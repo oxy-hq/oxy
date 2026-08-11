@@ -859,10 +859,16 @@ pub async fn handle_function_request(
         invocation_id,
         timeout,
         write_destinations: manifest.write_destinations(),
-        secrets_write: manifest.secrets_write(),
-        email_send: manifest.email_send(),
-        storage_read: manifest.storage_read(),
-        storage_write: manifest.storage_write(),
+        caps: host::FunctionCapabilities {
+            secrets_write: manifest.secrets_write(),
+            email_send: manifest.email_send(),
+            storage_read: manifest.storage_read(),
+            storage_write: manifest.storage_write(),
+            storage_retention: super::custom_apps_manifest::retention_policy_from_build_manifest(
+                build.manifest_json.as_ref(),
+                app.id,
+            ),
+        },
         logs: logs.clone(),
         // Route path: cancellation is the `cancel_requested_at` DB flag (set on
         // client-gone / dashboard cancel), so a never-fired token suffices here.
@@ -1066,10 +1072,16 @@ pub(crate) async fn run_scheduled_function(
         invocation_id,
         timeout,
         write_destinations: manifest.write_destinations(),
-        secrets_write: manifest.secrets_write(),
-        email_send: manifest.email_send(),
-        storage_read: manifest.storage_read(),
-        storage_write: manifest.storage_write(),
+        caps: host::FunctionCapabilities {
+            secrets_write: manifest.secrets_write(),
+            email_send: manifest.email_send(),
+            storage_read: manifest.storage_read(),
+            storage_write: manifest.storage_write(),
+            storage_retention: super::custom_apps_manifest::retention_policy_from_build_manifest(
+                build.manifest_json.as_ref(),
+                app.id,
+            ),
+        },
         logs: logs.clone(),
         cancel,
     })
@@ -1176,14 +1188,9 @@ struct RunArgs<'a> {
     timeout: Duration,
     /// §11.3 allowlist — databases `ctx.warehouse.*` may write to (empty = none).
     write_destinations: Vec<String>,
-    /// §11.x fail-closed capability gate for `ctx.secrets.set`.
-    secrets_write: bool,
-    /// Fail-closed capability gate for `ctx.email.send`.
-    email_send: bool,
-    /// Fail-closed capability gates for `ctx.storage` (read: getDownloadUrl/list/get;
-    /// write: getUploadUrl/put).
-    storage_read: bool,
-    storage_write: bool,
+    /// Fail-closed capability gates (`ctx.secrets.set`, `ctx.email.send`,
+    /// `ctx.storage` read/write) plus the app's storage retention policy.
+    caps: host::FunctionCapabilities,
     /// Shared log buffer: the isolate appends `console.*`/`ctx.log`; the handler
     /// drains it after the run and sends it back as `log` frames (batched with
     /// the response, not live-tailed).
@@ -1239,12 +1246,10 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         args.write_destinations.clone(),
         args.app.project_id,
         args.app.id,
+        args.org_id,
         args.user_id,
-        args.secrets_write,
         args.app.name.clone(),
-        args.email_send,
-        args.storage_read,
-        args.storage_write,
+        args.caps.clone(),
     ));
 
     let env = resolve_function_env(args.db, args.app.project_id, args.app.id).await;

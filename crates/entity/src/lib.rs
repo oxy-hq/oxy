@@ -14,6 +14,8 @@ pub mod app_functions;
 pub mod app_members;
 pub mod app_publish_tokens;
 pub mod app_publishers;
+pub mod app_storage_usage;
+pub mod app_storage_usage_samples;
 pub mod app_team_grants;
 pub mod apps;
 pub mod artifacts;

@@ -129,6 +129,14 @@ async fn deploy_example_apps(conn: &sea_orm::DatabaseConnection, workspace_id: U
             "⚠️".warning()
         );
     }
+
+    // After the apps exist — storage usage hangs off `apps.id` (with an
+    // ON DELETE CASCADE foreign key), so seeding it earlier would insert
+    // nothing. Warn rather than fail: demo storage numbers are a nicety, and
+    // the rest of the seed is what a developer cannot work without.
+    if let Err(e) = super::seed_storage::seed_storage_usage(conn).await {
+        println!("{} storage usage not seeded: {e}", "⚠️".warning());
+    }
 }
 
 /// Ensure the Local organization exists at LOCAL_ORG_ID (nil). Shared with
@@ -281,6 +289,12 @@ pub async fn clear_demo() -> Result<(), OxyError> {
     // workspace does NOT cascade to them — they'd survive as rows pointing at a
     // workspace that no longer exists, and their bundle bytes would sit on disk
     // with nothing left to reference them.
+    // Before the apps: the FK would cascade these away, but `--clear` also runs
+    // where apps survive, and orphaned usage keeps counting against an org's quota.
+    if let Err(e) = super::seed_storage::clear_storage_usage(&conn).await {
+        println!("{} storage usage not cleared: {e}", "⚠️".warning());
+    }
+
     let apps = super::seed_apps::clear_example_apps(&conn).await?;
 
     // Staff grants are keyed by email, not by workspace or org, so nothing else in

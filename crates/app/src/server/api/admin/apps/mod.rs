@@ -15,6 +15,7 @@ pub mod fs;
 pub mod functions;
 pub mod handlers;
 mod ops;
+pub mod storage;
 pub mod templates;
 
 use axum::Router;

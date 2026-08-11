@@ -560,7 +560,13 @@ const customAppKeys = {
   // ships. Bump again if the response shape changes.
   templates: () => ["customApps", "templates", "v2"] as const,
   // Workspace-scoped published list (HQ launcher + workspace rail).
-  list: (workspaceId: string) => ["customApps", "list", workspaceId] as const
+  list: (workspaceId: string) => ["customApps", "list", workspaceId] as const,
+  // Storage: fleet rollup vs per-app live S3 listing (two sources, two keys).
+  storageFleet: (sort: string) => ["customApps", "storage", "fleet", sort] as const,
+  storageObjects: (id: string, prefix: string) =>
+    ["customApps", "storage", "objects", id, prefix] as const,
+  storageHistory: (days: number, appId?: string) =>
+    ["customApps", "storage", "history", days, appId ?? "fleet"] as const
 };
 
 const appAdminKeys = {

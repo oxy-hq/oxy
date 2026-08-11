@@ -14,8 +14,10 @@
 mod common;
 
 mod custom_app_access_control;
+mod custom_app_storage_routes;
 mod custom_app_visibility;
 mod custom_apps_boundary;
 mod custom_apps_cache_invalidation;
 mod example_app_serving;
 mod seed_example_app;
+mod storage_history_query;

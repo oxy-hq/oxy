@@ -12,13 +12,22 @@
 //! it. So the check lives here, layered once over the whole tree, and reads the app id
 //! straight out of the matched path.
 //!
-//! **What this does NOT cover**, because the id isn't in the path:
-//! * `create_app` — the org arrives in the body; checked in the handler.
-//! * the `batch/*` endpoints — ids arrive in the body; checked per id in `ops.rs`.
-//! * `list_apps` — no single app; filtered as rows.
+//! **What this does NOT cover**, because the id isn't in the path. Each is numbered, and
+//! the handler carrying the check cites its number back:
+//! * **#1 `create_app`** — the org arrives in the body; checked in the handler.
+//! * **#2 the `batch/*` endpoints** — ids arrive in the body; checked per id via
+//!   `split_by_scope` in `handlers.rs`.
+//! * **#3 list-shaped reads that name no app** — `list_apps`, and `list_grants`'s
+//!   workspace picker; filtered as rows through `scope_org_filter`.
+//! * **#4 the `storage/*` routes** — the target is a `?appId=` query param
+//!   (`storage/history`), an `{org_id}` path segment (`storage/meter/{org_id}`), or absent
+//!   entirely (`storage`, `storage/sweep`). Each checks itself: list-shaped reads filter
+//!   rows through `scope_org_filter`, targeted ones go through `handlers::org_in_scope`
+//!   and 404.
 //!
-//! Those three are the complete exception list. Keep it that way: a new route whose
-//! target org isn't in `{id}` needs its own check, and should say so out loud.
+//! Those four are the complete exception list. Keep it that way: a new route whose
+//! target org isn't in `{id}` needs its own check, and should say so out loud — #3 is the
+//! worked example of doing that for a target the path can't express.
 
 use std::collections::HashMap;
 

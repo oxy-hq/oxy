@@ -130,6 +130,55 @@ export interface OxyAppManifest {
    * shell's Ask dock works before the app is registered.
    */
   ask?: { agent?: string; suggestedQuestions?: string[] };
+  /**
+   * Optional app-level storage policy. Distinct from the per-function
+   * `storage: { read, write }` capability: those gate what one function may
+   * call, while this governs the app's whole asset silo, which every function
+   * shares.
+   */
+  storage?: OxyAppStorageManifest;
+}
+
+/** How long assets under a given prefix are kept. */
+export interface OxyAppRetentionRule {
+  /**
+   * Key prefix inside your silo, as you write it — `"tmp/"`, `"generated/"`.
+   * The `customer-app-storage/<app_id>/` part is implicit.
+   */
+  prefix: string;
+  /**
+   * One of the five supported classes. `null` (or omitted) pins the prefix to
+   * "keep forever", which is how you protect it from a broader sibling rule.
+   *
+   * The set is closed on purpose — each class is one bucket-wide S3 lifecycle
+   * rule, so an arbitrary duration can't be honoured. An unrecognized value is
+   * ignored with a warning and the prefix simply doesn't expire.
+   */
+  expireAfter?: "1d" | "7d" | "30d" | "90d" | "365d" | null;
+}
+
+/** App-level `storage` block in `oxy-app.json`. */
+export interface OxyAppStorageManifest {
+  /**
+   * Retention rules for the asset silo. **Longest matching prefix wins**; a key
+   * matching no rule is kept forever.
+   *
+   * Expiry is enforced by S3 lifecycle rules on an object tag, so it is
+   * approximate (evaluated daily, not on the hour) and applies from the time an
+   * object was written. Editing a rule does not retag assets already stored —
+   * new writes pick up the new class.
+   *
+   * ```jsonc
+   * "storage": {
+   *   "retention": [
+   *     { "prefix": "tmp/",       "expireAfter": "1d"  },
+   *     { "prefix": "generated/", "expireAfter": "90d" },
+   *     { "prefix": "uploads/",   "expireAfter": null  }  // keep forever
+   *   ]
+   * }
+   * ```
+   */
+  retention?: OxyAppRetentionRule[];
 }
 
 // ── Resolved manifest ───────────────────────────────────────────────────────

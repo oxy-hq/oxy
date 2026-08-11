@@ -15,7 +15,11 @@ use super::{ListPage, PutOptions, StorageError, StoredObject};
 
 /// Build an S3 client, honoring `AWS_ENDPOINT_URL` (LocalStack/MinIO) with
 /// path-style addressing — identical to the build store's client.
-async fn client() -> S3Client {
+///
+/// `pub(super)` so `retention` can issue the bucket-lifecycle calls against the
+/// same endpoint configuration; a second client builder would be one more place
+/// for the MinIO path-style flag to be forgotten.
+pub(super) async fn client() -> S3Client {
     let shared = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let mut builder = aws_sdk_s3::config::Builder::from(&shared);
     if std::env::var("AWS_ENDPOINT_URL")
@@ -35,24 +39,35 @@ fn presigning(ttl: Duration) -> Result<PresigningConfig, StorageError> {
 /// Presigned PUT. Content-Type and Content-Length are part of the signature, so a
 /// client that sends a different type or a larger body is rejected by S3 itself —
 /// the size ceiling is enforced by the object store, not by trust in the browser.
+///
+/// `tagging` (`oxy-ttl=30d`) is bound into the signature the same way, so the
+/// retention class cannot be stripped or forged by the uploading browser. The
+/// caller **must** send a matching `x-amz-tagging` header or S3 rejects the
+/// upload with a signature mismatch — `@oxy-hq/sdk`'s uploader does this, and
+/// `get_upload_url` returns the value so a hand-rolled uploader can too.
 pub(super) async fn presign_put(
     bucket: &str,
     key: &str,
     content_type: &str,
     content_length: u64,
     ttl: Duration,
+    tagging: Option<&str>,
 ) -> Result<String, StorageError> {
-    let req = client()
+    let mut req = client()
         .await
         .put_object()
         .bucket(bucket)
         .key(key)
         .content_type(content_type)
-        .content_length(content_length as i64)
+        .content_length(content_length as i64);
+    if let Some(tagging) = tagging {
+        req = req.tagging(tagging);
+    }
+    let signed = req
         .presigned(presigning(ttl)?)
         .await
         .map_err(|e| StorageError::S3(format!("presign put {key}: {e}")))?;
-    Ok(req.uri().to_string())
+    Ok(signed.uri().to_string())
 }
 
 /// Presigned GET. `download_filename` forces a save-as through
@@ -76,12 +91,17 @@ pub(super) async fn presign_get(
     Ok(signed.uri().to_string())
 }
 
+/// `tagging` carries the retention class (`oxy-ttl=30d`) the caller resolved from
+/// the app's manifest. Kept out of [`PutOptions`] on purpose: that struct is what
+/// a function author's call maps onto, and retention is not theirs to set
+/// per-write — it is app policy.
 pub(super) async fn put(
     bucket: &str,
     key: &str,
     body: Vec<u8>,
     content_type: &str,
     opts: &PutOptions,
+    tagging: Option<&str>,
 ) -> Result<(), StorageError> {
     let mut req = client()
         .await
@@ -92,6 +112,11 @@ pub(super) async fn put(
         .body(ByteStream::from(body));
     if let Some(max_age) = opts.cache_control_max_age {
         req = req.cache_control(format!("max-age={max_age}"));
+    }
+    // Retention class, resolved from the app's manifest by the caller. Absent →
+    // no tag → no lifecycle rule matches → the object never expires.
+    if let Some(tagging) = tagging {
+        req = req.tagging(tagging);
     }
     if !opts.allow_overwrite {
         // Atomic "create only" — S3 conditional write. A head-then-put check would

@@ -224,7 +224,7 @@ pub(super) const INPROC_GLOBAL_WORKER_ENV: &str = "OXY_INPROC_GLOBAL_WORKER";
 const INPROC_GLOBAL_WORKER_INTERVAL_ENV: &str = "OXY_INPROC_GLOBAL_WORKER_INTERVAL_SECS";
 const DEFAULT_INPROC_GLOBAL_WORKER_INTERVAL_SECS: u64 = 30;
 
-fn inproc_global_worker_enabled() -> bool {
+pub(super) fn inproc_global_worker_enabled() -> bool {
     // Explicit env override wins, in both directions.
     if let Ok(v) = std::env::var(INPROC_GLOBAL_WORKER_ENV) {
         return matches!(v.as_str(), "1" | "true" | "yes" | "on");

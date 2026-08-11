@@ -141,6 +141,7 @@ mod m20260730_000001_org_teams_and_app_grants;
 mod m20260804_000001_metric_anomalies_cohort;
 mod m20260805_000001_airway_source_config;
 mod m20260806_000001_platform_grants;
+mod m20260806_000002_create_app_storage_usage;
 
 pub struct Migrator;
 
@@ -283,6 +284,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260804_000001_metric_anomalies_cohort::Migration),
             Box::new(m20260805_000001_airway_source_config::Migration),
             Box::new(m20260806_000001_platform_grants::Migration),
+            Box::new(m20260806_000002_create_app_storage_usage::Migration),
         ]
     }
 }

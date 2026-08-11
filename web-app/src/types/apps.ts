@@ -409,3 +409,89 @@ export interface CustomAppDebug {
   /** Upstream URL when `manifest_source = "remote"`; null otherwise. */
   upstream_url: string | null;
 }
+
+// ── Custom-app storage (asset-lifecycle design, 2026-08-05) ──────────────────
+
+/** Per-top-level-prefix split, captured during the sweeper's walk. */
+export interface StoragePrefixUsage {
+  bytes: number;
+  objects: number;
+  /** TTL class the app's policy assigns this prefix; absent = kept forever. */
+  expireAfter?: string;
+}
+
+/** One app's row in the fleet storage view. */
+export interface AppStorageUsageRow {
+  appId: string;
+  appName: string;
+  appSlug: string;
+  orgId: string;
+  orgName: string | null;
+  bytes: number;
+  objectCount: number;
+  /** Bytes no retention rule covers — growth nothing will reclaim. */
+  untaggedBytes: number;
+  /** `null` when there is no sample old enough to difference against. */
+  growthBytes7d: number | null;
+  prefixBreakdown: Record<string, StoragePrefixUsage> | null;
+  measuredAt: string;
+  /** `ok` | `partial` | `failed`. Anything but `ok` means the row is a floor. */
+  measureStatus: string;
+  measureDetail: string | null;
+}
+
+export interface FleetStorageResponse {
+  rows: AppStorageUsageRow[];
+  totalBytes: number;
+  totalObjects: number;
+  totalUntaggedBytes: number;
+  /** Apps with no usage row yet — "never measured", not "0 bytes". */
+  unmeasuredApps: number;
+  totalsAreFloor: boolean;
+  softLimitBytes: number | null;
+  hardLimitBytes: number | null;
+}
+
+export interface StorageObject {
+  key: string;
+  /** Key with the silo prefix stripped. */
+  path: string;
+  size: number;
+  contentType: string | null;
+  lastModified: string | null;
+  /** TTL class today's policy assigns; absent = kept forever. */
+  expireAfter?: string;
+}
+
+export interface StorageRetentionRule {
+  prefix: string;
+  expireAfter: string | null;
+}
+
+export interface StorageBrowseResponse {
+  objects: StorageObject[];
+  cursor: string | null;
+  hasMore: boolean;
+  retentionRules: StorageRetentionRule[];
+}
+
+/**
+ * A sweep is accepted, not completed — it runs in the background because
+ * walking every silo can take minutes. Results land in the fleet rollup.
+ */
+export interface StorageSweepStarted {
+  started: boolean;
+}
+
+/** One day's storage total, as held at that day's end. */
+export interface StorageHistoryPoint {
+  /** `YYYY-MM-DD`, UTC. */
+  date: string;
+  bytes: number;
+  objectCount: number;
+}
+
+export interface StorageHistoryResponse {
+  days: number;
+  points: StorageHistoryPoint[];
+}

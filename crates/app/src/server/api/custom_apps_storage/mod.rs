@@ -56,14 +56,21 @@
 //! `AWS_ENDPOINT_URL` at a local MinIO to exercise them.
 
 mod local;
+pub mod metering;
+pub mod quota;
+pub mod retention;
 mod s3;
+pub mod sweeper;
 #[cfg(test)]
 mod tests;
+pub mod usage;
 
 use std::time::Duration;
 
 use serde::Serialize;
 use uuid::Uuid;
+
+pub use retention::{RetentionPolicy, RetentionRule};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -146,6 +153,27 @@ fn max_upload_bytes() -> u64 {
 /// slash, trailing slash (mirrors the build store's `build_prefix`).
 pub(crate) fn app_prefix(app_id: Uuid) -> String {
     format!("customer-app-storage/{app_id}/")
+}
+
+/// Resolve the `x-amz-tagging` value for a **full** silo key by matching its
+/// app-relative part against the app's retention policy.
+///
+/// The policy declares prefixes the way an author writes them (`uploads/`) while
+/// keys carry the silo prefix (`customer-app-storage/<id>/uploads/…`), so the
+/// silo part is stripped before matching. Skipping that strip would mean no rule
+/// ever matched and every object silently lived forever — a failure that looks
+/// exactly like success until the bill arrives.
+///
+/// `None` at any step (no policy, key outside the silo, no matching prefix) means
+/// no tag, which means no lifecycle rule applies. Fail open, deliberately.
+fn retention_tag(app_id: Uuid, key: &str, policy: &RetentionPolicy) -> Option<String> {
+    if policy.is_empty() {
+        return None;
+    }
+    let relative = key.strip_prefix(app_prefix(app_id).as_str())?;
+    policy
+        .resolve(relative)
+        .map(retention::TtlClass::tagging_header)
 }
 
 /// Sanitize one path segment: keep `[A-Za-z0-9._-]`, collapse anything else to
@@ -285,6 +313,12 @@ pub struct UploadUrl {
     pub url: String,
     pub key: String,
     pub expires_at: String,
+    /// The `x-amz-tagging` header the uploader **must** send verbatim, when the
+    /// app's retention policy assigns this key a class. It is bound into the
+    /// signature, so omitting it fails the upload with a signature mismatch
+    /// rather than silently storing an object that never expires.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tagging: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -358,6 +392,7 @@ pub async fn get_upload_url(
     content_type: &str,
     content_length: u64,
     ttl_secs: Option<u64>,
+    retention: &RetentionPolicy,
 ) -> Result<UploadUrl, StorageError> {
     if content_length == 0 {
         return Err(StorageError::Invalid(
@@ -383,11 +418,21 @@ pub async fn get_upload_url(
         content_type
     };
     let ttl = presign_ttl(ttl_secs, DEFAULT_UPLOAD_TTL_SECS);
-    let url = s3::presign_put(&bucket, &key, content_type, content_length, ttl).await?;
+    let tagging = retention_tag(app_id, &key, retention);
+    let url = s3::presign_put(
+        &bucket,
+        &key,
+        content_type,
+        content_length,
+        ttl,
+        tagging.as_deref(),
+    )
+    .await?;
     Ok(UploadUrl {
         url,
         key,
         expires_at: expires_at(ttl),
+        tagging,
     })
 }
 
@@ -420,6 +465,7 @@ pub async fn put(
     pathname: &str,
     body: Vec<u8>,
     opts: PutOptions,
+    retention: &RetentionPolicy,
 ) -> Result<PutResult, StorageError> {
     if body.len() > INLINE_BLOB_MAX_BYTES {
         return Err(StorageError::TooLarge(format!(
@@ -435,7 +481,22 @@ pub async fn put(
         .unwrap_or_else(|| guess_content_type(&key).to_string());
     let size = body.len() as u64;
     match bucket() {
-        Some(bucket) => s3::put(&bucket, &key, body, &content_type, &opts).await?,
+        Some(bucket) => {
+            let tagging = retention_tag(app_id, &key, retention);
+            s3::put(
+                &bucket,
+                &key,
+                body,
+                &content_type,
+                &opts,
+                tagging.as_deref(),
+            )
+            .await?
+        }
+        // The filesystem fallback has no tags and no lifecycle engine, so a local
+        // asset never expires. Stated here rather than left implicit: it is a real
+        // dev/prod divergence, and `spawn_lifecycle_verify` logs the same fact
+        // at boot so nobody concludes retention is broken in prod from a local run.
         None => local::put(&key, body, opts.allow_overwrite).await?,
     }
     Ok(PutResult {

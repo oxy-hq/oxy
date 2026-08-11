@@ -575,29 +575,43 @@ async fn point_app_at(conn: &Conn, app_id: Uuid, build_pk: Uuid) -> Result<(), O
     Ok(())
 }
 
+/// Every app **this seed** created: one of the two seeded slugs, each carrying
+/// the deterministic id derived from its `(org, slug)`.
+///
+/// The id is what proves provenance — a developer's own app that happens to share
+/// a slug has a random id and is excluded. Any seed path that writes to or
+/// deletes app-scoped data must select through here rather than `Apps::find()`,
+/// or it will reach real tenant rows.
+///
+/// **Ordered by id**, because callers assign per-app fixture data by position.
+/// Postgres returns unordered rows in whatever order it likes, and re-seeding
+/// updates these rows, which can move them — so without this the app that is the
+/// runaway on one run is the flat one on the next, and any test asserting which
+/// app tops the growth column flakes.
+pub(crate) async fn seeded_apps(conn: &Conn) -> Result<Vec<apps::Model>, OxyError> {
+    Ok(Apps::find()
+        .filter(apps::Column::Slug.is_in([APP_SLUG, RESTRICTED_APP_SLUG]))
+        .order_by_asc(apps::Column::Id)
+        .all(conn)
+        .await
+        .map_err(|e| OxyError::DBError(format!("query seeded apps: {e}")))?
+        .into_iter()
+        .filter(|row| row.id == app_id_for(row.org_id, &row.slug))
+        .collect())
+}
+
 /// Tear down every app this seed deployed — the stored bytes as well as the
 /// rows.
 ///
-/// Matches on the deterministic id, not just the slug: `id == app_id_for(org_id)`
-/// proves the seed created the row, so a developer's own app that happens to be
+/// Scoped through [`seeded_apps`], so a developer's own app that happens to be
 /// called `hello-oxy` is left alone. `apps.project_id` has no foreign key, so
 /// dropping the workspace would otherwise leave these rows dangling — and the
 /// bytes on disk have no owner at all.
 pub(crate) async fn clear_example_apps(conn: &Conn) -> Result<u64, OxyError> {
-    let rows = Apps::find()
-        .filter(apps::Column::Slug.is_in([APP_SLUG, RESTRICTED_APP_SLUG]))
-        .all(conn)
-        .await
-        .map_err(|e| OxyError::DBError(format!("query seeded apps: {e}")))?;
+    let rows = seeded_apps(conn).await?;
 
     let mut removed = 0;
     for row in rows {
-        // Both seeded slugs, each keyed by its own deterministic id — so the
-        // restricted second app is cleaned up too, and a developer's own app that
-        // happens to share a slug still isn't.
-        if row.id != app_id_for(row.org_id, &row.slug) {
-            continue;
-        }
         // Bytes first: a failure here leaves the row in place, so a re-run
         // still knows what to clean. The reverse would orphan the files.
         store::delete_app(row.id)

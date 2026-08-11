@@ -281,7 +281,12 @@ fn seed_id(kind: &str, key: &str) -> Uuid {
 /// seed creates real users, orgs and a partner grant, so it must not touch prod.
 /// Shared with `seed_platform_grants`, which seeds STAFF standing and therefore
 /// needs the same locality guard — issuing platform grants against a real database
-/// would be handing out console access.
+/// would be handing out console access — and with `seed_storage`, which fabricates
+/// usage rows that a real deployment would then bill against.
+///
+/// One accessor on purpose: every write path that fabricates data gates on the
+/// same definition of "local", because a second, drifting copy is how one seed
+/// ends up safe and its sibling doesn't.
 pub(crate) fn is_local_db() -> bool {
     is_local()
 }

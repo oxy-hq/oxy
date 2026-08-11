@@ -16,6 +16,7 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 
 use super::custom_apps_source::AppSource;
+use super::custom_apps_storage::{RetentionPolicy, RetentionRule};
 use super::custom_apps_sync::Channel;
 
 // ── Manifest schema ──────────────────────────────────────────────────────────
@@ -30,6 +31,22 @@ pub(super) struct OxyAppAskConfig {
     pub agent: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suggested_questions: Vec<String>,
+}
+
+/// App-level storage config from `oxy-app.json`.
+///
+/// Deliberately **not** the same block as the per-function `storage: { read,
+/// write }` capability. Those gate what one function may call; retention governs
+/// the per-app silo that every function shares, so it can only be stated once,
+/// app-wide. Putting it per-function would let two functions declare conflicting
+/// lifetimes for the same object.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OxyAppStorageConfig {
+    /// Prefix → TTL-class rules. Longest matching prefix wins; an unmatched key
+    /// never expires. See `custom_apps_storage::retention`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub retention: Vec<RetentionRule>,
 }
 
 /// Server-side mirror of the bundle's `oxy-app.json` — identity + launcher-card fields.
@@ -74,6 +91,47 @@ pub(crate) struct OxyAppManifest {
     /// static for now; a live data binding can replace it later.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    /// App-level storage policy — currently just asset retention.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage: Option<OxyAppStorageConfig>,
+}
+
+/// Resolve an app's asset-retention policy from the `oxy-app.json` captured in
+/// its build row (`app_builds.manifest_json`).
+///
+/// Reads the manifest that shipped with the **running build**, so a policy change
+/// takes effect on publish alongside the code that writes the assets — not the
+/// moment someone edits a file.
+///
+/// Every failure here degrades to "no policy", i.e. nothing expires. A manifest
+/// that won't parse must never be read as permission to start deleting; the
+/// warnings are logged so a misspelled rule is diagnosable rather than silent.
+pub(crate) fn retention_policy_from_build_manifest(
+    manifest_json: Option<&serde_json::Value>,
+    app_id: uuid::Uuid,
+) -> RetentionPolicy {
+    let Some(raw) = manifest_json else {
+        return RetentionPolicy::default();
+    };
+    let config: OxyAppStorageConfig = match raw.get("storage") {
+        Some(v) => match serde_json::from_value(v.clone()) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(
+                    %app_id,
+                    "oxy-app.json `storage` block could not be parsed ({e}); \
+                     assets for this app will not expire"
+                );
+                return RetentionPolicy::default();
+            }
+        },
+        None => return RetentionPolicy::default(),
+    };
+    let (policy, warnings) = RetentionPolicy::from_rules(&config.retention);
+    for warning in warnings {
+        tracing::warn!(%app_id, "oxy-app.json storage.retention: {warning}");
+    }
+    policy
 }
 
 // ── Manifest error ───────────────────────────────────────────────────────────

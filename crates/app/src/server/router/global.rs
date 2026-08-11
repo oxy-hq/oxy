@@ -218,6 +218,30 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 // access, flattened with its org + grant metadata. See
                 // `admin::oxy_access`.
                 .route("/oxy-access", get(admin::oxy_access::list_grants))
+                // ── Custom-app storage (see the asset-lifecycle design doc) ──
+                // Fleet view: every measured app ranked by size / 7d growth /
+                // untagged bytes. Reads the `app_storage_usage` rollup, never S3
+                // — ranking the fleet cannot mean walking every silo per request.
+                .route("/storage", get(admin::apps::storage::fleet))
+                // Force a re-measure. Without this the fleet view's staleness is
+                // visible but unactionable.
+                .route("/storage/sweep", post(admin::apps::storage::sweep_now))
+                // Daily totals for the usage-over-time chart. Fleet-wide by
+                // default; `?appId=` narrows it to one app.
+                .route("/storage/history", get(admin::apps::storage::history))
+                // Month-to-date GB-month for one org (time-weighted).
+                .route(
+                    "/storage/meter/{org_id}",
+                    get(admin::apps::storage::org_meter),
+                )
+                // Per-app browser: reads S3 live via `list()`, because the rollup
+                // holds no per-object rows and an operator investigating now
+                // needs current truth, not a number a sweep old.
+                .route("/{id}/storage/objects", get(admin::apps::storage::browse))
+                .route(
+                    "/{id}/storage/delete",
+                    post(admin::apps::storage::delete_objects),
+                )
                 // Mint an app-scoped API key. The plaintext key is
                 // returned **once** for the operator to paste into the
                 // bundle's deploy env (e.g. `OXY_API_KEY` in Vercel). The

@@ -42,7 +42,7 @@ pub(crate) use super::ops::{publish_one, unpublish_one, validate_display_name};
 /// `app_scope_guard` already fails closed on `Err`. Having the two halves of one system
 /// disagree about what an unreadable grant means is how this drifts, so the difference is
 /// stated here once rather than re-decided at each call site.
-async fn scope_org_filter_checked(
+pub(crate) async fn scope_org_filter_checked(
     db: &sea_orm::DatabaseConnection,
     user: &oxy_auth::types::AuthenticatedUser,
 ) -> Result<Option<Vec<Uuid>>, sea_orm::DbErr> {
@@ -82,6 +82,37 @@ pub(crate) async fn scope_org_filter(
         );
         None
     })
+}
+
+/// Scope exception #4 (see `app_scope_guard`): the **storage** routes name their target
+/// with something other than `{id}` — a `?appId=` query param, an `{org_id}` path segment,
+/// or nothing at all (the fleet rollup). The path-based guard sees none of those, so each
+/// of those handlers has to say out loud that it checked, which is what this is for.
+///
+/// Fails CLOSED, unlike [`scope_org_filter`]: these are targeted reads of one named org,
+/// so collapsing `Err` to "unbounded" would hand a bounded grant another tenant's figures
+/// on a transient `DbErr`. The lenient variant is for *list* endpoints, where the same
+/// collapse only over-shows rows the caller could already enumerate.
+///
+/// `Ok(false)` means out of scope; every caller turns that into **404, not 403** — the
+/// rule `app_scope_guard` sets so ids cannot be probed for existence.
+pub(crate) async fn org_in_scope(
+    db: &sea_orm::DatabaseConnection,
+    user: &oxy_auth::types::AuthenticatedUser,
+    org_id: Uuid,
+) -> Result<bool, StatusCode> {
+    match scope_org_filter_checked(db, user).await {
+        Ok(None) => Ok(true), // unbounded grant
+        Ok(Some(orgs)) => Ok(orgs.contains(&org_id)),
+        Err(e) => {
+            tracing::error!(
+                target: "authz",
+                error = %e,
+                "platform grant unreadable on a scoped storage read — refusing"
+            );
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 /// Scope exception #2 (see `app_scope_guard`): **batch** ids travel in the request body,

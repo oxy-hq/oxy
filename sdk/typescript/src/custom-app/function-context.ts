@@ -230,6 +230,30 @@ export interface StorageUploadUrl {
   key: string;
   /** ISO-8601 expiry of the presigned URL. */
   expiresAt: string;
+  /**
+   * Retention tag for this key, present only when your app declares a matching
+   * `storage.retention` rule in `oxy-app.json` (e.g. `"oxy-ttl=30d"`).
+   *
+   * **When present, the upload MUST send it as the `x-amz-tagging` header** — it
+   * is bound into the signature, so omitting it fails the PUT with a signature
+   * mismatch rather than storing an untagged object:
+   *
+   * ```ts
+   * const { url, tagging } = await ctx.storage.getUploadUrl({ ... });
+   * await fetch(url, {
+   *   method: "PUT",
+   *   body: file,
+   *   headers: {
+   *     "Content-Type": file.type,
+   *     ...(tagging ? { "x-amz-tagging": tagging } : {}),
+   *   },
+   * });
+   * ```
+   *
+   * Signing it is deliberate: a browser that could drop the header could opt any
+   * upload out of the app's own retention policy.
+   */
+  tagging?: string;
 }
 
 /** A minted presigned download. */

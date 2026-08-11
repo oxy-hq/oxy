@@ -158,6 +158,23 @@ pub async fn api_router(
         agentic_state.db.clone(),
         agentic_state.shutdown_token.clone(),
     );
+    // One-shot: verify the custom-app asset bucket enforces the TTL classes this
+    // binary stamps on objects. Singleton-gated because the answer is global, not
+    // per-tenant, and identical from every replica.
+    // Read-only: Terraform owns the asset bucket's lifecycle rules; this checks
+    // they still match the TTL classes this build stamps and logs loudly if not.
+    crate::server::api::custom_apps_storage::retention::spawn_lifecycle_verify(
+        super::recovery::inproc_global_worker_enabled(),
+    );
+    // Periodic: re-measure each app's asset silo into `app_storage_usage` so
+    // quotas, the admin fleet view, and GB-month billing have a number to read.
+    // Singleton-gated — every replica sweeping would multiply LIST cost by the
+    // replica count for identical results.
+    crate::server::api::custom_apps_storage::sweeper::spawn_periodic_sweep(
+        agentic_state.db.clone(),
+        agentic_state.shutdown_token.clone(),
+        super::recovery::inproc_global_worker_enabled(),
+    );
 
     // Compile-boundary maintenance: reap stuck `compiling` revisions (crashed
     // compiles) + prune old non-current revisions so the `*_definitions`

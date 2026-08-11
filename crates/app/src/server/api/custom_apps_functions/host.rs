@@ -17,6 +17,8 @@ use uuid::Uuid;
 
 use oxy::service::secret_manager::SecretManagerService;
 
+use crate::server::api::custom_apps_storage::RetentionPolicy;
+
 use super::runtime::{
     FUNCTION_MAX_ROWS, FUNCTION_STREAM_MAX_ROWS, FunctionHost, FunctionProjectContext,
     FunctionQueryExecutor,
@@ -49,23 +51,46 @@ pub struct ProjectFunctionHost {
     project_id: Uuid,
     /// App id — `ctx.secrets.set` writes land under `apps/<app_id>/`.
     app_id: Uuid,
+    /// Org the app belongs to. Storage quotas are org-level (a tenant thinks in
+    /// organizations, and one invoice covers every app under it), so the write
+    /// path needs it without re-reading `apps`.
+    org_id: Uuid,
     /// Actor stamped as created_by/updated_by on secret writes (the invoking
     /// user for a route call; the app owner for a scheduled call). Non-null FK.
     actor: Uuid,
-    /// §11.x fail-closed: `ctx.secrets.set` is rejected unless the function
-    /// declares the `secrets.write` capability in its manifest.
-    secrets_write: bool,
     /// App display name, used as the `From` friendly name on `ctx.email.send`.
     app_name: String,
-    /// Fail-closed capability gate for `ctx.email.send`.
-    email_send: bool,
-    /// Fail-closed capability gate for `ctx.storage` reads (getDownloadUrl / list / get).
-    storage_read: bool,
-    /// Fail-closed capability gate for `ctx.storage` writes (getUploadUrl / put).
-    storage_write: bool,
+    /// What this function may do, and under what storage policy.
+    caps: FunctionCapabilities,
     /// Per-invocation `ctx.email.send` counter (this host lives for exactly one
     /// invocation), bounding email fan-out from a single run.
     email_send_count: std::sync::atomic::AtomicUsize,
+}
+
+/// The fail-closed capability gates a function's manifest grants, plus the
+/// app-level storage retention policy those writes are stamped with.
+///
+/// Grouped rather than passed as five more positional `bool`s: adjacent
+/// same-typed parameters are exactly where a transposed argument silently grants
+/// a capability nobody declared, and this constructor already carried a
+/// `too_many_arguments` waiver.
+///
+/// Every gate defaults to **false** and the policy to empty, so a caller that
+/// forgets to set one denies the capability rather than granting it.
+#[derive(Debug, Clone, Default)]
+pub struct FunctionCapabilities {
+    /// §11.x — `ctx.secrets.set` is rejected unless the manifest declares
+    /// `secrets.write`.
+    pub secrets_write: bool,
+    /// Gate for `ctx.email.send`.
+    pub email_send: bool,
+    /// Gate for `ctx.storage` reads (getDownloadUrl / list / get).
+    pub storage_read: bool,
+    /// Gate for `ctx.storage` writes (getUploadUrl / put).
+    pub storage_write: bool,
+    /// App-level `storage.retention` policy. Empty → written objects carry no
+    /// TTL tag and never expire.
+    pub storage_retention: RetentionPolicy,
 }
 
 impl ProjectFunctionHost {
@@ -77,12 +102,10 @@ impl ProjectFunctionHost {
         write_destinations: Vec<String>,
         project_id: Uuid,
         app_id: Uuid,
+        org_id: Uuid,
         actor: Uuid,
-        secrets_write: bool,
         app_name: String,
-        email_send: bool,
-        storage_read: bool,
-        storage_write: bool,
+        caps: FunctionCapabilities,
     ) -> Self {
         Self {
             proj_ctx,
@@ -91,12 +114,10 @@ impl ProjectFunctionHost {
             write_destinations,
             project_id,
             app_id,
+            org_id,
             actor,
-            secrets_write,
             app_name,
-            email_send,
-            storage_read,
-            storage_write,
+            caps,
             email_send_count: std::sync::atomic::AtomicUsize::new(0),
             // `ctx.fetch` is defended in two layers:
             //  1. `is_safe_outbound` rejects the request URL up front (scheme,
@@ -368,7 +389,7 @@ impl FunctionHost for ProjectFunctionHost {
         // §11.x fail-closed: the function must declare the `secrets.write`
         // capability. Scoped to the app's own `apps/<app_id>/` namespace, so it
         // can never touch another app's or the project's secrets.
-        if !self.secrets_write {
+        if !self.caps.secrets_write {
             return Err(
                 "ctx.secrets.set: this function has not declared the `secrets.write` \
                  capability (add it to oxy-app.json to permit writes)"
@@ -384,7 +405,7 @@ impl FunctionHost for ProjectFunctionHost {
 
     async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
         // Fail-closed: the function must declare the `email.send` capability.
-        if !self.email_send {
+        if !self.caps.email_send {
             return Err(
                 "EmailCapabilityMissing: this function has not declared the `email.send` \
                  capability (add \"email\": { \"send\": true } to its oxy-app.json entry)"
@@ -419,14 +440,14 @@ impl FunctionHost for ProjectFunctionHost {
         // Fail-closed capability gate: uploads/put need `storage.write`; the
         // read paths need `storage.read`.
         let needs_write = matches!(op.as_str(), "getUploadUrl" | "put");
-        if needs_write && !self.storage_write {
+        if needs_write && !self.caps.storage_write {
             return Err(
                 "StorageCapabilityMissing: this function has not declared the `storage.write` \
                  capability (add \"storage\": { \"write\": true } to its oxy-app.json entry)"
                     .to_string(),
             );
         }
-        if !needs_write && !self.storage_read {
+        if !needs_write && !self.caps.storage_read {
             return Err(
                 "StorageCapabilityMissing: this function has not declared the `storage.read` \
                  capability (add \"storage\": { \"read\": true } to its oxy-app.json entry)"
@@ -451,12 +472,19 @@ impl FunctionHost for ProjectFunctionHost {
                 };
                 let content_length =
                     u64_field("contentLength").ok_or_else(|| required("contentLength"))?;
+                // Org-level quota. Checked before the URL is minted, not after
+                // the bytes land: a presigned PUT goes straight to S3, so this is
+                // the last moment oxy can refuse it.
+                st::quota::check_write_allowed(&self.db, self.org_id, content_length)
+                    .await
+                    .map_err(|e| e.to_string())?;
                 let out = st::get_upload_url(
                     self.app_id,
                     &pathname,
                     str_field("contentType").unwrap_or(""),
                     content_length,
                     u64_field("expiresInSeconds"),
+                    &self.caps.storage_retention,
                 )
                 .await
                 .map_err(|e| e.to_string())?;
@@ -493,6 +521,20 @@ impl FunctionHost for ProjectFunctionHost {
                         ));
                     }
                 };
+                // Checked unconditionally, matching the presigned path above.
+                //
+                // An earlier version exempted `allowOverwrite: true` on the
+                // reasoning that refusing an overwrite pushes the caller to write
+                // under a new name and grow the silo. That only holds when the key
+                // already exists — and the flag does not assert it does. A
+                // function that always passes `allowOverwrite: true` with fresh
+                // pathnames would never have been checked at all, which is exactly
+                // the runaway growth this gate exists to stop. The concern it was
+                // guarding against is moot anyway: past the hard limit *every*
+                // write is refused, so there is no cheaper name to escape to.
+                st::quota::check_write_allowed(&self.db, self.org_id, bytes.len() as u64)
+                    .await
+                    .map_err(|e| e.to_string())?;
                 let out = st::put(
                     self.app_id,
                     pathname,
@@ -503,6 +545,7 @@ impl FunctionHost for ProjectFunctionHost {
                         allow_overwrite: bool_field("allowOverwrite"),
                         cache_control_max_age: u64_field("cacheControlMaxAge"),
                     },
+                    &self.caps.storage_retention,
                 )
                 .await
                 .map_err(|e| e.to_string())?;

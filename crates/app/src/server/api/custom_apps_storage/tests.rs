@@ -14,6 +14,13 @@ fn other() -> Uuid {
     Uuid::from_u128(8)
 }
 
+/// The default for every pre-existing test: no retention policy, so nothing is
+/// tagged and nothing expires. Retention-specific behaviour is asserted in the
+/// `retention_tagging` block below and in `retention.rs`'s own unit tests.
+fn no_retention() -> RetentionPolicy {
+    RetentionPolicy::default()
+}
+
 // ── Pathname normalization ────────────────────────────────────────────────────
 
 #[test]
@@ -188,9 +195,15 @@ fn presign_ttl_defaults_and_clamps() {
 #[tokio::test]
 async fn put_rejects_an_oversized_inline_blob() {
     let big = vec![0u8; INLINE_BLOB_MAX_BYTES + 1];
-    let err = put(app(), "generated/big.bin", big, PutOptions::default())
-        .await
-        .unwrap_err();
+    let err = put(
+        app(),
+        "generated/big.bin",
+        big,
+        PutOptions::default(),
+        &no_retention(),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(err, StorageError::TooLarge(_)));
     // The message must point at the escape hatch, not just refuse.
     assert!(format!("{err}").contains("presigned"), "{err}");
@@ -200,13 +213,29 @@ async fn put_rejects_an_oversized_inline_blob() {
 async fn upload_url_validates_content_length() {
     // Zero-length is a client bug, not a zero-byte upload.
     assert!(matches!(
-        get_upload_url(app(), "uploads/x.pdf", "application/pdf", 0, None).await,
+        get_upload_url(
+            app(),
+            "uploads/x.pdf",
+            "application/pdf",
+            0,
+            None,
+            &no_retention()
+        )
+        .await,
         Err(StorageError::Invalid(_))
     ));
     // Over the ceiling is refused before any signing happens.
     let over = max_upload_bytes() + 1;
     assert!(matches!(
-        get_upload_url(app(), "uploads/x.pdf", "application/pdf", over, None).await,
+        get_upload_url(
+            app(),
+            "uploads/x.pdf",
+            "application/pdf",
+            over,
+            None,
+            &no_retention()
+        )
+        .await,
         Err(StorageError::TooLarge(_))
     ));
 }
@@ -217,9 +246,16 @@ async fn presigning_without_a_bucket_is_a_clear_error() {
     unsafe {
         std::env::remove_var("OXY_CUSTOMER_APPS_STORAGE_S3_BUCKET");
     }
-    let err = get_upload_url(app(), "uploads/x.pdf", "application/pdf", 10, None)
-        .await
-        .unwrap_err();
+    let err = get_upload_url(
+        app(),
+        "uploads/x.pdf",
+        "application/pdf",
+        10,
+        None,
+        &no_retention(),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(err, StorageError::NotConfigured(_)));
     let err = get_download_url(app(), &format!("{}a.pdf", app_prefix(app())), None, false)
         .await
@@ -254,6 +290,7 @@ async fn generated_asset_lifecycle_on_fs() {
         "generated/jan.csv",
         b"a,b\n1,2\n".to_vec(),
         PutOptions::default(),
+        &no_retention(),
     )
     .await
     .expect("put");
@@ -310,6 +347,7 @@ async fn binary_generated_assets_round_trip_byte_for_byte() {
         "generated/chart.png",
         binary.clone(),
         PutOptions::default(),
+        &no_retention(),
     )
     .await
     .expect("put binary");
@@ -323,14 +361,26 @@ async fn binary_generated_assets_round_trip_byte_for_byte() {
 async fn put_refuses_to_clobber_unless_told_to() {
     let tmp = use_temp_state_dir();
     let a = Uuid::new_v4();
-    let first = put(a, "generated/r.txt", b"one".to_vec(), PutOptions::default())
-        .await
-        .expect("first put");
+    let first = put(
+        a,
+        "generated/r.txt",
+        b"one".to_vec(),
+        PutOptions::default(),
+        &no_retention(),
+    )
+    .await
+    .expect("first put");
 
     // Default is create-only: silently losing an asset is worse than an error.
-    let err = put(a, "generated/r.txt", b"two".to_vec(), PutOptions::default())
-        .await
-        .unwrap_err();
+    let err = put(
+        a,
+        "generated/r.txt",
+        b"two".to_vec(),
+        PutOptions::default(),
+        &no_retention(),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(err, StorageError::AlreadyExists(_)));
     assert_eq!(
         get(a, &first.key).await.unwrap().unwrap().0,
@@ -347,6 +397,7 @@ async fn put_refuses_to_clobber_unless_told_to() {
             allow_overwrite: true,
             ..Default::default()
         },
+        &no_retention(),
     )
     .await
     .expect("overwrite");
@@ -361,6 +412,7 @@ async fn put_refuses_to_clobber_unless_told_to() {
             add_random_suffix: true,
             ..Default::default()
         },
+        &no_retention(),
     )
     .await
     .expect("suffixed");
@@ -374,12 +426,24 @@ async fn put_refuses_to_clobber_unless_told_to() {
 async fn copy_refuses_to_clobber_and_rejects_self() {
     let tmp = use_temp_state_dir();
     let a = Uuid::new_v4();
-    let src = put(a, "generated/a.txt", b"src".to_vec(), PutOptions::default())
-        .await
-        .expect("put src");
-    put(a, "generated/b.txt", b"dst".to_vec(), PutOptions::default())
-        .await
-        .expect("put dst");
+    let src = put(
+        a,
+        "generated/a.txt",
+        b"src".to_vec(),
+        PutOptions::default(),
+        &no_retention(),
+    )
+    .await
+    .expect("put src");
+    put(
+        a,
+        "generated/b.txt",
+        b"dst".to_vec(),
+        PutOptions::default(),
+        &no_retention(),
+    )
+    .await
+    .expect("put dst");
 
     let err = copy(a, &src.key, "generated/b.txt", false)
         .await
@@ -407,6 +471,7 @@ async fn list_paginates_with_a_cursor() {
             &format!("generated/f{i:02}.txt"),
             vec![b'x'; i + 1],
             PutOptions::default(),
+            &no_retention(),
         )
         .await
         .expect("put");
@@ -455,17 +520,25 @@ async fn list_is_scoped_by_prefix_and_never_leaks_another_app() {
         "generated/mine.txt",
         b"a".to_vec(),
         PutOptions::default(),
+        &no_retention(),
     )
     .await
     .unwrap();
-    put(a, "uploads/mine.txt", b"a".to_vec(), PutOptions::default())
-        .await
-        .unwrap();
+    put(
+        a,
+        "uploads/mine.txt",
+        b"a".to_vec(),
+        PutOptions::default(),
+        &no_retention(),
+    )
+    .await
+    .unwrap();
     put(
         b,
         "generated/theirs.txt",
         b"b".to_vec(),
         PutOptions::default(),
+        &no_retention(),
     )
     .await
     .unwrap();
@@ -499,6 +572,7 @@ async fn cross_tenant_reads_and_writes_are_denied_before_touching_disk() {
         "generated/secret.txt",
         b"top".to_vec(),
         PutOptions::default(),
+        &no_retention(),
     )
     .await
     .expect("put");
@@ -545,12 +619,24 @@ async fn delete_app_assets_removes_the_whole_silo() {
     let tmp = use_temp_state_dir();
     let a = Uuid::new_v4();
     let b = Uuid::new_v4();
-    let mine = put(a, "generated/x.txt", b"x".to_vec(), PutOptions::default())
-        .await
-        .unwrap();
-    let theirs = put(b, "generated/y.txt", b"y".to_vec(), PutOptions::default())
-        .await
-        .unwrap();
+    let mine = put(
+        a,
+        "generated/x.txt",
+        b"x".to_vec(),
+        PutOptions::default(),
+        &no_retention(),
+    )
+    .await
+    .unwrap();
+    let theirs = put(
+        b,
+        "generated/y.txt",
+        b"y".to_vec(),
+        PutOptions::default(),
+        &no_retention(),
+    )
+    .await
+    .unwrap();
 
     delete_app_assets(a).await.expect("delete app assets");
     assert!(head(a, &mine.key).await.unwrap().is_none());
@@ -575,4 +661,92 @@ async fn delete_rejects_an_unbounded_batch() {
         Err(StorageError::Invalid(_))
     ));
     assert_eq!(delete(a, &[]).await.unwrap(), 0);
+}
+
+// ── Retention tagging ────────────────────────────────────────────────────────
+//
+// `retention.rs` unit-tests class parsing and prefix matching in isolation.
+// What these cover is the seam between the two: turning an app's policy plus a
+// *full silo key* into the tag value actually bound into the S3 request. That
+// seam is where a silent failure lives — strip the silo prefix wrongly and every
+// object quietly stops expiring, with no error anywhere.
+
+fn policy(rules: &[(&str, Option<&str>)]) -> RetentionPolicy {
+    let rules: Vec<RetentionRule> = rules
+        .iter()
+        .map(|(prefix, expire_after)| RetentionRule {
+            prefix: (*prefix).to_string(),
+            expire_after: expire_after.map(str::to_string),
+        })
+        .collect();
+    let (policy, warnings) = RetentionPolicy::from_rules(&rules);
+    assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+    policy
+}
+
+#[test]
+fn retention_tag_matches_against_the_silo_relative_path() {
+    let p = policy(&[("generated/", Some("90d"))]);
+    // The key carries the silo prefix; the policy does not. If the prefix isn't
+    // stripped before matching, this returns None and nothing ever expires.
+    let key = normalize_pathname(app(), "generated/q1.pdf", false).unwrap();
+    assert!(key.starts_with(&app_prefix(app())), "precondition: {key}");
+    assert_eq!(
+        retention_tag(app(), &key, &p).as_deref(),
+        Some("oxy-ttl=90d")
+    );
+}
+
+#[test]
+fn retention_tag_is_absent_without_a_policy() {
+    let key = normalize_pathname(app(), "generated/q1.pdf", false).unwrap();
+    assert_eq!(retention_tag(app(), &key, &no_retention()), None);
+}
+
+#[test]
+fn retention_tag_is_absent_for_an_unmatched_prefix() {
+    let p = policy(&[("tmp/", Some("1d"))]);
+    let key = normalize_pathname(app(), "uploads/invoice.pdf", false).unwrap();
+    // Fail open: an unmatched key keeps its bytes forever.
+    assert_eq!(retention_tag(app(), &key, &p), None);
+}
+
+#[test]
+fn retention_tag_refuses_a_key_from_another_apps_silo() {
+    // Belt-and-braces against the tenant boundary: even if a foreign key reached
+    // here, it must not be stamped with THIS app's policy.
+    let p = policy(&[("generated/", Some("30d"))]);
+    let foreign = normalize_pathname(other(), "generated/q1.pdf", false).unwrap();
+    assert_eq!(retention_tag(app(), &foreign, &p), None);
+}
+
+#[test]
+fn retention_tag_honors_longest_prefix_through_the_full_key() {
+    let p = policy(&[("generated/", Some("90d")), ("generated/tmp/", Some("1d"))]);
+    let long = normalize_pathname(app(), "generated/tmp/scratch.csv", false).unwrap();
+    let short = normalize_pathname(app(), "generated/keep.pdf", false).unwrap();
+    assert_eq!(
+        retention_tag(app(), &long, &p).as_deref(),
+        Some("oxy-ttl=1d")
+    );
+    assert_eq!(
+        retention_tag(app(), &short, &p).as_deref(),
+        Some("oxy-ttl=90d")
+    );
+}
+
+#[test]
+fn a_random_suffix_does_not_change_the_matched_class() {
+    // Uploads always get a random suffix; the suffix lands on the FILENAME, so
+    // the prefix match must be unaffected.
+    let p = policy(&[("uploads/", Some("30d"))]);
+    let key = normalize_pathname(app(), "uploads/report.pdf", true).unwrap();
+    assert_ne!(
+        key,
+        normalize_pathname(app(), "uploads/report.pdf", true).unwrap()
+    );
+    assert_eq!(
+        retention_tag(app(), &key, &p).as_deref(),
+        Some("oxy-ttl=30d")
+    );
 }

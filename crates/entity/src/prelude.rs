@@ -10,6 +10,8 @@ pub use super::app_functions::Entity as AppFunctions;
 pub use super::app_members::Entity as AppMembers;
 pub use super::app_publish_tokens::Entity as AppPublishTokens;
 pub use super::app_publishers::Entity as AppPublishers;
+pub use super::app_storage_usage::Entity as AppStorageUsage;
+pub use super::app_storage_usage_samples::Entity as AppStorageUsageSamples;
 pub use super::app_team_grants::Entity as AppTeamGrants;
 pub use super::apps::Entity as Apps;
 pub use super::artifacts::Entity as Artifacts;
