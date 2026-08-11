@@ -141,8 +141,8 @@ impl agentic_automation::WorkspaceContext for CompiledOnlyWorkspace {
     async fn resolve_automation_yaml(&self, _r: &str) -> Result<String, String> {
         Err("not available".into())
     }
-    async fn resolve_pipeline_yaml(&self, _pipeline_ref: &str) -> Option<String> {
-        Some(self.pipeline_yaml.clone())
+    async fn resolve_pipeline_yaml(&self, _pipeline_ref: &str) -> Result<Option<String>, String> {
+        Ok(Some(self.pipeline_yaml.clone()))
     }
 }
 

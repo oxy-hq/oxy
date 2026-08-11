@@ -102,6 +102,16 @@ pub enum AirwayRunError {
     Db(#[from] DbErr),
     #[error("io error reading airway spec: {0}")]
     Io(String),
+    /// The pipeline's YAML could not be resolved **on this node** — the
+    /// compile boundary could not be asked, or the revision has nothing
+    /// compiled and this process holds no working copy.
+    ///
+    /// Distinct from [`InvalidInput`](Self::InvalidInput) because the caller
+    /// did nothing wrong and retrying is the correct response: mid-deploy and
+    /// not-yet-compiled are transient states, not bad requests. Callers should
+    /// answer 503, not 400 (`agentic-http`'s airway route does).
+    #[error("airway spec unavailable on this node: {0}")]
+    Unavailable(String),
     /// A run this caller wanted to (re)drive is already in flight.
     ///
     /// No longer raised by `start_airway_run`: submit coalesces onto a queued
@@ -170,6 +180,7 @@ pub async fn start_airway_run(
         .map_err(|e| match e {
             crate::pipeline_ref::PipelineRefError::Invalid(m) => AirwayRunError::InvalidInput(m),
             crate::pipeline_ref::PipelineRefError::Io(m) => AirwayRunError::Io(m),
+            crate::pipeline_ref::PipelineRefError::Unavailable(m) => AirwayRunError::Unavailable(m),
         })?;
     let spec = AirwayPipelineSpec::from_yaml_with_vars(&yaml, request.variables.as_ref())?;
 

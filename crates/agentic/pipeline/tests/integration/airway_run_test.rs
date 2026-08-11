@@ -151,8 +151,8 @@ impl agentic_automation::WorkspaceContext for TmpWorkspace {
     async fn resolve_automation_yaml(&self, _workflow_ref: &str) -> Result<String, String> {
         Err("tmp workspace: not available".into())
     }
-    async fn resolve_pipeline_yaml(&self, _pipeline_ref: &str) -> Option<String> {
-        self.compiled.clone()
+    async fn resolve_pipeline_yaml(&self, _pipeline_ref: &str) -> Result<Option<String>, String> {
+        Ok(self.compiled.clone())
     }
 }
 

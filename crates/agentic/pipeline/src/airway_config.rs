@@ -132,6 +132,20 @@ pub struct PipelineAirwayAdmissionResolver {
     workspace_id: Uuid,
 }
 
+/// Which pipeline-YAML load failures are worth another attempt.
+///
+/// A free function rather than an inline `match` so the tests can exercise the
+/// real mapping. While it was inline, the test module kept its own copy — and a
+/// copy of the thing under test passes whatever the original does, so reverting
+/// `Unavailable` to `Determinate` here would have left every one of those tests
+/// green.
+fn classify_load_failure(e: PipelineRefError) -> AttemptError {
+    match e {
+        PipelineRefError::Invalid(m) => AttemptError::Determinate(m),
+        PipelineRefError::Io(m) | PipelineRefError::Unavailable(m) => AttemptError::Transient(m),
+    }
+}
+
 impl PipelineAirwayAdmissionResolver {
     pub fn new(
         db: DatabaseConnection,
@@ -195,16 +209,17 @@ impl PipelineAirwayAdmissionResolver {
         // `start_airway_run` and the worker perform, so a stateless replica
         // resolves the admission without a working copy.
         //
-        // The split mirrors `PipelineRefError`'s own doc: `Invalid` is
-        // caller-input-shaped (400) — a ref that doesn't resolve won't start
-        // resolving — while `Io` is I/O-shaped (500) on an already-resolved
-        // path, which is exactly a retryable read.
+        // `Unavailable` is the arm that carries this path: on a stateless
+        // worker replica, a compile-boundary blip or a not-yet-compiled
+        // revision means *this node cannot answer*, which no amount of
+        // rewriting the ref would fix and which the next attempt very well
+        // might. `Invalid` stays determinate — a ref that doesn't resolve
+        // won't start resolving — and `Io` is a read that failed on a path
+        // that did resolve, which is retryable but near-unreachable in
+        // practice (see `PipelineRefError`).
         let yaml = crate::pipeline_ref::load_pipeline_yaml(self.workspace.as_ref(), pipeline_ref)
             .await
-            .map_err(|e| match e {
-                PipelineRefError::Invalid(m) => AttemptError::Determinate(m),
-                PipelineRefError::Io(m) => AttemptError::Transient(m),
-            })?;
+            .map_err(classify_load_failure)?;
         // `variables: None` matches what this dispatch path puts on the queued
         // `TaskSpec::Airway`, so the document parsed here is the document the
         // worker will parse. A parse failure is therefore a failure the run
@@ -386,6 +401,115 @@ mod retry_tests {
         assert!(
             err.contains("connection reset by peer") && err.contains("transient"),
             "the cause and its classification must both survive: {err}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod resolution_classification_tests {
+    use super::{AttemptError, classify_load_failure};
+    use crate::pipeline_ref::{PipelineRefError, load_pipeline_yaml};
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    struct Host {
+        root: PathBuf,
+        compiled: Result<Option<String>, String>,
+    }
+
+    #[async_trait::async_trait]
+    impl agentic_automation::WorkspaceContext for Host {
+        fn workspace_path(&self) -> &Path {
+            &self.root
+        }
+        fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
+            vec![]
+        }
+        async fn get_connector(
+            &self,
+            _name: &str,
+        ) -> Result<Arc<dyn agentic_connector::DatabaseConnector>, String> {
+            Err("unused".into())
+        }
+        async fn get_integration(
+            &self,
+            _name: &str,
+        ) -> Result<agentic_automation::workspace::IntegrationConfig, String> {
+            Err("unused".into())
+        }
+        async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String> {
+            Ok(vec![])
+        }
+        async fn resolve_automation_yaml(&self, _r: &str) -> Result<String, String> {
+            Err("unused".into())
+        }
+        async fn resolve_pipeline_yaml(&self, _r: &str) -> Result<Option<String>, String> {
+            self.compiled.clone()
+        }
+    }
+
+    /// The regression this exists for. A compile-boundary lookup that *fails*
+    /// is not an answer, and on a worker replica there is no working copy to
+    /// fall back to — so this used to arrive as `Invalid`, classify
+    /// `Determinate`, and kill the automation run on attempt one.
+    #[tokio::test]
+    async fn a_compile_boundary_error_is_transient() {
+        let host = Host {
+            root: PathBuf::from("/nonexistent-oxy-workspace"),
+            compiled: Err("pool timed out".into()),
+        };
+        let err = load_pipeline_yaml(&host, "p.airway.yml")
+            .await
+            .expect_err("a boundary error must not resolve");
+        assert!(
+            matches!(err, PipelineRefError::Unavailable(_)),
+            "got {err:?}"
+        );
+        assert!(
+            matches!(classify_load_failure(err), AttemptError::Transient(_)),
+            "a boundary blip must be retried, not returned to the step"
+        );
+    }
+
+    /// The other half, and the one product-context.md names: nothing compiled
+    /// for this revision *yet* and no working copy here. Also not the caller's
+    /// fault, also worth another attempt.
+    #[tokio::test]
+    async fn not_compiled_with_no_working_copy_is_transient() {
+        let host = Host {
+            root: PathBuf::from("/nonexistent-oxy-workspace"),
+            compiled: Ok(None),
+        };
+        let err = load_pipeline_yaml(&host, "p.airway.yml")
+            .await
+            .expect_err("no row and no working copy must not resolve");
+        assert!(
+            matches!(err, PipelineRefError::Unavailable(_)),
+            "got {err:?}"
+        );
+        assert!(matches!(
+            classify_load_failure(err),
+            AttemptError::Transient(_)
+        ));
+    }
+
+    /// The line this must not blur: with a working copy present, a ref naming
+    /// a file that isn't there is genuinely the caller's problem, and retrying
+    /// it just delays the same answer.
+    #[tokio::test]
+    async fn a_missing_file_under_a_real_root_stays_determinate() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let host = Host {
+            root: dir.path().to_path_buf(),
+            compiled: Ok(None),
+        };
+        let err = load_pipeline_yaml(&host, "nope.airway.yml")
+            .await
+            .expect_err("a missing file must not resolve");
+        assert!(matches!(err, PipelineRefError::Invalid(_)), "got {err:?}");
+        assert!(
+            matches!(classify_load_failure(err), AttemptError::Determinate(_)),
+            "a bad ref must still fail the step on the first attempt"
         );
     }
 }

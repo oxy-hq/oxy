@@ -936,19 +936,35 @@ async fn run_one_chunk(
             .await?;
             (ChunkDisposition::Deferred, Some(note))
         }
+        // Same reasoning as `AlreadyRunning` directly above, for a different
+        // cause: this node could not resolve the pipeline's YAML — a
+        // compile-boundary blip, or a revision still compiling. Backfill drives
+        // on the same stateless fleet, so this is reachable by exactly the
+        // deploy the compile boundary exists for. Recording it `failed` would
+        // leave a permanently red chunk that `rollup_range_status` folds into a
+        // failed range, demanding an operator re-run for a node condition that
+        // clears itself in seconds.
+        // Disposition decided by `chunk_action_for_error` — see there for why
+        // `Unavailable` is not a red chunk.
         Err(e) => {
-            let note = e.to_string();
+            let action = chunk_action_for_error(&e);
             checkpoint_set(
                 &db,
                 &cp,
-                "failed",
+                action.status,
+                // `Keep` for every arm here, but NOT for the reason the
+                // `AlreadyRunning` arm above gives. There, `Keep` preserves
+                // the link to a run that is still live. Here nothing was
+                // seeded — `start_airway_run` fails before
+                // `checkpoint_record_run_id` — so `Keep` instead leaves a PRIOR
+                // attempt's id in place for the reuse branch to recognise.
                 RunIdWrite::Keep,
-                Some(note.clone()),
+                Some(action.note.clone()),
                 None,
                 false,
             )
             .await?;
-            (ChunkDisposition::Failed, Some(note))
+            (action.disposition, Some(action.note))
         }
     };
     Ok(ChunkProgress {
@@ -956,6 +972,42 @@ async fn run_one_chunk(
         disposition,
         note,
     })
+}
+
+/// How a chunk records a failed submit: the checkpoint status, the coverage
+/// disposition, and the note an operator reads.
+struct ChunkFailureAction {
+    status: &'static str,
+    disposition: ChunkDisposition,
+    note: String,
+}
+
+/// Decide a failed submit's disposition.
+///
+/// Free function so the choice is assertable without a database — this is
+/// coverage-visible state, and the difference between `pending`/`Deferred` and
+/// `failed`/`Failed` is the difference between a chunk the next pass picks up
+/// and one an operator has to re-run by hand.
+fn chunk_action_for_error(e: &AirwayRunError) -> ChunkFailureAction {
+    match e {
+        // The node could not resolve the pipeline's YAML: a compile-boundary
+        // blip, or a revision still compiling. Backfill drives on the same
+        // stateless fleet, so this is reachable by exactly the deploy the
+        // compile boundary exists for. Recording it `failed` would leave a
+        // permanently red chunk that `rollup_range_status` folds into a failed
+        // range, demanding an operator re-run for a condition that clears
+        // itself in seconds.
+        AirwayRunError::Unavailable(m) => ChunkFailureAction {
+            status: "pending",
+            disposition: ChunkDisposition::Deferred,
+            note: format!("deferred: {m}"),
+        },
+        e => ChunkFailureAction {
+            status: "failed",
+            disposition: ChunkDisposition::Failed,
+            note: e.to_string(),
+        },
+    }
 }
 
 /// Record a user-initiated backfill of `[from, to)` as a `backfill_ranges` row
@@ -1556,5 +1608,30 @@ mod tests {
         );
         assert_eq!(ChunkGranularity::parse("day"), Some(ChunkGranularity::Day));
         assert_eq!(ChunkGranularity::parse("fortnight"), None);
+    }
+}
+
+#[cfg(test)]
+mod chunk_failure_action_tests {
+    use super::{AirwayRunError, ChunkDisposition, chunk_action_for_error};
+
+    /// A blip must not leave coverage red. `rollup_range_status` folds a
+    /// `failed` chunk into a failed range, so recording one here costs an
+    /// operator a manual re-run for a node condition that clears itself.
+    #[test]
+    fn unavailable_leaves_the_chunk_pending_and_deferred() {
+        let a = chunk_action_for_error(&AirwayRunError::Unavailable("compiling".into()));
+        assert_eq!(a.status, "pending");
+        assert_eq!(a.disposition, ChunkDisposition::Deferred);
+        assert!(a.note.starts_with("deferred: "), "note was {:?}", a.note);
+    }
+
+    /// And the converse, or the deferral would hide real load errors as
+    /// perpetually-pending chunks that never surface to anyone.
+    #[test]
+    fn any_other_error_still_fails_the_chunk() {
+        let a = chunk_action_for_error(&AirwayRunError::InvalidInput("bad ref".into()));
+        assert_eq!(a.status, "failed");
+        assert_eq!(a.disposition, ChunkDisposition::Failed);
     }
 }

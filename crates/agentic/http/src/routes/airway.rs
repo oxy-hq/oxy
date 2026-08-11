@@ -81,6 +81,17 @@ pub async fn list_runs_for_pipeline(
 
 // ── POST /agentic-airway/runs ──────────────────────────────────────────────
 
+/// `Retry-After` for every airway 503, in seconds.
+///
+/// Derived from the executor's defer cadence rather than restated: the two
+/// answer the same question ("when is it worth asking again?") for the same
+/// condition, and three hand-written `"5"`s across two routes and another crate
+/// is three places for one number to drift. That cadence has already moved once
+/// for reasons a route author would not see.
+fn airway_unavailable_retry_after() -> String {
+    agentic_pipeline::executor::AIRWAY_UNAVAILABLE_RETRY_SECS.to_string()
+}
+
 pub async fn create_airway_run(
     Extension(state): Extension<Arc<AgenticState>>,
     Extension(platform): Extension<Arc<dyn PlatformContext>>,
@@ -135,6 +146,21 @@ async fn start_and_drive(
         Ok(id) => id,
         Err(AirwayRunError::InvalidInput(msg)) | Err(AirwayRunError::Io(msg)) => {
             return (StatusCode::BAD_REQUEST, msg).into_response();
+        }
+        // 503 + Retry-After, not 400: the caller's ref may be perfectly good
+        // and this node simply could not resolve it — a compile-boundary blip,
+        // or a revision mid-compile. Answering 400 tells a client to fix a
+        // request that is not broken, and tells a retrying scheduler to stop.
+        Err(AirwayRunError::Unavailable(msg)) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                [(
+                    axum::http::header::RETRY_AFTER,
+                    airway_unavailable_retry_after(),
+                )],
+                msg,
+            )
+                .into_response();
         }
         Err(AirwayRunError::Airway(e)) => {
             // Spec parse / validation failure — caller's input problem.
@@ -659,9 +685,19 @@ pub async fn reset_airway_schema(
             use agentic_pipeline::executor::ResetSchemaError;
             // Caller mistakes (bad ref / non-airhouse dest) → 400; a failed
             // destination drop or state delete is server-side → 500.
-            let status = match &e {
-                ResetSchemaError::BadRequest(_) => StatusCode::BAD_REQUEST,
-                ResetSchemaError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            // Status AND headers from one match, so the error→response mapping
+            // is stated once. Re-testing the mapped status afterwards to attach
+            // `Retry-After` split it across two places in one function.
+            let (status, retry_after) = match &e {
+                ResetSchemaError::BadRequest(_) => (StatusCode::BAD_REQUEST, None),
+                ResetSchemaError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, None),
+                // Matches the start path's answer for the same condition: the
+                // request was fine, this node could not serve it yet — and half
+                // the reason 503 beats 400 here is telling the caller *when*.
+                ResetSchemaError::Unavailable(_) => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Some(airway_unavailable_retry_after()),
+                ),
             };
             tracing::warn!(
                 error = %e,
@@ -669,7 +705,19 @@ pub async fn reset_airway_schema(
                 status = status.as_u16(),
                 "reset_airway_schema failed"
             );
-            (status, e.to_string()).into_response()
+            // `Retry-After` on the 503, matching the start path. Half the reason
+            // 503 beats 400 for this condition is telling a retrying client
+            // *when*; a 503 without it leaves that to the client's guess, and
+            // the two airway routes would answer the same condition differently.
+            match retry_after {
+                Some(secs) => (
+                    status,
+                    [(axum::http::header::RETRY_AFTER, secs)],
+                    e.to_string(),
+                )
+                    .into_response(),
+                None => (status, e.to_string()).into_response(),
+            }
         }
     }
 }

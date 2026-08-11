@@ -23,16 +23,25 @@ use std::path::{Component, Path, PathBuf};
 
 use agentic_automation::WorkspaceContext;
 
-/// Why a `pipeline_ref` could not be turned into YAML: a bad or unresolvable
-/// ref is caller input, a failed read of a resolved path is I/O.
+/// Why a `pipeline_ref` could not be turned into YAML.
 ///
-/// The split is diagnostic, not a status-code mapping — `agentic-http`'s
-/// airway route matches both arms together and answers 400
-/// (`routes/airway.rs`). `Io` is also close to unreachable now that
-/// `resolve_pipeline_ref` canonicalises first, so a missing file is `Invalid`
-/// before any read is attempted; it stays because "resolved but unreadable"
-/// (permissions, a racing delete) is a genuinely different fact from "never
-/// resolved".
+/// The first two are diagnostic, not a status-code mapping — `agentic-http`'s
+/// airway route matches them together and answers 400 (`routes/airway.rs`).
+/// `Io` is close to unreachable now that `resolve_pipeline_ref` canonicalises
+/// first, so a missing file is `Invalid` before any read is attempted; it stays
+/// because "resolved but unreadable" (permissions, a racing delete) is a
+/// genuinely different fact from "never resolved".
+///
+/// [`Unavailable`](Self::Unavailable) is the one that carries weight. It says
+/// *this node could not answer*, which is neither of the above, and callers key
+/// their retry on it — see `airway_config::PipelineAirwayAdmissionResolver`.
+/// Before it existed, a compile-boundary blip on a stateless worker arrived
+/// here as `Invalid("workspace root is not accessible")` and read as caller
+/// input: the host laundered its `Err` into "not compiled", the FS fallback
+/// found no working copy, and a retryable condition killed the run on attempt
+/// one. `product-context.md` states the requirement this closes — a
+/// not-yet-compiled workspace must return a **retryable** state, and mid-deploy
+/// "workspace directory not found" is transient.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum PipelineRefError {
     /// Ref rejected by the containment guard, or no such pipeline.
@@ -41,6 +50,12 @@ pub enum PipelineRefError {
     /// The ref resolved but its bytes could not be read.
     #[error("{0}")]
     Io(String),
+    /// Neither backend could answer *here*: the host could not be asked (a
+    /// compile-boundary lookup error) or there is nothing compiled and this
+    /// process holds no working copy. Retryable — the ref may be perfectly
+    /// good, and another node or another moment may resolve it.
+    #[error("{0}")]
+    Unavailable(String),
 }
 
 /// Syntactic half of the containment guard: reject empty, absolute, and
@@ -74,14 +89,23 @@ fn validate_pipeline_ref(pipeline_ref: &str) -> Result<&str, String> {
 /// Load a pipeline's YAML for `pipeline_ref`, compile boundary first.
 ///
 /// 1. Contain the ref (syntactic guard above) — untrusted input, both paths.
-/// 2. Ask the host: [`WorkspaceContext::resolve_pipeline_yaml`]. `Some(yaml)`
+/// 2. Ask the host: [`WorkspaceContext::resolve_pipeline_yaml`]. `Ok(Some(yaml))`
 ///    means it came from the workspace's compiled `airway_pipelines` rows,
 ///    scoped to that workspace's promoted revision. No filesystem involved —
 ///    this is the path a stateless durable worker takes.
-/// 3. `None` means "read the FS" (host doesn't do the boundary, workspace is
-///    the legacy local one, branch is a draft, or nothing is compiled yet).
-///    Fall through to the canonical-containment-checked read, byte-for-byte
-///    today's behaviour.
+/// 3. `Ok(None)` means "read the FS" (host doesn't do the boundary, workspace
+///    is the legacy local one, branch is a draft, or nothing is compiled yet).
+///    Fall through to the canonical-containment-checked read.
+/// 4. `Err` means the host could not be *asked* — a database blip, not an
+///    answer. That is [`PipelineRefError::Unavailable`] and never a fall-through
+///    to the FS: a working copy that happens to exist would answer a question
+///    the boundary was supposed to answer, which is the instance-affinity
+///    divergence this module exists to remove.
+///
+/// Step 3 has its own `Unavailable` case, and it is the one that used to be
+/// mis-classified: if there is no compiled row *and* this process holds no
+/// working copy, nothing here can answer, so the root being inaccessible is a
+/// fact about the node and not about the caller's ref.
 ///
 /// Rendering is deliberately **not** done here: callers pass their own
 /// `variables` to `AirwayPipelineSpec::from_yaml_with_vars`, so the submitter
@@ -92,12 +116,31 @@ pub async fn load_pipeline_yaml(
 ) -> Result<String, PipelineRefError> {
     let trimmed = validate_pipeline_ref(pipeline_ref).map_err(PipelineRefError::Invalid)?;
 
-    if let Some(yaml) = workspace.resolve_pipeline_yaml(trimmed).await {
-        return Ok(yaml);
+    match workspace.resolve_pipeline_yaml(trimmed).await {
+        Ok(Some(yaml)) => return Ok(yaml),
+        Ok(None) => {}
+        Err(e) => {
+            return Err(PipelineRefError::Unavailable(format!(
+                "compile boundary unavailable for pipeline_ref `{pipeline_ref}`: {e}"
+            )));
+        }
     }
 
-    let path = resolve_pipeline_ref(workspace.workspace_path(), trimmed)
-        .map_err(PipelineRefError::Invalid)?;
+    let root = workspace.workspace_path();
+    if !root.is_dir() {
+        // Deliberately checked before `resolve_pipeline_ref`, which folds this
+        // into the same `Err(String)` as "not found" and so cannot be told
+        // apart downstream.
+        // Says only what is known. "not compiled for this revision" would be
+        // false whenever the host declined for another reason — a draft branch,
+        // or a row it found and could not re-serialise.
+        return Err(PipelineRefError::Unavailable(format!(
+            "pipeline_ref `{pipeline_ref}` could not be resolved on this node (nothing served from \
+             the compile boundary, no working copy here)"
+        )));
+    }
+
+    let path = resolve_pipeline_ref(root, trimmed).map_err(PipelineRefError::Invalid)?;
     tokio::fs::read_to_string(&path)
         .await
         .map_err(|e| PipelineRefError::Io(format!("read pipeline_ref `{pipeline_ref}`: {e}")))
@@ -137,10 +180,13 @@ mod tests {
 
     /// Minimal host: `workspace_path()` points at a directory that does not
     /// exist (a stateless durable worker), and the compile-boundary hook
-    /// optionally serves a body.
+    /// answers with `compiled`.
     struct FakeHost {
         root: PathBuf,
-        compiled: Option<String>,
+        /// Exactly the port's three answers: served, nothing here, could not
+        /// look. The last one is the case that has no `Option` spelling, which
+        /// is why the port is a `Result`.
+        compiled: Result<Option<String>, String>,
     }
 
     #[async_trait::async_trait]
@@ -169,7 +215,10 @@ mod tests {
         async fn resolve_automation_yaml(&self, _r: &str) -> Result<String, String> {
             Err("unused".into())
         }
-        async fn resolve_pipeline_yaml(&self, _pipeline_ref: &str) -> Option<String> {
+        async fn resolve_pipeline_yaml(
+            &self,
+            _pipeline_ref: &str,
+        ) -> Result<Option<String>, String> {
             self.compiled.clone()
         }
     }
@@ -183,7 +232,7 @@ mod tests {
     async fn compiled_body_is_served_without_any_workspace_directory() {
         let host = FakeHost {
             root: PathBuf::from("/nonexistent-oxy-workspace/does/not/exist"),
-            compiled: Some("name: from_boundary\n".to_string()),
+            compiled: Ok(Some("name: from_boundary\n".to_string())),
         };
         assert!(!host.root.exists(), "precondition: no working copy");
 
@@ -202,7 +251,7 @@ mod tests {
         fs::write(dir.path().join("pipelines/p.airway.yml"), "name: from_fs\n").unwrap();
         let host = FakeHost {
             root: dir.path().to_path_buf(),
-            compiled: None,
+            compiled: Ok(None),
         };
 
         let yaml = load_pipeline_yaml(&host, "pipelines/p.airway.yml")
@@ -221,6 +270,43 @@ mod tests {
         assert!(!err.to_string().contains(&*dir.path().to_string_lossy()));
     }
 
+    /// An `Err` from the compile boundary must NOT fall through to a working
+    /// copy that happens to exist.
+    ///
+    /// The root here is real and DOES contain the pipeline, so a fall-through
+    /// implementation returns `Ok(yaml)` and this fails. Every other
+    /// `Unavailable` test points at a nonexistent root, where both
+    /// implementations return `Unavailable` for different reasons and the
+    /// assertion proves nothing about this rule.
+    ///
+    /// The rule matters because the alternative is two nodes giving two answers
+    /// for one revision — an IDE box serving its working copy while a replica
+    /// serves the compiled row — which is the divergence the boundary exists to
+    /// remove.
+    #[tokio::test]
+    async fn a_boundary_error_does_not_fall_through_to_an_existing_working_copy() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("pipelines")).expect("mkdir");
+        fs::write(
+            dir.path().join("pipelines/p.airway.yml"),
+            "name: from_working_copy\n",
+        )
+        .expect("write");
+
+        let host = FakeHost {
+            root: dir.path().to_path_buf(),
+            compiled: Err("connection reset by peer".into()),
+        };
+
+        let err = load_pipeline_yaml(&host, "pipelines/p.airway.yml")
+            .await
+            .expect_err("a boundary error must not be answered from the working copy");
+        assert!(
+            matches!(err, PipelineRefError::Unavailable(_)),
+            "got {err:?}"
+        );
+    }
+
     /// Containment is enforced BEFORE the backend choice, so a traversal ref
     /// can't address a compiled row either — even a host that would happily
     /// return a body never sees the ref.
@@ -228,7 +314,7 @@ mod tests {
     async fn containment_applies_to_the_compiled_path_too() {
         let host = FakeHost {
             root: PathBuf::from("/nonexistent-oxy-workspace"),
-            compiled: Some("name: attacker\n".to_string()),
+            compiled: Ok(Some("name: attacker\n".to_string())),
         };
         for bad in ["", "   ", "/etc/passwd", "../../etc/passwd", "a/../../b"] {
             let err = load_pipeline_yaml(&host, bad)

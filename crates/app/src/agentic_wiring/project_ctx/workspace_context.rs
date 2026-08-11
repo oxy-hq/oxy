@@ -260,9 +260,17 @@ impl WorkspaceContext for OxyProjectContext {
             .map_err(|e| format!("{e}"))
     }
 
-    /// Serve a `.airway.yml` body from `airway_pipelines`. `None` = "read the
-    /// FS", which the caller (`pipeline_ref::load_pipeline_yaml`) then does
-    /// under its containment guard.
+    /// Serve a `.airway.yml` body from `airway_pipelines`. `Ok(None)` = "read
+    /// the FS", which the caller (`pipeline_ref::load_pipeline_yaml`) then does
+    /// under its containment guard; `Err` = "I could not look", which the
+    /// caller turns into a retryable `Unavailable` instead of an FS read.
+    ///
+    /// That last distinction is why this returns a `Result`. Reporting a
+    /// lookup error as `Ok(None)` sent the caller to a filesystem that does not
+    /// exist on a stateless replica, where the failure resurfaced as
+    /// `Invalid("workspace root is not accessible")` — a caller-input shape for
+    /// a database blip, and terminal on the automation dispatch path that
+    /// retries only transient errors.
     ///
     /// This is what makes an airway run executable on the durable worker
     /// fleet: the executor claims a queued `TaskSpec::Airway` on a stateless
@@ -272,7 +280,7 @@ impl WorkspaceContext for OxyProjectContext {
     /// The branch hint comes from the working copy when this process HAS one,
     /// so `open_compiled_revision`'s existing gate routes a draft branch back
     /// to the filesystem and the IDE's edit-then-run loop is unchanged.
-    async fn resolve_pipeline_yaml(&self, pipeline_ref: &str) -> Option<String> {
+    async fn resolve_pipeline_yaml(&self, pipeline_ref: &str) -> Result<Option<String>, String> {
         let branch = self.working_copy_branch().await;
         match crate::server::api::compiled_reader::resolve_pipeline(
             self.workspace_manager.workspace_id,
@@ -290,8 +298,14 @@ impl WorkspaceContext for OxyProjectContext {
                         pipeline_ref,
                         "resolve_pipeline_yaml served from compile boundary"
                     );
-                    Some(yaml)
+                    Ok(Some(yaml))
                 }
+                // `Ok(None)`, not `Err`: the row was found and is unusable, so
+                // this is a content problem with that revision rather than a
+                // question we failed to ask. A host with a working copy has a
+                // legitimately better answer, and on a host without one the
+                // caller's own no-working-copy branch reports it as
+                // `Unavailable` anyway.
                 Err(e) => {
                     tracing::warn!(
                         workspace_id = %self.workspace_manager.workspace_id,
@@ -299,20 +313,23 @@ impl WorkspaceContext for OxyProjectContext {
                         error = ?e,
                         "compile boundary pipeline YAML re-serialise failed; falling through to FS"
                     );
-                    None
+                    Ok(None)
                 }
             },
             // Draft branch, workspace not promoted, local workspace, or no
             // matching row — fall through to FS.
-            Ok(None) => None,
+            Ok(None) => Ok(None),
+            // The lookup itself failed. Propagated rather than laundered into
+            // `Ok(None)`: this is "unknown", and the caller must not read it as
+            // "not compiled here" and go to a filesystem this node may not have.
             Err(e) => {
                 tracing::warn!(
                     workspace_id = %self.workspace_manager.workspace_id,
                     pipeline_ref,
                     error = ?e,
-                    "compile boundary pipeline lookup error; falling through to FS"
+                    "compile boundary pipeline lookup error; reporting unavailable"
                 );
-                None
+                Err(e.to_string())
             }
         }
     }

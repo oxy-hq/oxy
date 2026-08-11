@@ -136,21 +136,30 @@ pub trait WorkspaceContext: Send + Sync {
     /// Compile-boundary hook for an airway pipeline (`.airway.yml`) body,
     /// keyed by its workspace-relative `pipeline_ref`.
     ///
-    /// `Some(yaml)` — the host served the pipeline from its compiled
+    /// `Ok(Some(yaml))` — the host served the pipeline from its compiled
     /// `airway_pipelines` rows; the caller parses that string and never
     /// touches the filesystem. This is what lets the durable worker fleet
     /// (stateless, no working copy) run a pipeline at all.
     ///
-    /// `None` (the default) — "read the workspace filesystem", which is
-    /// exactly today's behaviour. Covers hosts that don't participate in the
-    /// compile boundary (test fakes, CLI) *and* the host's own fall-through
-    /// cases (unpromoted workspace, draft branch, no matching row). The FS
-    /// read + its containment guard live in one place on the caller side:
+    /// `Ok(None)` (the default) — "read the workspace filesystem". Covers hosts
+    /// that don't participate in the compile boundary (test fakes, CLI) *and*
+    /// the host's own fall-through cases (unpromoted workspace, draft branch,
+    /// no matching row). The FS read + its containment guard live in one place
+    /// on the caller side:
     /// [`agentic_pipeline::pipeline_ref::load_pipeline_yaml`].
+    ///
+    /// `Err` — the boundary could not be *asked*: a lookup error, not an
+    /// answer. This is a `Result` rather than an `Option` for exactly that
+    /// distinction. While it was one, a host had no way to say "I don't know"
+    /// and had to report a database blip as `None`, which reads as "nothing is
+    /// compiled here" — so a retryable condition became a terminal run on a
+    /// replica with no working copy to fall back to. An `Option` cannot carry
+    /// the difference between *absent* and *unknown*, and every caller that
+    /// has to guess gets it wrong in the direction of the cheerful answer.
     ///
     /// Mirrors `ProjectContext::resolve_agent_yaml`, the same hook shape for
     /// `.agentic.yml`.
-    async fn resolve_pipeline_yaml(&self, _pipeline_ref: &str) -> Option<String> {
-        None
+    async fn resolve_pipeline_yaml(&self, _pipeline_ref: &str) -> Result<Option<String>, String> {
+        Ok(None)
     }
 }

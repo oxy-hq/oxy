@@ -52,12 +52,20 @@ pub enum ResetSchemaError {
     BadRequest(String),
     /// State read/delete or the destination drop failed — server-side. → `500`.
     Internal(String),
+    /// The pipeline's YAML could not be resolved **on this node** — a
+    /// compile-boundary blip, or a revision still compiling. → `503`.
+    ///
+    /// Not `BadRequest`: the caller's `pipeline_ref` may be perfectly good, and
+    /// telling them it is bad is both false and unactionable. Same reasoning as
+    /// `AirwayRunError::Unavailable` on the start path — this variant exists so
+    /// the two paths do not disagree about the same condition inside one file.
+    Unavailable(String),
 }
 
 impl std::fmt::Display for ResetSchemaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::BadRequest(m) | Self::Internal(m) => f.write_str(m),
+            Self::BadRequest(m) | Self::Internal(m) | Self::Unavailable(m) => f.write_str(m),
         }
     }
 }
@@ -84,6 +92,87 @@ const AIRWAY_LEASE_RETRY_SECS: u64 = 30;
 /// opinion on the value.
 const AIRWAY_LEASE_MAX_WAIT_SECS: u64 =
     2 * agentic_airway::extension::pipeline_lease::LEASE_TTL_SECS as u64;
+
+/// How long a task whose pipeline YAML could not be resolved on this node
+/// waits before being handed to a worker again.
+///
+/// Equal to [`AIRWAY_LEASE_RETRY_SECS`], which is the cadence that goes with
+/// the ceiling below — the two deferral kinds share `first_deferred_at`, so
+/// they share a budget, and a budget is a count of retries as much as a span of
+/// time. This was `5`, chosen against a 300s ceiling where it meant ~60
+/// claim→defer cycles. Against 43200s the same `5` means **~8,640** cycles,
+/// each a queue claim, a `defer_task` UPDATE and a log line; N tasks stuck in
+/// one compile window would churn at N/5 claims per second for its duration.
+/// At 30s the count matches the lease deferral's ~1,440, which is the churn
+/// this queue is already designed for.
+///
+/// The cost is recovery latency: a blip now clears in up to 30s rather than 5.
+/// That is the right way round for a condition measured in promote times, and
+/// nothing user-facing waits on it — the submit path is bounded far sooner by
+/// `ADMISSION_MAX_ATTEMPTS`.
+///
+/// Escalating (short delays first, then long) would beat both, and needs a
+/// defer count the executor cannot see: `TaskAssignment` carries none, so it
+/// would mean a change in `agentic-runtime`.
+pub const AIRWAY_UNAVAILABLE_RETRY_SECS: u64 = 30;
+
+/// Dead-letter ceiling passed with an unavailable-deferral.
+///
+/// **Equal to [`AIRWAY_LEASE_MAX_WAIT_SECS`] on purpose, and it must not be
+/// lowered.** `defer_task` measures the ceiling against `first_deferred_at`,
+/// which is the first defer of the current streak *whatever its reason* —
+/// `COALESCE(first_deferred_at, now())`, written once and deliberately not
+/// cleared on claim-side paths (`runtime/orchestrator/crud/queue.rs`). Both
+/// deferral kinds in `execute_airway` therefore share one clock, so the
+/// smaller ceiling silently governs the larger.
+///
+/// A shorter value here reads as "give up on an unavailable node sooner" and
+/// actually means: any task that has waited longer than that on the
+/// single-flight lease is dead-lettered by its *first* unavailable defer —
+/// minutes into a legitimate 12-hour wait, for the transient condition this
+/// deferral exists to survive. It was 300s, which is exactly that bug.
+///
+/// The cost of matching is dead-letter latency for a *permanently* unresolvable
+/// task: 12 hours rather than 5 minutes, and the dead-letter is the only
+/// operator-visible signal it produces. A misconfigured `workspace_path` is one
+/// such case; the commoner one is a ref that no longer exists in the newly
+/// promoted revision, because on a stateless replica "gone from revision B" and
+/// "revision B has not compiled yet" are the same `Ok(None)` and so the same
+/// `Unavailable`. Neither can reach a caller that way — the submit path is
+/// bounded much sooner by `ADMISSION_MAX_ATTEMPTS`.
+///
+/// Giving each reason its own clock is the real fix and belongs to
+/// `agentic-runtime`, not here.
+const AIRWAY_UNAVAILABLE_MAX_WAIT_SECS: u64 = AIRWAY_LEASE_MAX_WAIT_SECS;
+
+/// What to do with a pipeline-YAML load failure at claim time.
+///
+/// Split from the call site so the choice can be asserted without a database, a
+/// queue, or a workspace — the same reason `airway_config::classify_load_failure`
+/// is a free function. What changed in this area was a *disposition*, and a
+/// disposition nothing asserts is a disposition that quietly reverts.
+#[derive(Debug, PartialEq)]
+enum LoadFailureAction {
+    /// Not this node's answer to give: hand the task back to the queue.
+    Defer {
+        delay_secs: u64,
+        max_wait_secs: u64,
+        reason: String,
+    },
+    /// The ref or its bytes are wrong; no node will do better.
+    Fail(String),
+}
+
+fn action_for_load_failure(e: crate::pipeline_ref::PipelineRefError) -> LoadFailureAction {
+    match e {
+        crate::pipeline_ref::PipelineRefError::Unavailable(m) => LoadFailureAction::Defer {
+            delay_secs: AIRWAY_UNAVAILABLE_RETRY_SECS,
+            max_wait_secs: AIRWAY_UNAVAILABLE_MAX_WAIT_SECS,
+            reason: m,
+        },
+        e => LoadFailureAction::Fail(format!("airway: {e}")),
+    }
+}
 
 /// Build an [`ExecutingTask`] that immediately reports [`TaskOutcome::Deferred`].
 ///
@@ -586,9 +675,41 @@ impl PipelineTaskExecutor {
         // submit time, but the guard re-runs at queue-claim too (the queued
         // spec is caller-influenced). Both resolve through `PlatformContext`'s
         // `WorkspaceContext` supertrait.
-        let yaml = crate::pipeline_ref::load_pipeline_yaml(self.platform.as_ref(), pipeline_ref)
-            .await
-            .map_err(|e| format!("airway: {e}"))?;
+        //
+        // `Unavailable` DEFERS rather than fails. This is the read the compile
+        // boundary exists for, and the one most exposed to a mid-deploy blip:
+        // the pre-enqueue admission resolve has its own retry, but the task is
+        // re-resolved HERE at claim, and `orchestrator::worker` turns an
+        // executor `Err` into `TaskOutcome::Failed` with nothing in the
+        // orchestrator re-queueing it. So a run claimed while its revision was
+        // still compiling died permanently for a condition that clears in
+        // seconds.
+        //
+        // Safe to return early: this load runs BEFORE `pipeline_lease::try_acquire`
+        // below, so no lease is held and the deferral correctly skips
+        // `release_airway_lease`. If this load ever moves below the acquire,
+        // that stops being true and the deferral must release first.
+        let yaml =
+            match crate::pipeline_ref::load_pipeline_yaml(self.platform.as_ref(), pipeline_ref)
+                .await
+            {
+                Ok(y) => y,
+                Err(e) => match action_for_load_failure(e) {
+                    LoadFailureAction::Defer {
+                        delay_secs,
+                        max_wait_secs,
+                        reason,
+                    } => {
+                        tracing::info!(
+                            pipeline_ref,
+                            reason = %reason,
+                            "airway task deferred — pipeline yaml not resolvable on this node"
+                        );
+                        return Ok(deferred_task(delay_secs, max_wait_secs, reason));
+                    }
+                    LoadFailureAction::Fail(m) => return Err(m),
+                },
+            };
         // Render with the same `variables` that `start_airway_run`
         // validated against, so the worker's document matches what the
         // submitter saw.
@@ -751,9 +872,16 @@ impl PipelineTaskExecutor {
         // No `variables` — a reset targets a pipeline's persisted state, keyed
         // by its rendered `name`. A bad ref / unparseable spec is caller input
         // → `BadRequest` (400).
-        let yaml = crate::pipeline_ref::load_pipeline_yaml(self.platform.as_ref(), pipeline_ref)
-            .await
-            .map_err(|e| BadRequest(format!("airway: {e}")))?;
+        let yaml =
+            match crate::pipeline_ref::load_pipeline_yaml(self.platform.as_ref(), pipeline_ref)
+                .await
+            {
+                Ok(y) => y,
+                Err(crate::pipeline_ref::PipelineRefError::Unavailable(m)) => {
+                    return Err(ResetSchemaError::Unavailable(format!("airway: {m}")));
+                }
+                Err(e) => return Err(BadRequest(format!("airway: {e}"))),
+            };
         let mut spec = agentic_airway::AirwayPipelineSpec::from_yaml_with_vars(&yaml, None)
             .map_err(|e| BadRequest(format!("airway: parse `{pipeline_ref}`: {e}")))?;
 
@@ -1206,5 +1334,64 @@ mod tests {
         set_rest_api_auth_secret(&mut config, "token", "token_var", "");
         assert!(config["auth"].get("token").is_none());
         assert!(config["auth"].get("token_var").is_none());
+    }
+}
+
+#[cfg(test)]
+mod load_failure_action_tests {
+    use super::{
+        AIRWAY_LEASE_MAX_WAIT_SECS, AIRWAY_UNAVAILABLE_MAX_WAIT_SECS,
+        AIRWAY_UNAVAILABLE_RETRY_SECS, LoadFailureAction, action_for_load_failure,
+    };
+    use crate::pipeline_ref::PipelineRefError;
+
+    /// The regression guard for the shared deferral clock.
+    ///
+    /// `defer_task` compares whatever ceiling a defer passes against
+    /// `first_deferred_at` — the first defer of the streak, *any* reason. Both
+    /// deferral kinds in `execute_airway` write that one column, so a smaller
+    /// ceiling here silently governs the lease's: a task already waiting its
+    /// turn is dead-lettered by its first unavailable defer. This assertion is
+    /// the only thing standing between a plausible-looking "300s is plenty for
+    /// a compile" edit and that bug.
+    #[test]
+    fn the_unavailable_ceiling_never_undercuts_the_lease_ceiling() {
+        assert!(
+            AIRWAY_UNAVAILABLE_MAX_WAIT_SECS >= AIRWAY_LEASE_MAX_WAIT_SECS,
+            "the two deferral kinds share `first_deferred_at`, so the smaller \
+             ceiling wins for both: {AIRWAY_UNAVAILABLE_MAX_WAIT_SECS} < \
+             {AIRWAY_LEASE_MAX_WAIT_SECS}"
+        );
+    }
+
+    /// The disposition this branch exists to change: the worker turns an
+    /// executor `Err` into `TaskOutcome::Failed` and nothing re-queues it, so
+    /// failing here is permanent for a condition that clears in seconds.
+    #[test]
+    fn unavailable_defers_rather_than_failing() {
+        let action = action_for_load_failure(PipelineRefError::Unavailable("db blip".into()));
+        assert_eq!(
+            action,
+            LoadFailureAction::Defer {
+                delay_secs: AIRWAY_UNAVAILABLE_RETRY_SECS,
+                max_wait_secs: AIRWAY_UNAVAILABLE_MAX_WAIT_SECS,
+                reason: "db blip".to_string(),
+            }
+        );
+    }
+
+    /// The other side of the line: deferring a bad ref would retry it until the
+    /// ceiling and then dead-letter it, turning a clear error into a slow one.
+    #[test]
+    fn a_bad_ref_still_fails_immediately() {
+        for e in [
+            PipelineRefError::Invalid("pipeline_ref \"x\" not found".into()),
+            PipelineRefError::Io("permission denied".into()),
+        ] {
+            assert!(
+                matches!(action_for_load_failure(e), LoadFailureAction::Fail(_)),
+                "only `Unavailable` may defer"
+            );
+        }
     }
 }

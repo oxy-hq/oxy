@@ -1140,6 +1140,17 @@ async fn fire_schedule(
                 Err(crate::airway_run::AirwayRunError::AlreadyRunning { run_id, .. }) => {
                     Ok(FireOutcome::SkippedAlreadyRunning(run_id))
                 }
+                // NOTE: `Unavailable` deliberately has no arm here, and an
+                // arm would not help. `tick_schedules` CAS-advances
+                // `next_run_at` BEFORE calling this — that CAS is what makes
+                // firing exactly-once across replicas — so by the time any
+                // outcome is returned the slot is already gone, exactly as the
+                // `SkippedAlreadyRunning` comment at the call site says. Making
+                // a mid-deploy blip re-firable means re-arming `next_run_at` or
+                // reversing the CAS/fire order, either of which risks the
+                // double-fire the CAS exists to prevent. Left as a known gap:
+                // a scheduled fire landing inside a compile window drops that
+                // occurrence, and the next one runs normally.
                 Err(e) => Err(e.to_string()),
             }
         }
