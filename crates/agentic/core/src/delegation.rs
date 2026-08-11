@@ -319,6 +319,29 @@ pub enum TaskSpec {
     },
 }
 
+/// The two admission strings for one airway run, as stored in
+/// `airway_source_config` and as carried on [`TaskSpec::Airway`].
+///
+/// Lives in core — beside the `TaskSpec::Airway` fields it fills — because
+/// every layer that *builds* an airway spec needs to name the shape: the
+/// facade (`agentic-pipeline`, which owns the only merge implementation and
+/// the `entity` dependency it needs) and the automation domain, which reaches
+/// that implementation through the
+/// `agentic_automation::AirwayAdmissionResolver` port. Core carries the type,
+/// not the query, so no `sea-orm`/`entity` dependency follows it down here.
+///
+/// `None` means "unset", which `agentic_airway::AirwayAdmission::from_strings`
+/// reads as airway's own default — `permissive` / `production`.
+///
+/// Deliberately **not** parsed: the strings ride the durable queue payload and
+/// are parsed at the worker, so a value that was valid at enqueue and invalid
+/// after a downgrade fails the run loudly rather than at submit time.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolvedAdmission {
+    pub contract_policy: Option<String>,
+    pub environment: Option<String>,
+}
+
 /// A completed child task's outcome, packaged for folding into an automation
 /// decision's input state.
 #[derive(Debug, Clone, Serialize, Deserialize)]

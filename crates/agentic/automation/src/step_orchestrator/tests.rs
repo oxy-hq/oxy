@@ -17,6 +17,7 @@ fn make_orchestrator(results: HashMap<String, Value>) -> AutomationStepOrchestra
         current_step: 0,
         trace_id: "test".into(),
         evaluator: None,
+        airway_admission: None,
     }
 }
 

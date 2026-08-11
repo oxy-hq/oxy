@@ -714,6 +714,11 @@ async fn run_inline_automation_internal(
         invalidate_iterations: HashMap::new(),
     };
 
+    // No airway admission resolver here, deliberately: this is the inline
+    // (Data App) runner and `run_delegated_step` rejects `TaskSpec::Airway`
+    // outright, so no airway run is ever enqueued down this path and there is
+    // no admission to resolve. The queue-driven site
+    // (`executor::automation::execute_automation_decision`) injects one.
     let decider = AutomationDecider::new(None);
     let mut pending_child: Option<ChildCompletion> = None;
     // Hard cap on iterations matches `workflow_cache_resume_test::drive_to_complete`

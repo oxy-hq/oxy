@@ -85,7 +85,14 @@ dependency to this crate.
   (`entity::backfill_checkpoints`, `entity::backfill_ranges`). The stage-2
   airway admission resolver (`airway_config::resolve_admission`) lives here
   specifically because this crate, unlike `agentic-airway`, is allowed to
-  depend on it.
+  depend on it. It stays the **only** merge implementation: the automation
+  domain reaches it through `airway_config::PipelineAirwayAdmissionResolver`,
+  this crate's impl of the `agentic_automation::AirwayAdmissionResolver` port.
+  Do not move the merge into `agentic-airway` to "share" it — that crate is
+  barred from `entity`, and `agentic-automation` importing it would be a
+  domain→domain edge. The returned type (`ResolvedAdmission`) lives in
+  `agentic-core`, beside the `TaskSpec::Airway` fields it fills, so every
+  layer can name the shape without taking a DB dependency.
   `recovery.rs`, `retry.rs`, `scheduler.rs`, and `executor/mod.rs` also
   reference something spelled `entity::`, but it's `agentic_runtime::entity`
   — a same-named, unrelated module local to `agentic-runtime`

@@ -4,15 +4,25 @@
 //! The orchestrator runs as a long-lived task. For each workflow step it
 //! either executes inline (formatter, conditional) or suspends to delegate
 //! execution to the coordinator which dispatches it to a worker.
+//!
+//! **[`AutomationStepOrchestrator`] itself has no production caller** — the
+//! stateless [`crate::step_decider`] replaced it, and only this module's tests
+//! still construct it. The rest of the module is not dead: `StepKind`,
+//! [`build_minijinja_context`] and [`to_column_oriented`] are the decider's
+//! building blocks. Treat the actor as retained-but-dormant, and see
+//! [`AutomationStepOrchestrator::with_airway_admission_resolver`] for what
+//! that means for anyone reviving it.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::airway_admission::AirwayAdmissionResolver;
 use crate::config::{AutomationConfig, TaskType};
 use crate::resolve::build_subrun_steps;
 use crate::step_decider::build_agent_extra;
 use agentic_core::delegation::{
-    DelegationItem, DelegationTarget, FanoutFailurePolicy, SuspendReason, TaskOutcome, TaskSpec,
+    DelegationItem, DelegationTarget, FanoutFailurePolicy, ResolvedAdmission, SuspendReason,
+    TaskOutcome, TaskSpec,
 };
 use agentic_core::evaluator::ConsistencyEvaluator;
 use agentic_core::human_input::SuspendedRunData;
@@ -80,6 +90,10 @@ pub struct AutomationStepOrchestrator {
     trace_id: String,
     /// Optional LLM-based consistency evaluator for pairwise answer comparison.
     evaluator: Option<Arc<dyn ConsistencyEvaluator>>,
+    /// Host port that resolves `airway_source_config` for an airway step.
+    /// `None` keeps airway's `permissive` / `production` defaults — see
+    /// [`crate::AirwayAdmissionResolver`].
+    airway_admission: Option<Arc<dyn AirwayAdmissionResolver>>,
 }
 
 impl AutomationStepOrchestrator {
@@ -100,6 +114,49 @@ impl AutomationStepOrchestrator {
             current_step: 0,
             trace_id,
             evaluator,
+            airway_admission: None,
+        }
+    }
+
+    /// Inject the admission resolver used by the [`StepKind::Airway`] arm.
+    /// Mirrors [`crate::AutomationDecider::with_airway_admission_resolver`].
+    ///
+    /// **Nothing in production calls this, because nothing in production
+    /// constructs an `AutomationStepOrchestrator` at all.** This type is the
+    /// long-lived actor that [`crate::step_decider`] replaced; the only
+    /// remaining constructor calls are in this module's own tests, and the
+    /// queue-driven path injects its resolver on `AutomationDecider` instead
+    /// (`agentic_pipeline::executor::automation::execute_automation_decision`).
+    /// The struct is kept, not deleted, because the rest of the module is very
+    /// much alive — `build_minijinja_context`, `to_column_oriented` and the
+    /// `StepKind` classification here are what the decider is built out of —
+    /// and unpicking the actor from them is a refactor, not a review fix.
+    ///
+    /// So this exists for **parity, on purpose**: the orchestrator's airway arm
+    /// would otherwise queue under a silently-defaulted `permissive`, which is
+    /// exactly the bug the port was added to close. Leaving the seam here means
+    /// a future caller that revives the actor has something to wire rather than
+    /// a hole to discover. If you are that caller, wire it — the resolver is
+    /// `agentic_pipeline::airway_config::PipelineAirwayAdmissionResolver`, and
+    /// an orchestrator constructed without it ignores the operator's
+    /// `airway_source_config` policy silently.
+    pub fn with_airway_admission_resolver(
+        mut self,
+        resolver: Arc<dyn AirwayAdmissionResolver>,
+    ) -> Self {
+        self.airway_admission = Some(resolver);
+        self
+    }
+
+    /// Resolve the admission for `pipeline_ref` at dispatch time; the default
+    /// (both fields `None`) when no resolver is injected.
+    async fn resolve_airway_admission(
+        &self,
+        pipeline_ref: &str,
+    ) -> Result<ResolvedAdmission, String> {
+        match &self.airway_admission {
+            Some(resolver) => resolver.resolve_for_pipeline(pipeline_ref).await,
+            None => Ok(ResolvedAdmission::default()),
         }
     }
 
@@ -177,17 +234,22 @@ impl AutomationStepOrchestrator {
                     // inherits secret resolution, the Airhouse credential
                     // provider and run-scoped state. Backfill bounds stay
                     // `None` — windowed backfills are driven by the backfill
-                    // path, not by an automation step. `contract_policy`/
-                    // `environment` also stay `None` — the resolver
-                    // (`agentic_pipeline::airway_config::resolve_admission`)
-                    // now exists and is wired at `start_airway_run`'s enqueue
-                    // site, but `agentic-automation` is a sibling domain that
-                    // must not import `agentic-pipeline`, so this path can't
-                    // reach it and still runs under airway's defaults
-                    // (`permissive` / `production`). This path therefore still
-                    // runs under a different policy than a schedule-triggered
-                    // run of the same pipeline; closing that gap needs the
-                    // resolver exposed behind a port this domain can call.
+                    // path, not by an automation step.
+                    //
+                    // `contract_policy`/`environment` come from the injected
+                    // [`AirwayAdmissionResolver`] port, resolved here — where
+                    // the spec is built, before the coordinator writes the
+                    // child's queue row — so this path is admitted under the
+                    // same `airway_source_config` policy `start_airway_run`
+                    // applies to schedule- and HTTP-triggered runs.
+                    let admission = match self.resolve_airway_admission(&pipeline_ref).await {
+                        Ok(admission) => admission,
+                        Err(e) => {
+                            // Fail rather than queue under a
+                            // silently-defaulted `permissive`.
+                            return Err(format!("airway admission for step {step_name}: {e}"));
+                        }
+                    };
                     self.suspend_for_step(
                         &outcome_tx,
                         &mut answer_rx,
@@ -198,8 +260,8 @@ impl AutomationStepOrchestrator {
                             resources,
                             backfill_from: None,
                             backfill_to: None,
-                            contract_policy: None,
-                            environment: None,
+                            contract_policy: admission.contract_policy,
+                            environment: admission.environment,
                         },
                     )
                     .await
@@ -854,6 +916,9 @@ impl AutomationStepOrchestrator {
             current_step,
             trace_id,
             evaluator: None, // Evaluator is set via set_evaluator() after recovery.
+            // Same as `evaluator`: a host port, not serializable state.
+            // Re-inject via `with_airway_admission_resolver` after recovery.
+            airway_admission: None,
         })
     }
 

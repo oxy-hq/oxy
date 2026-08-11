@@ -659,7 +659,25 @@ async fn due_health_row_enqueues_one_global_custom_task() {
     )
     .await
     .unwrap();
-    force_due(&db, &s.id, 5).await;
+    // Due by a decade, NOT a few seconds — and the margin is the point, not a
+    // bigger number to win a race with.
+    //
+    // `tick_health_schedules` selects `ORDER BY next_run_at ASC LIMIT
+    // MAX_HEALTH_FIRES_PER_TICK` (256), and this testcontainer is shared and
+    // long-lived, so it carries due `health_eval` rows left by other tests. A
+    // row due 5s ago sorts behind all of them and falls outside the cap: this
+    // workspace never fires, while `fired >= 1` still passes on everyone
+    // else's rows. The assertions below are about *this* workspace, so the row
+    // has to be inside the cap for them to mean anything.
+    //
+    // The invariant a decade buys: for this row to sort outside 256, there
+    // must be 256 rows due *more than ten years* ago. Nothing creates those.
+    // A forced row cannot linger at its forced timestamp either — the tick's
+    // `cas_advance_next_run` advances `next_run_at` before it even attempts
+    // the enqueue, so every forced row the tick sees is pushed back into the
+    // future whether the fire succeeds or not. That is an invariant about what
+    // rows can exist, not a bet on how many have accumulated.
+    force_due(&db, &s.id, 10 * 365 * 24 * 3600).await;
 
     // `tick_health_schedules` is a global tick and the testcontainer is shared
     // across tests, so the returned `fired` count includes other workspaces'
@@ -684,6 +702,10 @@ async fn due_health_row_enqueues_one_global_custom_task() {
         1,
         "this workspace's row not due → no double-enqueue"
     );
+
+    // Don't leave a row behind to become someone else's backlog — see
+    // `health_tick_caps_fires_per_pass` for why that matters here.
+    delete_workspace_schedules(&db, ws).await.unwrap();
 }
 
 /// Regression: the health run a tick seeds must be visible to the latency
@@ -717,7 +739,9 @@ async fn fired_health_run_is_picked_up_by_latency_worker() {
     )
     .await
     .unwrap();
-    force_due(&db, &s.id, 5).await;
+    // Oldest-due by a decade — see the invariant note on the per-tick fire cap
+    // in `due_health_row_enqueues_one_global_custom_task`.
+    force_due(&db, &s.id, 10 * 365 * 24 * 3600).await;
 
     let fired = tick_health_schedules(&db).await;
     assert!(fired >= 1, "at least this workspace's row fired");
@@ -758,6 +782,8 @@ async fn fired_health_run_is_picked_up_by_latency_worker() {
         Some(s.id.as_str()),
         "scheduled health run must stamp schedule_id or it won't appear in the job's run history",
     );
+
+    delete_workspace_schedules(&db, ws).await.unwrap();
 }
 
 /// An operator-triggered eval (`enqueue_health_eval`) enqueues the same Global
@@ -910,6 +936,24 @@ async fn health_tick_caps_fires_per_pass() {
         total,
         "every seeded workspace fired exactly once across the ticks"
     );
+
+    // Clean up the 276 rows this test seeded. `tick_health_schedules` is
+    // global and `agentic_schedules` has no FK to cascade off, so a row left
+    // here outlives the test on the shared, reused testcontainer and comes due
+    // again 600s later — forever. This one test is the dominant contributor to
+    // that backlog (276 rows per run, vs one apiece from its neighbours), and
+    // the backlog is what pushed the two `health_eval` assertions above outside
+    // `MAX_HEALTH_FIRES_PER_TICK` and made them flake. Those two now force
+    // their rows oldest-due so ordering can't hurt them; this stops the
+    // pressure at its source, and keeps every later tick in the file cheap
+    // rather than draining thousands of strangers' rows.
+    //
+    // Best-effort by construction: a panic above skips it. That is acceptable
+    // — this bounds normal growth, it isn't a correctness guarantee, and the
+    // decade-margin above is what the assertions actually rely on.
+    for ws in &wss {
+        delete_workspace_schedules(&db, *ws).await.unwrap();
+    }
 }
 
 /// `delete_workspace_schedules` removes every schedule row for a workspace

@@ -9,6 +9,7 @@ pub mod airway_config;
 pub mod airway_run;
 pub mod automation_run;
 pub mod backfill;
+mod db_transient;
 pub mod executor;
 pub mod pipeline_ref;
 pub mod platform;

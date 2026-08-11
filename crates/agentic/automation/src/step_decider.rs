@@ -7,13 +7,15 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::airway_admission::AirwayAdmissionResolver;
 use crate::config::TaskType;
 use crate::extension::AutomationRunState;
 use crate::render::{render_jinja_string, validate_workspace_relative_path};
 use crate::step_hash::{StepHashInputs, compute_step_hash};
 use crate::step_orchestrator::{build_minijinja_context, to_column_oriented};
 use agentic_core::delegation::{
-    ChildCompletion, DelegationItem, DelegationTarget, FanoutFailurePolicy, TaskSpec,
+    ChildCompletion, DelegationItem, DelegationTarget, FanoutFailurePolicy, ResolvedAdmission,
+    TaskSpec,
 };
 use agentic_core::evaluator::ConsistencyEvaluator;
 use serde_json::{Value, json};
@@ -70,11 +72,47 @@ pub enum AutomationDecision {
 pub struct AutomationDecider {
     #[allow(dead_code)]
     evaluator: Option<Arc<dyn ConsistencyEvaluator>>,
+    /// Host port that resolves `airway_source_config` for an airway step.
+    /// `None` = no host wiring (the inline Data-App runner, unit fixtures),
+    /// which keeps the previous `permissive` / `production` behaviour.
+    airway_admission: Option<Arc<dyn AirwayAdmissionResolver>>,
 }
 
 impl AutomationDecider {
     pub fn new(evaluator: Option<Arc<dyn ConsistencyEvaluator>>) -> Self {
-        Self { evaluator }
+        Self {
+            evaluator,
+            airway_admission: None,
+        }
+    }
+
+    /// Inject the admission resolver used by [`StepKind::Airway`] dispatch.
+    ///
+    /// Queue-driven callers (`agentic-pipeline`'s executor) always set this;
+    /// without it an airway step inside an automation queues with both
+    /// admission fields `None` and silently ignores an operator's
+    /// `airway_source_config` policy.
+    pub fn with_airway_admission_resolver(
+        mut self,
+        resolver: Arc<dyn AirwayAdmissionResolver>,
+    ) -> Self {
+        self.airway_admission = Some(resolver);
+        self
+    }
+
+    /// Resolve the admission for `pipeline_ref` at dispatch time.
+    ///
+    /// No resolver injected → the default (both fields `None`). A resolver
+    /// that errors propagates: see [`AirwayAdmissionResolver`] for why this
+    /// must not fall back to the default.
+    async fn resolve_airway_admission(
+        &self,
+        pipeline_ref: &str,
+    ) -> Result<ResolvedAdmission, String> {
+        match &self.airway_admission {
+            Some(resolver) => resolver.resolve_for_pipeline(pipeline_ref).await,
+            None => Ok(ResolvedAdmission::default()),
+        }
     }
 
     /// Core decision function.
@@ -492,25 +530,53 @@ impl AutomationDecider {
                 // Airhouse credential provider, backfill windowing and
                 // run-scoped state. Backfill bounds stay `None`: a windowed
                 // backfill is driven by the backfill path, not by an
-                // automation step. `contract_policy`/`environment` also stay
-                // `None` — the resolver (`agentic_pipeline::airway_config::
-                // resolve_admission`) now exists and is wired at
-                // `start_airway_run`'s enqueue site, but `agentic-automation`
-                // is a sibling domain that must not import `agentic-pipeline`,
-                // so this path can't reach it and still runs under airway's
-                // defaults (`permissive` / `production`). A step-triggered run
-                // of a pipeline therefore still diverges from a
-                // schedule-triggered run of the same pipeline; closing that
-                // gap needs the resolver exposed behind a port this domain
-                // can call.
+                // automation step.
+                //
+                // `contract_policy`/`environment` come from the injected
+                // [`AirwayAdmissionResolver`] port, so a step-triggered run
+                // carries the same `airway_source_config` admission a
+                // schedule- or HTTP-triggered run of the same pipeline gets
+                // from `start_airway_run`. Resolved **here**, where the spec
+                // is built and before the coordinator writes the child's
+                // queue row, matching that site's resolve-at-enqueue
+                // ordering: the queued spec records the policy this run was
+                // admitted under, and stays explainable after the config
+                // changes.
+                let admission = match self.resolve_airway_admission(&pipeline_ref).await {
+                    Ok(admission) => admission,
+                    Err(e) => {
+                        // Fail the step rather than queue it under a
+                        // silently-defaulted `permissive` — see the port's
+                        // doc comment.
+                        let error = format!("airway admission for step {step_name}: {e}");
+                        events.push((
+                            "subrun_step_completed".to_string(),
+                            json!({ "step": step_name, "success": false, "error": &error }),
+                        ));
+                        events.push((
+                            "subrun_completed".to_string(),
+                            json!({
+                                "subrun_name": state.workflow.name,
+                                "success": false,
+                            }),
+                        ));
+                        return (
+                            state,
+                            AutomationDecision::Fail {
+                                error,
+                                emitted_events: events,
+                            },
+                        );
+                    }
+                };
                 let spec = TaskSpec::Airway {
                     pipeline_ref,
                     variables: None,
                     resources,
                     backfill_from: None,
                     backfill_to: None,
-                    contract_policy: None,
-                    environment: None,
+                    contract_policy: admission.contract_policy,
+                    environment: admission.environment,
                 };
                 (
                     state,

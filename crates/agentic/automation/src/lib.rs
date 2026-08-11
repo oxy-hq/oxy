@@ -1,3 +1,4 @@
+pub mod airway_admission;
 pub mod completion_policy;
 pub mod config;
 pub mod error;
@@ -24,6 +25,7 @@ pub use agentic_semantic::compile as semantic;
 pub use agentic_semantic::preagg;
 pub use agentic_semantic::refresh_key_cache;
 
+pub use airway_admission::AirwayAdmissionResolver;
 pub use completion_policy::{AutomationCompletionPolicy, AutomationDelegationResolver};
 pub use config::{AutomationConfig, TaskType};
 pub use error::AutomationError;

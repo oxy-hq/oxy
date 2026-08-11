@@ -81,6 +81,32 @@ The crate is host-agnostic. Callers supply a `WorkspaceContext` impl
 runner stays decoupled from `oxy::*` types. For Oxy that impl lives in
 `app::agentic_wiring::OxyProjectContext`.
 
+Second port: `AirwayAdmissionResolver` (`src/airway_admission.rs`). An
+`airway` step queues the same `TaskSpec::Airway` a schedule does, so it must
+carry the same `airway_source_config` admission — but resolving it needs a
+`DatabaseConnection`, the run's `workspace_id` (which appears nowhere in this
+crate), and the pipeline's `source_kind` (which lives in the referenced
+`.airway.yml`, not the step config). The facade supplies all three via
+`agentic_pipeline::airway_config::PipelineAirwayAdmissionResolver`, injected
+with `AutomationDecider::with_airway_admission_resolver`. Both dispatch sites
+(`step_decider.rs`, `step_orchestrator/mod.rs`) resolve **at dispatch**, where
+the spec is built and before the coordinator writes the child's queue row —
+though only `step_decider.rs` is on a production path; `AutomationStepOrchestrator`
+is the actor the decider replaced and nothing constructs it outside its own
+tests, so its injection point is parity for a future reviver, documented as such.
+No resolver injected → airway's `permissive` / `production` default; a
+resolver that errors **fails the step** rather than defaulting.
+
+`Err` from the port means *determinate, or transient past all patience*: the
+resolver owns the retry, because this crate has no error type richer than
+`String` and no queue-level retry to defer to (the root automation task is
+enqueued with `policy: None`, so `Coordinator::check_retry_or_fallback` never
+fires, and `commit_decision` writes the terminal failure transactionally before
+the coordinator sees an outcome). The facade impl classifies determinate
+failures (unresolvable ref, unparseable YAML, malformed row) from transient ones
+(reset connection, exhausted pool) and re-attempts only the latter, inside a
+budget far smaller than the decision task's 60s queue lease.
+
 ## Extension table
 
 `agentic_workflow_state` (managed by `WorkflowMigrator`, tracking table

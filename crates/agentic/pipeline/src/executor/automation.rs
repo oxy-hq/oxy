@@ -273,12 +273,23 @@ impl PipelineTaskExecutor {
         // doesn't change across decision passes within a run, so we
         // clone the path once here rather than threading it through
         // `AutomationRunState`.
-        let workspace_path: std::path::PathBuf = {
-            let workspace: std::sync::Arc<dyn agentic_automation::WorkspaceContext> =
-                self.platform.clone();
-            workspace.workspace_path().to_path_buf()
-        };
-        let decider = agentic_automation::AutomationDecider::new(None);
+        let workspace: std::sync::Arc<dyn agentic_automation::WorkspaceContext> =
+            self.platform.clone();
+        let workspace_path: std::path::PathBuf = workspace.workspace_path().to_path_buf();
+        // An airway step inside this automation queues the same
+        // `TaskSpec::Airway` a schedule does, so it must be admitted under the
+        // same `airway_source_config` policy. The domain crate has neither a
+        // `DatabaseConnection` nor the run's `workspace_id`, so the facade
+        // injects the resolver; `decide()` calls it where it builds the spec,
+        // before the coordinator writes the child's queue row.
+        let admission_resolver =
+            std::sync::Arc::new(crate::airway_config::PipelineAirwayAdmissionResolver::new(
+                self.db.clone(),
+                workspace,
+                self.platform.workspace_id(),
+            ));
+        let decider = agentic_automation::AutomationDecider::new(None)
+            .with_airway_admission_resolver(admission_resolver);
         let (new_state, decision) = decider
             .decide(
                 state,

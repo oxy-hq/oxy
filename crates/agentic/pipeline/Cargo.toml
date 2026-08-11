@@ -32,6 +32,10 @@ serde_yaml = { workspace = true }
 
 sea-orm = { workspace = true }
 serde = { workspace = true }
+# Structural transient-error matching only (`db_transient`), mirroring
+# `crates/platform/src/db/client.rs`. Already in the tree via sea-orm's
+# `sqlx-postgres`; this declares the direct use rather than adding a build.
+sqlx = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
