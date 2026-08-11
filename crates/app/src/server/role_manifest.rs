@@ -833,13 +833,15 @@ const FLEET_OK_READ_PATTERNS: &[ManifestEntry] = &[
     // `workspace_path()`, no `.git`.
     //
     // An earlier draft classified this IdeOnly, reasoning that
-    // `agentic_pipeline::airway_run` resolves a run's spec from the working
-    // copy so the working copy is "what actually runs". That was rejected:
-    // per `oxy-compile-boundary`, a per-request read comes from Postgres, and
-    // `airway_run`'s FS read is the violation rather than the precedent. Every
-    // replica can see the compiled rows, so pinning this to the ide would have
-    // put a Postgres-only admin surface behind the singleton for nothing.
-    // Do not reclassify it back on the "working copy is the truth" argument.
+    // `agentic_pipeline::airway_run` resolved a run's spec from the working
+    // copy so the working copy is "what actually runs". That was rejected on
+    // the `oxy-compile-boundary` rule — a per-request read comes from Postgres
+    // — and the premise has since gone away too: `airway_run` reads the
+    // compiled row through `pipeline_ref::load_pipeline_yaml`, so there is no
+    // FS read left to cite. Every replica can see those rows, so pinning this
+    // to the ide would have put a Postgres-only admin surface behind the
+    // singleton for nothing. Do not reclassify it back on the "working copy is
+    // the truth" argument.
     ManifestEntry {
         method: "GET",
         path_pattern: "/api/admin/airway/config/{source_kind}/preview",
@@ -1309,10 +1311,11 @@ mod tests {
 
     /// The preview reads workspace *content*, which is usually the tell for an
     /// IdeOnly route — but it reads that content from the compile boundary, so
-    /// it is FleetOk like the rest of the airway-config surface. Pinned because
-    /// the tempting misreading (`airway_run` resolves specs from the working
-    /// copy, so this must too) would pin a Postgres-only admin surface to the
-    /// singleton for no reason.
+    /// it is FleetOk like the rest of the airway-config surface. Pinned
+    /// because the tempting misreading (`airway_run` resolves specs from the
+    /// working copy, so this must too) would pin a Postgres-only admin surface
+    /// to the singleton for no reason — and that reading is now doubly wrong,
+    /// since `airway_run` reads the compiled row as well.
     #[test]
     fn airway_policy_preview_is_fleet_ok() {
         assert_eq!(

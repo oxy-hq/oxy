@@ -757,6 +757,39 @@ pub async fn list_pipeline_artifacts(
     ))
 }
 
+/// Single Airway-pipeline resolver, keyed by workspace-relative `file_path`.
+///
+/// The table's PK is `(revision_id, name)` — the YAML `name:` field — but a
+/// `pipeline_ref` is always a workspace-relative path (that's what the UI's
+/// `path_b64` carries, what `start_airway_run` stamps into run metadata, and
+/// what rides the queued `TaskSpec::Airway`). Keying by `name` would miss for
+/// every pipeline whose `name:` differs from its path, so we filter on
+/// `file_path` — same reasoning as `resolve_semantic_view`. One file → one row.
+///
+/// Cross-tenant containment comes for free: `revision_id` belongs to exactly
+/// one workspace, so a `pipeline_ref` can only ever address a row inside the
+/// caller's own promoted revision.
+pub async fn resolve_pipeline(
+    workspace_id: Uuid,
+    branch_hint: Option<&str>,
+    file_path: &str,
+) -> Result<Option<CompiledArtifact>, sea_orm::DbErr> {
+    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
+        return Ok(None);
+    };
+    let row = entity::airway_pipelines::Entity::find()
+        .filter(entity::airway_pipelines::Column::RevisionId.eq(revision_id))
+        .filter(entity::airway_pipelines::Column::FilePath.eq(file_path))
+        .one(&db)
+        .await?;
+    Ok(row.map(|m| CompiledArtifact {
+        file_path: m.file_path,
+        name: m.name,
+        definition: m.definition,
+        compiled_sql_blob_key: None,
+    }))
+}
+
 /// Shared gate consulted at the top of every public reader. Returns
 /// `Some((db, revision_id))` when the request should be served from
 /// Postgres, `None` when the caller should fall through to FS.

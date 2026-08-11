@@ -11,6 +11,32 @@ use oxy::config::model::IntegrationType;
 
 use super::{OxyProjectContext, resolve_workspace_relative};
 
+impl OxyProjectContext {
+    /// Branch to hand `compiled_reader` as its `branch_hint`.
+    ///
+    /// `Some(branch)` only on a role that OWNS a working copy (`Ide` / `All`):
+    /// there a non-default branch is a draft whose edits were never compiled,
+    /// and `open_compiled_revision`'s branch gate turns that hint into "read
+    /// the FS" — which is what keeps the IDE's edit-then-run loop working.
+    ///
+    /// `None` on the stateless roles (`Serve` / `Worker`): they have no working
+    /// copy and therefore no branch, and must read the promoted revision. Also
+    /// `None` when git can't answer (not a repo, working copy absent) — the
+    /// boundary is the only thing left to try.
+    async fn working_copy_branch(&self) -> Option<String> {
+        use crate::server::role_manifest::{Role, current_process_role};
+        use oxy_git::GitClient;
+
+        if matches!(current_process_role(), Role::Serve | Role::Worker) {
+            return None;
+        }
+        oxy::github::default_git_client()
+            .get_current_branch(self.workspace_path())
+            .await
+            .ok()
+    }
+}
+
 #[async_trait]
 impl WorkspaceContext for OxyProjectContext {
     fn workspace_path(&self) -> &Path {
@@ -232,6 +258,63 @@ impl WorkspaceContext for OxyProjectContext {
             .list_pipelines()
             .await
             .map_err(|e| format!("{e}"))
+    }
+
+    /// Serve a `.airway.yml` body from `airway_pipelines`. `None` = "read the
+    /// FS", which the caller (`pipeline_ref::load_pipeline_yaml`) then does
+    /// under its containment guard.
+    ///
+    /// This is what makes an airway run executable on the durable worker
+    /// fleet: the executor claims a queued `TaskSpec::Airway` on a stateless
+    /// replica with no working copy, so an FS read there is the
+    /// instance-affinity failure the compile boundary exists to close.
+    ///
+    /// The branch hint comes from the working copy when this process HAS one,
+    /// so `open_compiled_revision`'s existing gate routes a draft branch back
+    /// to the filesystem and the IDE's edit-then-run loop is unchanged.
+    async fn resolve_pipeline_yaml(&self, pipeline_ref: &str) -> Option<String> {
+        let branch = self.working_copy_branch().await;
+        match crate::server::api::compiled_reader::resolve_pipeline(
+            self.workspace_manager.workspace_id,
+            branch.as_deref(),
+            pipeline_ref,
+        )
+        .await
+        {
+            // Round-trip JSONB → YAML so the downstream parser (which renders
+            // `variables` with minijinja and then deserialises) is unchanged.
+            Ok(Some(artifact)) => match serde_yaml::to_string(&artifact.definition) {
+                Ok(yaml) => {
+                    tracing::debug!(
+                        workspace_id = %self.workspace_manager.workspace_id,
+                        pipeline_ref,
+                        "resolve_pipeline_yaml served from compile boundary"
+                    );
+                    Some(yaml)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        workspace_id = %self.workspace_manager.workspace_id,
+                        pipeline_ref,
+                        error = ?e,
+                        "compile boundary pipeline YAML re-serialise failed; falling through to FS"
+                    );
+                    None
+                }
+            },
+            // Draft branch, workspace not promoted, local workspace, or no
+            // matching row — fall through to FS.
+            Ok(None) => None,
+            Err(e) => {
+                tracing::warn!(
+                    workspace_id = %self.workspace_manager.workspace_id,
+                    pipeline_ref,
+                    error = ?e,
+                    "compile boundary pipeline lookup error; falling through to FS"
+                );
+                None
+            }
+        }
     }
 
     async fn resolve_automation_yaml(&self, workflow_ref: &str) -> Result<String, String> {

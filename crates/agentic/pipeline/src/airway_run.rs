@@ -160,17 +160,17 @@ pub async fn start_airway_run(
     // clear error at submit time rather than from a queued worker
     // failure later. The same `variables` ride the queue spec so the
     // worker renders an identical document at run time.
-    // Contain `pipeline_ref` to the workspace (untrusted HTTP input):
-    // reject absolute/`..`/empty + canonical-containment. Errors quote
-    // only the ref, never the resolved absolute path.
-    let path = crate::pipeline_ref::resolve_pipeline_ref(
-        workspace.workspace_path(),
-        &request.pipeline_ref,
-    )
-    .map_err(AirwayRunError::InvalidInput)?;
-    let yaml = tokio::fs::read_to_string(&path).await.map_err(|e| {
-        AirwayRunError::Io(format!("read pipeline_ref `{}`: {e}", request.pipeline_ref))
-    })?;
+    // `load_pipeline_yaml` reads the compiled `airway_pipelines` row when the
+    // host serves the compile boundary and only then the workspace FS, and
+    // contains `pipeline_ref` (untrusted HTTP input) on both paths: reject
+    // absolute/`..`/empty + canonical-containment. Errors quote only the ref,
+    // never the resolved absolute path.
+    let yaml = crate::pipeline_ref::load_pipeline_yaml(workspace, &request.pipeline_ref)
+        .await
+        .map_err(|e| match e {
+            crate::pipeline_ref::PipelineRefError::Invalid(m) => AirwayRunError::InvalidInput(m),
+            crate::pipeline_ref::PipelineRefError::Io(m) => AirwayRunError::Io(m),
+        })?;
     let spec = AirwayPipelineSpec::from_yaml_with_vars(&yaml, request.variables.as_ref())?;
 
     let run_id = Uuid::new_v4().to_string();

@@ -94,8 +94,13 @@ async fn test_db() -> Option<DatabaseConnection> {
 /// Minimal `WorkspaceContext` whose `workspace_path` points at a real
 /// temp dir so `start_airway_run` can read the `.airway.yml`. Every
 /// other method is unreachable on this path.
+///
+/// `compiled` stands in for the host's compile-boundary hook: `Some(yaml)`
+/// is a workspace whose `.airway.yml` is a compiled `airway_pipelines` row
+/// (what a stateless replica sees), `None` is "read the filesystem".
 struct TmpWorkspace {
     root: PathBuf,
+    compiled: Option<String>,
 }
 
 #[async_trait]
@@ -144,6 +149,9 @@ impl agentic_automation::WorkspaceContext for TmpWorkspace {
     async fn resolve_automation_yaml(&self, _workflow_ref: &str) -> Result<String, String> {
         Err("tmp workspace: not available".into())
     }
+    async fn resolve_pipeline_yaml(&self, _pipeline_ref: &str) -> Option<String> {
+        self.compiled.clone()
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -181,6 +189,7 @@ resources:
 
     let ws = TmpWorkspace {
         root: dir.path().to_path_buf(),
+        compiled: None,
     };
     let request = StartAirwayRequest {
         pipeline_ref: "p.airway.yml".to_string(),
@@ -276,6 +285,171 @@ resources:
     );
 }
 
+/// The compile-boundary regression: seeding a run must work on a node with
+/// **no workspace directory at all** — the shape of every durable-worker
+/// replica, and of the `serve` fleet. Before the boundary port, resolution
+/// canonicalised the workspace root first, so an absent working copy failed
+/// with "workspace root is not accessible" no matter what was queued.
+///
+/// Templating still happens at parse time on the compiled body, so the early
+/// validation `start_airway_run` exists for is intact and the worker renders
+/// the same document from the same `variables`.
+#[tokio::test(flavor = "multi_thread")]
+async fn start_airway_run_reads_the_compile_boundary_without_a_working_copy() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+
+    let pipeline_name = format!("compiled_{}", uuid::Uuid::new_v4().simple());
+    let yaml = format!(
+        r#"
+name: {pipeline_name}_{{{{ env }}}}
+source:
+  kind: filesystem
+  config:
+    base_path: /tmp/airway-compiled
+    pattern: "*.jsonl"
+    format: jsonl
+    table_name: users
+destination:
+  kind: memory
+  config:
+    dataset_name: scratch
+concurrency: 2
+resources:
+  - users
+"#
+    );
+
+    // No tempdir: the workspace root does not exist on this machine.
+    let absent = PathBuf::from(format!(
+        "/nonexistent-oxy-workspace/{}",
+        uuid::Uuid::new_v4()
+    ));
+    assert!(!absent.exists(), "precondition: no working copy");
+    assert!(
+        agentic_pipeline::pipeline_ref::resolve_pipeline_ref(&absent, "p.airway.yml").is_err(),
+        "the FS path must be unavailable for this test to mean anything"
+    );
+
+    let ws = TmpWorkspace {
+        root: absent,
+        compiled: Some(yaml),
+    };
+    let request = StartAirwayRequest {
+        pipeline_ref: "pipelines/p.airway.yml".to_string(),
+        variables: Some(serde_json::json!({ "env": "prod" })),
+        thread_id: None,
+        resources: Vec::new(),
+        schedule_id: None,
+        trigger: None,
+        logical_date: None,
+        retry_of: None,
+        backfill_from: None,
+        backfill_to: None,
+    };
+
+    let run_id = start_airway_run(
+        &db,
+        &ws,
+        request,
+        agentic_pipeline::TaskScope::Global,
+        uuid::Uuid::nil(),
+    )
+    .await
+    .expect("a compiled pipeline must be runnable with no working copy");
+
+    // The rendered name proves the compiled body went through the same
+    // `from_yaml_with_vars` render the worker will repeat.
+    let ext = run_extension::get_run_extension(&db, &run_id)
+        .await
+        .expect("query extension")
+        .expect("airway_run_extensions row exists");
+    assert_eq!(ext.pipeline_name, format!("{pipeline_name}_prod"));
+    assert_eq!(ext.pipeline_ref.as_deref(), Some("pipelines/p.airway.yml"));
+
+    // `variables` still ride the queue spec, so the worker re-renders rather
+    // than inheriting a pre-rendered document.
+    let entry = crud::get_queue_entry(&db, &run_id)
+        .await
+        .expect("query queue")
+        .expect("queue row exists");
+    let spec: TaskSpec = serde_json::from_value(entry.spec).expect("deserialize spec");
+    match spec {
+        TaskSpec::Airway { variables, .. } => assert_eq!(
+            variables.and_then(|v| v.get("env").cloned()),
+            Some(serde_json::json!("prod")),
+        ),
+        other => panic!("expected TaskSpec::Airway, got {other:?}"),
+    }
+}
+
+/// The containment guard runs BEFORE the backend choice, so a traversal ref
+/// can't address a compiled row either — a host that would happily hand back a
+/// body never sees the ref, and no run row is seeded.
+///
+/// The fixture is built so the guard is the ONLY thing that can reject. Both
+/// halves of that mattered: an earlier version used a stub body with no
+/// `destination:`, so `AirwayPipelineSpec` refused it whatever the ref was and
+/// `expect_err` passed with the guard deleted. This one hands back
+/// [`pipeline_yaml`] — a spec that parses and submits — so letting a traversal
+/// ref through would produce a *successful* run and fail here.
+///
+/// And it asserts the guard's own message rather than merely the absence of a
+/// resolved path: `TmpWorkspace::resolve_pipeline_yaml` ignores the ref, so no
+/// path is ever constructed on this route and "the error doesn't name the
+/// workspace root" was true by construction.
+#[tokio::test(flavor = "multi_thread")]
+async fn start_airway_run_contains_the_ref_on_the_compiled_path() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let ws = TmpWorkspace {
+        root: PathBuf::from("/nonexistent-oxy-workspace"),
+        compiled: Some(pipeline_yaml("contained")),
+    };
+    // The reason the guard must give for each shape, so a ref rejected by some
+    // *later* check can't be mistaken for containment holding.
+    for (bad, want) in [
+        ("../../etc/passwd", "must not contain `..` segments"),
+        ("/etc/passwd", "must be relative to the workspace"),
+        ("a/../../b", "must not contain `..` segments"),
+    ] {
+        let request = StartAirwayRequest {
+            pipeline_ref: bad.to_string(),
+            variables: None,
+            thread_id: None,
+            resources: Vec::new(),
+            schedule_id: None,
+            trigger: None,
+            logical_date: None,
+            retry_of: None,
+            backfill_from: None,
+            backfill_to: None,
+        };
+        let err = start_airway_run(
+            &db,
+            &ws,
+            request,
+            agentic_pipeline::TaskScope::Global,
+            uuid::Uuid::nil(),
+        )
+        .await
+        .expect_err("a traversal ref must be rejected before any backend")
+        .to_string();
+        assert!(
+            err.contains(want),
+            "`{bad}` must be refused by the containment guard ({want}), got: {err}"
+        );
+        assert!(
+            !err.contains("nonexistent-oxy-workspace"),
+            "errors must quote only the ref, never a resolved path: {err}"
+        );
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn start_airway_run_rejects_missing_pipeline_file() {
     let Some(db) = test_db().await else {
@@ -285,6 +459,7 @@ async fn start_airway_run_rejects_missing_pipeline_file() {
     let dir = tempfile::tempdir().expect("tempdir");
     let ws = TmpWorkspace {
         root: dir.path().to_path_buf(),
+        compiled: None,
     };
     let request = StartAirwayRequest {
         pipeline_ref: "does-not-exist.airway.yml".to_string(),
@@ -358,6 +533,7 @@ async fn airway_dispatch_failure_releases_the_lease() {
     // resolution — upstream of `worker.execute`, i.e. no engine is running.
     let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> = Arc::new(TmpWorkspace {
         root: dir.path().to_path_buf(),
+        compiled: None,
     });
     let executor = agentic_pipeline::executor::PipelineTaskExecutor::bare(platform, db.clone());
 
@@ -453,6 +629,7 @@ resources:
 
     let ws = TmpWorkspace {
         root: dir.path().to_path_buf(),
+        compiled: None,
     };
     let workspace_id = uuid::Uuid::new_v4();
     // Seed through the real submit path so the run, its extension and its
@@ -535,6 +712,7 @@ resources:
 
     let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> = Arc::new(TmpWorkspace {
         root: dir.path().to_path_buf(),
+        compiled: None,
     });
     agentic_pipeline::recovery::recover_active_runs(
         db.clone(),
@@ -665,6 +843,7 @@ resources:
 
     let ws = TmpWorkspace {
         root: dir.path().to_path_buf(),
+        compiled: None,
     };
     let request = StartAirwayRequest {
         pipeline_ref: "p.airway.yml".to_string(),
@@ -784,6 +963,7 @@ async fn submitting_twice_coalesces_onto_one_run() {
     std::fs::write(dir.path().join("p.airway.yml"), pipeline_yaml(&name)).expect("write");
     let ws = TmpWorkspace {
         root: dir.path().to_path_buf(),
+        compiled: None,
     };
     let workspace_id = uuid::Uuid::new_v4();
 
@@ -827,6 +1007,7 @@ async fn different_variables_do_not_coalesce() {
     std::fs::write(dir.path().join("p.airway.yml"), pipeline_yaml(&name)).expect("write");
     let ws = TmpWorkspace {
         root: dir.path().to_path_buf(),
+        compiled: None,
     };
     let workspace_id = uuid::Uuid::new_v4();
 

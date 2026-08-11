@@ -20,11 +20,13 @@
 //!   builds each connector, and feeds [`verdicts`].
 //!
 //! **Why compiled rows and not the working copy.** `agentic_pipeline::
-//! airway_run` resolves a run's spec with `tokio::fs::read_to_string`, so it is
-//! tempting to argue the working copy is "what actually runs" and read that.
-//! That argument is rejected: the `oxy-compile-boundary` rule is that every
-//! per-request read comes from Postgres, and `airway_run`'s FS read is itself
-//! the violation — not a precedent to inherit. `airway_pipelines` already
+//! airway_run` used to resolve a run's spec with `tokio::fs::read_to_string`,
+//! which made it tempting to argue the working copy is "what actually runs"
+//! and read that. That argument was rejected on the `oxy-compile-boundary`
+//! rule — every per-request read comes from Postgres, and `airway_run`'s FS
+//! read was itself the violation, not a precedent to inherit. It now reads the
+//! compiled row too, so the argument has no premise left. `airway_pipelines`
+//! already
 //! carries `file_path` + `definition`, so nothing here needs a working copy,
 //! and the route is `FleetOk` like the rest of this surface. **Do not "fix"
 //! this back to an FS walk**; that would re-pin a Postgres-only admin surface

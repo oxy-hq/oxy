@@ -132,4 +132,25 @@ pub trait WorkspaceContext: Send + Sync {
     async fn list_airway_files(&self) -> Result<Vec<PathBuf>, String> {
         Ok(vec![])
     }
+
+    /// Compile-boundary hook for an airway pipeline (`.airway.yml`) body,
+    /// keyed by its workspace-relative `pipeline_ref`.
+    ///
+    /// `Some(yaml)` — the host served the pipeline from its compiled
+    /// `airway_pipelines` rows; the caller parses that string and never
+    /// touches the filesystem. This is what lets the durable worker fleet
+    /// (stateless, no working copy) run a pipeline at all.
+    ///
+    /// `None` (the default) — "read the workspace filesystem", which is
+    /// exactly today's behaviour. Covers hosts that don't participate in the
+    /// compile boundary (test fakes, CLI) *and* the host's own fall-through
+    /// cases (unpromoted workspace, draft branch, no matching row). The FS
+    /// read + its containment guard live in one place on the caller side:
+    /// [`agentic_pipeline::pipeline_ref::load_pipeline_yaml`].
+    ///
+    /// Mirrors `ProjectContext::resolve_agent_yaml`, the same hook shape for
+    /// `.agentic.yml`.
+    async fn resolve_pipeline_yaml(&self, _pipeline_ref: &str) -> Option<String> {
+        None
+    }
 }

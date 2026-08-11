@@ -559,13 +559,14 @@ impl PipelineTaskExecutor {
         Ok(task)
     }
 
-    /// Dispatch a `TaskSpec::Airway`. Loads `.airway.yml` from the
-    /// workspace, parses it into an [`AirwayPipelineSpec`], and hands
-    /// off to `AirwayWorker` which spawns the engine run and returns
-    /// the runtime-shape channel pair.
+    /// Dispatch a `TaskSpec::Airway`. Loads the `.airway.yml` body through
+    /// [`crate::pipeline_ref::load_pipeline_yaml`] (compiled `airway_pipelines`
+    /// row first, workspace filesystem only if the host declines), parses it
+    /// into an [`AirwayPipelineSpec`], and hands off to `AirwayWorker` which
+    /// spawns the engine run and returns the runtime-shape channel pair.
     ///
-    /// `variables` is captured but not yet applied — YAML templating
-    /// lands in a follow-up alongside the CLI/HTTP entry points.
+    /// `variables` are rendered here, at claim time — the queued spec carries
+    /// them so this worker reproduces the document the submitter validated.
     async fn execute_airway(
         &self,
         run_id: &str,
@@ -576,16 +577,18 @@ impl PipelineTaskExecutor {
         backfill_to: Option<&str>,
         admission: agentic_airway::AirwayAdmission,
     ) -> Result<ExecutingTask, String> {
-        // Defence-in-depth: `start_airway_run` already contained the
-        // ref at submit time, but re-validate at queue-claim too (the
-        // queued spec is caller-influenced). `workspace_path` resolves
-        // through `PlatformContext`'s `WorkspaceContext` supertrait.
-        let path =
-            crate::pipeline_ref::resolve_pipeline_ref(self.platform.workspace_path(), pipeline_ref)
-                .map_err(|e| format!("airway: {e}"))?;
-        let yaml = tokio::fs::read_to_string(&path)
+        // Compile boundary first: this runs on the durable worker fleet, which
+        // is stateless and has NO working copy — an FS read here is the
+        // instance-affinity failure ("workspace directory not found" on a
+        // replica). `load_pipeline_yaml` serves the compiled `airway_pipelines`
+        // row and only falls back to disk when the host declines.
+        // Defence-in-depth: `start_airway_run` already contained the ref at
+        // submit time, but the guard re-runs at queue-claim too (the queued
+        // spec is caller-influenced). Both resolve through `PlatformContext`'s
+        // `WorkspaceContext` supertrait.
+        let yaml = crate::pipeline_ref::load_pipeline_yaml(self.platform.as_ref(), pipeline_ref)
             .await
-            .map_err(|e| format!("airway: read pipeline_ref `{pipeline_ref}`: {e}"))?;
+            .map_err(|e| format!("airway: {e}"))?;
         // Render with the same `variables` that `start_airway_run`
         // validated against, so the worker's document matches what the
         // submitter saw.
@@ -743,16 +746,14 @@ impl PipelineTaskExecutor {
     ) -> Result<Vec<String>, ResetSchemaError> {
         use ResetSchemaError::{BadRequest, Internal};
 
-        // Resolve `pipeline_ref` → path → yaml → spec, mirroring
-        // `execute_airway`'s first lines. No `variables` — a reset targets a
-        // pipeline's persisted state, keyed by its rendered `name`. A bad ref /
-        // unparseable spec is caller input → `BadRequest` (400).
-        let path =
-            crate::pipeline_ref::resolve_pipeline_ref(self.platform.workspace_path(), pipeline_ref)
-                .map_err(|e| BadRequest(format!("airway: {e}")))?;
-        let yaml = tokio::fs::read_to_string(&path)
+        // Resolve `pipeline_ref` → yaml → spec, mirroring `execute_airway`'s
+        // first lines (compile boundary first, contained FS read on a miss).
+        // No `variables` — a reset targets a pipeline's persisted state, keyed
+        // by its rendered `name`. A bad ref / unparseable spec is caller input
+        // → `BadRequest` (400).
+        let yaml = crate::pipeline_ref::load_pipeline_yaml(self.platform.as_ref(), pipeline_ref)
             .await
-            .map_err(|e| BadRequest(format!("airway: read pipeline_ref `{pipeline_ref}`: {e}")))?;
+            .map_err(|e| BadRequest(format!("airway: {e}")))?;
         let mut spec = agentic_airway::AirwayPipelineSpec::from_yaml_with_vars(&yaml, None)
             .map_err(|e| BadRequest(format!("airway: parse `{pipeline_ref}`: {e}")))?;
 
