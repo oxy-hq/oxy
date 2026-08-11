@@ -64,10 +64,17 @@ async fn test_db() -> Option<DatabaseConnection> {
         }
     }
     let db = db?;
-    RuntimeMigrator::up(&db, None)
+    // Central -> runtime -> airway, like the other three modules in this
+    // binary. Running `RuntimeMigrator` alone left `agentic_runs` already
+    // carrying `thread_id`, so whichever module's helper ran next brought
+    // central in second and hit 42701 / 42P07 — and since sea-orm wraps a
+    // whole `up()` in one transaction, that rollback left the database with
+    // no `seaql_migrations` at all. Nothing ordered these modules, so the
+    // failure depended on which case happened to run first.
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
         .await
-        .expect("runtime migrations failed");
-    AirwayMigrator::up(&db, None)
+        .expect("shared migrations failed")
+        .then::<AirwayMigrator>()
         .await
         .expect("airway migrations failed");
     Some(db)

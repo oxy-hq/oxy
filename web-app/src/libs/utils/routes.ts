@@ -39,7 +39,8 @@ const ROUTES = {
     USER_DETAIL: (userId: string) => `/admin/users/${userId}`,
     WORKSPACES: "/admin/workspaces",
     WORKSPACE_DETAIL: (workspaceId: string) => `/admin/workspaces/${workspaceId}`,
-    WORKSPACE_HEALTH: "/admin/workspace-health"
+    WORKSPACE_HEALTH: "/admin/workspace-health",
+    AIRWAY: "/admin/airway"
   },
 
   // Org-scoped routes. Passing an empty `orgSlug` degrades to flat local-mode

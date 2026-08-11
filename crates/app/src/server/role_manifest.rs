@@ -664,6 +664,12 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/customer-apps/{org}/{app}/fn/{name}",
         role: RouteRole::IdeOnly,
     },
+    // NB: the airway admission-policy PREVIEW
+    // (`GET /api/admin/airway/config/{source_kind}/preview`) is intentionally
+    // NOT here — it reads the compiled `airway_pipelines` rows, never the
+    // workspace filesystem, so it is FleetOk with the rest of that surface. Its
+    // entry is in `FLEET_OK_READ_PATTERNS`; see the rationale there.
+    //
     // NB: the on-demand single-workspace health eval
     // (`POST /api/admin/workspace-health/{workspace_id}/eval`) is intentionally
     // NOT here — it is a pure Postgres enqueue (FS-free) and serves FleetOk by
@@ -781,6 +787,62 @@ const FLEET_OK_READ_PATTERNS: &[ManifestEntry] = &[
     ManifestEntry {
         method: "GET",
         path_pattern: "/api/admin/workspace-health",
+        role: RouteRole::FleetOk,
+    },
+    // ── Airway admission-policy config (stage 3) ──────────────────────────
+    // The WHOLE surface is Postgres-only, reads and writes alike, so every
+    // route here is FleetOk. Listed explicitly (rather than relying on
+    // `classify`'s FleetOk default) so it stays FleetOk even if a future
+    // `/admin/*` IdeOnly wildcard is added.
+    //
+    // Task 1's read: `list_airway_config` — one `find_also_related` over
+    // `airway_source_config` + `workspaces`.
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/admin/airway/config",
+        role: RouteRole::FleetOk,
+    },
+    // Task 2's writes: `upsert_global`/`upsert_override`/`delete_global`/
+    // `delete_override` are plain Postgres upsert/delete.
+    ManifestEntry {
+        method: "PUT",
+        path_pattern: "/api/admin/airway/config/{source_kind}",
+        role: RouteRole::FleetOk,
+    },
+    ManifestEntry {
+        method: "DELETE",
+        path_pattern: "/api/admin/airway/config/{source_kind}",
+        role: RouteRole::FleetOk,
+    },
+    ManifestEntry {
+        method: "PUT",
+        path_pattern: "/api/admin/airway/config/{source_kind}/workspaces/{workspace_id}",
+        role: RouteRole::FleetOk,
+    },
+    ManifestEntry {
+        method: "DELETE",
+        path_pattern: "/api/admin/airway/config/{source_kind}/workspaces/{workspace_id}",
+        role: RouteRole::FleetOk,
+    },
+    // Task 3's policy preview. The one route here that reads *workspace
+    // content* rather than config rows — and it reads it from the compile
+    // boundary: `preview::scan_pipelines` queries `workspaces` for each one's
+    // promoted `current_revision_id` and `airway_pipelines` for the compiled
+    // `.airway.yml` definitions under those revisions (a bounded platform grant
+    // pays two more to count what its scope withheld). No `tokio::fs`, no
+    // `workspace_path()`, no `.git`.
+    //
+    // An earlier draft classified this IdeOnly, reasoning that
+    // `agentic_pipeline::airway_run` resolves a run's spec from the working
+    // copy so the working copy is "what actually runs". That was rejected:
+    // per `oxy-compile-boundary`, a per-request read comes from Postgres, and
+    // `airway_run`'s FS read is the violation rather than the precedent. Every
+    // replica can see the compiled rows, so pinning this to the ide would have
+    // put a Postgres-only admin surface behind the singleton for nothing.
+    // Do not reclassify it back on the "working copy is the truth" argument.
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/admin/airway/config/{source_kind}/preview",
         role: RouteRole::FleetOk,
     },
     // Analytics conversation history — list_runs_by_thread / get_run_by_thread
@@ -1210,6 +1272,54 @@ mod tests {
         assert_eq!(
             classify("GET", "/api/admin/workspace-health"),
             RouteRole::FleetOk
+        );
+    }
+
+    #[test]
+    fn airway_config_is_fleet_ok() {
+        assert_eq!(
+            classify("GET", "/api/admin/airway/config"),
+            RouteRole::FleetOk,
+            "airway config CRUD is Postgres-only and must stay HA"
+        );
+    }
+
+    #[test]
+    fn airway_config_writes_are_fleet_ok() {
+        let ws = "d9830be4-c6a4-4c1c-9c1e-000000000001";
+        for (method, path) in [
+            ("PUT", "/api/admin/airway/config/toast".to_string()),
+            ("DELETE", "/api/admin/airway/config/toast".to_string()),
+            (
+                "PUT",
+                format!("/api/admin/airway/config/toast/workspaces/{ws}"),
+            ),
+            (
+                "DELETE",
+                format!("/api/admin/airway/config/toast/workspaces/{ws}"),
+            ),
+        ] {
+            assert_eq!(
+                classify(method, &path),
+                RouteRole::FleetOk,
+                "{method} {path} is Postgres-only CRUD (stage 3 Task 2) and must stay HA"
+            );
+        }
+    }
+
+    /// The preview reads workspace *content*, which is usually the tell for an
+    /// IdeOnly route — but it reads that content from the compile boundary, so
+    /// it is FleetOk like the rest of the airway-config surface. Pinned because
+    /// the tempting misreading (`airway_run` resolves specs from the working
+    /// copy, so this must too) would pin a Postgres-only admin surface to the
+    /// singleton for no reason.
+    #[test]
+    fn airway_policy_preview_is_fleet_ok() {
+        assert_eq!(
+            classify("GET", "/api/admin/airway/config/toast/preview"),
+            RouteRole::FleetOk,
+            "the preview reads compiled `airway_pipelines` rows scoped to each workspace's \
+             promoted revision — never the workspace filesystem — so it serves from any replica"
         );
     }
 

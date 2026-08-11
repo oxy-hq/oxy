@@ -9014,6 +9014,7 @@ dependencies = [
 name = "oxy-app"
 version = "0.5.122"
 dependencies = [
+ "agentic-airway",
  "agentic-analytics",
  "agentic-automation",
  "agentic-builder",

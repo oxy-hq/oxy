@@ -33,6 +33,25 @@ pub use extension::AirwayMigrator;
 pub use source_factory::{
     DiscoveredColumn, DiscoveredTable, build_source_connector, discover_source_tables,
 };
+
+/// Airway's admission vocabulary, re-exported for the same reason
+/// [`DiscoveredTable`] is: a host that needs to *name* these types — oxy's
+/// Global-Owner policy-preview endpoint reads `contracts()` / `resources()` off
+/// a built connector and scores them against a [`ContractPolicy`] — should not
+/// have to take a direct dependency on the `airway` engine to do it. This crate
+/// is the boundary every other oxy crate enters airway through; widening it here
+/// keeps that true.
+pub use airway::connector::{
+    ContractPolicy, Environment, ExtractionResult, Mutability, ResourceInfo, SourceConnector,
+    SourceContract, admit_with,
+};
+pub use airway::types::WriteDisposition;
+
+/// The **engine's** error type, aliased because it is not this crate's
+/// [`AirwayError`] — `crate::error::AirwayError` wraps it, and having both in
+/// scope under one name is exactly the confusion this alias avoids. Needed by
+/// anything implementing [`SourceConnector`] outside this crate.
+pub use airway::AirwayError as EngineError;
 pub use state_store::{AirwayPgStateStore, AirwayRunScopedStateStore};
 pub use worker::AirwayWorker;
 

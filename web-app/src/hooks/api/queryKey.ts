@@ -688,6 +688,34 @@ const workspaceHealthKeys = {
   list: () => [...workspaceHealthKeys.all, "list"] as const
 };
 
+const airwayConfigKeys = {
+  all: ["admin", "airway-config"] as const,
+  config: () => [...airwayConfigKeys.all, "config"] as const,
+  /**
+   * Keyed on **both** admission axes. `undefined` on either means airway's
+   * default (`permissive` / `production`), keyed as `null` so it's stable.
+   *
+   * `environment` belongs in the key even though it once looked cosmetic: a
+   * scan computed under `production` says nothing about a save that sets
+   * `sandbox` (the source factory refuses connectors there), so a key that
+   * omitted it served a stale-but-`isSuccess` body the save gate then read as
+   * "confirmed clean". Adding it makes that a cache miss — a refetch, and a
+   * gate that honestly says "loading" until the real answer lands.
+   */
+  preview: (
+    sourceKind: string,
+    contractPolicy: string | undefined,
+    environment: string | undefined
+  ) =>
+    [
+      ...airwayConfigKeys.all,
+      "preview",
+      sourceKind,
+      contractPolicy ?? null,
+      environment ?? null
+    ] as const
+};
+
 const authConfigKeys = {
   all: ["authConfig"] as const,
   current: () => [...authConfigKeys.all] as const
@@ -940,6 +968,7 @@ const queryKeys = {
   github: githubKeys,
   preagg: preaggKeys,
   workspaceHealth: workspaceHealthKeys,
+  airwayConfig: airwayConfigKeys,
   partner: partnerKeys,
   audit: auditKeys,
   adminAssume: adminAssumeKeys,

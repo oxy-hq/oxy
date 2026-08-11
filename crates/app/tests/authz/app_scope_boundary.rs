@@ -512,6 +512,24 @@ fn scoped_admin_writes_fence_before_touching_the_database() {
                 "get_workspace_detail",
             ],
         ),
+        (
+            // Named explicitly because the router sweep above cannot see this
+            // one: it resolves `admin/{router}.rs`, and `airway_config` is a
+            // DIRECTORY module (`airway_config/mod.rs` + `handlers.rs`) — as are
+            // `apps`, `partners` and `workspace_health`. That blindness is
+            // exactly how these two shipped unfenced: a bounded grant could
+            // `PUT /admin/airway/config/{kind}/workspaces/{any}` and pin another
+            // tenant's pipelines to a policy that halts them.
+            //
+            // Widening the sweep to directories is the better fix and is a
+            // bigger change than this one: the other three would come with it,
+            // their handlers live in sub-modules the sweep's search space does
+            // not reach, and its route-chunk parse assumes one indent level. So
+            // this list carries airway_config today, and the gap is written
+            // down rather than left to be rediscovered.
+            "crates/app/src/server/api/admin/airway_config/handlers.rs",
+            &["put_workspace_override", "delete_workspace_override"],
+        ),
     ];
 
     for (file, handlers) in sites {
@@ -992,4 +1010,67 @@ fn a_delegation_denial_carries_its_reason_to_the_client() {
         "`deny_undelegatable` is back — no correct handler can call it, and naming it in \
          the docs sends the next author around the row lock"
     );
+}
+
+/// Every **read** on the airway admission console that returns per-tenant rows
+/// must narrow them to the caller's platform scope.
+///
+/// The write half is mechanised above; this is its counterpart, and it exists
+/// because the read half shipped with a hole. `platform_cap_guard` decides on
+/// `Resource::platform()`, so a bounded `global_admin` reaches this console and
+/// the handler is the only thing left — and `preview_policy` did not even take
+/// an `AuthenticatedUserExtractor`, so a grant bounded to two orgs could
+/// enumerate every tenant's airway pipelines: `pipeline_ref` is
+/// `{workspace_id}:{real path}`, `resource` names tables inside their
+/// pipelines, and an `unevaluated` entry quotes their `.airway.yml`.
+///
+/// What made that a defect rather than a judgement call is that three doc
+/// blocks shipped alongside the *other* fences claimed the surface was
+/// covered. A doc that reads as coverage is worse than none, so the claim is
+/// pinned here instead of restated there.
+///
+/// Asserted per handler body, not file-wide: `handlers.rs` and `preview.rs`
+/// each hold several functions, and a file-wide needle is satisfiable by the
+/// wrong one — the defect this file has now re-learned four times.
+#[test]
+fn scoped_admin_reads_on_the_airway_console_filter_by_scope() {
+    let sites: &[(&str, &str)] = &[
+        (
+            "crates/app/src/server/api/admin/airway_config/handlers.rs",
+            "get_config",
+        ),
+        (
+            "crates/app/src/server/api/admin/airway_config/preview.rs",
+            "preview_policy",
+        ),
+    ];
+
+    for (file, handler) in sites {
+        let src = read(file);
+        let body = src
+            .split(&format!("pub async fn {handler}("))
+            .nth(1)
+            .unwrap_or_else(|| panic!("`{handler}` not found in {file} — renamed or moved?"))
+            .split("\n}\n")
+            .next()
+            .unwrap_or_default();
+
+        // The extractor is half of it: without an actor there is nothing to
+        // resolve a scope from, which is exactly how `preview_policy` shipped.
+        assert!(
+            body.contains("AuthenticatedUserExtractor"),
+            "`{handler}` ({file}) takes no `AuthenticatedUserExtractor`, so it cannot know \
+             who is asking. The capability guard decides on a resource with no org, so a \
+             grant bounded to one tenant reads every other one here."
+        );
+        // And the shared read-path filter is the other half — the same one
+        // `admin::apps::handlers` owns, never a second spelling of it.
+        assert!(
+            body.contains("scope_org_filter"),
+            "`{handler}` ({file}) does not call `scope_org_filter(..)`. Every read on this \
+             console that returns per-tenant rows narrows them; the docs in \
+             `airway_config/mod.rs` and `handlers.rs` state that as a property of the \
+             whole surface."
+        );
+    }
 }

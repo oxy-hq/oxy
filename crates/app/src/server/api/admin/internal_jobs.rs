@@ -724,14 +724,23 @@ async fn run_retention() -> Result<Json<RunRetentionResponse>, Response> {
 // Error helpers
 // ---------------------------------------------------------------------------
 
+/// Shared error body shape for every admin write route that reuses `connect`
+/// / `db_err` from this module (`internal_jobs` itself, plus
+/// `airway_config`'s Task 2 write handlers) — `pub(crate)` specifically so
+/// a validation-style 400 elsewhere in `admin/` doesn't have to invent a
+/// one-off shape the frontend would need to special-case.
 #[derive(Serialize)]
-struct ErrorBody {
-    code: &'static str,
+pub(crate) struct ErrorBody {
+    pub(crate) code: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    message: Option<String>,
+    pub(crate) message: Option<String>,
 }
 
-fn error_body(status: StatusCode, code: &'static str, message: Option<String>) -> Response {
+pub(crate) fn error_body(
+    status: StatusCode,
+    code: &'static str,
+    message: Option<String>,
+) -> Response {
     (status, Json(ErrorBody { code, message })).into_response()
 }
 

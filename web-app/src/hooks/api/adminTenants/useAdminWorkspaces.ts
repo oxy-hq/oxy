@@ -10,14 +10,22 @@ function errMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * `keepPreviousData` is opt-in for search-as-you-type callers: without it a
+ * changed `search` term is a new query key, so `data` drops to `undefined` and
+ * the list a picker is rendering blinks out and back on every keystroke. Off by
+ * default — a list page that changes filters should show the new filter's
+ * loading state, not the old filter's rows.
+ */
 export const useAdminWorkspacesList = (
   query: ListWorkspacesQuery = {},
-  options: { enabled?: boolean } = {}
+  options: { enabled?: boolean; keepPreviousData?: boolean } = {}
 ) =>
   useQuery({
     queryKey: queryKeys.adminWorkspaces.list(query.search, query.status, query.org_id),
     queryFn: () => AdminWorkspacesService.list(query),
-    enabled: options.enabled ?? true
+    enabled: options.enabled ?? true,
+    placeholderData: options.keepPreviousData ? (prev) => prev : undefined
   });
 
 export const useAdminWorkspaceDetail = (workspaceId: string | undefined) =>

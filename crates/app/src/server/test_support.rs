@@ -35,6 +35,20 @@
 //! So migrations run under a Postgres **advisory lock**, which serializes across
 //! processes no matter how many there are. The `OnceCell` stays as the
 //! in-process fast path.
+//!
+//! # Serializing a test's own critical section
+//!
+//! The same problem, and the same fix, applies to any test that mutates rows
+//! a concurrent `kind(lib)` test also touches — not just the migration
+//! bootstrap below. `#[serial_test::serial]` does **not** substitute for
+//! this: this crate's `Cargo.lock` pulls in `serial_test` with default
+//! features only, so its `file_locks` feature (the cross-process lock,
+//! backed by `fslock`) is off, and it falls back to an in-process
+//! `parking_lot` mutex — which, given nextest's one-process-per-test
+//! execution, never actually contends with anything. [`AdvisoryLock`] is the
+//! real fix, reusable outside this module: acquire it with your own fixed
+//! key (distinct from [`MIGRATION_LOCK_KEY`] and every other caller's) around
+//! the critical section, exactly like the migration bootstrap does.
 
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection};
 use tokio::sync::OnceCell;
@@ -63,7 +77,7 @@ pub(crate) async fn test_db() -> Option<DatabaseConnection> {
 
     MIGRATED
         .get_or_init(|| async {
-            let lock = MigrationLock::acquire(&url).await;
+            let lock = AdvisoryLock::acquire(&url, MIGRATION_LOCK_KEY).await;
             use migration::MigratorTrait;
             // Startup order, mirroring `cli::commands::admin`. The central
             // migrator alone is not enough: `agentic_runs` and friends belong to
@@ -81,36 +95,52 @@ pub(crate) async fn test_db() -> Option<DatabaseConnection> {
     Some(db)
 }
 
-/// A held `pg_advisory_lock`, on a connection of its own.
-struct MigrationLock(DatabaseConnection);
+/// The URL [`test_db`] connects to, exposed for tests that need their own
+/// out-of-band session — e.g. an [`AdvisoryLock`] around a critical section.
+/// `None` under the same condition `test_db` skips on.
+pub(crate) fn database_url() -> Option<String> {
+    std::env::var("OXY_DATABASE_URL").ok()
+}
 
-impl MigrationLock {
-    /// Blocks until every other test process has finished migrating.
-    async fn acquire(url: &str) -> Self {
-        // A pool of exactly one connection. Advisory locks are per *session*, so
-        // on a multi-connection pool the unlock could land on a different
-        // connection than the lock — leaving the lock held until that session
-        // closed, and every later process blocked behind it.
+/// A held `pg_advisory_lock`, on a connection of its own.
+///
+/// Advisory locks are per **session**, so a shared/pooled connection risks
+/// the acquire and release landing on different sessions — this always opens
+/// a dedicated single-connection handle for exactly that reason. Originally
+/// built for the migration bootstrap below; reusable by any test that needs
+/// to serialize its own critical section across nextest's per-process test
+/// execution — see "Serializing a test's own critical section" at the top of
+/// this file for why `#[serial_test::serial]` doesn't substitute for it here.
+pub(crate) struct AdvisoryLock {
+    conn: DatabaseConnection,
+    key: i64,
+}
+
+impl AdvisoryLock {
+    /// Blocks until every other session holding `key` has released it.
+    pub(crate) async fn acquire(url: &str, key: i64) -> Self {
+        // A pool of exactly one connection — see the struct doc for why.
         let mut opt = ConnectOptions::new(url.to_string());
         opt.max_connections(1).min_connections(1);
         let conn = Database::connect(opt)
             .await
-            .expect("connect for migration lock");
-        conn.execute_unprepared(&format!("SELECT pg_advisory_lock({MIGRATION_LOCK_KEY})"))
+            .expect("connect for advisory lock");
+        conn.execute_unprepared(&format!("SELECT pg_advisory_lock({key})"))
             .await
-            .expect("acquire migration lock");
-        Self(conn)
+            .expect("acquire advisory lock");
+        Self { conn, key }
     }
 
-    async fn release(self) {
+    pub(crate) async fn release(self) {
         // Best-effort: a failure here is not worth failing a test over, because
         // dropping the connection ends the session and Postgres releases the
-        // lock anyway. That's also what covers a panicking migration — the lock
-        // can't outlive the process that holds it, so a failed test can't wedge
-        // the suite.
+        // lock anyway. That's also what covers a panicking critical section —
+        // the lock can't outlive the process that holds it, so a failed test
+        // can't wedge the suite.
+        let key = self.key;
         let _ = self
-            .0
-            .execute_unprepared(&format!("SELECT pg_advisory_unlock({MIGRATION_LOCK_KEY})"))
+            .conn
+            .execute_unprepared(&format!("SELECT pg_advisory_unlock({key})"))
             .await;
     }
 }

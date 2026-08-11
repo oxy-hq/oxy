@@ -1,12 +1,13 @@
 //! `/api/admin/*` — Oxy-staff admin surface. The outer guard in
 //! `router::global` is `oxy_owner_or_app_admin_guard_middleware` so both
 //! OXY_OWNER staff and members of the `app_admins` table can reach most
-//! admin features. Sensitive subsets (billing operations and the
-//! `app_admins` table itself — "promotion / demotion of admin and billing
-//! adjustment") escalate to a strict OXY_OWNER guard via `route_layer`
-//! below; that inner layer runs after the outer permissive check and
-//! denies app-admin callers with 403.
+//! admin features. One subset — billing operations — escalates to a strict
+//! OXY_OWNER guard via `route_layer` below; that inner layer runs after the
+//! outer permissive check and denies app-admin callers with 403. Every other
+//! section escalates to the capability its surface is about, including the
+//! airway admission config (`Action::PlatformOperate`).
 
+pub(crate) mod airway_config;
 pub mod app_admins;
 pub mod app_publish_tokens;
 pub mod apps;
@@ -83,6 +84,13 @@ use crate::server::router::AppState;
 ///   - DELETE /admin/workspaces/{workspace_id}
 ///   - POST   /admin/workspaces/{workspace_id}/transfer-org
 ///   - POST   /admin/workspace-health/{workspace_id}/eval
+///   - GET    /admin/airway/config
+///   - PUT    /admin/airway/config/{source_kind}
+///   - DELETE /admin/airway/config/{source_kind}
+///   - PUT    /admin/airway/config/{source_kind}/workspaces/{workspace_id}
+///   - DELETE /admin/airway/config/{source_kind}/workspaces/{workspace_id}
+///   - GET    /admin/airway/config/{source_kind}/preview
+///
 /// Admin routes. The outer nest layer in `router::global` is the **door**
 /// (`oxy_owner_or_app_admin_guard`): it answers "are you Oxy staff at all". Each
 /// sub-router below then escalates to the capability its surface is actually about,
@@ -115,9 +123,9 @@ use crate::server::router::AppState;
 /// in `router::global` because its routes were flattened during the
 /// app-admin opening.
 pub(crate) fn router() -> Router<AppState> {
-    // route_layer applied per sub-router so only billing + app-admins get
-    // the strict guard; everything else runs only under the outer
-    // permissive guard.
+    // route_layer applied per sub-router so only billing gets the strict
+    // owner guard; everything else escalates to a capability, and anything
+    // not named here runs only under the outer permissive guard.
     let strict = middleware::from_fn(oxy_owner_guard::oxy_owner_guard_middleware);
     let cap = |action| middleware::from_fn(platform_cap_guard::require(action));
 
@@ -150,6 +158,42 @@ pub(crate) fn router() -> Router<AppState> {
         .merge(partners::router().route_layer(cap(Action::PlatformPartners)))
         .merge(billing::router().route_layer(strict))
         .merge(app_admins::router().route_layer(cap(Action::PlatformGrants)))
+        // Deployment-wide operational config — which source resources every
+        // tenant's pipelines may use. Same shape as workspace_health /
+        // routing / metrics, so it takes the same capability rather than
+        // becoming a second owner-only gate beside billing.
+        //
+        // The per-workspace half of this surface carries its own scope fence,
+        // because this layer cannot: `Resource::platform()` has no org, so a
+        // bounded grant passes every capability gate here (see
+        // `platform_cap_guard`). `airway_config::handlers` fences both override
+        // writes with `deny_out_of_scope_for_workspace` and filters the
+        // overrides `get_config` returns; `airway_config::preview` narrows the
+        // cross-tenant pipeline scan with the same `scope_org_filter` and
+        // reports the withheld remainder as a bare count.
+        //
+        // KNOWN LIMITATION, accepted rather than overlooked: the **global row
+        // stays fleet-wide**. A grant bounded to two orgs can still `PUT
+        // /airway/config/{kind}` and change the policy every tenant's pipelines
+        // resolve against. There is nothing to fence it on — the global row is
+        // `workspace_id IS NULL`, it belongs to no org, and a scope check has
+        // no org to ask about. The three ways to close it were each worse than
+        // the gap: split the global row behind `Ring::GlobalOwnerOnly` (a
+        // third owner-only gate, re-creating exactly the escalation this mount
+        // removed, on the field operators most need to reach); refuse the
+        // global write for any bounded grant (the surface then silently does
+        // half of what its UI shows, for the operators most likely to use it);
+        // or make the row per-org (a schema change that contradicts what the
+        // row IS — airway resolves admission per source kind, fleet-wide, in
+        // `agentic_pipeline::airway_config::resolve_admission`).
+        //
+        // What makes it acceptable: `PlatformOperate` is already the capability
+        // for fleet-wide operational config (`routing`, `metrics`,
+        // `workspace_health`), a scoped grant is issued to staff, not tenants,
+        // and the save-confirmation gate in front of this write previews the
+        // fleet-wide blast radius before it happens. If that stops holding, the
+        // per-org row is the direction to take — not a second owner-only gate.
+        .merge(airway_config::router().route_layer(cap(Action::PlatformOperate)))
         .route_layer(middleware::from_fn(assume::block_admin_while_acting));
 
     // Assume-role itself lives at `/api/assume`, NOT here — see `assume::router`.
@@ -307,6 +351,86 @@ mod tests {
         assert_eq!(
             request_as(app, "/billing/probe", None).await,
             StatusCode::UNAUTHORIZED
+        );
+    }
+
+    fn test_app_state() -> AppState {
+        AppState {
+            enterprise: false,
+            internal: false,
+            mode: oxy_app_core::serve_mode::ServeMode::Cloud,
+            observability: None,
+            startup_cwd: std::path::PathBuf::new(),
+            preagg_cache: None,
+            preagg_renewal_threshold_secs: None,
+            agentic_state: None,
+            semantic_layer_cache: crate::server::router::workspace_cache::new_semantic_layer_cache(
+            ),
+            semantic_engine_cache:
+                crate::server::router::workspace_cache::new_semantic_engine_cache(),
+        }
+    }
+
+    /// Proves `airway_config` is mounted on the REAL `admin::router()` tree —
+    /// not just a compiling-but-orphaned module. `test_router()` above is a
+    /// hand-rolled stub (re-declares probe routes rather than calling
+    /// `router()`), so it can't catch "the merge line is missing." This test
+    /// calls the actual `router()` function this file exports and drives a
+    /// request through it with `tower::ServiceExt::oneshot`.
+    ///
+    /// No `OXY_OWNER` / auth setup needed: `block_admin_while_acting`'s
+    /// `AuthenticatedUserExtractor` rejects with 401 *before* the handler or
+    /// the inner strict guard ever runs (no DB call either — extraction
+    /// fails on the missing request extension). `route_layer` — used by both
+    /// that layer and the strict OXY_OWNER escalation — only wraps MATCHED
+    /// routes, so an unmatched path bypasses it entirely and axum's fallback
+    /// 404s directly. That's the discriminator: 404 on a real path means the
+    /// route isn't mounted; a bogus sibling path stays 404 as the control.
+    ///
+    /// Covers Task 1's read route (`GET /config`), Task 2's four write routes
+    /// (`PUT`/`DELETE` on both the global and per-workspace-override path
+    /// shapes), and Task 3's `GET /config/{kind}/preview` — a route that
+    /// compiles but was never added to `airway_config::router()`'s
+    /// `.route(...)` chain is exactly the failure this test exists to catch,
+    /// and that applies just as much to a new write or preview route as it did
+    /// to the original read one.
+    #[tokio::test]
+    async fn airway_config_is_mounted_on_the_real_router() {
+        let real_router = router().with_state(test_app_state());
+        let ws = "d9830be4-c6a4-4c1c-9c1e-000000000001";
+
+        for (method, path) in [
+            ("GET", "/airway/config".to_string()),
+            ("PUT", "/airway/config/toast".to_string()),
+            ("DELETE", "/airway/config/toast".to_string()),
+            ("PUT", format!("/airway/config/toast/workspaces/{ws}")),
+            ("DELETE", format!("/airway/config/toast/workspaces/{ws}")),
+            ("GET", "/airway/config/toast/preview".to_string()),
+        ] {
+            let req = Request::builder()
+                .method(method)
+                .uri(&path)
+                .body(Body::empty())
+                .unwrap();
+            let resp = real_router.clone().oneshot(req).await.unwrap();
+            assert_ne!(
+                resp.status(),
+                StatusCode::NOT_FOUND,
+                "{method} {path} must be mounted on admin::router() — got 404, so the \
+                 merge in router() is missing or the path doesn't match"
+            );
+        }
+
+        let bogus = Request::builder()
+            .uri("/airway/does-not-exist")
+            .body(Body::empty())
+            .unwrap();
+        let bogus_resp = real_router.oneshot(bogus).await.unwrap();
+        assert_eq!(
+            bogus_resp.status(),
+            StatusCode::NOT_FOUND,
+            "control: an unregistered sibling path must still 404, or the assertion \
+             above isn't actually discriminating"
         );
     }
 }

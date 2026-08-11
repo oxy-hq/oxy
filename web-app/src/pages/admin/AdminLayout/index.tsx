@@ -25,7 +25,8 @@ const PAGE_TITLES: Record<string, string> = {
   [ROUTES.ADMIN.TENANTS]: "Tenants overview",
   [ROUTES.ADMIN.ORGS]: "Organizations",
   [ROUTES.ADMIN.USERS]: "Users",
-  [ROUTES.ADMIN.WORKSPACES]: "Workspaces"
+  [ROUTES.ADMIN.WORKSPACES]: "Workspaces",
+  [ROUTES.ADMIN.AIRWAY]: "Airway"
 };
 
 export default function AdminLayout() {

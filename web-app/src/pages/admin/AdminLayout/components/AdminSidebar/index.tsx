@@ -10,7 +10,8 @@ import {
   ScrollText,
   ShieldCheck,
   Telescope,
-  Users
+  Users,
+  Waypoints
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -127,6 +128,16 @@ export const ADMIN_NAV: AdminNavItem[] = [
     label: "Workspace health",
     icon: HeartPulse,
     capability: "operate_platform",
+    group: "operations"
+  },
+  // Airway admission policy can silently halt every pipeline of a source
+  // kind (a one-click outage) — strict Global Owner, like Billing queue and
+  // Global admins.
+  {
+    to: ROUTES.ADMIN.AIRWAY,
+    label: "Airway",
+    icon: Waypoints,
+    ownerOnly: true,
     group: "operations"
   },
   // Tenant management: the unified, relationship-first directory of orgs /

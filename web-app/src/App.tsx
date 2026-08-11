@@ -153,6 +153,7 @@ const AdminWorkspaceDetail = React.lazy(
   () => import("./pages/admin/AdminWorkspaces/AdminWorkspaceDetail")
 );
 const AdminWorkspaceHealth = React.lazy(() => import("./pages/admin/AdminWorkspaceHealth"));
+const AdminAirway = React.lazy(() => import("./pages/admin/AdminAirway"));
 
 const CheckoutSuccessPage = React.lazy(() => import("./pages/billing/CheckoutSuccess"));
 const CheckoutCancelledPage = React.lazy(() => import("./pages/billing/CheckoutCancelled"));
@@ -576,6 +577,10 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             <Route path='admin/workspaces' element={<AdminWorkspaces />} />
             <Route path='admin/workspaces/:workspaceId' element={<AdminWorkspaceDetail />} />
             <Route path='admin/workspace-health' element={<AdminWorkspaceHealth />} />
+            {/* Airway admission policy — Global Owner only (see AdminSidebar's
+                ownerOnly gate and AdminLayout's APP_ADMIN_ROUTE_PREFIXES, which
+                deliberately omits this route). */}
+            <Route path='admin/airway' element={<AdminAirway />} />
           </Route>
 
           {/* Partner console — anyone holding a partner role (the server enforces
