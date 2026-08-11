@@ -139,7 +139,21 @@ export interface AirwayResourceVerdict {
   passes: boolean;
   /** Why it fails, in the operator's terms. `null` when it passes. */
   reason: string | null;
-  /** True when the failure cannot be fixed from Oxy (no upstream way to declare a contract for this kind). */
+  /**
+   * True when the failure cannot be fixed from Oxy — no setting on the admin
+   * surface, and nothing in the pipeline's YAML, reaches it.
+   *
+   * Since airway 0.1.24 the only cause is an *orphaned* contract (declared for
+   * a name that is not one of the connector's resources). The former cause — a
+   * source kind with no way to declare at all — is gone: #105 added a
+   * per-endpoint `EndpointConfig::contract` field, so every kind can declare.
+   *
+   * Note `reason` names *where* the declaration goes, and that differs per
+   * kind: `rest_api` declares on the endpoint in the pipeline's own
+   * `.airway.yml`, while `toast` / `quickbooks` / `weather` declare in airway's
+   * Rust source. Render `reason` verbatim rather than substituting a generic
+   * line of copy for it.
+   */
   not_fixable_here: boolean;
 }
 
@@ -273,8 +287,8 @@ export const AirwayConfigService = {
 
 /**
  * airway's process-wide `GlobalConfig`, stored in the singleton
- * `airway_deployment_config` row. Seven settings over ten fields (`tls` is one
- * setting spread over four).
+ * `airway_deployment_config` row. Eight settings over eleven fields (`tls` is
+ * one setting spread over four).
  *
  * **`null` means "airway's built-in default", never 0 and never "disabled".**
  * An input left empty must serialize to `null`, and a `null` must render as
@@ -293,6 +307,16 @@ export interface AirwayDeploymentValues {
   retry_initial_delay_ms: number | null;
   retry_max_delay_secs: number | null;
   retry_backoff_factor: number | null;
+  /**
+   * A **floor** under every resource's declared cursor lag, in whole seconds.
+   *
+   * `null` is *no floor* and is the only way to say that: `0` raises no
+   * resource's lag, so airway refuses it rather than reading it as absence and
+   * the API answers `400`. Do not "helpfully" send `0` for an emptied input —
+   * that is the one field where the usual empty-to-`null` rule is not merely
+   * tidy but the difference between saving and a rejected request.
+   */
+  cursor_lag_floor_secs: number | null;
   tls_ca_cert: string | null;
   tls_client_cert: string | null;
   tls_client_key_file: string | null;
@@ -354,7 +378,7 @@ export const AirwayDeploymentService = {
 
   /**
    * `PUT /admin/airway/deployment-config` — a replace, not a patch. Send all
-   * ten fields; `null` clears a setting back to airway's default.
+   * eleven fields; `null` clears a setting back to airway's default.
    *
    * **This does not take effect until the airway worker process restarts.**
    * airway's install is one-shot per process, so a successful save changes

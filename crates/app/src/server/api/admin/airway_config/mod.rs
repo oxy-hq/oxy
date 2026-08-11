@@ -48,16 +48,23 @@
 //! - the **policy tier** — `contract_policy` and `environment`, per source
 //!   kind with a per-workspace override, resolved on every run. That is
 //!   [`handlers`] and [`preview`], over `airway_source_config`.
-//! - the **operational tier** — the seven settings airway installs
+//! - the **operational tier** — the eight settings airway installs
 //!   process-wide once at startup. That is [`deployment`], over the singleton
 //!   `airway_deployment_config` row.
 //!
 //! The bar for both is the same and is the one airway's own plan sets: **a
 //! knob must do something.** Every field on either tier is read by airway —
-//! the operational seven are exactly `GlobalConfig`'s non-policy fields, and
-//! `max_rewind` / `cursor_lag_floor` / `allow_unversioned_writes` /
-//! `partition_repull_budget` are still absent from both because they have zero
-//! occurrences in airway's `src/` and would be accepted, stored and ignored.
+//! the operational eight are exactly `GlobalConfig`'s non-policy fields, and
+//! `max_rewind` / `allow_unversioned_writes` / `partition_repull_budget` are
+//! still absent from both because they have zero occurrences in airway's
+//! `src/` and would be accepted, stored and ignored.
+//!
+//! `cursor_lag_floor` was on that absent list until airway 0.1.24, which is
+//! the bar working rather than the bar moving: oxy contributed the key
+//! upstream (#111), upstream grew the reader
+//! (`global::resolve_cursor_lookback`), and only then did the column arrive.
+//! The order is the point — a knob earns its column by having a consumer,
+//! never the other way round.
 
 pub(crate) mod deployment;
 pub(crate) mod handlers;

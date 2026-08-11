@@ -5,9 +5,18 @@ import { VerdictGroup } from "./VerdictGroup";
 
 /**
  * The fetched preview, grouped by verdict. `not_fixable_here` is surfaced
- * ONCE here, above the failing list — never repeated per row. Roughly two
- * dozen `rest_api` resources can carry it simultaneously; repeating the
- * explanation that many times would bury the signal it exists to send.
+ * ONCE here, above the failing list — never repeated per row, since several
+ * rows can carry it at once and repeating the explanation would bury the
+ * signal it exists to send.
+ *
+ * **What raises the flag changed at airway 0.1.24.** It used to mean "this
+ * source kind has no way to declare a contract", which was true of `rest_api`
+ * until #105 added a per-endpoint `contract` field to `EndpointConfig`. Every
+ * kind can now declare, so the only remaining cause is an *orphaned* contract: the
+ * connector declares a contract under a name that is not one of its resources.
+ * That is a typo in connector source — no setting on this page, and nothing in
+ * the pipeline's YAML, reaches it. The copy below must describe that, not the
+ * missing slot.
  */
 export function PreviewResults({
   data,
@@ -21,10 +30,12 @@ export function PreviewResults({
   const notFixable = failing.filter((r) => r.not_fixable_here);
   // The banner used to say "will halt every <kind> pipeline" whenever ANY
   // failing resource was `not_fixable_here`. That is true only when the
-  // upstream gap covers every pipeline scanned (`rest_api`, which has no
-  // `contracts` slot at all) — and alarmingly false for the partial case,
-  // where one connector's orphaned declaration got described as a fleet-wide
-  // halt. Count the pipelines actually affected, and say that number.
+  // upstream gap covers every pipeline scanned — and alarmingly false for the
+  // partial case, where one connector's orphaned declaration got described as
+  // a fleet-wide halt. Count the pipelines actually affected, and say that
+  // number. Narrowing the flag to orphaned contracts at 0.1.24 made the
+  // partial case the *common* one: an orphan is one name in one connector,
+  // where the old missing-slot cause really did cover a whole kind.
   //
   // Keyed on the whole `pipeline_ref` (`{workspace_id}:{path}`), not the path:
   // this is a cross-tenant scan and the same path exists in many workspaces.
@@ -73,9 +84,9 @@ export function PreviewResults({
         >
           <AlertTriangle className='mt-0.5 size-3.5 shrink-0' />
           <p>
-            These cannot declare contracts until airway adds a{" "}
-            <code className='font-mono'>contracts</code> slot on{" "}
-            <code className='font-mono'>EndpointConfig</code>. Saving this will halt{" "}
+            These name a contract the <span className='font-medium'>{sourceKind}</span> connector
+            declares for a resource it does not expose — a typo in connector source, which no
+            setting here can fix. Saving this will halt{" "}
             {haltsEveryScannedPipeline ? (
               <>
                 every <span className='font-medium'>{sourceKind}</span> pipeline scanned (
@@ -89,8 +100,8 @@ export function PreviewResults({
                 scanned <span className='font-medium'>{sourceKind}</span> pipelines — the ones
                 listed under Failing below
               </>
-            )}
-            .
+            )}{" "}
+            until it is corrected upstream.
           </p>
         </div>
       )}

@@ -18,6 +18,7 @@ use agentic_airway::{
 };
 use async_trait::async_trait;
 
+use super::super::KNOWN_SOURCE_KINDS;
 use super::{ResourceVerdict, verdicts};
 // `substitute_secret_vars` lives with the scan half (it exists to make a
 // *stored* definition constructible) but is itself pure, so its tests stay in
@@ -25,8 +26,9 @@ use super::{ResourceVerdict, verdicts};
 // self-skip.
 use super::super::preview_scan::substitute_secret_vars;
 
-/// The kind the un-suffixed helper scores under. `toast` declares contracts
-/// upstream, so it is the "fixable" side of the `not_fixable_here` split.
+/// The kind the un-suffixed helper scores under. Since airway 0.1.24 every
+/// kind is on the "fixable" side of the `not_fixable_here` split, so this is
+/// now just a representative kind rather than a choice with meaning.
 const DEFAULT_KIND: &str = "toast";
 
 fn cursored(name: &str) -> ResourceInfo {
@@ -107,42 +109,94 @@ fn opaque_resources_fail_forbid_opaque_only() {
     assert!(strict[0].reason.as_ref().unwrap().contains("opaque"));
 }
 
+/// **An undeclared resource is fixable for every kind Oxy knows.**
+///
+/// This inverted at airway 0.1.24. Before it, `rest_api` was flagged
+/// `not_fixable_here` because `EndpointConfig` had no `contract` field — the
+/// operator was told to wait for upstream. #105 added it, so all ~24
+/// REST-backed connectors can now declare, and `toast` / `quickbooks` /
+/// `weather` always could. There is no longer a kind for which "undeclared"
+/// names an action the operator cannot take.
+///
+/// Written as a loop over [`KNOWN_SOURCE_KINDS`] rather than one case per
+/// kind: a kind added to that list without an upstream way to declare would
+/// fail here, which is the only signal that would justify bringing the
+/// removed allow-list back.
 #[test]
-fn an_undeclared_rest_api_resource_is_flagged_not_fixable_here() {
-    // rest_api declares nothing at all: an empty contract map.
-    let v = verdicts_for_kind(
-        "rest_api",
-        "stripe.airway.yml",
-        &HashMap::new(),
-        ContractPolicy::RequireDeclared,
-    );
-    assert!(!v[0].passes);
-    assert!(
-        v[0].not_fixable_here,
-        "rest_api cannot declare contracts upstream, so the operator cannot act on this"
-    );
+fn an_undeclared_resource_is_fixable_for_every_known_kind() {
+    for kind in KNOWN_SOURCE_KINDS {
+        let v = verdicts_for_kind(
+            kind,
+            "p.airway.yml",
+            &HashMap::new(),
+            ContractPolicy::RequireDeclared,
+        );
+        assert!(
+            !v[0].passes,
+            "{kind}: an undeclared cursored resource fails"
+        );
+        assert!(
+            !v[0].not_fixable_here,
+            "{kind}: every kind can declare a contract since airway 0.1.24, so an undeclared \
+             resource is a real, fixable gap — not an upstream limitation"
+        );
+    }
 }
 
+/// **The fix location differs per kind, and the diagnostic must say which.**
+///
+/// `rest_api` is config-defined — #105 put the declaration on
+/// `EndpointConfig::contract`, which `build_rest_api` reads straight out of
+/// `source.config`, so it lives in the pipeline's own `.airway.yml`. The other
+/// three implement `SourceConnector::contracts()` in airway's Rust source and
+/// have no YAML slot at all.
+///
+/// One generic sentence is wrong for one of those halves, and wrong in the
+/// worst direction: `EndpointConfig` does not `deny_unknown_fields`, so a
+/// `contract:` key added to a *toast* pipeline on this advice would be parsed,
+/// ignored, and leave the resource failing with no error to explain why.
 #[test]
-fn an_undeclared_toast_resource_is_fixable() {
-    let v = verdicts_for_kind(
-        "toast",
-        "t.airway.yml",
-        &HashMap::new(),
-        ContractPolicy::RequireDeclared,
-    );
-    assert!(!v[0].passes);
-    assert!(
-        !v[0].not_fixable_here,
-        "toast declares contracts upstream, so an undeclared resource is a real, fixable gap"
-    );
+fn the_undeclared_diagnostic_names_the_right_site_per_kind() {
+    for kind in KNOWN_SOURCE_KINDS {
+        let v = verdicts_for_kind(
+            kind,
+            "p.airway.yml",
+            &HashMap::new(),
+            ContractPolicy::RequireDeclared,
+        );
+        let reason = v[0]
+            .reason
+            .as_ref()
+            .expect("a failing verdict has a reason");
+
+        if *kind == "rest_api" {
+            assert!(
+                reason.contains("source.config.endpoints") && reason.contains("`contract:`"),
+                "rest_api declares in YAML, on the endpoint — got: {reason}"
+            );
+            assert!(
+                !reason.contains("contracts()"),
+                "rest_api needs no Rust change; pointing at `contracts()` sends the operator \
+                 to a file they cannot edit — got: {reason}"
+            );
+        } else {
+            assert!(
+                reason.contains("SourceConnector::contracts()"),
+                "{kind} declares in airway's Rust source — got: {reason}"
+            );
+            assert!(
+                !reason.contains("source.config.endpoints"),
+                "{kind} has no endpoint slot; `EndpointConfig` ignores unknown keys, so this \
+                 advice would fail silently — got: {reason}"
+            );
+        }
+    }
 }
 
 /// A *declared* `opaque()` under `forbid_opaque` is refused, but it is not an
 /// upstream limitation — the operator's move (pick a policy this kind can
-/// meet) is one they make in this very UI. Pins the other side of the split
-/// the two tests above draw, so `not_fixable_here` can't degenerate into
-/// "any failure".
+/// meet) is one they make in this very UI. Pins one side of the split, so
+/// `not_fixable_here` can't degenerate into "any failure".
 #[test]
 fn a_declared_opaque_failure_is_not_an_upstream_limitation() {
     let contracts = HashMap::from([("things".to_string(), SourceContract::opaque())]);
@@ -155,7 +209,7 @@ fn a_declared_opaque_failure_is_not_an_upstream_limitation() {
     assert!(!v[0].passes);
     assert!(
         !v[0].not_fixable_here,
-        "a contract that WAS declared is not the missing-slot case, even on rest_api"
+        "a contract that WAS declared is a checked vendor fact, not an upstream gap"
     );
 }
 

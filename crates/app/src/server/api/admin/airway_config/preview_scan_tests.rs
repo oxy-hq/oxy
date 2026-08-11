@@ -186,6 +186,36 @@ fn rest_api_definition(name: &str) -> serde_json::Value {
     })
 }
 
+/// The same pipeline with the endpoint's contract **declared in YAML** — the
+/// exact edit [`super::declaration_site`] tells a `rest_api` operator to make.
+///
+/// `contract` is singular and sits on the endpoint, which is airway 0.1.24's
+/// `EndpointConfig::contract` (#105) and *not* a name-keyed map on
+/// `RestApiConfig`. The nesting is load-bearing in both directions:
+/// `EndpointConfig` does not `deny_unknown_fields`, so a misplaced or mistyped
+/// key parses as "no contract" and this fixture would silently stop testing
+/// anything — which is why the assertion is that the verdict *passes*, a state
+/// only a really-decoded contract can produce.
+fn rest_api_definition_with_contract(name: &str) -> serde_json::Value {
+    serde_json::json!({
+        "name": name,
+        "source": {
+            "kind": "rest_api",
+            "config": {
+                "base_url": "https://api.example.invalid",
+                "auth": { "type": "bearer", "token_var": "STRIPE_TOKEN" },
+                "endpoints": [{
+                    "name": "charges",
+                    "path": "/charges",
+                    "cursor_field": "created",
+                    "contract": { "mutability": "immutable" },
+                }],
+            },
+        },
+        "destination": { "database": "warehouse", "dataset_name": "raw" },
+    })
+}
+
 /// Verdicts belonging to the workspace this test seeded. The scan is
 /// cross-tenant and the test DB is shared, so nothing may assert on totals.
 fn mine(scan: &Scan, workspace_id: Uuid) -> Vec<&super::ResourceVerdict> {
@@ -267,11 +297,19 @@ async fn scans_compiled_pipelines_of_the_requested_kind_only() {
     held.release().await;
 }
 
-/// `rest_api` under `require_declared` is the `not_fixable_here` case, end to
-/// end from a stored definition — the pure tests fake the contract map, this
-/// one goes through a real `RestApiSource` built from compiled JSON.
+/// An undeclared `rest_api` endpoint under `require_declared` fails, and is
+/// **fixable** — end to end from a stored definition. The pure tests fake the
+/// contract map; this one goes through a real `RestApiSource` built from
+/// compiled JSON, which is what makes it the load-bearing check that airway
+/// 0.1.24's `EndpointConfig::contract` field (#105) is actually reachable from
+/// a definition Oxy stores.
+///
+/// This assertion was inverted by the 0.1.24 bump: the endpoint used to be
+/// flagged `not_fixable_here` because no slot existed to declare through.
+/// [`a_rest_api_endpoint_declaring_a_contract_in_yaml_passes`] is the other
+/// half — that the fix this now advertises actually works.
 #[tokio::test]
-async fn an_undeclared_rest_api_endpoint_previews_as_not_fixable_here() {
+async fn an_undeclared_rest_api_endpoint_previews_as_fixable() {
     let Some(db) = test_db().await else {
         eprintln!("{SKIP_MSG}");
         return;
@@ -307,8 +345,84 @@ async fn an_undeclared_rest_api_endpoint_previews_as_not_fixable_here() {
         .expect("the cursored endpoint is scored");
     assert!(!charges.passes);
     assert!(
-        charges.not_fixable_here,
-        "rest_api has no contracts slot, so this is an upstream limitation"
+        !charges.not_fixable_here,
+        "airway 0.1.24 gave `EndpointConfig` a `contract` field, so declaring this is an edit \
+         to the pipeline's own YAML — not an upstream limitation"
+    );
+    let reason = charges
+        .reason
+        .as_ref()
+        .expect("a failing verdict has a reason");
+    assert!(
+        reason.contains("source.config.endpoints"),
+        "a `rest_api` operator must be sent to the endpoint in their own `.airway.yml`, not \
+         to connector source — got: {reason}"
+    );
+
+    held.release().await;
+}
+
+/// The other half of the diagnostic: the edit it advertises **works**.
+///
+/// Declaring `contract:` on the endpoint, in the stored definition, makes the
+/// same resource pass `require_declared` — through the real
+/// `source_factory::build_rest_api` → `RestApiSource::contracts()` path, not a
+/// fake map. This is what makes [`super::declaration_site`]'s `rest_api` branch
+/// a checked fact rather than a claim: if #105's field were named differently,
+/// nested elsewhere, or unreachable from `source.config`, `EndpointConfig`'s
+/// tolerance of unknown keys would swallow it silently and this test would be
+/// the only thing that noticed.
+#[tokio::test]
+async fn a_rest_api_endpoint_declaring_a_contract_in_yaml_passes() {
+    let Some(db) = test_db().await else {
+        eprintln!("{SKIP_MSG}");
+        return;
+    };
+    let held = lock().await;
+
+    let workspace_id = seed_workspace(&db).await;
+    let revision_id = seed_revision(&db, workspace_id).await;
+    promote(&db, workspace_id, revision_id).await;
+    seed_pipeline(
+        &db,
+        revision_id,
+        "stripe_charges",
+        "pipelines/stripe.airway.yml",
+        rest_api_definition_with_contract("stripe_charges"),
+    )
+    .await;
+
+    let scan = scan_pipelines(
+        &db,
+        "rest_api",
+        ContractPolicy::RequireDeclared,
+        Environment::Production,
+        // Unbounded, like every case here that is about admission rather than
+        // the scope fence — this one is checking that a declared contract
+        // passes, not who may see it.
+        None,
+    )
+    .await
+    .expect("scan");
+    let verdicts = mine(&scan, workspace_id);
+
+    assert!(
+        my_unevaluated(&scan, workspace_id).is_empty(),
+        "the definition with a `contract:` block still builds a connector"
+    );
+    let charges = verdicts
+        .iter()
+        .find(|v| v.resource == "charges")
+        .expect("the cursored endpoint is scored");
+    assert!(
+        charges.passes,
+        "a contract declared in YAML must satisfy `require_declared` — got: {:?}",
+        charges.reason
+    );
+    assert_eq!(
+        charges.mutability, "immutable",
+        "the declared mutability reaches the verdict, so this is the real contract and not a \
+         silently-ignored unknown key"
     );
 
     held.release().await;

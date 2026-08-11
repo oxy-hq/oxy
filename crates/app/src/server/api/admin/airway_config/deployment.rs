@@ -4,10 +4,10 @@
 //! [`super`]). Not owner-only: a Global Admin holds that capability too.
 //!
 //! The sibling routes in [`super::handlers`] edit the *policy* tier: per
-//! source kind, per workspace, resolved on every run. This one edits the seven
+//! source kind, per workspace, resolved on every run. This one edits the eight
 //! settings airway installs into a process-wide `OnceLock` — `timeout`,
 //! `max_retries`, `user_agent`, `retry_initial_delay`, `retry_max_delay`,
-//! `retry_backoff_factor`, `tls`.
+//! `retry_backoff_factor`, `cursor_lag_floor`, `tls`.
 //!
 //! # A save here is not live, and the response says so
 //!
@@ -203,6 +203,7 @@ pub(crate) fn values_from_row(
         retry_initial_delay_ms: nonneg(row.retry_initial_delay_ms, "retry_initial_delay_ms")?,
         retry_max_delay_secs: nonneg(row.retry_max_delay_secs, "retry_max_delay_secs")?,
         retry_backoff_factor: row.retry_backoff_factor,
+        cursor_lag_floor_secs: nonneg(row.cursor_lag_floor_secs, "cursor_lag_floor_secs")?,
         tls_ca_cert: row.tls_ca_cert.clone(),
         tls_client_cert: row.tls_client_cert.clone(),
         tls_client_key_file: row.tls_client_key_file.clone(),
@@ -341,8 +342,14 @@ fn narrow_i32(
 /// schema's `CHECK` then rejects as a `500`.
 ///
 /// A replace, not a patch, matching the sibling policy routes: a `null` field
-/// clears that setting back to airway's default. Callers send all ten fields
+/// clears that setting back to airway's default. Callers send all eleven fields
 /// every time.
+///
+/// The `cursor_lag_floor_secs = 0` case is worth naming because it is the one
+/// value that *looks* like a clear and is not: `null` clears the floor, `0` is
+/// a floor of zero, and airway refuses the second precisely so the two cannot
+/// be spelled the same way. It comes back from `to_global()` as a `400` naming
+/// the key — no Oxy-side rule is written for it here.
 ///
 /// `ON CONFLICT (id)` rather than a read-then-write: the `CHECK (id = 1)`
 /// makes `id` the only conflict target there is, so this is an upsert with no
@@ -370,6 +377,7 @@ pub(crate) async fn upsert_deployment(
             "retry_max_delay_secs",
         )?),
         retry_backoff_factor: Set(values.retry_backoff_factor),
+        cursor_lag_floor_secs: Set(values.cursor_lag_floor_secs.map(|v| v as i64)),
         tls_ca_cert: Set(values.tls_ca_cert.clone()),
         tls_client_cert: Set(values.tls_client_cert.clone()),
         tls_client_key_file: Set(values.tls_client_key_file.clone()),
@@ -387,6 +395,7 @@ pub(crate) async fn upsert_deployment(
                     DeployColumn::RetryInitialDelayMs,
                     DeployColumn::RetryMaxDelaySecs,
                     DeployColumn::RetryBackoffFactor,
+                    DeployColumn::CursorLagFloorSecs,
                     DeployColumn::TlsCaCert,
                     DeployColumn::TlsClientCert,
                     DeployColumn::TlsClientKeyFile,
@@ -402,7 +411,7 @@ pub(crate) async fn upsert_deployment(
 
 /// Delete the singleton row, if any. Idempotent — every setting goes back to
 /// airway's built-in default at the next restart. Distinct from saving all
-/// ten fields as `null`, which leaves a row (and an `updated_at`) behind.
+/// eleven fields as `null`, which leaves a row (and an `updated_at`) behind.
 pub(crate) async fn delete_deployment(db: &DatabaseConnection) -> Result<(), DbErr> {
     airway_deployment_config::Entity::delete_by_id(SINGLETON_ID)
         .exec(db)

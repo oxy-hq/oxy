@@ -47,6 +47,7 @@ fn sample() -> DeploymentValues {
         retry_initial_delay_ms: Some(250),
         retry_max_delay_secs: Some(60),
         retry_backoff_factor: Some(1.5),
+        cursor_lag_floor_secs: Some(120),
         tls_ca_cert: Some("/etc/pki/ca.pem".into()),
         tls_client_cert: Some("/etc/pki/client.pem".into()),
         tls_client_key_file: Some("/etc/pki/client.key".into()),
@@ -310,6 +311,93 @@ async fn a_value_too_wide_for_its_column_is_refused_rather_than_wrapped() {
     reset(&db).await;
 }
 
+/// **A process that predates the column cannot silently clear it.**
+///
+/// The rolling-deploy hazard, stated: the migration adds
+/// `cursor_lag_floor_secs` before the last replica of the previous image is
+/// gone, so for a few minutes a build whose `DeploymentValues` has no such
+/// field is still serving `PUT /deployment-config`. If that save were a
+/// full-row overwrite it would erase a floor a newer replica had just
+/// configured — no error, and nothing in the row afterwards to say it happened.
+///
+/// It is not, because [`upsert_deployment`]'s `OnConflict::update_columns` list
+/// is **enumerated**: a build overwrites exactly the columns it knows and
+/// leaves the rest alone. Driven with the raw statement a pre-#111 build would
+/// generate rather than through the helper — the helper's column list is the
+/// thing under test, so using it would assert nothing. Whoever swaps this for
+/// `Entity::update`, which SeaORM writes for every column in the model, finds
+/// out here rather than in production.
+///
+/// The `timeout_secs` assertion is what keeps the test honest: without it, a
+/// statement that silently failed to apply would pass on the floor check alone.
+#[tokio::test]
+async fn an_older_writer_cannot_clear_the_cursor_lag_floor() {
+    let Some(db) = test_db().await else {
+        println!("{SKIP_MSG}");
+        return;
+    };
+    let _lock = lock().await;
+    reset(&db).await;
+
+    // A current build configures a floor.
+    upsert_deployment(&db, &sample())
+        .await
+        .expect("current build saves the whole row");
+    assert_eq!(
+        load_row(&db)
+            .await
+            .expect("load")
+            .expect("row")
+            .cursor_lag_floor_secs,
+        Some(120)
+    );
+
+    // The previous image saves the ten columns it has. Column-for-column what
+    // SeaORM emits for an `ActiveModel` without `cursor_lag_floor_secs` and an
+    // `update_columns` list that does not mention it.
+    db.execute(Statement::from_string(
+        db.get_database_backend(),
+        r#"
+        INSERT INTO airway_deployment_config
+            (id, timeout_secs, max_retries, user_agent, retry_initial_delay_ms,
+             retry_max_delay_secs, retry_backoff_factor, tls_ca_cert, tls_client_cert,
+             tls_client_key_file, tls_danger_accept_invalid_certs, updated_at)
+        VALUES (1, 45, 2, 'oxy-airway/previous-image', 100, 30, 2.0,
+                NULL, NULL, NULL, NULL, NOW())
+        ON CONFLICT (id) DO UPDATE SET
+            timeout_secs = EXCLUDED.timeout_secs,
+            max_retries = EXCLUDED.max_retries,
+            user_agent = EXCLUDED.user_agent,
+            retry_initial_delay_ms = EXCLUDED.retry_initial_delay_ms,
+            retry_max_delay_secs = EXCLUDED.retry_max_delay_secs,
+            retry_backoff_factor = EXCLUDED.retry_backoff_factor,
+            tls_ca_cert = EXCLUDED.tls_ca_cert,
+            tls_client_cert = EXCLUDED.tls_client_cert,
+            tls_client_key_file = EXCLUDED.tls_client_key_file,
+            tls_danger_accept_invalid_certs = EXCLUDED.tls_danger_accept_invalid_certs,
+            updated_at = EXCLUDED.updated_at
+        "#
+        .to_string(),
+    ))
+    .await
+    .expect("the previous image's upsert applies");
+
+    let row = load_row(&db).await.expect("load").expect("row");
+    assert_eq!(
+        row.timeout_secs,
+        Some(45),
+        "the old write must actually have landed, or this test proves nothing"
+    );
+    assert_eq!(
+        row.cursor_lag_floor_secs,
+        Some(120),
+        "a build with no `cursor_lag_floor_secs` cleared a configured floor — the upsert has \
+         become a full-row overwrite"
+    );
+
+    reset(&db).await;
+}
+
 // ---------------------------------------------------------------------------
 // Drift
 // ---------------------------------------------------------------------------
@@ -430,4 +518,73 @@ fn inert_knobs_have_no_column() {
              be accepted, stored and ignored"
         );
     }
+}
+
+/// **`cursor_lag_floor_secs` has two ways to say "nothing" and only one of them
+/// is a value.** `NULL` is *no floor*; `0` is a floor of zero, which raises no
+/// resource's lag and is therefore a setting that does not settle anything.
+/// airway refuses the second so the two cannot be spelled the same way, and
+/// this pins that the refusal reaches the *write path* rather than only the
+/// install — a `0` accepted here would sit in the table until the next restart
+/// and then fail every worker's boot install.
+///
+/// Written as one test because the two halves are the same claim: the column
+/// must accept absence and refuse zero, and either half alone is satisfiable
+/// by a mistake (refuse both, or accept both).
+#[tokio::test]
+async fn a_zero_cursor_lag_floor_is_refused_while_no_floor_is_stored() {
+    let Some(db) = test_db().await else {
+        println!("{SKIP_MSG}");
+        return;
+    };
+    let _lock = lock().await;
+    reset(&db).await;
+
+    let err = upsert_deployment(
+        &db,
+        &DeploymentValues {
+            cursor_lag_floor_secs: Some(0),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect_err("a zero floor must be refused, not stored");
+    assert!(
+        err.to_string().contains("cursor_lag_floor_secs"),
+        "the diagnostic must name the key: {err}"
+    );
+    assert!(
+        load_row(&db).await.expect("load").is_none(),
+        "the refused floor was written anyway"
+    );
+
+    // Absence is storable, and comes back as absence — not as the `0` the
+    // write path just refused.
+    upsert_deployment(&db, &DeploymentValues::default())
+        .await
+        .expect("no floor is a valid deployment");
+    let row = load_row(&db).await.expect("load").expect("row");
+    assert_eq!(
+        row.cursor_lag_floor_secs, None,
+        "an unset floor materialised as a stored value"
+    );
+    assert_eq!(
+        values_from_row(&row).expect("widen").cursor_lag_floor_secs,
+        None
+    );
+
+    // And a real floor round-trips in the unit the column name states.
+    upsert_deployment(
+        &db,
+        &DeploymentValues {
+            cursor_lag_floor_secs: Some(900),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("a positive floor saves");
+    let row = load_row(&db).await.expect("load").expect("row");
+    assert_eq!(row.cursor_lag_floor_secs, Some(900));
+
+    reset(&db).await;
 }

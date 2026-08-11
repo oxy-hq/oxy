@@ -122,6 +122,12 @@ use crate::server::router::AppState;
 /// **Scope is not enforced here** — see `platform_cap_guard`. A scoped operator passes
 /// these gates and the handler filters its rows.
 ///
+/// `airway_config` is deliberately *not* a third owner-only gate: it is deployment-wide
+/// operational config, so it takes `Action::PlatformOperate` beside `workspace_health` /
+/// `routing` / `metrics`. The two exceptions above are exceptions for reasons that do not
+/// apply to it — billing is `Ring::GlobalOwnerOnly`, and `app_admins` is the grant table
+/// itself, where a capability could widen its own holder.
+///
 /// `internal_jobs::router()` is mounted separately at `/admin/internal-jobs`
 /// in `router::global` because its routes were flattened during the
 /// app-admin opening.

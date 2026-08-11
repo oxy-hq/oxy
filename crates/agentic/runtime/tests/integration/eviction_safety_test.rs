@@ -58,9 +58,11 @@ async fn test_db() -> Option<DatabaseConnection> {
     }
     let db = db.unwrap();
     // Central then runtime (production order — see oxy_test_utils::migration).
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&url, &db)
         .await
-        .expect("shared migrations failed");
+        .expect("shared migrations failed")
+        .finish()
+        .await;
     Some(db)
 }
 

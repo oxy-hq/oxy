@@ -92,22 +92,6 @@ use super::KNOWN_SOURCE_KINDS;
 use super::preview_scan::scan_pipelines;
 use crate::server::api::admin::apps::handlers::scope_org_filter;
 
-/// Source kinds that have **no upstream way to declare a contract at all**.
-///
-/// `rest_api` backs roughly 24 SaaS connectors (stripe, shopify, github, …) and
-/// airway's `EndpointConfig` carries no `contracts` slot — no field, no
-/// builder. Under `require_declared` every cursored endpoint therefore fails
-/// with a diagnostic naming an action the operator cannot take. Flagging that
-/// as [`ResourceVerdict::not_fixable_here`] is the difference between "24
-/// pipelines need a one-line declaration" and "this kind cannot use this policy
-/// yet, full stop" — see `ContractPolicy::RequireDeclared`'s own doc upstream,
-/// which records the same limitation.
-///
-/// A kind absent from this list is assumed fixable. That is the conservative
-/// direction: claiming "nothing you can do" about a gap that *is* declarable
-/// would talk an operator out of the one-line fix.
-const KINDS_WITHOUT_CONTRACT_SLOT: &[&str] = &["rest_api"];
-
 #[derive(Debug, Deserialize)]
 pub struct PreviewQuery {
     /// Wire spelling of the policy to preview. Absent = airway's default
@@ -181,8 +165,18 @@ pub struct ResourceVerdict {
     pub passes: bool,
     /// Why it fails, in the operator's terms. `None` when it passes.
     pub reason: Option<String>,
-    /// True when the failure cannot be fixed from Oxy — the connector has no
-    /// way to declare a contract yet. Drives the frontend's upstream warning.
+    /// True when the failure cannot be fixed from Oxy — no setting on this
+    /// surface, and no declaration in the pipeline's YAML, reaches it. Drives
+    /// the frontend's upstream warning.
+    ///
+    /// **Since airway 0.1.24 exactly one thing raises this: an orphaned
+    /// contract** (see [`orphan_verdicts`]). The other former source — a
+    /// source kind with no way to declare a contract at all — no longer
+    /// exists, because #105 gave `rest_api` an `EndpointConfig::contract`
+    /// field and every other kind already declared in Rust. The field is kept
+    /// rather than deleted because the orphan case is real and unchanged: a
+    /// contract naming no resource is a typo in connector *source*, which no
+    /// operator action on this page can repair.
     pub not_fixable_here: bool,
 }
 
@@ -359,28 +353,26 @@ fn failure_for(
 
     let name = &resource.name;
     match declared {
-        None => {
-            let not_fixable_here = KINDS_WITHOUT_CONTRACT_SLOT.contains(&source_kind);
-            let reason = if not_fixable_here {
-                format!(
-                    "`{name}` is cursored and declares no contract, and `{source_kind}` has no \
-                     way to declare one — airway's `EndpointConfig` carries no `contracts` slot. \
-                     This cannot be fixed from Oxy: the only options are to leave `{source_kind}` \
-                     on `permissive` or to wait for upstream support."
-                )
-            } else {
-                format!(
-                    "`{name}` is cursored and declares no contract. `{}` requires one for every \
-                     cursored resource. Declaring it is a one-line change in the `{source_kind}` \
-                     connector, which already supports contracts.",
-                    policy_label(policy)
-                )
-            };
-            Some(Failure {
-                reason,
-                not_fixable_here,
-            })
-        }
+        // **Always fixable since airway 0.1.24.** Every source kind Oxy knows
+        // can now carry a declaration: `toast`, `quickbooks` and `weather`
+        // implement `contracts()` in Rust, and #105 added `EndpointConfig::
+        // contract` so the ~24 `rest_api`-backed connectors declare per
+        // endpoint. There is no longer a kind for which "undeclared" names an
+        // action the operator cannot take, which is why the kind allow-list
+        // that used to gate this is gone rather than emptied.
+        //
+        // *Where* the declaration goes still differs per kind, though, so the
+        // second sentence comes from [`declaration_site`] rather than being
+        // one generic line that is wrong for somebody.
+        None => Some(Failure {
+            reason: format!(
+                "`{name}` is cursored and declares no contract. `{}` requires one for every \
+                 cursored resource. {}",
+                policy_label(policy),
+                declaration_site(source_kind, name),
+            ),
+            not_fixable_here: false,
+        }),
         Some(contract)
             if policy == ContractPolicy::ForbidOpaque
                 && matches!(contract.mutability(), Mutability::Opaque) =>
@@ -404,6 +396,47 @@ fn failure_for(
     }
 }
 
+/// Where a contract for `resource` actually goes, for `source_kind`.
+///
+/// The second sentence of the undeclared-resource diagnostic, and it has to be
+/// per-kind: [`KNOWN_SOURCE_KINDS`](super::KNOWN_SOURCE_KINDS) splits into two
+/// halves that declare in **different files**, so a single generic line is
+/// necessarily wrong for one of them — and sending an operator to edit a file
+/// that cannot carry the answer is the same failure `not_fixable_here` exists
+/// to prevent, one level down.
+///
+/// * **`rest_api` is config-defined.** airway 0.1.24's #105 inlined the
+///   declaration on `EndpointConfig::contract` — *singular*, one contract per
+///   endpoint, **not** a name-keyed map on `RestApiConfig`. Upstream chose the
+///   inline field so a contract rides its endpoint through the `--resources`
+///   filter (a side map would not be filtered with it, and every unselected
+///   resource would then read as an orphan). `source_factory::build_rest_api`
+///   deserializes `RestApiConfig` straight out of `source.config`, so the field
+///   is reachable from the pipeline's own `.airway.yml` — this is the one kind
+///   an operator fixes without touching connector code.
+/// * **`toast` / `quickbooks` / `weather` declare in Rust**, by implementing
+///   `SourceConnector::contracts()`. They have no YAML slot at all, and
+///   `EndpointConfig` does not `deny_unknown_fields`, so a `contract:` key
+///   invented in one of *their* pipeline files would be silently ignored rather
+///   than refused.
+///
+/// Both halves are *fixable* — this sets no flag; see
+/// [`ResourceVerdict::not_fixable_here`].
+fn declaration_site(source_kind: &str, resource: &str) -> String {
+    if source_kind == "rest_api" {
+        return format!(
+            "Declare it in this pipeline's `.airway.yml`, on the `{resource}` entry under \
+             `source.config.endpoints`: a `contract:` block with at least `mutability:` \
+             (`immutable` / `versioned` / `opaque`). No connector change is needed."
+        );
+    }
+    format!(
+        "`{source_kind}` declares contracts in airway's Rust source, not in YAML: add \
+         `{resource}` to that connector's `SourceConnector::contracts()`. Nothing in this \
+         pipeline's `.airway.yml` reaches it."
+    )
+}
+
 /// Contract names that answer to no resource.
 ///
 /// Upstream, an orphan fails a tightened policy *before* any resource is
@@ -414,7 +447,15 @@ fn failure_for(
 ///
 /// Unreachable through today's factory — `contracts()` and `resources()` come
 /// from the same connector's code, and upstream tests pin them together — so
-/// this is a guard against a future connector, not a live case.
+/// this is a guard against a future connector, not a live case. airway 0.1.24
+/// narrowed it further for `rest_api`: #105 inlined the declaration on
+/// `EndpointConfig`, so a contract now rides its endpoint through the
+/// `--resources` filter and an orphan is unrepresentable there rather than
+/// merely detected (upstream's `selecting_a_resource_subset_leaves_no_orphans`).
+///
+/// **This is now the only thing that sets [`ResourceVerdict::not_fixable_here`]**
+/// — see that field's doc for why the flag survived the removal of the
+/// kind-level allow-list.
 fn orphan_verdicts(
     source_kind: &str,
     pipeline_ref: &str,

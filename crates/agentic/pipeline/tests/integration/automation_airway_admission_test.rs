@@ -68,15 +68,17 @@ async fn test_db() -> Option<DatabaseConnection> {
         .clone();
 
     let db = Database::connect(&url).await.ok()?;
-    // Central -> runtime -> domain, in production order. The token the helper
-    // returns has no public constructor, so a domain migrator can only run on
-    // proof the first two already did.
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
+    // Central → runtime → domain, in production order. The token returned by
+    // `migrate_shared_test_db` has no public constructor, so a domain migrator
+    // can only run on proof the first two already did.
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&url, &db)
         .await
         .expect("shared migrations")
         .then::<AirwayMigrator>()
         .await
-        .expect("airway migrations");
+        .expect("airway migrations")
+        .finish()
+        .await;
     Some(db)
 }
 

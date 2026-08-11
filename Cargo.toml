@@ -416,19 +416,44 @@ airform-core = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e82886
 # target whose `required-features` are unmet silently — so the opt-out
 # belongs on this side. `duckdb` is still required: the `http_file`
 # source arm builds on it.
-# Pinned to the 0.1.23 release commit: version-guarded `Merge` /
-# `Replacing` writes (re-reading history is no longer destructive),
-# per-resource `SourceContract` declarations on Toast / QuickBooks /
-# Weather, and the `ContractPolicy` + `Environment` admission checks
-# reached via `Source::try_from_connector_with`. Supersedes 0.1.22
-# (end-of-load fold outcomes), 0.1.21 (reset-schema `drop_tables`) and
-# 0.1.20 (resumable backfill), all still carried.
+# Pinned to the 0.1.24 tag (`dc84d7be`). Four changes oxy consumes:
 #
-# `rev`, not `tag`: upstream shipped `chore: release 0.1.23` on the
-# `release/0.1.23` branch without pushing a `0.1.23` tag. A branch pin
-# would be mutable — a later push would silently change what oxy builds
-# with no diff here. Swap to `tag = "0.1.23"` once that tag exists.
-airway = { git = "https://github.com/oxy-hq/airway-internal.git", rev = "8cd121322a15332d9ddab34d258df8fc04c1ec8c", default-features = false, features = [
+#   * #105 `EndpointConfig::contract` — a per-endpoint
+#     `Option<SourceContract>` so the ~24 REST-backed connectors can
+#     declare one. **Singular, and a field on the endpoint** — not a
+#     name-keyed map on `RestApiConfig`. Upstream chose the inline field
+#     so a contract rides its endpoint through the `--resources` filter;
+#     a side map would not be filtered with it, and every unselected
+#     resource would then read as an orphan. The consequence oxy depends
+#     on is that an orphan is *unrepresentable* for `rest_api` (the key
+#     is always the endpoint's own name), which is why
+#     `preview::orphan_verdicts` can still set `not_fixable_here`
+#     unconditionally. An undeclared `rest_api` endpoint is now a fixable
+#     declaration in the pipeline's own `.airway.yml`, which is why the
+#     admin policy preview no longer flags the kind `not_fixable_here`.
+#   * #107 a run where EVERY resource failed returns `Err` instead of
+#     `Ok` + `completed_with_errors`. Oxy maps that to a failed run, which
+#     is what re-surfaces the "Reconnect QuickBooks" affordance on an
+#     `invalid_grant`.
+#   * #108 QuickBooks cascades the document `Id` into nested child tables
+#     (`invoice_id`, `bill_id`, `purchase_order_id`,
+#     `inventory_adjustment_id`, `item_id`). **Additive columns only** —
+#     nothing renamed. A consumer joining a child to its parent still
+#     needs `_aw_parent_id = parent._aw_id` as well; the propagated key
+#     alone over-counts across re-ingests, since children load
+#     append-only.
+#   * #111 `cursor_lag_floor_secs` on `GlobalConfig`, wired through the
+#     `airway_deployment_config` tier.
+#
+# Supersedes 0.1.23 (version-guarded `Merge`/`Replacing` writes,
+# per-resource `SourceContract`s, the `ContractPolicy` + `Environment`
+# admission checks), 0.1.22, 0.1.21 and 0.1.20 — all still carried.
+#
+# `tag`, now that upstream pushes them: 0.1.23 shipped only as a
+# `release/0.1.23` branch, so that one had to be a `rev` to stay
+# immutable. A tag is immutable enough for this and reads better in a
+# diff; a *branch* pin would not be, and must never be used here.
+airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.24", default-features = false, features = [
   "duckdb",
   "postgres",
 ] }

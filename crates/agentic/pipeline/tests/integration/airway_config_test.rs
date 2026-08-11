@@ -74,12 +74,14 @@ async fn test_db() -> Option<DatabaseConnection> {
     // ordering every other fixture on the shared test DB now follows).
     // `airway_run_extensions.run_id` and the queue row both FK / key off
     // `agentic_runs`, so RuntimeMigrator must precede AirwayMigrator.
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&url, &db)
         .await
         .expect("shared migrations")
         .then::<AirwayMigrator>()
         .await
-        .expect("airway migrations");
+        .expect("airway migrations")
+        .finish()
+        .await;
     Some(db)
 }
 

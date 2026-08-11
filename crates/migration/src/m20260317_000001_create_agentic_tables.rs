@@ -89,6 +89,14 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 Index::create()
+                    // NOT dead, despite central now running first everywhere.
+                    // Several test binaries each migrate a *fresh* shared
+                    // database concurrently (nextest gives no inter-binary
+                    // ordering and the helper holds no lock), so two central
+                    // runs race here and the loser gets 42P07. Removing this
+                    // was tried and reverted: it fails ~174 tests across the
+                    // three agentic packages, all on this one index.
+                    .if_not_exists()
                     .name("idx_agentic_run_events_run_id_seq")
                     .table(AgenticRunEvent::Table)
                     .col(AgenticRunEvent::RunId)

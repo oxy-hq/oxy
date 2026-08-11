@@ -195,6 +195,49 @@ describe("reduceAirwayEvents", () => {
     expect(v.resources.find((r) => r.table === "orders")?.status).toBe("done");
   });
 
+  /**
+   * **A run where EVERY resource failed is `failed`, not `completed_with_errors`
+   * — even though `load_completed` arrives first.**
+   *
+   * airway 0.1.24 (#107) made a zero-of-N run return an error rather than a
+   * partial success. On its streaming path the engine still emits
+   * `load_completed` (the audit row and cursors are already settled) and only
+   * then surfaces the failure as `pipeline_error`, so the terminal status
+   * depends on the *later* event winning. That ordering is load-bearing here:
+   * the "Reconnect QuickBooks" affordance on `/airway` is gated on
+   * `status === "failed" && error`, and an expired `invalid_grant` token is
+   * exactly the case that fails every resource for one reason.
+   *
+   * The sibling test above pins the opposite direction — one resource skipped
+   * out of two really is `completed_with_errors` — so this cannot be satisfied
+   * by making every skip a hard failure.
+   */
+  it("all resources failed → failed, even though load_completed precedes pipeline_error", () => {
+    const failed = (table: string) =>
+      ev("resource_failed", {
+        pipeline_name: PIPE,
+        load_id: LOAD,
+        table,
+        error: "invalid_grant: Token expired or revoked"
+      });
+    const v = reduceAirwayEvents([
+      loadStarted(),
+      failed("invoices"),
+      failed("bills"),
+      // Emitted before the error on the streaming path — nothing loaded, so
+      // `rows_loaded` is empty.
+      loadCompleted({}),
+      ev("pipeline_error", {
+        pipeline_name: PIPE,
+        load_id: LOAD,
+        error: "every resource failed — no data was loaded"
+      })
+    ]);
+    expect(v.status).toBe("failed");
+    expect(v.error).toBe("every resource failed — no data was loaded");
+    expect(v.failedResources.map((f) => f.table)).toEqual(["invoices", "bills"]);
+  });
+
   it("pipeline_plan renders the full skeleton up-front", () => {
     const v = reduceAirwayEvents([
       loadStarted(),

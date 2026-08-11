@@ -15,7 +15,6 @@ use agentic_runtime::event_registry::EventRegistry;
 use agentic_runtime::migration::RuntimeMigrator;
 use agentic_runtime::transport::DurableTransport;
 use sea_orm::{Database, DatabaseConnection};
-use sea_orm_migration::MigratorTrait;
 use serde_json::json;
 
 /// Shared test Postgres container — started once per process, reused across tests.
@@ -84,16 +83,19 @@ async fn test_db() -> Option<DatabaseConnection> {
     }
     let db = db.unwrap();
 
-    // Central then runtime (production order — see oxy_test_utils::migration).
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
-        .await
-        .expect("shared migrations failed");
-
-    // Also run analytics extension migrations for the full test surface.
+    // Central then runtime (production order — see oxy_test_utils::migration),
+    // then the analytics extension for the full test surface. Chained through
+    // the token rather than called separately so it runs inside the same
+    // migration advisory lock, not after it.
     use agentic_analytics::extension::AnalyticsMigrator;
-    AnalyticsMigrator::up(&db, None)
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&url, &db)
         .await
-        .expect("analytics migrations failed");
+        .expect("shared migrations failed")
+        .then::<AnalyticsMigrator>()
+        .await
+        .expect("analytics migrations failed")
+        .finish()
+        .await;
 
     // Every test shares this one Postgres and the task queue / outcomes are
     // claimed globally, so clear them up front — each test then starts from an

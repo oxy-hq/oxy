@@ -64,12 +64,14 @@ async fn test_db() -> Option<DatabaseConnection> {
         .await;
     let db = Database::connect(url).await.ok()?;
     // Central then runtime (production order — see oxy_test_utils::migration).
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(url, &db)
         .await
         .expect("shared migrate")
         .then::<AutomationMigrator>()
         .await
-        .expect("automation migrate");
+        .expect("automation migrate")
+        .finish()
+        .await;
     Some(db)
 }
 

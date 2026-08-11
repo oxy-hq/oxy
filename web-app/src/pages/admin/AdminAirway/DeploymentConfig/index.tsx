@@ -23,11 +23,11 @@ import {
   valuesFromDraft
 } from "./fields";
 
-const GROUPS = ["transport", "retry", "tls"] as const;
+const GROUPS = ["transport", "retry", "extraction", "tls"] as const;
 
 /**
  * The `/admin/airway` **Deployment** region — airway's operational tier
- * (`airway_deployment_config`), a singleton row of seven settings.
+ * (`airway_deployment_config`), a singleton row of eight settings.
  *
  * Distinct from the source-kind cards above it in both scope and lifetime:
  * those are per source kind and resolved on every run, this is per *process*

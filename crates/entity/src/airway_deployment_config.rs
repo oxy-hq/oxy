@@ -1,7 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Airway's deployment-wide **operational tier** — the seven
+/// Airway's deployment-wide **operational tier** — the eight
 /// `airway::config::global::GlobalConfig` settings that are installed once per
 /// process, as opposed to the policy tier (`airway_source_config`) that is
 /// resolved per source kind on every run.
@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 /// Every setting is `Option`, and `None` maps to `None` on the matching
 /// `GlobalConfig` field, which `apply_to_http` / `apply_to_retry` treat as
 /// "leave the compiled-in value alone". A stored `0` is a value the operator
-/// chose, and airway rejects it for all three durations. Do not `unwrap_or(0)`
+/// chose, and airway rejects it for all four durations. Do not `unwrap_or(0)`
 /// anything here, and do not introduce an Oxy-side default constant — that
 /// would silently diverge from upstream's the first time airway changed a
 /// built-in.
@@ -63,6 +63,15 @@ pub struct Model {
     pub retry_max_delay_secs: Option<i64>,
     /// `GlobalConfig::retry_backoff_factor`. Must be finite and >= 1.
     pub retry_backoff_factor: Option<f64>,
+    /// `GlobalConfig::cursor_lag_floor`, in **whole seconds** — a floor under
+    /// every resource's declared `cursor_lag`, never a ceiling.
+    ///
+    /// `None` means *no floor*, and it is the only spelling for that: airway
+    /// **rejects** a stored `0` rather than reading it as absence, because
+    /// `max(lag, 0)` raises nothing and would be a setting that does not
+    /// settle anything. The write path validates through the same
+    /// `GlobalConfig::validate`, so a `0` is a `400`, not a row.
+    pub cursor_lag_floor_secs: Option<i64>,
     /// `TlsConfig::ca_cert` — a path on the airway process's filesystem.
     pub tls_ca_cert: Option<String>,
     /// `TlsConfig::client_cert`. Must be set together with

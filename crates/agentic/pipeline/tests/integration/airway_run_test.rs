@@ -82,12 +82,14 @@ async fn test_db() -> Option<DatabaseConnection> {
     // oxy_test_utils::migration for the full ordering rationale.
     // `airway_run_extensions.run_id` and the queue row both FK / key off
     // `agentic_runs`.
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&url, &db)
         .await
         .expect("shared migrations")
         .then::<AirwayMigrator>()
         .await
-        .expect("airway migrations");
+        .expect("airway migrations")
+        .finish()
+        .await;
     Some(db)
 }
 

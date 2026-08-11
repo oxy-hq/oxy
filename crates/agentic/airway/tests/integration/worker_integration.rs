@@ -79,12 +79,14 @@ async fn test_db() -> Option<DatabaseConnection> {
     // oxy_test_utils::migration), then AirwayMigrator: `airway_run_extensions.run_id`
     // FKs to `agentic_runs.id`, so the runtime tables must exist before
     // AirwayMigrator's third migration runs.
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&url, &db)
         .await
         .expect("shared migrations")
         .then::<AirwayMigrator>()
         .await
-        .expect("airway migrations");
+        .expect("airway migrations")
+        .finish()
+        .await;
     Some(db)
 }
 

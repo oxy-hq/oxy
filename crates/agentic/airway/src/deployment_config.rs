@@ -9,6 +9,14 @@
 //! and `RetryConfig::default` read, which is what lets it reach transports
 //! nobody remembered to plumb.
 //!
+//! **Two kinds of reader, since 0.1.24.** The seven original settings are read
+//! by those two `Default` impls, so they reach a transport by being *built*.
+//! `cursor_lag_floor_secs` is read by `global::resolve_cursor_lookback`, which
+//! a source calls per resource while deciding how far back to pull. That is a
+//! different reach — a source with no incremental cursor never asks — and it
+//! is why the roster below says "every airway load" rather than "every HTTP
+//! client".
+//!
 //! # Three properties shape everything here
 //!
 //! 1. **`install` is one-shot.** A second call returns `Err`, and airway is
@@ -24,11 +32,16 @@
 //! 3. **Parsing and validation are airway's, not ours.** [`DeploymentValues`]
 //!    renders itself as the flat string keys airway already reads and hands
 //!    them to [`GlobalConfig::from_lookup`], which parses *and* calls
-//!    `GlobalConfig::validate`. Every rule — zero durations, an empty
-//!    `user_agent`, a `user_agent` that cannot become a header, a backoff
-//!    factor below 1, half an mTLS identity, a TLS struct that carries
-//!    settings it would drop — arrives for free and stays in one place. A
-//!    second copy on the oxy side is a copy that goes stale.
+//!    `GlobalConfig::validate`. Every rule — zero durations (including a zero
+//!    `cursor_lag_floor_secs`, refused because `max(lag, 0)` raises nothing and
+//!    so is indistinguishable from omitting the key), an empty `user_agent`, a
+//!    `user_agent` that cannot become a header, a backoff factor below 1, half
+//!    an mTLS identity, a TLS struct that carries settings it would drop —
+//!    arrives for free and stays in one place. A second copy on the oxy side
+//!    is a copy that goes stale. The *warning* above an implausibly large
+//!    floor (~30 days) is upstream's too, and is deliberately not restated:
+//!    it is a caution rather than a refusal, and duplicating it would double
+//!    the line an operator sees.
 //!
 //! # Where this tier reaches
 //!
@@ -43,13 +56,26 @@
 //! so one install covers every connector the process builds, with no
 //! signature to thread and nothing to remember at a new call site.
 //!
-//! | site | reached |
-//! |---|---|
-//! | `worker::run_pipeline` — every airway load: HTTP, schedule, `oxy airway run`, automation step, backfill | yes. It also still **calls** [`install_once`] itself — see below |
-//! | `agentic_pipeline::airway_run::discover_airway_source_tables` (`POST /sources/discover`, the create-pipeline wizard's table picker) | yes, via the boot install. This one does connect to the vendor, and before the hoist it ran on airway's built-in timeout, retry and TLS — an operator's custom CA bundle worked for runs and not for the wizard, which reads as a broken source rather than a config gap |
-//! | `oxy-app`'s admin policy preview (`airway_config::preview`) | yes, via the boot install — though it needs nothing: it builds a connector only to read `contracts()` and makes no request at all |
-//! | any connector site added later inside an oxy-app process | yes, by construction |
-//! | a process with no database (`oxy run`, which falls back to no-op storage) | no, and correctly: there is no row to read, so airway's own compiled-in settings stay in force |
+//! The `cursor_lag_floor_secs` column of the table is not "reached" but
+//! "consumed": every site below installs the whole tier, and the floor is the
+//! one setting that only *some* of them can act on, since only an extract asks
+//! `resolve_cursor_lookback` anything.
+//!
+//! | site | reached | consumes the cursor floor |
+//! |---|---|---|
+//! | `worker::run_pipeline` — every airway load: HTTP, schedule, `oxy airway run`, automation step, backfill | yes. It also still **calls** [`install_once`] itself — see below | yes — this is the only site that extracts |
+//! | `agentic_pipeline::airway_run::discover_airway_source_tables` (`POST /sources/discover`, the create-pipeline wizard's table picker) | yes, via the boot install. This one does connect to the vendor, and before the hoist it ran on airway's built-in timeout, retry and TLS — an operator's custom CA bundle worked for runs and not for the wizard, which reads as a broken source rather than a config gap | no — it lists tables, it never pulls rows against a cursor |
+//! | `oxy-app`'s admin policy preview (`airway_config::preview`) | yes, via the boot install — though it needs nothing: it builds a connector only to read `contracts()` and makes no request at all | no, for the same reason it needs nothing else |
+//! | any connector site added later inside an oxy-app process | yes, by construction | only if it extracts |
+//! | a process with no database (`oxy run`, which falls back to no-op storage) | no, and correctly: there is no row to read, so airway's own compiled-in settings stay in force | n/a |
+//!
+//! One place the floor deliberately does **not** show up: [`crate::contract`]'s
+//! `ResourceContract`, the per-resource projection the run UI renders. That
+//! reports the *declared* contract — a vendor claim — and the floor is a
+//! deployment position layered over it at extract time. Folding
+//! `max(cursor_lag, floor)` in there by hand would be the second copy of an
+//! upstream rule this module exists to avoid, and it would silently restate an
+//! operator's setting as something the vendor said.
 //!
 //! **`run_pipeline` keeps its call**, and it is not a redundant second
 //! install. It is the fallback for any process with no oxy-app boot seam — an
@@ -92,7 +118,7 @@ pub const TABLE: &str = "airway_deployment_config";
 /// The singleton row's primary key.
 pub const SINGLETON_ID: i16 = 1;
 
-/// The seven settings, as the ten columns that carry them — spelled with
+/// The eight settings, as the eleven columns that carry them — spelled with
 /// airway's own key names so the unit is never in doubt at any layer.
 ///
 /// Read by [`load`]'s `SELECT` and by the entity-drift test. `tls` is one
@@ -100,6 +126,10 @@ pub const SINGLETON_ID: i16 = 1;
 /// are absent on purpose: they are the policy tier, resolved per source kind
 /// per run, and installing them process-wide would silently outrank the
 /// per-run admission oxy already passes explicitly.
+///
+/// In airway's own `GlobalConfig::KEYS` order, minus those two — so the
+/// per-setting drift report reads in the same order the operator meets the
+/// keys upstream.
 pub const COLUMNS: &[&str] = &[
     global::TIMEOUT_SECS,
     global::MAX_RETRIES,
@@ -107,6 +137,7 @@ pub const COLUMNS: &[&str] = &[
     global::RETRY_INITIAL_DELAY_MS,
     global::RETRY_MAX_DELAY_SECS,
     global::RETRY_BACKOFF_FACTOR,
+    global::CURSOR_LAG_FLOOR_SECS,
     global::TLS_CA_CERT,
     global::TLS_CLIENT_CERT,
     global::TLS_CLIENT_KEY_FILE,
@@ -124,6 +155,40 @@ pub const COLUMNS: &[&str] = &[
 /// `retry_max_delay_secs` in whole seconds, `retry_initial_delay_ms` in
 /// milliseconds. That is airway's spelling, carried unchanged through the
 /// column name, this struct, the JSON, and the admin field label.
+///
+/// # Rolling-deploy skew on a newly added field
+///
+/// A new setting means a new column, and for the length of a rollout the
+/// migration has already run while processes on the previous image are still
+/// serving `PUT /api/admin/airway/deployment-config` with a `DeploymentValues`
+/// that has no such field. Two versions of that hazard, and they land
+/// differently — worth separating, because only one of them is a bug:
+///
+/// * **An older *process* writing the row cannot clear the new column.** The
+///   write is column-scoped, not a full-row overwrite:
+///   `deployment::upsert_deployment` enumerates its
+///   `OnConflict::update_columns`, so a build touches exactly the columns it
+///   knows about, and SeaORM's `INSERT` carries only the `Set` members of the
+///   `ActiveModel` (and fires only when there is no row, hence no configured
+///   value to lose). An old replica's save leaves `cursor_lag_floor_secs`
+///   exactly as it found it. Pinned by
+///   `an_older_writer_cannot_clear_the_cursor_lag_floor`, which drives the raw
+///   statement a pre-#111 build would emit. Note this is a property of that one
+///   call site, not of the type: a refactor to `Entity::update` — SeaORM writes
+///   every column in the model — would reintroduce it for the *next* field
+///   added here, which is what that test exists to catch.
+/// * **An older *client* body against a current process does clear it, by
+///   design.** The endpoint is a replace, not a patch, and `#[serde(default)]`
+///   below is what makes that work: a missing key deserializes to `None`, which
+///   is how the UI clears a setting back to airway's built-in default. A
+///   browser tab holding a pre-deploy bundle posts the ten fields it knows and
+///   so clears the eleventh. That is the same behaviour as clearing any other
+///   field, it is visible on the page immediately after (the read renders
+///   configured beside installed), and it changes nothing until a process
+///   restarts. Narrowing it would mean making omission and explicit-null
+///   different — the distinction this surface deliberately refuses everywhere
+///   else, since it is what lets `null` mean "airway's default" and nothing
+///   else.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DeploymentValues {
@@ -135,6 +200,12 @@ pub struct DeploymentValues {
     pub retry_initial_delay_ms: Option<u64>,
     pub retry_max_delay_secs: Option<u64>,
     pub retry_backoff_factor: Option<f64>,
+    /// A **floor** under every resource's declared `cursor_lag`, in whole
+    /// seconds — never a ceiling. `None` is *no floor*, and it is the only way
+    /// to say that: airway refuses a zero, since `max(lag, 0)` raises nothing
+    /// and a stored `0` would read as a deployment position that changes
+    /// nothing.
+    pub cursor_lag_floor_secs: Option<u64>,
     pub tls_ca_cert: Option<String>,
     pub tls_client_cert: Option<String>,
     pub tls_client_key_file: Option<String>,
@@ -157,6 +228,7 @@ impl DeploymentValues {
             global::RETRY_INITIAL_DELAY_MS => self.retry_initial_delay_ms.map(|v| v.to_string()),
             global::RETRY_MAX_DELAY_SECS => self.retry_max_delay_secs.map(|v| v.to_string()),
             global::RETRY_BACKOFF_FACTOR => self.retry_backoff_factor.map(|v| v.to_string()),
+            global::CURSOR_LAG_FLOOR_SECS => self.cursor_lag_floor_secs.map(|v| v.to_string()),
             global::TLS_CA_CERT => self.tls_ca_cert.clone(),
             global::TLS_CLIENT_CERT => self.tls_client_cert.clone(),
             global::TLS_CLIENT_KEY_FILE => self.tls_client_key_file.clone(),
@@ -195,6 +267,12 @@ impl DeploymentValues {
                 .map(|d| duration_as_millis_u64(d)),
             retry_max_delay_secs: config.retry_max_delay.map(|d| d.as_secs()),
             retry_backoff_factor: config.retry_backoff_factor,
+            // Seconds, matching the key's `_secs` suffix. Lossless in
+            // practice and by construction on the round trip: the only way a
+            // value reaches `GlobalConfig::cursor_lag_floor` on this path is
+            // `Duration::from_secs` in airway's own `from_lookup`, so there is
+            // no sub-second remainder to truncate.
+            cursor_lag_floor_secs: config.cursor_lag_floor.map(|d| d.as_secs()),
             tls_ca_cert: config.tls.as_ref().and_then(|t| t.ca_cert.clone()),
             tls_client_cert: config.tls.as_ref().and_then(|t| t.client_cert.clone()),
             tls_client_key_file: config.tls.as_ref().and_then(|t| t.client_key_file.clone()),
@@ -244,6 +322,7 @@ pub fn drift(configured: &DeploymentValues, installed: &DeploymentValues) -> Vec
         retry_initial_delay_ms,
         retry_max_delay_secs,
         retry_backoff_factor,
+        cursor_lag_floor_secs,
         tls_ca_cert,
         tls_client_cert,
         tls_client_key_file,
@@ -273,6 +352,10 @@ pub fn drift(configured: &DeploymentValues, installed: &DeploymentValues) -> Vec
     check(
         *retry_backoff_factor != installed.retry_backoff_factor,
         global::RETRY_BACKOFF_FACTOR,
+    );
+    check(
+        *cursor_lag_floor_secs != installed.cursor_lag_floor_secs,
+        global::CURSOR_LAG_FLOOR_SECS,
     );
     check(*tls_ca_cert != installed.tls_ca_cert, global::TLS_CA_CERT);
     check(
@@ -362,6 +445,7 @@ pub async fn load(db: &DatabaseConnection) -> Result<Option<DeploymentValues>, A
         retry_backoff_factor: row
             .try_get("", global::RETRY_BACKOFF_FACTOR)
             .map_err(|e| AirwayError::Other(format!("{TABLE}.retry_backoff_factor: {e}")))?,
+        cursor_lag_floor_secs: get_u64(global::CURSOR_LAG_FLOOR_SECS)?,
         tls_ca_cert: get_string(global::TLS_CA_CERT)?,
         tls_client_cert: get_string(global::TLS_CLIENT_CERT)?,
         tls_client_key_file: get_string(global::TLS_CLIENT_KEY_FILE)?,

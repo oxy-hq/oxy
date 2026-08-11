@@ -16,6 +16,7 @@ const EMPTY: AirwayDeploymentValues = {
   retry_initial_delay_ms: null,
   retry_max_delay_secs: null,
   retry_backoff_factor: null,
+  cursor_lag_floor_secs: null,
   tls_ca_cert: null,
   tls_client_cert: null,
   tls_client_key_file: null,
@@ -46,6 +47,25 @@ describe("valuesFromDraft", () => {
     const { values, invalid } = valuesFromDraft(draft({ max_retries: "0" }));
     expect(invalid).toEqual([]);
     expect(values.max_retries).toBe(0);
+  });
+
+  /**
+   * `cursor_lag_floor_secs` is the field where empty and `0` are genuinely
+   * different requests: empty is "no floor" and saves, `0` is a floor of zero
+   * and airway refuses it. Both halves are pinned here because the tempting
+   * "fix" for the rejection is to coerce a typed `0` to `null` in the browser
+   * — which would silently save something the operator did not ask for and
+   * swallow the diagnostic that explains why. Value rules stay airway's; this
+   * layer only decides empty-vs-typed.
+   */
+  it("sends a typed zero floor for the server to refuse, and empty as no floor", () => {
+    const typed = valuesFromDraft(draft({ cursor_lag_floor_secs: "0" }));
+    expect(typed.invalid).toEqual([]);
+    expect(typed.values.cursor_lag_floor_secs).toBe(0);
+
+    const empty = valuesFromDraft(draft({ cursor_lag_floor_secs: UNSET }));
+    expect(empty.invalid).toEqual([]);
+    expect(empty.values.cursor_lag_floor_secs).toBeNull();
   });
 
   it("parses each kind in the unit its field name states", () => {
@@ -104,6 +124,7 @@ describe("draftFromValues", () => {
       retry_initial_delay_ms: 250,
       retry_max_delay_secs: 60,
       retry_backoff_factor: 1.5,
+      cursor_lag_floor_secs: 120,
       tls_ca_cert: "/etc/pki/ca.pem",
       tls_client_cert: "/etc/pki/client.pem",
       tls_client_key_file: "/etc/pki/client.key",
@@ -154,14 +175,16 @@ describe("isDirty", () => {
 
 describe("DEPLOYMENT_FIELDS", () => {
   /**
-   * Only settings airway reads. These four have zero occurrences in airway's
+   * Only settings airway reads. These have zero occurrences in airway's
    * source, so a control for one would be accepted, saved and inert.
+   * `cursor_lag_floor` was on this list until airway 0.1.24 gave the key a
+   * reader; it is now a real field, which is why it is gone from here rather
+   * than merely spelled differently.
    */
   it("offers no knob airway does not read", () => {
     const keys = DEPLOYMENT_FIELDS.map((f) => f.key as string);
     for (const inert of [
       "max_rewind",
-      "cursor_lag_floor",
       "allow_unversioned_writes",
       "partition_repull_budget",
       "tls_server_name",
@@ -169,11 +192,16 @@ describe("DEPLOYMENT_FIELDS", () => {
     ]) {
       expect(keys).not.toContain(inert);
     }
-    expect(keys).toHaveLength(10);
+    expect(keys).toHaveLength(11);
   });
 
   it("states a unit for every duration", () => {
-    for (const key of ["timeout_secs", "retry_initial_delay_ms", "retry_max_delay_secs"]) {
+    for (const key of [
+      "timeout_secs",
+      "retry_initial_delay_ms",
+      "retry_max_delay_secs",
+      "cursor_lag_floor_secs"
+    ]) {
       const field = DEPLOYMENT_FIELDS.find((f) => f.key === key);
       expect(field?.unit, `${key} must state its unit`).toBeTruthy();
     }

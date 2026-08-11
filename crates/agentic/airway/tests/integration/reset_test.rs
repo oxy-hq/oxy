@@ -65,12 +65,14 @@ async fn test_db() -> Option<DatabaseConnection> {
     // Central then runtime (production order — see
     // oxy_test_utils::migration), then AirwayMigrator: airway_run_extensions.run_id
     // FKs to agentic_runs.id, so it must land after runtime.
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&url, &db)
         .await
         .expect("shared migrations failed")
         .then::<AirwayMigrator>()
         .await
-        .expect("airway migrations failed");
+        .expect("airway migrations failed")
+        .finish()
+        .await;
     Some(db)
 }
 

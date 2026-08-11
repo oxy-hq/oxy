@@ -14,7 +14,6 @@ use agentic_airway::extension::pipeline_lease::{
 };
 use agentic_runtime::migration::RuntimeMigrator;
 use sea_orm::{ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement};
-use sea_orm_migration::MigratorTrait;
 use uuid::Uuid;
 
 static TEST_DB_URL: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
@@ -65,18 +64,24 @@ async fn test_db() -> Option<DatabaseConnection> {
     }
     let db = db?;
     // Central -> runtime -> airway, like the other three modules in this
-    // binary. Running `RuntimeMigrator` alone left `agentic_runs` already
-    // carrying `thread_id`, so whichever module's helper ran next brought
-    // central in second and hit 42701 / 42P07 — and since sea-orm wraps a
-    // whole `up()` in one transaction, that rollback left the database with
-    // no `seaql_migrations` at all. Nothing ordered these modules, so the
-    // failure depended on which case happened to run first.
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
+    // binary. This fixture used to run `RuntimeMigrator` alone, which is the
+    // one shape the shared database cannot survive: runtime creates
+    // `agentic_runs` *with* `thread_id`, so whichever module's helper ran next
+    // brought central in second and hit `42701 column "thread_id" ... already
+    // exists` — central has no `.if_not_exists()` guard there because
+    // production always leads. Since sea-orm wraps a whole `up()` in one
+    // transaction, that rollback left the database with no `seaql_migrations`
+    // at all, permanently, for every other binary: on a fresh DB it poisoned
+    // 174 of 432 tests. Nothing ordered these modules, so which case ran first
+    // decided whether the run passed.
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&url, &db)
         .await
         .expect("shared migrations failed")
         .then::<AirwayMigrator>()
         .await
-        .expect("airway migrations failed");
+        .expect("airway migrations failed")
+        .finish()
+        .await;
     Some(db)
 }
 

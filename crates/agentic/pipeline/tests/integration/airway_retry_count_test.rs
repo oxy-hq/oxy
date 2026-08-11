@@ -47,12 +47,14 @@ async fn test_db() -> Option<DatabaseConnection> {
         .await
         .expect("failed to connect to test DB");
     // Central then runtime (production order — see oxy_test_utils::migration).
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&url, &db)
         .await
         .expect("shared migrations failed")
         .then::<AirwayMigrator>()
         .await
-        .expect("airway migrations failed");
+        .expect("airway migrations failed")
+        .finish()
+        .await;
     Some(db)
 }
 

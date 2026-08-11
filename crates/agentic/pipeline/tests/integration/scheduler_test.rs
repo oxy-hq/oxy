@@ -88,12 +88,14 @@ async fn test_db() -> Option<DatabaseConnection> {
     // shared migration this binary now runs before anything else.
     // `start_airway_run` also writes `airway_run_extensions`, owned by this
     // migrator — needed for the same reason as above.
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&url, &db)
         .await
         .expect("shared migrations")
         .then::<AirwayMigrator>()
         .await
-        .expect("airway migrations");
+        .expect("airway migrations")
+        .finish()
+        .await;
     Some(db)
 }
 

@@ -19,6 +19,7 @@ fn fully_configured() -> DeploymentValues {
         retry_initial_delay_ms: Some(250),
         retry_max_delay_secs: Some(60),
         retry_backoff_factor: Some(1.5),
+        cursor_lag_floor_secs: Some(120),
         tls_ca_cert: Some("/etc/pki/ca.pem".into()),
         tls_client_cert: Some("/etc/pki/client.pem".into()),
         tls_client_key_file: Some("/etc/pki/client.key".into()),
@@ -46,6 +47,10 @@ fn an_absent_row_leaves_every_airway_default_alone() {
     assert!(global.retry_initial_delay.is_none());
     assert!(global.retry_max_delay.is_none());
     assert!(global.retry_backoff_factor.is_none());
+    // The one that must not become `Some(ZERO)`: a zero floor is a value
+    // airway refuses, so collapsing absence into it would make an unconfigured
+    // deployment fail to install at all.
+    assert!(global.cursor_lag_floor.is_none());
     assert!(global.tls.is_none());
 
     // And, driven through the gap-fillers, the compiled-in values survive.
@@ -81,7 +86,7 @@ fn absence_survives_the_round_trip_as_absence() {
     );
 }
 
-/// Each of the seven settings reaches the airway field it names, in the unit
+/// Each of the eight settings reaches the airway field it names, in the unit
 /// its column name states.
 #[test]
 fn every_setting_reaches_its_airway_field_in_the_stated_unit() {
@@ -97,6 +102,11 @@ fn every_setting_reaches_its_airway_field_in_the_stated_unit() {
     );
     assert_eq!(global.retry_max_delay, Some(Duration::from_secs(60)));
     assert_eq!(global.retry_backoff_factor, Some(1.5));
+    assert_eq!(
+        global.cursor_lag_floor,
+        Some(Duration::from_secs(120)),
+        "seconds, per the `_secs` suffix the column carries"
+    );
 
     let tls = global.tls.clone().expect("tls columns were set");
     assert_eq!(tls.ca_cert.as_deref(), Some("/etc/pki/ca.pem"));
@@ -191,6 +201,19 @@ fn a_bad_value_is_an_error_that_names_the_key() {
                 ..Default::default()
             },
         ),
+        // A zero floor is refused, not read as "no floor". `max(lag, 0)` is
+        // `lag` for every resource, so accepting it would store a deployment
+        // position that raises nothing — the one value indistinguishable from
+        // omitting the key, and therefore the one that must not be spelled the
+        // same way. `None` is how you say "no floor"; see the `absent` case
+        // below it.
+        (
+            "cursor_lag_floor_secs",
+            DeploymentValues {
+                cursor_lag_floor_secs: Some(0),
+                ..Default::default()
+            },
+        ),
         (
             "user_agent",
             DeploymentValues {
@@ -213,6 +236,46 @@ fn a_bad_value_is_an_error_that_names_the_key() {
             .to_string();
         assert!(err.contains(key), "the key must be named, got: {err}");
     }
+}
+
+/// The other half of the zero rule above, and the reason airway *refuses* a
+/// zero floor rather than coercing it: **absence is no floor**, and absence has
+/// to stay reachable and valid. If a zero were quietly normalised to `None` the
+/// two spellings would mean the same thing, which is the ambiguity the refusal
+/// exists to prevent — and if absence were normalised to `Some(ZERO)` an
+/// unconfigured deployment would fail to install at all.
+#[test]
+fn an_absent_cursor_lag_floor_means_no_floor_and_stays_valid() {
+    let global = DeploymentValues::default()
+        .to_global()
+        .expect("no floor is a valid deployment");
+    assert_eq!(global.cursor_lag_floor, None, "absence became a floor");
+    assert_eq!(
+        DeploymentValues::from_global(&global).cursor_lag_floor_secs,
+        None,
+        "absence came back as a value on the round trip"
+    );
+}
+
+/// A floor airway only *warns* about is still **accepted** here. Pinned
+/// because the obvious over-correction to the zero rule is an oxy-side range
+/// check, and a ceiling is the one direction this key deliberately is not:
+/// capping a lag a vendor genuinely needs reintroduces the skip the
+/// declaration exists to prevent. Upstream owns the caution; oxy owns no copy
+/// of it, so 60 days must save.
+#[test]
+fn an_implausibly_large_floor_is_warned_about_upstream_not_refused_here() {
+    let sixty_days = 60 * 24 * 60 * 60;
+    let global = DeploymentValues {
+        cursor_lag_floor_secs: Some(sixty_days),
+        ..Default::default()
+    }
+    .to_global()
+    .expect("a large floor is a warning upstream, never a refusal");
+    assert_eq!(
+        global.cursor_lag_floor,
+        Some(Duration::from_secs(sixty_days))
+    );
 }
 
 /// Zero attempts is the one coherent zero — "do not retry" — and it must stay

@@ -16,16 +16,18 @@ export interface DeploymentField {
   /** Rendered beside the label. The stated unit — never converted anywhere. */
   unit?: string;
   help: string;
-  group: "transport" | "retry" | "tls";
+  group: "transport" | "retry" | "extraction" | "tls";
 }
 
 /**
- * The seven `GlobalConfig` settings, as the ten fields that carry them.
+ * The eight `GlobalConfig` settings, as the eleven fields that carry them.
  *
- * **Exactly these.** `max_rewind`, `cursor_lag_floor`,
- * `allow_unversioned_writes` and `partition_repull_budget` are deliberately
- * absent: they have no reader in airway, so a control for one would be
- * accepted, saved, and inert — the failure this whole surface exists to avoid.
+ * **Exactly these.** `max_rewind`, `allow_unversioned_writes` and
+ * `partition_repull_budget` are deliberately absent: they have no reader in
+ * airway, so a control for one would be accepted, saved, and inert — the
+ * failure this whole surface exists to avoid. `cursor_lag_floor` was on that
+ * list until airway 0.1.24 gave it one, which is the rule working rather than
+ * bending: a control appears when a consumer does.
  *
  * `tls_server_name` and `tls_enabled` are absent for the same reason one level
  * down: airway itself withholds those keys because its only consumer cannot
@@ -79,6 +81,14 @@ export const DEPLOYMENT_FIELDS: DeploymentField[] = [
     help: "Multiplier between attempts. Must be at least 1 — anything smaller shrinks the delay instead of growing it."
   },
   {
+    key: "cursor_lag_floor_secs",
+    label: "Cursor lag floor",
+    kind: "integer",
+    unit: "seconds",
+    group: "extraction",
+    help: "Raises every resource's declared cursor lag to at least this, for sources whose index lags further back than their contract claims. A floor, never a ceiling — it can only widen a window, never narrow one a vendor needs. Leave empty for no floor; airway refuses 0, which would raise nothing and so says nothing."
+  },
+  {
     key: "tls_ca_cert",
     label: "CA certificate",
     kind: "text",
@@ -111,6 +121,7 @@ export const DEPLOYMENT_FIELDS: DeploymentField[] = [
 export const GROUP_LABELS: Record<DeploymentField["group"], string> = {
   transport: "Transport",
   retry: "Retry",
+  extraction: "Extraction",
   tls: "TLS"
 };
 

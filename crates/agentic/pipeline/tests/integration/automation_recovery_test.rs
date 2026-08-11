@@ -81,7 +81,7 @@ async fn test_db() -> Option<DatabaseConnection> {
     let db = db.unwrap();
 
     // Central then runtime (production order — see oxy_test_utils::migration).
-    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&db)
+    oxy_test_utils::migration::migrate_shared_test_db::<RuntimeMigrator>(&url, &db)
         .await
         .expect("shared migrations failed")
         .then::<agentic_analytics::extension::AnalyticsMigrator>()
@@ -89,7 +89,9 @@ async fn test_db() -> Option<DatabaseConnection> {
         .expect("analytics migrations failed")
         .then::<agentic_automation::AutomationMigrator>()
         .await
-        .expect("automation migrations failed");
+        .expect("automation migrations failed")
+        .finish()
+        .await;
     Some(db)
 }
 
