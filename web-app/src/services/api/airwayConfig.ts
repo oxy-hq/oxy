@@ -266,3 +266,106 @@ export const AirwayConfigService = {
     return res.data;
   }
 };
+
+// ---------------------------------------------------------------------------
+// Deployment (operational) tier
+// ---------------------------------------------------------------------------
+
+/**
+ * airway's process-wide `GlobalConfig`, stored in the singleton
+ * `airway_deployment_config` row. Seven settings over ten fields (`tls` is one
+ * setting spread over four).
+ *
+ * **`null` means "airway's built-in default", never 0 and never "disabled".**
+ * An input left empty must serialize to `null`, and a `null` must render as
+ * "airway default" — not as `0`, not as an empty cell.
+ *
+ * Durations carry their unit in the field name and are stored in it:
+ * `timeout_secs` / `retry_max_delay_secs` in whole seconds,
+ * `retry_initial_delay_ms` in milliseconds. Do not convert anywhere; the unit
+ * is the same from the column to the field label.
+ */
+export interface AirwayDeploymentValues {
+  timeout_secs: number | null;
+  /** One count for both airway transports — there is no separate retry-layer count. */
+  max_retries: number | null;
+  user_agent: string | null;
+  retry_initial_delay_ms: number | null;
+  retry_max_delay_secs: number | null;
+  retry_backoff_factor: number | null;
+  tls_ca_cert: string | null;
+  tls_client_cert: string | null;
+  tls_client_key_file: string | null;
+  tls_danger_accept_invalid_certs: boolean | null;
+}
+
+/**
+ * Which process the `installed` half of the response describes.
+ *
+ * `installed` is read from one process's `OnceLock`. On a split fleet the
+ * replica answering this request is usually NOT the worker that installed, so
+ * this must be surfaced to the operator rather than dropped — a `null`
+ * `installed` from a `serve` replica says nothing about the deployment.
+ */
+export interface AirwayInstalledScope {
+  /** Always `"answering_process"`. Never read this payload as deployment-wide. */
+  scope: string;
+  /** `OXY_ROLE` as the answering process resolved it. */
+  process_role: string;
+  pid: number;
+  hostname: string | null;
+  /** Whether a node in this role runs airway pipelines at all. */
+  process_runs_airway: boolean;
+  installed_in_this_process: boolean;
+}
+
+export type AirwayDriftStatus = "in_sync" | "drifted" | "unknown";
+
+/**
+ * `unknown` is a real answer and must never render as a green tick: "this
+ * replica installed nothing" and "this replica installed exactly what is
+ * configured" are different facts.
+ */
+export interface AirwayDriftReport {
+  status: AirwayDriftStatus;
+  /** airway key names of the settings that differ. Empty unless `drifted`. */
+  fields: string[];
+  reason: "not_installed_in_this_process" | "configured_values_invalid" | null;
+}
+
+export interface AirwayDeploymentConfigResponse {
+  configured: AirwayDeploymentValues;
+  /** Distinguishes "a row exists with everything cleared" from "never configured". */
+  configured_row_exists: boolean;
+  updated_at: string | null;
+  installed: AirwayDeploymentValues | null;
+  installed_scope: AirwayInstalledScope;
+  drift: AirwayDriftReport;
+}
+
+export const AirwayDeploymentService = {
+  /** `GET /admin/airway/deployment-config`. */
+  async get(): Promise<AirwayDeploymentConfigResponse> {
+    const res = await apiClient.get<AirwayDeploymentConfigResponse>(
+      "/admin/airway/deployment-config"
+    );
+    return res.data;
+  },
+
+  /**
+   * `PUT /admin/airway/deployment-config` — a replace, not a patch. Send all
+   * ten fields; `null` clears a setting back to airway's default.
+   *
+   * **This does not take effect until the airway worker process restarts.**
+   * airway's install is one-shot per process, so a successful save changes
+   * what the next process installs and nothing about the running one.
+   */
+  async upsert(body: AirwayDeploymentValues): Promise<void> {
+    await apiClient.put("/admin/airway/deployment-config", body);
+  },
+
+  /** `DELETE /admin/airway/deployment-config` — remove the row entirely (idempotent). */
+  async clear(): Promise<void> {
+    await apiClient.delete("/admin/airway/deployment-config");
+  }
+};

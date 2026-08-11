@@ -10,10 +10,14 @@ use serde::{Deserialize, Serialize};
 /// `environment` still inherits `contract_policy` from the global row. See
 /// `agentic_pipeline::airway_config::resolve_admission`.
 ///
-/// Only the two keys stage 2 can enforce live here. `max_rewind`,
-/// `cursor_lag_floor` and per-resource restatement overrides land in stage 4,
-/// with the code that honours them — a knob nothing reads is the failure
-/// airway's own plan calls out.
+/// Only the two keys stage 2 can enforce live here — this is the **policy**
+/// tier. airway's process-wide **operational** tier (`timeout`, `max_retries`,
+/// `user_agent`, the three retry knobs, `tls`) is a different scope and a
+/// different table: `airway_deployment_config`, a singleton.
+///
+/// `max_rewind`, `cursor_lag_floor` and per-resource restatement overrides are
+/// on neither table, and land only with the code that honours them — a knob
+/// nothing reads is the failure airway's own plan calls out.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "airway_source_config")]
 pub struct Model {

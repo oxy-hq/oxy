@@ -159,6 +159,45 @@ export type DiscoverSourceRequest = {
 };
 
 /**
+ * How a source resource's rows behave, as declared by its connector.
+ *
+ * `undeclared` is deliberately **not** `opaque`: `opaque` is a checked
+ * vendor fact ("this source exposes no version"), `undeclared` is a gap
+ * nobody has filled. Airway's own default for an undeclared resource is
+ * `opaque`, and collapsing the two here would make a gap read as a
+ * guarantee. Mirrors `agentic_airway::contract::ContractMutability`.
+ */
+export type ContractMutability = "immutable" | "versioned" | "opaque" | "undeclared";
+
+/**
+ * Frontend mirror of `agentic_airway::contract::ResourceContract` — one
+ * source resource's airway `SourceContract`, flattened for the wire.
+ *
+ * Every field but `resource`/`mutability` is `null` when
+ * `mutability === "undeclared"`; nothing may be asserted on an undeclared
+ * resource's behalf. For a declared contract, `null` is a real fact (e.g.
+ * `restatement_window_ms: null` = declares no restatement window), so
+ * `mutability` is what tells the two apart.
+ *
+ * Durations are milliseconds — seconds would truncate a sub-second
+ * `cursor_lag` to `0`, which reads as "declares no lag".
+ */
+export type ResourceContract = {
+  resource: string;
+  mutability: ContractMutability;
+  /** Source-side version field (the vendor's API path). */
+  version_field: string | null;
+  /** Landed column the destination's version guard compares on. */
+  version_column: string | null;
+  cursor_tracks_modification: boolean | null;
+  restatement_window_ms: number | null;
+  cursor_lag_ms: number | null;
+  /** `cursor_lag + restatement_window` — what a pull rewinds by. */
+  rewind_ms: number | null;
+  requires_partition_repull: boolean | null;
+};
+
+/**
  * Frontend mirror of `agentic_airway::AirwayEvent`. The backend tags
  * with `event_type` (snake_case) and the runtime splits that into the
  * SSE `event:` field; `data:` carries the full payload (the tag is
@@ -176,6 +215,17 @@ export type AirwayEvent =
         load_id: string;
         resources: string[];
         destination: string;
+        /**
+         * One entry per planned resource, in plan order — undeclared ones
+         * included and labelled.
+         *
+         * Optional because runs recorded before the field existed replay
+         * verbatim. Absent or empty means "this stream carried no contract
+         * information", which is NOT the same as "everything is undeclared":
+         * the grid renders nothing for those rows rather than asserting a
+         * fact about a run it cannot see.
+         */
+        contracts?: ResourceContract[];
       };
     }
   | {

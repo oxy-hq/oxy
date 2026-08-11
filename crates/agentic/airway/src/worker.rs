@@ -7,6 +7,7 @@
 //! resource-level fan-out happens inside [`airway::Pipeline::extract_source`]
 //! via `extract_workers`.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -14,6 +15,7 @@ use agentic_core::delegation::TaskOutcome;
 use agentic_runtime::orchestrator::worker::ExecutingTask;
 use airway::Pipeline;
 use airway::airstack::{AirappEventHandler, EventBus, PipelineEvent};
+use airway::connector::SourceContract;
 use airway::state::StateStore;
 use async_trait::async_trait;
 use chrono::Utc;
@@ -316,8 +318,50 @@ async fn run_pipeline(
     cancel: CancellationToken,
     saw_error: Arc<AtomicBool>,
 ) -> Result<airway::destination::LoadInfo, AirwayError> {
+    // ── Install the deployment (operational) tier ──────────────────────────
+    //
+    // A *fallback* install. The primary one is at process boot, in `oxy-app`'s
+    // `airway_boot` — airway's `GlobalConfig` is process-wide, so installing
+    // there also covers the connector sites that never reach a run (source
+    // discovery, policy preview). This call keeps `agentic-airway` correct for
+    // a process with no such seam (an integration test, an embedder) and is
+    // where a malformed row becomes a *run* failure the operator can read
+    // rather than a boot-time warning. After a successful boot install it
+    // short-circuits inside `install_once`'s `OnceCell` and logs nothing.
+    //
+    // **Within this crate this is the seam, and `AirwayWorker::new` is not.**
+    // Three reasons, in the order they bite:
+    //
+    // 1. `new` runs once per *dispatch*, not once per process — the executor
+    //    builds a worker for every queued run. airway's `install` is a
+    //    `OnceLock`, so putting it there would turn "already installed" (a
+    //    normal condition on run #2) into a diagnostic that means nothing, and
+    //    the real second-installer case would be lost in the noise.
+    // 2. `new` is sync and infallible, so it can neither await the row nor
+    //    report a malformed one. Here the error joins the run's own failure
+    //    path and reaches the operator on the SSE stream via `drive`.
+    // 3. `new` is not even on every path — `with_refresh_sink` is a second
+    //    constructor. Every construction funnels through `execute` → `drive` →
+    //    here, so this is the one place that covers all of them.
+    //
+    // And it must be **before `build_source_connector`**: `HttpConfig::default`
+    // and `RetryConfig::default` read the installed global, and every source
+    // builds its client inside its constructor. Installing afterwards leaves
+    // those clients on the built-in values with nothing to say so.
+    //
+    // `install_once` guards itself, so this line costs one `OnceCell` read per
+    // run after the first.
+    crate::deployment_config::install_once(db.as_ref()).await?;
+
     // ── Build pluggable parts ──────────────────────────────────────────────
     let connector = build_source_connector(&spec.source, refresh_sink, admission.environment)?;
+    // Read the **declared** contract map here, while the concrete connector is
+    // still in hand, so the run's `pipeline_plan` can tell the operator how
+    // each resource behaves. `contracts()`, not `contract_for()`: the latter
+    // substitutes `SourceContract::default()` (= opaque) for anything
+    // undeclared, which would report a gap as a checked vendor fact. Purely
+    // observational — nothing here feeds admission, extraction, or writes.
+    let declared_contracts = connector.contracts();
     let destination = build_destination(spec.destination.as_inline()?, credential_provider)?;
 
     // Admission runs **before** the source exists: `try_from_connector_with`
@@ -353,6 +397,7 @@ async fn run_pipeline(
     bus.subscribe(EventForwarder {
         tx: event_tx,
         saw_error,
+        declared_contracts,
     });
     let bus = Arc::new(bus);
 
@@ -392,12 +437,17 @@ struct EventForwarder {
     /// knows the engine already reported the failure and doesn't
     /// double-emit a synthetic one.
     saw_error: Arc<AtomicBool>,
+    /// The source connector's declared `SourceContract` map, captured in
+    /// [`run_pipeline`] before the connector is boxed into the engine. The
+    /// engine's `PipelinePlan` carries resource *names* only, so this is the
+    /// one place that can attach how each resource behaves.
+    declared_contracts: HashMap<String, SourceContract>,
 }
 
 #[async_trait]
 impl AirappEventHandler for EventForwarder {
     async fn handle_event(&self, event: PipelineEvent) -> Result<(), airway::AirwayError> {
-        let domain = AirwayEvent::from(event);
+        let domain = AirwayEvent::from_engine(event, Some(&self.declared_contracts));
         match serde_json::to_value(&domain) {
             Ok(mut value) => {
                 // Stamp emit time once, here (this handler fires when
@@ -448,11 +498,19 @@ mod tests {
     use serde_json::json;
 
     fn forwarder(tx: mpsc::Sender<(String, Value)>) -> (EventForwarder, Arc<AtomicBool>) {
+        forwarder_with(tx, HashMap::new())
+    }
+
+    fn forwarder_with(
+        tx: mpsc::Sender<(String, Value)>,
+        declared_contracts: HashMap<String, SourceContract>,
+    ) -> (EventForwarder, Arc<AtomicBool>) {
         let saw_error = Arc::new(AtomicBool::new(false));
         (
             EventForwarder {
                 tx,
                 saw_error: saw_error.clone(),
+                declared_contracts,
             },
             saw_error,
         )
@@ -498,6 +556,34 @@ mod tests {
             saw_error.load(Ordering::Relaxed),
             "pipeline_error must flip saw_error so drive() doesn't double-emit"
         );
+    }
+
+    /// The whole contract-display path in one assertion: the forwarder is the
+    /// only place holding both the engine's plan and the connector's declared
+    /// map, so if it stops projecting, the run UI silently loses the column.
+    #[tokio::test]
+    async fn forwarder_projects_contracts_onto_pipeline_plan() {
+        let (tx, mut rx) = mpsc::channel::<(String, Value)>(4);
+        let declared = HashMap::from([("orders".to_string(), SourceContract::immutable())]);
+        let (forwarder, _saw_error) = forwarder_with(tx, declared);
+        forwarder
+            .handle_event(PipelineEvent::PipelinePlan {
+                pipeline_name: "p".into(),
+                load_id: "l".into(),
+                resources: vec!["orders".into(), "users".into()],
+                destination: "memory".into(),
+            })
+            .await
+            .expect("forward");
+
+        let (event_type, payload) = rx.recv().await.expect("event");
+        assert_eq!(event_type, "pipeline_plan");
+        assert_eq!(payload["contracts"][0]["resource"], json!("orders"));
+        assert_eq!(payload["contracts"][0]["mutability"], json!("immutable"));
+        // `users` is planned but undeclared — labelled, never defaulted to
+        // `opaque` (which is what `contract_for` would have handed back).
+        assert_eq!(payload["contracts"][1]["resource"], json!("users"));
+        assert_eq!(payload["contracts"][1]["mutability"], json!("undeclared"));
     }
 
     #[tokio::test]

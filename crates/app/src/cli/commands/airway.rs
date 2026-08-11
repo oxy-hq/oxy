@@ -179,6 +179,15 @@ async fn connect_db() -> Result<sea_orm::DatabaseConnection, OxyError> {
     AirwayMigrator::up(&db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("airway migrations: {e}")))?;
+
+    // The one connect path `run`, `backfill` and `coverage` all share, so it
+    // is the seam that covers the whole `oxy airway` surface. Installs
+    // airway's process-wide `GlobalConfig` from `airway_deployment_config`
+    // before any connector exists — `run_pipeline` would install it too, but
+    // only for the runs, and only after this command has already had a chance
+    // to build one. Never fails the command; see `crate::airway_boot`.
+    crate::airway_boot::install_deployment_tier(Some(&db)).await;
+
     Ok(db)
 }
 

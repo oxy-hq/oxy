@@ -116,7 +116,20 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     init_feature_flags().await?;
     println!("serve: feature flags initialized, seeding app admins from env");
     seed_app_admins_from_env().await?;
-    println!("serve: app admins seeded, finding available port");
+    println!("serve: app admins seeded, installing airway deployment tier");
+
+    // airway's process-wide `GlobalConfig` (timeout / retries / user-agent /
+    // TLS), from the singleton `airway_deployment_config` row. Installed once
+    // here, at boot, rather than at the top of an airway run — because
+    // `HttpConfig::default` and `RetryConfig::default` read a process-wide
+    // `OnceLock`, so one install covers every connector this process builds,
+    // including the ones that never go through a run: `POST /sources/discover`
+    // (the create-pipeline wizard's table picker, which does connect to the
+    // vendor) and the admin policy preview. Must precede
+    // `create_web_application`, which mounts those routes and starts the
+    // in-process worker fleet. Never fails boot — see `airway_boot`.
+    crate::airway_boot::install_deployment_tier_from_env().await;
+    println!("serve: airway deployment tier resolved, finding available port");
 
     // Now that OXY_DATABASE_URL is set (either externally for `oxy serve` or
     // by `oxy start` after booting Postgres), resolve the observability

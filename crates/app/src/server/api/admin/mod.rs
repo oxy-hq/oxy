@@ -90,6 +90,9 @@ use crate::server::router::AppState;
 ///   - PUT    /admin/airway/config/{source_kind}/workspaces/{workspace_id}
 ///   - DELETE /admin/airway/config/{source_kind}/workspaces/{workspace_id}
 ///   - GET    /admin/airway/config/{source_kind}/preview
+///   - GET    /admin/airway/deployment-config
+///   - PUT    /admin/airway/deployment-config
+///   - DELETE /admin/airway/deployment-config
 ///
 /// Admin routes. The outer nest layer in `router::global` is the **door**
 /// (`oxy_owner_or_app_admin_guard`): it answers "are you Oxy staff at all". Each
@@ -406,6 +409,12 @@ mod tests {
             ("PUT", format!("/airway/config/toast/workspaces/{ws}")),
             ("DELETE", format!("/airway/config/toast/workspaces/{ws}")),
             ("GET", "/airway/config/toast/preview".to_string()),
+            // The operational tier. A sibling of `/config`, so it is also the
+            // case where a bad `.nest`/`.route` shape would have it matched by
+            // `/config/{source_kind}` instead of its own handler.
+            ("GET", "/airway/deployment-config".to_string()),
+            ("PUT", "/airway/deployment-config".to_string()),
+            ("DELETE", "/airway/deployment-config".to_string()),
         ] {
             let req = Request::builder()
                 .method(method)

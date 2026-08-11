@@ -6,9 +6,14 @@
 //! converts between the two via [`From`] impls when bridging engine
 //! events onto the runtime event channel.
 
+use std::collections::HashMap;
+
 use agentic_core::events::DomainEvents;
 use airway::airstack::PipelineEvent;
+use airway::connector::SourceContract;
 use serde::{Deserialize, Serialize};
+
+use crate::contract::{ResourceContract, project_contracts};
 
 /// Events emitted by an airway run.
 ///
@@ -37,6 +42,24 @@ pub enum AirwayEvent {
         load_id: String,
         resources: Vec<String>,
         destination: String,
+        /// Per-resource [`SourceContract`] projection — how each resource
+        /// behaves (immutable / versioned / opaque / undeclared), plus its
+        /// version column and restatement window.
+        ///
+        /// The **only** field on this taxonomy that does not come from the
+        /// engine event: airway's `PipelinePlan` carries names only, and the
+        /// contracts are read off the connector oxy built. See
+        /// [`AirwayEvent::from_engine`].
+        ///
+        /// `#[serde(default)]` because runs recorded before this field existed
+        /// are replayed from `agentic_run_events` verbatim. **Empty is not
+        /// "everything undeclared"** — it is "this stream carried no contract
+        /// information at all", and the UI must render nothing rather than
+        /// claim a fact about a run it cannot see. A run that *does* carry
+        /// contracts has one entry per planned resource, undeclared ones
+        /// included.
+        #[serde(default)]
+        contracts: Vec<ResourceContract>,
     },
 
     /// A resource is about to be extracted. Emitted up-front for every
@@ -187,7 +210,42 @@ pub enum AirwayEvent {
 impl DomainEvents for AirwayEvent {}
 
 impl From<PipelineEvent> for AirwayEvent {
+    /// Structural bridge with **no connector in scope**, so a `PipelinePlan`
+    /// built this way carries an empty `contracts` list — "nothing known".
+    ///
+    /// Every caller that *does* hold the connector must use
+    /// [`AirwayEvent::from_engine`] instead; the worker's `EventForwarder`
+    /// does. Routing both through one function keeps "we were never given a
+    /// connector" a deliberate argument rather than a forgotten field.
     fn from(event: PipelineEvent) -> Self {
+        Self::from_engine(event, None)
+    }
+}
+
+impl AirwayEvent {
+    /// Convert an engine event, projecting the connector's **declared**
+    /// contract map onto [`AirwayEvent::PipelinePlan`].
+    ///
+    /// `declared` is `SourceConnector::contracts()` — never `contract_for()`,
+    /// which substitutes `SourceContract::default()` (opaque) and would
+    /// silently promote "nobody said" to a checked vendor fact. See
+    /// [`crate::contract`].
+    ///
+    /// `None` is **not** the same as `Some(empty map)`, and the distinction is
+    /// the whole point of the option:
+    /// - `Some(map)` — a connector was asked. Every planned resource gets an
+    ///   entry, `undeclared` for the ones the map omits. An empty map is the
+    ///   normal case for a connector that declares nothing, and every resource
+    ///   is then honestly labelled `undeclared`.
+    /// - `None` — no connector was in scope, so nothing may be said about any
+    ///   resource. The list stays empty and the UI renders nothing rather than
+    ///   reporting a connector's silence it never actually heard.
+    ///
+    /// Only `PipelinePlan` reads it; every other variant is a 1:1 field move.
+    pub fn from_engine(
+        event: PipelineEvent,
+        declared: Option<&HashMap<String, SourceContract>>,
+    ) -> Self {
         match event {
             PipelineEvent::LoadStarted {
                 pipeline_name,
@@ -204,6 +262,9 @@ impl From<PipelineEvent> for AirwayEvent {
             } => AirwayEvent::PipelinePlan {
                 pipeline_name,
                 load_id,
+                contracts: declared
+                    .map(|declared| project_contracts(&resources, declared))
+                    .unwrap_or_default(),
                 resources,
                 destination,
             },
@@ -533,21 +594,95 @@ mod tests {
         assert_eq!(v["rows"], 42);
     }
 
-    #[test]
-    fn from_engine_pipeline_plan_maps_and_tags_snake_case() {
-        let ev: AirwayEvent = PipelineEvent::PipelinePlan {
+    fn plan(resources: &[&str]) -> PipelineEvent {
+        PipelineEvent::PipelinePlan {
             pipeline_name: "p".into(),
             load_id: "l".into(),
-            resources: vec!["users".into(), "orders".into()],
+            resources: resources.iter().map(|s| (*s).to_string()).collect(),
             destination: "memory".into(),
         }
-        .into();
+    }
+
+    #[test]
+    fn from_engine_pipeline_plan_maps_and_tags_snake_case() {
+        let ev: AirwayEvent = plan(&["users", "orders"]).into();
         let v = serde_json::to_value(&ev).unwrap();
         assert_eq!(v["event_type"], "pipeline_plan");
         assert_eq!(v["destination"], "memory");
         match ev {
             AirwayEvent::PipelinePlan { resources, .. } => {
                 assert_eq!(resources, vec!["users", "orders"]);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    /// The contract-display payload: one entry per planned resource, in plan
+    /// order, with the *undeclared* resource labelled rather than defaulted.
+    #[test]
+    fn from_engine_pipeline_plan_projects_declared_contracts() {
+        let declared = HashMap::from([("orders".to_string(), SourceContract::immutable())]);
+        let ev = AirwayEvent::from_engine(plan(&["users", "orders"]), Some(&declared));
+        let v = serde_json::to_value(&ev).unwrap();
+        assert_eq!(v["contracts"][0]["resource"], "users");
+        assert_eq!(
+            v["contracts"][0]["mutability"], "undeclared",
+            "an undeclared resource must not arrive wearing airway's opaque default"
+        );
+        assert_eq!(v["contracts"][1]["resource"], "orders");
+        assert_eq!(v["contracts"][1]["mutability"], "immutable");
+    }
+
+    /// `From` has no connector, so it must say *nothing* rather than guess —
+    /// an empty list, which the UI reads as "no contract info on this stream".
+    ///
+    /// Contrast the next test: a connector that *was* asked and declared
+    /// nothing yields `undeclared` entries, which is a different claim.
+    #[test]
+    fn from_without_a_connector_carries_no_contracts() {
+        let ev: AirwayEvent = plan(&["users"]).into();
+        match ev {
+            AirwayEvent::PipelinePlan { contracts, .. } => assert!(
+                contracts.is_empty(),
+                "no connector in scope means nothing may be asserted about any resource"
+            ),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    /// An empty `contracts()` map is the normal case for a connector that has
+    /// not been migrated to 0.1.23's contracts. It was still *asked*, so every
+    /// planned resource is labelled `undeclared` — not omitted, and not
+    /// defaulted to `opaque`.
+    #[test]
+    fn an_empty_declared_map_still_labels_every_resource_undeclared() {
+        let ev = AirwayEvent::from_engine(plan(&["users", "orders"]), Some(&HashMap::new()));
+        let v = serde_json::to_value(&ev).unwrap();
+        assert_eq!(v["contracts"].as_array().map(Vec::len), Some(2));
+        assert_eq!(v["contracts"][0]["mutability"], "undeclared");
+        assert_eq!(v["contracts"][1]["mutability"], "undeclared");
+    }
+
+    /// Runs recorded before the field existed replay verbatim out of
+    /// `agentic_run_events`; they must still deserialize.
+    #[test]
+    fn pipeline_plan_without_contracts_field_still_deserializes() {
+        let legacy = serde_json::json!({
+            "event_type": "pipeline_plan",
+            "pipeline_name": "p",
+            "load_id": "l",
+            "resources": ["users"],
+            "destination": "memory",
+        });
+        let ev: AirwayEvent = serde_json::from_value(legacy).expect("legacy payload deserializes");
+        match ev {
+            AirwayEvent::PipelinePlan {
+                contracts,
+                resources,
+                ..
+            } => {
+                assert_eq!(resources, vec!["users"]);
+                assert!(contracts.is_empty());
             }
             _ => panic!("wrong variant"),
         }

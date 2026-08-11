@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AirwayEvent } from "@/services/api/airway";
+import type { AirwayEvent, ContractMutability, ResourceContract } from "@/services/api/airway";
 
 import { reduceAirwayEvents } from "./airwayReducer";
 
@@ -15,6 +15,18 @@ const PIPE = "shopify_users_orders";
 const LOAD = "load-abc1";
 
 const loadStarted = () => ev("load_started", { pipeline_name: PIPE, load_id: LOAD });
+/** Minimal contract payload — only `mutability` matters to the reducer. */
+const contract = (resource: string, mutability: ContractMutability): ResourceContract => ({
+  resource,
+  mutability,
+  version_field: null,
+  version_column: null,
+  cursor_tracks_modification: null,
+  restatement_window_ms: null,
+  cursor_lag_ms: null,
+  rewind_ms: null,
+  requires_partition_repull: null
+});
 const extract = (table: string, rows: number) =>
   ev("extract_completed", {
     pipeline_name: PIPE,
@@ -210,6 +222,72 @@ describe("reduceAirwayEvents", () => {
     ]);
     expect(v2.resources.map((r) => r.table)).toEqual(["users", "orders"]);
     expect(v2.resources.find((r) => r.table === "users")?.rowsExtracted).toBe(4);
+  });
+
+  it("pipeline_plan attaches each resource's contract by name", () => {
+    const v = reduceAirwayEvents([
+      loadStarted(),
+      ev("pipeline_plan", {
+        pipeline_name: PIPE,
+        load_id: LOAD,
+        // Deliberately not in `resources` order — attachment is by name.
+        contracts: [contract("orders", "immutable"), contract("users", "undeclared")],
+        resources: ["users", "orders"],
+        destination: "wh"
+      })
+    ]);
+    const byTable = new Map(v.resources.map((r) => [r.table, r]));
+    expect(byTable.get("orders")?.contract?.mutability).toBe("immutable");
+    // Declared-nothing is carried through as `undeclared` — a state, not a
+    // missing value, and never silently the `opaque` airway defaults to.
+    expect(byTable.get("users")?.contract?.mutability).toBe("undeclared");
+  });
+
+  it("leaves the contract unset when the stream carries none", () => {
+    // A run recorded before contracts rode on `pipeline_plan`. "We were not
+    // told" must stay distinguishable from "the connector declared nothing".
+    const legacy = reduceAirwayEvents([
+      loadStarted(),
+      ev("pipeline_plan", {
+        pipeline_name: PIPE,
+        load_id: LOAD,
+        resources: ["users"],
+        destination: "wh"
+      })
+    ]);
+    expect(legacy.resources[0].contract).toBeUndefined();
+
+    // Same for a normalized child table: it is not a source resource, so no
+    // contract is invented for it from its parent's.
+    const withChild = reduceAirwayEvents([
+      loadStarted(),
+      ev("pipeline_plan", {
+        pipeline_name: PIPE,
+        load_id: LOAD,
+        contracts: [contract("orders", "immutable")],
+        resources: ["orders"],
+        destination: "wh"
+      }),
+      normalize("orders", 2, ["orders__checks"])
+    ]);
+    const child = withChild.resources.find((r) => r.table === "orders__checks");
+    expect(child?.parent).toBe("orders");
+    expect(child?.contract).toBeUndefined();
+  });
+
+  it("ignores a contract for a resource the plan does not list", () => {
+    const v = reduceAirwayEvents([
+      loadStarted(),
+      ev("pipeline_plan", {
+        pipeline_name: PIPE,
+        load_id: LOAD,
+        contracts: [contract("ghost", "opaque")],
+        resources: ["users"],
+        destination: "wh"
+      })
+    ]);
+    expect(v.resources.map((r) => r.table)).toEqual(["users"]);
+    expect(v.resources[0].contract).toBeUndefined();
   });
 
   it("extract_started / normalize_started surface in-flight rows + phases", () => {

@@ -8,6 +8,7 @@
 
 import type React from "react";
 
+import ContractBadge from "@/components/airway/ContractBadge";
 import { Badge } from "@/components/ui/shadcn/badge";
 import {
   Table,
@@ -63,6 +64,9 @@ const ResourceGrid: React.FC<Props> = ({ resources }) => {
       <TableHeader>
         <TableRow>
           <TableHead>Resource</TableHead>
+          <TableHead title='How the source declares this resource behaves — whether rows are ever corrected, and how far back each pull reaches.'>
+            Contract
+          </TableHead>
           <TableHead className='text-right'>Extracted</TableHead>
           <TableHead className='text-right'>Normalized</TableHead>
           <TableHead className='text-right'>Loaded</TableHead>
@@ -76,6 +80,12 @@ const ResourceGrid: React.FC<Props> = ({ resources }) => {
             <TableRow key={`${r.parent ?? ""}:${r.table}`}>
               <TableCell className={cn("font-medium", isChild && "pl-8 text-muted-foreground")}>
                 {isChild ? `└ ${r.table}` : r.table}
+              </TableCell>
+              <TableCell>
+                {/* Child tables are produced by relational normalization,
+                    not pulled from the source, so they carry no contract
+                    of their own and `contract` is undefined for them. */}
+                <ContractBadge contract={r.contract} />
               </TableCell>
               <TableCell className='text-right tabular-nums'>{num(r.rowsExtracted)}</TableCell>
               <TableCell className='text-right tabular-nums'>{num(r.rowsNormalized)}</TableCell>

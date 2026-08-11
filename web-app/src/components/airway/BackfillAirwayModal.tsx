@@ -9,13 +9,20 @@
  *
  * The UI treats the end date as **inclusive**; the backend window is half-open
  * `[from, to)`, so the exclusive upper bound is pushed to the next UTC midnight.
+ *
+ * The range is **pre-filled from the resources' source contracts** when they
+ * declare a restatement window — see `backfillSuggestion.ts` for the
+ * derivation and `BackfillWindowHint` for how it is explained. It is a
+ * suggestion, not a cage: the operator's first edit takes the fields over for
+ * the rest of the session, and "Use suggested" puts it back.
  */
 
 import { CalendarClock, Layers, Loader2 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import BackfillWindowHint from "@/components/airway/BackfillWindowHint";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   Dialog,
@@ -28,7 +35,11 @@ import {
 } from "@/components/ui/shadcn/dialog";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { useBackfillAirway, useChunkedBackfill } from "@/hooks/api/airway/useAirway";
+import {
+  useBackfillAirway,
+  useBackfillSuggestion,
+  useChunkedBackfill
+} from "@/hooks/api/airway/useAirway";
 import type { ChunkGranularity } from "@/services/api/airway";
 
 /** `YYYY-MM-DD` → RFC3339 at UTC midnight (inclusive lower bound). */
@@ -57,13 +68,45 @@ const BackfillAirwayModal: React.FC<{
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [granularity, setGranularity] = useState<ChunkGranularity>("month");
+  // Set by the operator's first edit. Once true the contract suggestion never
+  // writes the fields again — a suggestion that reasserts itself is a cage.
+  const [touched, setTouched] = useState(false);
   const backfill = useBackfillAirway();
   const chunked = useChunkedBackfill();
+  // Only streams while the dialog is on screen.
+  const { suggestion, loading, neverRan, runsError } = useBackfillSuggestion(pipelineRef, open);
+  const suggested = suggestion.window;
+
+  const applySuggested = () => {
+    if (!suggested) return;
+    setFrom(suggested.fromDate);
+    setTo(suggested.toDate);
+  };
+
+  // Pre-fill once the contracts arrive (they land a beat after the dialog
+  // opens, over SSE), and only while the fields are still untouched.
+  useEffect(() => {
+    if (!open || touched || !suggested) return;
+    setFrom(suggested.fromDate);
+    setTo(suggested.toDate);
+  }, [open, touched, suggested]);
+
+  const openChange = (next: boolean) => {
+    setOpen(next);
+    // Closing clears the form so the next open re-derives from whatever the
+    // contracts say then, rather than resurrecting a stale hand-typed range.
+    if (!next) {
+      setFrom("");
+      setTo("");
+      setTouched(false);
+    }
+  };
 
   // Inclusive [from, to]; valid when both are set and from <= to (lexical
   // compare is correct for ISO `YYYY-MM-DD`).
   const valid = from !== "" && to !== "" && from <= to;
   const busy = backfill.isPending || chunked.isPending;
+  const applied = !!suggested && from === suggested.fromDate && to === suggested.toDate;
 
   const submit = async () => {
     if (!valid) return;
@@ -76,7 +119,7 @@ const BackfillAirwayModal: React.FC<{
       if (mode === "single") {
         const { run_id } = await backfill.mutateAsync(range);
         toast.success("Backfill started");
-        setOpen(false);
+        openChange(false);
         onStarted(run_id);
       } else {
         // Chunks are serialized server-side (they share one staging buffer);
@@ -89,7 +132,7 @@ const BackfillAirwayModal: React.FC<{
         toast.success(
           `Chunked backfill started — ${chunk_count} ${granularity} chunk${chunk_count === 1 ? "" : "s"}`
         );
-        setOpen(false);
+        openChange(false);
         onChunkedStarted?.();
       }
     } catch (e) {
@@ -98,7 +141,7 @@ const BackfillAirwayModal: React.FC<{
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={openChange}>
       <DialogTrigger asChild>
         <Button size='sm' variant='outline' aria-label='Backfill this pipeline'>
           <CalendarClock className='h-4 w-4' />
@@ -138,6 +181,15 @@ const BackfillAirwayModal: React.FC<{
           </Button>
         </div>
 
+        <BackfillWindowHint
+          suggestion={suggestion}
+          loading={loading}
+          neverRan={neverRan}
+          runsError={runsError}
+          applied={applied}
+          onApply={applySuggested}
+        />
+
         <div className='grid grid-cols-2 gap-4 py-2'>
           <div className='flex flex-col gap-2'>
             <Label htmlFor='backfill-from'>Start date</Label>
@@ -146,7 +198,10 @@ const BackfillAirwayModal: React.FC<{
               type='date'
               value={from}
               max={to || undefined}
-              onChange={(e) => setFrom(e.target.value)}
+              onChange={(e) => {
+                setTouched(true);
+                setFrom(e.target.value);
+              }}
             />
           </div>
           <div className='flex flex-col gap-2'>
@@ -156,7 +211,10 @@ const BackfillAirwayModal: React.FC<{
               type='date'
               value={to}
               min={from || undefined}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={(e) => {
+                setTouched(true);
+                setTo(e.target.value);
+              }}
             />
           </div>
         </div>

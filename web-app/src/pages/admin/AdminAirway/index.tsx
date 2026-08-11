@@ -1,14 +1,23 @@
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useAirwayConfig } from "@/hooks/api/airwayConfig/useAirwayConfig";
+import { DeploymentConfig } from "./DeploymentConfig";
 import { SourceKindCard } from "./SourceKindCard";
 
 /**
- * `/admin/airway` — staff console for airway's per-source-kind
- * admission policy. Two regions only: source-kind cards (each embedding its
- * own workspace-overrides table) — no "Deployment" region. `max_rewind`,
- * `cursor_lag_floor`, and per-resource restatement windows are stage 4,
- * deliberately: the code that honours them doesn't exist yet, and a knob
- * that does nothing is the exact failure this surface exists to avoid.
+ * `/admin/airway` — staff console for airway's configuration. Three regions,
+ * and the first two belong to a different tier than the third:
+ *
+ * 1. **source-kind cards** — the admission *policy* tier (`contract_policy`,
+ *    `environment`), per kind, resolved on every run;
+ * 2. **workspace overrides**, embedded in each card, sparse over that policy;
+ * 3. **Deployment** — airway's *operational* tier, deployment-wide and
+ *    installed once per worker process. Different scope, different lifetime,
+ *    and crucially not live on save — see `DeploymentConfig`.
+ *
+ * `max_rewind`, `cursor_lag_floor`, `allow_unversioned_writes` and
+ * `partition_repull_budget` appear in none of them: they have zero occurrences
+ * in airway's source, so a control for one would be accepted, saved and inert
+ * — the exact failure this surface exists to avoid.
  *
  * Tightening a kind's `contract_policy` can silently halt every pipeline
  * whose resources don't satisfy it, so the preview is the guardrail — see
@@ -24,10 +33,11 @@ export default function AdminAirway() {
         <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-[0.14em]'>
           Admin · Airway
         </p>
-        <h1 className='font-semibold text-xl tracking-tight'>Admission policy</h1>
+        <h1 className='font-semibold text-xl tracking-tight'>Airway configuration</h1>
         <p className='max-w-2xl text-muted-foreground text-xs'>
-          The contract policy each source kind admits pipelines under. Tightening a kind's policy
-          can halt every pipeline whose resources don't satisfy it — preview before saving.
+          The contract policy each source kind admits pipelines under, plus the deployment-wide
+          operational settings airway installs at worker startup. Tightening a kind's policy can
+          halt every pipeline whose resources don't satisfy it — preview before saving.
         </p>
       </header>
 
@@ -57,6 +67,11 @@ export default function AdminAirway() {
           ))}
         </div>
       )}
+
+      {/* Its own query, so a failure in the policy tier does not take the
+          operational tier down with it (and vice versa) — two tiers, two
+          tables, two independent reads. */}
+      <DeploymentConfig />
     </div>
   );
 }

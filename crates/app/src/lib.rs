@@ -9,6 +9,7 @@
 #![recursion_limit = "256"]
 
 pub mod agentic_wiring;
+pub mod airway_boot;
 pub mod cli;
 /// Shared by `cli::commands::publish` and the admin apps list — see the module
 /// doc for why it belongs to neither.

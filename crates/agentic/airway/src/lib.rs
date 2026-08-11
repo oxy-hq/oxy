@@ -12,6 +12,8 @@
 pub mod admission;
 pub mod boxed;
 pub mod config;
+pub mod contract;
+pub mod deployment_config;
 pub mod destination_factory;
 pub mod error;
 pub mod events;
@@ -26,6 +28,13 @@ pub use admission::AirwayAdmission;
 pub use config::{
     AirwayPipelineSpec, DestinationConfig, DestinationRef, DestinationSpec, SourceConfig,
 };
+pub use contract::{ContractMutability, ResourceContract, project_contracts};
+/// The deployment (operational) tier — airway's process-wide `GlobalConfig`,
+/// stored in the singleton `airway_deployment_config` row. Re-exported for the
+/// same reason [`ContractPolicy`] is: oxy's staff admin surface has to
+/// *name* these values (configured vs installed, and the drift between them)
+/// and this crate is the boundary every other oxy crate enters airway through.
+pub use deployment_config::{DeploymentValues, drift as deployment_drift, installed_values};
 pub use destination_factory::build_destination;
 pub use error::AirwayError;
 pub use events::AirwayEvent;
@@ -36,7 +45,7 @@ pub use source_factory::{
 
 /// Airway's admission vocabulary, re-exported for the same reason
 /// [`DiscoveredTable`] is: a host that needs to *name* these types — oxy's
-/// Global-Owner policy-preview endpoint reads `contracts()` / `resources()` off
+/// staff policy-preview endpoint reads `contracts()` / `resources()` off
 /// a built connector and scores them against a [`ContractPolicy`] — should not
 /// have to take a direct dependency on the `airway` engine to do it. This crate
 /// is the boundary every other oxy crate enters airway through; widening it here

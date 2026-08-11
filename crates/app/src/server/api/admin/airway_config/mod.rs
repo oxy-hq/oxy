@@ -1,6 +1,7 @@
-//! `/api/admin/airway/config` — staff read/write of Airway admission policy
-//! config (`airway_source_config`): the global per-source-kind row plus any
-//! per-workspace overrides.
+//! `/api/admin/airway/*` — staff read/write of Airway's configuration: the
+//! admission policy per source kind (`airway_source_config`, its global row
+//! plus any per-workspace overrides) and the deployment-wide operational tier
+//! (`airway_deployment_config`).
 //!
 //! Gated by `cap(Action::PlatformOperate)` — the capability the other
 //! deployment-wide operational surfaces (`workspace_health` / `routing` /
@@ -19,6 +20,11 @@
 //! not a route; a doc that reads as coverage is worse than none, so the claim
 //! is now specific enough to be falsifiable.
 //!
+//! [`deployment`] is the third case that note has to cover, and it is the
+//! **global row's** shape, not the listing's: a deployment-wide singleton that
+//! belongs to no org, so there is nothing to fence it against. It carries no
+//! per-tenant data at all.
+//!
 //! Stage 2 added the `airway_source_config` table and
 //! `agentic_pipeline::airway_config::resolve_admission`, with no way to
 //! edit those rows except SQL. Task 1 shipped the read side, Task 2 the
@@ -32,14 +38,28 @@
 //! reads it from the compile boundary (`airway_pipelines`, scoped to each
 //! workspace's promoted revision) rather than the working copy, so it needs
 //! no ide node. See [`preview`]'s module doc for why the compiled rows beat
-//! the "but `airway_run` reads the working copy" argument.
+//! the "but `airway_run` reads the working copy" argument. [`deployment`]'s
+//! read also touches a process-local `OnceLock`, which is not node-local
+//! *state* — see its module doc for why that is labelled in the payload
+//! rather than fixed by pinning the route to the ide.
 //!
-//! Scope is the policy tier only: `contract_policy` and `environment`, the
-//! two fields stage 2's resolver actually honours. See
-//! `crates/entity/src/airway_source_config.rs` for why nothing else (e.g.
-//! `max_rewind`, a `Deployment` region) belongs here yet — a knob nothing
-//! reads is the failure airway's own plan calls out.
+//! Two tiers live under `/airway`, and they are not the same shape:
+//!
+//! - the **policy tier** — `contract_policy` and `environment`, per source
+//!   kind with a per-workspace override, resolved on every run. That is
+//!   [`handlers`] and [`preview`], over `airway_source_config`.
+//! - the **operational tier** — the seven settings airway installs
+//!   process-wide once at startup. That is [`deployment`], over the singleton
+//!   `airway_deployment_config` row.
+//!
+//! The bar for both is the same and is the one airway's own plan sets: **a
+//! knob must do something.** Every field on either tier is read by airway —
+//! the operational seven are exactly `GlobalConfig`'s non-policy fields, and
+//! `max_rewind` / `cursor_lag_floor` / `allow_unversioned_writes` /
+//! `partition_repull_budget` are still absent from both because they have zero
+//! occurrences in airway's `src/` and would be accepted, stored and ignored.
 
+pub(crate) mod deployment;
 pub(crate) mod handlers;
 pub(crate) mod preview;
 pub(crate) mod preview_scan;
@@ -77,6 +97,15 @@ pub(crate) fn router() -> Router<AppState> {
             .route(
                 "/config/{source_kind}/preview",
                 get(preview::preview_policy),
+            )
+            // The operational tier. A sibling of `/config`, not a child:
+            // `/config/{source_kind}` would swallow it as a source kind, and
+            // it is deployment-wide rather than per kind in any case.
+            .route(
+                "/deployment-config",
+                get(deployment::get_deployment_config)
+                    .put(deployment::put_deployment_config)
+                    .delete(deployment::delete_deployment_config),
             ),
     )
 }

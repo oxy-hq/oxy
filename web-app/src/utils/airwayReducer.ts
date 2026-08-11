@@ -7,7 +7,7 @@
  * unit-tested, no React.
  */
 
-import type { AirwayEvent } from "@/services/api/airway";
+import type { AirwayEvent, ResourceContract } from "@/services/api/airway";
 
 export type PhaseState = "pending" | "active" | "done";
 
@@ -23,6 +23,25 @@ export type ResourceRow = {
   table: string;
   /** Set for child tables produced by relational normalization. */
   parent?: string;
+  /**
+   * The source contract this resource was pulled under, from
+   * `pipeline_plan`.
+   *
+   * Three states, not two — the distinction matters and the UI must keep
+   * it:
+   * - `undefined` — the stream said nothing. Either an old run recorded
+   *   before contracts rode on `pipeline_plan`, or a normalized child
+   *   table, which is not a source resource and has no contract of its
+   *   own. Render nothing.
+   * - `{ mutability: "undeclared" }` — the connector was asked and
+   *   declared nothing. Render it as such.
+   * - anything else — a declared vendor fact.
+   *
+   * Collapsing the first two into "undeclared" would claim a connector
+   * said something it was never asked; collapsing `undeclared` into
+   * `opaque` would turn a gap into a guarantee.
+   */
+  contract?: ResourceContract;
   rowsExtracted?: number;
   rowsNormalized?: number;
   rowsLoaded?: number;
@@ -216,8 +235,19 @@ export function reduceAirwayEvents(events: AirwayEvent[]): AirwayRunView {
         // Render the full skeleton immediately: every resource as
         // `pending` so the grid/lineage view isn't empty while the
         // first (slow) extract runs.
+        //
+        // `contracts` (when the stream carries it) has one entry per
+        // planned resource, keyed by name rather than by position, so a
+        // future divergence in ordering can't silently mis-attribute a
+        // contract to the wrong resource. A resource with no entry keeps
+        // `contract === undefined` — see `ResourceRow.contract`.
+        const contracts = new Map<string, ResourceContract>(
+          (ev.payload.contracts ?? []).map((c) => [c.resource, c])
+        );
         for (const table of ev.payload.resources) {
-          upsertResource(view, table);
+          const row = upsertResource(view, table);
+          const contract = contracts.get(table);
+          if (contract) row.contract = contract;
         }
         break;
       }

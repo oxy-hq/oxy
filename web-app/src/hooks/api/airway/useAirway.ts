@@ -21,6 +21,10 @@ import {
 } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  type BackfillSuggestion,
+  deriveBackfillSuggestion
+} from "@/components/airway/backfillSuggestion";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import {
   type AirwayEvent,
@@ -242,6 +246,17 @@ export const useAirwayCoverage = (rangeId: string | undefined): UseQueryResult<C
 
 // ── Run stream ─────────────────────────────────────────────────────────────
 
+/**
+ * Where a subscription is in its life.
+ *
+ * Three states rather than a boolean because a consumer waiting for an event
+ * has to tell "not subscribed yet" from "subscribed and finished" — collapsing
+ * them is what leaves a placeholder on screen forever. `idle` is also the value
+ * on the render *before* the effect subscribes, so a caller keyed off `settled`
+ * never flashes a terminal message on the way to opening the stream.
+ */
+export type AirwayStreamStatus = "idle" | "open" | "closed";
+
 export type AirwayRunStreamHandle = {
   /** Folded view model for the phase bar + resource grid. */
   view: AirwayRunView;
@@ -249,6 +264,13 @@ export type AirwayRunStreamHandle = {
   events: AirwayEvent[];
   /** True while the SSE connection is open. */
   streaming: boolean;
+  /**
+   * The stream reached an end — server close or a fatal transport error — so
+   * whatever has not arrived by now is never arriving. `false` while idle:
+   * "nothing to wait for" and "done waiting" are different answers.
+   */
+  settled: boolean;
+  status: AirwayStreamStatus;
 };
 
 const IDLE_VIEW: AirwayRunView = reduceAirwayEvents([]);
@@ -261,19 +283,19 @@ export const useAirwayRunStream = (runId: string | undefined): AirwayRunStreamHa
   const { project } = useCurrentProjectBranch();
   const queryClient = useQueryClient();
   const [events, setEvents] = useState<AirwayEvent[]>([]);
-  const [streaming, setStreaming] = useState(false);
+  const [status, setStatus] = useState<AirwayStreamStatus>("idle");
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!runId) {
       setEvents([]);
-      setStreaming(false);
+      setStatus("idle");
       return;
     }
     const controller = new AbortController();
     abortRef.current = controller;
     setEvents([]);
-    setStreaming(true);
+    setStatus("open");
 
     AirwayService.streamEvents(project.id, runId, {
       signal: controller.signal,
@@ -291,10 +313,15 @@ export const useAirwayRunStream = (runId: string | undefined): AirwayRunStreamHa
             payload: { pipeline_name: "", load_id: null, error: err.message }
           }
         ]);
+        // `fetchEventSource` treats a throw from its `onerror` as fatal and
+        // does **not** then call `onclose`, so this is the only notice a
+        // consumer gets that the stream is over. Without it, a connection
+        // failure leaves every "still waiting" reader waiting forever.
+        setStatus("closed");
       },
       onClose: () => {
         if (controller.signal.aborted) return;
-        setStreaming(false);
+        setStatus("closed");
         // The run-history list keys off `agentic_runs`; drop it so a
         // freshly-terminal run shows the right status on next read.
         queryClient.invalidateQueries({
@@ -302,13 +329,16 @@ export const useAirwayRunStream = (runId: string | undefined): AirwayRunStreamHa
         });
       }
     }).catch(() => {
-      // Connection-level failure already surfaced via `onError`; the
-      // `.catch` only stops an unhandled rejection.
+      // Connection-level failure already surfaced via `onError` (which also
+      // closed the status); the `.catch` only stops an unhandled rejection.
+      // Belt and braces so no rejection path can leave the status `open`.
+      if (!controller.signal.aborted) setStatus("closed");
     });
 
     return () => {
       controller.abort();
-      setStreaming(false);
+      // Unsubscribed, not finished: a remount re-opens and re-reads.
+      setStatus("idle");
     };
   }, [runId, project.id, queryClient]);
 
@@ -317,7 +347,74 @@ export const useAirwayRunStream = (runId: string | undefined): AirwayRunStreamHa
     [events]
   );
 
-  return { view, events, streaming };
+  return { view, events, streaming: status === "open", settled: status === "closed", status };
+};
+
+// ── Contract-derived backfill suggestion ───────────────────────────────────
+
+export type BackfillSuggestionHandle = {
+  suggestion: BackfillSuggestion;
+  /** True while the contracts are still on their way — the caller shows a
+   *  placeholder instead of the (momentarily indistinguishable) "nothing
+   *  declared" message. **Terminates**: see the hook doc. */
+  loading: boolean;
+  /** The pipeline has never run, so no contract has ever been reported. */
+  neverRan: boolean;
+  /** The run history could not be read at all, so *whether* a contract exists
+   *  is unknown. Distinct from `neverRan`, which is a fact about the pipeline
+   *  rather than about this request. */
+  runsError: boolean;
+};
+
+/**
+ * The contracts a pipeline's resources were last pulled under, folded into a
+ * suggested backfill window.
+ *
+ * There is no run-config API, so contracts are read the same way the Pipeline
+ * Overview reads lineage: replay the latest run through the existing stream +
+ * reducer — the whole event stream, for one `pipeline_plan` event. `enabled`
+ * gates the SSE subscription, so the backfill modal only opens a stream while
+ * it is on screen; the runs list underneath is a shared React Query key, so it
+ * costs nothing extra. If run event volumes grow enough for that replay to be
+ * felt, the fix is a run-config read endpoint, not a narrower replay.
+ *
+ * # `loading` is bounded by the stream's own end, not by a clock
+ *
+ * A latest run that failed *before* planning — admission refusal, a connector
+ * build error, a malformed deployment row — replays to completion with zero
+ * resource rows. Defining `loading` as "no resources yet" therefore never
+ * cleared, and the modal sat on "Reading the source contracts…" for as long as
+ * it stayed open: a placeholder that reads as *in progress* while it actually
+ * means *never*.
+ *
+ * So it is bounded by [`AirwayRunStreamHandle.settled`], which covers all three
+ * ways a subscription ends — the server closing the stream, a fatal transport
+ * error, and unmount. A timer was the alternative and is worse in both
+ * directions: short enough to help a dead stream is short enough to fire
+ * mid-replay of a long run, which would report "no contract data" while the
+ * events are still arriving — the same lie, told the other way round. The one
+ * case a terminal branch does not bound is a socket that stays open and sends
+ * nothing at all, and that is a broken SSE endpoint (every stream here must
+ * emit a terminal event), not a state to design a timeout around.
+ */
+export const useBackfillSuggestion = (
+  pipelineRef: string,
+  enabled: boolean
+): BackfillSuggestionHandle => {
+  const { data: runs, isLoading, isError } = useAirwayRuns(pipelineRef);
+  const latestRunId = runs?.[0]?.run_id;
+  const { view, settled } = useAirwayRunStream(enabled ? latestRunId : undefined);
+  const suggestion = useMemo(() => deriveBackfillSuggestion(view.resources), [view.resources]);
+  return {
+    suggestion,
+    // `pipeline_plan` is the first event of a replay, so "resources are still
+    // empty" is the honest definition of not-yet-known — but only until the
+    // stream ends. Once it has, empty resources mean the run never reported a
+    // contract, and the caller says so instead of waiting.
+    loading: enabled && (isLoading || (!!latestRunId && !settled && view.resources.length === 0)),
+    neverRan: !isLoading && !isError && !latestRunId,
+    runsError: isError
+  };
 };
 
 // ── Controller (launch + stream + stop) ────────────────────────────────────

@@ -145,5 +145,17 @@ impl AdvisoryLock {
     }
 }
 
+/// Advisory-lock key for the singleton `airway_deployment_config` row.
+///
+/// Shared rather than declared twice on purpose: two test files write that row
+/// — `server::api::admin::airway_config::deployment_tests` and
+/// `airway_boot_tests` — and there is exactly **one** of it, so they must
+/// contend on the *same* key. Two different keys would let them run
+/// concurrently and overwrite each other's row rather than merely interleave,
+/// which is the failure the lock exists to prevent. Distinct from
+/// [`MIGRATION_LOCK_KEY`] and from every other caller's key, since keys share
+/// one namespace per database. `AIRWDP` truncated: `41 49 52 57 44 50`.
+pub(crate) const AIRWAY_DEPLOYMENT_LOCK_KEY: i64 = 0x4149_5257_4450;
+
 /// Message to print when skipping, so a skipped run says which knob to turn.
 pub(crate) const SKIP_MSG: &str = "skipping: OXY_DATABASE_URL not set";

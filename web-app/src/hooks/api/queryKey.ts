@@ -697,6 +697,8 @@ const workspaceHealthKeys = {
 const airwayConfigKeys = {
   all: ["admin", "airway-config"] as const,
   config: () => [...airwayConfigKeys.all, "config"] as const,
+  /** The deployment (operational) tier — one singleton row, so no parameters. */
+  deployment: () => [...airwayConfigKeys.all, "deployment"] as const,
   /**
    * Keyed on **both** admission axes. `undefined` on either means airway's
    * default (`permissive` / `production`), keyed as `null` so it's stable.

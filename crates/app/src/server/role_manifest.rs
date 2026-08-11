@@ -847,6 +847,35 @@ const FLEET_OK_READ_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/admin/airway/config/{source_kind}/preview",
         role: RouteRole::FleetOk,
     },
+    // ── Airway deployment (operational) tier ──────────────────────────────
+    // The singleton `airway_deployment_config` row: one `find_by_id` and one
+    // upsert/delete. Postgres-only like the rest of this surface.
+    //
+    // The read handler ALSO does a process-local `OnceLock` read
+    // (`agentic_airway::installed_values`) to report what the answering
+    // process installed. That is not node-local *state* in the IdeOnly sense —
+    // no filesystem, no `.git`, no state dir — and it is why the response
+    // carries `installed_scope` naming the process that answered. A replica
+    // that installed nothing reports `drift.status: "unknown"`, never
+    // `in_sync`, so serving from any replica is honest rather than merely
+    // possible. Do not reclassify this IdeOnly to "make `installed` mean the
+    // deployment": pinning it to the singleton would still only report ONE
+    // process, while costing the surface its availability.
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/admin/airway/deployment-config",
+        role: RouteRole::FleetOk,
+    },
+    ManifestEntry {
+        method: "PUT",
+        path_pattern: "/api/admin/airway/deployment-config",
+        role: RouteRole::FleetOk,
+    },
+    ManifestEntry {
+        method: "DELETE",
+        path_pattern: "/api/admin/airway/deployment-config",
+        role: RouteRole::FleetOk,
+    },
     // Analytics conversation history — list_runs_by_thread / get_run_by_thread
     // (agentic-http, `state.db` only).
     ManifestEntry {
@@ -1323,6 +1352,42 @@ mod tests {
             RouteRole::FleetOk,
             "the preview reads compiled `airway_pipelines` rows scoped to each workspace's \
              promoted revision — never the workspace filesystem — so it serves from any replica"
+        );
+    }
+
+    /// The operational tier's three routes are Postgres-only and must stay
+    /// HA. The read one is the interesting case: it also reads a process-local
+    /// `OnceLock` to report what the answering replica installed. That is
+    /// deliberately NOT a reason to pin it to the ide — a singleton would
+    /// report exactly one process's state too, just less available. The
+    /// honesty comes from `installed_scope` in the payload, not from the route
+    /// class.
+    #[test]
+    fn airway_deployment_config_is_fleet_ok() {
+        for method in ["GET", "PUT", "DELETE"] {
+            assert_eq!(
+                classify(method, "/api/admin/airway/deployment-config"),
+                RouteRole::FleetOk,
+                "{method} /api/admin/airway/deployment-config is Postgres-only and must stay HA"
+            );
+        }
+    }
+
+    /// `deployment-config` must not be swallowed by the per-source-kind
+    /// pattern next door. Both live under `/api/admin/airway/`, and
+    /// `/config/{source_kind}` is one segment away from matching it — a
+    /// regression here would classify the deployment routes by whatever rule
+    /// the policy routes carry, silently.
+    #[test]
+    fn deployment_config_does_not_collide_with_a_source_kind_path() {
+        assert_eq!(
+            classify("PUT", "/api/admin/airway/config/deployment-config"),
+            RouteRole::FleetOk,
+            "control: this is the source-kind route, matched by its own pattern"
+        );
+        assert_eq!(
+            classify("GET", "/api/admin/airway/deployment-config"),
+            RouteRole::FleetOk
         );
     }
 

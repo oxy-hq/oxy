@@ -96,6 +96,16 @@ pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
         tracing::info!("worker: migrations complete");
     }
 
+    // airway's process-wide `GlobalConfig`, from the singleton
+    // `airway_deployment_config` row — installed once here rather than at the
+    // top of each airway run, so it also covers any connector this process
+    // builds outside a run. A standalone worker drains `TaskSpec::Airway` off
+    // the queue, so it is one of the three entry points that can build a
+    // source connector; see `crate::airway_boot` for the full roster. Never
+    // fails boot: a malformed row is a warning here and a legible run failure
+    // where the operator can see it.
+    crate::airway_boot::install_deployment_tier_from_env().await;
+
     let max_inflight = read_max_inflight();
     let recovery_interval = resolve_recovery_interval(args.recovery_interval_secs);
     let health_port = resolve_health_port(args.health_port);
