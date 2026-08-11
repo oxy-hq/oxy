@@ -307,11 +307,37 @@ impl Worker {
                 outcome,
                 TaskOutcome::Done { .. } | TaskOutcome::Failed(_) | TaskOutcome::Cancelled
             );
+            // A deferral is not an outcome. Translate it into `Defer` so the
+            // task returns to the queue unrun, and stop consuming: sending it
+            // as an `Outcome` would have the coordinator record a result for a
+            // task that never executed.
+            if let TaskOutcome::Deferred {
+                delay_secs,
+                max_wait_secs,
+                reason,
+            } = outcome
+            {
+                tracing::info!(
+                    target: "worker",
+                    task_id = %task_id, delay_secs, %reason,
+                    "task deferred; handing it back to the queue"
+                );
+                let _ = transport
+                    .send(WorkerMessage::Defer {
+                        task_id: task_id.clone(),
+                        delay_secs,
+                        max_wait_secs,
+                        reason,
+                    })
+                    .await;
+                break;
+            }
             let outcome_type = match &outcome {
                 TaskOutcome::Done { .. } => "Done",
                 TaskOutcome::Suspended { .. } => "Suspended",
                 TaskOutcome::Failed(_) => "Failed",
                 TaskOutcome::Cancelled => "Cancelled",
+                TaskOutcome::Deferred { .. } => unreachable!("handled above"),
             };
             tracing::info!(
                 target: "worker",
@@ -458,6 +484,9 @@ mod tests {
                 Some(WorkerMessage::Outcome { outcome, .. }) => {
                     assert!(matches!(outcome, TaskOutcome::Done { .. }));
                     break;
+                }
+                Some(WorkerMessage::Defer { .. }) => {
+                    panic!("unexpected defer in this test")
                 }
                 None => panic!("transport closed unexpectedly"),
             }

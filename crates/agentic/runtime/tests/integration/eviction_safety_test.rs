@@ -1111,3 +1111,257 @@ async fn reap_reports_which_tasks_were_dead_lettered() {
          it is being reset to"
     );
 }
+
+/// `defer_task` must make a task genuinely INVISIBLE to the claim query, not
+/// merely re-queued.
+///
+/// Before `available_at`, the only way to express "not yet" was to claim the
+/// task and let its visibility timeout expire — which burns `claim_count`
+/// toward `max_claims` and is indistinguishable from a worker that crashed.
+/// This pins the property that makes deferral expressible at all.
+#[tokio::test]
+async fn deferred_task_is_invisible_until_its_window_opens() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let (_run_id, task_id) = seed_task(&db, "agent", TaskScope::Global).await;
+
+    let claimed = crud::claim_task_under_root(&db, "w1", &task_id)
+        .await
+        .unwrap();
+    assert!(claimed.is_some(), "precondition: task must be claimable");
+
+    assert_eq!(
+        crud::defer_task(&db, &task_id, "w1", 3600, 86_400)
+            .await
+            .unwrap(),
+        crud::DeferOutcome::Deferred,
+        "defer must apply to a task this worker holds"
+    );
+
+    let r = row(&db, &task_id).await;
+    assert_eq!(r.queue_status, "queued", "a deferred task is queued...");
+    assert!(r.worker_id.is_none(), "...and unowned");
+
+    // Queued and unowned, yet not claimable — that is the whole point.
+    assert!(
+        crud::claim_task_under_root(&db, "w2", &task_id)
+            .await
+            .unwrap()
+            .is_none(),
+        "a deferred task must not be claimable before available_at"
+    );
+
+    // Open the window; it becomes claimable again with no other change.
+    db.execute(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "UPDATE agentic_task_queue SET available_at = now() - interval '1 second' \
+         WHERE task_id = $1",
+        [task_id.clone().into()],
+    ))
+    .await
+    .unwrap();
+    let after = crud::claim_task_under_root(&db, "w3", &task_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        after.map(|t| t.task_id),
+        Some(task_id),
+        "once available_at has passed the task claims normally"
+    );
+}
+
+/// A deferral is not an attempt, so it must not spend the retry budget.
+///
+/// If `claim_count` stayed incremented, an indefinitely-contended task would
+/// walk to `max_claims` and dead-letter itself for waiting its turn — the exact
+/// outcome deferral exists to avoid.
+#[tokio::test]
+async fn defer_refunds_the_claim_it_returns() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let (_run_id, task_id) = seed_task(&db, "agent", TaskScope::Global).await;
+
+    crud::claim_task_under_root(&db, "w1", &task_id)
+        .await
+        .unwrap();
+    assert_eq!(row(&db, &task_id).await.claim_count, 1);
+
+    crud::defer_task(&db, &task_id, "w1", 60, 86_400)
+        .await
+        .unwrap();
+    assert_eq!(
+        row(&db, &task_id).await.claim_count,
+        0,
+        "deferral must refund the claim, or contention exhausts max_claims"
+    );
+
+    // And a worker that does NOT hold the claim cannot defer it.
+    crud::claim_task_under_root(&db, "w1", &task_id)
+        .await
+        .unwrap_or(None);
+    assert_eq!(
+        crud::defer_task(&db, &task_id, "someone-else", 60, 86_400)
+            .await
+            .unwrap(),
+        crud::DeferOutcome::NotHeld,
+        "defer must be scoped to the holding worker"
+    );
+}
+
+/// An explicit re-enqueue means "run this now" and must clear a prior deferral.
+///
+/// `available_at` is in the upsert's update set for this reason: without it the
+/// re-enqueue resets status and claim count but inherits a deadline its caller
+/// never chose, leaving the task silently invisible.
+#[tokio::test]
+async fn reenqueue_clears_a_pending_deferral() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let (run_id, task_id) = seed_task(&db, "agent", TaskScope::Global).await;
+
+    crud::claim_task_under_root(&db, "w1", &task_id)
+        .await
+        .unwrap();
+    crud::defer_task(&db, &task_id, "w1", 3600, 86_400)
+        .await
+        .unwrap();
+    assert!(
+        crud::claim_task_under_root(&db, "w2", &task_id)
+            .await
+            .unwrap()
+            .is_none(),
+        "precondition: deferred and invisible"
+    );
+
+    crud::enqueue_task(
+        &db,
+        &run_id,
+        &task_id,
+        None,
+        &TaskSpec::Agent {
+            agent_id: "test-agent".to_string(),
+            question: "q".to_string(),
+            extra: None,
+        },
+        None,
+        TaskScope::Global,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        crud::claim_task_under_root(&db, "w3", &task_id)
+            .await
+            .unwrap()
+            .map(|t| t.task_id),
+        Some(task_id),
+        "a re-enqueued task must be claimable immediately"
+    );
+}
+
+/// A task that can never run must eventually fail loudly, not wait in silence.
+///
+/// The whole reason to bound the wait is that a queue which grows quietly
+/// looks healthy. Measured in wall clock from the first defer of the streak —
+/// not in deferrals, because the retry interval is the domain's choice and can
+/// change, so N defers is not a bounded amount of time.
+#[tokio::test]
+async fn a_task_that_waits_past_its_ceiling_is_dead_lettered() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let (_run_id, task_id) = seed_task(&db, "agent", TaskScope::Global).await;
+
+    // First defer starts the streak and stays queued.
+    crud::claim_task_under_root(&db, "w1", &task_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        crud::defer_task(&db, &task_id, "w1", 1, 3600)
+            .await
+            .unwrap(),
+        crud::DeferOutcome::Deferred,
+        "a fresh streak is nowhere near the ceiling"
+    );
+    assert_eq!(row(&db, &task_id).await.queue_status, "queued");
+
+    // Age the streak past the ceiling. `first_deferred_at` must survive the
+    // intervening defers — if a later defer overwrote it, the streak would
+    // reset every hop and never reach any ceiling.
+    db.execute(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "UPDATE agentic_task_queue \
+         SET first_deferred_at = now() - interval '2 hours', available_at = now() \
+         WHERE task_id = $1",
+        [task_id.clone().into()],
+    ))
+    .await
+    .unwrap();
+
+    crud::claim_task_under_root(&db, "w2", &task_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        crud::defer_task(&db, &task_id, "w2", 1, 3600)
+            .await
+            .unwrap(),
+        crud::DeferOutcome::DeadLettered,
+        "past the ceiling the task must be dead-lettered, not deferred again"
+    );
+    assert_eq!(
+        row(&db, &task_id).await.queue_status,
+        "dead",
+        "and it must actually leave the queue"
+    );
+}
+
+/// The streak spans consecutive deferrals rather than restarting each time.
+#[tokio::test]
+async fn the_wait_streak_is_not_reset_by_later_deferrals() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let (_run_id, task_id) = seed_task(&db, "agent", TaskScope::Global).await;
+
+    crud::claim_task_under_root(&db, "w1", &task_id)
+        .await
+        .unwrap();
+    crud::defer_task(&db, &task_id, "w1", 0, 3600)
+        .await
+        .unwrap();
+    let first = row(&db, &task_id).await.first_deferred_at.unwrap();
+
+    crud::claim_task_under_root(&db, "w2", &task_id)
+        .await
+        .unwrap();
+    crud::defer_task(&db, &task_id, "w2", 0, 3600)
+        .await
+        .unwrap();
+    let second = row(&db, &task_id).await.first_deferred_at.unwrap();
+
+    assert_eq!(
+        first, second,
+        "the second defer must not restart the clock, or no ceiling is ever reached"
+    );
+
+    // Leave nothing claimable behind. These tests share one database with the
+    // whole suite, and `claim_task` is a GLOBAL claim: a stray queued root here
+    // gets picked up by another test that assumed it would claim its own task.
+    // Deferring with delay 0 (needed above, to re-claim) ends with exactly such
+    // a row, so retire it explicitly.
+    db.execute(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "DELETE FROM agentic_task_queue WHERE task_id = $1",
+        [task_id.clone().into()],
+    ))
+    .await
+    .unwrap();
+}

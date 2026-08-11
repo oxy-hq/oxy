@@ -275,8 +275,8 @@ async fn latest_event_seq(db: &DatabaseConnection, run_id: &str) -> i64 {
 /// Re-take the single-flight lease for a chunk's reset-in-place re-drive.
 ///
 /// Returns `false` when another run holds it, so the caller seeds a fresh run
-/// instead — which will itself hit the guard in `start_airway_run` and surface
-/// the conflict through the normal path rather than a second bespoke one.
+/// instead. That seed now simply enqueues: submit no longer refuses a contended
+/// caller, and the contention is resolved at claim time like any other.
 async fn reacquire_chunk_lease(
     db: &DatabaseConnection,
     platform: &Arc<dyn PlatformContext>,
@@ -893,13 +893,18 @@ async fn run_one_chunk(
             .await?;
             (disposition, Some(note))
         }
-        // Lease contention is not a chunk failure. A scheduled tick (or a manual
-        // run) landing between chunks makes the next `start_airway_run` return
-        // `AlreadyRunning`; recording that as `failed` puts a red chunk in
-        // coverage for a pipeline that is working exactly as designed, and an
-        // operator reading coverage cannot tell it from a real load error.
-        // Left `pending` instead, so the next pass picks it up — the same
-        // treatment a never-started chunk gets, which is what this is.
+        // A chunk whose PRIOR run is still being driven is not a failure.
+        //
+        // Lease contention no longer reaches here: submit coalesces and the
+        // executor defers at claim, so `start_airway_run` cannot return
+        // `AlreadyRunning` any more. The one remaining source is
+        // `Reuse::StillLive` — a re-drive of a chunk whose earlier run is
+        // still queued or claimed by a worker. Recording that as `failed`
+        // would put a red chunk in coverage for a pipeline working exactly as
+        // designed, and an operator reading coverage could not tell it from a
+        // real load error. Left `pending` instead, so the next pass picks it
+        // up — the same treatment a never-started chunk gets, which is what
+        // this is.
         Err(AirwayRunError::AlreadyRunning {
             pipeline_name,
             run_id: holder,

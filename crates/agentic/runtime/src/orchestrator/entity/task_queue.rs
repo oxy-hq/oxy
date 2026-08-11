@@ -36,6 +36,19 @@ pub struct Model {
     /// `scope_owned = false` so it never poaches interactive runs. Preserved
     /// across `claimed -> queued` reaping.
     pub scope_owned: bool,
+    /// Earliest time this task may be claimed. Defaults to `now()`, so a row
+    /// that never sets it is claimable immediately — the pre-existing
+    /// behaviour.
+    ///
+    /// This is what lets a deferral be spelled as *"not yet"* rather than as a
+    /// claim that is allowed to time out. The latter was the only option
+    /// before, and it burns `claim_count` toward `max_claims` while looking
+    /// exactly like a worker that crashed.
+    pub available_at: DateTimeWithTimeZone,
+    /// When the current run of consecutive deferrals began; `NULL` when the
+    /// task is not waiting. Set on the first defer and left alone by later
+    /// ones, so it measures the whole streak rather than the last hop.
+    pub first_deferred_at: Option<DateTimeWithTimeZone>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

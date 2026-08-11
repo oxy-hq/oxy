@@ -508,6 +508,20 @@ resources:
     .await
     .expect("drop queued task");
 
+    // The lease is taken at CLAIM now, not at submit, so stand in for the
+    // executor and acquire it. This assertion previously read "submit must
+    // have taken the lease" and failed loudly when that stopped being true —
+    // which is exactly what it was written to do.
+    agentic_airway::extension::pipeline_lease::try_acquire(
+        &db,
+        workspace_id,
+        &pipeline_name,
+        &run_id,
+        agentic_airway::extension::pipeline_lease::LEASE_TTL_SECS,
+    )
+    .await
+    .expect("acquire the lease as the executor would at claim time");
+
     let held_before =
         agentic_airway::extension::pipeline_lease::list_for_workspace(&db, workspace_id)
             .await
@@ -516,7 +530,7 @@ resources:
             .any(|l| l.run_id == run_id);
     assert!(
         held_before,
-        "precondition: submit must have taken the lease"
+        "precondition: the run must hold its lease before recovery runs"
     );
 
     let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> = Arc::new(TmpWorkspace {
@@ -714,5 +728,189 @@ resources:
         ext.environment.as_deref(),
         Some("sandbox"),
         "extension row must record the resolved environment, not contract_policy"
+    );
+}
+
+fn pipeline_yaml(name: &str) -> String {
+    format!(
+        r#"
+name: {name}
+source:
+  kind: filesystem
+  config:
+    base_path: /tmp/airway-coalesce
+    pattern: "*.jsonl"
+    format: jsonl
+    table_name: users
+destination:
+  kind: memory
+  config:
+    dataset_name: scratch
+resources:
+  - users
+"#
+    )
+}
+
+fn req(pipeline_ref: &str, variables: Option<serde_json::Value>) -> StartAirwayRequest {
+    StartAirwayRequest {
+        pipeline_ref: pipeline_ref.to_string(),
+        variables,
+        thread_id: None,
+        resources: Vec::new(),
+        schedule_id: None,
+        trigger: Some("test".to_string()),
+        logical_date: None,
+        retry_of: None,
+        backfill_from: None,
+        backfill_to: None,
+    }
+}
+
+/// Submitting the same pipeline twice must return ONE run, not two.
+///
+/// Coalescing is what makes "queue instead of reject" safe. Without it, ten
+/// clicks become ten identical runs that then serialize one at a time — the
+/// backlog problem that motivated refusing contended submits in the first
+/// place. This is the property that replaced the 409.
+#[tokio::test(flavor = "multi_thread")]
+async fn submitting_twice_coalesces_onto_one_run() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let dir = tempfile::tempdir().expect("tempdir");
+    let name = format!("coal_{}", uuid::Uuid::new_v4().simple());
+    std::fs::write(dir.path().join("p.airway.yml"), pipeline_yaml(&name)).expect("write");
+    let ws = TmpWorkspace {
+        root: dir.path().to_path_buf(),
+    };
+    let workspace_id = uuid::Uuid::new_v4();
+
+    let first = start_airway_run(
+        &db,
+        &ws,
+        req("p.airway.yml", None),
+        agentic_pipeline::TaskScope::Scoped,
+        workspace_id,
+    )
+    .await
+    .expect("first submit");
+    let second = start_airway_run(
+        &db,
+        &ws,
+        req("p.airway.yml", None),
+        agentic_pipeline::TaskScope::Scoped,
+        workspace_id,
+    )
+    .await
+    .expect("second submit must be accepted, not refused");
+
+    assert_eq!(
+        first, second,
+        "a second submit must coalesce onto the queued run, not create another"
+    );
+}
+
+/// Different variables are different work and must NOT coalesce.
+///
+/// A coalesce that ignored variables would hand one caller another caller's
+/// parameters — silently serving the wrong result rather than failing.
+#[tokio::test(flavor = "multi_thread")]
+async fn different_variables_do_not_coalesce() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let dir = tempfile::tempdir().expect("tempdir");
+    let name = format!("vars_{}", uuid::Uuid::new_v4().simple());
+    std::fs::write(dir.path().join("p.airway.yml"), pipeline_yaml(&name)).expect("write");
+    let ws = TmpWorkspace {
+        root: dir.path().to_path_buf(),
+    };
+    let workspace_id = uuid::Uuid::new_v4();
+
+    let a = start_airway_run(
+        &db,
+        &ws,
+        req("p.airway.yml", Some(serde_json::json!({"env": "a"}))),
+        agentic_pipeline::TaskScope::Scoped,
+        workspace_id,
+    )
+    .await
+    .expect("first");
+    let b = start_airway_run(
+        &db,
+        &ws,
+        req("p.airway.yml", Some(serde_json::json!({"env": "b"}))),
+        agentic_pipeline::TaskScope::Scoped,
+        workspace_id,
+    )
+    .await
+    .expect("second");
+
+    assert_ne!(a, b, "different variables must produce distinct runs");
+}
+
+/// A lease whose holder has already terminalized must be reclaimable at once.
+///
+/// TTL is the backstop, not the reclaim policy. Before the widened predicate a
+/// pipeline whose holder died — or was force-failed by crash recovery — stayed
+/// blocked for the full six hours with nothing running, which is exactly how a
+/// wedged `quickbooks_financials` lease was found on dev.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_terminal_holder_does_not_block_the_pipeline() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    use agentic_airway::extension::pipeline_lease::{self, LeaseAcquisition};
+
+    let workspace_id = uuid::Uuid::new_v4();
+    let pipeline = format!("live_{}", uuid::Uuid::new_v4().simple());
+    let dead = uuid::Uuid::new_v4().to_string();
+
+    crud::insert_run(&db, &dead, "Q", None, "airway", None, workspace_id)
+        .await
+        .unwrap();
+    assert!(matches!(
+        pipeline_lease::try_acquire(&db, workspace_id, &pipeline, &dead, 3600)
+            .await
+            .unwrap(),
+        LeaseAcquisition::Acquired
+    ));
+
+    // A live holder still blocks — the guard must not be toothless.
+    let next = uuid::Uuid::new_v4().to_string();
+    assert!(
+        matches!(
+            pipeline_lease::try_acquire(&db, workspace_id, &pipeline, &next, 3600)
+                .await
+                .unwrap(),
+            LeaseAcquisition::Held { .. }
+        ),
+        "a live holder must still hold the lease"
+    );
+
+    // Terminalize it; the lease is now reclaimable without waiting out the TTL.
+    sea_orm::ConnectionTrait::execute(
+        &db,
+        sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "UPDATE agentic_runs SET task_status = 'failed' WHERE id = $1",
+            [dead.clone().into()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        matches!(
+            pipeline_lease::try_acquire(&db, workspace_id, &pipeline, &next, 3600)
+                .await
+                .unwrap(),
+            LeaseAcquisition::Acquired
+        ),
+        "a terminal holder must not block for the full TTL"
     );
 }

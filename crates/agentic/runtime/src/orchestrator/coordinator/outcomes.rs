@@ -93,9 +93,24 @@ impl Coordinator {
             TaskOutcome::Suspended { .. } => "Suspended",
             TaskOutcome::Failed(_) => "Failed",
             TaskOutcome::Cancelled => "Cancelled",
+            TaskOutcome::Deferred { .. } => "Deferred",
         };
         tracing::info!(target: "coordinator", task_id, outcome_type, "handle_outcome");
         match outcome {
+            // Unreachable by construction: the worker converts `Deferred` into
+            // `WorkerMessage::Defer` and never forwards it as an outcome. If it
+            // arrives here a transport is mistranslating — say so rather than
+            // silently recording a result for a task that never ran.
+            TaskOutcome::Deferred {
+                delay_secs, reason, ..
+            } => {
+                tracing::error!(
+                    target: "coordinator",
+                    task_id, delay_secs, %reason,
+                    "coordinator received a Deferred outcome; a transport is not \
+                     honouring the defer path. Ignoring — the task did not run."
+                );
+            }
             TaskOutcome::Done { answer, metadata } => {
                 self.handle_done(task_id, answer, metadata).await;
             }

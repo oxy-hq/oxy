@@ -474,6 +474,19 @@ async fn reenqueue_dead(Path(task_id): Path<String>) -> Result<Json<QueueRowDto>
     match status.as_deref() {
         None => Err(not_found_row()),
         Some("dead") => {
+            // A revival is FRESH WORK, so it clears the wait-streak and pulls a
+            // future `available_at` back — matching `enqueue_task`,
+            // `requeue_task` and `reset_task_to_queued`, the other three doors
+            // into `queued`.
+            //
+            // This door needs it MOST: `defer_task` dead-letters a starved task
+            // with a 12h-old `first_deferred_at` AND a future `available_at` in
+            // one statement, and reviving `dead` rows is this endpoint's whole
+            // purpose. Without both writes the operator's action cannot work
+            // under contention — the task goes `dead -> queued -> dead` on its
+            // first claim, with one log line and nothing in the UI to explain
+            // it.
+            //
             // TOCTOU guard: the SELECT above is advisory — the reaper or another
             // admin could mutate the row before our UPDATE lands. The
             // `WHERE queue_status = 'dead'` clause prevents the wrong write,
@@ -488,6 +501,8 @@ async fn reenqueue_dead(Path(task_id): Path<String>) -> Result<Json<QueueRowDto>
                          worker_id = NULL, \
                          claimed_at = NULL, \
                          last_heartbeat = NULL, \
+                         available_at = LEAST(available_at, now()), \
+                         first_deferred_at = NULL, \
                          updated_at = now() \
                      WHERE task_id = $1 AND queue_status = 'dead'",
                     [task_id.clone().into()],

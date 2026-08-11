@@ -32,6 +32,8 @@ impl MigratorTrait for RuntimeMigrator {
             Box::new(AddScheduleMissedRuns),
             Box::new(AddRunScheduleId),
             Box::new(AddScheduleQuestion),
+            Box::new(AddTaskQueueAvailableAt),
+            Box::new(AddTaskQueueFirstDeferredAt),
         ]
     }
 
@@ -1731,6 +1733,115 @@ impl MigrationTrait for AddScheduleQuestion {
                         .drop_column(Alias::new("question"))
                         .to_owned(),
                 )
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+/// **Delayed visibility for the task queue** — the column that makes queueing
+/// expressible.
+///
+/// `agentic_task_queue` could say "claimable now" (`queued`) or "someone has
+/// it" (`claimed`), and nothing else. There was no way to say *"make this
+/// claimable again in 30 seconds"*, so every deferral had to be spelled as a
+/// claim that is then allowed to time out — which burns `claim_count` toward
+/// `max_claims` and is indistinguishable from a worker that crashed. That is
+/// why backoff, contention retry, and "wait your turn" were all hard to build
+/// on this queue: the vocabulary was missing, not the machinery.
+///
+/// `available_at` defaults to `now()`, so every existing row and every INSERT
+/// that does not mention it behaves exactly as before — this migration is
+/// behaviour-neutral until a caller sets a future value.
+///
+/// The existing poll index (`(created_at) WHERE queue_status = 'queued'`) is
+/// left as-is: it already returns rows in the order the claim needs, and the
+/// added `available_at <= now()` test is a cheap filter applied as rows are
+/// walked.
+struct AddTaskQueueAvailableAt;
+
+impl MigrationName for AddTaskQueueAvailableAt {
+    fn name(&self) -> &str {
+        "m20260810_000001_add_task_queue_available_at"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddTaskQueueAvailableAt {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if !column_exists(manager, "agentic_task_queue", "available_at").await? {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE agentic_task_queue \
+                     ADD COLUMN available_at TIMESTAMPTZ NOT NULL DEFAULT now()",
+                )
+                .await?;
+        }
+        // The poll index is LEFT ALONE, deliberately.
+        //
+        // An earlier revision rebuilt it as `(available_at, created_at)` on the
+        // theory that the filter column must lead. That is backwards here:
+        // `available_at <= now()` is a RANGE, so a leading `available_at`
+        // returns rows in `available_at` order and `ORDER BY created_at LIMIT 1`
+        // then has to sort every available row. The existing `(created_at)`
+        // index already returns rows in the required order and stops at the
+        // first one passing the (cheap, usually-true) `available_at` test.
+        //
+        // It would only be worth revisiting if most queued rows were deferred,
+        // which is not the shape here — deferral is the contended exception.
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if column_exists(manager, "agentic_task_queue", "available_at").await? {
+            manager
+                .get_connection()
+                .execute_unprepared("ALTER TABLE agentic_task_queue DROP COLUMN available_at")
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+/// **Starvation detection for deferred tasks.**
+///
+/// `available_at` says when a task may next be claimed; it cannot say how long
+/// it has been waiting, because each defer overwrites it. Without that, an
+/// indefinitely-contended task waits forever in silence.
+///
+/// Wall clock, not a counter: the retry interval is chosen per domain and can
+/// change, so N defers is not a bounded amount of time. `first_deferred_at`
+/// records when the CURRENT waiting streak began — set on the first defer,
+/// left alone by later ones, cleared when the task is (re-)enqueued as fresh
+/// work.
+struct AddTaskQueueFirstDeferredAt;
+
+impl MigrationName for AddTaskQueueFirstDeferredAt {
+    fn name(&self) -> &str {
+        "m20260810_000002_add_task_queue_first_deferred_at"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddTaskQueueFirstDeferredAt {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if !column_exists(manager, "agentic_task_queue", "first_deferred_at").await? {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE agentic_task_queue ADD COLUMN first_deferred_at TIMESTAMPTZ NULL",
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if column_exists(manager, "agentic_task_queue", "first_deferred_at").await? {
+            manager
+                .get_connection()
+                .execute_unprepared("ALTER TABLE agentic_task_queue DROP COLUMN first_deferred_at")
                 .await?;
         }
         Ok(())

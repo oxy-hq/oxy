@@ -15,10 +15,10 @@ pub use outcomes::{
     insert_child_run, insert_task_outcome, suspend_with_data_txn,
 };
 pub use queue::{
-    DeadTask, QueueStats, QueueTaskRow, ReapOutcome, TASKS_DEAD_LETTERED, TASKS_REQUEUED,
-    TaskScope, TerminalWrite, cancel_queued_task, cancel_queued_task_owned, claim_task,
-    claim_task_under_root, complete_queue_task, drain_claims_for_worker, enqueue_task,
-    fail_queue_task, get_queue_entry, get_queue_stats, mark_released_roots_global,
+    DeadTask, DeferOutcome, QueueStats, QueueTaskRow, ReapOutcome, TASKS_DEAD_LETTERED,
+    TASKS_REQUEUED, TaskScope, TerminalWrite, cancel_queued_task, cancel_queued_task_owned,
+    claim_task, claim_task_under_root, complete_queue_task, defer_task, drain_claims_for_worker,
+    enqueue_task, fail_queue_task, get_queue_entry, get_queue_stats, mark_released_roots_global,
     mark_task_global, purge_old_terminal_tasks, reap_stale_tasks, release_claim,
     release_claims_for_worker, requeue_task, reset_task_to_queued, set_terminal_status_owned,
     update_queue_heartbeat,

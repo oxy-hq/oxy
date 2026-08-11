@@ -64,6 +64,51 @@ impl std::fmt::Display for ResetSchemaError {
 
 impl std::error::Error for ResetSchemaError {}
 
+/// How long a contended airway task waits before trying for the lease again.
+///
+/// Short enough that a pipeline finishing early is picked up promptly, long
+/// enough that a long load does not spin the queue. The wait is invisible —
+/// the task is not claimed while deferred, so it costs no worker slot.
+const AIRWAY_LEASE_RETRY_SECS: u64 = 30;
+
+/// Total wall clock an airway task may spend waiting for the single-flight
+/// lease before it is dead-lettered — twice the lease TTL.
+///
+/// The ceiling exists so a permanently blocked pipeline surfaces as a failure
+/// rather than as a queue that grows while looking healthy. Twice the TTL
+/// because a lease is at most one TTL old before liveness or expiry reclaims
+/// it, so a task that has waited two full TTLs is not contending, it is stuck.
+///
+/// This is the DOMAIN's number, passed with the deferral: only airway knows how
+/// long its work can legitimately be blocked. The queue enforces it and has no
+/// opinion on the value.
+const AIRWAY_LEASE_MAX_WAIT_SECS: u64 =
+    2 * agentic_airway::extension::pipeline_lease::LEASE_TTL_SECS as u64;
+
+/// Build an [`ExecutingTask`] that immediately reports [`TaskOutcome::Deferred`].
+///
+/// The executor's contract is to return a HANDLE, not an outcome, so a
+/// deferral is expressed by handing back a task whose only outcome is the
+/// deferral. No trait change, and the worker's existing outcome loop does the
+/// translation.
+fn deferred_task(delay_secs: u64, max_wait_secs: u64, reason: String) -> ExecutingTask {
+    let (events_tx, events) = tokio::sync::mpsc::channel(1);
+    drop(events_tx);
+    let (outcomes_tx, outcomes) = tokio::sync::mpsc::channel(1);
+    // Capacity 1 and a single send, so this cannot block.
+    let _ = outcomes_tx.try_send(agentic_core::delegation::TaskOutcome::Deferred {
+        delay_secs,
+        max_wait_secs,
+        reason,
+    });
+    ExecutingTask {
+        events,
+        outcomes,
+        cancel: tokio_util::sync::CancellationToken::new(),
+        answers: None,
+    }
+}
+
 #[async_trait]
 impl TaskExecutor for PipelineTaskExecutor {
     async fn execute(&self, assignment: TaskAssignment) -> Result<ExecutingTask, String> {
@@ -187,14 +232,18 @@ impl TaskExecutor for PipelineTaskExecutor {
                         return Err(e.to_string());
                     }
                 };
-                // The single-flight lease is taken at SUBMIT (`start_airway_run`),
-                // so a dispatch that fails here — unreadable `.airway.yml`, a
-                // parse error, an unresolvable destination — leaves the run
-                // terminal with its lease still held. Nothing else releases on
-                // this path: every existing release site is in a submit, retry
-                // or backfill path. Observed in dev as a run that reached
-                // `failed` 38ms after creation and blocked its pipeline for the
-                // full 6h TTL.
+                // The lease is taken inside `execute_airway`, at claim time,
+                // and released by `agentic_airway`'s worker when execution
+                // ends. Between those two points sit the failures this arm
+                // covers — unresolvable secrets, an unresolvable destination —
+                // where the lease is held but no worker exists yet to release
+                // it. Without this the run goes terminal with its lease held
+                // for the full TTL; observed in dev as a run that reached
+                // `failed` 38ms after creation and blocked its pipeline for 27
+                // minutes.
+                //
+                // A DEFERRED task returns `Ok`, not `Err`, and holds no lease —
+                // so it correctly does not reach this release.
                 //
                 // Release is `run_id`-scoped and idempotent, so this is safe
                 // even when a later path would have released too.
@@ -542,6 +591,53 @@ impl PipelineTaskExecutor {
         // submitter saw.
         let mut spec = agentic_airway::AirwayPipelineSpec::from_yaml_with_vars(&yaml, variables)
             .map_err(|e| format!("airway: parse `{pipeline_ref}`: {e}"))?;
+
+        // SINGLE-FLIGHT, ACQUIRED HERE — at claim, not at submit.
+        //
+        // This is the only place an airway pipeline can start, which is what
+        // makes the invariant real. Submit-time acquisition protected only the
+        // callers that went through submit: an inline `TaskSpec::Airway` step
+        // from an automation never did, so two workflows could run one pipeline
+        // concurrently and nothing stopped them.
+        //
+        // Contention is NOT a failure. The task goes back to the queue
+        // invisible for a while and tries again, so a contended pipeline
+        // serializes instead of erroring — which is the whole point of the
+        // redesign. `TaskOutcome::Deferred` is how a domain says that; the
+        // worker turns it into the queue write.
+        if !spec.allow_concurrent_runs {
+            use agentic_airway::extension::pipeline_lease;
+            let workspace_id = self.platform.workspace_id();
+            match pipeline_lease::try_acquire(
+                &self.db,
+                workspace_id,
+                &spec.name,
+                run_id,
+                pipeline_lease::LEASE_TTL_SECS,
+            )
+            .await
+            {
+                Ok(pipeline_lease::LeaseAcquisition::Acquired) => {}
+                Ok(pipeline_lease::LeaseAcquisition::Held { run_id: holder, .. }) => {
+                    tracing::info!(
+                        pipeline = %spec.name,
+                        held_by = %holder,
+                        "airway task deferred — single-flight lease held"
+                    );
+                    return Ok(deferred_task(
+                        AIRWAY_LEASE_RETRY_SECS,
+                        AIRWAY_LEASE_MAX_WAIT_SECS,
+                        format!(
+                            "pipeline `{}` is already running ({holder}); waiting for its turn",
+                            spec.name
+                        ),
+                    ));
+                }
+                Err(e) => {
+                    return Err(format!("airway: single-flight lease acquire failed: {e}"));
+                }
+            }
+        }
 
         // Capture QuickBooks' refresh-token var name *before* secret
         // resolution strips it — the write-back sink needs to know which

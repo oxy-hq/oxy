@@ -102,7 +102,12 @@ pub enum AirwayRunError {
     Db(#[from] DbErr),
     #[error("io error reading airway spec: {0}")]
     Io(String),
-    /// A run of this pipeline is already in flight in this workspace.
+    /// A run this caller wanted to (re)drive is already in flight.
+    ///
+    /// No longer raised by `start_airway_run`: submit coalesces onto a queued
+    /// run and the executor defers at claim, so contention never surfaces as
+    /// an error. The remaining producer is the backfill re-drive path, where
+    /// a chunk's PRIOR run is still queued or claimed by a worker.
     ///
     /// Carries the incumbent's `run_id` so callers can link to it instead of
     /// reporting a bare "busy" — the UI shows what is already running, and a
@@ -170,50 +175,54 @@ pub async fn start_airway_run(
 
     let run_id = Uuid::new_v4().to_string();
 
-    // Single-flight gate, taken BEFORE any row is written so a rejected caller
-    // leaves no orphan `agentic_runs` row behind. Two runs of one pipeline are
-    // incorrect, not just wasteful: they read-modify-write a single
-    // `airway_pipeline_state` cursor row (keyed by `pipeline_name`), and their
-    // end-of-load folds can overlap snapshots and land duplicate rows.
+    // SINGLE-FLIGHT IS ENFORCED AT CLAIM, NOT HERE.
     //
-    // Held across the whole run and released when it terminalizes; the TTL is
-    // only the crash backstop. See `extension::pipeline_lease`.
+    // Submit used to take the lease and refuse a contended caller with a 409.
+    // That protected only the callers that go through submit — an inline
+    // `TaskSpec::Airway` step never did, so two workflows could run one
+    // pipeline concurrently and the invariant was never actually enforced. It
+    // also held the lease across queue time, so a run that failed before
+    // executing blocked its pipeline for the full TTL.
     //
-    // `allow_concurrent_runs: true` in the YAML opts a pipeline out. Logged at
-    // start so an operator debugging duplicate rows can see from the run's own
-    // trace that the guard was disabled, rather than having to go read the spec.
+    // The executor now acquires at claim time and defers when contended, which
+    // makes the executor the only door. Submit's remaining job is to not
+    // create redundant work.
+    //
+    // COALESCE: if a run for this pipeline is already queued and has not
+    // started, return it instead of enqueuing a second. Without this,
+    // "queue instead of reject" turns ten clicks into ten identical runs —
+    // the backlog problem that motivated rejecting in the first place.
+    // Coalescing is what makes queueing safe; it is not optional polish.
+    //
+    // Deliberately NOT coalescing backfills: two backfill requests for
+    // different windows are different work, and folding them would silently
+    // drop one. Only plain runs (no window, matching variables) coalesce.
+    if !spec.allow_concurrent_runs
+        && request.backfill_from.is_none()
+        && request.backfill_to.is_none()
+        && let Some(existing) = find_coalescible_run(
+            db,
+            workspace_id,
+            &spec.name,
+            request.variables.as_ref(),
+            &request.resources,
+        )
+        .await?
+    {
+        tracing::info!(
+            pipeline = %spec.name,
+            existing_run = %existing,
+            "airway run coalesced onto an already-queued run"
+        );
+        return Ok(existing);
+    }
     if spec.allow_concurrent_runs {
         tracing::warn!(
             pipeline = %spec.name,
             "airway single-flight DISABLED for this pipeline (allow_concurrent_runs: true)"
         );
-    } else {
-        match agentic_airway::extension::pipeline_lease::try_acquire(
-            db,
-            workspace_id,
-            &spec.name,
-            &run_id,
-            agentic_airway::extension::pipeline_lease::LEASE_TTL_SECS,
-        )
-        .await?
-        {
-            agentic_airway::extension::pipeline_lease::LeaseAcquisition::Acquired => {}
-            agentic_airway::extension::pipeline_lease::LeaseAcquisition::Held {
-                run_id: holder,
-                ..
-            } => {
-                tracing::info!(
-                    pipeline = %spec.name,
-                    held_by = %holder,
-                    "airway run rejected — single-flight lease held"
-                );
-                return Err(AirwayRunError::AlreadyRunning {
-                    pipeline_name: spec.name.clone(),
-                    run_id: holder,
-                });
-            }
-        }
     }
+
     // Lineage labels stamped at run-start so the dashboard can label
     // the Source / Destination cards even before `pipeline_plan` fires
     // (or for legacy runs that predated it). `source_kind` is the
@@ -263,11 +272,9 @@ pub async fn start_airway_run(
         &request.retry_of,
     );
 
-    // From here on the lease is held, so every failure path must release it —
-    // otherwise a transient DB error would block the pipeline until the TTL
-    // lapses. Seeding runs in a helper and the result is funnelled through one
-    // release-on-error, rather than repeating the cleanup at each `?`.
-    let seeded = seed_airway_run_rows(
+    // Submit takes no lease — the executor acquires at claim — so there is
+    // nothing to release if seeding fails, and no cleanup to funnel.
+    seed_airway_run_rows(
         db,
         &run_id,
         &spec,
@@ -276,18 +283,7 @@ pub async fn start_airway_run(
         workspace_id,
         &admission,
     )
-    .await;
-    if seeded.is_err() {
-        // Best-effort: if this DELETE also fails the TTL still frees the lease.
-        let _ = agentic_airway::extension::pipeline_lease::release_counted(
-            db,
-            workspace_id,
-            &spec.name,
-            &run_id,
-        )
-        .await;
-    }
-    seeded?;
+    .await?;
 
     Ok(run_id)
 }
@@ -559,6 +555,87 @@ pub fn spawn_airway_run_drive(
         worker_task.abort();
         cleanup_state.deregister(&cleanup_run_id);
     });
+}
+
+/// Find a run of this pipeline that is already queued and has not started, so
+/// a fresh request can ride on it instead of enqueuing duplicate work.
+///
+/// Keyed on `metadata->>'pipeline_name'` — the SAME key the single-flight
+/// lease uses — not on `pipeline_ref`. Two refs can resolve to one pipeline
+/// name, and coalescing on the ref would let them both through to contend at
+/// claim time, which is the contention this is meant to avoid.
+///
+/// BEST EFFORT, not a guarantee: this is a read followed by an insert with no
+/// unique constraint behind it, so two genuinely simultaneous submits can still
+/// create two runs. That is acceptable under this design — they serialize at
+/// claim — but it is not mutual exclusion.
+///
+/// "Has not started" is `queue_status = 'queued'`, which also covers a task
+/// deferred while waiting for the lease. Coalescing onto a deferred run is
+/// correct: it is the same pending work, and the caller wants it done once.
+async fn find_coalescible_run(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+    pipeline_name: &str,
+    variables: Option<&Value>,
+    requested_resources: &[String],
+) -> Result<Option<String>, AirwayRunError> {
+    use sea_orm::{FromQueryResult, Statement};
+
+    #[derive(FromQueryResult)]
+    struct Row {
+        id: String,
+        variables: Option<Value>,
+        resources: Option<Value>,
+    }
+
+    let stmt = Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        r#"
+        SELECT r.id, r.metadata->'variables' AS variables,
+               r.metadata->'resources' AS resources
+        FROM agentic_runs r
+        JOIN agentic_task_queue q
+          ON q.run_id = r.id AND q.parent_task_id IS NULL
+        WHERE r.source_type = $1
+          AND r.parent_run_id IS NULL
+          AND r.workspace_id = $2
+          AND r.metadata->>'pipeline_name' = $3
+          AND r.metadata->>'backfill_from' IS NULL
+          AND q.queue_status = 'queued'
+        ORDER BY r.created_at
+        LIMIT 1
+        "#,
+        [
+            agentic_airway::SOURCE_TYPE.into(),
+            workspace_id.into(),
+            pipeline_name.into(),
+        ],
+    );
+
+    let Some(row) = Row::find_by_statement(stmt).one(db).await? else {
+        return Ok(None);
+    };
+    // Different variables render a different document, so they are different
+    // work. Compare rather than assume — a coalesce that ignored them would
+    // silently serve one caller another caller's parameters.
+    let existing_vars = row.variables.filter(|v| !v.is_null());
+    if existing_vars.as_ref() != variables {
+        return Ok(None);
+    }
+    // `resources` is the same class of parameter and must match too. A "retry
+    // failed tables" run carries a RESTRICTED scope; folding a full-pipeline
+    // submit onto it would silently skip the full load and report success.
+    // `[]` and absent both mean "the whole spec", so normalise before
+    // comparing.
+    fn scope(v: Option<Value>) -> Vec<String> {
+        v.and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
+            .unwrap_or_default()
+    }
+    if scope(row.resources) != requested_resources {
+        return Ok(None);
+    }
+    Ok(Some(row.id))
 }
 
 /// List recent airway runs for a `pipeline_ref`, newest first, capped

@@ -374,4 +374,23 @@ pub enum TaskOutcome {
     Failed(String),
     /// Task was cancelled.
     Cancelled,
+    /// The task could not run **yet** and wants to be retried later.
+    ///
+    /// Not a failure and not an attempt: the executor looked at the task,
+    /// found a precondition unmet (a contended single-flight lease, a
+    /// rate limit), and is handing it back. The worker translates this into
+    /// [`crate::transport::WorkerMessage::Defer`] rather than an `Outcome`,
+    /// so it is never recorded as a result — the coordinator's view is that
+    /// nothing happened, which is the truth.
+    Deferred {
+        /// How long to withhold the task before it may be claimed again.
+        delay_secs: u64,
+        /// Total wall-clock the task may spend waiting across consecutive
+        /// deferrals before it is dead-lettered. The DOMAIN sets this: only it
+        /// knows how long its work can legitimately be blocked. The queue
+        /// enforces it but has no opinion on the value.
+        max_wait_secs: u64,
+        /// Operator-facing reason, for logs.
+        reason: String,
+    },
 }

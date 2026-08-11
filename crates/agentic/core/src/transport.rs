@@ -29,6 +29,19 @@ pub enum WorkerMessage {
         task_id: String,
         outcome: TaskOutcome,
     },
+    /// The task could not run yet — return it to the queue, invisible for
+    /// `delay_secs`.
+    ///
+    /// Distinct from `Outcome` on purpose: a deferral produces no result, so
+    /// recording one would make the coordinator believe the task ran. The
+    /// durable transport turns this into the queue's delayed-visibility
+    /// write; in-memory transports may simply drop it.
+    Defer {
+        task_id: String,
+        delay_secs: u64,
+        max_wait_secs: u64,
+        reason: String,
+    },
 }
 
 // ── TransportError ───────────────────────────────────────────────────────────

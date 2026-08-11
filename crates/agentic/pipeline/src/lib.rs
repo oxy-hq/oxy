@@ -1431,11 +1431,39 @@ pub async fn drive_with_coordinator(
                     outcome = outcomes.recv() => {
                         match outcome {
                             Some(outcome) => {
+                                // Same translation the pooled worker does: a
+                                // deferral is not an outcome, so hand the task
+                                // back to the queue instead of reporting a
+                                // result for something that never ran. This
+                                // in-process driver is a second worker
+                                // implementation and has to honour it too.
+                                if let agentic_core::delegation::TaskOutcome::Deferred {
+                                    delay_secs,
+                                    max_wait_secs,
+                                    reason,
+                                } = outcome
+                                {
+                                    tracing::info!(target: "worker", task_id = %task_id, delay_secs, %reason, "virtual worker deferring task");
+                                    let _ = transport
+                                        .send(agentic_core::transport::WorkerMessage::Defer {
+                                            task_id: task_id.clone(),
+                                            delay_secs,
+                                            max_wait_secs,
+                                            reason,
+                                        })
+                                        .await;
+                                    // Cancel like every other exit from this
+                                    // loop; without it the ticker keeps
+                                    // heartbeating a task we just handed back.
+                                    heartbeat_cancel.cancel();
+                                    break;
+                                }
                                 let outcome_type = match &outcome {
                                     agentic_core::delegation::TaskOutcome::Done { .. } => "Done",
                                     agentic_core::delegation::TaskOutcome::Suspended { .. } => "Suspended",
                                     agentic_core::delegation::TaskOutcome::Failed(_) => "Failed",
                                     agentic_core::delegation::TaskOutcome::Cancelled => "Cancelled",
+                                    agentic_core::delegation::TaskOutcome::Deferred { .. } => unreachable!("handled above"),
                                 };
                                 tracing::debug!(target: "worker", task_id = %task_id, outcome_type, "virtual worker forwarding outcome");
                                 let is_terminal = matches!(

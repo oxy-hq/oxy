@@ -685,6 +685,68 @@ impl WorkerTransport for DurableTransport {
     async fn send(&self, msg: WorkerMessage) -> Result<(), TransportError> {
         // On terminal outcomes, update the queue entry.
         match &msg {
+            // A deferral returns the task to the queue unrun, invisible for
+            // `delay_secs`. Scoped to `self.worker_id` for the same reason
+            // every terminal write is: this can arrive after graceful release
+            // handed our claims back and a peer re-claimed the row, and
+            // deferring a peer's live task would strand it.
+            //
+            // Deliberately NOT forwarded to the coordinator: it produced no
+            // outcome, and a coordinator that saw one would accumulate a
+            // result for a task that never ran.
+            WorkerMessage::Defer {
+                task_id,
+                delay_secs,
+                max_wait_secs,
+                reason,
+            } => {
+                use crud::DeferOutcome;
+                match crud::defer_task(
+                    &self.db,
+                    task_id,
+                    &self.worker_id,
+                    *delay_secs as i64,
+                    *max_wait_secs as i64,
+                )
+                .await
+                {
+                    Ok(DeferOutcome::Deferred) => {
+                        tracing::info!(
+                            target: "transport",
+                            %task_id, delay_secs, %reason,
+                            "task returned to the queue, deferred"
+                        );
+                    }
+                    Ok(DeferOutcome::DeadLettered) => {
+                        // Waited past the domain's ceiling. Loud on purpose:
+                        // a pipeline blocked this long is a failure someone
+                        // has to see, and the whole reason to bound the wait
+                        // was that a silently growing queue looks healthy.
+                        tracing::error!(
+                            target: "transport",
+                            %task_id, max_wait_secs, %reason,
+                            "task dead-lettered: waited past its ceiling without \
+                             ever being able to run"
+                        );
+                    }
+                    Ok(DeferOutcome::NotHeld) => {
+                        tracing::warn!(
+                            target: "transport",
+                            %task_id,
+                            "defer skipped: this worker no longer holds the claim"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            target: "transport",
+                            %task_id, error = %e,
+                            "failed to defer task; it stays claimed until the reaper \
+                             reclaims it at the visibility timeout"
+                        );
+                    }
+                }
+                return Ok(());
+            }
             WorkerMessage::Outcome { task_id, outcome } => {
                 // Every terminal write is scoped to `self.worker_id`. This
                 // outcome can arrive after graceful release handed our claims
@@ -692,6 +754,17 @@ impl WorkerTransport for DurableTransport {
                 // then would strand the peer's live work. See
                 // `crud::queue::set_terminal_status_owned`.
                 let result = match outcome {
+                    // Intercepted by the worker before it reaches a transport;
+                    // if it gets here the worker's translation was bypassed.
+                    TaskOutcome::Deferred { .. } => {
+                        tracing::error!(
+                            target: "transport",
+                            %task_id,
+                            "Deferred arrived as an Outcome; worker translation bypassed. \
+                             Leaving the claim alone rather than stamping it terminal."
+                        );
+                        return Ok(());
+                    }
                     TaskOutcome::Done { .. } => {
                         crud::complete_queue_task(&self.db, task_id, &self.worker_id).await
                     }

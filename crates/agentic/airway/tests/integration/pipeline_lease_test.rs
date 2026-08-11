@@ -268,3 +268,46 @@ async fn lease_row_is_gone_after_release() {
         .expect("query");
     assert!(remaining.is_empty(), "lease row should be deleted");
 }
+
+/// A run that already holds the lease must be able to re-take it.
+///
+/// Regression: acquisition moved to claim time, but `retry_airway` and the
+/// backfill re-drive still acquire at submit under the ORIGINAL run_id (which
+/// is deliberate — the retry is the same run). Without re-entrancy the
+/// executor's claim-time `try_acquire` returns `Held { run_id: <itself> }`, the
+/// task defers, and it loops every 30s until the 12h ceiling dead-letters it —
+/// so retry and backfill re-drive would never execute again.
+#[tokio::test]
+async fn a_run_can_retake_its_own_lease() {
+    let Some(db) = test_db().await else { return };
+    let (w, pipe) = (ws(), "reentrant");
+
+    assert!(matches!(
+        try_acquire(&db, w, pipe, "run-a", LEASE_TTL_SECS)
+            .await
+            .unwrap(),
+        LeaseAcquisition::Acquired
+    ));
+
+    // The same run acquiring again is not contention.
+    assert!(
+        matches!(
+            try_acquire(&db, w, pipe, "run-a", LEASE_TTL_SECS)
+                .await
+                .unwrap(),
+            LeaseAcquisition::Acquired
+        ),
+        "a run must be able to re-take its own lease, or retry/re-drive deadlocks"
+    );
+
+    // And re-entrancy must not weaken the guard against anyone else.
+    assert!(
+        matches!(
+            try_acquire(&db, w, pipe, "run-b", LEASE_TTL_SECS)
+                .await
+                .unwrap(),
+            LeaseAcquisition::Held { .. }
+        ),
+        "a DIFFERENT run must still be refused"
+    );
+}

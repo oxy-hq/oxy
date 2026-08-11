@@ -219,3 +219,72 @@ async fn reset_run_for_retry_clears_terminal_error() {
     );
     assert_eq!(reset.error_message, None, "terminal error must be cleared");
 }
+
+/// A revival must clear the wait-streak, or a retry can dead-letter instantly.
+///
+/// `first_deferred_at` measures how long a task has been waiting for something
+/// it needs (an airway single-flight lease). If a reset carries a stale streak
+/// across, a task that deferred yesterday, ran, failed, and is retried today
+/// evaluates its FIRST contention against yesterday's clock and is
+/// dead-lettered without waiting at all. `enqueue_task` clears it; this is the
+/// third door into the same state and needs the same treatment.
+#[tokio::test]
+async fn reset_clears_the_wait_streak_and_visibility() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let task_id = seed_airway_task(&db).await;
+
+    // Put the row in the shape a long wait then a failure leaves behind:
+    // a streak that began well beyond any ceiling, and a future visibility.
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE agentic_task_queue \
+         SET queue_status = 'failed', \
+             first_deferred_at = now() - interval '2 days', \
+             available_at = now() + interval '1 hour' \
+         WHERE task_id = $1",
+        [task_id.clone().into()],
+    ))
+    .await
+    .unwrap();
+
+    let reset = crud::reset_task_to_queued(&db, &task_id).await.unwrap();
+    assert_eq!(reset, 1, "precondition: the reset must have applied");
+
+    // Both assertions read a BOOLEAN expression, not the raw column: `queue_col`
+    // unwraps a `String`, so a NULL `first_deferred_at` would panic inside the
+    // helper rather than compare equal to `None`. Note `boolean::text` is
+    // "true"/"false" — `t` is psql's display abbreviation, not the cast.
+    assert_eq!(
+        queue_col(&db, &task_id, "(first_deferred_at IS NULL)")
+            .await
+            .as_deref(),
+        Some("true"),
+        "a revived task must start a fresh streak, not inherit yesterday's"
+    );
+    // And it must be visible NOW, not an hour from now.
+    //
+    // Asserted on the column rather than by claiming it: `claim_task` is a
+    // GLOBAL claim and ~400 tests share this database, so any peer can take
+    // this row between the reset and the claim. Testing the property directly
+    // removes a race that has nothing to do with what is being verified.
+    assert_eq!(
+        queue_col(&db, &task_id, "(available_at <= now())")
+            .await
+            .as_deref(),
+        Some("true"),
+        "a revived task must be immediately visible, not held by a stale available_at"
+    );
+
+    // Retire the row: it is globally claimable until something takes it, and a
+    // stray one perturbs the peers that claim or count globally.
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "DELETE FROM agentic_task_queue WHERE task_id = $1",
+        [task_id.clone().into()],
+    ))
+    .await
+    .unwrap();
+}

@@ -82,6 +82,25 @@ impl ActiveModelBehavior for ActiveModel {}
 /// That gap is why a manual release command is a **prerequisite** for shipping a
 /// TTL this long, not a nice-to-have: without one, a dead-lettered run blocks
 /// its pipeline for six hours with no recourse but raw SQL against prod.
+/// TTL is the BACKSTOP, not the reclaim policy.
+///
+/// Acquisition also reclaims a lease whose holder has reached a TERMINAL
+/// status — `done`, `failed`, `cancelled`, `timed_out`.
+///
+/// Deliberately `EXISTS (… terminal)` and not `NOT EXISTS (… live)`: a MISSING
+/// run row must not make a lease stealable. Callers may acquire before the run
+/// row is written, and treating absence as death would let a concurrent
+/// acquirer take a lease out from under one of them. Absence falls back to the
+/// TTL, which is what a backstop is for. Without that, a holder
+/// that died — or that was force-failed by crash recovery — blocked its
+/// pipeline for the full six hours even though nothing was running, which is
+/// how a wedged `quickbooks_financials` lease was found on dev held by a run
+/// that had already failed.
+///
+/// The predicate is widened on the EXISTING atomic CAS rather than added as a
+/// separate reaper. A second mechanism racing the first over the same rows is
+/// how this gets subtly wrong; the `INSERT … ON CONFLICT DO UPDATE … WHERE`
+/// already serializes two racers correctly, so it only needed a bigger WHERE.
 pub const LEASE_TTL_SECS: i64 = 6 * 60 * 60;
 
 /// Outcome of [`try_acquire`].
@@ -128,6 +147,18 @@ async fn try_acquire_once<C: ConnectionTrait>(
                 acquired_at = EXCLUDED.acquired_at,
                 expires_at  = EXCLUDED.expires_at
             WHERE airway_pipeline_leases.expires_at < now()
+               -- RE-ENTRANT: a run re-taking its OWN lease is not contention.
+               -- `retry_airway` and the backfill re-drive both re-acquire under
+               -- the original run_id on purpose, and the executor acquires
+               -- again at claim. Without this the run is `Held` by itself, the
+               -- executor defers, and the task loops until it dead-letters.
+               -- Re-taking also refreshes `expires_at`, which a re-drive wants.
+               OR airway_pipeline_leases.run_id = EXCLUDED.run_id
+               OR EXISTS (
+                    SELECT 1 FROM agentic_runs r
+                    WHERE r.id = airway_pipeline_leases.run_id
+                      AND r.task_status IN ('done', 'failed', 'cancelled', 'timed_out')
+               )
         RETURNING run_id, expires_at
     "#;
 

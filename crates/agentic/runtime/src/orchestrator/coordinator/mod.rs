@@ -298,6 +298,18 @@ pub(super) enum LoopAction {
         task_id: String,
         answer: String,
     },
+    /// A worker handed a task back unrun (`WorkerMessage::Defer`).
+    ///
+    /// On the durable transport this never reaches the coordinator — the
+    /// send side turns it into the queue's delayed-visibility write. It is
+    /// modelled here because in-memory transports pass every message through,
+    /// and mapping it onto an existing action would make a task that did not
+    /// run look like one that did.
+    TaskDeferred {
+        task_id: String,
+        delay_secs: u64,
+        reason: String,
+    },
     TransportClosed,
     /// A suspend timeout expired — loop back to check_suspend_timeouts.
     SuspendTimeout,

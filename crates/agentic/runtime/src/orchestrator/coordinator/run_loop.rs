@@ -55,6 +55,22 @@ impl Coordinator {
                 } => {
                     self.handle_event(&task_id, &event_type, payload).await;
                 }
+                LoopAction::TaskDeferred {
+                    task_id,
+                    delay_secs,
+                    reason,
+                } => {
+                    // The task was handed back unrun. On the durable transport
+                    // the send side already returned it to the queue with a
+                    // delayed `available_at`; there is nothing to record and no
+                    // outcome to accumulate — the coordinator's view is that
+                    // this task simply has not run yet.
+                    tracing::info!(
+                        target: "coordinator",
+                        task_id = %task_id, delay_secs, %reason,
+                        "task deferred; returned to the queue unrun"
+                    );
+                }
                 LoopAction::WorkerOutcome { task_id, outcome } => {
                     self.handle_outcome(&task_id, outcome).await;
                 }
@@ -169,6 +185,16 @@ impl Coordinator {
                 Some(WorkerMessage::Outcome { task_id, outcome }) => {
                     LoopAction::WorkerOutcome { task_id, outcome }
                 }
+                Some(WorkerMessage::Defer {
+                    task_id,
+                    delay_secs,
+                    reason,
+                    ..
+                }) => LoopAction::TaskDeferred {
+                    task_id,
+                    delay_secs,
+                    reason,
+                },
                 None => LoopAction::TransportClosed,
             };
         };
@@ -197,6 +223,8 @@ impl Coordinator {
                             LoopAction::WorkerEvent { task_id, event_type, payload },
                         Some(WorkerMessage::Outcome { task_id, outcome }) =>
                             LoopAction::WorkerOutcome { task_id, outcome },
+                        Some(WorkerMessage::Defer { task_id, delay_secs, reason, .. }) =>
+                            LoopAction::TaskDeferred { task_id, delay_secs, reason },
                         None => LoopAction::TransportClosed,
                     }
                 }
@@ -227,6 +255,8 @@ impl Coordinator {
                                         LoopAction::WorkerEvent { task_id, event_type, payload },
                                     Some(WorkerMessage::Outcome { task_id, outcome }) =>
                                         LoopAction::WorkerOutcome { task_id, outcome },
+                                    Some(WorkerMessage::Defer { task_id, delay_secs, reason, .. }) =>
+                                        LoopAction::TaskDeferred { task_id, delay_secs, reason },
                                     None => LoopAction::TransportClosed,
                                 }
                             }
@@ -247,6 +277,8 @@ impl Coordinator {
                         LoopAction::WorkerEvent { task_id, event_type, payload },
                     Some(WorkerMessage::Outcome { task_id, outcome }) =>
                         LoopAction::WorkerOutcome { task_id, outcome },
+                    Some(WorkerMessage::Defer { task_id, delay_secs, reason, .. }) =>
+                        LoopAction::TaskDeferred { task_id, delay_secs, reason },
                     None => LoopAction::TransportClosed,
                 };
             }

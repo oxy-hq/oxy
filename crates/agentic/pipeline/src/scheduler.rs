@@ -1125,9 +1125,18 @@ async fn fire_schedule(
             )
             .await
             {
+                // May be a COALESCED id: since submit stopped refusing
+                // contended callers, a tick landing while a run is already
+                // queued gets that run's id back rather than an error. The
+                // slot still collapses onto one run — the same end state
+                // `SkippedAlreadyRunning` produced — but it is now recorded as
+                // `Seeded`, so a schedule that used to show "skipped" shows the
+                // run it joined instead.
                 Ok(rid) => Ok(FireOutcome::Seeded(rid)),
-                // The previous load is still going — collapse this slot
-                // instead of recording a failure.
+                // Defensive only. `start_airway_run` no longer raises this:
+                // contention coalesces at submit and defers at claim. Kept so a
+                // future producer of `AlreadyRunning` cannot silently turn a
+                // collapsed slot into a scheduler error.
                 Err(crate::airway_run::AirwayRunError::AlreadyRunning { run_id, .. }) => {
                     Ok(FireOutcome::SkippedAlreadyRunning(run_id))
                 }

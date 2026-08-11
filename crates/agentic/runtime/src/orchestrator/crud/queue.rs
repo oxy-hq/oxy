@@ -2,7 +2,10 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use sea_orm::{ActiveValue::*, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait};
+use sea_orm::{
+    ActiveValue::*, ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, EntityTrait,
+    Statement,
+};
 
 use crate::lifecycle::crud::now;
 use crate::orchestrator::entity::task_queue;
@@ -57,6 +60,16 @@ pub async fn enqueue_task(
         claim_count: Set(0),
         max_claims: Set(3),
         scope_owned: Set(scope.is_owned()),
+        // Explicitly `now()`, not `NotSet`. An enqueue MEANS "claimable now",
+        // and saying so is what makes the upsert below correct: this row is
+        // also the conflict path for re-enqueueing an existing `task_id`
+        // (retry, reset). Leaving the column unwritten there would inherit a
+        // prior `defer_task` deadline, so an explicit re-enqueue would sit
+        // invisible for the remainder of a deferral its caller never chose.
+        available_at: Set(now),
+        // Fresh work is not waiting on anything — clear any prior streak, on
+        // the upsert path too (same reasoning as `available_at`).
+        first_deferred_at: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
     };
@@ -71,6 +84,9 @@ pub async fn enqueue_task(
                     task_queue::Column::LastHeartbeat,
                     task_queue::Column::ClaimedAt,
                     task_queue::Column::ClaimCount,
+                    // Clears any prior deferral — see `available_at` above.
+                    task_queue::Column::AvailableAt,
+                    task_queue::Column::FirstDeferredAt,
                     task_queue::Column::UpdatedAt,
                 ])
                 .to_owned(),
@@ -116,6 +132,7 @@ pub async fn claim_task(
         WHERE task_id = ( \
             SELECT task_id FROM agentic_task_queue \
             WHERE queue_status = 'queued' \
+              AND available_at <= now() \
               AND scope_owned = false \
               AND parent_task_id IS NULL \
             ORDER BY created_at \
@@ -162,6 +179,7 @@ pub async fn claim_task_under_root(
         WHERE task_id = ( \
             SELECT task_id FROM agentic_task_queue \
             WHERE queue_status = 'queued' \
+              AND available_at <= now() \
               AND (task_id = $2 OR task_id LIKE $2 || '.%') \
             ORDER BY created_at \
             LIMIT 1 \
@@ -380,6 +398,8 @@ pub async fn requeue_task(
              last_heartbeat = NULL, \
              claimed_at = NULL, \
              claim_count = 0, \
+             available_at = LEAST(agentic_task_queue.available_at, now()), \
+             first_deferred_at = NULL, \
              updated_at = now()",
         [
             task_id.into(),
@@ -404,6 +424,17 @@ pub async fn requeue_task(
 /// Returns rows affected; `0` means the task row was reaped **or** is still live
 /// (queued/claimed) — either way the caller should fall back to a fresh run
 /// rather than reset in place.
+/// A revival is FRESH WORK: it clears the wait-streak and can only ever make
+/// the task MORE visible (`LEAST(available_at, now())`, never a bare `now()`).
+///
+/// Not redundant, despite reviving only non-`queued`/`claimed` rows:
+/// `defer_task` sets `queue_status = 'dead'` and `available_at = now() + delay`
+/// in the SAME statement, so a dead-lettered task is terminal AND invisible
+/// with a streak that already exceeds the ceiling. Reviving it without both
+/// writes sends it straight back to `dead` on its first contention.
+///
+/// The same treatment is applied at the other three doors into `queued` —
+/// `enqueue_task`, `requeue_task`, and the admin `reenqueue_dead` handler.
 pub async fn reset_task_to_queued(db: &DatabaseConnection, task_id: &str) -> Result<u64, DbErr> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
     let res = db
@@ -411,7 +442,10 @@ pub async fn reset_task_to_queued(db: &DatabaseConnection, task_id: &str) -> Res
             DatabaseBackend::Postgres,
             "UPDATE agentic_task_queue SET \
                  queue_status = 'queued', worker_id = NULL, last_heartbeat = NULL, \
-                 claimed_at = NULL, claim_count = 0, updated_at = now() \
+                 claimed_at = NULL, claim_count = 0, \
+                 available_at = LEAST(available_at, now()), \
+                 first_deferred_at = NULL, \
+                 updated_at = now() \
              WHERE task_id = $1 AND queue_status NOT IN ('queued', 'claimed')",
             [task_id.into()],
         ))
@@ -739,6 +773,111 @@ pub async fn release_claims_for_worker(
         ))
         .await?;
     Ok(res.rows_affected())
+}
+
+/// What [`defer_task`] did.
+///
+/// Not a `bool`: "we deferred it", "it has waited too long and is now dead",
+/// and "it is not ours to defer" are three different facts, and a caller that
+/// cannot tell them apart cannot log or alert correctly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeferOutcome {
+    /// Returned to the queue, invisible until the delay elapses.
+    Deferred,
+    /// Waited longer than the caller's ceiling; moved to `dead` instead.
+    DeadLettered,
+    /// This worker no longer holds the claim — nothing was changed.
+    NotHeld,
+}
+
+/// Return a claimed task to the queue, invisible until `delay_secs` from now.
+///
+/// The counterpart to a claim that neither completes nor fails: the worker
+/// looked at the task, decided it cannot run *yet*, and wants it retried
+/// without occupying a slot in the meantime.
+///
+/// `claim_count` is deliberately **decremented** back. A deferral is not an
+/// attempt — it is the absence of one. Leaving it incremented would walk an
+/// indefinitely-contended task toward `max_claims` and dead-letter it for
+/// waiting its turn, which is the failure the caller is trying to avoid.
+///
+/// Two paths deliberately do NOT clear `first_deferred_at`: the REAPER's
+/// re-queue and [`RELEASE_SET_CLAUSE`] (graceful shutdown refund). Both revive
+/// a row that was CLAIMED, so they continue the same attempt rather than
+/// expressing fresh intent — unlike the four doors listed on
+/// `reset_task_to_queued`, which are all a caller asking for the work again.
+///
+/// Clearing the streak on a claim-side path would reset the clock on every
+/// defer -> claim -> defer cycle, and the wall-clock bound below would never be
+/// reached. (A reap itself is rare — it needs a worker to die — but it sits on
+/// the claim side, and that is what decides it.) The accepted cost is that a
+/// task reaped after genuinely running for hours carries that time into its
+/// next contention.
+///
+/// STARVATION is bounded by `max_wait_secs` measured in WALL CLOCK from the
+/// first defer of the current streak, not by a number of deferrals: the retry
+/// interval is a domain's choice and can change, so N defers is not a bounded
+/// amount of time. A task that has waited longer than the ceiling moves to
+/// `dead` rather than waiting in silence — a permanently blocked pipeline has
+/// to be visible as a failure, not as a queue that looks healthy.
+///
+/// Scoped to `worker_id` so a worker cannot defer a task another worker has
+/// since claimed (the reaper may have reassigned it while this one was
+/// deciding).
+pub async fn defer_task(
+    db: &DatabaseConnection,
+    task_id: &str,
+    worker_id: &str,
+    delay_secs: i64,
+    max_wait_secs: i64,
+) -> Result<DeferOutcome, DbErr> {
+    // One statement so the streak read and the write cannot interleave with a
+    // peer's claim: `first_deferred_at` is both read and written here.
+    let sql = "\
+        UPDATE agentic_task_queue \
+        SET queue_status = CASE \
+                WHEN COALESCE(first_deferred_at, now()) <= now() - make_interval(secs => $4) \
+                THEN 'dead' ELSE 'queued' END, \
+            worker_id = NULL, \
+            claimed_at = NULL, \
+            last_heartbeat = NULL, \
+            claim_count = GREATEST(claim_count - 1, 0), \
+            first_deferred_at = COALESCE(first_deferred_at, now()), \
+            available_at = now() + make_interval(secs => $3), \
+            updated_at = now() \
+        WHERE task_id = $1 AND worker_id = $2 AND queue_status = 'claimed' \
+        RETURNING queue_status";
+
+    use sea_orm::FromQueryResult;
+    #[derive(FromQueryResult)]
+    struct Row {
+        queue_status: String,
+    }
+
+    let row = Row::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        [
+            task_id.into(),
+            worker_id.into(),
+            // `make_interval(secs => …)` takes double precision; bind it as
+            // such rather than leaning on implicit cast resolution (matches
+            // `pipeline_lease::try_acquire`).
+            (delay_secs as f64).into(),
+            (max_wait_secs as f64).into(),
+        ],
+    ))
+    .one(db)
+    .await?;
+
+    Ok(match row {
+        None => DeferOutcome::NotHeld,
+        Some(r) if r.queue_status == "dead" => {
+            TASKS_DEAD_LETTERED.fetch_add(1, Ordering::Relaxed);
+            DeferOutcome::DeadLettered
+        }
+        Some(_) => DeferOutcome::Deferred,
+    })
 }
 
 /// The `claimed -> queued` refund shared by both release paths.
