@@ -53,6 +53,19 @@ describe("canReachAdminRoute", () => {
     ).toBe(false);
   });
 
+  it("gates airway on operate_platform, matching the endpoint", () => {
+    // Regression: this entry was `ownerOnly` while the server mounted
+    // `airway_config` under `cap(Action::PlatformOperate)`. A holder of that
+    // capability got a 200 from `GET /admin/airway/config` and was still
+    // bounced off the page — the nav and the API disagreeing about one
+    // surface, which is the bug this asserts against.
+    expect(canReachAdminRoute(ROUTES.ADMIN.AIRWAY, staff("operate_platform"))).toBe(true);
+    expect(canReachAdminRoute(ROUTES.ADMIN.AIRWAY, owner)).toBe(true);
+    // Still staff-only: the capability is the door, not the absence of one.
+    expect(canReachAdminRoute(ROUTES.ADMIN.AIRWAY, staff("manage_apps"))).toBe(false);
+    expect(canReachAdminRoute(ROUTES.ADMIN.AIRWAY, nobody)).toBe(false);
+  });
+
   it("gates the grant console on manage_platform_grants", () => {
     expect(canReachAdminRoute("/admin/app-admins", staff("manage_platform_grants"))).toBe(true);
     expect(canReachAdminRoute("/admin/app-admins", staff("manage_apps"))).toBe(false);

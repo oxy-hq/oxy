@@ -130,14 +130,28 @@ export const ADMIN_NAV: AdminNavItem[] = [
     capability: "operate_platform",
     group: "operations"
   },
-  // Airway admission policy can silently halt every pipeline of a source
-  // kind (a one-click outage) — strict Global Owner, like Billing queue and
-  // Global admins.
+  // Deployment-wide operational config, beside Workspace health / routing /
+  // metrics — the server gates it on exactly that capability
+  // (`admin::router()` mounts `airway_config` under
+  // `cap(Action::PlatformOperate)`), so this must too.
+  //
+  // It was `ownerOnly: true`, written when the surface really was mounted
+  // under the strict OXY_OWNER guard. When the backend moved to the
+  // capability, this entry did not, and the two disagreeing is worse than
+  // either alone: `canReachAdminRoute` votes with the same rule, so a
+  // `operate_platform` holder was bounced off a page the API would serve them
+  // — the link absent, the route redirecting, and `GET /admin/airway/config`
+  // returning 200 the whole time.
+  //
+  // The original rationale (a policy flip can halt every pipeline of a kind)
+  // is real and is answered where it belongs: the page previews the blast
+  // radius and confirms a save that is not provably clean. It is not an
+  // argument for a *narrower audience* than the endpoint has.
   {
     to: ROUTES.ADMIN.AIRWAY,
     label: "Airway",
     icon: Waypoints,
-    ownerOnly: true,
+    capability: "operate_platform",
     group: "operations"
   },
   // Tenant management: the unified, relationship-first directory of orgs /
