@@ -727,8 +727,8 @@ dependencies = [
 
 [[package]]
 name = "airway"
-version = "0.1.25"
-source = "git+https://github.com/oxy-hq/airway-internal.git?tag=0.1.25#e7d5239801a442c9422bffb2a660b72565b10ffd"
+version = "0.1.26"
+source = "git+https://github.com/oxy-hq/airway-internal.git?tag=0.1.26#bb50e6a0290fec6a42682a2df0e48b80fb2dd0f6"
 dependencies = [
  "anyhow",
  "arrow 58.3.0",
