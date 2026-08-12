@@ -72,6 +72,12 @@ pub use worker::AirwayWorker;
 /// `RefreshTokenSink` internally.
 pub use source_factory::RefreshTokenSink;
 
+/// QuickBooks **read-only** token port and the custody selector pairing it with
+/// [`RefreshTokenSink`]. A grant tolerates exactly one rotation writer; when the
+/// host already runs one, the pipeline supplies an `AccessTokenSource` instead
+/// of a sink and never contacts Intuit's token endpoint.
+pub use source_factory::{AccessTokenSource, QuickBooksTokens};
+
 /// Host-side credential provider for `airhouse_managed` destinations. A thin,
 /// `String`-error port (the factory bridges it to airway's `CredentialProvider`)
 /// so an airway load re-mints a fresh ephemeral credential on every (re)connect

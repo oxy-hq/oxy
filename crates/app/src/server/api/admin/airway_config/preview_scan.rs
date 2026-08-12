@@ -33,6 +33,20 @@ use super::preview::{ResourceVerdict, UnevaluatedPipeline, verdicts};
 /// leaves the process — it exists only so a connector *constructs*.
 const PLACEHOLDER_SECRET: &str = "oxy-preview-placeholder";
 
+/// `*_var` keys that are **not** substitutable credential references and must
+/// survive [`substitute_secret_vars`] untouched.
+///
+/// `access_token_var` is a *mode selector*, not a credential the factory reads:
+/// its presence is what puts a quickbooks source into read-only token custody,
+/// and the executor turns it into an `AccessTokenSource` rather than a literal
+/// (see `PipelineTaskExecutor::dispatch_airway`). Rewriting it to an
+/// `access_token` literal both erases that declaration — dropping the source
+/// into the rotating branch, which then fails for want of `client_secret` — and
+/// produces a field `QuickBooksParams` rejects under `deny_unknown_fields`.
+/// Either way the pipeline lands in `unevaluated`, which is the one outcome
+/// this scan exists to keep empty.
+const NON_CREDENTIAL_VARS: &[&str] = &["access_token_var"];
+
 /// What one scan found.
 ///
 /// `unevaluated` and `uncompiled_workspaces` are deliberately **two fields,
@@ -401,7 +415,7 @@ fn evaluate_rows(
 ///
 /// Synchronous, and that is the point: no filesystem, no network. See
 /// [`substitute_secret_vars`] for why placeholder credentials are safe.
-fn evaluate_pipeline(
+pub(crate) fn evaluate_pipeline(
     definition: &serde_json::Value,
     source_kind: &str,
     pipeline_ref: &str,
@@ -416,8 +430,24 @@ fn evaluate_pipeline(
         return Ok(None);
     }
     let mut source = spec.source;
+    // Read before substitution — the key is preserved (see `NON_CREDENTIAL_VARS`),
+    // but reading here keeps the decision next to the config it is made from.
+    let read_only = source
+        .config
+        .get("access_token_var")
+        .and_then(|v| v.as_str())
+        .is_some();
     substitute_secret_vars(&mut source.config);
-    let connector = build_source_connector(&source, None, environment)
+    // A config declaring read-only custody must be handed a matching source or
+    // `build_quickbooks` refuses it — correctly, since the alternative is
+    // falling back to refreshing. The stub is safe for the same reason the
+    // placeholder secrets are: connector construction performs no I/O, and
+    // nothing in this scan ever issues a request, so `access_token` is never
+    // called.
+    let tokens = read_only.then(|| {
+        agentic_airway::QuickBooksTokens::ReadOnly(std::sync::Arc::new(PlaceholderAccessToken))
+    });
+    let connector = build_source_connector(&source, tokens, environment)
         .map_err(|e| format!("connector could not be built: {e}"))?;
     Ok(Some(verdicts(
         source_kind,
@@ -426,6 +456,23 @@ fn evaluate_pipeline(
         &connector.contracts(),
         policy,
     )))
+}
+
+/// Stands in for the host's access-token source when previewing a quickbooks
+/// pipeline in read-only token custody.
+///
+/// It can never be called: the preview builds connectors and reads their
+/// declared resources/contracts, and issues no request. Returning an error
+/// rather than [`PLACEHOLDER_SECRET`] keeps that true by construction — if a
+/// future arm ever *does* authenticate at construction time, this fails loudly
+/// instead of sending a fake bearer token from a staff admin route.
+struct PlaceholderAccessToken;
+
+#[async_trait::async_trait]
+impl agentic_airway::AccessTokenSource for PlaceholderAccessToken {
+    async fn access_token(&self) -> Result<String, String> {
+        Err("preview scan never issues requests; no access token is available".into())
+    }
 }
 
 /// Rewrite every `<field>_var` secret reference into a `<field>` literal
@@ -469,6 +516,7 @@ pub(crate) fn substitute_secret_vars(value: &mut serde_json::Value) {
             let var_keys: Vec<String> = map
                 .keys()
                 .filter(|k| k.strip_suffix("_var").is_some_and(|f| !f.is_empty()))
+                .filter(|k| !NON_CREDENTIAL_VARS.contains(&k.as_str()))
                 .cloned()
                 .collect();
             for var_key in var_keys {

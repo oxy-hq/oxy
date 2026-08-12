@@ -24,7 +24,7 @@ use super::{ResourceVerdict, verdicts};
 // *stored* definition constructible) but is itself pure, so its tests stay in
 // this file rather than moving into the DB-backed one where they could
 // self-skip.
-use super::super::preview_scan::substitute_secret_vars;
+use super::super::preview_scan::{evaluate_pipeline, substitute_secret_vars};
 
 /// The kind the un-suffixed helper scores under. Since airway 0.1.24 every
 /// kind is on the "fixable" side of the `not_fixable_here` split, so this is
@@ -437,4 +437,125 @@ fn an_explicit_literal_survives_substitution() {
     substitute_secret_vars(&mut config);
     assert_eq!(config["client_secret"], "literal-in-yaml");
     assert!(config.get("client_secret_var").is_none());
+}
+
+/// `access_token_var` is a token-custody *mode selector*, not a credential the
+/// factory reads — the executor turns it into an `AccessTokenSource`, never a
+/// literal. Substituting it would both erase the read-only declaration (so the
+/// source falls into the rotating branch and fails for want of `client_secret`)
+/// and produce a field `QuickBooksParams` rejects under `deny_unknown_fields`.
+/// Either way every read-only quickbooks pipeline would land in `unevaluated`
+/// — permanently, on the staff surface whose whole job is keeping that list
+/// empty.
+#[test]
+fn access_token_var_survives_substitution() {
+    let mut config = serde_json::json!({
+        "client_id": "id-123",
+        "realm_id": "9341456441393444",
+        "access_token_var": "apps/app-id/QB_ACCESS_TOKEN",
+    });
+    substitute_secret_vars(&mut config);
+
+    assert_eq!(
+        config["access_token_var"], "apps/app-id/QB_ACCESS_TOKEN",
+        "the mode selector must reach the factory intact"
+    );
+    assert!(
+        config.get("access_token").is_none(),
+        "and must not be rewritten into a literal the params struct rejects"
+    );
+}
+
+/// The symptom, not a mechanism inside it: a quickbooks pipeline in read-only
+/// token custody must **evaluate** — produce verdicts — rather than land in
+/// `unevaluated`.
+///
+/// Deliberately asserted through `evaluate_pipeline` rather than through
+/// `substitute_secret_vars` alone. Two things have to hold for this to work:
+/// the `_var` key must survive substitution, *and* `evaluate_pipeline` must
+/// hand `build_quickbooks` a matching read-only source — because the factory
+/// fails closed on a declared-but-unsupplied `access_token_var`. A test on
+/// either half alone still passes with the other deleted, and the pipeline is
+/// back in `unevaluated`.
+///
+/// Pure by construction: `evaluate_pipeline` reads no database and no
+/// filesystem, and the placeholder token source is never called because
+/// connector construction issues no requests.
+#[test]
+fn a_read_only_quickbooks_pipeline_evaluates_instead_of_landing_unevaluated() {
+    let definition = serde_json::json!({
+        "name": "quickbooks_financials",
+        "source": {
+            "kind": "quickbooks",
+            "config": {
+                "client_id": "client-123",
+                "realm_id": "9341456441393444",
+                // No client_secret_var / refresh_token_var: read-only custody
+                // means this pipeline never refreshes, so it carries neither.
+                "access_token_var": "apps/app-id/QB_ACCESS_TOKEN",
+            },
+        },
+        "destination": { "database": "warehouse", "dataset_name": "quickbooks_financials" },
+    });
+
+    let verdicts = evaluate_pipeline(
+        &definition,
+        "quickbooks",
+        "pipelines/quickbooks_financials.airway.yml",
+        ContractPolicy::Permissive,
+        Environment::Production,
+    )
+    .expect("a read-only quickbooks pipeline must be evaluable")
+    .expect("kind matches, so the scan returns verdicts rather than skipping");
+
+    assert!(
+        !verdicts.is_empty(),
+        "the connector declares resources, so the preview should score them"
+    );
+}
+
+/// The rotating counterpart still evaluates, so excluding `access_token_var`
+/// from substitution cannot have broken the path every existing pipeline uses.
+#[test]
+fn a_rotating_quickbooks_pipeline_still_evaluates() {
+    let definition = serde_json::json!({
+        "name": "quickbooks_financials",
+        "source": {
+            "kind": "quickbooks",
+            "config": {
+                "client_id": "client-123",
+                "realm_id": "9341456441393444",
+                "client_secret_var": "QB_CLIENT_SECRET",
+                "refresh_token_var": "QB_REFRESH_TOKEN",
+            },
+        },
+        "destination": { "database": "warehouse", "dataset_name": "quickbooks_financials" },
+    });
+
+    let verdicts = evaluate_pipeline(
+        &definition,
+        "quickbooks",
+        "pipelines/quickbooks_financials.airway.yml",
+        ContractPolicy::Permissive,
+        Environment::Production,
+    )
+    .expect("a rotating quickbooks pipeline must stay evaluable")
+    .expect("kind matches");
+
+    assert!(!verdicts.is_empty());
+}
+
+/// The exclusion is by exact key, so a genuine credential whose name merely
+/// ends the same way is still substituted.
+#[test]
+fn other_token_vars_are_still_substituted() {
+    let mut config = serde_json::json!({
+        "refresh_token_var": "QB_REFRESH_TOKEN",
+        "auth": { "token_var": "REST_TOKEN" },
+    });
+    substitute_secret_vars(&mut config);
+
+    assert!(config.get("refresh_token_var").is_none());
+    assert!(config["refresh_token"].is_string());
+    assert!(config["auth"]["token"].is_string());
 }

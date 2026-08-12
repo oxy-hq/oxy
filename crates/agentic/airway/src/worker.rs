@@ -52,10 +52,11 @@ const OUTCOME_BUFFER: usize = 4;
 #[derive(Clone)]
 pub struct AirwayWorker {
     db: Arc<DatabaseConnection>,
-    /// Optional OAuth refresh-token write-back sink, supplied by the
-    /// host for sources that rotate refresh tokens (QuickBooks). `None`
-    /// for every other source.
-    refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
+    /// Optional QuickBooks token hook, supplied by the host: either a
+    /// write-back sink for a grant this pipeline rotates, or a read-only
+    /// access-token source for a grant some other writer owns. `None` for
+    /// every other source. See [`crate::QuickBooksTokens`].
+    tokens: Option<crate::QuickBooksTokens>,
     /// Optional credential provider, supplied by the host for
     /// `airhouse_managed` destinations so the destination re-mints a fresh
     /// (non-expired) ephemeral credential on every (re)connect. `None` for
@@ -77,7 +78,7 @@ impl AirwayWorker {
     pub fn new(db: Arc<DatabaseConnection>, admission: crate::AirwayAdmission) -> Self {
         Self {
             db,
-            refresh_sink: None,
+            tokens: None,
             credential_provider: None,
             admission,
         }
@@ -85,7 +86,8 @@ impl AirwayWorker {
 
     /// Construct a worker that hands `sink` to the source factory so a
     /// rotated OAuth refresh token can be persisted to the host's secret
-    /// store. Used by the executor for `quickbooks` pipelines.
+    /// store. Used by the executor for `quickbooks` pipelines this instance
+    /// rotates.
     ///
     /// `admission` is required for the reason [`Self::new`] gives.
     pub fn with_refresh_sink(
@@ -93,9 +95,30 @@ impl AirwayWorker {
         sink: Arc<dyn crate::RefreshTokenSink>,
         admission: crate::AirwayAdmission,
     ) -> Self {
+        Self::with_quickbooks_tokens(db, crate::QuickBooksTokens::Rotating(sink), admission)
+    }
+
+    /// Construct a worker in **read-only** token custody: the source reads
+    /// access tokens from `source` and never contacts Intuit's token endpoint.
+    /// Used for grants whose rotation some other writer owns.
+    ///
+    /// `admission` is required for the reason [`Self::new`] gives.
+    pub fn with_access_token_source(
+        db: Arc<DatabaseConnection>,
+        source: Arc<dyn crate::AccessTokenSource>,
+        admission: crate::AirwayAdmission,
+    ) -> Self {
+        Self::with_quickbooks_tokens(db, crate::QuickBooksTokens::ReadOnly(source), admission)
+    }
+
+    fn with_quickbooks_tokens(
+        db: Arc<DatabaseConnection>,
+        tokens: crate::QuickBooksTokens,
+        admission: crate::AirwayAdmission,
+    ) -> Self {
         Self {
             db,
-            refresh_sink: Some(sink),
+            tokens: Some(tokens),
             credential_provider: None,
             admission,
         }
@@ -142,7 +165,7 @@ impl AirwayWorker {
         let cancel = CancellationToken::new();
 
         let db = self.db.clone();
-        let refresh_sink = self.refresh_sink.clone();
+        let tokens = self.tokens.clone();
         let credential_provider = self.credential_provider.clone();
         let admission = self.admission;
         let cancel_clone = cancel.clone();
@@ -164,7 +187,7 @@ impl AirwayWorker {
                 resume_run_id,
                 run_id,
                 db,
-                refresh_sink,
+                tokens,
                 credential_provider,
                 admission,
                 event_tx,
@@ -217,7 +240,7 @@ async fn drive(
     resume_run_id: Option<String>,
     run_id: String,
     db: Arc<DatabaseConnection>,
-    refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
+    tokens: Option<crate::QuickBooksTokens>,
     credential_provider: Option<Arc<dyn crate::CredentialProvider>>,
     admission: crate::AirwayAdmission,
     event_tx: mpsc::Sender<(String, Value)>,
@@ -237,7 +260,7 @@ async fn drive(
         spec,
         resume_run_id,
         db,
-        refresh_sink,
+        tokens,
         credential_provider,
         admission,
         event_tx.clone(),
@@ -311,7 +334,7 @@ async fn run_pipeline(
     spec: AirwayPipelineSpec,
     resume_run_id: Option<String>,
     db: Arc<DatabaseConnection>,
-    refresh_sink: Option<Arc<dyn crate::RefreshTokenSink>>,
+    tokens: Option<crate::QuickBooksTokens>,
     credential_provider: Option<Arc<dyn crate::CredentialProvider>>,
     admission: crate::AirwayAdmission,
     event_tx: mpsc::Sender<(String, Value)>,
@@ -354,7 +377,7 @@ async fn run_pipeline(
     crate::deployment_config::install_once(db.as_ref()).await?;
 
     // ── Build pluggable parts ──────────────────────────────────────────────
-    let connector = build_source_connector(&spec.source, refresh_sink, admission.environment)?;
+    let connector = build_source_connector(&spec.source, tokens, admission.environment)?;
     // Read the **declared** contract map here, while the concrete connector is
     // still in hand, so the run's `pipeline_plan` can tell the operator how
     // each resource behaves. `contracts()`, not `contract_for()`: the latter

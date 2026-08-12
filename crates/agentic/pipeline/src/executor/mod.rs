@@ -763,18 +763,27 @@ impl PipelineTaskExecutor {
             }
         }
 
-        // Capture QuickBooks' refresh-token var name *before* secret
-        // resolution strips it — the write-back sink needs to know which
-        // secret to update when Intuit rotates the token mid-run.
-        let qb_refresh_var: Option<String> = if spec.source.kind == "quickbooks" {
-            spec.source
-                .config
-                .get("refresh_token_var")
+        // Capture QuickBooks' token var names *before* secret resolution
+        // strips them. The write-back sink needs to know which secret to update
+        // when Intuit rotates the token mid-run; the read-only source needs to
+        // know which secret to re-read.
+        let qb_var = |key: &str| -> Option<String> {
+            (spec.source.kind == "quickbooks")
+                .then(|| spec.source.config.get(key))
+                .flatten()
                 .and_then(|v| v.as_str())
                 .map(str::to_string)
-        } else {
-            None
         };
+        // `access_token_var` selects READ-ONLY token custody: some other writer
+        // (for Poke House, the scheduled `refresh-qb-token` Oxy Function) owns
+        // this grant's rotation, and Intuit expires the previous refresh token
+        // whenever it issues a new one — so a second refresher here would fork
+        // the chain and brick the grant. Unlike every other `*_var`, this one is
+        // deliberately NOT resolved into the spec: an access token lives ~60
+        // minutes and a backfill outlives that, so it becomes a provider that
+        // re-reads per request instead of a literal frozen at dispatch.
+        let qb_tokens =
+            quickbooks_token_vars(qb_var("access_token_var"), qb_var("refresh_token_var"))?;
 
         // Resource override (e.g. "retry failed tables"): restrict the run
         // to the named subset. The worker filters the source by
@@ -826,8 +835,16 @@ impl PipelineTaskExecutor {
         let airhouse_db = self.resolve_airway_destination(&mut spec).await?;
 
         let db = Arc::new(self.db.clone());
-        let mut worker = match qb_refresh_var {
-            Some(var_name) => {
+        let mut worker = match qb_tokens {
+            Some(QuickBooksTokenVar::ReadOnly(var_name)) => {
+                let source: Arc<dyn agentic_airway::AccessTokenSource> =
+                    Arc::new(PlatformAccessTokenSource {
+                        platform: self.platform.clone(),
+                        var_name,
+                    });
+                agentic_airway::AirwayWorker::with_access_token_source(db, source, admission)
+            }
+            Some(QuickBooksTokenVar::Rotating(var_name)) => {
                 let sink: Arc<dyn agentic_airway::RefreshTokenSink> =
                     Arc::new(PlatformRefreshTokenSink {
                         platform: self.platform.clone(),
@@ -1210,6 +1227,92 @@ impl agentic_airway::RefreshTokenSink for PlatformRefreshTokenSink {
     }
 }
 
+/// Treat a resolved-but-empty secret as unset.
+///
+/// `resolve_secret` returns `Some("")` for a secret row that exists with an
+/// empty value, which is a configuration mistake rather than a credential. The
+/// LLM-key readiness check in this crate already draws the line here; naming it
+/// keeps the two consistent and makes the rule testable.
+fn usable_secret(resolved: Option<String>) -> Option<String> {
+    resolved.filter(|value| !value.trim().is_empty())
+}
+
+/// Which token-custody var a quickbooks spec declared, and the secret it names.
+#[derive(Debug, PartialEq, Eq)]
+enum QuickBooksTokenVar {
+    /// `access_token_var` — the host owns rotation; this run only reads.
+    ReadOnly(String),
+    /// `refresh_token_var` — this run owns rotation and writes back.
+    Rotating(String),
+}
+
+/// Decide token custody from the two `*_var` keys a quickbooks spec may carry.
+///
+/// **Declaring both is an error, not a precedence question.** They describe
+/// mutually exclusive answers to "who rotates this grant?", and the whole point
+/// of `QuickBooksTokens` being an enum is that resolving that silently has no
+/// correct meaning — picking read-only would leave a `refresh_token_var` in the
+/// YAML implying a write-back that never happens, and picking rotating would
+/// fork a grant whose owner the config just named. The operator has to say which.
+///
+/// Pure so the choice is testable without a database or a spec fixture.
+fn quickbooks_token_vars(
+    access_token_var: Option<String>,
+    refresh_token_var: Option<String>,
+) -> Result<Option<QuickBooksTokenVar>, String> {
+    match (access_token_var, refresh_token_var) {
+        (Some(_), Some(_)) => Err(
+            "airway quickbooks: `access_token_var` and `refresh_token_var` are mutually \
+             exclusive — the first says another writer owns this grant's rotation, the \
+             second says this pipeline does. Remove whichever does not apply."
+                .into(),
+        ),
+        (Some(v), None) => Ok(Some(QuickBooksTokenVar::ReadOnly(v))),
+        (None, Some(v)) => Ok(Some(QuickBooksTokenVar::Rotating(v))),
+        (None, None) => Ok(None),
+    }
+}
+
+/// Reads a host-maintained OAuth **access** token out of the secret store for a
+/// QuickBooks source in read-only token custody.
+///
+/// `var_name` is typically an app-scoped secret written by a scheduled
+/// refresher — e.g. `apps/<app_id>/QB_ACCESS_TOKEN`. That name contains `/`,
+/// which `validate_secret_name` rejects on *write*; the read path does not
+/// validate, which is why the app-scoped namespace is reachable from here at
+/// all (writes go through `set_app_secret`, which builds the prefix itself).
+///
+/// Resolved per request rather than once per run — see the `access_token_var`
+/// capture in `dispatch_airway` for why freezing it would break backfills.
+/// `SecretManagerService` caches decrypted values for 300s, so this costs at
+/// most one query per 5 minutes while still picking up a rotation well inside
+/// the token's ~60-minute life.
+struct PlatformAccessTokenSource {
+    platform: Arc<dyn PlatformContext>,
+    var_name: String,
+}
+
+#[async_trait]
+impl agentic_airway::AccessTokenSource for PlatformAccessTokenSource {
+    async fn access_token(&self) -> Result<String, String> {
+        // `usable_secret` drops a resolved-but-empty value: it would otherwise
+        // become `Authorization: Bearer ` on every request — a 401 loop that
+        // read-only mode cannot refresh its way out of, reported with a message
+        // naming neither the secret nor the cause.
+        usable_secret(self.platform.resolve_secret(&self.var_name).await)
+            // Fail loudly rather than falling back to a refresh: an unenrolled
+            // or renamed grant must stop the run, not silently start a second
+            // rotation chain.
+            .ok_or_else(|| {
+                format!(
+                    "airway quickbooks: access token secret `{}` (referenced by \
+                     `access_token_var`) is missing or empty in the secret manager",
+                    self.var_name
+                )
+            })
+    }
+}
+
 /// Re-mints a fresh `airhouse_managed` credential on every (re)connect for an
 /// airway pipeline destination. Wired into the airway worker for airhouse
 /// destinations: when the destination opens or cycles its long-lived pgwire
@@ -1258,6 +1361,59 @@ mod tests {
     #[test]
     fn builder_agent_id_routes_to_builder() {
         assert!(is_builder_agent("__builder__"));
+    }
+
+    // ── QuickBooks token custody ─────────────────────────────────────────
+
+    #[test]
+    fn access_token_var_selects_read_only_custody() {
+        assert_eq!(
+            quickbooks_token_vars(Some("apps/app-id/QB_ACCESS_TOKEN".into()), None).unwrap(),
+            Some(QuickBooksTokenVar::ReadOnly(
+                "apps/app-id/QB_ACCESS_TOKEN".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn refresh_token_var_selects_rotating_custody() {
+        assert_eq!(
+            quickbooks_token_vars(None, Some("QB_REFRESH_TOKEN".into())).unwrap(),
+            Some(QuickBooksTokenVar::Rotating("QB_REFRESH_TOKEN".into()))
+        );
+    }
+
+    #[test]
+    fn no_token_var_means_no_hook() {
+        assert_eq!(quickbooks_token_vars(None, None).unwrap(), None);
+    }
+
+    /// Declaring both is ambiguous about who rotates the grant, and either
+    /// silent resolution is wrong — so it is refused rather than ordered.
+    #[test]
+    fn declaring_both_token_vars_is_refused() {
+        let err = quickbooks_token_vars(Some("A".into()), Some("R".into()))
+            .err()
+            .expect("expected refusal");
+        assert!(
+            err.contains("mutually exclusive"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// A secret that exists but is empty must read as unset. Otherwise it
+    /// becomes `Authorization: Bearer ` on every request — a 401 loop that
+    /// read-only mode cannot refresh its way out of.
+    #[test]
+    fn an_empty_secret_reads_as_unset() {
+        assert_eq!(usable_secret(None), None);
+        assert_eq!(usable_secret(Some(String::new())), None);
+        assert_eq!(usable_secret(Some("   ".into())), None);
+        assert_eq!(usable_secret(Some("\n".into())), None);
+        assert_eq!(
+            usable_secret(Some("eyJ.abc".into())).as_deref(),
+            Some("eyJ.abc")
+        );
     }
 
     #[test]

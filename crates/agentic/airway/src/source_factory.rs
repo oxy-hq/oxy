@@ -74,6 +74,69 @@ impl airway::connector::sources::quickbooks::RefreshTokenSink for AirwayRefreshS
     }
 }
 
+/// Read port for a host-maintained OAuth **access** token (QuickBooks).
+///
+/// The counterpart to [`RefreshTokenSink`], and mutually exclusive with it.
+/// Supplying one puts the connector in read-only mode: it never calls Intuit's
+/// token endpoint, because Intuit expires the previous refresh token whenever
+/// it issues a new one, so a grant tolerates exactly one rotation writer. When
+/// the host already runs that writer (for Poke House, a scheduled
+/// `refresh-qb-token` Oxy Function), this pipeline must be a reader.
+///
+/// Implemented by `agentic-pipeline`'s executor over the secret store. Uses a
+/// `String` error so implementors need no `airway` dependency —
+/// [`build_quickbooks`] bridges it via [`AirwayAccessTokenSource`].
+///
+/// **Called per request, not once per run.** The executor resolves ordinary
+/// `*_var` secrets once, before dispatch; doing that here would pin a ~60-minute
+/// access token for a backfill that outlives it. This port is invoked on demand
+/// so each call re-reads whatever the refresher last wrote.
+///
+/// Concretely, in airway ≥ 0.1.25: `QuickBooksAuth::authorization_header` is
+/// called by every data-API request, and in read-only mode it returns from this
+/// port before touching the token cache — nothing is memoised engine-side
+/// (`readonly_mode_reasks_the_source_on_every_call` pins that). The only cache
+/// in the path is `SecretManagerService`'s 300s TTL, so a rotation is picked up
+/// within 5 minutes. That window is safe rather than merely tolerable: Poke
+/// House's refresher fires every ~50 minutes against a 60-minute token, so the
+/// value being served during it still has ~10 minutes of validity left.
+#[async_trait]
+pub trait AccessTokenSource: Send + Sync {
+    async fn access_token(&self) -> Result<String, String>;
+}
+
+/// Which side of a QuickBooks grant's token custody this run takes.
+///
+/// An enum rather than two `Option`s because the two are mutually exclusive and
+/// "both supplied" has no correct meaning — it would have to resolve to a
+/// silent precedence rule, and the wrong branch of that rule is precisely the
+/// failure this type exists to prevent (a second refresher forking the grant's
+/// rotation chain). `None` at the call site means the source needs no token
+/// hook at all, which is every non-QuickBooks source.
+#[derive(Clone)]
+pub enum QuickBooksTokens {
+    /// This connector owns rotation: it refreshes at Intuit and writes the
+    /// rotated refresh token back through the sink.
+    Rotating(Arc<dyn RefreshTokenSink>),
+    /// The host owns rotation: this connector only ever reads access tokens
+    /// and never contacts Intuit's token endpoint.
+    ReadOnly(Arc<dyn AccessTokenSource>),
+}
+
+/// Bridges a host [`AccessTokenSource`] (String error) onto airway's
+/// `AccessTokenSource` (AirwayError), so the engine can drive it.
+struct AirwayAccessTokenSource(Arc<dyn AccessTokenSource>);
+
+#[async_trait]
+impl airway::connector::sources::quickbooks::AccessTokenSource for AirwayAccessTokenSource {
+    async fn access_token(&self) -> Result<String, airway::AirwayError> {
+        self.0
+            .access_token()
+            .await
+            .map_err(airway::AirwayError::Extract)
+    }
+}
+
 /// Build the concrete [`SourceConnector`] for a parsed source config.
 ///
 /// Returns a boxed trait object so the worker can hand it straight to
@@ -91,10 +154,10 @@ impl airway::connector::sources::quickbooks::RefreshTokenSink for AirwayRefreshS
 /// connector currently declaring a sandbox host.
 pub fn build_source_connector(
     config: &SourceConfig,
-    refresh_sink: Option<Arc<dyn RefreshTokenSink>>,
+    tokens: Option<QuickBooksTokens>,
     environment: airway::connector::Environment,
 ) -> Result<Box<dyn SourceConnector>, AirwayError> {
-    let (connector, applied) = build_source_connector_inner(config, refresh_sink, environment)?;
+    let (connector, applied) = build_source_connector_inner(config, tokens, environment)?;
     admit_environment_is_applied(config, environment, connector.as_ref(), applied)?;
     Ok(connector)
 }
@@ -154,7 +217,7 @@ fn admit_environment_is_applied(
 
 fn build_source_connector_inner(
     config: &SourceConfig,
-    refresh_sink: Option<Arc<dyn RefreshTokenSink>>,
+    tokens: Option<QuickBooksTokens>,
     environment: airway::connector::Environment,
 ) -> Result<(Box<dyn SourceConnector>, EnvironmentApplied), AirwayError> {
     // Dispatched ahead of the table below so the `Yes` is produced by the same
@@ -162,7 +225,7 @@ fn build_source_connector_inner(
     // `environment` stops compiling here, rather than leaving a stale claim
     // behind in the guard.
     if config.kind == "quickbooks" {
-        let connector = build_quickbooks(&config.config, refresh_sink, environment)?;
+        let connector = build_quickbooks(&config.config, tokens, environment)?;
         return Ok((connector, EnvironmentApplied::Yes));
     }
 
@@ -631,11 +694,28 @@ struct QuickBooksParams {
     /// substitutes `client_secret_var` -> this field from the secret
     /// manager before dispatch, so the factory only sees the resolved
     /// literal.
-    client_secret: String,
+    ///
+    /// Required in rotating mode, unused in read-only mode (the data API
+    /// authenticates with the bearer token alone) — hence optional here and
+    /// enforced per-mode in [`build_quickbooks`].
+    #[serde(default)]
+    client_secret: Option<String>,
     /// Bootstrap refresh token (rotates on first use). Resolved from
     /// `refresh_token_var` by the executor; the rotated value is written
-    /// back via the supplied [`RefreshTokenSink`].
-    refresh_token: String,
+    /// back via the supplied [`RefreshTokenSink`]. Same per-mode optionality
+    /// as `client_secret`.
+    #[serde(default)]
+    refresh_token: Option<String>,
+    /// Name of the secret holding a host-maintained **access** token.
+    ///
+    /// Its presence in the YAML is what selects read-only mode. Unlike every
+    /// other `*_var`, the executor does **not** substitute it into this struct:
+    /// it builds an [`AccessTokenSource`] that re-reads per request, because an
+    /// access token lives ~60 minutes and a backfill can outlive it. The field
+    /// is declared here only so `deny_unknown_fields` accepts the YAML; the
+    /// value is read by the executor, not by this factory.
+    #[serde(default)]
+    access_token_var: Option<String>,
     /// QuickBooks company id. Accepts a YAML string *or* a bare integer —
     /// realm ids are all-digits (e.g. 9341456860808037) and an unquoted
     /// value would otherwise fail deserialization ("invalid type: integer").
@@ -720,25 +800,82 @@ fn resolve_quickbooks_base_url(
 
 fn build_quickbooks(
     raw: &Value,
-    refresh_sink: Option<Arc<dyn RefreshTokenSink>>,
+    tokens: Option<QuickBooksTokens>,
     environment: airway::connector::Environment,
 ) -> Result<Box<dyn SourceConnector>, AirwayError> {
     let params: QuickBooksParams = serde_json::from_value(raw.clone())
         .map_err(|e| AirwayError::Other(format!("invalid quickbooks config: {e}")))?;
-    let mut source = QuickBooksSource::new(
-        params.client_id,
-        params.client_secret,
-        params.refresh_token,
-        params.realm_id,
-    );
+
+    // FAIL CLOSED. `access_token_var` in the YAML is a declaration that some
+    // other writer owns this grant's rotation. If the executor did not hand us
+    // a matching source — an unresolvable secret, or a dispatch path that never
+    // builds one — the only other way to authenticate is to refresh, which is
+    // exactly what the declaration forbids. Refusing is the whole point: a
+    // silent fallback would fork the rotation chain and brick the grant, and it
+    // would do so at 3am on a schedule rather than here.
+    let read_only_declared = params.access_token_var.is_some();
+    let tokens = match (read_only_declared, tokens) {
+        (true, Some(QuickBooksTokens::ReadOnly(src))) => Some(QuickBooksTokens::ReadOnly(src)),
+        (true, other) => {
+            let got = match other {
+                Some(QuickBooksTokens::Rotating(_)) => "a refresh-token sink",
+                _ => "nothing",
+            };
+            return Err(AirwayError::Other(format!(
+                "quickbooks config declares `access_token_var` (read-only token custody) \
+                 but the host supplied {got}. Refusing to fall back to refreshing: \
+                 Intuit expires the previous refresh token whenever it issues a new one, \
+                 so a second refresher would fork this grant's rotation chain."
+            )));
+        }
+        (false, other) => other,
+    };
+
+    let mut source = match &tokens {
+        // Read-only: the data API authenticates with the bearer token alone, so
+        // the refresh-side credentials are genuinely unused. Passing empty
+        // strings is safe *because* `with_access_token_source` below makes the
+        // refresh path unreachable.
+        Some(QuickBooksTokens::ReadOnly(_)) => {
+            QuickBooksSource::new(params.client_id, "", "", params.realm_id)
+        }
+        _ => {
+            let client_secret = params.client_secret.ok_or_else(|| {
+                AirwayError::Other(
+                    "quickbooks config: `client_secret_var` is required unless \
+                     `access_token_var` selects read-only token custody"
+                        .into(),
+                )
+            })?;
+            let refresh_token = params.refresh_token.ok_or_else(|| {
+                AirwayError::Other(
+                    "quickbooks config: `refresh_token_var` is required unless \
+                     `access_token_var` selects read-only token custody"
+                        .into(),
+                )
+            })?;
+            QuickBooksSource::new(
+                params.client_id,
+                client_secret,
+                refresh_token,
+                params.realm_id,
+            )
+        }
+    };
     if let Some(base) = resolve_quickbooks_base_url(params.base_url.as_deref(), environment) {
         source = source.with_base_url(&base);
     }
     if let Some(mv) = params.minor_version.as_deref() {
         source = source.with_minor_version(mv);
     }
-    if let Some(sink) = refresh_sink {
-        source = source.with_refresh_token_sink(Arc::new(AirwayRefreshSink(sink)));
+    match tokens {
+        Some(QuickBooksTokens::Rotating(sink)) => {
+            source = source.with_refresh_token_sink(Arc::new(AirwayRefreshSink(sink)));
+        }
+        Some(QuickBooksTokens::ReadOnly(src)) => {
+            source = source.with_access_token_source(Arc::new(AirwayAccessTokenSource(src)));
+        }
+        None => {}
     }
     if let Some((start, end)) = parse_backfill_window(&params.backfill_start, &params.backfill_end)?
     {
@@ -1225,6 +1362,123 @@ mod tests {
         .err()
         .expect("expected error");
         assert!(err.to_string().contains("invalid quickbooks config"));
+    }
+
+    // ── read-only token custody ─────────────────────────────────────────
+
+    struct StubAccessTokenSource;
+
+    #[async_trait]
+    impl AccessTokenSource for StubAccessTokenSource {
+        async fn access_token(&self) -> Result<String, String> {
+            Ok("access.stub".into())
+        }
+    }
+
+    struct StubRefreshSink;
+
+    #[async_trait]
+    impl RefreshTokenSink for StubRefreshSink {
+        async fn persist(&self, _refresh_token: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn build_with(
+        config: &SourceConfig,
+        tokens: Option<QuickBooksTokens>,
+    ) -> Result<Box<dyn SourceConnector>, AirwayError> {
+        build_source_connector(config, tokens, airway::connector::Environment::Production)
+    }
+
+    /// Read-only mode needs neither `client_secret` nor `refresh_token` — the
+    /// data API authenticates with the bearer token alone.
+    #[test]
+    fn quickbooks_read_only_builds_without_refresh_credentials() {
+        let source = build_with(
+            &cfg(
+                "quickbooks",
+                json!({
+                    "client_id": "c",
+                    "realm_id": "realm",
+                    "access_token_var": "apps/app-id/QB_ACCESS_TOKEN",
+                }),
+            ),
+            Some(QuickBooksTokens::ReadOnly(Arc::new(StubAccessTokenSource))),
+        )
+        .expect("build read-only quickbooks");
+        assert_eq!(source.name(), "quickbooks");
+    }
+
+    /// THE safety property. `access_token_var` declares that another writer
+    /// owns this grant's rotation; if no source arrives, the only other way to
+    /// authenticate is to refresh — which would fork the chain. Refuse instead.
+    #[test]
+    fn quickbooks_read_only_declared_without_a_source_is_refused() {
+        let err = build_with(
+            &cfg(
+                "quickbooks",
+                json!({
+                    "client_id": "c",
+                    "client_secret": "s",
+                    "refresh_token": "r",
+                    "realm_id": "realm",
+                    "access_token_var": "apps/app-id/QB_ACCESS_TOKEN",
+                }),
+            ),
+            None,
+        )
+        .err()
+        .expect("expected refusal");
+        assert!(
+            err.to_string()
+                .contains("Refusing to fall back to refreshing"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Same refusal when the host supplies the *wrong* hook — a sink for a
+    /// config that declared read-only custody.
+    #[test]
+    fn quickbooks_read_only_declared_but_handed_a_sink_is_refused() {
+        let err = build_with(
+            &cfg(
+                "quickbooks",
+                json!({
+                    "client_id": "c",
+                    "client_secret": "s",
+                    "refresh_token": "r",
+                    "realm_id": "realm",
+                    "access_token_var": "apps/app-id/QB_ACCESS_TOKEN",
+                }),
+            ),
+            Some(QuickBooksTokens::Rotating(Arc::new(StubRefreshSink))),
+        )
+        .err()
+        .expect("expected refusal");
+        assert!(
+            err.to_string().contains("a refresh-token sink"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Rotating mode still demands both credentials, so dropping them to
+    /// `Option` for read-only mode can't silently weaken the refresh path.
+    #[test]
+    fn quickbooks_rotating_still_requires_refresh_credentials() {
+        let err = build_with(
+            &cfg(
+                "quickbooks",
+                json!({ "client_id": "c", "realm_id": "realm" }),
+            ),
+            None,
+        )
+        .err()
+        .expect("expected error");
+        assert!(
+            err.to_string().contains("`client_secret_var` is required"),
+            "unexpected error: {err}"
+        );
     }
 
     // ── the sandbox-reaches-production guards ───────────────────────────
