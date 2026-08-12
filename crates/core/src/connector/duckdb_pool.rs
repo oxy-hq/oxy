@@ -48,6 +48,22 @@ pub(super) enum PoolTarget {
     Local { dir: PathBuf },
     /// File mode: an on-disk DuckDB database.
     File { path: PathBuf },
+    /// A remote MotherDuck database (`md:<database>`). Identified by database
+    /// name only — the credential is a *generation* of that identity and lives in
+    /// [`PoolKey::credential`], exactly as a file's mtime does, so a rotated token
+    /// replaces the slot instead of accumulating one per token.
+    ///
+    /// **Caveat:** the *account* is not part of the identity, because nothing
+    /// short of the token identifies it and folding the token in would turn a
+    /// rotation into a new slot rather than a replacement. Two accounts using the
+    /// same database name — including the very common `database: None` (`md:`) —
+    /// therefore share one slot with different credentials, and each query evicts
+    /// the other's handle, degrading to the per-query opens this pool replaced.
+    /// Correctness is unaffected: `lookup_fresh` compares the whole key, including
+    /// the credential, so a session is never reused across accounts. Prod has a
+    /// single MotherDuck workspace today, so this is latent rather than live; if
+    /// that changes, key on an account identifier rather than the token.
+    MotherDuck { database: Option<String> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,9 +73,37 @@ pub(super) struct PoolKey {
     /// depends on. `mtime` is captured as a tuple of `u64` + `u32` so the
     /// key is hashable / comparable (`SystemTime` is not).
     file_signatures: Vec<(PathBuf, u64, u32)>,
+    /// Fingerprint of the credential a token-authenticated handle was opened
+    /// with; `None` for targets whose freshness is decided by file mtimes.
+    ///
+    /// Only the fingerprint, never the token: pool keys sit in a process-global
+    /// map for the lifetime of the process, and a token there would outlive every
+    /// scope that was supposed to own it.
+    credential: Option<u64>,
 }
 
 impl PoolKey {
+    /// Key for a MotherDuck database. `token` is fingerprinted, not stored.
+    ///
+    /// SHA-256 truncated to 64 bits rather than `DefaultHasher`: the fingerprint
+    /// decides whether a cached session may be served, so a collision would hand
+    /// out a handle opened under a *different* credential. `DefaultHasher` is a
+    /// non-cryptographic digest with no collision resistance against a chosen
+    /// input; `sha2` is already a dependency, so the stronger digest is free.
+    pub(super) fn motherduck(database: Option<&str>, token: &str) -> Self {
+        use sha2::{Digest, Sha256};
+        let digest = Sha256::digest(token.as_bytes());
+        let mut head = [0u8; 8];
+        head.copy_from_slice(&digest[..8]);
+        PoolKey {
+            target: PoolTarget::MotherDuck {
+                database: database.map(str::to_owned),
+            },
+            file_signatures: Vec::new(),
+            credential: Some(u64::from_be_bytes(head)),
+        }
+    }
+
     pub(super) fn local(dir: PathBuf, files: &[(String, PathBuf)]) -> Result<Self, OxyError> {
         let mut signatures = Vec::with_capacity(files.len() + 1);
         // Include the directory itself so a `.csv` rename (which preserves
@@ -72,6 +116,7 @@ impl PoolKey {
         Ok(PoolKey {
             target: PoolTarget::Local { dir },
             file_signatures: signatures,
+            credential: None,
         })
     }
 
@@ -100,6 +145,7 @@ impl PoolKey {
         Ok(PoolKey {
             target: PoolTarget::File { path: canonical },
             file_signatures: signatures,
+            credential: None,
         })
     }
 }
@@ -255,6 +301,35 @@ impl DuckDBPool {
         Ok(new_entry)
     }
 
+    /// Drop the cached entry for `target`, so the next [`Self::get_or_init`]
+    /// rebuilds it from scratch.
+    ///
+    /// Mtime-based eviction cannot express "the handle itself went bad", which is
+    /// a failure mode only the network-backed targets have: a `Local`/`File`
+    /// primary is in-process and stays valid until dropped, whereas a MotherDuck
+    /// primary is a session the server can end at any time. Callers invoke this
+    /// when a query fails in a way that implicates the handle rather than the SQL.
+    ///
+    /// Two properties this deliberately does **not** have. It only unlinks the
+    /// slot, so a query running concurrently on another thread keeps the clone it
+    /// already checked out and the next caller opens a second primary alongside
+    /// it — briefly more than one handle per database, though never a concurrent
+    /// *init* (`get_or_init` still serialises those on the per-target lock), which
+    /// is the shape that actually SIGSEGVs. And it inherits the name-only identity
+    /// documented on [`PoolTarget::MotherDuck`], so where two accounts share a
+    /// database name, one account's failed query drops the other's slot — a
+    /// wasted reopen, not a correctness problem, since the key comparison still
+    /// includes the credential.
+    ///
+    /// Note that the target's entry in `init_locks` is deliberately left behind:
+    /// a caller may be waiting on it right now, and the map holds one small
+    /// `Arc<Mutex<()>>` per target for the life of the process — bounded by the
+    /// number of distinct targets, not by how often they are invalidated.
+    pub(super) fn invalidate(&self, target: &PoolTarget) {
+        let mut slots = self.slots.lock().expect("DuckDB pool slots mutex poisoned");
+        slots.remove(target);
+    }
+
     /// Returns the cached entry only if it matches `key` (i.e. mtimes
     /// haven't changed). A stale slot returns `None` — the caller will then
     /// rebuild and replace via [`Self::get_or_init`].
@@ -280,6 +355,7 @@ mod tests {
                 dir: dir.to_path_buf(),
             },
             file_signatures: vec![(dir.to_path_buf(), 0, 0)],
+            credential: None,
         }
     }
 
@@ -287,6 +363,104 @@ mod tests {
         let conn = Connection::open_in_memory()
             .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
         Ok((conn, vec![]))
+    }
+
+    /// MotherDuck opens a `duckdb_database` handle like any other DuckDB target,
+    /// so it is subject to the same "one handle per database per process" rule
+    /// that [`super::super::duckdb::checkout_file_connection`] documents. Pooling
+    /// it means the second query reuses the first query's session instead of
+    /// opening an independent handle to the same remote database.
+    #[test]
+    fn a_motherduck_target_is_opened_once_per_database() {
+        let pool = DuckDBPool::default();
+        let key = PoolKey::motherduck(Some("personal_data"), "token-a");
+
+        let first = pool.get_or_init(key.clone(), dummy_entry).unwrap();
+        let second = pool
+            .get_or_init(key, || panic!("init must not re-run for a warm target"))
+            .unwrap();
+
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "the same md: database must share one pooled handle"
+        );
+    }
+
+    /// Credentials are the MotherDuck analogue of a file mtime: the identity of
+    /// the database is unchanged, but a handle opened under the old token must
+    /// not be served after a rotation.
+    #[test]
+    fn rotating_the_motherduck_token_rebuilds_the_handle() {
+        let pool = DuckDBPool::default();
+        let old = pool
+            .get_or_init(
+                PoolKey::motherduck(Some("personal_data"), "token-a"),
+                dummy_entry,
+            )
+            .unwrap();
+        let weak_old = Arc::downgrade(&old);
+        drop(old);
+
+        let fresh = pool
+            .get_or_init(
+                PoolKey::motherduck(Some("personal_data"), "token-b"),
+                dummy_entry,
+            )
+            .unwrap();
+
+        assert!(
+            weak_old.upgrade().is_none(),
+            "a rotated token must evict the session opened under the old credential"
+        );
+        assert_eq!(
+            pool.slots.lock().unwrap().len(),
+            1,
+            "rotation replaces the slot rather than accumulating one per token"
+        );
+        drop(fresh);
+    }
+
+    /// A `md:` primary is a network session the server can end under us. Without
+    /// invalidation every later `try_clone()` hands out a connection on a dead
+    /// handle and the connector stays broken until the process restarts — the
+    /// per-query `Connection::open` this pool replaced was at least self-healing.
+    #[test]
+    fn invalidating_a_motherduck_target_forces_the_next_checkout_to_rebuild() {
+        let pool = DuckDBPool::default();
+        let key = PoolKey::motherduck(Some("personal_data"), "token-a");
+        let target = PoolTarget::MotherDuck {
+            database: Some("personal_data".to_string()),
+        };
+
+        let first = pool.get_or_init(key.clone(), dummy_entry).unwrap();
+        let weak_first = Arc::downgrade(&first);
+        drop(first);
+
+        pool.invalidate(&target);
+
+        assert!(
+            weak_first.upgrade().is_none(),
+            "invalidate must drop the cached session, not merely unlink it"
+        );
+        let mut rebuilt = false;
+        let _second = pool
+            .get_or_init(key, || {
+                rebuilt = true;
+                dummy_entry()
+            })
+            .unwrap();
+        assert!(rebuilt, "the next checkout must reopen the session");
+    }
+
+    /// Pool keys live in a process-global map for the lifetime of the process, so
+    /// the token itself must never be one — only a fingerprint of it.
+    #[test]
+    fn a_motherduck_key_does_not_retain_the_token() {
+        let key = PoolKey::motherduck(Some("personal_data"), "super-secret-token");
+        assert!(
+            !format!("{key:?}").contains("super-secret-token"),
+            "the pool key must fingerprint the token, never store it"
+        );
     }
 
     #[test]
@@ -305,6 +479,7 @@ mod tests {
         let key2 = PoolKey {
             target: PoolTarget::Local { dir: dir.clone() },
             file_signatures: vec![(dir.clone(), 1, 0)],
+            credential: None,
         };
         let entry2 = pool.get_or_init(key2, dummy_entry).unwrap();
 
