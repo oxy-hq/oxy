@@ -126,6 +126,28 @@ export function markOnboardingDismissedForStorageKey(storageKeyId: string): void
   }
 }
 
+/**
+ * Drop the deferral without touching any in-progress wizard state.
+ *
+ * `CompletionCard` sets the dismissal on EVERY successful completion, not just
+ * on "Skip for now", and nothing else clears it — so the workspace creator's
+ * browser carries it forever. Home reads it to decide whether to run the
+ * IdeOnly setup probe, so a flag that never clears means that browser keeps
+ * hitting an ide-pinned route on every visit with no setup left to finish.
+ * Home clears it once the workspace is provably ready.
+ *
+ * Deliberately NOT `clearOnboardingStateForStorageKey`, which also drops the
+ * wizard state and would break a resume.
+ */
+export function clearOnboardingDismissedForStorageKey(storageKeyId: string): void {
+  if (!storageKeyId) return;
+  try {
+    localStorage.removeItem(dismissKey(storageKeyId));
+  } catch {
+    // ignore
+  }
+}
+
 export function isOnboardingDismissedForStorageKey(storageKeyId: string): boolean {
   if (!storageKeyId) return false;
   try {
