@@ -127,6 +127,11 @@ UPSELL_CAMERAS=""
 # `/opt/oxy-edge/.env` so docker-compose picks it up at runtime.
 CONGESTION_CLIP_SEC=""
 
+# Workload role: full (cameras + audio, default) | video | audio (a dedicated
+# upsell-audio-only box). Optional; empty ⇒ the compose default (full). Passed
+# through to `/opt/oxy-edge/.env` so docker-compose picks it up at runtime.
+EDGE_ROLE=""
+
 # ── Output helpers ───────────────────────────────────────────
 
 log() { printf '\033[1;34m[oxy-edge]\033[0m %s\n' "$*"; }
@@ -175,6 +180,9 @@ Optional:
                                     Optional; omit for the worker default (30).
                                     Set 900 for 15-min clips (see the compose
                                     note on clip size + annotation CPU).
+  --edge-role <full|video|audio>   Workload role. Default full (cameras + audio).
+                                    'audio' = a dedicated upsell-audio-only box
+                                    (no YOLO / MediaMTX / preview).
   --allow-remote-support           Opt this box in to Oxy operator SSH-via-tailnet.
                                     Default OFF. When set, requires --ts-host-authkey.
                                     Can be enabled later with
@@ -203,6 +211,7 @@ while [[ $# -gt 0 ]]; do
         --anthropic-api-key) ANTHROPIC_API_KEY="$2"; shift 2 ;;
         --upsell-cameras) UPSELL_CAMERAS="$2"; shift 2 ;;
         --congestion-clip-sec) CONGESTION_CLIP_SEC="$2"; shift 2 ;;
+        --edge-role) EDGE_ROLE="$2"; shift 2 ;;
         --allow-remote-support) ALLOW_REMOTE_SUPPORT=1; shift ;;
         --ts-host-authkey) TS_HOST_AUTHKEY="$2"; shift 2 ;;
         --compose-url) COMPOSE_URL="$2"; shift 2 ;;
@@ -352,6 +361,9 @@ MTX_AUTH_URL="${OXY_URL%/}/control/mtx-auth"
         if [[ -n "$CONGESTION_CLIP_SEC" ]]; then
             strip_re="${strip_re}|^CONGESTION_CLIP_SEC="
         fi
+        if [[ -n "$EDGE_ROLE" ]]; then
+            strip_re="${strip_re}|^EDGE_ROLE="
+        fi
         grep -vE "$strip_re" "${INSTALL_ROOT}/.env" || true
     fi
     printf 'OXY_URL=%s\n' "$OXY_URL"
@@ -374,6 +386,9 @@ MTX_AUTH_URL="${OXY_URL%/}/control/mtx-auth"
     fi
     if [[ -n "$CONGESTION_CLIP_SEC" ]]; then
         printf 'CONGESTION_CLIP_SEC=%s\n' "$CONGESTION_CLIP_SEC"
+    fi
+    if [[ -n "$EDGE_ROLE" ]]; then
+        printf 'EDGE_ROLE=%s\n' "$EDGE_ROLE"
     fi
 } > "${INSTALL_ROOT}/.env.new"
 mv "${INSTALL_ROOT}/.env.new" "${INSTALL_ROOT}/.env"

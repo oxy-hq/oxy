@@ -39,6 +39,12 @@ CONF_THRESHOLD = float(os.environ.get("UPSELL_CONF_THRESHOLD", "0.5"))
 # One offer can straddle two transcription windows; collapse the duplicate
 # by not re-emitting the same item within this window.
 ITEM_COOLDOWN_SEC = float(os.environ.get("UPSELL_ITEM_COOLDOWN_SEC", "30.0"))
+# Observability: log the classifier verdict for EVERY window with speech (not
+# just emitted upsells), so you can see the pipeline hearing + classifying even
+# at zero upsells. UPSELL_LOG_TRANSCRIPTS additionally includes the transcript —
+# off by default (transcribe-and-discard); only enable to tune on a consented
+# near-field-mic box.
+LOG_TRANSCRIPTS = os.environ.get("UPSELL_LOG_TRANSCRIPTS", "0").lower() not in ("0", "false", "off", "")
 
 
 def upsell_cameras() -> list[str]:
@@ -163,6 +169,12 @@ class AudioReader:
         v = classify(text, client=self._intent_client)
         if v.error:
             log("warn", "upsell.classify_error", camera=self.cfg.name, error=v.error)
+        # Verdict for EVERY classified window (upsell or not) — the signal that
+        # the audio pipeline is hearing + classifying. No transcript unless
+        # UPSELL_LOG_TRANSCRIPTS is set.
+        log("info", "upsell.verdict", camera=self.cfg.name,
+            is_upsell=v.is_upsell, item=v.item, confidence=round(v.confidence, 3),
+            chars=len(text), **({"text": text} if LOG_TRANSCRIPTS else {}))
         if not should_emit(v, window_end, last_emit):
             return window_end
         with self._stats_lock:

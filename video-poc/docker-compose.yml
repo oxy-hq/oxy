@@ -217,6 +217,10 @@ services:
       DWELL_EVENT_EVERY_SEC: ${DWELL_EVENT_EVERY_SEC:-30}
       REQUIRED_ATTIRE: ${REQUIRED_ATTIRE:-hat,apron}
       REQUIRED_HYGIENE: ${REQUIRED_HYGIENE:-glove}
+      # --- Workload role (worker/main.py) ---
+      # full (cameras + audio, default) | video (cameras only) | audio (upsell
+      # audio only — a dedicated low-compute box: no YOLO / MediaMTX / preview).
+      EDGE_ROLE: ${EDGE_ROLE:-full}
       # --- Audio upsell detection (worker/upsell*.py) ---
       # Off by default. Set UPSELL_CAMERAS in .env to a comma-separated list of
       # camera-name substrings (e.g. "PH - Santa Clara - Register") to run the
@@ -226,6 +230,8 @@ services:
       UPSELL_STT_MODEL: ${UPSELL_STT_MODEL:-small.en}
       UPSELL_CONF_THRESHOLD: ${UPSELL_CONF_THRESHOLD:-0.5}
       UPSELL_ITEM_COOLDOWN_SEC: ${UPSELL_ITEM_COOLDOWN_SEC:-30}
+      UPSELL_STALL_TIMEOUT_SEC: ${UPSELL_STALL_TIMEOUT_SEC:-20}  # kill+reconnect a stalled RTSP audio pull
+      UPSELL_LOG_TRANSCRIPTS: ${UPSELL_LOG_TRANSCRIPTS:-0}       # 1 = log transcripts (debug; consented mic only)
       # --- Congestion evidence clips (worker/congestion.py + annotate.py) ---
       # A clip fires when >= MIN_COUNT people hold the zone for SUSTAIN_SEC, and
       # captures the CLIP_SEC leading up to it (pulled from MTX's 24h buffer).

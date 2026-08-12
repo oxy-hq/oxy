@@ -32,6 +32,9 @@ Optional env:
                          (near-field-mic) audio is run through the upsell-
                          detection pipeline. Needs ANTHROPIC_API_KEY. Unset
                          ⇒ audio upsell detection off.
+  - EDGE_ROLE            full (cameras + audio, default) | video (cameras only)
+                         | audio (upsell audio only — a dedicated low-compute
+                         box: no YOLO / MediaMTX / preview).
 """
 from __future__ import annotations
 
@@ -317,6 +320,14 @@ async def run() -> None:
     health_interval = int(os.environ.get("HEALTH_INTERVAL_S", "30"))
     config_interval = int(os.environ.get("CONFIG_POLL_INTERVAL_S", "30"))
     image_tag = os.environ.get("IMAGE_TAG", "dev")
+    # EDGE_ROLE selects the workload: 'full' (cameras + audio, default), 'video'
+    # (cameras only, no upsell audio), or 'audio' (upsell audio only — a
+    # dedicated low-compute box that pulls register-mic audio and skips all
+    # YOLO / MediaMTX / preview / clips).
+    edge_role = os.environ.get("EDGE_ROLE", "full").strip().lower()
+    run_video = edge_role in ("full", "video")
+    run_audio = edge_role in ("full", "audio")
+    log("info", "edge.role", role=edge_role, video=run_video, audio=run_audio)
 
     log("info", "edge.boot",
         edge_box_id=str(box_id),
@@ -356,12 +367,12 @@ async def run() -> None:
     upsell_allow = upsell.upsell_cameras()
     upsell_stt: upsell.Transcriber | None = None
     upsell_intent_client: anthropic.Anthropic | None = None
-    if upsell_allow and os.environ.get("ANTHROPIC_API_KEY"):
+    if run_audio and upsell_allow and os.environ.get("ANTHROPIC_API_KEY"):
         upsell_stt = upsell.Transcriber()
         upsell_intent_client = anthropic.Anthropic()
         log("info", "edge.upsell_enabled", cameras=upsell_allow,
             stt_model=os.environ.get("UPSELL_STT_MODEL", "small.en"))
-    elif upsell_allow:
+    elif run_audio and upsell_allow:
         log("warn", "edge.upsell_disabled",
             reason="ANTHROPIC_API_KEY not set; upsell intent needs it",
             cameras=upsell_allow)
@@ -369,7 +380,11 @@ async def run() -> None:
     # MTX dynamic-path API. Defaults to the compose service hostname;
     # production overrides via env. Empty string disables MTX sync
     # entirely (useful for tests / dev with no MTX in the stack).
-    mtx_api_url = os.environ.get("MEDIAMTX_API_URL", "http://mediamtx:9997").strip()
+    # Audio-only boxes have no video path → no MediaMTX.
+    mtx_api_url = (
+        os.environ.get("MEDIAMTX_API_URL", "http://mediamtx:9997").strip()
+        if run_video else ""
+    )
 
     # Auth: per-device JWT signed with the HMAC secret persisted at
     # factory enroll. We mint a fresh JWT every ~55min and inject it
@@ -508,19 +523,20 @@ async def run() -> None:
             if not cam.rtsp_url:
                 log("info", "edge.reader.skip_no_rtsp", camera_id=cid, name=cam.name)
                 return False
-            r = CameraReader(
-                cam,
-                loop,
-                queue,
-                vlm_client,
-                oxy_client=client,
-            )
-            r.start()
-            readers[cid] = r
-            health_tasks[cid] = asyncio.create_task(
-                camera_health_loop(client, cam.id, health_interval, r.stats),
-                name=f"camera-health-{cam.name}",
-            )
+            if run_video:
+                r = CameraReader(
+                    cam,
+                    loop,
+                    queue,
+                    vlm_client,
+                    oxy_client=client,
+                )
+                r.start()
+                readers[cid] = r
+                health_tasks[cid] = asyncio.create_task(
+                    camera_health_loop(client, cam.id, health_interval, r.stats),
+                    name=f"camera-health-{cam.name}",
+                )
             # Audio upsell reader for allowlisted register cameras. Pulls
             # audio directly from the camera RTSP (MTX strips it), so it's a
             # second, audio-only session to the camera.
@@ -566,15 +582,16 @@ async def run() -> None:
                 box_health_loop(client, box_id, health_interval, image_tag),
                 name="box-health",
             ),
-            # Preview HTTP server — Oxy backend proxies JPEG snapshots
-            # from here for the UI's per-camera thumbnail. Shares the
-            # `readers` map so hot-swapped cameras show up / drop out
-            # automatically without restarting the preview server.
-            asyncio.create_task(
+        ]
+        # Preview HTTP server — Oxy backend proxies JPEG snapshots from here for
+        # the UI's per-camera thumbnail. Video roles only (audio boxes have no
+        # readers to preview); shares the `readers` map so hot-swapped cameras
+        # show up / drop out automatically.
+        if run_video:
+            tasks.append(asyncio.create_task(
                 run_preview_server(readers, host=preview_host, port=preview_port),
                 name="preview-server",
-            ),
-        ]
+            ))
 
         # Log shipper drains the in-memory buffer to Oxy every
         # 30s (or 50 lines, whichever fires first). Reuses the

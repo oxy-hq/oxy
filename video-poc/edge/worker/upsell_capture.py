@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
+import time
 from collections.abc import Iterator
 
 import numpy as np
@@ -32,6 +33,14 @@ ENHANCE_AF = os.environ.get(
     "UPSELL_ENHANCE_AF",
     "highpass=f=120,lowpass=f=4000,afftdn=nf=-25,speechnorm=e=12.5:r=0.0001:l=1",
 )
+
+# A half-open RTSP session (camera reboot, network blip, TCP stall) delivers no
+# data, no EOF, and no error — so ffmpeg's read() blocks forever and the reader
+# wedges (observed: windows frozen for a day). The watchdog in stream_pcm kills
+# ffmpeg after this many seconds without a chunk so the AudioReader reconnects.
+# Silence still produces PCM (zeros), so a data GAP this long is a genuine
+# stall, not a quiet register.
+STALL_TIMEOUT_SEC = float(os.environ.get("UPSELL_STALL_TIMEOUT_SEC", "20"))
 
 
 def stream_pcm(
@@ -71,17 +80,43 @@ def stream_pcm(
     cmd += ["-f", "s16le", "-"]               # raw PCM to stdout
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     bytes_per_chunk = int(sample_rate * chunk_sec) * 2  # int16 = 2 bytes
+
+    # Stall watchdog — kill ffmpeg if no chunk arrives for STALL_TIMEOUT_SEC
+    # (killing it makes the blocking read() below return EOF), then flag it so
+    # the loop raises and the AudioReader's reconnect loop takes over.
+    last_data = [time.monotonic()]
+    stalled = threading.Event()
+
+    def _watchdog() -> None:
+        while proc.poll() is None:
+            if stop is not None and stop.is_set():
+                proc.kill()
+                return
+            if time.monotonic() - last_data[0] > STALL_TIMEOUT_SEC:
+                stalled.set()
+                proc.kill()
+                return
+            time.sleep(1.0)
+
+    threading.Thread(target=_watchdog, name="upsell-capture-watchdog", daemon=True).start()
     try:
         while True:
             if stop is not None and stop.is_set():
                 return
             buf = proc.stdout.read(bytes_per_chunk)
             if not buf:
+                if stalled.is_set():
+                    raise RuntimeError(
+                        f"audio stream stalled (no data for {STALL_TIMEOUT_SEC:.0f}s)"
+                    )
                 err = (proc.stderr.read() or b"").decode("utf-8", "replace")
                 if proc.poll() not in (0, None) and err:
                     raise RuntimeError(f"ffmpeg: {err[-300:]}")
                 return
-            yield np.frombuffer(buf, dtype=np.int16)
+            last_data[0] = time.monotonic()
+            n = len(buf) & ~1  # a killed read can return an odd byte count
+            if n:
+                yield np.frombuffer(buf[:n], dtype=np.int16)
     finally:
         proc.kill()
         proc.wait(timeout=5)
