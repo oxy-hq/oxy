@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "slack_oauth_states")]
 pub struct Model {
@@ -21,38 +22,24 @@ pub struct Model {
     pub created_at: DateTimeWithTimeZone,
     pub expires_at: DateTimeWithTimeZone,
     pub consumed_at: Option<DateTimeWithTimeZone>,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrgId",
-        to = "super::organizations::Column::Id",
+        belongs_to,
+        from = "org_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Organizations,
+    #[serde(skip)]
+    pub organizations: BelongsTo<Option<super::organizations::Entity>>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::OxyUserId",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "oxy_user_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Users,
-}
-
-impl Related<super::organizations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Organizations.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
+    #[serde(skip)]
+    pub users: BelongsTo<Option<super::users::Entity>>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

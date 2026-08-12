@@ -56,6 +56,7 @@ impl FromStr for OrgRole {
     }
 }
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "org_members")]
 pub struct Model {
@@ -66,38 +67,24 @@ pub struct Model {
     pub role: OrgRole,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrgId",
-        to = "super::organizations::Column::Id",
+        belongs_to,
+        from = "org_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Organizations,
+    #[serde(skip)]
+    pub organizations: BelongsTo<super::organizations::Entity>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::UserId",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "user_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Users,
-}
-
-impl Related<super::organizations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Organizations.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
+    #[serde(skip)]
+    pub users: BelongsTo<super::users::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

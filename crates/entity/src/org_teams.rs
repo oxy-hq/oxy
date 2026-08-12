@@ -18,6 +18,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "org_teams")]
 pub struct Model {
@@ -35,24 +36,15 @@ pub struct Model {
     /// Who created the team. NULL when their user row is gone
     /// (`ON DELETE SET NULL`) or for a seeded/system team.
     pub created_by: Option<Uuid>,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrgId",
-        to = "super::organizations::Column::Id",
+        belongs_to,
+        from = "org_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Organizations,
-}
-
-impl Related<super::organizations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Organizations.def()
-    }
+    #[serde(skip)]
+    pub organizations: BelongsTo<super::organizations::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

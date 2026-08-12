@@ -2,6 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "api_keys")]
 pub struct Model {
@@ -20,40 +21,30 @@ pub struct Model {
     /// Vercel-hosted Next.js bundle's server-side calls back into oxy).
     /// Nullable so CLI-style user-scoped keys stay unaffected.
     pub app_id: Option<Uuid>,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::workspaces::Entity",
-        from = "Column::ProjectId",
-        to = "super::workspaces::Column::Id",
+        belongs_to,
+        from = "project_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Projects,
+    pub projects: BelongsTo<super::workspaces::Entity>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::UserId",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "user_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Users,
+    pub users: BelongsTo<super::users::Entity>,
     #[sea_orm(
-        belongs_to = "super::apps::Entity",
-        from = "Column::AppId",
-        to = "super::apps::Column::Id",
+        belongs_to,
+        from = "app_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Apps,
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
+    pub apps: BelongsTo<Option<super::apps::Entity>>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

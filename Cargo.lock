@@ -245,7 +245,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "chrono",
- "chrono-tz 0.8.6",
+ "chrono-tz 0.10.4",
  "duckdb",
  "futures",
  "futures-core",
@@ -315,7 +315,7 @@ dependencies = [
  "arrow 58.3.0",
  "async-trait",
  "chrono",
- "chrono-tz 0.8.6",
+ "chrono-tz 0.10.4",
  "glob",
  "oxy",
  "oxy-airform",
@@ -431,7 +431,7 @@ dependencies = [
  "airway",
  "async-trait",
  "chrono",
- "chrono-tz 0.8.6",
+ "chrono-tz 0.10.4",
  "entity",
  "futures",
  "oxy-test-utils",
@@ -459,7 +459,7 @@ dependencies = [
  "agentic-core",
  "async-trait",
  "chrono",
- "chrono-tz 0.8.6",
+ "chrono-tz 0.10.4",
  "croner",
  "dashmap 5.5.3",
  "futures",
@@ -685,7 +685,7 @@ dependencies = [
  "oxy-auth",
  "oxy-platform",
  "oxy-shared",
- "rand 0.10.1",
+ "rand 0.10.2",
  "reqwest 0.12.28",
  "sea-orm",
  "sea-orm-migration",
@@ -3488,7 +3488,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5411,7 +5411,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5513,7 +5513,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee93edf3c501f0035bbeffeccfed0b79e14c311f12195ec0e661e114a0f60da4"
 dependencies = [
  "portable-atomic",
- "rand 0.10.1",
+ "rand 0.10.2",
  "web-time",
 ]
 
@@ -7178,9 +7178,9 @@ dependencies = [
 
 [[package]]
 name = "jsonwebtoken"
-version = "10.4.0"
+version = "11.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eba32bfb4ffdeaca3e34431072faf01745c9b26d25504aa7a6cf5684334fc4fc"
+checksum = "881733cbc631fc9e472e24447ce32a64bedf2da498d6d8570b08edc87de71f65"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -8638,7 +8638,7 @@ name = "omni"
 version = "0.5.123"
 dependencies = [
  "garde",
- "rand 0.10.1",
+ "rand 0.10.2",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -8884,7 +8884,7 @@ dependencies = [
  "indexmap 2.14.0",
  "indoc",
  "itertools 0.14.0",
- "jsonwebtoken 10.4.0",
+ "jsonwebtoken 11.0.0",
  "lazy_static",
  "libc",
  "log",
@@ -8906,7 +8906,7 @@ dependencies = [
  "oxy-test-utils",
  "parquet",
  "predicates",
- "rand 0.10.1",
+ "rand 0.10.2",
  "regex",
  "reqwest 0.12.28",
  "rkyv",
@@ -8942,7 +8942,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tower 0.5.3",
- "tower-http",
+ "tower-http 0.7.0",
  "tqdm",
  "tracing",
  "tracing-log",
@@ -8969,7 +8969,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "dirs 6.0.0",
- "jsonwebtoken 10.4.0",
+ "jsonwebtoken 11.0.0",
  "oxy",
  "oxy-shared",
  "reqwest 0.12.28",
@@ -9040,7 +9040,7 @@ dependencies = [
  "base64 0.22.1",
  "brotli",
  "chrono",
- "chrono-tz 0.8.6",
+ "chrono-tz 0.10.4",
  "clap",
  "clickhouse",
  "colored",
@@ -9072,7 +9072,7 @@ dependencies = [
  "indicatif 0.18.4",
  "indoc",
  "itertools 0.14.0",
- "jsonwebtoken 10.4.0",
+ "jsonwebtoken 11.0.0",
  "lazy_static",
  "lettre",
  "libc",
@@ -9108,7 +9108,7 @@ dependencies = [
  "oxy-workspace-fs",
  "parking_lot 0.12.5",
  "parquet",
- "rand 0.10.1",
+ "rand 0.10.2",
  "rapidfuzz",
  "rayon",
  "regex",
@@ -9147,7 +9147,7 @@ dependencies = [
  "tokio-tungstenite",
  "tokio-util",
  "tower 0.5.3",
- "tower-http",
+ "tower-http 0.7.0",
  "tower-serve-static",
  "tracing",
  "tracing-appender",
@@ -9195,11 +9195,11 @@ dependencies = [
  "chrono",
  "entity",
  "hex",
- "jsonwebtoken 10.4.0",
+ "jsonwebtoken 11.0.0",
  "log",
  "oxy-platform",
  "oxy-shared",
- "rand 0.10.1",
+ "rand 0.10.2",
  "sea-orm",
  "serde",
  "serde_json",
@@ -9262,7 +9262,7 @@ dependencies = [
  "oxy-shared",
  "oxy-slack-client",
  "oxy-unifi",
- "rand 0.10.1",
+ "rand 0.10.2",
  "reqwest 0.12.28",
  "rustls 0.23.43",
  "sea-orm",
@@ -9377,7 +9377,7 @@ dependencies = [
  "augurs-ets",
  "augurs-mstl",
  "chrono",
- "chrono-tz 0.8.6",
+ "chrono-tz 0.10.4",
  "entity",
  "humantime",
  "sea-orm",
@@ -10199,7 +10199,7 @@ dependencies = [
  "hmac 0.13.0",
  "md-5 0.11.0",
  "memchr",
- "rand 0.10.1",
+ "rand 0.10.2",
  "sha2 0.11.0",
  "stringprep",
 ]
@@ -10628,7 +10628,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.4",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10718,9 +10718,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
+checksum = "c7f5fa3a058cd35567ef9bfa5e75732bee0f9e4c55fa90477bef2dfcdbc4be80"
 dependencies = [
  "chacha20",
  "getrandom 0.4.2",
@@ -11015,7 +11015,7 @@ dependencies = [
  "tokio-rustls 0.26.4",
  "tokio-util",
  "tower 0.5.3",
- "tower-http",
+ "tower-http 0.6.11",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -11062,7 +11062,7 @@ dependencies = [
  "tokio-native-tls",
  "tokio-rustls 0.26.4",
  "tower 0.5.3",
- "tower-http",
+ "tower-http 0.6.11",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -11397,7 +11397,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11410,7 +11410,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11490,7 +11490,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -12933,7 +12933,7 @@ dependencies = [
  "log",
  "md-5 0.11.0",
  "memchr",
- "rand 0.10.1",
+ "rand 0.10.2",
  "rust_decimal",
  "serde",
  "serde_json",
@@ -13329,7 +13329,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -13644,7 +13644,7 @@ dependencies = [
  "pin-project-lite",
  "postgres-protocol",
  "postgres-types",
- "rand 0.10.1",
+ "rand 0.10.2",
  "socket2 0.6.4",
  "tokio",
  "tokio-util",
@@ -13700,9 +13700,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.24.0"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
+checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
 dependencies = [
  "futures-util",
  "log",
@@ -13710,7 +13710,7 @@ dependencies = [
  "rustls-pki-types",
  "tokio",
  "tokio-rustls 0.26.4",
- "tungstenite 0.24.0",
+ "tungstenite 0.30.0",
  "webpki-roots 0.26.11",
 ]
 
@@ -13954,6 +13954,29 @@ dependencies = [
  "http 1.4.2",
  "http-body 1.0.1",
  "http-body-util",
+ "pin-project-lite",
+ "tokio",
+ "tokio-util",
+ "tower 0.5.3",
+ "tower-layer",
+ "tower-service",
+ "url",
+]
+
+[[package]]
+name = "tower-http"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b11f75e912b0c2be01b63d8cf8057b8c3f97cf34abb3d431a3a4c8675498e233"
+dependencies = [
+ "async-compression",
+ "bitflags 2.13.0",
+ "bytes",
+ "futures-core",
+ "futures-util",
+ "http 1.4.2",
+ "http-body 1.0.1",
+ "http-body-util",
  "http-range-header",
  "httpdate",
  "mime",
@@ -13962,11 +13985,9 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-util",
- "tower 0.5.3",
  "tower-layer",
  "tower-service",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -14109,26 +14130,6 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tungstenite"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
-dependencies = [
- "byteorder",
- "bytes",
- "data-encoding",
- "http 1.4.2",
- "httparse",
- "log",
- "rand 0.8.6",
- "rustls 0.23.43",
- "rustls-pki-types",
- "sha1 0.10.6",
- "thiserror 1.0.69",
- "utf-8",
-]
-
-[[package]]
-name = "tungstenite"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442"
@@ -14142,6 +14143,24 @@ dependencies = [
  "sha1 0.10.6",
  "thiserror 2.0.20",
  "utf-8",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
+dependencies = [
+ "bytes",
+ "data-encoding",
+ "http 1.4.2",
+ "httparse",
+ "log",
+ "rand 0.10.2",
+ "rustls 0.23.43",
+ "rustls-pki-types",
+ "sha1 0.11.0",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -14833,7 +14852,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

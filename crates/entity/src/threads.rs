@@ -2,6 +2,7 @@
 
 use sea_orm::{JsonValue, entity::prelude::*};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "threads")]
 pub struct Model {
@@ -20,70 +21,30 @@ pub struct Model {
     pub is_processing: bool,
     #[sea_orm(column_type = "Json", nullable)]
     pub sandbox_info: Option<JsonValue>,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(has_many = "super::artifacts::Entity")]
-    Artifacts,
-    #[sea_orm(has_many = "super::logs::Entity")]
-    Logs,
-    #[sea_orm(has_many = "super::messages::Entity")]
-    Messages,
-    #[sea_orm(has_many = "super::slack_threads::Entity")]
-    SlackThreads,
+    #[sea_orm(has_many)]
+    pub artifacts: HasMany<super::artifacts::Entity>,
+    #[sea_orm(has_many)]
+    pub logs: HasMany<super::logs::Entity>,
+    #[sea_orm(has_many)]
+    pub messages: HasMany<super::messages::Entity>,
+    #[sea_orm(has_many)]
+    pub slack_threads: HasMany<super::slack_threads::Entity>,
     #[sea_orm(
-        belongs_to = "super::workspaces::Entity",
-        from = "Column::ProjectId",
-        to = "super::workspaces::Column::Id",
+        belongs_to,
+        from = "project_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Workspaces,
+    pub workspaces: BelongsTo<super::workspaces::Entity>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::UserId",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "user_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]
-    Users,
-}
-
-impl Related<super::artifacts::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Artifacts.def()
-    }
-}
-
-impl Related<super::logs::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Logs.def()
-    }
-}
-
-impl Related<super::messages::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Messages.def()
-    }
-}
-
-impl Related<super::workspaces::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Workspaces.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
-}
-
-impl Related<super::slack_threads::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackThreads.def()
-    }
+    pub users: BelongsTo<Option<super::users::Entity>>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

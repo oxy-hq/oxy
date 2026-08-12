@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "test_runs")]
 pub struct Model {
@@ -13,47 +14,27 @@ pub struct Model {
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
     pub project_run_id: Option<Uuid>,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    // Logical relation only — no FK in DB (mirrors the runs table pattern)
     #[sea_orm(
-        belongs_to = "super::workspaces::Entity",
-        from = "Column::ProjectId",
-        to = "super::workspaces::Column::Id",
+        belongs_to,
+        from = "project_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]
-    Workspaces,
-    #[sea_orm(has_many = "super::test_run_cases::Entity")]
-    TestRunCases,
+    #[serde(skip)]
+    pub workspaces: BelongsTo<super::workspaces::Entity>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub test_run_cases: HasMany<super::test_run_cases::Entity>,
     #[sea_orm(
-        belongs_to = "super::test_project_runs::Entity",
-        from = "Column::ProjectRunId",
-        to = "super::test_project_runs::Column::Id",
+        belongs_to,
+        from = "project_run_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    TestProjectRuns,
-}
-
-impl Related<super::workspaces::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Workspaces.def()
-    }
-}
-
-impl Related<super::test_run_cases::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::TestRunCases.def()
-    }
-}
-
-impl Related<super::test_project_runs::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::TestProjectRuns.def()
-    }
+    #[serde(skip)]
+    pub test_project_runs: BelongsTo<Option<super::test_project_runs::Entity>>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

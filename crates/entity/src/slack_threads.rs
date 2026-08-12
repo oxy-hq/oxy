@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "slack_threads")]
 pub struct Model {
@@ -16,66 +17,42 @@ pub struct Model {
     pub last_slack_message_ts: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::slack_installations::Entity",
-        from = "Column::InstallationId",
-        to = "super::slack_installations::Column::Id",
+        belongs_to,
+        from = "installation_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    SlackInstallations,
+    #[serde(skip)]
+    pub slack_installations: BelongsTo<super::slack_installations::Entity>,
     #[sea_orm(
-        belongs_to = "super::workspaces::Entity",
-        from = "Column::WorkspaceId",
-        to = "super::workspaces::Column::Id",
+        belongs_to,
+        from = "workspace_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Workspaces,
+    #[serde(skip)]
+    pub workspaces: BelongsTo<super::workspaces::Entity>,
     #[sea_orm(
-        belongs_to = "super::threads::Entity",
-        from = "Column::OxyThreadId",
-        to = "super::threads::Column::Id",
+        belongs_to,
+        from = "oxy_thread_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Threads,
+    #[serde(skip)]
+    pub threads: BelongsTo<super::threads::Entity>,
     #[sea_orm(
-        belongs_to = "super::slack_user_links::Entity",
-        from = "Column::InitiatedByUserLinkId",
-        to = "super::slack_user_links::Column::Id",
+        belongs_to,
+        from = "initiated_by_user_link_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    SlackUserLinks,
-}
-
-impl Related<super::slack_installations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackInstallations.def()
-    }
-}
-
-impl Related<super::workspaces::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Workspaces.def()
-    }
-}
-
-impl Related<super::threads::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Threads.def()
-    }
-}
-
-impl Related<super::slack_user_links::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackUserLinks.def()
-    }
+    #[serde(skip)]
+    pub slack_user_links: BelongsTo<Option<super::slack_user_links::Entity>>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

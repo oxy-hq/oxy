@@ -11,6 +11,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "app_publish_tokens")]
 pub struct Model {
@@ -34,24 +35,15 @@ pub struct Model {
     /// **NULL = legacy non-expiring.** Required (enforced at the app layer) for a
     /// partner-minted token — a long-lived secret in someone's CI must expire.
     pub expires_at: Option<DateTimeWithTimeZone>,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::CreatedBy",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "created_by",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Users,
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
+    #[serde(skip)]
+    pub users: BelongsTo<Option<super::users::Entity>>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

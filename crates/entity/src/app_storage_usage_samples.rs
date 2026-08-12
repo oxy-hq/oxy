@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 ///   cadence.)
 /// * **Growth rate** — differencing two samples gives the Δ/week that actually
 ///   predicts the next invoice, which a single current number never can.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "app_storage_usage_samples")]
 pub struct Model {
@@ -23,24 +24,15 @@ pub struct Model {
     pub measured_at: DateTimeWithTimeZone,
     pub bytes: i64,
     pub object_count: i64,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::apps::Entity",
-        from = "Column::AppId",
-        to = "super::apps::Column::Id",
+        belongs_to,
+        from = "app_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Apps,
-}
-
-impl Related<super::apps::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Apps.def()
-    }
+    #[serde(skip)]
+    pub apps: BelongsTo<super::apps::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

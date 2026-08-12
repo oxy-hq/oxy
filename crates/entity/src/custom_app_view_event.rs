@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 /// The Activity tab in AppDetail queries this table for "who opened
 /// this app and when?" — see also `super::custom_app_event` for the
 /// engineer-tagged custom events fired from inside the bundle.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "custom_app_view_event")]
 pub struct Model {
@@ -42,38 +43,24 @@ pub struct Model {
     /// `<org>--<slug>.customer-apps[-env].oxygen-hq.com`). Lets the
     /// admin see which surface their users are reaching.
     pub source: String,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::apps::Entity",
-        from = "Column::AppId",
-        to = "super::apps::Column::Id",
+        belongs_to,
+        from = "app_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Apps,
+    #[serde(skip)]
+    pub apps: BelongsTo<super::apps::Entity>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::UserId",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "user_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Users,
-}
-
-impl Related<super::apps::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Apps.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
+    #[serde(skip)]
+    pub users: BelongsTo<super::users::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

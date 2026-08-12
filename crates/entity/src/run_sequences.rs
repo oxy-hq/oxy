@@ -1,5 +1,6 @@
 use sea_orm::entity::prelude::*;
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "run_sequences")]
 pub struct Model {
@@ -11,8 +12,5 @@ pub struct Model {
     pub source_id: String,
     pub last_value: i32,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}

@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "slack_user_preferences")]
 pub struct Model {
@@ -11,38 +12,24 @@ pub struct Model {
     pub default_workspace_id: Option<Uuid>,
     pub default_agent_path: Option<String>,
     pub updated_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::slack_user_links::Entity",
-        from = "Column::UserLinkId",
-        to = "super::slack_user_links::Column::Id",
+        belongs_to,
+        from = "user_link_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    SlackUserLinks,
+    #[serde(skip)]
+    pub slack_user_links: BelongsTo<super::slack_user_links::Entity>,
     #[sea_orm(
-        belongs_to = "super::workspaces::Entity",
-        from = "Column::DefaultWorkspaceId",
-        to = "super::workspaces::Column::Id",
+        belongs_to,
+        from = "default_workspace_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    Workspaces,
-}
-
-impl Related<super::slack_user_links::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackUserLinks.def()
-    }
-}
-
-impl Related<super::workspaces::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Workspaces.def()
-    }
+    #[serde(skip)]
+    pub workspaces: BelongsTo<Option<super::workspaces::Entity>>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

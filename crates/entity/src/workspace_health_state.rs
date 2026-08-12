@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Last-known health status per workspace. One row per workspace; updated by
 /// the periodic health-eval job. Drives transition-only Slack alerting.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "workspace_health_state")]
 pub struct Model {
@@ -42,8 +43,5 @@ pub struct Model {
     /// diffing it would re-page continuously and defeat the reminder interval.
     pub alerted_failures: Option<Json>,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}

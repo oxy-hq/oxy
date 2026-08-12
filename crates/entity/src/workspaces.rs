@@ -52,6 +52,7 @@ pub enum WorkspaceStatus {
     NotOxyProject,
 }
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "workspaces")]
 pub struct Model {
@@ -83,62 +84,33 @@ pub struct Model {
     /// NOT promote it here. Phase 1.6b will start promoting on each
     /// successful compile (Vercel-style atomic publish).
     pub current_revision_id: Option<Uuid>,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::git_namespaces::Entity",
-        from = "Column::GitNamespaceId",
-        to = "super::git_namespaces::Column::Id",
+        belongs_to,
+        from = "git_namespace_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    GitNamespaces,
+    #[serde(skip)]
+    pub git_namespaces: BelongsTo<Option<super::git_namespaces::Entity>>,
     #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrgId",
-        to = "super::organizations::Column::Id",
+        belongs_to,
+        from = "org_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Organizations,
-    #[sea_orm(has_many = "super::workspace_members::Entity")]
-    WorkspaceMembers,
-    #[sea_orm(has_many = "super::slack_user_preferences::Entity")]
-    SlackUserPreferences,
-    #[sea_orm(has_many = "super::slack_threads::Entity")]
-    SlackThreads,
-}
-
-impl Related<super::git_namespaces::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::GitNamespaces.def()
-    }
-}
-
-impl Related<super::organizations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Organizations.def()
-    }
-}
-
-impl Related<super::workspace_members::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::WorkspaceMembers.def()
-    }
-}
-
-impl Related<super::slack_user_preferences::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackUserPreferences.def()
-    }
-}
-
-impl Related<super::slack_threads::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackThreads.def()
-    }
+    #[serde(skip)]
+    pub organizations: BelongsTo<Option<super::organizations::Entity>>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub workspace_members: HasMany<super::workspace_members::Entity>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub slack_user_preferences: HasMany<super::slack_user_preferences::Entity>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub slack_threads: HasMany<super::slack_threads::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

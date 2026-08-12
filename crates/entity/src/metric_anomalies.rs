@@ -9,6 +9,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "metric_anomalies")]
 pub struct Model {
@@ -88,8 +89,5 @@ pub struct Model {
     pub detected_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}

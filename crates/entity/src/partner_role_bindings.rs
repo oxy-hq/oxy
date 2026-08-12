@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 /// simply `org_members` of the partner org. No email keying, no orphaned `user_id`,
 /// no parallel invitation flow. Org invitations already cover "grant before first
 /// login". (The table keeps its historical name for migration continuity.)
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "partner_role_bindings")]
 pub struct Model {
@@ -21,24 +22,15 @@ pub struct Model {
     #[sea_orm(unique)]
     pub org_member_id: Uuid,
     pub created_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::org_members::Entity",
-        from = "Column::OrgMemberId",
-        to = "super::org_members::Column::Id",
+        belongs_to,
+        from = "org_member_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    OrgMembers,
-}
-
-impl Related<super::org_members::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::OrgMembers.def()
-    }
+    #[serde(skip)]
+    pub org_members: BelongsTo<super::org_members::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

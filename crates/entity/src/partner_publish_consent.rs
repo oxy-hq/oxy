@@ -12,6 +12,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "partner_publish_consent")]
 pub struct Model {
@@ -24,24 +25,15 @@ pub struct Model {
     /// The client officer who last set it.
     pub granted_by: Option<Uuid>,
     pub updated_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrgId",
-        to = "super::organizations::Column::Id",
+        belongs_to,
+        from = "org_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Organizations,
-}
-
-impl Related<super::organizations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Organizations.def()
-    }
+    #[serde(skip)]
+    pub organizations: BelongsTo<super::organizations::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

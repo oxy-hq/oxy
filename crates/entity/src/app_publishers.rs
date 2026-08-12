@@ -15,6 +15,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "app_publishers")]
 pub struct Model {
@@ -28,24 +29,15 @@ pub struct Model {
     pub environment: String,
     pub created_by: Option<Uuid>,
     pub created_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::apps::Entity",
-        from = "Column::AppId",
-        to = "super::apps::Column::Id",
+        belongs_to,
+        from = "app_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Apps,
-}
-
-impl Related<super::apps::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Apps.def()
-    }
+    #[serde(skip)]
+    pub apps: BelongsTo<super::apps::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

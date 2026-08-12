@@ -2,6 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "artifacts")]
 pub struct Model {
@@ -12,38 +13,22 @@ pub struct Model {
     pub message_id: Uuid,
     pub thread_id: Uuid,
     pub created_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::messages::Entity",
-        from = "Column::MessageId",
-        to = "super::messages::Column::Id",
+        belongs_to,
+        from = "message_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Messages,
+    pub messages: BelongsTo<super::messages::Entity>,
     #[sea_orm(
-        belongs_to = "super::threads::Entity",
-        from = "Column::ThreadId",
-        to = "super::threads::Column::Id",
+        belongs_to,
+        from = "thread_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Threads,
-}
-
-impl Related<super::messages::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Messages.def()
-    }
-}
-
-impl Related<super::threads::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Threads.def()
-    }
+    pub threads: BelongsTo<super::threads::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

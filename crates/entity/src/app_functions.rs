@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// existing channel pointers (no per-function channel state needed).
 ///
 /// See `internal-docs/customer-apps-functions.md`.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "app_functions")]
 pub struct Model {
@@ -25,24 +26,15 @@ pub struct Model {
     /// `customer-apps/<app_id>/builds/<build_id>/functions/<name>.js`.
     pub artifact_key: String,
     pub created_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::app_builds::Entity",
-        from = "Column::BuildId",
-        to = "super::app_builds::Column::Id",
+        belongs_to,
+        from = "build_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    AppBuilds,
-}
-
-impl Related<super::app_builds::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::AppBuilds.def()
-    }
+    #[serde(skip)]
+    pub app_builds: BelongsTo<super::app_builds::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

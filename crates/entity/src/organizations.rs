@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "organizations")]
 pub struct Model {
@@ -21,66 +22,27 @@ pub struct Model {
     pub logo_content_type: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(has_many = "super::org_members::Entity")]
-    OrgMembers,
-    #[sea_orm(has_many = "super::org_invitations::Entity")]
-    OrgInvitations,
-    #[sea_orm(has_many = "super::org_secrets::Entity")]
-    OrgSecrets,
-    #[sea_orm(has_many = "super::workspaces::Entity")]
-    Workspaces,
-    #[sea_orm(has_many = "super::git_namespaces::Entity")]
-    GitNamespaces,
-    #[sea_orm(has_many = "super::slack_installations::Entity")]
-    SlackInstallations,
-    #[sea_orm(has_many = "super::slack_oauth_states::Entity")]
-    SlackOauthStates,
-}
-
-impl Related<super::org_members::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::OrgMembers.def()
-    }
-}
-
-impl Related<super::org_invitations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::OrgInvitations.def()
-    }
-}
-
-impl Related<super::org_secrets::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::OrgSecrets.def()
-    }
-}
-
-impl Related<super::workspaces::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Workspaces.def()
-    }
-}
-
-impl Related<super::git_namespaces::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::GitNamespaces.def()
-    }
-}
-
-impl Related<super::slack_installations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackInstallations.def()
-    }
-}
-
-impl Related<super::slack_oauth_states::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackOauthStates.def()
-    }
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub org_members: HasMany<super::org_members::Entity>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub org_invitations: HasMany<super::org_invitations::Entity>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub org_secrets: HasMany<super::org_secrets::Entity>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub workspaces: HasMany<super::workspaces::Entity>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub git_namespaces: HasMany<super::git_namespaces::Entity>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub slack_installations: HasMany<super::slack_installations::Entity>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub slack_oauth_states: HasMany<super::slack_oauth_states::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

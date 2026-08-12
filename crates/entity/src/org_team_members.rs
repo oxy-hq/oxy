@@ -12,6 +12,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "org_team_members")]
 pub struct Model {
@@ -25,38 +26,24 @@ pub struct Model {
     /// Who added them. NULL when the granter's user row is gone
     /// (`ON DELETE SET NULL`).
     pub created_by: Option<Uuid>,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::org_teams::Entity",
-        from = "Column::TeamId",
-        to = "super::org_teams::Column::Id",
+        belongs_to,
+        from = "team_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    OrgTeams,
+    #[serde(skip)]
+    pub org_teams: BelongsTo<super::org_teams::Entity>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::UserId",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "user_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Users,
-}
-
-impl Related<super::org_teams::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::OrgTeams.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
+    #[serde(skip)]
+    pub users: BelongsTo<super::users::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 /// back-compat view under the old name). The module
 /// `entity::customer_app_procedure_runs` is kept as an alias (see
 /// `lib.rs`).
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "customer_app_automation_runs")]
 pub struct Model {
@@ -35,8 +36,5 @@ pub struct Model {
     pub started_at: DateTimeWithTimeZone,
     pub completed_at: Option<DateTimeWithTimeZone>,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}

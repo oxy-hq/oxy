@@ -29,6 +29,7 @@ impl UserStatus {
     }
 }
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "users")]
 pub struct Model {
@@ -44,74 +45,22 @@ pub struct Model {
     pub status: UserStatus,
     pub created_at: DateTimeWithTimeZone,
     pub last_login_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(has_many = "super::api_keys::Entity")]
-    ApiKeys,
-    #[sea_orm(has_many = "super::logs::Entity")]
-    Logs,
-    #[sea_orm(has_many = "super::org_members::Entity")]
-    OrgMembers,
-    #[sea_orm(has_many = "super::secrets::Entity")]
-    Secrets,
-    #[sea_orm(has_many = "super::threads::Entity")]
-    Threads,
-    #[sea_orm(has_many = "super::slack_installations::Entity")]
-    SlackInstallations,
-    #[sea_orm(has_many = "super::slack_user_links::Entity")]
-    SlackUserLinks,
-    #[sea_orm(has_many = "super::slack_oauth_states::Entity")]
-    SlackOauthStates,
-}
-
-impl Related<super::api_keys::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::ApiKeys.def()
-    }
-}
-
-impl Related<super::logs::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Logs.def()
-    }
-}
-
-impl Related<super::org_members::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::OrgMembers.def()
-    }
-}
-
-impl Related<super::secrets::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Secrets.def()
-    }
-}
-
-impl Related<super::threads::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Threads.def()
-    }
-}
-
-impl Related<super::slack_installations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackInstallations.def()
-    }
-}
-
-impl Related<super::slack_user_links::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackUserLinks.def()
-    }
-}
-
-impl Related<super::slack_oauth_states::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackOauthStates.def()
-    }
+    #[sea_orm(has_many)]
+    pub api_keys: HasMany<super::api_keys::Entity>,
+    #[sea_orm(has_many)]
+    pub logs: HasMany<super::logs::Entity>,
+    #[sea_orm(has_many)]
+    pub org_members: HasMany<super::org_members::Entity>,
+    #[sea_orm(has_many)]
+    pub secrets: HasMany<super::secrets::Entity>,
+    #[sea_orm(has_many)]
+    pub threads: HasMany<super::threads::Entity>,
+    #[sea_orm(has_many)]
+    pub slack_installations: HasMany<super::slack_installations::Entity>,
+    #[sea_orm(has_many)]
+    pub slack_user_links: HasMany<super::slack_user_links::Entity>,
+    #[sea_orm(has_many)]
+    pub slack_oauth_states: HasMany<super::slack_oauth_states::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

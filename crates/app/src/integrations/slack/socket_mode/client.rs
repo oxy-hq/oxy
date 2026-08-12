@@ -73,7 +73,7 @@ async fn run_once(
             } => {
                 // Ack first (3-second SLA), then dispatch asynchronously.
                 let ack = serde_json::json!({"envelope_id": envelope_id}).to_string();
-                if let Err(e) = ws.send(Message::Text(ack)).await {
+                if let Err(e) = ws.send(Message::text(ack)).await {
                     tracing::warn!("slack socket mode: ack failed: {e}");
                 }
                 tokio::spawn(async move {
@@ -87,7 +87,7 @@ async fn run_once(
                 payload,
             } => {
                 let ack = serde_json::json!({"envelope_id": envelope_id}).to_string();
-                if let Err(e) = ws.send(Message::Text(ack)).await {
+                if let Err(e) = ws.send(Message::text(ack)).await {
                     tracing::warn!("slack socket mode: ack failed: {e}");
                 }
                 tokio::spawn(async move {
@@ -97,7 +97,7 @@ async fn run_once(
             SocketEvent::SlashCommands { envelope_id, .. } => {
                 // Not used — ack and drop so Slack doesn't retry.
                 let ack = serde_json::json!({"envelope_id": envelope_id}).to_string();
-                let _ = ws.send(Message::Text(ack)).await;
+                let _ = ws.send(Message::text(ack)).await;
             }
             SocketEvent::Disconnect { reason } => {
                 tracing::info!("slack socket mode: disconnect received: {:?}", reason);

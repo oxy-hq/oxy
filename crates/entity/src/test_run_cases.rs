@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "test_run_cases")]
 pub struct Model {
@@ -24,24 +25,15 @@ pub struct Model {
     pub judge_reasoning: Option<Json>,
     pub errors: Option<Json>,
     pub created_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::test_runs::Entity",
-        from = "Column::TestRunId",
-        to = "super::test_runs::Column::Id",
+        belongs_to,
+        from = "test_run_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    TestRuns,
-}
-
-impl Related<super::test_runs::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::TestRuns.def()
-    }
+    #[serde(skip)]
+    pub test_runs: BelongsTo<super::test_runs::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

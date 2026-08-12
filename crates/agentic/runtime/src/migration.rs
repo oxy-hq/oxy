@@ -143,142 +143,181 @@ impl MigrationName for CreateAgenticTables {
     }
 }
 
+/// The `agentic_runs` create-table statement.
+///
+/// **Twin: `agentic_runs_table()` in `crates/migration`.** Both crates create
+/// this table with `if_not_exists`, so a column added here and not there (or
+/// vice versa) does not fail — whichever migrator runs first wins and the other
+/// no-ops, and the divergence shows up as a missing column at runtime. Edit
+/// both. They deliberately render *different* identifiers: plural here (pinned
+/// with `#[iden]`), singular there until `m20260317_000002` renames it.
+///
+/// Pins the **create** shape only; the `parent_run_id` / `task_status` /
+/// `task_metadata` columns added by later migrations in this file are guarded
+/// by `column_exists` and are not part of this statement.
+fn agentic_runs_table() -> TableCreateStatement {
+    Table::create()
+        .table(AgenticRun::Table)
+        .if_not_exists()
+        .col(
+            ColumnDef::new(AgenticRun::Id)
+                .string()
+                .not_null()
+                .primary_key(),
+        )
+        .col(ColumnDef::new(AgenticRun::AgentId).string().not_null())
+        .col(ColumnDef::new(AgenticRun::Question).text().not_null())
+        .col(
+            ColumnDef::new(AgenticRun::Status)
+                .string()
+                .not_null()
+                .default("running"),
+        )
+        .col(ColumnDef::new(AgenticRun::Answer).text().null())
+        .col(ColumnDef::new(AgenticRun::ErrorMessage).text().null())
+        .col(
+            ColumnDef::new(AgenticRun::CreatedAt)
+                .timestamp_with_time_zone()
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(AgenticRun::UpdatedAt)
+                .timestamp_with_time_zone()
+                .not_null(),
+        )
+        .to_owned()
+}
+
+/// The `agentic_run_suspensions` create-table statement.
+///
+/// **Twin: `agentic_run_suspensions_table()` in `crates/migration`** — same
+/// `if_not_exists` hazard and same deliberate identifier difference as
+/// `agentic_runs_table()` above. Edit both.
+fn agentic_run_suspensions_table() -> TableCreateStatement {
+    Table::create()
+        .table(AgenticRunSuspension::Table)
+        .if_not_exists()
+        .col(
+            ColumnDef::new(AgenticRunSuspension::RunId)
+                .string()
+                .not_null()
+                .primary_key(),
+        )
+        .col(
+            ColumnDef::new(AgenticRunSuspension::Prompt)
+                .text()
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(AgenticRunSuspension::Suggestions)
+                .json_binary()
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(AgenticRunSuspension::ResumeData)
+                .json_binary()
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(AgenticRunSuspension::CreatedAt)
+                .timestamp_with_time_zone()
+                .not_null(),
+        )
+        .foreign_key(
+            ForeignKey::create()
+                .from(AgenticRunSuspension::Table, AgenticRunSuspension::RunId)
+                .to(AgenticRun::Table, AgenticRun::Id)
+                .on_delete(ForeignKeyAction::Cascade),
+        )
+        .to_owned()
+}
+
+/// The unique index on `agentic_run_events (run_id, seq)`.
+///
+/// **Twin: `agentic_run_events_index()` in `crates/migration`**, and a sharper
+/// hazard than the tables: the index *name* is identical on both sides, so
+/// `if_not_exists` no-ops by name. Change the columns or drop `.unique()` on
+/// one side and the other silently does nothing — no error, just an index that
+/// isn't the one you wrote.
+fn agentic_run_events_index() -> IndexCreateStatement {
+    Index::create()
+        .if_not_exists()
+        .name("idx_agentic_run_events_run_id_seq")
+        .table(AgenticRunEvent::Table)
+        .col(AgenticRunEvent::RunId)
+        .col(AgenticRunEvent::Seq)
+        .unique()
+        .to_owned()
+}
+
+/// The `agentic_run_events` create-table statement.
+///
+/// **Twin: `agentic_run_events_table()` in `crates/migration`** — same
+/// `if_not_exists` hazard and same deliberate identifier difference as
+/// `agentic_runs_table()` above. Edit both.
+///
+/// Extracted so the test at the bottom of this file asserts on the DDL this
+/// migrator actually emits, rather than on a copy that can drift from it. The
+/// whole rendering is pinned, not just the `bigserial` PK.
+fn agentic_run_events_table() -> TableCreateStatement {
+    Table::create()
+        .table(AgenticRunEvent::Table)
+        .if_not_exists()
+        .col(
+            // Spelled `bigserial` explicitly — see the twin migration in
+            // `crates/migration`. `.auto_increment()` renders identity columns
+            // on SeaORM 2.0 without the non-default `postgres-use-serial-pk`
+            // feature, and this table already exists as `bigserial` in every
+            // deployed database.
+            ColumnDef::new(AgenticRunEvent::Id)
+                .custom(Alias::new("bigserial"))
+                .not_null()
+                .primary_key(),
+        )
+        .col(ColumnDef::new(AgenticRunEvent::RunId).string().not_null())
+        .col(
+            ColumnDef::new(AgenticRunEvent::Seq)
+                .big_integer()
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(AgenticRunEvent::EventType)
+                .string()
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(AgenticRunEvent::Payload)
+                .json_binary()
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(AgenticRunEvent::CreatedAt)
+                .timestamp_with_time_zone()
+                .not_null(),
+        )
+        .foreign_key(
+            ForeignKey::create()
+                .from(AgenticRunEvent::Table, AgenticRunEvent::RunId)
+                .to(AgenticRun::Table, AgenticRun::Id)
+                .on_delete(ForeignKeyAction::Cascade),
+        )
+        .to_owned()
+}
+
 #[async_trait::async_trait]
 impl MigrationTrait for CreateAgenticTables {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         // agentic_runs
-        manager
-            .create_table(
-                Table::create()
-                    .table(AgenticRun::Table)
-                    .if_not_exists()
-                    .col(
-                        ColumnDef::new(AgenticRun::Id)
-                            .string()
-                            .not_null()
-                            .primary_key(),
-                    )
-                    .col(ColumnDef::new(AgenticRun::AgentId).string().not_null())
-                    .col(ColumnDef::new(AgenticRun::Question).text().not_null())
-                    .col(
-                        ColumnDef::new(AgenticRun::Status)
-                            .string()
-                            .not_null()
-                            .default("running"),
-                    )
-                    .col(ColumnDef::new(AgenticRun::Answer).text().null())
-                    .col(ColumnDef::new(AgenticRun::ErrorMessage).text().null())
-                    .col(
-                        ColumnDef::new(AgenticRun::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(AgenticRun::UpdatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
-                    .to_owned(),
-            )
-            .await?;
+        manager.create_table(agentic_runs_table()).await?;
 
         // agentic_run_events
-        manager
-            .create_table(
-                Table::create()
-                    .table(AgenticRunEvent::Table)
-                    .if_not_exists()
-                    .col(
-                        ColumnDef::new(AgenticRunEvent::Id)
-                            .big_integer()
-                            .not_null()
-                            .auto_increment()
-                            .primary_key(),
-                    )
-                    .col(ColumnDef::new(AgenticRunEvent::RunId).string().not_null())
-                    .col(
-                        ColumnDef::new(AgenticRunEvent::Seq)
-                            .big_integer()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(AgenticRunEvent::EventType)
-                            .string()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(AgenticRunEvent::Payload)
-                            .json_binary()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(AgenticRunEvent::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
-                    .foreign_key(
-                        ForeignKey::create()
-                            .from(AgenticRunEvent::Table, AgenticRunEvent::RunId)
-                            .to(AgenticRun::Table, AgenticRun::Id)
-                            .on_delete(ForeignKeyAction::Cascade),
-                    )
-                    .to_owned(),
-            )
-            .await?;
+        manager.create_table(agentic_run_events_table()).await?;
 
-        manager
-            .create_index(
-                Index::create()
-                    .name("idx_agentic_run_events_run_id_seq")
-                    .table(AgenticRunEvent::Table)
-                    .col(AgenticRunEvent::RunId)
-                    .col(AgenticRunEvent::Seq)
-                    .unique()
-                    .if_not_exists()
-                    .to_owned(),
-            )
-            .await?;
+        manager.create_index(agentic_run_events_index()).await?;
 
         // agentic_run_suspensions
         manager
-            .create_table(
-                Table::create()
-                    .table(AgenticRunSuspension::Table)
-                    .if_not_exists()
-                    .col(
-                        ColumnDef::new(AgenticRunSuspension::RunId)
-                            .string()
-                            .not_null()
-                            .primary_key(),
-                    )
-                    .col(
-                        ColumnDef::new(AgenticRunSuspension::Prompt)
-                            .text()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(AgenticRunSuspension::Suggestions)
-                            .json_binary()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(AgenticRunSuspension::ResumeData)
-                            .json_binary()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(AgenticRunSuspension::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
-                    .foreign_key(
-                        ForeignKey::create()
-                            .from(AgenticRunSuspension::Table, AgenticRunSuspension::RunId)
-                            .to(AgenticRun::Table, AgenticRun::Id)
-                            .on_delete(ForeignKeyAction::Cascade),
-                    )
-                    .to_owned(),
-            )
+            .create_table(agentic_run_suspensions_table())
             .await?;
 
         Ok(())
@@ -1853,5 +1892,125 @@ impl MigrationTrait for AddTaskQueueFirstDeferredAt {
                 .await?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm_migration::sea_orm::sea_query::PostgresQueryBuilder;
+
+    /// `agentic_run_events.id` must render `bigserial`, not an identity column.
+    ///
+    /// This migrator is a separate crate from `crates/migration` with its own
+    /// tracking table, so the twin assertion over there does not cover it. The
+    /// protection used to be the workspace-wide `postgres-use-serial-pk`
+    /// feature, which covered every call site at once; now that the type is
+    /// spelled per site, each site needs its own assertion.
+    #[test]
+    fn agentic_run_events_id_renders_bigserial() {
+        let ddl = agentic_run_events_table().to_string(PostgresQueryBuilder);
+
+        // Full-statement equality, not `contains`. This statement and the one in
+        // `crates/migration` are near-copies, and both are `IF NOT EXISTS`: add a
+        // column to one and not the other and whichever migrator runs first wins
+        // while the second silently no-ops, so the divergence surfaces as a
+        // missing column at runtime rather than as a failed migration. Pinning
+        // both renderings turns a one-sided edit into a failing test.
+        //
+        // The two are NOT identical and must not be asserted equal — this
+        // migrator pins the plural `agentic_run_events` / `agentic_runs`, while
+        // `crates/migration` derives the singular forms from its Iden enum
+        // names. That difference is transient, not a second set of tables:
+        // central's `m20260317_000002` renames the singular trio to plural right
+        // after creating it, so by the time this migrator runs the plural tables
+        // already exist and its `if_not_exists` create no-ops. A fresh database
+        // ends up with three plural tables — the ones the entity layer reads.
+        assert_eq!(
+            ddl,
+            r#"CREATE TABLE IF NOT EXISTS "agentic_run_events" ( "id" bigserial NOT NULL PRIMARY KEY, "run_id" varchar NOT NULL, "seq" bigint NOT NULL, "event_type" varchar NOT NULL, "payload" jsonb NOT NULL, "created_at" timestamp with time zone NOT NULL, FOREIGN KEY ("run_id") REFERENCES "agentic_runs" ("id") ON DELETE CASCADE )"#,
+            "agentic_run_events DDL changed. Causes, in rough order of likelihood: \
+             a column edit here (update this literal AND check whether \
+             crates/migration's twin needs the same edit); or a sea-query \
+             rendering change upstream (whitespace/quoting), in which case only \
+             this literal needs refreshing."
+        );
+        assert!(
+            !ddl.to_uppercase().contains("IDENTITY"),
+            "identity columns diverge from every deployed database. Rendered: {ddl}"
+        );
+    }
+
+    /// Negative control: `.auto_increment()` — the spelling the explicit
+    /// `bigserial` replaced — must still render an identity column here.
+    ///
+    /// This crate needs its own copy rather than relying on the twin in
+    /// `crates/migration`: cargo feature unification is per dependency graph, so
+    /// `postgres-use-serial-pk` could be re-enabled for *this* crate (by a
+    /// transitive dependency) while the other crate's control still passes. In
+    /// that world the assertion above keeps passing on `bigserial` while proving
+    /// nothing about the spelling it replaced.
+    #[test]
+    fn auto_increment_still_renders_identity_here() {
+        let legacy = Table::create()
+            .table(AgenticRunEvent::Table)
+            .col(
+                ColumnDef::new(AgenticRunEvent::Id)
+                    .big_integer()
+                    .not_null()
+                    .auto_increment()
+                    .primary_key(),
+            )
+            .to_string(PostgresQueryBuilder);
+
+        assert!(
+            legacy.to_uppercase().contains("IDENTITY"),
+            "`.auto_increment()` no longer renders IDENTITY in this crate — either \
+             `postgres-use-serial-pk` reached it (directly or transitively), or an \
+             upstream sea-query default changed. Either way the explicit \
+             `bigserial` above has stopped being load-bearing. Rendered: {legacy}"
+        );
+    }
+    /// The other two tables this migrator shares with `crates/migration`.
+    ///
+    /// Same hazard as `agentic_run_events`: both crates create them with
+    /// `IF NOT EXISTS`, so a column added on one side only does not fail — the
+    /// second create no-ops and the column is simply missing at runtime.
+    ///
+    /// These pin the **create** shape only. `parent_run_id` / `task_status` /
+    /// `task_metadata` are added to `agentic_runs` by later migrations in this
+    /// file under `column_exists` guards; that is deliberate, not divergence.
+    #[test]
+    fn sibling_twin_tables_render_their_pinned_ddl() {
+        assert_eq!(
+            agentic_runs_table().to_string(PostgresQueryBuilder),
+            r#"CREATE TABLE IF NOT EXISTS "agentic_runs" ( "id" varchar NOT NULL PRIMARY KEY, "agent_id" varchar NOT NULL, "question" text NOT NULL, "status" varchar NOT NULL DEFAULT 'running', "answer" text NULL, "error_message" text NULL, "created_at" timestamp with time zone NOT NULL, "updated_at" timestamp with time zone NOT NULL )"#,
+            "agentic_runs DDL changed. Causes: a column edit here (update this \
+             literal AND check crates/migration's twin); or an upstream \
+             sea-query rendering change, in which case only this literal needs \
+             refreshing."
+        );
+
+        assert_eq!(
+            agentic_run_suspensions_table().to_string(PostgresQueryBuilder),
+            r#"CREATE TABLE IF NOT EXISTS "agentic_run_suspensions" ( "run_id" varchar NOT NULL PRIMARY KEY, "prompt" text NOT NULL, "suggestions" jsonb NOT NULL, "resume_data" jsonb NOT NULL, "created_at" timestamp with time zone NOT NULL, FOREIGN KEY ("run_id") REFERENCES "agentic_runs" ("id") ON DELETE CASCADE )"#,
+            "agentic_run_suspensions DDL changed. Causes: a column edit here \
+             (update this literal AND check crates/migration's twin); or an \
+             upstream sea-query rendering change."
+        );
+    }
+    /// The shared unique index, pinned like the tables — and it is the sharper
+    /// case: both migrators create `idx_agentic_run_events_run_id_seq` under
+    /// the *same name*, so `IF NOT EXISTS` no-ops by name. Change the columns
+    /// or drop `.unique()` on one side and the other silently does nothing.
+    #[test]
+    fn the_shared_index_renders_its_pinned_ddl() {
+        assert_eq!(
+            agentic_run_events_index().to_string(PostgresQueryBuilder),
+            r#"CREATE UNIQUE INDEX IF NOT EXISTS "idx_agentic_run_events_run_id_seq" ON "agentic_run_events" ("run_id", "seq")"#,
+            "the shared index changed. Causes: an edit here (update this literal \
+             AND check crates/migration's twin, which creates the same index name); or an \
+             upstream sea-query rendering change."
+        );
     }
 }

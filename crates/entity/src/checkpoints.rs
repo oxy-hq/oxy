@@ -2,6 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "checkpoints")]
 pub struct Model {
@@ -16,24 +17,14 @@ pub struct Model {
     pub loop_values: Option<Json>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::runs::Entity",
-        from = "Column::RunId",
-        to = "super::runs::Column::Id",
+        belongs_to,
+        from = "run_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Runs,
-}
-
-impl Related<super::runs::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Runs.def()
-    }
+    pub runs: BelongsTo<super::runs::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

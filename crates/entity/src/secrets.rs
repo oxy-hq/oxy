@@ -2,6 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "secrets")]
 pub struct Model {
@@ -19,38 +20,22 @@ pub struct Model {
     pub updated_by: Option<Uuid>,
     pub project_id: Uuid,
     pub is_active: bool,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::workspaces::Entity",
-        from = "Column::ProjectId",
-        to = "super::workspaces::Column::Id",
+        belongs_to,
+        from = "project_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Workspaces,
+    pub workspaces: BelongsTo<super::workspaces::Entity>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::CreatedBy",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "created_by",
+        to = "id",
         on_update = "Cascade",
         on_delete = "Restrict"
     )]
-    Users,
-}
-
-impl Related<super::workspaces::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Workspaces.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
+    pub users: BelongsTo<super::users::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

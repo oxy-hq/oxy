@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 /// from inside.
 ///
 /// Sensitive flags (`manage_billing`, `manage_secrets`) are Owner-only to grant.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "partner_capabilities")]
 pub struct Model {
@@ -30,24 +31,15 @@ pub struct Model {
     /// Rename / configure a managed org.
     pub manage_org_settings: bool,
     pub updated_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::partner_grants::Entity",
-        from = "Column::OrgId",
-        to = "super::partner_grants::Column::OrgId",
+        belongs_to,
+        from = "org_id",
+        to = "org_id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    PartnerGrants,
-}
-
-impl Related<super::partner_grants::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::PartnerGrants.def()
-    }
+    #[serde(skip)]
+    pub partner_grants: BelongsTo<super::partner_grants::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

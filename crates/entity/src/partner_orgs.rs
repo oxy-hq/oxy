@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// `managed_org_id` is UNIQUE: a client is never managed by two partners. Detaching
 /// is Oxy-only — a partner cannot unilaterally orphan a customer.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "partner_orgs")]
 pub struct Model {
@@ -17,38 +18,24 @@ pub struct Model {
     pub managed_org_id: Uuid,
     pub created_by: Option<Uuid>,
     pub created_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::partner_grants::Entity",
-        from = "Column::PartnerOrgId",
-        to = "super::partner_grants::Column::OrgId",
+        belongs_to,
+        from = "partner_org_id",
+        to = "org_id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    PartnerGrants,
+    #[serde(skip)]
+    pub partner_grants: BelongsTo<super::partner_grants::Entity>,
     #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::ManagedOrgId",
-        to = "super::organizations::Column::Id",
+        belongs_to,
+        from = "managed_org_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Organizations,
-}
-
-impl Related<super::partner_grants::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::PartnerGrants.def()
-    }
-}
-
-impl Related<super::organizations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Organizations.def()
-    }
+    #[serde(skip)]
+    pub organizations: BelongsTo<super::organizations::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

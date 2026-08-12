@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 /// impersonated identity, so the audit trail names who actually acted.
 ///
 /// A session is live when `ended_at IS NULL AND expires_at > now()`.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "admin_assume_sessions")]
 pub struct Model {
@@ -29,38 +30,24 @@ pub struct Model {
     pub expires_at: DateTimeWithTimeZone,
     /// Set when explicitly ended; NULL while live.
     pub ended_at: Option<DateTimeWithTimeZone>,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrgId",
-        to = "super::organizations::Column::Id",
+        belongs_to,
+        from = "org_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Organizations,
+    #[serde(skip)]
+    pub organizations: BelongsTo<super::organizations::Entity>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::ActorUserId",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "actor_user_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Users,
-}
-
-impl Related<super::organizations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Organizations.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
+    #[serde(skip)]
+    pub users: BelongsTo<super::users::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

@@ -16,6 +16,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "app_team_grants")]
 pub struct Model {
@@ -33,44 +34,30 @@ pub struct Model {
     /// Who granted it. NULL when the granter's user row is gone
     /// (`ON DELETE SET NULL`).
     pub created_by: Option<Uuid>,
+    #[sea_orm(
+        belongs_to,
+        from = "app_id",
+        to = "id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    #[serde(skip)]
+    pub apps: BelongsTo<super::apps::Entity>,
+    #[sea_orm(
+        belongs_to,
+        from = "team_id",
+        to = "id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    #[serde(skip)]
+    pub org_teams: BelongsTo<super::org_teams::Entity>,
 }
 
 impl Model {
     /// True when this grant confers the app's privileged surface on the team.
     pub fn is_admin(&self) -> bool {
         self.role == super::app_members::ROLE_ADMIN
-    }
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::apps::Entity",
-        from = "Column::AppId",
-        to = "super::apps::Column::Id",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    Apps,
-    #[sea_orm(
-        belongs_to = "super::org_teams::Entity",
-        from = "Column::TeamId",
-        to = "super::org_teams::Column::Id",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    OrgTeams,
-}
-
-impl Related<super::apps::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Apps.def()
-    }
-}
-
-impl Related<super::org_teams::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::OrgTeams.def()
     }
 }
 

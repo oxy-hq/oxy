@@ -6,6 +6,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "semantic_views")]
 pub struct Model {
@@ -18,24 +19,15 @@ pub struct Model {
     /// S3 key for the dialect-compiled SQL bodies. NULL until Phase
     /// 1.6b populates it.
     pub compiled_sql_blob_key: Option<String>,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::revisions::Entity",
-        from = "Column::RevisionId",
-        to = "super::revisions::Column::RevisionId",
+        belongs_to,
+        from = "revision_id",
+        to = "revision_id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Revisions,
-}
-
-impl Related<super::revisions::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Revisions.def()
-    }
+    #[serde(skip)]
+    pub revisions: BelongsTo<super::revisions::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

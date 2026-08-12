@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 /// `<slug>.oxygen-hq.com` — so there's no label column; presence of an
 /// `enabled` row is the opt-in flag. `default_workspace_id` is the project
 /// the subdomain root scopes to.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "org_subdomains")]
 pub struct Model {
@@ -18,52 +19,33 @@ pub struct Model {
     pub created_by: Option<Uuid>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrgId",
-        to = "super::organizations::Column::Id",
+        belongs_to,
+        from = "org_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Organizations,
+    #[serde(skip)]
+    pub organizations: BelongsTo<super::organizations::Entity>,
     #[sea_orm(
-        belongs_to = "super::workspaces::Entity",
-        from = "Column::DefaultWorkspaceId",
-        to = "super::workspaces::Column::Id",
+        belongs_to,
+        from = "default_workspace_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    Workspaces,
+    #[serde(skip)]
+    pub workspaces: BelongsTo<Option<super::workspaces::Entity>>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::CreatedBy",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "created_by",
+        to = "id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    Users,
-}
-
-impl Related<super::organizations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Organizations.def()
-    }
-}
-
-impl Related<super::workspaces::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Workspaces.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
+    #[serde(skip)]
+    pub users: BelongsTo<Option<super::users::Entity>>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

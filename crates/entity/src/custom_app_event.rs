@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 /// The Activity tab in AppDetail groups these by `event_name` for the
 /// counts row + lets the operator drill into recent occurrences with
 /// their payloads.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "custom_app_event")]
 pub struct Model {
@@ -27,38 +28,24 @@ pub struct Model {
     pub event_name: String,
     pub payload: Json,
     pub occurred_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::apps::Entity",
-        from = "Column::AppId",
-        to = "super::apps::Column::Id",
+        belongs_to,
+        from = "app_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Apps,
+    #[serde(skip)]
+    pub apps: BelongsTo<super::apps::Entity>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::UserId",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "user_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Users,
-}
-
-impl Related<super::apps::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Apps.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
+    #[serde(skip)]
+    pub users: BelongsTo<super::users::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

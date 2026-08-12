@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// flow. Created (authenticated) when the user clicks Connect, consumed
 /// once by the public callback. Carries no secret material — only the var
 /// names the callback resolves/writes through the workspace secret manager.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "quickbooks_oauth_states")]
 pub struct Model {
@@ -29,8 +30,5 @@ pub struct Model {
     pub expires_at: DateTimeWithTimeZone,
     pub consumed_at: Option<DateTimeWithTimeZone>,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// references (deleting an org/user must not touch its history), so scope ids
 /// and labels are denormalized here rather than joined. Rows are insert-only;
 /// treat this Model as read-after-write.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "audit_events")]
 pub struct Model {
@@ -44,8 +45,5 @@ pub struct Model {
     /// `created_at` (skew-independent). Filled by the DB on insert.
     pub seq: i64,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}

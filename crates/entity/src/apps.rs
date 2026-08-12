@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "apps")]
 pub struct Model {
@@ -82,6 +83,15 @@ pub struct Model {
     pub visibility: String,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(
+        belongs_to,
+        from = "org_id",
+        to = "id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    #[serde(skip)]
+    pub organizations: BelongsTo<super::organizations::Entity>,
 }
 
 impl Model {
@@ -94,22 +104,102 @@ impl Model {
     }
 }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrgId",
-        to = "super::organizations::Column::Id",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    Organizations,
-}
+impl ActiveModelBehavior for ActiveModel {}
 
-impl Related<super::organizations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Organizations.def()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `Model` is what API handlers serialize, and the dense-format migration
+    /// must not have changed its JSON shape.
+    ///
+    /// The guarantee is structural, not a serde attribute: `#[sea_orm::model]`
+    /// emits *two* structs — `Model` carrying only the scalar columns, and
+    /// `ModelEx` carrying those plus the `BelongsTo`/`HasMany` relations. The
+    /// relation never reaches the type that goes out over the wire, so it
+    /// cannot add a key to a response.
+    ///
+    /// (The `#[serde(skip)]` on the declared relation field is still
+    /// load-bearing, but for `ModelEx`: without it the derive requires
+    /// `E::ModelEx: Serialize` on every *related* entity, and `users::Model`
+    /// deliberately has no serde derive at all.)
+    #[test]
+    fn the_serialized_model_carries_columns_and_no_relations() {
+        let model = Model {
+            id: Uuid::nil(),
+            slug: "acme".into(),
+            name: "Acme".into(),
+            org_id: Uuid::nil(),
+            project_id: Uuid::nil(),
+            branch: "main".into(),
+            source_repo: "acme/dash".into(),
+            status: "active".into(),
+            source_type: "s3".into(),
+            source_config: serde_json::json!({}),
+            last_synced_at: None,
+            manifest_override: None,
+            bootstrap_pr_url: None,
+            published_at: None,
+            repo_path: None,
+            draft_build_id: None,
+            published_build_id: None,
+            last_promoted_by: None,
+            last_promoted_at: None,
+            visibility: "org".into(),
+            created_at: Default::default(),
+            updated_at: Default::default(),
+        };
+
+        let json = serde_json::to_value(&model).expect("Model serializes");
+        let obj = json.as_object().expect("serializes to an object");
+
+        assert!(
+            !obj.contains_key("organizations"),
+            "no relation key may appear in a serialized Model. Keys: {:?}",
+            obj.keys().collect::<Vec<_>>()
+        );
+
+        // A blanket skip would satisfy the assertion above by emitting nothing,
+        // so check the columns really are still present.
+        for key in ["id", "slug", "name", "org_id", "visibility", "created_at"] {
+            assert!(
+                obj.contains_key(key),
+                "column `{key}` missing from the JSON"
+            );
+        }
+    }
+
+    /// A payload in the pre-2.0 shape — no relation key — still deserializes,
+    /// so existing API clients are unaffected.
+    #[test]
+    fn a_pre_2_0_payload_still_deserializes() {
+        let json = serde_json::json!({
+            "id": Uuid::nil(),
+            "slug": "acme",
+            "name": "Acme",
+            "org_id": Uuid::nil(),
+            "project_id": Uuid::nil(),
+            "branch": "main",
+            "source_repo": "acme/dash",
+            "status": "active",
+            "source_type": "s3",
+            "source_config": {},
+            "last_synced_at": null,
+            "manifest_override": null,
+            "bootstrap_pr_url": null,
+            "published_at": null,
+            "repo_path": null,
+            "draft_build_id": null,
+            "published_build_id": null,
+            "last_promoted_by": null,
+            "last_promoted_at": null,
+            "visibility": "org",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+        });
+
+        let model: Model = serde_json::from_value(json).expect("pre-2.0 shape parses");
+        assert_eq!(model.slug, "acme");
+        assert!(!model.is_restricted(), "visibility `org` is unrestricted");
     }
 }
-
-impl ActiveModelBehavior for ActiveModel {}

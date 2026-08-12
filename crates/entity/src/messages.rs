@@ -2,6 +2,7 @@
 
 use sea_orm::{ActiveValue, entity::prelude::*};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "messages")]
 pub struct Model {
@@ -14,44 +15,18 @@ pub struct Model {
     pub created_at: DateTimeWithTimeZone,
     pub input_tokens: i32,
     pub output_tokens: i32,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(has_many = "super::artifacts::Entity")]
-    Artifacts,
+    #[sea_orm(has_many)]
+    pub artifacts: HasMany<super::artifacts::Entity>,
     #[sea_orm(
-        belongs_to = "super::threads::Entity",
-        from = "Column::ThreadId",
-        to = "super::threads::Column::Id",
+        belongs_to,
+        from = "thread_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Threads,
-    #[sea_orm(
-        has_many = "super::runs::Entity",
-        from = "Column::Id",
-        to = "super::runs::Column::LookupId"
-    )]
-    Runs,
-}
-
-impl Related<super::threads::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Threads.def()
-    }
-}
-
-impl Related<super::artifacts::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Artifacts.def()
-    }
-}
-
-impl Related<super::runs::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Runs.def()
-    }
+    pub threads: BelongsTo<super::threads::Entity>,
+    #[sea_orm(has_many)]
+    pub runs: HasMany<super::runs::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {
@@ -61,5 +36,46 @@ impl ActiveModelBehavior for ActiveModel {
             output_tokens: ActiveValue::Set(0),
             ..ActiveModelTrait::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::{DbBackend, EntityTrait, QueryTrait};
+
+    /// `runs` is declared as a bare `#[sea_orm(has_many)]`, so its join
+    /// condition is *inferred* from the reverse `belongs_to` in `runs.rs` —
+    /// and this crate's one non-conventional join lives there:
+    /// `messages.id = runs.lookup_id`, not the `runs.message_id` the naming
+    /// convention would suggest.
+    ///
+    /// The inference is unambiguous only while `runs` has exactly one
+    /// `belongs_to` pointing at `messages`. A second one would make the
+    /// generated relation pick a side silently, and a wrong join reads as
+    /// missing or duplicated rows rather than as an error. This states the
+    /// join the code actually depends on.
+    #[test]
+    fn the_runs_relation_joins_on_lookup_id() {
+        let sql = Entity::find()
+            .inner_join(crate::runs::Entity)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        // Assert the ON clause, not `contains("lookup_id")` over the whole
+        // statement: the rendering also lists every `messages` column, so a
+        // bare substring check would start passing vacuously the day `messages`
+        // gains a `lookup_id` column of its own — and "this test can no longer
+        // fail" is precisely what it exists to rule out.
+        assert!(
+            sql.contains(r#""messages"."id" = "runs"."lookup_id""#),
+            "messages -> runs must join `messages.id = runs.lookup_id`; a change \
+             to `runs::Model`'s belongs_to would silently re-point this. SQL: {sql}"
+        );
+        assert!(
+            !sql.contains("message_id"),
+            "the join must NOT use a conventional `runs.message_id` column — \
+             that column does not exist. SQL: {sql}"
+        );
     }
 }

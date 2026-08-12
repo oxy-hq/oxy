@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// One row per Oxy Functions invocation (route, schedule, or airway).
 /// See `internal-docs/customer-apps-functions.md` §11.12.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "app_function_invocations")]
 pub struct Model {
@@ -31,8 +32,5 @@ pub struct Model {
     /// different body is rejected instead of silently replaying the first result.
     pub request_hash: Option<i64>,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}

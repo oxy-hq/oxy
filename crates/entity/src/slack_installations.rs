@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "slack_installations")]
 pub struct Model {
@@ -18,68 +19,39 @@ pub struct Model {
     pub installed_by_slack_user_id: String,
     pub installed_at: DateTimeWithTimeZone,
     pub revoked_at: Option<DateTimeWithTimeZone>,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::organizations::Entity",
-        from = "Column::OrgId",
-        to = "super::organizations::Column::Id",
+        belongs_to,
+        from = "org_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Organizations,
+    #[serde(skip)]
+    pub organizations: BelongsTo<super::organizations::Entity>,
     #[sea_orm(
-        belongs_to = "super::org_secrets::Entity",
-        from = "Column::BotTokenSecretId",
-        to = "super::org_secrets::Column::Id",
+        belongs_to,
+        from = "bot_token_secret_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]
-    OrgSecrets,
+    #[serde(skip)]
+    pub org_secrets: BelongsTo<super::org_secrets::Entity>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::InstalledByUserId",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "installed_by_user_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]
-    Users,
-    #[sea_orm(has_many = "super::slack_user_links::Entity")]
-    SlackUserLinks,
-    #[sea_orm(has_many = "super::slack_threads::Entity")]
-    SlackThreads,
-}
-
-impl Related<super::organizations::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Organizations.def()
-    }
-}
-
-impl Related<super::org_secrets::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::OrgSecrets.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
-}
-
-impl Related<super::slack_user_links::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackUserLinks.def()
-    }
-}
-
-impl Related<super::slack_threads::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SlackThreads.def()
-    }
+    #[serde(skip)]
+    pub users: BelongsTo<super::users::Entity>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub slack_user_links: HasMany<super::slack_user_links::Entity>,
+    #[sea_orm(has_many)]
+    #[serde(skip)]
+    pub slack_threads: HasMany<super::slack_threads::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

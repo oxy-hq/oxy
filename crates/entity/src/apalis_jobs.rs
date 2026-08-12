@@ -19,6 +19,7 @@ pub enum JobStatus {
     Killed,
 }
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "apalis_jobs")]
 pub struct Model {
@@ -35,8 +36,5 @@ pub struct Model {
     pub lock_by: Option<String>,
     pub last_error: Option<String>,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}

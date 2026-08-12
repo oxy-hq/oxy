@@ -13,6 +13,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "app_members")]
 pub struct Model {
@@ -30,6 +31,24 @@ pub struct Model {
     /// Who granted the membership. NULL when the granter's user row is gone
     /// (`ON DELETE SET NULL`) or for a seeded/system grant.
     pub created_by: Option<Uuid>,
+    #[sea_orm(
+        belongs_to,
+        from = "app_id",
+        to = "id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    #[serde(skip)]
+    pub apps: BelongsTo<super::apps::Entity>,
+    #[sea_orm(
+        belongs_to,
+        from = "user_id",
+        to = "id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    #[serde(skip)]
+    pub users: BelongsTo<super::users::Entity>,
 }
 
 /// The role an `app_members` row carries. Kept as a plain string in the DB (with
@@ -41,38 +60,6 @@ impl Model {
     /// True when this membership administers the app.
     pub fn is_admin(&self) -> bool {
         self.role == ROLE_ADMIN
-    }
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::apps::Entity",
-        from = "Column::AppId",
-        to = "super::apps::Column::Id",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    Apps,
-    #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::UserId",
-        to = "super::users::Column::Id",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    Users,
-}
-
-impl Related<super::apps::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Apps.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
     }
 }
 

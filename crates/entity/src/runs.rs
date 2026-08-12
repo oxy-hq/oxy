@@ -20,6 +20,7 @@ pub struct Output {
     pub output: Json,
 }
 
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "runs")]
 pub struct Model {
@@ -42,52 +43,30 @@ pub struct Model {
     pub user_id: Option<Uuid>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
-}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::workspaces::Entity",
-        from = "Column::ProjectId",
-        to = "super::workspaces::Column::Id",
+        belongs_to,
+        from = "project_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Workspaces,
+    pub workspaces: BelongsTo<super::workspaces::Entity>,
     #[sea_orm(
-        belongs_to = "super::messages::Entity",
-        from = "Column::LookupId",
-        to = "super::messages::Column::Id",
+        belongs_to,
+        from = "lookup_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    Messages,
+    pub messages: BelongsTo<Option<super::messages::Entity>>,
     #[sea_orm(
-        belongs_to = "super::users::Entity",
-        from = "Column::UserId",
-        to = "super::users::Column::Id",
+        belongs_to,
+        from = "user_id",
+        to = "id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Users,
-}
-
-impl Related<super::workspaces::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Workspaces.def()
-    }
-}
-
-impl Related<super::messages::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Messages.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Users.def()
-    }
+    pub users: BelongsTo<Option<super::users::Entity>>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

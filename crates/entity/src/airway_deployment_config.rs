@@ -42,6 +42,7 @@ use serde::{Deserialize, Serialize};
 /// `agentic_airway::deployment_config::COLUMNS`; the two lists are pinned
 /// against each other by `entity_columns_match_the_airway_key_roster` in
 /// `crates/app/src/server/api/admin/airway_config/deployment_tests.rs`.
+#[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "airway_deployment_config")]
 pub struct Model {
@@ -85,8 +86,5 @@ pub struct Model {
     pub tls_danger_accept_invalid_certs: Option<bool>,
     pub updated_at: DateTimeWithTimeZone,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
