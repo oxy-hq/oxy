@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.124] - 2026-08-12
+
+### 🚀 Features
+
+- Adopt airway 0.1.24 (#2883)
+- *(video-poc)* Dedicated audio role + audio-capture stall watchdog + verdict log (#2912)
+- Read-only QuickBooks token custody for airway pipelines (#2913)
+- Adopt Sea-ORM 2.0 typed COLUMN + dependency upgrades (#2911)
+
+### 🐛 Bug Fixes
+
+- Make an unresolvable airway pipeline_ref retryable, not caller error (#2906)
+- Gate the Airway nav entry on the capability its endpoint uses (#2909)
+- Stop Home auto-loading GitHub onboarding (and its IdeOnly probe) (#2908)
+
+### 💼 Other
+
+- Bump airway 0.1.25 -> 0.1.26 for the Toast orders restatement window (#2917)
+
+### 🚜 Refactor
+
+- Restructure PR template for clarity and reviewer guidance (#2918)
+
+### ⚙️ Miscellaneous Tasks
+
+- Upgrade sea-orm to 2.0 and sqlx to 0.9 (#2900)
+- Migrate workflow telemetry action to cilium fork (#2910)
+
 ## [0.5.123] - 2026-08-11
 
 ### 🚀 Features
@@ -17,6 +45,10 @@ All notable changes to this project will be documented in this file.
 - *(video-poc)* Plumb UPSELL_CAMERAS through the edge install + compose (#2903)
 - Read airway pipeline YAML from the compile boundary (#2876)
 - Apply airway admission to automation-dispatched runs (#2880)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.123 (#2901)
 
 ## [0.5.122] - 2026-08-10
 
