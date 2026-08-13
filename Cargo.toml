@@ -489,7 +489,7 @@ airform-core = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e82886
 # `release/0.1.23` branch, so that one had to be a `rev` to stay
 # immutable. A tag is immutable enough for this and reads better in a
 # diff; a *branch* pin would not be, and must never be used here.
-airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.28", default-features = false, features = [
+airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.29", default-features = false, features = [
   "duckdb",
   "postgres",
 ] }
