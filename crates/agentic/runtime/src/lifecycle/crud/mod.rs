@@ -34,7 +34,7 @@ pub use runs::{
     request_cancel, try_acquire_driver, update_run_done, update_run_failed, update_run_running,
     update_run_suspended, update_run_terminal_from_events, update_task_status,
 };
-pub use suspension::{get_suspension, upsert_suspension};
+pub use suspension::{get_suspension, get_suspension_with_start, upsert_suspension};
 
 pub fn now() -> chrono::DateTime<chrono::FixedOffset> {
     chrono::Utc::now().fixed_offset()

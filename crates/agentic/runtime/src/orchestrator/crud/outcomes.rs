@@ -188,6 +188,12 @@ pub async fn suspend_with_data_txn(
                     run_suspension::Column::Prompt,
                     run_suspension::Column::Suggestions,
                     run_suspension::Column::ResumeData,
+                    // Tracks the CURRENT suspension, not the run's first — see
+                    // `lifecycle::crud::suspension::upsert_suspension`, which
+                    // carries the full reasoning. This is the hot path for
+                    // delegation (every suspended step lands here), so it is the
+                    // one that must not go stale.
+                    run_suspension::Column::CreatedAt,
                 ])
                 .to_owned(),
         )

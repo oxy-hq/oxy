@@ -46,7 +46,48 @@ pub use recovery::PendingResume;
 
 // ── Defaults ────────────────────────────────────────────────────────────────
 
-const DEFAULT_SUSPEND_TIMEOUT: Duration = Duration::from_secs(30 * 60); // 30 min
+/// How long a task may sit `WaitingOnChildren` before the coordinator fails it.
+///
+/// **Sized from the slowest legitimate delegated step, not from taste.** On
+/// oxy-dev over 90 days, of 160 airway runs that reached `done`: p99 was 1h25m
+/// and the max 1h41m, with 14 (8.8%) over 30 minutes and 8 (5%) over an hour.
+/// The previous 30-minute value therefore sat *inside* the real distribution —
+/// it would have failed roughly one in eleven legitimately-successful pipelines
+/// once delegated steps stopped being silently re-run. (Before oxy#2927 that
+/// was invisible: a delegating step was re-queued at the 60s visibility timeout
+/// and dead-lettered after `max_claims`, so nothing survived long enough to
+/// reach this ceiling.)
+///
+/// 4h is ~2.4x the observed max — enough that a slow upstream day or a backfill
+/// does not need a code change — while staying comfortably inside airway's
+/// `LEASE_TTL_SECS` (6h). That ordering is the point: the coordinator times out
+/// *first*, so an operator gets "delegation timed out" naming the children
+/// instead of a pipeline that looks merely slow.
+///
+/// What that does **not** buy is releasing the lease.
+/// `run_loop::check_suspend_timeouts` fails the parent but never cancels its
+/// children — unlike the FailFast and human-override paths, which do — so a hung
+/// airway child keeps running and keeps its lease row until the child's own
+/// terminal path or the 6h TTL. The timeout buys the *signal*, not the
+/// reclamation. (Cancelling children on timeout is the obvious follow-up; it is
+/// a behaviour change with its own blast radius, and a contended child can
+/// legitimately sit deferred for up to `AIRWAY_LEASE_MAX_WAIT_SECS` = 12h, so it
+/// wants its own change rather than riding along with a constant.)
+///
+/// The cost of one global value: this also bounds sub-automations and loop
+/// fan-outs, which finish in seconds (`workflow_step` max: 22s), so a genuinely
+/// hung one of those now takes 4h to surface instead of 30m. Accepted because
+/// this is a backstop, not the primary signal — a stuck run is visible in the
+/// UI and the internal-jobs admin long before. If that trade ever stops paying,
+/// the fix is a per-step ceiling (the `TaskPolicy` on the delegation already
+/// carries per-task settings), not a lower global one that re-breaks airway.
+///
+/// `SuspendedHuman` is deliberately exempt — see `run_loop::check_suspend_timeouts`.
+///
+/// Public so the layer that can see both this and `agentic-airway` can *enforce*
+/// the ordering rather than just describe it; `agentic-runtime` must not depend
+/// on a domain crate, so the assertion lives in `agentic-pipeline`.
+pub const DEFAULT_SUSPEND_TIMEOUT: Duration = Duration::from_secs(4 * 60 * 60); // 4h
 const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 
 // ── TaskNode ────────────────────────────────────────────────────────────────

@@ -154,20 +154,69 @@ impl Coordinator {
                 }
             };
 
-            let suspended_at = match &status {
+            // Carry the suspend clock across the restart instead of restarting
+            // it.
+            //
+            // `suspended_at` is a `tokio::time::Instant` — process-local, so a
+            // recovered task used to get a fresh full timeout. Airway's
+            // single-flight lease, the other bound on the same stuck pipeline,
+            // is an *absolute* `expires_at`. Resetting therefore let the two
+            // invert: a restart three hours into a suspension gave the
+            // coordinator four more (seven total) against a lease expiring at
+            // six, so the lease fired first and the operator lost the named
+            // failure — exactly what the ordering tests in
+            // `agentic-pipeline::airway_run` exist to prevent, and something
+            // those constant-level tests cannot see. At the old 30-minute
+            // ceiling a reset cost 30 minutes; at 4h it costs 4h, and a deploy
+            // cadence under 4h meant the ceiling could never fire at all.
+            //
+            // One read for both the clock and the checkpoint — two `find_by_id`
+            // calls against the same row could disagree.
+            let suspension = match &status {
                 TaskStatus::SuspendedHuman | TaskStatus::WaitingOnChildren { .. } => {
-                    Some(tokio::time::Instant::now())
+                    crud::get_suspension_with_start(&db, &row.id).await?
                 }
                 _ => None,
             };
 
-            // Reload suspension data for suspended tasks.
-            let suspend_data = match &status {
+            // `elapsed` is clamped to the ceiling itself, which is what makes
+            // `checked_sub` total: subtracting at most 4h from `Instant::now()`
+            // is always representable, so the `unwrap_or_else` below is
+            // unreachable rather than merely unlikely. That matters because its
+            // only sane fallback is `Instant::now()` — a fresh full timeout,
+            // i.e. precisely the reset this whole block removes. Without the
+            // clamp, a long outage (a run suspended for days, recovered on a
+            // machine booted an hour ago) could reach it.
+            //
+            // "At most fully elapsed" is also the semantics we want: a task
+            // suspended for longer than the ceiling should time out on the next
+            // check, not be handed more time.
+            //
+            // A missing row, or one somehow stamped in the future, yields zero
+            // elapsed — "just suspended" — via `to_std()` failing on a negative
+            // delta. Note `suspended_at` stays `Some` for any suspended status
+            // even without a row: `check_suspend_timeouts` skips `None`, so
+            // returning `None` here would mean the task could never time out.
+            let suspended_at = match &status {
                 TaskStatus::SuspendedHuman | TaskStatus::WaitingOnChildren { .. } => {
-                    crud::get_suspension(&db, &row.id).await?
+                    let elapsed = suspension
+                        .as_ref()
+                        .and_then(|(started, _)| (crud::now() - *started).to_std().ok())
+                        .unwrap_or_default()
+                        .min(DEFAULT_SUSPEND_TIMEOUT);
+                    Some(
+                        tokio::time::Instant::now()
+                            .checked_sub(elapsed)
+                            .unwrap_or_else(tokio::time::Instant::now),
+                    )
                 }
                 _ => None,
             };
+
+            // An unparseable checkpoint yields `None` here — the task cannot be
+            // resumed — but the clock above still ran, so it reaches the ceiling
+            // instead of being renewed forever. See `get_suspension_with_start`.
+            let suspend_data = suspension.and_then(|(_, data)| data);
 
             // Restore retry state from task_metadata if present.
             let meta = row.task_metadata.as_ref();

@@ -710,3 +710,69 @@ pub async fn list_airway_runs(
 // worker's integration tests — `start_airway_run` is mostly persistence
 // (one runtime row + one extension row + one queue row) and the
 // validation surface is a single empty-string check.
+
+#[cfg(test)]
+mod timeout_ordering_tests {
+    /// An **absolute** gap rather than a ratio, deliberately. A ratio has to be
+    /// re-justified every time either constant moves, and "at most half the
+    /// lease" would rule out values well clear of it for no stated reason —
+    /// which it did on the first draft of this test, rejecting the 4h the data
+    /// supports purely because 4h is more than half of 6h. What the ordering
+    /// actually needs is that the two events are far enough apart to be
+    /// distinguishable in an incident, and an hour is comfortably that.
+    const MIN_GAP: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+    /// The coordinator's delegation ceiling must expire BEFORE airway's
+    /// single-flight lease.
+    ///
+    /// Strictly implied by the margin test below — kept for the distinct
+    /// failure message, since "past the lease entirely" and "too close to it"
+    /// are different mistakes to make and worth reading differently. Only one
+    /// of the two can ever fail alone.
+    ///
+    /// Both bound the same stuck pipeline, and which one fires first decides
+    /// what an operator sees. Coordinator first: the delegating task is failed
+    /// with "delegation timed out" naming its children, and the airway lease is
+    /// released on the way out. Lease first: the run simply looks slow for up to
+    /// six hours, and the thing that eventually frees it is a TTL backstop that
+    /// says nothing about which step hung.
+    ///
+    /// This is asserted here rather than in `agentic-runtime` because the
+    /// runtime layer must not depend on a domain crate — `agentic-pipeline` is
+    /// the lowest layer that can see both constants. Raising
+    /// `DEFAULT_SUSPEND_TIMEOUT` past the lease TTL silently inverts the
+    /// documented behaviour, which is exactly the kind of change a comment
+    /// cannot stop.
+    #[test]
+    fn suspend_timeout_expires_before_the_airway_lease() {
+        let suspend = agentic_runtime::orchestrator::coordinator::DEFAULT_SUSPEND_TIMEOUT;
+        let lease = std::time::Duration::from_secs(
+            agentic_airway::extension::pipeline_lease::LEASE_TTL_SECS as u64,
+        );
+        assert!(
+            suspend < lease,
+            "DEFAULT_SUSPEND_TIMEOUT ({suspend:?}) must stay under airway's \
+             LEASE_TTL_SECS ({lease:?}) so a hung delegated pipeline surfaces as \
+             a named timeout rather than waiting out the lease"
+        );
+    }
+
+    /// …and with enough margin to be worth having, not one second under.
+    ///
+    /// Guards the useful half of the ordering: a value at 5h59m would satisfy
+    /// the assertion above while leaving the two effectively simultaneous, so
+    /// an operator could not tell which bound fired.
+    #[test]
+    fn suspend_timeout_leaves_real_margin_under_the_lease() {
+        let suspend = agentic_runtime::orchestrator::coordinator::DEFAULT_SUSPEND_TIMEOUT;
+        let lease = std::time::Duration::from_secs(
+            agentic_airway::extension::pipeline_lease::LEASE_TTL_SECS as u64,
+        );
+        assert!(
+            suspend + MIN_GAP <= lease,
+            "DEFAULT_SUSPEND_TIMEOUT ({suspend:?}) must clear LEASE_TTL_SECS \
+             ({lease:?}) by at least {MIN_GAP:?}; closer than that and the \
+             coordinator's timeout stops being a distinguishable signal"
+        );
+    }
+}

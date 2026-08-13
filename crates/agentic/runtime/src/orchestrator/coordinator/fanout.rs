@@ -472,10 +472,19 @@ impl Coordinator {
                 _ => None,
             };
 
-            parent_node.status = TaskStatus::Running;
-            parent_node.suspended_at = None;
             let run_id = parent_node.run_id.clone();
 
+            // Take the checkpoint BEFORE leaving the suspended state, so the
+            // failure path leaves the node as it found it.
+            //
+            // With the mutations first, a parent that cannot resume — no
+            // checkpoint, or one this binary cannot deserialize — was left
+            // `Running` with `suspended_at = None`, which is precisely the pair
+            // `check_suspend_timeouts` filters on (`WaitingOnChildren` +
+            // `suspended_at.is_some()`). It became invisible to its own ceiling
+            // and sat in memory until the process restarted and `from_db` put it
+            // back. Staying `WaitingOnChildren` is also just truer: the parent
+            // did not resume, so it is still waiting.
             let resume_data = match parent_node.suspend_data.take() {
                 Some(data) => data,
                 None => {
@@ -483,6 +492,9 @@ impl Coordinator {
                     return;
                 }
             };
+
+            parent_node.status = TaskStatus::Running;
+            parent_node.suspended_at = None;
 
             let seq = parent_node.next_seq;
             parent_node.next_seq += 1;
