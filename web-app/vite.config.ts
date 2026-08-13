@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
-import react from "@vitejs/plugin-react-swc";
+import react from "@vitejs/plugin-react";
 import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
@@ -13,7 +13,7 @@ import { nodePolyfills } from "vite-plugin-node-polyfills";
 // missing chunk. CI can pin it via VITE_APP_VERSION; otherwise it combines the
 // package version (human-readable) with the build timestamp — the timestamp is
 // what keeps two deploys of the same package version distinguishable.
-const pkg = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf-8")) as {
+const pkg = JSON.parse(readFileSync(resolve(import.meta.dirname, "package.json"), "utf-8")) as {
   version: string;
 };
 const BUILD_ID = process.env.VITE_APP_VERSION || `${pkg.version}+${new Date().toISOString()}`;
@@ -189,7 +189,7 @@ function manualChunks(id: string): string | undefined {
 // /customer-apps at a backend on another port. These are read from the repo-root
 // .env (the same file the Rust backend loads) so a checkout only sets them once.
 export default defineConfig(({ mode }) => {
-  const rootEnv = loadEnv(mode, resolve(__dirname, ".."), "");
+  const rootEnv = loadEnv(mode, resolve(import.meta.dirname, ".."), "");
   const DEV_PORT = Number(rootEnv.OXY_DEV_PORT) || 5173;
   const DEV_PROXY_TARGET = rootEnv.OXY_DEV_PROXY_TARGET || "http://localhost:3000";
   // Origin of the OAuth bounce proxy (the single port registered with Google).
@@ -214,8 +214,8 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: [
-        { find: "@", replacement: resolve(__dirname, "./src") },
-        { find: "styled-system", replacement: resolve(__dirname, "./styled-system") },
+        { find: "@", replacement: resolve(import.meta.dirname, "./src") },
+        { find: "styled-system", replacement: resolve(import.meta.dirname, "./styled-system") },
         { find: "elkjs", replacement: "elkjs/lib/elk.bundled.js" },
         // react-syntax-highlighter@16 imports "refractor/lib/core|all" and "refractor/lang/*.js"
         // directly, but refractor@5 only exposes these via its exports map as

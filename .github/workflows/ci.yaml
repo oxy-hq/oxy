@@ -80,14 +80,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: pnpm/action-setup@v6
         with:
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@v7
         id: setup-node
         with:
-          node-version: 24.x
+          node-version: 26
           cache: "pnpm"
 
       - name: Run pnpm install
@@ -116,14 +116,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: pnpm/action-setup@v6
         with:
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@v7
         id: setup-node
         with:
-          node-version: 24.x
+          node-version: 26
           cache: "pnpm"
 
       # Cache TypeScript build info for incremental compilation
@@ -187,13 +187,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: pnpm/action-setup@v6
         with:
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@v7
         with:
-          node-version: 24.x
+          node-version: 26
           cache: "pnpm"
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile --prefer-offline
@@ -376,14 +376,14 @@ jobs:
       # is clippy and doesn't read dist content.
       - name: Setup pnpm
         if: matrix.task == 'test'
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        uses: pnpm/action-setup@v6.0.9
         with:
           run_install: false
       - name: Setup Node.js
         if: matrix.task == 'test'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@v7
         with:
-          node-version: 24.x
+          node-version: 26
           cache: "pnpm"
       - name: Build web-app dist (embedded into oxy binary)
         if: matrix.task == 'test'

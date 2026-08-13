@@ -10,7 +10,7 @@
 Oxy (brand: **Oxygen**) is a Rust workspace + web frontend. The `oxy` CLI/server
 binary lives in the `app` crate (the default workspace member).
 
-- **Rust** edition 2024, MSRV 1.92.0 · **async** Tokio · **ORM** Sea-ORM (PostgreSQL) · **HTTP** Axum
+- **Rust** · **async** Tokio · **ORM** Sea-ORM (PostgreSQL) · **HTTP** Axum
 - **Frontend** Vite + React + TypeScript, **pnpm** (never npm/yarn)
 
 ## Workspace Layout

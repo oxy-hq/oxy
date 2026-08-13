@@ -13,7 +13,7 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 2: Build the web application
-FROM node:24-slim AS web-builder
+FROM node:26-slim AS web-builder
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -24,7 +24,10 @@ COPY web-app/package.json ./web-app/
 COPY sdk/typescript/package.json ./sdk/typescript/
 COPY sdk/vite-plugin/package.json ./sdk/vite-plugin/
 COPY sdk/create-oxy-app/package.json ./sdk/create-oxy-app/
-RUN corepack enable && corepack prepare --activate && pnpm install
+# Node 25 dropped bundled Corepack, so node:26-slim has no `corepack` binary —
+# install it from npm. Keeps the sha512-pinned `packageManager` field authoritative.
+RUN npm install -g corepack@latest && \
+    corepack enable && corepack prepare --activate && pnpm install
 
 COPY web-app/ ./web-app/
 ARG VITE_SENTRY_DSN

@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 26
       - run: npm ci
       - run: npm run build
       # Install the Oxy CLI first if the runner doesn't have it (see the docs).

@@ -79,9 +79,6 @@ docs/_build/
 # Cursor
 .history/
 
-# Pyenv
-.python-version
-
 # Poetry
 oxy/**/poetry.lock
 
