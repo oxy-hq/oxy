@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.125] - 2026-08-13
+
+### 🐛 Bug Fixes
+
+- Stop the hourly SIGSEGV crash loop in the workspace-health smoke pass (#2916)
+
+### 💼 Other
+
+- Bump airway 0.1.26 -> 0.1.27 for the merge dedup + time_entries cursor lag (#2920)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 1 update (#2924)
+- *(deps)* Bump sigstore/cosign-installer from 3.9.1 to 4.1.2 (#2922)
+- *(deps)* Bump slackapi/slack-github-action from 3.0.3 to 4.0.0 (#2921)
+
 ## [0.5.124] - 2026-08-12
 
 ### 🚀 Features
@@ -29,6 +42,7 @@ All notable changes to this project will be documented in this file.
 
 - Upgrade sea-orm to 2.0 and sqlx to 0.9 (#2900)
 - Migrate workflow telemetry action to cilium fork (#2910)
+- Release 0.5.124 (#2907)
 
 ## [0.5.123] - 2026-08-11
 
