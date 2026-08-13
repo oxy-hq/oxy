@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.126] - 2026-08-13
+
+### 🐛 Bug Fixes
+
+- Keep a suspended task's heartbeat alive so the reaper can't re-run it (#2927)
+
+### 💼 Other
+
+- *(deps)* Bump the prod-npm-major-dependencies group across 2 directories with 1 update (#2925)
+- Bump airway 0.1.27 -> 0.1.28 for journal_entries + the Replace-child fix (#2926)
+
+### ⚙️ Miscellaneous Tasks
+
+- Upgrade deps
+
 ## [0.5.125] - 2026-08-13
 
 ### 🐛 Bug Fixes
@@ -14,6 +29,10 @@ All notable changes to this project will be documented in this file.
 - *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 1 update (#2924)
 - *(deps)* Bump sigstore/cosign-installer from 3.9.1 to 4.1.2 (#2922)
 - *(deps)* Bump slackapi/slack-github-action from 3.0.3 to 4.0.0 (#2921)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.125 (#2919)
 
 ## [0.5.124] - 2026-08-12
 
