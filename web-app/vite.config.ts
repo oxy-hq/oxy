@@ -91,7 +91,6 @@ const dependencies = {
   // Data management - state, queries, tables
   dataVendor: [
     "@tanstack/react-query",
-    "@tanstack/react-table",
     "@tanstack/react-virtual",
     "zustand",
     "@duckdb/duckdb-wasm"
