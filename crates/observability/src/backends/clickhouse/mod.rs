@@ -590,13 +590,6 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
         traces::insert_spans(self, spans).await
     }
 
-    async fn purge_older_than(&self, _retention_days: u32) -> Result<u64, OxyError> {
-        // ClickHouse handles retention natively via TTL clauses configured at
-        // startup via `apply_retention_ttl()`. Background merges delete expired
-        // rows automatically; no app-level DELETE needed.
-        Ok(0)
-    }
-
     async fn shutdown(&self) {
         // HTTP client has no long-lived resources.
         tracing::debug!("ClickHouseObservabilityStorage shutdown");

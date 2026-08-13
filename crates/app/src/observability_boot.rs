@@ -2,15 +2,15 @@
 //!
 //! Observability needs the tracing subscriber installed *early* (before CLI
 //! dispatch) so every span from startup is captured, but the backend store
-//! needs the database URL which `oxy start` only sets *after* it boots its
-//! Postgres container. We bridge this gap by:
+//! needs its ClickHouse endpoint, which `oxy start` only boots *after*
+//! startup begins. We bridge this gap by:
 //!
 //! 1. In `main.rs`, create the SpanCollectorLayer + its channel and install
 //!    the layer into the subscriber. Stash the receiver in [`stash_receiver`].
-//! 2. Later, in `serve.rs` — by which point `OXY_DATABASE_URL` is set for both
-//!    `oxy start` and `oxy serve` paths — call [`finalize`] to resolve the
-//!    backend, spawn the bridge task, register the global store, and start
-//!    retention cleanup.
+//! 2. Later, in `serve.rs` — by which point `OXY_CLICKHOUSE_*` is set for both
+//!    paths (externally for `oxy serve`, by `oxy start` once its container is
+//!    ready) — call [`finalize`] to resolve the backend, spawn the bridge
+//!    task, and register the global store.
 //!
 //! Spans emitted between step 1 and step 2 accumulate in the unbounded channel
 //! and get flushed as soon as the bridge spawns.
@@ -19,7 +19,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use once_cell::sync::OnceCell;
-use oxy::state_dir::get_state_dir;
 use oxy::theme::StyledText;
 use oxy_observability::{ObservabilityStore, SpanRecord};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -51,164 +50,69 @@ fn take_receiver() -> Option<UnboundedReceiver<SpanRecord>> {
 
 /// Resolve the observability backend from env. Strictly honors
 /// `OXY_OBSERVABILITY_BACKEND` — no default, no silent fallbacks. When the env
-/// var is unset, observability is disabled entirely.
+/// var is unset, observability is disabled entirely. ClickHouse is the sole
+/// backend; removed labels get a migration error via
+/// [`oxy_observability::backends::validate_backend_label`].
 /// Returns the store + a human-readable status message.
 async fn resolve_backend() -> (Option<Arc<dyn ObservabilityStore>>, Option<String>) {
     let Ok(backend) = std::env::var("OXY_OBSERVABILITY_BACKEND") else {
         return (None, None);
     };
 
-    match backend.as_str() {
-        "duckdb" => {
-            let db_path = get_state_dir().join("observability.duckdb");
-            match oxy_observability::backends::duckdb::DuckDBStorage::open(&db_path) {
-                Ok(storage) => (
-                    Some(Arc::new(storage) as Arc<dyn ObservabilityStore>),
-                    Some(format!("Observability: duckdb ({})", db_path.display())),
-                ),
-                Err(e) => {
-                    eprintln!(
-                        "{}",
-                        format!("Failed to open DuckDB observability: {e}").error()
-                    );
-                    (None, None)
-                }
-            }
-        }
-        "clickhouse" => {
-            match oxy_observability::backends::clickhouse::ClickHouseObservabilityStorage::from_env(
-            )
-            .await
-            {
-                Ok(storage) => match storage.ensure_schema().await {
-                    Ok(()) => {
-                        if let Err(e) = storage
-                            .apply_retention_ttl(oxy_observability::RETENTION_DAYS)
-                            .await
-                        {
-                            eprintln!("{}", format!("ClickHouse TTL apply failed: {e}").error());
-                        }
-                        (
-                            Some(Arc::new(storage) as Arc<dyn ObservabilityStore>),
-                            Some("Observability: clickhouse (OXY_CLICKHOUSE_URL)".to_string()),
-                        )
-                    }
-                    Err(e) => {
-                        eprintln!("{}", format!("ClickHouse schema init failed: {e}").error());
-                        (None, None)
-                    }
-                },
-                Err(e) => {
-                    eprintln!("{}", format!("ClickHouse init failed: {e}").error());
-                    (None, None)
-                }
-            }
-        }
-        "postgres" => {
-            if std::env::var("OXY_DATABASE_URL").is_err() {
-                eprintln!(
-                    "{}",
-                    "Observability: postgres backend selected but OXY_DATABASE_URL is not set. \
-                     Set OXY_DATABASE_URL or choose a different backend via \
-                     OXY_OBSERVABILITY_BACKEND=duckdb|clickhouse."
-                        .error()
-                );
-                return (None, None);
-            }
-            match oxy_observability::backends::postgres::PostgresObservabilityStorage::from_env()
-                .await
-            {
-                Ok(storage) => (
-                    Some(Arc::new(storage) as Arc<dyn ObservabilityStore>),
-                    Some("Observability: postgres (OXY_DATABASE_URL)".to_string()),
-                ),
-                Err(e) => {
-                    eprintln!(
-                        "{}",
-                        format!("Failed to initialize Postgres observability: {e}").error()
-                    );
-                    (None, None)
-                }
-            }
-        }
-        "airhouse" => {
-            let airhouse_cfg = airhouse::AirhouseConfig::from_env();
-            let Some(runtime_cfg) = airhouse_cfg.as_runtime() else {
-                eprintln!(
-                    "{}",
-                    "Airhouse observability requires AIRHOUSE_WIRE_HOST (and AIRHOUSE_BASE_URL, \
-                     AIRHOUSE_ADMIN_TOKEN) to be set."
-                        .error()
-                );
-                return (None, None);
-            };
-            let host = runtime_cfg.wire_host.clone();
-            let port = runtime_cfg.wire_port;
-            let insecure = std::env::var("OXY_AIRHOUSE_OBS_INSECURE")
-                .ok()
-                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-                .unwrap_or(false);
+    if let Err(e) = oxy_observability::backends::validate_backend_label(&backend) {
+        // Deliberately non-fatal: a stale telemetry label should not take the
+        // product down. But an explicitly-set-yet-invalid value is a stronger
+        // signal than an unset one, so it goes to the structured log (where
+        // cloud alerting can see it) as well as stderr.
+        tracing::error!(backend = %backend, "{e}");
+        eprintln!("{}", e.to_string().error());
+        return (None, None);
+    }
 
-            let Some(get_credentials) =
-                oxy_observability::backends::airhouse::credentials_from_env()
-            else {
-                eprintln!(
-                    "{}",
-                    "Airhouse observability requires OXY_AIRHOUSE_OBS_USER, \
-                     OXY_AIRHOUSE_OBS_PASSWORD, and OXY_AIRHOUSE_OBS_DATABASE to be set."
-                        .error()
-                );
-                return (None, None);
-            };
+    open_clickhouse_store().await
+}
 
-            match oxy_observability::backends::airhouse::AirhouseObservabilityStorage::connect(
-                &host,
-                port,
-                insecure,
-                get_credentials,
-            )
-            .await
-            {
-                Ok(storage) => match storage.ensure_schema().await {
-                    Ok(()) => (
-                        Some(Arc::new(storage) as Arc<dyn ObservabilityStore>),
-                        Some("Observability: airhouse (AIRHOUSE_WIRE_HOST)".to_string()),
+/// Open the ClickHouse observability store from `OXY_CLICKHOUSE_*` env,
+/// ensure its schema, and apply retention TTL. Shared by the serve boot path
+/// and standalone CLI commands ([`crate::observability_setup`]). Errors are
+/// printed loudly and yield `None` — callers decide whether that is fatal.
+pub(crate) async fn open_clickhouse_store() -> (Option<Arc<dyn ObservabilityStore>>, Option<String>)
+{
+    match oxy_observability::backends::clickhouse::ClickHouseObservabilityStorage::from_env().await
+    {
+        Ok(storage) => match storage.ensure_schema().await {
+            Ok(()) => {
+                let retention_days = oxy_observability::RETENTION_DAYS;
+                match storage.apply_retention_ttl(retention_days).await {
+                    // Retention is ClickHouse's job from here on: the TTL is
+                    // enforced by background merges, so there is no purge loop
+                    // to run or monitor.
+                    Ok(()) => tracing::info!(
+                        "Observability retention: {retention_days} days (ClickHouse TTL)"
                     ),
-                    Err(e) => {
-                        eprintln!(
-                            "{}",
-                            format!("Airhouse observability schema init failed: {e}").error()
-                        );
-                        (None, None)
-                    }
-                },
-                Err(e) => {
-                    eprintln!(
-                        "{}",
-                        format!("Airhouse observability init failed: {e}").error()
-                    );
-                    (None, None)
+                    Err(e) => eprintln!("{}", format!("ClickHouse TTL apply failed: {e}").error()),
                 }
-            }
-        }
-        other => {
-            eprintln!(
-                "{}",
-                format!(
-                    "Unknown OXY_OBSERVABILITY_BACKEND='{other}'. \
-                     Valid values: duckdb, postgres, clickhouse, airhouse."
+                (
+                    Some(Arc::new(storage) as Arc<dyn ObservabilityStore>),
+                    Some("Observability: clickhouse (OXY_CLICKHOUSE_URL)".to_string()),
                 )
-                .error()
-            );
+            }
+            Err(e) => {
+                eprintln!("{}", format!("ClickHouse schema init failed: {e}").error());
+                (None, None)
+            }
+        },
+        Err(e) => {
+            eprintln!("{}", format!("ClickHouse init failed: {e}").error());
             (None, None)
         }
     }
 }
 
 /// Resolve the backend, spawn the bridge task against the stashed receiver,
-/// register the global store, and kick off retention cleanup.
+/// and register the global store.
 ///
-/// Called from `serve.rs` once `OXY_DATABASE_URL` is guaranteed set. Safe to
+/// Called from `serve.rs` once `OXY_CLICKHOUSE_*` is guaranteed set. Safe to
 /// call when no receiver was stashed (OXY_OBSERVABILITY_BACKEND unset) — it
 /// becomes a no-op.
 ///
@@ -236,8 +140,7 @@ pub async fn finalize() {
     }
 
     oxy_observability::spawn_bridge(receiver, Arc::clone(&store));
-    oxy_observability::global::set_global(Arc::clone(&store));
-    oxy_observability::spawn_retention_cleanup(store);
+    oxy_observability::global::set_global(store);
 }
 
 /// Shut down the global observability store, if set. Also drops any

@@ -267,34 +267,20 @@ fn main() {
 
     // Check if --enterprise flag is present (gates the observability UI/routes)
     let enterprise_enabled = args.iter().any(|a| a == "--enterprise");
-    let local_mode = args.iter().any(|a| a == "--local");
 
-    // In `--local` mode, default the observability backend to DuckDB. Local
-    // installs are single-instance by definition, the state dir is already
-    // writable, and the alternative (making the operator set the env var for
-    // every local run) is pointless friction. For non-local runs the backend
-    // stays opt-in — we don't want to pick a backend for a multi-pod cluster
-    // without the operator asking.
-    //
-    // Safety: we're still single-threaded at this point (before `block_on`
-    // spins up the Tokio runtime), so setting the env var is safe.
-    if local_mode && env::var_os("OXY_OBSERVABILITY_BACKEND").is_none() {
-        unsafe {
-            env::set_var("OXY_OBSERVABILITY_BACKEND", "duckdb");
-        }
-    }
-
-    // Observability is only enabled when the user explicitly picks a backend
-    // (or is running --local, which implies duckdb). With `--enterprise` but
-    // no backend, we warn and run with observability disabled — no data is
-    // recorded and the UI surfaces a "not configured" banner.
-    let observability_backend = env::var("OXY_OBSERVABILITY_BACKEND").ok();
-    let observability_enabled = observability_backend.is_some();
+    // Observability is opt-in everywhere — including `--local`. ClickHouse is
+    // the sole backend, so there is no embedded store to default to: enabling
+    // it implies a running ClickHouse (`oxy start` boots the container when
+    // the var is set). With `--enterprise` but no backend, we warn and run
+    // with observability disabled — no data is recorded and the UI surfaces a
+    // "not configured" banner.
+    let observability_enabled = env::var_os("OXY_OBSERVABILITY_BACKEND").is_some();
     if enterprise_enabled && !observability_enabled {
         eprintln!(
             "{}",
             "Observability disabled: OXY_OBSERVABILITY_BACKEND is not set. \
-             Set it to duckdb, postgres, clickhouse, or airhouse to record traces."
+             Set it to clickhouse — with OXY_CLICKHOUSE_URL pointing at your \
+             instance, or under `oxy start`, which boots one — to record traces."
                 .text()
         );
     }

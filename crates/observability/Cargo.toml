@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 async-trait = { workspace = true }
 chrono = { workspace = true }
+clickhouse = { workspace = true, features = ["rustls-tls"] }
 hex = { workspace = true }
 oxy-shared = { workspace = true }
 serde = { workspace = true }
@@ -16,22 +17,6 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 uuid = { workspace = true, features = ["v4", "serde"] }
-
-# Backend-specific deps (feature-gated)
-duckdb = { workspace = true, optional = true }
-sea-orm = { workspace = true, optional = true }
-clickhouse = { workspace = true, features = ["rustls-tls"], optional = true }
-tokio-postgres = { workspace = true, optional = true }
-tokio-postgres-rustls = { workspace = true, optional = true }
-rustls = { workspace = true, optional = true }
-webpki-roots = { workspace = true, optional = true }
-
-[features]
-default = ["duckdb"]
-duckdb = ["dep:duckdb"]
-postgres = ["dep:sea-orm"]
-clickhouse = ["dep:clickhouse"]
-airhouse = ["dep:tokio-postgres", "dep:tokio-postgres-rustls", "dep:rustls", "dep:webpki-roots"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

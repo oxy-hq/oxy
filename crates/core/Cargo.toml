@@ -72,11 +72,7 @@ duckdb = { workspace = true }
 entity = { workspace = true }
 omni = { workspace = true }
 oxy-looker = { workspace = true }
-oxy-observability = { workspace = true, features = [
-  "duckdb",
-  "postgres",
-  "clickhouse",
-] }
+oxy-observability = { workspace = true }
 # oxy-config moved back into core/src/config to avoid circular dependency
 oxy-anthropic = { workspace = true }
 oxy-gemini = { workspace = true }

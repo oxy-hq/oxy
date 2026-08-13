@@ -9398,20 +9398,14 @@ dependencies = [
  "async-trait",
  "chrono",
  "clickhouse",
- "duckdb",
  "hex",
  "oxy-shared",
- "rustls 0.23.43",
- "sea-orm",
  "serde",
  "serde_json",
  "tokio",
- "tokio-postgres",
- "tokio-postgres-rustls",
  "tracing",
  "tracing-subscriber",
  "uuid",
- "webpki-roots 0.26.11",
 ]
 
 [[package]]

@@ -1,8 +1,8 @@
 //! Observability crate for Oxy.
 //!
-//! Provides the `ObservabilityStore` trait plus pluggable backends (DuckDB,
-//! Postgres, ClickHouse), a tracing `SpanCollectorLayer`, and the
-//! `init_observability` bridge that wires them together.
+//! Provides the `ObservabilityStore` trait with its sole backend (ClickHouse),
+//! a tracing `SpanCollectorLayer`, and the `init_observability` bridge that
+//! wires them together.
 
 pub mod backends;
 pub mod duration;
@@ -20,6 +20,6 @@ pub use layer::{SpanCollectorLayer, current_trace_id};
 pub use store::ObservabilityStore;
 pub use telemetry::{
     build_layer_and_receiver, build_observability_layer, init_observability, init_stdout,
-    observability_filter, shutdown, spawn_bridge, spawn_retention_cleanup,
+    observability_filter, shutdown, spawn_bridge,
 };
 pub use types::*;

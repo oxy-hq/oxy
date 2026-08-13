@@ -92,10 +92,12 @@ pub async fn handle_intent_command(intent_args: IntentArgs) -> Result<(), OxyErr
     sentry_config::add_operation_context("intent", None);
 
     // `oxy intent` runs as a standalone CLI, not under `oxy serve --enterprise`,
-    // so the global `ObservabilityStore` isn't auto-initialized. Open the
-    // same backend the server would use (DuckDB by default, Postgres if
-    // `OXY_DATABASE_URL` is set) so `IntentClassifier::new` has a store to
-    // read/write. No-op if already initialized.
+    // so the global `ObservabilityStore` isn't auto-initialized. Open the same
+    // store the server would use — ClickHouse, from `OXY_CLICKHOUSE_*` — so
+    // `IntentClassifier::new` has something to read/write. No-op if already
+    // initialized. Observability is opt-in with no fallback store, so an unset
+    // `OXY_OBSERVABILITY_BACKEND` fails this command outright rather than
+    // degrading to a local file.
     crate::observability_setup::ensure_global_store_initialized().await?;
 
     let mut config = IntentConfig::from_env();

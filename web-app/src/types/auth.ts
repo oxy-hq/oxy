@@ -153,7 +153,7 @@ export interface AuthConfigResponse {
   enterprise?: boolean;
   /**
    * True when the observability backend is wired up (OXY_OBSERVABILITY_BACKEND
-   * set to duckdb/postgres/clickhouse). When false on an enterprise build,
+   * set to clickhouse — the sole backend). When false on an enterprise build,
    * observability pages render a "not configured" banner and record nothing.
    * Always present — server serializes the bool unconditionally.
    */

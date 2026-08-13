@@ -131,19 +131,18 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     crate::airway_boot::install_deployment_tier_from_env().await;
     println!("serve: airway deployment tier resolved, finding available port");
 
-    // Now that OXY_DATABASE_URL is set (either externally for `oxy serve` or
-    // by `oxy start` after booting Postgres), resolve the observability
-    // backend and spawn the bridge that drains the span channel into it.
-    // No-op when OXY_OBSERVABILITY_BACKEND is unset — the layer was never
-    // installed and there's no receiver to drain.
+    // Now that OXY_CLICKHOUSE_* is set (either externally for `oxy serve` or
+    // by `oxy start` once its ClickHouse container is ready), resolve the
+    // observability backend and spawn the bridge that drains the span channel
+    // into it. No-op when OXY_OBSERVABILITY_BACKEND is unset — the layer was
+    // never installed and there's no receiver to drain.
     crate::observability_boot::finalize().await;
 
-    // Spawn the 90-day retention sweep for custom-app usage tracking.
-    // Mirrors how `observability_boot::finalize` wires the
-    // observability retention task. Runs every 6h; the first tick
-    // fires 60s after startup so migrations can settle. See
-    // `custom_apps_tracking::spawn_retention_cleanup` for the
-    // failure-handling rationale.
+    // Spawn the 90-day retention sweep for custom-app usage tracking. Runs
+    // every 6h; the first tick fires 60s after startup so migrations can
+    // settle. See `custom_apps_tracking::spawn_retention_cleanup` for the
+    // failure-handling rationale, and its module doc for why this one is an
+    // app-level loop where observability leaves retention to ClickHouse.
     crate::server::api::custom_apps_tracking::spawn_retention_cleanup();
 
     // Detect whether any cloud auth provider is configured — used only to

@@ -25,15 +25,17 @@ function ObservabilityNotConfiguredBanner() {
         <div>
           <div className='font-medium text-sm'>Observability is not configured</div>
           <p className='mt-0.5 text-muted-foreground text-sm'>
-            No traces will be recorded. Pick a backend and restart the server.
+            No traces will be recorded. Enable the ClickHouse backend and restart the server.
           </p>
         </div>
         <pre className='overflow-x-auto rounded-sm bg-muted px-3 py-2 font-mono text-xs leading-relaxed'>
-          <span className='text-muted-foreground'># set one of: duckdb, postgres, clickhouse</span>
+          <span className='text-muted-foreground'>
+            # ClickHouse is the sole backend (oxy start boots the container)
+          </span>
           {"\n"}
           <span>export </span>
           <span className='text-warning'>OXY_OBSERVABILITY_BACKEND</span>
-          <span>=duckdb</span>
+          <span>=clickhouse</span>
         </pre>
       </div>
     </div>

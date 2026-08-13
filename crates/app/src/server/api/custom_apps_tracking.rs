@@ -25,9 +25,10 @@
 //! - All data is app-admin-only behind the Activity tab gate.
 //! - 90-day TTL via [`retention_cleanup`], run on a 6-hour interval by
 //!   [`spawn_retention_cleanup`] which is invoked from
-//!   `serve::start_server_and_web_app` at startup. Mirrors the
-//!   observability crate's `spawn_retention_cleanup` cadence —
-//!   "internal-volume product analytics" doesn't need a tighter window.
+//!   `serve::start_server_and_web_app` at startup. Postgres has no native
+//!   row expiry, so unlike observability (where ClickHouse TTL does this),
+//!   the prune has to be an app-level loop — "internal-volume product
+//!   analytics" doesn't need a tighter window than 6h.
 
 use axum::http::{HeaderMap, header};
 use chrono::Utc;

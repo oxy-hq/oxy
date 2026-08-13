@@ -1,189 +1,46 @@
-//! Observability backend resolution, shared by the `oxy serve`/`oxy start`
-//! entry points and standalone CLI commands (e.g. `oxy intent cluster`)
-//! that need to reach the `ObservabilityStore` without a running server.
+//! Observability store access for standalone CLI commands (e.g.
+//! `oxy intent cluster`) that need the `ObservabilityStore` without a
+//! running server.
 //!
-//! Keeps the resolution rules in one place so CLI commands stay aligned
-//! with server behaviour (DuckDB by default, Postgres when
-//! `OXY_DATABASE_URL` is set, ClickHouse on explicit opt-in).
+//! ClickHouse is the sole backend; resolution rules live in
+//! [`crate::observability_boot`] so CLI commands stay aligned with server
+//! behaviour.
 
 use std::env;
 use std::sync::Arc;
 
-use oxy::state_dir::get_state_dir;
-use oxy::theme::StyledText;
+use oxy_shared::errors::OxyError;
 
-/// Resolve the observability backend, open the store, and return a
-/// status message describing which backend was actually selected
-/// (useful to print once the tracing subscriber is installed).
-pub async fn resolve_observability_backend() -> (
-    Option<Arc<dyn oxy_observability::ObservabilityStore>>,
-    Option<String>,
-) {
-    let requested = env::var("OXY_OBSERVABILITY_BACKEND").ok();
-    let has_db_url = env::var("OXY_DATABASE_URL").is_ok();
-    let backend = requested.clone().unwrap_or_else(|| {
-        if has_db_url {
-            "postgres".to_string()
-        } else {
-            "duckdb".to_string()
-        }
-    });
+/// Resolve the observability store (ClickHouse from `OXY_CLICKHOUSE_*` env).
+///
+/// Mirrors the serve path: observability is opt-in, so an *unset*
+/// `OXY_OBSERVABILITY_BACKEND` is "not configured" rather than a dial of
+/// ClickHouse's default endpoint that fails with a connection error. A legacy
+/// value (`duckdb` / `postgres` / `airhouse`) yields the migration error.
+///
+/// Every failure is returned rather than printed — the CLI command that asked
+/// for the store surfaces it once, so there is no doubled message.
+pub async fn resolve_observability_backend()
+-> Result<Arc<dyn oxy_observability::ObservabilityStore>, OxyError> {
+    let backend = env::var("OXY_OBSERVABILITY_BACKEND").map_err(|_| {
+        OxyError::ConfigurationError(
+            "Observability is not configured: OXY_OBSERVABILITY_BACKEND is not set. \
+             Set it to clickhouse (and OXY_CLICKHOUSE_URL) to use this command."
+                .into(),
+        )
+    })?;
+    oxy_observability::backends::validate_backend_label(&backend)?;
 
-    match backend.as_str() {
-        "duckdb" => {
-            let db_path = get_state_dir().join("observability.duckdb");
-            match oxy_observability::backends::duckdb::DuckDBStorage::open(&db_path) {
-                Ok(storage) => (
-                    Some(Arc::new(storage)),
-                    Some(format!("Observability: duckdb ({})", db_path.display())),
-                ),
-                Err(e) => {
-                    eprintln!(
-                        "{}",
-                        format!("Failed to open DuckDB observability: {e}").error()
-                    );
-                    (None, None)
-                }
-            }
-        }
-        "clickhouse" => {
-            match oxy_observability::backends::clickhouse::ClickHouseObservabilityStorage::from_env(
-            )
-            .await
-            {
-                Ok(storage) => match storage.ensure_schema().await {
-                    Ok(()) => {
-                        if let Err(e) = storage
-                            .apply_retention_ttl(oxy_observability::RETENTION_DAYS)
-                            .await
-                        {
-                            eprintln!("{}", format!("ClickHouse TTL apply failed: {e}").error());
-                        }
-                        (
-                            Some(
-                                Arc::new(storage) as Arc<dyn oxy_observability::ObservabilityStore>
-                            ),
-                            Some("Observability: clickhouse (OXY_CLICKHOUSE_URL)".to_string()),
-                        )
-                    }
-                    Err(e) => {
-                        eprintln!("{}", format!("ClickHouse schema init failed: {e}").error());
-                        (None, None)
-                    }
-                },
-                Err(e) => {
-                    eprintln!("{}", format!("ClickHouse init failed: {e}").error());
-                    (None, None)
-                }
-            }
-        }
-        "airhouse" => {
-            let airhouse_cfg = airhouse::AirhouseConfig::from_env();
-            let Some(runtime_cfg) = airhouse_cfg.as_runtime() else {
-                eprintln!(
-                    "{}",
-                    "Airhouse observability requires AIRHOUSE_WIRE_HOST (and AIRHOUSE_BASE_URL, \
-                     AIRHOUSE_ADMIN_TOKEN) to be set."
-                        .error()
-                );
-                return (None, None);
-            };
-            let host = runtime_cfg.wire_host.clone();
-            let port = runtime_cfg.wire_port;
-            let insecure = env::var("OXY_AIRHOUSE_OBS_INSECURE")
-                .ok()
-                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-                .unwrap_or(false);
-
-            let Some(get_credentials) =
-                oxy_observability::backends::airhouse::credentials_from_env()
-            else {
-                eprintln!(
-                    "{}",
-                    "Airhouse observability requires OXY_AIRHOUSE_OBS_USER, \
-                     OXY_AIRHOUSE_OBS_PASSWORD, and OXY_AIRHOUSE_OBS_DATABASE to be set."
-                        .error()
-                );
-                return (None, None);
-            };
-
-            match oxy_observability::backends::airhouse::AirhouseObservabilityStorage::connect(
-                &host,
-                port,
-                insecure,
-                get_credentials,
-            )
-            .await
-            {
-                Ok(storage) => match storage.ensure_schema().await {
-                    Ok(()) => (
-                        Some(Arc::new(storage) as Arc<dyn oxy_observability::ObservabilityStore>),
-                        Some("Observability: airhouse (AIRHOUSE_WIRE_HOST)".to_string()),
-                    ),
-                    Err(e) => {
-                        eprintln!(
-                            "{}",
-                            format!("Airhouse observability schema init failed: {e}").error()
-                        );
-                        (None, None)
-                    }
-                },
-                Err(e) => {
-                    eprintln!(
-                        "{}",
-                        format!("Airhouse observability init failed: {e}").error()
-                    );
-                    (None, None)
-                }
-            }
-        }
-        _ => {
-            if has_db_url {
-                match oxy_observability::backends::postgres::PostgresObservabilityStorage::from_env(
-                )
-                .await
-                {
-                    Ok(storage) => (
-                        Some(Arc::new(storage) as Arc<dyn oxy_observability::ObservabilityStore>),
-                        Some("Observability: postgres (OXY_DATABASE_URL)".to_string()),
-                    ),
-                    Err(e) => {
-                        eprintln!(
-                            "{}",
-                            format!("Postgres observability failed: {e}. Falling back to DuckDB.")
-                                .error()
-                        );
-                        fallback_to_duckdb()
-                    }
-                }
-            } else {
-                let label = if requested.as_deref() == Some("postgres") {
-                    "Observability: postgres → duckdb (OXY_DATABASE_URL not set)"
-                } else {
-                    "Observability: duckdb (no OXY_DATABASE_URL)"
-                };
-                let (store, _) = fallback_to_duckdb();
-                (store, Some(label.to_string()))
-            }
-        }
-    }
-}
-
-fn fallback_to_duckdb() -> (
-    Option<Arc<dyn oxy_observability::ObservabilityStore>>,
-    Option<String>,
-) {
-    let db_path = get_state_dir().join("observability.duckdb");
-    match oxy_observability::backends::duckdb::DuckDBStorage::open(&db_path) {
-        Ok(s) => (
-            Some(Arc::new(s) as Arc<dyn oxy_observability::ObservabilityStore>),
-            None,
-        ),
-        Err(e) => {
-            eprintln!("{}", format!("DuckDB fallback failed: {e}").error());
-            (None, None)
-        }
-    }
+    // Detail of an init failure (bad URL, unreachable host, schema error) is
+    // printed by the shared constructor; this is the actionable summary.
+    let (store, _msg) = crate::observability_boot::open_clickhouse_store().await;
+    store.ok_or_else(|| {
+        OxyError::RuntimeError(
+            "Could not initialize observability storage (check OXY_CLICKHOUSE_URL / \
+             OXY_CLICKHOUSE_USER / OXY_CLICKHOUSE_PASSWORD / OXY_CLICKHOUSE_DATABASE)"
+                .into(),
+        )
+    })
 }
 
 /// Ensure the global `ObservabilityStore` is initialized. No-op if it is
@@ -191,18 +48,10 @@ fn fallback_to_duckdb() -> (
 ///
 /// Standalone CLI commands that query the store (intent classification,
 /// metric analytics) call this before touching `oxy_observability::global`.
-pub async fn ensure_global_store_initialized() -> Result<(), oxy_shared::errors::OxyError> {
+pub async fn ensure_global_store_initialized() -> Result<(), OxyError> {
     if oxy_observability::global::get_global().is_some() {
         return Ok(());
     }
-    let (store, _msg) = resolve_observability_backend().await;
-    let store = store.ok_or_else(|| {
-        oxy_shared::errors::OxyError::RuntimeError(
-            "Could not initialize observability storage (check OXY_DATABASE_URL / \
-             OXY_OBSERVABILITY_BACKEND / OXY_CLICKHOUSE_URL / OXY_AIRHOUSE_OBS_*)"
-                .into(),
-        )
-    })?;
-    oxy_observability::global::set_global(store);
+    oxy_observability::global::set_global(resolve_observability_backend().await?);
     Ok(())
 }

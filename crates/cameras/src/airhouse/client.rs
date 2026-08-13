@@ -17,8 +17,8 @@
 //!
 //! Keep **one** long-lived `tokio_postgres::Client` per
 //! `(workspace_id, role, purpose)` — i.e. per tenant + access pattern —
-//! behind a background reconnect driver, mirroring
-//! `observability::backends::airhouse`. The first write per tenant opens the
+//! behind a background reconnect driver (a pattern originally shared with the
+//! since-removed airhouse observability backend). The first write per tenant opens the
 //! connection; every subsequent write reuses it, so session churn collapses
 //! from N-per-minute to ~1-per-tenant. A dropped connection is re-established
 //! in the background with exponential backoff, **re-minting** the ephemeral
@@ -369,8 +369,7 @@ impl Drop for AliveGuard {
 
 /// Drive the pgwire connection future and reconnect with exponential backoff
 /// when it ends. A single spawned task owns the whole lifecycle; the inner loop
-/// handles every reconnect attempt so no task is spawned per reconnect. Mirrors
-/// `observability::backends::airhouse::spawn_driver`, plus a give-up bound so a
+/// handles every reconnect attempt so no task is spawned per reconnect. Adds a give-up bound so a
 /// deprovisioned / long-dead tenant doesn't keep a reconnect task (and its log
 /// spam) and a server-side DuckDB session alive forever. The bound trips on
 /// **both** repeated connect/auth failures (can't connect at all) **and**

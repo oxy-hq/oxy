@@ -2,8 +2,12 @@
 //!
 //! The [`ObservabilityStore`] trait abstracts the storage backend for
 //! observability data (traces, intents, metrics, execution analytics).
-//! This allows swapping the underlying storage engine (DuckDB, Postgres,
-//! ClickHouse, ...) without changing consumer code.
+//!
+//! It has exactly one production implementation — `ClickHouseObservabilityStorage`
+//! — and the multi-engine era it was built for is over (see
+//! `internal-docs/observability-analytics.md`). What the trait still buys is a
+//! seam consumers can be tested against without a database: the batching bridge
+//! in `telemetry.rs` exercises a `RecordingStore` mock through it.
 
 use async_trait::async_trait;
 use oxy_shared::errors::OxyError;
@@ -111,9 +115,10 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
         source: &str,
     ) -> Result<(), OxyError>;
 
-    /// Upsert a classification keyed by `(trace_id, question)`. Implementations
-    /// use their native upsert primitive (DuckDB `INSERT OR REPLACE`, Postgres
-    /// `ON CONFLICT DO UPDATE`, ClickHouse `ReplacingMergeTree`).
+    /// Upsert a classification keyed by `(trace_id, question)`. ClickHouse has
+    /// no `UPDATE`, so the write is a plain insert that `ReplacingMergeTree`
+    /// collapses on that key during background merges; until a merge runs both
+    /// rows exist, which is why the read queries select `FINAL`.
     async fn update_classification(
         &self,
         trace_id: &str,
@@ -224,17 +229,6 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
 
     /// Insert span records directly (used by the tracing layer bridge).
     async fn insert_spans(&self, spans: Vec<SpanRecord>) -> Result<(), OxyError>;
-
-    // ── Retention ─────────────────────────────────────────────────────────
-
-    /// Delete observability event data (spans, metric usage, intent
-    /// classifications) older than `retention_days`. Intent clusters are
-    /// preserved because they are aggregated labels, not event data.
-    ///
-    /// Returns the approximate number of rows deleted across all tables.
-    /// Returns `0` when the backend handles expiry natively (e.g. ClickHouse
-    /// via `TTL ... DELETE`). Callers pass `0` days to disable retention.
-    async fn purge_older_than(&self, retention_days: u32) -> Result<u64, OxyError>;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
 

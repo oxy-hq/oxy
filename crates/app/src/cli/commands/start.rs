@@ -47,10 +47,12 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
     // 3. Start PostgreSQL container
     let db_url = start_postgres().await?;
 
-    // 3b. If the observability backend is ClickHouse, start its container.
-    // No extra container is needed for duckdb, postgres, or when the env var
-    // is unset (observability disabled).
-    if std::env::var("OXY_OBSERVABILITY_BACKEND").as_deref() == Ok("clickhouse") {
+    // 3b. Observability is ClickHouse-only; start its container when enabled.
+    // When the env var is unset, observability is disabled and no container
+    // is needed.
+    if std::env::var("OXY_OBSERVABILITY_BACKEND").as_deref()
+        == Ok(oxy_observability::backends::BACKEND_CLICKHOUSE)
+    {
         start_clickhouse().await?;
     }
 

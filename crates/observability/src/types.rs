@@ -1,10 +1,9 @@
-//! Shared types used across all observability backends.
+//! Shared types for the observability store.
 //!
-//! These types form the "row" and "record" shapes exchanged between the
-//! [`crate::store::ObservabilityStore`] trait and its backend implementations.
-//! They are intentionally free of any backend-specific types so they can live
-//! at a neutral location and be imported by DuckDB, Postgres, and ClickHouse
-//! backends alike.
+//! These types form the "row" and "record" shapes exchanged across the
+//! [`crate::store::ObservabilityStore`] trait. They are intentionally free of
+//! any backend-specific types, so the trait's consumers — and its test doubles
+//! — never depend on the ClickHouse client crate.
 
 // ── Write records ──────────────────────────────────────────────────────────
 

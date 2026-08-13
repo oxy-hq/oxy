@@ -194,51 +194,6 @@ pub fn observability_filter() -> EnvFilter {
     build_observability_filter()
 }
 
-/// Spawn a background task that periodically deletes observability event
-/// data older than [`crate::duration::RETENTION_DAYS`]. Runs every 6 hours.
-///
-/// The retention window is derived from the longest finite duration the UI
-/// exposes (see `crate::duration`), so the UI and retention stay in lockstep
-/// automatically — there is no separate env var to keep in sync.
-pub fn spawn_retention_cleanup(store: Arc<dyn ObservabilityStore>) {
-    let retention_days = crate::duration::RETENTION_DAYS;
-
-    tracing::info!(
-        "Observability retention: {} days (cleanup every 6h)",
-        retention_days
-    );
-
-    tokio::spawn(async move {
-        // First cleanup after 60s — gives the app time to finish startup so
-        // the DELETE doesn't race with migrations or schema setup.
-        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(6 * 3600));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-
-        loop {
-            // `tokio::time::interval` fires its first tick immediately, which
-            // acts as our "run now" signal after the 60s startup sleep. On
-            // subsequent iterations this waits the full 6h period. Placing
-            // the tick at the top of the loop is the standard Tokio periodic-
-            // task pattern — putting the work first would cause a double
-            // execution because the immediate first tick would resolve right
-            // after the first purge completes.
-            interval.tick().await;
-
-            match store.purge_older_than(retention_days).await {
-                Ok(0) => tracing::debug!("Retention cleanup: no rows purged"),
-                Ok(n) => tracing::info!(
-                    "Retention cleanup: purged {} observability rows older than {}d",
-                    n,
-                    retention_days
-                ),
-                Err(e) => tracing::warn!("Retention cleanup failed: {}", e),
-            }
-        }
-    });
-}
-
 /// Initialize observability with a backend-agnostic store.
 ///
 /// Sets up a tracing subscriber with:
@@ -437,9 +392,6 @@ mod tests {
         async fn insert_spans(&self, spans: Vec<SpanRecord>) -> Result<(), OxyError> {
             self.batches.lock().unwrap().push(spans);
             Ok(())
-        }
-        async fn purge_older_than(&self, _: u32) -> Result<u64, OxyError> {
-            unimplemented!()
         }
         async fn shutdown(&self) {}
     }

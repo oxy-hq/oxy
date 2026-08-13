@@ -75,7 +75,8 @@ Deployment modes — almost every bug report depends on which one:
 ## Counterintuitive gotchas (high-cost, hard to guess)
 
 - **DuckDB concurrent init** — two handles opening the same file concurrently have caused SIGSEGV; the pool serializes init, so code opening DuckDB outside it must too.
-- **DuckLake has no indexes** — the Airhouse observability backend must not `CREATE INDEX`, or capture silently goes inert after the first table.
+- **DuckLake has no indexes** — DDL against Airhouse/DuckLake tables (today: the camera-fleet schema) must avoid `CREATE INDEX`, `PRIMARY KEY`, and `UNIQUE`; a table carrying one fails and the writer goes inert from there on. Ordering-based predicate pushdown is the substitute, not an index.
+- **Observability is ClickHouse-only** — one backend, no default in any mode (`--local` included), so unset means capture is simply off. The former `duckdb` / `postgres` / `airhouse` labels don't fall back to anything: the server boots with capture off and logs a loud migration error, so a stale label reads as "no traces", not as a crash. No data crosses over.
 - **Observability serving has two repeat footguns** — timestamps must go out as ISO-8601 UTC or the browser mis-parses them (render crash, waterfall spans collapsed to slivers), and trace queries need hard time/size caps: an unbounded scan took the backend offline, not merely timed out.
 - **Empty-result warehouse queries** can panic in the shared Arrow bridge (DuckDB / Snowflake / MotherDuck / connectorx); each path must short-circuit its empty shape. Oversized results hit a cross-connector memory backstop and unbounded semantic/SQL-IDE queries cap at 10k rows — both flag **truncated**, so "missing rows" may be a cap, not a query bug.
 - **Semantic file discovery** must skip hidden/build dirs (`.worktrees`, `.git`, `.oxy_state`, `target`, `node_modules`, …); stray copies there trigger spurious "duplicate view name" errors.
