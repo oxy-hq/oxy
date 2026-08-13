@@ -18,10 +18,10 @@ pub use queue::{
     DeadTask, DeferOutcome, QueueStats, QueueTaskRow, ReapOutcome, TASKS_DEAD_LETTERED,
     TASKS_REQUEUED, TaskScope, TerminalWrite, cancel_queued_task, cancel_queued_task_owned,
     claim_task, claim_task_under_root, complete_queue_task, defer_task, drain_claims_for_worker,
-    enqueue_task, fail_queue_task, get_queue_entry, get_queue_stats, mark_released_roots_global,
-    mark_task_global, purge_old_terminal_tasks, reap_stale_tasks, release_claim,
-    release_claims_for_worker, requeue_task, reset_task_to_queued, set_terminal_status_owned,
-    update_queue_heartbeat,
+    enqueue_task, fail_orphaned_claim, fail_queue_task, get_queue_entry, get_queue_stats,
+    mark_released_roots_global, mark_task_global, purge_old_terminal_tasks, reap_stale_tasks,
+    release_claim, release_claims_for_worker, requeue_task, reset_task_to_queued,
+    set_terminal_status_owned, update_queue_heartbeat,
 };
 pub use recovery::{
     StuckRun, cleanup_stale_runs, find_pending_global_runs, find_stuck_automation_runs,

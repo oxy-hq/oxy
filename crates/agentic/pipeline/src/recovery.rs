@@ -912,7 +912,10 @@ fn spawn_virtual_worker(
     let task_id_clone = task_id.clone();
 
     // Spawn heartbeat loop for the recovered task.
-    let heartbeat_cancel = transport.spawn_heartbeat(&task_id, std::time::Duration::from_secs(15));
+    let heartbeat_cancel = transport.spawn_heartbeat(
+        &task_id,
+        agentic_runtime::orchestrator::worker::HEARTBEAT_INTERVAL,
+    );
 
     tokio::spawn(async move {
         let mut events = executing.events;
@@ -934,21 +937,83 @@ fn spawn_virtual_worker(
     let task_id_for_outcomes = task_id;
     tokio::spawn(async move {
         let mut outcomes = executing.outcomes;
+        // Whether the driver stopped while still holding the claim — see
+        // `Worker::handle_task`'s cleanup block. This third driver has to
+        // honour the same rule as the other two.
+        let mut parked_suspended = false;
         while let Some(outcome) = outcomes.recv().await {
             let is_terminal = matches!(
                 outcome,
                 TaskOutcome::Done { .. } | TaskOutcome::Failed(_) | TaskOutcome::Cancelled
             );
-            let _ = transport
+            parked_suspended = matches!(outcome, TaskOutcome::Suspended { .. });
+            // Captured before the send moves `outcome` — it is the field that
+            // tells an operator whether the dropped outcome was the `Suspended`
+            // that strands a claim or a terminal one that doesn't.
+            let outcome_type = match &outcome {
+                TaskOutcome::Done { .. } => "Done",
+                TaskOutcome::Suspended { .. } => "Suspended",
+                TaskOutcome::Failed(_) => "Failed",
+                TaskOutcome::Cancelled => "Cancelled",
+                // NOT `unreachable!` here, unlike the other two drivers — this
+                // one has no `Defer` translation, so a `Deferred` would be
+                // forwarded as a plain `Outcome` and dropped by
+                // `Coordinator::handle_outcome`, which documents that variant as
+                // unreachable by construction.
+                //
+                // It cannot arrive today, and the durable way to say why is the
+                // *builder*, not the route list: `deferred_task` is constructed
+                // only inside `execute_airway`, and no path out of
+                // `resume_from_state` reaches that function — so neither producer
+                // of `Deferred` (unresolvable pipeline YAML, single-flight lease
+                // held) is reachable from a re-launch. Stated this way the claim
+                // survives a fourth resume route being added; enumerating the
+                // routes would not, and an earlier draft of this comment had
+                // already missed one (`execute_automation`, via the
+                // `task_metadata.original_spec` branch).
+                //
+                // If a resume path ever does reach airway admission, note the
+                // failure is quiet rather than loud: the deferral is dropped, the
+                // ticker is cancelled, and the row comes back only via the reaper
+                // — which charges a `claim_count` that a real `Defer`
+                // deliberately refunds.
+                TaskOutcome::Deferred { .. } => "Deferred",
+            };
+            // Same rule as the other two drivers: a dropped `Suspended` would
+            // park the claim on a ticker for an outcome no coordinator ever
+            // received, leaving the row `claimed` with every backstop disarmed.
+            // Let the claim go stale instead so the reaper → `find_stuck_runs`
+            // chain takes over. This driver has one backstop FEWER than
+            // `Worker::handle_task` — no `saw_any_outcome` synthesized `Failed`
+            // — so it needs this at least as much.
+            if let Err(e) = transport
                 .send(WorkerMessage::Outcome {
                     task_id: task_id_for_outcomes.clone(),
                     outcome,
                 })
-                .await;
+                .await
+            {
+                // `target: "recovery"` like every other line in this file — an
+                // operator narrowing to the recovery sweep must not lose the one
+                // line saying a recovered task's outcome went nowhere. The
+                // three-driver rule is filterable via `rule` instead, which
+                // works across targets where a shared target would not.
+                tracing::error!(
+                    target: "recovery",
+                    rule = "dropped-outcome",
+                    task_id = %task_id_for_outcomes,
+                    outcome_type,
+                    error = %e,
+                    "failed to deliver outcome to the coordinator"
+                );
+                parked_suspended = false;
+            }
             if is_terminal {
-                heartbeat_cancel.cancel();
                 break;
             }
+        }
+        if !parked_suspended {
+            heartbeat_cancel.cancel();
         }
     });
 }

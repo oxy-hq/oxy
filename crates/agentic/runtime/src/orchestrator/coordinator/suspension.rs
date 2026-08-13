@@ -18,9 +18,77 @@ impl Coordinator {
         resume_data: agentic_core::human_input::SuspendedRunData,
         _trace_id: String,
     ) {
+        // Idempotency: a task already waiting on children is being asked to
+        // delegate *again*, without an intervening resume (`resume_parent` puts
+        // it back to `Running` before re-assigning). That means something
+        // re-drove this task while its first delegation was still outstanding —
+        // a re-claimed queue row, a second driver, crash recovery re-running the
+        // decider. Honouring it would mint a fresh `{task_id}.{n}` child, orphan
+        // the live one (`WaitingOnChildren` is overwritten wholesale below, not
+        // appended to), and run the same step a second time concurrently.
+        //
+        // Dropping the duplicate is safe: the original child is still running and
+        // its completion still resumes this parent. The `Suspended` outcome that
+        // brought us here writes nothing to the queue row either way.
+        if matches!(
+            reason,
+            SuspendReason::Delegation { .. } | SuspendReason::ParallelDelegation { .. }
+        ) && let Some(node) = self.tasks.get(task_id)
+            && let TaskStatus::WaitingOnChildren { child_task_ids, .. } = &node.status
+        {
+            tracing::warn!(
+                target: "coordinator",
+                task_id,
+                existing_children = ?child_task_ids,
+                "duplicate delegation for a task already waiting on children; \
+                 ignoring re-delegation rather than spawning another child"
+            );
+            return;
+        }
+
         // Store suspend data (drop mutable borrow before calling other methods).
         {
+            // A suspension for a task this coordinator has never heard of. The
+            // outcome has nowhere to go — nothing will ever resume it — and it
+            // must not be dropped in silence, because the row is still
+            // `claimed` with a heartbeat ticker deliberately kept alive. Every
+            // backstop is disarmed in that state: the reaper skips a fresh
+            // heartbeat, `find_stuck_runs` requires no active queue entry, and
+            // `check_suspend_timeouts` reads `suspended_at`, which is set two
+            // lines below and so never gets written. It would sit claimed until
+            // the process restarts.
+            //
+            // Fail the row instead: terminal, visible in the dead-letter admin
+            // table, and the write itself stops the ticker (the heartbeat
+            // predicate needs `queue_status = 'claimed'`).
+            //
+            // Pathological by construction rather than transient — `claim_task`
+            // only lets ROOT tasks be claimed globally precisely so an outcome
+            // can't be routed to a coordinator that doesn't own the task.
             let Some(node) = self.tasks.get_mut(task_id) else {
+                // `rule = "orphaned-claim"` pairs with the drivers'
+                // `rule = "dropped-outcome"`: the two halves of "an outcome went
+                // nowhere" are documented together in `worker-fleet.md`, so they
+                // should be filterable together too, across the differing
+                // tracing targets they legitimately use.
+                tracing::error!(
+                    target: "coordinator",
+                    rule = "orphaned-claim",
+                    task_id,
+                    ?reason,
+                    "suspension for a task absent from this coordinator's map; \
+                     nothing can resume it — failing the queue row so it cannot \
+                     sit claimed on a live heartbeat"
+                );
+                if let Err(e) = crud::fail_orphaned_claim(&self.db, task_id).await {
+                    tracing::error!(
+                        target: "coordinator",
+                        rule = "orphaned-claim",
+                        task_id,
+                        error = %e,
+                        "failed to fail the orphaned queue row"
+                    );
+                }
                 return;
             };
             node.suspend_data = Some(resume_data.clone());

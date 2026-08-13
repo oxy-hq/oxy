@@ -54,6 +54,45 @@ pub struct DurableTransport {
     /// Per-task cancellation tokens, keyed by task_id.
     cancel_tokens: DashMap<String, CancellationToken>,
 
+    /// The live heartbeat ticker for each claimed task, keyed by task_id.
+    ///
+    /// **At most one ticker per `task_id`, and this map is what enforces it.**
+    /// A suspended task keeps its ticker running (see `Worker::handle_task`),
+    /// so the resume path can hand the same `task_id` to a *second* driver
+    /// while the first driver's ticker is still alive. Nothing else would stop
+    /// the first one: [`Self::worker_id`] is process-stable, and
+    /// `update_queue_heartbeat` authorizes on `worker_id` alone with no
+    /// fencing token — so once the same process re-claims the row (typically
+    /// within milliseconds, far inside one tick), the stale ticker's predicate
+    /// matches again and it beats on forever.
+    ///
+    /// Left unbounded that accumulates one ticker per suspension for the life
+    /// of the run, all writing `last_heartbeat` to the same row every tick —
+    /// and worse, a ticker outliving the driver it belonged to keeps a claim
+    /// looking alive that nobody is working, which is precisely the liveness
+    /// signal the reaper depends on.
+    ///
+    /// **Scope: per transport instance, while the authority it writes with
+    /// (`worker_id`) is per process.** A second transport in this process would
+    /// not see — and so could not retire — this one's tickers. That gap is not
+    /// reachable today: the delegating-step resume re-claims through the *same*
+    /// transport (`claim_task_under_root` matches the root itself), and recovery
+    /// only selects runs with no active queue entry, which already implies the
+    /// old ticker broke on `Ok(false)`. If it ever does bite, the class-killing
+    /// fix is a fencing token rather than a wider map — `claim_task` already
+    /// returns `claim_count`, so `update_queue_heartbeat` could carry
+    /// `AND claim_count = $3` and stale tickers would fence themselves out.
+    ///
+    /// Entries are removed at every point this process hands the claim back, so
+    /// the map tracks live claims rather than history — with one exception: a
+    /// driver that dies without any terminal write through [`Self::send`] (the
+    /// `agentic-pipeline` virtual workers can only cancel their own token, since
+    /// `retire_heartbeat` is private here) leaves a cancelled token behind until
+    /// that `task_id` is claimed again. Bounded by run lifetime for the per-run
+    /// transports, and inert either way — a cancelled token holds nothing but
+    /// its own key.
+    heartbeats: DashMap<String, CancellationToken>,
+
     /// Poll interval when no notification arrives.
     poll_interval: Duration,
 
@@ -305,6 +344,7 @@ impl DurableTransport {
             message_rx: Mutex::new(message_rx),
             new_task_notify: Notify::new(),
             cancel_tokens: DashMap::new(),
+            heartbeats: DashMap::new(),
             poll_interval,
             task_id_root,
             router,
@@ -317,6 +357,23 @@ impl DurableTransport {
     /// calls this internally, but `requeue_task()` bypasses the transport.
     pub fn notify_new_task(&self) {
         self.new_task_notify.notify_waiters();
+    }
+
+    /// Stop the heartbeat ticker registered for `task_id`, if any.
+    ///
+    /// Called from exactly the points where this process stops owning the
+    /// claim — a terminal outcome, a deferral that hands the row back, and the
+    /// re-spawn path in [`WorkerTransport::spawn_heartbeat`]. A *suspension*
+    /// is deliberately not one of them: the row stays `claimed` and the ticker
+    /// is what says so.
+    ///
+    /// Removing the entry here is also what bounds [`Self::heartbeats`] — it
+    /// holds live claims, not history.
+    fn retire_heartbeat(&self, task_id: &str, why: &'static str) {
+        if let Some((_, token)) = self.heartbeats.remove(task_id) {
+            tracing::debug!(task_id, why, "retiring heartbeat ticker");
+            token.cancel();
+        }
     }
 
     // `heartbeat` / `spawn_heartbeat` inherent methods removed: they duplicated
@@ -701,6 +758,9 @@ impl WorkerTransport for DurableTransport {
                 reason,
             } => {
                 use crud::DeferOutcome;
+                // The row goes back to the queue unrun, so this process stops
+                // owning the claim — stop proving otherwise.
+                self.retire_heartbeat(task_id, "task deferred");
                 match crud::defer_task(
                     &self.db,
                     task_id,
@@ -766,15 +826,21 @@ impl WorkerTransport for DurableTransport {
                         return Ok(());
                     }
                     TaskOutcome::Done { .. } => {
+                        self.retire_heartbeat(task_id, "task done");
                         crud::complete_queue_task(&self.db, task_id, &self.worker_id).await
                     }
                     TaskOutcome::Failed(_) => {
+                        self.retire_heartbeat(task_id, "task failed");
                         crud::fail_queue_task(&self.db, task_id, &self.worker_id).await
                     }
                     TaskOutcome::Cancelled => {
+                        self.retire_heartbeat(task_id, "task cancelled");
                         crud::cancel_queued_task_owned(&self.db, task_id, &self.worker_id).await
                     }
-                    // Suspended is not terminal — task may resume.
+                    // Suspended is not terminal — the row stays `claimed` so it
+                    // can resume, and the heartbeat ticker stays running to say
+                    // so. Retiring it here is exactly the bug this arm's
+                    // silence used to cause; see `Worker::handle_task`.
                     TaskOutcome::Suspended { .. } => Ok(crud::TerminalWrite::Stamped),
                 };
                 match result {
@@ -838,6 +904,14 @@ impl WorkerTransport for DurableTransport {
 
     fn spawn_heartbeat(&self, task_id: &str, interval: Duration) -> CancellationToken {
         let cancel = CancellationToken::new();
+        // Retire any ticker still beating for this task_id before registering
+        // the new one. See [`Self::heartbeats`]: a process-stable `worker_id`
+        // plus an unfenced heartbeat predicate means the previous driver's
+        // ticker would otherwise keep matching this row after the resume path
+        // re-enqueued it and this process re-claimed it.
+        self.retire_heartbeat(task_id, "superseded by a new claim");
+        self.heartbeats.insert(task_id.to_string(), cancel.clone());
+
         let db = self.db.clone();
         let worker_id = self.worker_id.clone();
         let task_id = task_id.to_string();

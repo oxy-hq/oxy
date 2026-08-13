@@ -539,6 +539,49 @@ pub async fn cancel_queued_task(db: &DatabaseConnection, task_id: &str) -> Resul
     Ok(())
 }
 
+/// Fail the claim **this process** holds on `task_id`, without the caller
+/// having to name the worker.
+///
+/// One caller: the coordinator receiving an outcome for a task absent from its
+/// in-memory map. That outcome has nowhere to go, so the row must not be left
+/// `claimed` — a suspended task keeps its heartbeat ticker running on purpose
+/// (see `Worker::handle_task`), so a row abandoned this way looks alive to the
+/// reaper forever and never reaches `find_stuck_runs` recovery.
+///
+/// **Ownership-scoped, despite the caller not supplying a `worker_id`.** The
+/// outcome reached this coordinator over `DurableTransport`'s in-memory
+/// channel, so the worker that produced it is in *this* process, and
+/// [`crate::orchestrator::transport::process_worker_id`] names its claim
+/// exactly. Without the fence the write
+/// would also match a row a peer had since re-claimed (or one sitting
+/// legitimately `queued`), silently killing live work — the same unfenced-write
+/// hazard that makes [`update_queue_heartbeat`] unable to police stale tickers.
+/// Matching nothing is the correct outcome in those cases: whoever owns the row
+/// now is the one responsible for it.
+///
+/// Contrast [`cancel_queued_task`], which is genuinely unscoped because a user
+/// pressing Stop really is a third party, and [`fail_queue_task`], which the
+/// worker's own outcome path uses with a `worker_id` it holds directly.
+///
+/// Stamping the row terminal also stops the ticker without needing a handle on
+/// it — [`update_queue_heartbeat`] requires `queue_status = 'claimed'`, so the
+/// next tick returns `Ok(false)` and the loop breaks itself.
+pub async fn fail_orphaned_claim(db: &DatabaseConnection, task_id: &str) -> Result<u64, DbErr> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    let worker_id = crate::orchestrator::transport::process_worker_id();
+    let res = db
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE agentic_task_queue \
+             SET queue_status = 'failed', worker_id = NULL, claimed_at = NULL, \
+                 last_heartbeat = NULL, updated_at = now() \
+             WHERE task_id = $1 AND worker_id = $2 AND queue_status = 'claimed'",
+            [task_id.into(), worker_id.into()],
+        ))
+        .await?;
+    Ok(res.rows_affected())
+}
+
 /// Cancel a task **this worker holds**, reporting its own `Cancelled` outcome.
 ///
 /// The ownership-scoped counterpart to [`cancel_queued_task`]: the status guard

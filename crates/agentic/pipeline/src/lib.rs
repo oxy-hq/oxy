@@ -1380,7 +1380,7 @@ pub async fn drive_with_coordinator(
             let heartbeat_cancel = WorkerTransport::spawn_heartbeat(
                 transport_clone.as_ref(),
                 &task_id,
-                std::time::Duration::from_secs(15),
+                agentic_runtime::orchestrator::worker::HEARTBEAT_INTERVAL,
             );
 
             let mut events = executing_task.events;
@@ -1391,6 +1391,12 @@ pub async fn drive_with_coordinator(
             // process both without blocking one on the other. The pipeline
             // may emit a Suspended outcome while the events channel is
             // still open (pipeline task holds the sender).
+            //
+            // `parked_suspended` tracks whether the LAST outcome forwarded was
+            // a suspension, i.e. whether this driver is stopping while still
+            // holding the queue claim. Every exit from the loop below consults
+            // it before cancelling the heartbeat — see `Worker::handle_task`.
+            let mut parked_suspended = false;
             loop {
                 tokio::select! {
                     event = events.recv() => {
@@ -1413,6 +1419,10 @@ pub async fn drive_with_coordinator(
                                             | agentic_core::delegation::TaskOutcome::Failed(_)
                                             | agentic_core::delegation::TaskOutcome::Cancelled
                                     );
+                                    parked_suspended = matches!(
+                                        outcome,
+                                        agentic_core::delegation::TaskOutcome::Suspended { .. }
+                                    );
                                     let _ = transport_clone
                                         .send(agentic_core::transport::WorkerMessage::Outcome {
                                             task_id: task_id.clone(),
@@ -1424,7 +1434,12 @@ pub async fn drive_with_coordinator(
                                         return;
                                     }
                                 }
-                                heartbeat_cancel.cancel();
+                                // A suspension still holds the claim — keep
+                                // beating. See `Worker::handle_task`'s cleanup
+                                // block for why, and for why this is not a leak.
+                                if !parked_suspended {
+                                    heartbeat_cancel.cancel();
+                                }
                                 return;
                             }
                         }
@@ -1473,12 +1488,32 @@ pub async fn drive_with_coordinator(
                                         | agentic_core::delegation::TaskOutcome::Failed(_)
                                         | agentic_core::delegation::TaskOutcome::Cancelled
                                 );
-                                let _ = transport_clone
+                                parked_suspended = matches!(
+                                    outcome,
+                                    agentic_core::delegation::TaskOutcome::Suspended { .. }
+                                );
+                                // Same rule as `Worker::handle_task`: a dropped
+                                // `Suspended` would keep the ticker alive for an
+                                // outcome no coordinator received, leaving the row
+                                // claimed with every backstop disarmed. Let the
+                                // claim go stale instead.
+                                if let Err(e) = transport_clone
                                     .send(agentic_core::transport::WorkerMessage::Outcome {
                                         task_id: task_id.clone(),
                                         outcome,
                                     })
-                                    .await;
+                                    .await
+                                {
+                                    tracing::error!(
+                                        target: "worker",
+                                        rule = "dropped-outcome",
+                                        task_id = %task_id,
+                                        outcome_type,
+                                        error = %e,
+                                        "failed to deliver outcome to the coordinator"
+                                    );
+                                    parked_suspended = false;
+                                }
                                 if is_terminal {
                                     // Drain remaining events before exiting.
                                     while let Ok(ev) = events.try_recv() {
@@ -1508,7 +1543,13 @@ pub async fn drive_with_coordinator(
                                         })
                                         .await;
                                 }
-                                heartbeat_cancel.cancel();
+                                // This is the ordinary way a suspended pipeline
+                                // ends: it emits `Suspended`, then drops the
+                                // outcome sender. The claim is still ours, so
+                                // the ticker has to outlive this driver.
+                                if !parked_suspended {
+                                    heartbeat_cancel.cancel();
+                                }
                                 return;
                             }
                         }

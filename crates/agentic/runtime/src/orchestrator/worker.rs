@@ -36,6 +36,17 @@ pub const MAX_INFLIGHT_ENV: &str = "OXY_WORKER_MAX_INFLIGHT";
 /// [`MAX_INFLIGHT_ENV`].
 pub const DEFAULT_MAX_INFLIGHT: usize = 32;
 
+/// How often a worker re-stamps `agentic_task_queue.last_heartbeat` for a task
+/// it holds.
+///
+/// **Must stay well under `visibility_timeout_secs`** (default 60s, set in
+/// `crud::queue::enqueue_task`): that ratio is the entire liveness contract
+/// between a worker and the reaper. Every driver that claims a task — the
+/// pooled [`Worker`] here and the two virtual workers in `agentic-pipeline` —
+/// uses this same value, so the relationship is stated once rather than
+/// re-derived per call site.
+pub const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
+
 fn read_max_inflight() -> usize {
     std::env::var(MAX_INFLIGHT_ENV)
         .ok()
@@ -255,8 +266,7 @@ impl Worker {
         };
 
         // Spawn heartbeat loop — DurableTransport updates DB, LocalTransport no-ops.
-        let heartbeat_cancel =
-            transport.spawn_heartbeat(&task_id, std::time::Duration::from_secs(15));
+        let heartbeat_cancel = transport.spawn_heartbeat(&task_id, HEARTBEAT_INTERVAL);
 
         // Forward cancellation from transport to the executing task.
         let task_cancel = executing.cancel.clone();
@@ -301,12 +311,24 @@ impl Worker {
         // close with *no* outcome at all means the driver task died (panic or
         // early drop) before reporting anything.
         let mut saw_any_outcome = false;
+        // Did the driver stop by *suspending*, i.e. still holding the claim?
+        // See the `heartbeat_cancel` decision at the end of this function.
+        let mut parked_suspended = false;
         while let Some(outcome) = outcomes.recv().await {
             saw_any_outcome = true;
             let is_terminal = matches!(
                 outcome,
                 TaskOutcome::Done { .. } | TaskOutcome::Failed(_) | TaskOutcome::Cancelled
             );
+            // Recomputed every iteration, so a `Suspended` followed by `Done`
+            // (the pipeline's normal resume-in-place shape) lands on `false`.
+            //
+            // Assigned BEFORE the `Deferred` early-`break` below, and that
+            // ordering is load-bearing: a deferral hands the claim back, so a
+            // `Suspended` → `Deferred` sequence has to land on `false` too.
+            // Moving this past the break would keep the ticker alive for a row
+            // this worker no longer holds.
+            parked_suspended = matches!(outcome, TaskOutcome::Suspended { .. });
             // A deferral is not an outcome. Translate it into `Defer` so the
             // task returns to the queue unrun, and stop consuming: sending it
             // as an `Outcome` would have the coordinator record a result for a
@@ -346,12 +368,36 @@ impl Worker {
                 is_terminal,
                 "forwarding outcome"
             );
-            let _ = transport
+            // A dropped `Suspended` is the one send failure that must not stay
+            // silent: `parked_suspended` is already true, so the ticker would be
+            // kept alive for a suspension no coordinator ever received, and the
+            // row would sit `claimed` on a fresh heartbeat with every backstop
+            // disarmed — the same state `handle_suspended`'s map-miss arm exists
+            // to prevent, reached one hop earlier. Letting the claim go stale
+            // instead hands it to the ordinary reaper → `find_stuck_runs` chain.
+            //
+            // Unreachable today (`DurableTransport` owns both ends of this
+            // channel, so it cannot close while the worker holds the transport),
+            // which is exactly why it is worth pinning rather than discarding.
+            if let Err(e) = transport
                 .send(WorkerMessage::Outcome {
                     task_id: task_id.clone(),
                     outcome,
                 })
-                .await;
+                .await
+            {
+                tracing::error!(
+                    target: "worker",
+                    // Shared across all three drivers so the rule is filterable
+                    // as one thing; their tracing targets differ by design.
+                    rule = "dropped-outcome",
+                    task_id = %task_id,
+                    outcome_type,
+                    error = %e,
+                    "failed to deliver outcome to the coordinator"
+                );
+                parked_suspended = false;
+            }
             if is_terminal {
                 break;
             }
@@ -378,7 +424,38 @@ impl Worker {
         }
 
         // Clean up.
-        heartbeat_cancel.cancel();
+        //
+        // The heartbeat proves the CLAIM is still owned by a live process — not
+        // that a task future is still running. Those two came apart for
+        // suspended tasks and that gap was a bug: `DurableTransport` writes
+        // nothing for `TaskOutcome::Suspended` on purpose (the row must stay
+        // `claimed` so it can resume), but suspending also completes the driver
+        // future, so cancelling the ticker here froze `last_heartbeat` on a row
+        // the reaper reads as "worker died". It re-queued the task at the
+        // visibility timeout, a worker re-claimed it, the decider re-ran and
+        // delegated the SAME step again — up to `max_claims` copies of any
+        // delegated step that outlives 60s (airway pipelines, routinely).
+        //
+        // So: keep beating while parked.
+        //
+        // What retires the ticker is `DurableTransport::retire_heartbeat`, at
+        // the points where this process stops owning the claim (terminal
+        // outcome, deferral, or a re-claim of the same `task_id`) — NOT the
+        // heartbeat predicate going unsatisfied. Do not weaken that to "it
+        // stops itself once the row is no longer ours": `worker_id` is
+        // process-stable and `update_queue_heartbeat` carries no fencing
+        // token, so after the resume path re-enqueues this `task_id` and this
+        // same process re-claims it — typically within milliseconds, far
+        // inside one tick — a stale ticker's predicate matches all over again
+        // and it never stops.
+        //
+        // Process death still stops every ticker, so a genuinely abandoned
+        // suspension goes stale, gets reaped, and reaches `find_stuck_runs`
+        // recovery as before — that path *depends* on the reaper freeing the
+        // claim first.
+        if !parked_suspended {
+            heartbeat_cancel.cancel();
+        }
         event_fwd.await.ok();
         cancel_fwd.abort();
     }
@@ -907,6 +984,194 @@ mod tests {
             peak.load(Ordering::SeqCst) <= 2,
             "peak in-flight was {}, must not exceed cap=2",
             peak.load(Ordering::SeqCst)
+        );
+    }
+}
+
+/// The heartbeat ticker tracks CLAIM ownership, not driver-future lifetime.
+///
+/// Regression cover for: a delegating step that outlives the 60s visibility
+/// timeout ran up to `max_claims` times. `DurableTransport` writes nothing for
+/// `TaskOutcome::Suspended` so the row stays `claimed` and can resume — but the
+/// driver future *completes* when it suspends, and cancelling the ticker there
+/// froze `last_heartbeat` on a live row. The reaper read that as a dead worker,
+/// re-queued it, and the re-run decider delegated the same step again.
+///
+/// These tests use a transport that hands back the tokens it minted, so the
+/// assertion is on the exact decision that changed rather than on a 60s wait
+/// (the reason the bug survived: it is invisible to any test whose step
+/// returns inside the visibility timeout).
+#[cfg(test)]
+mod heartbeat_lifetime_tests {
+    use super::*;
+    use crate::orchestrator::transport::LocalTransport;
+    use agentic_core::delegation::{SuspendReason, TaskSpec};
+    use agentic_core::human_input::SuspendedRunData;
+    use agentic_core::transport::{CoordinatorTransport, TransportError, WorkerTransport};
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    /// Delegates everything to a `LocalTransport`, but records the heartbeat
+    /// token it minted for each task so a test can ask whether the worker
+    /// cancelled it.
+    struct HeartbeatSpy {
+        inner: Arc<LocalTransport>,
+        tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    }
+
+    #[async_trait]
+    impl WorkerTransport for HeartbeatSpy {
+        async fn recv_assignment(&self) -> Option<TaskAssignment> {
+            self.inner.recv_assignment().await
+        }
+        async fn send(&self, msg: WorkerMessage) -> Result<(), TransportError> {
+            self.inner.send(msg).await
+        }
+        fn cancellation_token(&self, task_id: &str) -> CancellationToken {
+            self.inner.cancellation_token(task_id)
+        }
+        fn spawn_heartbeat(&self, task_id: &str, _interval: Duration) -> CancellationToken {
+            let token = CancellationToken::new();
+            self.tokens
+                .lock()
+                .unwrap()
+                .insert(task_id.to_string(), token.clone());
+            token
+        }
+    }
+
+    /// Reports `Done` and stops — the claim is given up.
+    struct DoneExecutor;
+
+    #[async_trait]
+    impl TaskExecutor for DoneExecutor {
+        async fn execute(&self, _assignment: TaskAssignment) -> Result<ExecutingTask, String> {
+            let (event_tx, event_rx) = mpsc::channel(4);
+            let (outcome_tx, outcome_rx) = mpsc::channel(4);
+            tokio::spawn(async move {
+                let _ = outcome_tx
+                    .send(TaskOutcome::Done {
+                        answer: "done".into(),
+                        metadata: None,
+                    })
+                    .await;
+                drop(event_tx);
+            });
+            Ok(ExecutingTask {
+                events: event_rx,
+                outcomes: outcome_rx,
+                cancel: CancellationToken::new(),
+                answers: None,
+            })
+        }
+    }
+
+    /// The shape of every delegating step: report `Suspended`, then drop both
+    /// senders. The claim stays ours; the child task is what runs next.
+    struct SuspendingExecutor;
+
+    #[async_trait]
+    impl TaskExecutor for SuspendingExecutor {
+        async fn execute(&self, _assignment: TaskAssignment) -> Result<ExecutingTask, String> {
+            let (event_tx, event_rx) = mpsc::channel(4);
+            let (outcome_tx, outcome_rx) = mpsc::channel(4);
+            tokio::spawn(async move {
+                let _ = outcome_tx
+                    .send(TaskOutcome::Suspended {
+                        reason: SuspendReason::HumanInput { questions: vec![] },
+                        resume_data: SuspendedRunData {
+                            from_state: "workflow_decision".into(),
+                            original_input: "q".into(),
+                            trace_id: "trace".into(),
+                            stage_data: serde_json::json!({}),
+                            question: "waiting on a child".into(),
+                            suggestions: vec![],
+                        },
+                        trace_id: "trace".into(),
+                    })
+                    .await;
+                drop(event_tx);
+            });
+            Ok(ExecutingTask {
+                events: event_rx,
+                outcomes: outcome_rx,
+                cancel: CancellationToken::new(),
+                answers: None,
+            })
+        }
+    }
+
+    /// Run one task to its first outcome and return the heartbeat token the
+    /// worker was handed for it.
+    async fn drive_one(executor: Arc<dyn TaskExecutor>, task_id: &str) -> CancellationToken {
+        let inner = LocalTransport::with_defaults();
+        let tokens: Arc<Mutex<HashMap<String, CancellationToken>>> = Default::default();
+        let spy = Arc::new(HeartbeatSpy {
+            inner: inner.clone(),
+            tokens: tokens.clone(),
+        });
+        tokio::spawn(async move {
+            let worker = Worker::new(spy as Arc<dyn WorkerTransport>, executor);
+            worker.run().await;
+        });
+
+        (&*inner as &dyn CoordinatorTransport)
+            .assign(TaskAssignment {
+                task_id: task_id.into(),
+                parent_task_id: None,
+                run_id: task_id.into(),
+                spec: TaskSpec::Agent {
+                    agent_id: "a".into(),
+                    question: "q".into(),
+                    extra: None,
+                },
+                policy: None,
+            })
+            .await
+            .unwrap();
+
+        // Wait for the first outcome — by then `handle_task` has made its
+        // cancel-or-keep decision (the executor drops its outcome sender
+        // immediately after, and the decision precedes `event_fwd.await`).
+        loop {
+            match (&*inner as &dyn CoordinatorTransport).recv().await {
+                Some(WorkerMessage::Outcome { .. }) => break,
+                Some(_) => continue,
+                None => panic!("transport closed before any outcome"),
+            }
+        }
+        tokens
+            .lock()
+            .unwrap()
+            .get(task_id)
+            .cloned()
+            .expect("worker must spawn a heartbeat for an assigned task")
+    }
+
+    /// The control. A terminal outcome gives the claim up, so the ticker must
+    /// stop — if this ever stops holding, the test below proves nothing.
+    #[tokio::test]
+    async fn terminal_outcome_cancels_the_heartbeat() {
+        let token = drive_one(Arc::new(DoneExecutor), "t-done").await;
+        tokio::time::timeout(Duration::from_secs(5), token.cancelled())
+            .await
+            .expect("a Done outcome must cancel the heartbeat ticker");
+    }
+
+    /// The regression. Suspending keeps the claim, so the ticker must survive:
+    /// it is the only thing telling the reaper this row is parked rather than
+    /// abandoned.
+    #[tokio::test]
+    async fn suspension_keeps_the_heartbeat_alive() {
+        let token = drive_one(Arc::new(SuspendingExecutor), "t-suspend").await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(500), token.cancelled())
+                .await
+                .is_err(),
+            "a suspended task still holds its claim; cancelling the heartbeat here \
+             freezes last_heartbeat and the reaper re-queues a task that is merely \
+             waiting on a child"
         );
     }
 }
