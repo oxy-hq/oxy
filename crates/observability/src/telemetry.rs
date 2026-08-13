@@ -75,13 +75,16 @@ pub fn build_layer_and_receiver() -> (
 /// this, oldest records are dropped (with a warning) to bound memory.
 const MAX_BUFFERED_SPANS: usize = 5_000;
 
-/// Time-based flush cadence. Every flush is one storage commit — on DuckLake
-/// one commit = one parquet file, and the previous 1s cadence at low span
-/// rates committed ~1-row files around the clock until reads drowned in file
-/// enumeration (2026-07-06 dev outage: every observability endpoint past the
-/// 30s server / 60s HTTP timeout). 30s bounds file creation at ≤2,880/day per
-/// writer while keeping the panel near-real-time; bursts still flush early on
-/// [`FLUSH_BATCH_SIZE`].
+/// Time-based flush cadence. Every flush is one write, and on a columnar store
+/// a write is a physical unit the reader later pays for: on ClickHouse each
+/// `INSERT` creates a MergeTree part, so a 1s cadence at low span rates
+/// produces ~86k near-empty parts/day per writer for background merges to chase
+/// — the road to "too many parts". The cost model was first learned the hard
+/// way on DuckLake, where one commit was one parquet file: the 2026-07-06 dev
+/// outage buried reads in file enumeration until every observability endpoint
+/// blew past the 30s server / 60s HTTP timeout. 30s bounds writes at ≤2,880/day
+/// per writer while keeping the panel near-real-time; bursts still flush early
+/// on [`FLUSH_BATCH_SIZE`].
 const FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Size-based flush trigger — bounds memory and batch width under load.
@@ -414,9 +417,11 @@ mod tests {
 
     // Incident 2026-07-06 (dev): flushing every second at low span rates
     // committed one ~1-row parquet file per second into DuckLake, and the
-    // resulting small-file explosion pushed every observability read past
-    // the 30s server / 60s HTTP timeouts. Small batches must be HELD for the
-    // flush cadence (30s), not committed eagerly.
+    // resulting small-file explosion pushed every observability read past the
+    // 30s server / 60s HTTP timeouts. The store is ClickHouse now and the unit
+    // is a MergeTree part rather than a file, but the shape is the same — a
+    // tiny write per second is a debt the reader pays. Small batches must be
+    // HELD for the flush cadence (30s), not committed eagerly.
 
     #[tokio::test(start_paused = true)]
     async fn small_batches_are_held_for_the_flush_cadence() {
@@ -430,8 +435,8 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(5)).await;
         assert!(
             store.batches.lock().unwrap().is_empty(),
-            "a small batch must not commit within 5s — eager 1s commits caused \
-             the DuckLake small-file explosion"
+            "a small batch must not commit within 5s — eager 1s commits are what \
+             buried reads in tiny write units (2026-07-06)"
         );
 
         tokio::time::sleep(Duration::from_secs(26)).await; // t = 31s > cadence

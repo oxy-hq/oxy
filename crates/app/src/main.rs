@@ -298,10 +298,11 @@ fn main() {
         .block_on(async {
             // Install tracing with Sentry + file appender + (if enterprise)
             // the SpanCollectorLayer. The observability *store* isn't wired
-            // yet — the `oxy start` path boots Postgres and only then is
-            // `OXY_DATABASE_URL` set. `observability_boot::finalize()` is
-            // called from `serve.rs` once the DB is ready to resolve the
-            // backend and spawn the bridge task.
+            // yet — the `oxy start` path boots its ClickHouse container and
+            // only then are `OXY_CLICKHOUSE_*` set.
+            // `observability_boot::finalize()` is called from `serve.rs` once
+            // that endpoint is available, to resolve the backend and spawn
+            // the bridge task.
             init_tracing_logging(observability_enabled);
 
             // Give the server enough file-descriptor headroom before it binds
