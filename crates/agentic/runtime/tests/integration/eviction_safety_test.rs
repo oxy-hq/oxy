@@ -94,6 +94,79 @@ async fn seed_task(
     (run_id.clone(), run_id)
 }
 
+/// Claim a task as `worker`, failing loudly if the claim doesn't land.
+///
+/// Every fixture claim in this file goes through here, because
+/// `claim_task_under_root(..).await.unwrap()` unwraps the **`Result`** and
+/// silently drops the **`Option`** — so a claim that matched no row read as
+/// success and only surfaced later, as a mystifying `NotOwned` or an
+/// `is_none()` precondition that "spontaneously" broke. That is the wrong end
+/// of the failure to be standing at: the interesting event is the lost claim,
+/// not its echo three assertions later.
+///
+/// A lost claim here is real and worth stopping on. These tests share one
+/// table, and several operations in it are unscoped by design — the global
+/// `claim_task` takes *any* queued root, `reap_stale_tasks` reaps *every*
+/// expired row — so a row can genuinely be taken out from under a fixture.
+/// **Reports rather than asserts, deliberately.** An `assert!` here would
+/// convert a known, unfixed environmental flake into a hard CI failure: the
+/// module is not hermetic (see `internal-docs/testing.md`, "`serial-db` is
+/// load-bearing for the queue tests"), so under load a fixture row really can be
+/// taken by another test's unscoped `reap_stale_tasks` or global `claim_task`.
+/// Failing loudly on that would make CI red for something nobody can act on in
+/// the moment, which buys less than it costs.
+///
+/// What was actually missing was the *diagnosis*, and this supplies it: nextest
+/// prints captured output only for failing tests, so this line is invisible
+/// while things are fine and appears directly above the real assertion when they
+/// are not — naming the lost claim instead of leaving a downstream `NotOwned` to
+/// be puzzled over. Make it an `assert!` once the module is hermetic.
+///
+/// **The report is worthless in tests that assert a NEGATIVE**, and those must
+/// not rely on it. "Nothing was marked", "no row was touched" and friends hold
+/// just as well when the fixture never claimed anything, so the test passes,
+/// nextest discards the output, and nobody learns anything. **Such a test must
+/// assert its own precondition** — that the fixture claim really landed, and
+/// that the operation it is about really ran — before the negative it cares
+/// about. See below for what to assert. Stated as a rule rather than a list of
+/// which tests do it, because a list is read as a completeness claim and stops
+/// being one the moment a test is added.
+///
+/// That does contradict the paragraph above, and deliberately: those few
+/// preconditions DO fail hard on the same environmental lost claim this helper
+/// declines to assert on. The difference is what the alternative buys. For the
+/// other fixture claims it is a loud failure a moment later on the test's own
+/// assertion — the report is enough, and an `assert!` only moves the same
+/// failure earlier. For these, the alternative is a *green* run that proves
+/// nothing, and a red build beats a false pass every time.
+///
+/// Assert whichever thing actually discriminates, in this order of preference:
+///
+/// 1. **The operation's own return value**, when it has one —
+///    `DeferOutcome::Deferred`, a `TerminalWrite` that is not `NotOwned`. Best
+///    of the three: it rules out a lost claim and a stolen one together, in the
+///    line that does the work, with no second query.
+///    `the_wait_streak_is_not_reset_by_later_deferrals` is the model.
+/// 2. **`worker_id` on the row**, when the operation returns nothing useful. A
+///    stolen row is still `claimed`, just not by you, so the owner is the
+///    discriminating column and `queue_status` is not.
+/// 3. **`queue_status`**, only where the status arm of the predicate under test
+///    is itself the confound to rule out — as in
+///    `defer_refunds_the_claim_it_returns`.
+async fn claim_or_fail(db: &DatabaseConnection, worker: &str, task_id: &str) {
+    let claimed = crud::claim_task_under_root(db, worker, task_id)
+        .await
+        .expect("claim query failed");
+    if claimed.is_none() {
+        eprintln!(
+            "FIXTURE CLAIM DID NOT LAND: worker `{worker}` found no claimable row for \
+             `{task_id}`. Everything this test asserts from here is downstream of that. \
+             The row was taken by another test's unscoped operation, deferred, or never \
+             queued — start there, not at the assertion that follows."
+        );
+    }
+}
+
 /// Age a claimed task's heartbeat so the reaper's visibility timeout has expired.
 async fn expire_heartbeat(db: &DatabaseConnection, task_id: &str) {
     db.execute_raw(Statement::from_sql_and_values(
@@ -145,9 +218,7 @@ async fn reap_reports_requeue_and_dead_letter_separately() {
     // `queued`) would otherwise be claimed instead of the row this test just
     // seeded, silently testing the wrong row.
     let (_, live) = seed_task(&db, "workflow", TaskScope::Global).await;
-    crud::claim_task_under_root(&db, "w-1", &live)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w-1", &live).await;
     expire_heartbeat(&db, &live).await;
 
     // One task at the cap -> dead-lettered.
@@ -205,9 +276,7 @@ async fn reap_counters_increment_via_a_call_site_other_than_run_reaper_cycle() {
     // `reap_reports_requeue_and_dead_letter_separately` for why the claim is
     // scoped to this task's own id rather than the generic global claim.
     let (_, live) = seed_task(&db, "workflow", TaskScope::Global).await;
-    crud::claim_task_under_root(&db, "w-dt", &live)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w-dt", &live).await;
     expire_heartbeat(&db, &live).await;
 
     // One task at the cap -> dead-lettered.
@@ -256,9 +325,7 @@ async fn reap_nulls_last_heartbeat_on_requeue() {
     // See the comment in `reap_reports_requeue_and_dead_letter_separately` —
     // scope the claim to this task's own id, not the generic global claim.
     let (_, task_id) = seed_task(&db, "workflow", TaskScope::Global).await;
-    crud::claim_task_under_root(&db, "w-1", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w-1", &task_id).await;
     expire_heartbeat(&db, &task_id).await;
 
     crud::reap_stale_tasks(&db).await.unwrap();
@@ -338,9 +405,7 @@ async fn hard_crash_still_charges_the_budget() {
 
     // Three crashes: claim, then die without releasing. The reaper charges each.
     for _ in 0..3 {
-        crud::claim_task_under_root(&db, "crasher", &task_id)
-            .await
-            .unwrap();
+        claim_or_fail(&db, "crasher", &task_id).await;
         expire_heartbeat(&db, &task_id).await;
         crud::reap_stale_tasks(&db).await.unwrap();
     }
@@ -360,13 +425,9 @@ async fn release_only_touches_this_workers_claims() {
     };
 
     let (_, mine) = seed_task(&db, "workflow", TaskScope::Global).await;
-    crud::claim_task_under_root(&db, "worker-a", &mine)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "worker-a", &mine).await;
     let (_, theirs) = seed_task(&db, "workflow", TaskScope::Global).await;
-    crud::claim_task_under_root(&db, "worker-b", &theirs)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "worker-b", &theirs).await;
 
     let released = crud::release_claims_for_worker(&db, "worker-a")
         .await
@@ -374,9 +435,14 @@ async fn release_only_touches_this_workers_claims() {
 
     assert_eq!(released, 1);
     assert_eq!(row(&db, &mine).await.queue_status, "queued");
+    // `worker_id` rather than `queue_status`, for the same reason as the
+    // sibling assertion in `a_claim_taken_during_shutdown_can_be_handed_straight_back`.
+    // Weaker here than there — `released == 1` above would already catch a
+    // dropped `worker_id = $1`, since a released peer would make it 2 — but the
+    // two should read the same way, and the stronger form costs nothing.
     assert_eq!(
-        row(&db, &theirs).await.queue_status,
-        "claimed",
+        row(&db, &theirs).await.worker_id.as_deref(),
+        Some("worker-b"),
         "must never release a peer's live claim"
     );
 }
@@ -389,9 +455,21 @@ async fn release_floors_claim_count_at_zero() {
     };
 
     let (_, task_id) = seed_task(&db, "workflow", TaskScope::Global).await;
-    crud::claim_task_under_root(&db, "w-floor", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w-floor", &task_id).await;
+    // Same class as `released_agent_root_stays_scoped`: the forced UPDATE below
+    // runs regardless of status, and on a lost claim
+    // `release_claims_for_worker` then matches nothing — so the final
+    // `claim_count == 0` holds without `GREATEST(claim_count - 1, 0)`, the
+    // thing under test, ever running.
+    // `worker_id`, not `queue_status`: a stolen claim leaves the row `claimed`
+    // by the thief, so a status check does not discriminate the case this
+    // precondition exists for. Ownership is the property every assertion below
+    // actually depends on.
+    assert_eq!(
+        row(&db, &task_id).await.worker_id.as_deref(),
+        Some("w-floor"),
+        "precondition: claimed BY US, or the floor below is never exercised"
+    );
 
     // Force the pathological case: claimed with a zero budget already spent.
     db.execute_raw(Statement::from_sql_and_values(
@@ -437,14 +515,10 @@ async fn releasing_twice_is_a_no_op_and_does_not_double_refund() {
     // genuine double refund would be *invisible*, and the property this test is
     // named for could not fail. From 2 the two outcomes separate: 1 if the
     // second pass correctly matches nothing, 0 if it refunds again.
-    crud::claim_task_under_root(&db, "w-twice", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w-twice", &task_id).await;
     expire_heartbeat(&db, &task_id).await;
     crud::reap_stale_tasks(&db).await.unwrap();
-    crud::claim_task_under_root(&db, "w-twice", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w-twice", &task_id).await;
     assert_eq!(
         row(&db, &task_id).await.claim_count,
         2,
@@ -498,12 +572,8 @@ async fn drain_releases_every_held_claim_without_double_refunding() {
 
     let (_, first) = seed_task(&db, "workflow", TaskScope::Global).await;
     let (_, second) = seed_task(&db, "workflow", TaskScope::Global).await;
-    crud::claim_task_under_root(&db, "w-drain", &first)
-        .await
-        .unwrap();
-    crud::claim_task_under_root(&db, "w-drain", &second)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w-drain", &first).await;
+    claim_or_fail(&db, "w-drain", &second).await;
 
     let released = crud::drain_claims_for_worker(&db, "w-drain").await.unwrap();
 
@@ -546,13 +616,9 @@ async fn terminal_writes_cannot_stamp_a_peers_reclaimed_row() {
         ("cancelled", "cancel"),
     ] {
         let (_, task_id) = seed_task(&db, "workflow", TaskScope::Global).await;
-        crud::claim_task_under_root(&db, "dying", &task_id)
-            .await
-            .unwrap();
+        claim_or_fail(&db, "dying", &task_id).await;
         crud::release_claims_for_worker(&db, "dying").await.unwrap();
-        crud::claim_task_under_root(&db, "peer", &task_id)
-            .await
-            .unwrap();
+        claim_or_fail(&db, "peer", &task_id).await;
 
         let write = terminal_write(&db, &task_id, "dying", outcome).await;
 
@@ -590,9 +656,7 @@ async fn terminal_writes_still_land_for_the_holder() {
         ("h-cancel", "cancelled", "cancel"),
     ] {
         let (_, task_id) = seed_task(&db, "workflow", TaskScope::Global).await;
-        crud::claim_task_under_root(&db, worker, &task_id)
-            .await
-            .unwrap();
+        claim_or_fail(&db, worker, &task_id).await;
 
         let write = terminal_write(&db, &task_id, worker, kind).await;
 
@@ -613,9 +677,7 @@ async fn released_claim_is_immediately_claimable_by_a_successor() {
     };
 
     let (_, task_id) = seed_task(&db, "workflow", TaskScope::Global).await;
-    crud::claim_task_under_root(&db, "dying-worker", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "dying-worker", &task_id).await;
     crud::release_claims_for_worker(&db, "dying-worker")
         .await
         .unwrap();
@@ -655,12 +717,8 @@ async fn a_claim_taken_during_shutdown_can_be_handed_straight_back() {
 
     let (_, mine) = seed_task(&db, "workflow", TaskScope::Global).await;
     let (_, sibling) = seed_task(&db, "workflow", TaskScope::Global).await;
-    crud::claim_task_under_root(&db, "w-late", &mine)
-        .await
-        .unwrap();
-    crud::claim_task_under_root(&db, "w-late", &sibling)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w-late", &mine).await;
+    claim_or_fail(&db, "w-late", &sibling).await;
 
     let handed_back = crud::release_claim(&db, &mine, "w-late").await.unwrap();
 
@@ -676,9 +734,12 @@ async fn a_claim_taken_during_shutdown_can_be_handed_straight_back() {
     // Scoped to one row on purpose: sibling workers in this process are still
     // executing their own claims when one worker's straggler lands, and a
     // blanket release would yank the row out from under work that will finish.
+    // On `worker_id`, not `queue_status`: a sibling stolen by another test is
+    // still `claimed` — by the thief — so a status check passes while
+    // `release_claim` could have been scoped wrongly all along.
     assert_eq!(
-        row(&db, &sibling).await.queue_status,
-        "claimed",
+        row(&db, &sibling).await.worker_id.as_deref(),
+        Some("w-late"),
         "handing back one claim must not disturb this worker's other claims"
     );
 
@@ -702,9 +763,7 @@ async fn release_claim_never_touches_a_peers_row() {
     // one. Without it, a straggler hand-back could release a row a peer had
     // already re-claimed — reintroducing the very hazard it exists to avoid.
     let (_, task_id) = seed_task(&db, "workflow", TaskScope::Global).await;
-    crud::claim_task_under_root(&db, "peer", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "peer", &task_id).await;
 
     assert!(
         !crud::release_claim(&db, &task_id, "not-the-holder")
@@ -742,9 +801,7 @@ async fn user_cancel_then_worker_cancelled_is_not_a_lost_claim() {
     };
 
     let (_, task_id) = seed_task(&db, "workflow", TaskScope::Global).await;
-    crud::claim_task_under_root(&db, "w-stop", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w-stop", &task_id).await;
 
     // 1. The requester (user pressed Stop) stamps the row.
     crud::cancel_queued_task(&db, &task_id).await.unwrap();
@@ -786,9 +843,7 @@ async fn a_cancelled_row_is_not_reopened_by_a_later_outcome() {
 
     for kind in ["fail", "complete"] {
         let (_, task_id) = seed_task(&db, "workflow", TaskScope::Global).await;
-        crud::claim_task_under_root(&db, "w-late-outcome", &task_id)
-            .await
-            .unwrap();
+        claim_or_fail(&db, "w-late-outcome", &task_id).await;
         crud::cancel_queued_task(&db, &task_id).await.unwrap();
 
         let write = terminal_write(&db, &task_id, "w-late-outcome", kind).await;
@@ -919,9 +974,7 @@ async fn released_workflow_root_becomes_globally_eligible() {
 
     let (_, task_id) = seed_task(&db, "workflow", TaskScope::Scoped).await;
     let worker = "w-shutdown";
-    crud::claim_task_under_root(&db, worker, &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, worker, &task_id).await;
 
     let marked = crud::mark_released_roots_global(&db, worker).await.unwrap();
     crud::release_claims_for_worker(&db, worker).await.unwrap();
@@ -942,9 +995,18 @@ async fn released_agent_root_stays_scoped() {
 
     let (_, task_id) = seed_task(&db, "agentic", TaskScope::Scoped).await;
     let worker = "w-shutdown-agent";
-    crud::claim_task_under_root(&db, worker, &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, worker, &task_id).await;
+    // Negative assertion, so the precondition is asserted rather than assumed:
+    // `mark_released_roots_global` is scoped to `worker_id` + `claimed`, so a
+    // lost claim makes `marked == 0` hold for the wrong reason — and
+    // `scope_owned` stays `true` from the seed regardless. Both would be green
+    // with the `source_type` guard this test exists for never exercised.
+    assert_eq!(
+        row(&db, &task_id).await.worker_id.as_deref(),
+        Some(worker),
+        "precondition: claimed, or `marked == 0` proves nothing about the \
+         source_type guard"
+    );
 
     let marked = crud::mark_released_roots_global(&db, worker).await.unwrap();
     crud::release_claims_for_worker(&db, worker).await.unwrap();
@@ -979,9 +1041,7 @@ async fn a_marked_root_is_claimable_by_the_global_path() {
 
     let (_, task_id) = seed_task(&db, "workflow", TaskScope::Scoped).await;
     let worker = "w-shutdown-claimable";
-    crud::claim_task_under_root(&db, worker, &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, worker, &task_id).await;
 
     crud::mark_released_roots_global(&db, worker).await.unwrap();
     crud::release_claims_for_worker(&db, worker).await.unwrap();
@@ -1044,9 +1104,17 @@ async fn mark_released_roots_global_refuses_a_claimed_child() {
     .unwrap();
 
     let worker = "w-shutdown-child";
-    crud::claim_task_under_root(&db, worker, &child)
-        .await
-        .unwrap();
+    claim_or_fail(&db, worker, &child).await;
+    // Asserted, not assumed: this test's claim is a NEGATIVE (`marked == 0`),
+    // which holds just as well if the fixture never claimed anything — so a
+    // lost claim would pass it vacuously and `claim_or_fail`'s report would be
+    // discarded along with the rest of a passing test's output.
+    assert_eq!(
+        row(&db, &child).await.worker_id.as_deref(),
+        Some(worker),
+        "precondition: the child must actually be claimed, or `marked == 0` \
+         below proves nothing about the `parent_task_id IS NULL` guard"
+    );
 
     let marked = crud::mark_released_roots_global(&db, worker).await.unwrap();
 
@@ -1187,9 +1255,7 @@ async fn defer_refunds_the_claim_it_returns() {
     };
     let (_run_id, task_id) = seed_task(&db, "agent", TaskScope::Global).await;
 
-    crud::claim_task_under_root(&db, "w1", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w1", &task_id).await;
     assert_eq!(row(&db, &task_id).await.claim_count, 1);
 
     crud::defer_task(&db, &task_id, "w1", 60, 86_400)
@@ -1202,9 +1268,29 @@ async fn defer_refunds_the_claim_it_returns() {
     );
 
     // And a worker that does NOT hold the claim cannot defer it.
-    crud::claim_task_under_root(&db, "w1", &task_id)
-        .await
-        .unwrap_or(None);
+    //
+    // Re-open the availability window first. The deferral above pushed
+    // `available_at` 60s out, and `claim_task_under_root` filters
+    // `available_at <= now()` — so without this the re-claim below can never
+    // land, the row stays `queued`, and the `NotHeld` asserted next comes back
+    // because of `queue_status` rather than because of the `worker_id` scoping
+    // this test exists to check. That assertion held with the ownership
+    // predicate deleted from `defer_task` entirely.
+    db.execute_raw(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "UPDATE agentic_task_queue SET available_at = now() - interval '1 second' \
+         WHERE task_id = $1",
+        [task_id.clone().into()],
+    ))
+    .await
+    .unwrap();
+    claim_or_fail(&db, "w1", &task_id).await;
+    assert_eq!(
+        row(&db, &task_id).await.queue_status,
+        "claimed",
+        "precondition: the row must be CLAIMED for the next assertion to be about \
+         ownership rather than about status"
+    );
     assert_eq!(
         crud::defer_task(&db, &task_id, "someone-else", 60, 86_400)
             .await
@@ -1227,9 +1313,7 @@ async fn reenqueue_clears_a_pending_deferral() {
     };
     let (run_id, task_id) = seed_task(&db, "agent", TaskScope::Global).await;
 
-    crud::claim_task_under_root(&db, "w1", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w1", &task_id).await;
     crud::defer_task(&db, &task_id, "w1", 3600, 86_400)
         .await
         .unwrap();
@@ -1282,9 +1366,7 @@ async fn a_task_that_waits_past_its_ceiling_is_dead_lettered() {
     let (_run_id, task_id) = seed_task(&db, "agent", TaskScope::Global).await;
 
     // First defer starts the streak and stays queued.
-    crud::claim_task_under_root(&db, "w1", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w1", &task_id).await;
     assert_eq!(
         crud::defer_task(&db, &task_id, "w1", 1, 3600)
             .await
@@ -1307,9 +1389,7 @@ async fn a_task_that_waits_past_its_ceiling_is_dead_lettered() {
     .await
     .unwrap();
 
-    crud::claim_task_under_root(&db, "w2", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w2", &task_id).await;
     assert_eq!(
         crud::defer_task(&db, &task_id, "w2", 1, 3600)
             .await
@@ -1333,20 +1413,32 @@ async fn the_wait_streak_is_not_reset_by_later_deferrals() {
     };
     let (_run_id, task_id) = seed_task(&db, "agent", TaskScope::Global).await;
 
-    crud::claim_task_under_root(&db, "w1", &task_id)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w1", &task_id).await;
     crud::defer_task(&db, &task_id, "w1", 0, 3600)
         .await
         .unwrap();
     let first = row(&db, &task_id).await.first_deferred_at.unwrap();
 
-    crud::claim_task_under_root(&db, "w2", &task_id)
-        .await
-        .unwrap();
-    crud::defer_task(&db, &task_id, "w2", 0, 3600)
-        .await
-        .unwrap();
+    claim_or_fail(&db, "w2", &task_id).await;
+    // Assert the OUTCOME, not just the `Result` — the idiom both sibling
+    // deferral tests already use. The assertion below is that nothing changed,
+    // which is exactly the shape that passes when the operation never ran: on a
+    // lost or stolen second claim `defer_task` returns `NotHeld`, its UPDATE
+    // matches nothing, and `first == second` holds for that reason instead of
+    // the one under test. `.unwrap()` alone hides it, since `NotHeld` is an
+    // `Ok`. One line, and it discriminates lost and stolen claims together.
+    //
+    // Exposed rather than theoretical here: the `delay 0` above is what makes
+    // the row re-claimable at all, and it is globally claimable — see this
+    // test's own cleanup note below.
+    assert_eq!(
+        crud::defer_task(&db, &task_id, "w2", 0, 3600)
+            .await
+            .unwrap(),
+        crud::DeferOutcome::Deferred,
+        "precondition: the second defer must actually run, or the equality \
+         below holds because nothing happened"
+    );
     let second = row(&db, &task_id).await.first_deferred_at.unwrap();
 
     assert_eq!(

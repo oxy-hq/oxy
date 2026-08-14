@@ -106,8 +106,14 @@ fn parse_checkpoint(run_id: &str, resume_data: Value) -> Option<SuspendedRunData
                 target: "runtime",
                 run_id,
                 error = %e,
-                "unparseable suspension checkpoint; this task cannot resume and \
-                 will sit until its suspend ceiling"
+                // Deliberately stops at "cannot resume". Three consumers reach
+                // here — coordinator, HTTP, pipeline — and what happens next
+                // differs for each: the coordinator leaves a delegating parent
+                // to its suspend ceiling, while the other two just see a run
+                // with no checkpoint. Naming one consequence would be wrong for
+                // the others. (Consumers, not call sites: the count of the
+                // latter drifts.)
+                "unparseable suspension checkpoint; this task cannot resume"
             );
             None
         }

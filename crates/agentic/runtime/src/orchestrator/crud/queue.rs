@@ -66,6 +66,34 @@ pub async fn enqueue_task(
         // (retry, reset). Leaving the column unwritten there would inherit a
         // prior `defer_task` deadline, so an explicit re-enqueue would sit
         // invisible for the remainder of a deferral its caller never chose.
+        //
+        // **This timestamp comes from the APP's clock, and the predicate that
+        // reads it (`available_at <= now()` in `claim_task` /
+        // `claim_task_under_root`) evaluates on the DATABASE's.** They are
+        // different machines in any real deployment. If the database runs
+        // behind the app by more than the enqueue→claim gap — milliseconds — a
+        // freshly enqueued row is briefly invisible to a claim.
+        //
+        // Deliberately left as-is — but cost it honestly, because this comment
+        // is what someone will re-decide from. The skew *window* is
+        // sub-second; the *latency* is up to one poll interval, 10s by
+        // default. A missed claim returns `Ok(None)` from `recv_assignment`,
+        // which parks on `new_task_notify` / `router.wait_for_task` — and this
+        // enqueue's NOTIFY was already consumed by the poll that missed it, so
+        // absent unrelated traffic the next wake is `DEFAULT_POLL_INTERVAL`.
+        //
+        // Still latency rather than lost work, which is what keeps it out of
+        // scope: a server-side `now()` would mean hand-writing this upsert
+        // (SeaORM's `ActiveModel` cannot express it) and re-deriving the
+        // conflict semantics above. It is written down because it is invisible
+        // in the code and reads as a logic bug when it bites — the claim just
+        // returns `None`, and in tests that surfaces as an unrelated assertion
+        // failing several steps later.
+        //
+        // `created_at` below is stamped from the same clock and is
+        // `claim_task`'s `ORDER BY` key, so multi-instance skew also perturbs
+        // claim *order*. Fairness rather than correctness, and equally
+        // invisible.
         available_at: Set(now),
         // Fresh work is not waiting on anything — clear any prior streak, on
         // the upsert path too (same reasoning as `available_at`).

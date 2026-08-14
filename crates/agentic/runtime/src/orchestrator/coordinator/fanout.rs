@@ -485,6 +485,16 @@ impl Coordinator {
             // and sat in memory until the process restarted and `from_db` put it
             // back. Staying `WaitingOnChildren` is also just truer: the parent
             // did not resume, so it is still waiting.
+            //
+            // One branch this does NOT rescue: `resume_parent` is
+            // suspend-reason-agnostic, so a `SuspendedHuman` parent is preserved
+            // the same way — and that status is deliberately exempt from
+            // `check_suspend_timeouts` (people answer hours later), so there is
+            // no ceiling behind it. Such a task simply re-logs "no suspend data
+            // for resume" on each answer instead of flipping to `Running` and
+            // hitting the "human answer for non-suspended task" branch. Neither
+            // state makes progress; this one at least describes itself
+            // accurately.
             let resume_data = match parent_node.suspend_data.take() {
                 Some(data) => data,
                 None => {
