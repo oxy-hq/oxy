@@ -8,7 +8,7 @@
     "format": "turbo format",
     "format:docs": "prettier --write \"docs/**/*.{md,mdx}\"",
     "format:docs:check": "prettier --check \"docs/**/*.{md,mdx}\"",
-    "prepare": "husky"
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

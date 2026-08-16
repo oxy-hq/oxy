@@ -17,7 +17,46 @@ install:
     @cargo nextest --version >/dev/null 2>&1 || cargo install cargo-nextest --locked
     @echo "==> Installing Node dependencies..."
     pnpm install
+    @just install-hooks
     @echo "Done. Run 'just dev' to start the development servers."
+
+# Point git at the tracked hook dir, so a new worktree seeds its own target/.
+#
+# .githooks owns core.hooksPath outright: package.json's `prepare` sets that
+# config directly rather than running `husky`, because husky v9 claims
+# core.hooksPath for .husky/_ and would silently take it back on the next
+# `pnpm install` — which is exactly what happened, leaving post-checkout dead and
+# every new worktree unseeded. Setting it from `prepare` keeps every install
+# route self-wiring (a plain `pnpm install` on a fresh clone still gets hooks,
+# which is how commitlint and lint-staged reach anyone who never runs
+# `just install`) without letting husky reclaim the path. We need a *tracked*
+# dir anyway: .husky/_ is generated, so it does not exist in a brand-new
+# worktree — the exact case post-checkout is for.
+#
+# husky stays a devDependency only to keep .husky/ meaningful; nothing invokes
+# it. .githooks carries shims that forward commit-msg / pre-commit / pre-push to
+# the scripts in .husky/, so commitlint and lint-staged keep running. Add a shim
+# whenever a hook is added to .husky/.
+install-hooks:
+    @git config core.hooksPath .githooks
+    @echo "==> git hooks enabled (.githooks, forwarding to .husky)"
+
+# It removes the dependency graph for good (a cold build is 88% registry deps),
+# but NOT the edit loop: rustc's incremental cache cannot be shared, so your
+# first edit to each crate still compiles it from scratch — ~61s for oxy-app on
+# `cargo check`, and `cargo build` is several times that, against 418s cold.
+#
+# Auto-picks the closest warm sibling; pass one to override. Runs automatically
+# on `git worktree add` once hooks are installed. The win tracks third-party
+# dependency drift, so glance at the "N differ" line it prints. See
+# internal-docs/rust-build-performance.md.
+#
+# Single-arg and quoted: a source path with a space used to split into two argv
+# entries and die in argparse as `unrecognized arguments`.
+#
+# Seed this checkout's target/ from a warm checkout (~9s, ~1.3G of copied build/).
+seed-target source="":
+    src={{ quote(source) }}; python3 scripts/seed-target.py ${src:+"$src"}
 
 # ── Build ──────────────────────────────────────────────────────────────────────
 

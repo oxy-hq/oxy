@@ -2,10 +2,15 @@
 MACOSX_DEPLOYMENT_TARGET = "12.0"
 
 [build]
+# Load-bearing beyond the edit loop: `incremental` is part of cargo's profile
+# hash, so this is what makes one checkout's artifacts addressable from another
+# and lets scripts/seed-target.py work at all. Every shell that builds must
+# agree on it and on CARGO_PROFILE_DEV_*.
 incremental = true
-# To enable sccache locally for faster rebuilds:
-#   brew install sccache
-#   export RUSTC_WRAPPER=sccache
+# Do NOT set RUSTC_WRAPPER=sccache here or in your shell. sccache hard-errors
+# under incremental, and turning incremental off to satisfy it repartitions the
+# fingerprint namespace and throws away every seeded artifact — measured at
+# 1m43s vs 1.5s on a fresh worktree. See internal-docs/rust-build-performance.md.
 
 [net]
 git-fetch-with-cli = true

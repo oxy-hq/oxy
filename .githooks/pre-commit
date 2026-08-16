@@ -1,0 +1,35 @@
+#!/usr/bin/env sh
+# Delegate to husky's hook of the same name.
+#
+# We own core.hooksPath (see post-checkout, which must be reachable from a
+# brand-new worktree where .husky/_/ does not exist yet). Husky v9 wants that
+# same config pointing at .husky/_, and only one can win — so package.json's
+# `prepare` sets this path directly instead of running `husky`, and we forward.
+# Sharing it was tried and lost: husky reclaimed core.hooksPath on the next
+# `pnpm install`, post-checkout stopped firing, and new worktrees went unseeded
+# for weeks (a cold build reads as 418s instead of seconds). Do not restore
+# `"prepare": "husky"`.
+#
+# Keep this list in sync with .husky/. A hook added there needs a shim here.
+
+[ "$HUSKY" = "0" ] && exit 0
+
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -f "$root/.husky/pre-commit" ] || exit 0
+
+# Reproduce husky's own runner (.husky/_/h) exactly:
+#
+#   init.sh is the documented place to set up nvm/fnm/corepack so a non-login
+#   shell finds node and pnpm. Without it a commit from VS Code / Fork / Tower
+#   dies with `pnpm: not found` — node_modules/.bin is no substitute, since
+#   these scripts invoke `pnpm` itself, which lives on the user's PATH.
+#
+#   sh -e, not sh: .husky/pre-commit is multi-command and its last statement is
+#   an advisory block that always succeeds, so without -e a failing
+#   `pnpm lint-staged` exits 0 and the commit sails through.
+i="${XDG_CONFIG_HOME:-$HOME/.config}/husky/init.sh"
+[ -f "$i" ] && . "$i"
+
+PATH="$root/node_modules/.bin:$PATH"
+export PATH
+exec sh -e "$root/.husky/pre-commit" "$@"

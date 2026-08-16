@@ -32,8 +32,18 @@ If you'd rather install the pieces by hand:
 
 ```bash
 cargo build      # build the Rust workspace (debug — never use --release locally)
-pnpm install     # install frontend dependencies
+pnpm install     # install frontend dependencies, and point git at .githooks
 ```
+
+Either route installs the git hooks: `pnpm install` runs a `prepare` script that
+sets `core.hooksPath` to the tracked `.githooks` dir, which forwards commit-msg /
+pre-commit / pre-push to `.husky/` and seeds a new checkout's `target/`.
+`just install-hooks` does the same thing explicitly.
+
+**That first `cargo build` is ~7 minutes from cold, and you can skip nearly all
+of it** if you already have another checkout of this repo built:
+`just seed-target` hardlinks its artifacts across in seconds. See
+[internal-docs/rust-build-performance.md](internal-docs/rust-build-performance.md).
 
 ## Environment Variables
 

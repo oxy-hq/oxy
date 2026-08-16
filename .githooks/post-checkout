@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Seed a brand-new worktree's target/ with hardlinked dependency artifacts.
+#
+# Git runs this with cwd set to the new working tree. `git worktree add` passes
+# an all-zero previous HEAD; an ordinary `git checkout <branch>` passes a real
+# one. That distinction is the whole trigger — we only want to seed a tree that
+# has no target/ yet, never on a routine branch switch.
+#
+# A fresh `git clone` passes the all-zero HEAD too, but core.hooksPath is local
+# config and is not cloned, so nothing runs there until `pnpm install` (or
+# `just install-hooks`) sets it. Seed a new clone by hand: `just seed-target`.
+#
+# This must never fail a checkout, so every path exits 0.
+#
+# Enable with `just install-hooks` (sets core.hooksPath); see
+# internal-docs/rust-build-performance.md.
+
+prev_head="$1"
+branch_checkout="$3"
+
+[ "$branch_checkout" = "1" ] || exit 0
+# All-zero previous HEAD, matched as a glob so this still works in a SHA-256
+# repo, where the null OID is 64 characters rather than 40.
+case "$prev_head" in
+  *[!0]* | "") exit 0 ;;
+esac
+
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -n "$root" ] || exit 0
+[ -f "$root/scripts/seed-target.py" ] || exit 0
+
+# Never seed a worktree under .worktrees/. That directory belongs to the
+# product, not to a developer: `git_switch_branch` in an HTTP handler calls
+# get_or_create_worktree(), which shells out to `git worktree add`
+# (crates/git/src/cli/worktree.rs, WORKTREES_DIR). Seeding there would put a
+# ~9s, 1.3G copy inside a request — every IDE branch switch hanging, and
+# ~1.3G left behind per branch — to warm a tree nobody runs cargo in. Set
+# OXY_SEED_TARGET=1 if you really are building in one.
+case "${OXY_SEED_TARGET:-}" in
+  1) ;;
+  *) case "$root" in */.worktrees/*) exit 0 ;; esac ;;
+esac
+[ -d "$root/target/debug/deps" ] && exit 0   # already warm; nothing to do
+command -v python3 >/dev/null 2>&1 || exit 0
+# seed-target.py runs `cargo metadata` before anything else. A git invoked from
+# an IDE may not have the rustup shims on PATH, and without this the checkout
+# ends with a Python traceback in the middle of its output.
+command -v cargo >/dev/null 2>&1 || exit 0
+
+echo "post-checkout: seeding target/ from a warm checkout…"
+python3 "$root/scripts/seed-target.py" --dest "$root" || true
+exit 0
