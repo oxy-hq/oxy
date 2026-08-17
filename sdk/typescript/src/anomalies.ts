@@ -51,6 +51,14 @@ export interface Anomaly {
    * {@link ScanFailure.filters}.
    */
   filters: AnomalyFilter[] | null;
+  /**
+   * Groups consecutive flagged buckets of one segment into a single event, so a
+   * surge spanning Mon/Wed/Thu reads as one problem rather than three. `null`
+   * for rows detected before events existed. This is what
+   * {@link AnomaliesClient.updateStatusBulk} wants as `eventIds` — a status
+   * action applies to the whole event.
+   */
+  event_id?: string | null;
   /** Cached ExplainResult — populated by `POST /anomalies/:id/explain`. */
   explain_cache?: ExplainResult | null;
   explain_cached_at?: string | null;
@@ -67,6 +75,16 @@ export interface ListAnomaliesOptions {
    */
   limit?: number;
   /**
+   * How many **events** to skip (rows, with `order: "recent"`) — same unit as
+   * `limit`, so page `n` is `offset: (n - 1) * limit`. Defaults to 0.
+   *
+   * Bounded: past the server's maximum depth the request is refused with a 400
+   * rather than served a repeat of the last reachable page, so a runaway
+   * `offset += limit` loop ends loudly instead of spinning. Every response
+   * echoes that depth as `max_offset`, so a loop can stop before reaching it.
+   */
+  offset?: number;
+  /**
    * `"recent"` returns latest-first (`detected_at DESC`). Omit for the default
    * worst-first ranking by event severity (active events before dismissed).
    */
@@ -75,6 +93,75 @@ export interface ListAnomaliesOptions {
 
 export interface ListAnomaliesResponse {
   anomalies: Anomaly[];
+  /**
+   * Total matching the filter across every page — **events** under the default
+   * ranking, rows under `order: "recent"`. Same unit as `limit`/`offset`, so
+   * `Math.ceil(total / limit)` is the page count. Note it will not equal
+   * `anomalies.length` under the default ranking even on a single page: each
+   * event returns all of its buckets.
+   *
+   * **Absent** in two cases, and a client that pages has to handle both. Send
+   * neither `limit` nor `offset` and you have asked for "the top N", so there
+   * is no total behind the answer — the field is omitted rather than filled
+   * with the page's own length. Pass a `limit` (with `offset: 0` for the first
+   * page) to get a real total to loop against.
+   *
+   * It is also dropped when the count query itself fails: the page rows are
+   * already in hand, and the server serves them without their denominator
+   * rather than failing a request it could answer. So a page you asked for
+   * with `limit` can still come back untotalled — page off `anomalies.length`
+   * and `max_offset` in that case rather than treating it as zero.
+   */
+  total?: number;
+  /**
+   * The page actually served. `limit` is clamped to 1..=500, so it can come
+   * back smaller than you asked for and every page number you compute must
+   * divide by this rather than by what you sent. `offset` is *not* clamped —
+   * too deep a request is refused with a 400 (see `max_offset`), so this echoes
+   * the offset you sent whenever there is a response at all.
+   *
+   * Optional because a replica still running a pre-paging build emits neither,
+   * which is a live shape during a rolling deploy. Fall back to what you asked
+   * for rather than doing arithmetic on `undefined`.
+   */
+  limit?: number;
+  offset?: number;
+  /**
+   * The deepest `offset` the server will serve — past it a request is refused
+   * with a 400. Read it rather than hardcoding a copy: a paging loop bounded by
+   * this stops cleanly instead of ending on an error.
+   */
+  max_offset?: number;
+  /**
+   * Event keys whose buckets were trimmed to the server's per-event cap (50) —
+   * an `event_id`, or `ungrouped:<row id>` for a row detected before events
+   * existed. For those events `anomalies` holds the worst buckets, not all of
+   * them, so a status write should name the event through `updateStatusBulk`'s
+   * `eventIds` rather than enumerating the buckets you received.
+   *
+   * Only meaningful under the default ranking, which pages *events* and
+   * returns each whole — there, an absence means complete. With
+   * `order: "recent"` the page is row-limited, so an event can straddle its
+   * boundary instead; this list stays empty and every event should be treated
+   * as possibly partial.
+   */
+  truncated_events?: string[];
+}
+
+export interface BulkUpdateStatusResponse {
+  /** Buckets actually written. Lower than what you sent when a row was
+   *  deleted, moved out of `onlyStatus`, or belongs to another workspace. */
+  updated: number;
+  /** Distinct anomalies behind those buckets — events, plus standalone
+   *  pre-event rows. The unit a UI counts in, and one only the server can
+   *  compute: naming an event never told you how many buckets it held.
+   *
+   *  An anomaly counts as updated once *any* of its buckets is written. Name
+   *  events through `eventIds` and that is the whole anomaly; name one bucket
+   *  of a long chain through `ids` and this still reports `1` while the rest
+   *  keep their old status. `ids` is for pre-event rows, which hold one bucket
+   *  each — using it for anything else buys a partial write. */
+  events_updated: number;
 }
 
 export interface ScanOptions {
@@ -122,6 +209,13 @@ export interface ExplainOptions {
 
 export type RequestFn = <T>(endpoint: string, options?: RequestInit) => Promise<T>;
 
+/** Which buckets a write may touch when the caller didn't say. Live statuses
+ *  for ack/dismiss; all three for a reopen, which exists to reach dismissed
+ *  ones. */
+function defaultScope(status: AnomalyStatus): AnomalyStatus[] {
+  return status === "new" ? ["new", "acknowledged", "dismissed"] : ["new", "acknowledged"];
+}
+
 /**
  * Client for `/semantic/anomalies*`. Construct via `OxyClient.anomalies`
  * rather than instantiating directly — the getter wires the request helper
@@ -163,12 +257,22 @@ export class AnomaliesClient {
    * ```typescript
    * // Open / unresolved anomalies only
    * const { anomalies } = await client.anomalies.list({ status: "new" });
+   *
+   * // Second page of 25 events
+   * const page2 = await client.anomalies.list({ limit: 25, offset: 25 });
+   * console.log(`${(page2.offset ?? 25) + 1}+ of ${page2.total ?? "?"}`);
    * ```
    */
   async list(options: ListAnomaliesOptions = {}): Promise<ListAnomaliesResponse> {
     const extra: Record<string, string> = {};
     if (options.status) extra.status = options.status;
-    if (options.limit) extra.limit = String(options.limit);
+    // Presence, not truthiness. The server reads "is this caller paging?" off
+    // whether these params were sent at all, so dropping `offset: 0` on a
+    // falsy check would make the first iteration of a paging loop a non-paging
+    // request — one that reports `total` as just the rows it returned, ending
+    // the loop after a single page.
+    if (options.limit !== undefined) extra.limit = String(options.limit);
+    if (options.offset !== undefined) extra.offset = String(options.offset);
     if (options.order) extra.order = options.order;
     // No trailing slash before the query — axum 307-redirects "/anomalies/"
     // to "/anomalies", and the redirect fails CORS preflight in browsers.
@@ -212,6 +316,63 @@ export class AnomaliesClient {
     return this.request<Anomaly>(this.path(`/${encodeURIComponent(anomalyId)}/status${query}`), {
       method: "POST",
       body: JSON.stringify({ status })
+    });
+  }
+
+  /**
+   * Update many anomalies in one request — the batch form of
+   * {@link updateStatus}. Identifiers outside the workspace are skipped rather
+   * than erroring, so `updated` (rows written) can be lower than what you sent.
+   * At most 2000 identifiers across both lists.
+   *
+   * **Prefer `eventIds`.** Inbox actions are per *event*, and a list response
+   * caps how many buckets it returns per event — so acking the bucket ids you
+   * received can leave the tail of a long chain behind, `new`, under a clean
+   * success. Naming the event lets the server write all of it. `ids` is for
+   * rows with no `event_id` (detected before events existed), which can only
+   * be named individually.
+   *
+   * `onlyStatuses` says which of an event's buckets may move. An event can span
+   * statuses, so an unbounded write resurrects buckets that were dismissed on
+   * purpose — which is why omitting it takes a scope rather than no bound at
+   * all: the live statuses (`["new", "acknowledged"]`) for an ack or dismiss,
+   * and all three for `status: "new"`, since reopening is how a dismissed
+   * anomaly comes back. The server applies that same default, so the safe
+   * behaviour does not depend on going through this client. Pass `[]` to opt
+   * out of the bound entirely.
+   *
+   * @example
+   * ```typescript
+   * const { anomalies } = await client.anomalies.list({ status: "new", limit: 50, offset: 0 });
+   * // Both lists: events by id, and pre-event rows (no `event_id`) by their own.
+   * const eventIds = [...new Set(anomalies.flatMap((a) => (a.event_id ? [a.event_id] : [])))];
+   * const ids = anomalies.filter((a) => !a.event_id).map((a) => a.id);
+   * const { updated } = await client.anomalies.updateStatusBulk(
+   *   { ids, eventIds, onlyStatuses: ["new", "acknowledged"] },
+   *   "acknowledged"
+   * );
+   * ```
+   */
+  async updateStatusBulk(
+    target: { ids?: string[]; eventIds?: string[]; onlyStatuses?: AnomalyStatus[] },
+    status: AnomalyStatus
+  ): Promise<BulkUpdateStatusResponse> {
+    return this.request<BulkUpdateStatusResponse>(this.path(`/status${this.buildQuery()}`), {
+      method: "POST",
+      body: JSON.stringify({
+        ids: target.ids ?? [],
+        event_ids: target.eventIds ?? [],
+        // Defaults to a scope, never to "no bound": an empty list tells the
+        // server to write every bucket of the named events, dismissed ones
+        // included, and that is the single state this design says must not be
+        // reversed by accident.
+        //
+        // Reopening is the exception. `status: "new"` is how a dismissed
+        // anomaly comes back, so excluding `dismissed` there would make the
+        // one call that needs it a silent no-op.
+        only_statuses: target.onlyStatuses ?? defaultScope(status),
+        status
+      })
     });
   }
 

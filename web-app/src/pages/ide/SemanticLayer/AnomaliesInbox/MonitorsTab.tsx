@@ -104,18 +104,20 @@ export default function MonitorsTab() {
   // measure across all statuses. `order="recent"` is required: the Inbox's
   // default severity ranking would let a measure whose recent anomalies are all
   // `low` fall off the page and show a stale "last anomaly".
-  const { data: anomalies = [] } = useMetricAnomalies(undefined, "recent");
+  const { data: recent } = useMetricAnomalies(undefined, "recent");
 
   const lastAnomalyByMeasure = useMemo(() => {
     const map = new Map<string, string>();
-    for (const a of anomalies) {
+    // Depend on the response, not a defaulted `?? []`: that literal is a new
+    // array identity every render, which would rebuild this map every time.
+    for (const a of recent?.anomalies ?? []) {
       const existing = map.get(a.measure);
       if (!existing || a.period_start > existing) {
         map.set(a.measure, a.period_start);
       }
     }
     return map;
-  }, [anomalies]);
+  }, [recent]);
 
   // Coverage is per segment; the table is per monitor entry. Group on the same
   // (measure, time_dimension, granularity) triple the scanner keys its rows by

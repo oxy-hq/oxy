@@ -52,6 +52,66 @@ export interface MetricAnomaly {
 
 export interface ListAnomaliesResponse {
   anomalies: MetricAnomaly[];
+  /** Total across every page — **events** under the default ranking (the same
+   *  unit as `limit`/`offset`, so `total / limit` is the page count), rows
+   *  under `order=recent`.
+   *
+   *  Absent when the request sent neither `limit` nor `offset`: that asks for
+   *  "the top N", and there is no total behind it.
+   *
+   *  Also absent when the count query failed — the server serves the page it
+   *  already has rather than failing over a denominator. That case is why the
+   *  inbox carries an uncounted pager at all, so read `undefined` as "unknown",
+   *  never as zero. */
+  total?: number;
+  /** The page the server actually served — `limit` is clamped to 1..=500, so a
+   *  client that pages must read it back rather than trust what it asked for.
+   *
+   *  Optional because a replica still running a pre-paging build sends neither,
+   *  which is a live shape during a rolling deploy — the inbox guards on that,
+   *  and typing these as required would let a refactor delete the guard and
+   *  reintroduce a `?offset=NaN` request. */
+  limit?: number;
+  offset?: number;
+  /** The deepest `offset` the server will serve — past it a request is a 400.
+   *  Echoed so the pager can stop offering pages that don't exist, rather than
+   *  the client keeping its own copy of the number and drifting from it. */
+  max_offset?: number;
+  /** Event keys whose buckets were trimmed to the server's per-event cap, in
+   *  the same key space `groupIntoEvents` builds (`event_id`, or
+   *  `ungrouped:<row id>`). Without it a row cannot tell a complete 50-bucket
+   *  event from a trimmed 200-bucket one, and "worst of N" would be a guess.
+   *
+   *  Only populated under the default ranking, which pages whole events. */
+  truncated_events?: string[];
+}
+
+/** One status write: which anomalies, and the status they were shown as.
+ *  Built by the inbox's `targetOf`; consumed by the update hook and service. */
+export interface StatusWriteGroup {
+  /** Only buckets already in one of these statuses are written.
+   *
+   *  A set, not the tab's single status. An event can hold buckets the user
+   *  dismissed weeks ago and can't see from here — acking the row must not
+   *  resurrect those — while a scan can chain a fresh `new` bucket onto an
+   *  already-acknowledged event, which a single-status bound would strand.
+   *  So: the live statuses, plus `dismissed` when the row itself is dismissed. */
+  onlyStatuses: AnomalyStatus[];
+  ids: string[];
+  eventIds: string[];
+}
+
+export interface BulkUpdateStatusResponse {
+  /** Buckets the server actually wrote — lower than what was asked for when a
+   *  row was deleted, moved, or belongs to another workspace. */
+  updated: number;
+  /** Distinct anomalies (events, or standalone rows) behind those buckets —
+   *  the unit the UI counts in, so a partial apply can be reported honestly.
+   *
+   *  An anomaly counts once any of its buckets is written, which means what it
+   *  says only when the write named the event. `targetOf` uses bare row ids
+   *  solely for pre-event rows, which are one bucket each. */
+  events_updated: number;
 }
 
 /** A monitor that errored during a scan — identifies the monitor/segment and the error. */

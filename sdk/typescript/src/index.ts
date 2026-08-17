@@ -6,6 +6,7 @@ export type {
   AnomalyFilter,
   AnomalySeverity,
   AnomalyStatus,
+  BulkUpdateStatusResponse,
   ExplainOptions,
   ListAnomaliesOptions,
   ListAnomaliesResponse,

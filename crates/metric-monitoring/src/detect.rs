@@ -161,11 +161,28 @@ pub enum Severity {
 }
 
 /// SQL `CASE` mapping the stringified `severity` column to an orderable rank
-/// (`high` > `medium` > `low`). The single source of this encoding, shared by
-/// every query that ranks anomalies so the inbox and the agent tool can't
-/// drift; must stay in sync with [`Severity`]'s declaration order.
+/// (`high` > `medium` > `low`). Shared by every query that ranks anomalies, so
+/// the inbox and the agent tool can't drift; must stay in sync with
+/// [`Severity`]'s declaration order and with [`severity_rank`] beside it, which
+/// is the same mapping for code that ranks in Rust after the rows are back.
+///
+/// One copy still lives outside this crate — `SEVERITY_RANK` in the web app's
+/// `AnomaliesInbox/components/events.ts`, which ranks buckets inside an already
+/// served event. It cannot import this, so a change here is a change there.
 pub fn severity_rank_case_sql() -> &'static str {
     "CASE severity WHEN 'high' THEN 2 WHEN 'medium' THEN 1 ELSE 0 END"
+}
+
+/// [`severity_rank_case_sql`]'s mapping, in Rust, for ranking rows the database
+/// has already returned. Kept adjacent so the two are read and changed
+/// together: if they drift, a page's ordering and the per-event trim inside it
+/// disagree about which bucket matters.
+pub fn severity_rank(severity: &str) -> u8 {
+    match severity {
+        "high" => 2,
+        "medium" => 1,
+        _ => 0,
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

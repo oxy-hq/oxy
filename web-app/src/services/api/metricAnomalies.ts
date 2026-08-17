@@ -1,17 +1,46 @@
 import { AxiosError } from "axios";
 import type {
   AnomalyStatus,
+  BulkUpdateStatusResponse,
   ListAnomaliesResponse,
   ListMonitorsResponse,
-  MetricAnomaly,
-  ScanAnomaliesResponse
+  ScanAnomaliesResponse,
+  StatusWriteGroup
 } from "@/types/metricAnomalies";
 import type { ExplainResult } from "@/types/metricTree";
 import { apiClient } from "./axios";
 
+/**
+ * Surface the server's own words.
+ *
+ * These handlers answer with a **plain-text** body — `(StatusCode, String)` on
+ * the Rust side — so `data` is the message itself, not `{ message }`. Reading
+ * only the JSON shape threw the AxiosError instead, and the UI rendered
+ * "Request failed with status code 500" over the one line that said anything:
+ * the scan's `ScanError` chain, or the 400s that tell a caller exactly what to
+ * do ("that selection covers N buckets… narrow it and repeat").
+ *
+ * Both shapes are handled because this client is one of several and the JSON
+ * envelope is the house style elsewhere.
+ *
+ * A plain-text body is only *our* handlers' shape, though. A 502 from a load
+ * balancer or CDN answers with an HTML error page, which is also a string — so
+ * that is skipped and the AxiosError's own "Request failed with status code
+ * 502" is thrown instead, and anything else is capped: a toast is one line, and
+ * an unbounded body swamps it either way.
+ */
+const MAX_MESSAGE = 300;
+
 function rethrow(error: unknown): never {
-  if (error instanceof AxiosError && error.response?.data?.message) {
-    throw new Error(error.response.data.message);
+  if (error instanceof AxiosError) {
+    const body = error.response?.data;
+    const raw = typeof body === "string" ? body.trim() : body?.message;
+    const message = typeof raw === "string" && !raw.startsWith("<") ? raw : undefined;
+    if (message) {
+      throw new Error(
+        message.length > MAX_MESSAGE ? `${message.slice(0, MAX_MESSAGE - 1)}…` : message
+      );
+    }
   }
   throw error;
 }
@@ -19,22 +48,34 @@ function rethrow(error: unknown): never {
 /** Client for the `/semantic/anomalies*` endpoints. */
 export class MetricAnomaliesService {
   /**
-   * List anomalies for the workspace, optionally filtered by status.
+   * List one page of anomalies for the workspace, optionally filtered by status.
    *
    * `order="recent"` asks for latest-first (`detected_at DESC`); the default
    * ranks worst-first by event severity for the Insights Inbox.
+   *
+   * `limit`/`offset` count **events** under the default ranking (every bucket
+   * of a returned event comes back, so the row count is larger) and rows under
+   * `order="recent"`. `total` in the response uses the same unit, so paging
+   * maths never has to guess at the grouping.
    */
   static async list(
     projectId: string,
     status?: AnomalyStatus,
-    order?: "recent"
-  ): Promise<MetricAnomaly[]> {
+    order?: "recent",
+    page?: { limit: number; offset: number }
+  ): Promise<ListAnomaliesResponse> {
     try {
       const response = await apiClient.get<ListAnomaliesResponse>(
         `/${projectId}/semantic/anomalies`,
-        { params: { ...(status ? { status } : {}), ...(order ? { order } : {}) } }
+        {
+          params: {
+            ...(status ? { status } : {}),
+            ...(order ? { order } : {}),
+            ...(page ? { limit: page.limit, offset: page.offset } : {})
+          }
+        }
       );
-      return response.data.anomalies;
+      return response.data;
     } catch (error) {
       rethrow(error);
     }
@@ -90,16 +131,36 @@ export class MetricAnomaliesService {
     }
   }
 
-  /** Move an anomaly between new / acknowledged / dismissed. */
+  /**
+   * Move anomalies between new / acknowledged / dismissed — one request for
+   * the whole set.
+   *
+   * Targets are events (`eventIds`) wherever there is one, and bare row `ids`
+   * only for pre-event rows that have no event to name. That split matters:
+   * a list response caps how many buckets it returns per event, so sending the
+   * bucket ids we happen to hold would leave the tail of a long chain `new`
+   * while the toast claimed success.
+   *
+   * `onlyStatuses` bounds which of an event's buckets may move: the live ones
+   * always, and the dismissed ones only when the row acted on was itself
+   * dismissed. Acking a New row must not resurrect what the user retired.
+   * `updated` counts the rows the server actually wrote, so zero means the
+   * selection was stale.
+   */
   static async updateStatus(
     projectId: string,
-    anomalyId: string,
+    target: StatusWriteGroup,
     status: AnomalyStatus
-  ): Promise<MetricAnomaly> {
+  ): Promise<BulkUpdateStatusResponse> {
     try {
-      const response = await apiClient.post<MetricAnomaly>(
-        `/${projectId}/semantic/anomalies/${anomalyId}/status`,
-        { status }
+      const response = await apiClient.post<BulkUpdateStatusResponse>(
+        `/${projectId}/semantic/anomalies/status`,
+        {
+          ids: target.ids,
+          event_ids: target.eventIds,
+          only_statuses: target.onlyStatuses,
+          status
+        }
       );
       return response.data;
     } catch (error) {

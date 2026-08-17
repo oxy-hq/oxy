@@ -900,8 +900,27 @@ const worldModelKeys = {
 
 const metricAnomaliesKeys = {
   all: ["metric-anomalies"] as const,
-  list: (projectId: string, status: string | undefined, order?: string) =>
-    [...metricAnomaliesKeys.all, "list", projectId, status ?? null, order ?? null] as const,
+  /** Every anomaly *list* for one project, whatever its filter or page.
+   *
+   *  Narrower than `all` in two directions. `all` covers the per-anomaly
+   *  `explain` decompositions, and invalidating those on a status write throws
+   *  away a 20-30s server-side computation the write cannot have changed; and
+   *  it spans projects, so a scan in one would sweep another's cached lists. */
+  lists: (projectId: string) => [...metricAnomaliesKeys.all, "list", projectId] as const,
+  list: (
+    projectId: string,
+    status: string | undefined,
+    order?: string,
+    page?: { limit: number; offset: number }
+  ) =>
+    [
+      ...metricAnomaliesKeys.all,
+      "list",
+      projectId,
+      status ?? null,
+      order ?? null,
+      page ?? null
+    ] as const,
   monitors: (projectId: string) => [...metricAnomaliesKeys.all, "monitors", projectId] as const,
   /** Per-anomaly explain decomposition (cached server-side on the row).
    *  Distinct from `metricTree.explain` because the cache lifecycle is

@@ -8,9 +8,10 @@
 //!
 //! Mixed three ways, and the split is in `.config/nextest.toml`:
 //!
-//! * `compiled_reader_semantic`, `toast_webhook_compile_boundary` and
-//!   `airway_compile_boundary` are database-backed through [`common::fresh_db`]
-//!   — own database each, so they sit in `db-per-test` (`max-threads = 4`).
+//! * `compiled_reader_semantic`, `toast_webhook_compile_boundary`,
+//!   `airway_compile_boundary` and `anomaly_bulk_status` are database-backed
+//!   through [`common::fresh_db`] — own database each, so they sit in
+//!   `db-per-test` (`max-threads = 4`).
 //! * `projects_query` and `local_mode_router` call `api_router(..)`, which
 //!   reaches the *shared* `OXY_DATABASE_URL` and runs `cleanup_stale_runs` — an
 //!   unscoped UPDATE over `agentic_runs`. They are excluded from `db-per-test`
@@ -23,6 +24,7 @@
 mod common;
 
 mod airway_compile_boundary;
+mod anomaly_bulk_status;
 mod build;
 mod compile;
 mod compiled_reader_semantic;

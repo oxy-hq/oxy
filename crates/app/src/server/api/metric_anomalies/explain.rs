@@ -1,0 +1,115 @@
+//! The cached per-anomaly decomposition. The first call runs airlayer's
+//! recursive driver search and writes the result onto the row; every later call
+//! returns it, which is why the cache lives on the anomaly rather than in a
+//! request-keyed store.
+
+use agentic_http::AgenticState;
+use axum::extract::{Extension, Json, Path, Query};
+use chrono::Utc;
+use entity::metric_anomalies::{self, Entity as AnomaliesEntity};
+use oxy_auth::extractor::AuthenticatedUserExtractor;
+use oxy_metric_monitoring as monitoring;
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter};
+use serde::Deserialize;
+use std::sync::Arc;
+use uuid::Uuid;
+
+use super::error::AnomalyError;
+use crate::agentic_wiring::OxyMetricTreeRunner;
+use crate::server::api::middlewares::workspace_context::{
+    EffectiveWorkspaceRole, WorkspaceManagerExtractor,
+};
+
+#[derive(Debug, Deserialize, Default)]
+pub struct ExplainAnomalyQuery {
+    /// Force a fresh computation even if the row already has a cached result.
+    #[serde(default)]
+    pub refresh: bool,
+}
+
+/// `POST /workspaces/{workspace_id}/semantic/anomalies/{id}/explain` — run
+/// (or return cached) airlayer explain for this anomaly bucket.
+///
+/// First call computes and writes the JSON result onto the row. Subsequent
+/// calls return the cached payload instantly so the Insights drawer
+/// survives page refreshes without re-running the 20-30s recursive search.
+/// `?refresh=true` busts the cache for the rescan affordance in the UI.
+pub async fn explain_anomaly(
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
+    Extension(state): Extension<Arc<AgenticState>>,
+    Path((_workspace_id, anomaly_id)): Path<(Uuid, Uuid)>,
+    Query(q): Query<ExplainAnomalyQuery>,
+) -> Result<Json<serde_json::Value>, AnomalyError> {
+    let row = AnomaliesEntity::find_by_id(anomaly_id)
+        .filter(metric_anomalies::Column::WorkspaceId.eq(workspace_manager.workspace_id))
+        .one(&state.db)
+        .await?
+        .ok_or(AnomalyError::NotFound)?;
+
+    // Cheap path: hand back the cache.
+    if !q.refresh
+        && let Some(cached) = &row.explain_cache
+    {
+        return Ok(Json(cached.clone()));
+    }
+
+    // Build the explain request from the anomaly's fields. Current = the
+    // anomaly bucket; previous = the same phase one seasonal cycle earlier,
+    // derived from the monitor's persisted seasonality (falling back to the
+    // granularity default for pre-column rows). Aligning to the seasonal
+    // period — not a hardcoded offset — is what keeps a daily/weekly-seasonal
+    // anomaly compared against the same weekday rather than the weekend.
+    let current = row.period_start.date_naive();
+    let periods = agentic_analytics::anomaly_period::resolve_seasonal_period(
+        row.seasonal_period,
+        &row.granularity,
+    );
+    let previous =
+        agentic_analytics::anomaly_period::shift_date_back(current, &row.granularity, periods);
+    let current_str = current.format("%Y-%m-%d").to_string();
+    let previous_str = previous.format("%Y-%m-%d").to_string();
+
+    // Scope the explain to the anomaly's segment (e.g. the specific restaurant
+    // a `group_by` monitor flagged) so the totals and decomposition reflect
+    // that segment, not the chain-wide aggregate.
+    let filters = agentic_analytics::anomaly_store::segment_query_filters(&row.filters);
+
+    use agentic_analytics::MetricTreeRunner as _;
+    let runner = OxyMetricTreeRunner::new(workspace_manager, user.id, role);
+    let mut config = airlayer::engine::metric_tree_ops::ExplainConfig::default();
+    config.deep = false;
+
+    let result = runner
+        .run_explain(
+            row.measure.clone(),
+            row.time_dimension.clone(),
+            (current_str.clone(), current_str),
+            (previous_str.clone(), previous_str),
+            filters,
+            config,
+        )
+        .await
+        .map_err(|e| AnomalyError::Scan(monitoring::ScanError::FetchSeries(e)))?;
+
+    let value = serde_json::to_value(&result)
+        .map_err(|e| AnomalyError::Internal(format!("serialize explain: {e}")))?;
+
+    // Persist cache. Failures here are non-fatal — the user gets the
+    // result; next click will just recompute.
+    let mut active = row.into_active_model();
+    active.explain_cache = Set(Some(value.clone()));
+    active.explain_cached_at = Set(Some(Utc::now().into()));
+    if let Err(e) = active.update(&state.db).await {
+        tracing::warn!(
+            target: "metric_anomalies",
+            anomaly_id = %anomaly_id,
+            error = %e,
+            "failed to persist explain cache"
+        );
+    }
+
+    Ok(Json(value))
+}

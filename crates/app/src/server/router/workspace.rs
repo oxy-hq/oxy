@@ -380,6 +380,9 @@ pub(super) fn build_external_workspace_routes(
             Router::new()
                 .route("/", get(metric_anomalies::list_anomalies))
                 .route("/scan", post(metric_anomalies::run_scan))
+                // Static `/status` (bulk) and `/{id}/status` (single) differ in
+                // segment count, so they don't compete for a match.
+                .route("/status", post(metric_anomalies::update_status_bulk))
                 .route("/{id}/status", post(metric_anomalies::update_status))
                 .route("/{id}/explain", post(metric_anomalies::explain_anomaly))
                 .layer(Extension(agentic_state.clone()))
@@ -461,6 +464,7 @@ fn build_metric_anomaly_routes(agentic_state: Arc<AgenticState>) -> Router<AppSt
     Router::new()
         .route("/", get(metric_anomalies::list_anomalies))
         .route("/scan", post(metric_anomalies::run_scan))
+        .route("/status", post(metric_anomalies::update_status_bulk))
         .route(
             "/{anomaly_id}/status",
             post(metric_anomalies::update_status),
@@ -865,6 +869,9 @@ mod tests {
         let cases: &[(&str, String)] = &[
             ("GET", "/semantic/anomalies".to_string()),
             ("POST", "/semantic/anomalies/scan".to_string()),
+            // Bulk status — `client.anomalies.updateStatusBulk()`. One segment,
+            // so it must not be swallowed by the two-segment `/{id}/status`.
+            ("POST", "/semantic/anomalies/status".to_string()),
             ("POST", format!("/semantic/anomalies/{anomaly_id}/status")),
             ("POST", format!("/semantic/anomalies/{anomaly_id}/explain")),
         ];
