@@ -1247,6 +1247,35 @@ mod tests {
     /// `/analytics` `/agentic-workflows` `/agentic-airway` wildcards; the
     /// EXECUTION + live-stream + file-read endpoints right next to them stay
     /// IdeOnly.
+    /// The UberEats report upload writes to S3 and Postgres and reads nothing
+    /// node-local, so it must serve from any replica.
+    ///
+    /// It is mounted at `/ubereats` rather than under `/agentic-airway`
+    /// precisely because that prefix is an `IdeOnly` `{*rest}` for every
+    /// method — a live pipeline run executes in-process and touches the
+    /// working copy. An upload does neither, and pinning it to the singleton
+    /// would mean uploads stop whenever the ide restarts.
+    ///
+    /// Asserted rather than left to the unlisted-default, so moving the route
+    /// under an IdeOnly prefix fails here instead of silently costing HA.
+    #[test]
+    fn ubereats_report_upload_is_fleet_ok() {
+        let ws = "d9830be4-c6a4";
+        assert_eq!(
+            classify("POST", &format!("/api/{ws}/ubereats/reports")),
+            RouteRole::FleetOk,
+            "an S3 write with no working-copy access must not need the ide"
+        );
+
+        // The neighbouring surface it deliberately does NOT live under.
+        assert_eq!(
+            classify("POST", &format!("/api/{ws}/agentic-airway/runs")),
+            RouteRole::IdeOnly,
+            "a live pipeline run still belongs on the ide — the carve-out is \
+             the upload, not the surface"
+        );
+    }
+
     #[test]
     fn agentic_run_history_reads_are_fleet_ok() {
         let ws = "d9830be4-c6a4";
@@ -2194,6 +2223,13 @@ mod tests {
         "/threads",
         "/agents",
         "/api-keys",
+        // Report uploads: multipart in, validate, write to S3, done. No
+        // working copy, no `.git`, no state dir — the temp file the validator
+        // uses is per-process and ephemeral, which is not what this guard is
+        // about. Mounted outside `/agentic-airway` precisely so the IdeOnly
+        // wildcard protecting live runs does not pin an S3 write to the
+        // singleton.
+        "/ubereats",
         "/blocks",
         "/runs/{source_id}/{run_index}",
         "/logs",

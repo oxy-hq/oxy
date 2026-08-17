@@ -76,6 +76,7 @@ pub mod test_run;
 pub mod thread;
 pub mod traces;
 pub mod typed_stream;
+pub mod ubereats_upload;
 pub mod user;
 pub mod video;
 pub mod webhooks;

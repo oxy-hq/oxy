@@ -18,6 +18,7 @@ pub mod destination_factory;
 pub mod error;
 pub mod events;
 pub mod extension;
+pub mod report_validation;
 pub mod reset;
 pub mod source_factory;
 pub mod state_store;

@@ -29,6 +29,10 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 minijinja = { workspace = true }
 thiserror = { workspace = true }
+# Not dev-only: `report_validation` writes the bytes it is handed to a temp file
+# because the airway source reads paths, not buffers. Ephemeral and per-process,
+# so it does not make a caller node-local.
+tempfile = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }

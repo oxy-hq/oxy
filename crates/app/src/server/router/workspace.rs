@@ -105,6 +105,11 @@ pub(super) fn build_workspace_routes(
         .nest("/apps", build_app_routes())
         .nest("/app-integrations", build_app_integration_routes())
         .nest("/tests", build_test_file_routes())
+        // NOT under `/agentic-airway`, which is an `IdeOnly` `{*rest}` wildcard
+        // for execution safety. This writes to S3 and reads nothing node-local,
+        // so pinning it to the singleton would cost HA for no reason — it stays
+        // `FleetOk`, the default for an unlisted route.
+        .nest("/ubereats", build_ubereats_routes())
         .nest("/traces", traces::traces_routes())
         .nest("/metrics", metrics::metrics_routes())
         .nest(
@@ -603,6 +608,28 @@ fn build_app_routes() -> Router<AppState> {
         .route("/file/{pathb64}", get(app::get_data))
         .route("/source/{pathb64}", get(app::get_source_file))
         .route("/save-from-run/{run_id}", post(app::save_app_builder_run))
+}
+
+/// Report uploads for the UberEats landing zone.
+///
+/// Deliberately its own nest rather than a child of `/agentic-airway`: that
+/// prefix is classified `IdeOnly` for every method so a live run stays on the
+/// instance holding the working copy, and this handler touches no working copy.
+fn build_ubereats_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/reports",
+            post(crate::server::api::ubereats_upload::upload_report),
+        )
+        // Without this, axum 0.8's 2 MiB default governs and the handler's own
+        // ceiling is unreachable — a larger report fails inside `field.bytes()`
+        // as a 400, never the 413 the handler writes. At `Router` level rather
+        // than on the `MethodRouter` for the same reason `build_onboarding_routes`
+        // gives: the latter can interact unexpectedly with outer CORS preflight
+        // handling on axum 0.8.
+        .layer(axum::extract::DefaultBodyLimit::max(
+            crate::server::api::ubereats_upload::MAX_REPORT_BYTES,
+        ))
 }
 
 fn build_test_file_routes() -> Router<AppState> {

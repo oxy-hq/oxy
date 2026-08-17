@@ -38,6 +38,7 @@ use airway::connector::sources::sql_database::{
 // discovery response without taking a direct `airway` dependency.
 pub use airway::connector::sources::sql_database::{DiscoveredColumn, DiscoveredTable};
 use airway::connector::sources::toast::ToastSource;
+use airway::connector::sources::ubereats::UberEatsSource;
 use airway::connector::sources::weather::{WeatherConfig, weather_source};
 use airway::types::WriteDisposition;
 use async_trait::async_trait;
@@ -243,6 +244,7 @@ fn build_source_connector_inner(
         "overture" => build_overture(&config.config),
         "http_file" => build_http_file(&config.config),
         "overpass" => build_overpass(&config.config),
+        "ubereats" => build_ubereats(&config.config),
         other => Err(AirwayError::Other(format!(
             "unsupported source kind `{other}`. Wire it up in \
              agentic_airway::source_factory::build_source_connector \
@@ -259,6 +261,101 @@ fn build_rest_api(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> 
     let config: RestApiConfig = serde_json::from_value(raw.clone())
         .map_err(|e| AirwayError::Other(format!("invalid rest_api config: {e}")))?;
     Ok(Box::new(RestApiSource::new(config)))
+}
+
+// ── ubereats ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UberEatsParams {
+    /// Landing zone, or one report: `/data/ubereats`, `s3://bucket/zone`,
+    /// `s3://bucket/zone/2026.08 UberEats SF.csv`.
+    base_path: String,
+    /// Store names in scope, matched per ROW — an API report section can span
+    /// stores this tenancy does not own.
+    ///
+    /// Keyed on `store_name`, not `store_id`: reports exist where the ID is
+    /// blank for an entire store, which is why it is not a JE-critical column.
+    ///
+    /// Absent means every store in the file loads — right for the one-store
+    /// manual export, wrong for an API section, so it is opt-in rather than
+    /// defaulted.
+    #[serde(default)]
+    allowed_stores: Option<Vec<String>>,
+    /// Report year, when filenames and paths do not carry one.
+    ///
+    /// Source-wide, so it cannot serve a zone spanning periods — the normal
+    /// path is to let the layout supply it (`.../2026.08/…` or
+    /// `2026.08 UberEats SF.csv`).
+    #[serde(default)]
+    report_year: Option<i64>,
+    #[serde(default)]
+    report_month: Option<u32>,
+    /// Extra row-id discriminator. Rarely needed: the file's path within the
+    /// zone already separates chunks of one period.
+    #[serde(default)]
+    uid_salt: Option<String>,
+    /// Optional table name (defaults to `ubereats_transactions`).
+    #[serde(default)]
+    table_name: Option<String>,
+}
+
+fn build_ubereats(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
+    let params: UberEatsParams = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid ubereats config: {e}")))?;
+
+    // Both or neither. A year without a month is not a period, and silently
+    // taking one half would stamp a month the operator never named — the
+    // failure `period_from_filename` refuses to guess at, arriving through
+    // config instead of through a path.
+    let period = match (params.report_year, params.report_month) {
+        // One definition, shared with the upload path: a period nobody named
+        // stamps a partition that cannot exist here, and produces an object key
+        // the source's period scan cannot read there. Two copies of the bounds
+        // would be free to drift.
+        (Some(year), Some(month)) => {
+            crate::report_validation::check_period(year, month)
+                .map_err(|e| AirwayError::Other(format!("ubereats: {e}")))?;
+            Some((year, month))
+        }
+        (None, None) => None,
+        _ => {
+            return Err(AirwayError::Other(
+                "ubereats: `report_year` and `report_month` must be given \
+                 together — half a period is not one, and guessing the other \
+                 half stamps a month nobody named"
+                    .to_string(),
+            ));
+        }
+    };
+
+    let mut source = UberEatsSource::new(&params.base_path);
+    if let Some(stores) = params.allowed_stores {
+        // Absent means "every store"; EMPTY would mean "no store", so a
+        // pipeline that reads `allowed_stores: []` succeeds and lands zero
+        // rows. That is the silent-wrong-shape failure this whole source is
+        // built to avoid, and every sibling scoping list here guards it —
+        // `restaurant_guids`, `locations`, `venue_ids`, `bboxes`.
+        if stores.is_empty() {
+            return Err(AirwayError::Other(
+                "ubereats: `allowed_stores` was given but empty — an empty \
+                 allow-list matches no store and would land zero rows. Omit \
+                 the key to load every store in the file."
+                    .to_string(),
+            ));
+        }
+        source = source.with_allowed_stores(stores.into_iter().collect());
+    }
+    if let Some((year, month)) = period {
+        source = source.with_period(year, month);
+    }
+    if let Some(salt) = params.uid_salt.as_deref() {
+        source = source.with_uid_salt(salt);
+    }
+    if let Some(name) = params.table_name.as_deref() {
+        source = source.with_table_name(name);
+    }
+    Ok(Box::new(source))
 }
 
 // ── filesystem ───────────────────────────────────────────────────────────────
@@ -1077,6 +1174,169 @@ mod tests {
         .expect("expected error");
         assert!(
             err.to_string().contains("invalid rest_api config"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn ubereats_builds_from_a_zone() {
+        let source = build(&cfg(
+            "ubereats",
+            json!({
+                "base_path": "s3://landing/ubereats",
+                "allowed_stores": ["Poke House SF", "Poke House LA"],
+            }),
+        ))
+        .expect("build");
+        assert_eq!(source.name(), "ubereats");
+
+        // The resource carries the merge key the deterministic row id exists
+        // for. Any other disposition either duplicates on re-read or replaces a
+        // table nothing else keys.
+        let resources = source.resources();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].name, "ubereats_transactions");
+        assert_eq!(
+            resources[0].primary_key.as_deref(),
+            Some(["_row_uid".to_string()].as_slice())
+        );
+    }
+
+    /// The whole reason for the 0.1.30 bump: the declared types must reach the
+    /// factory-built connector, or an all-null column does not materialize and
+    /// the landed table's shape follows load order.
+    #[test]
+    fn ubereats_declares_its_column_types_through_the_factory() {
+        let source = build(&cfg("ubereats", json!({ "base_path": "/tmp/ue" }))).expect("build");
+        let hints = source.column_hints();
+        assert_eq!(
+            hints["ubereats_transactions"]["total_payout"].data_type,
+            Some(airway::types::DataType::Double),
+            "money must land as double — decimal is a migration, not a port"
+        );
+        assert_eq!(
+            hints["ubereats_transactions"]["order_date"].data_type,
+            Some(airway::types::DataType::Date)
+        );
+    }
+
+    /// Half a period is not one. Taking the given half and guessing the other
+    /// stamps a month nobody named — the failure the source refuses to guess at
+    /// when reading a path, arriving through config instead.
+    #[test]
+    fn ubereats_refuses_half_a_period() {
+        for half in [json!({"report_year": 2026}), json!({"report_month": 8})] {
+            let mut params = json!({ "base_path": "/tmp/ue" });
+            let obj = params.as_object_mut().unwrap();
+            for (k, v) in half.as_object().unwrap() {
+                obj.insert(k.clone(), v.clone());
+            }
+            let err = build(&cfg("ubereats", params))
+                .err()
+                .expect("half a period must be refused");
+            let msg = err.to_string();
+            assert!(msg.contains("must be given together"), "got: {msg}");
+            // The message IS the guard, so it has to read as one sentence — a
+            // literal wrapped without `\` continuations renders ~18-space runs
+            // mid-sentence, and asserting only on a substring hid exactly that.
+            assert!(
+                !msg.contains("  "),
+                "the refusal must not carry a run of spaces: {msg:?}"
+            );
+        }
+
+        // Both together is fine, and neither is fine.
+        build(&cfg(
+            "ubereats",
+            json!({ "base_path": "/tmp/ue", "report_year": 2026, "report_month": 8 }),
+        ))
+        .expect("a whole period builds");
+        build(&cfg("ubereats", json!({ "base_path": "/tmp/ue" }))).expect("no period builds");
+    }
+
+    /// Absent means "every store"; empty means "no store", so it would build a
+    /// pipeline that succeeds and lands zero rows — inverting the field's
+    /// purpose. Every sibling scoping list in this file guards this.
+    #[test]
+    fn ubereats_refuses_an_empty_allowed_stores() {
+        let err = build(&cfg(
+            "ubereats",
+            json!({ "base_path": "/tmp/ue", "allowed_stores": [] }),
+        ))
+        .err()
+        .expect("an empty allow-list must be refused");
+        let msg = err.to_string();
+        assert!(msg.contains("allowed_stores"), "names the field: {msg}");
+        assert!(!msg.contains("  "), "reads as one sentence: {msg:?}");
+
+        // Omitting the key still means "every store".
+        build(&cfg("ubereats", json!({ "base_path": "/tmp/ue" })))
+            .expect("absent allowed_stores loads every store");
+    }
+
+    /// Half a validated pair reads as though the pair were validated, so the
+    /// month guard's argument — not a value anyone named — has to cover the
+    /// year too.
+    #[test]
+    fn ubereats_refuses_a_year_that_does_not_exist() {
+        for year in [-5, 0, 1900, 3000] {
+            let err = build(&cfg(
+                "ubereats",
+                json!({ "base_path": "/tmp/ue", "report_year": year, "report_month": 8 }),
+            ))
+            .err()
+            .unwrap_or_else(|| panic!("year {year} must be refused"));
+            let msg = err.to_string();
+            assert!(msg.contains("report_year"), "names the field: {msg}");
+            assert!(!msg.contains("  "), "reads as one sentence: {msg:?}");
+        }
+
+        build(&cfg(
+            "ubereats",
+            json!({ "base_path": "/tmp/ue", "report_year": 2026, "report_month": 8 }),
+        ))
+        .expect("a real year builds");
+    }
+
+    /// A month outside 1–12 is not a month anyone named, which is the same
+    /// argument that refuses half a period — forwarding it stamps a partition
+    /// that cannot exist.
+    #[test]
+    fn ubereats_refuses_a_month_that_does_not_exist() {
+        for month in [0, 13, 99] {
+            let err = build(&cfg(
+                "ubereats",
+                json!({ "base_path": "/tmp/ue", "report_year": 2026, "report_month": month }),
+            ))
+            .err()
+            .unwrap_or_else(|| panic!("month {month} must be refused"));
+            let msg = err.to_string();
+            assert!(msg.contains("report_month"), "names the field: {msg}");
+            assert!(!msg.contains("  "), "reads as one sentence: {msg:?}");
+        }
+
+        for month in [1, 8, 12] {
+            build(&cfg(
+                "ubereats",
+                json!({ "base_path": "/tmp/ue", "report_year": 2026, "report_month": month }),
+            ))
+            .unwrap_or_else(|_| panic!("month {month} is real and must build"));
+        }
+    }
+
+    /// `deny_unknown_fields`, so a mistyped key is refused rather than silently
+    /// ignored — a misspelled `allowed_stores` would load every store in an API
+    /// section, which is the shape scoping exists to prevent.
+    #[test]
+    fn ubereats_refuses_an_unknown_field() {
+        let err = build(&cfg(
+            "ubereats",
+            json!({ "base_path": "/tmp/ue", "allowed_store": ["Poke House SF"] }),
+        ))
+        .err()
+        .expect("a mistyped key must be refused");
+        assert!(
+            err.to_string().contains("invalid ubereats config"),
             "got: {err}"
         );
     }

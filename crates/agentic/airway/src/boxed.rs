@@ -96,6 +96,22 @@ impl SourceConnector for BoxedSourceConnector {
         self.0.excluded_tables()
     }
 
+    // 0.1.30's addition, defaulted and therefore masked like the rest.
+    //
+    // Worse than most, because the failure is invisible from here: unforwarded,
+    // the box returns an empty map and every declared column type silently
+    // reverts to *inferred*. Inference only sees non-null values, so a column
+    // that is entirely null in one file does not materialize at all — and the
+    // landed table's shape then depends on which file loaded first. UberEats
+    // ships reports with `store_id` blank for a whole store, which is the case
+    // the seam exists for, so this is not a hypothetical.
+    //
+    // Nothing about that fails a compile or a run: the pipeline succeeds, the
+    // table is just the wrong shape.
+    fn column_hints(&self) -> HashMap<String, HashMap<String, airway::types::ColumnHints>> {
+        self.0.column_hints()
+    }
+
     // 0.1.23's four additions, all defaulted and therefore all subject to
     // the same masking as `extract_stream` above. `contracts` and
     // `sandbox_base_url` are what `connector::admit_with` reads: unforwarded,
@@ -239,6 +255,19 @@ mod tests {
             }]
         }
 
+        fn column_hints(&self) -> HashMap<String, HashMap<String, airway::types::ColumnHints>> {
+            HashMap::from([(
+                "orders".to_string(),
+                HashMap::from([(
+                    "total".to_string(),
+                    airway::types::ColumnHints {
+                        data_type: Some(airway::types::DataType::Double),
+                        ..Default::default()
+                    },
+                )]),
+            )])
+        }
+
         fn contracts(&self) -> HashMap<String, SourceContract> {
             HashMap::from([("orders".to_string(), SourceContract::immutable())])
         }
@@ -352,6 +381,27 @@ mod tests {
             boxed.supports_streaming(),
             "`supports_streaming()` fell through to the `false` trait default, which \
              silently disables the entire streaming path through the box"
+        );
+    }
+
+    /// Unforwarded, this returns the empty default and every declared column
+    /// type reverts to *inferred* — which only sees non-null values, so a
+    /// column null throughout one file does not materialize and the table's
+    /// shape follows load order. Nothing fails: the run succeeds with the wrong
+    /// schema, which is why it needs a test rather than a reviewer.
+    #[test]
+    fn box_forwards_column_hints() {
+        let boxed = BoxedSourceConnector(Box::new(DeclaringConnector));
+        let hints = boxed.column_hints();
+        assert_eq!(
+            hints.len(),
+            1,
+            "`column_hints()` fell through to the empty trait default"
+        );
+        assert_eq!(
+            hints["orders"]["total"].data_type,
+            Some(airway::types::DataType::Double),
+            "the declared type must survive the box, not just the key"
         );
     }
 

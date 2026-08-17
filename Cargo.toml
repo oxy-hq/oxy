@@ -489,7 +489,20 @@ airform-core = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e82886
 # `release/0.1.23` branch, so that one had to be a `rev` to stay
 # immutable. A tag is immutable enough for this and reads better in a
 # diff; a *branch* pin would not be, and must never be used here.
-airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.29", default-features = false, features = [
+#
+# 0.1.30 adds `SourceConnector::column_hints`, which is why this bump
+# exists: without it a connector cannot declare a column's type, and an
+# all-null column does not materialize at all — leaving the landed table's
+# shape dependent on which file loaded first.
+#
+# Note the tag is NOT the `release/0.1.30` branch tip this was briefly
+# pinned to (`608c9e5`): the release merged as #127 and picked up netsuite
+# work along the way, so `0.1.30` is a superset, +1514 lines. Everything
+# consumed here is byte-identical between the two — `ubereats.rs`,
+# `connector/mod.rs`, `source/mod.rs`, `schema/inference.rs` and
+# `filesystem.rs` are unchanged, and the `SourceConnector` method list is
+# identical — so the swap moves only netsuite code oxy has no arm for.
+airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.30", default-features = false, features = [
   "duckdb",
   "postgres",
 ] }
