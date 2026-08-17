@@ -63,49 +63,60 @@
      shows they actually looked. Neither side gets to skim — that is why the answer is
      written down, and why it starts collapsed.
 
+     ALTITUDE — read this before writing anything. Every item names a DECISION, not a
+     detail. Much of the code here is drafted by an assistant, which means most choices in
+     a diff were never argued by anyone: a default was picked, an unhappy path was given
+     semantics, an abstraction was placed in a crate, a pattern was invented next to an
+     existing one. Those choices ship silently and become the system. This section exists so
+     no design decision reaches main without one human who can state it and one who checked
+     it. If the answer is "the assistant chose it and nobody weighed in", write exactly that
+     — an unowned decision is the most useful thing this section can surface.
+
      Replace the five placeholders below with five NEW ones written for THIS diff. Do not
      reuse items from a previous PR. Each is a question the reviewer sees, plus the answer
-     inside the <details> block. Keep the answer to 1–2 sentences, and keep it honest:
-     "not covered, worst case is X" is a useful answer.
+     inside the <details> block. Keep the answer to 1–2 sentences and keep it honest:
+     "not handled — worst case is X" is a good answer.
 
-     Phrase each as a directed lookup — something settled by reading the code, not by
-     reading this body. "Which fleet role serves the new /foo route, and what does it read
-     off local disk?" is checkable; "Is the route classified correctly?" is a yes-box that
-     ticks itself.
+     Pick five, one per angle where the diff has one:
+       - THE FORK: the alternative that was rejected, and what would have to be true for it
+         to have been the better call
+       - INVENTED BEHAVIOUR: what this decided that nobody specified — a default, a limit,
+         retry or timeout semantics, what the unhappy path now does, the name of a new
+         contract
+       - SHAPE: the abstraction introduced or extended (module, trait, table, state, event)
+         and why it lives where it does rather than one layer up or down
+       - BAKED-IN ASSUMPTION: what this now takes for granted — ordering, idempotency,
+         single-writer, tenancy, freshness, scale — and what breaks the day it stops holding
+       - DELIBERATELY NOT DONE: the case left unhandled, the follow-up, the existing repo
+         pattern this departs from and why
 
-     A good item is one only someone who understands this change can settle, and whose
-     wrong answer would be a real bug. Pick five, spread across these angles:
-       - the load-bearing decision: why this approach and not the obvious alternative
-       - blast radius: what else calls this, what breaks if it misbehaves
-       - the edge case most likely to be wrong HERE (empty result, concurrency, partial
-         failure, first-run / migration state, an auth or tenant boundary)
-       - how a reviewer can tell it works: the test or command that fails without this diff
-       - rollback, or the one thing you would watch after deploy
+     Where the diff lands tells you which decision is load-bearing — use this to find it,
+     not as a compliance checklist:
+       | Diff touches                                     | The decision worth surfacing                                       |
+       | ------------------------------------------------ | ------------------------------------------------------------------ |
+       | a route under `server/router/`                   | which fleet role this pins the feature to, and whether reading local disk was chosen or inherited |
+       | any access or permission decision                | which authority ring this lands in — who can newly do this, and who quietly cannot |
+       | a query or handler over tenant data              | what the scoping key is, and what one missing filter would expose   |
+       | a new `.foo.yml`, or a workspace FS read         | whether the artifact became compiled state or a per-request read, and what that costs later |
+       | background work, `tokio::spawn`, a periodic loop | durable or fire-and-forget, and what is lost when the instance dies mid-flight |
+       | an SSE stream                                    | what the client is left believing on each failure path              |
+       | `crates/agentic/**`                              | which layer owns the new logic, and what placing it there forecloses |
+       | `migration/` or `entity/`                        | the shape of the data change and the deploy order it now requires   |
+       | `web-app/**`                                     | the state model chosen, and what the user sees while it is loading, empty, or wrong |
+       | an LLM or pipeline path                          | which vendor path this takes and what changes for configs already in the wild |
 
-     Prefer the invariant this repo already knows it can break — route by what the diff touches:
-       | Diff touches                                   | Ask about                                                        |
-       | ---------------------------------------------- | ---------------------------------------------------------------- |
-       | a route under `server/router/`                 | IdeOnly vs FleetOk — does it read node-local disk / `.git`?       |
-       | any access or permission decision              | which `Ring` in `allows()`; a `role_guards` extractor, not a hand-rolled `matches!` |
-       | a query or handler over tenant data            | scoping by `workspace_id` / project — what leaks if it is missing |
-       | a new `.foo.yml`, or a workspace FS read        | compile boundary: a `*_definitions` row keyed by `revision_id`, not a per-request read |
-       | background work, `tokio::spawn`, a periodic loop | a `TaskSpec` on the queue — what happens when the instance dies   |
-       | an SSE stream                                  | the terminal `done`/`error`/`cancelled` on every failure path     |
-       | `crates/agentic/**`                            | layering direction; no domain ↔ domain import                     |
-       | `migration/` or `entity/`                      | additive-only, backfill, and the old binary still running mid-deploy |
-       | `web-app/**`                                   | loading / error / empty states, effect races, which agentic flow covers it |
-       | an LLM or pipeline path                        | Azure OpenAI routes via the OSS path; `openai_compat` needs an explicit `api_url` |
+     Do NOT write items about naming, formatting, a lint, a one-line guard, or an edge case
+     in isolation — those are review comments, and the bots already have them. An edge case
+     earns a slot only when the answer reveals a decision. Nothing yes/no, nothing answerable
+     from the diff header, nothing CI answers.
 
-     Do NOT write anything answerable from the diff header ("which file changed?"),
-     anything yes/no, or process items CI answers ("did tests pass?").
+     MAINTAINERS: this is the review checklist, and it is aimed at you as much as the author.
+     Settle each from the code, then reveal. Tick when the two agree; leave it unticked and
+     ask when they do not, or when the code alone would not have told you — a decision only
+     one side can state is the finding. -->
 
-     MAINTAINERS: this is the review checklist. Each item should be settleable against the
-     code in well under a minute. Answer it from the code, then open the author's answer.
-     Tick when the two agree; leave it unticked and ask when they do not, or when the code
-     would not tell you — that disagreement is the entire point of this section. -->
-
-_Settle each from the code before revealing the answer. Tick when the two agree; leave it
-unticked and ask when they do not._
+_Each item is a decision this change makes. Settle it from the code before revealing the
+answer; tick when the two agree, leave it unticked and ask when they do not._
 
 - [ ] <!-- question 1 -->
 
