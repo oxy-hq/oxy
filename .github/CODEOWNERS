@@ -53,6 +53,7 @@ crates/auth/                                       @luong-komorebi @hotay
 crates/oxy-compile/                                @luong-komorebi @NTtanh
 crates/project/                                    @luong-komorebi @NTtanh
 crates/workspace-fs/                               @luong-komorebi @NTtanh
+crates/app-core/                                   @luong-komorebi @haitrr
 internal-docs/multi-instance-fleet.md              @luong-komorebi @NTtanh
 internal-docs/compile-boundary.md                  @luong-komorebi @NTtanh
 internal-docs/ephemeral-workspace-environments.md  @luong-komorebi @NTtanh
@@ -93,9 +94,10 @@ web-app/src/pages/ide/WorldModel/                  @haitrr @NTtanh
 # Metric Tree & Anomaly Monitoring
 crates/metric-monitoring/                          @haitrr @NTtanh
 crates/app/src/server/api/metric_tree.rs           @haitrr @NTtanh
-crates/app/src/server/api/metric_anomalies.rs      @haitrr @NTtanh
+crates/app/src/server/api/metric_anomalies/        @haitrr @NTtanh
 crates/app/src/server/api/metrics.rs               @haitrr @NTtanh
 web-app/src/pages/ide/MetricTree/                  @haitrr @NTtanh
+web-app/src/pages/ide/SemanticLayer/AnomaliesInbox/  @haitrr @NTtanh
 internal-docs/anomaly-monitoring.md                @haitrr @NTtanh
 
 # Workspace health & reconciliation (override: carved out of admin/ above)
@@ -133,6 +135,8 @@ internal-docs/airhouse-service-accounts-migration.md  @hotay @luong-komorebi
 crates/agentic/airway/                             @hotay @nresh
 web-app/src/pages/airway/                          @hotay @nresh
 web-app/src/pages/quickbooks/                      @hotay @nresh
+# Airway admission policy (override: carved out of admin/ above — Tay owns airway)
+crates/app/src/server/api/admin/airway_config/     @hotay @luong-komorebi
 
 # Agentic runtime + FSM framework
 crates/agentic/runtime/                            @hotay @luong-komorebi

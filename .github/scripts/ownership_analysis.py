@@ -47,6 +47,7 @@ AREAS = [
     ("sdk/create-oxy-app",                                "Custom Apps — scaffold SDK"),
     # NOTE: list a nested path BEFORE its parent — the AREAS loop takes the first match.
     ("crates/app/src/server/api/admin/workspace_health",  "Workspace health & reconcile"),
+    ("crates/app/src/server/api/admin/airway_config",     "Airway admission (admin)"),
     ("crates/app/src/server/api/admin",                   "Admin (backend)"),
     ("web-app/src/pages/admin",                           "Admin (UI)"),
     ("crates/authz",                                      "Authorization model"),
@@ -55,6 +56,7 @@ AREAS = [
     ("crates/oxy-compile",                                "Compile boundary"),
     ("crates/project",                                    "Project domain"),
     ("crates/workspace-fs",                               "Workspace FS"),
+    ("crates/app-core",                                   "App-layer core seam"),
     ("crates/app/src/server/router",                      "HTTP router / fleet routing"),
     ("crates/observability",                              "Observability (traces)"),
     ("crates/app/src/server/api/partner_console",         "Partner platform (backend)"),
@@ -66,6 +68,7 @@ AREAS = [
     ("web-app/src/pages/ide/WorldModel",                  "World Model (UI)"),
     ("crates/metric-monitoring",                          "Metric tree & anomaly monitoring"),
     ("web-app/src/pages/ide/MetricTree",                  "Metric Tree (UI)"),
+    ("web-app/src/pages/ide/SemanticLayer/AnomaliesInbox", "Anomalies Inbox (UI)"),
     ("crates/airform",                                    "Airform (modeling)"),
     ("crates/cameras",                                    "Cameras / edge / video"),
     ("crates/airhouse",                                   "Airhouse (warehouse+connector)"),
