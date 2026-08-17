@@ -38,6 +38,15 @@ pub struct MagicLinkVerifyRequest {
     pub token: String,
 }
 
+/// Body of `POST /auth/dev-login` and query of its `GET` twin. Both fields
+/// default, so `{}` (or no query at all) means "the first identity in
+/// `OXY_DEV_LOGIN_EMAILS`" — the caller never has to know the allow-list.
+#[derive(Deserialize, Default)]
+pub struct DevLoginRequest {
+    #[serde(default)]
+    pub email: Option<String>,
+}
+
 #[derive(Serialize)]
 pub struct AuthResponse {
     pub token: String,
@@ -118,6 +127,10 @@ pub struct AuthConfigResponse {
     /// the org Billing settings tab and the admin Billing queue surfaces a
     /// "Billing is disabled" notice instead of a misleading empty state.
     pub billing_enabled: bool,
+    /// True when `OXY_DEV_LOGIN_EMAILS` is set, i.e. the dev sign-in bypass is
+    /// available. Drives the "Dev sign-in" button on the login page — the one
+    /// affordance a browser-automation tool can click without OAuth or email.
+    pub dev_login: bool,
 }
 
 #[derive(Serialize)]

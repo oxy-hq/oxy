@@ -4,6 +4,11 @@
       "command": "code-review-graph",
       "args": ["serve"],
       "type": "stdio"
+    },
+    "playwright": {
+      "command": "pnpm",
+      "args": ["--dir", "web-app", "exec", "playwright-mcp"],
+      "type": "stdio"
     }
   }
 }

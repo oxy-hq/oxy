@@ -105,6 +105,7 @@ pub async fn issue_oauth_state() -> Result<Json<OAuthStateResponse>, StatusCode>
 
 pub async fn get_config(
     State(app_state): State<AppState>,
+    peer: super::PeerAddr,
 ) -> Result<Json<AuthConfigResponse>, StatusCode> {
     let auth_config = oxy::config::oxy::get_oxy_config()
         .ok()
@@ -129,6 +130,10 @@ pub async fn get_config(
 
     let observability_enabled = app_state.observability.is_some();
     let billing_enabled = crate::server::feature_flags::is_enabled("billing");
+    // Per-caller, not process-wide: an off-box peer that the dev-login route
+    // 404s must not be told from here that a bypass exists. See
+    // `dev_login::dev_login_reachable_by`.
+    let dev_login = super::dev_login_reachable_by(peer.0);
 
     if !auth_enabled || app_state.internal {
         return Ok(Json(AuthConfigResponse {
@@ -141,6 +146,7 @@ pub async fn get_config(
             github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
             mode: app_state.mode.label(),
             billing_enabled,
+            dev_login,
         }));
     }
 
@@ -166,6 +172,7 @@ pub async fn get_config(
         github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
         mode: app_state.mode.label(),
         billing_enabled,
+        dev_login,
     };
 
     Ok(Json(config))
@@ -528,6 +535,7 @@ mod mode_field_tests {
             github: None,
             mode: ServeMode::Local.label(),
             billing_enabled: false,
+            dev_login: false,
         };
         let json = serde_json::to_value(&response).expect("serialize");
         assert_eq!(json["mode"], "local");
@@ -545,6 +553,7 @@ mod mode_field_tests {
             github: None,
             mode: ServeMode::Cloud.label(),
             billing_enabled: false,
+            dev_login: false,
         };
         let json = serde_json::to_value(&response).expect("serialize");
         assert_eq!(json["mode"], "cloud");

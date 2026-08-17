@@ -217,6 +217,8 @@ Older flows under `cache_actions: false` were written before egress substitution
 
 Flows that test the multi-tenant onboarding (org → workspace) declare `backend_mode: cloud` in their settings. The runner spawns `oxy start --enterprise --clean` and drives the auth-disabled internal port (3001). `--clean` wipes the local oxy Postgres volume, so any orgs/workspaces from previous runs are gone — the create-org step in the flow always starts from a fresh DB.
 
+Driving the **authenticated** public port (3000) instead — worth it when you're debugging something auth-shaped by hand, or pointing Playwright MCP at a running server — no longer requires OAuth or the magic-link email preview: set `OXY_DEV_LOGIN_EMAILS` and navigate to `/dev-login` (see the "Dev sign-in" section in `DEVELOPMENT.md`). Committed flows still use 3001; nothing here changes.
+
 `onboarding-blank-workspace` is the canonical cloud-mode flow and runs in CI. It uses DuckDB as the warehouse and uploads the committed `demo_project/.db/oxymart.csv` (a Walmart-style retail dataset) via `browser_file_upload`. DuckDB is file:// only with no network credentials, so this flow is structurally incapable of hitting a port-forward to production — the failure mode of the 2026-05-06 incident. `builder-edits-app` used to run in cloud mode against a freshly-onboarded Demo Workspace, but the cloud-mode prelude duplicated coverage from `onboarding-blank-workspace`; it now runs in local mode against `demo_project/insights.app.yml` directly with a `restore_demo_file:insights.app.yml` setup command to revert the builder's edits between runs.
 
 ### Runbook: onboarding-blank-workspace (local manual run)

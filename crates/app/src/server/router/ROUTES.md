@@ -45,6 +45,7 @@ GET    /auth/config
 POST   /auth/google  /auth/github  /auth/okta
 POST   /auth/magic-link/request  /auth/magic-link/verify
 GET    /user
+GET|POST /auth/dev-login          (404s unless OXY_DEV_LOGIN_EMAILS is set)
 ```
 
 ### ☁️ Global — cloud only

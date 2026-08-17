@@ -1,6 +1,7 @@
 import type {
   AuthConfigResponse,
   AuthResponse,
+  DevLoginRequest,
   GitHubAuthRequest,
   GoogleAuthRequest,
   MagicLinkRequest,
@@ -60,6 +61,19 @@ export class AuthService {
 
   static async verifyMagicLink(request: MagicLinkVerifyRequest): Promise<AuthResponse> {
     const response = await apiClient.post("/auth/magic-link/verify", request);
+    return response.data;
+  }
+
+  /**
+   * Dev-only sign-in bypass — mints the same session the real login flows do,
+   * for an identity the backend pre-declared. The allow-list comes from
+   * `OXY_DEV_LOGIN_EMAILS`, or on a **debug build** from `OXY_GLOBAL_ADMINS`,
+   * in which case the server only answers loopback callers. 404s when neither
+   * resolves, which is every release build that hasn't opted in — i.e. every
+   * real deployment.
+   */
+  static async devLogin(request: DevLoginRequest = {}): Promise<AuthResponse> {
+    const response = await apiClient.post("/auth/dev-login", request);
     return response.data;
   }
 

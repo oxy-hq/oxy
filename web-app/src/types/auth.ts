@@ -164,4 +164,23 @@ export interface AuthConfigResponse {
    * "Billing is disabled" notice instead of calling endpoints that 503.
    */
   billing_enabled: boolean;
+  /**
+   * Whether the dev-only sign-in bypass is reachable **by this caller** — the
+   * server computes it per request, not once per process. An allow-list
+   * inferred from the staff roster (debug builds, no `OXY_DEV_LOGIN_EMAILS`)
+   * is honored for loopback callers only, so this is false off-box even
+   * though the server has one. Renders the "Dev sign-in" button; `/dev-login`
+   * itself is always routable and explains the refusal. Never true in a real
+   * deployment.
+   */
+  dev_login: boolean;
+}
+
+/**
+ * `POST /auth/dev-login`. Omit `email` to sign in as the first identity in
+ * `OXY_DEV_LOGIN_EMAILS`; any email passed must be on that list or the server
+ * returns 403.
+ */
+export interface DevLoginRequest {
+  email?: string;
 }

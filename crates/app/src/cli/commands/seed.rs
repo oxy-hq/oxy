@@ -7,7 +7,7 @@
 //!   `./examples` (or `--workspace-path`). Non-nil so the enterprise
 //!   `workspace_context` middleware accepts it — that guard 404s nil-UUID
 //!   workspaces because nil is the local-mode-only convention.
-//! - Every email in `OXY_GLOBAL_ADMINS` (or legacy `OXY_APP_ADMINS`) as
+//! - Every email in `OXY_GLOBAL_ADMINS` as
 //!   Owner of Local org, so OAuth login (GitHub / Google) lands in a
 //!   workspace already without the user clicking through a setup wizard.
 //!
@@ -41,11 +41,12 @@ fn demo_workspace_id() -> Uuid {
 
 /// Run the full demo seed. `workspace_path` defaults to `./examples`.
 ///
-/// Also binds every email in `OXY_GLOBAL_ADMINS` (or legacy `OXY_APP_ADMINS`)
-/// as Owner of the Local org so OAuth login (GitHub / Google) lands in a
-/// workspace already. Skips emails already bound. Skips silently when
-/// neither env var is set — the guest user still gets seeded so the
-/// workspace is usable from a fresh login.
+/// Also binds every email in `OXY_GLOBAL_ADMINS` as Owner of the Local org so
+/// OAuth login (GitHub / Google) lands in a workspace already. Skips emails
+/// already bound, and skips the binding entirely when that env var is unset —
+/// the guest user still gets seeded so the workspace is usable from a fresh
+/// login. A `.env` carrying only the removed `OXY_APP_ADMINS` gets an error
+/// logged rather than binding nobody in silence.
 pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> {
     let resolved = resolve_workspace_path(workspace_path)?;
     let resolved_str = resolved.to_string_lossy().to_string();
@@ -225,14 +226,16 @@ async fn ensure_demo_workspace(
     Ok(())
 }
 
-/// Bind every email in OXY_GLOBAL_ADMINS (or legacy OXY_APP_ADMINS) as
-/// Owner of the Local org. Idempotent — already-bound emails are skipped.
-/// When neither env is set, returns Ok without action.
+/// Bind every email in OXY_GLOBAL_ADMINS as Owner of the Local org.
+/// Idempotent — already-bound emails are skipped. When the env is not set,
+/// returns Ok without action.
 async fn bind_org_admin_emails(conn: &sea_orm::DatabaseConnection) -> Result<(), OxyError> {
-    let raw = std::env::var("OXY_GLOBAL_ADMINS")
-        .ok()
-        .or_else(|| std::env::var("OXY_APP_ADMINS").ok())
-        .unwrap_or_default();
+    // This path lost the OXY_APP_ADMINS fallback too, and `oxy seed` never
+    // touches the serve boot that carries the same warning — so without this
+    // call it would bind nobody and say nothing, which is the exact silent
+    // failure the removal is supposed to announce.
+    crate::server::api::custom_apps_auth::warn_on_removed_legacy_admins_env();
+    let raw = std::env::var("OXY_GLOBAL_ADMINS").unwrap_or_default();
     let parsed: Vec<String> = raw
         .split(',')
         .map(|s| s.trim().to_string())

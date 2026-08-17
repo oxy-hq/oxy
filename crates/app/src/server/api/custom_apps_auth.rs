@@ -419,35 +419,75 @@ pub(crate) async fn authenticate_and_authorize(
 
 // ── Bootstrap: OXY_GLOBAL_ADMINS env → app_admins table ─────────────────────
 
-/// Reads `OXY_GLOBAL_ADMINS` (preferred) or the legacy `OXY_APP_ADMINS`
-/// (comma-separated emails) once at startup and inserts any missing rows
-/// into `app_admins` with `granted_by = NULL`. Idempotent — re-running is
-/// harmless. After the seed, OXY_OWNER users can add/remove admins through
-/// the UI; the env var becomes a bootstrap-only convenience, never a
-/// permanent allow-list.
+/// The pre-rename `OXY_APP_ADMINS` is gone from every reader (seeding, the
+/// `seed` command, dev sign-in). Removing a var that used to grant staff
+/// access fails silently by nature — nothing errors, there are simply no
+/// admins — so say it loudly at the moment the seed would have used it.
 ///
-/// If both env vars are set, the contents are unioned so a half-migrated
-/// deployment doesn't lose admins. A deprecation warning is logged when
-/// the legacy name is observed.
+/// Keyed on **which emails are lost**, not on whether the variable is set.
+/// The old code unioned the two lists, so "both set" also covers a
+/// half-migrated deployment whose lists are disjoint — some staff under the new
+/// name, others still only under the old one. That is precisely where addresses
+/// silently stop being seeded, and a set-vs-unset rule is silent for it. The
+/// bite is bounded (seeding is insert-only, so rows already created survive) but
+/// lands on a fresh database, or on anyone never seeded, as "why isn't X an
+/// admin" with nothing in the log.
+///
+/// A fully-migrated deployment that just left the old line behind stays quiet,
+/// which is what the set-vs-unset rule was reaching for.
+pub(crate) fn warn_on_removed_legacy_admins_env() {
+    let lost = legacy_only_emails(
+        std::env::var("OXY_APP_ADMINS").ok().as_deref(),
+        std::env::var("OXY_GLOBAL_ADMINS").ok().as_deref(),
+    );
+    if lost.is_empty() {
+        return;
+    }
+    tracing::error!(
+        "OXY_APP_ADMINS is set but is NO LONGER READ — rename it to \
+         OXY_GLOBAL_ADMINS. These {} address(es) appear ONLY under the old name \
+         and are no longer seeded as global admins: {}",
+        lost.len(),
+        lost.join(", ")
+    );
+}
+
+/// Emails present in the removed `OXY_APP_ADMINS` and absent from
+/// `OXY_GLOBAL_ADMINS` — i.e. exactly what the removal costs this deployment.
+/// Split out from the env read so the rule is testable without touching
+/// process-global state.
+fn legacy_only_emails(legacy: Option<&str>, current: Option<&str>) -> Vec<String> {
+    let normalize = |raw: Option<&str>| -> std::collections::BTreeSet<String> {
+        raw.unwrap_or_default()
+            .split(',')
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
+    let current = normalize(current);
+    normalize(legacy)
+        .into_iter()
+        .filter(|email| !current.contains(email))
+        .collect()
+}
+
+/// Reads `OXY_GLOBAL_ADMINS` (comma-separated emails) once at startup and
+/// inserts any missing rows into `app_admins` with `granted_by = NULL`.
+/// Idempotent — re-running is harmless. After the seed, OXY_OWNER users can
+/// add/remove admins through the UI; the env var becomes a bootstrap-only
+/// convenience, never a permanent allow-list.
+///
+/// The pre-rename spelling `OXY_APP_ADMINS` is **no longer read**. A
+/// deployment still setting only that one would otherwise seed nobody and
+/// discover it as "the admin UI is empty", so its presence is called out at
+/// startup — see [`warn_on_removed_legacy_admins_env`].
 pub async fn bootstrap_app_admins_from_env(db: &DatabaseConnection) -> Result<(), DbErr> {
-    let mut raw_inputs: Vec<String> = Vec::new();
-    if let Ok(v) = std::env::var("OXY_GLOBAL_ADMINS") {
-        raw_inputs.push(v);
-    }
-    if let Ok(v) = std::env::var("OXY_APP_ADMINS") {
-        tracing::warn!(
-            "OXY_APP_ADMINS is deprecated — rename to OXY_GLOBAL_ADMINS. \
-             Both are accepted for now; the legacy name will be removed in \
-             a future release."
-        );
-        raw_inputs.push(v);
-    }
-    if raw_inputs.is_empty() {
+    warn_on_removed_legacy_admins_env();
+    let Ok(raw) = std::env::var("OXY_GLOBAL_ADMINS") else {
         return Ok(());
-    }
-    let emails: Vec<String> = raw_inputs
-        .iter()
-        .flat_map(|s| s.split(','))
+    };
+    let emails: Vec<String> = raw
+        .split(',')
         .map(|s| s.trim().to_ascii_lowercase())
         .filter(|s| !s.is_empty())
         .collect::<std::collections::BTreeSet<_>>()
@@ -513,5 +553,48 @@ mod tests {
         assert_eq!(cached_access(user, app), Some(true));
         invalidate_access_cache();
         assert_eq!(cached_access(user, app), None);
+    }
+
+    // What the OXY_APP_ADMINS removal actually costs a given deployment. The
+    // rule is keyed on lost addresses rather than on whether the var is set,
+    // because the case that loses admins silently is the half-migrated one
+    // where BOTH names are set with different contents.
+
+    #[test]
+    fn nothing_is_lost_when_the_old_name_is_absent() {
+        assert!(legacy_only_emails(None, Some("staff@oxy.tech")).is_empty());
+        assert!(legacy_only_emails(Some(""), Some("staff@oxy.tech")).is_empty());
+    }
+
+    #[test]
+    fn a_fully_migrated_deployment_stays_quiet() {
+        // Same people under both names, modulo case and spacing: the operator
+        // renamed it and left the old line behind. Nagging every boot would
+        // train them to ignore the message that matters.
+        assert!(
+            legacy_only_emails(
+                Some("Staff@oxy.tech, ops@oxy.tech"),
+                Some("staff@oxy.tech,ops@oxy.tech"),
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_half_migrated_deployment_names_the_addresses_it_drops() {
+        // The blind spot in a set-vs-unset rule: both are set, so "already
+        // migrated" looks true, but ops@ is seeded by nobody.
+        assert_eq!(
+            legacy_only_emails(Some("staff@oxy.tech,ops@oxy.tech"), Some("staff@oxy.tech")),
+            vec!["ops@oxy.tech".to_string()]
+        );
+    }
+
+    #[test]
+    fn the_new_name_missing_entirely_loses_everyone() {
+        assert_eq!(
+            legacy_only_emails(Some("staff@oxy.tech,ops@oxy.tech"), None),
+            vec!["ops@oxy.tech".to_string(), "staff@oxy.tech".to_string()]
+        );
     }
 }

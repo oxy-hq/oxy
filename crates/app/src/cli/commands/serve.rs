@@ -1000,6 +1000,36 @@ async fn serve_application(
         protocol_info
     );
 
+    // Auth bypass is opt-in and loud: if someone set it on a box that isn't
+    // theirs alone, the startup banner is where they find out. Print the API
+    // endpoint, not the SPA page — the page is served by the Vite dev server on
+    // its own port under `pnpm run dev`, and isn't mounted at all in local
+    // mode, so this URL is the one that's always right. DEVELOPMENT.md owns
+    // the browser flow.
+    if crate::api::auth::is_dev_login_enabled() {
+        // Name the variable that actually enabled it: on a debug build with no
+        // explicit opt-in that is OXY_GLOBAL_ADMINS, and someone reading
+        // "OXY_DEV_LOGIN_EMAILS" would go looking for a var they never set.
+        let source = crate::api::auth::dev_login_source().unwrap_or("OXY_DEV_LOGIN_EMAILS");
+        // "anyone who can reach this server" is only true for an explicit
+        // allow-list; an inferred one is refused off-box, and saying otherwise
+        // would train readers to ignore the louder message.
+        let reach = if crate::api::auth::dev_login_is_loopback_only() {
+            "this machine only (loopback) — set OXY_DEV_LOGIN_EMAILS to serve other hosts"
+        } else {
+            "anyone who can reach this server"
+        };
+        println!(
+            "{} {}",
+            format!("Dev sign-in ENABLED ({source}) — {reach}, via").warning(),
+            format!(
+                "{}://{}:{}/api/auth/dev-login",
+                protocol, display_host, args.port
+            )
+            .secondary(),
+        );
+    }
+
     // Start internal server if enabled
     if let Some(internal_app) = internal_app {
         let internal_addr: SocketAddr = format!("{}:{}", args.internal_host, args.internal_port)
@@ -1030,7 +1060,15 @@ async fn serve_application(
                 })?;
 
         tokio::spawn(async move {
-            if let Err(e) = axum::serve(internal_listener, internal_app).await {
+            // Connect-info, like both main-port branches: this router merges
+            // `build_public_routes`, so it serves `/auth/dev-login`, whose
+            // loopback check needs a peer address to be meaningful here.
+            if let Err(e) = axum::serve(
+                internal_listener,
+                internal_app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            {
                 tracing::error!("Internal server error: {}", e);
             }
         });

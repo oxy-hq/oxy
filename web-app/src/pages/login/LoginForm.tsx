@@ -1,7 +1,7 @@
 import { Mail } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import { FieldError } from "@/components/ui/shadcn/field";
@@ -11,6 +11,7 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRequestMagicLink } from "@/hooks/auth/useMagicLink";
 import { cn } from "@/libs/shadcn/utils";
+import ROUTES from "@/libs/utils/routes";
 import LoginWithGitHubButton from "./LoginWithGitHubButton";
 import LoginWithGoogleButton from "./LoginWithGoogleButton";
 import LoginWithOktaButton from "./LoginWithOktaButton";
@@ -138,6 +139,21 @@ const Divider = ({ label }: { label: string }) => (
   </div>
 );
 
+/**
+ * Only rendered when the server reports the bypass reachable *by this caller*
+ * (`authConfig.dev_login` — see the field's docstring; an inferred allow-list
+ * is loopback-only, so this is absent off-box). It exists so an agent driving
+ * the browser has something to click — the login page is where automation
+ * lands, and every other button here leads off to a provider or an inbox.
+ */
+const DevSignInSection = () => (
+  <Link to={ROUTES.AUTH.DEV_LOGIN} className='w-full' data-testid='login-dev-signin'>
+    <Button type='button' variant='outline' className='w-full'>
+      Dev sign-in (no password)
+    </Button>
+  </Link>
+);
+
 const LoginForm = () => {
   const { authConfig } = useAuth();
 
@@ -168,6 +184,13 @@ const LoginForm = () => {
             clientId={authConfig.okta.client_id}
             domain={authConfig.okta.domain}
           />
+        )}
+
+        {authConfig.dev_login && (
+          <>
+            <Divider label='dev only' />
+            <DevSignInSection />
+          </>
         )}
       </div>
     </div>

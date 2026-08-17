@@ -24,7 +24,7 @@ pub struct Model {
     #[sea_orm(unique)]
     pub email: String,
     /// User who added this admin. NULL when the row was seeded from the
-    /// legacy `OXY_APP_ADMINS` env var on startup.
+    /// `OXY_GLOBAL_ADMINS` env var on startup.
     pub granted_by: Option<Uuid>,
     pub created_at: DateTimeWithTimeZone,
     /// The preset this grant was issued as — `oxy_authz::PlatformRole::as_str`.

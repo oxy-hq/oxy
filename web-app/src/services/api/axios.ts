@@ -18,6 +18,13 @@ const publicAPIPaths = [
   "/auth/session",
   "/auth/magic-link/request",
   "/auth/magic-link/verify",
+  // Dev sign-in refusals are the endpoint's normal vocabulary — 403 for an
+  // email that isn't on the allow-list, 404 when the bypass is off — and the
+  // /dev-login page renders both with the fix. Without this exemption the
+  // caller also gets the generic "You don't have permission to do this."
+  // toast, which is the wrong register for a sign-in attempt: nothing has
+  // been denied to a *session*, the identity was simply never on the list.
+  "/auth/dev-login",
   // Logging out with an already-expired token 401s; let AuthContext.logout's
   // own teardown + home redirect own the outcome instead of this interceptor
   // racing a redirect to /login. (Only gates the 401 handler — the request

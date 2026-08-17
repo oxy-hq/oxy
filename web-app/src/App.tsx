@@ -50,6 +50,7 @@ import { LOCAL_WORKSPACE_ID } from "./libs/utils/constants";
 import { setLastWorkspaceId } from "./libs/utils/lastWorkspace";
 import AppPage from "./pages/app";
 import CliAuth from "./pages/auth/CliAuth";
+import DevLogin from "./pages/auth/DevLogin";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
 import OktaCallback from "./pages/auth/OktaCallback";
@@ -489,6 +490,21 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             <Route path={ROUTES.AUTH.MAGIC_LINK_CALLBACK} element={<MagicLinkCallback />} />
           </>
         )}
+
+        {/* Dev sign-in bypass — public, and mounted unconditionally. Sits
+            outside the `auth_enabled` block because it IS the sign-in for a
+            browser automation tool: one `goto('/dev-login')` and the browser
+            holds a real session.
+
+            Not gated on `authConfig.dev_login`, which is per-caller and false
+            off-box: gating it there meant the developer browsing their own
+            server as `192.168.1.x` fell through to `/*` → `ProtectedRoute` →
+            `/login` and got a silent bounce, while the page's own copy — which
+            exists to say "browse localhost, or set OXY_DEV_LOGIN_EMAILS" —
+            could never render. The gate is the server's 404; this page's job is
+            to explain it. Hiding the route buys no probe-resistance either: the
+            bundle ships the page and its strings to every caller regardless. */}
+        <Route path={ROUTES.AUTH.DEV_LOGIN} element={<DevLogin />} />
 
         {/* GitHub callback must always be accessible (used during the workspace import popup flow) */}
         <Route path='/github/callback' element={<GitHubCallback />} />

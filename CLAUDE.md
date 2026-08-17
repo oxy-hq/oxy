@@ -90,6 +90,17 @@ authoring/maintenance; drive it via slash commands (`/test-feature`,
 `/agentic-test-add-case`, `/run-agentic-tests`, `/fix-agentic-test`,
 `/accept-agentic-healing`). Mechanics: `web-app/tests/agentic/README.md`.
 
+### Driving the running app (Playwright MCP)
+
+The `playwright` MCP server (declared in `.mcp.json`) is for **looking at** a change —
+clicking through it, screenshotting it, reproducing a reported bug. Different job from
+the flows above, which are the committed regression suite: don't hand-drive a flow you
+should be writing, don't write a flow to see a page once.
+
+Signing in is one navigation, not OAuth: with `OXY_DEV_LOGIN_EMAILS` set,
+`browser_navigate("http://localhost:5173/dev-login")` leaves the browser holding a real
+session. Setup, query params, and the `curl` form: **Dev sign-in** in `DEVELOPMENT.md`.
+
 ## Committing
 
 Conventional Commits, types `feat|fix|refactor|docs|test|build|chore|perf|style|ci`.

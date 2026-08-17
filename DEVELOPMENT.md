@@ -176,6 +176,111 @@ In each checkout, run `cargo run serve` and `pnpm run dev` as usual. Checkout A
 is then at `http://localhost:5173` (API `3000`) and checkout B at
 `http://localhost:5273` (API `3100`), fully isolated.
 
+## Dev sign-in (browser automation without OAuth or email)
+
+Local development runs the production path — cloud mode with magic-link auth —
+so signing in normally means completing Google/Okta OAuth or opening the email
+preview `MAGIC_LINK_LOCAL_TEST` writes to disk. Neither is scriptable, which
+makes Playwright MCP, a scratch Playwright script, or any headless probe
+useless against a local server.
+
+There is a bypass that mints exactly the session the real login flows mint
+(JWT + `oxy_session` cookie), for identities the operator pre-declared.
+
+**On a debug build — `cargo run serve`, anything `just` builds — you configure
+nothing.** The allow-list falls back to `OXY_GLOBAL_ADMINS`, which a dev box
+already sets, so a fresh clone can drive the app immediately. (The pre-rename
+`OXY_APP_ADMINS` is no longer read by anything; rename it if your `.env` predates
+the change — the server logs an error at startup when only the old name is set.)
+
+That inferred list is served to **loopback callers only**. `serve` binds
+`0.0.0.0`, so without that limit a plain `cargo run serve` on office or café
+wifi would hand every device on the network an unauthenticated session for a
+real staff address — with nothing configured and nothing announcing it. Your own
+browser and Playwright are on the same machine, so the zero-config path is
+unaffected; a phone on the same wifi, a container, or a colleague's laptop gets
+a 404. To serve those, name the identities explicitly — that is a deliberate act
+and is honored for any peer:
+
+```bash
+# .env — comma-separated. The first entry is the default identity.
+OXY_DEV_LOGIN_EMAILS=dev@oxy.local,member@oxy.local
+OXY_DEV_LOGIN_EMAILS=            # set-but-empty: bypass off, admins untouched
+```
+
+Restart the server; the startup banner says dev sign-in is on and names the
+variable that enabled it. Then:
+
+| Want | Do |
+| ---- | -- |
+| A signed-in browser | navigate to `http://localhost:5173/dev-login` |
+| …as a specific identity | `/dev-login?email=member@oxy.local` |
+| …landing on a specific page | `/dev-login?next=/ide` |
+| A token for `curl`/scripts | `curl 'http://localhost:3000/api/auth/dev-login?email=dev@oxy.local'` |
+| A button to click | the **Dev sign-in** button on `/login` (only rendered when enabled) |
+
+`GET` returns the token in the body and sets **no** session cookie; only the
+`POST` the page uses does. That way a page you happen to have open can't
+navigate your browser into a session behind your back — the session cookie is
+`SameSite=Lax`, which would otherwise ride along on a top-level GET.
+
+The identity is an ordinary user row, created on first use — so a first
+sign-in against a fresh database has no orgs and lands on onboarding, exactly
+like a real new user. List the same address in `OXY_OWNER` / `OXY_GLOBAL_ADMINS`
+when you need staff reach.
+
+For Playwright MCP that is the whole setup: one `browser_navigate` to
+`/dev-login` and the browser holds a real session for the rest of the run. The
+`playwright` server is declared in the repo's `.mcp.json` and pinned as a
+`web-app` devDependency, so `pnpm install` is all it takes for Claude Code to
+offer it (the package's binary is `playwright-mcp`).
+
+If the first navigation complains about a missing browser, install it **through
+the MCP package**, not from `web-app`:
+
+```bash
+pnpm --dir web-app/node_modules/@playwright/mcp exec playwright install chromium
+```
+
+The obvious `pnpm --dir web-app exec playwright install` is the wrong one and
+will leave you in a loop. Browser revisions are pinned per Playwright version:
+`@playwright/mcp` depends on its own `playwright` + `playwright-core` pair
+(`1.63.0-alpha-2026-08-05` → chromium **1237**), while `web-app`'s direct dep is
+`@playwright/test@1.62.1` → chromium **1234**, and pnpm only links direct
+dependencies' binaries. Running it from inside the MCP package resolves the
+right one without naming a version, so it survives a pin bump. Confirm either
+way with `--dry-run`, which prints the install path.
+
+Artifacts land in `.playwright-mcp/` relative to the **server's working
+directory**, which is whatever cwd Claude Code was started in — the repo root in
+the usual case, observed there rather than under `web-app/`. `pnpm --dir web-app`
+resolves the *package* from `web-app` without changing the child process's cwd.
+Either way it's gitignored: `.gitignore`'s `.playwright-mcp/` has no leading
+slash, so it matches that directory at any depth.
+
+**The guard rails, so this can't become a production hole:**
+
+- **The roster fallback is debug-build only.** Production and every Docker image
+  are release builds; they honor `OXY_DEV_LOGIN_EMAILS` and nothing else.
+  `OXY_GLOBAL_ADMINS` *is* set on real deployments, so a release binary that
+  honored it would hand anyone who can reach the server an unauthenticated
+  **Global Admin** session.
+- **…and loopback-only on top of that.** The two guards cover different axes:
+  `debug_assertions` separates shipped from local, loopback separates this
+  machine from the network. Only an explicit `OXY_DEV_LOGIN_EMAILS` — which
+  somebody deliberately typed — is served off-box.
+- No allow-list resolves ⇒ `/api/auth/dev-login` **404s**. A deployment that
+  never sets the var is unaffected. (The `/dev-login` *page* is always routable
+  — it exists to explain the refusal, and the server is the gate.)
+- The endpoint only ever issues a session for an address **already listed** — an
+  unlisted email is a 403, so a caller cannot name their way into someone
+  else's account.
+- Enabling it prints a warning at startup and logs one per issued session.
+
+A dev box is cloud mode with non-prod secrets, so the server cannot tell itself
+apart from production by mode — the build profile and this env var are the only
+gates. Never set `OXY_DEV_LOGIN_EMAILS` on a deployment other people can reach.
+
 ## OAuth bounce proxy (Google / GitHub sign-in across instances)
 
 OAuth providers validate the `redirect_uri` against a fixed allow-list, so every

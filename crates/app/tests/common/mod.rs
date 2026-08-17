@@ -277,7 +277,6 @@ pub async fn test_db() -> DatabaseConnection {
         // pass for the wrong reason, or fail only on someone else's machine.
         std::env::remove_var("OXY_OWNER");
         std::env::remove_var("OXY_GLOBAL_ADMINS");
-        std::env::remove_var("OXY_APP_ADMINS");
     }
 
     db

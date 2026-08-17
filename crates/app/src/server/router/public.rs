@@ -33,6 +33,15 @@ pub(super) fn build_public_routes() -> Router<AppState> {
         .route("/auth/magic-link/request", post(auth::request_magic_link))
         .route("/auth/magic-link/verify", post(auth::verify_magic_link))
         .route("/auth/return-to/validate", get(auth::validate_return_to))
+        // Dev-only sign-in bypass. Public by necessity (it IS the login), but
+        // 404s unless an allow-list resolves — `OXY_DEV_LOGIN_EMAILS` in any
+        // build, or the staff roster on a debug build for a loopback caller —
+        // and only ever issues a session for an address on it. The three rungs
+        // and why they differ: `api::auth::dev_login`.
+        .route(
+            "/auth/dev-login",
+            get(auth::dev_login_get).post(auth::dev_login),
+        )
         .route("/user", get(user::get_current_user_public))
         .route("/webhooks/stripe", post(billing::webhook::stripe_webhook))
         .route(

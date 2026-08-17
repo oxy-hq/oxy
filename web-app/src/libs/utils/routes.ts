@@ -14,7 +14,9 @@ const ROUTES = {
     GOOGLE_CALLBACK: "/auth/google/callback",
     OKTA_CALLBACK: "/auth/okta/callback",
     MAGIC_LINK_CALLBACK: "/auth/magic-link/callback",
-    GITHUB_AUTH_CALLBACK: "/auth/github/callback"
+    GITHUB_AUTH_CALLBACK: "/auth/github/callback",
+    /** Dev-only bypass; mounted only when `authConfig.dev_login` is true. */
+    DEV_LOGIN: "/dev-login"
   },
   GITHUB: {
     CALLBACK: "/github/callback"

@@ -8,9 +8,16 @@
 //!   exchange, magic-link email + rate limiting, and login finalization.
 //! - [`handlers`]: the HTTP handler functions themselves.
 
+mod dev_login;
 mod dto;
 mod handlers;
 mod ops;
 
+// The two handlers stay `pub` (mounted from `router/public.rs`, whose `pub`
+// signatures name `PeerAddr`); every query about the allow-list is crate-only.
+pub use dev_login::{PeerAddr, dev_login, dev_login_get};
+pub(crate) use dev_login::{
+    dev_login_is_loopback_only, dev_login_reachable_by, dev_login_source, is_dev_login_enabled,
+};
 pub use handlers::*;
 pub(crate) use ops::{clear_session_cookie, extract_base_url_from_headers};
