@@ -490,18 +490,22 @@ airform-core = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e82886
 # immutable. A tag is immutable enough for this and reads better in a
 # diff; a *branch* pin would not be, and must never be used here.
 #
-# 0.1.30 adds `SourceConnector::column_hints`, which is why this bump
-# exists: without it a connector cannot declare a column's type, and an
-# all-null column does not materialize at all — leaving the landed table's
-# shape dependent on which file loaded first.
+# 0.1.30 adds `SourceConnector::column_hints`, which is why the ubereats
+# source needed this bump: without it a connector cannot declare a column's
+# type, and an all-null column does not materialize at all — leaving the
+# landed table's shape dependent on which file loaded first.
+#
+# It also carries the **netsuite** connector, which `source_factory` now has
+# an arm for. Two changes arrived at this pin from different directions and
+# both are consumed: #2937 for `column_hints`, this one for netsuite.
 #
 # Note the tag is NOT the `release/0.1.30` branch tip this was briefly
-# pinned to (`608c9e5`): the release merged as #127 and picked up netsuite
-# work along the way, so `0.1.30` is a superset, +1514 lines. Everything
-# consumed here is byte-identical between the two — `ubereats.rs`,
-# `connector/mod.rs`, `source/mod.rs`, `schema/inference.rs` and
-# `filesystem.rs` are unchanged, and the `SourceConnector` method list is
-# identical — so the swap moves only netsuite code oxy has no arm for.
+# pinned to (`608c9e5`): the release merged as #127 and picked up the
+# netsuite work along the way, so `0.1.30` is a superset, +1514 lines.
+# Everything ubereats consumes is byte-identical between the two —
+# `ubereats.rs`, `connector/mod.rs`, `source/mod.rs`, `schema/inference.rs`
+# and `filesystem.rs` are unchanged, and the `SourceConnector` method list
+# is identical.
 airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.30", default-features = false, features = [
   "duckdb",
   "postgres",

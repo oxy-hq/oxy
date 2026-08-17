@@ -84,7 +84,8 @@ use crate::server::router::AppState;
 /// `source_kind`: a row under an unknown kind would silently never appear
 /// in [`handlers::get_config`]'s response, since that groups strictly by
 /// this list.
-pub(crate) const KNOWN_SOURCE_KINDS: &[&str] = &["toast", "quickbooks", "weather", "rest_api"];
+pub(crate) const KNOWN_SOURCE_KINDS: &[&str] =
+    &["toast", "quickbooks", "weather", "rest_api", "netsuite"];
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new().nest(

@@ -26,6 +26,7 @@ use airway::connector::SourceConnector;
 use airway::connector::sources::besttime::{BestTimeConfig, besttime_source};
 use airway::connector::sources::filesystem::{FilesystemSource, SourceFileFormat};
 use airway::connector::sources::http_file::{HttpFileConfig, http_file_source};
+use airway::connector::sources::netsuite::{NetSuiteCredentials, NetSuiteSource, SigningAlgorithm};
 use airway::connector::sources::overpass::{OverpassConfig, overpass_source};
 use airway::connector::sources::overture::{OvertureConfig, overture_source};
 use airway::connector::sources::postgres_cdc::PostgresCdcSource;
@@ -244,6 +245,7 @@ fn build_source_connector_inner(
         "overture" => build_overture(&config.config),
         "http_file" => build_http_file(&config.config),
         "overpass" => build_overpass(&config.config),
+        "netsuite" => build_netsuite(&config.config),
         "ubereats" => build_ubereats(&config.config),
         other => Err(AirwayError::Other(format!(
             "unsupported source kind `{other}`. Wire it up in \
@@ -703,6 +705,161 @@ fn build_postgres_cdc(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayErr
     Ok(Box::new(source))
 }
 
+// ── netsuite ─────────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NetSuiteParams {
+    /// NetSuite account id, e.g. `4544316` or `1234567_SB1`. An identifier,
+    /// not a secret — it is visible in every API hostname.
+    account_id: String,
+    /// Client ID (Consumer Key) from the integration record. An identifier.
+    client_id: String,
+    /// Certificate ID from the OAuth 2.0 Client Credentials (M2M) Setup page.
+    /// Travels as the JWT `kid`; an identifier, not the key itself.
+    certificate_id: String,
+    /// PEM-encoded **private** key matching the uploaded certificate.
+    ///
+    /// The `agentic-pipeline` executor substitutes `private_key_var` -> this
+    /// field from the secret manager before dispatch, so the factory only ever
+    /// sees the resolved literal — the same shape as toast's `client_secret`.
+    ///
+    /// A multi-line PEM rather than a token, which is the one thing to know
+    /// about it: whatever stores the secret must preserve newlines. A key that
+    /// arrives re-wrapped fails at construction naming the credential, rather
+    /// than later as an opaque signature error.
+    ///
+    /// **`default` is load-bearing.** The executor treats a resolved-but-empty
+    /// secret as unset and skips the insert entirely, so the field arrives
+    /// *absent* rather than empty. Without a default, serde refuses first with
+    /// `missing field \`private_key_pem\``, which names the struct rather than
+    /// the secret an operator has to go and fix. Defaulting collapses absent
+    /// into `""` so both land on the explicit message in [`build_netsuite`].
+    #[serde(default)]
+    private_key_pem: String,
+    /// Signature algorithm; must match the key type. `PS256` (RSA) when absent,
+    /// which is the pairing Oracle's own setup guide walks through.
+    #[serde(default)]
+    algorithm: Option<String>,
+    /// Cold-start lookback for the cursored resources, in days. Widen for a
+    /// deliberate backfill; airway defaults to 90 when absent.
+    #[serde(default)]
+    lookback_days: Option<i64>,
+    /// Restrict to a subset of resources, **narrowing the connector itself**.
+    ///
+    /// There is already a kind-agnostic `resources:` at the top level of
+    /// `.airway.yml` ([`crate::config::AirwayPipelineSpec`]), and for merely
+    /// skipping a large table that one is the right knob — it is the same list
+    /// for every source kind. Row count is *not* what makes this one useful.
+    ///
+    /// The difference is **when** each applies. This list is handed to the
+    /// connector inside `build_netsuite`, so `resources()` and `contracts()`
+    /// are already narrowed by the time `Source::try_from_connector_with` runs
+    /// admission (`worker.rs`). The top-level list is applied *after* that, so
+    /// a tightened `ContractPolicy` still judges the full resource set. Reach
+    /// for this one when the subset must be visible to admission; reach for the
+    /// top-level one otherwise.
+    ///
+    /// **They compose by intersection, and a disjoint pair extracts nothing
+    /// without erroring.** Setting both is rarely what anyone means.
+    #[serde(default)]
+    resources: Option<Vec<String>>,
+}
+
+/// Hand-written so a `{params:?}` in future maintenance cannot put a private
+/// key in the logs.
+///
+/// `ToastParams` derives `Debug` while holding `client_secret`, so this is a
+/// departure from the neighbouring shape rather than a house rule — but the
+/// argument is the same one this file's own tests make about
+/// `Box<dyn SourceConnector>` implementing no `Debug`, and a PEM is the
+/// credential with the longest blast radius here.
+impl std::fmt::Debug for NetSuiteParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NetSuiteParams")
+            .field("account_id", &self.account_id)
+            .field("client_id", &self.client_id)
+            .field("certificate_id", &self.certificate_id)
+            .field("private_key_pem", &"<redacted>")
+            .field("algorithm", &self.algorithm)
+            .field("lookback_days", &self.lookback_days)
+            .field("resources", &self.resources)
+            .finish()
+    }
+}
+
+fn build_netsuite(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
+    let params: NetSuiteParams = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid netsuite config: {e}")))?;
+
+    // Covers both shapes an unset secret can take. The executor treats a
+    // resolved-but-empty secret as *unset* and skips the field insert
+    // (`resolve_airway_source_secrets`), so it arrives absent — which is why
+    // the field carries `#[serde(default)]`; a hand-written empty or
+    // whitespace value in YAML arrives as itself. Either way the default
+    // failure would name the struct field rather than the secret an operator
+    // has to fix, so it is named explicitly here.
+    if params.private_key_pem.trim().is_empty() {
+        return Err(AirwayError::Other(
+            concat!(
+                "netsuite config: `private_key_pem` is empty or unset — set ",
+                "`private_key_var` to a secret that is set, and check the stored ",
+                "value kept the PEM's newlines",
+            )
+            .into(),
+        ));
+    }
+
+    let algorithm = match params.algorithm.as_deref() {
+        Some(name) => SigningAlgorithm::parse(name).map_err(AirwayError::Other)?,
+        None => SigningAlgorithm::default(),
+    };
+
+    // Rejected rather than passed through: a zero or negative lookback puts the
+    // cold-start window at or after now, so the first run of a new pipeline
+    // returns nothing and looks like an empty account.
+    if let Some(days) = params.lookback_days
+        && days <= 0
+    {
+        return Err(AirwayError::Other(format!(
+            "netsuite config: `lookback_days` must be positive, got {days} \
+             (a non-positive window starts at or after now and extracts nothing)"
+        )));
+    }
+
+    // Mirrors the `restaurant_guids` empty-check in `build_toast`. An empty
+    // list here means "all" at the top level of `.airway.yml` but reaches the
+    // connector verbatim from this one — the same key spelling with two
+    // meanings, so the ambiguous form is refused rather than silently
+    // resolved either way.
+    if let Some(resources) = params.resources.as_deref()
+        && resources.is_empty()
+    {
+        return Err(AirwayError::Other(
+            concat!(
+                "netsuite config: `resources` is present but empty. Omit the ",
+                "key to extract every resource, or list the ones you want.",
+            )
+            .into(),
+        ));
+    }
+
+    let mut source = NetSuiteSource::new(NetSuiteCredentials {
+        account_id: params.account_id,
+        client_id: params.client_id,
+        certificate_id: params.certificate_id,
+        private_key_pem: params.private_key_pem,
+        algorithm,
+    })?;
+    if let Some(days) = params.lookback_days {
+        source = source.with_lookback_days(days);
+    }
+    if let Some(resources) = params.resources {
+        source = source.with_resources(resources)?;
+    }
+    Ok(Box::new(source))
+}
+
 // ── toast ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -1087,6 +1244,224 @@ mod tests {
     /// default `Environment::Production`.
     fn build(config: &SourceConfig) -> Result<Box<dyn SourceConnector>, AirwayError> {
         build_source_connector(config, None, airway::connector::Environment::Production)
+    }
+
+    /// The field the executor resolves the managed secret into.
+    ///
+    /// Deserialized directly rather than through `build`, deliberately: building
+    /// constructs an HTTP client, which reads the *process-global* deployment
+    /// config — so a sibling test installing a `tls_ca_cert` makes this fail for
+    /// reasons unrelated to what it asserts. `besttime`, `overpass` and
+    /// `weather` already fail that way on `main`. Mirrors
+    /// `rest_api_bearer_reads_resolved_token` below, which round-trips the
+    /// config struct for the same reason.
+    ///
+    /// `NetSuiteParams` carries `deny_unknown_fields`, so a rename on either
+    /// side of `("private_key_pem", "private_key_var")` fails here at CI rather
+    /// than landing the key in an ignored field and authenticating with nothing.
+    #[test]
+    fn netsuite_params_read_the_resolved_private_key_field() {
+        let params: NetSuiteParams = serde_json::from_value(json!({
+            "account_id": "4544316",
+            "client_id": "cid",
+            "certificate_id": "kid",
+            // Exactly what the executor's managed-secret table substitutes.
+            "private_key_pem": "-----BEGIN PRIVATE KEY-----\nresolved\n-----END PRIVATE KEY-----\n",
+            "lookback_days": 30,
+            "resources": ["items", "locations"],
+        }))
+        .expect("deserialize");
+
+        assert!(params.private_key_pem.contains("resolved"));
+        assert_eq!(params.lookback_days, Some(30));
+        assert_eq!(
+            params.resources.as_deref(),
+            Some(&["items".to_string(), "locations".to_string()][..])
+        );
+        // Identifiers, not secrets — the account id is in every API hostname.
+        assert_eq!(params.account_id, "4544316");
+        assert_eq!(params.certificate_id, "kid");
+    }
+
+    /// A misspelled key must be refused, not silently ignored: without
+    /// `deny_unknown_fields` a typo'd optional field is dropped and the default
+    /// used, which is invisible until the pull behaves unexpectedly.
+    #[test]
+    fn netsuite_params_refuse_an_unknown_field() {
+        let err = serde_json::from_value::<NetSuiteParams>(json!({
+            "account_id": "4544316",
+            "client_id": "cid",
+            "certificate_id": "kid",
+            "private_key_pem": "x",
+            "lookbackdays": 30,
+        }))
+        .expect_err("unknown field must be refused");
+        assert!(err.to_string().contains("lookbackdays"), "{err}");
+    }
+
+    /// ES512 is a legitimate NetSuite choice this client cannot sign, so the
+    /// error has to say so — the fix is a new key, not a new spelling. Rejected
+    /// before any HTTP client is built, so this is independent of global state.
+    #[test]
+    fn netsuite_rejects_an_unsupported_algorithm_with_the_reason() {
+        let built = build(&cfg(
+            "netsuite",
+            json!({
+                "account_id": "4544316",
+                "client_id": "cid",
+                "certificate_id": "kid",
+                "private_key_pem": "x",
+                "algorithm": "ES512",
+            }),
+        ));
+        // `match`, not `expect_err`: the `Ok` side is `Box<dyn SourceConnector>`,
+        // which implements no `Debug` — and should not, holding credentials.
+        let msg = match built {
+            Ok(_) => panic!("ES512 must be refused"),
+            Err(e) => e.to_string(),
+        };
+        assert!(msg.contains("ES512"), "{msg}");
+        assert!(msg.contains("PS256"), "{msg}");
+    }
+
+    /// A netsuite config with everything valid except the one field under test,
+    /// so each case fails for exactly one reason.
+    fn netsuite_cfg(extra: serde_json::Map<String, Value>) -> SourceConfig {
+        let mut obj = json!({
+            "account_id": "4544316",
+            "client_id": "cid",
+            "certificate_id": "kid",
+            "private_key_pem": "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n",
+        })
+        .as_object()
+        .expect("object")
+        .clone();
+        obj.extend(extra);
+        cfg("netsuite", Value::Object(obj))
+    }
+
+    fn refusal(built: Result<Box<dyn SourceConnector>, AirwayError>) -> String {
+        match built {
+            Ok(_) => panic!("expected this config to be refused"),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    /// The signing algorithm is a *security* default, and it lives upstream.
+    /// If airway ever changes `SigningAlgorithm::default`, every existing
+    /// netsuite pipeline silently changes how it signs — with no CI signal and
+    /// a now-false comment. Pinned here the way this file pins its other
+    /// cross-crate contracts.
+    #[test]
+    fn netsuite_default_algorithm_is_ps256() {
+        assert_eq!(
+            SigningAlgorithm::default(),
+            SigningAlgorithm::parse("PS256").expect("PS256 parses"),
+            concat!(
+                "the documented default changed upstream — update the field ",
+                "doc on NetSuiteParams::algorithm before taking this",
+            )
+        );
+    }
+
+    /// A non-positive lookback puts the cold-start window at or after now, so
+    /// the first run of a new pipeline returns nothing and reads as an empty
+    /// account — the silent-failure class this wiring is careful about.
+    #[test]
+    fn netsuite_rejects_a_non_positive_lookback() {
+        for days in [0, -30] {
+            let msg = refusal(build(&netsuite_cfg(
+                json!({ "lookback_days": days })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )));
+            assert!(msg.contains("lookback_days"), "{msg}");
+            assert!(!msg.contains("  "), "collapsed whitespace: {msg}");
+        }
+    }
+
+    /// `resources: []` means "all" at the top level of `.airway.yml` but reaches
+    /// the connector verbatim from here, so the ambiguous form is refused rather
+    /// than silently resolved to one meaning or the other.
+    #[test]
+    fn netsuite_rejects_an_empty_resource_list() {
+        let msg = refusal(build(&netsuite_cfg(
+            json!({ "resources": [] }).as_object().unwrap().clone(),
+        )));
+        assert!(msg.contains("resources"), "{msg}");
+        assert!(msg.contains("Omit the key"), "{msg}");
+        assert!(!msg.contains("  "), "collapsed whitespace: {msg}");
+    }
+
+    /// An unset secret reaches `build_netsuite` in three shapes, and all three
+    /// must name the secret rather than the struct field:
+    ///
+    /// * resolved to `""` — the executor *skips the insert*, so the field
+    ///   arrives **absent**; `#[serde(default)]` is what turns that into `""`
+    /// * resolved to whitespace — `is_empty()` is false, so it is inserted
+    ///   verbatim
+    /// * written blank in YAML with no `_var` at all — passes through
+    ///
+    /// Without the default, the first shape fails as `missing field
+    /// 'private_key_pem'`, which names the struct rather than the credential
+    /// an operator has to go and set.
+    #[test]
+    fn netsuite_names_the_secret_when_the_resolved_key_is_empty() {
+        // The shape the executor actually produces: an empty resolved secret is
+        // treated as unset, so the field is *absent*, not `""`. Without
+        // `#[serde(default)]` this fails as `missing field \`private_key_pem\``
+        // — naming the struct rather than the secret to go and fix.
+        let absent = refusal(build(&cfg(
+            "netsuite",
+            json!({
+                "account_id": "4544316",
+                "client_id": "cid",
+                "certificate_id": "kid",
+            }),
+        )));
+        assert!(absent.contains("private_key_var"), "{absent}");
+        assert!(!absent.contains("  "), "collapsed whitespace: {absent}");
+
+        // And a hand-written blank in YAML, which arrives as itself.
+        let msg = refusal(build(&cfg(
+            "netsuite",
+            json!({
+                "account_id": "4544316",
+                "client_id": "cid",
+                "certificate_id": "kid",
+                "private_key_pem": "   ",
+            }),
+        )));
+        assert!(msg.contains("private_key_var"), "{msg}");
+        assert!(msg.contains("newlines"), "{msg}");
+        // Not just `contains`. These messages have twice shipped with a run of
+        // literal spaces mid-sentence — "... check that              `private_
+        // key_var` ..." — while every `contains` assertion still passed. The
+        // cause was the patch tooling used to write them, not rustfmt: a `\`
+        // continuation is a correct Rust idiom and the `lookback_days` message
+        // above relies on it. Asserting no double space is what catches it.
+        assert!(
+            !msg.contains("  "),
+            "message has collapsed whitespace: {msg}"
+        );
+    }
+
+    /// The file's convention for the `_var` -> resolved-field contract: an
+    /// unsubstituted var key must not sail through as an unknown field.
+    #[test]
+    fn netsuite_rejects_unresolved_var_key() {
+        let msg = refusal(build(&cfg(
+            "netsuite",
+            json!({
+                "account_id": "4544316",
+                "client_id": "cid",
+                "certificate_id": "kid",
+                // Left un-substituted: the executor failed to resolve it.
+                "private_key_var": "NETSUITE_PRIVATE_KEY",
+            }),
+        )));
+        assert!(msg.contains("private_key_var"), "{msg}");
     }
 
     #[test]

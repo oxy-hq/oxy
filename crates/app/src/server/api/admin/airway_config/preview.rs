@@ -354,12 +354,13 @@ fn failure_for(
     let name = &resource.name;
     match declared {
         // **Always fixable since airway 0.1.24.** Every source kind Oxy knows
-        // can now carry a declaration: `toast`, `quickbooks` and `weather`
-        // implement `contracts()` in Rust, and #105 added `EndpointConfig::
-        // contract` so the ~24 `rest_api`-backed connectors declare per
-        // endpoint. There is no longer a kind for which "undeclared" names an
-        // action the operator cannot take, which is why the kind allow-list
-        // that used to gate this is gone rather than emptied.
+        // can now carry a declaration: `toast`, `quickbooks`, `weather` and
+        // `netsuite` implement `contracts()` in Rust, and #105 added
+        // `EndpointConfig::contract` so the ~24 `rest_api`-backed connectors
+        // declare per endpoint. There is no longer a kind for which
+        // "undeclared" names an action the operator cannot take, which is why
+        // the kind allow-list that used to gate this is gone rather than
+        // emptied.
         //
         // *Where* the declaration goes still differs per kind, though, so the
         // second sentence comes from [`declaration_site`] rather than being
@@ -414,11 +415,11 @@ fn failure_for(
 ///   deserializes `RestApiConfig` straight out of `source.config`, so the field
 ///   is reachable from the pipeline's own `.airway.yml` — this is the one kind
 ///   an operator fixes without touching connector code.
-/// * **`toast` / `quickbooks` / `weather` declare in Rust**, by implementing
-///   `SourceConnector::contracts()`. They have no YAML slot at all, and
-///   `EndpointConfig` does not `deny_unknown_fields`, so a `contract:` key
-///   invented in one of *their* pipeline files would be silently ignored rather
-///   than refused.
+/// * **`toast` / `quickbooks` / `weather` / `netsuite` declare in Rust**, by
+///   implementing `SourceConnector::contracts()`. They have no YAML slot at
+///   all, and `EndpointConfig` does not `deny_unknown_fields`, so a `contract:`
+///   key invented in one of *their* pipeline files would be silently ignored
+///   rather than refused.
 ///
 /// Both halves are *fixable* — this sets no flag; see
 /// [`ResourceVerdict::not_fixable_here`].

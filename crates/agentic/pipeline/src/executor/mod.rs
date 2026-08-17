@@ -1030,6 +1030,13 @@ impl PipelineTaskExecutor {
                 ("client_secret", "client_secret_var"),
                 ("refresh_token", "refresh_token_var"),
             ],
+            // The PEM private key behind OAuth 2.0 client-credentials (M2M).
+            // `account_id` / `client_id` / `certificate_id` are identifiers —
+            // the account id is in every API hostname — so the key is the only
+            // managed secret. Note it is multi-line, unlike every other entry
+            // here: whatever backs the secret must preserve newlines, or the
+            // connector refuses it at construction.
+            "netsuite" => &[("private_key_pem", "private_key_var")],
             "clickhouse" => &[("password", "password_var")],
             // Open-Meteo commercial API key → routes the connector to the paid
             // `customer-*` endpoint (the keyless endpoint is non-commercial only).
