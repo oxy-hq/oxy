@@ -4,7 +4,8 @@
 //!
 //! - **`ide`** — singleton owning the workspace working copy + `.git`.
 //! - **`serve`** — stateless fleet replica reading Postgres + S3 only.
-//! - **`worker`** — TaskSpec drainer; no inbound HTTP today, has `/healthz`.
+//! - **`worker`** — TaskSpec drainer; no inbound application HTTP, but
+//!   serves `/healthz` + `/readyz` + `/metrics` when `--health-port` is set.
 //!
 //! Routes carry one of:
 //!
@@ -48,7 +49,8 @@ pub enum Role {
     Ide,
     /// Stateless fleet replica.
     Serve,
-    /// Queue drainer. Today has only `/healthz` over HTTP.
+    /// Queue drainer. Over HTTP serves only the opt-in `--health-port`
+    /// surface: `/healthz`, `/readyz`, `/metrics`.
     Worker,
     /// Single-process all-in-one. Accepts every route.
     All,

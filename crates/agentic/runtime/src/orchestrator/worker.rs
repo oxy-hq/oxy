@@ -27,7 +27,9 @@ pub const MAX_INFLIGHT_ENV: &str = "OXY_WORKER_MAX_INFLIGHT";
 ///
 /// 32 gives a single local run enough headroom for IO-bound loops
 /// (HTTP fetches, fast warehouse queries) without exhausting the
-/// Postgres pool (default 32+ connections) or stampeding a downstream
+/// Postgres pool (DEFAULT_MAX_CONNECTIONS = 80, and it must stay
+/// comfortably above this cap — see the floor discussion in
+/// internal-docs/worker-fleet.md) or stampeding a downstream
 /// LLM provider. The previous value of 16 was conservative for the
 /// agentic chat path; raised when audit showed the LLM round-trip,
 /// not the local semaphore, is the actual bottleneck for normal runs.

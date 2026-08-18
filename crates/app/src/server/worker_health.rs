@@ -1,9 +1,28 @@
-//! Tiny k8s probe surface for `oxy worker`.
+//! Probe + metrics surface for `oxy worker`.
 //!
-//! Exposes only `GET /healthz` and `GET /readyz` on a dedicated TCP port.
-//! Intentionally does NOT mount any existing Oxy HTTP routes — this is a
-//! probe-only surface so liveness/readiness checks can't accidentally hit
-//! authenticated or stateful endpoints.
+//! Exposes `GET /healthz`, `GET /readyz` and — when the caller passes
+//! metrics state, which today is exactly when `--health-port` /
+//! `OXY_WORKER_HEALTH_PORT` is set on `oxy worker` — `GET /metrics`, all on
+//! one dedicated TCP port. `spawn` is `pub` and still supports `None` for
+//! tests and local mode, so treat the flag as the current caller rather than
+//! the rule. No Oxy *application* routes are mounted, so a probe can never
+//! reach an authenticated endpoint.
+//!
+//! It is NOT stateless. `/metrics` makes two DB round trips per scrape (see
+//! `worker_metrics::metrics`), so this listener is DB-touching and
+//! unauthenticated. Keep it cluster-internal — never behind a Service or
+//! Ingress that faces anything else.
+//!
+//! That is a deployment constraint, NOT something this file enforces: the
+//! bind below is `0.0.0.0`, so on a host-network pod or a node with a public
+//! IP the port is reachable by anything that can route to it. Enforce it with
+//! a NetworkPolicy or by not publishing the port. The exposure matters
+//! because the queue-depth query is a sequential scan over every retained row
+//! (`worker_metrics::read_queue_depth`), which is unbounded if either
+//! retention TTL is disabled.
+//!
+//! The original "probe-only, so it can't hit stateful endpoints" guarantee
+//! stopped being true when `/metrics` landed here.
 //!
 //! Lifetime is tied to the same umbrella `CancellationToken` the worker
 //! uses, so `Ctrl+C`/SIGTERM cleanly tears the health server down with the

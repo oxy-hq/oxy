@@ -38,13 +38,46 @@ pub struct VersionResponse {
     pub build_info: BuildInfo,
 }
 
-/// Health check endpoint
+// ── OPERATOR NOTE — deliberately `//`, not `///` ─────────────────────────────
+//
+// utoipa lifts a handler's doc comment into the OpenAPI operation description,
+// and the spec is served unauthenticated at /apidoc. Anything written with ///
+// below ships to every deployment's API docs, self-hosted customers included,
+// so the incident narrative and our internal topology stay in plain comments.
+//
+// WHY THIS ENDPOINT IS NOT A LIVENESS PROBE
+//
+// /health returns 503 when Postgres is unreachable. Wired to livenessProbe,
+// that makes kubelet restart the pod during a database incident — a crash loop
+// layered on top of an outage, and worst on a single-replica StatefulSet with
+// an RWO volume, where the restart also risks a Multi-Attach stall. oxy-prod
+// did exactly this until 2026-08-11; the doc comment here previously listed
+// "Kubernetes liveness/readiness probes" as an intended use, which is where
+// the misconfiguration came from.
+//
+// The deployed paths are /api/health, /api/live and /api/ready — these routes
+// are only mounted inside the router nested at /api (see build_public_routes
+// and its nest in serve.rs). The bare forms below match the #[utoipa::path]
+// annotations, which are relative to the spec's `servers = ["/api"]`. A probe
+// pointed at bare /live gets a 404, which kubelet counts as a failure — the
+// same restart-during-incident outcome by a different route.
+//
+// A durable version of this guidance lives in internal-docs/, which is where
+// whoever wires probes in the infrastructure repo will actually look.
+
+/// Health check endpoint — for humans and uptime monitors.
 ///
-/// Returns the health status of the Oxy service including database connectivity.
-/// This endpoint does not require authentication and can be used by:
-/// - Load balancers for health checks
-/// - Monitoring systems for uptime tracking
-/// - Kubernetes liveness/readiness probes
+/// Returns service health including database connectivity, plus version and
+/// build information. Unauthenticated. Served at `/api/health`.
+///
+/// Intended for external uptime monitoring (the build info aids triage) and for
+/// operators asking "what is deployed, and can it reach its database?".
+///
+/// **Not a Kubernetes liveness probe** — it returns 503 when Postgres is
+/// unreachable, which would restart the pod during a database incident. Use
+/// [`liveness_check`] (`/live`, served at `/api/live`) for liveness and
+/// [`readiness_check`] (`/ready`, served at `/api/ready`) for readiness and
+/// load-balancer health.
 #[utoipa::path(
     get,
     path = "/health",
@@ -160,10 +193,23 @@ async fn check_database_connection() -> DatabaseStatus {
     }
 }
 
-/// Readiness check endpoint
+// Fleet-wide failure mode, worth knowing before relying on this: every replica
+// pings the SAME Postgres, so a database outage fails readiness across the
+// whole fleet at once and the Service drops to zero endpoints. That is intended
+// — a replica that cannot read is not ready — but the resulting behaviour is
+// "all traffic fails at the load balancer", not "traffic shifts to a healthy
+// replica". There is no healthy replica to shift to.
+
+/// Readiness check endpoint. Served at `/api/ready`.
 ///
-/// Similar to health check but specifically designed for Kubernetes readiness probes.
-/// Returns 200 only when the service is ready to accept traffic.
+/// Returns 200 only when the service can reach Postgres, and 503 while it
+/// cannot — so an unready pod leaves the load balancer and the Service
+/// endpoints **without being restarted**, and returns on its own the moment the
+/// database recovers.
+///
+/// This is the correct target for `readinessProbe` and for load-balancer health
+/// checks. For `livenessProbe` use [`liveness_check`] instead: liveness must not
+/// depend on a database.
 #[utoipa::path(
     get,
     path = "/ready",

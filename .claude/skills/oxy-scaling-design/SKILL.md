@@ -21,7 +21,7 @@ description: Use when the user asks about Oxy's multi-instance scaling, the spli
 - **Route classification + HA carve-out.** `IDE_ONLY_PATTERNS` (FS/exec/live-stream → ide) + `FLEET_OK_READ_PATTERNS` (Postgres/S3 reads buried under an IdeOnly wildcard stay HA) + drift tests + the `super_read_only` runtime guard. See the `oxy-route-classification` skill.
 - **Runtime-artifact S3 mirror** (`runtime_artifact.rs`) — charts/results/app-data mirror to the compile-boundary bucket so any replica serves them; ide-down charts degrade to the S3 mirror.
 - **Schedules/monitors fire without a leader.** The periodic global driver runs on every eligible node; `tick_schedules`/`tick_monitor_schedules` CAS-advance `next_run_at` so firing is exactly-once across replicas. (Leader election was tried and removed — the CAS already guarantees it, and running on all eligible nodes is better HA.)
-- **Backpressure** — admission control (global ceiling + per-tenant fairness, 503 + `Retry-After`), worker HPA on queue depth.
+- **Backpressure** — admission control (global ceiling + per-tenant fairness, 503 + `Retry-After`), worker HPA on outstanding work (queued + claimed) against capacity — see the recipe in `internal-docs/worker-fleet.md`; queue depth alone goes absent when the fleet keeps up.
 - **Migrations** — a dedicated migrate Job owns the schema; `serve`/`compile`/`worker` honour `OXY_SKIP_MIGRATIONS`; a startup advisory lock serialises co-booting nodes.
 
 ## What is pending

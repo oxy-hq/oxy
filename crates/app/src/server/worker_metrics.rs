@@ -18,7 +18,7 @@
 //! | `oxy_compile_promotion_lag` | gauge | (none) | `revisions` ⋈ `workspaces` |
 //! | `oxy_tasks_requeued_total` | counter | (none) | `agentic_runtime::crud::TASKS_REQUEUED` |
 //! | `oxy_tasks_dead_lettered_total` | counter | (none) | `agentic_runtime::crud::TASKS_DEAD_LETTERED` |
-//! | `oxy_metrics_scrape_db_ok` | gauge=0/1 | (none) | DB read status this scrape |
+//! | `oxy_metrics_scrape_db_ok` | gauge=0/1 | (none) | this replica's DB read status this scrape |
 //!
 //! The queue-depth rows group by the task's kind, which `agentic_task_queue`
 //! stores only inside its `spec` JSONB — that table has no `source_type`
@@ -29,7 +29,16 @@
 //! expose them out of the box; they'll land alongside `claimed_by`
 //! observability (refinement E of the scaling design). Scrapers
 //! should derive in-flight from `oxy_queue_depth_claimed` meanwhile
-//! (`max` across replicas, then summed across `task_kind`).
+//! (`max` across replicas, then summed across `task_kind`) — with the
+//! same absent-vs-zero caveat the queue-depth gauges carry below: it
+//! comes off the same folded map, so an idle fleet emits no series at
+//! all and a panel reads "no data" rather than 0.
+//!
+//! Both uses aggregate this gauge identically — `max` across replicas,
+//! then `sum` across `task_kind`. There is no second rule for the HPA
+//! numerator. The only per-kind constraint in that query is on the
+//! DENOMINATOR: `oxy_worker_capacity` must carry exactly one `task_kind`
+//! label, because summing its three is the 3x trap below.
 //!
 //! Aggregation splits on the table's `Source` column, not on metric
 //! type, and the replica and `task_kind` axes don't always agree.
@@ -39,17 +48,53 @@
 //! take `sum` across replicas — but capacity does *not* sum across
 //! `task_kind`: `ConcurrencyCaps::from_env` emits one global pool under
 //! all three labels, so adding them reports 3× the real headroom. Pick a
-//! single label, or `max` over them.
+//! single label.
 //!
-//! The HPA reads one metric from each side, comparing
-//! `oxy_queue_depth_queued` against `oxy_worker_capacity`, so each of
-//! those mistakes mis-sizes the fleet: `sum` across replicas inflates
-//! the backlog N×, `max` across replicas hides all but one replica's
-//! headroom, and summing capacity's labels reports 3× the pool — which
-//! under-scales precisely under load. The well-defined query is the
-//! per-kind ratio; see `from_env`. Alert recipes for the DB-sourced
-//! gauges: "What to watch" in `internal-docs/compile-boundary.md`, the
-//! operator runbook.
+//! `oxy_metrics_scrape_db_ok` belongs to NEITHER bucket, despite reading
+//! the DB: `db_error` is computed from this process's own two queries,
+//! so the gauge is per-replica. Aggregate with `min`. Alerting takes
+//! THREE matchers for three disjoint failures — they are not
+//! alternatives:
+//!
+//! ```text
+//! up{job="oxy-worker"} == 0            one replica's scrape hung or
+//!                                      failed. PRIMARY — the only
+//!                                      per-target matcher. Give it a
+//!                                      for: 2m, so one slow or missed
+//!                                      scrape does not page; real
+//!                                      starvation persists across
+//!                                      several.
+//! <gauge>{job="oxy-worker"} == 0       scrape returned, DB read failed.
+//! absent(<gauge>{job="oxy-worker"})    TOTAL loss — every target gone
+//!                                      or discovery broke, which
+//!                                      up == 0 cannot catch because
+//!                                      there are no up series either.
+//! ```
+//!
+//! `job` comes from your scrape config — substitute whatever labels it.
+//!
+//! `absent()` alone is NOT enough: it fires only when the selector
+//! matches nothing, so one starved replica among ten leaves nine series
+//! and it stays quiet — the same partial-blindness defect `max` is
+//! rejected for below. Always scope the selector: unscoped, a staging
+//! fleet in the same Prometheus keeps the vector non-empty forever.
+//! `max` is the one aggregation that must not be used — it returns 1
+//! while any single replica can still reach Postgres, so the alert goes
+//! quiet exactly when part of the fleet has gone blind, and this is the
+//! alert called load-bearing below.
+//!
+//! The HPA reads outstanding work — `oxy_queue_depth_queued` PLUS
+//! `oxy_queue_depth_claimed`, summed across kinds — against
+//! `oxy_worker_capacity`, so each of those mistakes mis-sizes the
+//! fleet: `sum` across replicas inflates the backlog N×, `max` across
+//! replicas hides all but one replica's headroom, and summing capacity's
+//! labels reports 3× the pool — which under-scales precisely under load.
+//! NOT a per-kind ratio: capacity is ONE shared semaphore per process
+//! (see `from_env`), so dividing one kind's work by it double-books the
+//! pool. Sum the numerator across kinds and keep a single capacity label
+//! as the pool size; the recipe is in `internal-docs/worker-fleet.md`.
+//! Alert recipes for the DB-sourced gauges: "What to watch" in
+//! `internal-docs/compile-boundary.md`, the operator runbook.
 //!
 //! Failure mode: if the DB read errors, we emit the in-process
 //! metrics anyway and surface scrape health via the separate
@@ -81,8 +126,10 @@ pub struct MetricsState {
     pub worker_id: Arc<String>,
     pub version: &'static str,
     pub db: Arc<DatabaseConnection>,
-    /// Per-task-kind concurrency caps, surfaced for HPA target sizing
-    /// (HPA can compare `queue_depth_queued` / `worker_capacity` to
+    /// The in-flight cap, surfaced for HPA target sizing. ONE shared pool
+    /// emitted under three `task_kind` labels — not a partition
+    /// (HPA compares outstanding work — `queue_depth_queued` +
+    /// `queue_depth_claimed`, all kinds — against `worker_capacity` to
     /// pick the right number of replicas).
     pub capacity: ConcurrencyCaps,
 }
@@ -96,10 +143,16 @@ pub struct ConcurrencyCaps {
 
 impl ConcurrencyCaps {
     /// All three caps share the single global concurrency knob
-    /// (`OXY_WORKER_MAX_INFLIGHT`, default 32). The per-kind labels
-    /// are kept so the HPA dashboard query (queue_depth / capacity
-    /// per task_kind) stays well-defined; we just emit the same
-    /// number for each label.
+    /// (`OXY_WORKER_MAX_INFLIGHT`, default 32) — the process backs every
+    /// kind with ONE semaphore, so these labels are NOT a partition; the
+    /// same number is emitted under each.
+    ///
+    /// Which means a per-`task_kind` ratio of queue depth to capacity is
+    /// not well-defined: it divides one kind's work by the whole pool and
+    /// double-books it. Sum the numerator across kinds and keep a single
+    /// capacity label as the pool size — see the recipe in
+    /// `internal-docs/worker-fleet.md`. The labels are retained only so
+    /// the gauge's shape matches its siblings.
     pub fn from_env() -> Self {
         let global = std::env::var("OXY_WORKER_MAX_INFLIGHT")
             .ok()
@@ -116,6 +169,39 @@ impl ConcurrencyCaps {
 /// Hand-rolled Prometheus exposition. Quick path that doesn't need a
 /// metrics client crate; the module header table is the list of what
 /// this emits.
+///
+/// UNBOUNDED, and that is the thing to know before changing it. Nothing
+/// caps how long this runs: `worker_health::spawn` merges plain `Router`s
+/// with no `TimeoutLayer`, and there is no `tokio::time::timeout` around
+/// the two DB reads below — each can park on the pool waiter queue for
+/// `ACQUIRE_TIMEOUT` (30s). Against a starved pool the client abandons the
+/// scrape at `scrape_timeout` and the WHOLE series set vanishes rather
+/// than reporting `oxy_metrics_scrape_db_ok 0`, which is what turns one
+/// starved replica into a silently under-counted HPA denominator. If you
+/// add the timeout, bound it against `scrape_timeout` (not the interval)
+/// with headroom — the reads are only part of the request — and use ONE
+/// timeout around the pair, not one each: the reads are sequential, so
+/// two at `scrape_timeout / 2` costs the whole budget and loses the same
+/// race. The floor discussion in `internal-docs/worker-fleet.md` has the
+/// full argument.
+///
+/// UNBOUNDED does NOT mean shutdown can hang on it — but it is not free
+/// either. `axum::serve(...).with_graceful_shutdown(...)` waits for
+/// in-flight connections, so a parked scrape keeps the health task alive
+/// until `drain_background` gives up on it; that join is bounded at 5s and
+/// then abandoned (`cli/commands/worker.rs`). Since `release_queue_claims`
+/// runs AFTER `drain_background` rather than inside it, a parked scrape
+/// therefore DELAYS the release by up to that 5s — it cannot hang it. At the
+/// default recovery interval this 5s is the ENTIRE shutdown budget, not a
+/// slice of it: both DB-touching terms are gated on `interval < 30`. The 30s
+/// recovery drain because `tick_once` short-circuits at
+/// `interval >= REAPER_INTERVAL`; the 10s `release_queue_claims` because it
+/// early-returns unless `PROCESS_WORKER_ID` was minted, and the only thing
+/// that mints it in this process is the `DurableTransport` that same tick
+/// builds *after* the short-circuit. So: ~0s with no `--health-port`, 5s with
+/// it, 45s only below the default interval — budget for 45s, see the k8s
+/// recipe in `internal-docs/worker-fleet.md`. The cost of a parked scrape is
+/// a lost series set and the whole default-interval budget, not a stuck pod.
 pub async fn metrics(State(state): State<MetricsState>) -> Response {
     let mut body = String::new();
 
@@ -149,7 +235,7 @@ pub async fn metrics(State(state): State<MetricsState>) -> Response {
         // stuck_compiling and promotion_lag, and a number here would
         // just be a second thing to keep in sync. An operator reading
         // this string in Grafana has to be able to trust its scope.
-        "# HELP oxy_metrics_scrape_db_ok Whether both metrics DB reads (queue depth, compile health) succeeded on this scrape.\n",
+        "# HELP oxy_metrics_scrape_db_ok Whether both metrics DB reads (queue depth, compile health) succeeded on this scrape. PER-REPLICA, not fleet-wide: aggregate with min. Alerting needs three scoped matchers, not one: up{job=...}==0 with a for: 2m for a hung scrape (primary, per-target; the for keeps one missed scrape from paging), this gauge ==0 for a live scrape whose DB read failed, and absent(oxy_metrics_scrape_db_ok{job=...}) for total loss. max stays at 1 while any one replica can still reach the DB.\n",
     );
     body.push_str("# TYPE oxy_metrics_scrape_db_ok gauge\n");
     body.push_str(&format!(
@@ -179,7 +265,7 @@ fn push_identity_and_capacity(body: &mut String, state: &MetricsState) {
     ));
 
     body.push_str(
-        "# HELP oxy_worker_capacity Per-task-kind inflight cap for this worker process.\n",
+        "# HELP oxy_worker_capacity In-flight cap for this worker process. ONE shared pool: the same value is emitted under every task_kind, the labels are not a partition.\n",
     );
     body.push_str("# TYPE oxy_worker_capacity gauge\n");
     for (label, cap) in [
@@ -204,12 +290,12 @@ fn push_queue_depth(body: &mut String, folded: &QueueDepthByKind) {
         (
             "oxy_queue_depth_queued",
             "queued",
-            "Tasks in 'queued' status, by task kind. HPA scales on this.",
+            "Tasks in 'queued' status, by task kind. Scale on this PLUS claimed: queued alone goes absent when the fleet keeps up.",
         ),
         (
             "oxy_queue_depth_claimed",
             "claimed",
-            "Tasks currently claimed (in flight) by some worker.",
+            "Tasks currently claimed (in flight) by some worker. The HPA numerator is this PLUS queued: queued alone goes absent when the fleet keeps up.",
         ),
         (
             "oxy_queue_depth_dead",
@@ -336,11 +422,20 @@ struct QueueDepthRow {
 
 impl QueueDepthRow {
     fn task_kind_label(&self) -> &'static str {
-        // Label-space MUST match the kinds `oxy_worker_capacity` emits
-        // (`compile`, `agent`, `other`). The documented HPA recipe joins
-        // `oxy_queue_depth_queued` against `oxy_worker_capacity` per
-        // `task_kind`; any queue-depth label that has no capacity peer
-        // joins to empty and silently breaks the HPA query. Airway and
+        // Two separate constraints here, with separate strengths:
+        //
+        //   CLOSED set (strong) — unrecognised kinds fold into `other`.
+        //     Series-cardinality control (see below), plus the per-kind
+        //     ALERTING queries in internal-docs/compile-boundary.md,
+        //     which select `compile` by name.
+        //   Closed to CAPACITY's set specifically (weak) — it only buys
+        //     depth and capacity sharing one dashboard axis. The HPA does
+        //     NOT join on `task_kind`: it sums the numerator across kinds
+        //     and pins one label on the denominator, so an unpaired
+        //     queue-depth label would add to the sum, not break anything.
+        //
+        // So a new label is a cardinality and alerting question first; the
+        // capacity coupling alone is not grounds to refuse one. Airway and
         // automation tasks share the generic worker capacity pool and
         // therefore collapse into `other` rather than getting their own
         // label. Unrecognised spec types also fold into `other` so
@@ -485,8 +580,9 @@ mod tests {
     fn caps_from_env_share_the_global_pool() {
         // Every task kind reads the same global cap. Per-kind env vars
         // were removed in the compile-boundary simplification — workers
-        // share one pool, the per-kind labels just keep the HPA dashboard
-        // query well-defined.
+        // share one pool, and the per-kind labels are NOT a partition:
+        // the same number is emitted under each, so a per-kind ratio of
+        // queue depth to capacity double-books it. See `from_env`.
         unsafe {
             std::env::set_var("OXY_WORKER_MAX_INFLIGHT", "16");
         }
@@ -552,11 +648,21 @@ mod tests {
 
     #[test]
     fn task_kind_label_matches_capacity_label_space() {
-        // `oxy_worker_capacity` only emits `compile` / `agent` / `other`.
-        // Queue-depth labels must collapse into the same set so the HPA
-        // recipe (queue_depth / capacity join per task_kind) is well-defined.
-        // Airway and automation tasks share the generic worker pool and fold
-        // into `other`.
+        // This pins the MAPPING, spec variant by spec variant — not just
+        // that the set is closed. So `task_kind_label`'s note that a new
+        // label is "a cardinality and alerting question first" is true of
+        // the DESIGN and does not make it free: adding one fails here.
+        //
+        // Adding a label therefore costs, in order: update this test;
+        // decide whether `ConcurrencyCaps` should emit it too (only if you
+        // want depth and capacity on a shared dashboard axis — the HPA does
+        // not care, it sums across kinds); and check the per-kind alerting
+        // queries in internal-docs/compile-boundary.md. None of that is a
+        // prohibition, it is the checklist.
+        //
+        // `Custom { kind }` folding to `other` is the cardinality guard
+        // itself and should stay. Airway and automation tasks share the
+        // generic worker pool and fold into `other`.
         //
         // Every input below is a tag derived from a real `TaskSpec` value, so
         // this asserts against the enum rather than against a copy of its

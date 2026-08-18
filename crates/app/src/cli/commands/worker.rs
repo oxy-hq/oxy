@@ -41,6 +41,82 @@ use crate::server::worker_runtime::WorkerRuntime;
 /// Default cadence for the standalone-worker recovery loop. Same default the
 /// in-process driver uses (`OXY_INPROC_GLOBAL_WORKER_INTERVAL_SECS`).
 const DEFAULT_RECOVERY_INTERVAL_SECS: u64 = 30;
+
+// The shutdown budget documented in `internal-docs/worker-fleet.md` (the
+// `terminationGracePeriodSeconds` bullet's `reachable when` column, both
+// "graceful shutdown takes…" troubleshooting rows) and in `metrics()`'s doc
+// comment all rest on ONE property: at the default recovery interval,
+// `tick_once` short-circuits before touching the DB, so neither the 30s
+// recovery drain nor the 10s `release_queue_claims` is reachable.
+//
+// That property is `DEFAULT_RECOVERY_INTERVAL_SECS >= REAPER_INTERVAL`, and it
+// currently holds at exact equality (30 >= 30) between two constants in
+// DIFFERENT CRATES whose values were chosen for unrelated reasons — this one to
+// match `OXY_INPROC_GLOBAL_WORKER_INTERVAL_SECS`, that one to pace the reaper.
+// Raise `REAPER_INTERVAL` to 60, or take this default to 15 for the reason its
+// own comment gives, and every one of those documents becomes silently wrong
+// with nothing failing.
+//
+// So it is checked rather than coincidental.
+//
+// Compared in NANOS rather than `as_secs()`, so the assert tests the same
+// predicate the runtime does: `tick_once` compares whole `Duration`s
+// (`interval >= REAPER_INTERVAL`). `as_secs()` floors, so a `REAPER_INTERVAL`
+// of 30_500 ms would satisfy `30 >= 30` here while the runtime comparison went
+// false — the assert would pass, the short-circuit would stop firing, and the
+// docs would go silently wrong. That is the exact failure this exists to catch,
+// so it must not be reachable through the assert's own units.
+//
+// If this fires, the fix is to update the docs named above, not to bend the
+// constant back.
+const _: () = assert!(
+    Duration::from_secs(DEFAULT_RECOVERY_INTERVAL_SECS).as_nanos()
+        >= agentic_runtime::background::REAPER_INTERVAL.as_nanos(),
+    "DEFAULT_RECOVERY_INTERVAL_SECS must stay >= REAPER_INTERVAL. Update these \
+     four before changing it: the terminationGracePeriodSeconds bullet's \
+     `reachable when` table and both `graceful shutdown takes...` \
+     troubleshooting rows in internal-docs/worker-fleet.md, and the metrics() \
+     doc comment in crates/app/src/server/worker_metrics.rs. They all assume \
+     tick_once short-circuits at the default interval"
+);
+
+/// The worst-case graceful shutdown the k8s recipe in
+/// `internal-docs/worker-fleet.md` sizes `terminationGracePeriodSeconds`
+/// against — all three terms, i.e. `--health-port` set AND a recovery interval
+/// below `REAPER_INTERVAL`. The release runs after `drain_background` rather
+/// than inside it, so the terms add.
+///
+/// Exists so the number the doc publishes is derived from the bounds rather
+/// than transcribed from them. The gate above is checked; without this the
+/// three MAGNITUDES were not, and changing any one of them would have left the
+/// table, the `50` recommendation and the copy-paste manifest wrong with
+/// nothing failing — the same enforcement-by-hope the gate assert replaced.
+/// Summed in NANOS for the same reason the gate assert above compares nanos:
+/// `as_secs()` floors, so summing truncated terms and then truncating the sum
+/// would let any sub-second change slip through invisibly —
+/// `HEALTH_JOIN_TIMEOUT = 5_500ms` still gives `5 + 30 + 10 = 45` while the
+/// real bound is 45.5s. A derivation that floors is a transcription with extra
+/// steps, which is exactly what this const exists not to be.
+const WORST_CASE_SHUTDOWN: Duration = Duration::from_nanos(
+    (RECOVERY_DRAIN_TIMEOUT.as_nanos()
+        + HEALTH_JOIN_TIMEOUT.as_nanos()
+        + RELEASE_CLAIMS_TIMEOUT.as_nanos()) as u64,
+);
+
+// If this fires, `internal-docs/worker-fleet.md` publishes a stale worst case
+// and a `terminationGracePeriodSeconds` that no longer covers it. Fix the doc
+// and the recommended TGP, not this line.
+const _: () = assert!(
+    WORST_CASE_SHUTDOWN.as_nanos() == Duration::from_secs(45).as_nanos(),
+    "shutdown worst case changed. FOUR sites publish these magnitudes: the 45s \
+     row and the 50s recommendation in internal-docs/worker-fleet.md's \
+     terminationGracePeriodSeconds table; the metrics() doc comment in \
+     crates/app/src/server/worker_metrics.rs; and the two troubleshooting rows \
+     in worker-fleet.md that quote the drain log lines VERBATIM as grep \
+     strings - those strings derive their numbers from these consts, so \
+     changing one silently makes the runbook's grep miss. Update all four, \
+     then update this assert"
+);
 const RECOVERY_INTERVAL_ENV: &str = "OXY_WORKER_RECOVERY_INTERVAL_SECS";
 const HEALTH_PORT_ENV: &str = "OXY_WORKER_HEALTH_PORT";
 
@@ -72,9 +148,20 @@ pub struct WorkerArgs {
     #[clap(long)]
     pub recovery_interval_secs: Option<u64>,
 
-    /// Bind a tiny health server on this TCP port exposing `/healthz` and
-    /// `/readyz`. Intended for k8s liveness / readiness probes only — no Oxy
-    /// HTTP routes are mounted here.
+    /// Bind a tiny server on this TCP port exposing `/healthz`, `/readyz` and
+    /// `/metrics`. No Oxy application routes are mounted here.
+    ///
+    /// Leaving it unset costs more than the k8s probes: `/metrics` is where an
+    /// HPA reads outstanding work (`oxy_queue_depth_queued` +
+    /// `oxy_queue_depth_claimed`) against `oxy_worker_capacity` to size the
+    /// fleet, so an unset port removes the scrape target too.
+    ///
+    /// Aggregation differs per metric — DB-sourced, process-local and
+    /// per-replica gauges each take a different function, and the two halves of
+    /// the HPA query are not the same one. Getting it wrong silently mis-sizes
+    /// the fleet or silences an alert. The module header of
+    /// `server/worker_metrics.rs` is the authority; read it before writing a
+    /// query.
     ///
     /// Falls back to `OXY_WORKER_HEALTH_PORT`. Default OFF (no port bound).
     #[clap(long)]
@@ -159,7 +246,8 @@ pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
     // Optional health probe + Prometheus metrics server (off unless
     // --health-port / OXY_WORKER_HEALTH_PORT is set). Metrics share the
     // same listener as the probes — one tiny axum router with three
-    // routes. HPA scrapes `oxy_queue_depth_queued` to size the fleet.
+    // routes. HPA scrapes outstanding work (`oxy_queue_depth_queued` +
+    // `oxy_queue_depth_claimed`) against `oxy_worker_capacity`.
     let health_handle = match health_port {
         Some(port) => {
             let metrics_state = crate::server::worker_metrics::MetricsState {
@@ -247,11 +335,21 @@ fn spawn_recovery(
     })
 }
 
+/// Bound on joining the recovery loop during shutdown. Term 1 of 3 in the
+/// budget `internal-docs/worker-fleet.md` publishes as
+/// `terminationGracePeriodSeconds`; see `WORST_CASE_SHUTDOWN` near the top of
+/// this file, whose assert pins the sum of all three.
+const RECOVERY_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Bound on joining the optional health server during shutdown. Term 2 of 3.
+/// Only present when `--health-port` is set.
+const HEALTH_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Wait for the recovery loop (and optional health server) to drain after
 /// the umbrella token is cancelled. We bound the wait so a stuck task can't
 /// keep the process alive forever.
 async fn drain_background(recovery_handle: JoinHandle<()>, health_handle: Option<JoinHandle<()>>) {
-    let drain_deadline = Duration::from_secs(30);
+    let drain_deadline = RECOVERY_DRAIN_TIMEOUT;
     match tokio::time::timeout(drain_deadline, recovery_handle).await {
         Ok(Ok(())) => tracing::info!("worker: recovery loop drained cleanly"),
         Ok(Err(e)) => tracing::warn!(error = ?e, "worker: recovery loop join failed"),
@@ -261,10 +359,13 @@ async fn drain_background(recovery_handle: JoinHandle<()>, health_handle: Option
         ),
     }
     if let Some(handle) = health_handle {
-        match tokio::time::timeout(Duration::from_secs(5), handle).await {
+        match tokio::time::timeout(HEALTH_JOIN_TIMEOUT, handle).await {
             Ok(Ok(())) => tracing::info!("worker: health server drained cleanly"),
             Ok(Err(e)) => tracing::warn!(error = ?e, "worker: health server join failed"),
-            Err(_) => tracing::warn!("worker: health server did not drain within 5s; abandoning"),
+            Err(_) => tracing::warn!(
+                "worker: health server did not drain within {}s; abandoning",
+                HEALTH_JOIN_TIMEOUT.as_secs()
+            ),
         }
     }
 }
@@ -275,8 +376,14 @@ async fn drain_background(recovery_handle: JoinHandle<()>, health_handle: Option
 /// *wedged* database (a down one fails fast) must never be why this pod
 /// outlives its Kubernetes termination grace period and gets SIGKILLed —
 /// which would skip the release entirely, the opposite of what it is for.
-/// There are no `connect_timeout` / `acquire_timeout` overrides on the shared
-/// pool, so without this bound the wait really is unbounded.
+/// The shared pool IS bounded:
+/// `establish_connection` sets `.connect_timeout(CONNECT_TIMEOUT)` (10s) and
+/// `.acquire_timeout(ACQUIRE_TIMEOUT)` (30s) — `platform/src/db/client.rs`.
+/// So without this constant the wait would be 30s per acquire, not unbounded.
+/// 30s is still too long, which is why the bound stays: it is triple the 10s
+/// this constant promises the termination grace period, and the mark + drain
+/// pair compounds it (next paragraph). The justification is the budget, not
+/// the absence of any other cap.
 ///
 /// **One budget for the whole sequence, not one per call.** `recovery.rs`'s
 /// `spawn_shutdown_hook` gets this for free — its mark-then-drain sequence
@@ -287,6 +394,10 @@ async fn drain_background(recovery_handle: JoinHandle<()>, health_handle: Option
 /// `RELEASE_CLAIMS_TIMEOUT` itself. Timing each call separately would let
 /// worst-case shutdown take up to 20s — double what this constant documents
 /// and promises the Kubernetes termination grace period.
+///
+/// **Term 3 of 3** in the shutdown budget `internal-docs/worker-fleet.md`
+/// publishes; `WORST_CASE_SHUTDOWN` near the top of this file asserts the sum,
+/// so changing this value fails the build until the doc is updated too.
 const RELEASE_CLAIMS_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Release every durable-queue claim this process holds back to the queue,
