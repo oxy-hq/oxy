@@ -506,7 +506,30 @@ airform-core = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e82886
 # `ubereats.rs`, `connector/mod.rs`, `source/mod.rs`, `schema/inference.rs`
 # and `filesystem.rs` are unchanged, and the `SourceConnector` method list
 # is identical.
-airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.30", default-features = false, features = [
+#
+# ---
+#
+# 0.1.31 (`4423cd3f`) carried two bugs this feature hit head-on:
+#
+#   * airway#133 — the file sources built their object store with
+#     `object_store::parse_url`, which reads NO environment: endpoint, static
+#     keys and region were all dropped, and the client went to IMDS instead.
+#     Not local-only — the region defaulting to `us-east-1` fails a us-west-2
+#     bucket's signature, so the extract could not have worked in dev either.
+#   * airway#134 — the Postgres destination filled a `$1`..`$N` template by
+#     ascending string replacement, and `$1` is a prefix of `$10`, so every
+#     table of ten or more columns was corrupted. Ours has 54.
+#
+# 0.1.32 adds one netsuite fix (#136) on top. It is not confined to netsuite
+# though — it also rewrites `schema/inference.rs`, which ubereats goes
+# through: a declared `primary_key` / `merge_key` set is now AUTHORITATIVE,
+# clearing a key that is no longer declared, where before it could only add
+# one. That only changes behaviour when the declared set NARROWS between
+# batches, which is the netsuite `inventory_balance` case. Ubereats declares
+# a constant `["_row_uid"]` on every call, so there is nothing to clear and
+# the change is inert here — checked rather than assumed, and re-verified end
+# to end on this pin.
+airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.32", default-features = false, features = [
   "duckdb",
   "postgres",
 ] }

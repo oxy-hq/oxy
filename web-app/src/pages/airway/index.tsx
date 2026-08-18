@@ -24,6 +24,7 @@ import LineageGraph from "@/components/airway/LineageGraph";
 import PhaseBar from "@/components/airway/PhaseBar";
 import PipelineOverview from "@/components/airway/PipelineOverview";
 import QuickBooksReconnect from "@/components/airway/QuickBooksReconnect";
+import ReportUpload from "@/components/airway/ReportUpload";
 import ResourceGrid from "@/components/airway/ResourceGrid";
 import RetryFailedTablesButton from "@/components/airway/RetryFailedTablesButton";
 import RunHistory from "@/components/airway/RunHistory";
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/shadcn/collapsible";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { useAirwayRunController } from "@/hooks/api/airway/useAirway";
+import { useAirwayFiles } from "@/hooks/api/schedules/useSchedules";
 import { decodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import type { AirwayRunStatus } from "@/utils/airwayReducer";
@@ -107,6 +109,11 @@ export const AirwayPipelinePage: React.FC<{
   const navigate = useNavigate();
   // Controlled so a started chunked backfill can jump straight to Coverage.
   const [tab, setTab] = useState("overview");
+  const { data: files } = useAirwayFiles();
+  const acceptsReports = useMemo(
+    () => files?.find((f) => f.path === pipelineRef)?.source_kind === "ubereats",
+    [files, pipelineRef]
+  );
 
   const openRun = (runId: string) => {
     if (onOpenRun) onOpenRun(runId);
@@ -149,6 +156,12 @@ export const AirwayPipelinePage: React.FC<{
           <TabsTrigger value='overview'>Overview</TabsTrigger>
           <TabsTrigger value='runs'>Runs</TabsTrigger>
           <TabsTrigger value='coverage'>Coverage</TabsTrigger>
+          {/* Only for a source that accepts uploads. The endpoint refuses any
+              other kind, so offering the tab elsewhere would be an action that
+              cannot succeed — and `source_kind` is absent on the filesystem
+              fallback, so an un-promoted workspace hides it rather than
+              showing something that will fail. */}
+          {acceptsReports && <TabsTrigger value='reports'>Reports</TabsTrigger>}
         </TabsList>
         <TabsContent value='overview' className='min-h-0 flex-1 overflow-auto'>
           <PipelineOverview pipelineRef={pipelineRef} onOpenRun={openRun} />
@@ -156,6 +169,11 @@ export const AirwayPipelinePage: React.FC<{
         <TabsContent value='runs' className='min-h-0 flex-1 overflow-auto'>
           <RunHistory pipelineRef={pipelineRef} onSelect={openRun} />
         </TabsContent>
+        {acceptsReports && (
+          <TabsContent value='reports' className='min-h-0 flex-1 overflow-auto'>
+            <ReportUpload pipelineRef={pipelineRef} />
+          </TabsContent>
+        )}
         <TabsContent value='coverage' className='min-h-0 flex-1 overflow-auto'>
           <BackfillRangesPanel pipelineRef={pipelineRef} />
         </TabsContent>

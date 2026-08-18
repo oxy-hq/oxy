@@ -71,6 +71,9 @@ pub fn check_period(year: i64, month: u32) -> Result<(), String> {
 
 /// Run `UberEatsSource` over `bytes` as if loading them.
 ///
+/// `allowed_stores` is the PIPELINE's scoping, passed through so this reports
+/// what the load will actually land rather than what a bare source would.
+///
 /// `filename` is preserved on the temp file because the source derives the
 /// period from it when `period` is `None` — a report named
 /// `2026.08 UberEats SF.csv` carries its own period, and renaming it to
@@ -79,6 +82,7 @@ pub async fn validate_ubereats_report(
     bytes: &[u8],
     filename: &str,
     period: Option<(i64, u32)>,
+    allowed_stores: Option<&std::collections::HashSet<String>>,
 ) -> Result<ValidatedReport, ReportValidationError> {
     // The name must be a BARE file name.
     //
@@ -120,6 +124,16 @@ pub async fn validate_ubereats_report(
     let mut source = UberEatsSource::new(path);
     if let Some((year, month)) = period {
         source = source.with_period(year, month);
+    }
+    // The pipeline's OWN scoping, not a bare source.
+    //
+    // Without it this validated a different thing from what the load will do —
+    // a report spanning six stores where two are in scope reported six rows
+    // and then loaded two. The whole argument for validating by running the
+    // real source is that the answer cannot differ from the loader's; a
+    // configured loader and an unconfigured validator break exactly that.
+    if let Some(stores) = allowed_stores {
+        source = source.with_allowed_stores(stores.clone());
     }
 
     let out = source
@@ -183,6 +197,55 @@ mod tests {
         format!("{}\n{}\n", header.join(","), row.join(",")).into_bytes()
     }
 
+    /// The same report, spanning two stores — one a pipeline owns, one it
+    /// does not.
+    fn report_two_stores(a: &str, b: &str) -> Vec<u8> {
+        let mut out = report(a);
+        let second = report(b);
+        // Drop the second copy's header row: one report, two rows.
+        let body = second
+            .split(|c| *c == b'\n')
+            .nth(1)
+            .expect("the helper emits a header and a row")
+            .to_vec();
+        out.extend(body);
+        out.push(b'\n');
+        out
+    }
+
+    /// Validation must count what THIS PIPELINE will load, not what a bare
+    /// source would.
+    ///
+    /// The endpoint's whole claim is that validation cannot disagree with the
+    /// loader because it *is* the loader. It quietly stopped being true: the
+    /// handler validated before reading the pipeline, so a report spanning
+    /// stores the pipeline does not own was reported whole and then loaded
+    /// short — a two-store report answered 2 and landed 1. Uploading is where
+    /// someone decides whether the month is complete, so a row count that
+    /// overstates by exactly the out-of-scope rows is the worst possible
+    /// answer: it reads as a successful full month.
+    ///
+    /// Pinned here rather than at the handler because the argument is what
+    /// carries the scoping; a caller that drops it fails this test.
+    #[tokio::test]
+    async fn scoping_is_applied_to_the_row_count() {
+        let bytes = report_two_stores("Poke House SF", "Someone Else BBQ");
+
+        let unscoped = validate_ubereats_report(&bytes, "2026.08 SF.csv", None, None)
+            .await
+            .expect("a complete report validates");
+        assert_eq!(unscoped.rows, 2, "no scoping loads both stores");
+
+        let owned = std::collections::HashSet::from(["Poke House SF".to_string()]);
+        let scoped = validate_ubereats_report(&bytes, "2026.08 SF.csv", None, Some(&owned))
+            .await
+            .expect("a complete report validates");
+        assert_eq!(
+            scoped.rows, 1,
+            "an out-of-scope store must not be counted — it will not be loaded"
+        );
+    }
+
     /// A caller-supplied name reaches `Path::join`, so anything but a bare
     /// base name is an arbitrary write: an absolute path DISCARDS the tempdir
     /// entirely, and `../` walks out of it. Both must be refused, and nothing
@@ -199,7 +262,7 @@ mod tests {
             "a/b.csv".to_string(),
         ];
         for name in escapes {
-            let err = validate_ubereats_report(&report("SF"), &name, Some((2026, 8)))
+            let err = validate_ubereats_report(&report("SF"), &name, Some((2026, 8)), None)
                 .await
                 .err()
                 .unwrap_or_else(|| panic!("`{name}` must be refused, not validated"));
@@ -235,7 +298,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_good_report_yields_its_period_and_row_count() {
-        let out = validate_ubereats_report(&report("Poke House SF"), "2026.08 SF.csv", None)
+        let out = validate_ubereats_report(&report("Poke House SF"), "2026.08 SF.csv", None, None)
             .await
             .expect("a complete report validates");
         assert_eq!(
@@ -257,13 +320,13 @@ mod tests {
     /// are the opposite of "the filename supplies it".
     #[tokio::test]
     async fn the_period_precedence() {
-        let out = validate_ubereats_report(&report("SF"), "2026.11 UberEats SF.csv", None)
+        let out = validate_ubereats_report(&report("SF"), "2026.11 UberEats SF.csv", None, None)
             .await
             .expect("validates");
         assert_eq!((out.report_year, out.report_month), (2026, 11));
 
         // An explicit period wins, and rescues a file with no period in its name.
-        let out = validate_ubereats_report(&report("SF"), "payments.csv", Some((2025, 3)))
+        let out = validate_ubereats_report(&report("SF"), "payments.csv", Some((2025, 3)), None)
             .await
             .expect("validates");
         assert_eq!((out.report_year, out.report_month), (2025, 3));
@@ -277,7 +340,7 @@ mod tests {
         // `1900.05` deliberately: if precedence ever inverts, the caller's
         // range check catches it as a refusal rather than a wrong-but-plausible
         // key.
-        let out = validate_ubereats_report(&report("SF"), "1900.05 SF.csv", Some((2026, 8)))
+        let out = validate_ubereats_report(&report("SF"), "1900.05 SF.csv", Some((2026, 8)), None)
             .await
             .expect("validates");
         assert_eq!(
@@ -292,7 +355,7 @@ mod tests {
     #[tokio::test]
     async fn a_missing_je_column_is_rejected_with_airways_own_message() {
         let csv = b"Store Name,Total payout\nPoke House SF,10\n";
-        let err = validate_ubereats_report(csv, "2026.08 SF.csv", None)
+        let err = validate_ubereats_report(csv, "2026.08 SF.csv", None, None)
             .await
             .expect_err("a header variant must be refused");
 
@@ -306,7 +369,7 @@ mod tests {
     /// wrong period aggregates a month of payouts into the wrong JE.
     #[tokio::test]
     async fn a_report_with_no_period_anywhere_is_rejected() {
-        let err = validate_ubereats_report(&report("SF"), "payments.csv", None)
+        let err = validate_ubereats_report(&report("SF"), "payments.csv", None, None)
             .await
             .expect_err("no period must be refused");
         assert!(matches!(err, ReportValidationError::Rejected(_)));
@@ -316,7 +379,7 @@ mod tests {
     /// confusing missing-column error rather than "unsupported".
     #[tokio::test]
     async fn a_non_csv_is_rejected() {
-        let err = validate_ubereats_report(b"PK\x03\x04", "2026.08 SF.xlsx", None)
+        let err = validate_ubereats_report(b"PK\x03\x04", "2026.08 SF.xlsx", None, None)
             .await
             .expect_err("a workbook must be refused");
         let msg = err.to_string();

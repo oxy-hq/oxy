@@ -132,9 +132,60 @@ export type AirwayRunSummary = {
 };
 
 /** `.airway.yml` file ref (parity with `AutomationFile`). */
+/**
+ * SHA-256 of a file's bytes, hex, truncated to 32 chars.
+ *
+ * Truncated because it becomes a path segment and the server caps the id at
+ * 128 characters; 128 bits of a SHA-256 is far past any collision concern for
+ * a workspace's monthly reports. Hex so it satisfies the server's
+ * `[A-Za-z0-9_-]` rule without encoding.
+ */
+async function contentHash(file: File): Promise<string> {
+  // `crypto.subtle` is secure-context only: on a self-hosted `oxy serve`
+  // reached over plain HTTP it is `undefined`, and the bare call died with an
+  // opaque `TypeError` the moment a file was dropped. Named here instead,
+  // because the cause is the page's origin and no amount of retrying helps.
+  if (!globalThis.crypto?.subtle) {
+    throw new Error(
+      "Uploading needs a secure context (HTTPS or localhost) to hash the file. " +
+        "This page is served over plain HTTP, so the browser withholds crypto.subtle."
+    );
+  }
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 32);
+}
+
 export type AirwayFile = {
   path: string;
   path_b64: string;
+  /**
+   * `source.kind` — what source-specific surfaces key on (the report-upload
+   * tab is only meaningful for `ubereats`).
+   *
+   * Comes from the compiled definition when there is one, and from a direct
+   * YAML read on the filesystem fallback, so an un-promoted workspace answers
+   * the same kind as a promoted one. This used to say the fallback omitted
+   * it — true before the fallback learned to read it, and the reason the tab
+   * was missing in local mode.
+   *
+   * Absent now only when the file could not be read or did not parse; a
+   * surface gated on this stays hidden in that case rather than appearing and
+   * then failing.
+   */
+  source_kind?: string;
+};
+
+/** One report the server accepted and wrote to the landing zone. */
+export type UploadedReport = {
+  /** `s3://…` — the same spelling the pipeline's `base_path` uses. */
+  location: string;
+  report_year: number;
+  report_month: number;
+  /** Rows the report yielded under validation. Zero is a valid empty report. */
+  rows: number;
 };
 
 /** A column surfaced by source table discovery. */
@@ -476,6 +527,52 @@ export class AirwayService {
     const { data } = await apiClient.get(`${AirwayService.base(projectId)}/runs`, {
       params: { pipeline_ref: pipelineRef, limit }
     });
+    return data;
+  }
+
+  /**
+   * Upload one payment-details report into a pipeline's landing zone.
+   *
+   * `workflowId` is the **content hash**, not a random id: the object key is
+   * the loader's merge identity, so hashing the bytes makes re-uploading the
+   * same file land on the same key and merge, while a different file gets its
+   * own. A random id would turn every re-drop into a duplicate — the same
+   * replace-by-file-sha reasoning the bookkeeping app's importer uses.
+   *
+   * `period` is optional. Given, it wins; omitted, the server reads it from
+   * the file name (`2026.08 UberEats SF.csv`). Explicit is better when the
+   * caller knows — a file name is the part of a report that can lie — but
+   * requiring it would make a correctly-named file need a form field for
+   * something already in the name.
+   */
+  static async uploadReport(
+    projectId: string,
+    pipelineRef: string,
+    file: File,
+    period: { year: number; month: number } | undefined,
+    onProgress?: (loaded: number, total: number) => void
+  ): Promise<UploadedReport> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    form.append("pipeline_ref", pipelineRef);
+    form.append("workflow_id", await contentHash(file));
+    // Both or neither — the server refuses half a period, because taking one
+    // half and guessing the other stamps a month nobody named. Omitted
+    // entirely, it derives the period from the file name (`2026.08 …`).
+    if (period) {
+      form.append("report_year", String(period.year));
+      form.append("report_month", String(period.month));
+    }
+
+    const { data } = await apiClient.post<UploadedReport>(
+      `/${projectId}/source-uploads/reports`,
+      form,
+      {
+        onUploadProgress: (e) => {
+          if (onProgress && e.total) onProgress(e.loaded, e.total);
+        }
+      }
+    );
     return data;
   }
 

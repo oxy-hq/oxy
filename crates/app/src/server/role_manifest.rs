@@ -1249,22 +1249,31 @@ mod tests {
     /// `/analytics` `/agentic-workflows` `/agentic-airway` wildcards; the
     /// EXECUTION + live-stream + file-read endpoints right next to them stay
     /// IdeOnly.
-    /// The UberEats report upload writes to S3 and Postgres and reads nothing
-    /// node-local, so it must serve from any replica.
+    /// The source-report upload writes to S3 and reads the pipeline from the
+    /// compile boundary in Postgres, so it must serve from any replica.
     ///
-    /// It is mounted at `/ubereats` rather than under `/agentic-airway`
+    /// It DOES touch the working copy, on one path: when no compiled row
+    /// matches, `read_pipeline_from_disk` falls back to the workspace FS for
+    /// the local / not-yet-promoted case. That is a fallback, not the route's
+    /// job — in cloud every promoted pipeline is served from Postgres, and a
+    /// replica without the working copy answers 503 *retryable* rather than
+    /// wrong. Classifying `IdeOnly` to cover the fallback would pin every
+    /// upload to the singleton to serve a case that only arises before a
+    /// workspace is compiled.
+    ///
+    /// It is mounted at `/source-uploads` rather than under `/agentic-airway`
     /// precisely because that prefix is an `IdeOnly` `{*rest}` for every
-    /// method — a live pipeline run executes in-process and touches the
-    /// working copy. An upload does neither, and pinning it to the singleton
-    /// would mean uploads stop whenever the ide restarts.
+    /// method — a live pipeline run executes in-process and holds the working
+    /// copy for its whole duration. An upload does neither, and pinning it to
+    /// the singleton would mean uploads stop whenever the ide restarts.
     ///
     /// Asserted rather than left to the unlisted-default, so moving the route
     /// under an IdeOnly prefix fails here instead of silently costing HA.
     #[test]
-    fn ubereats_report_upload_is_fleet_ok() {
+    fn source_upload_is_fleet_ok() {
         let ws = "d9830be4-c6a4";
         assert_eq!(
-            classify("POST", &format!("/api/{ws}/ubereats/reports")),
+            classify("POST", &format!("/api/{ws}/source-uploads/reports")),
             RouteRole::FleetOk,
             "an S3 write with no working-copy access must not need the ide"
         );
@@ -2231,7 +2240,7 @@ mod tests {
         // about. Mounted outside `/agentic-airway` precisely so the IdeOnly
         // wildcard protecting live runs does not pin an S3 write to the
         // singleton.
-        "/ubereats",
+        "/source-uploads",
         "/blocks",
         "/runs/{source_id}/{run_index}",
         "/logs",

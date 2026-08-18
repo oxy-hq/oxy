@@ -109,7 +109,7 @@ pub(super) fn build_workspace_routes(
         // for execution safety. This writes to S3 and reads nothing node-local,
         // so pinning it to the singleton would cost HA for no reason — it stays
         // `FleetOk`, the default for an unlisted route.
-        .nest("/ubereats", build_ubereats_routes())
+        .nest("/source-uploads", build_source_upload_routes())
         .nest("/traces", traces::traces_routes())
         .nest("/metrics", metrics::metrics_routes())
         .nest(
@@ -610,16 +610,16 @@ fn build_app_routes() -> Router<AppState> {
         .route("/save-from-run/{run_id}", post(app::save_app_builder_run))
 }
 
-/// Report uploads for the UberEats landing zone.
+/// Report uploads for file-based sources, into the shared landing zone.
 ///
 /// Deliberately its own nest rather than a child of `/agentic-airway`: that
 /// prefix is classified `IdeOnly` for every method so a live run stays on the
 /// instance holding the working copy, and this handler touches no working copy.
-fn build_ubereats_routes() -> Router<AppState> {
+fn build_source_upload_routes() -> Router<AppState> {
     Router::new()
         .route(
             "/reports",
-            post(crate::server::api::ubereats_upload::upload_report),
+            post(crate::server::api::source_upload::upload_report),
         )
         // Without this, axum 0.8's 2 MiB default governs and the handler's own
         // ceiling is unreachable — a larger report fails inside `field.bytes()`
@@ -627,8 +627,15 @@ fn build_ubereats_routes() -> Router<AppState> {
         // than on the `MethodRouter` for the same reason `build_onboarding_routes`
         // gives: the latter can interact unexpectedly with outer CORS preflight
         // handling on axum 0.8.
+        // `MAX_REPORT_BYTES` plus slack, because this bounds the whole
+        // multipart body while the constant bounds ONE FILE: boundaries, field
+        // names, `pipeline_ref`, `workflow_id` and the period all ride along.
+        // Set equal, a file a few hundred bytes under the ceiling passed the
+        // client-side check and the handler's own check and still died here —
+        // answered by this layer's terse 400, never the handler's 413 that
+        // names the size. The handler stays the authority on the file itself.
         .layer(axum::extract::DefaultBodyLimit::max(
-            crate::server::api::ubereats_upload::MAX_REPORT_BYTES,
+            crate::server::api::source_upload::MAX_REPORT_BYTES + 64 * 1024,
         ))
 }
 

@@ -1,0 +1,53 @@
+name: ubereats
+source:
+  kind: ubereats
+  config:
+    # The landing zone this pipeline READS, which must equal where the upload
+    # endpoint WRITES. The server refuses an upload whose pipeline reads from
+    # somewhere else, naming both values — so if this is wrong, the first
+    # upload tells you exactly what to put here.
+    #
+    # Shape: <OXY_SOURCE_UPLOAD_ZONE>/<workspace_id>/<source_kind>/<pipeline>
+    #
+    # The all-zeros UUID below is not a placeholder — it is the real workspace
+    # id in local mode (`LOCAL_WORKSPACE_ID` == `Uuid::nil()`), which is the
+    # mode this example is written for, so it runs as shipped. In cloud each
+    # workspace has its own UUID and this segment has to be that one; the
+    # upload endpoint names both values when they disagree.
+    #
+    # The trailing segment is the PIPELINE, derived from this file's whole
+    # relative path with `__` for `/` — so `pipelines/ubereats.airway.yml` is
+    # `pipelines__ubereats`. The directory is included because two pipelines
+    # of the same name in different directories would otherwise share a zone.
+    base_path: s3://oxy-local-source-uploads/00000000-0000-0000-0000-000000000000/ubereats/pipelines__ubereats
+
+    # Store scoping, matched per ROW — one report section can span stores this
+    # tenancy does not own. Keyed on the store NAME, not the id: reports exist
+    # where `Store ID` is blank for a whole store, which is why it is not one
+    # of the JE-critical columns.
+    #
+    # Omit the key entirely to load every store in the file (right for the
+    # one-store manual export). An EMPTY list is refused — it would match
+    # nothing and land zero rows, which is the opposite of what it reads like.
+    allowed_stores:
+      - "Poke House SF"
+      - "Poke House Oakland"
+
+    # Optional. Omitted, the period is read from each file's path or name
+    # (`2026.08 …`), which is what the upload endpoint writes. Give BOTH or
+    # neither — half a period is not one, and guessing the other half stamps a
+    # month nobody named.
+    # report_year: 2026
+    # report_month: 8
+
+destination:
+  # A database defined in config.yml. Credentials are resolved at run
+  # time (airhouse_managed mints an ephemeral per-user credential).
+  database: local-acme
+  dataset_name: ubereats
+
+# Optional: restrict to a subset of the source's resources.
+# resources: []
+
+# In-flight extractions when running resources in parallel (1-16).
+concurrency: 1
