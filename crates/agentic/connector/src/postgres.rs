@@ -204,6 +204,16 @@ impl DatabaseConnector for PostgresConnector {
         SqlDialect::Postgres
     }
 
+    /// Opens its **own** connection rather than borrowing `self.client` — see
+    /// `postgres_tx`'s module docs for why sharing it would block every other
+    /// reader of this database for the lifetime of an app's transaction.
+    async fn begin_transaction(
+        &self,
+    ) -> Result<Box<dyn crate::transaction::SqlTransaction>, ConnectorError> {
+        let tx = crate::postgres_tx::PgTransaction::begin(&self.config).await?;
+        Ok(Box::new(tx))
+    }
+
     async fn execute_query(
         &self,
         sql: &str,

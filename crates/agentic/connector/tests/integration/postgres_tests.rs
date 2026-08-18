@@ -26,12 +26,12 @@ static TEST_CONTAINER: tokio::sync::OnceCell<
 > = tokio::sync::OnceCell::const_new();
 
 #[derive(Clone, Debug)]
-struct Dsn {
-    host: String,
-    port: u16,
-    user: String,
-    password: String,
-    database: String,
+pub(crate) struct Dsn {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub password: String,
+    pub database: String,
 }
 
 impl Dsn {
@@ -55,7 +55,7 @@ impl Dsn {
     }
 }
 
-async fn test_dsn() -> Option<Dsn> {
+pub(crate) async fn test_dsn() -> Option<Dsn> {
     TEST_DSN
         .get_or_try_init(|| async {
             if let Some(dsn) = Dsn::from_env() {

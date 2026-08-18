@@ -43,6 +43,7 @@ export type {
   OxySecretsApi,
   OxySemanticApi,
   OxyStorageApi,
+  OxyTransaction,
   OxyWarehouseApi,
   StorageDownloadUrl,
   StorageListPage,

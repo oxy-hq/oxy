@@ -14,12 +14,28 @@ authors.workspace = true
 # Arrow (DuckDB, Snowflake) implement the extension under this feature.
 # Row-based backends never need it.
 arrow = ["dep:arrow"]
+# `SqlTransaction` and `DatabaseConnector::begin_transaction`. Split out because
+# the trait signature names `serde_json::Value`, and `serde_json` is optional
+# here (see the comment on `estimate_value_bytes`) — leaving the module ungated
+# breaks any dependent that enables no connector backend, e.g. agentic-analytics.
+# A future backend that overrides `begin_transaction` must add `transactions` to
+# its own feature list — `postgres` is the only feature implying it today, and
+# forgetting it yields a confusing "override with no trait method" error.
+transactions = ["dep:serde_json"]
 
 duckdb = ["dep:duckdb", "dep:slugify"]
 # `dep:chrono` — for decoding DATE / TIMESTAMP / TIMESTAMPTZ into owned
 # Rust types inside `execute_query_full`.
 # `dep:serde_json` — for decoding JSON / JSONB columns.
-postgres = ["dep:tokio-postgres", "dep:chrono", "dep:serde_json"]
+# `dep:uuid` — for UUID columns on the `ctx.tx` path (a uuid primary key is the
+# common shape for an OLTP table, so `INSERT … RETURNING id` needs it).
+postgres = [
+    "dep:tokio-postgres",
+    "dep:chrono",
+    "dep:serde_json",
+    "dep:uuid",
+    "transactions",
+]
 
 clickhouse = ["dep:reqwest", "dep:serde_json", "dep:serde"]
 # MySQL via sqlx-mysql. `chrono` + `serde_json` decode DATE / DATETIME /
@@ -67,8 +83,10 @@ slugify = { workspace = true, optional = true }
 tokio-postgres = { workspace = true, features = [
     "with-chrono-0_4",
     "with-serde_json-1",
+    "with-uuid-1",
 ], optional = true }
 chrono = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
 
 # ClickHouse (HTTP API)
 reqwest = { workspace = true, features = [

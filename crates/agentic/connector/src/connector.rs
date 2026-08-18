@@ -877,6 +877,24 @@ pub trait DatabaseConnector: Send + Sync {
         self.execute_query_full(sql).await
     }
 
+    /// Open a multi-statement transaction on a pinned connection.
+    ///
+    /// Every other method here is one statement, which is all analytics needs.
+    /// This is the seam for callers that must write several statements
+    /// atomically — see [`crate::transaction`] for why that is a distinct
+    /// capability rather than a flag on `execute_query`.
+    ///
+    /// Default: unsupported. Only backends that can genuinely pin a session and
+    /// honour `BEGIN`/`COMMIT` override this — a connector that faked it by
+    /// running the statements independently would report success on a
+    /// half-applied write, which is worse than refusing.
+    #[cfg(feature = "transactions")]
+    async fn begin_transaction(
+        &self,
+    ) -> Result<Box<dyn crate::transaction::SqlTransaction>, ConnectorError> {
+        Err(crate::transaction::unsupported(self.dialect().as_str()))
+    }
+
     /// Opt-in Arrow zero-copy extension.
     ///
     /// Backends whose drivers natively produce Arrow (`DuckDbConnector`,

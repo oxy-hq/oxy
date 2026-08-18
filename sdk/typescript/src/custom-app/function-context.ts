@@ -99,6 +99,25 @@ export interface OxyWarehouseApi {
   ): Promise<unknown>;
 }
 
+/**
+ * The handle `ctx.tx` passes to your callback — a pinned connection with an
+ * open transaction.
+ *
+ * Both methods take **bound parameters** (`$1`, `$2`, …). Never build SQL by
+ * concatenating request data: `ctx.warehouse.exec` takes a bare string, but a
+ * transaction exists for surfaces that accept end-user input, and placeholders
+ * are the only thing that makes that safe.
+ *
+ * The handle is live only for the duration of the callback. Using it after the
+ * callback returns throws — it is not a connection you can stash.
+ */
+export interface OxyTransaction {
+  /** Run a row-returning statement (including `INSERT … RETURNING`). */
+  query(sql: string, params?: unknown[]): Promise<OxyFunctionRow[]>;
+  /** Run a statement for its effect; resolves to the number of rows affected. */
+  exec(sql: string, params?: unknown[]): Promise<number>;
+}
+
 /** `ctx.secrets` — write app-scoped secrets (gated by the `secrets.write` capability). */
 export interface OxySecretsApi {
   set(key: string, value: string): Promise<void>;
@@ -406,6 +425,38 @@ export interface OxyFunctionContext {
    */
   fetch(url: string, init?: OxyFetchInit): Promise<OxyFetchResult>;
   warehouse: OxyWarehouseApi;
+  /**
+   * Run several statements atomically on one connection: commits when your
+   * callback resolves, rolls back when it throws, and rethrows your error
+   * either way. Resolves to whatever the callback returns.
+   *
+   * `database` must be in this function's manifest `destinations` — a
+   * transaction is a write, and the same fail-closed allowlist applies. Postgres
+   * only; other backends reject `ctx.tx` rather than faking it.
+   *
+   * **Do not catch a failed statement and return normally.** A statement the
+   * server rejects aborts the whole transaction, and `COMMIT` on an aborted
+   * transaction does not fail — Postgres applies nothing and reports success —
+   * so `ctx.tx` refuses to commit and throws instead, naming the statement that
+   * poisoned it. Let the error propagate.
+   *
+   * ```ts
+   * const orderId = await ctx.tx("appdb", async (tx) => {
+   *   const [{ id }] = await tx.query(
+   *     "INSERT INTO orders (table_no) VALUES ($1) RETURNING id",
+   *     [tableNo],
+   *   );
+   *   for (const it of items) {
+   *     await tx.exec(
+   *       "INSERT INTO order_items (order_id, sku, qty) VALUES ($1, $2, $3)",
+   *       [id, it.sku, it.qty],
+   *     );
+   *   }
+   *   return id;
+   * });
+   * ```
+   */
+  tx<T>(database: string, fn: (tx: OxyTransaction) => Promise<T> | T): Promise<T>;
   secrets: OxySecretsApi;
   semantic: OxySemanticApi;
   airway: OxyAirwayApi;

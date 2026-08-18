@@ -65,6 +65,9 @@ pub struct ProjectFunctionHost {
     /// Per-invocation `ctx.email.send` counter (this host lives for exactly one
     /// invocation), bounding email fan-out from a single run.
     email_send_count: std::sync::atomic::AtomicUsize,
+    /// Transactions `ctx.tx()` has open. Per-invocation like the counter above,
+    /// which is what makes cleanup automatic — see `tx`'s module docs.
+    transactions: super::tx::TxRegistry,
 }
 
 /// The fail-closed capability gates a function's manifest grants, plus the
@@ -119,6 +122,7 @@ impl ProjectFunctionHost {
             app_name,
             caps,
             email_send_count: std::sync::atomic::AtomicUsize::new(0),
+            transactions: super::tx::TxRegistry::default(),
             // `ctx.fetch` is defended in two layers:
             //  1. `is_safe_outbound` rejects the request URL up front (scheme,
             //     literal private IPs, internal suffixes).
@@ -163,6 +167,76 @@ impl ProjectFunctionHost {
                 .map_err(|e| format!("failed to connect to database '{db_name}': {e}"))
         })
         .await
+    }
+
+    /// §11.3 — a write may only target a database the function declared in its
+    /// manifest `destinations`, and that database must actually be configured.
+    ///
+    /// Fail-closed: an empty allowlist denies every database. Checked *before*
+    /// any connector — and therefore any credential — is built, so a function
+    /// can never reach the project's source warehouse just because it happens
+    /// to be configured. `ctx.tx` shares this with `ctx.warehouse` because a
+    /// transaction is a write by definition; splitting them would let a
+    /// transaction reach a database the same function may not `insert` into.
+    ///
+    /// `surface` names the caller so the error says which API was denied.
+    fn check_write_destination(&self, surface: &str, database: &str) -> Result<(), String> {
+        if !self.write_destinations.iter().any(|d| d == database) {
+            return Err(format!(
+                "{surface}: database '{database}' is not in this function's \
+                 `destinations` allowlist (declare it in oxy-app.json to permit writes)"
+            ));
+        }
+        let cm = &self.proj_ctx.workspace_manager().config_manager;
+        if !cm.list_databases().iter().any(|db| db.name == database) {
+            return Err(format!(
+                "{surface}: database '{database}' is not configured for this project"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Pull `{ id, sql, params }` off a `ctx.tx` payload.
+    ///
+    /// `params` distinguishes three cases: **absent or null** is "no
+    /// parameters" (the common case — a statement with no placeholders), an
+    /// **array** is the argument list, and **anything else** is an author error
+    /// reported as such. Collapsing the third into the first is what produced
+    /// the misleading "takes 1 parameter(s) but 0 were passed" for
+    /// `tx.exec(sql, {a: 1})`.
+    fn tx_statement(
+        payload: &serde_json::Value,
+    ) -> Result<(u64, String, Vec<serde_json::Value>), String> {
+        let id = payload
+            .get("id")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| "ctx.tx: `id` is required".to_string())?;
+        let sql = payload
+            .get("sql")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "ctx.tx: `sql` is required".to_string())?
+            .to_string();
+        // Absent means "no parameters"; present-but-not-an-array is an author
+        // error and must say so. Collapsing both to `[]` reported the far more
+        // confusing "takes 1 parameter(s) but 0 were passed".
+        let params = match payload.get("params") {
+            None | Some(serde_json::Value::Null) => Vec::new(),
+            Some(serde_json::Value::Array(a)) => a.clone(),
+            Some(other) => {
+                return Err(format!(
+                    "ctx.tx: `params` must be an array of values, got {}. \
+                     Pass positional arguments for $1, $2, … — e.g. [tableNo, sku].",
+                    match other {
+                        serde_json::Value::Object(_) => "an object",
+                        serde_json::Value::String(_) => "a string",
+                        serde_json::Value::Number(_) => "a number",
+                        serde_json::Value::Bool(_) => "a boolean",
+                        _ => "a non-array value",
+                    }
+                ));
+            }
+        };
+        Ok((id, sql, params))
     }
 }
 
@@ -343,24 +417,7 @@ impl FunctionHost for ProjectFunctionHost {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "warehouse write: `database` is required".to_string())?;
 
-        // §11.3 — restrict writes to the function's declared `destinations`
-        // allowlist (fail-closed: an empty allowlist denies all writes). This
-        // is validated *before* any connector — and therefore any ephemeral
-        // credential — is built, so a function can never `exec` DDL/DML against
-        // the project's source warehouse just because it's configured. The
-        // target must ALSO be a real configured database.
-        if !self.write_destinations.iter().any(|d| d == database) {
-            return Err(format!(
-                "warehouse write: database '{database}' is not in this function's \
-                 `destinations` allowlist (declare it in oxy-app.json to permit writes)"
-            ));
-        }
-        let cm = &self.proj_ctx.workspace_manager().config_manager;
-        if !cm.list_databases().iter().any(|db| db.name == database) {
-            return Err(format!(
-                "warehouse write: database '{database}' is not configured for this project"
-            ));
-        }
+        self.check_write_destination("warehouse write", database)?;
 
         let sql = match op.as_str() {
             "exec" => payload
@@ -383,6 +440,86 @@ impl FunctionHost for ProjectFunctionHost {
         })
         .await?;
         Ok(serde_json::json!({ "ok": true }))
+    }
+
+    /// `ctx.tx` — five verbs over one op, dispatched onto the per-invocation
+    /// [`TxRegistry`].
+    ///
+    /// `begin` is the only verb that touches authorization: it runs the same
+    /// fail-closed `destinations` check as `ctx.warehouse`, before a connector
+    /// exists. The other four take an id that `begin` handed out, and the
+    /// registry rejects any id it did not issue — so a script cannot reach a
+    /// database by guessing a number.
+    ///
+    /// [`TxRegistry`]: super::tx::TxRegistry
+    async fn tx(
+        &self,
+        op: String,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        match op.as_str() {
+            "begin" => {
+                let database = payload
+                    .get("database")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "ctx.tx: `database` is required".to_string())?;
+                self.check_write_destination("ctx.tx", database)?;
+                let connector = self.connect(database).await?;
+                let tx = with_db_timeout("ctx.tx begin", async {
+                    connector.begin_transaction().await.map_err(|e| {
+                        format!("ctx.tx: could not open a transaction on '{database}': {e}")
+                    })
+                })
+                .await?;
+                let id = self.transactions.insert(tx).await?;
+                Ok(serde_json::json!({ "id": id }))
+            }
+            "query" => {
+                let (id, sql, params) = Self::tx_statement(&payload)?;
+                let rows =
+                    with_db_timeout("ctx.tx query", self.transactions.query(id, &sql, &params))
+                        .await?;
+                let result = serde_json::json!({ "rows": rows });
+                enforce_result_byte_cap(&result)?;
+                Ok(result)
+            }
+            "exec" => {
+                let (id, sql, params) = Self::tx_statement(&payload)?;
+                let count =
+                    with_db_timeout("ctx.tx exec", self.transactions.exec(id, &sql, &params))
+                        .await?;
+                Ok(serde_json::json!({ "rowCount": count }))
+            }
+            "commit" | "rollback" => {
+                let id = payload
+                    .get("id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| "ctx.tx: `id` is required".to_string())?;
+                // Bounded like the other ops: `take` waits on the slot lock, so
+                // a commit racing a statement on the same handle (an author bug)
+                // would otherwise wait unbounded on that statement.
+                let tx = with_db_timeout("ctx.tx take", self.transactions.take(id)).await?;
+                let committing = op == "commit";
+                let label = if committing {
+                    "ctx.tx commit"
+                } else {
+                    "ctx.tx rollback"
+                };
+                // Taken from the registry first, so a timeout here still drops
+                // the handle — which closes the connection, which rolls back.
+                with_db_timeout(label, async move {
+                    let outcome = if committing {
+                        tx.commit().await
+                    } else {
+                        tx.rollback().await
+                    };
+                    outcome.map_err(|e| format!("ctx.tx {op} failed: {e}"))
+                })
+                .await?;
+                Ok(serde_json::json!({ "ok": true }))
+            }
+            other => Err(format!("ctx.tx: unknown op '{other}'")),
+        }
     }
 
     async fn secrets_set(&self, key: String, value: String) -> Result<serde_json::Value, String> {

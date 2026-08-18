@@ -12,12 +12,19 @@
 
 pub mod config;
 pub mod connector;
+#[cfg(feature = "transactions")]
+pub mod transaction;
 
 #[cfg(feature = "duckdb")]
 pub mod duckdb;
 
 #[cfg(feature = "postgres")]
 pub mod postgres;
+
+/// Postgres implementation of [`transaction::SqlTransaction`] — the pinned
+/// connection behind `ctx.tx()`. Gated on `postgres` only.
+#[cfg(feature = "postgres")]
+pub mod postgres_tx;
 
 /// Shared typed-row helpers used by the `postgres` backend's
 /// `execute_query_full`. Gated on `postgres` only.
@@ -66,6 +73,9 @@ pub use connector::{
     estimate_row_bytes, guard_row_stream, is_returning_statement, is_wrappable_select,
     normalize_sql, plan_sql_script, split_sql_statements,
 };
+
+#[cfg(feature = "transactions")]
+pub use transaction::{SqlTransaction, TxParams};
 
 #[cfg(feature = "arrow")]
 pub use connector::{ArrowQueryStream, AsArrowConnector};

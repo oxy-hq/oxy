@@ -25,7 +25,12 @@
 //!
 //! `ctx.semantic.query` (airlayer), `ctx.airway.run` (Airway runner), and
 //! `ctx.warehouse.{insert,exec,upsert}` (project-database allowlist, §11.3)
-//! are all wired to real backends. `ctx.queryStream` (§11.5) fetches up to
+//! are all wired to real backends.
+//!
+//! `ctx.tx` adds multi-statement atomicity over that same allowlist: the
+//! isolate holds only a handle id, the pinned connection lives in the host's
+//! `tx::TxRegistry`, and the bootstrap wrapper owns the commit/rollback
+//! bracket so an author cannot leave one open. `ctx.queryStream` (§11.5) fetches up to
 //! `FUNCTION_STREAM_MAX_ROWS` rows in one host call and yields them to the
 //! function as an async generator in client-side batches — a pragmatic MVP
 //! pending a true warehouse-cursor implementation.
@@ -214,6 +219,18 @@ pub trait FunctionHost: Send + Sync {
         op: String,
         payload: serde_json::Value,
     ) -> Result<serde_json::Value, String>;
+    /// `ctx.tx(database, fn)` — a multi-statement transaction on a pinned
+    /// connection. `op` is one of `begin` / `query` / `exec` / `commit` /
+    /// `rollback`; `payload` carries its args. Same single-op-dispatcher shape
+    /// as `warehouse_write`, and gated by the same fail-closed `destinations`
+    /// allowlist — a transaction is a write, so it may not reach a database the
+    /// function did not declare.
+    ///
+    /// The op split exists because the transaction has to stay open across
+    /// `await`s **in the author's JavaScript**: the isolate holds a handle id
+    /// and the pinned connection lives here.
+    async fn tx(&self, op: String, payload: serde_json::Value)
+    -> Result<serde_json::Value, String>;
 }
 
 /// A request the isolate sends to the broker loop.
@@ -255,6 +272,11 @@ enum HostCall {
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
     },
     Storage {
+        op: String,
+        payload: serde_json::Value,
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    Tx {
         op: String,
         payload: serde_json::Value,
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
@@ -376,6 +398,35 @@ async fn op_ctx_warehouse(
         .await
         .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
     Ok(reply_json("ctx.warehouse", result))
+}
+
+/// `ctx.tx` — bridge to `FunctionHost::tx`.
+///
+/// One op for all five verbs (`begin`/`query`/`exec`/`commit`/`rollback`), same
+/// as `op_ctx_warehouse`. The transaction handle never crosses this boundary —
+/// the isolate only ever holds the integer id `begin` returns, so a script
+/// cannot fabricate a connection, only name one it was given.
+#[op2(async)]
+#[string]
+async fn op_ctx_tx(
+    state: Rc<RefCell<OpState>>,
+    #[string] op: String,
+    #[string] payload_json: String,
+) -> Result<String, JsErrorBox> {
+    check_cancelled(&state)?;
+    let tx = state
+        .borrow()
+        .borrow::<mpsc::UnboundedSender<HostCall>>()
+        .clone();
+    let payload: serde_json::Value =
+        serde_json::from_str(&payload_json).unwrap_or(serde_json::Value::Null);
+    let (reply, rx) = oneshot::channel();
+    tx.send(HostCall::Tx { op, payload, reply })
+        .map_err(|_| JsErrorBox::generic("function host unavailable"))?;
+    let result = rx
+        .await
+        .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
+    Ok(reply_json("ctx.tx", result))
 }
 
 /// `ctx.secrets.set(key, value)` — bridge to `FunctionHost::secrets_set`.
@@ -541,6 +592,7 @@ deno_core::extension!(
         op_ctx_airway_run,
         op_ctx_email_send,
         op_ctx_storage,
+        op_ctx_tx,
     ],
 );
 
@@ -735,6 +787,65 @@ globalThis.__buildCtx = (ctxData) => ({
       __wrapOp("op_ctx_warehouse")("exec", { database, sql }),
     upsert: (database, table, rows, conflictColumns) =>
       __wrapOp("op_ctx_warehouse")("upsert", { database, table, rows, conflictColumns }),
+  },
+  // tx(database, fn) — run `fn` inside one transaction on a pinned connection.
+  // Commits when `fn` resolves, rolls back when it throws, and rethrows the
+  // original error either way.
+  //
+  // The commit/rollback bracket lives HERE rather than in the author's code on
+  // purpose: an author who forgets a rollback in a catch block leaves a
+  // transaction open holding locks, and the only reliable moment to close it is
+  // the one the runtime owns. Statements take bound parameters ($1, $2, …) —
+  // never build SQL by concatenating user input.
+  tx: async (database, fn) => {
+    if (typeof fn !== "function") {
+      throw new TypeError("ctx.tx(database, fn): fn must be a function");
+    }
+    const call = __wrapOp("op_ctx_tx");
+    const { id } = await call("begin", { database: String(database) });
+    let closed = false;
+    // Every method re-checks `closed` so a handle that escapes the callback
+    // (stashed on a global, captured by a stray promise) fails loudly instead
+    // of addressing whatever transaction now holds that id.
+    const live = (what) => {
+      if (closed) {
+        throw new Error(
+          `ctx.tx: this transaction is already finished — ${what} was called after the callback returned`,
+        );
+      }
+    };
+    const handle = {
+      query: async (sql, params) => {
+        live("query");
+        // `??` not `||`: both map a real omission to [], but `||` also
+        // swallows 0 and "" — handing a wrong-typed argument to the host as
+        // "no parameters" and producing a misleading arity error. Anything
+        // else is forwarded as-is for the host to reject by name.
+        const r = await call("query", { id, sql: String(sql), params: params ?? [] });
+        return r.rows;
+      },
+      exec: async (sql, params) => {
+        live("exec");
+        const r = await call("exec", { id, sql: String(sql), params: params ?? [] });
+        return r.rowCount;
+      },
+    };
+    let result;
+    try {
+      result = await fn(handle);
+    } catch (err) {
+      closed = true;
+      // Swallow a rollback failure: the connection drops either way, which the
+      // server treats as a rollback, and surfacing it would replace the error
+      // the author actually needs to see.
+      try {
+        await call("rollback", { id });
+      } catch (_) {}
+      throw err;
+    }
+    closed = true;
+    await call("commit", { id });
+    return result;
   },
   secrets: {
     // set(key, value) — both stay bare strings so they arrive as the op's
@@ -942,6 +1053,9 @@ pub async fn run(
                                 HostCall::WarehouseWrite { op, payload, reply } => {
                                     let _ = reply.send(host.warehouse_write(op, payload).await);
                                 }
+                                HostCall::Tx { op, payload, reply } => {
+                                    let _ = reply.send(host.tx(op, payload).await);
+                                }
                                 HostCall::SecretsSet { key, value, reply } => {
                                     let _ = reply.send(host.secrets_set(key, value).await);
                                 }
@@ -1064,12 +1178,39 @@ mod tests {
     #[derive(Default)]
     struct MockHost {
         last_email: std::sync::Mutex<Option<serde_json::Value>>,
+        /// Every `ctx.tx` op this host saw, in order — the bootstrap wrapper's
+        /// commit/rollback bracket is only observable from here.
+        tx_ops: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl MockHost {
+        fn tx_ops(&self) -> Vec<String> {
+            self.tx_ops.lock().unwrap().clone()
+        }
     }
 
     #[async_trait::async_trait]
     impl FunctionHost for MockHost {
         async fn query(&self, _sql: String) -> Result<serde_json::Value, String> {
             Ok(serde_json::json!({ "rows": [{ "x": 1 }], "truncated": false }))
+        }
+        async fn tx(
+            &self,
+            op: String,
+            payload: serde_json::Value,
+        ) -> Result<serde_json::Value, String> {
+            self.tx_ops.lock().unwrap().push(op.clone());
+            match op.as_str() {
+                "begin" => Ok(serde_json::json!({ "id": 1 })),
+                // Echo the params back so a test can assert they crossed the
+                // boundary as an array rather than being stringified.
+                "query" => Ok(serde_json::json!({
+                    "rows": [{ "id": 42, "params": payload.get("params").cloned() }]
+                })),
+                "exec" => Ok(serde_json::json!({ "rowCount": 1 })),
+                "commit" | "rollback" => Ok(serde_json::json!({ "ok": true })),
+                other => Err(format!("unexpected tx op '{other}'")),
+            }
         }
         async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
             *self.last_email.lock().unwrap() = Some(input);
@@ -1153,6 +1294,155 @@ mod tests {
         assert!(!flag.load(Ordering::Relaxed));
         flag.store(true, Ordering::Relaxed);
         assert!(flag.load(Ordering::Relaxed));
+    }
+
+    /// Run `artifact` against a fresh `MockHost` and hand back both, so a test
+    /// can assert on the response *and* on what reached the host.
+    async fn run_with_mock(artifact: &str) -> (Result<FnResponse, RuntimeError>, Arc<MockHost>) {
+        let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        let host = Arc::new(MockHost::default());
+        let result = run(
+            artifact.to_string(),
+            test_ctx(),
+            b"{}".to_vec(),
+            host.clone(),
+            cancel_rx,
+            std::time::Duration::from_secs(10),
+            Arc::new(std::sync::Mutex::new(Vec::new())),
+        )
+        .await;
+        (result, host)
+    }
+
+    /// The happy path of the `ctx.tx` bracket: begin → the author's statements
+    /// → commit, with the callback's return value handed back.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ctx_tx_commits_when_the_callback_resolves() {
+        let (result, host) = run_with_mock(
+            r#"
+            export default async (req, ctx) => {
+                const id = await ctx.tx("appdb", async (tx) => {
+                    const rows = await tx.query("INSERT INTO orders DEFAULT VALUES RETURNING id");
+                    await tx.exec("UPDATE inventory SET on_hand = on_hand - $1", [2]);
+                    return rows[0].id;
+                });
+                return Response.json({ id });
+            };
+        "#,
+        )
+        .await;
+
+        let resp = result.expect("ctx.tx must resolve");
+        assert!(resp.body.contains(r#""id":42"#), "{}", resp.body);
+        assert_eq!(
+            host.tx_ops(),
+            vec!["begin", "query", "exec", "commit"],
+            "the wrapper must commit exactly once, after the author's statements"
+        );
+    }
+
+    /// The property the whole bracket exists for: an author who throws — or
+    /// whose statement fails — must not leave a transaction open, and must
+    /// still see their own error rather than a rollback error.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ctx_tx_rolls_back_when_the_callback_throws_and_rethrows_the_original() {
+        let (result, host) = run_with_mock(
+            r#"
+            export default async (req, ctx) => {
+                let seen = null;
+                try {
+                    await ctx.tx("appdb", async (tx) => {
+                        await tx.exec("INSERT INTO orders DEFAULT VALUES");
+                        throw new Error("inventory went negative");
+                    });
+                } catch (e) {
+                    seen = e.message;
+                }
+                return Response.json({ seen });
+            };
+        "#,
+        )
+        .await;
+
+        let resp = result.expect("the handler itself must still return");
+        assert!(
+            resp.body.contains("inventory went negative"),
+            "the author's error must survive the rollback: {}",
+            resp.body
+        );
+        assert_eq!(
+            host.tx_ops(),
+            vec!["begin", "exec", "rollback"],
+            "a throwing callback must roll back and must NOT commit"
+        );
+    }
+
+    /// A handle that escapes its callback must fail loudly. Without this, a
+    /// stashed handle would address whatever transaction later holds that id.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_tx_handle_used_after_the_callback_returns_is_rejected() {
+        let (result, host) = run_with_mock(
+            r#"
+            export default async (req, ctx) => {
+                let escaped;
+                await ctx.tx("appdb", async (tx) => { escaped = tx; });
+                let threw = false;
+                try { await escaped.exec("DELETE FROM orders"); } catch (e) { threw = true; }
+                return Response.json({ threw });
+            };
+        "#,
+        )
+        .await;
+
+        let resp = result.expect("handler must return");
+        assert!(resp.body.contains(r#""threw":true"#), "{}", resp.body);
+        assert_eq!(
+            host.tx_ops(),
+            vec!["begin", "commit"],
+            "the escaped handle must never reach the host"
+        );
+    }
+
+    /// Parameters must cross the boundary as a JSON array. If they arrived
+    /// stringified, binding would silently become interpolation — the exact
+    /// failure this API exists to prevent.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn tx_params_cross_the_boundary_as_an_array() {
+        let (result, _host) = run_with_mock(
+            r#"
+            export default async (req, ctx) => {
+                const rows = await ctx.tx("appdb", (tx) =>
+                    tx.query("SELECT * FROM t WHERE a = $1 AND b = $2", [7, "x"]));
+                return Response.json({ params: rows[0].params });
+            };
+        "#,
+        )
+        .await;
+
+        let resp = result.expect("handler must return");
+        assert!(
+            resp.body.contains(r#""params":[7,"x"]"#),
+            "params must arrive as an array: {}",
+            resp.body
+        );
+    }
+
+    /// Omitting `params` is the common case (a statement with no placeholders)
+    /// and must not become `undefined` on the wire.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn tx_params_default_to_an_empty_array() {
+        let (result, _host) = run_with_mock(
+            r#"
+            export default async (req, ctx) => {
+                const rows = await ctx.tx("appdb", (tx) => tx.query("SELECT 1"));
+                return Response.json({ params: rows[0].params });
+            };
+        "#,
+        )
+        .await;
+
+        let resp = result.expect("handler must return");
+        assert!(resp.body.contains(r#""params":[]"#), "{}", resp.body);
     }
 
     /// Regression: a handler that awaits an async host op (`ctx.query`) must

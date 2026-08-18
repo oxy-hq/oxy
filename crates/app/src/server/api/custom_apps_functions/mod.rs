@@ -21,6 +21,9 @@ pub mod host;
 mod result_cache;
 #[cfg(feature = "custom-app-functions")]
 pub mod runtime;
+/// Per-invocation registry of open `ctx.tx()` transactions.
+#[cfg(feature = "custom-app-functions")]
+mod tx;
 
 use std::collections::HashMap;
 use std::sync::Mutex;

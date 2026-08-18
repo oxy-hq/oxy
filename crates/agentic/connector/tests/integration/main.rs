@@ -12,3 +12,4 @@ mod domo_tests;
 mod duckdb_tests;
 mod mysql_tests;
 mod postgres_tests;
+mod postgres_tx_tests;
