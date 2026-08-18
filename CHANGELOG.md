@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.127] - 2026-08-18
+
+### 🚀 Features
+
+- Make ClickHouse the sole observability backend (#2676)
+- Anomaly inbox — action feedback, paging, batch triage (#2914)
+- Dev-only sign-in bypass for browser automation (#2933)
+- *(airway)* Bump to 0.1.30 and wire the ubereats source (#2937)
+- *(airway)* Wire the NetSuite source (#2939)
+- Ctx.tx() — atomic multi-statement writes for Oxy Functions (#2944)
+
+### 🐛 Bug Fixes
+
+- Raise the delegation suspend timeout to 4h, sized from measured runs (#2929)
+
+### 💼 Other
+
+- Bump airway 0.1.28 -> 0.1.29 for delete-by-parent on Merge children (#2932)
+
+### 📚 Documentation
+
+- Re-anchor two observability comments left pointing at removed backends (#2931)
+- Update product-context.md from recent changelogs (#2941)
+- Refresh ownership matrix + CODEOWNERS (weekly) (#2940)
+- Aim the PR template's comprehension check at design decisions (#2936)
+- *(healthcheck)* Stop recommending /health as a liveness probe (#2943)
+
+### ⚡ Performance
+
+- Seed a fresh checkout's target/ from a warm one (cold build 418s -> ~61s) (#2935)
+
+### 🧪 Testing
+
+- Name the lost claim, and write down why the queue tests are fragile (#2934)
+
 ## [0.5.126] - 2026-08-13
 
 ### 🐛 Bug Fixes
@@ -16,6 +51,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Upgrade deps
+- Release 0.5.126 (#2928)
 
 ## [0.5.125] - 2026-08-13
 
