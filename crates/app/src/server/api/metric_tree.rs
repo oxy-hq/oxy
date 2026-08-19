@@ -1,11 +1,17 @@
 //! Metric Tree API — tree structure and analysis ops over the semantic layer.
 //!
-//! The tree is built per request from the workspace's semantic layer (the
-//! same scan path `execute_semantic_query` uses). The pure ops — tree,
-//! `sensitivity`, `predict` — need no database access. The query-executing
-//! ops (`explain`, `opportunity`) run airlayer's algorithms against a
-//! `QueryExecutor` bridged to Oxy's connector: airlayer compiles each
-//! `QueryRequest` to SQL, and `run_via_agentic_connector` executes it.
+//! The tree is built per request from the workspace's semantic layer, resolved
+//! through the same scan source `execute_semantic_query` uses —
+//! [`resolve_query_scan_source`]: the compile boundary first, the working copy
+//! second. Every route here is `FleetOk`, so reading the working copy directly
+//! is not an option: a stateless serve replica has none, and scanning the
+//! missing directory failed every call with a flat 500 (oxy-hq/oxygen#878).
+//!
+//! The pure ops — tree, `sensitivity`, `predict` — need no database access.
+//! The query-executing ops (`explain`, `opportunity`) run airlayer's
+//! algorithms against a `QueryExecutor` bridged to Oxy's connector: airlayer
+//! compiles each `QueryRequest` to SQL, and `run_via_agentic_connector`
+//! executes it.
 
 use std::collections::BTreeMap;
 
@@ -28,16 +34,23 @@ use crate::agentic_wiring::metric_tree_runner::{
 use crate::server::api::middlewares::workspace_context::{
     EffectiveWorkspaceRole, PreaggCacheCtx, WorkspaceManagerExtractor,
 };
+use crate::server::api::semantic::{QueryScanSource, resolve_query_scan_source};
 
 #[derive(Debug)]
 pub enum MetricTreeError {
     LayerLoad(String),
+    /// No semantic layer is reachable on this node: the workspace has no
+    /// compiled revision and this replica has no working copy to fall back to.
+    /// Retryable — a compile is enqueued on the way out — so it must not be
+    /// flattened into the generic 500 above.
+    ScanUnavailable(String),
     NotFound(String),
     Op(String),
 }
 
 impl IntoResponse for MetricTreeError {
     fn into_response(self) -> Response {
+        let mut retry_after = false;
         let (status, msg) = match &self {
             MetricTreeError::LayerLoad(e) => {
                 tracing::error!("metric-tree layer load failed: {e}");
@@ -45,6 +58,16 @@ impl IntoResponse for MetricTreeError {
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to load semantic layer".to_string(),
                 )
+            }
+            MetricTreeError::ScanUnavailable(m) => {
+                // Logged, not silent: the "no compiled revision at all" branch
+                // leaves no breadcrumb anywhere else (`resolve_query_scan_source`
+                // only warns when a materialise actually failed), so a workspace
+                // stuck un-compiled would be visible to the client and to nobody
+                // operating the fleet.
+                tracing::warn!("metric-tree scan unavailable: {m}");
+                retry_after = true;
+                (StatusCode::SERVICE_UNAVAILABLE, m.clone())
             }
             MetricTreeError::NotFound(m) => (StatusCode::NOT_FOUND, m.clone()),
             MetricTreeError::Op(e) => {
@@ -55,21 +78,43 @@ impl IntoResponse for MetricTreeError {
                 )
             }
         };
+        if retry_after {
+            // A compile is enqueued on the way out; give the client a concrete
+            // interval instead of leaving the retry cadence to guesswork.
+            return (status, [(axum::http::header::RETRY_AFTER, "5")], msg).into_response();
+        }
         (status, msg).into_response()
     }
 }
 
-/// Load the workspace's semantic layer from disk.
-fn load_layer(
+/// Resolve the scan root for this request: compile boundary first, working copy
+/// second — the same resolution `execute_semantic_query` performs.
+///
+/// The returned [`QueryScanSource`] owns the materialised tempdir, so callers
+/// must keep it alive until every read of `scan_path` has finished. Every such
+/// read happens in the async half of a handler — parsing the layer, or a
+/// runner's `snapshot_for_blocking` — deliberately: a `spawn_blocking` task
+/// outlives handler cancellation (client disconnect, `EXPLAIN_TIMEOUT`), which
+/// drops the guard and deletes the directory underneath it. Keep it that way;
+/// the invariant "hold the guard across the blocking task" is not one the
+/// handler can actually enforce.
+async fn resolve_scan(
     workspace_manager: &WorkspaceManager,
-) -> Result<airlayer::SemanticLayer, MetricTreeError> {
-    OxyMetricTreeRunner::load_layer_sync(workspace_manager)
+) -> Result<QueryScanSource, MetricTreeError> {
+    resolve_query_scan_source(workspace_manager)
+        .await
+        .map_err(|e| MetricTreeError::ScanUnavailable(e.message()))
+}
+
+/// Parse the workspace's semantic layer from an already-resolved scan root.
+fn load_layer_at(scan_path: &std::path::Path) -> Result<airlayer::SemanticLayer, MetricTreeError> {
+    OxyMetricTreeRunner::load_layer_at(scan_path)
         .map_err(|e| MetricTreeError::LayerLoad(e.to_string()))
 }
 
-/// Build the metric tree for the workspace's semantic layer.
-fn load_tree(workspace_manager: &WorkspaceManager) -> Result<MetricTree, MetricTreeError> {
-    let layer = load_layer(workspace_manager)?;
+/// Build the metric tree from an already-resolved scan root.
+fn load_tree_at(scan_path: &std::path::Path) -> Result<MetricTree, MetricTreeError> {
+    let layer = load_layer_at(scan_path)?;
     Ok(oxy_semantic::build_metric_tree(&layer))
 }
 
@@ -91,7 +136,8 @@ pub async fn get_metric_tree(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Query(q): Query<TreeQuery>,
 ) -> Result<Json<MetricTree>, MetricTreeError> {
-    let tree = load_tree(&workspace_manager)?;
+    let source = resolve_scan(&workspace_manager).await?;
+    let tree = load_tree_at(&source.scan_path)?;
     match q.root {
         Some(root) => oxy_semantic::subtree(&tree, &root)
             .map(Json)
@@ -105,7 +151,8 @@ pub async fn get_sensitivity(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, measure_id)): Path<(Uuid, String)>,
 ) -> Result<Json<airlayer::engine::metric_tree_ops::SensitivityResult>, MetricTreeError> {
-    let tree = load_tree(&workspace_manager)?;
+    let source = resolve_scan(&workspace_manager).await?;
+    let tree = load_tree_at(&source.scan_path)?;
     oxy_semantic::sensitivity(&tree, &measure_id)
         .map(Json)
         .map_err(|e| MetricTreeError::Op(e.to_string()))
@@ -127,7 +174,8 @@ pub async fn post_predict(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Json(req): Json<PredictRequest>,
 ) -> Result<Json<airlayer::engine::metric_tree_ops::PredictResult>, MetricTreeError> {
-    let tree = load_tree(&workspace_manager)?;
+    let source = resolve_scan(&workspace_manager).await?;
+    let tree = load_tree_at(&source.scan_path)?;
     let changes: Vec<(String, f64)> = req
         .changes
         .into_iter()
@@ -211,10 +259,16 @@ pub async fn post_explain(
     Json(req): Json<ExplainRequest>,
 ) -> Result<Json<ExplainResult>, MetricTreeError> {
     use agentic_analytics::MetricTreeRunner as _;
-    let runner = OxyMetricTreeRunner::new(workspace_manager, user.id, role).with_preagg(
-        preagg_ctx.cache,
-        preagg_ctx.renewal_threshold_secs.unwrap_or(120),
-    );
+    // `source` owns the materialised tempdir — it must outlive `runner`, which
+    // re-parses the layer from `scan_path` once per run it performs (in the
+    // async `snapshot_for_blocking`, not inside the blocking task).
+    let source = resolve_scan(&workspace_manager).await?;
+    let runner = OxyMetricTreeRunner::new(workspace_manager, user.id, role)
+        .with_scan_path(source.scan_path.clone())
+        .with_preagg(
+            preagg_ctx.cache,
+            preagg_ctx.renewal_threshold_secs.unwrap_or(120),
+        );
     let config = explain_config(req.config);
 
     let result = tokio::time::timeout(
@@ -345,7 +399,11 @@ pub async fn post_opportunity(
     preagg_ctx: PreaggCacheCtx,
     Json(req): Json<OpportunityRequest>,
 ) -> Result<Json<OpportunityResponse>, MetricTreeError> {
-    let mut layer = load_layer(&workspace_manager)?;
+    // `source` owns the materialised tempdir; hold it until the layer below is
+    // parsed. Nothing inside the blocking task reads it — the executor derives
+    // its own (different) pre-aggregation cache root from the workspace manager.
+    let source = resolve_scan(&workspace_manager).await?;
+    let mut layer = load_layer_at(&source.scan_path)?;
     // Order is load-bearing. The tree is built from the clean layer: the
     // dispersion measure below is a pass-through, and pass-throughs read as
     // composite nodes, so a tree built after it would sprout an internal
@@ -373,10 +431,6 @@ pub async fn post_opportunity(
     let databases = workspace_databases(&workspace_manager);
     let engine = build_engine(layer.clone(), &databases)?;
     let handle = tokio::runtime::Handle::current();
-    let scan_path = workspace_manager
-        .config_manager
-        .semantics_scan_path()
-        .to_path_buf();
     let preagg_cache = preagg_ctx.cache;
     let preagg_renewal_threshold_secs = preagg_ctx.renewal_threshold_secs.unwrap_or(120);
 
@@ -389,7 +443,6 @@ pub async fn post_opportunity(
             user.id,
             role,
             handle,
-            scan_path,
             preagg_cache,
             preagg_renewal_threshold_secs,
         );
@@ -489,7 +542,11 @@ pub async fn post_opportunity_drill(
     preagg_ctx: PreaggCacheCtx,
     Json(req): Json<DrillRequest>,
 ) -> Result<Json<DrillResponse>, MetricTreeError> {
-    let mut clean_layer = load_layer(&workspace_manager)?;
+    // `source` owns the materialised tempdir; hold it until the layer below is
+    // parsed. Nothing inside the blocking task reads it — the executor derives
+    // its own (different) pre-aggregation cache root from the workspace manager.
+    let source = resolve_scan(&workspace_manager).await?;
+    let mut clean_layer = load_layer_at(&source.scan_path)?;
     // Tree from the CLEAN layer (same reason as post_opportunity: augmentation
     // adds pass-through measures that would sprout graph nodes).
     let tree = oxy_semantic::build_metric_tree(&clean_layer);
@@ -513,10 +570,6 @@ pub async fn post_opportunity_drill(
     let shared: airlayer::engine::metric_tree_ops::SharedLayer =
         std::sync::Arc::new(std::sync::RwLock::new(clean_layer));
     let handle = tokio::runtime::Handle::current();
-    let scan_path = workspace_manager
-        .config_manager
-        .semantics_scan_path()
-        .to_path_buf();
     let preagg_cache = preagg_ctx.cache;
     let preagg_renewal_threshold_secs = preagg_ctx.renewal_threshold_secs.unwrap_or(120);
     let default_config = airlayer::engine::metric_tree_ops::DrillConfig::default();
@@ -536,7 +589,6 @@ pub async fn post_opportunity_drill(
             user.id,
             role,
             handle,
-            scan_path,
             preagg_cache,
             preagg_renewal_threshold_secs,
         );
@@ -590,7 +642,8 @@ pub async fn get_time_dimensions(
 ) -> Result<Json<TimeDimensionsResponse>, MetricTreeError> {
     use airlayer::schema::models::DimensionType;
 
-    let layer = load_layer(&workspace_manager)?;
+    let source = resolve_scan(&workspace_manager).await?;
+    let layer = load_layer_at(&source.scan_path)?;
     let mut by_view: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for view in &layer.views {
         let mut dims: Vec<String> = view
@@ -637,10 +690,14 @@ pub async fn post_distribution(
     let baseline = derive_baseline_period(&req.period.0, &req.period.1)
         .ok_or_else(|| MetricTreeError::Op("invalid period dates (expected YYYY-MM-DD)".into()))?;
 
-    let runner = OxyMetricTreeRunner::new(workspace_manager, user.id, role).with_preagg(
-        preagg_ctx.cache,
-        preagg_ctx.renewal_threshold_secs.unwrap_or(120),
-    );
+    // `source` owns the materialised tempdir; keep it alive for the whole run.
+    let source = resolve_scan(&workspace_manager).await?;
+    let runner = OxyMetricTreeRunner::new(workspace_manager, user.id, role)
+        .with_scan_path(source.scan_path.clone())
+        .with_preagg(
+            preagg_ctx.cache,
+            preagg_ctx.renewal_threshold_secs.unwrap_or(120),
+        );
     let config = ExplainConfig::default();
 
     let result = tokio::time::timeout(
@@ -685,6 +742,31 @@ pub(crate) fn derive_baseline_period(start: &str, end: &str) -> Option<(String, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The handler source, excluding this test module — which necessarily
+    /// names the very symbols the tests below assert are absent.
+    fn handler_src() -> &'static str {
+        include_str!("metric_tree.rs")
+            .split("\n#[cfg(test)]")
+            .next()
+            .expect("source splits on its own test-module attribute")
+    }
+
+    /// The handlers must resolve their scan root through the compile boundary,
+    /// never from the workspace working copy — a stateless serve replica has
+    /// none, and reading it there 500'd every metric-tree call on every
+    /// workspace (oxy-hq/oxygen#878). `load_layer_sync` is gone, but
+    /// `config_manager.semantics_scan_path()` is still one autocomplete away,
+    /// and it compiles fine — it just fails in cloud. So guard the shape, in
+    /// the spirit of `tests/authz/authz_boundaries.rs`.
+    #[test]
+    fn handlers_never_scan_the_working_copy() {
+        assert!(
+            !handler_src().contains("semantics_scan_path"),
+            "metric_tree.rs must resolve its scan root via resolve_query_scan_source \
+             (compile boundary first), not config_manager.semantics_scan_path()"
+        );
+    }
 
     /// Parsed from YAML rather than built field-by-field, so the fixture is
     /// bound to the real view schema instead of a hand-rolled approximation.

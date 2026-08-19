@@ -112,14 +112,18 @@ impl OxyMetricTreeRunner {
         }
     }
 
-    /// Load the workspace's semantic layer from disk. Same scan path the
-    /// analytics catalog uses, so the agent and the metric-tree ops see the
-    /// same set of views.
-    pub fn load_layer_sync(
-        workspace_manager: &WorkspaceManager,
+    /// Parse a semantic layer from an ALREADY-RESOLVED scan root.
+    ///
+    /// Deliberately takes the path rather than a `WorkspaceManager`: it used to
+    /// derive the root from `config_manager.semantics_scan_path()` itself, which
+    /// is the workspace working copy — a directory that does not exist on a
+    /// stateless serve replica, so every metric-tree call 500'd there
+    /// (oxy-hq/oxygen#878). Callers now resolve the root through the compile
+    /// boundary first (`semantic::resolve_query_scan_source`) and pass it in.
+    pub fn load_layer_at(
+        scan_path: &std::path::Path,
     ) -> Result<SemanticLayer, MetricTreeRunnerError> {
-        let scan_path = workspace_manager.config_manager.semantics_scan_path();
-        oxy_airlayer_compat::load_layer_from_dir(&scan_path)
+        oxy_airlayer_compat::load_layer_from_dir(scan_path)
             .map_err(|e| MetricTreeRunnerError::LayerLoad(e.to_string()))
     }
 
@@ -174,7 +178,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                scan_path,
                 preagg_cache,
                 preagg_renewal_threshold_secs,
             } = inputs;
@@ -194,7 +197,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                scan_path,
                 preagg_cache,
                 preagg_renewal_threshold_secs,
             );
@@ -287,7 +289,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                scan_path,
                 preagg_cache,
                 preagg_renewal_threshold_secs,
                 ..
@@ -300,7 +301,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                scan_path,
                 preagg_cache,
                 preagg_renewal_threshold_secs,
             );
@@ -372,7 +372,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                scan_path,
                 preagg_cache,
                 preagg_renewal_threshold_secs,
                 ..
@@ -385,7 +384,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                scan_path,
                 preagg_for(&preagg_cache, timezone.as_deref()),
                 preagg_renewal_threshold_secs,
             );
@@ -440,7 +438,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                scan_path,
                 preagg_cache,
                 preagg_renewal_threshold_secs,
                 ..
@@ -453,7 +450,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                scan_path,
                 preagg_cache,
                 preagg_renewal_threshold_secs,
             );
@@ -488,7 +484,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                scan_path,
                 preagg_cache,
                 preagg_renewal_threshold_secs,
             } = inputs;
@@ -501,7 +496,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                scan_path,
                 preagg_cache,
                 preagg_renewal_threshold_secs,
             );
@@ -535,7 +529,6 @@ struct RunInputs {
     user_id: Uuid,
     role: WorkspaceRole,
     handle: tokio::runtime::Handle,
-    scan_path: PathBuf,
     preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
     preagg_renewal_threshold_secs: u64,
 }
@@ -547,7 +540,6 @@ impl OxyMetricTreeRunner {
         let dialects = airlayer::DatasourceDialectMap::from_config_databases(&databases);
         let engine = airlayer::SemanticEngine::from_semantic_layer(layer.clone(), dialects)
             .map_err(|e| MetricTreeRunnerError::ExecutorBuild(e.to_string()))?;
-        let scan_path = self.effective_scan_path();
         Ok(RunInputs {
             layer,
             databases,
@@ -556,7 +548,6 @@ impl OxyMetricTreeRunner {
             user_id: self.user_id,
             role: self.role.clone(),
             handle: tokio::runtime::Handle::current(),
-            scan_path,
             preagg_cache: self.preagg_cache.clone(),
             preagg_renewal_threshold_secs: self.preagg_renewal_threshold_secs,
         })
@@ -780,6 +771,7 @@ fn read_default_timezone(workspace_root: &std::path::Path) -> Option<String> {
 ///
 /// Extracted here so both `OxyMetricTreeRunner` and the HTTP `/explain` and
 /// `/opportunity` handlers go through the exact same code path.
+#[allow(clippy::too_many_arguments)]
 pub fn build_query_executor(
     _target_measure: &str,
     engine: airlayer::SemanticEngine,
@@ -788,11 +780,34 @@ pub fn build_query_executor(
     user_id: Uuid,
     role: WorkspaceRole,
     handle: tokio::runtime::Handle,
-    scan_path: PathBuf,
     preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
     preagg_renewal_threshold_secs: u64,
 ) -> Box<QueryExecutor> {
     use agentic_connector::DatabaseConnector;
+
+    // The root the pre-aggregation cache is keyed on — DERIVED from the
+    // workspace manager, never taken from the caller.
+    //
+    // There are two roots in play and they are different things: one is where
+    // the semantic layer is parsed from, the other is a cache key. The rollup
+    // builder keys its cache directory on the workspace FS root
+    // (`preagg_rebuild::RebuildContext::workspace_path` →
+    // `state_dir::get_airlayer_cache_dir`, a hash of that path), so handing
+    // `try_resolve_local_parquet` the materialised boundary tempdir instead
+    // hashes to a directory that has never existed: the manifest read misses
+    // and every query silently takes the warehouse path — right rows, no
+    // "Pre-aggregated" badge, none of the explain headroom.
+    //
+    // This was a parameter for exactly one revision, which is one longer than
+    // it should have been: a caller with a materialised scan path in scope
+    // could pass it and it compiled. Deriving it here makes the wrong root
+    // unrepresentable at all seven call sites, every one of which hands us the
+    // manager it would have derived from anyway.
+    let preagg_scan_path = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
+
     let pool: std::sync::Mutex<std::collections::HashMap<String, Vec<Arc<dyn DatabaseConnector>>>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
 
@@ -842,7 +857,7 @@ pub fn build_query_executor(
                 parquet_path,
                 ..
             }) = agentic_semantic::compile::try_resolve_local_parquet(
-                &scan_path,
+                &preagg_scan_path,
                 request,
                 preagg,
                 preagg_renewal_threshold_secs,
@@ -965,11 +980,18 @@ pub fn build_drill_query_executor(
     user_id: Uuid,
     role: WorkspaceRole,
     handle: tokio::runtime::Handle,
-    scan_path: PathBuf,
     preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
     preagg_renewal_threshold_secs: u64,
 ) -> Box<QueryExecutor> {
     use agentic_connector::DatabaseConnector;
+
+    // Cache-key root, derived not passed — same two-roots rule (and the same
+    // reason it is not a parameter) as [`build_query_executor`].
+    let preagg_scan_path = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
+
     let pool: std::sync::Mutex<std::collections::HashMap<String, Vec<Arc<dyn DatabaseConnector>>>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
 
@@ -1020,7 +1042,7 @@ pub fn build_drill_query_executor(
                 parquet_path,
                 ..
             }) = agentic_semantic::compile::try_resolve_local_parquet(
-                &scan_path,
+                &preagg_scan_path,
                 request,
                 preagg,
                 preagg_renewal_threshold_secs,

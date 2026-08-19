@@ -361,19 +361,19 @@ fn semantic_err(status: StatusCode, message: String) -> (StatusCode, extract::Js
 /// The query-shaped counterpart to [`resolve_semantic_source`], which does the
 /// same for a single-file read. `_guard` owns the materialised tempdir — hold it
 /// until compilation finishes or the scan root is deleted out from under it.
-struct QueryScanSource {
-    scan_path: std::path::PathBuf,
+pub(crate) struct QueryScanSource {
+    pub(crate) scan_path: std::path::PathBuf,
     _guard: Option<MaterialisedScan>,
 }
 
 /// The workspace has no compiled semantic layer and this node has no working
 /// copy to fall back to.
-struct ScanUnavailable {
+pub(crate) struct ScanUnavailable {
     workspace_id: Uuid,
 }
 
 impl ScanUnavailable {
-    fn message(&self) -> String {
+    pub(crate) fn message(&self) -> String {
         format!(
             "workspace {} has no compiled semantic layer available on this stateless \
              replica; a (re)compile has been enqueued — retry shortly",
@@ -395,12 +395,17 @@ impl ScanUnavailable {
 /// `projects::semantic_query` (custom-app data plane) and
 /// `resolve_semantic_source` (single-file IDE reads) already do exactly this.
 ///
+/// The workspace-surface metric-tree handlers (`api::metric_tree`) are the
+/// other caller, for the same reason and with a louder symptom: scanning the
+/// missing directory failed outright there, 500ing every metric-tree call on
+/// every workspace in cloud (oxy-hq/oxygen#878).
+///
 /// Branch semantics come for free: `workspace_middleware` pins the request to
 /// one revision via `compiled_reader::resolve_request_revision`, which yields
 /// `None` for a non-default branch on a node that HAS a working copy. The IDE
 /// previewing uncommitted edits on a feature branch therefore still reads the
 /// FS, exactly as before.
-async fn resolve_query_scan_source(
+pub(crate) async fn resolve_query_scan_source(
     workspace_manager: &WorkspaceManager,
 ) -> Result<QueryScanSource, ScanUnavailable> {
     let workspace_id = workspace_manager.workspace_id;

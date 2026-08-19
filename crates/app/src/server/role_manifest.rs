@@ -1447,18 +1447,45 @@ mod tests {
         );
     }
 
+    /// Every workspace-surface metric-tree route must serve from ANY replica.
+    ///
+    /// They resolve their scan root through `semantic::resolve_query_scan_source`
+    /// — compile boundary first, working copy second — exactly like the
+    /// `/semantic` execute route next door, and their warehouse config comes
+    /// from the compiled workspace config (`resolve_workspace_config_typed` in
+    /// `workspace_context`), not the FS fallback. No `.git`, no state dir.
+    ///
+    /// This list is a regression guard with a real outage behind it: the
+    /// handlers USED to call `config_manager.semantics_scan_path()` directly, so
+    /// on a stateless serve replica — which has no working copy — every call
+    /// 500'd with a flat "Failed to load semantic layer" for every workspace
+    /// (oxy-hq/oxygen#878). The fix was to move them onto the compile boundary,
+    /// NOT to pin them to the ide: viewing a metric tree is a read, and a read
+    /// that needs the singleton is an HA bug. If one of these ever fails here,
+    /// check that the handler still resolves its scan root through the boundary
+    /// before reaching for an `IDE_ONLY_PATTERNS` entry.
     #[test]
-    fn metric_tree_drill_is_fleet_ok() {
-        // The drill loads the semantic layer from the workspace FS scan path
-        // (`load_layer` -> `load_layer_sync` -> `semantics_scan_path()`), the
-        // same read the `/semantic` execute route does — and `/opportunity`
-        // goes through that same helper. No .git / state dir, so it stays
-        // FleetOk and must serve from any replica.
+    fn workspace_metric_tree_routes_are_fleet_ok() {
         let ws = "d9830be4-c6a4";
-        assert_eq!(
-            classify("POST", &format!("/api/{ws}/semantic/metric-tree/drill")),
-            RouteRole::FleetOk
-        );
+        let mt = format!("/api/{ws}/semantic/metric-tree");
+        let routes = [
+            ("GET", mt.clone()),
+            ("GET", format!("{mt}/revenue/sensitivity")),
+            ("POST", format!("{mt}/predict")),
+            ("POST", format!("{mt}/explain")),
+            ("POST", format!("{mt}/opportunity")),
+            ("POST", format!("{mt}/drill")),
+            ("GET", format!("{mt}/time-dimensions")),
+            ("POST", format!("{mt}/distribution")),
+        ];
+        for (method, path) in &routes {
+            assert_eq!(
+                classify(method, path),
+                RouteRole::FleetOk,
+                "workspace metric-tree route {method} {path} must stay FleetOk \
+                 (compile-boundary scan root — see resolve_query_scan_source)"
+            );
+        }
     }
 
     #[test]
