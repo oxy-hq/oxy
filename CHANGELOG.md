@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.128] - 2026-08-18
+
+### 🚀 Features
+
+- *(ubereats)* Report upload UI, with the bucket kept server-side (#2942)
+
 ## [0.5.127] - 2026-08-18
 
 ### 🚀 Features
@@ -36,6 +42,10 @@ All notable changes to this project will be documented in this file.
 ### 🧪 Testing
 
 - Name the lost claim, and write down why the queue tests are fragile (#2934)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.127 (#2930)
 
 ## [0.5.126] - 2026-08-13
 
