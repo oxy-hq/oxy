@@ -529,7 +529,35 @@ airform-core = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e82886
 # a constant `["_row_uid"]` on every call, so there is nothing to clear and
 # the change is inert here — checked rather than assumed, and re-verified end
 # to end on this pin.
-airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.32", default-features = false, features = [
+#
+# 0.1.33 is the first bump in a while with NO blast radius outside its own
+# source. `git diff --name-only 0.1.32 0.1.33` is `netsuite.rs`, `CHANGELOG.md`,
+# `Cargo.toml`, `Cargo.lock` — no shared module, so nothing to reason about for
+# ubereats, toast or quickbooks. It carries two netsuite changes:
+#
+#   * airway#138 — `items` stops being cursored and becomes a full snapshot.
+#     A cursor on `lastmodifieddate` only fetches rows that CHANGED inside the
+#     window, and items go quiet once they settle, so 43 of BMG's 671 listed
+#     items had never landed at all. ~5,300 rows, six page-reads. No backfill
+#     or schema reset is needed: `Replace` re-reads the whole table, so the
+#     first run on this pin closes the gap by itself.
+#   * airway#139 — declares `partition_keys` / `sort_keys` for the first time
+#     on this connector: `transaction_lines` partitioned by `location` (11.16M
+#     rows over 17 locations, and every FBA query filters on it), sorted by
+#     `item`; `transactions` sorted by `trandate`.
+#
+# #139 is the one with a plumbing dependency on THIS repo rather than airway:
+# `boxed.rs` must forward `partition_keys` / `sort_keys`, or the box silently
+# substitutes the trait defaults and the declarations never reach
+# `SET PARTITIONED BY`. It does (`crates/agentic/airway/src/boxed.rs:87-93`) —
+# checked before pinning, because the failure mode is a no-op with no error.
+#
+# One behavioural note for anyone reading a slow query after this lands:
+# `SET PARTITIONED BY` is applied in `migrate_schema_impl`, so it does reach
+# the existing `transaction_lines` (which is `Merge` and never dropped), but
+# it is lazy — existing Parquet keeps its layout until compaction rewrites it.
+# The benefit accrues, it does not switch on.
+airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.33", default-features = false, features = [
   "duckdb",
   "postgres",
 ] }
