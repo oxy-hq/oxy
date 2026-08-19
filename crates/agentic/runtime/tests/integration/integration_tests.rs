@@ -264,7 +264,6 @@ async fn test_batch_insert_and_get_events() {
     let max_seq = crud::get_max_seq(&db, &run_id).await.unwrap();
     assert_eq!(max_seq, 2);
 
-    // get_events_after with offset
     let rows = crud::get_events_after(&db, &run_id, 0).await.unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].seq, 1);
@@ -394,7 +393,6 @@ async fn test_registry_processes_analytics_core_events() {
         .await
         .unwrap();
 
-    // Create registry with analytics handler.
     let mut registry = EventRegistry::new();
     registry.register("analytics", agentic_analytics::event_handler());
     let mut processor = registry.stream_processor("analytics");
@@ -779,7 +777,6 @@ mod coordinator_tests {
         .with_suspend_timeout(Duration::from_secs(30));
         coordinator.register_answer_channel(run_id.clone(), answer_rx);
 
-        // Submit the root task.
         coordinator
             .submit_root(
                 run_id.clone(),
@@ -792,7 +789,6 @@ mod coordinator_tests {
             .await
             .unwrap();
 
-        // Spawn worker and coordinator.
         tokio::spawn(async move { worker.run().await });
         let coord_handle = tokio::spawn(async move { coordinator.run().await });
 
@@ -806,7 +802,6 @@ mod coordinator_tests {
             }
         }
 
-        // Verify run is suspended in DB.
         let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
         assert_eq!(
             crud::user_facing_status(run.task_status.as_deref()),
@@ -814,11 +809,9 @@ mod coordinator_tests {
             "run should be suspended"
         );
 
-        // Verify suspension data is persisted.
         let suspension = crud::get_suspension(&db, &run_id).await.unwrap();
         assert!(suspension.is_some(), "suspension data should be persisted");
 
-        // Send the human answer.
         answer_tx.send("revenue".into()).await.unwrap();
 
         // Wait for coordinator to finish.
@@ -827,7 +820,6 @@ mod coordinator_tests {
             .expect("coordinator timed out")
             .expect("coordinator panicked");
 
-        // Verify run completed.
         let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
         assert_eq!(
             crud::user_facing_status(run.task_status.as_deref()),
@@ -981,7 +973,6 @@ mod coordinator_tests {
             }
         }
 
-        // Send answer.
         answer_tx.send("revenue".into()).await.unwrap();
 
         // Wait for completion.
@@ -1177,7 +1168,6 @@ mod coordinator_tests {
             event_types
         );
 
-        // Verify run completed.
         let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
         assert_eq!(
             crud::user_facing_status(run.task_status.as_deref()),
@@ -1324,7 +1314,6 @@ mod coordinator_tests {
             .expect("coordinator timed out")
             .expect("coordinator panicked");
 
-        // Verify parent run completed.
         let parent_run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
         assert_eq!(
             crud::user_facing_status(parent_run.task_status.as_deref()),
@@ -1483,7 +1472,6 @@ mod coordinator_tests {
             }
         }
 
-        // Send human answer.
         answer_tx.send("revenue".into()).await.unwrap();
 
         tokio::time::timeout(Duration::from_secs(10), coord_handle)
@@ -2135,7 +2123,6 @@ mod task_tree_tests {
             .expect("coordinator timed out")
             .expect("coordinator panicked");
 
-        // Verify root run is done.
         let root = crud::get_run(&db, &run_id).await.unwrap().unwrap();
         assert_eq!(
             crud::user_facing_status(root.task_status.as_deref()),
@@ -2143,7 +2130,6 @@ mod task_tree_tests {
         );
         assert_eq!(root.task_status.as_deref(), Some("done"));
 
-        // Verify a child run was created with parent_run_id.
         let tree = crud::load_task_tree(&db, &run_id).await.unwrap();
         assert!(tree.len() >= 2, "should have root + at least 1 child");
 
@@ -2390,7 +2376,6 @@ mod fanout_tests {
             .expect("coordinator timed out")
             .expect("coordinator panicked");
 
-        // Verify root run is done.
         let root = crud::get_run(&db, &run_id).await.unwrap().unwrap();
         assert_eq!(
             crud::user_facing_status(root.task_status.as_deref()),
@@ -2399,7 +2384,6 @@ mod fanout_tests {
         );
         assert_eq!(root.task_status.as_deref(), Some("done"));
 
-        // Verify 3 child runs were created.
         let tree = crud::load_task_tree(&db, &run_id).await.unwrap();
         assert_eq!(tree.len(), 4, "should have root + 3 children");
 
@@ -2491,7 +2475,6 @@ mod fanout_tests {
             "root should complete after fail-fast resume"
         );
 
-        // Verify task tree has children.
         let tree = crud::load_task_tree(&db, &run_id).await.unwrap();
         assert!(tree.len() >= 3, "should have root + 2 children");
 
@@ -3117,7 +3100,6 @@ mod crash_recovery_tests {
         .await
         .unwrap();
 
-        // Insert a task outcome.
         crud::insert_task_outcome(&db, &child_id, &parent_id, "done", Some("42"))
             .await
             .unwrap();
@@ -3602,7 +3584,6 @@ mod crash_recovery_tests {
             .await
             .unwrap();
 
-        // Failed outcome.
         crud::insert_task_outcome(&db, &child_id, &parent_id, "failed", Some("child exploded"))
             .await
             .unwrap();
@@ -3888,7 +3869,6 @@ mod crash_recovery_tests {
             .expect("coordinator timed out")
             .expect("coordinator panicked");
 
-        // Verify root is done.
         let root = crud::get_run(&db, &run_id).await.unwrap().unwrap();
         assert_eq!(
             crud::user_facing_status(root.task_status.as_deref()),
@@ -4643,7 +4623,6 @@ mod recovery_attempt_tests {
         .await
         .unwrap();
 
-        // Mark these as failed too (crash again).
         crud::update_run_failed(&db, &step_1_retry, "server crashed again")
             .await
             .unwrap();
@@ -4849,20 +4828,17 @@ async fn test_enqueue_and_claim_task() {
         .expect("queue entry not found");
     assert_eq!(entry.queue_status, "queued");
 
-    // Claim it.
     let claimed = crud::claim_task(&db, "worker-1")
         .await
         .expect("claim_task failed")
         .expect("no task to claim");
     assert_eq!(claimed.task_id, task_id);
 
-    // Verify status changed.
     let entry = crud::get_queue_entry(&db, &task_id).await.unwrap().unwrap();
     assert_eq!(entry.queue_status, "claimed");
     assert_eq!(entry.worker_id.as_deref(), Some("worker-1"));
     assert_eq!(entry.claim_count, 1);
 
-    // Claim again → nothing left.
     let nothing = crud::claim_task(&db, "worker-2")
         .await
         .expect("claim_task failed");
@@ -4934,7 +4910,6 @@ async fn test_heartbeat_and_reap() {
     };
     let (task_id, _) = enqueue_test_task(&db).await;
 
-    // Claim it.
     crud::claim_task(&db, "w1").await.unwrap().unwrap();
 
     // Heartbeat should update last_heartbeat. Keyed on the claiming worker —
@@ -4975,7 +4950,6 @@ async fn test_heartbeat_and_reap() {
     assert_eq!(entry.queue_status, "queued");
     assert!(entry.worker_id.is_none());
 
-    // Claim again → claim_count = 2.
     let claimed = crud::claim_task(&db, "w2").await.unwrap().unwrap();
     assert_eq!(claimed.claim_count, 2);
 }
@@ -5065,13 +5039,11 @@ async fn test_durable_transport_assign_and_recv() {
     let (transport, run_id) = setup_durable_transport(&db).await;
     let task_id = run_id.clone();
 
-    // Coordinator assigns a task.
     let assignment = test_assignment(&task_id, &run_id);
     CoordinatorTransport::assign(transport.as_ref(), assignment)
         .await
         .unwrap();
 
-    // Verify it's in the queue.
     let entry = crud::get_queue_entry(&db, &task_id).await.unwrap().unwrap();
     assert_eq!(entry.queue_status, "queued");
 
@@ -5109,7 +5081,6 @@ async fn test_durable_transport_cancel() {
         .await
         .unwrap();
 
-    // Queue status should be cancelled.
     let entry = crud::get_queue_entry(&db, &task_id).await.unwrap().unwrap();
     assert_eq!(entry.queue_status, "cancelled");
 }
@@ -5159,7 +5130,6 @@ async fn test_durable_transport_worker_outcome_updates_queue() {
     .expect("no message");
     assert!(matches!(msg, WorkerMessage::Outcome { .. }));
 
-    // Queue entry should be completed.
     let entry = crud::get_queue_entry(&db, &task_id).await.unwrap().unwrap();
     assert_eq!(entry.queue_status, "completed");
 }
@@ -5270,7 +5240,6 @@ async fn test_durable_transport_reaper_requeues_stale() {
     .unwrap()
     .unwrap();
 
-    // Verify it's claimed.
     let entry = crud::get_queue_entry(&db, &task_id).await.unwrap().unwrap();
     assert_eq!(entry.queue_status, "claimed");
 
@@ -5288,7 +5257,6 @@ async fn test_durable_transport_reaper_requeues_stale() {
     assert_eq!(reaped.requeued, 1);
     assert_eq!(reaped.dead_lettered, 0);
 
-    // Task should be queued again.
     let entry = crud::get_queue_entry(&db, &task_id).await.unwrap().unwrap();
     assert_eq!(entry.queue_status, "queued");
 }

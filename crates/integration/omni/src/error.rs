@@ -236,15 +236,12 @@ mod tests {
         let polling_error =
             OmniError::QueryPollingError("Network error during polling".to_string());
 
-        // Test error display
         assert!(timeout_error.to_string().contains("Query timeout"));
         assert!(polling_error.to_string().contains("Query polling failed"));
 
-        // Test is_temporary behavior
         assert!(!timeout_error.is_temporary()); // Timeout errors are not temporary
         assert!(polling_error.is_temporary()); // Polling errors are temporary
 
-        // Test retry delay
         assert_eq!(timeout_error.retry_delay_seconds(), None);
         assert_eq!(polling_error.retry_delay_seconds(), Some(5));
 
@@ -278,7 +275,6 @@ mod tests {
         assert!(!timeout_error.is_temporary());
         assert_eq!(timeout_error.retry_delay_seconds(), None);
 
-        // Test QueryPollingError classification
         let polling_error = OmniError::QueryPollingError("HTTP connection failed".to_string());
         assert!(polling_error.is_temporary());
         assert_eq!(polling_error.retry_delay_seconds(), Some(5));
@@ -339,7 +335,6 @@ mod tests {
             .is_temporary()
         );
 
-        // Test non-temporary errors
         assert!(!OmniError::AuthenticationError("Invalid token".to_string()).is_temporary());
         assert!(!OmniError::SyncError("Sync failed".to_string()).is_temporary());
         assert!(!OmniError::QueryError("Invalid query".to_string()).is_temporary());
@@ -418,7 +413,6 @@ mod tests {
         assert!(conn_error.to_string().contains("Connection refused"));
         assert!(conn_error.to_string().contains("Verify the URL is correct"));
 
-        // Test auth_failed helper
         let auth_error = OmniError::auth_failed("Token expired");
         assert!(auth_error.to_string().contains("Token expired"));
         assert!(
@@ -427,7 +421,6 @@ mod tests {
                 .contains("Verify your API token is valid")
         );
 
-        // Test config_invalid helper
         let config_error = OmniError::config_invalid("base_url", "Invalid URL format");
         assert!(
             config_error
@@ -443,7 +436,6 @@ mod tests {
                 .contains("Generate an API token")
         );
 
-        // Test query_invalid helper
         let query_error = OmniError::query_invalid("fields", "No fields specified");
         assert!(
             query_error
@@ -459,7 +451,6 @@ mod tests {
                 .contains("between 1 and 10,000")
         );
 
-        // Test sync_failed helper
         let sync_error = OmniError::sync_failed("users", "fetch metadata", "API timeout");
         assert!(
             sync_error

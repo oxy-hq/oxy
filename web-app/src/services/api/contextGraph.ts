@@ -123,7 +123,6 @@ export class ContextGraphService {
             });
           }
 
-          // Link entity to view
           edges.push({
             id: `${entityId}->${viewId}`,
             source: entityId,
@@ -153,7 +152,6 @@ export class ContextGraphService {
         }
       });
 
-      // Link topic to its views
       topic.views.forEach((viewName) => {
         const viewNode = nodes.find((n) => n.type === "view" && n.data.name === viewName);
         if (viewNode) {
@@ -218,7 +216,6 @@ export class ContextGraphService {
       return new RegExp(`^${regexPattern}$`).test(path);
     };
 
-    // Build set of referenced SQL queries
     const referencedSqlQueries = new Set<string>();
 
     // Helper to check tasks for SQL query references
@@ -243,12 +240,10 @@ export class ContextGraphService {
       });
     };
 
-    // Check automations for execute_sql tasks
     automations.forEach((automation) => {
       checkTasksForSqlReferences(automation.tasks);
     });
 
-    // Helper to add SQL queries matching a pattern
     const addMatchingSqlQueries = (pattern: string) => {
       if (!pattern.endsWith(".sql")) return;
       sqlQueries.forEach((query) => {
@@ -258,7 +253,6 @@ export class ContextGraphService {
       });
     };
 
-    // Helper to extract SQL paths from context item
     const extractSqlPathsFromContext = (
       contextItem: string | { name?: string; type?: string; src?: string[] }
     ): string[] => {
@@ -415,7 +409,6 @@ export class ContextGraphService {
         });
       }
 
-      // Link routing agent to fallback agent
       if (agent.agentType === "routing" && agent.route_fallback) {
         const fallbackAgentNode = nodes.find(
           (n) => n.type === "agent" && n.data.path === agent.route_fallback
@@ -569,10 +562,8 @@ export class ContextGraphService {
       tasks: unknown[];
     }> = [];
 
-    // Find all relevant files
     const projectFiles = ContextGraphService.findProjectFiles(fileTree);
 
-    // Fetch and parse each file
     await Promise.all(
       projectFiles.map(async (file) => {
         try {
@@ -715,7 +706,6 @@ export class ContextGraphService {
 
       const taskObj = task as Record<string, unknown>;
 
-      // Link to semantic queries (topics)
       if (taskObj.type === "semantic_query" && typeof taskObj.topic === "string") {
         const topicNode = nodes.find((n) => n.type === "topic" && n.data.name === taskObj.topic);
         if (topicNode) {

@@ -138,7 +138,6 @@ test.describe("IDE Files - App Form Editor - Mode Switching", () => {
 
       await idePage.waitForEditorToLoad();
 
-      // Add invalid YAML
       await idePage.insertTextAtEnd("\n  invalid: yaml:\n    broken");
 
       const vizTab = page.getByRole("tab", { name: /visualization|preview/i });
@@ -242,7 +241,6 @@ test.describe("IDE Files - App Form Editor - Display", () => {
           await addDisplayButton.click();
           await page.waitForTimeout(300);
 
-          // Select line_chart type
           const chartTypeSelect = page
             .locator('[data-testid*="display-type"], select[name*="type"]')
             .first();
@@ -350,7 +348,6 @@ test.describe("IDE Files - App Form Editor - Merge Strategy", () => {
       await idePage.insertTextAtEnd("\ncustom_field: preserved_value");
       await page.waitForTimeout(500);
 
-      // Switch to form and back
       const formTab = page.getByRole("tab", { name: /form/i });
       const editorTabForSwitch = page.getByRole("tab", { name: /editor/i });
 

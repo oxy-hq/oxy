@@ -28,7 +28,6 @@ type AppTask = {
 
 type AppDisplayItem = {
   type: string;
-  // control
   name?: string;
   control_type?: string;
   label?: string;

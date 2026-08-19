@@ -403,7 +403,6 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
 
   const hasResult = caseState.result !== null || (isViewingHistorical && historicalCase !== null);
 
-  // Judge errors
   const judgeErrors = isViewingHistorical ? (historicalCase?.errors ?? null) : null;
   const hasJudgeErrors = judgeErrors !== null && judgeErrors.length > 0;
 
@@ -843,7 +842,6 @@ const TestFileDetailPage: React.FC = () => {
 
   const isViewingHistorical = selectedRunIndex !== null;
 
-  // Case + attempt selection
   const [selectedCaseIndex, setSelectedCaseIndex] = useState<number>(0);
   const [selectedAttemptIndex, setSelectedAttemptIndex] = useState<number>(0);
 
@@ -884,7 +882,6 @@ const TestFileDetailPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCaseIndex, selectedCaseState.result]);
 
-  // Human verdicts from API
   const { data: humanVerdictsList } = useHumanVerdicts(pathb64 ?? "", selectedRunIndex);
   const setHumanVerdictMutation = useSetHumanVerdict();
 
@@ -908,7 +905,6 @@ const TestFileDetailPage: React.FC = () => {
     });
   };
 
-  // Search and filter
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 

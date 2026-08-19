@@ -57,7 +57,6 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     // routing middleware can enforce the FS-routing boundary.
     crate::server::role_manifest::init_process_role_from_env();
 
-    // Require OXY_DATABASE_URL to be set
     if std::env::var("OXY_DATABASE_URL").is_err() {
         return Err(OxyError::RuntimeError(
             "OXY_DATABASE_URL environment variable is required.\n\n\

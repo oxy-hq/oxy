@@ -62,7 +62,6 @@ async fn get_docker_client() -> Result<Docker, OxyError> {
         let alternative_paths = vec![
             // Docker Desktop (user installation on macOS)
             format!("{}/.docker/run/docker.sock", home_dir),
-            // Colima
             format!("{}/.colima/default/docker.sock", home_dir),
             // Rancher Desktop
             format!("{}/.rd/docker.sock", home_dir),
@@ -192,7 +191,6 @@ pub async fn start_postgres_container() -> Result<String, OxyError> {
     // Pull the image (if not already present)
     pull_image(&docker, POSTGRES_IMAGE).await?;
 
-    // Configure port bindings
     let mut port_bindings = HashMap::new();
     port_bindings.insert(
         "5432/tcp".to_string(),
@@ -225,7 +223,6 @@ pub async fn start_postgres_container() -> Result<String, OxyError> {
         "PGDATA=/var/lib/postgresql/18/docker".to_string(),
     ];
 
-    // Create container configuration
     let config = ContainerCreateBody {
         image: Some(POSTGRES_IMAGE.to_string()),
         env: Some(env),
@@ -251,7 +248,6 @@ pub async fn start_postgres_container() -> Result<String, OxyError> {
 
     info!("PostgreSQL container started successfully");
 
-    // Generate connection string
     let connection_string = format!(
         "postgresql://{}:{}@localhost:{}/{}",
         POSTGRES_USERNAME, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_DATABASE
@@ -287,7 +283,6 @@ pub async fn wait_for_postgres_ready(timeout_secs: u64) -> Result<(), OxyError> 
 
         match inspect_result {
             Ok(container) => {
-                // Check if container is running
                 if let Some(state) = container.state
                     && state.status != Some(ContainerStateStatusEnum::RUNNING)
                 {
@@ -488,7 +483,6 @@ async fn remove_volume(docker: &Docker, name: &str) -> Result<(), OxyError> {
 pub async fn clean_all() -> Result<(), OxyError> {
     let docker = get_docker_client().await?;
 
-    // Remove postgres container + volume
     remove_container(&docker, POSTGRES_CONTAINER_NAME).await;
     remove_volume(&docker, POSTGRES_VOLUME).await?;
 

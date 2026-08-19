@@ -18,7 +18,6 @@ test.describe("Navigation", () => {
   });
 
   test("should navigate to threads page", async ({ page }) => {
-    // Click on Threads link
     await page.getByRole("link", { name: "Threads" }).click();
 
     // Verify navigation
@@ -47,7 +46,6 @@ test.describe("Navigation", () => {
   });
 
   test("should navigate to IDE page", async ({ page }) => {
-    // Click on Developer Portal link
     await page.getByRole("link", { name: "Developer Portal" }).click();
 
     // Verify navigation

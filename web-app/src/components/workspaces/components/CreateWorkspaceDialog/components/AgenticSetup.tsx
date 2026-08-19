@@ -633,7 +633,6 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
       }
     }
 
-    // Scan view run events
     for (const ev of viewRunManager.events) {
       collectFromEvent(ev);
     }
@@ -740,7 +739,6 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
         }
       };
 
-      // Semantic phase
       if (semanticPhaseStarted) setStart("semantic");
       if (semanticPhaseDone) setEnd("semantic");
 

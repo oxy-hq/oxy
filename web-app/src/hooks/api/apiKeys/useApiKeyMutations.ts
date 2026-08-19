@@ -33,7 +33,6 @@ export const useRevokeApiKey = () => {
   return useMutation<void, Error, string>({
     mutationFn: (id) => ApiKeyService.revokeApiKey(projectId, id),
     onSuccess: () => {
-      // Invalidate and refetch API keys list
       queryClient.invalidateQueries({
         queryKey: queryKeys.apiKey.list(projectId)
       });

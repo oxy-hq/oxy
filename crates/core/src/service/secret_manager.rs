@@ -136,7 +136,6 @@ impl serde::Serialize for ManagedSecret {
     }
 }
 
-// Implement JsonSchema for schemars
 impl schemars::JsonSchema for ManagedSecret {
     fn schema_name() -> String {
         "ManagedSecret".to_string()
@@ -346,7 +345,6 @@ impl SecretManagerService {
         })?;
 
         tracing::info!("Secret created successfully: {}", saved_secret.name);
-        // Invalidate cache for this secret
         self.invalidate_cache(&params.name).await;
 
         Ok(SecretInfo {
@@ -442,7 +440,6 @@ impl SecretManagerService {
             let decrypted_value = self.decrypt_value(&secret.encrypted_value);
             match decrypted_value {
                 Ok(value) => {
-                    // Cache the decrypted value
                     self.cache_value(name, &value).await;
 
                     Some(value)
@@ -527,7 +524,6 @@ impl SecretManagerService {
             .await
             .map_err(|e| OxyError::Database(e.to_string()))?;
 
-        // Invalidate cache for this secret
         self.invalidate_cache(name).await;
 
         Ok(SecretInfo {

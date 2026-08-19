@@ -153,7 +153,6 @@ impl Coordinator {
                 context,
                 policy,
             } => {
-                // Spawn a child task.
                 self.child_counter += 1;
                 let child_id = format!("{task_id}.{}", self.child_counter);
                 tracing::info!(

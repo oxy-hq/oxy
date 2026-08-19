@@ -80,7 +80,6 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
   const createMutation = useCreateDatabaseConfig();
   const testConnection = useTestDatabaseConnection();
 
-  // Track which warehouses have been tested successfully
   const [currentTestingIndex, setCurrentTestingIndex] = useState<number | null>(null);
   // Track which warehouse's results are currently being displayed
   const [displayResultsForIndex, setDisplayResultsForIndex] = useState<number | null>(null);

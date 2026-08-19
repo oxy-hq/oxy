@@ -42,7 +42,6 @@ const OutputItem = ({
   const handleCopy = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
-      // For expandable items, copy all children content
       const contentToCopy = isExpandable ? getAllChildrenContent(log) : log.content;
       await copyToClipboard(contentToCopy);
     },

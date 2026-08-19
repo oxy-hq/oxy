@@ -124,7 +124,6 @@ test.describe("Default Editor - Basic Text Editing", () => {
     await page.keyboard.press("Control+A");
     await page.waitForTimeout(300);
 
-    // Check for selection highlight
     const selection = page.locator(".selected-text, .selectionHighlight");
     const hasSelection = await selection.isVisible().catch(() => false);
     expect(hasSelection || true).toBeTruthy();
@@ -140,7 +139,6 @@ test.describe("Default Editor - Basic Text Editing", () => {
     const editor = page.locator(".monaco-editor .view-lines").first();
     await editor.click();
 
-    // Type test text
     await page.keyboard.type("Cut copy paste test");
     await page.keyboard.press("Control+A");
     await page.keyboard.press("Control+C"); // Copy
@@ -764,7 +762,6 @@ test.describe("Default Editor - Edge Cases & Navigation", () => {
     const editor = page.locator(".monaco-editor .view-lines").first();
     await editor.click();
 
-    // Type and save rapidly
     for (let i = 0; i < 5; i++) {
       await page.keyboard.type(`Save ${i} `);
       await page.keyboard.press("Control+S");

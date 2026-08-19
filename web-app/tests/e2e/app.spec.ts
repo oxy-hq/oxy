@@ -21,12 +21,10 @@ test.describe("App Flow", () => {
       timeout: 15000
     });
 
-    // Verify MarkdownDisplayBlock is present
     await expect(page.getByTestId("app-markdown-display-block").first()).toBeVisible({
       timeout: 10000
     });
 
-    // Verify DataTableBlock is present
     await expect(page.getByTestId("app-data-table-block").first()).toBeVisible({
       timeout: 10000
     });

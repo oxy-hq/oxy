@@ -549,7 +549,6 @@ async fn describe_table_returns_columns() {
     assert_eq!(cols[0]["name"], "order_id");
     assert_eq!(cols[0]["data_type"], "INTEGER");
     assert_eq!(cols[1]["name"], "revenue");
-    // Check sample values are included.
     let samples = cols[1]["sample_values"].as_array().unwrap();
     assert!(!samples.is_empty());
 }

@@ -730,7 +730,6 @@ async fn event_stream_happy_path_state_sequence() {
             .all(|(_, o)| *o == agentic_core::Outcome::Advanced)
     );
 
-    // There must be a terminal Done event.
     let has_done = events
         .iter()
         .any(|e| matches!(e, Event::Core(agentic_core::CoreEvent::Done { .. })));
@@ -1267,7 +1266,6 @@ async fn run_pushes_to_memory_while_run_pipeline_does_not() {
         .unwrap();
     assert_eq!(orch.memory().len(), 0);
 
-    // run: pushes to memory.
     let _ans = orch.run("via run".into()).await.unwrap();
     assert_eq!(orch.memory().len(), 1);
     assert_eq!(orch.memory().turns()[0].intent, "clarified: via run");
@@ -1462,7 +1460,6 @@ impl DomainSolver<MockDomain> for FanOutSolver {
         _ctx: &agentic_core::orchestrator::RunContext<MockDomain>,
         _memory: &agentic_core::orchestrator::SessionMemory<MockDomain>,
     ) -> Result<Vec<String>, (String, BackTarget<MockDomain>)> {
-        // Fail for the configured failing sub-spec index.
         if let Some(fi) = self.fail_sub_index {
             if spec.intent == self.sub_specs.get(fi).cloned().unwrap_or_default() {
                 return Err((
@@ -2341,7 +2338,6 @@ async fn test_concurrent_fanout_happy_path() {
         "pipeline must reach interpreting after concurrent fan-out"
     );
 
-    // Verify Done event.
     let has_done = events
         .iter()
         .any(|e| matches!(e, Event::Core(CoreEvent::Done { .. })));
@@ -2399,7 +2395,6 @@ async fn test_serial_fanout_unchanged() {
     assert_eq!(sub_starts.len(), 2);
     assert_eq!(sub_ends.len(), 2);
 
-    // FanOut event must be present.
     let fan_out_count = events
         .iter()
         .filter(|e| matches!(e, Event::Core(CoreEvent::FanOut { .. })))

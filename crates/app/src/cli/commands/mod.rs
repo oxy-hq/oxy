@@ -796,7 +796,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 let mut errors: Vec<String> = Vec::new();
                 let mut valid_count = 0;
 
-                // Validate automations
                 for automation_file in cfg.list_workflows(&cfg.workspace_path) {
                     match validate_single_file(&automation_file, cfg) {
                         Ok(_) => valid_count += 1,
@@ -804,7 +803,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
-                // Validate agentic agents
                 for agentic_file in cfg.list_agentic_agents(&cfg.workspace_path) {
                     match validate_single_file(&agentic_file, cfg) {
                         Ok(_) => valid_count += 1,
@@ -812,7 +810,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
-                // Validate apps
                 for app_file in cfg.list_apps(&cfg.workspace_path) {
                     match validate_single_file(&app_file, cfg) {
                         Ok(_) => valid_count += 1,
@@ -1068,7 +1065,6 @@ async fn handle_omni_sync() -> Result<(), OxyError> {
         println!("🔄 Synchronizing Omni metadata for {} topics", topics.len());
         let topics_to_sync: Vec<_> = topics.iter().collect();
 
-        // Create API client
         let api_client =
             OmniApiClient::new(base_url.clone(), api_key.clone()).map_err(|e| match e {
                 AdapterOmniError::ConfigError(msg) => {
@@ -1077,7 +1073,6 @@ async fn handle_omni_sync() -> Result<(), OxyError> {
                 _ => OxyError::RuntimeError(format!("Failed to create Omni API client: {}", e)),
             })?;
 
-        // Create sync service
         let sync_service =
             OmniSyncService::new(api_client, &workspace_path, integration_name.clone());
 
@@ -1102,7 +1097,6 @@ async fn handle_omni_sync() -> Result<(), OxyError> {
             integration_results.push(sync_result);
         }
 
-        // Collect results for this integration
         if let Some(first_result) = integration_results.into_iter().next() {
             total_successful_topics.extend(first_result.successful_topics.clone());
             all_sync_results.push(first_result);

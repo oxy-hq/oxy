@@ -875,10 +875,8 @@ pub async fn get_app_result(
         }
     };
 
-    // Execute the app
     let execution_result = app_service.run(&path, HashMap::new()).await;
 
-    // Transform execution results into TaskResult objects
     let (tasks, execution_succeeded): (Vec<TaskResult>, bool) = match execution_result {
         Ok(DataContainer::Map(results)) => {
             // Convert the results map into TaskResult objects
@@ -900,7 +898,6 @@ pub async fn get_app_result(
             (tasks, true)
         }
         Err(e) => {
-            // If execution failed, return tasks with error
             let error_msg = e.to_string();
             let tasks = task_configs
                 .iter()
@@ -934,7 +931,6 @@ pub async fn get_app_result(
         .filter_map(|t| t.output.as_ref().map(|o| (t.task_name.clone(), o.clone())))
         .collect();
 
-    // Get typed displays
     let typed_displays =
         match get_app_displays(workspace_manager.clone(), query.branch.as_deref(), &path).await {
             Ok((displays, _controls)) => displays,
@@ -1208,7 +1204,6 @@ pub async fn get_chart_image(
         HeaderValue::from_static("private, max-age=3600"),
     );
 
-    // Get charts directory
     let charts_dir = workspace_manager
         .config_manager
         .get_charts_dir()

@@ -620,7 +620,6 @@ impl PipelineBuilder {
                 Arc::new(runner) as Arc<dyn agentic_core::subrun::SubrunRunner>
             });
 
-        // Thread history.
         let (history, prior_spec_hint) = if let Some(tid) = self.thread_id {
             let turns = agentic_runtime::crud::get_thread_history(db, tid, 10)
                 .await
@@ -789,7 +788,6 @@ impl PipelineBuilder {
                 Arc::new(runner) as Arc<dyn agentic_core::subrun::SubrunRunner>
             });
 
-        // Thread history.
         let (history, prior_spec_hint) = if let Some(tid) = self.thread_id {
             let turns = agentic_runtime::crud::get_thread_history(db, tid, 10)
                 .await
@@ -869,7 +867,6 @@ impl PipelineBuilder {
             None => build_builder_llm_client(&*self.platform, model).await,
         };
 
-        // Thread history.
         let history: Vec<agentic_builder::ConversationTurn> = if let Some(tid) = self.thread_id {
             agentic_runtime::crud::get_thread_history_with_events(db, tid, 10)
                 .await
@@ -991,7 +988,6 @@ impl PipelineBuilder {
             None => build_builder_llm_client(&*self.platform, model).await,
         };
 
-        // Thread history.
         let history: Vec<agentic_builder::ConversationTurn> = if let Some(tid) = self.thread_id {
             agentic_runtime::crud::get_thread_history_with_events(db, tid, 10)
                 .await
@@ -1562,7 +1558,6 @@ pub async fn drive_with_coordinator(
     // Register the root task in the coordinator (already running via virtual worker).
     coordinator.register_root(run_id.clone(), root_next_seq);
 
-    // Spawn the worker for child tasks.
     let child_worker = tokio::spawn(async move {
         worker.run().await;
     });

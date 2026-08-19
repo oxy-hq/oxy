@@ -113,7 +113,6 @@ function explainToFlow(result: ExplainResult): FlowGraph {
   const nodes: RFNode[] = [];
   const edges: RFEdge[] = [];
 
-  // Root: the target measure.
   const rootId = "root";
   const direction = numberDirection(result.target_delta);
   nodes.push({

@@ -54,7 +54,6 @@ pub fn build_dialect_map(
         }
     }
 
-    // Set the default connector's dialect as the map default.
     if let Some(connector) = connectors.get(default) {
         if let Some(dialect) = convert_dialect(connector.dialect()) {
             map.set_default(dialect);

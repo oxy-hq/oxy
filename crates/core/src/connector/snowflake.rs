@@ -203,7 +203,6 @@ impl Snowflake {
             } => {
                 tracing::info!("🔐 Snowflake: Using browser-based authentication");
 
-                // Prepare the callback if we have a sender
                 let sso_sender = self.sso_url_sender.clone();
                 let callback = sso_sender.map(|sender| {
                     Arc::new(move |url: String| {
@@ -250,7 +249,6 @@ impl Snowflake {
                             err
                         ))
                     })?;
-                // Use private key authentication
                 let private_key_content =
                     std::fs::read_to_string(private_key_path).map_err(|err| {
                         OxyError::ConfigurationError(format!(

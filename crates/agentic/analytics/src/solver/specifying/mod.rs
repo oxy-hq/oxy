@@ -896,7 +896,6 @@ impl AnalyticsSolver {
             }
         }
 
-        // Validate all specs.
         for spec in &specs {
             if let Err(err) = self.validator.validate_specified(spec, &self.catalog) {
                 return diagnose_validation_error(&self.event_tx, err, spec, retry_ctx, &intent)

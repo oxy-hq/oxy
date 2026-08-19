@@ -16,13 +16,11 @@ test.describe("Home Page Chat Box Test", () => {
   test("should be able to ask a question and get a response", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
-    // Ask question
     await chatPage.askQuestion("Top 3 fruit sales?", "duckdb");
 
     // Wait for response
     await chatPage.waitForStreamingComplete();
 
-    // Verify response
     await chatPage.verifyResponse();
 
     // Verify artifacts (SQL queries) are visible
@@ -33,20 +31,17 @@ test.describe("Home Page Chat Box Test", () => {
     const artifact = page.getByTestId("agent-artifact").first();
     await expect(artifact).toHaveAttribute("data-artifact-kind", "execute_sql");
 
-    // Verify follow-up input is enabled
     await expect(chatPage.followUpInput).toBeEnabled();
   });
 
   test("should be able to cancel streaming with stop button", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
-    // Ask question
     await chatPage.askQuestion("Top 3 fruit sales?", "duckdb");
 
     // Wait for streaming to start
     await expect(chatPage.stopButton).toBeVisible({ timeout: 10000 });
 
-    // Cancel streaming
     await chatPage.stopStreaming();
 
     // Verify cancellation message
@@ -54,7 +49,6 @@ test.describe("Home Page Chat Box Test", () => {
       timeout: 10000
     });
 
-    // Verify follow-up input is enabled
     await expect(chatPage.followUpInput).toBeEnabled();
 
     // Verify some response was shown
@@ -96,11 +90,9 @@ test.describe("Home Page Chat Box Test", () => {
   test("should be able to ask a follow-up question in thread", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
-    // Ask initial question
     await chatPage.askQuestion("Top 3 fruit sales?", "duckdb");
     await chatPage.waitForStreamingComplete();
 
-    // Ask follow-up
     await chatPage.askFollowUp("What about the bottom 3?");
     await chatPage.waitForStreamingComplete();
 
@@ -116,7 +108,6 @@ test.describe("Home Page Chat Box Test", () => {
     await expect(chatPage.agentSelectorButton).not.toHaveText("");
     await expect(chatPage.agentSelectorButton).not.toContainText("undefined");
 
-    // Click on agent selector
     await chatPage.agentSelectorButton.click();
 
     // Wait for dropdown to open
@@ -126,7 +117,6 @@ test.describe("Home Page Chat Box Test", () => {
     await expect(page.getByRole("menuitemcheckbox", { name: "duckdb" })).toBeVisible();
     await expect(page.getByRole("menuitemcheckbox", { name: "_routing" })).toBeVisible();
 
-    // Select semantic agent if available
     const semanticAgent = page.getByRole("menuitemcheckbox", {
       name: "semantic",
       exact: true
@@ -151,13 +141,10 @@ test.describe("Home Page Chat Box Test", () => {
     // Type something
     await chatPage.questionInput.fill("test");
 
-    // Submit button should be enabled
     await expect(chatPage.submitButton).toBeEnabled();
 
-    // Clear the input
     await chatPage.questionInput.clear();
 
-    // Submit button should be disabled again
     await expect(chatPage.submitButton).toBeDisabled();
   });
 
@@ -166,10 +153,8 @@ test.describe("Home Page Chat Box Test", () => {
 
     const userQuestion = "What are the top selling fruits?";
 
-    // Ask question
     await chatPage.askQuestion(userQuestion, "duckdb");
 
-    // Verify user message is displayed
     await chatPage.verifyUserMessage(userQuestion);
   });
 
@@ -182,7 +167,6 @@ test.describe("Home Page Chat Box Test", () => {
     // Verify Ask is selected by default (radio button is checked)
     await expect(chatPage.askModeButton).toBeChecked();
 
-    // Switch to Build mode
     await chatPage.switchMode("Build");
     await expect(chatPage.buildModeButton).toBeChecked();
     await expect(chatPage.questionInput).toHaveAttribute(
@@ -190,7 +174,6 @@ test.describe("Home Page Chat Box Test", () => {
       "Enter anything you want to build"
     );
 
-    // Switch to Automation mode
     await chatPage.switchMode("Workflow");
     await expect(chatPage.automationModeButton).toBeChecked();
     await expect(chatPage.questionInput).toHaveAttribute(
@@ -199,7 +182,6 @@ test.describe("Home Page Chat Box Test", () => {
     );
     await expect(chatPage.automationSelectorButton).toBeVisible();
 
-    // Switch back to Ask
     await chatPage.switchMode("Ask");
     await expect(chatPage.askModeButton).toBeChecked();
     await expect(chatPage.questionInput).toHaveAttribute("placeholder", "Ask anything");

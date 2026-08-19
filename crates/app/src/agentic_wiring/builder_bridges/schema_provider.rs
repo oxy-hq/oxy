@@ -42,7 +42,6 @@ const SUPPORTED_TYPES: &[&str] = &[
     // for the new runner; the schema name stays "TaskCache" so
     // existing YAML / IDE suggestions match.
     "TaskCache",
-    // App
     "AppConfig",
     "Display",
     "MarkdownDisplay",
@@ -50,7 +49,6 @@ const SUPPORTED_TYPES: &[&str] = &[
     "BarChartDisplay",
     "PieChartDisplay",
     "TableDisplay",
-    // Config
     "Config",
     "Database",
     "DatabaseType",
@@ -95,7 +93,6 @@ impl BuilderSchemaProvider for OxyBuilderSchemaProvider {
         use oxy::config::model as cfg;
 
         let schema = match object_name {
-            // Workflow
             "Workflow" => serde_json::to_value(schema_for!(cfg::Workflow)),
             "Task" => serde_json::to_value(schema_for!(cfg::Task)),
             "TaskType" => serde_json::to_value(schema_for!(cfg::TaskType)),
@@ -107,7 +104,6 @@ impl BuilderSchemaProvider for OxyBuilderSchemaProvider {
             "ConditionalTask" => serde_json::to_value(schema_for!(cfg::ConditionalTask)),
             "TaskCache" => serde_json::to_value(schema_for!(cfg::TaskCache)),
 
-            // App
             "AppConfig" => serde_json::to_value(schema_for!(cfg::AppConfig)),
             "Display" => serde_json::to_value(schema_for!(cfg::Display)),
             "MarkdownDisplay" => serde_json::to_value(schema_for!(cfg::MarkdownDisplay)),
@@ -116,7 +112,6 @@ impl BuilderSchemaProvider for OxyBuilderSchemaProvider {
             "PieChartDisplay" => serde_json::to_value(schema_for!(cfg::PieChartDisplay)),
             "TableDisplay" => serde_json::to_value(schema_for!(cfg::TableDisplay)),
 
-            // Config
             "Config" => serde_json::to_value(schema_for!(cfg::Config)),
             "Database" => serde_json::to_value(schema_for!(cfg::Database)),
             "DatabaseType" => serde_json::to_value(schema_for!(cfg::DatabaseType)),

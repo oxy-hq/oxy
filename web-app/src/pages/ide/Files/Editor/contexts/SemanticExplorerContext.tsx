@@ -7,7 +7,6 @@ import type { Field, Filter, Order } from "../types";
 import { buildSemanticQuery } from "../utils/queryBuilder";
 
 type SemanticExplorerContextType = {
-  // Data
   dataLoading: boolean;
   loadingError?: string;
   loading: boolean;
@@ -32,31 +31,26 @@ type SemanticExplorerContextType = {
   sqlError: string | null;
   executionError: string | null;
 
-  // Filters
   filters: Filter[];
   onAddFilter: () => void;
   onUpdateFilter: (index: number, updates: Filter) => void;
   onRemoveFilter: (index: number) => void;
 
-  // Orders
   orders: Order[];
   onAddOrder: () => void;
   onUpdateOrder: (index: number, updates: Order) => void;
   onRemoveOrder: (index: number) => void;
 
-  // Variables
   variables: Variable[];
   onAddVariable: () => void;
   onUpdateVariable: (index: number, updates: Partial<Variable>) => void;
   onRemoveVariable: (index: number) => void;
 
-  // Time Dimensions
   timeDimensions: TimeDimension[];
   onAddTimeDimension: (initialValues?: Partial<TimeDimension>) => void;
   onUpdateTimeDimension: (index: number, updates: Partial<TimeDimension>) => void;
   onRemoveTimeDimension: (index: number) => void;
 
-  // Limit
   limit?: number;
   onLimitChange?: (limit: number) => void;
 

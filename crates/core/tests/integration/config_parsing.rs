@@ -23,26 +23,21 @@ fn test_clickhouse_filter_schema_parsing() {
 
     let config = result.unwrap();
 
-    // Verify database exists
     assert_eq!(config.databases.len(), 1);
     let db = &config.databases[0];
     assert_eq!(db.name, "clickhouse_test");
 
     // Verify ClickHouse-specific fields
     if let DatabaseType::ClickHouse(ch) = &db.database_type {
-        // Verify role
         assert_eq!(ch.role, Some("app_readonly".to_string()));
 
-        // Verify settings_prefix
         assert_eq!(ch.settings_prefix, Some("SQL_".to_string()));
 
-        // Verify filters
         assert_eq!(ch.filters.len(), 3);
         assert!(ch.filters.contains_key("account_id"));
         assert!(ch.filters.contains_key("user_id"));
         assert!(ch.filters.contains_key("opening_ids"));
 
-        // Verify account_id filter schema
         let account_id_schema = &ch.filters["account_id"];
         if let Some(instance_type) = &account_id_schema.instance_type {
             assert!(
@@ -51,7 +46,6 @@ fn test_clickhouse_filter_schema_parsing() {
             );
         }
 
-        // Verify user_id filter schema
         let user_id_schema = &ch.filters["user_id"];
         if let Some(instance_type) = &user_id_schema.instance_type {
             assert!(

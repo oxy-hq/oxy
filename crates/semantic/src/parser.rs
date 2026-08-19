@@ -154,7 +154,6 @@ impl SemanticLayerParser {
             )));
         }
 
-        // Create semantic layer
         let semantic_layer = SemanticLayer {
             views,
             topics: if topics.is_empty() {
@@ -177,7 +176,6 @@ impl SemanticLayerParser {
         let encoder = VariableEncoder::new();
 
         for view in &semantic_layer.views {
-            // Collect variables from dimensions
             for dimension in &view.dimensions {
                 if dimension.has_variables() {
                     let vars = encoder.extract_variables(&dimension.expr);
@@ -240,7 +238,6 @@ impl SemanticLayerParser {
 
         reject_legacy_globals(&content, path)?;
 
-        // Parse the YAML
         let mut yaml_value: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
             let location_info = if let Some(location) = e.location() {
                 format!(" at line {}, column {}", location.line(), location.column())
@@ -356,7 +353,6 @@ impl SemanticLayerParser {
         let mut processed_value = yaml_value.clone();
         let encoder = VariableEncoder::new();
 
-        // Process dimensions if they exist
         if let Some(dimensions) = processed_value.get_mut("dimensions")
             && let Some(dimensions_array) = dimensions.as_sequence_mut()
         {
@@ -365,7 +361,6 @@ impl SemanticLayerParser {
                     && let Some(expr_value) = dimension_map.get("expr")
                     && let Some(expr_str) = expr_value.as_str()
                 {
-                    // Validate variable syntax
                     let validation = validate_variable_syntax(
                         expr_str,
                         &format!("Dimension in {}", file_path.display()),
@@ -387,7 +382,6 @@ impl SemanticLayerParser {
             }
         }
 
-        // Process measures if they exist
         if let Some(measures) = processed_value.get_mut("measures")
             && let Some(measures_array) = measures.as_sequence_mut()
         {
@@ -397,7 +391,6 @@ impl SemanticLayerParser {
                     if let Some(expr_value) = measure_map.get("expr")
                         && let Some(expr_str) = expr_value.as_str()
                     {
-                        // Validate variable syntax
                         let validation = validate_variable_syntax(
                             expr_str,
                             &format!("Measure in {}", file_path.display()),
@@ -417,7 +410,6 @@ impl SemanticLayerParser {
                         }
                     }
 
-                    // Process measure filters
                     if let Some(filters) = measure_map.get_mut("filters")
                         && let Some(filters_array) = filters.as_sequence_mut()
                     {
@@ -426,7 +418,6 @@ impl SemanticLayerParser {
                                 && let Some(expr_value) = filter_map.get("expr")
                                 && let Some(expr_str) = expr_value.as_str()
                             {
-                                // Validate variable syntax
                                 let validation = validate_variable_syntax(
                                     expr_str,
                                     &format!("Measure filter in {}", file_path.display()),
@@ -451,7 +442,6 @@ impl SemanticLayerParser {
             }
         }
 
-        // Process table references
         if let Some(table_value) = processed_value.get("table")
             && let Some(table_str) = table_value.as_str()
         {
@@ -466,7 +456,6 @@ impl SemanticLayerParser {
             }
         }
 
-        // Process SQL queries
         if let Some(sql_value) = processed_value.get("sql")
             && let Some(sql_str) = sql_value.as_str()
         {

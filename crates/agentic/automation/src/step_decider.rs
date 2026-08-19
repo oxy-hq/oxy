@@ -173,7 +173,6 @@ impl AutomationDecider {
             );
             state.results.insert(step_name.clone(), folded);
 
-            // Remove this child from pending_children.
             if let Some(siblings) = state.pending_children.get_mut(&step_key) {
                 siblings.retain(|id| id != &child.child_task_id);
                 if siblings.is_empty() {

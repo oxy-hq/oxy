@@ -210,9 +210,7 @@ export interface ExecutionDetail {
   sqlRef?: string;
   // For SQL queries (generated)
   userQuestion?: string;
-  // For automations
   automationRef?: string;
-  // For agent tools
   agentRef?: string;
   toolInput?: string;
 }

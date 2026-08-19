@@ -308,7 +308,6 @@ where
             String::new()
         };
 
-        // Serialize attributes to JSON.
         let span_attributes =
             serde_json::to_string(&data.attributes).unwrap_or_else(|_| "{}".to_string());
 
@@ -435,7 +434,6 @@ mod tests {
         let attrs: HashMap<String, String> = serde_json::from_str(&record.span_attributes).unwrap();
         assert_eq!(attrs.get("key").map(|s| s.as_str()), Some("value"));
 
-        // Verify event data.
         let events: Vec<serde_json::Value> = serde_json::from_str(&record.event_data).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0]["name"], "test.event");

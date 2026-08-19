@@ -109,7 +109,6 @@ pub fn cluster_embeddings(embeddings: &[Vec<f32>], min_cluster_size: usize) -> C
         }
     }
 
-    // Renumber clusters to be contiguous
     let (final_labels, final_count) = renumber_clusters(&labels);
 
     ClusteringResult {

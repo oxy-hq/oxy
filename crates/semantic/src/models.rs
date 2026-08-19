@@ -466,7 +466,6 @@ impl Eq for TopicFilterType {}
 
 impl Hash for TopicFilterType {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Hash the discriminant first
         std::mem::discriminant(self).hash(state);
         // Then hash the value(s)
         match self {

@@ -105,7 +105,6 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
         return;
       }
 
-      // Verify the request is from our iframe
       if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) {
         console.warn("[Oxy] Auth request from unknown source, ignoring");
         return;
@@ -123,7 +122,6 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
         return;
       }
 
-      // Get API key from props or localStorage
       const userApiKey = apiKey || localStorage.getItem("auth_token");
 
       if (!userApiKey) {
@@ -146,7 +144,6 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
       }
     };
 
-    // Add event listener
     window.addEventListener("message", handleAuthRequest);
 
     // Cleanup on unmount
@@ -179,7 +176,6 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
         return;
       }
 
-      // Add the log to our console logs
       const log: ConsoleLog = v0ToConsoleLog(data);
 
       setConsoleLogs((prev) => [...prev, log]);
@@ -212,7 +208,6 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
     };
   }, []);
 
-  // Validate preview_url
   if (!preview_url) {
     return artifact.is_streaming ? (
       <div className='p-4'>

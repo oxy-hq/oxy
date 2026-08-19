@@ -31,7 +31,6 @@ export const getObjectName = (file: FileTreeModel): string => {
     .replace(/\.(yml|yaml)$/, "");
 };
 
-// Helper to get icon for file type
 export const getFileTypeIcon = (fileType: FileType, fileName?: string) => {
   switch (fileType) {
     case FileType.PROCEDURE:
@@ -71,7 +70,6 @@ interface GroupedObjects {
   semanticObjects: FileTreeModel[];
 }
 
-// Group objects by type
 export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
   const groups: GroupedObjects = {
     automations: [],
@@ -110,7 +108,6 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
     }
   });
 
-  // Sort each group alphabetically by name
   groups.automations.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   groups.agents.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   groups.apps.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));

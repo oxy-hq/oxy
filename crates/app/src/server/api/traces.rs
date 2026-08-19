@@ -403,7 +403,6 @@ pub async fn get_cluster_map(
         .as_ref()
         .ok_or_else(|| TracesError::QueryFailed("Observability not configured".into()))?;
 
-    // Fetch embeddings with their classifications
     let embeddings = storage
         .get_cluster_map_data(query.days, query.limit, query.source.as_deref())
         .await
@@ -418,7 +417,6 @@ pub async fn get_cluster_map(
         }));
     }
 
-    // Fetch cluster info
     let cluster_infos = storage.get_cluster_infos().await.unwrap_or_default();
 
     // Project embeddings to 2D using simple PCA-like approach
@@ -447,13 +445,11 @@ pub async fn get_cluster_map(
         .await
         .unwrap_or_default();
 
-    // Build enrichment map
     let enrichment_map: HashMap<String, _> = enrichments
         .into_iter()
         .map(|e| (e.trace_id.clone(), e))
         .collect();
 
-    // Build points with enrichment
     let mut points: Vec<ClusterMapPoint> = Vec::with_capacity(embeddings.len());
     let mut cluster_counts: HashMap<i32, usize> = HashMap::new();
 
@@ -500,7 +496,6 @@ pub async fn get_cluster_map(
     let parse_sample_questions =
         |sq: &str| -> Vec<String> { serde_json::from_str(sq).unwrap_or_default() };
 
-    // Build cluster summaries
     let mut clusters: Vec<ClusterSummary> = cluster_infos
         .iter()
         .map(|c| ClusterSummary {

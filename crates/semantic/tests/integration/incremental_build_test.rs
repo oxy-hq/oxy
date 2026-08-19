@@ -82,7 +82,6 @@ table: orders.csv
 "#,
     );
 
-    // Create initial manifest with old hash
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash("semantics/views/orders.view.yml", "old_hash".to_string());
     manifest.set_config_hash("config_hash".to_string());
@@ -147,7 +146,6 @@ table: orders.csv
         .save(&target_dir.join(".build_manifest.json"))
         .unwrap();
 
-    // Add new view
     create_view_file(
         workspace_root,
         "customers",
@@ -230,7 +228,6 @@ fn test_incremental_build_with_dependencies() {
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
-    // Create views
     create_view_file(
         workspace_root,
         "customers",
@@ -303,7 +300,6 @@ fn test_full_rebuild_on_config_change() {
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
-    // Create view
     create_view_file(
         workspace_root,
         "orders",
@@ -331,7 +327,6 @@ table: orders.csv
         .detect_changes("new_config".to_string(), false)
         .unwrap();
 
-    // Should trigger full rebuild
     assert!(result.requires_full_rebuild);
     assert_eq!(
         result.full_rebuild_reason,
@@ -359,7 +354,6 @@ base_view: orders
 "#,
     );
 
-    // Create manifest with old hash
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash("semantics/topics/sales.topic.yml", "old_hash".to_string());
     manifest.set_config_hash("config_hash".to_string());

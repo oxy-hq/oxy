@@ -172,7 +172,6 @@ impl TurnStore for JsonFileStorage {
             artifact.content = truncate_artifact_content(&artifact.content);
         }
 
-        // Write turn file.
         let turn_path = self.turns_path(turn.session_id);
         let mut turns: Vec<PersistedTurn> = Self::read_json(&turn_path).await?;
         let id = self.next_id();

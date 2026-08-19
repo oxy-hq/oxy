@@ -91,14 +91,12 @@ pub async fn handle_looker_sync(args: LookerSyncArgs) -> Result<(), OxyError> {
 
     let config = project.config_manager.clone();
 
-    // Get all Looker integration configurations
     let looker_integrations: Vec<_> = config
         .get_config()
         .integrations
         .iter()
         .filter_map(|integration| match &integration.integration_type {
             IntegrationType::Looker(looker_integration) => {
-                // Filter by integration name if specified
                 if let Some(ref filter_name) = args.integration
                     && &integration.name != filter_name
                 {
@@ -175,7 +173,6 @@ pub async fn handle_looker_sync(args: LookerSyncArgs) -> Result<(), OxyError> {
         // Get state directory for metadata storage
         let state_dir = project.config_manager.resolve_state_dir().await?;
 
-        // Create sync service
         let mut sync_service = LookerSyncService::new(
             api_client,
             state_dir.join(".looker"),
@@ -186,7 +183,6 @@ pub async fn handle_looker_sync(args: LookerSyncArgs) -> Result<(), OxyError> {
         // Determine what to sync based on arguments
         if let Some(ref model) = args.model {
             if let Some(ref explore) = args.explore {
-                // Sync specific explore
                 println!(
                     "  🔄 Syncing explore: {}/{}.{}",
                     integration_name, model, explore
@@ -227,7 +223,6 @@ pub async fn handle_looker_sync(args: LookerSyncArgs) -> Result<(), OxyError> {
                     }
                 }
             } else {
-                // Sync all explores in model
                 println!("  🔄 Syncing model: {}/{}", integration_name, model);
                 match sync_service.sync_model(model).await {
                     Ok(result) => {
@@ -328,14 +323,12 @@ async fn handle_looker_list(args: LookerListArgs) -> Result<(), OxyError> {
     // Get state directory for metadata storage
     let state_dir = project.config_manager.resolve_state_dir().await?;
 
-    // Get all Looker integration configurations
     let looker_integrations: Vec<_> = config
         .get_config()
         .integrations
         .iter()
         .filter_map(|integration| match &integration.integration_type {
             IntegrationType::Looker(looker_integration) => {
-                // Filter by integration name if specified
                 if let Some(ref filter_name) = args.integration
                     && &integration.name != filter_name
                 {
@@ -419,14 +412,12 @@ async fn handle_looker_test(args: LookerTestArgs) -> Result<(), OxyError> {
 
     let config = project.config_manager.clone();
 
-    // Get all Looker integration configurations
     let looker_integrations: Vec<_> = config
         .get_config()
         .integrations
         .iter()
         .filter_map(|integration| match &integration.integration_type {
             IntegrationType::Looker(looker_integration) => {
-                // Filter by integration name if specified
                 if let Some(ref filter_name) = args.integration
                     && &integration.name != filter_name
                 {

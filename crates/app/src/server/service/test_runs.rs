@@ -242,7 +242,6 @@ impl TestRunsManager {
 
         let project_run_ids: Vec<Uuid> = project_runs.iter().map(|r| r.id).collect();
 
-        // Get all test_runs for these project runs
         let file_runs = test_runs::Entity::find()
             .filter(test_runs::Column::ProjectRunId.is_in(project_run_ids.clone()))
             .filter(test_runs::Column::ProjectId.eq(self.workspace_id))
@@ -911,7 +910,6 @@ impl TestRunsManager {
             .map(|(id, s, ri)| (*id, (s.as_str(), *ri)))
             .collect();
 
-        // Group cases by run
         let mut cases_by_run: HashMap<Uuid, Vec<&test_run_cases::Model>> = HashMap::new();
         for case in &cases {
             cases_by_run.entry(case.test_run_id).or_default().push(case);

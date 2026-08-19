@@ -118,7 +118,6 @@ async fn test_insert_run_analytics_creates_extension() {
     );
     assert_eq!(run.source_type.as_deref(), Some("analytics"));
 
-    // Verify analytics extension was created.
     let ext = get_analytics_extension(&db, &run_id)
         .await
         .unwrap()
@@ -193,7 +192,6 @@ async fn test_update_run_done_with_spec_hint() {
         .await
         .unwrap();
 
-    // Verify run is done.
     let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
     assert_eq!(crud::user_facing_status(run.task_status.as_deref()), "done");
     assert_eq!(run.answer.as_deref(), Some("The answer is 42"));

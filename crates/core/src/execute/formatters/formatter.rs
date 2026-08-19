@@ -21,7 +21,6 @@ pub trait SourceHandler {
     }
 
     fn can_handle_source(&self, source: &Source) -> bool {
-        // Check source kind
         let supported_kinds = self.supported_source_kinds();
         let kind_match = supported_kinds.iter().any(|kind| kind.eq(&source.kind));
 

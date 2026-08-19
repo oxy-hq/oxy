@@ -1,7 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { IDEPage } from "../pages/IDEPage";
 
-// Helper function to open a automation file
 async function openAutomationFile(page: Page, mode: "files" | "objects" = "files") {
   if (mode === "objects") {
     await page.getByRole("tab", { name: "Objects" }).click();
@@ -449,7 +448,6 @@ test.describe("IDE Files - Workflow Form Editor - Variables", () => {
           await formTab.click();
           await page.waitForTimeout(500);
 
-          // Look for variables section
           const variablesSection = page.getByText(/variables/i);
           if (await variablesSection.isVisible()) {
             await variablesSection.click();

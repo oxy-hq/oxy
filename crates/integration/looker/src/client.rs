@@ -251,7 +251,6 @@ impl LookerApiClient {
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
 
-        // Handle authentication errors
         if status_code == 401 || status_code == 403 {
             return Err(LookerError::AuthenticationError {
                 message: format!("Authentication failed ({}): {}", status_code, message),
@@ -263,7 +262,6 @@ impl LookerApiClient {
             return Err(LookerError::NotFoundError { resource: message });
         }
 
-        // Handle other API errors
         Err(LookerError::ApiError {
             status: status_code,
             message,

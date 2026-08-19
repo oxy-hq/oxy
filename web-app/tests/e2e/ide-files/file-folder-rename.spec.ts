@@ -48,7 +48,6 @@ test.describe("IDE Files - File/Folder Rename", () => {
   test("3.2 - should update URL when renaming currently open file", async ({ page }) => {
     const idePage = new IDEPage(page);
 
-    // Open a file first
     await idePage.openFile("test-file-for-e2e.txt");
     await idePage.verifyFileIsOpen("test-file-for-e2e.txt");
 
@@ -141,7 +140,6 @@ test.describe("IDE Files - File/Folder Rename", () => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
-    // Find an agent file
     const agentFolder = page.getByRole("button", {
       name: "agents",
       exact: true
@@ -229,7 +227,6 @@ test.describe("IDE Files - File/Folder Rename", () => {
       if (await renameOption.isVisible()) {
         await renameOption.click();
 
-        // Count visible inputs
         const inputs = page.locator("input:visible");
         const inputCount = await inputs.count();
         expect(inputCount).toBeLessThanOrEqual(2);

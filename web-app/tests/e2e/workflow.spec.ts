@@ -27,7 +27,6 @@ test.describe("Workflow Execution", () => {
       },
       { timeout: 60000 }
     );
-    // Verify OutputLogs is visible
     await expect(page.getByTestId("automation-output-logs")).toBeVisible({
       timeout: 10000
     });

@@ -99,7 +99,6 @@ pub async fn list_workspace_members(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Fetch all org members for this org
     use entity::org_members::Column as OmCol;
     let org_members = OrgMembers::find()
         .filter(OmCol::OrgId.eq(org_id))
@@ -107,7 +106,6 @@ pub async fn list_workspace_members(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Fetch all workspace member overrides for this workspace
     use entity::workspace_members::Column as WmCol;
     let ws_overrides = WorkspaceMembers::find()
         .filter(WmCol::WorkspaceId.eq(workspace.id))

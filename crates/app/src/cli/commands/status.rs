@@ -112,7 +112,6 @@ async fn check_postgres_container_status() {
 async fn check_database_connectivity() {
     println!("{}", "Database Connection:".text());
 
-    // Check if using external database
     if let Ok(url) = std::env::var("OXY_DATABASE_URL") {
         println!("  Mode: {}", "External PostgreSQL".text());
         println!("  URL: {}", mask_password(&url));
@@ -128,7 +127,6 @@ async fn check_database_connectivity() {
             }
         }
     } else {
-        // Using Docker PostgreSQL
         println!("  Mode: {}", "Docker PostgreSQL".text());
 
         match docker::is_postgres_container_running().await {

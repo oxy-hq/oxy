@@ -477,7 +477,6 @@ mod tests {
         assert!(build_upstream_url("https://10.0.0.5", "", None).is_none());
         assert!(build_upstream_url("https://192.168.1.1", "", None).is_none());
         assert!(build_upstream_url("https://172.16.0.1", "", None).is_none());
-        // Loopback.
         assert!(build_upstream_url("https://127.0.0.1", "", None).is_none());
         // IPv6 loopback + link-local + ULA.
         assert!(build_upstream_url("https://[::1]", "", None).is_none());

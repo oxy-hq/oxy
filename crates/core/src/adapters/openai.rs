@@ -93,7 +93,6 @@ impl IntoOpenAIConfig for Model {
             // gateway serves natively. They diverge only in the agentic
             // pipeline, which picks Responses vs Chat Completions by vendor.
             Model::OpenAI { config } | Model::OpenAICompat { config } => {
-                // Resolve API key from secrets
                 let api_key = secrets_manager
                     .resolve_secret(&config.key_var)
                     .await
@@ -126,7 +125,6 @@ impl IntoOpenAIConfig for Model {
                 ))
             }
             Model::Google { config } => {
-                // Resolve API key from secrets
                 let api_key = secrets_manager
                     .resolve_secret(&config.key_var)
                     .await
@@ -141,7 +139,6 @@ impl IntoOpenAIConfig for Model {
                 Ok(oxy_gemini::create_openai_config(api_key))
             }
             Model::Anthropic { config } => {
-                // Resolve API key from secrets
                 let api_key = secrets_manager
                     .resolve_secret(&config.key_var)
                     .await

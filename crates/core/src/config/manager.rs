@@ -301,11 +301,9 @@ impl ConfigManager {
 
     /// Updates the databases in the config and writes to config.yml
     pub async fn update_databases(&self, new_databases: Vec<Database>) -> Result<(), OxyError> {
-        // Create a new config with updated databases
         let mut updated_config = (*self.config).clone();
         updated_config.databases = new_databases;
 
-        // Write the updated config
         self.storage.write_config(&updated_config).await?;
         Ok(())
     }

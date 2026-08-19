@@ -52,7 +52,6 @@ pub fn extract_session_filters(
             "Extracted session filters from MCP request"
         );
 
-        // Convert to SessionFilters
         let session_filters = SessionFilters::from(filters_map);
 
         // Let the execution layer handle filter validation

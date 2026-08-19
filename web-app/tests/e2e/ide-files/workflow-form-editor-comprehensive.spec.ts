@@ -122,7 +122,6 @@ test.describe("Workflow Editor - Form & Editor Sync", () => {
       return;
     }
 
-    // Switch to form mode
     const switched = await switchToMode(page, "form");
     if (!switched) {
       test.skip();
@@ -136,7 +135,6 @@ test.describe("Workflow Editor - Form & Editor Sync", () => {
       await page.waitForTimeout(600); // Wait for debounce
     }
 
-    // Switch to editor
     await switchToMode(page, "editor");
 
     // Verify change is reflected in editor
@@ -151,7 +149,6 @@ test.describe("Workflow Editor - Form & Editor Sync", () => {
       return;
     }
 
-    // Switch to editor mode
     await switchToMode(page, "editor");
 
     // Make a change in editor
@@ -164,7 +161,6 @@ tasks:
     type: agent`);
     await page.waitForTimeout(1000);
 
-    // Switch to form
     await switchToMode(page, "form");
 
     // Verify form is populated with editor changes
@@ -208,7 +204,6 @@ tasks:
       await page.waitForTimeout(600);
     }
 
-    // Save
     const saveButton = page.getByRole("button", { name: /save/i });
     if (await saveButton.isVisible()) {
       await saveButton.click();
@@ -230,7 +225,6 @@ tasks:
       return;
     }
 
-    // Edit in form with unique name
     await switchToMode(page, "form");
     const uniqueName = `saved-workflow-${Date.now()}`;
     const nameInput = page.locator('input[name*="name"]').first();
@@ -239,7 +233,6 @@ tasks:
       await page.waitForTimeout(600);
     }
 
-    // Save
     const saveButton = page.getByRole("button", { name: /save/i });
     if (await saveButton.isVisible()) {
       await saveButton.click();
@@ -286,7 +279,6 @@ tasks:
       await page.waitForTimeout(600);
     }
 
-    // Reload page
     await page.reload();
     await page.waitForLoadState("networkidle");
 
@@ -608,7 +600,6 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
     await page.keyboard.type("# test");
     await page.waitForTimeout(500);
 
-    // Press Ctrl+S
     await page.keyboard.press("Control+S");
     await page.waitForTimeout(1000);
 
@@ -870,7 +861,6 @@ test.describe("Workflow Editor - Edge Cases", () => {
     // Start typing
     page.keyboard.type("name: typing-test").catch(() => {});
 
-    // Immediately switch mode
     await page.waitForTimeout(100);
     await switchToMode(page, "form");
     await page.waitForTimeout(500);
@@ -941,7 +931,6 @@ test.describe("Workflow Editor - Edge Cases", () => {
     await page.keyboard.type("back button test");
     await page.waitForTimeout(300);
 
-    // Try to go back
     await page.goBack();
     await page.waitForTimeout(500);
 
@@ -964,14 +953,12 @@ test.describe("Workflow Editor - Edge Cases", () => {
       await page.waitForTimeout(200); // Don't wait for full debounce
     }
 
-    // Switch to editor and edit
     await switchToMode(page, "editor");
     await clickEditorArea(page);
     await page.keyboard.press("End");
     await page.keyboard.type(" # comment");
     await page.waitForTimeout(200);
 
-    // Switch back to form
     await switchToMode(page, "form");
     await page.waitForTimeout(600);
 
@@ -1009,7 +996,6 @@ test.describe("Workflow Editor - Form Field Validation", () => {
 
     const taskNameInput = page.locator('input[name*="task"][name*="name"]').first();
     if (await taskNameInput.isVisible()) {
-      // Test invalid names
       const invalidNames = ["1task", "task-name!", "task name", ""];
 
       for (const name of invalidNames) {
@@ -1043,7 +1029,6 @@ test.describe("Workflow Editor - Form Field Validation", () => {
     if (await addTaskButton.isVisible()) {
       const initialTaskCount = await page.locator('[data-testid*="task"], [class*="task"]').count();
 
-      // Add task
       await addTaskButton.click();
       await page.waitForTimeout(500);
 
@@ -1070,7 +1055,6 @@ test.describe("Workflow Editor - Form Field Validation", () => {
 
     const addTaskButton = page.getByRole("button", { name: /add.*task/i }).first();
     if (await addTaskButton.isVisible()) {
-      // Add 20 tasks
       for (let i = 0; i < 20; i++) {
         await addTaskButton.click();
         await page.waitForTimeout(100);
@@ -1095,7 +1079,6 @@ test.describe("Workflow Editor - Form Field Validation", () => {
 
     const taskTypeSelect = page.locator('select[name*="type"], [data-testid*="task-type"]').first();
     if (await taskTypeSelect.isVisible()) {
-      // Change task type
       await taskTypeSelect.click();
       await page.waitForTimeout(300);
 
@@ -1125,13 +1108,11 @@ test.describe("Workflow Editor - Form Field Validation", () => {
 
     await switchToMode(page, "form");
 
-    // Look for variables section
     const variablesSection = page.getByText(/variables/i);
     if (await variablesSection.isVisible()) {
       await variablesSection.click();
       await page.waitForTimeout(500);
 
-      // Variables might have Monaco editor embedded
       const variablesEditor = page.locator('.monaco-editor, textarea[name*="variable"]');
       if (await variablesEditor.isVisible()) {
         // Try to edit variables
@@ -1139,7 +1120,6 @@ test.describe("Workflow Editor - Form Field Validation", () => {
         await page.keyboard.type('{"test_var": "value"}');
         await page.waitForTimeout(600);
 
-        // Switch to editor and verify
         await switchToMode(page, "editor");
         const content = await getEditorContent(page);
         expect(content).toContain("test_var");
@@ -1236,11 +1216,9 @@ test.describe("Workflow Editor - Output Mode", () => {
       return;
     }
 
-    // Start in output mode
     await switchToMode(page, "output");
     await page.waitForTimeout(500);
 
-    // Switch to editor
     await switchToMode(page, "editor");
     await page.waitForTimeout(500);
 

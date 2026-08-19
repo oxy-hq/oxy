@@ -31,7 +31,6 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // Drop the index first
         manager
             .drop_index(
                 Index::drop()

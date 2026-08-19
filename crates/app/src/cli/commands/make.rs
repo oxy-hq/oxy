@@ -141,14 +141,12 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
     let setup = setup_project(make_args.file.clone())?;
     let (db_dir, data_dir) = setup_directories(&setup).await?;
 
-    // Handle database file
     let db_file_path = db_dir.join(&setup.file_name);
     if !db_file_path.exists() {
         std::fs::copy(&setup.file_path, &db_file_path)?;
         println!("Copied file to: {}", db_file_path.display());
     }
 
-    // Create SQL file
     let sql_file_path = data_dir.join(format!("{}.sql", setup.file_name_without_ext));
     std::fs::write(
         &sql_file_path,
@@ -159,7 +157,6 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
     )?;
     println!("Created SQL file: {}", sql_file_path.display());
 
-    // Create semantic file
     let semantic_file_path = data_dir.join(format!("{}.schema.yml", setup.file_name_without_ext));
     let semantic_content = create_semantic_models(&setup.file_path, &db_file_path, &db_dir)?;
     serde_yaml::to_writer(
@@ -168,7 +165,6 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
     )?;
     println!("Created semantic file: {}", semantic_file_path.display());
 
-    // Create config
     let (model_name, model) = determine_model();
     let config_content = Config {
         databases: vec![Database {

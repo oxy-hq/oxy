@@ -18,7 +18,6 @@ export function useCreateDatabaseConfig() {
         toast.success(result.message, {
           description: `Added: ${result.databases_added.join(", ")}`
         });
-        // Invalidate databases query to refresh the list
         queryClient.invalidateQueries({
           queryKey: queryKeys.database.list(projectId, branchName)
         });

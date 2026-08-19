@@ -155,7 +155,6 @@ export class ExecutionAnalyticsService {
   }
 }
 
-// Convert time range to days
 export function timeRangeToDays(timeRange: string): number {
   switch (timeRange) {
     case "1h":

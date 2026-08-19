@@ -120,7 +120,6 @@ pub async fn create_secret(
     Path(workspace_id): Path<Uuid>,
     extract::Json(request): extract::Json<CreateSecretRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // Validate the request using garde
     if let Err(validation_errors) = request.validate() {
         tracing::warn!("Secret creation validation failed: {}", validation_errors);
         return Ok((
@@ -197,7 +196,6 @@ pub async fn bulk_create_secrets(
     Path(workspace_id): Path<Uuid>,
     extract::Json(request): extract::Json<BulkCreateSecretsRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // Validate the request using garde
     if let Err(validation_errors) = request.validate() {
         tracing::warn!(
             "Bulk secret creation validation failed: {}",
@@ -368,7 +366,6 @@ pub async fn update_secret(
             .into_response());
     }
 
-    // Validate the request using garde
     if let Err(validation_errors) = request.validate() {
         tracing::warn!("Secret update validation failed: {}", validation_errors);
         return Ok((

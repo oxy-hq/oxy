@@ -220,10 +220,8 @@ mod tests {
         manifest.set_config_hash("config123".to_string());
         manifest.update_timestamp();
 
-        // Save
         manifest.save(&manifest_path).unwrap();
 
-        // Load
         let loaded = BuildManifest::load(&manifest_path).unwrap().unwrap();
 
         assert_eq!(loaded.version, MANIFEST_VERSION);
@@ -260,7 +258,6 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
 
-        // Create test file
         std::fs::write(&file_path, "test content").unwrap();
 
         let hash1 = hash_file(&file_path).unwrap();
@@ -270,7 +267,6 @@ mod tests {
         assert_eq!(hash1, hash2);
         assert_eq!(hash1.len(), 64);
 
-        // Different content produces different hash
         std::fs::write(&file_path, "different content").unwrap();
         let hash3 = hash_file(&file_path).unwrap();
         assert_ne!(hash1, hash3);
@@ -320,7 +316,6 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("manifest.json");
 
-        // Create manifest with wrong version
         let wrong_version = r#"{
             "version": "999.0",
             "file_hashes": {},

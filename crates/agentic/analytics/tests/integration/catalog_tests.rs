@@ -358,7 +358,6 @@ fn semantic_list_dimensions_includes_primary_view_and_joinable_views() {
     let sem = semantic_catalog();
     let dims = sem.list_dimensions("revenue");
     let names: Vec<&str> = dims.iter().map(|d| d.name.as_str()).collect();
-    // From orders_view
     assert!(
         names.contains(&"orders_view.status"),
         "orders_view.status not in dims: {names:?}"
@@ -983,7 +982,6 @@ fn from_schema_info_registers_join_keys() {
     let info = two_table_schema_info();
     let cat = SchemaCatalog::from_schema_info(&info);
 
-    // Both ordered lookups must resolve
     let jp_fwd = cat
         .get_join_path("orders", "customers")
         .expect("orders→customers join path");
@@ -1412,7 +1410,6 @@ fn demo_project_semantic_layer_loads_and_compiles() {
     let cat =
         SemanticCatalog::load_files(&paths, dialects).expect("examples semantic layer should load");
 
-    // Verify metrics are discovered
     let metrics = cat.list_metrics("");
     assert!(
         metrics.len() >= 5,

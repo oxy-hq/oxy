@@ -627,7 +627,6 @@ impl QueryStructureBuilder {
     }
 }
 
-// TimeoutConfig implementations
 impl Default for TimeoutConfig {
     fn default() -> Self {
         Self {
@@ -780,7 +779,6 @@ impl TimeoutConfig {
             .validate_config()
             .map_err(|e| format!("Validation failed: {}", e))?;
 
-        // Validate consistency
         config.validate_consistency()?;
 
         Ok(config)
@@ -1648,7 +1646,6 @@ mod measure_metadata_validation_tests {
     fn test_measure_validation_rules() {
         let mut measure = create_valid_measure();
 
-        // Test each field boundary
         measure.field_name = "a".repeat(256);
         assert!(measure.validate().is_err());
 

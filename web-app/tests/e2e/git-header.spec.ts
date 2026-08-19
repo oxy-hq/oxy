@@ -174,7 +174,6 @@ test.describe("Git Header — navigation & rendering", () => {
     const panel = page.getByTestId("changes-panel");
     await expect(panel).toBeVisible({ timeout: 5000 });
 
-    // The commit message textarea should be present.
     const textarea = page.getByTestId("changes-panel-commit-message");
     await expect(textarea).toBeVisible();
 

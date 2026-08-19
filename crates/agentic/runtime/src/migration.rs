@@ -307,15 +307,12 @@ fn agentic_run_events_table() -> TableCreateStatement {
 #[async_trait::async_trait]
 impl MigrationTrait for CreateAgenticTables {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // agentic_runs
         manager.create_table(agentic_runs_table()).await?;
 
-        // agentic_run_events
         manager.create_table(agentic_run_events_table()).await?;
 
         manager.create_index(agentic_run_events_index()).await?;
 
-        // agentic_run_suspensions
         manager
             .create_table(agentic_run_suspensions_table())
             .await?;
@@ -953,7 +950,6 @@ impl MigrationTrait for RationalizeStatusModel {
                 .await?;
         }
 
-        // Add recovery_requested_at column.
         if !column_exists(manager, "agentic_runs", "recovery_requested_at").await? {
             db.execute_unprepared(
                 "ALTER TABLE agentic_runs ADD COLUMN recovery_requested_at TIMESTAMPTZ",
@@ -983,7 +979,6 @@ impl MigrationTrait for RationalizeStatusModel {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
 
-        // Re-add status column.
         if !column_exists(manager, "agentic_runs", "status").await? {
             db.execute_unprepared(
                 "ALTER TABLE agentic_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'running'",
@@ -991,7 +986,6 @@ impl MigrationTrait for RationalizeStatusModel {
             .await?;
         }
 
-        // Drop recovery column.
         if column_exists(manager, "agentic_runs", "recovery_requested_at").await? {
             db.execute_unprepared("ALTER TABLE agentic_runs DROP COLUMN recovery_requested_at")
                 .await?;

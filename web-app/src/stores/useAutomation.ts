@@ -50,7 +50,6 @@ type ExportConfig = {
   path: string;
 };
 
-// Specific task configurations
 type FormatterTaskConfig = BaseTaskConfig & {
   type: TaskType.FORMATTER;
   template: string;

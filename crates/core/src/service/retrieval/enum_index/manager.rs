@@ -136,7 +136,6 @@ impl EnumIndexManager {
 
         let has_semantic_enums = !semantic_enums.is_empty();
 
-        // Check if any retrieval objects have enum variables
         let has_retrieval_enums = retrieval_objects.iter().any(|obj| {
             obj.enum_variables
                 .as_ref()
@@ -225,7 +224,6 @@ impl EnumIndexManager {
         retrieval_objects: &[RetrievalObject],
         semantic_enums: &[SemanticEnum],
     ) -> Result<(), OxyError> {
-        // Build routing blob in-memory using builder
         let routing_blob = builder::build_routing_blob(retrieval_objects, semantic_enums)?;
 
         // Persist both JSON (readable) and rkyv (runtime)

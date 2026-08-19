@@ -465,7 +465,6 @@ impl Handler for GroupBlockHandler {
                 });
             }
             EventKind::ArtifactFinished { artifact_id, error } => {
-                // Handle artifact finish
                 self.end_group(artifact_id.clone(), error.clone());
             }
             _ => {

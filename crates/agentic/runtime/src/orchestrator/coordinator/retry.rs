@@ -22,7 +22,6 @@ impl Coordinator {
         let parent_task_id = node.parent_task_id.clone();
         let run_id = node.run_id.clone();
 
-        // Check retry policy.
         if let Some(retry) = &policy.retry
             && node.attempt < retry.max_retries
         {

@@ -120,7 +120,6 @@ pub fn tool_call_error(error: &str) {
 /// full SQL doesn't repeat in console logs at INFO — observability backends
 /// still capture it via their own filter.
 pub fn add_sql(execution_context: &ExecutionContext, sql: &str) {
-    // Record SQL in metric context via ExecutionContext
     execution_context.record_sql(sql);
 
     // Emit tracing event

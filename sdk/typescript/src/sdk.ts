@@ -125,7 +125,6 @@ export class OxySDK {
       return null;
     }
 
-    // Load each file in the data container
     const loadPromises = Object.entries(appDataResponse.data).map(async ([tableName, fileRef]) => {
       await this.loadFile(fileRef.file_path, tableName);
     });

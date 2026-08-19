@@ -129,10 +129,8 @@ async fn install_cross_org_conflict() {
     }
     set_test_encryption_key();
 
-    // Seed two orgs.
     let (org_a, user_a) = seed_org_with_admin().await;
     let (org_b, user_b) = seed_org_with_admin().await;
-    // Shared team ID.
     let team_id = format!("T{}", &Uuid::new_v4().simple().to_string()[..8]);
 
     // Install into org A — should succeed.

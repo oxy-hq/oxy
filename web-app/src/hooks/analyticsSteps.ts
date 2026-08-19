@@ -453,7 +453,6 @@ function createScope() {
     // ── Flush ────────────────────────────────────────────────────────────────
     // Drains any open state left by a still-streaming response.
     flush(): StepOrGroup[] {
-      // Drain all active cards.
       for (const [, entry] of activeCards) {
         for (const step of entry.stepStack.splice(0).reverse()) entry.card.steps.push(step);
         currentFanOut?.cards.push(entry.card);

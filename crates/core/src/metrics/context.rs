@@ -191,7 +191,6 @@ impl MetricContext {
         let mut context_items = Vec::new();
         let mut context_types = Vec::new();
 
-        // Add question context
         if let Some(q) = &self.question {
             context_items.push(ContextItem {
                 context_type: "question".to_string(),
@@ -200,7 +199,6 @@ impl MetricContext {
             context_types.push(ContextType::Question);
         }
 
-        // Add response context
         if let Some(r) = &self.response {
             context_items.push(ContextItem {
                 context_type: "response".to_string(),
@@ -209,7 +207,6 @@ impl MetricContext {
             context_types.push(ContextType::Response);
         }
 
-        // Add SQL contexts
         for sql in &self.executed_sqls {
             context_items.push(ContextItem {
                 context_type: "sql".to_string(),
@@ -315,7 +312,6 @@ impl MetricContext {
                 source_ref
             );
 
-            // Build full context once
             let (context_types, context_json) = self.build_full_context();
 
             // Collect Tier 1 metrics (explicit from semantic queries)

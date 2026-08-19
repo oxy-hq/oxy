@@ -214,7 +214,6 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
       return false;
     }
 
-    // Check for invalid characters
     if (/[<>:"/\\|?*]/.test(name)) {
       setError("File name contains invalid characters");
       return false;
@@ -269,7 +268,6 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
       setSelectedType(null);
       setFileName("");
 
-      // Navigate to the file
       navigate(ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.FILES.FILE(pathb64));
     } catch (err) {
       toast.error("Failed to create file", {

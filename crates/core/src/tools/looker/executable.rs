@@ -90,7 +90,6 @@ impl LookerQueryExecutable {
         // Validate parameters
         self.validate_params(params)?;
 
-        // Get Looker configuration
         let looker_config = self.get_looker_config(execution_context, integration)?;
 
         // Resolve client credentials from environment variables
@@ -139,14 +138,12 @@ impl LookerQueryExecutable {
                 msg: format!("Failed to create Looker API client: {}", e),
             })?;
 
-        // Build query request
         let query_request = self
             .build_query_request(execution_context, params, integration, model, explore)
             .await?;
 
         tracing::info!("Looker query request: {:?}", query_request);
 
-        // Execute query
         let response = api_client
             .run_inline_query(query_request)
             .await
@@ -160,7 +157,6 @@ impl LookerQueryExecutable {
         let row_count = response.data.len();
         tracing::info!("Query returned {} rows", row_count);
 
-        // Create table output
         let table_output = self.create_table_output(&response, model, explore)?;
 
         let (result, is_result_truncated) = table_output.to_2d_array()?;
@@ -542,7 +538,6 @@ impl LookerQueryExecutable {
 
         let schema = Arc::new(Schema::new(fields.clone()));
 
-        // Build arrays for each column
         let mut arrays: Vec<ArrayRef> = Vec::new();
 
         for field in &fields {
@@ -590,7 +585,6 @@ impl LookerQueryExecutable {
             arrays.push(array);
         }
 
-        // Create record batch
         let batch = RecordBatch::try_new(schema.clone(), arrays)
             .map_err(|e| format!("Failed to create Arrow record batch: {}", e))?;
 

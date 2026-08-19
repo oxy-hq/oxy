@@ -17,7 +17,6 @@ import {
 } from "@/services/api/executionAnalytics";
 import queryKeys from "./queryKey";
 
-// Query keys for execution analytics
 const executionAnalyticsKeys = {
   all: ["executionAnalytics"] as const,
   summary: (projectId: string, params?: SummaryQuery) =>

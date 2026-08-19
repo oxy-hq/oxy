@@ -60,7 +60,6 @@ pub async fn resolve_execute_sql_tool(
         })?
         .to_string();
 
-    // Extract description from SQL comments
     let description = extract_sql_description(&content)
         .unwrap_or_else(|| format!("Execute {} SQL query", file_name));
 

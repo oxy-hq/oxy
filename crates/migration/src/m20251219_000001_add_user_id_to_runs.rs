@@ -16,7 +16,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // Add foreign key constraint
         manager
             .create_foreign_key(
                 ForeignKey::create()
@@ -45,7 +44,6 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // Drop the index
         manager
             .drop_index(
                 Index::drop()
@@ -56,7 +54,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // Drop the foreign key
         manager
             .drop_foreign_key(
                 ForeignKey::drop()

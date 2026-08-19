@@ -201,11 +201,9 @@ mod tests {
     fn test_capture_helpers() {
         use std::io;
 
-        // Test error capture
         let error = io::Error::new(io::ErrorKind::NotFound, "Test error");
         capture_error_with_context(&error, "Test context");
 
-        // Test message capture
         capture_message_with_context("Test message", sentry::Level::Warning, "Test context");
     }
 }

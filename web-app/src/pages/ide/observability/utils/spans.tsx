@@ -9,14 +9,12 @@ export function formatSpanLabel(spanName: string): string {
     "workflow.launcher.get_global_context": "Get Global Context",
     "workflow.launcher.launch": "Launch Automation",
 
-    // Automation run
     "workflow.run_workflow": "Automation",
 
     // Automation task execution
     "workflow.task.execute": "Execute Task",
     "workflow.task.agent.execute": "Execute Agent Task",
 
-    // Semantic query operations
     "workflow.task.semantic_query.render": "Render Semantic Query",
     "workflow.task.semantic_query.map": "Map Semantic Query",
     "workflow.task.semantic_query.compile": "Compile Query to SQL",
@@ -27,7 +25,6 @@ export function formatSpanLabel(spanName: string): string {
     "workflow.task.execute_sql.map": "Map SQL Task",
     "workflow.task.execute_sql.execute": "Execute SQL",
 
-    // Omni query operations
     "workflow.task.omni_query.map": "Map Omni Query",
     "workflow.task.omni_query.execute": "Execute Omni Query",
     "workflow.task.omni_query.execute_query": "Run Omni Query",
@@ -36,13 +33,10 @@ export function formatSpanLabel(spanName: string): string {
     "workflow.task.loop.map": "Map Loop",
     "workflow.task.loop.item_map": "Process Loop Item",
 
-    // Formatter
     "workflow.task.formatter.execute": "Format Output",
 
-    // Sub-automation
     "workflow.task.sub_workflow.execute": "Execute Sub-Automation",
 
-    // LLM calls
     "llm.call": "LLM Call",
     "llm.openai.call": "OpenAI Call",
     "llm.oss.call": "OSS LLM Call",

@@ -15,11 +15,9 @@ limit: 100
     let task: oxy::config::model::Task =
         serde_yaml::from_str(yaml_content).expect("Failed to parse YAML");
 
-    // Verify the task kind is correct
     assert_eq!(task.kind(), "omni_query");
     assert_eq!(task.name, "test_omni_query");
 
-    // Verify the task type is OmniQuery
     if let oxy::config::model::TaskType::OmniQuery(omni_task) = &task.task_type {
         assert_eq!(omni_task.integration, "test_integration");
         assert_eq!(omni_task.topic, "test_topic");

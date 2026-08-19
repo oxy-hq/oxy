@@ -554,7 +554,6 @@ impl RunsStorage for RunsDatabaseStorage {
             .num_pages()
             .await
             .map_err(|err| OxyError::DBError(format!("Failed to get number of pages: {err}")))?;
-        // Query runs from the database
         let runs = query
             .fetch_page(pagination.page as u64 - 1)
             .await

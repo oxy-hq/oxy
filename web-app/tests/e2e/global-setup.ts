@@ -5,7 +5,6 @@ import { resetProject } from "./utils";
 async function globalSetup() {
   console.log("Setting up test files for E2E tests...");
 
-  // Ensure test file exists
   const testFilePath = "../examples/test-file-for-e2e.txt";
   const testFileContent = `# Test File for E2E Tests
 
@@ -13,7 +12,6 @@ This file is used for IDE E2E tests.
 It gets modified during tests and reset after each test.
 `;
 
-  // Ensure test agent file exists
   const testAgentPath = "../examples/agents/test-agent-e2e.agent.yml";
   const testAgentContent = `# Test Agent for E2E Tests
 description: "A test agent used for IDE E2E tests"
@@ -36,7 +34,6 @@ tools:
   try {
     // Reset database/storage before creating files & seeding threads
     resetProject();
-    // Create test file
     await writeFile(testFilePath, testFileContent, "utf-8");
     console.log(`✓ Created ${testFilePath}`);
 
@@ -45,7 +42,6 @@ tools:
       await mkdir("../examples/agents", { recursive: true });
     }
 
-    // Create test agent file
     await writeFile(testAgentPath, testAgentContent, "utf-8");
     console.log(`✓ Created ${testAgentPath}`);
 

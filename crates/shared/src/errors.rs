@@ -256,7 +256,6 @@ impl From<std::io::Error> for OxyError {
 impl From<OxyError> for StatusCode {
     fn from(error: OxyError) -> Self {
         tracing::error!("Error occurred: {}", error);
-        // Capture error in Sentry
         error.capture_to_sentry();
 
         match error {

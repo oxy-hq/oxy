@@ -108,7 +108,6 @@ pub async fn auth_middleware<T: Authenticator>(
             err.into()
         })?;
 
-    // Find or create user based on claims
     let user = UserService::get_or_create_user(&claims)
         .await
         .map_err(|e| {
@@ -116,7 +115,6 @@ pub async fn auth_middleware<T: Authenticator>(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // Check if user is active
     if user.status != UserStatus::Active {
         tracing::warn!(
             "Inactive user {} (status: {}) attempted to access protected route",

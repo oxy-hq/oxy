@@ -117,7 +117,6 @@ const dependencies = {
   // Date and time utilities
   dateUtils: ["dayjs", "date-fns"],
 
-  // Data processing and parsing
   dataProcessing: ["lodash", "papaparse", "nunjucks", "yaml"],
 
   // Small utilities and helpers

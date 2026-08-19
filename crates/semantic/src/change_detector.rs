@@ -94,7 +94,6 @@ impl ChangeDetector {
             });
         }
 
-        // Load previous manifest
         let manifest_path = self.target_dir.join(".build_manifest.json");
         let prev_manifest = BuildManifest::load(&manifest_path)?;
 
@@ -113,7 +112,6 @@ impl ChangeDetector {
             }
         };
 
-        // Check config hash
         if manifest.config_hash != config_hash {
             return Ok(ChangeDetectionResult {
                 views_to_rebuild: Vec::new(),
@@ -514,7 +512,6 @@ mod tests {
         std::fs::create_dir_all(&semantic_dir).unwrap();
         std::fs::create_dir_all(&target_dir).unwrap();
 
-        // Create manifest with old config hash
         let mut manifest = BuildManifest::new();
         manifest.set_config_hash("old_config".to_string());
         manifest

@@ -12,7 +12,6 @@ import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-
  * - Browser compatibility edge cases
  */
 
-// Helper to open automation
 async function openAutomation(page: Page): Promise<boolean> {
   await page.getByRole("tab", { name: "Files" }).click();
   await page.waitForTimeout(500);

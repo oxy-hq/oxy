@@ -535,7 +535,6 @@ impl DurableTransport {
 #[async_trait]
 impl CoordinatorTransport for DurableTransport {
     async fn assign(&self, assignment: TaskAssignment) -> Result<(), TransportError> {
-        // Register a cancellation token for this task.
         self.cancel_tokens
             .insert(assignment.task_id.clone(), CancellationToken::new());
 

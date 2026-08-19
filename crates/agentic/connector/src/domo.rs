@@ -434,7 +434,6 @@ impl DatabaseConnector for DomoConnector {
 
         let total_row_count = resp.rows.len() as u64;
 
-        // Sample rows.
         let limit = (sample_limit as usize).min(resp.rows.len());
         let sample_rows: Vec<QueryRow> = resp
             .rows

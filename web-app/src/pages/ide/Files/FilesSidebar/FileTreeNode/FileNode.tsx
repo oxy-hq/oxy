@@ -31,7 +31,6 @@ import { SIDEBAR_REVEAL_FILE } from "..";
 import AlertDeleteDialog from "./AlertDeleteDialog";
 import RenameNode from "./RenameNode";
 
-// Helper to get icon for file type
 const getFileIcon = (path: string) => {
   const fileType = detectFileType(path);
   switch (fileType) {

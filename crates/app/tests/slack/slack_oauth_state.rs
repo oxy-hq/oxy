@@ -78,7 +78,6 @@ async fn create_install_and_consume() {
 
     let (org_id, user_id) = seed_org_with_admin().await;
 
-    // Create install state.
     let nonce = OauthStateService::create_install(CreateInstallState {
         org_id,
         oxy_user_id: user_id,
@@ -213,7 +212,6 @@ async fn user_link_state_creation_and_consume() {
     .await
     .expect("create_user_link");
 
-    // Consume as user_link kind — should succeed.
     let row = OauthStateService::consume(&nonce, StateKind::UserLink)
         .await
         .expect("consume user_link state");

@@ -82,7 +82,6 @@ impl ServerHandler for OxyMcpServer {
             )?)
             .with_meta_variables(extract_meta_variables(Some(&ctx.meta.0))?);
 
-        // Execute tool using its executor
         let executor = oxy_tool.tool_type.executor();
         executor
             .execute(

@@ -147,7 +147,6 @@ impl OmniSyncService {
             ));
         }
 
-        // Ensure directory structure exists
         self.storage.ensure_directory_structure(model_id)?;
 
         // Fetch topic metadata from Omni API
@@ -169,7 +168,6 @@ impl OmniSyncService {
         // Convert API data to metadata structure
         let topic_metadata: TopicMetadata = topic_response.topic.into();
 
-        // Validate the converted metadata
         if let Err(validation_error) = topic_metadata.validate_metadata() {
             return Err(OmniError::validation_failed(
                 &format!("topic '{}'", topic_name),
@@ -177,7 +175,6 @@ impl OmniSyncService {
             ));
         }
 
-        // Save the metadata to storage
         self.save_topic_metadata(model_id, &topic_metadata)?;
 
         Ok(())
@@ -297,7 +294,6 @@ impl OmniSyncService {
             ));
         }
 
-        // Ensure directory structure exists
         self.storage.ensure_directory_structure(model_id)?;
 
         // Initialize sync result for single topic
@@ -309,7 +305,6 @@ impl OmniSyncService {
             skipped_topics: Vec::new(),
         };
 
-        // Sync the specific topic
         match self.sync_topic(model_id, topic_name).await {
             Ok(()) => {
                 sync_result.successful_topics.push(topic_name.to_string());

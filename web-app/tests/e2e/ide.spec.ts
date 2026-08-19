@@ -95,11 +95,9 @@ test.describe("IDE Functionality", () => {
     // Verify we're in Files mode (switched in beforeEach)
     await idePage.verifyFilesMode();
 
-    // Switch to Objects mode
     await idePage.switchToObjectsMode();
     await idePage.verifyObjectsMode();
 
-    // Switch back to Files mode
     await idePage.switchToFilesMode();
     await idePage.verifyFilesMode();
   });
@@ -107,7 +105,6 @@ test.describe("IDE Functionality", () => {
   test("should display objects grouped by type in Objects mode", async ({ page }) => {
     const idePage = new IDEPage(page);
 
-    // Switch to Objects mode
     await idePage.switchToObjectsMode();
 
     // Verify we're in Objects mode (check the tab is active)
@@ -132,7 +129,6 @@ test.describe("IDE Functionality", () => {
     expect(hasVisibleGroup).toBeTruthy();
   });
 
-  // Enhanced editing experience tests
   test.describe("Editing Experience", () => {
     test("should edit file and show save button", async ({ page }) => {
       const idePage = new IDEPage(page);
@@ -207,13 +203,11 @@ test.describe("IDE Functionality", () => {
 
       await idePage.openFile("test-file-for-e2e.txt");
 
-      // First edit
       await idePage.insertTextAtEnd("## First Edit");
       await idePage.verifySaveButtonVisible();
       await idePage.saveFile();
       await idePage.verifySaveButtonHidden();
 
-      // Second edit
       await idePage.insertTextAtEnd("## Second Edit");
       await idePage.verifySaveButtonVisible();
       await idePage.saveFile();
@@ -223,11 +217,9 @@ test.describe("IDE Functionality", () => {
     test("should verify breadcrumb updates when switching files", async ({ page }) => {
       const idePage = new IDEPage(page);
 
-      // Open first file
       await idePage.openFile("config.yml");
       await idePage.verifyBreadcrumb("config.yml");
 
-      // Open second file
       await idePage.openFile("test-file-for-e2e.txt");
       await idePage.verifyBreadcrumb("test-file-for-e2e.txt");
     });

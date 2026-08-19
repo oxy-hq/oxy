@@ -32,7 +32,6 @@ export default function SummaryCards({ clusters, points, isLoading }: SummaryCar
     const totalPoints = points.length;
     const successRate = totalPoints > 0 ? (successCount / totalPoints) * 100 : 0;
 
-    // Top cluster
     const topCluster = validClusters.reduce(
       (max, c) => (c.count > (max?.count ?? 0) ? c : max),
       null as ClusterSummary | null

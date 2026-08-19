@@ -125,7 +125,6 @@ async fn create_find_touch_delete() {
     assert_eq!(link.oxy_user_id, user_id);
     assert_eq!(link.link_method, "email_auto");
 
-    // find
     let found = UserLinksService::find(installation_id, &slack_user_id)
         .await
         .expect("find link");
@@ -138,7 +137,6 @@ async fn create_find_touch_delete() {
         .await
         .expect("touch_last_seen");
 
-    // delete
     UserLinksService::delete(link.id)
         .await
         .expect("delete link");
@@ -187,6 +185,5 @@ async fn magic_link_method_stored_correctly() {
 
     assert_eq!(link.link_method, "magic_link");
 
-    // cleanup
     UserLinksService::delete(link.id).await.expect("cleanup");
 }

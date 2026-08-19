@@ -269,7 +269,6 @@ impl ArtifactTracker {
             None
         }
 
-        // Find OmniQuery params block
         let params_block = find_content(children, |b| {
             matches!(
                 &*b.value,
@@ -311,7 +310,6 @@ impl ArtifactTracker {
                 .collect()
         });
 
-        // Find Table content recursively
         if let Some(table_block) = find_content(children, |b| {
             matches!(
                 &*b.value,

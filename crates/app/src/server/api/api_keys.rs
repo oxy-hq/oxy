@@ -155,7 +155,6 @@ pub async fn create_api_key(
     Path(workspace_id): Path<Uuid>,
     extract::Json(request): extract::Json<CreateApiKeyRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // Validate the request using garde
     if let Err(validation_errors) = request.validate() {
         tracing::warn!("API key creation validation failed: {}", validation_errors);
         return Ok((

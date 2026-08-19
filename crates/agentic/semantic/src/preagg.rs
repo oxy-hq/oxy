@@ -408,7 +408,6 @@ mod tests {
 
         // No .tmp file should remain after a successful save.
         assert!(!dir.path().join("manifest.json.tmp").exists());
-        // The real file must exist.
         assert!(dir.path().join("manifest.json").exists());
     }
 

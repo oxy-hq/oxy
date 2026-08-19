@@ -124,7 +124,6 @@ pub struct LenientChatCompletionResponse {
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
-// Conversion to async-openai types
 impl From<LenientToolCall> for async_openai::types::chat::ChatCompletionMessageToolCall {
     fn from(tc: LenientToolCall) -> Self {
         Self {

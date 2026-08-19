@@ -640,7 +640,6 @@ impl OmniApiClient {
     ) -> Result<QueryResponse, OmniError> {
         let query_start = Instant::now();
 
-        // Validate the query request
         self.validate_query_request(&query_request)?;
 
         let url = format!("{}/api/v1/query/run", self.base_url);
@@ -659,7 +658,6 @@ impl OmniApiClient {
             "Executing query with timeout handling"
         );
 
-        // Execute initial query request
         let initial_request_start = Instant::now();
         let query_request_clone = query_request.clone();
 
@@ -1037,7 +1035,6 @@ impl QueryPoller {
             let elapsed_secs = elapsed.as_secs();
             let elapsed_ms = elapsed.as_millis();
 
-            // Check total timeout
             if elapsed > self.config.get_total_timeout() {
                 warn!(
                     job_ids = ?job_ids,
@@ -1054,7 +1051,6 @@ impl QueryPoller {
                 )));
             }
 
-            // Check max attempts
             if attempt > self.config.max_polling_attempts {
                 warn!(
                     job_ids = ?job_ids,
@@ -1142,7 +1138,6 @@ impl QueryPoller {
                             elapsed_secs = elapsed_secs,
                             "Polling failed with non-temporary error, aborting"
                         );
-                        // Non-temporary error, fail immediately
                         return Err(OmniError::QueryPollingError(format!(
                             "Polling failed with non-temporary error after {} attempts (elapsed: {} seconds): {}",
                             attempt, elapsed_secs, error
@@ -1335,7 +1330,6 @@ mod tests {
             ..QueryResponse::new()
         };
 
-        // Merge all partial responses
         client.merge_query_response(&mut final_response, partial1);
         client.merge_query_response(&mut final_response, partial2);
         client.merge_query_response(&mut final_response, partial3);

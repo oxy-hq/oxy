@@ -288,12 +288,10 @@ impl MetadataStorage {
             )));
         }
 
-        // Serialize to YAML
         let yaml_content = serde_yaml::to_string(topic_metadata).map_err(|e| {
             OmniError::StorageError(format!("Failed to serialize metadata to YAML: {}", e))
         })?;
 
-        // Write to file
         if let Err(e) = fs::write(file_path, yaml_content) {
             return Err(OmniError::StorageError(format!(
                 "Failed to write metadata file '{}': {}",
@@ -322,7 +320,6 @@ impl MetadataStorage {
             )));
         }
 
-        // Serialize to YAML
         let yaml_content = serde_yaml::to_string(overlay_metadata).map_err(|e| {
             OmniError::StorageError(format!(
                 "Failed to serialize overlay metadata to YAML: {}",
@@ -330,7 +327,6 @@ impl MetadataStorage {
             ))
         })?;
 
-        // Write to file
         if let Err(e) = fs::write(file_path, yaml_content) {
             return Err(OmniError::StorageError(format!(
                 "Failed to write overlay metadata file '{}': {}",
@@ -351,7 +347,6 @@ impl MetadataStorage {
             return Ok(None);
         }
 
-        // Read file content
         let yaml_content = fs::read_to_string(file_path).map_err(|e| {
             OmniError::StorageError(format!(
                 "Failed to read metadata file '{}': {}",
@@ -377,7 +372,6 @@ impl MetadataStorage {
             ))
         })?;
 
-        // Validate metadata structure
         self.validate_topic_metadata(&topic_metadata)?;
 
         Ok(Some(topic_metadata))
@@ -392,7 +386,6 @@ impl MetadataStorage {
             return Ok(None);
         }
 
-        // Read file content
         let yaml_content = fs::read_to_string(file_path).map_err(|e| {
             OmniError::StorageError(format!(
                 "Failed to read overlay metadata file '{}': {}",
@@ -419,7 +412,6 @@ impl MetadataStorage {
                 ))
             })?;
 
-        // Validate overlay metadata structure
         self.validate_overlay_topic_metadata(&overlay_metadata)?;
 
         Ok(Some(overlay_metadata))
@@ -725,7 +717,6 @@ mod tests {
         let model_id = "test_model";
         let topic_name = "test_topic";
 
-        // Create base metadata
         let base_metadata = create_test_topic_metadata(topic_name);
         storage
             .save_base_metadata(model_id, &base_metadata)
@@ -737,7 +728,6 @@ mod tests {
             .save_overlay_metadata(model_id, &overlay_metadata)
             .unwrap();
 
-        // Load merged metadata
         let merged = storage.load_merged_metadata(model_id, topic_name).unwrap();
         assert!(merged.is_some());
 
@@ -759,7 +749,6 @@ mod tests {
         );
         assert!(merged_metadata.examples.is_some());
 
-        // Check that views are properly merged
         assert_eq!(merged_metadata.views.len(), 1);
         assert_eq!(merged_metadata.views[0].name, "test_view");
         assert_eq!(
@@ -781,7 +770,6 @@ mod tests {
             .save_base_metadata(model_id, &base_metadata)
             .unwrap();
 
-        // Load merged metadata
         let merged = storage.load_merged_metadata(model_id, topic_name).unwrap();
         assert!(merged.is_some());
 
@@ -808,7 +796,6 @@ mod tests {
             .save_overlay_metadata(model_id, &overlay_metadata)
             .unwrap();
 
-        // Load merged metadata
         let merged = storage.load_merged_metadata(model_id, topic_name).unwrap();
         assert!(merged.is_some());
 
@@ -917,7 +904,6 @@ mod tests {
                         ai_context: Some("Overlay AI context for dim1".to_string()),
                         label: Some("Overlay Dim1".to_string()),
                     },
-                    // Add new dim3
                     DimensionMetadata {
                         field_name: "dim3".to_string(),
                         view_name: "test_view".to_string(),
@@ -1048,12 +1034,10 @@ mod tests {
             examples: None,    // Not specified
         };
 
-        // Save overlay metadata
         storage
             .save_overlay_metadata_direct(model_id, &overlay_metadata)
             .unwrap();
 
-        // Load back as overlay metadata
         let loaded_overlay = storage
             .load_overlay_metadata_direct(model_id, topic_name)
             .unwrap();
@@ -1069,13 +1053,11 @@ mod tests {
         assert!(loaded.agent_hints.is_none());
         assert!(loaded.examples.is_none());
 
-        // Check views
         assert!(loaded.views.is_some());
         let views = loaded.views.as_ref().unwrap();
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].name, "test_view");
 
-        // Check dimensions
         assert!(views[0].dimensions.is_some());
         let dimensions = views[0].dimensions.as_ref().unwrap();
         assert_eq!(dimensions.len(), 1);
@@ -1088,7 +1070,6 @@ mod tests {
             Some("Custom dimension description".to_string())
         );
 
-        // Check measures
         assert!(views[0].measures.is_some());
         let measures = views[0].measures.as_ref().unwrap();
         assert_eq!(measures.len(), 1);
@@ -1097,7 +1078,6 @@ mod tests {
         assert_eq!(measures[0].data_type, Some("custom_number".to_string()));
         assert_eq!(measures[0].fully_qualified_name, None); // Should remain None
 
-        // Check filter_only_fields
         assert!(views[0].filter_only_fields.is_none());
     }
 
@@ -1139,7 +1119,6 @@ mod tests {
             examples: None,    // Missing - should remain None
         };
 
-        // Convert to regular metadata
         let regular_metadata: TopicMetadata = overlay_metadata.into();
 
         // Check basic fields
@@ -1152,7 +1131,6 @@ mod tests {
         assert_eq!(regular_metadata.agent_hints, None);
         assert_eq!(regular_metadata.examples, None);
 
-        // Check views
         assert_eq!(regular_metadata.views.len(), 1);
         assert_eq!(regular_metadata.views[0].name, "test_view");
 
@@ -1210,7 +1188,6 @@ mod tests {
         let model_id = "test_model";
         let topic_name = "test_topic";
 
-        // Create and save metadata
         let metadata = create_test_topic_metadata(topic_name);
         storage.save_base_metadata(model_id, &metadata).unwrap();
         storage.save_overlay_metadata(model_id, &metadata).unwrap();
@@ -1253,7 +1230,6 @@ mod tests {
             overlay_file.display()
         );
 
-        // Verify we can load the metadata
         let loaded = storage.load_merged_metadata(model_id, topic_name).unwrap();
         assert!(loaded.is_some());
         assert_eq!(loaded.unwrap().name, topic_name);

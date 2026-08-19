@@ -117,7 +117,6 @@ impl SemanticValidator for Entity {
             result.add_error("Entity description cannot be empty".to_string());
         }
 
-        // Validate key or keys
         if self.key.is_none() && self.keys.is_none() {
             result.add_error("Entity must have either 'key' or 'keys' specified".to_string());
         }
@@ -195,7 +194,6 @@ impl SemanticValidator for Dimension {
             }
         }
 
-        // Validate variable syntax in expressions
         result.merge(validate_variable_syntax(
             &self.expr,
             &format!("Dimension '{}'", self.name),
@@ -245,7 +243,6 @@ impl SemanticValidator for Measure {
                 }
             }
             MeasureType::Custom => {
-                // Custom measures require expr
                 if self.expr.is_none() {
                     result.add_error("Custom measures require an 'expr' field".to_string());
                 }
@@ -275,7 +272,6 @@ impl SemanticValidator for Measure {
             }
         }
 
-        // Validate variable syntax in expressions
         if let Some(ref expr) = self.expr {
             result.merge(validate_variable_syntax(
                 expr,
@@ -353,17 +349,14 @@ impl SemanticValidator for View {
             let mut primary_entities = 0;
 
             for entity in &self.entities {
-                // Check for duplicate entity names
                 if !entity_names.insert(&entity.name) {
                     result.add_error(format!("Duplicate entity name '{}' found", entity.name));
                 }
 
-                // Count primary entities
                 if entity.entity_type == EntityType::Primary {
                     primary_entities += 1;
                 }
 
-                // Validate individual entity
                 result.merge(entity.validate());
             }
 
@@ -390,7 +383,6 @@ impl SemanticValidator for View {
                     ));
                 }
 
-                // Validate individual dimension
                 result.merge(dimension.validate());
             }
         }
@@ -400,12 +392,10 @@ impl SemanticValidator for View {
             let mut measure_names = HashSet::new();
 
             for measure in measures {
-                // Check for duplicate measure names
                 if !measure_names.insert(&measure.name) {
                     result.add_error(format!("Duplicate measure name '{}' found", measure.name));
                 }
 
-                // Validate individual measure
                 result.merge(measure.validate());
             }
         }
@@ -523,12 +513,10 @@ impl SemanticValidator for SemanticLayer {
             let mut view_names = HashSet::new();
 
             for view in &self.views {
-                // Check for duplicate view names
                 if !view_names.insert(&view.name) {
                     result.add_error(format!("Duplicate view name '{}' found", view.name));
                 }
 
-                // Validate individual view
                 result.merge(view.validate());
             }
         }
@@ -539,12 +527,10 @@ impl SemanticValidator for SemanticLayer {
             let view_names: HashSet<_> = self.views.iter().map(|v| &v.name).collect();
 
             for topic in topics {
-                // Check for duplicate topic names
                 if !topic_names.insert(&topic.name) {
                     result.add_error(format!("Duplicate topic name '{}' found", topic.name));
                 }
 
-                // Validate individual topic
                 result.merge(topic.validate());
 
                 // Check if all referenced views exist
@@ -581,7 +567,6 @@ impl SemanticValidator for SemanticLayer {
                     }
                 }
 
-                // Validate base_view reachability if specified
                 if let Some(ref base_view) = topic.base_view {
                     // Build entity graph to check reachability
                     match EntityGraph::from_semantic_layer(self) {
@@ -887,7 +872,6 @@ mod tests {
             "Should have error about base_view not in views"
         );
 
-        // Test topic with empty base_view
         let empty_base_view_topic = Topic {
             name: "sales".to_string(),
             description: Some("Sales data".to_string()),

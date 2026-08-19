@@ -228,7 +228,6 @@ pub async fn sync_database(
                 None
             };
 
-            // Collect error messages
             let error_messages: Vec<String> = results
                 .iter()
                 .filter_map(|result| match result {
@@ -470,14 +469,12 @@ pub async fn create_database_config(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(warehouses_form): Json<WarehousesFormData>,
 ) -> Result<Response, StatusCode> {
-    // Get the workspace path from the config manager
     let repo_path = workspace_manager.config_manager.workspace_path();
 
     tracing::info!(
         "Creating database configurations {:?}",
         warehouses_form.warehouses
     );
-    // Build database configurations
     let databases = DatabaseConfigBuilder::build_configs(
         &warehouses_form,
         repo_path,
@@ -486,7 +483,6 @@ pub async fn create_database_config(
     )
     .await?;
 
-    // Collect database names for response
     let database_names: Vec<String> = databases.iter().map(|db| db.name.clone()).collect();
 
     // Add databases to the config and write to config.yml
@@ -588,7 +584,6 @@ pub async fn test_database_connection(
     Json(request): Json<TestDatabaseConnectionRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let (tx, rx) = mpsc::channel::<ConnectionTestEvent>(100);
-    // Build temp database config
     let temp_db_name = format!("test_conn_{}", uuid::Uuid::new_v4());
     let repo_path = workspace_manager.config_manager.workspace_path();
 
@@ -636,7 +631,6 @@ pub async fn test_database_connection(
             tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(async move {
                     tracing::info!("Cleaning up temporary secret: {}", secret_name);
-                    // Delete the temporary secret
                     secrets_manager
                         .remove_secret(&secret_name)
                         .await
@@ -880,7 +874,6 @@ pub async fn test_database_connection(
             })
             .await;
 
-        // Run test query
         match connector.run_query("SELECT 1").await {
             Ok(_) => {
                 let elapsed = start_time.elapsed().as_millis() as u64;

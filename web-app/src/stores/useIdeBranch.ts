@@ -8,10 +8,8 @@ interface IdeBranchState {
   // Get the current branch for a project (defaults to active branch if not set)
   getCurrentBranch: (projectId: string, activeBranchName?: string) => string | undefined;
 
-  // Set the current branch for a project
   setCurrentBranch: (projectId: string, branchName: string) => void;
 
-  // Clear branch data for a project
   clearProjectBranch: (projectId: string) => void;
 }
 

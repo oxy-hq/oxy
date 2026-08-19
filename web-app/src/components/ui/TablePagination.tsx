@@ -95,7 +95,6 @@ export default function TablePagination({
   );
 }
 
-// Helper function to generate pagination items with ellipsis
 function generatePaginationItems(currentPage: number, totalPages: number): (number | "ellipsis")[] {
   const items: (number | "ellipsis")[] = [];
 

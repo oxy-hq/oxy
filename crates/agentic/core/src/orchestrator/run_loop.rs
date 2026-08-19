@@ -233,7 +233,6 @@ impl<D: Domain, S: DomainSolver<D> + 'static, Ev: DomainEvents> Orchestrator<D, 
                                 },
                             )
                             .await;
-                            // Store checkpoint for retry.
                             if let Some(cp) = self.solver.build_checkpoint(from, &run_ctx, None) {
                                 self.solver.store_suspension_data(cp);
                             }

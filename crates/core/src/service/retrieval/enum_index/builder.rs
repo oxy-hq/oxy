@@ -80,7 +80,6 @@ impl IndexBuilder {
             entries.push((inclusion.clone(), false));
         }
 
-        // Add exclusions
         for exclusion in &retrieval_obj.exclusions {
             entries.push((exclusion.clone(), true));
         }

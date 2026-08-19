@@ -124,7 +124,6 @@ export const VirtualizedTable = ({
           setTableName(registeredName);
           tableToQuery = registeredName;
 
-          // Get schema and total count
           const countResult = await conn.query(`SELECT COUNT(*) as count FROM "${registeredName}"`);
           setTotalRows(Number(countResult.toArray()[0].count));
 
@@ -140,7 +139,6 @@ export const VirtualizedTable = ({
         const offset = page * pageSize;
         let query = `SELECT * FROM "${tableToQuery}"`;
 
-        // Add sorting
         if (sort.column && sort.direction) {
           query += ` ORDER BY "${sort.column}" ${sort.direction.toUpperCase()}`;
         }
@@ -218,7 +216,6 @@ export const VirtualizedTable = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedCell, data]);
 
-  // Handle column resizing
   useEffect(() => {
     if (!resizingColumn) return;
 

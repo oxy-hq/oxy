@@ -34,7 +34,6 @@ export interface BaseMonacoEditorProps {
   path?: string;
   options?: BaseMonacoEditorOptions;
   isLoading?: boolean;
-  // Diff mode props
   diffMode?: boolean;
   original?: string;
   splitView?: boolean;

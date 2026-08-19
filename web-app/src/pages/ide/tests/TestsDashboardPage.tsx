@@ -674,7 +674,6 @@ const TestsDashboardPage: React.FC = () => {
     return map;
   }, [testFiles, selectedProjectRun]);
 
-  // Run naming dialog
   const [runNameDialogOpen, setRunNameDialogOpen] = useState(false);
   const [pendingRunName, setPendingRunName] = useState("");
   const [pendingRunPathb64, setPendingRunPathb64] = useState<string | null>(null);

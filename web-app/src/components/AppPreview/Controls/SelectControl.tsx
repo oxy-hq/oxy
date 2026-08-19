@@ -46,7 +46,6 @@ export function SelectControl({ control, value, data, onChange }: Props) {
         const connection = await db.connect();
 
         try {
-          // Get the first column name
           const schema = await connection.query(`SELECT * FROM "${fileName}" LIMIT 0`);
           const firstCol = schema.schema.fields[0]?.name;
           if (firstCol) {

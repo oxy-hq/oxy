@@ -38,14 +38,12 @@ pub async fn handle(
         }
     };
 
-    // Resolve tenant.
     let team_id = &payload.team.id;
     let Some(tenant) = tenant_resolver::resolve(team_id).await? else {
         tracing::warn!("pick_workspace: unknown team {team_id}");
         return Ok(());
     };
 
-    // Resolve user link.
     let slack_user_id = &payload.user.id;
     let user_link = match resolve_user(&tenant.installation, slack_user_id).await? {
         ResolvedUser::Linked(link) => link,
@@ -55,7 +53,6 @@ pub async fn handle(
         }
     };
 
-    // Extract channel + thread from payload.container.
     let Some((channel_id, thread_ts)) = extract_channel_and_thread(payload) else {
         tracing::warn!("pick_workspace: could not extract channel/thread from container");
         return Ok(());

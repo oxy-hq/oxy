@@ -106,7 +106,6 @@ impl MetadataMerger {
         let base_view_names: std::collections::HashSet<&str> =
             base_views.iter().map(|v| v.name.as_str()).collect();
 
-        // Create a HashMap of overlay views keyed by name
         let overlay_map: HashMap<String, &OverlayViewMetadata> =
             overlay_views.iter().map(|v| (v.name.clone(), v)).collect();
 
@@ -467,14 +466,12 @@ mod tests {
     fn test_load_merged_metadata() {
         let (merger, _state_dir, _project_dir) = create_test_merger();
 
-        // Save base metadata
         let base = create_base_metadata();
         merger
             .storage()
             .save_base_metadata("ecommerce", "orders", &base)
             .unwrap();
 
-        // Save overlay metadata
         let overlay = OverlayExploreMetadata {
             description: Some("Merged description".to_string()),
             views: None,
@@ -484,7 +481,6 @@ mod tests {
             .save_overlay_metadata("ecommerce", "orders", &overlay)
             .unwrap();
 
-        // Load merged
         let merged = merger.load_merged_metadata("ecommerce", "orders").unwrap();
 
         assert_eq!(merged.description, Some("Merged description".to_string()));
@@ -512,7 +508,6 @@ mod tests {
             .save_overlay_metadata("ecommerce", "users", &overlay)
             .unwrap();
 
-        // List all explores
         let explores = merger.list_all_explores("ecommerce").unwrap();
 
         assert_eq!(explores.len(), 2);
@@ -527,7 +522,6 @@ mod tests {
         // Initially should not exist
         assert!(!merger.merged_metadata_exists("ecommerce", "orders"));
 
-        // Save base metadata
         let base = create_base_metadata();
         merger
             .storage()
@@ -642,7 +636,6 @@ mod tests {
 
         let merged = MetadataMerger::merge(base, Some(overlay));
 
-        // Description should be updated
         assert_eq!(merged.description, Some("Updated description".to_string()));
 
         // Valid field should be updated

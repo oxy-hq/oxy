@@ -20,7 +20,6 @@ export const OBJECT_FILE_TYPES = [
   FileType.TEST
 ];
 
-// Sub-view mode for Files section
 export enum FilesSubViewMode {
   OBJECTS = "objects",
   FILES = "files"

@@ -23,7 +23,6 @@ export const useSemanticQueryFields = (index: number, basePath: string) => {
   // Track previous topic to detect changes
   const prevTopicRef = useRef<string | undefined>(topicValue);
 
-  // Fetch available topics
   const { topicFiles, isLoading: topicsLoading, error: topicsError } = useTopicFiles();
 
   // Fetch field options based on selected topic

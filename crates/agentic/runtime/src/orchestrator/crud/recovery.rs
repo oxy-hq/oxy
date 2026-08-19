@@ -66,7 +66,6 @@ pub async fn cleanup_stale_runs(db: &DatabaseConnection) -> Result<u64, DbErr> {
             continue;
         }
 
-        // Check if this run has any events at all.
         let event_count = get_max_seq(db, &r.id).await.unwrap_or(-1) + 1;
         if event_count == 0 && r.parent_run_id.is_none() {
             // Root with zero events. Two sub-cases:

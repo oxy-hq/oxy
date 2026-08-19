@@ -14,26 +14,20 @@ use super::{AppState, build_cors_layer};
 
 pub async fn openapi_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        // Health check routes
         .routes(routes!(healthcheck::health_check))
         .routes(routes!(healthcheck::readiness_check))
         .routes(routes!(healthcheck::liveness_check))
         .routes(routes!(healthcheck::version_info))
-        // Agent routes
         .routes(routes!(agent::get_agents))
-        // API Keys routes
         .routes(routes!(api_keys::create_api_key))
         .routes(routes!(api_keys::list_api_keys))
         .routes(routes!(api_keys::get_api_key))
         .routes(routes!(api_keys::delete_api_key))
-        // App routes
         .routes(routes!(app::list_apps))
         .routes(routes!(app::get_app_result))
         .routes(routes!(app::get_chart_image))
-        // Workspace routes
         .routes(routes!(workspaces::get_workspace))
         .routes(routes!(workspaces::get_workspace_branches))
-        // Run routes
         .routes(routes!(run::get_automation_runs))
         .routes(routes!(run::create_automation_run))
         .routes(routes!(run::cancel_automation_run))
@@ -42,7 +36,6 @@ pub async fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(run::automation_events))
         .routes(routes!(run::automation_events_sync))
         .routes(routes!(run::get_blocks))
-        // Thread routes
         .routes(routes!(thread::get_threads))
         .routes(routes!(thread::get_thread))
         .routes(routes!(thread::create_thread))

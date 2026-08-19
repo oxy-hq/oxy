@@ -64,7 +64,6 @@ pub fn get_encryption_key() -> [u8; 32] {
         return decode_key_from_string(&key_str);
     }
 
-    // Try loading from file
     let key_file_path = get_key_file_path();
     if let Ok(key_str) = fs::read_to_string(&key_file_path) {
         let key_str = key_str.trim();
@@ -83,10 +82,8 @@ pub fn get_encryption_key() -> [u8; 32] {
     {
         tracing::error!("Failed to create directory for encryption key: {}", e);
     }
-    // Encode key as base64 string
     let key_string = BASE64.encode(key);
 
-    // Save key to file
     if let Err(e) = fs::write(&key_file_path, &key_string) {
         tracing::error!("Failed to save encryption key to file: {}", e);
     } else {

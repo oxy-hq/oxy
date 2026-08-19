@@ -55,7 +55,6 @@ test.describe("IDE Files - File/Folder Delete", () => {
   test("4.2 - should navigate to IDE root when deleting open file", async ({ page }) => {
     const idePage = new IDEPage(page);
 
-    // Open the test file first
     await idePage.openFile("test-file-for-e2e.txt");
     await idePage.verifyFileIsOpen("test-file-for-e2e.txt");
 
@@ -139,7 +138,6 @@ test.describe("IDE Files - File/Folder Delete", () => {
   }) => {
     const idePage = new IDEPage(page);
 
-    // Open and modify a file
     await idePage.openFile("test-file-for-e2e.txt");
     await idePage.insertTextAtEnd("Unsaved changes");
     await idePage.verifySaveButtonVisible();
@@ -234,7 +232,6 @@ test.describe("IDE Files - File/Folder Delete", () => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
-    // Intercept delete API
     await page.route("**/api/v1/**/files/**", (route, request) => {
       if (request.method() === "DELETE") {
         route.fulfill({

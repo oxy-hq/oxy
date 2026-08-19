@@ -47,7 +47,6 @@ test.describe("IDE Files - Read-Only Mode", () => {
     if (await testFile.isVisible()) {
       await testFile.click({ button: "right" });
 
-      // Context menu should appear
       const contextMenu = page.locator('[role="menu"]');
       await expect(contextMenu.first()).toBeVisible({ timeout: 2000 });
 
@@ -122,7 +121,6 @@ test.describe("IDE Files - Read-Only Mode", () => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    // Look for new object button
     const newObjectButton = page.getByRole("button", { name: /new/i });
 
     if (await newObjectButton.isVisible()) {
@@ -212,7 +210,6 @@ test.describe("IDE Files - Page Reload Scenarios", () => {
 
   // 13.6 Reload with invalid pathb64
   test("13.6 - should show file not found for invalid path", async ({ page }) => {
-    // Navigate to invalid path
     await page.goto("/ide/aW52YWxpZC1wYXRoLnR4dA=="); // "invalid-path.txt" in base64
 
     await page.waitForLoadState("networkidle");
@@ -257,7 +254,6 @@ test.describe("IDE Files - Resizable Panels", () => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
-    // Find collapse button
     const collapseButton = page.getByRole("button", {
       name: /collapse|chevron/i
     });
@@ -276,7 +272,6 @@ test.describe("IDE Files - Resizable Panels", () => {
     await idePage.openFile("config.yml");
     await idePage.waitForEditorToLoad();
 
-    // Find resize handle
     const resizeHandle = page.locator("[data-panel-resize-handle-id]").first();
 
     if (await resizeHandle.isVisible()) {
@@ -374,7 +369,6 @@ test.describe("IDE Files - YAML Parsing & Serialization", () => {
         await page.waitForURL(/\/ide\/.+/);
         await idePage.waitForEditorToLoad();
 
-        // Insert invalid YAML
         await idePage.insertTextAtEnd("\n  invalid:\n    - yaml: broken:\n");
 
         // Try switching to form

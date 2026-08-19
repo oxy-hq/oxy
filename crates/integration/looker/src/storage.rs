@@ -366,15 +366,12 @@ mod tests {
         let (storage, _state_dir, _project_dir) = create_test_storage();
         let metadata = create_test_metadata();
 
-        // Save metadata
         storage
             .save_base_metadata("ecommerce", "orders", &metadata)
             .unwrap();
 
-        // Verify file exists
         assert!(storage.base_metadata_exists("ecommerce", "orders"));
 
-        // Load and verify
         let loaded = storage.load_base_metadata("ecommerce", "orders").unwrap();
         assert_eq!(loaded.name, "orders");
         assert_eq!(loaded.model, "ecommerce");
@@ -390,12 +387,10 @@ mod tests {
             views: None,
         };
 
-        // Save overlay
         storage
             .save_overlay_metadata("ecommerce", "orders", &overlay)
             .unwrap();
 
-        // Verify file exists
         assert!(storage.overlay_metadata_exists("ecommerce", "orders"));
 
         // Load and verify
@@ -440,7 +435,6 @@ mod tests {
             .save_base_metadata("ecommerce", "users", &metadata2)
             .unwrap();
 
-        // List explores
         let explores = storage.list_base_explores("ecommerce").unwrap();
         assert_eq!(explores.len(), 2);
         assert!(explores.contains(&"orders".to_string()));
@@ -466,7 +460,6 @@ mod tests {
             .unwrap();
         assert!(storage.base_metadata_exists("ecommerce", "orders"));
 
-        // Delete and verify
         storage.delete_base_metadata("ecommerce", "orders").unwrap();
         assert!(!storage.base_metadata_exists("ecommerce", "orders"));
     }
@@ -506,7 +499,6 @@ mod tests {
         let (storage, _state_dir, _project_dir) = create_test_storage();
         let metadata = create_test_metadata();
 
-        // Save base metadata
         storage
             .save_base_metadata("ecommerce", "orders", &metadata)
             .unwrap();
@@ -529,7 +521,6 @@ mod tests {
             .save_overlay_metadata("ecommerce", "orders", &overlay)
             .unwrap();
 
-        // Load merged
         let merged = storage.load_merged_metadata("ecommerce", "orders").unwrap();
 
         // Check overlay description is applied

@@ -92,7 +92,6 @@ const ArrayBasedTable = ({ result }: { result: string[][] }) => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedCell, result]);
 
-  // Handle column resizing
   useEffect(() => {
     if (!resizingColumn) return;
 
@@ -245,12 +244,10 @@ const ArrayBasedTable = ({ result }: { result: string[][] }) => {
 };
 
 const SqlResultsTable = ({ result, resultFile }: ResultsProps) => {
-  // If we have a result file, use the VirtualizedTable component
   if (resultFile) {
     return <VirtualizedTable key={resultFile} filePath={resultFile} />;
   }
 
-  // If we have array results, use the array-based table
   if (result && result.length > 0) {
     return <ArrayBasedTable result={result} />;
   }

@@ -283,10 +283,8 @@ pub fn to_openai_function_name(
     // Get the relative path from project root, falling back to the original path
     let relative_path = file_path.strip_prefix(project_path).unwrap_or(file_path);
 
-    // Remove the file extension to get a clean path
     let path_without_extension = remove_file_extension(relative_path);
 
-    // Convert the path to a string and slugify it
     let path_string = path_without_extension.to_string_lossy();
     let function_name = slugify!(&path_string, separator = "_", max_length = 60);
 

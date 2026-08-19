@@ -249,7 +249,6 @@ impl Worker {
             })
             .await;
 
-        // Get the cancellation token for this task from the transport.
         let cancel_token = transport.cancellation_token(&task_id);
 
         // Execute the task.
@@ -488,7 +487,6 @@ mod tests {
 
             let task_id = assignment.task_id.clone();
             tokio::spawn(async move {
-                // Emit 3 events.
                 for i in 0..3 {
                     let _ = event_tx
                         .send(("test_event".into(), json!({"index": i, "task": &task_id})))
@@ -530,7 +528,6 @@ mod tests {
             Arc::new(MockExecutor),
         );
 
-        // Spawn worker.
         let worker_handle = tokio::spawn({
             let worker = Worker::new(
                 transport.clone() as Arc<dyn WorkerTransport>,
@@ -539,7 +536,6 @@ mod tests {
             async move { worker.run().await }
         });
 
-        // Assign a task.
         coord(&transport)
             .assign(TaskAssignment {
                 task_id: "t1".into(),
@@ -787,7 +783,6 @@ mod tests {
     async fn test_worker_cancellation() {
         let transport = LocalTransport::with_defaults();
 
-        // Executor that waits for cancellation.
         struct WaitingExecutor;
 
         #[async_trait]
@@ -841,7 +836,6 @@ mod tests {
         // Give the worker a moment to start the task.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        // Cancel via transport.
         coord(&transport).cancel("t1").await.unwrap();
 
         // Should get Cancelled outcome. Drain any lifecycle events

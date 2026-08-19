@@ -77,7 +77,6 @@ pub fn create_config_from_model(
         let config_with_headers = CustomOpenAIConfig::new(config, custom_headers);
         ConfigType::WithHeaders(config_with_headers)
     } else {
-        // Standard OpenAI configuration
         let mut config = OpenAIConfig::new().with_api_key(api_key);
         if let Some(api_url) = api_url {
             config = config.with_api_base(api_url);

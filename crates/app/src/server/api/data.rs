@@ -499,11 +499,9 @@ async fn handle_omni_sync(workspace: &WorkspaceManager) -> Result<(), OxyError> 
         let base_url = omni_integration.base_url.clone();
         let topics = omni_integration.topics.clone();
 
-        // Sync all configured topics for this integration
         tracing::debug!(integration = %integration_name, topic_count = topics.len(), "Synchronizing Omni metadata");
         let topics_to_sync: Vec<_> = topics.iter().collect();
 
-        // Create API client
         let api_client =
             OmniApiClient::new(base_url.clone(), api_key.clone()).map_err(|e| match e {
                 AdapterOmniError::ConfigError(msg) => {
@@ -512,7 +510,6 @@ async fn handle_omni_sync(workspace: &WorkspaceManager) -> Result<(), OxyError> 
                 _ => OxyError::RuntimeError(format!("Failed to create Omni API client: {}", e)),
             })?;
 
-        // Create sync service
         let sync_service =
             OmniSyncService::new(api_client, workspace_path, integration_name.clone());
 
@@ -533,7 +530,6 @@ async fn handle_omni_sync(workspace: &WorkspaceManager) -> Result<(), OxyError> 
             integration_results.push(sync_result);
         }
 
-        // Collect results for this integration
         if let Some(first_result) = integration_results.into_iter().next() {
             total_successful_topics.extend(first_result.successful_topics.clone());
             all_sync_results.push(first_result);

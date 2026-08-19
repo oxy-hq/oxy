@@ -56,7 +56,6 @@ pub async fn execute_run_app(
     // Validate path is within project root (sandbox check).
     let _abs = safe_path(workspace_root, file_path)?;
 
-    // Parse optional control params from a JSON string.
     let control_params: HashMap<String, serde_json::Value> = params["params_json"]
         .as_str()
         .filter(|s| !s.is_empty() && *s != "{}")

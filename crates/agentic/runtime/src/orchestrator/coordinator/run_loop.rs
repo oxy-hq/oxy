@@ -15,7 +15,6 @@ impl Coordinator {
     pub async fn run(&mut self) {
         tracing::info!(target: "coordinator", task_count = self.tasks.len(), "run loop started");
         loop {
-            // Check if we have any active tasks.
             let has_active = self.tasks.values().any(|t| {
                 matches!(
                     t.status,

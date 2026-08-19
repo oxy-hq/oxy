@@ -172,7 +172,6 @@ impl CheckpointStorage for DatabaseStorage {
         run_info: &RunInfo,
         checkpoint: CheckpointData<T>,
     ) -> Result<(), OxyError> {
-        // Find the run to create a checkpoint for
         let run_index = run_info.get_run_index();
         let run = entity::runs::Entity::find()
             .filter(
@@ -185,7 +184,6 @@ impl CheckpointStorage for DatabaseStorage {
         let run = run
             .map_err(|err| OxyError::DBError(format!("Failed to find run: {err}")))?
             .ok_or_else(|| OxyError::RuntimeError("Run not found".to_string()))?;
-        // Serialize the checkpoint data
         let output_json = serde_json::to_value(&checkpoint.output).map_err(|err| {
             OxyError::SerializerError(format!("Failed to serialize checkpoint: {err}"))
         })?;
@@ -208,7 +206,6 @@ impl CheckpointStorage for DatabaseStorage {
                 })
             })
             .transpose()?;
-        // Create a new checkpoint entry
         let checkpoint_entry = entity::checkpoints::ActiveModel {
             id: ActiveValue::Set(uuid::Uuid::new_v4()),
             run_id: ActiveValue::Set(run.id),

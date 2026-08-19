@@ -138,7 +138,6 @@ async fn auto_match_user_in_same_org_links_successfully() {
     let alice_id = seed_user(&alice_email).await;
     let org_b = seed_org().await;
 
-    // Alice is a member of Org B.
     add_org_member(org_b, alice_id).await;
 
     let alice_in_org_b = is_org_member(org_b, alice_id).await;
@@ -189,7 +188,6 @@ async fn workspace_membership_is_org_scoped() {
     .await
     .expect("seed workspace A");
 
-    // Add user as member of workspace A.
     workspace_members::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         workspace_id: ActiveValue::Set(ws_a_id),

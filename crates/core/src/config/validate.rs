@@ -248,7 +248,6 @@ pub fn validate_consistency_prompt(
     _context: &ValidationContext,
 ) -> garde::Result {
     if let Some(prompt_str) = prompt {
-        // Validate minijinja template syntax
         match minijinja::Environment::new()
             .add_template_owned("test".to_string(), prompt_str.to_string())
         {
@@ -335,7 +334,6 @@ mod tests {
         #[test]
         fn test_nested_path_fails() {
             let temp_dir = TempDir::new().unwrap();
-            // Create a nested file
             let nested_dir = temp_dir.path().join("subdir");
             std::fs::create_dir(&nested_dir).unwrap();
             std::fs::write(nested_dir.join("file.txt"), "content").unwrap();

@@ -64,7 +64,6 @@ export default function ClusterBreakdownTable({
   isLoading
 }: ClusterBreakdownTableProps) {
   const clusterStats = useMemo(() => {
-    // Group points by cluster
     const pointsByCluster = new Map<number, ClusterMapPoint[]>();
     points.forEach((point) => {
       const existing = pointsByCluster.get(point.clusterId) || [];
@@ -72,7 +71,6 @@ export default function ClusterBreakdownTable({
       pointsByCluster.set(point.clusterId, existing);
     });
 
-    // Calculate stats for each cluster
     const stats: ClusterStats[] = clusters
       .filter((c) => c.clusterId !== -1)
       .map((cluster) => {

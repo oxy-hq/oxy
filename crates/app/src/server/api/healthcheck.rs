@@ -140,7 +140,6 @@ pub async fn health_check()
         workflow_url,
     };
 
-    // Check database connectivity
     let db_status = check_database_connection().await;
 
     let status = if db_status.connected {

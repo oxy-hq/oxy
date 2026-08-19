@@ -97,7 +97,6 @@ test.describe("Workflow Editor - EditorPageWrapper Integration", () => {
     );
     const hasStatus = await statusIndicator.isVisible().catch(() => false);
 
-    // Or save button becomes visible
     const saveButton = page.getByRole("button", { name: /save/i });
     const hasSaveButton = await saveButton.isVisible().catch(() => false);
 
@@ -137,7 +136,6 @@ test.describe("Workflow Editor - EditorPageWrapper Integration", () => {
       return;
     }
 
-    // Look for file path display
     const pathDisplay = page.locator('[data-testid*="path"], .file-path, header');
     const pathText = await pathDisplay.textContent().catch(() => "");
 
@@ -257,13 +255,11 @@ test.describe("Workflow Editor - Preview Panel", () => {
       return;
     }
 
-    // Switch to output mode
     await switchMode(page, "output");
     await page.waitForTimeout(500);
 
     const currentUrl = page.url();
 
-    // Switch to editor and back
     await switchMode(page, "editor");
     await page.waitForTimeout(300);
     await switchMode(page, "output");
@@ -303,7 +299,6 @@ test.describe("Workflow Editor - Validation Display", () => {
     await editor.click();
     await page.keyboard.press("Control+A");
 
-    // Enter invalid YAML
     await page.keyboard.type("invalid:: yaml::: syntax");
     await page.waitForTimeout(1000);
 
@@ -391,7 +386,6 @@ test.describe("Workflow Editor - Workflow Features", () => {
       return;
     }
 
-    // Look for run button
     const runButton = page.getByRole("button", { name: /run|execute/i });
     if (await runButton.isVisible()) {
       await runButton.click();
@@ -412,7 +406,6 @@ test.describe("Workflow Editor - Workflow Features", () => {
     await switchMode(page, "output");
     await page.waitForTimeout(1000);
 
-    // Look for run history list
     const runList = page.locator('[data-testid*="run"], .run-item, .run-history');
     const hasList = await runList.isVisible().catch(() => false);
 
@@ -434,7 +427,6 @@ test.describe("Workflow Editor - Workflow Features", () => {
       await runItem.click();
       await page.waitForTimeout(500);
 
-      // Should show run details
       const runDetails = page.locator('[data-testid*="run-detail"], [data-testid*="output"]');
       const hasDetails = await runDetails.isVisible().catch(() => false);
 
@@ -475,7 +467,6 @@ test.describe("Workflow Editor - Workflow Features", () => {
 
     await switchMode(page, "form");
 
-    // Look for variables section
     const variablesSection = page.getByText(/variables/i).first();
     if (await variablesSection.isVisible()) {
       await variablesSection.click();
@@ -498,19 +489,16 @@ test.describe("Workflow Editor - Workflow Features", () => {
 
     await switchMode(page, "form");
 
-    // Look for tests section
     const testsSection = page.getByText(/tests/i).first();
     if (await testsSection.isVisible()) {
       await testsSection.click();
       await page.waitForTimeout(500);
 
-      // Add test button
       const addTestButton = page.getByRole("button", { name: /add.*test/i }).first();
       if (await addTestButton.isVisible()) {
         await addTestButton.click();
         await page.waitForTimeout(500);
 
-        // Test form should appear
         const testForm = page.locator('[data-testid*="test"], .test-form');
         const hasForm = await testForm.isVisible().catch(() => false);
 

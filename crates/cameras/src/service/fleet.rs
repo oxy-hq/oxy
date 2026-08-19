@@ -757,7 +757,6 @@ pub async fn remove_member(
             out.edge_box_retired = true;
         }
 
-        // Revoke the linked claim (if any).
         let linked_claim = device_claims::Entity::find()
             .filter(device_claims::Column::EdgeBoxId.eq(eb_id))
             .filter(device_claims::Column::Status.is_in(["pending_claim", "claimed"]))

@@ -29,7 +29,6 @@ test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
         await page.waitForURL(/\/ide\/.+/);
         await page.waitForTimeout(1000);
 
-        // Should list multiple views
         const viewsList = page.locator('[data-testid*="views-list"], .views-list');
         const hasViews = await viewsList.isVisible().catch(() => false);
         // May or may not have views depending on topic
@@ -58,7 +57,6 @@ test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
         await page.waitForURL(/\/ide\/.+/);
         await page.waitForTimeout(1000);
 
-        // Look for base indicator
         const baseIndicator = page.getByText(/\(base\)|base view/i);
         const hasBase = await baseIndicator.isVisible().catch(() => false);
         // May or may not have base view indicator

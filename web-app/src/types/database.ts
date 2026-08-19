@@ -151,7 +151,6 @@ export interface CreateDatabaseConfigResponse {
   databases_added: string[];
 }
 
-// Test Connection Types
 export interface TestDatabaseConnectionRequest {
   warehouse: WarehouseConfig;
 }

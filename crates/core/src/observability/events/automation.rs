@@ -130,7 +130,6 @@ pub mod launcher {
             execution_context: &ExecutionContext,
             output: &crate::execute::types::OutputContainer,
         ) {
-            // Record response in metric context
             execution_context.record_response(&output.to_string());
 
             // Finalize metrics (triggers async storage)

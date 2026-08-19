@@ -480,7 +480,6 @@ impl LlmProvider for OpenAiCompatProvider {
                     let Some(choice) = ev["choices"].get(0) else { continue };
                     let delta = &choice["delta"];
 
-                    // Text content delta.
                     if let Some(content) = delta["content"].as_str()
                         && !content.is_empty() {
                             if enable_cot {
@@ -505,7 +504,6 @@ impl LlmProvider for OpenAiCompatProvider {
                             }
                         }
 
-                    // Tool call deltas.
                     if let Some(tool_calls) = delta["tool_calls"].as_array() {
                         for tc in tool_calls {
                             let idx = tc["index"].as_u64().unwrap_or(0);

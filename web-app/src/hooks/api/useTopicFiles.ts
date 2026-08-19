@@ -37,7 +37,6 @@ export default function useTopicFiles() {
     return flattenTopicFiles(fileTree.primary);
   }, [fileTree]);
 
-  // Helper to find path by topic name
   const getPathByTopicName = (topicName: string): string | undefined => {
     return topicFiles.find((t) => t.value === topicName)?.path;
   };

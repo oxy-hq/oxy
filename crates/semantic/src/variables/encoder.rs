@@ -68,7 +68,6 @@ impl VariableEncoder {
             // Store for later insertion into mapping
             mappings_to_add.push((encoded.clone(), full_match.to_string()));
 
-            // Replace in the result string
             result = result.replace(full_match, &encoded);
         }
 
@@ -152,7 +151,6 @@ impl VariableEncoder {
         placeholder_regex
             .replace_all(encoded, |caps: &regex::Captures| {
                 let hex_path = &caps[1];
-                // Decode hex back to original variable path
                 match self.decode_hex_variable_path(hex_path) {
                     Ok(original_path) => format!("{{{{variables.{}}}}}", original_path),
                     Err(_) => {
@@ -462,7 +460,6 @@ mod tests {
         for case in test_cases {
             let encoded = encoder.encode_expression(&format!("{{{{variables.{}}}}}", case));
 
-            // Extract the encoded placeholder
             let placeholder_start = encoded.find("__VAR_").unwrap();
             let placeholder_end = encoded.rfind("__").unwrap() + 2;
             let placeholder = &encoded[placeholder_start..placeholder_end];
@@ -483,7 +480,6 @@ mod tests {
                 placeholder
             );
 
-            // Verify the hex part is valid hex
             let hex_part = &placeholder[6..placeholder.len() - 2]; // Remove "__VAR_" and "__"
             assert!(
                 hex_part.chars().all(|c| c.is_ascii_hexdigit()),

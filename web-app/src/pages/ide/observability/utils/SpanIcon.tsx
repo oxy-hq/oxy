@@ -84,7 +84,6 @@ export function SpanIcon({ spanName, className = "h-4 w-4" }: SpanIconProps) {
     return <ClipboardList className={className} />;
   }
 
-  // Automation run
   if (spanName === "workflow.run_workflow") {
     return <Automation className={className} />;
   }

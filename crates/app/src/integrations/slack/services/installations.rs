@@ -62,7 +62,6 @@ impl InstallationsService {
             )));
         }
 
-        // Upsert the org_secret for the bot token.
         let secret_name = format!("slack_bot_token:{}", input.org_id);
         let secret_id =
             OrgSecretsService::upsert(input.org_id, &secret_name, &input.bot_token).await?;
@@ -150,7 +149,6 @@ impl InstallationsService {
         let secret_name = format!("slack_bot_token:{org_id}");
         OrgSecretsService::upsert(org_id, &secret_name, "").await?;
 
-        // Mark the installation as revoked.
         let mut active: slack_installations::ActiveModel = row.into();
         active.revoked_at = ActiveValue::Set(Some(Utc::now().into()));
         active

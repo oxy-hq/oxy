@@ -301,14 +301,12 @@ pub(super) fn populate_resume_context(
     data: &SuspendedRunData,
     run_ctx: &mut RunContext<crate::AnalyticsDomain>,
 ) {
-    // Restore intent from stage_data.
     if let Some(intent_val) = data.stage_data.get("intent")
         && let Ok(intent) = serde_json::from_value::<crate::AnalyticsIntent>(intent_val.clone())
     {
         run_ctx.intent = Some(intent);
     }
 
-    // Restore spec from stage_data.
     if let Some(spec_val) = data.stage_data.get("spec")
         && let Ok(spec) = serde_json::from_value::<crate::QuerySpec>(spec_val.clone())
     {

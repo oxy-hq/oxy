@@ -240,7 +240,6 @@ async fn handle_sql_file(
     variables: &[(String, String)],
     dry_run: bool,
 ) -> Result<String, OxyError> {
-    // Add Sentry context for SQL execution
     sentry_config::add_database_context(&database, Some("sql_file"));
     sentry_config::add_operation_context("sql", Some(&file_path.to_string_lossy()));
 
@@ -266,7 +265,6 @@ async fn handle_sql_file(
             .map_err(|e| OxyError::RuntimeError(format!("Failed to render SQL template: {e}")))?
     }
 
-    // Print colored SQL and execute query
     print_colored_sql(&query);
     let secrets_manager = SecretsManager::from_environment()?;
     // CLI runs as the local guest with no per-user identity. Catch the

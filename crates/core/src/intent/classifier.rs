@@ -38,7 +38,6 @@ impl IntentClassifier {
         let embedding_service = EmbeddingService::new(&config)?;
         let storage = IntentStorage::new(&config)?;
 
-        // Create LLM client for labeling
         let openai_config = OpenAIConfig::new().with_api_key(&config.openai_api_key);
         let llm_client = Client::with_config(openai_config);
 
@@ -208,7 +207,6 @@ impl IntentClassifier {
 
     /// Classify a single question
     pub async fn classify(&self, question: &str) -> Result<IntentClassification, OxyError> {
-        // Generate embedding for the question
         let embedding = self.embedding_service.embed(question).await?;
 
         self.classify_embedding(&embedding).await
@@ -261,10 +259,8 @@ impl IntentClassifier {
         // Generate embedding
         let embedding = self.embedding_service.embed(question).await?;
 
-        // Classify
         let classification = self.classify_embedding(&embedding).await?;
 
-        // Store classification with embedding
         self.storage
             .store_classification(
                 trace_id,
@@ -374,7 +370,6 @@ impl IntentClassifier {
     /// 4. Creates new clusters or merges into existing ones
     /// 5. Reclassifies all unknown items with the updated clusters
     pub async fn run_incremental_clustering(&self) -> Result<IncrementalResult, OxyError> {
-        // Load unknown classifications
         let unknown_items: Vec<(String, String, Vec<f32>, String)> =
             self.storage.load_unknown_classifications().await?;
         if unknown_items.is_empty() {
@@ -392,7 +387,6 @@ impl IntentClassifier {
             items_count
         );
 
-        // Load existing clusters from storage
         let mut clusters = self.storage.load_clusters().await?;
 
         // Extract embeddings and questions (keep original data for reclassification)
@@ -404,7 +398,6 @@ impl IntentClassifier {
         let mini_cluster_size = (self.config.min_cluster_size / 2).max(2);
         let clustering_result = cluster_embeddings(&embeddings, mini_cluster_size);
 
-        // Extract clusters
         let new_clusters = extract_clusters(&clustering_result.labels, &embeddings, &questions);
 
         let mut new_cluster_count = 0;
@@ -417,7 +410,6 @@ impl IntentClassifier {
                 Self::find_similar_cluster(&clusters, &cluster.centroid)
                 && similarity >= self.config.cluster_merge_threshold
             {
-                // Merge into existing cluster
                 info!(
                     "Merging new cluster into existing cluster {} (similarity: {:.2})",
                     clusters[existing_idx].cluster_id, similarity
@@ -428,7 +420,6 @@ impl IntentClassifier {
                 continue;
             }
 
-            // Create a new cluster
             let next_id = self.storage.get_next_cluster_id().await?;
             let (intent_name, intent_description) = self.label_cluster(&cluster.questions).await?;
 
@@ -453,7 +444,6 @@ impl IntentClassifier {
             new_cluster_count += 1;
         }
 
-        // Reclassify all unknown items with the updated clusters
         info!(
             "Reclassifying {} unknown items with updated clusters",
             unknown_items.len()
@@ -464,7 +454,6 @@ impl IntentClassifier {
         for (trace_id, question, embedding, agent_ref) in &unknown_items {
             let classification = Self::classify_embedding_with_clusters(&clusters, embedding);
 
-            // Update the classification in the database
             self.storage
                 .update_classification(
                     trace_id,
@@ -576,7 +565,6 @@ impl IntentClassifier {
 
     /// Label a cluster using LLM
     async fn label_cluster(&self, questions: &[String]) -> Result<(String, String), OxyError> {
-        // Take sample questions for the prompt
         let sample_questions: Vec<&String> = questions.iter().take(10).collect();
         let questions_text = sample_questions
             .iter()
@@ -629,7 +617,6 @@ Respond ONLY with the JSON object, no other text."#;
             .and_then(|c| c.message.content.as_ref())
             .ok_or_else(|| OxyError::RuntimeError("No response from LLM".to_string()))?;
 
-        // Parse the JSON response
         self.parse_label_response(content)
     }
 

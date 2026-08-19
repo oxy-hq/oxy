@@ -63,7 +63,6 @@ export default function SaveQueryDialog({ open, onOpenChange, tab }: SaveQueryDi
     setError(null);
 
     try {
-      // Use saveFile which will create or update the file
       await FileService.saveFile(project.id, pathb64, tab.content, branchName);
 
       updateTab(tab.id, {

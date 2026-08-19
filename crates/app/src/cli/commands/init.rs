@@ -367,7 +367,6 @@ fn prompt_continue(message: &str) -> io::Result<bool> {
     io::stdin().read_line(&mut answer)?;
     Ok(answer.trim().to_lowercase() == "y")
 }
-// Function to create and populate a directory
 fn create_and_populate_directory(name: &str, dir: &Dir) -> Result<(), InitError> {
     fs::create_dir_all(name)?;
     dir.extract(name)

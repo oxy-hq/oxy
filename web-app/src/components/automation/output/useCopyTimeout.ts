@@ -15,7 +15,6 @@ export function useCopyTimeout() {
 
   const handleCopy = useCallback(async (content: string) => {
     try {
-      // Clear any existing timeout
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }

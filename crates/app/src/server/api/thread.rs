@@ -452,7 +452,6 @@ pub async fn delete_thread(
         })?;
 
     if let Some(thread) = thread {
-        // Check if thread is being processed
         if thread.is_processing {
             tracing::warn!(
                 "Attempted to delete thread {} that is currently being processed",

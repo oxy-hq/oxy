@@ -65,14 +65,12 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
   const summary = summaryData;
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  // Count by category from summary
   const counts = {
     all: (summary?.verifiedCount ?? 0) + (summary?.generatedCount ?? 0),
     verified: summary?.verifiedCount ?? 0,
     generated: summary?.generatedCount ?? 0
   };
 
-  // Available execution types from EXECUTION_TYPES constant
   const availableTypes = Object.keys(EXECUTION_TYPES) as ExecutionType[];
 
   // Reset page when filters change

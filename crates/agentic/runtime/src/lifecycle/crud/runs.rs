@@ -317,7 +317,6 @@ pub async fn load_task_tree(
     db: &DatabaseConnection,
     root_run_id: &str,
 ) -> Result<Vec<run::Model>, DbErr> {
-    // Load the root.
     let root = run::Entity::find_by_id(root_run_id.to_string())
         .one(db)
         .await?;

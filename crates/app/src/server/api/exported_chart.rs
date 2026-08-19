@@ -58,13 +58,11 @@ pub async fn get_exported_chart(
 
     let file_path = exported_chart_dir.join(&file_name);
 
-    // Check if file exists
     if !file_path.exists() {
         tracing::warn!("Exported chart file not found: {:?}", file_path);
         return Err(StatusCode::NOT_FOUND);
     }
 
-    // Open the file
     let file = File::open(&file_path).await.map_err(|e| {
         tracing::error!("Failed to open exported chart file: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -76,7 +74,6 @@ pub async fn get_exported_chart(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Create a stream from the file
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
 

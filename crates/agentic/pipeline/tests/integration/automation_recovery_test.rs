@@ -1013,7 +1013,6 @@ async fn seed_agent_delegates_to_automation(db: &DatabaseConnection) -> (String,
         .await
         .expect("set step done");
 
-    // Task outcome: step → automation = done
     crud::insert_task_outcome(db, &step_id, &wf_id, "done", None)
         .await
         .expect("insert step outcome");

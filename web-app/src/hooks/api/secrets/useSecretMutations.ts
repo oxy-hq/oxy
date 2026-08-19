@@ -18,7 +18,6 @@ export const useCreateSecret = () => {
   return useMutation<CreateSecretResponse, Error, CreateSecretRequest>({
     mutationFn: (request) => SecretService.createSecret(projectId, request),
     onSuccess: () => {
-      // Invalidate and refetch secrets list
       queryClient.invalidateQueries({
         queryKey: queryKeys.secret.list(projectId)
       });
@@ -39,7 +38,6 @@ export const useUpdateSecret = () => {
   return useMutation<Secret, Error, { id: string; request: UpdateSecretRequest }>({
     mutationFn: ({ id, request }) => SecretService.updateSecret(projectId, id, request),
     onSuccess: (data) => {
-      // Invalidate and refetch secrets list
       queryClient.invalidateQueries({
         queryKey: queryKeys.secret.list(projectId)
       });
@@ -64,7 +62,6 @@ export const useDeleteSecret = () => {
   return useMutation<void, Error, string>({
     mutationFn: (id) => SecretService.deleteSecret(projectId, id),
     onSuccess: () => {
-      // Invalidate and refetch secrets list
       queryClient.invalidateQueries({
         queryKey: queryKeys.secret.list(projectId)
       });

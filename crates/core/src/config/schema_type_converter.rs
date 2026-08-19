@@ -200,14 +200,11 @@ pub fn validate_array(value: &Value, schema: &SchemaObject) -> ConversionResult 
         ));
     };
 
-    // Get array validation if it exists
     let Some(array_validation) = &schema.array else {
         return Ok(value.clone());
     };
 
-    // Get the item schema if specified
     if let Some(items_schema) = &array_validation.items {
-        // Handle single schema for all items
         let item_schema = match items_schema {
             SingleOrVec::<schemars::schema::Schema>::Single(schema) => schema.as_ref(),
             SingleOrVec::<schemars::schema::Schema>::Vec(schemas) => {
@@ -220,7 +217,6 @@ pub fn validate_array(value: &Value, schema: &SchemaObject) -> ConversionResult 
             }
         };
 
-        // Extract SchemaObject from Schema
         let item_schema_obj = if let schemars::schema::Schema::Object(obj) = item_schema {
             obj
         } else {

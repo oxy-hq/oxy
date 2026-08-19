@@ -326,7 +326,6 @@ pub(super) async fn exchange_github_code_for_user_info(
         OxyError::RuntimeError("GitHub token response missing access_token".to_string())
     })?;
 
-    // Fetch user profile.
     let user_resp: GitHubUserInfo = client
         .get("https://api.github.com/user")
         .bearer_auth(&access_token)
@@ -795,7 +794,6 @@ pub(super) async fn request_magic_link_inner(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Find or create user
     let existing = Users::find()
         .filter_by_email(&req.email)
         .one(&connection)

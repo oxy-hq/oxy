@@ -76,7 +76,6 @@ impl BlockHandler {
         title: &str,
         is_verified: bool,
     ) -> Result<(), OxyError> {
-        // Create container kind
         let container_kind = ContainerKind::Artifact {
             artifact_id: source.id.to_string(),
             kind: kind.to_string(),
@@ -109,11 +108,9 @@ impl BlockHandler {
         if let Some(active_block) = self.block_manager.last_block()
             && active_block.is_artifact()
         {
-            // Store artifact
             self.artifact_tracker.store_artifact(active_block).await?;
         }
 
-        // Finish the artifact
         if let Some(artifact_id) = self.artifact_tracker.finish_artifact() {
             self.stream_dispatcher
                 .send_artifact_done(&artifact_id, error, &source.kind)
@@ -131,7 +128,6 @@ impl BlockHandler {
         source: &Source,
         kind: &ContainerKind,
     ) -> Result<(), OxyError> {
-        // Prepare and send container opener
         let (opener, _) = self.content_processor.prepare_container(kind);
         let text = format!("\n{opener}\n");
         self.stream_dispatcher
@@ -163,14 +159,12 @@ impl BlockHandler {
             }
         }
 
-        // Add the block to the manager
         self.block_manager.add_container_block(source, kind).await?;
 
         Ok(())
     }
 
     async fn handle_container_finished(&mut self, source: &Source) -> Result<(), OxyError> {
-        // Close the block
         let is_closed = self.block_manager.finish_block(source).await?;
         tracing::info!(
             "Block finished for source {}({}): is_closed={}",
@@ -262,17 +256,14 @@ impl BlockHandler {
         }
 
         if chunk.finished {
-            // Process the final chunk
             if let Some(content) = self.block_manager.finalize_content(&chunk.delta)
                 && let Some(processed_content) = self.content_processor.output_to_content(&content)
             {
-                // Add the content to our blocks
                 self.block_manager
                     .add_content(source, processed_content)
                     .await?;
             }
         } else {
-            // Update the active content with this chunk
             self.block_manager.update_content(&chunk.delta);
         }
 

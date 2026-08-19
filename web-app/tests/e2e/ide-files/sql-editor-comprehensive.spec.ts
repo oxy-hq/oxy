@@ -280,7 +280,6 @@ test.describe("SQL Editor - Error Handling", () => {
     await editor.click();
     await page.keyboard.press("Control+A");
 
-    // Execute invalid query
     await page.keyboard.type("INVALID QUERY");
     await page.waitForTimeout(500);
 

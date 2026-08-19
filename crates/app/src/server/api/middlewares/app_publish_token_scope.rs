@@ -131,7 +131,6 @@ mod tests {
             &Method::POST,
             "/customer-apps/3f2504e0/api-keys"
         ));
-        // Delete an app / unpublish.
         assert!(!is_allowed(&Method::DELETE, "/customer-apps/3f2504e0"));
         assert!(!is_allowed(
             &Method::DELETE,

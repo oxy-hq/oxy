@@ -80,7 +80,6 @@ impl MetadataMerger {
         // Process base views, merging with overlay if present
         for base_view in base_views {
             if let Some(overlay_view) = overlay_map.remove(&base_view.name) {
-                // Merge base and overlay view
                 merged_views.push(Self::merge_view_metadata(base_view, overlay_view));
             } else {
                 // Only base view exists
@@ -93,7 +92,6 @@ impl MetadataMerger {
             merged_views.push(overlay_view);
         }
 
-        // Sort by name for consistent ordering
         merged_views.sort_by(|a, b| a.name.cmp(&b.name));
         merged_views
     }
@@ -144,7 +142,6 @@ impl MetadataMerger {
             merged_dimensions.push(overlay_dim);
         }
 
-        // Sort by field_name for consistent ordering
         merged_dimensions.sort_by(|a, b| a.field_name.cmp(&b.field_name));
         merged_dimensions
     }
@@ -206,7 +203,6 @@ impl MetadataMerger {
             merged_measures.push(overlay_measure);
         }
 
-        // Sort by field_name for consistent ordering
         merged_measures.sort_by(|a, b| a.field_name.cmp(&b.field_name));
         merged_measures
     }

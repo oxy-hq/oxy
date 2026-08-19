@@ -824,7 +824,6 @@ impl AirformService {
         let project = airform_loader::load_project(&self.project_dir)
             .map_err(|e| AirformIntegrationError::Other(e.to_string()))?;
 
-        // Check profiles.yml
         let local_profiles = self.project_dir.join("profiles.yml");
         let home_profiles = dirs::home_dir()
             .map(|h| h.join(".dbt").join("profiles.yml"))

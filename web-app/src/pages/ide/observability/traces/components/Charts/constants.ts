@@ -16,7 +16,6 @@ export const AXIS_STYLE = {
   splitLine: { show: false }
 } as const;
 
-// Chart grid configuration
 export const CHART_GRID = {
   top: 5,
   right: 5,
@@ -24,7 +23,6 @@ export const CHART_GRID = {
   left: 5
 } as const;
 
-// Axis label style
 export const getAxisLabelStyle = () =>
   ({
     show: true,

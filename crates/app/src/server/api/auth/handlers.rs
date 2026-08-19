@@ -242,7 +242,6 @@ pub async fn google_auth(
             StatusCode::INTERNAL_SERVER_ERROR
         })? {
         Some(existing_user) if existing_user.status == UserStatus::Active => {
-            // Update existing active user
             let mut user_update: users::ActiveModel = existing_user.clone().into();
             user_update.name = Set(user_info.name.clone());
             user_update.picture = Set(user_info.picture.clone());
@@ -330,7 +329,6 @@ pub async fn okta_auth(
             return Err(StatusCode::UNAUTHORIZED);
         }
         Some(existing_user) => {
-            // Update existing user info
             let mut user_update: users::ActiveModel = existing_user.clone().into();
             user_update.name = Set(user_info.name.clone());
             user_update.picture = Set(user_info.picture.clone());

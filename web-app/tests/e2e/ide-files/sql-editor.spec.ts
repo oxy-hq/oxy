@@ -32,7 +32,6 @@ test.describe("IDE Files - SQL Editor", () => {
         await page.waitForURL(/\/ide\/.+/);
         await idePage.waitForEditorToLoad();
 
-        // Find execute button
         const executeButton = page.getByRole("button", {
           name: /run|execute/i
         });
@@ -70,7 +69,6 @@ test.describe("IDE Files - SQL Editor", () => {
         await page.waitForURL(/\/ide\/.+/);
         await idePage.waitForEditorToLoad();
 
-        // Replace with invalid SQL
         await idePage.replaceAllContent("SELECT * FORM invalid_syntax");
 
         const executeButton = page.getByRole("button", {
@@ -106,7 +104,6 @@ test.describe("IDE Files - SQL Editor", () => {
         await page.waitForURL(/\/ide\/.+/);
         await idePage.waitForEditorToLoad();
 
-        // Find database dropdown
         const dbDropdown = page
           .locator('[data-testid*="database"], select[name*="database"]')
           .first();
@@ -120,7 +117,6 @@ test.describe("IDE Files - SQL Editor", () => {
 
   // 11.6 No databases available
   test("11.6 - should handle empty database dropdown", async ({ page }) => {
-    // Intercept databases API
     await page.route("**/api/v1/**/databases**", (route) => {
       route.fulfill({
         status: 200,
@@ -240,7 +236,6 @@ test.describe("IDE Files - SQL Editor", () => {
           await executeButton.click();
           await page.waitForTimeout(3000);
 
-          // Look for download button
           const downloadButton = page.getByRole("button", {
             name: /download/i
           });

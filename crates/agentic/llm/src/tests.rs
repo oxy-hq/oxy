@@ -1106,7 +1106,6 @@ async fn anthropic_render_chart_tool_use_result_pairing() {
     let rounds = captured.lock().unwrap();
     assert_eq!(rounds.len(), 2, "expected 2 API calls (rounds)");
 
-    // Round 0: just the initial user message.
     assert_eq!(rounds[0].len(), 1, "round 0 should have 1 message (user)");
     assert_eq!(rounds[0][0]["role"].as_str(), Some("user"));
 
@@ -2495,7 +2494,6 @@ fn build_resume_messages_batched_file_change_all_ids_resolved() {
 
     let msgs = client.build_resume_messages(&prior, "", &[], "accepted");
 
-    // All three IDs must have tool_results.
     validate_anthropic_messages(&msgs)
         .expect("all three tool_use ids must have matching tool_results");
 

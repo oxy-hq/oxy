@@ -1891,7 +1891,6 @@ pub enum SemanticFilterType {
 
 impl Hash for SemanticFilterType {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Hash the discriminant first
         std::mem::discriminant(self).hash(state);
         // Then hash the value(s)
         match self {
@@ -2007,7 +2006,6 @@ impl JsonSchema for SemanticFilter {
         // This will add it to the definitions and return a reference
         let _filter_ref = r#gen.subschema_for::<SemanticFilterType>();
 
-        // Get the actual schema from the definitions
         let definitions = r#gen.definitions();
         let filter_type_schema = definitions.get("SemanticFilterType").cloned();
 

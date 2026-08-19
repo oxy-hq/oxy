@@ -85,7 +85,6 @@ impl SecretsStorage for SecretsEnvironmentStorage {
             lines.push(format!("{}={}", secret_name, secret_value));
         }
 
-        // Write back to .env file
         Self::write_env_file(&env_path, lines)?;
 
         // Set in current environment
@@ -124,7 +123,6 @@ impl SecretsStorage for SecretsEnvironmentStorage {
             })
             .collect();
 
-        // Write back to .env file
         Self::write_env_file(&env_path, filtered_lines)?;
 
         // Remove from current environment

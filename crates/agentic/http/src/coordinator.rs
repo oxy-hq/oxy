@@ -839,7 +839,6 @@ pub async fn get_recovery_stats(
 ) -> Response {
     let db = state.db.clone();
 
-    // Fetch recent root runs.
     let limit = query.limit.min(500);
     let runs = match db::list_recent_runs(&db, workspace_id, limit).await {
         Ok(r) => r,

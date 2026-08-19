@@ -169,14 +169,12 @@ export function tuplesToRecord(tuples: Array<[string, string]>): Record<string, 
   return Object.fromEntries(tuples);
 }
 
-// Parsed event from a span
 export interface SpanEvent {
   timestamp: string;
   name: string;
   attributes: Record<string, string>;
 }
 
-// Timeline span for visualization
 export interface TimelineSpan {
   spanId: string;
   parentSpanId: string;

@@ -10,7 +10,6 @@ import type {
 import { apiClient } from "./axios";
 
 export class GitHubApiService {
-  // Git Namespaces
   static async listGitNamespaces(orgId: string): Promise<GitHubNamespace[]> {
     const response = await apiClient.get(`/orgs/${orgId}/github/namespaces`);
     return response.data.installations;

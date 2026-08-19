@@ -285,7 +285,6 @@ function PromotionBody({
   const composesBefore = model.edges.filter((e) => e.to === fromId);
   const composesAfter = model.edges.filter((e) => e.from === toId);
 
-  // All measures that push forward: own + induced on the from entity
   const allForwardedMeasures = [
     ...(fromEntity?.own_measures ?? []).map((m) => ({ measure: m, induced: false })),
     ...(fromEntity?.induced_measures ?? []).map((m) => ({ measure: m, induced: true }))

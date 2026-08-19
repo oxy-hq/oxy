@@ -213,7 +213,6 @@ impl DatabaseConnector for SnowflakeConnector {
             .await
             .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
-        // Decode rows and column names from the Snowflake result.
         let (column_names, column_types, mut sample_rows) = match sf_result {
             SnowflakeQueryResult::Arrow(batches) => {
                 let (columns, types) = batches
@@ -283,7 +282,6 @@ impl DatabaseConnector for SnowflakeConnector {
             SnowflakeQueryResult::Empty => (Vec::new(), Vec::new(), Vec::new()),
         };
 
-        // Apply sample limit.
         sample_rows.truncate(sample_limit as usize);
 
         let col_count = column_names.len();

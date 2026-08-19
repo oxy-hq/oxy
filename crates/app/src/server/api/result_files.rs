@@ -36,11 +36,9 @@ pub async fn store_result_file(
     workspace_manager: &WorkspaceManager,
     temp_file_path: &str,
 ) -> Result<String, String> {
-    // Load the Arrow result
     let (batches, schema) =
         load_result(temp_file_path).map_err(|e| format!("Failed to load Arrow result: {}", e))?;
 
-    // Get the results directory
     let results_dir = workspace_manager
         .config_manager
         .get_results_dir()
@@ -51,7 +49,6 @@ pub async fn store_result_file(
     let file_name = format!("{}.parquet", uuid::Uuid::new_v4());
     let dest_path = results_dir.join(&file_name);
 
-    // Write as Parquet
     write_parquet(&dest_path, &batches, schema)
         .map_err(|e| format!("Failed to write Parquet file: {}", e))?;
 
@@ -65,7 +62,6 @@ pub async fn store_result_file(
             .await;
     }
 
-    // Clean up temp file
     let _ = tokio::fs::remove_file(temp_file_path).await;
 
     Ok(file_name)
@@ -109,7 +105,6 @@ pub async fn get_result_file(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, file_name)): Path<(Uuid, String)>,
 ) -> Result<Response, StatusCode> {
-    // Validate file format
     if !file_name.ends_with(".parquet") {
         tracing::warn!("Invalid file format: {}", file_name);
         return Err(StatusCode::BAD_REQUEST);
@@ -125,7 +120,6 @@ pub async fn get_result_file(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    // Get the results directory from the project manager
     let results_dir = workspace_manager
         .config_manager
         .get_results_dir()
@@ -165,7 +159,6 @@ pub async fn get_result_file(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    // Open the file
     let file = File::open(&file_path).await.map_err(|e| {
         tracing::error!("Failed to open result file: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -177,7 +170,6 @@ pub async fn get_result_file(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Create a stream from the file
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
 
@@ -207,7 +199,6 @@ pub async fn delete_result_file(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, file_id)): Path<(Uuid, String)>,
 ) -> Result<StatusCode, StatusCode> {
-    // Validate file_id format
     if !file_id.ends_with(".parquet") {
         tracing::warn!("Invalid file format for deletion: {}", file_id);
         return Err(StatusCode::BAD_REQUEST);
@@ -224,7 +215,6 @@ pub async fn delete_result_file(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    // Get the results directory
     let results_dir = workspace_manager
         .config_manager
         .get_results_dir()
@@ -237,13 +227,11 @@ pub async fn delete_result_file(
     // Construct the full file path
     let file_path = results_dir.join(&file_id);
 
-    // Check if file exists
     if !file_path.exists() {
         tracing::warn!("Result file not found for deletion: {:?}", file_path);
         return Err(StatusCode::NOT_FOUND);
     }
 
-    // Delete the file
     tokio::fs::remove_file(&file_path).await.map_err(|e| {
         tracing::error!("Failed to delete result file: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR

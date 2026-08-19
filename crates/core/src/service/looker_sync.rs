@@ -149,7 +149,6 @@ impl LookerSyncService {
             });
         }
 
-        // Ensure directory structure exists
         self.storage.ensure_directory_structure(model)?;
 
         // Fetch explore metadata from Looker API
@@ -161,10 +160,8 @@ impl LookerSyncService {
                     message: format!("Failed to fetch explore {}/{}: {}", model, explore, e),
                 })?;
 
-        // Transform API response to ExploreMetadata
         let explore_metadata = transform_to_metadata(&explore_response, model);
 
-        // Save the metadata to storage
         self.storage
             .save_base_metadata(model, explore, &explore_metadata)?;
 
@@ -208,7 +205,6 @@ impl LookerSyncService {
             .map(|e| e.name.clone())
             .collect();
 
-        // Initialize sync result
         let mut sync_result = SyncResult {
             integration: self.integration_name.clone(),
             model: model.to_string(),
@@ -218,7 +214,6 @@ impl LookerSyncService {
             skipped: Vec::new(),
         };
 
-        // Sync each explore
         for explore_name in explore_names {
             match self.sync_explore(model, &explore_name).await {
                 Ok(()) => {
@@ -292,7 +287,6 @@ fn transform_to_metadata(
     use oxy_looker::models::{FieldMetadata, ViewMetadata};
     use std::collections::HashMap;
 
-    // Group fields by view
     let mut views_map: HashMap<String, (Vec<FieldMetadata>, Vec<FieldMetadata>)> = HashMap::new();
 
     // Get fields from the explore (may be None)
@@ -330,7 +324,6 @@ fn transform_to_metadata(
         }
     }
 
-    // Convert to ViewMetadata
     let mut views: Vec<ViewMetadata> = views_map
         .into_iter()
         .map(|(view_name, (dimensions, measures))| ViewMetadata {
@@ -340,7 +333,6 @@ fn transform_to_metadata(
         })
         .collect();
 
-    // Sort views by name for consistency
     views.sort_by(|a, b| a.name.cmp(&b.name));
 
     ExploreMetadata {

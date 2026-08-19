@@ -123,7 +123,6 @@ const DetectionsPage: React.FC = () => {
     return Array.from(set).sort();
   }, [allReports]);
 
-  // Filters
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
   const [triggerFilter, setTriggerFilter] = useState<string>("all");
   const [minConfidence, setMinConfidence] = useState<number>(0);

@@ -60,7 +60,6 @@ impl S3StorageSecret {
                 url_style,
                 use_ssl,
             } => {
-                // Expose the secret value from the secrets manager
                 let secret_value = secret.expose_str_with_adapter(secrets_manager).await?;
 
                 Ok(format!(

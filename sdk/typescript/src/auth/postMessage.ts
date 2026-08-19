@@ -105,16 +105,13 @@ function createAuthListener(
   timeout: number
 ): Promise<OxyAuthResponseMessage> {
   return new Promise((resolve, reject) => {
-    // Set up message listener
     const listener = (event: MessageEvent) => {
-      // Validate origin
       if (!validateOrigin(event.origin, origin)) {
         // Don't reject here - might be other postMessage traffic
         // Just ignore messages from wrong origins
         return;
       }
 
-      // Check message type
       if (event.data?.type !== "OXY_AUTH_RESPONSE") {
         // Not our message type, ignore
         return;
@@ -146,7 +143,6 @@ function createAuthListener(
       resolve(response);
     };
 
-    // Set up timeout
     const timeoutId = setTimeout(() => {
       window.removeEventListener("message", listener);
       reject(new PostMessageAuthTimeoutError(timeout));
@@ -194,10 +190,8 @@ export async function requestAuthFromParent(
     throw new PostMessageAuthNotInIframeError();
   }
 
-  // Generate request ID
   const requestId = generateRequestId();
 
-  // Create request message
   const request: OxyAuthRequestMessage = {
     type: "OXY_AUTH_REQUEST",
     version: "1.0",
@@ -205,7 +199,6 @@ export async function requestAuthFromParent(
     requestId
   };
 
-  // Attempt authentication with retries
   let lastError: Error | null = null;
   const maxAttempts = retries + 1;
 
@@ -214,7 +207,6 @@ export async function requestAuthFromParent(
       // Set up listener before sending request to avoid race condition
       const responsePromise = createAuthListener(requestId, parentOrigin, timeout);
 
-      // Send request to parent
       const targetOrigin = parentOrigin || "*";
       window.parent.postMessage(request, targetOrigin);
 

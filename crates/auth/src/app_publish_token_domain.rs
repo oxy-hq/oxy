@@ -179,7 +179,6 @@ mod tests {
         let t = generate_token();
         assert!(t.plaintext.starts_with(APP_PUBLISH_TOKEN_PREFIX));
         assert!(t.token_prefix.starts_with(APP_PUBLISH_TOKEN_PREFIX));
-        // prefix scheme (9) + 8 hex chars.
         assert_eq!(t.token_prefix.len(), APP_PUBLISH_TOKEN_PREFIX.len() + 8);
         // scheme (9) + 64 hex chars (32 bytes).
         assert_eq!(t.plaintext.len(), APP_PUBLISH_TOKEN_PREFIX.len() + 64);

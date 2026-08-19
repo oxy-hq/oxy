@@ -62,7 +62,6 @@ impl LocalTransport {
 #[async_trait]
 impl CoordinatorTransport for LocalTransport {
     async fn assign(&self, assignment: TaskAssignment) -> Result<(), TransportError> {
-        // Register a cancellation token for this task.
         self.cancel_tokens
             .insert(assignment.task_id.clone(), CancellationToken::new());
 
@@ -210,7 +209,6 @@ mod tests {
         };
         coord(&transport).assign(assignment).await.unwrap();
 
-        // Worker gets the cancellation token.
         let token = work(&transport).cancellation_token("t1");
         assert!(!token.is_cancelled());
 

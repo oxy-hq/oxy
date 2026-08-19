@@ -440,7 +440,6 @@ mod tests {
         // Default KeepMine → don't add upstream-only roles.
         let merged_default = merge(cur.clone(), ups.clone(), &HashMap::new());
         assert!(merged_default.roles.is_empty());
-        // TakeUpstream → add it.
         let mut actions = HashMap::new();
         actions.insert("new_role".into(), UpdateAction::TakeUpstream);
         let merged_take = merge(cur, ups, &actions);
@@ -482,12 +481,10 @@ mod tests {
             ppe_yolo: None,
         };
 
-        // Default → keep local variables.
         let merged_default = merge(cur.clone(), ups.clone(), &HashMap::new());
         assert!(merged_default.variables.contains_key("local_only"));
         assert!(!merged_default.variables.contains_key("upstream_only"));
 
-        // Take upstream → swap.
         let mut actions = HashMap::new();
         actions.insert(VARIABLES_ACTION_KEY.into(), UpdateAction::TakeUpstream);
         let merged_take = merge(cur, ups, &actions);

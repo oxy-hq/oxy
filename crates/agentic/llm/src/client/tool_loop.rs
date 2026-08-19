@@ -553,7 +553,6 @@ impl LlmClient {
             assistant_blocks.extend(ordered_blocks);
             messages.push(self.provider.assistant_message(&assistant_blocks));
 
-            // Execute tools and collect results.
             let mut tool_results: Vec<(String, String, bool)> = Vec::new();
             for (tool_idx, tc) in tool_calls.iter().enumerate() {
                 all_tool_calls.push((tc.name.clone(), tc.input.clone()));

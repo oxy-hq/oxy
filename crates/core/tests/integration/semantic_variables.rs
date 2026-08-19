@@ -73,7 +73,6 @@ pub mod semantic_variables {
             .assert();
 
         let output = String::from_utf8(result.get_output().stderr.clone()).unwrap();
-        // Should validate variable syntax correctly
         assert!(!output.contains("Invalid variable syntax"));
         assert!(!output.contains("Failed to parse"));
     }

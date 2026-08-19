@@ -500,7 +500,6 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
     [projectId, branchName, orchestrator]
   );
 
-  // Build the model_config payload from orchestrator state.
   const buildModelConfig = useCallback(() => {
     const { llmModel, llmVendor, llmModelRef, llmProvider } = orchestrator.state;
     if (llmModel && llmVendor && llmModelRef && llmProvider) {

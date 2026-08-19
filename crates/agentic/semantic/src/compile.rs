@@ -85,7 +85,6 @@ pub fn resolve_and_compile(
 
     let semantic_layer = engine.semantic_layer();
 
-    // Resolve topic.
     let topic = resolve_topic(semantic_layer, task)?;
 
     // Get database from views.
@@ -105,7 +104,6 @@ pub fn resolve_and_compile(
     // Build date fields for filter normalization.
     let date_fields = collect_date_fields(&views);
 
-    // Build query request.
     let request = build_query_request(
         task,
         &topic.name,

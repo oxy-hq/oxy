@@ -36,7 +36,6 @@ impl BlockManager {
         source: &Source,
         kind: &ContainerKind,
     ) -> Result<(), OxyError> {
-        // Create a new block for the container
         let block = Block::container(source.id.to_string(), kind.clone());
         self.active_blocks.push(block);
         Ok(())

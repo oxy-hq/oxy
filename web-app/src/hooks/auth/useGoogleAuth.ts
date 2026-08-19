@@ -45,7 +45,6 @@ export const useGoogleAuth = () => {
     },
     onError: (error) => {
       console.error("Google auth failed:", error);
-      // Clear state on error
       sessionStorage.removeItem(GOOGLE_STATE_KEY);
       navigate(ROUTES.AUTH.LOGIN);
     }

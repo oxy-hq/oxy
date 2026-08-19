@@ -19,7 +19,6 @@ fn extract_api_key_from_headers_with_name(
 }
 
 pub async fn authenticate_header(headers: &HeaderMap) -> Result<Identity, OxyError> {
-    // Establish database connection
     let db = establish_connection().await.map_err(|e| {
         tracing::error!(
             "Failed to establish database connection for API key validation: {}",
@@ -49,7 +48,6 @@ pub async fn authenticate_header_with_config(
         ))
     })?;
 
-    // Validate the API key
     let validated_key = ApiKeyService::validate_api_key(db, &key, config).await?;
 
     // Get the user associated with the API key

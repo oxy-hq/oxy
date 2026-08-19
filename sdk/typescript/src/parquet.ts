@@ -120,21 +120,18 @@ export class ParquetReader {
       const conn = await getConnection();
       const db = await initializeDuckDB();
 
-      // Convert blob to Uint8Array
       const arrayBuffer = await blob.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
 
       // Register the file with DuckDB using unique name
       await db.registerFileBuffer(`${internalTableName}.parquet`, uint8Array);
 
-      // Drop table if it exists
       try {
         await conn.query(`DROP TABLE IF EXISTS ${internalTableName}`);
       } catch {
         // Ignore error if table doesn't exist
       }
 
-      // Create table from parquet
       await conn.query(
         `CREATE TABLE ${internalTableName} AS SELECT * FROM '${internalTableName}.parquet'`
       );
@@ -294,7 +291,6 @@ export class ParquetReader {
 
         // Drop all registered tables and file buffers
         for (const [, internalTableName] of this.tableMap.entries()) {
-          // Drop the table using internal unique name
           try {
             await conn.query(`DROP TABLE IF EXISTS ${internalTableName}`);
           } catch {
@@ -309,7 +305,6 @@ export class ParquetReader {
           }
         }
 
-        // Clear the table map
         this.tableMap.clear();
       });
     }

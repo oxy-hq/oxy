@@ -84,7 +84,6 @@ impl Config for CustomOpenAIConfig {
     fn headers(&self) -> HeaderMap {
         let mut headers = self.base_config.headers();
 
-        // Add custom headers
         for (key, value) in &self.custom_headers {
             headers.insert(key.clone(), value.clone());
         }

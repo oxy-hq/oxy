@@ -40,7 +40,6 @@ export const useOktaAuth = () => {
     },
     onError: (error) => {
       console.error("Okta auth failed:", error);
-      // Clear state on error
       sessionStorage.removeItem(OKTA_STATE_KEY);
       navigate(ROUTES.AUTH.LOGIN);
     }

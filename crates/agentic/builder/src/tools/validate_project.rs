@@ -32,7 +32,6 @@ pub async fn execute_validate_project(
     validator: &dyn BuilderProjectValidator,
 ) -> Result<Value, ToolError> {
     if let Some(rel_path) = params["file_path"].as_str() {
-        // Validate a single file.
         let abs = safe_path(project_root, rel_path)?;
         match validator.validate_file(&abs).await {
             Ok(()) => Ok(json!({ "valid": true, "file": rel_path })),

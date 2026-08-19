@@ -26,7 +26,6 @@ test.describe("IDE Files - View Editor - Explorer Mode Fields Panel", () => {
         await page.waitForURL(/\/ide\/.+/);
         await page.waitForTimeout(1000);
 
-        // Should show dimensions or measures
         const dimensions = page.getByText(/dimensions/i);
         const measures = page.getByText(/measures/i);
         const hasDimensions = await dimensions.isVisible().catch(() => false);
@@ -140,7 +139,6 @@ test.describe("IDE Files - View Editor - Query Panel", () => {
         await page.waitForURL(/\/ide\/.+/);
         await page.waitForTimeout(1000);
 
-        // Find add filter button
         const addFilterButton = page.getByRole("button", {
           name: /add.*filter/i
         });
@@ -166,7 +164,6 @@ test.describe("IDE Files - View Editor - Query Panel", () => {
         await page.waitForURL(/\/ide\/.+/);
         await page.waitForTimeout(1000);
 
-        // Find add sort button
         const addSortButton = page.getByRole("button", {
           name: /add.*sort|order/i
         });
@@ -229,7 +226,6 @@ test.describe("IDE Files - View Editor - SQL & Execution", () => {
         await page.waitForURL(/\/ide\/.+/);
         await page.waitForTimeout(1000);
 
-        // Find execute button
         const executeButton = page.getByRole("button", {
           name: /run|execute/i
         });
@@ -287,7 +283,6 @@ test.describe("IDE Files - View Editor - SQL & Execution", () => {
         await page.waitForURL(/\/ide\/.+/);
         await page.waitForTimeout(1000);
 
-        // Find SQL toggle
         const sqlToggle = page.getByRole("button", { name: /sql|show query/i });
         if (await sqlToggle.isVisible()) {
           await sqlToggle.click();

@@ -67,7 +67,6 @@ impl Executable<OneShotInput> for OneShotExecutable {
         ));
         // Prior memory (typically empty for one-shot eval judges).
         messages.extend(input.memory);
-        // Optional user input.
         if let Some(user) = input.user_input {
             messages.push(ChatCompletionRequestMessage::User(
                 ChatCompletionRequestUserMessage {

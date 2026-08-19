@@ -93,7 +93,6 @@ function ScatterPlotInner({
       type: "downplay"
     });
 
-    // Then highlight the new selected point
     if (selectedPoint) {
       for (let seriesIndex = 0; seriesIndex < seriesData.length; seriesIndex++) {
         const series = seriesData[seriesIndex];

@@ -142,7 +142,6 @@ impl RetryPolicy {
                         break;
                     }
 
-                    // Calculate delay for next attempt
                     let delay = self.calculate_delay(attempt);
                     warn!(
                         operation = operation_name,
@@ -157,7 +156,6 @@ impl RetryPolicy {
             }
         }
 
-        // Return the last error if all attempts failed
         Err(last_error.unwrap_or_else(|| {
             OmniError::ConnectionError(format!(
                 "Operation '{}' failed after {} attempts",
@@ -213,7 +211,6 @@ fn should_retry(error: &OmniError) -> bool {
         OmniError::StorageError(_) => false,
         OmniError::SyncError(_) => false,
 
-        // Timeout error handling
         OmniError::QueryTimeoutError(_) => false, // Timeout errors indicate configuration or query complexity issues
         OmniError::QueryPollingError(_) => true, // Polling failures might be temporary network issues
     }
@@ -467,7 +464,6 @@ mod tests {
 
     #[test]
     fn test_should_retry_logic() {
-        // Should retry these errors
         assert!(should_retry(&OmniError::ServerError(
             "500 error".to_string()
         )));

@@ -39,17 +39,14 @@ export async function captureFileTree(page: Page): Promise<void> {
   try {
     console.log("📸 Capturing file tree snapshot...");
 
-    // Navigate to Files tab
     const filesTab = page.getByRole("tab", { name: "Files" });
     if (await filesTab.isVisible({ timeout: 2000 }).catch(() => false)) {
       await filesTab.click();
       await page.waitForTimeout(500);
     }
 
-    // Clear previous snapshot
     fileTreeSnapshot.clear();
 
-    // Get all file and folder links
     const fileLinks = page.locator(
       '[data-testid*="file-tree"] a, [data-testid*="file-tree"] button'
     );
@@ -85,14 +82,12 @@ async function restoreFileTree(page: Page): Promise<void> {
   try {
     console.log("🔄 Restoring file tree from snapshot...");
 
-    // Navigate to Files tab
     const filesTab = page.getByRole("tab", { name: "Files" });
     if (await filesTab.isVisible({ timeout: 2000 }).catch(() => false)) {
       await filesTab.click();
       await page.waitForTimeout(500);
     }
 
-    // Get current file tree
     const currentFiles = new Set<string>();
     const fileLinks = page.locator(
       '[data-testid*="file-tree"] a, [data-testid*="file-tree"] button'
@@ -115,7 +110,6 @@ async function restoreFileTree(page: Page): Promise<void> {
     // Find created files (in current but not in snapshot)
     const createdPaths = Array.from(currentFiles).filter((path) => !fileTreeSnapshot.has(path));
 
-    // Recreate deleted files
     for (const deletedFile of deletedFiles) {
       await recreateFileOrFolder(page, deletedFile);
     }
@@ -179,7 +173,6 @@ async function deleteFileOrFolder(page: Page, path: string): Promise<void> {
       await target.click({ button: "right" });
       await page.waitForTimeout(300);
 
-      // Click delete option
       const deleteOption = page.getByRole("menuitem", { name: /delete/i });
       if (await deleteOption.isVisible({ timeout: 1000 }).catch(() => false)) {
         await deleteOption.click();
@@ -214,7 +207,6 @@ export async function saveFileSnapshot(page: Page): Promise<void> {
 
     const filePath = decodeURIComponent(urlMatch[1]);
 
-    // Get file name from breadcrumb or tab
     const fileNameElement = page
       .locator('[data-testid*="file-name"], .file-name, .tab-label')
       .first();
@@ -272,10 +264,8 @@ export async function restoreFileSnapshot(page: Page): Promise<void> {
     const fileExists = await checkFileExists(page, snapshot.fileName);
 
     if (!fileExists && snapshot.exists) {
-      // File was deleted - recreate it
       await recreateFile(page, snapshot);
     } else if (fileExists) {
-      // File exists - restore content
       await restoreFileContent(page, snapshot);
     }
 
@@ -295,7 +285,6 @@ async function restoreFileContent(page: Page, snapshot: FileSnapshot): Promise<v
     const editor = page.locator(".monaco-editor .view-lines").first();
 
     if (await editor.isVisible({ timeout: 2000 }).catch(() => false)) {
-      // Get current content
       const currentContent = await editor.textContent();
 
       // Only restore if content changed
@@ -332,7 +321,6 @@ async function restoreFileContent(page: Page, snapshot: FileSnapshot): Promise<v
  */
 async function checkFileExists(page: Page, fileName: string): Promise<boolean> {
   try {
-    // Navigate to Files tab
     const filesTab = page.getByRole("tab", { name: "Files" });
     if (await filesTab.isVisible({ timeout: 1000 }).catch(() => false)) {
       await filesTab.click();
@@ -354,14 +342,12 @@ async function recreateFile(page: Page, snapshot: FileSnapshot): Promise<void> {
   try {
     console.log(`🔄 Recreating deleted file: ${snapshot.fileName}`);
 
-    // Navigate to Files tab
     const filesTab = page.getByRole("tab", { name: "Files" });
     if (await filesTab.isVisible({ timeout: 1000 }).catch(() => false)) {
       await filesTab.click();
       await page.waitForTimeout(500);
     }
 
-    // Find new file button
     const newFileButton = page.getByRole("button", {
       name: /new file|create file/i
     });
@@ -369,7 +355,6 @@ async function recreateFile(page: Page, snapshot: FileSnapshot): Promise<void> {
       await newFileButton.click();
       await page.waitForTimeout(500);
 
-      // Enter file name
       const fileNameInput = page
         .locator('input[placeholder*="file name"], input[type="text"]')
         .first();
@@ -448,7 +433,6 @@ async function discardUnsavedChanges(page: Page): Promise<void> {
 
 async function closeAllFiles(page: Page): Promise<void> {
   try {
-    // Close all tabs
     const closeTabs = page.locator('[aria-label*="close"], button[title*="Close"]');
     const count = await closeTabs.count();
     for (let i = 0; i < Math.min(count, 10); i++) {

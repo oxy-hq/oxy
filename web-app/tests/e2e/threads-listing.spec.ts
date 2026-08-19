@@ -24,7 +24,6 @@ test.describe("Threads Listing Page", () => {
     // Verify the page title
     await expect(page.getByRole("heading", { name: "Threads", level: 1 })).toBeVisible();
 
-    // Verify thread items are visible
     const threadItems = page.locator('[data-testid="thread-item"]');
     await expect(threadItems.first()).toBeVisible({ timeout: 10000 });
   });
@@ -42,7 +41,6 @@ test.describe("Threads Listing Page", () => {
   });
 
   test("should navigate to thread when clicked", async ({ page }) => {
-    // Click on the first thread
     const firstThread = page.locator('[data-testid="thread-item"]').first();
     await expect(firstThread).toBeVisible({ timeout: 10000 });
     await firstThread.click();
@@ -73,7 +71,6 @@ test.describe("Threads Listing Page", () => {
       timeout: 10000
     });
 
-    // Verify items per page combobox
     const itemsPerPage = page.locator("role=combobox").first();
     await expect(itemsPerPage).toBeVisible();
     await expect(itemsPerPage).toContainText("10 / page");
@@ -95,7 +92,6 @@ test.describe("Threads Listing Page", () => {
       timeout: 10000
     });
 
-    // Click Select button
     await page.getByRole("button", { name: "Select" }).click();
 
     // Verify checkboxes appear

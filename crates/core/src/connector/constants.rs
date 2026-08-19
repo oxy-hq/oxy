@@ -10,8 +10,6 @@ pub(super) const FAILED_TO_RUN_BLOCKING_TASK: &str = "Failed to run blocking tas
 
 pub(super) const SNOWFLAKE_SESSION_VAR_LIMIT: usize = 256;
 
-// duckdb errors
 pub(super) const PREPARE_DUCKDB_STMT: &str = "Failed to prepare DuckDB statement";
 
-// arrow errors
 pub(super) const LOAD_ARROW_RESULT: &str = "Failed to load arrow result";

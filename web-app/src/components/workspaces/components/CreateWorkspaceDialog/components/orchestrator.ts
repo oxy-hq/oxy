@@ -733,7 +733,6 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
   const messages: OnboardingMessage[] = [];
   const currentIdx = stepIndex(state.step);
 
-  // Welcome
   messages.push({
     id: "welcome",
     role: "assistant",
@@ -744,7 +743,6 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
 
   if (currentIdx < stepIndex("llm_provider")) return messages;
 
-  // LLM Provider selection
   messages.push({
     id: "llm_provider",
     role: "assistant",
@@ -777,7 +775,6 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
 
   if (currentIdx < stepIndex("llm_model")) return messages;
 
-  // LLM Model selection
   const modelOptions = getModelOptions(state.llmProvider);
   messages.push({
     id: "llm_model",
@@ -850,7 +847,6 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
 
   if (currentIdx < stepIndex("warehouse_type")) return messages;
 
-  // Warehouse type
   messages.push({
     id: "warehouse_type",
     role: "assistant",
@@ -925,7 +921,6 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
 
   if (currentIdx < stepIndex("connection_test")) return messages;
 
-  // Connection test
   if (state.connectionStatus === "testing") {
     messages.push({
       id: "connection_test",
@@ -960,7 +955,6 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
 
   if (currentIdx < stepIndex("schema_discovery")) return messages;
 
-  // Schema discovery
   if (state.schemaDiscoveryError) {
     messages.push({
       id: "schema_discovery",
@@ -990,7 +984,6 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
 
   if (currentIdx < stepIndex("table_selection")) return messages;
 
-  // Table selection
   messages.push({
     id: "table_selection",
     role: "assistant",

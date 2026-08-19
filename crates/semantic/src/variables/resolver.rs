@@ -127,7 +127,6 @@ impl RuntimeVariableResolver {
             }
         }
 
-        // Convert minijinja Value to JsonValue
         let json_value = serde_json::to_value(current)
             .map_err(|e| VariableError::InvalidSyntax(format!("Failed to convert value: {}", e)))?;
 

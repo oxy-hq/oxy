@@ -50,7 +50,6 @@ fn test_multiple_variable_sources_with_precedence() {
         ("limit".to_string(), json!(100)),
     ]);
 
-    // Create resolver with all sources
     let resolver = RuntimeVariableResolver::from_sources(
         Some(automation_vars),
         Some(agent_vars),
@@ -82,7 +81,6 @@ fn test_complex_expression_with_nested_variables() {
     let expr = "SELECT {{variables.id_col}}, {{variables.name_col}} FROM {{variables.db.schema}}.{{variables.db.table}} WHERE {{variables.filter_col}} = 'active'";
     let encoded = encoder.encode_expression(expr);
 
-    // Verify all variables are encoded
     assert!(!encoded.contains("{{"));
     assert!(encoded.contains("__VAR_"));
 
@@ -125,7 +123,6 @@ fn test_variable_resolution_with_sql_encoding() {
     let original_sql = "SELECT {{variables.date_column}} FROM {{variables.table_name}}";
     let encoded_sql = encoder.encode_expression(original_sql);
 
-    // Verify encoding happened
     assert!(encoded_sql.contains("__VAR_"));
     assert!(!encoded_sql.contains("{{"));
 
@@ -143,7 +140,6 @@ fn test_error_handling_for_missing_variables() {
 
     let resolver = RuntimeVariableResolver::new(context).unwrap();
 
-    // Test missing variable
     let result = resolver.resolve_variable("missing");
     assert!(result.is_err());
 }
@@ -231,7 +227,6 @@ fn test_decode_all_variables_in_sql() {
     let original = "SELECT {{variables.col1}}, {{variables.col2}} FROM {{variables.table}}";
     let encoded = encoder.encode_expression(original);
 
-    // Test decoding all at once
     let decoded = encoder.decode_all_variables(&encoded);
     assert_eq!(decoded, original);
 }

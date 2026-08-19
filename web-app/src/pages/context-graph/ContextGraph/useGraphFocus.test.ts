@@ -112,7 +112,6 @@ describe("useGraphFocus", () => {
     expect(result.current.focusedNodeId).toBe("n1");
     expect(result.current.selectedNode?.id).toBe("n1");
 
-    // Click same node again — toggles off
     act(() => {
       result.current.handleNodeClick({} as React.MouseEvent, { id: "n1" });
     });

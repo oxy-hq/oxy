@@ -221,7 +221,6 @@ async fn uninstall_is_idempotent() {
         .await
         .expect("first revoke should succeed");
 
-    // Fetch the already-revoked row.
     let conn = establish_connection().await.expect("db connect");
     let revoked_row = SlackInstallations::find_by_id(installation.id)
         .one(&conn)
@@ -261,7 +260,6 @@ async fn find_active_returns_none_after_revoke() {
     .await
     .expect("seed installation");
 
-    // Verify active before.
     let found_before = InstallationsService::find_active_by_team(&team_id)
         .await
         .expect("lookup before");

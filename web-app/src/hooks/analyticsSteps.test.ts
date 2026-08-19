@@ -553,7 +553,6 @@ describe("buildAnalyticsSteps — concurrent fan-out", () => {
       fanOutStart(3),
       subSpecStart(0, "Query 1 of 3"),
       subSpecStart(1, "Query 2 of 3"),
-      // Card 0 step
       stepStart("solving", 0),
       stepStart("solving", 1),
       // Card 1 finishes first
@@ -607,7 +606,6 @@ describe("buildAnalyticsSteps — concurrent fan-out", () => {
     };
     expect(group.cards).toHaveLength(2);
 
-    // Both cards should be streaming
     expect(group.cards[0].isStreaming).toBe(true);
     expect(group.cards[0].steps).toHaveLength(1);
     expect(group.cards[0].steps[0].isStreaming).toBe(true);

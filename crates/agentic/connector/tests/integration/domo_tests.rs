@@ -132,7 +132,6 @@ async fn execute_query_returns_bounded_sample_and_stats() {
     assert_eq!(res.result.rows.len(), 2);
     assert!(res.result.truncated);
 
-    // Stats.
     let name_stats = res
         .summary
         .columns

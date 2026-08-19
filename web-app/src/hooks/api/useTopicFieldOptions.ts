@@ -25,7 +25,6 @@ export interface TopicFieldOptions {
 export default function useTopicFieldOptions(topicName: string | undefined): TopicFieldOptions {
   const { topicFiles, isLoading: topicFilesLoading } = useTopicFiles();
 
-  // Resolve topic name to file path
   const topicFilePath = useMemo(() => {
     if (!topicName || topicFiles.length === 0) return undefined;
     return topicFiles.find((t) => t.value === topicName)?.path;
@@ -47,7 +46,6 @@ export default function useTopicFieldOptions(topicName: string | undefined): Top
     const measures: FieldOption[] = [];
 
     for (const view of data.views) {
-      // Add dimensions
       for (const dim of view.dimensions) {
         const value = `${view.view_name}.${dim.name}`;
         dimensions.push({
@@ -62,7 +60,6 @@ export default function useTopicFieldOptions(topicName: string | undefined): Top
         });
       }
 
-      // Add measures
       for (const measure of view.measures) {
         const value = `${view.view_name}.${measure.name}`;
         measures.push({

@@ -82,11 +82,9 @@ interface QueryResult {
 }
 
 interface DatabaseClientState {
-  // Connections
   connections: DatabaseConnection[];
   activeConnectionId: string | null;
 
-  // Query tabs
   tabs: QueryTab[];
   activeTabId: string | null;
   setActiveConnection: (id: string | null) => void;

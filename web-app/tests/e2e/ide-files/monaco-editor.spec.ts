@@ -50,7 +50,6 @@ test.describe("IDE Files - Monaco Editor - Loading & Display", () => {
     await idePage.openFile("test-file-for-e2e.txt");
     await idePage.waitForEditorToLoad();
 
-    // Should be able to type in editor
     await idePage.clickEditor();
     await page.keyboard.type("New content in empty file");
 
@@ -194,7 +193,6 @@ test.describe("IDE Files - Monaco Editor - Content Editing", () => {
     await idePage.insertTextAtEnd("Changes to undo");
     await idePage.verifySaveButtonVisible();
 
-    // Undo
     await idePage.undo();
     await idePage.undo();
     await page.waitForTimeout(500);
@@ -262,7 +260,6 @@ test.describe("IDE Files - Monaco Editor - Content Editing", () => {
     // Open find and replace
     await page.keyboard.press("Control+H");
 
-    // Find widget should appear
     const findWidget = page.locator(".find-widget");
     await expect(findWidget).toBeVisible({ timeout: 3000 });
   });
@@ -274,7 +271,6 @@ test.describe("IDE Files - Monaco Editor - Content Editing", () => {
     await idePage.openFile("config.yml");
     await idePage.waitForEditorToLoad();
 
-    // Check for line numbers
     const lineNumbers = page.locator(".line-numbers");
     await expect(lineNumbers.first()).toBeVisible();
   });
@@ -320,7 +316,6 @@ test.describe("IDE Files - Monaco Editor - Diff View", () => {
     if (await diffButton.isVisible()) {
       await diffButton.click();
 
-      // Should show diff editor
       const diffEditor = page.locator(".monaco-diff-editor");
       await expect(diffEditor).toBeVisible({ timeout: 3000 });
     }
@@ -423,7 +418,6 @@ test.describe("IDE Files - Monaco Editor - Saving", () => {
     await idePage.insertTextAtEnd("Content that will fail to save");
     await idePage.verifySaveButtonVisible();
 
-    // Intercept save request
     await page.route("**/api/v1/**/files/**", (route, request) => {
       if (request.method() === "PUT" || request.method() === "POST") {
         route.fulfill({

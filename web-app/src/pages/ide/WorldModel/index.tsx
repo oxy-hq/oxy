@@ -15,7 +15,6 @@ export default function WorldModelView() {
   const [selection, setSelectionRaw] = useState<WmSelection>(null);
   const [history, setHistory] = useState<WmSelection[]>([]);
 
-  // Filter seed state.
   const [filterSeed, setFilterSeed] = useState<WmFilterSeed | null>(null);
 
   // Picker state: which entity + screen position.

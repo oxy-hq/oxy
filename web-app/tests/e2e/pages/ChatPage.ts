@@ -67,7 +67,6 @@ export class ChatPage {
       await this.askModeButton.click();
     }
 
-    // Fill question
     await this.questionInput.fill(question);
 
     // Wait for agent selector to have loaded (button text should not be empty)
@@ -82,10 +81,8 @@ export class ChatPage {
 
     await this.page.getByRole("menuitemcheckbox", { name: agentName }).click();
 
-    // Submit
     await this.submitButton.click();
 
-    // Wait for navigation to thread
     await this.page.waitForURL(/\/threads\/.+/);
   }
 
@@ -99,13 +96,11 @@ export class ChatPage {
     // Wait for loading to start
     await expect(this.loadingState).toBeVisible({ timeout: 10000 });
 
-    // Wait for loading to finish
     await this.loadingState.waitFor({
       state: "hidden",
       timeout: 60000
     });
 
-    // Wait for streaming to stop
     await this.stopButton.waitFor({
       state: "hidden",
       timeout: 60000

@@ -23,7 +23,6 @@ function processTraceSpans(rawSpans: TraceDetailSpan[]): ProcessedTrace | null {
 
   const traceId = rawSpans[0].traceId;
 
-  // Sort by timestamp
   const sortedSpans = [...rawSpans].sort(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
@@ -41,7 +40,6 @@ function processTraceSpans(rawSpans: TraceDetailSpan[]): ProcessedTrace | null {
     }
   });
 
-  // Calculate depths
   const depthMap = new Map<string, number>();
   const calculateDepth = (spanId: string, parentSpanId: string): number => {
     if (!parentSpanId) return 0;
