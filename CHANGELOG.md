@@ -2,11 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.128] - 2026-08-18
+## [0.5.129] - 2026-08-20
+
+### 🐛 Bug Fixes
+
+- Workspace metric-tree 500s on the serve fleet (#2946)
+
+### 💼 Other
+
+- Pin airway to the 0.1.33 tag (#2950)
+- *(deps)* Bump Swatinem/rust-cache from e18b497796c12c097a38f9edb9d0641fb99eee32 to f0d9c3887740aee45f6153b24b3a6b815192ec16 (#2956)
+- *(deps)* Bump github/codeql-action/upload-sarif from 4.37.0 to 4.37.7 (#2955)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 5 updates (#2958)
+
+### 🚜 Refactor
+
+- Remove restating comments across crates and web-app (follow-up to #2954) (#2959)
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove redundant inline comments throughout codebase (#2954)
+
+## [0.5.128] - 2026-08-19
 
 ### 🚀 Features
 
 - *(ubereats)* Report upload UI, with the bucket kept server-side (#2942)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.128 (#2947)
 
 ## [0.5.127] - 2026-08-18
 
