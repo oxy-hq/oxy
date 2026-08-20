@@ -42,7 +42,6 @@ impl BlockManager {
     }
 
     pub async fn add_content(&mut self, source: &Source, content: Content) -> Result<(), OxyError> {
-        // If there's an active block, add the content to it
         if let Some(active_block) = self.active_blocks.last_mut() {
             if let BlockValue::Children { children, .. } = &mut *active_block.value {
                 children.push(Block::content(source.id.to_string(), content));

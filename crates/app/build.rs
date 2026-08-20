@@ -31,7 +31,6 @@ fn main() {
         "dev-build".to_string()
     };
 
-    // Capture build profile
     let profile = std::env::var("PROFILE").unwrap_or_else(|_| "unknown".to_string());
 
     // Capture GitHub CI environment variables (if building in CI)

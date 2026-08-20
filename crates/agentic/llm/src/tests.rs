@@ -2118,14 +2118,12 @@ fn validate_openai_messages(messages: &[Value]) -> Result<(), String> {
         })
         .collect();
 
-    // Collect all function_call call_ids.
     let call_ids: Vec<&str> = flat
         .iter()
         .filter(|v| v["type"].as_str() == Some("function_call"))
         .filter_map(|v| v["call_id"].as_str())
         .collect();
 
-    // Collect all function_call_output call_ids.
     let output_ids: Vec<&str> = flat
         .iter()
         .filter(|v| v["type"].as_str() == Some("function_call_output"))

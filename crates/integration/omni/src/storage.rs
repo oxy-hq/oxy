@@ -363,7 +363,6 @@ impl MetadataStorage {
             )));
         }
 
-        // Deserialize from YAML
         let topic_metadata: TopicMetadata = serde_yaml::from_str(&yaml_content).map_err(|e| {
             OmniError::StorageError(format!(
                 "Failed to deserialize metadata from YAML file '{}': {}",
@@ -402,7 +401,6 @@ impl MetadataStorage {
             )));
         }
 
-        // Deserialize from YAML
         let overlay_metadata: crate::models::OverlayTopicMetadata =
             serde_yaml::from_str(&yaml_content).map_err(|e| {
                 OmniError::StorageError(format!(
@@ -801,7 +799,6 @@ mod tests {
 
         let merged_metadata = merged.unwrap();
 
-        // Should return overlay metadata as-is
         assert_eq!(merged_metadata.name, topic_name);
         assert_eq!(
             merged_metadata.label,
@@ -1151,7 +1148,6 @@ mod tests {
         assert_eq!(measure.data_type, "number"); // Default
         assert_eq!(measure.fully_qualified_name, "test_view.measure1"); // Generated
 
-        // Check filter_only_fields - should be empty vec
         assert_eq!(
             regular_metadata.views[0].filter_only_fields,
             Vec::<String>::new()
@@ -1215,7 +1211,6 @@ mod tests {
             overlay_dir.display()
         );
 
-        // Verify file paths use .yml extension
         let base_file = base_dir.join(format!("{}.yml", topic_name));
         let overlay_file = overlay_dir.join(format!("{}.yml", topic_name));
 

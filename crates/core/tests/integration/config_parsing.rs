@@ -62,7 +62,6 @@ fn test_clickhouse_filter_schema_parsing() {
                 "opening_ids should be array type"
             );
         }
-        // Check for default value
         if let Some(metadata) = &opening_ids_schema.metadata {
             assert!(
                 metadata.default.is_some(),

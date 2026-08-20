@@ -251,7 +251,6 @@ impl Worker {
 
         let cancel_token = transport.cancellation_token(&task_id);
 
-        // Execute the task.
         let executing = match executor.execute(assignment).await {
             Ok(e) => e,
             Err(msg) => {

@@ -2,7 +2,6 @@ import { persistNSync } from "persist-and-sync";
 import { create } from "zustand";
 
 interface IdeBranchState {
-  // Map of project ID to selected branch name
   projectBranches: Record<string, string>;
 
   // Get the current branch for a project (defaults to active branch if not set)

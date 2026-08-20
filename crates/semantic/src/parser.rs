@@ -371,7 +371,6 @@ impl SemanticLayerParser {
                         ));
                     }
 
-                    // Store original expression if it contains variables
                     if encoder.has_variables(expr_str) {
                         dimension_map.insert(
                             serde_yaml::Value::String("original_expr".to_string()),
@@ -401,7 +400,6 @@ impl SemanticLayerParser {
                             ));
                         }
 
-                        // Store original expression if it contains variables
                         if encoder.has_variables(expr_str) {
                             measure_map.insert(
                                 serde_yaml::Value::String("original_expr".to_string()),
@@ -428,7 +426,6 @@ impl SemanticLayerParser {
                                     ));
                                 }
 
-                                // Store original expression if it contains variables
                                 if encoder.has_variables(expr_str) {
                                     filter_map.insert(
                                         serde_yaml::Value::String("original_expr".to_string()),

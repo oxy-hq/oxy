@@ -99,10 +99,8 @@ impl ConnectionStringParser for PostgresConnectionString {
             Some(url.username().to_string())
         };
 
-        // Extract password
         let password = url.password().map(|p| p.to_string());
 
-        // Extract port
         let port = url.port();
 
         // Extract database name from path (remove leading slash)

@@ -12,7 +12,6 @@ test.describe("Navigation", () => {
     // Navigate back to home
     await page.getByRole("link", { name: "Home" }).click();
 
-    // Verify we're on the home page
     await expect(page).toHaveURL(/\/(home)?$/);
     await expect(page.getByRole("textbox", { name: "Ask anything" })).toBeVisible();
   });
@@ -95,7 +94,6 @@ test.describe("Navigation", () => {
     await expect(appLink).toBeVisible({ timeout: 10000 });
     await appLink.click();
 
-    // Verify navigation to app page
     await expect(page).toHaveURL(/\/apps\/.+/);
   });
 

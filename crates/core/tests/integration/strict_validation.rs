@@ -343,7 +343,6 @@ databases:
         parse_yaml(yaml).expect("Test config should parse")
     }
 
-    // Verifies that empty tasks fail garde validation
     #[test]
     fn test_automation_empty_tasks_fails_garde_validation() {
         use oxy::config::model::Automation;

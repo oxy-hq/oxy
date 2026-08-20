@@ -19,7 +19,6 @@ type ResultTableProps = {
 };
 
 export const QueryResultTable = ({ result, resultFile, isTruncated }: ResultTableProps) => {
-  // If we have a result file, use the virtualized table
   if (resultFile) {
     return (
       <div className='flex flex-col gap-4'>

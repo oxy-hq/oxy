@@ -433,7 +433,6 @@ pub(super) async fn finalize_login(
         is_app_admin: standing.is_global_admin,
     };
 
-    // Query org memberships for this user
     use entity::org_members::{self, Entity as OrgMembers};
     use entity::organizations::{self, Entity as Organizations};
 
@@ -567,7 +566,6 @@ pub(super) async fn exchange_google_code_for_user_info(
             OxyError::ConfigurationError(format!("Failed to exchange code for token: {e}"))
         })?;
 
-    // Check response status before parsing
     let status = token_response.status();
     if !status.is_success() {
         let error_body = token_response.text().await.unwrap_or_default();
@@ -601,7 +599,6 @@ pub(super) async fn exchange_google_code_for_user_info(
             OxyError::ConfigurationError(format!("Failed to get user info: {e}"))
         })?;
 
-    // Check response status before parsing
     let status = user_info_response.status();
     if !status.is_success() {
         let error_body = user_info_response.text().await.unwrap_or_default();
@@ -666,7 +663,6 @@ pub(super) async fn exchange_okta_code_for_user_info(
             OxyError::ConfigurationError(format!("Failed to exchange code for token: {e}"))
         })?;
 
-    // Check response status before parsing
     let status = token_response.status();
     if !status.is_success() {
         let error_body = token_response.text().await.unwrap_or_default();
@@ -703,7 +699,6 @@ pub(super) async fn exchange_okta_code_for_user_info(
             OxyError::ConfigurationError(format!("Failed to get user info: {e}"))
         })?;
 
-    // Check response status before parsing
     let status = user_info_response.status();
     if !status.is_success() {
         let error_body = user_info_response.text().await.unwrap_or_default();

@@ -161,7 +161,6 @@ impl IntentClassifier {
                 // Outlier - keep as unknown
                 IntentClassification::unknown()
             } else {
-                // Find the corresponding intent cluster
                 if let Some(intent_cluster) = intent_clusters
                     .iter()
                     .find(|c| c.cluster_id == cluster_label as u32)
@@ -282,7 +281,6 @@ impl IntentClassifier {
                 classification.confidence
             );
 
-            // Check if we should trigger incremental clustering
             let unknown_count = self.storage.get_unknown_count().await?;
             if unknown_count >= self.config.learning_pool_threshold {
                 info!(

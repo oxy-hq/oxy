@@ -152,7 +152,6 @@ impl ChangeDetector {
 
         // If semantic files changed, trigger full rebuild for semantic layer
         if semantic_files_changed {
-            // Check for embedding file changes
             let current_embedding_files = self.scan_embedding_files()?;
             let mut requires_embedding_rebuild = false;
 
@@ -263,7 +262,6 @@ impl ChangeDetector {
             &mut file_hashes,
         )?;
 
-        // Scan for SQL files (*.sql)
         Self::scan_directory_all_extensions(
             workspace_root,
             workspace_root,

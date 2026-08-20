@@ -12,7 +12,6 @@ test.describe("IDE Files - SQL Editor", () => {
     await page.waitForTimeout(500);
   });
 
-  // 11.1 Execute simple SELECT
   test("11.1 - should display results in table for simple SELECT", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -49,7 +48,6 @@ test.describe("IDE Files - SQL Editor", () => {
     }
   });
 
-  // 11.2 Execute with syntax error
   test("11.2 - should show error from database for syntax error", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -146,7 +144,6 @@ test.describe("IDE Files - SQL Editor", () => {
     }
   });
 
-  // 11.7 Database list fails to load
   test("11.7 - should show error and retry for database load failure", async ({ page }) => {
     await page.route("**/api/v1/**/databases**", (route) => {
       route.fulfill({
@@ -176,7 +173,6 @@ test.describe("IDE Files - SQL Editor", () => {
     }
   });
 
-  // 11.8 Results with NULL values
   test("11.8 - should display NULL values correctly", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();

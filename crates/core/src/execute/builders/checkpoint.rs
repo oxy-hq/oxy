@@ -127,7 +127,6 @@ where
         let manager = CheckpointBuilder::from_runs_manager(runs_manager).await?;
         let run_info = input.run_info();
         tracing::debug!("Running with run info: {:?}", run_info);
-        // Build new execution context with the new receiver and checkpoint manager
         let response = {
             let checkpoint_context = match &execution_context.checkpoint {
                 Some(checkpoint) => checkpoint.nested(run_info.clone()),

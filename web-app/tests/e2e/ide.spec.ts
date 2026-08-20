@@ -238,7 +238,6 @@ test.describe("IDE Functionality", () => {
       // Open a YAML file that exists
       await idePage.openFile("config.yml");
 
-      // Test edit and save functionality
       await idePage.insertTextAtEnd("# Test configuration line");
       await idePage.verifySaveButtonVisible();
       await idePage.saveFile();

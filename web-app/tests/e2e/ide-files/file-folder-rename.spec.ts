@@ -14,7 +14,6 @@ test.describe("IDE Files - File/Folder Rename", () => {
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
 
-    // Capture file tree before test
     await captureFileTree(page);
   });
 
@@ -23,12 +22,10 @@ test.describe("IDE Files - File/Folder Rename", () => {
     await cleanupAfterTest(page);
   });
 
-  // 3.1 Rename file in root
   test("3.1 - should rename file in root", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
-    // Right-click on test file
     const testFile = page.getByRole("link", { name: "test-file-for-e2e.txt" });
 
     if (await testFile.isVisible()) {
@@ -44,7 +41,6 @@ test.describe("IDE Files - File/Folder Rename", () => {
     }
   });
 
-  // 3.2 Rename currently open file
   test("3.2 - should update URL when renaming currently open file", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -53,11 +49,9 @@ test.describe("IDE Files - File/Folder Rename", () => {
 
     const currentUrl = page.url();
 
-    // The URL should contain the encoded file path
     expect(currentUrl).toContain("/ide/");
   });
 
-  // 3.3 Rename folder containing open file
   test("3.3 - should update URL when renaming folder containing open file", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -109,7 +103,6 @@ test.describe("IDE Files - File/Folder Rename", () => {
     }
   });
 
-  // 3.5 Rename to existing sibling name
   test("3.5 - should show error when renaming to existing sibling name", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -135,7 +128,6 @@ test.describe("IDE Files - File/Folder Rename", () => {
     }
   });
 
-  // 3.6 Rename Agent removing .agent.yml
   test("3.6 - should warn or prevent removing .agent.yml extension", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -186,7 +178,6 @@ test.describe("IDE Files - File/Folder Rename", () => {
     }
   });
 
-  // 3.8 Rename to empty string
   test("3.8 - should show error when renaming to empty string", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -212,7 +203,6 @@ test.describe("IDE Files - File/Folder Rename", () => {
     }
   });
 
-  // 3.9 Double-click rename same file
   test("3.9 - should show only one input when double-clicking rename", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();

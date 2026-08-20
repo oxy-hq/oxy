@@ -567,7 +567,6 @@ mod tests {
             "only one init must run when two threads race for the same target"
         );
 
-        // Exactly one slot in the map.
         assert_eq!(
             pool.slots.lock().unwrap().len(),
             1,

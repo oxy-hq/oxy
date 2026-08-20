@@ -73,7 +73,6 @@ pub fn get_encryption_key() -> [u8; 32] {
         }
     }
 
-    // Generate a new key and save it to file
     let key = Aes256Gcm::generate_key(&mut OsRng);
 
     // Ensure directory exists

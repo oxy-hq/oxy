@@ -66,7 +66,6 @@ fn add_now_function(env: &mut Environment<'static>) {
 fn add_global_functions(env: &mut Environment<'static>) {
     add_now_function(env);
 
-    // Add tojson filter for converting values to JSON strings
     env.add_filter(
         "tojson",
         |value: Value| -> Result<String, minijinja::Error> {

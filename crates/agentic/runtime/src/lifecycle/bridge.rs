@@ -62,7 +62,6 @@ pub async fn run_bridge<Ev: DomainEvents>(
 
                 let (event_type, mut payload) = event.serialize();
 
-                // Inject duration_ms into terminal events.
                 if is_terminal(&event_type)
                     && let Value::Object(ref mut map) = payload {
                         map.insert(

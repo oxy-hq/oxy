@@ -42,7 +42,6 @@ test.describe("IDE Files - File Tree Sidebar", () => {
     await expect(filesTab).toBeVisible();
   });
 
-  // 1.3 Expand folder with many children
   test("1.3 - should expand folder with many children within 2s", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -125,7 +124,6 @@ test.describe("IDE Files - File Tree Sidebar", () => {
     expect(errorCount).toBeLessThan(5);
   });
 
-  // 1.7 API returns 500 error
   test("1.7 - should show error message and retry option on API error", async ({ page }) => {
     // Intercept file tree API and return 500
     await page.route("**/api/v1/**/files/tree**", (route) => {
@@ -144,7 +142,6 @@ test.describe("IDE Files - File Tree Sidebar", () => {
     await expect(sidebar).toBeVisible();
   });
 
-  // 1.8 API returns empty array
   test("1.8 - should show empty state when no files", async ({ page }) => {
     // Intercept file tree API and return empty
     await page.route("**/api/v1/**/files/tree**", (route) => {
@@ -164,7 +161,6 @@ test.describe("IDE Files - File Tree Sidebar", () => {
     await expect(sidebar).toBeVisible();
   });
 
-  // 1.9 API returns malformed JSON
   test("1.9 - should handle malformed JSON gracefully", async ({ page }) => {
     await page.route("**/api/v1/**/files/tree**", (route) => {
       route.fulfill({

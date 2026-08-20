@@ -37,7 +37,6 @@ test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
     }
   });
 
-  // 10.3 Base view indicator
   test("10.3 - should show base view label", async ({ page }) => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
@@ -65,7 +64,6 @@ test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
     }
   });
 
-  // 10.4 Expand view → see fields
   test("10.4 - should show fields when expanding a view", async ({ page }) => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
@@ -95,7 +93,6 @@ test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
     }
   });
 
-  // 10.6 Default state: all expanded
   test("10.6 - should have all views expanded by default", async ({ page }) => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
@@ -156,7 +153,6 @@ test.describe("IDE Files - Topic Editor - Field Selection", () => {
     }
   });
 
-  // 10.11 Select from multiple views
   test("10.11 - should combine fields from multiple views in query", async ({ page }) => {
     const semanticSection = page.getByText("Semantic Layer");
     if (await semanticSection.isVisible()) {
@@ -185,7 +181,6 @@ test.describe("IDE Files - Topic Editor - Field Selection", () => {
     }
   });
 
-  // 10.13 Full name: viewName.fieldName
   test("10.13 - should show full field name format", async ({ page }) => {
     const semanticSection = page.getByText("Semantic Layer");
     if (await semanticSection.isVisible()) {
@@ -222,7 +217,6 @@ test.describe("IDE Files - Topic Editor - Loading", () => {
 
   // 10.14-10.16 Loading and error states
   test("10.14 - should show error for non-existent view reference", async ({ page }) => {
-    // Intercept topic API to return error
     await page.route("**/api/v1/**/topics/**", (route) => {
       route.fulfill({
         status: 500,
@@ -248,7 +242,6 @@ test.describe("IDE Files - Topic Editor - Loading", () => {
     }
   });
 
-  // 10.15 Views loading state
   test("10.15 - should show loading state for views", async ({ page }) => {
     const semanticSection = page.getByText("Semantic Layer");
     if (await semanticSection.isVisible()) {

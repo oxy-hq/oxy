@@ -196,7 +196,6 @@ tasks:
       return;
     }
 
-    // Edit in form
     await switchToMode(page, "form");
     const nameInput = page.locator('input[name*="name"]').first();
     if (await nameInput.isVisible()) {
@@ -210,7 +209,6 @@ tasks:
       await page.waitForTimeout(1000);
     }
 
-    // Switch to editor and verify saved content
     await switchToMode(page, "editor");
     const content = await getEditorContent(page);
     expect(content).toContain("saved-workflow");
@@ -271,7 +269,6 @@ tasks:
       return;
     }
 
-    // Edit in form
     await switchToMode(page, "form");
     const nameInput = page.locator('input[name*="name"]').first();
     if (await nameInput.isVisible()) {
@@ -311,7 +308,6 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
       return;
     }
 
-    // Edit in form
     await switchToMode(page, "form");
     const nameInput = page.locator('input[name*="name"]').first();
     if (await nameInput.isVisible()) {
@@ -945,7 +941,6 @@ test.describe("Workflow Editor - Edge Cases", () => {
       return;
     }
 
-    // Edit in form
     await switchToMode(page, "form");
     const nameInput = page.locator('input[name*="name"]').first();
     if (await nameInput.isVisible()) {

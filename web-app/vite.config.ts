@@ -114,7 +114,6 @@ const dependencies = {
     "react-day-picker" // Date picker has its own animations
   ],
 
-  // Date and time utilities
   dateUtils: ["dayjs", "date-fns"],
 
   dataProcessing: ["lodash", "papaparse", "nunjucks", "yaml"],

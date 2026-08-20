@@ -355,7 +355,6 @@ impl LlmProvider for AnthropicProvider {
             let mut sse_buf = String::new();
             // Current open content block
             let mut block_type: Option<String> = None;
-            // Thinking accumulator
             let mut thinking_text = String::new();
             let mut thinking_sig = String::new();
             // Tool-use accumulator

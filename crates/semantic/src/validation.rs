@@ -98,7 +98,6 @@ impl SemanticValidator for Entity {
     fn validate(&self) -> ValidationResult {
         let mut result = ValidationResult::new();
 
-        // Validate name
         if self.name.is_empty() {
             result.add_error("Entity name cannot be empty".to_string());
         }
@@ -110,7 +109,6 @@ impl SemanticValidator for Entity {
             ));
         }
 
-        // Validate description (optional)
         if let Some(ref desc) = self.description
             && desc.is_empty()
         {
@@ -156,7 +154,6 @@ impl SemanticValidator for Dimension {
     fn validate(&self) -> ValidationResult {
         let mut result = ValidationResult::new();
 
-        // Validate name
         if self.name.is_empty() {
             result.add_error("Dimension name cannot be empty".to_string());
         }
@@ -168,14 +165,12 @@ impl SemanticValidator for Dimension {
             ));
         }
 
-        // Validate description (optional)
         if let Some(ref description) = self.description
             && description.is_empty()
         {
             result.add_error("Dimension description cannot be empty when provided".to_string());
         }
 
-        // Validate expr
         if self.expr.is_empty() {
             result.add_error("Dimension expr cannot be empty".to_string());
         }
@@ -213,7 +208,6 @@ impl SemanticValidator for Measure {
     fn validate(&self) -> ValidationResult {
         let mut result = ValidationResult::new();
 
-        // Validate name
         if self.name.is_empty() {
             result.add_error("Measure name cannot be empty".to_string());
         }
@@ -225,7 +219,6 @@ impl SemanticValidator for Measure {
             ));
         }
 
-        // Validate description (optional)
         if let Some(ref description) = self.description
             && description.is_empty()
         {
@@ -285,7 +278,6 @@ impl SemanticValidator for Measure {
             ));
         }
 
-        // Validate variable syntax in filters
         if let Some(ref filters) = self.filters {
             for (i, filter) in filters.iter().enumerate() {
                 result.merge(validate_variable_syntax(
@@ -313,7 +305,6 @@ impl SemanticValidator for View {
     fn validate(&self) -> ValidationResult {
         let mut result = ValidationResult::new();
 
-        // Validate name
         if self.name.is_empty() {
             result.add_error("View name cannot be empty".to_string());
         }
@@ -325,7 +316,6 @@ impl SemanticValidator for View {
             ));
         }
 
-        // Validate description (optional)
         if let Some(ref desc) = self.description
             && desc.is_empty()
         {
@@ -375,7 +365,6 @@ impl SemanticValidator for View {
             let mut dimension_names = HashSet::new();
 
             for dimension in &self.dimensions {
-                // Check for duplicate dimension names
                 if !dimension_names.insert(&dimension.name) {
                     result.add_error(format!(
                         "Duplicate dimension name '{}' found",
@@ -440,7 +429,6 @@ impl SemanticValidator for Topic {
     fn validate(&self) -> ValidationResult {
         let mut result = ValidationResult::new();
 
-        // Validate name
         if self.name.is_empty() {
             result.add_error("Topic name cannot be empty".to_string());
         }
@@ -452,7 +440,6 @@ impl SemanticValidator for Topic {
             ));
         }
 
-        // Validate description (optional)
         if let Some(ref desc) = self.description
             && desc.is_empty()
         {
@@ -568,7 +555,6 @@ impl SemanticValidator for SemanticLayer {
                 }
 
                 if let Some(ref base_view) = topic.base_view {
-                    // Build entity graph to check reachability
                     match EntityGraph::from_semantic_layer(self) {
                         Ok(entity_graph) => {
                             let unreachable_views = entity_graph

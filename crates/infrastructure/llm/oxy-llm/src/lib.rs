@@ -15,7 +15,6 @@ pub use model::{
     OllamaModelConfig, OpenAIModelConfig, default_openai_api_url,
 };
 
-// Re-export the trait
 pub use traits::ModelConfig;
 
 // Re-export Anthropic's default API URL function

@@ -41,7 +41,6 @@ pub async fn ensure_data_repo_available(
 
     if let Some(git_url) = &repo.git_url {
         if !resolved.exists() {
-            // Clone the repo
             let mut cmd = Command::new("git");
             cmd.arg("clone").arg("--depth").arg("1");
             if let Some(branch) = &repo.branch {

@@ -130,7 +130,6 @@ impl CatalogConfig {
         &self,
         secrets_manager: &SecretsManager,
     ) -> Result<String, OxyError> {
-        // Retrieve the connection string from secrets manager
         let connection_string = self
             .catalog_path
             .expose_str_with_adapter(secrets_manager)

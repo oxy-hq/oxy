@@ -591,7 +591,6 @@ test.describe("Workflow Editor - Form Stress Tests", () => {
 
       await page.waitForTimeout(500);
 
-      // Scroll form
       const formContainer = page.locator("form").first();
       await formContainer.evaluate((el) => {
         el.scrollTop = el.scrollHeight;

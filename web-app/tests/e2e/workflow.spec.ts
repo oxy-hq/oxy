@@ -7,10 +7,8 @@ test.describe("Workflow Execution", () => {
   });
 
   test("should be able to run a workflow and see the result", async ({ page }) => {
-    // Navigate to the table_values automation
     await page.getByTestId("workflow-link-table_values").click();
 
-    // Click the Play button to run the automation
     await page.getByTestId("run-workflow-button").click();
 
     // Wait for the automation to complete by monitoring the API event stream

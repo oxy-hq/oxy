@@ -296,7 +296,6 @@ impl OmniSyncService {
 
         self.storage.ensure_directory_structure(model_id)?;
 
-        // Initialize sync result for single topic
         let mut sync_result = SyncResult {
             model_id: model_id.to_string(),
             total_topics: 1,

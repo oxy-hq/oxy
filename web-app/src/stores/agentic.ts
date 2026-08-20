@@ -29,7 +29,6 @@ export const useAgenticStore = (projectId: string, threadId: string) => {
     const messages = result.data;
     if (messages) {
       setMessages(threadId, messages);
-      // Set group blocks for messages that have runs
       messages.forEach((message) => {
         if (message.run_info?.source_id) {
           setGroupBlocks(

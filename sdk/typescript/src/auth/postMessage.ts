@@ -180,7 +180,6 @@ export async function requestAuthFromParent(
 ): Promise<PostMessageAuthResult> {
   const { parentOrigin, timeout = 5000, retries = 0 } = options;
 
-  // Validate we're in an iframe
   if (!isInIframe()) {
     throw new PostMessageAuthNotInIframeError();
   }
@@ -228,7 +227,6 @@ export async function requestAuthFromParent(
         throw error;
       }
 
-      // If we have more attempts, continue
       if (attempt < maxAttempts - 1) {
         // Optional: Add a small delay before retry
         await new Promise((resolve) => setTimeout(resolve, 100));

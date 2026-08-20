@@ -337,7 +337,6 @@ pub struct ExecutionDetail {
     // For workflows
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workflow_ref: Option<String>,
-    // For agent tools
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_ref: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

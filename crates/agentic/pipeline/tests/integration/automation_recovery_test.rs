@@ -748,7 +748,6 @@ async fn run_recovery(db: &DatabaseConnection, state: Arc<RuntimeState>, root_id
     let worker = Worker::new(transport.clone() as Arc<dyn WorkerTransport>, executor);
     tokio::spawn(async move { worker.run().await });
 
-    // Process pending_resumes then run the coordinator.
     tokio::spawn(async move {
         let mut coord = coordinator;
         coord.process_pending_resumes(pending_resumes).await;
@@ -1042,7 +1041,6 @@ async fn test_happy_path_analytics_automation_step_done() {
 
     let root_id = format!("happy-{}", uuid::Uuid::new_v4());
 
-    // Insert root analytics run.
     crud::insert_run(
         &db,
         &root_id,
@@ -1151,7 +1149,6 @@ async fn test_happy_path_analytics_automation_step_done() {
         "workflow_step should be done"
     );
 
-    // Verify the root answer contains the delegated result.
     assert!(
         run.answer.as_deref().unwrap_or("").contains("step0 result"),
         "root answer should contain the step result, got: {:?}",

@@ -183,7 +183,6 @@ impl MetadataMerger {
         let base_field_names: std::collections::HashSet<&str> =
             base_fields.iter().map(|f| f.name.as_str()).collect();
 
-        // Create a HashMap of overlay fields keyed by name
         let overlay_map: HashMap<&str, &OverlayFieldMetadata> = overlay_fields
             .iter()
             .map(|f| (f.name.as_str(), f))

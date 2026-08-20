@@ -101,7 +101,6 @@ interface DatabaseClientState {
   tabExists: (name: string) => boolean;
   getUniqueTabName: (baseName?: string) => string;
 
-  // Query execution
   setTabExecuting: (id: string, isExecuting: boolean) => void;
   setTabResults: (id: string, results: QueryResult | undefined) => void;
   setTabError: (id: string, error: string | undefined, details?: SqlExecutionError) => void;

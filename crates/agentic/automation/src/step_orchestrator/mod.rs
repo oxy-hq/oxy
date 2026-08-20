@@ -193,7 +193,6 @@ impl AutomationStepOrchestrator {
             let step_name = task.name.clone();
             let kind = self.classify_step(&task.task_type);
 
-            // Emit step started.
             self.emit_event(
                 &event_tx,
                 "subrun_step_started",

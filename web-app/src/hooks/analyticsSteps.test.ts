@@ -505,7 +505,6 @@ describe("buildAnalyticsSteps — outer steps around fan-out", () => {
       fanOutEnd(),
       stepEnd() // outer closes after fan-out
     ]);
-    // fan_out group + outer step
     expect(items).toHaveLength(2);
     expect(items[0].kind).toBe("fan_out");
     expect(items[1]).toMatchObject({ kind: "step", label: "Outer" });
@@ -712,7 +711,6 @@ describe("buildAnalyticsSteps — delegation suspension", () => {
     expect(items).toHaveLength(1);
     const step = items[0] as { kind: string; items: { kind: string }[] };
     expect(step.kind).toBe("step");
-    // automation item + 3 automation step artifacts
     const procItems = step.items.filter((i) => i.kind === "automation");
     expect(procItems).toHaveLength(1);
     expect(getProcItem(items).stepsDone).toBe(3);

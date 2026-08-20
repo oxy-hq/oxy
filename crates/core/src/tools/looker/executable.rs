@@ -588,7 +588,6 @@ impl LookerQueryExecutable {
         let batch = RecordBatch::try_new(schema.clone(), arrays)
             .map_err(|e| format!("Failed to create Arrow record batch: {}", e))?;
 
-        // Write to file
         let mut file_path = std::env::temp_dir();
         file_path.push(format!("{}.arrow", uuid::Uuid::new_v4()));
         let file_path_str = file_path.to_string_lossy().to_string();

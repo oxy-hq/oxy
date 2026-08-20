@@ -41,7 +41,6 @@ pub mod semantic_variables {
 
     #[test]
     fn run_semantic_variables_example_automation_validates() {
-        // Test the example automation from semantic-with-variables directory
         let mut cmd = setup_command();
         let result = cmd
             .arg("semantic-with-variables/workflow-example.automation.yml")

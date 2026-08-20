@@ -65,7 +65,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // test_run_cases
         manager
             .create_table(
                 Table::create()
@@ -159,7 +158,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // test_project_runs
         manager
             .create_table(
                 Table::create()

@@ -27,7 +27,6 @@ fn test_incremental_build_no_changes() {
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
-    // Create initial view
     create_view_file(
         workspace_root,
         "orders",
@@ -49,7 +48,6 @@ table: orders.csv
         .save(&target_dir.join(".build_manifest.json"))
         .unwrap();
 
-    // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
         .detect_changes("config_hash".to_string(), false)
@@ -71,7 +69,6 @@ fn test_incremental_build_view_modified() {
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
-    // Create initial view
     create_view_file(
         workspace_root,
         "orders",
@@ -100,7 +97,6 @@ table: orders_v2.csv  # Modified
 "#,
     );
 
-    // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
         .detect_changes("config_hash".to_string(), false)
@@ -124,7 +120,6 @@ fn test_incremental_build_view_added() {
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
-    // Create initial view
     create_view_file(
         workspace_root,
         "orders",
@@ -156,7 +151,6 @@ table: customers.csv
 "#,
     );
 
-    // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
         .detect_changes("config_hash".to_string(), false)
@@ -204,7 +198,6 @@ table: orders.csv
 "#,
     );
 
-    // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
         .detect_changes("config_hash".to_string(), false)
@@ -276,7 +269,6 @@ table: customers_v2.csv  # Modified
 "#,
     );
 
-    // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
         .detect_changes("config_hash".to_string(), false)
@@ -371,7 +363,6 @@ base_view: orders_v2  # Modified
 "#,
     );
 
-    // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
         .detect_changes("config_hash".to_string(), false)

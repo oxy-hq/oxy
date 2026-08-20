@@ -133,7 +133,6 @@ async fn install_cross_org_conflict() {
     let (org_b, user_b) = seed_org_with_admin().await;
     let team_id = format!("T{}", &Uuid::new_v4().simple().to_string()[..8]);
 
-    // Install into org A — should succeed.
     InstallationsService::upsert(make_upsert(org_a, user_a, &team_id))
         .await
         .expect("first upsert should succeed");
@@ -161,7 +160,6 @@ async fn reinstall_same_org_updates() {
     let (org_id, user_id) = seed_org_with_admin().await;
     let team_id = format!("T{}", &Uuid::new_v4().simple().to_string()[..8]);
 
-    // First install.
     let row1 = InstallationsService::upsert(make_upsert(org_id, user_id, &team_id))
         .await
         .expect("first upsert");
@@ -193,7 +191,6 @@ async fn reinstall_same_org_updates() {
         "exactly one active installation after reinstall"
     );
 
-    // Token was updated — decrypt and verify.
     let decrypted = InstallationsService::decrypt_bot_token(&row2)
         .await
         .expect("decrypt");

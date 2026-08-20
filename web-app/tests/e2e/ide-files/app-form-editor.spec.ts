@@ -10,7 +10,6 @@ test.describe("IDE Files - App Form Editor - Mode Switching", () => {
     });
   });
 
-  // 8.1 Open in Objects mode → Form
   test("8.1 - should show Form in Objects mode", async ({ page }) => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
@@ -21,7 +20,6 @@ test.describe("IDE Files - App Form Editor - Mode Switching", () => {
 
     if (appsSectionCount > 0) {
       try {
-        // Get the bounding box and click at the center
         const box = await appsSection.boundingBox();
         if (box) {
           await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -63,7 +61,6 @@ test.describe("IDE Files - App Form Editor - Mode Switching", () => {
     }
   });
 
-  // 8.2 Open in Files mode → Editor
   test("8.2 - should show YAML editor in Files mode", async ({ page }) => {
     const idePage = new IDEPage(page);
     await page.getByRole("tab", { name: "Files" }).click();
@@ -113,7 +110,6 @@ test.describe("IDE Files - App Form Editor - Mode Switching", () => {
     }
   });
 
-  // 8.4 Invalid YAML → Visualization
   test("8.4 - should show error in preview for invalid YAML", async ({ page }) => {
     const idePage = new IDEPage(page);
     await page.getByRole("tab", { name: "Files" }).click();
@@ -218,7 +214,6 @@ test.describe("IDE Files - App Form Editor - Display", () => {
     }
   });
 
-  // 8.9 Add line_chart display
   test("8.9 - should add line chart display", async ({ page }) => {
     const appFile = page
       .locator('a[href*="/ide/"]:visible')
@@ -253,7 +248,6 @@ test.describe("IDE Files - App Form Editor - Display", () => {
     }
   });
 
-  // 8.13 Switch display type
   test("8.13 - should update fields when switching display type", async ({ page }) => {
     const appFile = page
       .locator('a[href*="/ide/"]:visible')

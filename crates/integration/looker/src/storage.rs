@@ -454,7 +454,6 @@ mod tests {
         let (storage, _state_dir, _project_dir) = create_test_storage();
         let metadata = create_test_metadata();
 
-        // Save and verify
         storage
             .save_base_metadata("ecommerce", "orders", &metadata)
             .unwrap();
@@ -523,7 +522,6 @@ mod tests {
 
         let merged = storage.load_merged_metadata("ecommerce", "orders").unwrap();
 
-        // Check overlay description is applied
         assert_eq!(
             merged.description,
             Some("Custom overlay description".to_string())

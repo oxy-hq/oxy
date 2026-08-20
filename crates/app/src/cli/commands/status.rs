@@ -192,7 +192,6 @@ fn mask_password(url: &str) -> String {
         let protocol = &url[..protocol_end + 3];
         let after_at = &url[at_pos..];
 
-        // Find the colon after username
         let middle = &url[protocol_end + 3..at_pos];
         if let Some(colon_pos) = middle.find(':') {
             let username = &middle[..colon_pos];

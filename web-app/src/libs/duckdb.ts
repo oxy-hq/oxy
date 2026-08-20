@@ -103,7 +103,6 @@ export const registerAuthenticatedParquetFile = async (
   // Base64 encode the file path to create a valid table name
   const tableName = encodeBase64(filePath).replace(/[^a-zA-Z0-9]/g, "_");
 
-  // Fetch the Parquet file from the API
   const { apiClient } = await import("@/services/api/axios");
 
   const response = await apiClient.get(`/${projectId}/results/files/${filePath}`, {

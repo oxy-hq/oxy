@@ -49,7 +49,6 @@ test.describe("IDE Files - Performance Stress Tests", () => {
     await idePage.verifySaveButtonVisible();
   });
 
-  // 16.3 Form with 100 tasks
   test("16.3 - should render form with many tasks", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
@@ -82,7 +81,6 @@ test.describe("IDE Files - Performance Stress Tests", () => {
     }
   });
 
-  // 16.5 100 rapid file switches
   test("16.5 - should handle rapid file switching without memory leak", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -106,7 +104,6 @@ test.describe("IDE Files - Performance Stress Tests", () => {
     await page.waitForTimeout(500);
   });
 
-  // 16.7 50 folders deep
   test("16.7 - should navigate very deep folder hierarchies", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -153,7 +150,6 @@ test.describe("IDE Files - URL Manipulation", () => {
     await page.waitForLoadState("networkidle");
   });
 
-  // 17.1 Invalid base64 in pathb64
   test("17.1 - should show error page for invalid base64", async ({ page }) => {
     await page.goto("/ide/not-valid-base64!!!!");
     await page.waitForLoadState("networkidle");
@@ -163,7 +159,6 @@ test.describe("IDE Files - URL Manipulation", () => {
     await expect(page.locator("body")).toBeVisible();
   });
 
-  // 17.2 Valid base64, non-existent file
   test("17.2 - should show file not found for non-existent file", async ({ page }) => {
     // "does-not-exist.txt" in base64
     const pathb64 = btoa("does-not-exist.txt");
@@ -174,7 +169,6 @@ test.describe("IDE Files - URL Manipulation", () => {
     await page.waitForTimeout(1000);
   });
 
-  // 17.3 Path traversal attempt
   test("17.3 - should block path traversal attempts", async ({ page }) => {
     // "../../../etc/passwd" in base64
     const pathb64 = btoa("../../../etc/passwd");
@@ -224,7 +218,6 @@ test.describe("IDE Files - Context Menu", () => {
     await page.waitForTimeout(500);
   });
 
-  // 18.1 Right-click file → menu
   test("18.1 - should show options on right-click file", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -247,7 +240,6 @@ test.describe("IDE Files - Context Menu", () => {
     }
   });
 
-  // 18.2 Right-click folder → menu
   test("18.2 - should show more options on right-click folder", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -265,12 +257,10 @@ test.describe("IDE Files - Context Menu", () => {
       const itemCount = await menuItems.count();
       expect(itemCount).toBeGreaterThan(0);
 
-      // Close menu
       await page.keyboard.press("Escape");
     }
   });
 
-  // 18.3 Click outside → closes
   test("18.3 - should close menu when clicking outside", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -291,7 +281,6 @@ test.describe("IDE Files - Context Menu", () => {
     }
   });
 
-  // 18.4 Menu at screen edge
   test("18.4 - should position menu within viewport at screen edge", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -332,7 +321,6 @@ test.describe("IDE Files - API Error Responses", () => {
     await page.waitForTimeout(500);
   });
 
-  // 19.1 File fetch 404
   test("19.1 - should show file not found for 404", async ({ page }) => {
     await page.route("**/api/v1/**/files/**", (route, request) => {
       if (request.method() === "GET") {
@@ -353,7 +341,6 @@ test.describe("IDE Files - API Error Responses", () => {
     await page.waitForTimeout(1000);
   });
 
-  // 19.2 File fetch 500
   test("19.2 - should show error with retry for 500", async ({ page }) => {
     await page.route("**/api/v1/**/files/**", (route, request) => {
       if (request.method() === "GET") {
@@ -398,7 +385,6 @@ test.describe("IDE Files - API Error Responses", () => {
     await page.waitForTimeout(1000);
   });
 
-  // 19.6 API returns truncated JSON
   test("19.6 - should handle truncated JSON gracefully", async ({ page }) => {
     await page.route("**/api/v1/**/files/**", (route, request) => {
       if (request.method() === "GET") {

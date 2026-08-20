@@ -827,7 +827,6 @@ mod coordinator_tests {
             "run should be done after resume"
         );
 
-        // Verify input_resolved event was inserted.
         let events = crud::get_all_events(&db, &run_id).await.unwrap();
         let event_types: Vec<&str> = events.iter().map(|e| e.event_type.as_str()).collect();
         assert!(
@@ -1736,7 +1735,6 @@ mod task_tree_tests {
         let parent_id = test_run_id();
         let child_id = test_run_id();
 
-        // Insert parent.
         crud::insert_run(
             &db,
             &parent_id,
@@ -1749,7 +1747,6 @@ mod task_tree_tests {
         .await
         .unwrap();
 
-        // Insert child with parent reference.
         crud::insert_run_with_parent(
             &db,
             &child_id,
@@ -3178,7 +3175,6 @@ mod crash_recovery_tests {
         let parent_id = test_run_id();
         let child_id = format!("{parent_id}.1");
 
-        // Set up parent run.
         crud::insert_run(
             &db,
             &parent_id,
@@ -3729,7 +3725,6 @@ mod crash_recovery_tests {
             .expect("coordinator timed out")
             .expect("coordinator panicked");
 
-        // Root should be done.
         let root = crud::get_run(&db, &run_id).await.unwrap().unwrap();
         assert_eq!(
             crud::user_facing_status(root.task_status.as_deref()),
@@ -3952,7 +3947,6 @@ mod answer_channel_tests {
                             .send(("test_event".into(), json!({"task": "agent"})))
                             .await;
 
-                        // Suspend for delegation.
                         let _ = outcome_tx
                             .send(TaskOutcome::Suspended {
                                 reason: SuspendReason::Delegation {
@@ -4387,7 +4381,6 @@ mod recovery_attempt_tests {
         //    with the ID that the coordinator would generate should NOT conflict.
         drop(coordinator);
 
-        // Verify get_max_child_counter returns at least 3.
         let max_counter = crud::get_max_child_counter(&db, &root_id).await.unwrap();
         assert!(
             max_counter >= 3,
@@ -4851,7 +4844,6 @@ async fn test_complete_and_fail_task() {
         return;
     };
 
-    // Test complete.
     let (task_id_1, _) = enqueue_test_task(&db).await;
     crud::claim_task(&db, "w1").await.unwrap().unwrap();
     assert_eq!(
@@ -5047,7 +5039,6 @@ async fn test_durable_transport_assign_and_recv() {
     let entry = crud::get_queue_entry(&db, &task_id).await.unwrap().unwrap();
     assert_eq!(entry.queue_status, "queued");
 
-    // Worker receives the assignment.
     let received = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         WorkerTransport::recv_assignment(transport.as_ref()),
@@ -5093,7 +5084,6 @@ async fn test_durable_transport_worker_outcome_updates_queue() {
     let (transport, run_id) = setup_durable_transport(&db).await;
     let task_id = run_id.clone();
 
-    // Assign and claim.
     let assignment = test_assignment(&task_id, &run_id);
     CoordinatorTransport::assign(transport.as_ref(), assignment)
         .await
@@ -5106,7 +5096,6 @@ async fn test_durable_transport_worker_outcome_updates_queue() {
     .unwrap()
     .unwrap();
 
-    // Worker sends Done outcome.
     WorkerTransport::send(
         transport.as_ref(),
         WorkerMessage::Outcome {
@@ -5142,7 +5131,6 @@ async fn test_durable_transport_events_pass_through() {
     let (transport, run_id) = setup_durable_transport(&db).await;
     let task_id = run_id.clone();
 
-    // Assign and claim.
     let assignment = test_assignment(&task_id, &run_id);
     CoordinatorTransport::assign(transport.as_ref(), assignment)
         .await
@@ -5191,7 +5179,6 @@ async fn test_durable_transport_heartbeat() {
     let (transport, run_id) = setup_durable_transport(&db).await;
     let task_id = run_id.clone();
 
-    // Assign and claim.
     let assignment = test_assignment(&task_id, &run_id);
     CoordinatorTransport::assign(transport.as_ref(), assignment)
         .await
@@ -5204,7 +5191,6 @@ async fn test_durable_transport_heartbeat() {
     .unwrap()
     .unwrap();
 
-    // Record heartbeat time before.
     let entry_before = crud::get_queue_entry(&db, &task_id).await.unwrap().unwrap();
     let hb_before = entry_before.last_heartbeat.unwrap();
 
@@ -5227,7 +5213,6 @@ async fn test_durable_transport_reaper_requeues_stale() {
     let (transport, run_id) = setup_durable_transport(&db).await;
     let task_id = run_id.clone();
 
-    // Assign and claim.
     let assignment = test_assignment(&task_id, &run_id);
     CoordinatorTransport::assign(transport.as_ref(), assignment)
         .await
@@ -5252,7 +5237,6 @@ async fn test_durable_transport_reaper_requeues_stale() {
     ));
     task_queue::Entity::update(active).exec(&db).await.unwrap();
 
-    // Run reaper — should re-queue.
     let reaped = transport.run_reaper().await;
     assert_eq!(reaped.requeued, 1);
     assert_eq!(reaped.dead_lettered, 0);

@@ -56,7 +56,6 @@ test.describe("IDE Files - Monaco Editor - Loading & Display", () => {
     await idePage.verifySaveButtonVisible();
   });
 
-  // 5.4 Open file with Unicode content
   test("5.4 - should display Unicode content correctly", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -83,7 +82,6 @@ test.describe("IDE Files - Monaco Editor - Loading & Display", () => {
     await expect(editor).toBeVisible();
   });
 
-  // 5.6 Open file → refresh page
   test("5.6 - should reload content from API on page refresh", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -170,7 +168,6 @@ test.describe("IDE Files - Monaco Editor - Content Editing", () => {
     await page.waitForTimeout(500);
   });
 
-  // 5.13 Type single character
   test("5.13 - should mark file as dirty when typing single character", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -229,7 +226,6 @@ test.describe("IDE Files - Monaco Editor - Content Editing", () => {
     await idePage.verifySaveButtonVisible();
   });
 
-  // 5.20 Multiple cursors editing
   test("5.20 - should support multiple cursor editing", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -264,7 +260,6 @@ test.describe("IDE Files - Monaco Editor - Content Editing", () => {
     await expect(findWidget).toBeVisible({ timeout: 3000 });
   });
 
-  // 5.22 Line numbers visible
   test("5.22 - should display correct line numbers", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -275,7 +270,6 @@ test.describe("IDE Files - Monaco Editor - Content Editing", () => {
     await expect(lineNumbers.first()).toBeVisible();
   });
 
-  // 5.24 Editor in read-only mode
   test("5.24 - should prevent editing in read-only mode", async ({ page }) => {
     // This test would require switching to a read-only branch
     const idePage = new IDEPage(page);
@@ -301,7 +295,6 @@ test.describe("IDE Files - Monaco Editor - Diff View", () => {
     await page.waitForTimeout(500);
   });
 
-  // 5.25 Toggle diff view on
   test("5.25 - should show diff view when toggled on", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -346,7 +339,6 @@ test.describe("IDE Files - Monaco Editor - Saving", () => {
     await page.waitForTimeout(500);
   });
 
-  // 5.33 Ctrl+S saves file
   test("5.33 - should save file with Ctrl+S", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -363,7 +355,6 @@ test.describe("IDE Files - Monaco Editor - Saving", () => {
     await idePage.verifySaveButtonHidden();
   });
 
-  // 5.34 Click Save button
   test("5.34 - should save file when clicking Save button", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -408,7 +399,6 @@ test.describe("IDE Files - Monaco Editor - Saving", () => {
     await idePage.verifySaveButtonHidden();
   });
 
-  // 5.41 Save returns 500 error
   test("5.41 - should show error toast when save fails", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -435,7 +425,6 @@ test.describe("IDE Files - Monaco Editor - Saving", () => {
     await page.waitForTimeout(1000);
   });
 
-  // 5.42 Save returns 409 Conflict
   test("5.42 - should show conflict message on 409 response", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -500,7 +489,6 @@ test.describe("IDE Files - Monaco Editor - Navigation Blocking", () => {
     }
   });
 
-  // 5.45 Dialog → click "Save"
   test("5.45 - should save and navigate when clicking Save in dialog", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -522,7 +510,6 @@ test.describe("IDE Files - Monaco Editor - Navigation Blocking", () => {
     }
   });
 
-  // 5.46 Dialog → click "Discard"
   test("5.46 - should discard and navigate when clicking Discard", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -546,7 +533,6 @@ test.describe("IDE Files - Monaco Editor - Navigation Blocking", () => {
     }
   });
 
-  // 5.47 Dialog → click "Cancel"
   test("5.47 - should stay on current file when clicking Cancel", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -603,7 +589,6 @@ test.describe("IDE Files - Monaco Editor - Keyboard Handling", () => {
     await page.waitForTimeout(500);
   });
 
-  // 5.52 Space key in editor
   test("5.52 - should type space in editor (not capture by ResizablePanel)", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -618,7 +603,6 @@ test.describe("IDE Files - Monaco Editor - Keyboard Handling", () => {
     expect(content).toContain("space");
   });
 
-  // 5.53 Arrow keys in editor
   test("5.53 - should navigate cursor with arrow keys", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -684,7 +668,6 @@ test.describe("IDE Files - Monaco Editor - Keyboard Handling", () => {
     expect(content.length).toBeGreaterThan(10);
   });
 
-  // 5.57 Ctrl+Z / Ctrl+Y
   test("5.57 - should undo and redo with Ctrl+Z/Y", async ({ page }) => {
     const idePage = new IDEPage(page);
 

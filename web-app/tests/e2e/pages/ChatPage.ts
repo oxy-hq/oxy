@@ -52,10 +52,8 @@ export class ChatPage {
     } else if (options?.mode === "Workflow") {
       await this.automationModeButton.click();
 
-      // Fill automation title
       await this.questionInput.fill(question);
 
-      // Select automation
       if (options.automationName) {
         await this.automationSelectorButton.click();
         await this.page.getByRole("menuitemcheckbox", { name: options.automationName }).click();
@@ -73,7 +71,6 @@ export class ChatPage {
     await expect(this.agentSelectorButton).not.toHaveText("");
     await expect(this.agentSelectorButton).not.toContainText("undefined");
 
-    // Select agent
     await this.agentSelectorButton.click();
 
     // Wait for dropdown menu to be visible

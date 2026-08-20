@@ -36,7 +36,6 @@ pub fn extract_meta_variables(
     let variables_value = meta.and_then(|m| m.get("variables")).cloned();
 
     if let Some(value) = variables_value {
-        // Parse variables into HashMap
         serde_json::from_value(value).map_err(|e| {
             rmcp::ErrorData::invalid_params(
                 format!("Invalid variables format in _meta: {}", e),

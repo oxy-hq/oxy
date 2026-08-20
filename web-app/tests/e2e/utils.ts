@@ -15,7 +15,6 @@ export function resetProject() {
   execSync(`rm -rf ${database_path}`);
 }
 
-// Reset the dedicated test file to its original content
 export async function resetTestFile() {
   // File should be in the examples directory of the oxygen-internal project
   const testFilePath = "../examples/test-file-for-e2e.txt";
@@ -25,7 +24,6 @@ This file is used for IDE E2E tests.
 It gets modified during tests and reset after each test.
 `;
 
-  // Ensure examples directory exists
   if (!existsSync("../examples")) {
     await mkdir("../examples", { recursive: true });
   }
@@ -33,7 +31,6 @@ It gets modified during tests and reset after each test.
   await writeFile(testFilePath, originalContent, "utf-8");
 }
 
-// Reset the dedicated test agent file to its original content
 export async function resetTestAgentFile() {
   const testAgentPath = "../examples/agents/test-agent-e2e.agent.yml";
   const originalContent = `# Test Agent for E2E Tests
@@ -54,7 +51,6 @@ tools:
     database: local
 `;
 
-  // Ensure agents directory exists
   if (!existsSync("../examples/agents")) {
     await mkdir("../examples/agents", { recursive: true });
   }
@@ -62,7 +58,6 @@ tools:
   await writeFile(testAgentPath, originalContent, "utf-8");
 }
 
-// Delete test files created during tests
 export async function cleanupTestFiles() {
   const { unlink, readdir } = await import("node:fs/promises");
   const { existsSync } = await import("node:fs");

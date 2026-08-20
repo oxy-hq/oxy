@@ -9,7 +9,6 @@ test.describe("IDE Files - View Editor - Explorer Mode Fields Panel", () => {
     });
   });
 
-  // 9.1 View loads → fields display
   test("9.1 - should display dimensions and measures when view loads", async ({ page }) => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
@@ -89,7 +88,6 @@ test.describe("IDE Files - View Editor - Explorer Mode Fields Panel", () => {
     }
   });
 
-  // 9.9 View with 500+ fields
   test("9.9 - should handle view with many fields via virtual scroll", async ({ page }) => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
@@ -269,7 +267,6 @@ test.describe("IDE Files - View Editor - SQL & Execution", () => {
     }
   });
 
-  // 9.30 Toggle SQL view
   test("9.30 - should toggle SQL panel visibility", async ({ page }) => {
     const semanticSection = page.getByText("Semantic Layer");
     if (await semanticSection.isVisible()) {
@@ -303,7 +300,6 @@ test.describe("IDE Files - View Editor - Loading Errors", () => {
 
   // 9.31-9.33 Error handling
   test("9.31 - should show error for invalid datasource", async ({ page }) => {
-    // Intercept view API to return error
     await page.route("**/api/v1/**/views/**", (route) => {
       route.fulfill({
         status: 500,
@@ -328,7 +324,6 @@ test.describe("IDE Files - View Editor - Loading Errors", () => {
     }
   });
 
-  // 9.33 View loading state
   test("9.33 - should show loading state while fetching view data", async ({ page }) => {
     const semanticSection = page.getByText("Semantic Layer");
     if (await semanticSection.isVisible()) {

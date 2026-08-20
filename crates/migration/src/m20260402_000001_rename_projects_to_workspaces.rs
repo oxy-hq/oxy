@@ -15,7 +15,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // Rename projects → workspaces
         manager
             .rename_table(
                 Table::rename()

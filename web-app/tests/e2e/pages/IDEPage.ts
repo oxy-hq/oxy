@@ -152,7 +152,6 @@ export class IDEPage {
   }
 
   async getEditorContent(): Promise<string> {
-    // Get all text lines from Monaco editor
     const lines = await this.page.locator(".view-line").allTextContents();
     return lines.join("\n");
   }
@@ -210,7 +209,6 @@ export class IDEPage {
   // IDE sidebar mode switching
   async switchToFilesMode() {
     await this.filesModeButton.click();
-    // Wait for mode to switch
     await this.page.waitForTimeout(300);
   }
 

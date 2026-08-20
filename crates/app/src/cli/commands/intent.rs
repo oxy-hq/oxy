@@ -102,7 +102,6 @@ pub async fn handle_intent_command(intent_args: IntentArgs) -> Result<(), OxyErr
 
     let mut config = IntentConfig::from_env();
 
-    // Update min_cluster_size from CLI args if in Cluster action
     if let IntentAction::Cluster {
         min_cluster_size, ..
     } = &intent_args.action

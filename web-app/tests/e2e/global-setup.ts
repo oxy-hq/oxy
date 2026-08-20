@@ -37,7 +37,6 @@ tools:
     await writeFile(testFilePath, testFileContent, "utf-8");
     console.log(`✓ Created ${testFilePath}`);
 
-    // Ensure agents directory exists
     if (!existsSync("../examples/agents")) {
       await mkdir("../examples/agents", { recursive: true });
     }

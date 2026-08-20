@@ -111,7 +111,6 @@ impl SecretsStorage for SecretsEnvironmentStorage {
         let env_path = Self::get_env_file_path()?;
         let lines = Self::read_env_file(&env_path)?;
 
-        // Filter out the line with the matching key
         let filtered_lines: Vec<String> = lines
             .into_iter()
             .filter(|line| {

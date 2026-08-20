@@ -115,7 +115,6 @@ mod tests {
         let config = TimeoutConfig::from_headers(&headers);
         assert_eq!(config.duration, Duration::from_secs(get_timeout_secs()));
 
-        // Test valid timeout header
         headers.insert(REQUEST_TIMEOUT_HEADER, HeaderValue::from_static("45"));
         let config = TimeoutConfig::from_headers(&headers);
         assert_eq!(config.duration, Duration::from_secs(45));

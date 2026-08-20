@@ -126,7 +126,6 @@ pub async fn run_sql_file_tool(
     let (mut execution_context, mut rx) =
         create_execution_context(workspace_manager, "mcp_sql_file");
 
-    // Apply session filters if provided
     if let Some(session_filters) = filters {
         execution_context.filters = Some(session_filters);
     }

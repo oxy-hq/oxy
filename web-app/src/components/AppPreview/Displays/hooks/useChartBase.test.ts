@@ -262,7 +262,6 @@ describe("useChartBase – isLoading lifecycle", () => {
     // The hook is now rendering display2's query, which is still pending.
     expect(result.current.isLoading).toBe(true);
 
-    // Resolve the current query → isLoading should now be false.
     await act(async () => {
       second.resolve({});
     });

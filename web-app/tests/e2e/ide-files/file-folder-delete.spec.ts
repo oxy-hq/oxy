@@ -14,16 +14,13 @@ test.describe("IDE Files - File/Folder Delete", () => {
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
 
-    // Capture file tree before test
     await captureFileTree(page);
   });
 
   test.afterEach(async ({ page }) => {
-    // Restore file tree after test
     await cleanupAfterTest(page);
   });
 
-  // 4.1 Delete single file
   test("4.1 - should remove deleted file from tree", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -80,7 +77,6 @@ test.describe("IDE Files - File/Folder Delete", () => {
     }
   });
 
-  // 4.3 Delete folder with many files
   test("4.3 - should delete folder with all its files", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -107,7 +103,6 @@ test.describe("IDE Files - File/Folder Delete", () => {
     }
   });
 
-  // 4.4 Cancel delete confirmation
   test("4.4 - should not delete when canceling confirmation", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -132,7 +127,6 @@ test.describe("IDE Files - File/Folder Delete", () => {
     }
   });
 
-  // 4.5 Delete file with unsaved changes
   test("4.5 - should prompt to save before deleting file with unsaved changes", async ({
     page
   }) => {
@@ -158,7 +152,6 @@ test.describe("IDE Files - File/Folder Delete", () => {
     }
   });
 
-  // 4.6 Delete parent folder of open file
   test("4.6 - should navigate away when deleting parent folder of open file", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -227,7 +220,6 @@ test.describe("IDE Files - File/Folder Delete", () => {
     }
   });
 
-  // 4.8 API returns 500 on delete
   test("4.8 - should show toast error when API fails on delete", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -265,12 +257,10 @@ test.describe("IDE Files - File/Folder Delete", () => {
     }
   });
 
-  // 4.9 API returns 404 (already deleted)
   test("4.9 - should refresh tree when file already deleted (404)", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
-    // Intercept delete API to return 404
     await page.route("**/api/v1/**/files/**", (route, request) => {
       if (request.method() === "DELETE") {
         route.fulfill({

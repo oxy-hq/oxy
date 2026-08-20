@@ -17,7 +17,6 @@ export interface Trace {
   totalTokens?: number;
 }
 
-// Helper function to convert array of tuples to object
 function tupleArrayToRecord(arr: Array<[string, string]>): Record<string, string> {
   return Object.fromEntries(arr);
 }

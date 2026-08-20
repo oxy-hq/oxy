@@ -86,7 +86,6 @@ async fn create_install_and_consume() {
     .expect("create_install");
     assert_eq!(nonce.len(), 64, "nonce should be 64 hex chars");
 
-    // First consume — should succeed.
     let row = OauthStateService::consume(&nonce, StateKind::Install)
         .await
         .expect("first consume should succeed");

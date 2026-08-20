@@ -693,7 +693,6 @@ impl TimeoutConfig {
 
     /// Validates that the configuration values are reasonable and consistent
     pub fn validate_consistency(&self) -> Result<(), String> {
-        // Check that max polling interval is greater than initial interval
         if self.max_polling_interval_ms < self.polling_interval_ms {
             return Err(
                 "Maximum polling interval must be greater than or equal to initial polling interval"
@@ -701,7 +700,6 @@ impl TimeoutConfig {
             );
         }
 
-        // Check that backoff multiplier makes sense
         if self.polling_backoff_multiplier < 1.0 {
             return Err("Polling backoff multiplier must be at least 1.0".to_string());
         }

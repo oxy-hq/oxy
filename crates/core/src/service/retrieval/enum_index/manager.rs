@@ -230,14 +230,12 @@ impl EnumIndexManager {
         fs::create_dir_all(&self.config.cache_path)
             .map_err(|e| OxyError::RuntimeError(format!("Failed to create cache dir: {e}")))?;
 
-        // Write JSON
         let json_bytes = serde_json::to_vec_pretty(&routing_blob).map_err(|e| {
             OxyError::RuntimeError(format!("Failed to serialize routing JSON: {e}"))
         })?;
         fs::write(self.config.routing_json_path(), json_bytes)
             .map_err(|e| OxyError::RuntimeError(format!("Failed to write routing JSON: {e}")))?;
 
-        // Write rkyv
         let rkyv_bytes = rkyv::to_bytes::<_, 256>(&routing_blob)
             .map_err(|e| OxyError::RuntimeError(format!("Failed to archive routing blob: {e}")))?;
         fs::write(self.config.routing_rkyv_path(), rkyv_bytes)

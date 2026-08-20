@@ -144,7 +144,6 @@ pub async fn run_test_case(
             .map(|c| (c.prompt.clone(), c.expected.clone()))
             .unwrap_or_default();
 
-        // Look up the test_run_id from source_id + run_index
         match TestRunsManager::new(workspace_id).await {
             Ok(manager) => match manager.get_run(&path, run_index).await {
                 Ok(Some(run_with_cases)) => Some(TestCasePersistContext {

@@ -488,7 +488,6 @@ impl PipelineBuilder {
         // bound in this scope.
         let base_dir = ctx_root.path().to_path_buf();
 
-        // Update DB status back to running.
         agentic_runtime::crud::update_run_running(db, run_id).await?;
 
         let result = match source_type {

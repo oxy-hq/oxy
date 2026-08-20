@@ -18,7 +18,6 @@ test.describe("Home Page Chat Box Test", () => {
 
     await chatPage.askQuestion("Top 3 fruit sales?", "duckdb");
 
-    // Wait for response
     await chatPage.waitForStreamingComplete();
 
     await chatPage.verifyResponse();
@@ -58,7 +57,6 @@ test.describe("Home Page Chat Box Test", () => {
   test("should be able to run a workflow from chat box", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
-    // Run automation
     await chatPage.askQuestion("run this workflow", "duckdb", {
       mode: "Workflow",
       automationName: "fruit_sales_report"
@@ -96,7 +94,6 @@ test.describe("Home Page Chat Box Test", () => {
     await chatPage.askFollowUp("What about the bottom 3?");
     await chatPage.waitForStreamingComplete();
 
-    // Verify we have 2 agent responses
     const responseCount = await chatPage.getResponseCount();
     expect(responseCount).toBe(2);
   });
@@ -104,7 +101,6 @@ test.describe("Home Page Chat Box Test", () => {
   test("should be able to select different agents", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
-    // Wait for agent selector to have loaded
     await expect(chatPage.agentSelectorButton).not.toHaveText("");
     await expect(chatPage.agentSelectorButton).not.toContainText("undefined");
 
@@ -135,7 +131,6 @@ test.describe("Home Page Chat Box Test", () => {
   test("should show submit button disabled when input is empty", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
-    // Verify submit button is disabled initially
     await expect(chatPage.submitButton).toBeDisabled();
 
     // Type something

@@ -235,7 +235,6 @@ pub(crate) fn build_routing_blob(
                 obj_enum_pairs.push((name.clone(), strings));
             }
 
-            // Seed with enum variables from retrieval object
             builder.seed_enum_variables(&obj_enum_pairs);
         }
         // Pre-build templates necessary for rendering at query time

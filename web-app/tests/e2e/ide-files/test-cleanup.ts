@@ -25,7 +25,6 @@ interface FileTreeNode {
   isFolder: boolean;
 }
 
-// Store snapshots of files before tests
 const fileSnapshots = new Map<string, FileSnapshot>();
 
 // Store complete file tree snapshot before tests

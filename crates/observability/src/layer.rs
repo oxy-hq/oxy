@@ -311,7 +311,6 @@ where
         let span_attributes =
             serde_json::to_string(&data.attributes).unwrap_or_else(|_| "{}".to_string());
 
-        // Serialize events to JSON array.
         let event_data: Vec<serde_json::Value> = data
             .events
             .iter()

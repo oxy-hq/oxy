@@ -422,7 +422,6 @@ pub async fn get_cluster_map(
     // Project embeddings to 2D using simple PCA-like approach
     let points_2d = project_to_2d(&embeddings);
 
-    // Generate colors for clusters and build a color map by cluster_id
     let cluster_colors = generate_cluster_colors(cluster_infos.len() + 1); // +1 for outliers
     let mut cluster_color_map: HashMap<i32, String> = HashMap::new();
     cluster_color_map.insert(-1, cluster_colors[0].clone()); // Outliers get first color
@@ -492,7 +491,6 @@ pub async fn get_cluster_map(
         });
     }
 
-    // Parse sample_questions from JSON for each cluster info
     let parse_sample_questions =
         |sq: &str| -> Vec<String> { serde_json::from_str(sq).unwrap_or_default() };
 

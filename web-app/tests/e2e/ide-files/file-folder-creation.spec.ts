@@ -13,7 +13,6 @@ test.describe("IDE Files - File/Folder Creation", () => {
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
 
-    // Capture file tree before test
     await captureFileTree(page);
   });
 
@@ -71,7 +70,6 @@ test.describe("IDE Files - File/Folder Creation", () => {
     }
   });
 
-  // 2.3 Create folder then file inside immediately
   test("2.3 - should create folder then file inside immediately", async ({ page }) => {
     const newFolderButton = page.getByRole("button", { name: "New Folder" });
 
@@ -89,7 +87,6 @@ test.describe("IDE Files - File/Folder Creation", () => {
     }
   });
 
-  // 2.4 Press Enter without name
   test("2.4 - should not create file when pressing Enter without name", async ({ page }) => {
     const newFileButton = page.getByRole("button", { name: "New File" });
 
@@ -107,7 +104,6 @@ test.describe("IDE Files - File/Folder Creation", () => {
     }
   });
 
-  // 2.5 Press Escape during creation
   test("2.5 - should cancel creation when pressing Escape", async ({ page }) => {
     const newFileButton = page.getByRole("button", { name: "New File" });
 
@@ -193,7 +189,6 @@ test.describe("IDE Files - File/Folder Creation", () => {
     }
   });
 
-  // 2.9 Leading/trailing spaces
   test("2.9 - should handle leading/trailing spaces", async ({ page }) => {
     const newFileButton = page.getByRole("button", { name: "New File" });
 
@@ -249,7 +244,6 @@ test.describe("IDE Files - File/Folder Creation", () => {
     }
   });
 
-  // 2.16 API returns 500 during create
   test("2.16 - should show toast error on API failure during create", async ({ page }) => {
     await page.route("**/api/v1/**/files**", (route, request) => {
       if (request.method() === "POST") {
@@ -284,7 +278,6 @@ test.describe("IDE Files - File/Folder Creation", () => {
     }
   });
 
-  // 2.17 Network disconnects during creation
   test("2.17 - should handle network disconnect during creation", async ({ page }) => {
     const newFileButton = page.getByRole("button", { name: "New File" });
 

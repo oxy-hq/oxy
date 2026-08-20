@@ -65,7 +65,6 @@ impl OmniApiClient {
             ));
         }
 
-        // Check for whitespace in API token
         if api_token.trim() != api_token {
             return Err(OmniError::config_invalid(
                 "api_token",
@@ -84,7 +83,6 @@ impl OmniApiClient {
             "Validating timeout configuration"
         );
 
-        // Use the built-in validation from the TimeoutConfig
         timeout_config.validate_config().map_err(|e| {
             warn!(
                 timeout_config = ?timeout_config,

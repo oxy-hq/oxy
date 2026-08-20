@@ -240,7 +240,6 @@ pub async fn handle_looker_sync(args: LookerSyncArgs) -> Result<(), OxyError> {
                 }
             }
         } else {
-            // Sync all configured explores for this integration
             for explore_config in &looker_integration.explores {
                 println!(
                     "  🔄 Syncing explore: {}/{}.{}",

@@ -366,7 +366,6 @@ impl AnalyticsSolver {
                     )
                     .await;
 
-                    // Determine connector from resolved tables.
                     let translation = self.catalog.translate_to_raw_context(&query_request, "");
                     let connector_name = translation
                         .resolved_tables
@@ -649,7 +648,6 @@ impl AnalyticsSolver {
 
         let mut tools = crate::tools::metric_tree_tools();
         tools.extend(crate::tools::triage_tools(true));
-        // Add anomaly tools when the store is configured.
         let anomaly_store = self.anomaly_store.clone();
         if anomaly_store.is_some() {
             tools.extend(crate::tools::anomaly_tools());

@@ -712,7 +712,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         Some(SubCommand::Build(build_args)) => {
             sentry_config::add_operation_context("build", None);
 
-            // Synchronize Omni integration if configured
             handle_omni_sync().await?;
 
             // Synchronize Looker metadata if configured

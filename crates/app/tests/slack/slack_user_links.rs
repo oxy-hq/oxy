@@ -141,7 +141,6 @@ async fn create_find_touch_delete() {
         .await
         .expect("delete link");
 
-    // verify gone
     let after_delete = UserLinksService::find(installation_id, &slack_user_id)
         .await
         .expect("find after delete");

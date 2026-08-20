@@ -216,7 +216,6 @@ async fn uninstall_is_idempotent() {
     .await
     .expect("seed installation");
 
-    // First revoke.
     revoke(installation.clone())
         .await
         .expect("first revoke should succeed");

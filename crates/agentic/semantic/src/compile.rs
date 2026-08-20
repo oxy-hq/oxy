@@ -112,7 +112,6 @@ pub fn resolve_and_compile(
         &date_fields,
     )?;
 
-    // Compile to SQL.
     let result = engine
         .compile_query(&request)
         .map_err(|e| SemanticError::Runtime(format!("query compilation error: {e}")))?;

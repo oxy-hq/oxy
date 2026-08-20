@@ -90,7 +90,6 @@ impl FilterProcessor {
             }
         }
 
-        // Log successful filter validation
         tracing::debug!(
             filters = ?result.keys().collect::<Vec<_>>(),
             "Filter validation successful"

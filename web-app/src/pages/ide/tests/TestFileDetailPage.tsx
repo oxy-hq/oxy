@@ -978,7 +978,6 @@ const TestFileDetailPage: React.FC = () => {
     humanOverrides
   ]);
 
-  // Navigate between filtered cases
   const handleCaseNavigate = useCallback(
     (dir: -1 | 1) => {
       const currentIdx = filteredCases.findIndex((c) => c.originalIndex === selectedCaseIndex);

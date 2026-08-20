@@ -396,7 +396,6 @@ async fn multi_tenant_tick_isolation() {
         Err(ScheduleError::NotFound)
     ));
 
-    // Now tick B → fires B; A's count unchanged.
     let fired_b = tick_schedules(&db, ws_b, &FakeWorkspace).await;
     assert_eq!(run_count_for(&db, &r_b).await, 1);
     assert_eq!(run_count_for(&db, &r_a).await, 1, "A unchanged");

@@ -62,7 +62,6 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
     });
   });
 
-  // 7.1 Open in Objects mode → Form default
   test("7.1 - should default to Form in Objects mode", async ({ page }) => {
     const opened = await openAutomationFile(page, "objects");
     if (!opened) {
@@ -82,7 +81,6 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
     expect(hasForm || hasEditor).toBeTruthy();
   });
 
-  // 7.2 Open in Files mode → Output default
   test("7.2 - should default to Output view in Files mode", async ({ page }) => {
     const opened = await openAutomationFile(page, "files");
     if (!opened) {
@@ -102,7 +100,6 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
     expect(hasEditor || hasOutput || true).toBeTruthy();
   });
 
-  // 7.3 Switch to Output mode
   test("7.3 - should show run results in Output mode", async ({ page }) => {
     const idePage = new IDEPage(page);
     await page.getByRole("tab", { name: "Files" }).click();
@@ -134,7 +131,6 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
     }
   });
 
-  // 7.4 URL with ?run=<id>
   test("7.4 - should load specific run from URL parameter", async ({ page }) => {
     const idePage = new IDEPage(page);
     await page.getByRole("tab", { name: "Files" }).click();
@@ -253,7 +249,6 @@ test.describe("IDE Files - Workflow Form Editor - Tasks", () => {
     }
   });
 
-  // 7.11 Add execute_sql task
   test("7.11 - should show SQL field for execute_sql task", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
@@ -377,7 +372,6 @@ test.describe("IDE Files - Workflow Form Editor - Task Name Validation", () => {
     }
   });
 
-  // 7.25 Task name: "1task" (starts with number)
   test("7.25 - should invalidate task name starting with number", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
@@ -501,7 +495,6 @@ test.describe("IDE Files - Workflow Form Editor - Run History", () => {
     }
   });
 
-  // 7.49 Click old run
   test("7.49 - should update URL when clicking a run", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",

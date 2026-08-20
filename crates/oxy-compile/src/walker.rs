@@ -329,7 +329,6 @@ mod tests {
             "exactly one .sql outside modeling/"
         );
 
-        // outputs are sorted
         let paths: Vec<_> = by_kind.iter().map(|(p, _)| p.clone()).collect();
         let mut sorted = paths.clone();
         sorted.sort();

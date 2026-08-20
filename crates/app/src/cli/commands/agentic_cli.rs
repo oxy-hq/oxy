@@ -223,7 +223,6 @@ async fn cmd_run(args: RunArgs) -> Result<(), OxyError> {
     let (cancel_tx, cancel_rx) = watch::channel(false);
     state.register(&run_id, answer_tx, cancel_tx);
 
-    // Drive pipeline in background via coordinator.
     let db2 = db.clone();
     let state2 = Arc::clone(&state);
     let drive_handle = tokio::spawn(async move {

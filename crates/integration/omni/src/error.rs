@@ -245,7 +245,6 @@ mod tests {
         assert_eq!(timeout_error.retry_delay_seconds(), None);
         assert_eq!(polling_error.retry_delay_seconds(), Some(5));
 
-        // Test user-friendly messages
         let timeout_message = timeout_error.user_friendly_message();
         let polling_message = polling_error.user_friendly_message();
 
@@ -269,7 +268,6 @@ mod tests {
 
     #[test]
     fn test_timeout_error_classification() {
-        // Test QueryTimeoutError classification
         let timeout_error =
             OmniError::QueryTimeoutError("Polling exceeded maximum attempts".to_string());
         assert!(!timeout_error.is_temporary());
@@ -291,7 +289,6 @@ mod tests {
 
     #[test]
     fn test_timeout_error_user_friendly_messages() {
-        // Test QueryTimeoutError user-friendly message
         let timeout_error =
             OmniError::QueryTimeoutError("Query exceeded 5 minute limit".to_string());
         let message = timeout_error.user_friendly_message();
@@ -302,7 +299,6 @@ mod tests {
         assert!(message.contains("simplifying the query"));
         assert!(message.contains("using filters"));
 
-        // Test QueryPollingError user-friendly message
         let polling_error =
             OmniError::QueryPollingError("Network timeout during polling".to_string());
         let message = polling_error.user_friendly_message();
@@ -401,7 +397,6 @@ mod tests {
 
     #[test]
     fn test_error_helper_constructors() {
-        // Test connection_failed helper
         let conn_error =
             OmniError::connection_failed("https://api.example.com", "Connection refused");
         assert!(
@@ -459,7 +454,6 @@ mod tests {
         );
         assert!(sync_error.to_string().contains("API timeout"));
 
-        // Test validation_failed helper
         let validation_error =
             OmniError::validation_failed("TimeoutConfig", "Invalid polling interval");
         assert!(
@@ -500,7 +494,6 @@ mod tests {
 
     #[test]
     fn test_error_conversion_from_foreign_types() {
-        // Test IO error cloning
         let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "File not found");
         let omni_io_error = OmniError::IoError(io_error);
         let cloned_io = omni_io_error.clone();

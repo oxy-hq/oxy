@@ -30,7 +30,6 @@ interface SpanIconProps {
  */
 // eslint-disable-next-line sonarjs/cognitive-complexity
 export function SpanIcon({ spanName, className = "h-4 w-4" }: SpanIconProps) {
-  // LLM calls
   if (spanName.startsWith("llm.")) {
     return <Bot className={className} />;
   }
@@ -122,7 +121,6 @@ export function SpanIcon({ spanName, className = "h-4 w-4" }: SpanIconProps) {
     return <Automation className={className} />;
   }
 
-  // Agent operations
   if (spanName.startsWith("agent.")) {
     return <Bot className={className} />;
   }

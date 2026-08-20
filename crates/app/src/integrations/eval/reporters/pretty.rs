@@ -116,7 +116,6 @@ impl Reporter for PrettyReporter {
         let total_attempted: usize = results.iter().map(|r| r.stats.total_attempted).sum();
         let answered: usize = results.iter().map(|r| r.stats.answered).sum();
 
-        // Count passing/total cases from correctness metrics
         let (total_cases, passing_cases) = results
             .iter()
             .flat_map(|r| &r.metrics)

@@ -292,7 +292,6 @@ pub async fn list_databases(
             .await
         {
             Ok(Some(db_info)) => {
-                // Parse YAML semantic info into SemanticModels for each dataset
                 let datasets: HashMap<String, HashMap<String, SemanticModels>> = db_info
                     .datasets
                     .into_iter()
@@ -781,7 +780,6 @@ pub async fn test_database_connection(
         // Create SSO URL channel
         let (sso_tx, mut sso_rx) = mpsc::channel::<String>(1);
 
-        // Check if Snowflake browser auth
         let is_snowflake_browser = matches!(
             &db_config.database_type,
             DatabaseType::Snowflake(sf) if matches!(sf.auth_type, SnowflakeAuthType::BrowserAuth { .. })

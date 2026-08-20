@@ -73,7 +73,6 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
 
   const availableTypes = Object.keys(EXECUTION_TYPES) as ExecutionType[];
 
-  // Reset page when filters change
   const handleTabChange = (v: string) => {
     setActiveTab(v as FilterTab);
     setCurrentPage(1);

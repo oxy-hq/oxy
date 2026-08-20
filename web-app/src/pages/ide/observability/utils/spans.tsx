@@ -4,7 +4,6 @@
 export function formatSpanLabel(spanName: string): string {
   // Map of specific span names to friendly labels
   const labelMap: Record<string, string> = {
-    // Automation launcher
     "workflow.launcher.with_project": "Load Project",
     "workflow.launcher.get_global_context": "Get Global Context",
     "workflow.launcher.launch": "Launch Automation",

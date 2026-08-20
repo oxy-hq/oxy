@@ -166,7 +166,6 @@ impl TurnStore for JsonFileStorage {
     }
 
     async fn save_turn(&self, turn: &PersistedTurn) -> Result<i64, StorageError> {
-        // Truncate artifacts.
         let mut turn = turn.clone();
         for artifact in &mut turn.artifacts {
             artifact.content = truncate_artifact_content(&artifact.content);

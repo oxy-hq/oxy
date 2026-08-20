@@ -16,7 +16,6 @@ test.describe("IDE Files - Read-Only Mode", () => {
     await page.waitForTimeout(500);
   });
 
-  // 12.1 Enter read-only branch
   test("12.1 - should hide mutation buttons in read-only mode", async ({ page }) => {
     // Simulate read-only mode via URL or branch switch
     // This test verifies the UI responds to read-only state
@@ -103,7 +102,6 @@ test.describe("IDE Files - Read-Only Mode", () => {
     }
   });
 
-  // 12.5 Ctrl+S in read-only
   test("12.5 - should do nothing when pressing Ctrl+S in read-only mode", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.openFile("config.yml");
@@ -143,7 +141,6 @@ test.describe("IDE Files - Page Reload Scenarios", () => {
     await page.waitForTimeout(500);
   });
 
-  // 13.1 Reload file tree
   test("13.1 - should reload tree on page refresh", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -155,7 +152,6 @@ test.describe("IDE Files - Page Reload Scenarios", () => {
     await idePage.verifyFilesMode();
   });
 
-  // 13.2 Reload with file open
   test("13.2 - should reopen same file after refresh", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -172,7 +168,6 @@ test.describe("IDE Files - Page Reload Scenarios", () => {
     await idePage.waitForEditorToLoad();
   });
 
-  // 13.3 Reload with unsaved changes
   test("13.3 - should show browser prompt for unsaved changes", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -218,7 +213,6 @@ test.describe("IDE Files - Page Reload Scenarios", () => {
     await page.waitForTimeout(1000);
   });
 
-  // 13.7 Reload on slow network
   test("13.7 - should show loading states on slow network", async ({ page }) => {
     const idePage = new IDEPage(page);
 
@@ -286,7 +280,6 @@ test.describe("IDE Files - Resizable Panels", () => {
     }
   });
 
-  // 14.6 Toggle sidebar collapse
   test("14.6 - should toggle sidebar visibility", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -315,7 +308,6 @@ test.describe("IDE Files - YAML Parsing & Serialization", () => {
     await page.waitForTimeout(500);
   });
 
-  // 15.1 Valid YAML → Form
   test("15.1 - should parse valid YAML correctly", async ({ page }) => {
     const agentsFolder = page.getByRole("button", {
       name: "agents",
@@ -347,7 +339,6 @@ test.describe("IDE Files - YAML Parsing & Serialization", () => {
     }
   });
 
-  // 15.2 Invalid YAML syntax
   test("15.2 - should log error and return null for invalid YAML", async ({ page }) => {
     const idePage = new IDEPage(page);
 

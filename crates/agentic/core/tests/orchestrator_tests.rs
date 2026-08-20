@@ -1948,14 +1948,12 @@ async fn diagnose_backward_transition_still_emits_back_edge() {
         })
         .collect();
 
-    // First exit from executing should be BackTracked.
     assert_eq!(
         exec_exits.first(),
         Some(&agentic_core::Outcome::BackTracked),
         "executing → solving should be BackTracked"
     );
 
-    // A BackEdge event should have been emitted.
     let back_edges: Vec<(String, String)> = events
         .iter()
         .filter_map(|e| match e {
@@ -2584,7 +2582,6 @@ async fn concurrent_fanout_retry_succeeds_after_one_failure() {
     assert!(answer.contains("BETA"), "answer: {answer}");
     assert!(answer.contains("GAMMA"), "answer: {answer}");
 
-    // The retried sub-spec should have received retry context.
     assert!(
         answer.contains("retry=true"),
         "retried sub-spec must receive retry context, answer: {answer}"

@@ -277,7 +277,6 @@ impl TestRunsManager {
             }
         }
 
-        // Group file runs by project_run_id
         let mut file_runs_by_project: HashMap<Uuid, Vec<&test_runs::Model>> = HashMap::new();
         for run in &file_runs {
             if let Some(pr_id) = run.project_run_id {

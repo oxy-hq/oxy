@@ -148,11 +148,9 @@ pub fn record_batches_to_table(
 }
 
 pub fn record_batches_to_json(batches: &[RecordBatch]) -> Result<String, ArrowError> {
-    // Write the record batches out as JSON
     let buf = Vec::new();
     let mut writer = arrow_json::ArrayWriter::new(buf);
 
-    // Convert each RecordBatch reference to &RecordBatch
     let batch_refs: Vec<&RecordBatch> = batches.iter().collect();
     writer.write_batches(&batch_refs)?;
     writer.finish()?;

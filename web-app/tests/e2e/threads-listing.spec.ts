@@ -29,7 +29,6 @@ test.describe("Threads Listing Page", () => {
   });
 
   test("should display thread metadata", async ({ page }) => {
-    // Wait for threads to load
     const firstThread = page.locator('[data-testid="thread-item"]').first();
     await expect(firstThread).toBeVisible({ timeout: 10000 });
 
@@ -66,7 +65,6 @@ test.describe("Threads Listing Page", () => {
   });
 
   test("should display items per page selector", async ({ page }) => {
-    // Wait for threads to load
     await expect(page.locator('[data-testid="thread-item"]').first()).toBeVisible({
       timeout: 10000
     });
@@ -77,17 +75,14 @@ test.describe("Threads Listing Page", () => {
   });
 
   test("should display select mode button", async ({ page }) => {
-    // Wait for threads to load
     await expect(page.locator('[data-testid="thread-item"]').first()).toBeVisible({
       timeout: 10000
     });
 
-    // Verify Select button exists
     await expect(page.getByRole("button", { name: "Select" })).toBeVisible();
   });
 
   test("should enable checkboxes in select mode", async ({ page }) => {
-    // Wait for threads to load
     await expect(page.locator('[data-testid="thread-item"]').first()).toBeVisible({
       timeout: 10000
     });

@@ -6,7 +6,6 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // Create the Runs table
         manager
             .create_table(
                 Table::create()
@@ -47,7 +46,6 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
-        // Create the Checkpoints table
         manager
             .create_table(
                 Table::create()
@@ -75,7 +73,6 @@ impl MigrationTrait for Migration {
                             .timestamp_with_time_zone()
                             .not_null(),
                     )
-                    // Foreign key to Runs table
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_checkpoints_run_id")

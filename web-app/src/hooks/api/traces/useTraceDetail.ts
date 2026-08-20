@@ -30,7 +30,6 @@ function processTraceSpans(rawSpans: TraceDetailSpan[]): ProcessedTrace | null {
   const startTime = sortedSpans[0].timestamp;
   const startMs = new Date(startTime).getTime();
 
-  // Build parent-child map
   const childrenMap = new Map<string, string[]>();
   sortedSpans.forEach((span) => {
     if (span.parentSpanId) {
