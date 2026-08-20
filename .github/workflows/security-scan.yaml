@@ -68,7 +68,7 @@ jobs:
 
       - name: Upload vulnerability results to GitHub Security tab
         if: github.repository == 'oxy-hq/oxygen'
-        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
         with:
           sarif_file: trivy-vuln-results.sarif
           category: trivy-vulnerability
@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload secret scan results to GitHub Security tab
         if: github.repository == 'oxy-hq/oxygen'
-        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
         with:
           sarif_file: trivy-secret-results.sarif
           category: trivy-secret
