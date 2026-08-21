@@ -228,3 +228,80 @@ async fn example_bundle_index_html_is_self_contained() {
         );
     }
 }
+
+/// The viewer panel must address `shell-context` with the **injected** project
+/// id, never a baked one.
+///
+/// The whole point of `window.__OXY_APP__` is that one bundle serves any org: a
+/// hardcoded id would work in whichever workspace it was copied from and read
+/// somebody else's identity — or 403 — everywhere else. Pattern 3 already makes
+/// this claim in prose; pattern 4 is the second place it has to hold.
+#[tokio::test]
+async fn example_bundle_reads_the_viewer_from_the_injected_project_id() {
+    let html = body(&example_bundle().await, "index.html");
+    assert!(
+        html.contains("/api/projects/${app.projectId}/shell-context"),
+        "the viewer panel must template the injected projectId into shell-context"
+    );
+}
+
+/// A viewer's name and email are **user-controlled free text** — they come from
+/// the person's own IdP profile — so the bundle must put them in the DOM as
+/// text, never as markup.
+///
+/// This is the one XSS surface a single-file example can plausibly grow: the
+/// warehouse-value helper already carries a "textContent, never innerHTML"
+/// comment, and identity is the second source of untrusted strings to arrive.
+/// Pinned at the file level because the fix is trivial and the regression is
+/// silent — a stored display name of `<img onerror=…>` renders once and works
+/// for whoever opens the app next.
+///
+/// Scans **every** markup/script file in the bundle, not just `index.html`: the
+/// rule is stated as a bundle-wide invariant, and a bundle that later grows an
+/// `app.js` would otherwise be exempt from it while this docstring still claimed
+/// otherwise.
+#[tokio::test]
+async fn example_bundle_never_writes_untrusted_strings_as_html() {
+    // Match the SINKS, not the word: the bundle carries a "textContent, never
+    // innerHTML" comment, and a test that fails on its own guidance is a test
+    // nobody keeps.
+    const SINKS: [&str; 7] = [
+        "innerHTML =",
+        "innerHTML=",
+        "outerHTML =",
+        "outerHTML=",
+        "insertAdjacentHTML(",
+        "createContextualFragment(",
+        "document.write(",
+    ];
+
+    let files = example_bundle().await;
+    let scanned: Vec<String> = files
+        .iter()
+        .map(|(path, _)| path.clone())
+        .filter(|p| p.ends_with(".html") || p.ends_with(".js"))
+        .collect();
+    assert!(
+        !scanned.is_empty(),
+        "no .html/.js in the bundle — the scan would pass vacuously"
+    );
+
+    for path in scanned {
+        let source = body(&files, &path);
+        for sink in SINKS {
+            assert!(
+                !source.contains(sink),
+                "{path} uses {sink:?} — this bundle renders warehouse rows AND viewer \
+                 identity, both untrusted strings, so every write must go through \
+                 textContent (the `text()` helper)"
+            );
+        }
+        // `srcdoc` parses its value as a document — the same sink wearing an
+        // attribute. Checked separately: it has no trailing `(` or `=` shape the
+        // list above would catch.
+        assert!(
+            !source.contains("srcdoc"),
+            "{path} sets `srcdoc`, which parses its value as markup"
+        );
+    }
+}

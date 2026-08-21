@@ -12,7 +12,7 @@ OXY_ROLE=ide cargo run -p oxy-server -- serve --enterprise
 # → /customer-apps/local/oxy-starter/
 ```
 
-## The three patterns it shows
+## The four patterns it shows
 
 1. **Scalar aggregate** — `POST /api/projects/<projectId>/query` for one row of KPIs.
 2. **List query** — the same endpoint for a top-5 leaderboard.
@@ -20,6 +20,17 @@ OXY_ROLE=ide cargo run -p oxy-server -- serve --enterprise
    A bundle never hardcodes its org or project; it reads them and addresses the data plane
    with `projectId`. The session cookie that authorized the bundle also authorizes the
    query, so there's no second auth step.
+4. **Viewer identity** — `GET /api/projects/<projectId>/shell-context` for who is looking:
+   name, email, org, workspace. This is **display** identity, and it deliberately carries
+   **no role** — shipping one to the browser invites gating on it, and a bundle is
+   JavaScript the viewer can edit.
+
+   The **verified** half — `appRole`, `orgRole`, `teams`, `kind` — lives on `ctx.user`
+   inside an Oxy Function, assembled server-side from the authenticated session where the
+   caller cannot reach it. Only `appRole` is a gate; `orgRole` and `teams` are facts to
+   explain or lay out with. That needs a build step, so it is the one thing a single-file
+   app can't demonstrate — `examples/hello-oxy` in the customer-apps repo shows both halves
+   side by side.
 
 Both queries hit `oxymart` in the `local` DuckDB database from `examples/config.yml` — the
 same demo table the example dashboards use. No credentials, so it works offline.

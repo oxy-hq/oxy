@@ -155,6 +155,29 @@
           project — it addresses the data plane with the <code>projectId</code> Oxy gives it.
         </p>
       </section>
+      <section>
+        <div class="head">
+          <h2>Who is looking at this</h2>
+          <span class="pattern">Pattern 4 · viewer identity</span>
+        </div>
+        <div id="viewer">
+          <div class="panel">
+            <div class="state"><div class="skeleton"></div><div class="skeleton short"></div></div>
+          </div>
+        </div>
+        <p class="note">
+          One request to <code>/api/projects/&lt;projectId&gt;/shell-context</code>, on the same
+          session cookie that authorized the page. This is <b>display</b> identity — a name to
+          greet with, an avatar to render. It deliberately carries <b>no role</b>: shipping one
+          to the browser invites gating on it, and a bundle is just JavaScript the viewer can
+          edit. The <b>verified</b> half — <code>appRole</code>, <code>orgRole</code>,
+          <code>teams</code>, <code>kind</code> — lives on <code>ctx.user</code> inside an Oxy
+          Function, where the caller cannot reach it. That needs a build step, so it is the one
+          thing this single-file app cannot show you; see <code>examples/hello-oxy</code> in the
+          customer-apps repo.
+        </p>
+      </section>
+
     </main>
 
     <script>
@@ -215,17 +238,37 @@ LIMIT 5`;
         return text("td", String(value), typeof value === "number" ? "num" : undefined);
       }
 
-      async function query(sql) {
-        const response = await fetch(`/api/projects/${app.projectId}/query`, {
+      // Every data-plane call rides the same session cookie that authorized the
+      // page, so there is no token handling anywhere in this bundle.
+      //
+      // Failures carry their status, because the caller's advice depends on it:
+      // the gate chain answers 401 for an expired session and 403 for a
+      // disallowed origin long before a 404 is possible. It replies with a
+      // `{ message, code }` envelope, so prefer `message` over the raw body —
+      // otherwise a panel meant to explain shows JSON.
+      async function fetchJson(url, init) {
+        const response = await fetch(url, init);
+        if (!response.ok) {
+          const raw = (await response.text()).trim();
+          let detail = raw;
+          try {
+            detail = JSON.parse(raw).message || raw;
+          } catch {
+            // Not the envelope — a proxy or a static 404 page. Use it verbatim.
+          }
+          const err = new Error(detail || `${response.status} ${response.statusText}`);
+          err.status = response.status;
+          throw err;
+        }
+        return response.json();
+      }
+
+      function query(sql) {
+        return fetchJson(`/api/projects/${app.projectId}/query`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ sql, database: DATABASE }),
         });
-        if (!response.ok) {
-          const detail = (await response.text()).trim();
-          throw new Error(detail || `${response.status} ${response.statusText}`);
-        }
-        return response.json();
       }
 
       function queryFailed(err) {
@@ -301,6 +344,59 @@ LIMIT 5`;
         }
       }
 
+      // Display identity for the current viewer. Same session cookie as the
+      // queries above — the bundle never handles a token.
+      function shellContext() {
+        return fetchJson(`/api/projects/${app.projectId}/shell-context`);
+      }
+
+      // Why this endpoint failed, in the operator's terms. The version hint is
+      // the LAST guess, not the first: an expired cookie (401) is the common
+      // failure and a disallowed origin (403) the next, both of which the gate
+      // chain returns before a 404 is reachable at all. Answering "your server
+      // is old" to an expired session sends the reader to rebuild a binary.
+      function viewerHint(status) {
+        if (status === 401) {
+          return "The session cookie expired or was cleared. Reload the page to sign in again.";
+        }
+        if (status === 403) {
+          return "This origin is not allowed to call the data plane. Open the app from its own URL rather than a copy.";
+        }
+        if (status === 404) {
+          return "shell-context is served by oxy from 2026-08 onward; an older server has no such route, and a bundle should render without it.";
+        }
+        return "The server could not answer. The panels above are independent, so the rest of the page still works.";
+      }
+
+      async function renderViewer() {
+        try {
+          const ctx = await shellContext();
+          const dl = document.createElement("dl");
+          dl.className = "contract";
+          // The SDK types `user` as nullable, so handle it. Today this server
+          // always sends one — an unauthenticated caller is turned away by the
+          // gate before the handler runs, and lands in the catch below, not
+          // here. This branch is forward-compat against the published contract
+          // rather than a state you can currently reproduce.
+          const rows = ctx.user
+            ? [
+                ["Name", ctx.user.name],
+                ["Email", ctx.user.email],
+                ["Organization", ctx.org?.name],
+                ["Workspace", ctx.workspace?.name],
+              ]
+            : [["Viewer", "no session — the server reports no signed-in user"]];
+          for (const [label, value] of rows) {
+            dl.append(text("dt", label), text("dd", value ?? "—"));
+          }
+          el("viewer").replaceChildren(panel(dl));
+        } catch (err) {
+          el("viewer").replaceChildren(
+            errorPanel("Could not read the viewer", err.message, viewerHint(err.status)),
+          );
+        }
+      }
+
       function renderContract() {
         const dl = el("contract");
         for (const [label, value] of [
@@ -320,8 +416,8 @@ LIMIT 5`;
           "Run `oxy seed`, then open it at /customer-apps/<org>/oxy-starter/.",
         );
         el("contract").replaceWith(message);
-        for (const id of ["kpis", "top-stores"]) {
-          el(id).replaceChildren(panel(text("div", "No query ran — see below.", "state")));
+        for (const id of ["kpis", "top-stores", "viewer"]) {
+          el(id).replaceChildren(panel(text("div", "Nothing loaded — see below.", "state")));
         }
       }
 
@@ -330,6 +426,7 @@ LIMIT 5`;
         // Independent panels, so one failing query doesn't blank the other.
         renderKpis();
         renderTopStores();
+        renderViewer();
       } else {
         notServedByOxy();
       }
