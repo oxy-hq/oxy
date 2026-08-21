@@ -212,7 +212,14 @@ pub async fn build_connector_async(
 
         #[cfg(feature = "postgres")]
         ConnectorConfig::Postgres(c) | ConnectorConfig::Redshift(c) => {
-            let conn = PostgresConnector::new(&c.host, c.port, &c.user, &c.password, &c.database);
+            let conn = PostgresConnector::with_sslmode(
+                &c.host,
+                c.port,
+                &c.user,
+                &c.password,
+                &c.database,
+                c.sslmode.as_deref(),
+            );
             Ok(Box::new(conn))
         }
 

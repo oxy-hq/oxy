@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use tokio_postgres::{Client, NoTls};
+use tokio_postgres::Client;
 
 use agentic_core::result::{
     CellValue, ColumnSpec, QueryResult, QueryRow, TypedDataType, TypedRowError, TypedRowStream,
@@ -111,6 +111,10 @@ fn pg_text_to_cell(opt: Option<String>) -> CellValue {
 /// is not `Sync`.
 pub struct PostgresConnector {
     config: tokio_postgres::Config,
+    /// Whether the DSN asked for certificate verification (`verify-ca` /
+    /// `verify-full`). Everything else encrypts without validating — see
+    /// [`tls_connector`].
+    verify_tls: bool,
     /// `None` until the first query; `Some` after a successful connection.
     client: tokio::sync::Mutex<Option<Client>>,
     /// Populated after the first successful connection; empty until then.
@@ -128,14 +132,47 @@ impl PostgresConnector {
     /// Schema is populated on the first successful connection and cached for
     /// subsequent `introspect_schema` calls.
     pub fn new(host: &str, port: u16, user: &str, password: &str, database: &str) -> Self {
+        Self::with_sslmode(host, port, user, password, database, None)
+    }
+
+    /// Same, honouring a caller-resolved libpq `sslmode`.
+    ///
+    /// Only `require` and stricter change anything: they set
+    /// [`SslMode::Require`], so a server that refuses TLS ends the connection
+    /// instead of quietly continuing in plaintext. Anything else (including
+    /// `None`) leaves the `prefer` default, which is what a local container
+    /// with no certificate needs.
+    ///
+    /// The strict modes that ALSO verify the certificate — `verify-ca`,
+    /// `verify-full` — map to `Require` here rather than being rejected:
+    /// `tokio_postgres::SslMode` is `#[non_exhaustive]` with no verify variant,
+    /// and the rustls connector already checks the chain against the platform
+    /// roots. Encrypting is the part this enum controls.
+    pub fn with_sslmode(
+        host: &str,
+        port: u16,
+        user: &str,
+        password: &str,
+        database: &str,
+        sslmode: Option<&str>,
+    ) -> Self {
         let mut config = tokio_postgres::Config::new();
         config.host(host);
         config.port(port);
         config.user(user);
         config.password(password);
         config.dbname(database);
+        let mode = sslmode.map(str::trim);
+        // `require` and stricter all mean "do not fall back to plaintext".
+        if matches!(mode, Some("require" | "verify-ca" | "verify-full")) {
+            config.ssl_mode(tokio_postgres::config::SslMode::Require);
+        }
+        // Only the two verify- modes ask for the certificate to be CHECKED.
+        // `require` deliberately does not, matching libpq.
+        let verify_tls = matches!(mode, Some("verify-ca" | "verify-full"));
         Self {
             config,
+            verify_tls,
             client: tokio::sync::Mutex::new(None),
             cached_schema: std::sync::RwLock::new(SchemaInfo::default()),
             schema_error: std::sync::RwLock::new(None),
@@ -155,6 +192,114 @@ impl PostgresConnector {
 
 // ── Lazy-connection helper ────────────────────────────────────────────────────
 
+/// rustls verifier that encrypts but does not validate the certificate — the
+/// rustls equivalent of libpq `sslmode=require`. The handshake itself is still
+/// performed and verified; only the chain/identity check is skipped.
+///
+/// This exists because **the Mozilla root bundle is not enough for our own
+/// deployments**: AWS RDS presents the Amazon RDS CA and in-cluster
+/// CloudNativePG a self-signed internal CA, neither of which is in
+/// `webpki_roots`. The sibling connector says the same thing in
+/// `agentic-runtime`'s `TlsVerification::RequireNoVerify`, and calls it
+/// mandatory there.
+#[derive(Debug)]
+struct NoCertVerification(std::sync::Arc<rustls::crypto::CryptoProvider>);
+
+impl rustls::client::danger::ServerCertVerifier for NoCertVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.0.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.0.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.0.signature_verification_algorithms.supported_schemes()
+    }
+}
+
+/// TLS connector for a given `sslmode`, following **libpq's** semantics rather
+/// than rustls's defaults.
+///
+/// | `sslmode` | Encrypt | Verify the certificate |
+/// | --- | --- | --- |
+/// | `disable` | no | — |
+/// | absent / `prefer` | if offered | **no** |
+/// | `require` | yes | **no** |
+/// | `verify-ca` / `verify-full` | yes | yes |
+///
+/// **`require` does not mean verify**, and getting that wrong is worse than
+/// `NoTls` was. `prefer` falls back to plaintext only when the server DECLINES
+/// TLS; a server that accepts it and presents a private-CA certificate fails
+/// the handshake outright, with no plaintext retry. So verifying by default
+/// would break every RDS and CloudNativePG target that worked yesterday —
+/// including author-configured `type: postgres` databases, which is the path
+/// this change was supposed to leave alone.
+fn tls_connector(verify: bool) -> tokio_postgres_rustls::MakeRustlsConnect {
+    static VERIFYING: std::sync::OnceLock<tokio_postgres_rustls::MakeRustlsConnect> =
+        std::sync::OnceLock::new();
+    static ENCRYPT_ONLY: std::sync::OnceLock<tokio_postgres_rustls::MakeRustlsConnect> =
+        std::sync::OnceLock::new();
+
+    let build = |verify: bool| {
+        // Idempotent, and `let _` because another crate in this process may
+        // legitimately have installed it first.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let config = if verify {
+            let mut roots = rustls::RootCertStore::empty();
+            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth()
+        } else {
+            let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
+            rustls::ClientConfig::builder()
+                .dangerous()
+                .with_custom_certificate_verifier(std::sync::Arc::new(NoCertVerification(provider)))
+                .with_no_client_auth()
+        };
+        tokio_postgres_rustls::MakeRustlsConnect::new(config)
+    };
+
+    if verify {
+        VERIFYING.get_or_init(|| build(true)).clone()
+    } else {
+        ENCRYPT_ONLY.get_or_init(|| build(false)).clone()
+    }
+}
+
 /// Open a `tokio_postgres` connection if `opt_client` is still `None`.
 ///
 /// On success `*opt_client` is set to `Some(client)` and `schema_lock` is
@@ -163,6 +308,7 @@ impl PostgresConnector {
 /// but they do not prevent queries from running.
 async fn ensure_client_connected(
     config: &tokio_postgres::Config,
+    verify_tls: bool,
     opt_client: &mut Option<Client>,
     schema_lock: &std::sync::RwLock<SchemaInfo>,
     schema_error: &std::sync::RwLock<Option<String>>,
@@ -171,7 +317,7 @@ async fn ensure_client_connected(
         return Ok(());
     }
     let (client, connection) = config
-        .connect(NoTls)
+        .connect(tls_connector(verify_tls))
         .await
         .map_err(|e| ConnectorError::ConnectionError(pg_error_message(&e)))?;
     tokio::spawn(async move {
@@ -230,6 +376,7 @@ impl DatabaseConnector for PostgresConnector {
         let mut guard = self.client.lock().await;
         ensure_client_connected(
             &self.config,
+            self.verify_tls,
             &mut guard,
             &self.cached_schema,
             &self.schema_error,
@@ -399,6 +546,7 @@ impl DatabaseConnector for PostgresConnector {
         let mut guard = self.client.lock().await;
         ensure_client_connected(
             &self.config,
+            self.verify_tls,
             &mut guard,
             &self.cached_schema,
             &self.schema_error,
@@ -500,6 +648,7 @@ impl DatabaseConnector for PostgresConnector {
         let mut guard = self.client.lock().await;
         ensure_client_connected(
             &self.config,
+            self.verify_tls,
             &mut guard,
             &self.cached_schema,
             &self.schema_error,
@@ -635,4 +784,65 @@ fn detect_join_keys(tables: &[SchemaTableInfo]) -> Vec<(String, String, String)>
         }
     }
     keys
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_postgres::config::SslMode;
+
+    /// `require` and stricter all refuse a plaintext fallback.
+    ///
+    /// The resolver decides `require` per provider so a managed tenant cannot
+    /// fall back to plaintext. `prefer` — the default — offers TLS and
+    /// continues WITHOUT it if the server declines, which is a downgrade the
+    /// server chooses.
+    #[test]
+    fn a_resolved_sslmode_of_require_is_enforced_not_offered() {
+        for mode in ["require", "verify-ca", "verify-full", " require "] {
+            let c = PostgresConnector::with_sslmode("h", 5432, "u", "p", "d", Some(mode));
+            assert_eq!(
+                c.config.get_ssl_mode(),
+                SslMode::Require,
+                "`{mode}` must require TLS"
+            );
+        }
+    }
+
+    /// A local container has no certificate, so anything that is not an
+    /// explicit demand has to stay negotiable or every dev database breaks.
+    #[test]
+    fn everything_else_stays_negotiable() {
+        for mode in [None, Some("prefer"), Some("disable"), Some("allow")] {
+            let c = PostgresConnector::with_sslmode("h", 5432, "u", "p", "d", mode);
+            assert_eq!(c.config.get_ssl_mode(), SslMode::Prefer, "{mode:?}");
+        }
+    }
+
+    /// **`require` encrypts; it does not validate.** That is libpq's meaning,
+    /// and it is what our own deployments need: AWS RDS presents the Amazon RDS
+    /// CA and in-cluster CloudNativePG a self-signed one, neither in the
+    /// Mozilla bundle `webpki_roots` ships.
+    ///
+    /// Verifying under `require` — or under `prefer`, where a server that
+    /// ACCEPTS TLS and presents a private-CA certificate fails outright with no
+    /// plaintext retry — would break every such target that worked under
+    /// `NoTls`. That is the regression this pins.
+    #[test]
+    fn only_the_verify_modes_check_the_certificate() {
+        for mode in [None, Some("prefer"), Some("disable"), Some("require")] {
+            let c = PostgresConnector::with_sslmode("h", 5432, "u", "p", "d", mode);
+            assert!(
+                !c.verify_tls,
+                "{mode:?} must encrypt without validating the chain"
+            );
+        }
+        for mode in ["verify-ca", "verify-full"] {
+            let c = PostgresConnector::with_sslmode("h", 5432, "u", "p", "d", Some(mode));
+            assert!(
+                c.verify_tls,
+                "`{mode}` asks for the certificate to be checked"
+            );
+        }
+    }
 }

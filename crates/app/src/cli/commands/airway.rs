@@ -99,6 +99,16 @@ pub struct AirwayRunArgs {
     /// Emit one JSON object per event instead of pretty output.
     #[clap(long)]
     pub json: bool,
+    /// Workspace to run as. Defaults to the local workspace (`Uuid::nil()`).
+    ///
+    /// Destinations that resolve per tenant need a real one: a
+    /// `postgres_managed` database maps workspace → org → `oltp_tenants`, and
+    /// the nil workspace belongs to no org, so the run fails with "not a known
+    /// config.yml database with an airway-writable type" — which reads like a
+    /// config error rather than a missing workspace. Matches `--workspace-id`
+    /// on `leases` / `release-lease`.
+    #[clap(long)]
+    pub workspace_id: Option<Uuid>,
 }
 
 #[derive(Parser, Debug)]
@@ -197,11 +207,20 @@ fn build_event_registry() -> EventRegistry {
     registry
 }
 
+/// Statuses that mean the run is over and the CLI should stop polling.
+///
+/// This mirrors the runtime's own definition — the set `transition_run` clears
+/// the driver lease on (`agentic-runtime`'s `lifecycle::crud`). Note what is
+/// NOT here: `completed_with_errors` is a *backfill-range* status derived by
+/// `classify_run_outcome`, never a value of `agentic_runs.task_status`, so a
+/// partial failure reaches this loop as plain `done`.
+const TERMINAL_STATUSES: &[&str] = &["done", "failed", "cancelled", "timed_out"];
+
+/// The subset of [`TERMINAL_STATUSES`] that must exit non-zero.
+const FAILED_STATUSES: &[&str] = &["failed", "cancelled", "timed_out"];
+
 fn is_terminal(status: Option<&str>) -> bool {
-    matches!(
-        status,
-        Some("done") | Some("failed") | Some("cancelled") | Some("timed_out")
-    )
+    status.is_some_and(|s| TERMINAL_STATUSES.contains(&s))
 }
 
 /// Build the airway `variables` map from the process environment,
@@ -269,7 +288,8 @@ fn build_env_vars_for_yaml(
 async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
     let db = connect_db().await?;
     let project_path = resolve_local_workspace_path()?;
-    let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
+    let workspace_id = args.workspace_id.unwrap_or_else(Uuid::nil);
+    let workspace_manager = WorkspaceBuilder::new(workspace_id)
         .with_workspace_path(&project_path)
         .await?
         .with_runs_manager(oxy::adapters::runs::RunsManager::noop())
@@ -314,13 +334,22 @@ async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
     };
 
     // Single-process CLI: a co-located scoped coordinator drives this run.
-    // Local workspace == Uuid::nil() (LOCAL_WORKSPACE_ID).
+    //
+    // The SAME `workspace_id` the WorkspaceBuilder above got. This passed
+    // `Uuid::nil()` unconditionally, so `--workspace-id X` built the workspace
+    // as X and then started the run as nil — and that argument is not
+    // cosmetic. It picks the admission policy (`resolve_admission`), it is the
+    // key `find_coalescible_run` and the pipeline lease match on, and it is
+    // what the run row is attributed to. A run under nil therefore could not
+    // see a concurrent run on X, bypassing the "one run per pipeline per
+    // workspace" guarantee, and landed in history and Workspace Health under
+    // the wrong tenant.
     let run_id = match start_airway_run(
         &db,
         workspace.as_ref(),
         request,
         agentic_pipeline::TaskScope::Scoped,
-        Uuid::nil(),
+        workspace_id,
     )
     .await
     {
@@ -375,12 +404,16 @@ async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
         // Termination is keyed off the run row's task_status rather than
         // a join handle — `spawn_airway_run_drive` owns its tasks
         // internally and doesn't hand one back.
-        let terminal = match crud::get_run(&db, &run_id).await {
-            Ok(Some(run)) => is_terminal(run.task_status.as_deref()),
-            Ok(None) => true,
-            Err(_) => false,
+        let final_status = match crud::get_run(&db, &run_id).await {
+            Ok(Some(run)) if is_terminal(run.task_status.as_deref()) => {
+                Some(run.task_status.unwrap_or_default())
+            }
+            // The run row is gone. Nothing left to wait for, and nothing to
+            // report a status from.
+            Ok(None) => Some(String::new()),
+            _ => None,
         };
-        if terminal {
+        if let Some(status) = final_status {
             // Final sweep so the last batch of events isn't dropped.
             let rows = crud::get_events_after(&db, &run_id, last_seq)
                 .await
@@ -390,11 +423,27 @@ async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
                     emit(args.json, row.seq, &event_type, &payload);
                 }
             }
-            break;
+            // Exit non-zero on a failed run.
+            //
+            // This printed `✗ pipeline error: …` and then returned `Ok(())`, so
+            // `oxy airway run` exited 0 on a pipeline that landed nothing. Every
+            // caller that checks an exit code — CI, a cron wrapper, `set -e`,
+            // the OLTP demo script — read a failure as a success, and the only
+            // way to tell was to grep stdout for a mark. A CLI whose failures
+            // are invisible to `$?` is one nobody notices breaking.
+            //
+            // Which statuses are failures lives in `FAILED_STATUSES`, a
+            // declared subset of the terminal set, so a status can never end
+            // the poll loop without also being classified here.
+            return if FAILED_STATUSES.contains(&status.as_str()) {
+                Err(OxyError::RuntimeError(format!(
+                    "airway run {run_id} {status} — see the events above"
+                )))
+            } else {
+                Ok(())
+            };
         }
     }
-
-    Ok(())
 }
 
 // ─── chunked backfill (resumable) ───────────────────────────────────────────
@@ -884,4 +933,53 @@ async fn cmd_release_lease(args: AirwayReleaseLeaseArgs) -> Result<(), OxyError>
         .success()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every status that stops the poll loop must also have an exit code.
+    ///
+    /// These two lists are what `oxy airway run` reports with, and they drift
+    /// in opposite directions: a status missing from `TERMINAL_STATUSES` hangs
+    /// the CLI until `--wait` expires on a run that already finished, and one
+    /// missing from `FAILED_STATUSES` exits 0 on a run that landed nothing.
+    #[test]
+    fn every_failed_status_is_also_terminal() {
+        for s in FAILED_STATUSES {
+            assert!(
+                TERMINAL_STATUSES.contains(s),
+                "`{s}` exits non-zero but never ends the poll loop"
+            );
+        }
+    }
+
+    #[test]
+    fn a_lost_pipeline_exits_non_zero_and_a_clean_one_does_not() {
+        for s in ["failed", "cancelled", "timed_out"] {
+            assert!(is_terminal(Some(s)), "`{s}` must end the wait");
+            assert!(FAILED_STATUSES.contains(&s), "`{s}` must exit non-zero");
+        }
+        assert!(is_terminal(Some("done")));
+        assert!(
+            !FAILED_STATUSES.contains(&"done"),
+            "a clean run must exit 0"
+        );
+    }
+
+    /// A run still in flight — or one whose status we have never seen — must
+    /// keep the CLI waiting rather than being reported as some outcome.
+    #[test]
+    fn a_running_or_unknown_status_is_not_terminal() {
+        for s in [
+            None,
+            Some("running"),
+            Some("delegating"),
+            Some("awaiting_input"),
+            Some(""),
+        ] {
+            assert!(!is_terminal(s), "{s:?} must not end the wait");
+        }
+    }
 }

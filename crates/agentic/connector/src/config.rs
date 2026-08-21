@@ -41,6 +41,17 @@ pub struct PostgresConfig {
     pub user: String,
     pub password: String,
     pub database: String,
+    /// libpq `sslmode`, when the caller resolved one. `None` leaves
+    /// `tokio_postgres`'s default of `prefer`.
+    ///
+    /// **`prefer` is a downgrade the server chooses.** It offers TLS and
+    /// continues in plaintext if refused, silently — which is fine for a local
+    /// container and wrong for a managed tenant. `oxy-oltp`'s resolver already
+    /// decides `require` per provider and carries it on `AnalystConnection`;
+    /// this field is what stops that decision being thrown away one struct
+    /// later. Adding rustls made these connections *able* to negotiate TLS;
+    /// only this makes them insist.
+    pub sslmode: Option<String>,
 }
 
 // ── MySQL ─────────────────────────────────────────────────────────────────────

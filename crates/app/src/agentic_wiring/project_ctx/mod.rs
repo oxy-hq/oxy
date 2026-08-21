@@ -655,6 +655,9 @@ pub async fn database_to_connector_config(
                 user,
                 password,
                 database,
+                // An author-configured database; Oxy has no opinion on its TLS,
+                // so this keeps tokio_postgres's `prefer`.
+                sslmode: None,
             }))
         }
 
@@ -693,6 +696,7 @@ pub async fn database_to_connector_config(
                 user,
                 password,
                 database,
+                sslmode: None,
             }))
         }
 

@@ -345,6 +345,7 @@ dependencies = [
  "futures",
  "gcp-bigquery-client",
  "reqwest 0.12.28",
+ "rustls 0.23.43",
  "serde",
  "serde_json",
  "slugify",
@@ -355,8 +356,10 @@ dependencies = [
  "testcontainers-modules",
  "tokio",
  "tokio-postgres",
+ "tokio-postgres-rustls",
  "tracing",
  "uuid",
+ "webpki-roots 0.26.11",
  "wiremock",
 ]
 

@@ -692,6 +692,103 @@ impl AnalyticsSolver {
 
         let mut specs: Vec<QuerySpec> = Vec::with_capacity(envelope.specs.len());
 
+        // The same gate `propose_semantic_query` applies, BEFORE the loop and
+        // over every item.
+        //
+        // The first version returned `NeedsUserInput` from the parser, which
+        // `diagnosing` routes to Fatal: a one-value `date_range` — a formatting
+        // slip on the path that carries most of the traffic — killed the run and
+        // put the validator's own text in front of the user. Routing it like a
+        // compile failure gets the retry that already exists: the reason reaches
+        // the model through the hint, the offending item through `spec_hint`,
+        // and `max_iterations` bounds the loop.
+        //
+        // **The envelope is re-specified as a whole.** Checking every item up
+        // front does not keep the healthy ones — it decides WHICH item the hint
+        // names, and reports every problem at once instead of the first. Doing
+        // it before the loop also means a bad item cannot be preceded by
+        // siblings that were compiled through airlayer, emitted a tool-call pair
+        // and then thrown away, so "which item" no longer depends on compile
+        // order.
+        let problems: Vec<(usize, Vec<String>)> = envelope
+            .specs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| {
+                let p = crate::types::query_request::query_problems(item);
+                (!p.is_empty()).then_some((i, p))
+            })
+            .collect();
+        if let Some((first_bad, _)) = problems.first() {
+            // Names which spec the hint below carries. `format_spec_hint_section`
+            // frames it as "Previous query (use as a starting point)", so with
+            // two bad specs the model would otherwise read spec 1's shape beside
+            // complaints about spec 3.
+            let reason = format!(
+                "{}. The query below is spec {}. {}",
+                problems
+                    .iter()
+                    .map(|(i, p)| format!("spec {}: {}", i + 1, p.join("; ")))
+                    .collect::<Vec<_>>()
+                    .join(" | "),
+                first_bad + 1,
+                crate::types::query_request::QUERY_REJECTION_HINT
+            );
+            let bad_item = &envelope.specs[*first_bad];
+            // A ToolCall before the ToolResult, like every other pair in this
+            // loop. `analyticsSteps.ts` attaches a `tool_result` to the last
+            // STREAMING artifact, so a result with no matching call is stamped
+            // onto whichever artifact happens to be open — or dropped. Either
+            // way the one visible trace of "the model proposed something invalid
+            // and is retrying" does not render on the pill a reader would click.
+            let call_input = serde_json::to_string(&serde_json::json!({
+                "measures": bad_item.measures,
+                "dimensions": bad_item.dimensions,
+                "filters": bad_item.filters,
+                "time_dimensions": bad_item.time_dimensions,
+            }))
+            .unwrap_or_default();
+            emit_core(
+                &self.event_tx,
+                CoreEvent::ToolCall {
+                    name: "compile_semantic_query".to_string(),
+                    input: call_input,
+                    llm_duration_ms: 0,
+                    sub_spec_index: None,
+                },
+            )
+            .await;
+            emit_core(
+                &self.event_tx,
+                CoreEvent::ToolResult {
+                    name: "compile_semantic_query".to_string(),
+                    output: serde_json::to_string(&serde_json::json!({
+                        "success": false,
+                        "error": reason,
+                    }))
+                    .unwrap_or_default(),
+                    duration_ms: 0,
+                    is_error: false,
+                    sub_spec_index: None,
+                },
+            )
+            .await;
+            let hint = retry_ctx
+                .cloned()
+                .unwrap_or_default()
+                .advance(reason.clone());
+            let mut retry_intent = intent.clone();
+            // Without this the retry rebuilds the prompt from the intent alone
+            // and re-sends an identical request, burning iterations.
+            retry_intent.spec_hint = Some(bad_item.clone());
+            return TransitionResult::diagnosing(ProblemState::Diagnosing {
+                error: AnalyticsError::AirlayerCompileError {
+                    error_message: reason,
+                },
+                back: BackTarget::Specify(retry_intent, hint),
+            });
+        }
+
         for item in &envelope.specs {
             let query_request = item.to_query_request();
 

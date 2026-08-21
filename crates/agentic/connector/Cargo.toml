@@ -29,8 +29,15 @@ duckdb = ["dep:duckdb", "dep:slugify"]
 # `dep:serde_json` — for decoding JSON / JSONB columns.
 # `dep:uuid` — for UUID columns on the `ctx.tx` path (a uuid primary key is the
 # common shape for an OLTP table, so `INSERT … RETURNING id` needs it).
+# `dep:tokio-postgres-rustls` + `dep:rustls` + `dep:webpki-roots` — TLS. Not
+# optional-within-the-feature: every managed Postgres (Neon, Supabase, RDS with
+# `rds.force_ssl`) refuses a plaintext session, so a `postgres` connector
+# without them can only ever reach a local cluster.
 postgres = [
     "dep:tokio-postgres",
+    "dep:tokio-postgres-rustls",
+    "dep:rustls",
+    "dep:webpki-roots",
     "dep:chrono",
     "dep:serde_json",
     "dep:uuid",
@@ -87,6 +94,13 @@ tokio-postgres = { workspace = true, features = [
 ], optional = true }
 chrono = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
+tokio-postgres-rustls = { workspace = true, optional = true }
+# `ring` named explicitly: it is a rustls DEFAULT feature, but this crate's
+# subgraph also pulls rustls through `sqlx/tls-rustls`, and feature unification
+# there can leave the provider configured out — which fails as
+# "cannot find `ring` in `crypto`" only when this crate is built alone.
+rustls = { workspace = true, optional = true, features = ["ring"] }
+webpki-roots = { workspace = true, optional = true }
 
 # ClickHouse (HTTP API)
 reqwest = { workspace = true, features = [

@@ -48,6 +48,72 @@ pub(crate) enum ClarifyOutcome {
 
 // Solver impl methods
 
+/// Read a `propose_semantic_query` call: the accepted proposal, or the JSON
+/// telling the model why it was refused.
+///
+/// The deserialisation error is REPORTED, not swallowed. `unwrap_or_default()`
+/// turned a malformed proposal into an empty one — no measures, no dimensions,
+/// no filters — which then sailed through the gate below (nothing to object to)
+/// and came back "accepted" carrying the model's confidence. The shape that
+/// triggers it is the one the rejection message steers toward: Cube's native
+/// `date_range: "last week"` is a string where `TimeDimensionItem` wants
+/// `Option<Vec<String>>`, and serde fails the whole item on it. The one input
+/// that cannot be gated is the one that skips the gate.
+fn evaluate_proposal(
+    params: serde_json::Value,
+) -> Result<(QueryRequestItem, f32), serde_json::Value> {
+    let confidence = params["confidence"].as_f64().unwrap_or(0.0) as f32;
+    let hint = crate::types::query_request::QUERY_REJECTION_HINT;
+    let item: QueryRequestItem = match serde_json::from_value(params) {
+        Ok(item) => item,
+        Err(e) => {
+            return Err(serde_json::json!({
+                "status": "rejected",
+                "reason": format!("could not read the proposed query: {e}. {hint}"),
+            }));
+        }
+    };
+    // Reject an operator the semantic layer cannot compile, rather than letting
+    // it through to be guessed at. A model that invents `last_week` and passes
+    // the two ends of the range used to get `IN (start, end)` — every row inside
+    // the week dropped, answered as "no sales last week". The model retries with
+    // a real operator instead.
+    let bad = crate::types::query_request::query_problems(&item);
+    if !bad.is_empty() {
+        return Err(serde_json::json!({
+            "status": "rejected",
+            "reason": format!("{}. {hint}", bad.join("; ")),
+            "valid_operators": crate::types::query_request::FILTER_OPERATORS,
+        }));
+    }
+    Ok((item, confidence))
+}
+
+/// Apply a proposal to the slot the solver reads its answer from.
+///
+/// **A rejection CLEARS the slot.** The tool loop runs up to five rounds and
+/// the slot is not per-round: a model that proposed something valid, then
+/// refined it into something the gate refuses, used to leave the earlier
+/// proposal sitting there. The loop ended, the solver read the slot, and the
+/// run answered from a query the model had already replaced — silently, and
+/// with the *first* proposal's confidence attached. Clearing costs a re-propose
+/// in the rare case; not clearing answers the wrong question convincingly.
+fn record_proposal(
+    slot: &std::sync::Mutex<Option<(QueryRequestItem, f32)>>,
+    params: serde_json::Value,
+) -> serde_json::Value {
+    match evaluate_proposal(params) {
+        Ok(accepted) => {
+            *slot.lock().expect("poisoned") = Some(accepted);
+            serde_json::json!({ "status": "accepted" })
+        }
+        Err(rejection) => {
+            *slot.lock().expect("poisoned") = None;
+            rejection
+        }
+    }
+}
+
 impl AnalyticsSolver {
     /// Core clarify logic — classifies the question type, detects ambiguities,
     /// attempts a semantic shortcut, then forwards to Specifying.
@@ -158,11 +224,7 @@ impl AnalyticsSolver {
                             execute_clarifying_tool(&name, params, &*catalog)
                                 .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         } else if name == "propose_semantic_query" {
-                            let confidence = params["confidence"].as_f64().unwrap_or(0.0) as f32;
-                            let item: QueryRequestItem =
-                                serde_json::from_value(params).unwrap_or_default();
-                            *proposed_query.lock().expect("poisoned") = Some((item, confidence));
-                            Ok(Box::new(serde_json::json!({ "status": "accepted" }))
+                            Ok(Box::new(record_proposal(&proposed_query, params))
                                 as Box<dyn agentic_core::tools::ToolOutput>)
                         } else {
                             Err(ToolError::UnknownTool(name))
@@ -804,5 +866,113 @@ pub(super) fn build_clarifying_handler()
             },
         ),
         diagnose: None,
+    }
+}
+
+#[cfg(test)]
+mod proposal_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    fn good() -> serde_json::Value {
+        serde_json::json!({
+            "confidence": 0.9,
+            "measures": ["toast_sales.net_sales"],
+            "dimensions": ["toast_sales.location"],
+            "filters": [],
+            "time_dimensions": [],
+        })
+    }
+
+    /// The gate's whole purpose: an operator the semantic layer cannot compile
+    /// is refused, not guessed at.
+    #[test]
+    fn an_uncompilable_operator_is_refused_with_the_operators_that_work() {
+        let mut p = good();
+        p["filters"] = serde_json::json!([{
+            "member": "toast_sales.business_date",
+            "operator": "last_week",
+            "values": ["2026-08-10", "2026-08-16"],
+        }]);
+        let rejection = evaluate_proposal(p).expect_err("`last_week` must be refused");
+        assert_eq!(rejection["status"], "rejected");
+        assert!(
+            rejection["reason"].as_str().unwrap().contains("last_week"),
+            "the message must name the operator: {rejection}"
+        );
+        assert!(
+            rejection["valid_operators"]
+                .as_array()
+                .expect("the model needs the list to retry with")
+                .contains(&serde_json::json!("inDateRange")),
+            "a refusal that does not say what WOULD work just loops"
+        );
+    }
+
+    /// A malformed proposal must not deserialize into an empty-but-valid one.
+    #[test]
+    fn a_shape_serde_cannot_read_is_reported_not_emptied() {
+        let mut p = good();
+        // Cube's native form: a string where `TimeDimensionItem` wants a list.
+        p["time_dimensions"] = serde_json::json!([{
+            "dimension": "toast_sales.business_date",
+            "granularity": "day",
+            "date_range": "last week",
+        }]);
+        let rejection = evaluate_proposal(p).expect_err("a shape serde rejects must be reported");
+        assert!(
+            rejection["reason"]
+                .as_str()
+                .unwrap()
+                .contains("could not read"),
+            "{rejection}"
+        );
+    }
+
+    #[test]
+    fn a_sound_proposal_is_accepted_with_its_confidence() {
+        let (item, confidence) = evaluate_proposal(good()).expect("this query compiles");
+        assert_eq!(item.measures, vec!["toast_sales.net_sales".to_string()]);
+        assert!((confidence - 0.9).abs() < 1e-6);
+    }
+
+    /// The regression this seam exists for: five tool rounds share one slot,
+    /// so a refused refinement must not leave the superseded proposal behind
+    /// for the solver to answer from.
+    #[test]
+    fn a_refusal_clears_the_proposal_it_supersedes() {
+        let slot: Mutex<Option<(QueryRequestItem, f32)>> = Mutex::new(None);
+
+        assert_eq!(record_proposal(&slot, good())["status"], "accepted");
+        assert!(
+            slot.lock().unwrap().is_some(),
+            "an accepted proposal is stored"
+        );
+
+        let mut refined = good();
+        refined["filters"] = serde_json::json!([{
+            "member": "toast_sales.business_date",
+            "operator": "last_week",
+            "values": ["2026-08-10", "2026-08-16"],
+        }]);
+        assert_eq!(record_proposal(&slot, refined)["status"], "rejected");
+        assert!(
+            slot.lock().unwrap().is_none(),
+            "the refused round left the earlier proposal in place — the run \
+             would answer a question the model had already replaced"
+        );
+    }
+
+    /// Clearing is not one-way: the model re-proposing must still land.
+    #[test]
+    fn the_model_can_recover_after_a_refusal() {
+        let slot: Mutex<Option<(QueryRequestItem, f32)>> = Mutex::new(None);
+        record_proposal(
+            &slot,
+            serde_json::json!({ "confidence": 0.5, "measures": "not-a-list" }),
+        );
+        assert!(slot.lock().unwrap().is_none());
+        assert_eq!(record_proposal(&slot, good())["status"], "accepted");
+        assert!(slot.lock().unwrap().is_some());
     }
 }
