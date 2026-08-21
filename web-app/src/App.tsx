@@ -134,6 +134,7 @@ const AdminInternalJobs = React.lazy(() => import("./pages/admin/AdminInternalJo
 const AdminCompiles = React.lazy(() => import("./pages/admin/AdminCompiles"));
 const AdminExplorer = React.lazy(() => import("./pages/admin/AdminExplorer"));
 const AdminAudit = React.lazy(() => import("./pages/admin/AdminAudit"));
+const AdminAirhouse = React.lazy(() => import("./pages/admin/AdminAirhouse"));
 // Customer-apps admin surface (new-auth): per-org app admins + the
 // customer-apps registry (Add / Link / Sync / Publish). Lazy-loaded
 // alongside the rest of admin since most users never visit it.
@@ -572,6 +573,7 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             {/* ROUTES.ADMIN.INTERNAL_JOBS */}
             <Route path='admin/explorer' element={<AdminExplorer />} />
             <Route path='admin/audit' element={<AdminAudit />} />
+            <Route path='admin/airhouse' element={<AdminAirhouse />} />
             {/* ROUTES.ADMIN.EXPLORER */}
             <Route path='admin/app-admins' element={<AdminAppAdmins />} />
             {/* ROUTES.ADMIN.PUBLISH_TOKENS — open to any Global Admin */}

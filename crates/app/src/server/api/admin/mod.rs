@@ -7,6 +7,7 @@
 //! section escalates to the capability its surface is about, including the
 //! airway admission config (`Action::PlatformOperate`).
 
+pub mod airhouse;
 pub(crate) mod airway_config;
 pub mod app_admins;
 pub mod app_publish_tokens;
@@ -93,6 +94,8 @@ use crate::server::router::AppState;
 ///   - GET    /admin/airway/deployment-config
 ///   - PUT    /admin/airway/deployment-config
 ///   - DELETE /admin/airway/deployment-config
+///   - GET    /admin/airhouse
+///   - POST   /admin/workspaces/{workspace_id}/airhouse/provision
 ///
 /// Admin routes. The outer nest layer in `router::global` is the **door**
 /// (`oxy_owner_or_app_admin_guard`): it answers "are you Oxy staff at all". Each
@@ -155,6 +158,10 @@ pub(crate) fn router() -> Router<AppState> {
         .merge(app_publish_tokens::router().route_layer(cap(Action::PlatformApps)))
         .merge(explorer::router().route_layer(cap(Action::PlatformExplorer)))
         .merge(metrics::router().route_layer(cap(Action::PlatformOperate)))
+        // Airhouse rides `OperatePlatform` — provisioning a tenant's data plane
+        // is operator work — but with its own action, because the action name
+        // is what lands in an audit row and in the grant UI.
+        .merge(airhouse::router().route_layer(cap(Action::PlatformAirhouse)))
         // Org administration and creation are one router but two capabilities; the
         // router-level gate is the broader `PlatformOrgs`, and `create_org` asks for
         // `PlatformOrgCreate` inside the handler where the verb is known.
@@ -378,6 +385,109 @@ mod tests {
             semantic_engine_cache:
                 crate::server::router::workspace_cache::new_semantic_engine_cache(),
         }
+    }
+
+    /// The route list in this file's header must name every Airhouse route
+    /// the shim actually mounts.
+    ///
+    /// That header is the inventory an operator greps, and it drifted twice in
+    /// one review — the routes were missing from it, and the path recorded in
+    /// `internal-docs/admin-surfaces.md` was `/admin/airhouse/{id}/provision`
+    /// when the real one is `/admin/workspaces/{id}/airhouse/provision`. A
+    /// wrong path in an inventory is worse than an absent one: it reads as
+    /// checked.
+    #[test]
+    fn the_header_inventory_names_every_airhouse_route() {
+        let shim = include_str!("airhouse.rs");
+        // Everything above `router()`: the module list and the route inventory
+        // that documents it. Deliberately NOT the whole file — the tests below
+        // quote paths in their own doc comments, and searching those would let
+        // this pass on the strength of a comment about the bug.
+        let header = include_str!("mod.rs")
+            .split_once("pub(crate) fn router()")
+            .expect("the inventory sits above `router()`")
+            .0;
+        assert!(
+            header.contains("/admin/orgs"),
+            "the header slice missed the route inventory entirely"
+        );
+
+        // Every `"/..."` literal inside the shim's `router()`. Matching
+        // `.route("` misses the shape rustfmt gives a long call — the path
+        // ends up on its own line — which would have left this guard checking
+        // one of the two routes and passing.
+        let body = shim
+            .split_once("pub fn router<S>()")
+            .expect("the shim mounts its routes in `router`")
+            .1;
+        let body = body.split_once("\nasync fn ").map_or(body, |(b, _)| b);
+        let mounted: Vec<&str> = body
+            .match_indices('"')
+            .filter_map(|(i, _)| {
+                let rest = &body[i + 1..];
+                let end = rest.find('"')?;
+                let lit = &rest[..end];
+                lit.starts_with('/').then_some(lit)
+            })
+            .collect();
+        assert!(
+            !mounted.is_empty(),
+            "the `.route(..)` scan matched nothing — the mount syntax changed \
+             and this guard is now vacuous"
+        );
+        for path in mounted {
+            // `admin::router()` supplies the `/admin` prefix at the mount, and
+            // the header records the externally visible path — which is the
+            // one an operator greps for and the one the docs got wrong.
+            let external = format!("/admin{path}");
+            assert!(
+                header.contains(&external),
+                "`{external}` is mounted but absent from the route list at the \
+                 top of this file"
+            );
+        }
+    }
+
+    /// The Airhouse admin routes, driven through the REAL `router()`.
+    ///
+    /// `test_router()` elsewhere in this file is a hand-rolled stub that
+    /// re-declares probe routes, so it cannot catch a missing `.merge(..)`
+    /// line. A 404 on a real path means the route is not mounted; the bogus
+    /// sibling below stays 404 as the control, because `route_layer` only wraps
+    /// MATCHED routes and an unmatched path bypasses it to axum's fallback.
+    #[tokio::test]
+    async fn airhouse_admin_routes_are_mounted_on_the_real_router() {
+        let real_router = router().with_state(test_app_state());
+        let ws = "3c6e0b8a-9c15-224a-8236-000000000001";
+
+        for (method, path) in [
+            ("GET", "/airhouse".to_string()),
+            ("POST", format!("/workspaces/{ws}/airhouse/provision")),
+        ] {
+            let req = Request::builder()
+                .method(method)
+                .uri(&path)
+                .body(Body::empty())
+                .unwrap();
+            let resp = real_router.clone().oneshot(req).await.unwrap();
+            assert_ne!(
+                resp.status(),
+                StatusCode::NOT_FOUND,
+                "{method} {path} is not mounted"
+            );
+        }
+
+        // The control: an unmounted sibling must still 404, or the assertions
+        // above would pass for the very bug they exist to catch.
+        let bogus = Request::builder()
+            .uri("/airhouse/not-a-route")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            real_router.oneshot(bogus).await.unwrap().status(),
+            StatusCode::NOT_FOUND,
+            "an unmounted path must 404, otherwise this test proves nothing"
+        );
     }
 
     /// Proves `airway_config` is mounted on the REAL `admin::router()` tree —

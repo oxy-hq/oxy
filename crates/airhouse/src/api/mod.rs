@@ -15,6 +15,7 @@
 //! - `DELETE /airhouse/me/tokens/:username`   — revoke a single ephemeral
 //!   credential the caller previously minted.
 
+pub mod admin;
 pub mod handlers;
 
 use axum::Router;

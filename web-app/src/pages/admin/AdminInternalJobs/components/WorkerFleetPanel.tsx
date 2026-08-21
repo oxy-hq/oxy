@@ -2,8 +2,8 @@ import { Activity, Cpu } from "lucide-react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useWorkers } from "@/hooks/api/internalJobs";
 import { cn } from "@/libs/utils/cn";
+import { relativeTime } from "../../utils";
 import { useLive } from "../LiveContext";
-import { relativeTime } from "../utils";
 
 /**
  * Worker fleet — one card per `worker_id` seen in the last 24h. Liveness

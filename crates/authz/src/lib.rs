@@ -183,6 +183,16 @@ pub enum Action {
     /// Oxy's own machinery: internal jobs, compiles, serve routing, platform metrics,
     /// workspace health — [`Cap::OperatePlatform`].
     PlatformOperate,
+    /// Staff provisioning a tenant's **Airhouse warehouse** from the admin
+    /// console (`/admin/airhouse`) — [`Cap::OperatePlatform`].
+    ///
+    /// Its own action rather than riding [`Action::PlatformOperate`] because
+    /// `as_str()` is what lands in an audit row and in the grant UI, and
+    /// provisioning a tenant's data plane is not "Oxy's own machinery". Same
+    /// ring: a grant that can operate the platform can provision a warehouse,
+    /// and a tier that could do one but not the other is not a distinction
+    /// anyone has asked for.
+    PlatformAirhouse,
     /// The grant table (`/admin/app-admins`) — [`Cap::ManagePlatformGrants`].
     ///
     /// **This action is a door, not a decision.** It answers "may this principal
@@ -202,7 +212,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 34] = [
+    pub const ALL: [Action; 35] = [
         Action::OrgRead,
         Action::MemberInvite,
         Action::MemberSetRole,
@@ -235,6 +245,7 @@ impl Action {
         Action::PlatformUsers,
         Action::PlatformPartners,
         Action::PlatformOperate,
+        Action::PlatformAirhouse,
         Action::PlatformGrants,
         Action::PlatformOwnerOnly,
     ];
@@ -278,6 +289,7 @@ impl Action {
             Action::PlatformUsers => "platform_users",
             Action::PlatformPartners => "platform_partners",
             Action::PlatformOperate => "platform_operate",
+            Action::PlatformAirhouse => "platform_airhouse",
             Action::PlatformGrants => "platform_grants",
             Action::PlatformOwnerOnly => "platform_owner_only",
         }
@@ -314,7 +326,9 @@ impl Action {
             Action::PlatformOrgCreate => Ring::PlatformCap(Cap::CreateOrgs),
             Action::PlatformUsers => Ring::PlatformCap(Cap::ManageMembers),
             Action::PlatformPartners => Ring::PlatformCap(Cap::ManagePartners),
-            Action::PlatformOperate => Ring::PlatformCap(Cap::OperatePlatform),
+            Action::PlatformOperate | Action::PlatformAirhouse => {
+                Ring::PlatformCap(Cap::OperatePlatform)
+            }
             Action::PlatformGrants => Ring::PlatformCap(Cap::ManagePlatformGrants),
             Action::PlatformOwnerOnly => Ring::GlobalOwnerOnly,
         }
@@ -1371,6 +1385,35 @@ mod policy_tests {
             PlatformRole::AppOperator,
             scope,
         ))
+    }
+
+    /// Airhouse provisioning rides `OperatePlatform`, so it must answer exactly
+    /// as the action it shares that ring with — a divergence would mean a grant
+    /// that operates the platform but cannot provision a warehouse, which
+    /// nothing in the product describes.
+    #[test]
+    fn airhouse_provisioning_answers_as_platform_operate_does() {
+        for f in [
+            PrincipalFacts {
+                platform: global_admin_standing(),
+                ..facts()
+            },
+            PrincipalFacts {
+                platform: app_operator_standing(Scope::All),
+                ..facts()
+            },
+            PrincipalFacts {
+                owned_orgs: vec![org()],
+                ..facts()
+            },
+            facts(),
+        ] {
+            assert_eq!(
+                allows(&f, Action::PlatformAirhouse, &Resource::platform()),
+                allows(&f, Action::PlatformOperate, &Resource::platform()),
+                "airhouse must not diverge from the ring it rides"
+            );
+        }
     }
 
     #[test]

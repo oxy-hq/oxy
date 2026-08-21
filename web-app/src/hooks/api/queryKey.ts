@@ -411,7 +411,10 @@ const airhouseKeys = {
   connection: (workspaceId: string) => [...airhouseKeys.all, "connection", workspaceId] as const,
   version: () => [...airhouseKeys.all, "version"] as const,
   catalogIndexes: (workspaceId: string) =>
-    [...airhouseKeys.all, "catalog-indexes", workspaceId] as const
+    [...airhouseKeys.all, "catalog-indexes", workspaceId] as const,
+  // The admin console's fleet read. Separate root from the member-facing keys
+  // above because it is a different resource — every workspace, not mine.
+  adminFleet: () => ["admin", "airhouse", "fleet"] as const
 };
 
 const cameraKeys = {

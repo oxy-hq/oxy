@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Checkbox } from "@/components/ui/shadcn/checkbox";
 import { cn } from "@/libs/utils/cn";
 import type { QueueRow } from "@/services/api/internalJobs";
-import { relativeTime } from "../../utils";
+import { relativeTime } from "../../../utils";
 import { JobDebugPanel } from "./JobDebugPanel";
 import { statusTone } from "./statusTone";
 

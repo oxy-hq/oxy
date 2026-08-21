@@ -2,7 +2,7 @@ import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/libs/utils/cn";
 import type { QueueRow } from "@/services/api/internalJobs";
-import { relativeTime } from "../../utils";
+import { relativeTime } from "../../../utils";
 import { summarizeSpec } from "./specSummary";
 
 /**

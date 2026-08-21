@@ -2,7 +2,8 @@ import { Clock, Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useRunScheduledJob, useScheduledJobs } from "@/hooks/api/internalJobs";
-import { formatInterval, relativeTime } from "../utils";
+import { relativeTime } from "../../utils";
+import { formatInterval } from "../utils";
 
 /**
  * Periodic system loops registered with the runtime (reaper, retention prune,

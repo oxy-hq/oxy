@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Telescope,
   Users,
+  Warehouse,
   Waypoints
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -87,6 +88,16 @@ export const ADMIN_NAV: AdminNavItem[] = [
     icon: FileCheck,
     capability: "operate_platform",
     group: "operations"
+  },
+  {
+    to: ROUTES.ADMIN.AIRHOUSE,
+    label: "Airhouse warehouses",
+    icon: Warehouse,
+    // Matches the route gate (`Action::PlatformAirhouse` → `operate_platform`)
+    // rather than `manage_apps`: provisioning a tenant's data plane is
+    // operator work.
+    capability: "operate_platform",
+    group: "tenants"
   },
   {
     to: ROUTES.ADMIN.EXPLORER,

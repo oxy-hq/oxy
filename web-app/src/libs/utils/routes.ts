@@ -32,6 +32,7 @@ const ROUTES = {
     EXPLORER: "/admin/explorer",
     AUDIT: "/admin/audit",
     CUSTOMER_APPS: "/admin/apps",
+    AIRHOUSE: "/admin/airhouse",
     APP_ADMINS: "/admin/app-admins",
     PUBLISH_TOKENS: "/admin/publish-tokens",
     TENANTS: "/admin/tenants",

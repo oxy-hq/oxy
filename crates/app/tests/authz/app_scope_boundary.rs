@@ -530,6 +530,18 @@ fn scoped_admin_writes_fence_before_touching_the_database() {
             "crates/app/src/server/api/admin/airway_config/handlers.rs",
             &["put_workspace_override", "delete_workspace_override"],
         ),
+        (
+            // The Airhouse console. Its handlers live in the `airhouse` crate,
+            // which sits below `oxy-app` and cannot read the grant table, so
+            // this file is a shim whose whole purpose is to hold the fence.
+            // Workspace-keyed, so it calls `deny_out_of_scope_opt` — the needle
+            // below matches both spellings.
+            //
+            // `list_fleet` is absent deliberately: it FILTERS by scope rather
+            // than refusing, which is the read-path answer on this console.
+            "crates/app/src/server/api/admin/airhouse.rs",
+            &["provision"],
+        ),
     ];
 
     for (file, handlers) in sites {

@@ -1098,6 +1098,32 @@ fn is_rest_wildcard(seg: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// The Airhouse admin routes stay on the fleet.
+    ///
+    /// Postgres plus an HTTP client, no node-local state — so the `FleetOk`
+    /// default is already right and this is pinning, not a fix. It is what
+    /// stops a future broad `IdeOnly` pattern (an `/api/{workspace_id}/{*rest}`
+    /// say) from quietly capturing them, where the symptom is an HA outage
+    /// rather than a compile error.
+    #[test]
+    fn airhouse_admin_routes_are_fleet_ok() {
+        let ws = "3c6e0b8a-9c15-224a-8236-000000000001";
+        for (method, path) in [
+            ("GET", "/api/admin/airhouse".to_string()),
+            (
+                "POST",
+                format!("/api/admin/workspaces/{ws}/airhouse/provision"),
+            ),
+        ] {
+            assert_eq!(
+                classify(method, &path),
+                RouteRole::FleetOk,
+                "{method} {path} is a Postgres-plus-HTTP read/write — pinning it to \
+                 the ide makes a tenant's warehouse surface die with the singleton"
+            );
+        }
+    }
+
     #[test]
     fn only_serve_offloads_workers_single_all_in_one_drains_its_own_queue() {
         // The single-instance invariant: a plain `OXY_ROLE=all` node (and ide /
