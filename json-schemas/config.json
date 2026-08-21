@@ -1363,7 +1363,7 @@
       "description": "LLM model configuration supporting multiple vendors",
       "oneOf": [
         {
-          "description": "OpenAI model configuration",
+          "description": "Azure OpenAI deployment configuration",
           "type": "object",
           "required": [
             "key_var",
@@ -1412,7 +1412,6 @@
           }
         },
         {
-          "description": "Google Gemini model configuration",
           "type": "object",
           "required": [
             "key_var",
@@ -1439,7 +1438,6 @@
           }
         },
         {
-          "description": "Ollama model configuration",
           "type": "object",
           "required": [
             "api_key",
@@ -1470,7 +1468,6 @@
           }
         },
         {
-          "description": "Anthropic model configuration",
           "type": "object",
           "required": [
             "key_var",
@@ -1590,7 +1587,6 @@
           ]
         },
         "refresh_worker": {
-          "description": "Background refresh worker settings.",
           "anyOf": [
             {
               "$ref": "#/definitions/RefreshWorkerConfig"

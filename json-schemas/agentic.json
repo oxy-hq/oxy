@@ -29,12 +29,7 @@
       ]
     },
     "llm": {
-      "description": "LLM configuration.",
-      "allOf": [
-        {
-          "$ref": "#/definitions/LlmConfigYaml"
-        }
-      ]
+      "$ref": "#/definitions/LlmConfigYaml"
     },
     "semantic_engine": {
       "description": "Optional vendor semantic engine configuration.\n\nWhen absent, the solver routes exclusively through the internal semantic layer and LLM paths (identical to today's behaviour).",
@@ -113,7 +108,6 @@
       }
     },
     "LlmConfigYaml": {
-      "description": "LLM configuration section.",
       "type": "object",
       "properties": {
         "api_key": {
@@ -306,7 +300,6 @@
       }
     },
     "StateConfig": {
-      "description": "Per-state configuration overrides.",
       "type": "object",
       "properties": {
         "instructions": {
