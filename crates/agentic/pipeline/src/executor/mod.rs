@@ -1012,6 +1012,11 @@ impl PipelineTaskExecutor {
         if kind == "rest_api" {
             return self.resolve_rest_api_auth_secrets(spec).await;
         }
+        // google_sheets carries no storable credential at all — see
+        // `resolve_google_sheets_auth` for why the secret is the key, not a token.
+        if kind == "google_sheets" {
+            return self.resolve_google_sheets_auth(spec).await;
+        }
         // (field, var-key) pairs each source kind supports as managed secrets.
         // `client_id` / `realm_id` are identifiers, not secrets. Kinds not
         // listed here carry no managed credentials.
@@ -1105,6 +1110,52 @@ impl PipelineTaskExecutor {
         Ok(())
     }
 
+    /// `google_sheets` has no long-lived credential to store. A Google access
+    /// token lives one hour, so a stored one makes a scheduled pipeline succeed
+    /// exactly once and then 401 forever. The managed secret is therefore the
+    /// service-account JSON key, and a fresh token is minted per run.
+    ///
+    /// The scope is fixed to read-only and deliberately not configurable: this
+    /// connector only ever GETs `values/{range}`, and a sheet holding patient
+    /// data should not be writable by a pipeline credential.
+    async fn resolve_google_sheets_auth(
+        &self,
+        spec: &mut agentic_airway::AirwayPipelineSpec,
+    ) -> Result<(), String> {
+        let Some(obj) = spec.source.config.as_object_mut() else {
+            return Ok(());
+        };
+        let Some(var_val) = obj.get("service_account_json_var") else {
+            // No managed credential declared. Leave any literal `access_token`
+            // untouched so a one-off manual run can still pass one directly.
+            return Ok(());
+        };
+        let var_name = var_val
+            .as_str()
+            .ok_or("airway google_sheets: `service_account_json_var` must be a string secret name")?
+            .to_string();
+        let sa_json = self
+            .platform
+            .resolve_secret(&var_name)
+            .await
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "airway google_sheets: secret `{var_name}` (referenced by \
+                     `service_account_json_var`) could not be resolved from the secret manager"
+                )
+            })?;
+        let token = mint_google_access_token(
+            &sa_json,
+            "https://www.googleapis.com/auth/spreadsheets.readonly",
+        )
+        .await?;
+        obj.insert("access_token".to_string(), serde_json::Value::String(token));
+        // Strip the indirection so the rendered spec never carries it.
+        obj.remove("service_account_json_var");
+        Ok(())
+    }
+
     /// Turn a `destination: { database, dataset_name }` reference into a
     /// concrete inline connector by resolving the named `config.yml`
     /// database through the platform (secret substitution + per-subject
@@ -1163,6 +1214,86 @@ impl PipelineTaskExecutor {
             });
         Ok(is_airhouse.then_some(database))
     }
+}
+
+/// Exchange a Google service-account key for a one-hour access token.
+///
+/// The RS256 JWT-bearer flow, same as `crates/airform/src/adapter.rs` runs for
+/// BigQuery. Duplicated rather than shared: the two differ only in scope, and
+/// airform is a sibling this crate must not take a dependency on.
+async fn mint_google_access_token(sa_json: &str, scope: &str) -> Result<String, String> {
+    let key: serde_json::Value = serde_json::from_str(sa_json)
+        .map_err(|e| format!("google service-account key is not valid JSON: {e}"))?;
+    let client_email = key["client_email"]
+        .as_str()
+        .ok_or("google service-account key is missing `client_email`")?;
+    let private_key_pem = key["private_key"]
+        .as_str()
+        .ok_or("google service-account key is missing `private_key`")?;
+    // Present in every key Google issues; defaulted so a hand-trimmed key
+    // still works rather than failing on a field nobody edits on purpose.
+    let token_uri = key["token_uri"]
+        .as_str()
+        .unwrap_or("https://oauth2.googleapis.com/token");
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("system clock is before the unix epoch: {e}"))?
+        .as_secs();
+
+    #[derive(serde::Serialize)]
+    struct Claims<'a> {
+        iss: &'a str,
+        scope: &'a str,
+        aud: &'a str,
+        exp: u64,
+        iat: u64,
+    }
+
+    let assertion = jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256),
+        &Claims {
+            iss: client_email,
+            scope,
+            aud: token_uri,
+            exp: now + 3600,
+            iat: now,
+        },
+        &jsonwebtoken::EncodingKey::from_rsa_pem(private_key_pem.as_bytes())
+            .map_err(|e| format!("google service-account private key did not parse: {e}"))?,
+    )
+    .map_err(|e| format!("failed to sign the google service-account JWT: {e}"))?;
+
+    let resp = reqwest::Client::new()
+        .post(token_uri)
+        .form(&[
+            ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
+            ("assertion", assertion.as_str()),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("google token exchange failed: {e}"))?;
+
+    let status = resp.status();
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("google token response was not JSON: {e}"))?;
+    body["access_token"]
+        .as_str()
+        .map(str::to_string)
+        // A key the sheet was never shared with comes back 400 with
+        // {"error", "error_description"}. Surfacing that beats reporting a
+        // missing field, which reads like a bug on our side.
+        .ok_or_else(|| {
+            format!(
+                "google token exchange returned {status} without an access_token: {}",
+                body["error_description"]
+                    .as_str()
+                    .or_else(|| body["error"].as_str())
+                    .unwrap_or("no error field in the response")
+            )
+        })
 }
 
 /// Collect `(target_field, var_key, secret_name)` triples for `*_var`

@@ -28,6 +28,10 @@ chrono = { workspace = true }
 chrono-tz = { workspace = true }
 entity = { workspace = true }
 futures = { workspace = true }
+# Google service-account auth for the `google_sheets` airway source: sign an
+# RS256 JWT (jsonwebtoken) and exchange it for an access token (reqwest).
+jsonwebtoken = { workspace = true }
+reqwest = { workspace = true }
 serde_yaml = { workspace = true }
 
 sea-orm = { workspace = true }

@@ -25,6 +25,7 @@ use std::sync::Arc;
 use airway::connector::SourceConnector;
 use airway::connector::sources::besttime::{BestTimeConfig, besttime_source};
 use airway::connector::sources::filesystem::{FilesystemSource, SourceFileFormat};
+use airway::connector::sources::google_sheets::GoogleSheetsSource;
 use airway::connector::sources::http_file::{HttpFileConfig, http_file_source};
 use airway::connector::sources::netsuite::{NetSuiteCredentials, NetSuiteSource, SigningAlgorithm};
 use airway::connector::sources::overpass::{OverpassConfig, overpass_source};
@@ -244,6 +245,7 @@ fn build_source_connector_inner(
         "besttime" => build_besttime(&config.config),
         "overture" => build_overture(&config.config),
         "http_file" => build_http_file(&config.config),
+        "google_sheets" => build_google_sheets(&config.config),
         "overpass" => build_overpass(&config.config),
         "netsuite" => build_netsuite(&config.config),
         "ubereats" => build_ubereats(&config.config),
@@ -1225,6 +1227,56 @@ fn build_overpass(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> 
     Ok(Box::new(source))
 }
 
+// ── google_sheets ─────────────────────────────────────────────────────────────
+
+/// Authored config for the `google_sheets` source.
+///
+/// `access_token` is deliberately not something anyone writes in YAML. A Google
+/// access token lives one hour, so a scheduled pipeline holding a stored token
+/// would succeed once and then 401 forever. The executor mints a fresh one per
+/// run from the service-account key named by `service_account_json_var` and
+/// injects it here — see `resolve_google_sheets_auth` in agentic-pipeline.
+/// That is also why the field carries `#[serde(default)]`: it is absent from
+/// every file on disk and present only in the resolved spec.
+#[derive(Debug, Deserialize)]
+struct GoogleSheetsParams {
+    /// From the sheet URL: `/spreadsheets/d/<THIS>/edit`.
+    spreadsheet_id: String,
+    #[serde(default)]
+    access_token: String,
+    /// Sheet names or A1 ranges (`Main`, `Main!A:S`). Each becomes one
+    /// resource named after the part before `!`, lowercased with spaces
+    /// turned into underscores — so `Main!A:S` is the resource `main`, which
+    /// is the name `resources:` has to list. Empty means every sheet, landing
+    /// as one resource called `sheet_data`.
+    #[serde(default)]
+    ranges: Vec<String>,
+}
+
+fn build_google_sheets(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
+    let params: GoogleSheetsParams = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid google_sheets config: {e}")))?;
+    // An empty token here means secret resolution did not run or the key was
+    // missing. Failing with the reason beats handing the connector an empty
+    // Bearer header and reading Google's 401 back as "spreadsheet not found".
+    if params.access_token.is_empty() {
+        return Err(AirwayError::Other(
+            "google_sheets config: no access token was resolved. Set \
+             `service_account_json_var` to the name of a secret holding the \
+             service-account JSON key — the executor mints a short-lived \
+             access token from it on every run."
+                .into(),
+        ));
+    }
+    // `None` and `Some(vec![])` mean different things to the connector: none
+    // extracts every sheet under the single resource `sheet_data`, an empty
+    // vec would produce no resources at all.
+    let ranges = (!params.ranges.is_empty()).then_some(params.ranges);
+    let source = GoogleSheetsSource::new(&params.spreadsheet_id, &params.access_token, ranges)
+        .map_err(|e| AirwayError::Other(format!("google_sheets source init failed: {e}")))?;
+    Ok(Box::new(source))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1462,6 +1514,53 @@ mod tests {
             }),
         )));
         assert!(msg.contains("private_key_var"), "{msg}");
+    }
+
+    #[test]
+    fn google_sheets_builds_and_names_resources_after_the_range() {
+        let source = build(&cfg(
+            "google_sheets",
+            json!({
+                "spreadsheet_id": "1AbC",
+                // The executor injects this; no file on disk carries it.
+                "access_token": "minted-per-run",
+                "ranges": ["Main!A:S"],
+            }),
+        ))
+        .expect("build");
+        assert_eq!(source.name(), "google_sheets");
+        // `resources:` in the YAML has to name what the connector emits, and
+        // the connector derives that from the range rather than being told.
+        // Pin it: `Main!A:S` is the resource `main`, so a change upstream
+        // fails here rather than as an empty run against the customer's sheet.
+        let names: Vec<_> = source.resources().into_iter().map(|r| r.name).collect();
+        assert_eq!(names, vec!["main".to_string()]);
+    }
+
+    /// A google_sheets access token is minted per run by the executor, never
+    /// authored. If secret resolution did not run, the token is empty — and an
+    /// empty Bearer header comes back from Google as a 404 on the spreadsheet,
+    /// which reads like a wrong id rather than a missing credential. Fail here
+    /// instead, naming the field that is actually missing.
+    #[test]
+    fn google_sheets_without_a_resolved_token_is_rejected() {
+        // `expect_err` would need the Ok type to be Debug, and a boxed
+        // connector is not.
+        let Err(err) = build(&cfg(
+            "google_sheets",
+            json!({
+                "spreadsheet_id": "1AbC",
+                "service_account_json_var": "GOOGLE_SA_JSON",
+                "ranges": ["Main!A:S"],
+            }),
+        )) else {
+            panic!("google_sheets must not build without a resolved token");
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("service_account_json_var"),
+            "error should name the secret field to set, got: {msg}"
+        );
     }
 
     #[test]
