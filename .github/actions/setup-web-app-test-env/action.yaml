@@ -40,14 +40,50 @@ runs:
         NODE_OPTIONS: "--max-old-space-size=8192"
       run: pnpm install --frozen-lockfile --prefer-offline
 
+    # Deliberately NOT `install --with-deps`. That flag couples the browser
+    # download (Playwright CDN) to an apt run against the runner's regional
+    # Ubuntu mirror, and the regional pools baked into runner images
+    # (`us-east-2.ec2.ports.ubuntu.com` on the warp arm64 boxes,
+    # `azure.archive.ubuntu.com` on ubuntu-latest) are DNS round-robins whose
+    # unhealthy members answer 503 or hang. apt has no retry policy on these
+    # images, so one bad node took down the whole setup step — and with it a
+    # browser download that had already succeeded.
     - name: Install Playwright browsers
       if: inputs.install-playwright == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: web-app
-      run: pnpm exec playwright install --with-deps chromium
+      run: |
+        set -euo pipefail
+        for attempt in 1 2 3; do
+          if pnpm exec playwright install chromium; then
+            exit 0
+          fi
+          echo "::warning::playwright install chromium failed (attempt ${attempt}/3)"
+          sleep $((attempt * 10))
+        done
+        echo "::error::Could not download the Chromium build after 3 attempts"
+        exit 1
 
-    - name: Install Playwright system dependencies only
-      if: inputs.install-playwright == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
+    # Ask the runner directly instead of assuming apt is needed: the images
+    # already carry every library Chromium links against, so on the normal
+    # path this answers "yes, it works" and no mirror is contacted at all.
+    - name: Check whether Chromium can run
+      id: browser-check
+      if: inputs.install-playwright == 'true'
       shell: bash
       working-directory: web-app
-      run: pnpm exec playwright install-deps chromium
+      run: bash "${{ github.action_path }}/check-browser.sh"
+
+    - name: Repair missing system dependencies
+      if: inputs.install-playwright == 'true' && steps.browser-check.outputs.needs-repair == 'true'
+      shell: bash
+      working-directory: web-app
+      run: bash "${{ github.action_path }}/install-system-deps.sh"
+
+    # The single decision point: a dependency gap apt could not close fails
+    # here with the loader error, rather than mid-suite as an opaque crash.
+    - name: Verify Chromium after repair
+      if: inputs.install-playwright == 'true' && steps.browser-check.outputs.needs-repair == 'true'
+      shell: bash
+      working-directory: web-app
+      run: bash "${{ github.action_path }}/check-browser.sh" --strict

@@ -1,5 +1,11 @@
 # Running Migrator CLI
 
+The server applies pending migrations on startup, so running this CLI by hand is
+only needed to generate a migration, or to drive the database somewhere the
+server would not take it (a rollback, a `fresh`, a status check). It targets
+whatever `OXY_DATABASE_URL` points at, falling back to the embedded development
+PostgreSQL.
+
 If you are running this in the root workspace, you will need to suffix all command with `-p migration` to run:
 
 ```sh
