@@ -70,8 +70,17 @@ jobs:
   # below) and filter by `flow_bucket`. We can't filter the matrix via a
   # job-level `if:` because the `matrix` context isn't available there.
   resolve-matrix:
+    # oxygen-internal only, and the guard has to live HERE rather than only in
+    # `ci.yaml`'s caller job: this file is independently `workflow_dispatch`-able,
+    # so on the public mirror it would otherwise present a Run-workflow button
+    # that burns ANTHROPIC_API_KEY budget and then fails on a missing warp
+    # runner. Guarding the first job is enough to stop the matrix — a skipped
+    # `needs` skips its dependents — but `agentic-tests` repeats it so neither
+    # job's guard depends on the other still being wired this way.
+    if: github.repository == 'oxy-hq/oxygen-internal'
     runs-on: ubuntu-latest
-    # Just emits the bucket matrix JSON; sub-second work.
+    # Just emits the bucket matrix JSON; sub-second work — deliberately not a
+    # warp runner, since it runs no tests.
     timeout-minutes: 10
     outputs:
       flows: ${{ steps.resolve.outputs.flows }}
@@ -106,6 +115,10 @@ jobs:
   agentic-tests:
     name: agentic / ${{ matrix.flow.name }}
     needs: [resolve-matrix]
+    # See `resolve-matrix` — oxygen-internal only. A plain boolean `if:` does not
+    # override the implicit skip-when-a-need-is-skipped, so this narrows the job
+    # without loosening the dependency.
+    if: github.repository == 'oxy-hq/oxygen-internal'
     # Must match the binary's architecture (cargo-check-and-test builds
     # `oxy-binary-ci` on `warp-ubuntu-latest-arm64-4x` in this repo).
     # Running on x86_64 ubuntu-latest produced an ENOEXEC fallback to

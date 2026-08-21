@@ -180,9 +180,9 @@ jobs:
     # Own job, off the critical path (nothing `needs:` it). Gated on the web-app
     # changeset like fmt-web/build-web.
     if: inputs.agentic_only != true && needs.changesets.outputs.web-app == 'true'
-    runs-on:
-      ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
-      'ubuntu-latest' }}
+    # Warp arm64, like every other job in this repo that runs tests — the lint
+    # and format jobs stay on `ubuntu-slim` because they are not tests.
+    runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}
     # The Vitest unit suite runs in ~1-2m warm; 15m covers a cold pnpm store.
     timeout-minutes: 15
     steps:
@@ -461,7 +461,7 @@ jobs:
         }}
       cancel-in-progress: true
     if: false # temporarily disabled
-    runs-on: warp-ubuntu-latest-arm64-4x
+    runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}
     timeout-minutes: 20
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
