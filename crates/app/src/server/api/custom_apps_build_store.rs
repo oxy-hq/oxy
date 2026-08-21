@@ -335,6 +335,96 @@ pub async fn get_object(
     }
 }
 
+/// What a `HEAD` learned about an object's size.
+///
+/// `Unknown` is a real answer, not a zero: a response without `Content-Length`
+/// says the object is there and declines to say how big. Collapsing it into `0`
+/// is what would make a present file report as empty.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObjectSize {
+    Bytes(u64),
+    Unknown,
+}
+
+impl ObjectSize {
+    /// True only when the size is *known* to be zero.
+    pub fn is_known_empty(self) -> bool {
+        matches!(self, ObjectSize::Bytes(0))
+    }
+}
+
+/// Whether an object exists in a build, and how many bytes it is — without
+/// transferring it.
+///
+/// `Ok(None)` for an absent key, mirroring [`get_object`]. Exists for the
+/// per-app health endpoint, which asks "is `index.html` there and non-empty?" on
+/// every poll: `get_object` answers that identically but downloads the file to do
+/// it, and this endpoint is designed to be polled per app. Same two guards as
+/// `get_object` — an unsafe `rel` or an uncontainable `build_id` reads as a miss.
+pub async fn head_object(
+    app_id: Uuid,
+    build_id: &str,
+    rel_path: &str,
+) -> Result<Option<ObjectSize>, BuildStoreError> {
+    let rel = rel_path.trim_start_matches('/');
+    if !is_safe_rel(rel) {
+        return Ok(None);
+    }
+    if !is_containable_build_id(build_id) {
+        // Same reasoning as `get_object`: `Ok(None)` is indistinguishable from a
+        // genuine miss, so an operator needs something to grep for. It matters
+        // more here — the health endpoint is the surface that would otherwise
+        // report "re-publish the app" for a state re-publishing cannot fix.
+        tracing::warn!(
+            "app {app_id}: refusing unsafe build id {build_id:?} — every asset in this build \
+             will 404 until the row is corrected"
+        );
+        return Ok(None);
+    }
+    match bucket() {
+        Some(bucket) => {
+            let client = s3_client().await;
+            let key = format!("{}{}", build_prefix(app_id, build_id), rel);
+            match client.head_object().bucket(&bucket).key(&key).send().await {
+                // A response without `Content-Length` means "present, size
+                // unknown" — NOT zero. Defaulting to 0 would make the health
+                // check report "present but empty in the build store", a `fail`
+                // carrying a confidently wrong detail.
+                Ok(resp) => Ok(Some(match resp.content_length() {
+                    Some(n) if n >= 0 => ObjectSize::Bytes(n as u64),
+                    _ => ObjectSize::Unknown,
+                })),
+                Err(err) => {
+                    // HEAD reports a missing key as 404 without a typed
+                    // `NoSuchKey` the way GET does, so the status is what has to
+                    // be read here.
+                    let missing = err
+                        .raw_response()
+                        .map(|r| r.status().as_u16() == 404)
+                        .unwrap_or(false)
+                        || err
+                            .as_service_error()
+                            .map(|e| e.is_not_found())
+                            .unwrap_or(false);
+                    if missing {
+                        Ok(None)
+                    } else {
+                        Err(BuildStoreError::S3(format!("head_object {key}: {err}")))
+                    }
+                }
+            }
+        }
+        None => {
+            let dest = fs_build_dir(app_id, build_id).join(rel);
+            match tokio::fs::metadata(&dest).await {
+                Ok(meta) => Ok(Some(ObjectSize::Bytes(meta.len()))),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(e) => Err(BuildStoreError::Io(format!("stat {}: {e}", dest.display()))),
+            }
+        }
+    }
+}
+
 /// Delete every object/file under a build prefix (keep-last-N GC).
 pub async fn delete_build(app_id: Uuid, build_id: &str) -> Result<(), BuildStoreError> {
     // `remove_dir_all` on the FS backend — never let a traversal id name the
@@ -658,5 +748,28 @@ mod tests {
             std::env::remove_var("OXY_STATE_DIR");
         }
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
+
+#[cfg(test)]
+mod object_size_tests {
+    use super::ObjectSize;
+
+    /// Only a size *known* to be zero is an empty object.
+    ///
+    /// `Unknown` exists because a `HEAD` without `Content-Length` says "it's
+    /// there" and declines to say how big. Folding that into `0` — which the
+    /// first draft did via `unwrap_or(0)` — made the health endpoint report a
+    /// perfectly good `index.html` as "present but empty in the build store": a
+    /// failure carrying a confidently wrong detail, on an endpoint whose whole
+    /// value is that its verdict can be trusted.
+    #[test]
+    fn only_a_known_zero_is_empty() {
+        assert!(ObjectSize::Bytes(0).is_known_empty());
+        assert!(!ObjectSize::Bytes(1).is_known_empty());
+        assert!(
+            !ObjectSize::Unknown.is_known_empty(),
+            "an unmeasured object is present, not empty"
+        );
     }
 }

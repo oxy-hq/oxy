@@ -20,6 +20,7 @@ pub mod custom_apps_cache;
 pub mod custom_apps_debug;
 pub mod custom_apps_functions;
 pub mod custom_apps_gates;
+pub mod custom_apps_health;
 pub mod custom_apps_manifest;
 pub mod custom_apps_precompress;
 pub mod custom_apps_preview;

@@ -1626,6 +1626,36 @@ mod tests {
         );
     }
 
+    /// The per-app health endpoint must be answerable by ANY replica.
+    ///
+    /// This is the HA half of the rule, and it bites harder here than anywhere
+    /// else: a liveness endpoint pinned to the ide singleton would report the
+    /// app down every time that singleton restarted — an alarm that fires on the
+    /// monitoring path's own maintenance, not on the thing being monitored.
+    /// It reads `apps` + `app_builds` from Postgres and one object from the S3
+    /// build store; no workspace FS, no `.git`, no state dir.
+    #[test]
+    fn custom_app_health_is_fleet_ok() {
+        for path in [
+            "/api/customer-apps/acme/command-center/health",
+            "/api/customer-apps/health",
+        ] {
+            assert_eq!(
+                classify("GET", path),
+                RouteRole::FleetOk,
+                "{path} must stay FleetOk — a health check that needs the singleton \
+                 fails whenever the singleton restarts"
+            );
+        }
+        // Its 5-segment neighbour stays pinned: a function invocation executes
+        // in-process and reads the workspace. Segment counts differ, so neither
+        // shadows the other.
+        assert_eq!(
+            classify("POST", "/customer-apps/acme/command-center/fn/health"),
+            RouteRole::IdeOnly
+        );
+    }
+
     #[test]
     fn org_subdomain_routes_are_fleet_ok() {
         // Both org-subdomain surfaces are Postgres-only (read workspace→org,

@@ -96,6 +96,24 @@ pub(super) fn build_public_routes() -> Router<AppState> {
             "/customer-apps/{org_slug}/{app_slug}/debug",
             get(custom_apps_debug::get_debug),
         )
+        // External liveness for ONE published custom app. In the public router
+        // because it authenticates inline (session cookie or bearer token) like
+        // its neighbours — and the token is mandatory: auth runs before the app
+        // lookup so an unauthenticated caller gets 401 whether or not the app
+        // exists, which is what keeps this from becoming an app-enumeration
+        // oracle. Two forms: slug-explicit (pollable from the admin host, one
+        // monitor for every app) and Host-resolved (`/customer-apps/health` on
+        // an `<org>--<slug>.customer-apps.<zone>` subdomain, where `/api/*` is
+        // the only prefix the subdomain rewrite passes through). NOT a k8s
+        // probe — see the module docs.
+        .route(
+            "/customer-apps/{org_slug}/{app_slug}/health",
+            get(crate::server::api::custom_apps_health::get_health),
+        )
+        .route(
+            "/customer-apps/health",
+            get(crate::server::api::custom_apps_health::get_health_for_host),
+        )
         // Project-scoped proxies for custom-app bundles. Auth is
         // performed inline (session cookie or API key) so these sit
         // in the public router rather than under workspace middleware.
