@@ -31,7 +31,14 @@ The protected-route inner stack differs by mode:
 - **Local** (`apply_local_middleware`): `auth_middleware(AuthState::guest_only)` → `timeout_middleware`
   then `local_context_middleware` on every `/{workspace_id}/…` request.
 
-`build_global_routes` (org + user-github) is **not** mounted in local mode.
+`build_global_routes` (org routes) is **not** mounted in local mode.
+
+The `/orgs/{org_id}/github/*` and `/user/github/*` subtrees below are no longer
+defined here: they live in the sibling `oxy-api-github` crate and are injected by
+the composition root (`oxy-server`) through `api_router`'s `extra_api_routes` seam,
+merged into the protected tree before `apply_middleware` (cloud mode only). They
+re-apply their own `org_middleware` + `subscription_guard`; oxy-app no longer
+depends on them.
 
 ## Route tree
 

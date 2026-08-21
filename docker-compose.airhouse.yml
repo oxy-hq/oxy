@@ -12,7 +12,7 @@
 #   export AIRHOUSE_ADMIN_TOKEN=airhouse-local-token
 #   export AIRHOUSE_WIRE_HOST=localhost
 #   export AIRHOUSE_WIRE_PORT=5445
-#   cargo run -p oxy-app -- serve
+#   cargo run -p oxy-server -- serve
 #
 # Verify connectivity:
 #   curl -H 'Authorization: Bearer airhouse-local-token' \

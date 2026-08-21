@@ -9,8 +9,6 @@ use axum::middleware;
 use axum::routing::{delete, get, patch, post, put};
 
 use crate::api::billing;
-use crate::api::github::namespaces as github;
-use crate::api::github::{account, callback, installations};
 use crate::api::middlewares::{
     app_scope_guard, org_context, oxy_owner_or_app_admin_guard, platform_cap_guard,
     subscription_guard,
@@ -313,7 +311,6 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024)),
                 ),
         )
-        .nest("/user/github", build_user_github_routes())
     // NOTE: Slack webhook + OAuth-callback + magic-link routes are NOT
     // registered here. They must live in `public.rs` because the routes
     // in this file sit inside the auth middleware layer, and:
@@ -395,7 +392,6 @@ fn build_org_routes() -> Router<AppState> {
             "/workspaces/{id}/rename",
             patch(workspaces::rename_workspace),
         )
-        .nest("/github", build_github_routes())
         // Slack installation management. The admin check is the `OrgAdmin` extractor on the
         // handlers themselves, not a hand-rolled role match — `get_status` is member-level.
         .route(
@@ -416,32 +412,4 @@ fn build_org_routes() -> Router<AppState> {
     gated
         .merge(bypass)
         .layer(middleware::from_fn(org_context::org_middleware))
-}
-
-fn build_github_routes() -> Router<AppState> {
-    Router::new()
-        .route("/repositories", get(github::list_repositories))
-        .route("/branches", get(github::list_branches))
-        .route("/namespaces", get(github::list_git_namespaces))
-        .route("/namespaces/pat", post(github::create_pat_namespace))
-        .route(
-            "/namespaces/installation",
-            post(github::create_installation_namespace),
-        )
-        .route("/namespaces/{id}", delete(github::delete_git_namespace))
-}
-
-fn build_user_github_routes() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/account",
-            get(account::get_account).delete(account::delete_account),
-        )
-        .route("/account/oauth-url", get(account::get_oauth_url))
-        .route("/installations", get(installations::list_installations))
-        .route(
-            "/installations/new-url",
-            get(installations::get_new_installation_url),
-        )
-        .route("/callback", post(callback::callback))
 }

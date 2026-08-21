@@ -86,9 +86,9 @@ export POSTGRES_PASSWORD=admin        # config.yml reads it via password_var
 **5. Run it.**
 
 ```bash
-cargo run -p oxy-app --bin oxy -- serve --local        # then use the UI
+cargo run -p oxy-server -- serve --local        # then use the UI
 # …or drive the pipeline directly, once a report is in the zone:
-cargo run -p oxy-app --bin oxy -- airway run pipelines/ubereats.airway.yml
+cargo run -p oxy-server -- airway run pipelines/ubereats.airway.yml
 ```
 
 Drop `2026.08 UberEats Payment Details.csv` on the pipeline page's

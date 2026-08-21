@@ -8,9 +8,13 @@ publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "oxy"
-path = "src/main.rs"
+# The `oxy` binary lives in the `oxy-server` crate (the composition root that
+# mounts the API surfaces); oxy-app is a library only.
+#
+# For the optional dev-dynamic-linking fast loop, oxy-app is NOT itself a dylib
+# (that would build a ~1.4 GB dylib on every release/CI build). Instead the thin
+# `oxy-app-dylib` crate re-exports it as a dylib, pulled in only by oxy-server's
+# `dev-dynamic` feature. See `just dev-backend-dyn`.
 
 [features]
 default = ["custom-app-functions"]

@@ -13,6 +13,12 @@ oxy = { workspace = true }
 oxy-auth = { workspace = true }
 entity = { workspace = true }
 
+# AppState field types (lifted here so the router + surface crates can hold it):
+oxy-observability = { workspace = true }
+agentic-semantic = { workspace = true }
+agentic-http = { workspace = true }
+airlayer = { workspace = true }
+
 axum = { workspace = true }
 sea-orm = { workspace = true }
 serde = { workspace = true }

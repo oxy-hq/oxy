@@ -97,8 +97,8 @@ pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> 
 
     println!();
     println!("Next:");
-    println!("  cargo run -p oxy-app -- compile --workspace-path {resolved_str}");
-    println!("  OXY_ROLE=ide cargo run -p oxy-app -- serve --enterprise");
+    println!("  cargo run -p oxy-server -- compile --workspace-path {resolved_str}");
+    println!("  OXY_ROLE=ide cargo run -p oxy-server -- serve --enterprise");
     Ok(())
 }
 

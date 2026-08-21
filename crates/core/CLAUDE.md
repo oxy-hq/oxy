@@ -54,4 +54,4 @@ other domain crates     ┘
   files are legacy exceptions, not a license to add more). New surface → new module.
 - Warehouse code paths must respect the DuckDB pool's serialized init (concurrent open →
   SIGSEGV) and each connector must short-circuit its empty-result shape.
-- Run `cargo check -p oxy` after edits; the binary is a separate package (`cargo check -p oxy-app`).
+- Run `cargo check -p oxy` after edits; the app library is `cargo check -p oxy-app` and the `oxy` binary is `cargo check -p oxy-server`.

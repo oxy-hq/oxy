@@ -1,7 +1,9 @@
 # `oxy-app` — CLI + HTTP Server (`crates/app`)
 
-The `oxy` binary lives here (crate name **`oxy-app`**, path `crates/app`, ~111k LOC — the
-largest crate and the workspace **default member**). It wires everything together: the CLI
+The CLI + server **library** lives here (crate name **`oxy-app`**, path `crates/app`, ~111k
+LOC — the largest crate; lib-only). The `oxy` **binary** is the thin `oxy-server` crate
+(`crates/server`, the workspace default member), which mounts the API surfaces and calls into
+this library. It wires everything together: the CLI
 command surface, the Axum HTTP server (`server/`, ~80k LOC), the fleet/role machinery, the
 worker runtime, and integration glue (Slack, emails). Business logic should live in `oxy` and
 the domain crates — this crate is composition + transport.
@@ -49,7 +51,7 @@ is a compile error, and an in-flight branch using one will merge clean and then 
 
 ## Key entry points
 
-- `main.rs` → `oxy_app::cli::commands::cli()` — clap dispatch; log format auto-detects local vs cloud (JSON).
+- `cli::commands::cli()` — clap dispatch (called from the binary's `crates/server/src/main.rs`); log format auto-detects local vs cloud (JSON).
 - `oxy serve` (`cli/commands/serve.rs`) — production HTTP path; `--enterprise` is the default
   shape for tests/demos, `--local` is the single-user/no-auth laptop mode only.
 - `server/router/entry.rs` — top-level router assembly.

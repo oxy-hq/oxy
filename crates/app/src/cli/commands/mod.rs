@@ -551,7 +551,11 @@ fn list_semantic_files(project_path: &std::path::Path) -> Vec<PathBuf> {
     files
 }
 
-pub async fn cli() -> Result<(), Box<dyn Error>> {
+pub async fn cli(
+    // Surface API routes composed by the top `oxy-server` crate and forwarded to
+    // `serve` (the only subcommand that mounts them). Empty for every other command.
+    extra_api_routes: axum::Router<crate::server::router::AppState>,
+) -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     use std::panic;
 
@@ -861,13 +865,13 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Start(start_args)) => {
-            if let Err(e) = start::start_database_and_server(start_args).await {
+            if let Err(e) = start::start_database_and_server(start_args, extra_api_routes).await {
                 eprintln!("{}", format!("Failed to start: {e}").error());
                 exit(1);
             }
         }
         Some(SubCommand::Serve(serve_args)) => {
-            if let Err(e) = start_server_and_web_app(serve_args).await {
+            if let Err(e) = start_server_and_web_app(serve_args, extra_api_routes).await {
                 eprintln!("{}", format!("Server failed: {e}").error());
                 exit(1);
             }

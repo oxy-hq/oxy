@@ -23,50 +23,16 @@ use axum::http::header::{HeaderName, HeaderValue};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use entity::workspaces as workspace_entity;
-use oxy_app_core::serve_mode::ServeMode;
 use std::future::Future;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 pub use entry::{api_router, internal_api_router};
 pub use openapi::openapi_router;
 
-#[derive(Clone)]
-pub struct AppState {
-    pub enterprise: bool,
-    pub internal: bool,
-    pub mode: ServeMode,
-    pub observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
-    /// The server's working directory at startup. In local mode, used as the
-    /// target for `POST /{workspace_id}/setup/*`. In cloud/internal mode,
-    /// unused — populated with `PathBuf::new()`.
-    pub startup_cwd: std::path::PathBuf,
-    /// Shared Layer-1 preagg refresh-key cache. Set when a background preagg
-    /// worker is running (i.e. `startup_cwd` is non-empty). `None` in the
-    /// internal API router and when no workspace path is configured.
-    pub preagg_cache: Option<
-        std::sync::Arc<std::sync::RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>,
-    >,
-    /// Renewal threshold (seconds) for the preagg refresh-key cache.
-    /// Mirrors the worker's `pre_aggregations.refresh_worker.renewal_threshold`
-    /// so the query read-path uses the operator-configured value, not a
-    /// hardcoded default. `None` when no worker is running.
-    pub preagg_renewal_threshold_secs: Option<u64>,
-    /// Shared agentic state — runtime, schema cache, event registry,
-    /// task router. Populated for the main API router so custom-app
-    /// endpoints (useAsk, useProcedureRun, useAgentRun) can reach the
-    /// pipeline. `None` for the internal API router (no agentic
-    /// surface needed there). Handlers should 503 when this is
-    /// `None` rather than panic.
-    pub agentic_state: Option<std::sync::Arc<agentic_http::AgenticState>>,
-    /// Shared per-workspace semantic layer cache. Avoids re-reading and
-    /// re-parsing all `.view.yml`/`.topic.yml` files on every request.
-    /// Keyed by workspace UUID; TTL of 60 s with explicit invalidation on
-    /// semantic file writes.
-    pub semantic_layer_cache: std::sync::Arc<workspace_cache::SemanticLayerCache>,
-    /// Compiled SemanticEngine cache (join graph + evaluator).
-    /// Avoids rebuilding the engine on every compilation request.
-    pub semantic_engine_cache: std::sync::Arc<workspace_cache::SemanticEngineCache>,
-}
+// `AppState` moved to `oxy-app-core` so the router and future per-surface crates
+// can hold it without depending on `oxy-app`. Re-exported here so every existing
+// `crate::server::router::AppState` call site (~52 files) is unchanged.
+pub use oxy_app_core::AppState;
 
 #[derive(Clone)]
 pub struct WorkspaceExtractor(pub workspace_entity::Model);
@@ -264,6 +230,7 @@ pub(crate) fn is_allowed_origin(headers: &HeaderMap) -> bool {
 #[cfg(test)]
 mod app_state_tests {
     use super::*;
+    use oxy_app_core::serve_mode::ServeMode;
 
     #[test]
     fn app_state_carries_mode() {
@@ -301,6 +268,7 @@ mod router_split_tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use oxy_app_core::serve_mode::ServeMode;
     use tower::ServiceExt;
 
     /// `api_router()` wires database-backed middleware during construction.
@@ -324,6 +292,7 @@ mod router_split_tests {
             std::path::PathBuf::new(),
             tokio_util::sync::CancellationToken::new(),
             false,
+            axum::Router::new(),
         )
         .await
         .expect("router built");
@@ -348,6 +317,7 @@ mod router_split_tests {
             std::path::PathBuf::new(),
             tokio_util::sync::CancellationToken::new(),
             false,
+            axum::Router::new(),
         )
         .await
         .expect("router built");
@@ -371,6 +341,7 @@ mod router_split_tests {
             std::path::PathBuf::new(),
             tokio_util::sync::CancellationToken::new(),
             false,
+            axum::Router::new(),
         )
         .await
         .expect("router built");
@@ -398,6 +369,7 @@ mod router_split_tests {
             std::path::PathBuf::new(),
             tokio_util::sync::CancellationToken::new(),
             false,
+            axum::Router::new(),
         )
         .await
         .expect("router built");
@@ -432,6 +404,7 @@ mod router_split_tests {
             std::path::PathBuf::new(),
             tokio_util::sync::CancellationToken::new(),
             false,
+            axum::Router::new(),
         )
         .await
         .expect("router built");

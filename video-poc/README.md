@@ -29,7 +29,7 @@ video-poc/
   one-line ffmpeg transcode if your clips aren't H.264/yuv420p.
 - An Oxy backend reachable from the edge container. By default Compose points
   the worker at `http://host.docker.internal:3000/api` — start Oxy locally
-  (`cargo run -p oxy-app -- serve`) on port 3000, register an edge box in the
+  (`cargo run -p oxy-server -- serve`) on port 3000, register an edge box in the
   UI, copy the bearer, and paste it into `.env`.
 
 ## Quickstart

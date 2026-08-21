@@ -44,7 +44,8 @@ pub mod exported_chart;
 pub mod file;
 pub mod foot_traffic;
 mod foot_traffic_seed;
-pub mod github;
+// The GitHub HTTP surface moved to the `oxy-api-github` sibling crate, mounted by
+// `oxy-server`. oxy-app no longer depends on it.
 pub mod healthcheck;
 pub mod integration;
 pub mod local_setup;

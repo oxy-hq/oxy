@@ -6,9 +6,9 @@ file, no build step, no dependencies. `oxy seed` deploys it through the real pub
 `oxy publish` bundle does — and a fresh clone lands on a launcher with a working app on it.
 
 ```sh
-cargo run -p oxy-app -- seed
-cargo run -p oxy-app -- compile --workspace-path ./examples
-OXY_ROLE=ide cargo run -p oxy-app -- serve --enterprise
+cargo run -p oxy-server -- seed
+cargo run -p oxy-server -- compile --workspace-path ./examples
+OXY_ROLE=ide cargo run -p oxy-server -- serve --enterprise
 # → /customer-apps/local/oxy-starter/
 ```
 

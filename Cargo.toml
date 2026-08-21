@@ -2,6 +2,8 @@
 members = [
   "crates/billing",
   "crates/app",
+  "crates/server",
+  "crates/api-github",
   "crates/app-core",
   "crates/auth",
   "crates/authz",
@@ -56,9 +58,15 @@ exclude = [
   "json-schemas",
   "semantics",
   "sdk",
+  # Dev-only dynamic-linking shim. Excluded (NOT a member) so `--workspace`
+  # test/lint/build never compile its ~1.4 GB dylib; it is built solely when
+  # `oxy-server` enables the `dev-dynamic` feature (a path dep pulls it in).
+  "crates/app-dylib",
 ]
 
-default-members = ["crates/app"]
+# The default build target is the binary crate (oxy-server), so `cargo build` /
+# `cargo run` at the workspace root drive the `oxy` binary.
+default-members = ["crates/server"]
 resolver = "2"
 
 [workspace.dependencies]

@@ -9,8 +9,12 @@
 //! Nothing in here may depend on a per-surface crate. If something in this crate
 //! needs a surface, the dependency is pointing the wrong way.
 
+pub mod app_state;
 pub mod audit;
 pub mod custom_apps_host_dispatch;
 pub mod member_authz;
 pub mod org_host_dispatch;
 pub mod serve_mode;
+pub mod workspace_cache;
+
+pub use app_state::AppState;

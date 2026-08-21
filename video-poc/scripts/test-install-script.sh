@@ -193,7 +193,7 @@ if [[ "$MINT" -eq 1 ]]; then
   auth_hint() {
     cat >&2 <<'HINT'
 the backend returned 401. Options:
-  (a) run the backend in zero-auth mode: `cargo run -p oxy-app -- serve --local`
+  (a) run the backend in zero-auth mode: `cargo run -p oxy-server -- serve --local`
   (b) grab your JWT from the browser (DevTools → Application → Local Storage →
       `auth_token`) and rerun with OXY_AUTH_TOKEN=<token> (or --auth-token <token>).
 HINT

@@ -58,6 +58,15 @@ install-hooks:
 seed-target source="":
     src={{ quote(source) }}; python3 scripts/seed-target.py ${src:+"$src"}
 
+# Seed for the DEV-DYNAMIC loop (`just build-backend-dyn`): prefers a source that
+# already built the dylib, so this checkout reuses the seeded ~1.4 GB
+# liboxy_app_dylib.dylib (cold start ~3 min) instead of the ~20 min link. Build
+# dynamic once in a warm "golden" worktree first (`just build-backend-dyn`), then
+# `just seed-dyn` (auto-picks it) — or `just seed-dyn <golden>` to name it. Warns
+# if no dynamic-capable source is found.
+seed-dyn source="":
+    src={{ quote(source) }}; python3 scripts/seed-target.py --dynamic ${src:+"$src"}
+
 # ── Build ──────────────────────────────────────────────────────────────────────
 
 # Build everything (debug)
@@ -173,13 +182,35 @@ dev-backend:
 dev-backend-fast:
     cargo rf -- start
 
+# Start the API server with DYNAMIC LINKING (Phase 4, macOS). The ~1.4 GB of
+# heavy deps live in liboxy_app_dylib.dylib, linked ONCE (~20 min the first time,
+# a separate fingerprint from the static build). After that each surface edit
+# relinks in ~17s instead of ~52s. Baked rpaths (rustlib + @executable_path) let
+# ./target/debug/oxy find its dylibs with no DYLD_LIBRARY_PATH. `dev-dynamic`
+# is dev-only — CI/release never build the dylib. `just build-backend-dyn` to
+# build without running (e.g. to time it).
+_dyn-rustflags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SYSROOT="$(rustc --print sysroot)"; HOST="$(rustc -vV | awk '/host:/{print $2}')"
+    printf -- '-C prefer-dynamic -C link-arg=-Wl,-rpath,%s/lib/rustlib/%s/lib -C link-arg=-Wl,-rpath,@executable_path -C link-arg=-Wl,-rpath,@executable_path/deps' "$SYSROOT" "$HOST"
+
+build-backend-dyn:
+    # Full output (no grep filter / `|| true`): this is the recipe most likely to
+    # fail at LINK, where the actionable part is the `ld: Undefined symbols …` notes
+    # under `error: linking with cc failed` — a grep for `^error` drops exactly those.
+    RUSTFLAGS="$(just _dyn-rustflags)" cargo build -p oxy-server --features dev-dynamic
+
+dev-backend-dyn *ARGS="start":
+    RUSTFLAGS="$(just _dyn-rustflags)" cargo run -p oxy-server --features dev-dynamic -- {{ ARGS }}
+
 # `oxy start` runs its OWN oxy-clickhouse container — don't also `just clickhouse-up` (both bind :8123).
 # Start the API server with ClickHouse observability + enterprise UI
 dev-backend-obs:
     #!/usr/bin/env bash
     set -euo pipefail
     set -a; source .env.clickhouse; set +a
-    cargo run -p oxy-app -- start --enterprise
+    cargo run -p oxy-server -- start --enterprise
 
 # Start the Vite dev server (http://localhost:5173)
 dev-frontend:
@@ -222,7 +253,7 @@ migrate:
 #         cdba75a2-c074-4dfa-a77c-a505b2845944
 #
 # Prerequisites (one-time):
-#   - `cargo build -p oxy-app`  (provides ./target/debug/oxy)
+#   - `cargo build -p oxy-server`  (provides ./target/debug/oxy)
 #   - A local `oxy serve` running WITHOUT OXY_CUSTOMER_APPS_S3_BUCKET set, so
 #     builds land in the state dir, e.g.:
 #         OXY_STATE_DIR="$HOME/.local/share/oxy" ./target/debug/oxy serve
@@ -244,7 +275,7 @@ test-customer-apps-publish org slug bundle project_id:
         exit 1
     fi
     if [ ! -x "./target/debug/oxy" ]; then
-        echo "ERROR: ./target/debug/oxy missing — run 'cargo build -p oxy-app' first" >&2
+        echo "ERROR: ./target/debug/oxy missing — run 'cargo build -p oxy-server' first" >&2
         exit 1
     fi
 
@@ -318,11 +349,11 @@ airhouse-up:
     @echo "Or step-by-step:"
     @echo "  set -a; source .env.airhouse; set +a"
     @echo "  cargo run -p migration --bin migration                                     # one-shot"
-    @echo "  cargo run -p oxy-app -- seed                                               # guest user + Local org + workspace at ./examples + OXY_GLOBAL_ADMINS as Owners"
+    @echo "  cargo run -p oxy-server -- seed                                               # guest user + Local org + workspace at ./examples + OXY_GLOBAL_ADMINS as Owners"
     @echo "  # Compile+PROMOTE the seeded workspace. ABSOLUTE path: a RELATIVE --workspace-path"
     @echo "  # silently under-compiles (the discover globs miss → only config.yml). --promote sets"
     @echo "  # current_revision_id so the serve fleet can actually read it."
-    @echo "  cargo run -p oxy-app -- compile --workspace-path $PWD/examples --workspace-id 70787bb2-e11b-5488-b2c3-02e60d5fc7d3 --enterprise --promote"
+    @echo "  cargo run -p oxy-server -- compile --workspace-path $PWD/examples --workspace-id 70787bb2-e11b-5488-b2c3-02e60d5fc7d3 --enterprise --promote"
     @echo "  # Split fleet — run BOTH (the serve node self-proxies IdeOnly → the ide node)."
     @echo "  # The serve node's --internal-port 0 turns OFF its internal API (which also"
     @echo "  # defaults to 3001) so it can't clash with the ide node's internal API on :3001."
@@ -332,8 +363,8 @@ airhouse-up:
     @echo "  # compiled read with needs_recompile. The serve node must NOT have it (it has"
     @echo "  # no working copy; --no-workers keeps it a pure reader). Mirrors oxy-dev, where"
     @echo "  # the StatefulSet sets OXY_INPROC_GLOBAL_WORKER=1 and the serve fleet strips it."
-    @echo "  OXY_ROLE=ide   OXY_INPROC_GLOBAL_WORKER=1 cargo run -p oxy-app -- serve --enterprise  # ide node (full FS + drains compiles; main :3000, internal :3001)"
-    @echo "  OXY_ROLE=serve OXY_IDE_UPSTREAM=http://localhost:3000 cargo run -p oxy-app -- serve --enterprise --no-workers --port 3002 --internal-port 0   # stateless serve node"
+    @echo "  OXY_ROLE=ide   OXY_INPROC_GLOBAL_WORKER=1 cargo run -p oxy-server -- serve --enterprise  # ide node (full FS + drains compiles; main :3000, internal :3001)"
+    @echo "  OXY_ROLE=serve OXY_IDE_UPSTREAM=http://localhost:3000 cargo run -p oxy-server -- serve --enterprise --no-workers --port 3002 --internal-port 0   # stateless serve node"
     @echo "  just routing-check 3002                                                   # probe serve → IdeOnly shows Forwarded-Via: serve + Served-By: ide"
 
 # One-shot precompile: migrate + seed + compile+PROMOTE the demo workspace into
@@ -350,9 +381,9 @@ airhouse-precompile:
         pg_isready -U airhouse -d oxydb >/dev/null 2>&1 && break || sleep 1
     done
     echo "→ migrate"; cargo run -p migration --bin migration
-    echo "→ seed";    cargo run -p oxy-app -- seed
+    echo "→ seed";    cargo run -p oxy-server -- seed
     echo "→ compile + promote (ABSOLUTE path — a relative --workspace-path under-compiles)"
-    cargo run -p oxy-app -- compile --workspace-path "$PWD/examples" \
+    cargo run -p oxy-server -- compile --workspace-path "$PWD/examples" \
       --workspace-id 70787bb2-e11b-5488-b2c3-02e60d5fc7d3 --enterprise --promote --skip-migrations
     echo "✓ demo workspace compiled + promoted. Next: just airhouse-fleet"
 
@@ -366,7 +397,7 @@ airhouse-fleet:
     #!/usr/bin/env bash
     set -euo pipefail
     set -a; source .env.airhouse; set +a
-    echo "→ build"; cargo build -p oxy-app
+    echo "→ build"; cargo build -p oxy-server
     bin=./target/debug/oxy
 
     # Each node streams to THIS terminal (prefixed [ide]/[serve]) AND to a raw
@@ -446,7 +477,7 @@ clickhouse-up:
     @echo
     @echo "Point oxy at it (boot creates the obs schema — tables + rollup MV + backfill):"
     @echo "  set -a; source .env.clickhouse; set +a"
-    @echo "  cargo run -p oxy-app -- serve --enterprise"
+    @echo "  cargo run -p oxy-server -- serve --enterprise"
     @echo
     @echo "Then verify — no LLM/agent run needed:"
     @echo "  just clickhouse-status        # tables + row counts"
@@ -494,7 +525,7 @@ clickhouse-obs-verify:
 
     if ! ch --query "EXISTS TABLE observability.observability_executions" | grep -q 1; then
       echo "✗ observability.observability_executions not found — create the schema first:"
-      echo "    set -a; source .env.clickhouse; set +a; cargo run -p oxy-app -- serve --enterprise"
+      echo "    set -a; source .env.clickhouse; set +a; cargo run -p oxy-server -- serve --enterprise"
       exit 1
     fi
     if ! ch --query "EXISTS TABLE observability.observability_executions_mv" | grep -q 1; then

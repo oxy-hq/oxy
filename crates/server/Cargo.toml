@@ -1,0 +1,49 @@
+[package]
+name = "oxy-server"
+version.workspace = true
+authors.workspace = true
+description = "Oxy server binary: the composition root that mounts the API surfaces and runs the oxy CLI / HTTP server"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "oxy"
+path = "src/main.rs"
+
+[features]
+default = ["custom-app-functions"]
+# Forwards to oxy-app's V8 (deno_core) Oxy Functions runtime. On by default so a
+# plain build runs the real runtime; `--no-default-features` drops V8 (Functions
+# endpoints go inert) for the fast local loop — see `.cargo/config.toml` bf/rf.
+custom-app-functions = ["oxy-app/custom-app-functions"]
+
+# Dev-only fast build loop: link oxy-app dynamically (see `oxy-app-dylib` +
+# `just dev-backend-dyn`). Pulls in the dylib shim so `main.rs`'s guarded
+# `extern crate oxy_app_dylib` forces it into the link. NEVER enabled by
+# CI/release, so the ~1.4 GB dylib is never built there.
+dev-dynamic = ["dep:oxy-app-dylib"]
+
+[dependencies]
+# oxy-app is the library this binary drives; default-features off so the feature
+# forwarding above is the single switch for the V8 runtime. Not a workspace dep
+# (only this crate consumes it), so it is a direct path dependency.
+oxy-app = { path = "../app", default-features = false }
+oxy-api-github = { path = "../api-github" }
+# Dev-dynamic-linking shim, pulled in only by the `dev-dynamic` feature above.
+oxy-app-dylib = { path = "../app-dylib", optional = true }
+oxy = { workspace = true }
+oxy-observability = { workspace = true }
+
+axum = { workspace = true }
+dotenv = { workspace = true }
+human-panic = { workspace = true }
+libc = { workspace = true }
+once_cell = { workspace = true }
+rustls = { workspace = true }
+sentry = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }

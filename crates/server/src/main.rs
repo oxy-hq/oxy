@@ -3,6 +3,14 @@
 // default query depth since SeaORM 2.0 deepened its query types.
 #![recursion_limit = "256"]
 
+// Dev-only dynamic linking (see `oxy-app-dylib` + `just dev-backend-dyn`).
+// Forcing the dylib into the link (with `-C prefer-dynamic`) makes oxy-app's
+// symbols — and its ~1.4 GB of static deps — resolve dynamically from
+// liboxy_app_dylib.dylib instead of being re-linked into the binary every edit.
+// `as _` because we import it purely for the link edge, not to use its items.
+#[cfg(feature = "dev-dynamic")]
+extern crate oxy_app_dylib as _;
+
 use std::io::IsTerminal;
 use std::process::exit;
 
@@ -310,7 +318,11 @@ fn main() {
             // soft NOFILE of 256, which busy instances exhaust (EMFILE).
             raise_fd_limit();
 
-            let exit_code = match cli().await {
+            // Surface crates mounted by this composition root. `oxy-api-github`
+            // is the first extracted sibling; more merge in as they're pulled
+            // out of oxy-app. `cli` forwards these into `serve`'s `api_router`,
+            // where they join the protected tree before the auth middleware.
+            let exit_code = match cli(oxy_api_github::routes()).await {
                 Ok(_) => 0,
                 Err(e) => {
                     tracing::error!(error = %e, "Application error");

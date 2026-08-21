@@ -8,7 +8,9 @@
 > minute belongs in the code or a crate-local `CLAUDE.md`, not here.
 
 Oxy (brand: **Oxygen**) is a Rust workspace + web frontend. The `oxy` CLI/server
-binary lives in the `app` crate (the default workspace member).
+binary lives in the `server` crate (`oxy-server`, the default workspace member) — a
+thin composition root that mounts API surfaces over the `app` crate (`oxy-app`), the
+CLI + HTTP-server library where almost all the code lives.
 
 - **Rust** · **async** Tokio · **ORM** Sea-ORM (PostgreSQL) · **HTTP** Axum
 - **Frontend** Vite + React + TypeScript, **pnpm** (never npm/yarn)
@@ -17,7 +19,13 @@ binary lives in the `app` crate (the default workspace member).
 
 ```
 crates/
-  app/                      # (oxy-app / oxy binary) CLI + HTTP server, default member
+  server/                   # (oxy-server) the `oxy` BINARY — composition root (main.rs + router
+                            #   assembly) that mounts the API surfaces. Default member.
+  app/                      # (oxy-app) CLI + HTTP server LIBRARY (the bulk of the code; lib-only)
+  api-github/               # (oxy-api-github) GitHub OAuth + git-namespace HTTP surface — a sibling
+                            #   crate oxy-server mounts; oxy-app does NOT depend on it
+  app-dylib/                # (oxy-app-dylib) dev-only dynamic-linking shim, EXCLUDED from the
+                            #   workspace; built only by `--features dev-dynamic` (just dev-backend-dyn)
   app-core/                 # (oxy-app-core) Shared app-layer seam: audit, serve_mode,
                             #   org/custom-app subdomain dispatch, member authz
   core/                     # (oxy) Core platform library, published as "oxy"

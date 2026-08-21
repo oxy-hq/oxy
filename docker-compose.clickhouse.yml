@@ -15,7 +15,7 @@
 #   docker compose -f docker-compose.clickhouse.yml up -d      # or: just clickhouse-up
 #
 #   set -a; source .env.clickhouse; set +a
-#   cargo run -p oxy-app -- serve --enterprise    # boot runs ensure_schema (tables + rollup MV + backfill)
+#   cargo run -p oxy-server -- serve --enterprise    # boot runs ensure_schema (tables + rollup MV + backfill)
 #
 # Verify:
 #   just clickhouse-status        # service + tables + row counts

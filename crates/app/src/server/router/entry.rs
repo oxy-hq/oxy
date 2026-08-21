@@ -45,6 +45,16 @@ pub async fn api_router(
     startup_cwd: std::path::PathBuf,
     shutdown_token: CancellationToken,
     disable_inprocess_workers: bool,
+    // Surface routes composed by the caller (the top `oxy-server` crate) and merged
+    // into the protected tree below (cloud mode) BEFORE `apply_middleware`, so each
+    // surface inherits the standard auth stack instead of oxy-app depending on the
+    // surface crate to mount it. A surface still re-applies its own inner middleware
+    // (e.g. github's org routes carry org_middleware + subscription_guard).
+    //
+    // NOTE: these are merged ONLY in the `ServeMode::Cloud` arm — local mode never
+    // mounts the org/global tree, so it drops `extra_api_routes` entirely. Correct
+    // for github (cloud-only); a future local-mode surface needs its own local seam.
+    extra_api_routes: Router<AppState>,
 ) -> Result<(Router, Router), OxyError> {
     // Create AgenticState first — the preagg worker needs its db + runtime.
     let agentic_state = new_agentic_state(shutdown_token, true).await?;
@@ -286,10 +296,18 @@ pub async fn api_router(
             // it tied to server lifetime without adding a separate hook.
             // Disabled for now; will re-enable later.
             // spawn_billing_reconciler().await;
-            apply_middleware(build_protected_routes(
-                app_state.clone(),
-                agentic_state.clone(),
-            ))?
+            //
+            // Surface crates mounted by the composition root (`oxy-server`) —
+            // e.g. `oxy-api-github` — are merged into the protected tree HERE,
+            // before `apply_middleware`, so they inherit the exact standard auth
+            // stack (auth / api-key / timeout / publish-token-scope) rather than
+            // re-applying it themselves (a reproduction that could drift into an
+            // auth bypass). A surface still re-applies its own inner middleware
+            // (e.g. github's org routes carry org_middleware + subscription_guard).
+            apply_middleware(
+                build_protected_routes(app_state.clone(), agentic_state.clone())
+                    .merge(extra_api_routes),
+            )?
         }
         ServeMode::Local => apply_local_middleware(build_local_protected_routes(
             app_state.clone(),

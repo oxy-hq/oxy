@@ -52,7 +52,10 @@ const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 /// in `apidoc.md` so the long markdown stays out of this file.
 const APIDOC_DESCRIPTION: &str = include_str!("apidoc.md");
 
-pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
+pub async fn start_server_and_web_app(
+    args: ServeArgs,
+    extra_api_routes: Router<crate::server::router::AppState>,
+) -> Result<(), OxyError> {
     // OXY_ROLE → ide | serve | worker | all (default). Read once so the
     // routing middleware can enforce the FS-routing boundary.
     crate::server::role_manifest::init_process_role_from_env();
@@ -331,6 +334,7 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
         startup_cwd.clone(),
         shutdown_token.clone(),
         disable_inprocess_workers,
+        extra_api_routes,
     )
     .await?;
 
@@ -572,6 +576,7 @@ async fn create_web_application(
     startup_cwd: std::path::PathBuf,
     shutdown_token: CancellationToken,
     disable_inprocess_workers: bool,
+    extra_api_routes: Router<crate::server::router::AppState>,
 ) -> Result<Router, OxyError> {
     let (api_router, external_api_router) = crate::server::router::api_router(
         mode,
@@ -580,6 +585,7 @@ async fn create_web_application(
         startup_cwd,
         shutdown_token,
         disable_inprocess_workers,
+        extra_api_routes,
     )
     .await
     .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;

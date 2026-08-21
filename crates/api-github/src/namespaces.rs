@@ -15,7 +15,7 @@ use oxy::github::github_token_for_namespace;
 use oxy::github::types::{GitHubBranch, GitHubRepository};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 
-use crate::server::api::middlewares::org_context::OrgContextExtractor;
+use oxy_server_authz::org_context::OrgContextExtractor;
 
 #[derive(Debug, Serialize)]
 pub struct GitHubNamespace {
@@ -243,13 +243,13 @@ pub async fn delete_git_namespace(
         entity::org_members::OrgRole::Owner | entity::org_members::OrgRole::Admin
     );
     let legacy = is_admin || ns.created_by == user.id;
-    let allowed = crate::server::authz::enforce_for(
+    let allowed = oxy_server_authz::enforce_for(
         &db,
         user.id,
         &user.email,
         "namespace.delete",
-        crate::server::authz::Action::NamespaceDelete,
-        crate::server::authz::Resource::namespace_with_creator(
+        oxy_server_authz::Action::NamespaceDelete,
+        oxy_server_authz::Resource::namespace_with_creator(
             ns.id,
             org_ctx.org.id,
             Some(ns.created_by),
