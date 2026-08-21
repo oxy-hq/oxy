@@ -292,6 +292,11 @@ export interface VisitorRow {
   views: number;
   first_seen_at: string;
   last_seen_at: string;
+  /** Role in this app on their latest view that recorded one — a snapshot, not
+   *  their role today. `null` for views predating role capture. */
+  app_role: "admin" | "member" | null;
+  /** Role in the owning org, same basis. */
+  org_role: "owner" | "admin" | "member" | null;
 }
 
 export interface EventGroupRow {

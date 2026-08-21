@@ -50,6 +50,15 @@ recipients server-side**: `notify` sends to `ctx.user.email` (the invoking user)
 never to an address taken from the request body. Template *data* can come from
 the request; the recipient must not.
 
+One catch if you also give this function a `schedule`: a background run has no
+caller to attribute it to — a cron tick, or an operator's manual *Run now* from
+the admin console — and `ctx.user.email` is then the synthetic
+`schedule+notify@system.oxy`
+— a dead address. Branch on `ctx.user.kind === "system"` (never on the email
+string) and look the real recipients up from your own data on that path. `kind`
+needs an Oxy server from 2026-08-21 or later; against an older one, mark the
+schedule's configured `input` instead of inferring.
+
 Email templates are **preact** components, not React — preact runs inside the
 Functions isolate and react-dom does not. `@oxy-hq/sdk/email`'s
 `render(Component, props)` turns one into HTML.

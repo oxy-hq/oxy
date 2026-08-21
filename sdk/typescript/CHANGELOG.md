@@ -5,6 +5,61 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.1] - 2026-08-21
+
+Review corrections to 2.9.0, which had not shipped yet — folded in rather than
+left as a footnote, since the wording they fix is the contract itself.
+
+- **`kind: "system"` also covers a manual *Run now***, not just cron and Airway.
+  2.9.0 documented `"system"` as "no human behind it"; an operator clicking Run
+  now in the admin console is a human, and the job trigger deliberately routes it
+  down the same owner-identity path. The field now means *no caller to attribute
+  this to* — which is the honest claim, and the one a function can act on. The
+  triggering operator is still unreachable; carrying them through the task
+  payload is a follow-up on the server.
+- `ctx.user.teams` is now sorted **case-insensitively**. Byte order put every
+  lowercase team name after every capitalised one, which renders as unsorted.
+
+## [2.9.0] - 2026-08-21
+
+Fills out `ctx.user`. A function could previously answer "who is calling" with an
+id, an email, and a per-app role — enough to gate on, not enough to greet, label,
+or explain with, and with no way to tell a human apart from a cron tick.
+
+- **`ctx.user.name` / `ctx.user.picture`** — display identity, server-side. The
+  workaround was passing them up from the client, which is forgeable and so
+  defeats the point of reading identity from `ctx` at all.
+- **`ctx.user.orgRole`** (`"owner" | "admin" | "member"`) — their standing in the
+  owning org, absent for a staff break-glass visitor. Informational by design:
+  gate on `appRole`, use this to explain ("ask your org admin to connect a
+  warehouse"), label, or route.
+- **`ctx.user.teams`** — the org teams they belong to, name-sorted and scoped to
+  this app's org. Descriptive: a team confers something on an app only through an
+  app team grant, which `appRole` already folds in.
+- **`ctx.user.kind`** (`"user" | "system"`) — the supported way to tell a routed
+  invocation from a background one. `"system"` means *no caller to attribute
+  this to*, which also covers an operator's manual **Run now**: those run under
+  the org owner's id with every caller field absent, so they still read
+  `appRole: "admin"`, and the triggering operator is not reachable. The
+  email-sniffing check this replaces (`endsWith("@system.oxy")`) was never a
+  contract.
+- **Fixed: `ctx.user.orgId` was `undefined`.** The host serialized the field as
+  `org_id` while these types and every doc said `orgId` — so a tenant filter
+  written against it compared against nothing. The host now sends `orgId`, and
+  the runtime keeps `org_id` populated so functions written against the shipped
+  behaviour keep working. **If a function of yours filters SQL on the org id,
+  re-read that line.**
+- New exported types: `OxyOrgTeam`, `OxyIdentityKind`.
+- `teams` and `kind` are **optional** on the type. A server older than this
+  release doesn't send them, and a required type would have promised otherwise:
+  `ctx.user.teams.some(...)` throws there, and `kind === "system"` silently reads
+  `false` — routing a cron tick down the human branch, the exact bug `kind`
+  exists to prevent. There is no safe inference for an absent `kind` in either
+  direction; mark the schedule's `input` if you must support one.
+
+Full contract, including what is deliberately withheld from apps:
+`internal-docs/custom-apps-user-identity.md`.
+
 ## [2.8.0] - 2026-08-02
 
 Makes email attachments actually reachable from an Oxy Function. `content` was

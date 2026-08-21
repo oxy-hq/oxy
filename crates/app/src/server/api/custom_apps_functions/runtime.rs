@@ -55,11 +55,87 @@ pub struct InvocationCtx {
     pub env: BTreeMap<String, String>,
 }
 
+/// One org team the caller belongs to, as surfaced through `ctx.user.teams`.
+///
+/// **Scoped to the app's own org.** A team the caller holds in some *other* org
+/// is never reported here — the same user in two tenants must not learn one
+/// tenant's team names from the other's app.
+#[derive(Debug, Clone, Serialize)]
+pub struct CtxTeam {
+    pub id: String,
+    pub name: String,
+}
+
+/// Where this invocation's identity came from.
+///
+/// The distinction is **"is there a caller to attribute this to"**, not "did a
+/// human cause it". Every background path runs under the org **owner's**
+/// `user_id` (the invocation row needs a non-null FK, and `ctx.secrets` needs a
+/// `created_by`) and carries no caller — including an operator's manual
+/// **Run now**, which `trigger_function_job` deliberately routes down the same
+/// system path under the owner identity, with no caller context beyond whatever
+/// `input` the trigger was given. So a person may well have clicked; the platform
+/// simply did not carry who through the task queue.
+///
+/// A function that branches on identity — "email the person who clicked", "show
+/// the admin view" — has to be able to tell the two apart, and an email-sniffing
+/// check (`endsWith("@system.oxy")`) is exactly the kind of heuristic that
+/// silently stops working.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CtxIdentityKind {
+    /// A signed-in human called the function over its HTTP route.
+    User,
+    /// No caller to attribute it to: a schedule tick, an Airway transform step,
+    /// or an operator's manual **Run now** (which the job trigger routes down
+    /// this same path). Every *caller* field (`name`, `picture`, `orgRole`,
+    /// `teams`) is absent, and `email` is the synthetic
+    /// `schedule+<fn>@system.oxy`.
+    ///
+    /// A manual run therefore cannot reach the operator who triggered it —
+    /// `run_function_job` discards the authenticated user, and the task payload
+    /// has nowhere to put it. Threading it through is a real follow-up, and a
+    /// behaviour change: the run would then execute under that operator's
+    /// authority rather than the owner's.
+    System,
+}
+
+/// The identity of whoever (or whatever) invoked this function.
+///
+/// Assembled server-side from the authenticated session on every invocation and
+/// never cached across them, so **nothing here is client-supplied** — that is
+/// the whole point of reading identity from `ctx` rather than from the request
+/// body. See `internal-docs/custom-apps-user-identity.md` for the full contract
+/// and for what the *client* side (`useShellContext`) can and cannot be trusted
+/// for.
 #[derive(Debug, Clone, Serialize)]
 pub struct CtxUser {
+    /// `users.id`. On a system invocation this is the org owner's id, not a
+    /// caller — check `kind` before attributing anything to it.
     pub id: String,
+    /// `users.email`, or the synthetic `schedule+<fn>@system.oxy` when
+    /// `kind == "system"`.
     pub email: String,
+    /// The org that owns this app — the tenant boundary for any query the
+    /// function runs.
+    ///
+    /// Serialized as `orgId`. Before 2026-08-21 this went out as `org_id`,
+    /// which meant the documented `ctx.user.orgId` was `undefined` — a silent
+    /// footgun for any SQL filtering on it. `__buildCtx` still mirrors the old
+    /// `org_id` key so functions written against the shipped behaviour keep
+    /// working.
+    #[serde(rename = "orgId")]
     pub org_id: String,
+    /// `users.name` — display identity, absent on a system invocation.
+    ///
+    /// Free text the user controls. Fine for a greeting or an audit row; never
+    /// a key, and never interpolated into SQL or HTML without escaping.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// `users.picture` — an avatar URL, absent when unset or on a system
+    /// invocation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub picture: Option<String>,
     /// The caller's role **within this app** — `"admin"`, `"member"`, or absent.
     /// Server-derived: `"admin"` is `Ring::AppAdmin` in `oxy-authz` (an app grant,
     /// org owner/admin, or staff break-glass), and `"member"` is any grant the
@@ -67,8 +143,34 @@ pub struct CtxUser {
     /// belong to (`app_team_grants` × `org_team_members`)**. An app gates its
     /// privileged surface on this rather than on a client-side flag or a
     /// hard-coded email allowlist.
+    ///
+    /// A **system** invocation runs under the org owner, so this reads `"admin"`
+    /// there — a schedule has owner authority by construction. Gate on `kind`
+    /// too if a surface must be human-only.
     #[serde(rename = "appRole", skip_serializing_if = "Option::is_none")]
     pub app_role: Option<String>,
+    /// The caller's role in the owning **org** — `"owner"`, `"admin"`, or
+    /// `"member"`; absent when they reach the app without an org membership
+    /// (Oxy staff on break-glass) or on a system invocation.
+    ///
+    /// A *fact* read straight off `org_members.role`, not an authorization
+    /// verdict: org standing and app standing are different rings, and an app
+    /// admin need not be an org Admin. Gate on [`Self::app_role`]; use this to
+    /// explain, label, or route — "your org admin can change this".
+    #[serde(rename = "orgRole", skip_serializing_if = "Option::is_none")]
+    pub org_role: Option<String>,
+    /// The org teams the caller belongs to, name-sorted, scoped to this app's
+    /// org. Empty when they belong to none, and always present so a function can
+    /// `.some(...)` without a null check.
+    ///
+    /// Teams are how an org grants an app to a group it already recognises, so
+    /// they are useful for *shaping* a view (default the Finance team to the
+    /// finance tab). They are not a permission: a team only means something on
+    /// an app through `app_team_grants`, which is already folded into
+    /// [`Self::app_role`].
+    pub teams: Vec<CtxTeam>,
+    /// Whether a human or the platform invoked this function.
+    pub kind: CtxIdentityKind,
 }
 
 /// Result of running a function to completion.
@@ -710,7 +812,19 @@ function __wrapOp(opName) {
 }
 
 globalThis.__buildCtx = (ctxData) => ({
-  user: ctxData.user,
+  // `org_id` is a back-compat mirror of `orgId`. The host used to serialize the
+  // field snake_cased, so `ctx.user.orgId` — the name the SDK types and the docs
+  // have always used — read `undefined`, and a tenant filter written against it
+  // silently compared against nothing. The host now emits `orgId`; this keeps
+  // any function written against the shipped `org_id` working.
+  //
+  // Removal is NOT gated on an SDK version. What reads this key is the function
+  // source inside an already-published bundle, and a bundle keeps running until
+  // someone republishes it — an SDK floor would never come due. The measurable
+  // condition is the artifacts themselves: we hold every live build's
+  // `functions/*.js` in the build store, so this is removable once no build a
+  // live app points at contains `.org_id`.
+  user: { ...ctxData.user, org_id: ctxData.user.orgId },
   env: ctxData.env,
   log: (...args) => Deno.core.ops.op_ctx_log("info", args.map(String).join(" ")),
   query: __wrapOp("op_ctx_query"),
@@ -1218,7 +1332,12 @@ mod tests {
                 id: "u".into(),
                 email: "e@example.com".into(),
                 org_id: "o".into(),
+                name: None,
+                picture: None,
                 app_role: None,
+                org_role: None,
+                teams: Vec::new(),
+                kind: CtxIdentityKind::User,
             },
             env: Default::default(),
         }
@@ -1246,14 +1365,117 @@ mod tests {
         assert!(flag.load(Ordering::Relaxed));
     }
 
+    fn full_identity() -> CtxUser {
+        CtxUser {
+            id: "11111111-1111-1111-1111-111111111111".into(),
+            email: "ada@acme.com".into(),
+            org_id: "22222222-2222-2222-2222-222222222222".into(),
+            name: Some("Ada Lovelace".into()),
+            picture: Some("https://cdn.example/ada.png".into()),
+            app_role: Some("admin".into()),
+            org_role: Some("member".into()),
+            teams: vec![CtxTeam {
+                id: "33333333-3333-3333-3333-333333333333".into(),
+                name: "Finance".into(),
+            }],
+            kind: CtxIdentityKind::User,
+        }
+    }
+
+    /// The wire contract the SDK's `OxyFunctionUser` is typed against. Every key
+    /// here is camelCase — `org_id` shipped snake-cased once and made the
+    /// documented `ctx.user.orgId` read `undefined`, so the casing is pinned.
+    #[test]
+    fn ctx_user_serializes_the_documented_camel_case_keys() {
+        let json: serde_json::Value = serde_json::to_value(full_identity()).unwrap();
+        assert_eq!(json["orgId"], "22222222-2222-2222-2222-222222222222");
+        assert_eq!(json["appRole"], "admin");
+        assert_eq!(json["orgRole"], "member");
+        assert_eq!(json["name"], "Ada Lovelace");
+        assert_eq!(json["picture"], "https://cdn.example/ada.png");
+        assert_eq!(json["kind"], "user");
+        assert_eq!(json["teams"][0]["name"], "Finance");
+        assert!(
+            json.get("org_id").is_none(),
+            "the host serializes orgId; the snake alias is added in __buildCtx, not here"
+        );
+    }
+
+    /// A schedule tick runs under the org owner's `user_id` but has no human
+    /// behind it. Absent human fields are what lets a function tell the two
+    /// apart without sniffing the synthetic email.
+    #[test]
+    fn system_identity_omits_every_human_field() {
+        let json: serde_json::Value = serde_json::to_value(CtxUser {
+            email: "schedule+rollup@system.oxy".into(),
+            name: None,
+            picture: None,
+            org_role: None,
+            teams: Vec::new(),
+            kind: CtxIdentityKind::System,
+            ..full_identity()
+        })
+        .unwrap();
+        assert_eq!(json["kind"], "system");
+        for absent in ["name", "picture", "orgRole"] {
+            assert!(json.get(absent).is_none(), "{absent} must be absent");
+        }
+        assert_eq!(json["teams"], serde_json::json!([]));
+    }
+
+    /// The isolate's view, end to end: `ctx.user.orgId` is what the SDK types
+    /// promise, and the legacy `ctx.user.org_id` still resolves so functions
+    /// written against the shipped snake key keep working.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn isolate_sees_camel_case_identity_and_the_legacy_org_id_alias() {
+        let (result, _host) = run_with_mock_ctx(
+            r#"
+            export default async (req, ctx) => Response.json({
+                orgId: ctx.user.orgId,
+                legacy: ctx.user.org_id,
+                name: ctx.user.name,
+                orgRole: ctx.user.orgRole,
+                team: ctx.user.teams[0].name,
+                kind: ctx.user.kind,
+            });
+        "#,
+            InvocationCtx {
+                user: full_identity(),
+                env: Default::default(),
+            },
+        )
+        .await;
+
+        let body = result.expect("function must resolve").body;
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed["orgId"], "22222222-2222-2222-2222-222222222222");
+        assert_eq!(
+            parsed["legacy"], parsed["orgId"],
+            "the back-compat mirror must track orgId, not drift from it"
+        );
+        assert_eq!(parsed["name"], "Ada Lovelace");
+        assert_eq!(parsed["orgRole"], "member");
+        assert_eq!(parsed["team"], "Finance");
+        assert_eq!(parsed["kind"], "user");
+    }
+
     /// Run `artifact` against a fresh `MockHost` and hand back both, so a test
     /// can assert on the response *and* on what reached the host.
     async fn run_with_mock(artifact: &str) -> (Result<FnResponse, RuntimeError>, Arc<MockHost>) {
+        run_with_mock_ctx(artifact, test_ctx()).await
+    }
+
+    /// [`run_with_mock`] with a caller-supplied identity, for asserting what the
+    /// isolate actually sees on `ctx.user`.
+    async fn run_with_mock_ctx(
+        artifact: &str,
+        ctx: InvocationCtx,
+    ) -> (Result<FnResponse, RuntimeError>, Arc<MockHost>) {
         let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
         let host = Arc::new(MockHost::default());
         let result = run(
             artifact.to_string(),
-            test_ctx(),
+            ctx,
             b"{}".to_vec(),
             host.clone(),
             cancel_rx,

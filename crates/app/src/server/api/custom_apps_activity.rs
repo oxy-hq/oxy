@@ -381,6 +381,11 @@ pub struct VisitorRow {
     pub views: i64,
     pub first_seen_at: DateTime<FixedOffset>,
     pub last_seen_at: DateTime<FixedOffset>,
+    /// The visitor's app role on their **most recent view that recorded one**,
+    /// not their role today — see the query below for why the two differ.
+    pub app_role: Option<String>,
+    /// Their org role, same basis.
+    pub org_role: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -406,8 +411,21 @@ pub async fn get_visitors(
         views: i64,
         first_seen_at: DateTime<FixedOffset>,
         last_seen_at: DateTime<FixedOffset>,
+        app_role: Option<String>,
+        org_role: Option<String>,
     }
 
+    // Roles are per-view snapshots, so a roll-up has to pick one. It picks the
+    // latest **recorded** value (`FILTER (WHERE … IS NOT NULL)`) rather than the
+    // value on the latest row, because NULL means "not recorded" — a row from
+    // before the columns existed, or one whose lookup failed — and letting that
+    // blank out a visitor whose role is perfectly well known would read as "no
+    // role" and be wrong in the direction that matters.
+    //
+    // Deliberately NOT a join to `app_members` / `org_members`: that would show
+    // today's role against last month's activity and silently rewrite the log.
+    // A visitor whose role changed mid-window shows their newest one here; the
+    // change itself is still visible row-by-row in the underlying table.
     let backend = db.get_database_backend();
     let stmt = Statement::from_sql_and_values(
         backend,
@@ -417,7 +435,11 @@ pub async fn get_visitors(
              COUNT(DISTINCT session_id)::bigint AS sessions,
              COUNT(*)::bigint AS views,
              MIN(viewed_at) AS first_seen_at,
-             MAX(viewed_at) AS last_seen_at
+             MAX(viewed_at) AS last_seen_at,
+             (array_agg(app_role ORDER BY viewed_at DESC)
+                FILTER (WHERE app_role IS NOT NULL))[1] AS app_role,
+             (array_agg(org_role ORDER BY viewed_at DESC)
+                FILTER (WHERE org_role IS NOT NULL))[1] AS org_role
            FROM custom_app_view_event
            WHERE app_id = $1 AND viewed_at >= $2
            GROUP BY user_id
@@ -440,6 +462,8 @@ pub async fn get_visitors(
                 views: r.views,
                 first_seen_at: r.first_seen_at,
                 last_seen_at: r.last_seen_at,
+                app_role: r.app_role,
+                org_role: r.org_role,
             })
             .collect(),
     }))

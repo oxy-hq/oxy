@@ -188,12 +188,67 @@ global styles leak into your app. It follows your design tokens when present
 (`--sidebar-background`, `--foreground`, …) and falls back to the Oxygen
 defaults. Dark mode: put a `.dark` class on any ancestor.
 
+## Who is using the app
+
+Two identity surfaces, and the difference between them is the difference between
+a decision and a greeting.
+
+**`ctx.user`, inside an Oxy Function — authoritative.** Assembled server-side per
+invocation from the authenticated session, so nothing on it is client-supplied.
+This is where a check that matters goes:
+
+```ts
+import type { OxyFunctionContext, OxyFunctionRequest } from "@oxy-hq/sdk";
+
+export default async function exportAll(req: OxyFunctionRequest, ctx: OxyFunctionContext) {
+  if (ctx.user.appRole !== "admin") {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
+  return Response.json({ rows: await dump(ctx) });
+}
+```
+
+| Field | Notes |
+| --- | --- |
+| `id`, `email`, `orgId` | Always present. `orgId` is the tenant boundary for anything you query. |
+| `name`, `picture` | Display identity. Absent on schedule/Airway runs. |
+| `appRole` | `"admin"` \| `"member"` \| absent. **The one to gate on** — an app grant (direct or via a team), with org-officer / Oxy-staff break-glass. Fails closed. |
+| `orgRole` | `"owner"` \| `"admin"` \| `"member"` \| absent. Informational: explain ("ask your org admin"), label, route. Not a gate — org standing and app standing are different things. |
+| `teams` | Org teams they belong to, name-sorted, scoped to this org. Descriptive — a team only grants anything through an app team grant, which `appRole` already reflects. |
+| `kind` | `"user"` \| `"system"`. |
+
+`teams` and `kind` are typed optional because a server older than 2026-08-21
+doesn't send them — use `ctx.user.teams?.some(...)`. For `kind` there is no safe
+inference on such a server (`=== "system"` misses a cron, `!== "user"` misfires
+on a person), so if you support one, mark the schedule's configured `input`
+instead of guessing.
+
+**Background runs have no caller to attribute them to.** A schedule tick, an
+Airway step, and an operator's manual *Run now* all run under the org owner's
+`id` with `kind: "system"`, every caller field absent, and a synthetic
+`schedule+<fn>@system.oxy` email — but `appRole` still reads `"admin"`, since
+they carry owner authority. Note the manual case: a person did click, and there
+is still nobody to reach, because the triggering operator isn't carried through
+the job queue. A function wired to both a route and a background trigger must
+branch on `kind`, not on the email:
+
+```ts
+if (ctx.user.kind === "system") return runRollup(ctx);   // no one to email
+await ctx.email.send({ to: ctx.user.email, subject: `Hi ${ctx.user.name}`, html });
+```
+
+**`useShellContext()`, in the bundle — display only.** `data.user` is
+`{ name, email, picture } | null`, and it deliberately carries no role at all.
+Use it for an avatar or a greeting. Hiding a tab with it is fine; the endpoint
+behind that tab is what actually has to say no.
+
 ## Docs
 
 - Hands-on dev + deploy guide: `docs/local-development.md` in the
   [`oxy-hq/customer-apps`](https://github.com/oxy-hq/customer-apps) repo.
 - SDK flow reference: `docs/sdk-flow.md` in that repo.
-- Platform internals: `internal-docs/customer-apps.md` in oxygen-internal.
+- Platform internals: `internal-docs/customer-apps.md` and
+  `internal-docs/custom-apps-user-identity.md` in oxygen-internal.
 
 
 ## License

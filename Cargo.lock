@@ -435,7 +435,7 @@ dependencies = [
  "chrono-tz 0.10.4",
  "entity",
  "futures",
- "jsonwebtoken 10.4.0",
+ "jsonwebtoken 11.0.0",
  "oxy-test-utils",
  "reqwest 0.12.28",
  "sea-orm",
@@ -9012,7 +9012,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-api-github"
-version = "0.5.128"
+version = "0.5.129"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -9548,7 +9548,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-server"
-version = "0.5.128"
+version = "0.5.129"
 dependencies = [
  "axum",
  "dotenv",

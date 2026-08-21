@@ -32,12 +32,12 @@ use std::sync::{OnceLock, RwLock};
 use std::time::Instant;
 
 use entity::prelude::{
-    AppAdmins, AppMembers, AppTeamGrants, Apps, OrgMembers, OrgTeamMembers, Organizations,
-    WorkspaceOxyLockdown,
+    AppAdmins, AppMembers, AppTeamGrants, Apps, OrgMembers, OrgTeamMembers, OrgTeams,
+    Organizations, WorkspaceOxyLockdown,
 };
 use entity::{
-    app_admins, app_members, app_team_grants, apps, org_members, org_team_members, organizations,
-    workspace_oxy_lockdown,
+    app_admins, app_members, app_team_grants, apps, org_members, org_team_members, org_teams,
+    organizations, workspace_oxy_lockdown,
 };
 use oxy::database::client::establish_connection;
 use oxy_auth::authenticator::Authenticator;
@@ -274,6 +274,109 @@ pub async fn resolve_app_role(
         .then_some(app_members::ROLE_MEMBER))
 }
 
+/// The invoking user's role in the **owning org**, as surfaced through
+/// `ctx.user.orgRole` — `"owner"`, `"admin"`, `"member"`, or `None` when they
+/// reach the app without an org membership (Oxy staff on break-glass, a partner
+/// operating downstream).
+///
+/// This is a **fact read**, not an authorization decision: it reports the row in
+/// `org_members` verbatim and decides nothing. That is what keeps it clear of the
+/// rule the authz-boundary test enforces — no handler may branch on
+/// `matches!(role, Owner | Admin)`. An app that wants to *gate* asks
+/// [`resolve_app_role`], which goes through `oxy-authz`; this one exists so an app
+/// can explain itself ("ask your org admin"), label a byline, or route a
+/// tenant-admin view. Deliberately not cached: a stale role is worse than a query.
+///
+/// Callers that also want the caller's teams should use [`resolve_org_standing`],
+/// which returns both for this one read — teams are gated on this same
+/// membership, so asking for them separately would read the row twice.
+pub async fn resolve_org_role(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    org_id: Uuid,
+) -> Result<Option<&'static str>, DbErr> {
+    Ok(OrgMembers::find()
+        .filter(org_members::Column::UserId.eq(user_id))
+        .filter(org_members::Column::OrgId.eq(org_id))
+        .one(db)
+        .await?
+        .map(|row| row.role.as_str()))
+}
+
+/// Both org-level identity facts — role and teams — for **one** membership read.
+///
+/// The role lookup *is* the teams gate, so resolving them independently reads
+/// `org_members` twice. Worth avoiding here specifically: unlike the view
+/// recorder, the function-invocation path runs these synchronously *before* the
+/// isolate starts, so a redundant round trip is latency a caller waits on.
+///
+/// **The only way to ask for teams.** A teams-only variant existed briefly and
+/// wrote the membership gate a second time; nothing shipped called it, so the
+/// tenant-boundary and stale-row tests guarded a copy of the rule rather than the
+/// rule. One entry point means the gate is stated once and the tests exercise the
+/// path that actually runs.
+pub async fn resolve_org_standing(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    org_id: Uuid,
+) -> Result<(Option<&'static str>, Vec<OrgTeamRef>), DbErr> {
+    let Some(role) = resolve_org_role(db, user_id, org_id).await? else {
+        // Not a member: no role, and no teams to report even if stale rows exist.
+        return Ok((None, Vec::new()));
+    };
+    Ok((Some(role), org_teams_for_member(db, user_id, org_id).await?))
+}
+
+/// The joined team read, for a caller that has already established membership.
+///
+/// **One query, scoped in the join** rather than "fetch every team row this user
+/// has anywhere, then narrow". The result is the same either way; the difference
+/// is that the `IN (…)` list in the two-query form scales with the user's
+/// *cross-tenant* footprint — precisely the consultant-in-six-orgs case the org
+/// scoping exists for. Structural scoping also can't be dropped by a later edit
+/// the way a trailing `.filter` can.
+///
+/// Sorted case-insensitively. A byte-order sort puts every lowercase name after
+/// every capitalised one, and team names are user-authored free text rendered in
+/// an app's UI, where `["Finance", "Store Managers", "aardvarks"]` reads as
+/// unsorted. Ties fall back to byte order so two names differing only in case
+/// still order deterministically.
+async fn org_teams_for_member(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    org_id: Uuid,
+) -> Result<Vec<OrgTeamRef>, DbErr> {
+    let mut teams: Vec<OrgTeamRef> = OrgTeamMembers::find()
+        .filter(org_team_members::Column::UserId.eq(user_id))
+        .find_also_related(OrgTeams)
+        .filter(org_teams::Column::OrgId.eq(org_id))
+        .all(db)
+        .await?
+        .into_iter()
+        .filter_map(|(_, team)| team)
+        .map(|team| OrgTeamRef {
+            id: team.id,
+            name: team.name,
+        })
+        .collect();
+    teams.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(teams)
+}
+
+/// One org team, flattened for [`resolve_org_standing`]. Deliberately not the entity
+/// model: `ctx.user.teams` is a public wire shape handed to third-party app code,
+/// so it exposes id + name and nothing else the table may grow later.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrgTeamRef {
+    pub id: Uuid,
+    pub name: String,
+}
+
 /// Returns `true` when `user_id` is a member of `org_id`.
 ///
 /// Does **not** cache — callers that need caching should go through
@@ -291,10 +394,18 @@ pub(crate) async fn is_org_member(
         .map(|opt| opt.is_some())
 }
 
-/// True when the customer has enabled "Oxy can build tailored apps on
-/// Whether this workspace has LOCKED Oxy staff out. A row in
-/// `workspace_oxy_lockdown` is
-/// the toggle.
+/// Whether this workspace has **locked Oxy staff out**. A row in
+/// `workspace_oxy_lockdown` is the toggle.
+///
+/// Staff access is the default (inverted 2026-07-14 — the old opt-in consent row
+/// was self-grantable by staff, so it protected nobody), and this is how an org
+/// officer revokes it. Read as a conjunction with the staff verdict in
+/// [`user_can_access_app`]: staff reach an app only while their org has not
+/// locked them out.
+///
+/// (Comment repaired 2026-08-21: two functions' docs had been welded together by
+/// a comment-stripping sweep, leaving a sentence about a "build tailored apps"
+/// consent toggle that no longer exists spliced onto this one.)
 pub async fn is_oxy_locked_down(
     db: &DatabaseConnection,
     workspace_id: Uuid,
@@ -328,6 +439,12 @@ pub(crate) struct AuthOutcome {
     pub app: apps::Model,
     pub user_id: Uuid,
     pub user_email: String,
+    /// `users.name`. Display identity, carried so a function reading
+    /// `ctx.user.name` doesn't have to take the client's word for it — the whole
+    /// value of server-side identity is that it can't be spoofed by the caller.
+    pub user_name: String,
+    /// `users.picture`, when they have one.
+    pub user_picture: Option<String>,
     pub is_staff: bool,
 }
 
@@ -413,6 +530,8 @@ pub(crate) async fn authenticate_and_authorize(
         app,
         user_id: user.id,
         user_email: user.email,
+        user_name: user.name,
+        user_picture: user.picture,
         is_staff,
     })
 }

@@ -40,6 +40,8 @@ export type {
   OxyFunctionRequest,
   OxyFunctionRow,
   OxyFunctionUser,
+  OxyIdentityKind,
+  OxyOrgTeam,
   OxySecretsApi,
   OxySemanticApi,
   OxyStorageApi,

@@ -17,9 +17,27 @@
 //!    rationale (TL;DR: low volume + simpler Activity-tab queries +
 //!    works in local dev). An Airhouse sink is a documented follow-up.
 //!
+//! **What a view row captures, and why it needs no app cooperation.** The
+//! bundle is not asked to report anything: `record_view` runs on the serve
+//! path, so an app that never calls `useTrackEvent` still produces a complete
+//! "who opened this, when, from where, in what capacity" trail. That is
+//! deliberate — an uninstrumented app looking unused is indistinguishable from
+//! an app that genuinely is, and the operator asking "who uses this" cannot fix
+//! that by editing someone else's bundle. Custom events add detail on top; they
+//! are not what makes usage visible.
+//!
+//! Roles (`app_role` / `org_role`) are snapshotted at view time by
+//! [`record_view`], not joined at read time — see the column docs on
+//! `entity::custom_app_view_event` for why a usage log that re-derives roles
+//! rewrites its own history.
+//!
 //! Privacy notes — see `internal-docs/customer-apps.md` §13:
 //! - Every recorded user is an authenticated Oxy/workspace member; no
-//!   anonymous traffic bucket.
+//!   anonymous traffic bucket. Recording identity is not new exposure: the
+//!   request was authenticated and authorized before it reached here, and the
+//!   reader of this data is the app's own admin.
+//! - The role columns add a *privilege* label to that identity. Same 90-day
+//!   TTL, same app-admin gate — no separate retention or access posture.
 //! - Referrer is allowlisted to same-host (third-party refs are dropped
 //!   at insert time so external URLs don't leak into the DB).
 //! - All data is app-admin-only behind the Activity tab gate.
@@ -114,9 +132,9 @@ pub fn session_id_for_serve(headers: &HeaderMap, secure: bool) -> (Uuid, String)
 /// and swallowed — losing a view row on a transient DB blip is the
 /// documented acceptable failure mode (the alternative — failing the
 /// HTML serve because tracking is down — would be much worse).
-#[tracing::instrument(skip_all, fields(app_id = %app_id, user_id = %user_id))]
+#[tracing::instrument(skip_all, fields(app_id = %app.id, user_id = %user_id))]
 pub async fn record_view(
-    app_id: Uuid,
+    app: entity::apps::Model,
     user_id: Uuid,
     user_email: String,
     session_id: Uuid,
@@ -131,10 +149,11 @@ pub async fn record_view(
             return;
         }
     };
+    let (app_role, org_role) = resolve_view_roles(&db, &app, user_id, &user_email).await;
     let now = Utc::now().fixed_offset();
     let model = custom_app_view_event::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
-        app_id: ActiveValue::Set(app_id),
+        app_id: ActiveValue::Set(app.id),
         user_id: ActiveValue::Set(user_id),
         user_email: ActiveValue::Set(user_email),
         session_id: ActiveValue::Set(session_id),
@@ -142,10 +161,71 @@ pub async fn record_view(
         referrer: ActiveValue::Set(referrer),
         user_agent_class: ActiveValue::Set(user_agent_class),
         source: ActiveValue::Set(source),
+        app_role: ActiveValue::Set(app_role),
+        org_role: ActiveValue::Set(org_role),
     };
     if let Err(e) = model.insert(&db).await {
         tracing::warn!("custom-app view tracking: insert failed: {e}");
     }
+}
+
+/// The viewer's app + org standing at view time, for the snapshot columns on
+/// `custom_app_view_event`.
+///
+/// Runs entirely inside `record_view`'s `tokio::spawn`, which is what makes the
+/// cost acceptable — it never touches the HTML response path, and it is per
+/// *navigation*, not per request (the caller records views only for HTML
+/// documents, so an asset storm doesn't multiply it).
+///
+/// The cost is **roughly 7 indexed reads**, not the two call sites it looks like:
+/// `resolve_app_role`'s fact load (`load_principal_facts_scoped` reads org
+/// memberships, platform standing, partner standings and app grants) plus
+/// `has_app_grant`'s union, then the membership row. Worth stating plainly,
+/// because "two queries" is what this reads like at a glance and the real number
+/// is what would matter if view volume ever grew — that is the threshold at which
+/// the documented Airhouse sink stops being a follow-up.
+///
+/// Takes the app row rather than refetching it: `serve_dispatch` has already
+/// resolved (and process-cached) it to answer the request at all.
+///
+/// It runs *before* the insert, which widens the window in which an instance
+/// death loses the row. Accepted: losing a view on crash is already this
+/// module's documented failure mode, and the alternative — insert, then update
+/// with the roles — doubles the writes to narrow a window that costs a single
+/// analytics row.
+///
+/// Every failure is `None`, matching the column contract: an unresolvable role is
+/// unrecorded, never guessed. Tracking must not invent a label, and it must
+/// certainly not invent `"admin"`.
+///
+/// The app role deliberately comes from the same `resolve_app_role` that feeds
+/// `ctx.user.appRole` rather than a second query written here. The Activity tab
+/// and the app's own gate must be describing the same thing, or the log becomes
+/// evidence for a rule the platform doesn't actually enforce.
+async fn resolve_view_roles(
+    db: &sea_orm::DatabaseConnection,
+    app: &entity::apps::Model,
+    user_id: Uuid,
+    user_email: &str,
+) -> (Option<String>, Option<String>) {
+    let app_role =
+        crate::server::api::custom_apps_auth::resolve_app_role(db, user_id, user_email, app)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("custom-app view tracking: app role lookup failed: {e}");
+                None
+            })
+            .map(str::to_string);
+
+    let org_role = crate::server::api::custom_apps_auth::resolve_org_role(db, user_id, app.org_id)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("custom-app view tracking: org role lookup failed: {e}");
+            None
+        })
+        .map(str::to_string);
+
+    (app_role, org_role)
 }
 
 #[derive(Debug, thiserror::Error)]

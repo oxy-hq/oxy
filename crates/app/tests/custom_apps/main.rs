@@ -14,6 +14,7 @@
 mod common;
 
 mod custom_app_access_control;
+mod custom_app_activity_roles;
 mod custom_app_storage_routes;
 mod custom_app_visibility;
 mod custom_apps_boundary;

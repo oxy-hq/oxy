@@ -27,7 +27,7 @@ use entity::{
     workspaces,
 };
 use oxy_app::server::api::custom_apps_auth::{
-    has_app_grant, resolve_app_role, user_can_access_app,
+    has_app_grant, resolve_app_role, resolve_org_role, resolve_org_standing, user_can_access_app,
 };
 use oxy_app::server::api::org_teams::dto::{GranteeRef, SetAppAccessRequest};
 use oxy_app::server::api::org_teams::service;
@@ -1093,4 +1093,191 @@ async fn a_stale_row_cannot_swallow_a_visibility_change() {
     // and the re-read, which isn't reachable without a hook; what's pinned here is
     // that the two agree, not the mechanism.
     assert_eq!(returned.visibility, "org");
+}
+
+// ── ctx.user identity facts ─────────────────────────────────────────────────
+//
+// `orgRole` and `teams` decide nothing — they are descriptive fields a function
+// uses to explain, label, or lay out. What still needs pinning is that they are
+// *honest*: a role that over-reports invites an app to gate on it, and a team list
+// that ignores the org filter leaks one tenant's vocabulary into another's app.
+
+/// A team with a chosen name, so ordering can be asserted (`seed_team` names are
+/// uuid-suffixed and therefore unsorted-by-construction).
+async fn seed_named_team(conn: &DatabaseConnection, org_id: Uuid, name: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    org_teams::ActiveModel {
+        id: ActiveValue::Set(id),
+        org_id: ActiveValue::Set(org_id),
+        name: ActiveValue::Set(name.to_string()),
+        description: ActiveValue::Set(None),
+        created_at: ActiveValue::NotSet,
+        updated_at: ActiveValue::NotSet,
+        created_by: ActiveValue::Set(None),
+    }
+    .insert(conn)
+    .await
+    .expect("seed named team");
+    id
+}
+
+/// `ctx.user.orgRole` reports the `org_members` row verbatim — including its
+/// absence.
+///
+/// The absence is the case worth pinning: Oxy staff and partners reach a tenant's
+/// app through break-glass without holding a membership row, so an app that treats
+/// "no orgRole" as "not allowed" would lock out exactly the people brought in to
+/// help. `appRole` is the gate; this one is allowed to be silent.
+#[tokio::test]
+async fn org_role_mirrors_the_membership_row_including_its_absence() {
+    let conn = test_db().await;
+    let org = seed_org(&conn).await;
+
+    for (role, expected) in [
+        (OrgRole::Owner, "owner"),
+        (OrgRole::Admin, "admin"),
+        (OrgRole::Member, "member"),
+    ] {
+        let (user, _) = seed_user(&conn).await;
+        seed_member(&conn, org, user, role).await;
+        assert_eq!(
+            resolve_org_role(&conn, user, org).await.unwrap(),
+            Some(expected)
+        );
+    }
+
+    let (outsider, _) = seed_user(&conn).await;
+    assert_eq!(resolve_org_role(&conn, outsider, org).await.unwrap(), None);
+}
+
+/// Membership in *another* org is not this org's business.
+///
+/// `org_team_members` carries no org column, so the obvious "every team this user
+/// is in" query is wrong in a way nothing would surface in a single-tenant test: a
+/// consultant in six orgs would have all six orgs' team names handed to whichever
+/// app asked first. The org filter on `org_teams` is the boundary.
+#[tokio::test]
+async fn org_teams_never_cross_the_tenant_boundary() {
+    let conn = test_db().await;
+    let (consultant, _) = seed_user(&conn).await;
+
+    let acme = seed_org(&conn).await;
+    seed_member(&conn, acme, consultant, OrgRole::Member).await;
+    let acme_team = seed_named_team(&conn, acme, "Finance").await;
+    join_team(&conn, acme_team, consultant).await;
+
+    let initech = seed_org(&conn).await;
+    seed_member(&conn, initech, consultant, OrgRole::Member).await;
+    let initech_team = seed_named_team(&conn, initech, "Project Bluebird").await;
+    join_team(&conn, initech_team, consultant).await;
+
+    let seen = resolve_org_standing(&conn, consultant, acme)
+        .await
+        .unwrap()
+        .1;
+    let names: Vec<&str> = seen.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["Finance"],
+        "an app in one org must not learn another org's team names"
+    );
+    assert_eq!(seen[0].id, acme_team);
+    assert!(
+        !seen.iter().any(|t| t.id == initech_team),
+        "the other tenant's team id leaked"
+    );
+}
+
+/// Name-sorted, so a rendered team list doesn't reshuffle between invocations on
+/// whatever order Postgres felt like returning — and sorted the way a **reader**
+/// expects, not the way bytes do.
+///
+/// `"aardvarks"` is the case that matters: a byte-order `cmp` puts every lowercase
+/// name after every capitalised one, so a team someone named in lowercase lands at
+/// the bottom of the list and the whole thing reads as unsorted. Team names are
+/// user-authored free text rendered in an app's UI, so this is a real rendering
+/// bug, not a test detail.
+#[tokio::test]
+async fn org_teams_come_back_name_sorted_and_empty_means_empty() {
+    let conn = test_db().await;
+    let org = seed_org(&conn).await;
+    let (user, _) = seed_user(&conn).await;
+    seed_member(&conn, org, user, OrgRole::Member).await;
+
+    assert!(
+        resolve_org_standing(&conn, user, org)
+            .await
+            .unwrap()
+            .1
+            .is_empty(),
+        "belonging to no team is an empty list, not an error"
+    );
+
+    for name in ["Store Managers", "Finance", "aardvarks"] {
+        let team = seed_named_team(&conn, org, name).await;
+        join_team(&conn, team, user).await;
+    }
+
+    let names: Vec<String> = resolve_org_standing(&conn, user, org)
+        .await
+        .unwrap()
+        .1
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    assert_eq!(names, vec!["aardvarks", "Finance", "Store Managers"]);
+}
+
+/// A stale team row must not outlive the membership that justified it.
+///
+/// `remove_member` deletes the `org_members` row and the workspace overrides but
+/// leaves `org_team_members` behind — the comment there about re-invites "not
+/// silently reactivating stale overrides" covers workspaces and misses teams. So
+/// "is in a team" is genuinely not evidence of "is in the org".
+///
+/// Reporting the leftovers would make `ctx.user` self-contradictory: `orgRole`
+/// absent while `teams` names the org's internal groups, with an app free to
+/// render a team-shaped view for someone the org has ejected. Both fields now
+/// derive from the same membership fact, so the contradiction is unrepresentable.
+#[tokio::test]
+async fn a_stale_team_row_reports_nothing_once_org_membership_is_gone() {
+    let conn = test_db().await;
+    let org = seed_org(&conn).await;
+    let (user, _) = seed_user(&conn).await;
+    seed_member(&conn, org, user, OrgRole::Member).await;
+    let team = seed_named_team(&conn, org, "Finance").await;
+    join_team(&conn, team, user).await;
+
+    assert_eq!(
+        resolve_org_standing(&conn, user, org)
+            .await
+            .unwrap()
+            .1
+            .len(),
+        1,
+        "sanity: a current member sees their team"
+    );
+
+    // Exactly what `remove_member` leaves behind — the membership goes, the team
+    // row stays.
+    org_members::Entity::delete_many()
+        .filter(org_members::Column::OrgId.eq(org))
+        .filter(org_members::Column::UserId.eq(user))
+        .exec(&conn)
+        .await
+        .expect("remove membership");
+
+    assert_eq!(
+        resolve_org_role(&conn, user, org).await.unwrap(),
+        None,
+        "sanity: the membership really is gone"
+    );
+    assert!(
+        resolve_org_standing(&conn, user, org)
+            .await
+            .unwrap()
+            .1
+            .is_empty(),
+        "teams must follow membership — an ex-member is not on the team roster"
+    );
 }

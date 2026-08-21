@@ -275,7 +275,8 @@ pub(crate) fn function_task_policy(
 ///
 /// **Any function in the build can be triggered this way — including a
 /// route-only one.** It runs on the same **background/system path** a scheduled
-/// fire uses: an **empty request body** under the **org-owner identity**, not an
+/// fire uses: the **org-owner identity** and whatever `input` this trigger was
+/// given as the request body — empty only when the caller supplied none — not an
 /// HTTP request. This is intentional (the manual/API trigger is universal — a
 /// job need not declare a `schedule`), but a function written to require a
 /// request body or caller will observe an empty body. Author functions meant to
@@ -860,6 +861,9 @@ pub async fn handle_function_request(
         body: body.to_vec(),
         user_id: outcome.user_id,
         user_email: outcome.user_email.clone(),
+        user_name: Some(outcome.user_name.clone()),
+        user_picture: outcome.user_picture.clone(),
+        identity_kind: runtime::CtxIdentityKind::User,
         org_id: app.org_id,
         invocation_id,
         timeout,
@@ -1073,6 +1077,15 @@ pub(crate) async fn run_scheduled_function(
         body: input,
         user_id: owner.user_id,
         user_email: format!("schedule+{function_name}@system.oxy"),
+        // No caller to attribute this run to — and note this path serves the
+        // console's manual `Run now` as well as a cron tick, so a person may well
+        // have clicked. The `user_id` above is the org owner's (the invocation row
+        // needs a non-null FK and `ctx.secrets` a `created_by`), but every caller
+        // field stays empty so a function can't mistake either trigger for the
+        // owner using the app.
+        user_name: None,
+        user_picture: None,
+        identity_kind: runtime::CtxIdentityKind::System,
         org_id: app.org_id,
         invocation_id,
         timeout,
@@ -1188,6 +1201,17 @@ struct RunArgs<'a> {
     body: Vec<u8>,
     user_id: Uuid,
     user_email: String,
+    /// Display identity for `ctx.user.name` / `ctx.user.picture`. `None` on the
+    /// system paths (schedule / Airway / manual job run), where the `user_id` is
+    /// only the org owner's FK and there is no caller to attribute the run to —
+    /// reporting the owner's name there would let a function pin a background run
+    /// on a person. Note a manual **Run now** does have a human behind it; what
+    /// it lacks is any way to carry them through the task queue.
+    user_name: Option<String>,
+    user_picture: Option<String>,
+    /// Whether a human or the platform triggered this run; surfaced as
+    /// `ctx.user.kind` and the gate on every human-only identity field.
+    identity_kind: runtime::CtxIdentityKind,
     org_id: Uuid,
     invocation_id: Uuid,
     timeout: Duration,
@@ -1257,24 +1281,75 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         args.caps.clone(),
     ));
 
-    let env = resolve_function_env(args.db, args.app.project_id, args.app.id).await;
+    // Everything the isolate needs before it can start, resolved together.
+    //
+    // Identity facts for `ctx.user` are all resolved server-side so none of it can
+    // be forged by the caller.
+    //
+    // `app_role` is what a function gates a privileged surface on (e.g. the
+    // warehouse app's `?view=admin`) instead of a hard-coded email allowlist.
+    // `org_role` + `teams` are tenant-internal standing, for a function that wants
+    // to *explain* rather than gate ("ask your org admin to connect a warehouse").
+    //
+    // Only a human run resolves the org facts: a schedule executes under the
+    // owner's id, and reporting `orgRole: "owner"` there would make an owner-only
+    // branch fire on every tick.
+    //
+    // Concurrent, because these are independent reads and this is **pre-isolate
+    // latency a caller waits on** — not the view recorder's background spawn, where
+    // the same queries are free. `env` is in here for the same reason and is the
+    // most expensive of the three: `resolve_function_env` lists the project's
+    // secrets and then fetches each match one at a time, so leaving it sequential
+    // in front of the identity reads paid for it twice over.
+    //
+    // `join!` rather than `try_join!`: each fact keeps its own fail-CLOSED posture,
+    // so a blip on one can't blank the other, and an errored lookup yields no role,
+    // never "admin".
+    let human = args.identity_kind == runtime::CtxIdentityKind::User;
+    let (env, app_role, org_standing) = tokio::join!(
+        resolve_function_env(args.db, args.app.project_id, args.app.id),
+        crate::server::api::custom_apps_auth::resolve_app_role(
+            args.db,
+            args.user_id,
+            &args.user_email,
+            args.app,
+        ),
+        async {
+            if human {
+                // One membership read covers both the role and the teams gate.
+                crate::server::api::custom_apps_auth::resolve_org_standing(
+                    args.db,
+                    args.user_id,
+                    args.org_id,
+                )
+                .await
+            } else {
+                Ok((None, Vec::new()))
+            }
+        },
+    );
 
-    // The caller's role within THIS app, resolved server-side. This is what lets a
-    // function gate a privileged surface (e.g. the warehouse app's `?view=admin`)
-    // on something the client cannot forge, instead of a hard-coded email
-    // allowlist. Fail CLOSED: an errored lookup yields no role, never "admin".
-    let app_role = match crate::server::api::custom_apps_auth::resolve_app_role(
-        args.db,
-        args.user_id,
-        &args.user_email,
-        args.app,
-    )
-    .await
-    {
-        Ok(role) => role.map(str::to_string),
-        Err(e) => {
+    let app_role = app_role
+        .unwrap_or_else(|e| {
             error!("app role lookup failed for app {}: {e}", args.app.id);
             None
+        })
+        .map(str::to_string);
+
+    let (org_role, teams) = match org_standing {
+        Ok((role, teams)) => (
+            role.map(str::to_string),
+            teams
+                .into_iter()
+                .map(|team| runtime::CtxTeam {
+                    id: team.id.to_string(),
+                    name: team.name,
+                })
+                .collect(),
+        ),
+        Err(e) => {
+            error!("org standing lookup failed for app {}: {e}", args.app.id);
+            (None, Vec::new())
         }
     };
 
@@ -1283,7 +1358,12 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
             id: args.user_id.to_string(),
             email: args.user_email,
             org_id: args.org_id.to_string(),
+            name: args.user_name,
+            picture: args.user_picture,
             app_role,
+            org_role,
+            teams,
+            kind: args.identity_kind,
         },
         env,
     };

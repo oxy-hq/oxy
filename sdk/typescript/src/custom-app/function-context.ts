@@ -39,11 +39,62 @@ export interface OxyFunctionRequest {
 /** A single row from a `ctx.query` / `ctx.queryStream` result. */
 export type OxyFunctionRow = Record<string, unknown>;
 
-/** Identity of the invoking user (route) or the system identity (schedule/airway). */
-export interface OxyFunctionUser {
+/** One org team the caller belongs to, as reported by {@link OxyFunctionUser.teams}. */
+export interface OxyOrgTeam {
   id: string;
+  name: string;
+}
+
+/**
+ * Who — or what — invoked this function.
+ *
+ * `"system"` means **no caller to attribute this to** — not necessarily "no
+ * human caused it". A schedule tick, an Airway transform step, and an operator's
+ * manual *Run now* all take this path: they run under the org owner's `id` (the
+ * invocation record needs a real user FK) with every caller field absent. So on
+ * a manual run a person really did click, and there is still no way to reach
+ * them; the platform does not carry the triggering operator through the job
+ * queue.
+ *
+ * Any branch that emails "the person who clicked" or renders a personal view
+ * must check this rather than sniff the synthetic `email` — and must have a
+ * sensible answer for the case where there is nobody to send to.
+ */
+export type OxyIdentityKind = "user" | "system";
+
+/**
+ * Identity of the invoking user (route) or the system identity (schedule,
+ * Airway step, or a manual job run).
+ *
+ * Assembled server-side on every invocation from the authenticated session —
+ * **nothing on it is client-supplied**, which is the entire reason to read
+ * identity here instead of from the request body. See
+ * `internal-docs/custom-apps-user-identity.md` for the full contract, including
+ * what the client-side `useShellContext()` can and cannot be trusted for.
+ */
+export interface OxyFunctionUser {
+  /**
+   * `users.id`. On a `"system"` invocation this is the org owner's id and not a
+   * caller — check {@link kind} before attributing anything to it.
+   */
+  id: string;
+  /** Their email, or `schedule+<fn>@system.oxy` when {@link kind} is `"system"`. */
   email: string;
+  /**
+   * The org that owns this app — the tenant boundary for anything the function
+   * reads or writes.
+   *
+   * Servers before 2026-08-21 mistakenly sent this as `org_id`, so `orgId` read
+   * `undefined` there; both keys are populated now. If your function filters SQL
+   * on it, that is exactly the bug to re-check.
+   */
   orgId: string;
+  /** Display name. Absent on a `"system"` invocation. User-controlled free text —
+   *  fine for a greeting or an audit row, never a key, and escape it before it
+   *  reaches HTML or SQL. */
+  name?: string;
+  /** Avatar URL. Absent when unset or on a `"system"` invocation. */
+  picture?: string;
   /**
    * The caller's role **within this app**, derived server-side from app
    * membership (with org-owner / Oxy-staff break-glass). Absent when they hold
@@ -60,8 +111,58 @@ export interface OxyFunctionUser {
    *
    * Note it is deliberately NOT the org role: an app admin administers one app
    * without holding org-Admin (which also carries billing and member management).
+   *
+   * A `"system"` invocation runs under the org owner, so this reads `"admin"`
+   * there — a schedule carries owner authority by construction. Add a
+   * {@link kind} check when a surface must be human-only.
    */
   appRole?: "admin" | "member";
+  /**
+   * The caller's role in the owning **org**. Absent when they reach the app
+   * without an org membership (Oxy staff on break-glass) or on a `"system"`
+   * invocation.
+   *
+   * Informational, not a gate — org standing and app standing are separate
+   * rings. Use it to explain ("ask your org admin to connect a warehouse"), to
+   * label, or to route; gate on {@link appRole}.
+   */
+  orgRole?: "owner" | "admin" | "member";
+  /**
+   * The org teams the caller belongs to, name-sorted, and scoped to this app's
+   * org — teams they hold in other orgs are never reported. Empty when they
+   * belong to none.
+   *
+   * Optional because a server older than 2026-08-21 does not send it: use
+   * `ctx.user.teams?.some(...)`, never `ctx.user.teams.some(...)`, or the
+   * function throws on that server rather than degrading.
+   *
+   * Useful for *shaping* a view (default the Finance team to the finance tab).
+   * Not a permission: a team only grants anything on an app through an app team
+   * grant, which is already folded into {@link appRole}. Gating on a team name
+   * invents a permission the platform cannot revoke.
+   */
+  teams?: OxyOrgTeam[];
+  /**
+   * Whether there is a caller to attribute this invocation to.
+   *
+   * On a current server this is exact — `ctx.user.kind === "system"` is the
+   * check.
+   *
+   * Optional for the same reason as {@link teams}: a server older than
+   * 2026-08-21 does not send it. Note there is no safe *inference* to fall back
+   * on, in either direction — `=== "system"` reads `false` for a cron tick, and
+   * `!== "user"` reads `true` for a real person. An older server genuinely
+   * cannot tell you.
+   *
+   * So if you must support one, don't infer: a schedule invokes the function
+   * with the `input` you configured on it, which is yours to mark.
+   *
+   * ```ts
+   * const body = JSON.parse(req.body || "{}");
+   * const isSystem = ctx.user.kind ? ctx.user.kind === "system" : body._trigger === "schedule";
+   * ```
+   */
+  kind?: OxyIdentityKind;
 }
 
 /** Result of a `ctx.fetch` call. */

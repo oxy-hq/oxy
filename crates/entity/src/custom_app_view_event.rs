@@ -43,6 +43,31 @@ pub struct Model {
     /// `<org>--<slug>.customer-apps[-env].oxygen-hq.com`). Lets the
     /// admin see which surface their users are reaching.
     pub source: String,
+    /// The viewer's role **in this app** at view time — `"admin"` /
+    /// `"member"`, resolved through `oxy-authz` the same way
+    /// `ctx.user.appRole` is.
+    ///
+    /// Snapshotted, not joined at read time: roles change, and a log that
+    /// re-derives them retroactively rewrites its own history — the person who
+    /// exported the data as an admin would render as whatever they are today.
+    /// (Contrast `user_email` above, where staleness is fine precisely because
+    /// it *is* re-derivable from `user_id`.)
+    ///
+    /// `NULL` means **not recorded** — a row predating the column, or a lookup
+    /// that failed. View recording is best-effort and must never fail a page
+    /// load, so an unresolvable role is absent rather than guessed. Do not read
+    /// `NULL` as "no role".
+    pub app_role: Option<String>,
+    /// The viewer's role in the owning **org** at view time — `"owner"` /
+    /// `"admin"` / `"member"`. Same snapshot and same `NULL` semantics as
+    /// [`Self::app_role`].
+    ///
+    /// Both are recorded because they answer different questions and routinely
+    /// disagree: an app admin need not be an org admin, and an org owner shows
+    /// up as an app admin through break-glass without ever being granted the
+    /// app. Collapsing them to one column would lose whichever the operator
+    /// happened to need.
+    pub org_role: Option<String>,
     #[sea_orm(
         belongs_to,
         from = "app_id",

@@ -483,7 +483,10 @@ pub(crate) async fn serve_pretty(
             .and_then(|v| v.to_str().ok());
         let sanitized_referrer = super::custom_apps_tracking::sanitize_referrer(referrer, host);
         let user_agent_class = classify_user_agent(headers.get(axum::http::header::USER_AGENT));
-        let app_id = id;
+        // The recorder needs the app row to resolve the viewer's role snapshot.
+        // Hand it the one already resolved (and process-cached) above rather than
+        // making it refetch by id — the read is free here and isn't there.
+        let recorded_app = app.clone();
         let user_id = user.id;
         let user_email = user.email.clone();
         let source_label = source_label.to_string();
@@ -492,7 +495,7 @@ pub(crate) async fn serve_pretty(
         // failure mode for tracking-grade data.
         tokio::spawn(async move {
             super::custom_apps_tracking::record_view(
-                app_id,
+                recorded_app,
                 user_id,
                 user_email,
                 session_id,
