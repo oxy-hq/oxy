@@ -25,8 +25,6 @@ crate-type = ["dylib"]
 # default-features off so this dev-only shim never independently forces V8
 # (custom-app-functions) onto oxy-app; oxy-server's own
 # `custom-app-functions = ["oxy-app/custom-app-functions"]` is the single switch
-# that enables it for the default dynamic build. (Fully dropping V8 under
-# `--no-default-features` also requires oxy-api-github's oxy-app dep to be
-# default-features off — deferred until oxy-app compiles cleanly with the feature
-# off, so github stays standalone-buildable in the meantime.)
+# that enables it for the default dynamic build. (oxy-server + oxy-api-github set
+# the same, so `--no-default-features` drops V8 across the whole binary graph.)
 oxy-app = { path = "../app", default-features = false }

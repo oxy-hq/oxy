@@ -29,13 +29,10 @@ git-fetch-with-cli = true
 # these aliases for the Functions-inert convenience, not for a build-time win.
 # `cf` checks the oxy-app library (where ~all code lives — the fastest inner
 # loop, no binary link). `bf`/`rf` build/run the `oxy` binary (now the
-# `oxy-server` crate). CAVEAT: `--no-default-features` (the V8 drop) does NOT work
-# end-to-end yet — two things defeat it: (1) a pre-existing bug stops oxy-app
-# compiling with custom-app-functions off, and (2) oxy-api-github (an
-# unconditional oxy-server dep) pulls oxy-app with default features, so resolver-v2
-# unification re-enables V8. Once (1) lands, flip github's dep to
-# `default-features = false` and the drop works. Kept here so the aliases exist
-# for when it does.
+# `oxy-server` crate); their `--no-default-features` drops V8 — every oxy-app
+# dependent in the binary's graph (oxy-server, oxy-api-github, oxy-app-dylib) sets
+# `default-features = false`, and oxy-server's own `custom-app-functions` feature
+# is the single switch that turns V8 back on for the default build.
 cf = "check --no-default-features -p oxy-app"
 bf = "build --no-default-features -p oxy-server"
 rf = "run   --no-default-features -p oxy-server"

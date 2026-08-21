@@ -13,7 +13,14 @@ rust-version.workspace = true
 # subscription_guard) that live in oxy-app; auth is inherited from the seam's
 # apply_middleware, not re-applied here. This is the only oxy-app dependency, and
 # oxy-app never depends back on this crate (the whole point of the extraction).
-oxy-app = { path = "../app" }
+#
+# default-features off (github doesn't use custom-app-functions/V8): so a
+# `--no-default-features` build of oxy-server actually drops V8, github no longer
+# forces it on via resolver-v2 unification. oxy-server's own
+# `custom-app-functions` feature is the single switch that turns it back on for
+# the default build. In a `--workspace` build oxy-server (default) unifies V8 on,
+# so github still builds there.
+oxy-app = { path = "../app", default-features = false }
 oxy-app-core = { workspace = true }     # AppState (the router state type)
 oxy-server-authz = { workspace = true } # enforce_for, Action, Resource, OrgContextExtractor
 oxy = { workspace = true }              # database client, github core (git client / app auth)
