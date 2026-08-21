@@ -120,12 +120,12 @@ examples/omni
 examples/omni_bigquery.json
 examples/.oxy_state/
 .copilot-codeGeneration-instructions.md
-.playwright-mcp/before-submit.png
-.playwright-mcp/chat-complete.png
-.playwright-mcp/homepage.png
+.playwright-mcp/
+# Screenshots land wherever the MCP tool is told to put them, and it defaults
+# to the repo root. Three named files did not cover that, and one was committed.
+/*.png
 examples/test-file-for-e2e.txt
 examples/agents/test-agent-e2e.agent.yml
-.playwright-mcp/
 docs/superpowers/
 .claude/worktrees/
 # Added by code-review-graph

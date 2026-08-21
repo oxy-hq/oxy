@@ -103,6 +103,37 @@ pub struct AirhouseFleetRow {
     pub service_account_ready: bool,
     /// `None` when the SA has never been rotated.
     pub sa_rotated_at: Option<String>,
+
+    // Everything below is already on the row this query loads and was
+    // discarded. It is also the entire content of the psql session an operator
+    // opens when this page cannot answer their question — which is the page
+    // failing at its job, not the operator being thorough.
+    /// When the tenant was provisioned.
+    ///
+    /// Pairs with `sa_created_at` to make "never rotated" mean something. On
+    /// its own that phrase reads identically for a tenant provisioned this
+    /// morning and one provisioned two years ago, and only the second is a
+    /// finding.
+    pub created_at: Option<String>,
+    /// The service account's Airhouse-side id — what an operator gives the
+    /// Airhouse admin API to look at this tenant from the other side.
+    pub service_account_id: Option<String>,
+    /// When the service account was bound.
+    pub sa_created_at: Option<String>,
+    // The service account's **ceilings**, not the credential a caller gets.
+    // Both are written once at provisioning from `SA_MAX_ROLE` / `SA_MAX_TTL_SECS`
+    // and never varied, so on a healthy fleet every row reads `admin` / 86400.
+    // The effective role and TTL are chosen per mint by the broker from the
+    // caller's org role (Owner→admin, Admin→writer, Member→reader), and this
+    // page does not carry that.
+    //
+    // Worth surfacing anyway for the inverse reading: a row that does NOT match
+    // the constants is itself the finding — a tenant provisioned under an older
+    // policy, or one whose SA was rotated against a different cap.
+    /// The strongest role a minted credential may carry.
+    pub bearer_max_role: Option<String>,
+    /// The longest a minted credential may live.
+    pub bearer_max_ttl_secs: Option<i32>,
 }
 
 /// The fleet, and whether it is all of it.
@@ -134,6 +165,11 @@ fn row_from(
             prefix: String::new(),
             service_account_ready: false,
             sa_rotated_at: None,
+            created_at: None,
+            service_account_id: None,
+            sa_created_at: None,
+            bearer_max_role: None,
+            bearer_max_ttl_secs: None,
         },
         Some(t) => AirhouseFleetRow {
             workspace_id: workspace.id,
@@ -148,6 +184,11 @@ fn row_from(
             // bearer was never sealed, and that workspace cannot mint anything.
             service_account_ready: t.service_account_id.is_some() && t.bearer_ciphertext.is_some(),
             sa_rotated_at: t.sa_rotated_at.map(|d| d.to_rfc3339()),
+            created_at: Some(t.created_at.to_rfc3339()),
+            service_account_id: t.service_account_id.clone(),
+            sa_created_at: t.sa_created_at.map(|d| d.to_rfc3339()),
+            bearer_max_role: t.bearer_max_role.clone(),
+            bearer_max_ttl_secs: t.bearer_max_ttl_secs,
         },
     }
 }

@@ -18,6 +18,30 @@ export interface AirhouseFleetRow {
    */
   service_account_ready: boolean;
   sa_rotated_at: string | null;
+
+  // Everything below is what an operator would otherwise open psql for. It was
+  // always on the row the fleet query loads; the API just dropped it.
+  /**
+   * When the tenant was provisioned. Pairs with `sa_created_at` to make "never
+   * rotated" mean something — alone that phrase reads identically for a tenant
+   * provisioned this morning and one provisioned two years ago, and only the
+   * second is a finding.
+   */
+  created_at: string | null;
+  /** The service account's Airhouse-side id, for the Airhouse admin API. */
+  service_account_id: string | null;
+  /** When the service account was bound. */
+  sa_created_at: string | null;
+  /**
+   * The service account's **ceilings**, not the credential a caller gets. Both
+   * are written once at provisioning and never varied, so every row reads the
+   * same values; the effective role and TTL are chosen per mint by the broker
+   * from the caller's org role. A row that deviates from the constants is the
+   * finding.
+   */
+  bearer_max_role: string | null;
+  /** The longest a minted credential may live, in seconds. */
+  bearer_max_ttl_secs: number | null;
 }
 
 /** The fleet, and whether the server had to cut it short. */
