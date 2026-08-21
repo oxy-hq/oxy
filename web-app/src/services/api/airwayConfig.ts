@@ -17,9 +17,7 @@ import { apiClient } from "./axios";
  * names. Do not camelCase anything here.
  */
 
-// ---------------------------------------------------------------------------
 // Shared wire types
-// ---------------------------------------------------------------------------
 
 /** Wire spellings `AirwayAdmission::from_strings` accepts for `contract_policy`. */
 export type AirwayContractPolicy = "permissive" | "require_declared" | "forbid_opaque";
@@ -115,9 +113,7 @@ export interface UpsertAirwayConfigBody {
   environment: AirwayEnvironment | null;
 }
 
-// ---------------------------------------------------------------------------
 // Preview
-// ---------------------------------------------------------------------------
 
 /**
  * `immutable` / `versioned` / `opaque`, or `undeclared`. `undeclared` is
@@ -281,9 +277,7 @@ export const AirwayConfigService = {
   }
 };
 
-// ---------------------------------------------------------------------------
 // Deployment (operational) tier
-// ---------------------------------------------------------------------------
 
 /**
  * airway's process-wide `GlobalConfig`, stored in the singleton

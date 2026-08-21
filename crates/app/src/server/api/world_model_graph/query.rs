@@ -692,7 +692,6 @@ fn join_pk_parts(pk_vals: &[String], row: &[String]) -> String {
     }
 }
 
-/// Quote a table name for SQL.
 fn sql_quote(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }

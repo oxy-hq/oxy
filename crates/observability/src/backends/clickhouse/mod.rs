@@ -111,7 +111,6 @@ use crate::types::{
     MetricsListData, ModelUsageData, SpanRecord, TraceDetailRow, TraceEnrichmentRow, TraceRow,
 };
 
-/// ClickHouse observability storage backend.
 pub struct ClickHouseObservabilityStorage {
     client: Client,
     /// Target database (from `OXY_CLICKHOUSE_DATABASE`). Kept so `ensure_schema`

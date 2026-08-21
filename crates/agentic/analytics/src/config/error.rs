@@ -7,7 +7,6 @@ pub enum ConfigError {
     Io(std::io::Error),
     /// The YAML could not be parsed.
     Yaml(serde_yaml::Error),
-    /// A glob pattern was invalid.
     Glob(glob::PatternError),
     /// No databases were configured.
     NoDatabases,

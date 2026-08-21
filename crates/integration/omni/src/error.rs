@@ -211,7 +211,6 @@ impl OmniError {
         Self::QueryError(format!("{}: {}. Suggestion: {}", field, issue, suggestion))
     }
 
-    /// Create a sync error with topic context
     pub fn sync_failed(topic: &str, operation: &str, cause: &str) -> Self {
         Self::SyncError(format!(
             "Failed to {} topic '{}': {}",
@@ -219,7 +218,6 @@ impl OmniError {
         ))
     }
 
-    /// Create a validation error with context
     pub fn validation_failed(context: &str, issue: &str) -> Self {
         Self::ValidationError(format!("{}: {}", context, issue))
     }

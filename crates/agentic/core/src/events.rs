@@ -237,7 +237,6 @@ pub enum CoreEvent {
     // ── Delegation events ────────────────────────────────────────────────
     /// A delegation to a child task has started.
     DelegationStarted {
-        /// The child task's identifier.
         child_task_id: String,
         /// Human-readable target description (e.g. `"agent:builder"` or
         /// `"workflow:revenue.procedure.yml"`).

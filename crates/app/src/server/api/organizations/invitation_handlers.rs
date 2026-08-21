@@ -26,9 +26,7 @@ use oxy_app_core::member_authz;
 use super::dto::*;
 use super::ops::*;
 
-// ---------------------------------------------------------------------------
 // Invitations
-// ---------------------------------------------------------------------------
 
 /// POST /orgs/:org_id/invitations
 pub async fn create_invitation(

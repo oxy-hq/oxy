@@ -121,7 +121,6 @@ impl ClientRenderer for CliRenderer {
     }
 }
 
-/// Helpers for ArtifactKind → short kind label.
 trait ArtifactKindLabel {
     fn kind_label(&self) -> &'static str;
 }

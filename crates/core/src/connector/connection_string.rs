@@ -19,7 +19,6 @@
 //! let duckdb_format = conn.to_duckdb_format();
 //! ```
 
-/// Error type for connection string parsing
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionStringError {
     InvalidUrl(String),
@@ -56,7 +55,6 @@ pub trait ConnectionStringParser: Sized {
     /// The URL scheme this parser handles (e.g., "postgres", "mysql")
     fn scheme() -> &'static str;
 
-    /// Parse a connection string URL into a structured format
     fn parse(connection_string: &str) -> Result<Self, ConnectionStringError>;
 }
 

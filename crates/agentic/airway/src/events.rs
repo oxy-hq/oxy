@@ -193,7 +193,6 @@ pub enum AirwayEvent {
         error: String,
     },
 
-    /// Pipeline error occurred.
     PipelineError {
         pipeline_name: String,
         load_id: Option<String>,

@@ -22,7 +22,6 @@ pub struct TestProjectRunInfo {
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Aggregate score (0.0–1.0) across all files in this project run.
     pub score: Option<f64>,
-    /// Per-file score breakdown.
     pub file_scores: Vec<FileScore>,
     /// Total number of test cases across all files.
     pub total_cases: Option<i64>,

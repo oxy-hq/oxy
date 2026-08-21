@@ -19,7 +19,6 @@ use super::{
     types::{EnumRoutingBlob, RenderedRetrievalTemplate, SemanticEnum},
 };
 
-/// Configuration for enum index operations
 #[derive(Debug, Clone)]
 pub struct EnumIndexConfig {
     pub cache_path: PathBuf,

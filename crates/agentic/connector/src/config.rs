@@ -130,7 +130,6 @@ pub struct DomoConfig {
     /// Callers may also pass the bare subdomain (`"my-instance"`) if they
     /// build the URL via `DomoConfig::from_instance`.
     pub base_url: String,
-    /// DOMO developer token.
     pub developer_token: String,
     /// Dataset ID to run queries against.
     pub dataset_id: String,

@@ -142,7 +142,6 @@ pub fn to_string(value: &Value) -> ConversionResult {
     Ok(string_value)
 }
 
-/// Convert a value to a specific instance type
 pub fn convert_to_single_type(value: &Value, target_type: &InstanceType) -> ConversionResult {
     match target_type {
         InstanceType::Integer => to_integer(value),
@@ -190,7 +189,6 @@ pub fn value_matches_type(value: &Value, instance_type: &InstanceType) -> bool {
     }
 }
 
-/// Validate array and its items according to schema
 pub fn validate_array(value: &Value, schema: &SchemaObject) -> ConversionResult {
     let Value::Array(arr) = value else {
         return Err((

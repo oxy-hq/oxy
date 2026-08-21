@@ -275,9 +275,7 @@ fn environment_label(environment: Environment) -> &'static str {
     }
 }
 
-// ---------------------------------------------------------------------------
 // The verdict (pure)
-// ---------------------------------------------------------------------------
 
 /// Score every resource a connector exposes against `policy`.
 ///

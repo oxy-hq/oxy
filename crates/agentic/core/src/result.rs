@@ -107,7 +107,6 @@ pub enum TypedValue {
     /// Decimal as its canonical string form (e.g. `"123.4500"`).
     /// The paired [`TypedDataType::Decimal`] carries precision / scale.
     Decimal(String),
-    /// Arbitrary JSON value.
     Json(serde_json::Value),
 }
 

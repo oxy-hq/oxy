@@ -13,9 +13,7 @@
 use crate::semantic::SemanticCatalog;
 use crate::{AnalyticsError, AnalyticsResult, QuerySpec};
 
-// ---------------------------------------------------------------------------
 // Context structs
-// ---------------------------------------------------------------------------
 
 /// Inputs available to rules that run after the **Specify** stage.
 pub struct SpecifiedCtx<'a> {
@@ -36,9 +34,7 @@ pub struct SolvedCtx<'a> {
     pub spec: &'a QuerySpec,
 }
 
-// ---------------------------------------------------------------------------
 // Traits
-// ---------------------------------------------------------------------------
 
 /// A named, configurable validation check for the **Specify** stage.
 ///

@@ -7,7 +7,6 @@ use crate::variables::{VariableEncoder, VariableError};
 
 /// Trait for resolving variables in semantic layer expressions
 pub trait VariableResolver {
-    /// Resolve a single variable path to its value
     fn resolve_variable(&self, variable_path: &str) -> Result<JsonValue, VariableError>;
 
     /// Resolve all variables in an expression template
@@ -33,7 +32,6 @@ pub struct RuntimeVariableResolver {
 }
 
 impl RuntimeVariableResolver {
-    /// Create a new resolver with the given variable context
     pub fn new(context: JsonValue) -> Result<Self, VariableError> {
         let mut env = Environment::new();
 
@@ -100,7 +98,6 @@ impl RuntimeVariableResolver {
         Self::new(variables_context)
     }
 
-    /// Resolve variables in encoded SQL
     pub fn resolve_sql_variables(&self, encoded_sql: String) -> Result<String, VariableError> {
         // First decode any encoded variables back to template syntax
         let decoded_sql = self.encoder.decode_all_variables(&encoded_sql);

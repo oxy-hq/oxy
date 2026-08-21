@@ -32,9 +32,7 @@ pub use rules::{
 #[cfg(test)]
 pub(super) use helpers::{infer_shape, looks_like_date};
 
-// ---------------------------------------------------------------------------
 // Backward-compatible free function
-// ---------------------------------------------------------------------------
 
 /// Validate that the results of an executed query are non-empty, match the
 /// expected shape, and contain plausible numeric values.

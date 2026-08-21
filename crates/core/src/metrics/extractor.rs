@@ -52,14 +52,12 @@ impl ExtractorConfig {
     }
 }
 
-/// Context for metric extraction
 #[derive(Debug, Clone, Default)]
 pub struct ExtractionContext {
     /// User's question/prompt
     pub question: Option<String>,
     /// Agent/automation response
     pub response: Option<String>,
-    /// Executed SQL queries
     pub sql_queries: Vec<String>,
 }
 
@@ -122,7 +120,6 @@ struct LlmExtractionResponse {
     metrics: Vec<ExtractedMetric>,
 }
 
-/// Result of metric extraction
 #[derive(Debug, Clone)]
 pub struct ExtractionResult {
     /// Extracted metrics with source attribution
@@ -143,7 +140,6 @@ pub struct MetricExtractor {
 }
 
 impl MetricExtractor {
-    /// Create a new extractor with the given config
     pub fn new(config: &ExtractorConfig) -> Result<Self, OxyError> {
         if config.openai_api_key.is_empty() {
             return Err(OxyError::RuntimeError(
@@ -181,7 +177,6 @@ impl MetricExtractor {
         Ok(ExtractionResult { metrics })
     }
 
-    /// Build the extraction prompt
     fn build_prompt(&self, context: &ExtractionContext) -> String {
         let mut parts = Vec::new();
 
@@ -221,7 +216,6 @@ impl MetricExtractor {
         parts.join("\n\n")
     }
 
-    /// Build the JSON schema for structured output
     fn build_json_schema() -> serde_json::Value {
         json!({
             "type": "object",

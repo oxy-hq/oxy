@@ -14,7 +14,6 @@ use tokio::sync::mpsc;
 
 struct MockDomain;
 
-/// The spec for the mock domain.
 #[derive(Clone, Debug)]
 struct MockSpec {
     intent: String,
@@ -43,9 +42,7 @@ struct CallCounts {
     diagnose: u32,
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 1. Happy path — every stage succeeds on the first attempt
-// ═════════════════════════════════════════════════════════════════════════════
 
 struct HappySolver {
     calls: CallCounts,
@@ -146,9 +143,7 @@ async fn happy_path_calls_each_stage_exactly_once() {
     assert_eq!(counts.diagnose, 0);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 2. Back-edge: Clarify → Clarify (intent needs a second pass)
-// ═════════════════════════════════════════════════════════════════════════════
 
 struct RetryClarifySolver {
     clarify_calls: u32,
@@ -237,11 +232,9 @@ async fn back_edge_clarify_retries_until_success() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 3. Back-edge: Solve → Specify using HasIntent
 //    Demonstrates that the spec's HasIntent impl lets the solver recover the
 //    intent without storing it anywhere outside the spec.
-// ═════════════════════════════════════════════════════════════════════════════
 
 struct SolveBackToSpecifySolver {
     solve_calls: u32,
@@ -336,9 +329,7 @@ async fn back_edge_solve_to_specify_via_has_intent() {
     assert_eq!(orch.solver().solve_calls, 2);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 4. Back-edge: Execute → Solve (transient execution failure)
-// ═════════════════════════════════════════════════════════════════════════════
 
 struct ExecuteBackToSolveSolver {
     execute_calls: u32,
@@ -438,9 +429,7 @@ async fn back_edge_execute_to_solve_on_transient_failure() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 5. Fatal error — diagnose propagates Err
-// ═════════════════════════════════════════════════════════════════════════════
 
 struct FatalSolver;
 
@@ -514,9 +503,7 @@ async fn fatal_error_from_diagnose_terminates_run() {
     assert_eq!(err, OrchestratorError::Fatal("unrecoverable".into()));
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 6. Max iterations guard — prevents runaway back-edge cycles
-// ═════════════════════════════════════════════════════════════════════════════
 
 struct InfiniteLoopSolver;
 
@@ -592,9 +579,7 @@ async fn max_iterations_exceeded_terminates_loop() {
     assert_eq!(err, OrchestratorError::<MockDomain>::MaxIterationsExceeded);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 7. into_solver — orchestrator yields solver after the run
-// ═════════════════════════════════════════════════════════════════════════════
 
 struct CountingSolver {
     runs: u32,
@@ -664,9 +649,7 @@ async fn into_solver_returns_solver_with_accumulated_state() {
     assert_eq!(solver.runs, 1);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Event-system tests
-// ═════════════════════════════════════════════════════════════════════════════
 
 // ── Helper: drain a channel into a Vec ───────────────────────────────────────
 
@@ -678,9 +661,7 @@ async fn drain<Ev: DomainEvents>(rx: &mut mpsc::Receiver<Event<Ev>>) -> Vec<Even
     events
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 8. Event stream — happy path produces correct StateEnter/StateExit sequence
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn event_stream_happy_path_state_sequence() {
@@ -736,9 +717,7 @@ async fn event_stream_happy_path_state_sequence() {
     assert!(has_done, "expected a Done event");
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 9. Event stream — StateEnter revision increments on re-entry
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn event_stream_revision_increments_on_reentry() {
@@ -766,9 +745,7 @@ async fn event_stream_revision_increments_on_reentry() {
     assert_eq!(clarify_revisions, [0, 1, 2]);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 10. Event stream — back-edge produces BackEdge event with correct from/to
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn event_stream_back_edge_emits_back_edge_event() {
@@ -799,9 +776,7 @@ async fn event_stream_back_edge_emits_back_edge_event() {
     assert_eq!(back_edges[0].1, "specifying");
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 11. Event stream — retry back-edge (same stage) uses Outcome::Retry
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn event_stream_retry_uses_retry_outcome() {
@@ -835,9 +810,7 @@ async fn event_stream_retry_uses_retry_outcome() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 12. Event stream — domain events travel on the same channel
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// A trivial domain event to exercise the generic domain-event path.
 #[derive(Debug, serde::Serialize)]
@@ -951,9 +924,7 @@ async fn event_stream_domain_events_travel_on_same_channel() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 13. Event stream — events arrive in chronological order
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn event_stream_events_arrive_in_order() {
@@ -996,9 +967,7 @@ async fn event_stream_events_arrive_in_order() {
     assert_eq!(seq, expected);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 14. Static skip — SKIP_STATES bypasses solving without calling solve()
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// A solver that statically declares "solving" as a never-used stage.
 ///
@@ -1161,9 +1130,7 @@ async fn static_skip_emits_no_state_enter_exit_for_skipped_state() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Multi-turn session memory
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn orchestrator_stores_completed_turns_in_memory() {
@@ -1228,9 +1195,7 @@ async fn memory_cleared_between_topics() {
     assert_eq!(orch.memory().turns()[0].intent, "clarified: new topic B");
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // run_pipeline refactor — memory is NOT touched by run_pipeline
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn run_pipeline_does_not_push_to_memory() {
@@ -1335,9 +1300,7 @@ async fn run_pipeline_output_carries_spec() {
     assert_eq!(spec.requirements, vec!["req-A", "req-B"]);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // child_trace_id — tested indirectly via run_pipeline custom trace IDs
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn child_trace_id_convention_in_events() {
@@ -1387,9 +1350,7 @@ async fn child_trace_id_convention_in_events() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Fan-out tests — specify() returns N > 1 specs
-// ═════════════════════════════════════════════════════════════════════════════
 
 // ── FanOutSolver — specify returns N specs ────────────────────────────────────
 
@@ -1712,9 +1673,7 @@ async fn fan_out_pipeline_does_not_write_memory_entries() {
     assert_eq!(before, after, "run_pipeline must not push to memory");
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Forward recovery: executing → interpreting emits Advanced, not BackEdge
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// Solver where `execute` fails and diagnose recovers *forward* to
 /// Interpreting — simulating the ValueAnomaly pass-through pattern.
@@ -1838,9 +1797,7 @@ async fn diagnose_forward_transition_emits_advance_not_back_edge() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Backward recovery: executing → solving still emits BackEdge
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// Solver where `execute` fails and diagnose recovers *backward* to Solving.
 struct BackwardRecoverySolver {
@@ -1967,9 +1924,7 @@ async fn diagnose_backward_transition_still_emits_back_edge() {
     assert_eq!(back_edges[0].1, "solving");
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Item 4: StateHandler.diagnose = None acts as passthrough
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// Solver that succeeds unconditionally on all stages.
 struct PassSolver;
@@ -2135,9 +2090,7 @@ async fn state_handler_diagnose_some_none_escalates_to_fatal() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Item 7: problem_state_from_resume returns Option
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// Calling `resume` on a solver that does not override `problem_state_from_resume`
 /// (which now defaults to `None`) must return `OrchestratorError::ResumeNotSupported`
@@ -2162,9 +2115,7 @@ async fn resume_without_hitl_support_returns_resume_not_supported() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Concurrent fan-out — happy path
-// ═════════════════════════════════════════════════════════════════════════════
 
 use agentic_core::solver::FanoutWorker;
 
@@ -2342,9 +2293,7 @@ async fn test_concurrent_fanout_happy_path() {
     assert!(has_done, "expected a Done event");
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Serial fan-out unchanged when fanout_worker() returns None
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
 async fn test_serial_fanout_unchanged() {
@@ -2400,9 +2349,7 @@ async fn test_serial_fanout_unchanged() {
     assert_eq!(fan_out_count, 1);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // Concurrent fan-out retry tests
-// ═════════════════════════════════════════════════════════════════════════════
 
 use std::sync::atomic::{AtomicU32, Ordering};
 

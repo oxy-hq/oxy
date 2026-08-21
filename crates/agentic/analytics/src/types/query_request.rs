@@ -9,9 +9,7 @@ use serde::{Deserialize, Serialize};
 /// prior query structure on back-edge retries and cross-turn follow-ups.
 pub type SpecHint = QueryRequestItem;
 
-// ---------------------------------------------------------------------------
 // Airlayer-native query request types (LLM response deserialization)
-// ---------------------------------------------------------------------------
 
 /// Top-level envelope for the airlayer-native Specify response.
 ///
@@ -34,7 +32,6 @@ pub struct QueryRequestItem {
     /// Non-time dimension members to group by (e.g. `["orders.status"]`).
     #[serde(default)]
     pub dimensions: Vec<String>,
-    /// Structured filter conditions.
     #[serde(default)]
     pub filters: Vec<StructuredFilter>,
     /// Time dimensions with granularity and optional date range.
@@ -57,7 +54,6 @@ pub struct StructuredFilter {
     pub member: String,
     /// Filter operator (camelCase, matching airlayer's `FilterOperator`).
     pub operator: String,
-    /// Filter values as strings.
     #[serde(default)]
     pub values: Vec<String>,
 }

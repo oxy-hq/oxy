@@ -118,7 +118,6 @@ fn load_tree_at(scan_path: &std::path::Path) -> Result<MetricTree, MetricTreeErr
     Ok(oxy_semantic::build_metric_tree(&layer))
 }
 
-/// The airlayer database configs for the workspace.
 fn workspace_databases(workspace_manager: &WorkspaceManager) -> Vec<airlayer::DatabaseConfig> {
     OxyMetricTreeRunner::list_databases_sync(workspace_manager)
 }

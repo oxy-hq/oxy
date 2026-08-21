@@ -1,4 +1,3 @@
-/// Common trait for all LLM model configurations
 pub trait ModelConfig {
     /// Get the user-defined name for this model configuration
     fn name(&self) -> &str;

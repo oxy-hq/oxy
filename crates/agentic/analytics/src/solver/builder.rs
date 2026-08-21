@@ -9,9 +9,7 @@ use crate::semantic::SemanticCatalog;
 
 use super::AnalyticsSolver;
 
-// ---------------------------------------------------------------------------
 // AnalyticsSolverBuilder
-// ---------------------------------------------------------------------------
 
 /// Fluent builder for [`AnalyticsSolver`].
 ///

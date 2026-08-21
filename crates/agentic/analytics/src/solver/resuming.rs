@@ -26,9 +26,7 @@ use crate::types::QuestionType;
 use crate::{AnalyticsDomain, AnalyticsIntent, AnalyticsResult, QuerySpec};
 use agentic_core::result::QueryResult;
 
-// ---------------------------------------------------------------------------
 // ask_user tool — thin wrappers over agentic_core shared implementation
-// ---------------------------------------------------------------------------
 
 /// Tool definition for `ask_user`, with OpenAI `additionalProperties: false`
 /// injected for strict-mode compatibility.
@@ -42,9 +40,7 @@ pub(super) fn ask_user_tool_def() -> ToolDef {
 /// Re-export the shared `handle_ask_user` from core.
 pub(super) use agentic_core::tools::handle_ask_user;
 
-// ---------------------------------------------------------------------------
 // Resume routing
-// ---------------------------------------------------------------------------
 
 /// Reconstruct the [`ProblemState`] to re-enter when resuming a suspended run.
 ///

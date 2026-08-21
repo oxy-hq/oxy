@@ -87,7 +87,6 @@ pub enum IntentAction {
     },
 }
 
-/// Handle the intent command and its subcommands
 pub async fn handle_intent_command(intent_args: IntentArgs) -> Result<(), OxyError> {
     sentry_config::add_operation_context("intent", None);
 
@@ -228,7 +227,6 @@ async fn handle_classify(
     Ok(())
 }
 
-/// Print classification result in a formatted way
 fn print_classification_result(classification: &oxy::intent::IntentClassification) {
     if classification.intent_name != "unknown" {
         println!(
@@ -282,7 +280,6 @@ async fn handle_analytics(classifier: &IntentClassifier, days: u32) -> Result<()
     Ok(())
 }
 
-/// Handle the clusters action - list all clusters
 async fn handle_clusters(classifier: &IntentClassifier) -> Result<(), OxyError> {
     println!("{}", "📋 Current intent clusters".text());
 

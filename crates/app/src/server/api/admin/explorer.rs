@@ -100,9 +100,7 @@ fn paginate(page: Option<u64>, page_size: Option<u64>) -> Pagination {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Threads
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize, Debug, FromQueryResult)]
 pub struct ThreadRow {
@@ -177,9 +175,7 @@ async fn search_threads(
     Ok(Json(into_page(rows, &pagination)))
 }
 
-// ---------------------------------------------------------------------------
 // Runs
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize, Debug, FromQueryResult)]
 pub struct RunRow {

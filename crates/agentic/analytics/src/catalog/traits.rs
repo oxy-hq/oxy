@@ -100,7 +100,6 @@ pub trait Catalog: Send + Sync {
         result
     }
 
-    /// Get the full definition of a single metric.
     fn get_metric_definition(&self, metric: &str) -> Option<MetricDef>;
 
     // ── Specifying tools ─────────────────────────────────────────────────

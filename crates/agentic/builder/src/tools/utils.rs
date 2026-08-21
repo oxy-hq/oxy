@@ -146,7 +146,6 @@ pub async fn write_file_content(
         .map_err(|e| format!("failed to write file '{file_path}': {e}"))
 }
 
-/// Delete a file at the given path.
 pub async fn remove_file(workspace_root: &Path, file_path: &str) -> Result<(), String> {
     let abs = safe_path(workspace_root, file_path).map_err(|e| format!("path error: {e}"))?;
     tokio::fs::remove_file(&abs)

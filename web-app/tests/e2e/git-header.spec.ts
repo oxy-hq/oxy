@@ -13,9 +13,7 @@ import { expect, test } from "@playwright/test";
 import { IDEPage } from "./pages/IDEPage";
 import { resetTestFile } from "./utils";
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /** Wait for the IDE header to be fully rendered (card element present). */
 async function waitForHeader(page: import("@playwright/test").Page) {
@@ -40,9 +38,7 @@ async function hasNoErrorOverlay(page: import("@playwright/test").Page): Promise
   return !looksLikeCrash;
 }
 
-// ---------------------------------------------------------------------------
 // Test suite
-// ---------------------------------------------------------------------------
 
 test.describe("Git Header — navigation & rendering", () => {
   test.beforeEach(async ({ page }) => {
@@ -52,9 +48,7 @@ test.describe("Git Header — navigation & rendering", () => {
     await waitForHeader(page);
   });
 
-  // -------------------------------------------------------------------------
   // Core regression: navigating to IDE must not crash React
-  // -------------------------------------------------------------------------
 
   test("IDE loads without React crash", async ({ page }) => {
     // The header card (Back to Home button) must be present and the page
@@ -101,9 +95,7 @@ test.describe("Git Header — navigation & rendering", () => {
     expect(await hasNoErrorOverlay(page)).toBe(true);
   });
 
-  // -------------------------------------------------------------------------
   // Header branch UI (branch pill always visible in local-git mode)
-  // -------------------------------------------------------------------------
 
   test("branch pill is visible in the header", async ({ page }) => {
     // The branch pill is a button that contains a BranchInfo component.
@@ -115,9 +107,7 @@ test.describe("Git Header — navigation & rendering", () => {
     await expect(headerCard).toBeVisible({ timeout: 10_000 });
   });
 
-  // -------------------------------------------------------------------------
   // Non-main branch UI: refresh button must be visible
-  // -------------------------------------------------------------------------
 
   test("refresh git status button is visible on non-main branch", async ({ page }) => {
     // The running branch in this repo is git-branching (not main), so the
@@ -152,9 +142,7 @@ test.describe("Git Header — navigation & rendering", () => {
     expect(await hasNoErrorOverlay(page)).toBe(true);
   });
 
-  // -------------------------------------------------------------------------
   // ChangesPanel — open/close lifecycle
-  // -------------------------------------------------------------------------
 
   test("ChangesPanel opens when commit button is clicked", async ({ page }) => {
     const commitButton = page.getByTestId("ide-commit-push-button");
@@ -213,9 +201,7 @@ test.describe("Git Header — navigation & rendering", () => {
     await expect(textarea).toHaveValue("My custom commit message");
   });
 
-  // -------------------------------------------------------------------------
   // File save → diff count update (smoke test, no actual git assertion)
-  // -------------------------------------------------------------------------
 
   test("saving a file does not crash the IDE", async ({ page }) => {
     const idePage = new IDEPage(page);

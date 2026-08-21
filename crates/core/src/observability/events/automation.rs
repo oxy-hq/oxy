@@ -612,7 +612,6 @@ pub fn task_agent_execute_span(agent_ref: &str, consistency_run: usize) -> Span 
     )
 }
 
-/// Creates a span for formatter task execution
 pub fn task_formatter_execute_span() -> Span {
     tracing::info_span!(
         "workflow.task.formatter.execute",
@@ -621,7 +620,6 @@ pub fn task_formatter_execute_span() -> Span {
     )
 }
 
-/// Creates a span for sub-workflow execution
 pub fn task_sub_workflow_execute_span(workflow_ref: &str) -> Span {
     tracing::info_span!(
         "workflow.task.sub_workflow.execute",

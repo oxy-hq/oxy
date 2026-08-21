@@ -122,9 +122,7 @@ fn run_query(db: &Arc<Mutex<Connection>>, sql: &str) -> Result<QueryResult, Stri
     })
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 1. Happy path — full pipeline with real SQLite data
-// ═════════════════════════════════════════════════════════════════════════════
 
 struct FullPipelineSolver {
     db: Arc<Mutex<Connection>>,
@@ -313,9 +311,7 @@ async fn full_pipeline_with_sqlite_returns_real_data() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 2. Follow-up via prior intent — HasIntent recovery across a back-edge
-// ═════════════════════════════════════════════════════════════════════════════
 
 struct PriorIntentSolver {
     db: Arc<Mutex<Connection>>,
@@ -532,9 +528,7 @@ async fn follow_up_reuses_prior_intent_via_has_intent() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 3. Ambiguous column — back-edge to Clarifying for disambiguation
-// ═════════════════════════════════════════════════════════════════════════════
 
 struct AmbiguousColumnSolver {
     db: Arc<Mutex<Connection>>,
@@ -760,9 +754,7 @@ async fn ambiguous_column_triggers_back_edge_to_clarifying() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 4. Selected automation — automation path bypasses LLM spec resolution
-// ═════════════════════════════════════════════════════════════════════════════
 
 struct AutomationSolver {
     specify_calls: u32,

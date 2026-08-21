@@ -11,7 +11,6 @@ pub use oxy_observability::intent_types::{
     IntentAnalytics, IntentClassification, IntentCluster, UNKNOWN_CLUSTER_ID,
 };
 
-/// Configuration for intent classification
 #[derive(Debug, Clone)]
 pub struct IntentConfig {
     /// OpenAI API key for embeddings and LLM labeling
@@ -22,7 +21,6 @@ pub struct IntentConfig {
     pub embed_dims: usize,
     /// Minimum cluster size for HDBSCAN
     pub min_cluster_size: usize,
-    /// Model for LLM labeling
     pub labeling_model: String,
     /// Confidence threshold below which questions trigger incremental learning
     pub learning_confidence_threshold: f32,
@@ -81,7 +79,6 @@ impl IntentConfig {
     }
 }
 
-/// A question with its embedding vector
 #[derive(Debug, Clone)]
 pub struct QuestionEmbedding {
     pub trace_id: String,
@@ -136,7 +133,6 @@ pub struct PendingItem {
     pub created_at: i64,
 }
 
-/// Result of incremental learning
 #[derive(Debug, Clone)]
 pub struct IncrementalResult {
     /// Number of unknown items processed

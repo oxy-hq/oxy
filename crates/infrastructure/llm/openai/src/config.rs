@@ -16,7 +16,6 @@ pub fn default_openai_api_url() -> Option<String> {
     Some(OPENAI_API_URL.to_string())
 }
 
-/// OpenAI model configuration
 #[skip_serializing_none]
 #[derive(Deserialize, Debug, Clone, Serialize, JsonSchema)]
 pub struct OpenAIModelConfig {

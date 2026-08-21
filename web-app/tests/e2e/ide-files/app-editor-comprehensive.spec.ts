@@ -61,9 +61,7 @@ async function switchMode(page: Page, mode: "editor" | "form" | "visualization")
   return false;
 }
 
-// ============================================================================
 // FORM & EDITOR SYNC TESTS
-// ============================================================================
 
 test.describe("App Editor - Form & Editor Synchronization", () => {
   test.beforeEach(async ({ page }) => {
@@ -254,9 +252,7 @@ components: []`);
   });
 });
 
-// ============================================================================
 // VISUALIZATION MODE TESTS
-// ============================================================================
 
 test.describe("App Editor - Visualization Mode", () => {
   test.beforeEach(async ({ page }) => {
@@ -335,9 +331,7 @@ test.describe("App Editor - Visualization Mode", () => {
   });
 });
 
-// ============================================================================
 // COMPONENT CONFIGURATION TESTS
-// ============================================================================
 
 test.describe("App Editor - Component Configuration", () => {
   test.beforeEach(async ({ page }) => {
@@ -430,9 +424,7 @@ test.describe("App Editor - Component Configuration", () => {
   });
 });
 
-// ============================================================================
 // CHARACTER INPUT & EDGE CASES
-// ============================================================================
 
 test.describe("App Editor - Character Input & Edge Cases", () => {
   test.beforeEach(async ({ page }) => {
@@ -557,9 +549,7 @@ test.describe("App Editor - Character Input & Edge Cases", () => {
   });
 });
 
-// ============================================================================
 // KEYBOARD SHORTCUTS
-// ============================================================================
 
 test.describe("App Editor - Keyboard Shortcuts", () => {
   test.beforeEach(async ({ page }) => {
@@ -637,9 +627,7 @@ test.describe("App Editor - Keyboard Shortcuts", () => {
   });
 });
 
-// ============================================================================
 // RESPONSIVE LAYOUT
-// ============================================================================
 
 test.describe("App Editor - Responsive Layout", () => {
   test.beforeEach(async ({ page }) => {
@@ -685,9 +673,7 @@ test.describe("App Editor - Responsive Layout", () => {
   });
 });
 
-// ============================================================================
 // STRESS TESTS
-// ============================================================================
 
 test.describe("App Editor - Stress Tests", () => {
   test.beforeEach(async ({ page }) => {

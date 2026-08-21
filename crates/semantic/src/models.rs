@@ -92,7 +92,6 @@ impl Display for DimensionType {
 pub struct Dimension {
     /// Unique identifier for the dimension within the view
     pub name: String,
-    /// Data type of the dimension
     #[serde(rename = "type")]
     pub dimension_type: DimensionType,
     /// Human-readable description of what this dimension represents
@@ -153,7 +152,6 @@ pub struct MeasureFilter {
     pub description: Option<String>,
 }
 
-/// Direction of a driver relationship.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum DriverDirection {
@@ -163,7 +161,6 @@ pub enum DriverDirection {
     Unknown,
 }
 
-/// Strength of a driver relationship.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum DriverStrength {
@@ -173,7 +170,6 @@ pub enum DriverStrength {
     Weak,
 }
 
-/// Confidence in a driver relationship.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum DriverConfidence {
@@ -236,7 +232,6 @@ pub struct Driver {
 pub struct Measure {
     /// Unique identifier for the measure within the view
     pub name: String,
-    /// Type of measure aggregation
     #[serde(rename = "type")]
     pub measure_type: MeasureType,
     /// Human-readable description of what this measure represents
@@ -378,7 +373,6 @@ pub struct Topic {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub base_view: Option<String>,
-    /// Optional retrieval configuration for this topic
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub retrieval: Option<TopicRetrievalConfig>,

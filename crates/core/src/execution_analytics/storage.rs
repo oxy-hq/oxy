@@ -42,7 +42,6 @@ impl ExecutionAnalyticsStorage {
         Ok(Self { storage })
     }
 
-    /// Get summary statistics for execution analytics
     pub async fn get_summary(&self, days: u32) -> Result<ExecutionSummary, OxyError> {
         let data: ExecutionSummaryData = self.storage.get_execution_summary(days).await?;
 
@@ -93,7 +92,6 @@ impl ExecutionAnalyticsStorage {
         })
     }
 
-    /// Get time series data for execution analytics
     pub async fn get_time_series(&self, days: u32) -> Result<Vec<ExecutionTimeBucket>, OxyError> {
         let rows: Vec<ExecutionTimeBucketData> =
             self.storage.get_execution_time_series(days).await?;

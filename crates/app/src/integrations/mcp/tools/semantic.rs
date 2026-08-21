@@ -188,7 +188,6 @@ fn serde_json_array<T: serde::Serialize>(items: Vec<T>) -> Vec<Value> {
         .collect()
 }
 
-/// Creates an execution context for tool execution
 fn create_execution_context(
     workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     kind: &str,

@@ -12,7 +12,6 @@ use airlayer::engine::metric_tree_ops::{
     PredictResult, SensitivityResult, predict as al_predict, sensitivity as al_sensitivity,
 };
 
-/// Build the full metric tree for a semantic layer.
 pub fn build(layer: &SemanticLayer) -> MetricTree {
     MetricTree::build(layer)
 }

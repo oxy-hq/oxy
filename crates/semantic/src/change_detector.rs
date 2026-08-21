@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Result of change detection analysis
 #[derive(Debug, Clone)]
 pub struct ChangeDetectionResult {
     /// Views that need to be rebuilt (changed or depend on changed views)
@@ -17,7 +16,6 @@ pub struct ChangeDetectionResult {
     /// Output files that need to be deleted (orphaned from deleted sources)
     pub files_to_delete: Vec<PathBuf>,
 
-    /// Whether a full rebuild is required
     pub requires_full_rebuild: bool,
 
     /// Reason for full rebuild (if applicable)
@@ -38,7 +36,6 @@ impl ChangeDetectionResult {
     }
 }
 
-/// File type classification
 #[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 enum FileType {
@@ -332,7 +329,6 @@ impl ChangeDetector {
         Ok(())
     }
 
-    /// Scan a directory for files with multiple extensions
     fn scan_directory_all_extensions(
         dir: &Path,
         base_dir: &Path,
@@ -388,7 +384,6 @@ impl ChangeDetector {
         Ok(())
     }
 
-    /// Classify a file path as view or topic
     #[cfg(test)]
     fn classify_file(file_path: &str) -> Option<FileType> {
         let path = Path::new(file_path);
@@ -406,7 +401,6 @@ impl ChangeDetector {
     }
 }
 
-/// Helper to compute hash of database configuration from HashMap
 pub fn hash_database_config(databases: &HashMap<String, crate::models::DatabaseDetails>) -> String {
     // Convert to BTreeMap for deterministic ordering before serializing
     let ordered: BTreeMap<_, _> = databases.iter().collect();

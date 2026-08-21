@@ -11,9 +11,7 @@ use serde_json::Value;
 use super::config::RuleEntry;
 use super::rule::{SolvableRule, SolvedRule, SpecifiedRule};
 
-// ---------------------------------------------------------------------------
 // Error
-// ---------------------------------------------------------------------------
 
 /// Error constructing a rule from config.
 #[derive(Debug)]
@@ -39,17 +37,13 @@ impl std::fmt::Display for RegistryError {
 
 impl std::error::Error for RegistryError {}
 
-// ---------------------------------------------------------------------------
 // Constructor type aliases
-// ---------------------------------------------------------------------------
 
 type SpecifiedCtor = fn(&Value) -> Result<Box<dyn SpecifiedRule>, RegistryError>;
 type SolvableCtor = fn(&Value) -> Result<Box<dyn SolvableRule>, RegistryError>;
 type SolvedCtor = fn(&Value) -> Result<Box<dyn SolvedRule>, RegistryError>;
 
-// ---------------------------------------------------------------------------
 // Registry
-// ---------------------------------------------------------------------------
 
 /// Maps rule name strings to constructor function pointers.
 ///
@@ -167,9 +161,7 @@ impl RuleRegistry {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

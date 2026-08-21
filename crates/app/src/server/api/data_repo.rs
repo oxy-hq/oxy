@@ -51,7 +51,6 @@ pub struct AddDataRepoRequest {
     pub name: String,
     /// Local path (relative to project root or absolute)
     pub path: Option<String>,
-    /// Git URL to clone
     pub git_url: Option<String>,
     /// Branch for git URL repos (optional)
     pub branch: Option<String>,

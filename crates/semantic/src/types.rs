@@ -23,7 +23,6 @@ impl std::fmt::Display for SyncMetrics {
     }
 }
 
-/// Sync dimension tracking
 #[derive(Debug, Clone)]
 pub enum SyncDimension {
     Created {
@@ -41,7 +40,6 @@ pub struct DimensionInfo {
     pub name: String,
 }
 
-/// Semantic table reference
 #[derive(Debug, Clone)]
 pub struct SemanticTableRef {
     pub database: String,

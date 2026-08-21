@@ -326,9 +326,7 @@ impl ExecutionContext {
         }
     }
 
-    // =========================================================================
     // Metric recording helpers
-    // =========================================================================
 
     /// Record a SQL query in the metric context
     pub fn record_sql(&self, sql: &str) {

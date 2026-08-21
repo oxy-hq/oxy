@@ -49,7 +49,6 @@ macro_rules! connector_or_skip {
     };
 }
 
-/// Create a scratch table and return its name.
 async fn scratch_table(c: &PostgresConnector, name: &str, cols: &str) -> String {
     let mut tx = c.begin_transaction().await.expect("begin");
     tx.exec(&format!("DROP TABLE IF EXISTS {name}"), &[])

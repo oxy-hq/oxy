@@ -55,7 +55,6 @@ pub struct BuildManifest {
     /// Timestamp of last successful build (Unix epoch seconds)
     pub last_build: i64,
 
-    /// Hash of config.yml database configurations
     pub config_hash: String,
 }
 
@@ -73,7 +72,6 @@ impl BuildManifest {
         }
     }
 
-    /// Load manifest from file
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Option<Self>, SemanticLayerError> {
         let path = path.as_ref();
 
@@ -137,7 +135,6 @@ impl BuildManifest {
         Ok(())
     }
 
-    /// Set the current timestamp
     pub fn update_timestamp(&mut self) {
         self.last_build = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -145,13 +142,11 @@ impl BuildManifest {
             .as_secs() as i64;
     }
 
-    /// Add a file hash to the manifest
     pub fn add_file_hash<P: AsRef<Path>>(&mut self, file_path: P, hash: String) {
         self.file_hashes
             .insert(file_path.as_ref().to_string_lossy().to_string(), hash);
     }
 
-    /// Add an output mapping entry
     pub fn add_output_mapping<P: AsRef<Path>>(
         &mut self,
         source_path: P,
@@ -163,17 +158,14 @@ impl BuildManifest {
         );
     }
 
-    /// Set the dependency graph
     pub fn set_dependency_graph(&mut self, graph: BTreeMap<String, Vec<String>>) {
         self.dependency_graph = graph;
     }
 
-    /// Set the config hash
     pub fn set_config_hash(&mut self, hash: String) {
         self.config_hash = hash;
     }
 
-    /// Set the embedding file hashes
     pub fn set_embedding_file_hashes(&mut self, hashes: BTreeMap<String, String>) {
         self.embedding_file_hashes = hashes;
     }

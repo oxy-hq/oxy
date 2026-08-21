@@ -22,9 +22,7 @@ use super::config::SqlSyntaxParams;
 use super::registry::RegistryError;
 use super::rule::{SolvableCtx, SolvableRule};
 
-// ---------------------------------------------------------------------------
 // Shared helper
-// ---------------------------------------------------------------------------
 
 /// Return deduplicated, lowercased table names referenced in a parsed SQL
 /// statement list, excluding CTE aliases (which are not real catalog tables).
@@ -68,9 +66,7 @@ fn parse_sql(sql: &str) -> Result<Vec<Statement>, AnalyticsError> {
     })
 }
 
-// ---------------------------------------------------------------------------
 // Rule: sql_syntax
-// ---------------------------------------------------------------------------
 
 /// Rule: `sql_syntax`
 ///
@@ -139,9 +135,7 @@ impl SolvableRule for SqlSyntaxRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: tables_exist_in_catalog
-// ---------------------------------------------------------------------------
 
 /// Rule: `tables_exist_in_catalog`
 ///
@@ -184,9 +178,7 @@ impl SolvableRule for TablesExistRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: spec_tables_present
-// ---------------------------------------------------------------------------
 
 /// Rule: `spec_tables_present`
 ///
@@ -231,9 +223,7 @@ impl SolvableRule for SpecTablesPresentRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: column_refs_valid
-// ---------------------------------------------------------------------------
 
 /// Rule: `column_refs_valid`
 ///
@@ -280,9 +270,7 @@ impl SolvableRule for ColumnRefsValidRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Helper: recursive ORDER BY check
-// ---------------------------------------------------------------------------
 
 /// Returns `true` if any level of the query tree contains an ORDER BY clause.
 /// Checks: the query itself, CTE definitions, and subqueries in FROM.
@@ -312,9 +300,7 @@ fn query_has_order_by(q: &Query) -> bool {
     false
 }
 
-// ---------------------------------------------------------------------------
 // Rule: timeseries_order_by_check
-// ---------------------------------------------------------------------------
 
 /// Rule: `timeseries_order_by_check`
 ///
@@ -368,9 +354,7 @@ impl SolvableRule for TimeseriesOrderByCheckRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Backward-compatible free function
-// ---------------------------------------------------------------------------
 
 /// Validate that a SQL string is syntactically valid and references only
 /// tables that exist in the catalog and that the spec requires.
@@ -392,9 +376,7 @@ pub fn validate_solvable(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests;

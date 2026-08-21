@@ -49,9 +49,7 @@ async function openSQLFile(page: Page): Promise<boolean> {
   return false;
 }
 
-// ============================================================================
 // QUERY EXECUTION TESTS
-// ============================================================================
 
 test.describe("SQL Editor - Query Execution", () => {
   test.beforeEach(async ({ page }) => {
@@ -204,9 +202,7 @@ SELECT 3 as third;`);
   });
 });
 
-// ============================================================================
 // ERROR HANDLING TESTS
-// ============================================================================
 
 test.describe("SQL Editor - Error Handling", () => {
   test.beforeEach(async ({ page }) => {
@@ -300,9 +296,7 @@ test.describe("SQL Editor - Error Handling", () => {
   });
 });
 
-// ============================================================================
 // DATABASE SELECTION TESTS
-// ============================================================================
 
 test.describe("SQL Editor - Database Selection", () => {
   test.beforeEach(async ({ page }) => {
@@ -373,9 +367,7 @@ test.describe("SQL Editor - Database Selection", () => {
   });
 });
 
-// ============================================================================
 // RESULTS DISPLAY TESTS
-// ============================================================================
 
 test.describe("SQL Editor - Results Display", () => {
   test.beforeEach(async ({ page }) => {
@@ -490,9 +482,7 @@ test.describe("SQL Editor - Results Display", () => {
   });
 });
 
-// ============================================================================
 // CHARACTER ENCODING & SPECIAL CHARACTERS
-// ============================================================================
 
 test.describe("SQL Editor - Character Encoding", () => {
   test.beforeEach(async ({ page }) => {
@@ -593,9 +583,7 @@ Line 3' as multiline`);
   });
 });
 
-// ============================================================================
 // SAVE & RELOAD TESTS
-// ============================================================================
 
 test.describe("SQL Editor - Save & Reload", () => {
   test.beforeEach(async ({ page }) => {
@@ -719,9 +707,7 @@ test.describe("SQL Editor - Save & Reload", () => {
   });
 });
 
-// ============================================================================
 // KEYBOARD SHORTCUTS
-// ============================================================================
 
 test.describe("SQL Editor - Keyboard Shortcuts", () => {
   test.beforeEach(async ({ page }) => {
@@ -807,9 +793,7 @@ test.describe("SQL Editor - Keyboard Shortcuts", () => {
   });
 });
 
-// ============================================================================
 // EDGE CASES & STRESS TESTS
-// ============================================================================
 
 test.describe("SQL Editor - Edge Cases", () => {
   test.beforeEach(async ({ page }) => {

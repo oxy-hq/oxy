@@ -40,7 +40,6 @@ pub trait ToolExecutor: Send + Sync {
     ) -> Result<CallToolResult, rmcp::ErrorData>;
 }
 
-/// Automation tool executor
 pub struct AutomationExecutor;
 
 #[async_trait]

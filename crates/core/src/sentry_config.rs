@@ -95,7 +95,6 @@ pub fn add_operation_context(operation: &str, file_path: Option<&str>) {
     });
 }
 
-/// Add database context to Sentry scope
 pub fn add_database_context(database_name: &str, query_type: Option<&str>) {
     sentry::configure_scope(|scope| {
         scope.set_tag("database", database_name);
@@ -105,7 +104,6 @@ pub fn add_database_context(database_name: &str, query_type: Option<&str>) {
     });
 }
 
-/// Add automation context to Sentry scope
 pub fn add_automation_context(automation_name: &str, step: Option<&str>) {
     sentry::configure_scope(|scope| {
         scope.set_tag("workflow", automation_name);
@@ -115,7 +113,6 @@ pub fn add_automation_context(automation_name: &str, step: Option<&str>) {
     });
 }
 
-/// Add agent context to Sentry scope
 pub fn add_agent_context(agent_name: &str, question: Option<&str>) {
     sentry::configure_scope(|scope| {
         scope.set_tag("agent", agent_name);
@@ -131,7 +128,6 @@ pub fn add_agent_context(agent_name: &str, question: Option<&str>) {
     });
 }
 
-/// Capture an error with additional context
 pub fn capture_error_with_context(error: &dyn std::error::Error, context: &str) {
     sentry::configure_scope(|scope| {
         scope.set_extra("context", context.into());
@@ -139,7 +135,6 @@ pub fn capture_error_with_context(error: &dyn std::error::Error, context: &str) 
     sentry::capture_error(error);
 }
 
-/// Capture a message with additional context
 pub fn capture_message_with_context(message: &str, level: sentry::Level, context: &str) {
     sentry::configure_scope(|scope| {
         scope.set_extra("context", context.into());

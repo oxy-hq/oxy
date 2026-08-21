@@ -6,9 +6,14 @@ use super::spec::ResultShape;
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnalyticsError {
     /// A metric name could not be resolved to any known column.
-    UnresolvedMetric { metric: String },
+    UnresolvedMetric {
+        metric: String,
+    },
     /// A column name matches more than one table and cannot be disambiguated.
-    AmbiguousColumn { column: String, tables: Vec<String> },
+    AmbiguousColumn {
+        column: String,
+        tables: Vec<String>,
+    },
     /// A join path references a table or key that does not exist in the schema.
     UnresolvedJoin {
         left: String,
@@ -16,10 +21,14 @@ pub enum AnalyticsError {
         key: String,
         reason: String,
     },
-    /// The generated or supplied query has a syntax error.
-    SyntaxError { query: String, message: String },
+    SyntaxError {
+        query: String,
+        message: String,
+    },
     /// The query executed successfully but returned no rows.
-    EmptyResults { query: String },
+    EmptyResults {
+        query: String,
+    },
     /// The result set's shape does not match the expected shape.
     ShapeMismatch {
         expected: ResultShape,
@@ -33,12 +42,18 @@ pub enum AnalyticsError {
         reason: String,
     },
     /// The pipeline cannot proceed without additional input from the user.
-    NeedsUserInput { prompt: String },
+    NeedsUserInput {
+        prompt: String,
+    },
     /// The airlayer compiler returned an error when trying to compile the LLM-produced `QueryRequest`.
-    AirlayerCompileError { error_message: String },
+    AirlayerCompileError {
+        error_message: String,
+    },
     /// The chart config produced by the Interpret stage references columns
     /// that do not exist in the query result.
-    InvalidChartConfig { errors: Vec<String> },
+    InvalidChartConfig {
+        errors: Vec<String>,
+    },
     /// A vendor semantic engine returned an error during query execution.
     ///
     /// Covers both API-level errors (HTTP 4xx/5xx with a body) and transport
@@ -59,7 +74,10 @@ pub enum AnalyticsError {
     /// A pre-written SQL file selected as the verified-query path could not be
     /// read from disk (missing file, permission denied, etc.). Distinct from
     /// `SyntaxError` because the file content was never even parsed.
-    FileReadError { file_path: String, message: String },
+    FileReadError {
+        file_path: String,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for AnalyticsError {

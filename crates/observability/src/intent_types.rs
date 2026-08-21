@@ -7,7 +7,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Special cluster ID for the "unknown" cluster.
 pub const UNKNOWN_CLUSTER_ID: u32 = 0;
 
 /// An intent cluster stored in an observability backend.

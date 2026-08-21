@@ -63,7 +63,6 @@ pub struct PreaggConfig {
     /// Database connector used for pre-agg builds. Defaults to each view's own `datasource`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub database: Option<String>,
-    /// Background refresh worker settings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refresh_worker: Option<RefreshWorkerConfig>,
 }
@@ -1434,7 +1433,6 @@ impl TryFrom<ConnectionOverride> for SnowflakeConnectionOverride {
 /// deserialize to the correct variant based on the database configuration.
 pub type ConnectionOverrides = HashMap<String, ConnectionOverride>;
 
-/// Validate a list of models
 fn validate_models(models: &Vec<Model>, ctx: &ValidationContext) -> garde::Result {
     for (i, model) in models.iter().enumerate() {
         match model {
@@ -1738,9 +1736,7 @@ impl Hash for SemanticQueryTask {
     }
 }
 
-// -----------------------------------------------------------------------------
 // Supporting Enums & Structs
-// -----------------------------------------------------------------------------
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema, Hash, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SemanticOrderDirection {
@@ -2310,7 +2306,6 @@ impl LookerSortField {
     }
 }
 
-/// Query parameters for a Looker query.
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, PartialEq, Eq)]
 pub struct LookerQueryParams {
     /// List of field names to include in the results (e.g., "orders.id", "orders.total")
@@ -2318,7 +2313,6 @@ pub struct LookerQueryParams {
         description = "Fields to select. Field name must be full name format {view}.{field_name}."
     )]
     pub fields: Vec<String>,
-    /// Filter conditions as field name to filter expression mappings
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         description = "Filter conditions as field name to Looker filter expression mappings."

@@ -87,7 +87,6 @@ pub struct OnboardingContext {
     pub tables: Vec<String>,
     /// Warehouse type (e.g., "clickhouse", "postgres", "bigquery").
     pub warehouse_type: String,
-    /// Model configuration to write to config.yml.
     #[serde(default)]
     pub model_config: Option<OnboardingModelConfig>,
     /// Which build phase this run is for.

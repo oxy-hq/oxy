@@ -14,9 +14,7 @@ use super::{
     PromoteError, connect, db_err, error_body, insert_run_and_enqueue_compile, promote_one,
 };
 
-// ---------------------------------------------------------------------------
 // GET /admin/compiles
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
@@ -152,9 +150,7 @@ fn compile_row_from_model(
     }
 }
 
-// ---------------------------------------------------------------------------
 // GET /admin/compiles/{revision_id}
-// ---------------------------------------------------------------------------
 
 /// One entity successfully written into a revision — the "which compiled" unit.
 #[derive(Serialize, Debug)]
@@ -259,9 +255,7 @@ async fn collect_compiled_entities(
     Ok(out)
 }
 
-// ---------------------------------------------------------------------------
 // POST /admin/compiles/run
-// ---------------------------------------------------------------------------
 
 /// Operator action: enqueue a Compile TaskSpec for the given
 /// workspace. Used from the admin UI's "Run compile now" button. The
@@ -333,9 +327,7 @@ pub(super) async fn run_compile_now(
     }))
 }
 
-// ---------------------------------------------------------------------------
 // Rollback: repoint a workspace at a prior good revision
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize, Debug)]
 pub struct PromoteResponse {
@@ -372,9 +364,7 @@ pub(super) async fn promote_to_revision(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Backfill: compile every workspace that has never been compiled
-// ---------------------------------------------------------------------------
 
 /// Max workspaces enqueued per backfill call. Bounds the in-memory load, the
 /// per-request wall-clock (sequential enqueues), and the resulting compile

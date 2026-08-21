@@ -1,9 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-cleanup";
 
-// ============================================================================
 // HELPER FUNCTIONS
-// ============================================================================
 
 async function openAutomationFile(
   page: Page,
@@ -81,9 +79,7 @@ async function getEditorContent(page: Page): Promise<string> {
   return (await viewLines.textContent()) || "";
 }
 
-// ============================================================================
 // MODE SWITCHING & SYNC TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Form & Editor Sync", () => {
   test.beforeEach(async ({ page }) => {
@@ -284,9 +280,7 @@ tasks:
   });
 });
 
-// ============================================================================
 // NAVIGATION & UNSAVED CHANGES TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
   test.beforeEach(async ({ page }) => {
@@ -424,9 +418,7 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
   });
 });
 
-// ============================================================================
 // CHARACTER INPUT & VALIDATION TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Character Input Validation", () => {
   test.beforeEach(async ({ page }) => {
@@ -567,9 +559,7 @@ tasks:
   });
 });
 
-// ============================================================================
 // KEYBOARD SHORTCUT TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Keyboard Shortcuts", () => {
   test.beforeEach(async ({ page }) => {
@@ -774,9 +764,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
   });
 });
 
-// ============================================================================
 // EDGE CASES & STRESS TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Edge Cases", () => {
   test.beforeEach(async ({ page }) => {
@@ -963,9 +951,7 @@ test.describe("Workflow Editor - Edge Cases", () => {
   });
 });
 
-// ============================================================================
 // FORM-SPECIFIC TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Form Field Validation", () => {
   test.beforeEach(async ({ page }) => {
@@ -1123,9 +1109,7 @@ test.describe("Workflow Editor - Form Field Validation", () => {
   });
 });
 
-// ============================================================================
 // PREVIEW & OUTPUT MODE TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Output Mode", () => {
   test.beforeEach(async ({ page }) => {

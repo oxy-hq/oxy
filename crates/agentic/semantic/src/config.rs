@@ -94,7 +94,6 @@ pub struct SemanticOrder {
     pub direction: String,
 }
 
-/// Time granularity for semantic time dimensions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TimeGranularity {

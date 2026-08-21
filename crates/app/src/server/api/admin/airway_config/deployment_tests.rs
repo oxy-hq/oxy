@@ -55,9 +55,7 @@ fn sample() -> DeploymentValues {
     }
 }
 
-// ---------------------------------------------------------------------------
 // The singleton is a schema property, not a convention
-// ---------------------------------------------------------------------------
 
 /// **The constraint actually holds.** A second row is refused by Postgres, and
 /// so is a row under any id but `1` — the `PRIMARY KEY` closes the first door
@@ -398,9 +396,7 @@ async fn an_older_writer_cannot_clear_the_cursor_lag_floor() {
     reset(&db).await;
 }
 
-// ---------------------------------------------------------------------------
 // Drift
-// ---------------------------------------------------------------------------
 
 /// No install in this process is **unknown**, never `in_sync`. This is the
 /// multi-process case: a `serve` replica answering the request installed
@@ -466,9 +462,7 @@ fn an_invalid_configured_row_is_unknown_rather_than_drifted() {
     assert_eq!(report.reason, Some("configured_values_invalid"));
 }
 
-// ---------------------------------------------------------------------------
 // The two column rosters cannot drift apart
-// ---------------------------------------------------------------------------
 
 /// `agentic-airway` may not depend on `entity` (see that crate's `CLAUDE.md`),
 /// so it reads this table with a hand-written `SELECT` over

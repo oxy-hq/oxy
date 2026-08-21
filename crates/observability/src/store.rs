@@ -61,7 +61,6 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
             .await
     }
 
-    /// Get all spans for a given trace ID.
     async fn get_trace_detail(&self, trace_id: &str) -> Result<Vec<TraceDetailRow>, OxyError>;
 
     /// Get embeddings with classification data for cluster map visualization.
@@ -72,7 +71,6 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
         source: Option<&str>,
     ) -> Result<Vec<ClusterMapDataRow>, OxyError>;
 
-    /// Get cluster info for visualization.
     async fn get_cluster_infos(&self) -> Result<Vec<ClusterInfoRow>, OxyError>;
 
     /// Get trace enrichment data (status, duration) for a set of trace IDs.
@@ -99,10 +97,8 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
     /// Store clusters (replace all existing, then insert new ones).
     async fn store_clusters(&self, clusters: &[IntentCluster]) -> Result<(), OxyError>;
 
-    /// Load all clusters.
     async fn load_clusters(&self) -> Result<Vec<IntentCluster>, OxyError>;
 
-    /// Store a classification result.
     async fn store_classification(
         &self,
         trace_id: &str,
@@ -131,7 +127,6 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
         source: &str,
     ) -> Result<(), OxyError>;
 
-    /// Get intent analytics for the last N days.
     async fn get_intent_analytics(&self, days: u32) -> Result<Vec<IntentAnalyticsRow>, OxyError>;
 
     /// Get outlier questions (classified as "unknown").
@@ -143,24 +138,20 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
         &self,
     ) -> Result<Vec<(String, String, Vec<f32>, String)>, OxyError>;
 
-    /// Get count of unknown classifications.
     async fn get_unknown_count(&self) -> Result<usize, OxyError>;
 
     /// Update a single cluster (upsert).
     async fn update_cluster_record(&self, cluster: &IntentCluster) -> Result<(), OxyError>;
 
-    /// Get the next available cluster ID.
     async fn get_next_cluster_id(&self) -> Result<u32, OxyError>;
 
     // ── Metrics ───────────────────────────────────────────────────────────
 
-    /// Store metric usage records.
     async fn store_metric_usages(&self, metrics: Vec<MetricUsageRecord>) -> Result<(), OxyError>;
 
     /// Get analytics summary for the last N days.
     async fn get_metrics_analytics(&self, days: u32) -> Result<MetricAnalyticsData, OxyError>;
 
-    /// Get paginated metrics list.
     async fn get_metrics_list(
         &self,
         days: u32,
@@ -168,7 +159,6 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
         offset: usize,
     ) -> Result<MetricsListData, OxyError>;
 
-    /// Get detail for a specific metric.
     async fn get_metric_detail(
         &self,
         metric_name: &str,
@@ -177,7 +167,6 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
 
     // ── Execution Analytics ───────────────────────────────────────────────
 
-    /// Get execution analytics summary.
     async fn get_execution_summary(&self, days: u32) -> Result<ExecutionSummaryData, OxyError>;
 
     /// Get execution time series (daily buckets).
@@ -186,7 +175,6 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
         days: u32,
     ) -> Result<Vec<ExecutionTimeBucketData>, OxyError>;
 
-    /// Get per-agent execution stats.
     async fn get_execution_agent_stats(
         &self,
         days: u32,

@@ -82,7 +82,6 @@ pub fn record_semantic_tool_call_metric(
 
 // Record explicit metrics via ExecutionContext
 
-/// Log whether tool call is verified
 pub fn tool_call_is_verified(is_verified: bool) {
     event!(
         Level::INFO,
@@ -103,7 +102,6 @@ pub fn tool_call_output<T: serde::Serialize>(output: &T) {
     );
 }
 
-/// Log individual tool call error
 pub fn tool_call_error(error: &str) {
     event!(
         Level::ERROR,

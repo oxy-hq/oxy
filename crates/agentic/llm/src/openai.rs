@@ -105,7 +105,6 @@ pub struct OpenAiProvider {
 }
 
 impl OpenAiProvider {
-    /// Create a provider using the given API key and model.
     pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),

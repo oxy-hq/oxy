@@ -165,9 +165,7 @@ fn intent_with_filters(metrics: &[&str], dimensions: &[&str], filters: &[&str]) 
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 1. Schema-only tests
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn schema_list_metrics_finds_numeric_columns() {
@@ -319,9 +317,7 @@ fn schema_table_names_sorted() {
     });
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 2. Semantic-only tests
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn semantic_list_metrics_finds_defined_measures() {
@@ -553,9 +549,7 @@ fn semantic_table_names_are_source_tables() {
     assert!(names.contains(&"customers".to_string()), "{names:?}");
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 3. Hybrid tests
-// ═════════════════════════════════════════════════════════════════════════════
 
 fn hybrid_full() -> SemanticCatalog {
     semantic_catalog()
@@ -682,9 +676,7 @@ fn hybrid_get_join_path_prefers_semantic_entity_joins() {
     assert!(jp.path.contains("customer_id"));
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 4. Edge cases
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn hybrid_with_empty_schema_and_semantic_still_works() {
@@ -779,9 +771,7 @@ fn semantic_get_column_range_unknown_dimension_returns_none() {
     assert!(sem.get_column_range("no_such_dim").is_none());
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 5. SchemaCatalog::from_schema_info – vendor-agnostic introspection pipeline
-// ═════════════════════════════════════════════════════════════════════════════
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -1213,9 +1203,7 @@ fn table_summary_is_much_shorter_than_full_prompt() {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
 // search_catalog — batch multi-term search
-// ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn search_catalog_single_term_returns_metrics_and_dims() {
@@ -1319,9 +1307,7 @@ fn search_catalog_works_on_semantic() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 7. Fuzzy search tests
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn fuzzy_search_finds_typo_in_metric_name() {
@@ -1383,9 +1369,7 @@ fn fuzzy_search_works_on_schema_catalog() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 8. Real-world semantic layer validation (examples)
-// ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn demo_project_semantic_layer_loads_and_compiles() {
@@ -1488,9 +1472,7 @@ fn qualify_names_resolves_llm_raw_column_names() {
     );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // 9. Semantic layer → try_compile end-to-end (reproduces runtime path)
-// ═════════════════════════════════════════════════════════════════════════════
 
 /// Cardio view matching the real examples/semantics/cardio.view.yml.
 fn cardio_view_yaml() -> &'static str {

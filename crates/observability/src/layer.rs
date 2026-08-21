@@ -44,9 +44,7 @@ fn new_span_id() -> String {
     hex::encode(&bytes[..8])
 }
 
-// ---------------------------------------------------------------------------
 // Visitors for extracting field values from spans and events
-// ---------------------------------------------------------------------------
 
 /// Visitor that collects all fields into a HashMap<String, String>.
 struct FieldVisitor {
@@ -93,7 +91,6 @@ impl Visit for FieldVisitor {
     }
 }
 
-/// Visitor for events that also extracts the event name.
 struct EventVisitor {
     name: Option<String>,
     fields: HashMap<String, String>,
@@ -149,9 +146,7 @@ impl Visit for EventVisitor {
     }
 }
 
-// ---------------------------------------------------------------------------
 // SpanCollectorLayer
-// ---------------------------------------------------------------------------
 
 /// A custom `tracing_subscriber::Layer` that captures span lifecycle events
 /// and sends completed `SpanRecord`s to the observability store via an unbounded channel.
@@ -352,9 +347,7 @@ where
     }
 }
 
-// ---------------------------------------------------------------------------
 // Public helper
-// ---------------------------------------------------------------------------
 
 /// Extract the `trace_id` from the current span's extensions.
 ///

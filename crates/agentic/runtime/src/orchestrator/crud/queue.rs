@@ -226,7 +226,6 @@ pub async fn claim_task_under_root(
     Ok(result)
 }
 
-/// Retrieve a queue entry by task_id.
 pub async fn get_queue_entry(
     db: &DatabaseConnection,
     task_id: &str,

@@ -4,7 +4,6 @@ use std::sync::{LazyLock, Mutex};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// Execution type enum matching frontend ExecutionType
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionType {
@@ -90,7 +89,6 @@ pub struct ExecutionSummary {
     pub agent_tool_count: u64,
 }
 
-/// Time bucket for time series data
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionTimeBucket {
@@ -110,7 +108,6 @@ pub struct ExecutionTimeBucket {
     pub agent_tool_count: Option<u64>,
 }
 
-/// Per-agent execution statistics
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentExecutionStats {
@@ -132,7 +129,6 @@ pub struct LatencyTriple {
     pub p99_ms: f64,
 }
 
-/// One daily latency-percentile point.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LatencyPercentilePoint {
@@ -292,7 +288,6 @@ pub fn model_cost_usd(model: &str, input_tokens: u64, output_tokens: u64) -> f64
         + (output_tokens as f64 / 1_000_000.0) * price_out
 }
 
-/// Detailed execution record
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionDetail {

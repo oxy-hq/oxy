@@ -175,12 +175,10 @@ impl EntityGraph {
         &self.joins
     }
 
-    /// Get primary entities map
     pub fn get_primary_entities(&self) -> &HashMap<String, String> {
         &self.primary_entities
     }
 
-    /// Get foreign entities map
     pub fn get_foreign_entities(&self) -> &HashMap<String, Vec<String>> {
         &self.foreign_entities
     }
@@ -275,7 +273,6 @@ impl EntityGraph {
         unreachable_views
     }
 
-    /// Get joins for a specific view
     pub fn get_joins_for_view(&self, view_name: &str) -> Vec<&JoinRelationship> {
         self.joins
             .iter()

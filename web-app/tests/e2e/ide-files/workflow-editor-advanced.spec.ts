@@ -49,9 +49,7 @@ async function switchMode(page: Page, mode: string): Promise<boolean> {
   return false;
 }
 
-// ============================================================================
 // STRESS & PERFORMANCE TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Stress Tests", () => {
   test.beforeEach(async ({ page }) => {
@@ -192,9 +190,7 @@ test.describe("Workflow Editor - Stress Tests", () => {
   });
 });
 
-// ============================================================================
 // RACE CONDITION TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Race Conditions", () => {
   test.beforeEach(async ({ page }) => {
@@ -310,9 +306,7 @@ test.describe("Workflow Editor - Race Conditions", () => {
   });
 });
 
-// ============================================================================
 // BROWSER COMPATIBILITY & SPECIAL KEYS
-// ============================================================================
 
 test.describe("Workflow Editor - Special Keyboard Combinations", () => {
   test.beforeEach(async ({ page }) => {
@@ -481,9 +475,7 @@ test.describe("Workflow Editor - Special Keyboard Combinations", () => {
   });
 });
 
-// ============================================================================
 // FORM STRESS TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Form Stress Tests", () => {
   test.beforeEach(async ({ page }) => {
@@ -608,9 +600,7 @@ test.describe("Workflow Editor - Form Stress Tests", () => {
   });
 });
 
-// ============================================================================
 // CLIPBOARD & COPY/PASTE TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Clipboard Operations", () => {
   test.beforeEach(async ({ page }) => {
@@ -698,9 +688,7 @@ tasks:
   });
 });
 
-// ============================================================================
 // MEMORY & RESOURCE TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Resource Management", () => {
   test.beforeEach(async ({ page }) => {

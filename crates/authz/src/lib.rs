@@ -2470,12 +2470,10 @@ mod policy_tests {
         assert_eq!(PlatformRole::GlobalAdmin.caps().len(), Cap::ALL.len() - 1);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
     // The delegation bound. Every assertion below is written so that deleting ONE
     // guard in `may_delegate` reddens at least one of them — the file-wide
     // `contains("may_delegate")` style of check is what let three earlier defects
     // through on this branch.
-    // ─────────────────────────────────────────────────────────────────────────────
 
     fn admin_over(scope: Scope) -> PrincipalFacts {
         PrincipalFacts {

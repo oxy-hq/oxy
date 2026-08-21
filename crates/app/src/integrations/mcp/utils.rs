@@ -1,9 +1,7 @@
 // Standard library imports
 use std::collections::HashMap;
 
-// =============================================================================
 // Helper Functions
-// =============================================================================
 
 /// Converts a JSON object to a HashMap
 pub fn json_to_hashmap(

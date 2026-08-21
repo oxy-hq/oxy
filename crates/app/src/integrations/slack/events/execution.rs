@@ -44,9 +44,7 @@ pub(crate) const FILE_UPLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 /// same thread so the overflow is visible to the user.
 const MAX_SQL_ARTIFACTS_PER_MESSAGE: usize = 10;
 
-// ============================================================================
 // Public Types
-// ============================================================================
 
 /// All parameters needed to execute the agent from a Slack event.
 pub struct SlackRunRequest {
@@ -61,9 +59,7 @@ pub struct SlackRunRequest {
     pub thread_ts: String,
 }
 
-// ============================================================================
 // Public API
-// ============================================================================
 
 /// Execute an agentic agent from a Slack event and deliver the response.
 ///
@@ -199,9 +195,7 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
     Ok(())
 }
 
-// ============================================================================
 // Agentic execution
-// ============================================================================
 
 /// Output of one agentic Slack run, fed into block assembly + uploads.
 struct AgentExecOutput {
@@ -309,9 +303,7 @@ fn resolve_agent_config_path(repo_path: &Path, agent_path: &str) -> std::path::P
     direct
 }
 
-// ============================================================================
 // Block assembly
-// ============================================================================
 
 async fn build_message_blocks(
     exec: &AgentExecOutput,
@@ -550,9 +542,7 @@ async fn post_overflow_followups(
     }
 }
 
-// ============================================================================
 // Setup helpers
-// ============================================================================
 
 async fn set_loading_status(
     client: &SlackClient,
@@ -596,9 +586,7 @@ async fn resolve_reopen_query(org_id: Uuid, question: &str) -> Option<String> {
     }
 }
 
-// ============================================================================
 // URL helpers
-// ============================================================================
 
 async fn fetch_org_slug(org_id: Uuid) -> Option<String> {
     let conn = establish_connection().await.ok()?;
@@ -629,9 +617,7 @@ async fn build_thread_url(
     url.replace('|', "")
 }
 
-// ============================================================================
 // Thread + persistence
-// ============================================================================
 
 async fn find_or_create_slack_thread(
     req: &SlackRunRequest,
@@ -747,9 +733,7 @@ async fn update_thread_with_output(thread_id: Uuid, output: &str) -> Result<(), 
     Ok(())
 }
 
-// ============================================================================
 // Utilities
-// ============================================================================
 
 fn truncate(s: &str, max_len: usize) -> String {
     if s.chars().count() <= max_len {

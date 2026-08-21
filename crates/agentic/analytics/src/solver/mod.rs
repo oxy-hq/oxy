@@ -41,9 +41,7 @@ mod builder;
 
 mod domain_solver;
 
-// ---------------------------------------------------------------------------
 // Table-driven handlers
-// ---------------------------------------------------------------------------
 
 /// Build the analytics-specific state handler table.
 ///
@@ -64,9 +62,7 @@ pub fn build_analytics_handlers()
     map
 }
 
-// ---------------------------------------------------------------------------
 // Tests (lifted into sibling file `solver/tests.rs`)
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests;

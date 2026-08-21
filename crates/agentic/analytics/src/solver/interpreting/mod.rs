@@ -319,9 +319,7 @@ impl AnalyticsSolver {
     }
 }
 
-// ---------------------------------------------------------------------------
 // State handler
-// ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **interpreting** state.
 pub(super) fn build_interpreting_handler()

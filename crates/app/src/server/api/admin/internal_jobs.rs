@@ -45,9 +45,7 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/run-retention", post(run_retention))
 }
 
-// ---------------------------------------------------------------------------
 // Connect-on-demand helper
-// ---------------------------------------------------------------------------
 
 pub(crate) async fn connect() -> Result<DatabaseConnection, Response> {
     oxy::database::client::establish_connection()
@@ -62,9 +60,7 @@ pub(crate) async fn connect() -> Result<DatabaseConnection, Response> {
         })
 }
 
-// ---------------------------------------------------------------------------
 // Queue stats
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize, Default, Debug, PartialEq)]
 pub struct QueueStatusCounts {
@@ -152,9 +148,7 @@ fn accumulate(counts: &mut QueueStatusCounts, status: &str, n: i64) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Recent failures
-// ---------------------------------------------------------------------------
 
 /// A failed/dead job, enriched with the tenant + run context an operator needs
 /// to actually debug it. The enriched fields are LEFT-joined from
@@ -389,9 +383,7 @@ async fn recent_failures(Query(q): Query<LimitQuery>) -> Result<Json<Vec<QueueRo
     Ok(Json(rows.into_iter().map(Into::into).collect()))
 }
 
-// ---------------------------------------------------------------------------
 // Dead-letter list + actions
-// ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
 struct DeadLetterQuery {
@@ -582,9 +574,7 @@ async fn delete_dead(Path(task_id): Path<String>) -> Result<StatusCode, Response
     }
 }
 
-// ---------------------------------------------------------------------------
 // Worker fleet
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize, Debug)]
 pub struct WorkerDto {
@@ -640,9 +630,7 @@ async fn list_workers() -> Result<Json<WorkersResponse>, Response> {
     }))
 }
 
-// ---------------------------------------------------------------------------
 // Scheduled jobs registry (static for now)
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize, Debug)]
 pub struct ScheduledJobDto {
@@ -697,9 +685,7 @@ pub(crate) fn scheduled_jobs() -> Vec<ScheduledJobDto> {
     ]
 }
 
-// ---------------------------------------------------------------------------
 // Run reaper now
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize, Debug)]
 pub struct RunReaperResponse {
@@ -713,9 +699,7 @@ async fn run_reaper() -> Result<Json<RunReaperResponse>, Response> {
     Ok(Json(RunReaperResponse { rows_affected }))
 }
 
-// ---------------------------------------------------------------------------
 // Run retention prune now
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize, Debug)]
 pub struct RunRetentionResponse {
@@ -735,9 +719,7 @@ async fn run_retention() -> Result<Json<RunRetentionResponse>, Response> {
     Ok(Json(RunRetentionResponse { rows_deleted }))
 }
 
-// ---------------------------------------------------------------------------
 // Error helpers
-// ---------------------------------------------------------------------------
 
 /// Shared error body shape for every admin write route that reuses `connect`
 /// / `db_err` from this module (`internal_jobs` itself, plus

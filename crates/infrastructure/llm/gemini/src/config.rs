@@ -1,7 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Google Gemini model configuration
 #[derive(Deserialize, Debug, Clone, Serialize, JsonSchema)]
 pub struct GeminiModelConfig {
     pub name: String,

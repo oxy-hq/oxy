@@ -70,7 +70,6 @@ impl IntentStorage {
         self.storage.store_clusters(clusters).await
     }
 
-    /// Load all clusters from storage
     pub async fn load_clusters(&self) -> Result<Vec<IntentCluster>, OxyError> {
         self.storage.load_clusters().await
     }
@@ -133,7 +132,6 @@ impl IntentStorage {
             .await
     }
 
-    /// Get intent analytics for the last N days
     pub async fn get_analytics(&self, days: u32) -> Result<Vec<IntentAnalytics>, OxyError> {
         let rows = self.storage.get_intent_analytics(days).await?;
 
@@ -159,14 +157,12 @@ impl IntentStorage {
         self.storage.get_outliers(limit).await
     }
 
-    /// Load unknown classifications for incremental clustering
     pub async fn load_unknown_classifications(
         &self,
     ) -> Result<Vec<(String, String, Vec<f32>, String)>, OxyError> {
         self.storage.load_unknown_classifications().await
     }
 
-    /// Get the count of unknown classifications
     pub async fn get_unknown_count(&self) -> Result<usize, OxyError> {
         self.storage.get_unknown_count().await
     }
@@ -176,7 +172,6 @@ impl IntentStorage {
         self.storage.update_cluster_record(cluster).await
     }
 
-    /// Get the next available cluster ID
     pub async fn get_next_cluster_id(&self) -> Result<u32, OxyError> {
         self.storage.get_next_cluster_id().await
     }

@@ -10,7 +10,6 @@ use std::path::PathBuf;
 pub struct SecretsEnvironmentStorage;
 
 impl SecretsEnvironmentStorage {
-    /// Get the path to the .env file
     fn get_env_file_path() -> Result<PathBuf, OxyError> {
         let current_dir = env::current_dir().map_err(|e| {
             OxyError::SecretManager(format!("Failed to get current directory: {}", e))
@@ -18,7 +17,6 @@ impl SecretsEnvironmentStorage {
         Ok(current_dir.join(".env"))
     }
 
-    /// Read all lines from .env file
     fn read_env_file(path: &PathBuf) -> Result<Vec<String>, OxyError> {
         if !path.exists() {
             return Ok(Vec::new());
@@ -30,7 +28,6 @@ impl SecretsEnvironmentStorage {
         Ok(content.lines().map(|s| s.to_string()).collect())
     }
 
-    /// Write lines back to .env file
     fn write_env_file(path: &PathBuf, lines: Vec<String>) -> Result<(), OxyError> {
         let content = lines.join("\n");
         fs::write(path, content)

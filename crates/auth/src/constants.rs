@@ -4,7 +4,6 @@
 //! that `oxy-auth` no longer needs to import from `oxy`. The `oxy` crate
 //! re-exports these from `oxy::config::constants` for source compatibility.
 
-/// HTTP header used to carry the API key.
 pub const DEFAULT_API_KEY_HEADER: &str = "X-API-Key";
 
 /// HTTP header carrying the bearer JWT.

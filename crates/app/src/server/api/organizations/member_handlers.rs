@@ -22,9 +22,7 @@ use oxy_app_core::member_authz;
 
 use super::dto::*;
 
-// ---------------------------------------------------------------------------
 // Members management
-// ---------------------------------------------------------------------------
 
 /// GET /orgs/:org_id/members
 pub async fn list_members(

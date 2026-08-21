@@ -48,7 +48,6 @@ pub async fn update_spec_hint(
     Ok(())
 }
 
-/// Update the thinking_mode on the extension row.
 pub async fn update_thinking_mode(
     db: &DatabaseConnection,
     run_id: &str,

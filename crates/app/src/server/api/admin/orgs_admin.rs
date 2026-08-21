@@ -54,9 +54,7 @@ pub(crate) fn router() -> Router<AppState> {
         )
 }
 
-// ---------------------------------------------------------------------------
 // Create org + onboard owner  (POST /admin/orgs)
-// ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
 pub struct AdminCreateOrgBody {

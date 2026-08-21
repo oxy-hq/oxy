@@ -117,7 +117,6 @@ pub fn cluster_embeddings(embeddings: &[Vec<f32>], min_cluster_size: usize) -> C
     }
 }
 
-/// Build a similarity matrix using cosine similarity
 fn build_similarity_matrix(embeddings: &[Vec<f32>]) -> Vec<Vec<f32>> {
     let n = embeddings.len();
     let mut matrix = vec![vec![0.0f32; n]; n];
@@ -134,7 +133,6 @@ fn build_similarity_matrix(embeddings: &[Vec<f32>]) -> Vec<Vec<f32>> {
     matrix
 }
 
-/// Compute an adaptive similarity threshold
 fn compute_adaptive_threshold(similarities: &[Vec<f32>], _min_cluster_size: usize) -> f32 {
     // Collect all non-self similarities
     let mut all_sims: Vec<f32> = Vec::new();
@@ -161,7 +159,6 @@ fn compute_adaptive_threshold(similarities: &[Vec<f32>], _min_cluster_size: usiz
     base_threshold.max(0.5).min(0.95)
 }
 
-/// Find neighbors for each point above the similarity threshold
 fn find_neighbors(similarities: &[Vec<f32>], threshold: f32) -> Vec<Vec<usize>> {
     similarities
         .iter()

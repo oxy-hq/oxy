@@ -70,7 +70,6 @@ impl OauthStateService {
         Ok(nonce)
     }
 
-    /// Insert a new user_link state.
     pub async fn create_user_link(input: CreateUserLinkState) -> Result<String, OxyError> {
         let nonce = generate_nonce();
         let conn = establish_connection().await?;

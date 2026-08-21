@@ -184,7 +184,6 @@ fn print_helpful_commands() {
     );
 }
 
-/// Mask password in connection string for display
 fn mask_password(url: &str) -> String {
     if let Some(at_pos) = url.rfind('@')
         && let Some(protocol_end) = url.find("://")

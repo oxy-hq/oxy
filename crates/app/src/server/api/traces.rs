@@ -173,7 +173,6 @@ fn parse_event_data_to_pairs(json: &str) -> Vec<Vec<(String, String)>> {
         .collect()
 }
 
-/// Extract event names from event_data JSON array.
 fn extract_event_names(json: &str) -> Vec<String> {
     let events: Vec<serde_json::Value> = serde_json::from_str(json).unwrap_or_default();
     events
@@ -296,14 +295,10 @@ pub async fn get_trace_detail(
     Ok(extract::Json(spans))
 }
 
-// ============================================================================
 // Cluster Map API - 2D visualization of intent clusters
-// ============================================================================
 
-/// A point in the cluster map visualization
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ClusterMapPoint {
-    /// Unique trace ID
     #[serde(rename = "traceId")]
     pub trace_id: String,
     /// The question/prompt text
@@ -329,13 +324,10 @@ pub struct ClusterMapPoint {
     pub status: Option<String>,
 }
 
-/// Cluster summary for the legend
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ClusterSummary {
-    /// Cluster ID
     #[serde(rename = "clusterId")]
     pub cluster_id: i32,
-    /// Intent name
     #[serde(rename = "intentName")]
     pub intent_name: String,
     /// Intent description
@@ -344,19 +336,15 @@ pub struct ClusterSummary {
     pub count: usize,
     /// Color for this cluster (hex)
     pub color: String,
-    /// Sample questions
     #[serde(rename = "sampleQuestions")]
     pub sample_questions: Vec<String>,
 }
 
-/// Response for the cluster map visualization
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ClusterMapResponse {
     /// All points in the visualization
     pub points: Vec<ClusterMapPoint>,
-    /// Summary of each cluster
     pub clusters: Vec<ClusterSummary>,
-    /// Total number of points
     #[serde(rename = "totalPoints")]
     pub total_points: usize,
     /// Number of outliers
@@ -625,7 +613,6 @@ fn normalize_positions(positions: &mut [(f64, f64)]) {
     }
 }
 
-/// Generate distinct colors for clusters
 fn generate_cluster_colors(n: usize) -> Vec<String> {
     let palette = [
         "#9ca3af", // Gray for outliers

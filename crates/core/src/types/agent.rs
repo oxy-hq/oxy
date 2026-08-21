@@ -62,7 +62,6 @@ pub struct ArtifactInfo {
     pub error: Option<String>,
 }
 
-/// Response from asking an agent a question
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone)]
 pub struct AskAgentResponse {
     pub content: String,

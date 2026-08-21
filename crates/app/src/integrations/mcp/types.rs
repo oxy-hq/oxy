@@ -13,9 +13,7 @@ use oxy::{adapters::workspace::manager::WorkspaceManager, config::model::Semanti
 
 use super::executor::ToolExecutor;
 
-// =============================================================================
 // Constants
-// =============================================================================
 
 pub const WORKFLOW_TOOL_PREFIX: &str = "workflow-";
 pub const SEMANTIC_TOOL_PREFIX: &str = "semantic-";
@@ -23,9 +21,7 @@ pub const SQL_TOOL_PREFIX: &str = "sql-";
 
 pub const EVENT_CHANNEL_SIZE: usize = 100;
 
-// =============================================================================
 // Type Definitions
-// =============================================================================
 
 #[derive(Debug, Clone)]
 pub enum ToolType {
@@ -58,11 +54,8 @@ pub struct OxyMcpServer {
     pub tools: HashMap<String, OxyTool>,
 }
 
-// =============================================================================
 // Input Schemas
-// =============================================================================
 
-/// Input schema for SQL file tools
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SqlFileToolInput {
     /// Database connection to use (optional)
@@ -70,7 +63,6 @@ pub struct SqlFileToolInput {
     pub database: Option<String>,
 }
 
-/// Input schema for semantic topic tools
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SemanticTopicToolInput {
     /// Dimensions to group by (e.g., column names from the views in this topic)

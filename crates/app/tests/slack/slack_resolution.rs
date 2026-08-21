@@ -145,7 +145,6 @@ async fn seed_workspace(org_id: Uuid, name: &str) -> Uuid {
     ws_id
 }
 
-/// Add user as workspace member.
 async fn add_workspace_member(workspace_id: Uuid, user_id: Uuid) {
     let conn = establish_connection().await.expect("db connect");
     workspace_members::ActiveModel {

@@ -8,7 +8,6 @@ use omni::{MetadataMerger, MetadataStorage, OmniApiClient, OmniError, TopicMetad
 /// failed, and skipped topics with detailed error information.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SyncResult {
-    /// The model ID that was synchronized
     pub model_id: String,
     /// Total number of topics found in the model
     pub total_topics: usize,
@@ -20,7 +19,6 @@ pub struct SyncResult {
     pub skipped_topics: Vec<String>,
 }
 
-/// Error information for a failed topic synchronization
 #[derive(Debug, Clone, PartialEq)]
 pub struct TopicSyncError {
     /// Name of the topic that failed to sync
@@ -221,7 +219,6 @@ impl OmniSyncService {
         &self.storage
     }
 
-    /// Get the project path
     pub fn project_path(&self) -> &PathBuf {
         &self.project_path
     }

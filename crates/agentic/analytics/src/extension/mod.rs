@@ -78,7 +78,6 @@ pub async fn update_run_spec_hint(
     crud::update_spec_hint(db, run_id, hint).await
 }
 
-/// Update the thinking_mode on the extension row.
 pub async fn update_run_thinking_mode(
     db: &DatabaseConnection,
     run_id: &str,

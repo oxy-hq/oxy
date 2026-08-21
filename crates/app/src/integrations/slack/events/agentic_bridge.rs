@@ -96,9 +96,7 @@ pub async fn run_with_renderer(
     pipeline_result
 }
 
-// ============================================================================
 // Translator state
-// ============================================================================
 
 struct TranslatorState {
     /// Workspace ID — needed so chart events can write the translated

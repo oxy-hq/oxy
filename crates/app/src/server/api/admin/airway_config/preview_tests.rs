@@ -284,9 +284,7 @@ fn an_orphaned_contract_fails_a_tightened_policy() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Differential: the pure verdict vs. airway's own admission
-// ---------------------------------------------------------------------------
 
 /// A connector that answers exactly the fixture's resources and contracts, so
 /// the real `admit_with` can be asked the same question [`verdicts`] was.
@@ -388,9 +386,7 @@ fn verdicts_agree_with_airway_admission() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Credential placeholders
-// ---------------------------------------------------------------------------
 
 /// Flat and nested `*_var` references both become literals, so a connector
 /// whose `Params` is `deny_unknown_fields` around a required credential still

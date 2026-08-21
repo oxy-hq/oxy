@@ -14,7 +14,6 @@ use crate::delegation::{TaskAssignment, TaskOutcome};
 
 // ── WorkerMessage ────────────────────────────────────────────────────────────
 
-/// A message from a worker to the coordinator.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WorkerMessage {

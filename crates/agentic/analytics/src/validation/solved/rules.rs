@@ -13,9 +13,7 @@ use super::super::registry::RegistryError;
 use super::super::rule::{SolvedCtx, SolvedRule};
 use super::helpers::{infer_shape, looks_like_date};
 
-// ---------------------------------------------------------------------------
 // Rule: non_empty
-// ---------------------------------------------------------------------------
 
 /// Rule: `non_empty`
 ///
@@ -51,9 +49,7 @@ impl SolvedRule for NonEmptyRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: shape_match
-// ---------------------------------------------------------------------------
 
 /// Rule: `shape_match`
 ///
@@ -142,9 +138,7 @@ impl SolvedRule for ShapeMatchRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: no_nan_inf
-// ---------------------------------------------------------------------------
 
 /// Rule: `no_nan_inf`
 ///
@@ -197,9 +191,7 @@ impl SolvedRule for NoNanInfRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: outlier_detection
-// ---------------------------------------------------------------------------
 
 /// Rule: `outlier_detection`
 ///
@@ -317,9 +309,7 @@ impl SolvedRule for OutlierDetectionRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: timeseries_date_check
-// ---------------------------------------------------------------------------
 
 /// Rule: `timeseries_date_check`
 ///
@@ -400,9 +390,7 @@ impl SolvedRule for TimeseriesDateCheckRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: truncation_warning
-// ---------------------------------------------------------------------------
 
 /// Rule: `truncation_warning`
 ///
@@ -449,9 +437,7 @@ impl SolvedRule for TruncationWarningRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: null_ratio_check
-// ---------------------------------------------------------------------------
 
 /// Rule: `null_ratio_check`
 ///
@@ -552,9 +538,7 @@ impl SolvedRule for NullRatioCheckRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: duplicate_row_check
-// ---------------------------------------------------------------------------
 
 /// Rule: `duplicate_row_check`
 ///
@@ -652,9 +636,7 @@ impl SolvedRule for DuplicateRowCheckRule {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: freshness_check
-// ---------------------------------------------------------------------------
 
 /// Guards against answers that silently present a partially-covered period as
 /// complete: when the spec's requested date range extends more than

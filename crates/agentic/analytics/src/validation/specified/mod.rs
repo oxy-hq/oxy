@@ -18,9 +18,7 @@ use crate::semantic::SemanticCatalog;
 use super::registry::RegistryError;
 use super::rule::{SpecifiedCtx, SpecifiedRule};
 
-// ---------------------------------------------------------------------------
 // Helpers (shared across rules in this module)
-// ---------------------------------------------------------------------------
 
 /// Parse `"table.column"` into `(table, column)` (both lowercased).
 pub(super) fn parse_dotted(s: &str) -> Result<(String, String), AnalyticsError> {
@@ -87,9 +85,7 @@ fn lhs_column_name(expr: &Expr) -> Option<String> {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Rule: metric_resolves
-// ---------------------------------------------------------------------------
 
 /// Rule: `metric_resolves`
 ///
@@ -180,9 +176,7 @@ fn validate_metrics(spec: &QuerySpec, catalog: &SemanticCatalog) -> Result<(), A
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
 // Rule: join_key_exists
-// ---------------------------------------------------------------------------
 
 /// Rule: `join_key_exists`
 ///
@@ -300,9 +294,7 @@ fn validate_joins(spec: &QuerySpec, catalog: &SemanticCatalog) -> Result<(), Ana
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
 // Rule: filter_unambiguous
-// ---------------------------------------------------------------------------
 
 /// Rule: `filter_unambiguous`
 ///
@@ -434,9 +426,7 @@ fn validate_filters(spec: &QuerySpec, catalog: &SemanticCatalog) -> Result<(), A
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
 // Backward-compatible free function (used by old call sites via mod.rs)
-// ---------------------------------------------------------------------------
 
 /// Validate that a [`QuerySpec`] is fully resolved against a [`SchemaCatalog`].
 ///
@@ -453,9 +443,7 @@ pub fn validate_specified(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests;

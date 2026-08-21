@@ -39,7 +39,6 @@ pub use validation::validate_api_key;
 /// Vendor label used in user-facing messages (e.g. validation errors).
 pub const VENDOR_LABEL: &str = "OpenAI";
 
-/// Type alias for OpenAI client with dynamic configuration
 pub type OpenAIClient = Client<ConfigType>;
 
 /// Creates an OpenAI-compatible configuration from model parameters
@@ -85,9 +84,7 @@ pub fn create_config_from_model(
     }
 }
 
-// ============================================================================
 // Streaming Types
-// ============================================================================
 
 /// Represents a chunk of data from an OpenAI streaming response
 pub enum StreamChunk {
@@ -99,9 +96,7 @@ pub enum StreamChunk {
     },
 }
 
-// ============================================================================
 // Message Conversion Functions
-// ============================================================================
 
 /// Converts an OpenAI ChatCompletionRequestSystemMessage to a response InputItem
 pub fn convert_system_message(sys_msg: ChatCompletionRequestSystemMessage) -> InputItem {
@@ -349,7 +344,6 @@ pub fn convert_tool_choice(
     }
 }
 
-/// Converts ChatCompletion tools to Response API tools
 pub fn convert_tools(chat_tools: &[ChatCompletionTool]) -> Result<Vec<Tool>, OxyError> {
     chat_tools
         .iter()

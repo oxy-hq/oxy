@@ -286,7 +286,6 @@ impl LookerQueryExecutable {
         Ok(sql)
     }
 
-    /// Validate the query parameters
     fn validate_params(&self, params: &LookerQueryParams) -> Result<(), OxyError> {
         if params.fields.is_empty() {
             return Err(OxyError::ToolCallError {
@@ -332,7 +331,6 @@ impl LookerQueryExecutable {
         Ok(())
     }
 
-    /// Build the query request from parameters
     async fn build_query_request(
         &self,
         execution_context: &ExecutionContext,
@@ -459,7 +457,6 @@ impl LookerQueryExecutable {
         }
     }
 
-    /// Create a Table output from the Looker query response
     fn create_table_output(
         &self,
         response: &oxy_looker::QueryResponse,

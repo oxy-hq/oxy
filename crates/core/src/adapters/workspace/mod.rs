@@ -87,7 +87,6 @@ fn worktree_project_path(root: &Path, worktree: PathBuf) -> PathBuf {
     }
 }
 
-/// Resolve the workspace path for a given workspace ID.
 pub async fn resolve_workspace_path(workspace_id: Uuid) -> Result<PathBuf, OxyError> {
     if workspace_id.is_nil() {
         return resolve_local_workspace_path().map_err(|e| {

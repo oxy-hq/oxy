@@ -79,9 +79,7 @@ async function switchMode(page: Page, mode: "editor" | "explorer" | "query"): Pr
   return false;
 }
 
-// ============================================================================
 // VIEW EDITOR TESTS - FIELD SELECTION
-// ============================================================================
 
 test.describe("View Editor - Field Selection", () => {
   test.beforeEach(async ({ page }) => {
@@ -208,9 +206,7 @@ test.describe("View Editor - Field Selection", () => {
   });
 });
 
-// ============================================================================
 // VIEW EDITOR TESTS - QUERY BUILDER
-// ============================================================================
 
 test.describe("View Editor - Query Builder", () => {
   test.beforeEach(async ({ page }) => {
@@ -321,9 +317,7 @@ test.describe("View Editor - Query Builder", () => {
   });
 });
 
-// ============================================================================
 // VIEW EDITOR TESTS - SQL PREVIEW
-// ============================================================================
 
 test.describe("View Editor - SQL Preview", () => {
   test.beforeEach(async ({ page }) => {
@@ -408,9 +402,7 @@ test.describe("View Editor - SQL Preview", () => {
   });
 });
 
-// ============================================================================
 // VIEW EDITOR TESTS - SYNC
-// ============================================================================
 
 test.describe("View Editor - Form & Editor Sync", () => {
   test.beforeEach(async ({ page }) => {
@@ -550,9 +542,7 @@ fields:
   });
 });
 
-// ============================================================================
 // TOPIC EDITOR TESTS
-// ============================================================================
 
 test.describe("Topic Editor - Field Configuration", () => {
   test.beforeEach(async ({ page }) => {
@@ -665,9 +655,7 @@ test.describe("Topic Editor - Field Configuration", () => {
   });
 });
 
-// ============================================================================
 // CHARACTER INPUT & EDGE CASES
-// ============================================================================
 
 test.describe("Semantic Editor - Character Input & Edge Cases", () => {
   test.beforeEach(async ({ page }) => {
@@ -746,9 +734,7 @@ fields:
   });
 });
 
-// ============================================================================
 // KEYBOARD SHORTCUTS
-// ============================================================================
 
 test.describe("Semantic Editor - Keyboard Shortcuts", () => {
   test.beforeEach(async ({ page }) => {
@@ -805,9 +791,7 @@ test.describe("Semantic Editor - Keyboard Shortcuts", () => {
   });
 });
 
-// ============================================================================
 // RESPONSIVE LAYOUT
-// ============================================================================
 
 test.describe("Semantic Editor - Responsive Layout", () => {
   test.beforeEach(async ({ page }) => {

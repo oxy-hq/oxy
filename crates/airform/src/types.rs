@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// Summary of a dbt project.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DbtProjectInfo {
     /// The dbt project name (from dbt_project.yml `name:` field).
@@ -82,7 +81,6 @@ pub struct NodeRunResult {
     pub message: Option<String>,
 }
 
-/// Result of running tests.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TestOutput {
     pub tests_run: usize,
@@ -160,7 +158,6 @@ pub struct LineageEdge {
     pub target: String,
 }
 
-/// Column-level lineage.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ColumnLineageOutput {
     pub edges: Vec<ColumnLineageEntry>,
@@ -243,7 +240,6 @@ pub struct InitOutput {
     pub files: Vec<(String, String, String)>,
 }
 
-/// Streaming event emitted by run_streaming.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RunStreamEvent {

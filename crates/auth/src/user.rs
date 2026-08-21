@@ -129,7 +129,6 @@ impl UserService {
         Ok(users.into_iter().map(|user| user.into()).collect())
     }
 
-    /// Soft delete user
     pub async fn delete_user(user_id: Uuid) -> Result<(), OxyError> {
         let connection = establish_connection().await?;
 
@@ -150,7 +149,6 @@ impl UserService {
         Ok(())
     }
 
-    /// Update user status
     pub async fn update_user_status(user_id: Uuid, status: UserStatus) -> Result<(), OxyError> {
         let connection = establish_connection().await?;
 

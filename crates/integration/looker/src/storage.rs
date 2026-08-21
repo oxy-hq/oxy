@@ -66,13 +66,11 @@ impl MetadataStorage {
             .join(model)
     }
 
-    /// Returns the base metadata file path for an explore.
     fn get_base_metadata_path(&self, model: &str, explore: &str) -> PathBuf {
         self.get_base_metadata_dir(model)
             .join(format!("{}.yml", explore))
     }
 
-    /// Returns the overlay metadata file path for an explore.
     fn get_overlay_metadata_path(&self, model: &str, explore: &str) -> PathBuf {
         self.get_overlay_metadata_dir(model)
             .join(format!("{}.yml", explore))
@@ -146,7 +144,6 @@ impl MetadataStorage {
         Ok(())
     }
 
-    /// Loads base metadata for an explore.
     pub fn load_base_metadata(
         &self,
         model: &str,
@@ -221,12 +218,10 @@ impl MetadataStorage {
         self.get_overlay_metadata_path(model, explore).exists()
     }
 
-    /// Lists all explores with base metadata for a model.
     pub fn list_base_explores(&self, model: &str) -> Result<Vec<String>, LookerError> {
         self.list_explores_in_directory(&self.get_base_metadata_dir(model))
     }
 
-    /// Lists all explores with overlay metadata for a model.
     pub fn list_overlay_explores(&self, model: &str) -> Result<Vec<String>, LookerError> {
         self.list_explores_in_directory(&self.get_overlay_metadata_dir(model))
     }
@@ -262,7 +257,6 @@ impl MetadataStorage {
         Ok(explores)
     }
 
-    /// Deletes base metadata for an explore.
     pub fn delete_base_metadata(&self, model: &str, explore: &str) -> Result<(), LookerError> {
         let path = self.get_base_metadata_path(model, explore);
         if path.exists() {
@@ -273,7 +267,6 @@ impl MetadataStorage {
         Ok(())
     }
 
-    /// Deletes overlay metadata for an explore.
     pub fn delete_overlay_metadata(&self, model: &str, explore: &str) -> Result<(), LookerError> {
         let path = self.get_overlay_metadata_path(model, explore);
         if path.exists() {
@@ -284,17 +277,14 @@ impl MetadataStorage {
         Ok(())
     }
 
-    /// Returns the integration name.
     pub fn integration_name(&self) -> &str {
         &self.integration_name
     }
 
-    /// Returns the state directory.
     pub fn state_dir(&self) -> &Path {
         &self.state_dir
     }
 
-    /// Returns the project directory.
     pub fn project_dir(&self) -> &Path {
         &self.project_dir
     }

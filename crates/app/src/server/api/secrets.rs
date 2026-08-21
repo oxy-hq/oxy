@@ -113,7 +113,6 @@ pub struct UpdateSecretRequest {
     pub description: Option<String>,
 }
 
-/// Create a new secret
 pub async fn create_secret(
     _: WorkspaceAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -189,7 +188,6 @@ pub async fn create_secret(
     }
 }
 
-/// Create multiple secrets in bulk
 pub async fn bulk_create_secrets(
     _: WorkspaceAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -349,7 +347,6 @@ pub async fn get_secret(
     }
 }
 
-/// Update a secret by ID
 pub async fn update_secret(
     _: WorkspaceAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -828,7 +825,6 @@ pub async fn list_env_secrets(
     Ok((StatusCode::OK, axum::Json(env_secrets)).into_response())
 }
 
-/// Delete a secret by ID
 pub async fn delete_secret(
     _: WorkspaceAdmin,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,

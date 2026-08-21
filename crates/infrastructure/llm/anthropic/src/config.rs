@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 use std::collections::HashMap;
 
-/// Anthropic model configuration
 #[skip_serializing_none]
 #[derive(Deserialize, Debug, Clone, Serialize, JsonSchema)]
 pub struct AnthropicModelConfig {

@@ -227,13 +227,11 @@ impl MetadataStorage {
         file_path.exists()
     }
 
-    /// Delete base metadata for a topic
     pub fn delete_base_metadata(&self, model_id: &str, topic_name: &str) -> Result<(), OmniError> {
         let file_path = self.get_base_metadata_file_path(model_id, topic_name);
         self.delete_metadata_file(&file_path)
     }
 
-    /// Delete overlay metadata for a topic
     pub fn delete_overlay_metadata(
         &self,
         model_id: &str,
@@ -271,7 +269,6 @@ impl MetadataStorage {
             .join(format!("{}.yml", topic_name))
     }
 
-    /// Save metadata to a YAML file
     fn save_metadata_to_file(
         &self,
         file_path: &Path,
@@ -303,7 +300,6 @@ impl MetadataStorage {
         Ok(())
     }
 
-    /// Save overlay metadata to a YAML file
     fn save_overlay_metadata_to_file(
         &self,
         file_path: &Path,
@@ -338,7 +334,6 @@ impl MetadataStorage {
         Ok(())
     }
 
-    /// Load metadata from a YAML file
     fn load_metadata_from_file(
         &self,
         file_path: &Path,
@@ -376,7 +371,6 @@ impl MetadataStorage {
         Ok(Some(topic_metadata))
     }
 
-    /// Load overlay metadata from a YAML file
     fn load_overlay_metadata_from_file(
         &self,
         file_path: &Path,
@@ -455,7 +449,6 @@ impl MetadataStorage {
         Ok(topics)
     }
 
-    /// Delete a metadata file
     fn delete_metadata_file(&self, file_path: &Path) -> Result<(), OmniError> {
         if !file_path.exists() {
             return Ok(()); // File doesn't exist, nothing to delete
@@ -499,7 +492,6 @@ impl MetadataStorage {
         Ok(merged)
     }
 
-    /// Validate topic metadata structure
     fn validate_topic_metadata(&self, metadata: &TopicMetadata) -> Result<(), OmniError> {
         // Check that topic name is not empty
         if metadata.name.trim().is_empty() {

@@ -33,7 +33,6 @@ pub struct IntentClassifier {
 }
 
 impl IntentClassifier {
-    /// Create a new intent classifier
     pub async fn new(config: IntentConfig) -> Result<Self, OxyError> {
         let embedding_service = EmbeddingService::new(&config)?;
         let storage = IntentStorage::new(&config)?;
@@ -204,7 +203,6 @@ impl IntentClassifier {
         })
     }
 
-    /// Classify a single question
     pub async fn classify(&self, question: &str) -> Result<IntentClassification, OxyError> {
         let embedding = self.embedding_service.embed(question).await?;
 
@@ -298,7 +296,6 @@ impl IntentClassifier {
         Ok((classification, should_cluster))
     }
 
-    /// Classify and store the result
     pub async fn classify_and_store(
         &self,
         trace_id: &str,
@@ -323,22 +320,18 @@ impl IntentClassifier {
         Ok(classification)
     }
 
-    /// Get intent analytics for the last N days
     pub async fn get_analytics(&self, days: u32) -> Result<Vec<IntentAnalytics>, OxyError> {
         self.storage.get_analytics(days).await
     }
 
-    /// Get outlier questions
     pub async fn get_outliers(&self, limit: usize) -> Result<Vec<(String, String)>, OxyError> {
         self.storage.get_outliers(limit).await
     }
 
-    /// Get current clusters
     pub async fn get_clusters(&self) -> Result<Vec<IntentCluster>, OxyError> {
         self.storage.load_clusters().await
     }
 
-    /// Get unknown classifications count
     pub async fn get_unknown_count(&self) -> Result<usize, OxyError> {
         self.storage.get_unknown_count().await
     }
@@ -561,7 +554,6 @@ impl IntentClassifier {
         Ok(())
     }
 
-    /// Label a cluster using LLM
     async fn label_cluster(&self, questions: &[String]) -> Result<(String, String), OxyError> {
         let sample_questions: Vec<&String> = questions.iter().take(10).collect();
         let questions_text = sample_questions

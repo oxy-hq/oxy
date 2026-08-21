@@ -104,7 +104,6 @@ pub fn cube_translate(
     Ok(VendorQuery { payload })
 }
 
-/// Parse filter DSL strings into Cube filter objects.
 fn parse_cube_filters(filters: &[String]) -> Result<Vec<Value>, EngineError> {
     let mut result = Vec::new();
     for filter in filters {

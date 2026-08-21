@@ -173,7 +173,6 @@ pub struct QueryFailedDetails {
     pub position: Option<u32>,
 }
 
-/// Errors from connector operations.
 #[derive(Debug)]
 pub enum ConnectorError {
     QueryFailed(QueryFailedDetails),

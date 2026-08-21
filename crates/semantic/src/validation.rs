@@ -89,7 +89,6 @@ pub fn validate_variable_syntax(expr: &str, context: &str) -> ValidationResult {
     result
 }
 
-/// Validator trait for semantic layer components
 pub trait SemanticValidator {
     fn validate(&self) -> ValidationResult;
 }

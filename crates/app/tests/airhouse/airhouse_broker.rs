@@ -55,7 +55,6 @@ async fn test_db() -> DatabaseConnection {
     db
 }
 
-/// Seed an org + workspace and return the workspace id.
 async fn seed_workspace(db: &DatabaseConnection, name: &str) -> Uuid {
     let now = Utc::now().fixed_offset();
     let org_id = Uuid::new_v4();

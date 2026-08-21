@@ -9,7 +9,6 @@ pub struct ToolExchange {
     pub name: String,
     /// JSON-encoded input parameters.
     pub input: String,
-    /// Tool result output string.
     pub output: String,
 }
 

@@ -24,7 +24,6 @@ pub struct AirwayPipelineSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Source connector configuration.
     pub source: SourceConfig,
 
     /// Destination configuration. In authored YAML this is always a

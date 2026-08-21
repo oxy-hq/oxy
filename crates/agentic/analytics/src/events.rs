@@ -114,7 +114,6 @@ pub enum AnalyticsEvent {
 
     /// A query was executed (successfully or not).
     QueryExecuted {
-        /// The query string that was executed.
         query: String,
         /// Number of rows returned (0 on failure).
         row_count: usize,

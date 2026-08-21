@@ -5,9 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::query_request::{QueryRequestItem, SpecHint};
 
-// ---------------------------------------------------------------------------
 // Intent
-// ---------------------------------------------------------------------------
 
 /// The type of analytical question being asked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,7 +50,6 @@ pub struct ConversationTurn {
     /// The natural-language answer produced by the Interpret stage.
     pub answer: String,
 }
-/// The kind of semantic member that is missing from the catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MissingMemberKind {
@@ -145,7 +142,6 @@ pub struct AnalyticsIntent {
     /// pre-digested understanding of the goal.
     #[serde(default)]
     pub summary: String,
-    /// Classified question type.
     pub question_type: QuestionType,
     /// Metric names the user cares about (e.g. `["revenue", "orders"]`).
     pub metrics: Vec<String>,

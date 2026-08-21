@@ -342,9 +342,7 @@ impl LookerApiClient {
         Ok(explore_metadata)
     }
 
-    // =========================================================================
     // Query Endpoints
-    // =========================================================================
 
     /// Runs an inline query and returns the results.
     ///

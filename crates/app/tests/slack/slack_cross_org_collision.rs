@@ -18,7 +18,6 @@ fn db_unavailable() -> bool {
     std::env::var("OXY_DATABASE_URL").is_err()
 }
 
-/// Seed a user with a given email, returning user_id.
 async fn seed_user(email: &str) -> Uuid {
     let conn = establish_connection().await.expect("db connect");
     let user_id = Uuid::new_v4();
@@ -40,7 +39,6 @@ async fn seed_user(email: &str) -> Uuid {
     user_id
 }
 
-/// Seed an org, returning org_id.
 async fn seed_org() -> Uuid {
     let conn = establish_connection().await.expect("db connect");
     let org_id = Uuid::new_v4();
@@ -59,7 +57,6 @@ async fn seed_org() -> Uuid {
     org_id
 }
 
-/// Add user as a member of an org.
 async fn add_org_member(org_id: Uuid, user_id: Uuid) {
     let conn = establish_connection().await.expect("db connect");
     org_members::ActiveModel {

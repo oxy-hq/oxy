@@ -3,9 +3,7 @@ import type { HTMLAttributes, ReactNode } from "react";
 import { cn } from "@/libs/shadcn/utils";
 import { Button } from "./shadcn/button";
 
-// ---------------------------------------------------------------------------
 // Panel — right-side detail panel shell
-// ---------------------------------------------------------------------------
 
 interface PanelProps extends HTMLAttributes<HTMLDivElement> {
   /** Adds slide-in-from-right animation (for overlay/fixed panels) */
@@ -26,9 +24,7 @@ function Panel({ className, animate, ...props }: PanelProps) {
   );
 }
 
-// ---------------------------------------------------------------------------
 // PanelHeader — consistent header bar with title, subtitle, actions, close
-// ---------------------------------------------------------------------------
 
 interface PanelHeaderProps extends Omit<HTMLAttributes<HTMLDivElement>, "title"> {
   /** String renders as <h3 className="truncate font-semibold text-sm">; ReactNode renders as-is */
@@ -79,9 +75,7 @@ function PanelHeader({ title, subtitle, onClose, actions, className, ...props }:
   );
 }
 
-// ---------------------------------------------------------------------------
 // PanelContent — flex-1 scrollable content area
-// ---------------------------------------------------------------------------
 
 interface PanelContentProps extends HTMLAttributes<HTMLDivElement> {
   /** Whether to add overflow-auto (default: true) */

@@ -19,7 +19,6 @@ pub struct PageInfo {
     pub total_count: Option<u32>,
 }
 
-/// Individual model record from the models API
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ModelRecord {
     pub id: String,
@@ -309,7 +308,6 @@ pub struct SortField {
     pub sort_descending: bool,
 }
 
-/// Sort direction enumeration
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum SortDirection {
@@ -480,20 +478,17 @@ pub struct QueryMetadata {
 
 // Builder implementations for query structures
 impl QueryRequest {
-    /// Create a new query request builder
     pub fn builder() -> QueryRequestBuilder {
         QueryRequestBuilder::new()
     }
 }
 
 impl QueryStructure {
-    /// Create a new query structure builder
     pub fn builder() -> QueryStructureBuilder {
         QueryStructureBuilder::new()
     }
 }
 
-/// Builder for QueryRequest
 #[derive(Debug, Default)]
 pub struct QueryRequestBuilder {
     query: Option<QueryStructure>,
@@ -539,7 +534,6 @@ impl QueryRequestBuilder {
     }
 }
 
-/// Builder for QueryStructure
 #[derive(Debug, Default)]
 pub struct QueryStructureBuilder {
     topic: Option<String>,
@@ -720,17 +714,14 @@ impl TimeoutConfig {
         Ok(())
     }
 
-    /// Gets the initial polling interval as a Duration
     pub fn get_initial_polling_interval(&self) -> Duration {
         Duration::from_millis(self.polling_interval_ms)
     }
 
-    /// Gets the maximum polling interval as a Duration
     pub fn get_max_polling_interval(&self) -> Duration {
         Duration::from_millis(self.max_polling_interval_ms)
     }
 
-    /// Gets the total timeout as a Duration
     pub fn get_total_timeout(&self) -> Duration {
         Duration::from_secs(self.max_total_timeout_secs)
     }
@@ -795,7 +786,6 @@ impl TopicMetadata {
         !self.views.is_empty()
     }
 
-    /// Gets all dimension names across all views
     pub fn get_all_dimension_names(&self) -> Vec<String> {
         self.views
             .iter()
@@ -803,7 +793,6 @@ impl TopicMetadata {
             .collect()
     }
 
-    /// Gets all measure names across all views
     pub fn get_all_measure_names(&self) -> Vec<String> {
         self.views
             .iter()
@@ -1085,7 +1074,6 @@ impl QuerySummary {
         self.omni_sql_parse_failed.unwrap_or(false)
     }
 
-    /// Gets field information by field name
     pub fn get_field_info(&self, field_name: &str) -> Option<&FieldInfo> {
         self.fields.as_ref()?.get(field_name)
     }

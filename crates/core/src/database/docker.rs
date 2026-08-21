@@ -457,7 +457,6 @@ async fn remove_container(docker: &Docker, name: &str) {
     }
 }
 
-/// Remove a Docker volume by name
 async fn remove_volume(docker: &Docker, name: &str) -> Result<(), OxyError> {
     let opts = RemoveVolumeOptions { force: true };
     match docker.remove_volume(name, Some(opts)).await {

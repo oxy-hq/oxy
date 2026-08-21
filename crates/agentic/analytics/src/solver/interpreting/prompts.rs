@@ -14,9 +14,7 @@ pub(super) fn cell_to_json(cell: &CellValue) -> serde_json::Value {
     }
 }
 
-// ---------------------------------------------------------------------------
 // User-prompt builder
-// ---------------------------------------------------------------------------
 
 /// Maximum number of rows included in the LLM prompt for text interpretation.
 ///
@@ -220,9 +218,7 @@ pub fn build_interpret_user_prompt(
     )
 }
 
-// ---------------------------------------------------------------------------
 // interpret_impl
-// ---------------------------------------------------------------------------
 
 pub(super) fn format_delegation_data(
     result_sets: &[(Vec<String>, Vec<Vec<serde_json::Value>>)],

@@ -198,7 +198,6 @@ impl SecretManagerService {
         }
     }
 
-    /// Encrypt a secret value
     fn encrypt_value(&self, value: &str) -> Result<String, OxyError> {
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
@@ -214,7 +213,6 @@ impl SecretManagerService {
         Ok(general_purpose::STANDARD.encode(&combined))
     }
 
-    /// Decrypt a secret value
     fn decrypt_value(&self, encrypted_value: &str) -> Result<String, OxyError> {
         let combined = general_purpose::STANDARD
             .decode(encrypted_value)
@@ -238,7 +236,6 @@ impl SecretManagerService {
             .map_err(|e| OxyError::SecretManager(format!("Invalid UTF-8 in decrypted value: {e}")))
     }
 
-    /// Validate secret name
     fn validate_secret_name(name: &str) -> Result<(), OxyError> {
         if name.is_empty() {
             return Err(OxyError::SecretManager(
@@ -265,7 +262,6 @@ impl SecretManagerService {
         Ok(())
     }
 
-    /// Sanitize secret value
     fn sanitize_secret_value(value: &str) -> Result<String, OxyError> {
         if value.is_empty() {
             return Err(OxyError::SecretManager(
@@ -283,7 +279,6 @@ impl SecretManagerService {
         Ok(value.trim().to_string())
     }
 
-    /// Create a new secret
     pub async fn create_secret<C>(
         &self,
         db: &C,
@@ -405,7 +400,6 @@ impl SecretManagerService {
         }
     }
 
-    /// Get a secret value by name
     pub async fn get_secret(&self, name: &str) -> Option<String> {
         // Check cache first
         if let Some(cached_value) = self.get_from_cache(name).await {
@@ -482,7 +476,6 @@ impl SecretManagerService {
             .collect())
     }
 
-    /// Update a secret
     pub async fn update_secret<C>(
         &self,
         db: &C,

@@ -49,9 +49,7 @@ async function openJsonFile(page: Page): Promise<boolean> {
   return false;
 }
 
-// ============================================================================
 // BASIC TEXT EDITING
-// ============================================================================
 
 test.describe("Default Editor - Basic Text Editing", () => {
   test.beforeEach(async ({ page }) => {
@@ -188,9 +186,7 @@ test.describe("Default Editor - Basic Text Editing", () => {
   });
 });
 
-// ============================================================================
 // MONACO EDITOR FEATURES
-// ============================================================================
 
 test.describe("Default Editor - Monaco Features", () => {
   test.beforeEach(async ({ page }) => {
@@ -336,9 +332,7 @@ test.describe("Default Editor - Monaco Features", () => {
   });
 });
 
-// ============================================================================
 // FILE OPERATIONS
-// ============================================================================
 
 test.describe("Default Editor - File Operations", () => {
   test.beforeEach(async ({ page }) => {
@@ -488,9 +482,7 @@ test.describe("Default Editor - File Operations", () => {
   });
 });
 
-// ============================================================================
 // CHARACTER INPUT & ENCODING
-// ============================================================================
 
 test.describe("Default Editor - Character Input & Encoding", () => {
   test.beforeEach(async ({ page }) => {
@@ -609,9 +601,7 @@ test.describe("Default Editor - Character Input & Encoding", () => {
   });
 });
 
-// ============================================================================
 // SYNTAX HIGHLIGHTING
-// ============================================================================
 
 test.describe("Default Editor - Syntax Highlighting", () => {
   test.beforeEach(async ({ page }) => {
@@ -663,9 +653,7 @@ test.describe("Default Editor - Syntax Highlighting", () => {
   });
 });
 
-// ============================================================================
 // EDGE CASES & NAVIGATION
-// ============================================================================
 
 test.describe("Default Editor - Edge Cases & Navigation", () => {
   test.beforeEach(async ({ page }) => {
@@ -806,9 +794,7 @@ test.describe("Default Editor - Edge Cases & Navigation", () => {
   });
 });
 
-// ============================================================================
 // RESPONSIVE LAYOUT
-// ============================================================================
 
 test.describe("Default Editor - Responsive Layout", () => {
   test.beforeEach(async ({ page }) => {

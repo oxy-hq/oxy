@@ -34,9 +34,7 @@ use super::{
     resuming::{ask_user_tool_def, handle_ask_user},
 };
 
-// ---------------------------------------------------------------------------
 // Prompt builders
-// ---------------------------------------------------------------------------
 
 mod prompts;
 pub(super) use prompts::{build_delegation_request, build_triage_user_prompt};
@@ -48,9 +46,7 @@ pub(crate) enum ClarifyOutcome {
     SemanticShortcut(AnalyticsSolution),
 }
 
-// ---------------------------------------------------------------------------
 // Solver impl methods
-// ---------------------------------------------------------------------------
 
 impl AnalyticsSolver {
     /// Core clarify logic — classifies the question type, detects ambiguities,
@@ -720,9 +716,7 @@ impl AnalyticsSolver {
     }
 }
 
-// ---------------------------------------------------------------------------
 // State handler
-// ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **clarifying** state.
 pub(super) fn build_clarifying_handler()

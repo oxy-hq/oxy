@@ -178,7 +178,6 @@ impl RuntimeState {
 
     // ── Transport-agnostic operations ────────────────────────────────────
 
-    /// Submit a user answer to a suspended run.
     pub async fn submit_answer(&self, run_id: &str, answer: String) -> Result<(), RunError> {
         let status = self
             .statuses

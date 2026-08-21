@@ -23,7 +23,6 @@ pub enum LenientServiceTier {
     Other,
 }
 
-/// Lenient tool call type that defaults to "function"
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum LenientToolCallType {
@@ -33,7 +32,6 @@ pub enum LenientToolCallType {
     Other,
 }
 
-/// Lenient function call in a tool call
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LenientFunctionCall {
     pub name: String,
@@ -53,7 +51,6 @@ pub struct LenientToolCall {
     pub index: Option<u32>,
 }
 
-/// Lenient chat completion message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LenientChatCompletionMessage {
     pub role: String,
@@ -65,7 +62,6 @@ pub struct LenientChatCompletionMessage {
     pub refusal: Option<String>,
 }
 
-/// Lenient finish reason
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum LenientFinishReason {
@@ -79,7 +75,6 @@ pub enum LenientFinishReason {
     Other,
 }
 
-/// Lenient chat completion choice
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LenientChatCompletionChoice {
     pub index: u32,
@@ -90,7 +85,6 @@ pub struct LenientChatCompletionChoice {
     pub logprobs: Option<serde_json::Value>,
 }
 
-/// Lenient completion usage
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LenientCompletionUsage {
     #[serde(default)]
@@ -137,7 +131,6 @@ impl From<LenientToolCall> for async_openai::types::chat::ChatCompletionMessageT
 }
 
 impl LenientChatCompletionResponse {
-    /// Extract tool calls from the response
     pub fn extract_tool_calls(
         &self,
     ) -> Option<(

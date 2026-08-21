@@ -18,9 +18,7 @@ use uuid::Uuid;
 use crate::server::api::middlewares::workspace_context::OrgMembershipExtractor;
 use crate::server::router::WorkspaceExtractor;
 
-// ---------------------------------------------------------------------------
 // Request / Response types
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
 pub struct WorkspaceMemberResponse {
@@ -43,9 +41,7 @@ pub struct WorkspaceMemberPath {
     pub user_id: Uuid,
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 pub(crate) fn map_org_role_to_workspace(org_role: &OrgRole) -> WorkspaceRole {
     match org_role {
@@ -82,9 +78,7 @@ pub(crate) fn validate_role_override(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
 // Endpoints
-// ---------------------------------------------------------------------------
 
 /// List all org members with their effective workspace role.
 pub async fn list_workspace_members(
@@ -155,7 +149,6 @@ pub async fn list_workspace_members(
     Ok(Json(members))
 }
 
-/// Set or update a workspace role override for a user.
 pub async fn set_workspace_role_override(
     WorkspaceExtractor(workspace): WorkspaceExtractor,
     OrgMembershipExtractor(org_membership): OrgMembershipExtractor,

@@ -89,7 +89,6 @@ pub async fn resolve_execute_sql_tool(
     Ok((tool_name, oxy_tool))
 }
 
-/// Runs a SQL file tool with the given arguments
 pub async fn run_sql_file_tool(
     workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     sql_file_path: String,
@@ -164,7 +163,6 @@ pub async fn run_sql_file_tool(
         ))])),
     }
 }
-/// Creates an execution context for tool execution
 fn create_execution_context(
     workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     kind: &str,

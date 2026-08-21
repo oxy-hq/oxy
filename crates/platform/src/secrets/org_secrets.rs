@@ -60,7 +60,6 @@ impl OrgSecretsService {
         }
     }
 
-    /// Fetch and decrypt by id.
     pub async fn get_by_id(id: Uuid) -> Result<String, OxyError> {
         let conn = establish_connection().await?;
         let row = OrgSecrets::find_by_id(id)
@@ -77,7 +76,6 @@ impl OrgSecretsService {
         decrypt(&row.ciphertext)
     }
 
-    /// Delete by id.
     pub async fn delete(id: Uuid) -> Result<(), OxyError> {
         let conn = establish_connection().await?;
         OrgSecrets::delete_by_id(id)

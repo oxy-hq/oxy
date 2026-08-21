@@ -164,7 +164,6 @@ pub struct BuilderLlmMetadata {
     pub key_var: String,
 }
 
-/// Error from pipeline building.
 #[derive(Debug)]
 pub enum PipelineError {
     Config(String),
@@ -386,7 +385,6 @@ impl PipelineBuilder {
         self
     }
 
-    /// Set thinking mode.
     pub fn thinking_mode(mut self, mode: ThinkingMode) -> Self {
         self.thinking_mode = mode;
         self
@@ -398,7 +396,6 @@ impl PipelineBuilder {
         self
     }
 
-    /// Set builder test runner.
     pub fn test_runner(mut self, runner: Arc<dyn BuilderTestRunner>) -> Self {
         self.builder_test_runner = Some(runner);
         self

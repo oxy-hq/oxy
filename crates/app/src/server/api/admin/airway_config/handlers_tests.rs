@@ -273,9 +273,7 @@ async fn groups_the_global_row_and_its_overrides_under_one_kind() {
     held.release().await;
 }
 
-// ---------------------------------------------------------------------------
 // Writes (Task 2)
-// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn rejects_an_unknown_policy_spelling() {

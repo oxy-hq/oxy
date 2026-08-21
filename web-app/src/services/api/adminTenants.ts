@@ -2,17 +2,13 @@ import { isAxiosError } from "axios";
 import type { PlatformRoleId } from "@/types/access";
 import { apiClient } from "./axios";
 
-// ---------------------------------------------------------------------------
 // Shared types
-// ---------------------------------------------------------------------------
 
 export type WorkspaceStatusId = "ready" | "cloning" | "failed" | "not_oxy_project";
 export type UserStatusId = "active" | "deleted";
 export type OrgRoleId = "owner" | "admin" | "member";
 
-// ---------------------------------------------------------------------------
 // Organizations (admin meta surface)
-// ---------------------------------------------------------------------------
 
 /** The partner managing an org (at most one — `partner_orgs.org_id` is unique). */
 export interface OrgPartnerRef {
@@ -187,9 +183,7 @@ export const AdminOrgsService = {
   }
 };
 
-// ---------------------------------------------------------------------------
 // Users (admin meta surface)
-// ---------------------------------------------------------------------------
 
 /** A partner this user operates. `id` is the partner's ORG id. */
 export interface UserPartnerRef {
@@ -307,9 +301,7 @@ export const AdminUsersService = {
   }
 };
 
-// ---------------------------------------------------------------------------
 // Workspaces (admin meta surface)
-// ---------------------------------------------------------------------------
 
 export interface AdminWorkspaceRow {
   id: string;

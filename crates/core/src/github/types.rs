@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// GitHub repository information
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GitHubRepository {
     pub id: i64,
@@ -16,7 +15,6 @@ pub struct GitHubBranch {
     pub name: String,
 }
 
-/// Settings for the GitHub integration
 #[derive(Debug, Clone)]
 pub struct GitHubSettings {
     pub app_installation_id: String,
@@ -53,7 +51,6 @@ impl GitHubSettings {
     }
 }
 
-/// Project status information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectStatus {
     pub requires_onboarding: bool,
@@ -68,7 +65,6 @@ pub struct CurrentProject {
     pub sync_status: ProjectSyncStatus,
 }
 
-/// Sync status of a project
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub enum ProjectSyncStatus {
     #[serde(rename = "synced")]

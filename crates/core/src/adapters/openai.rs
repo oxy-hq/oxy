@@ -52,7 +52,6 @@ impl HeaderValueExt for HeaderValue {
     }
 }
 
-/// Extension trait for resolving headers in Model
 pub trait ModelHeadersExt {
     fn resolve_headers(
         &self,

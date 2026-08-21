@@ -42,7 +42,6 @@ fn ensure_dir_exists(path: &Path) {
 
 static STATE_DIR: Lazy<PathBuf> = Lazy::new(resolve_state_dir);
 
-/// Returns a reference to the state directory path.
 pub fn get_state_dir() -> &'static Path {
     STATE_DIR.as_path()
 }

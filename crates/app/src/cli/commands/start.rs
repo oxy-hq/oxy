@@ -5,7 +5,6 @@ use oxy::state_dir::get_state_dir;
 use oxy::theme::StyledText;
 use oxy_shared::errors::OxyError;
 
-/// Start the database and web server
 pub async fn start_database_and_server(
     args: StartArgs,
     extra_api_routes: axum::Router<crate::server::router::AppState>,

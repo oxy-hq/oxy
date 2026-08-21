@@ -68,7 +68,6 @@ pub struct SessionSummary {
     pub data_dir: Option<String>,
 }
 
-/// A query log entry.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct QueryLogEntry {
     pub session_id: i64,
@@ -117,7 +116,6 @@ pub trait TurnStore: Send + Sync {
 /// Storage port for the query audit log.
 #[async_trait]
 pub trait QueryLog: Send + Sync {
-    /// Append a query log entry.
     async fn log_query(&self, entry: &QueryLogEntry) -> Result<(), StorageError>;
 }
 
@@ -143,7 +141,6 @@ pub trait SuspendedPipelineStore: Send + Sync {
 pub trait PreferenceStore: Send + Sync {
     /// Get a preference value by key.
     async fn get(&self, key: &str) -> Result<Option<String>, StorageError>;
-    /// Set a preference value.
     async fn set(&self, key: &str, value: &str) -> Result<(), StorageError>;
 }
 

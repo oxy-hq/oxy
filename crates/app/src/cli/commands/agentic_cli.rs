@@ -93,7 +93,6 @@ pub struct EventsArgs {
 
 #[derive(Parser, Debug)]
 pub struct AnswerArgs {
-    /// Run ID to answer
     pub run_id: String,
     /// The answer text
     #[clap(long, short)]
@@ -102,13 +101,11 @@ pub struct AnswerArgs {
 
 #[derive(Parser, Debug)]
 pub struct CancelArgs {
-    /// Run ID to cancel
     pub run_id: String,
 }
 
 #[derive(Parser, Debug)]
 pub struct InspectArgs {
-    /// Run ID to inspect
     pub run_id: String,
     /// Output JSON
     #[clap(long)]

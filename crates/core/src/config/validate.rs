@@ -267,7 +267,6 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// Creates a minimal ValidationContext for testing.
     fn create_test_context(project_path: PathBuf) -> ValidationContext {
         ValidationContext {
             config: Config {

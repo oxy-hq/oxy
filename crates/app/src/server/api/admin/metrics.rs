@@ -29,9 +29,7 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/metrics/orgs/{org_id}/llm-usage", get(org_llm_usage))
 }
 
-// ---------------------------------------------------------------------------
 // Response shape
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize, Debug, Default)]
 pub struct UsageTotals {
@@ -103,9 +101,7 @@ struct UsageQuery {
     days: Option<i32>,
 }
 
-// ---------------------------------------------------------------------------
 // Shared CTE
-// ---------------------------------------------------------------------------
 
 /// Per-run token rollup over the window. Each run collapses to ONE model (the
 /// max `llm_end.model` — runs are effectively single-model), so downstream
@@ -157,9 +153,7 @@ struct OrgModelRow {
     run_count: i64,
 }
 
-// ---------------------------------------------------------------------------
 // Handler
-// ---------------------------------------------------------------------------
 
 async fn llm_usage(Query(q): Query<UsageQuery>) -> Result<Json<LlmUsageOverview>, Response> {
     let days = q.days.unwrap_or(30).clamp(1, 365);

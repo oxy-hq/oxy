@@ -106,7 +106,6 @@ pub enum TimeGranularity {
     Second,
 }
 
-/// Date range for time dimension filtering
 #[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum DateRange {

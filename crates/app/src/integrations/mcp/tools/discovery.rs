@@ -151,7 +151,6 @@ async fn get_tools(
     Ok(tools_map)
 }
 
-/// Detects the resource type based on file extension
 pub fn detect_resource_type(path: &Path) -> Option<ToolType> {
     let file_name = path.file_name()?.to_str()?;
 

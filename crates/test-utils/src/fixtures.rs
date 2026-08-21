@@ -82,7 +82,6 @@ impl Default for TestFixture {
     }
 }
 
-/// Creates a minimal config.yml fixture for testing.
 pub fn create_minimal_config(fixture: &TestFixture) -> std::io::Result<PathBuf> {
     let config = r#"
 project_name: test-project
@@ -92,7 +91,6 @@ defaults:
     fixture.create_file("config.yml", config)
 }
 
-/// Creates a semantic model fixture for testing.
 pub fn create_semantic_model(fixture: &TestFixture, name: &str) -> std::io::Result<PathBuf> {
     let model = format!(
         r#"

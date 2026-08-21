@@ -3,14 +3,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use tempfile::TempDir;
 
-/// Helper to create a simple view file
 fn create_view_file(dir: &std::path::Path, name: &str, content: &str) {
     let views_dir = dir.join("semantics/views");
     fs::create_dir_all(&views_dir).unwrap();
     fs::write(views_dir.join(format!("{}.view.yml", name)), content).unwrap();
 }
 
-/// Helper to create a simple topic file
 fn create_topic_file(dir: &std::path::Path, name: &str, content: &str) {
     let topics_dir = dir.join("semantics/topics");
     fs::create_dir_all(&topics_dir).unwrap();

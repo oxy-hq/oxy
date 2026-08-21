@@ -81,10 +81,8 @@ pub trait WorkspaceContext: Send + Sync {
     /// Database configurations for dialect mapping.
     fn database_configs(&self) -> Vec<airlayer::DatabaseConfig>;
 
-    /// Get a pre-built database connector by name.
     async fn get_connector(&self, name: &str) -> Result<Arc<dyn DatabaseConnector>, String>;
 
-    /// Get resolved integration credentials by name.
     async fn get_integration(&self, name: &str) -> Result<IntegrationConfig, String>;
 
     /// Fetch a project secret by name (Oxy Secrets, falling back to env var).
@@ -106,7 +104,6 @@ pub trait WorkspaceContext: Send + Sync {
         Err("secret persistence is not supported in this context".to_string())
     }
 
-    /// List all automation files in the workspace.
     async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String>;
 
     /// Read the raw YAML content of an automation file.

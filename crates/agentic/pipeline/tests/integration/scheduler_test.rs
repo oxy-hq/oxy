@@ -1162,7 +1162,6 @@ async fn app_function_job_seeds_manual_run_with_policy() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // monitor_scan schedules
 //
 // `tick_monitor_schedules` is a second, near-duplicate copy of the fire path
@@ -1170,7 +1169,6 @@ async fn app_function_job_seeds_manual_run_with_policy() {
 // none of it had ever executed: `OXY_INPROC_GLOBAL_WORKER` is off by default,
 // so every scan on record arrived by POST. The cases below are the ones the
 // workflow variant already covers, re-aimed at the copy that ships unexercised.
-// ---------------------------------------------------------------------------
 
 /// A `PlatformContext` with no `MonitorScanPort`, so the spawned scan fails
 /// immediately. Everything under test here happens *before* the spawn — the

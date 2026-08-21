@@ -47,7 +47,6 @@ impl MetricStorage {
         Ok(Self { storage })
     }
 
-    /// Store a batch of metric usage records
     pub async fn store_metrics(&self, metrics: &[MetricUsage]) -> Result<(), OxyError> {
         if metrics.is_empty() {
             return Ok(());
@@ -78,7 +77,6 @@ impl MetricStorage {
         self.storage.store_metric_usages(records).await
     }
 
-    /// Store a single metric usage record
     pub async fn store_metric(&self, metric: &MetricUsage) -> Result<(), OxyError> {
         self.store_metrics(std::slice::from_ref(metric)).await
     }
@@ -109,7 +107,6 @@ impl MetricStorage {
         })
     }
 
-    /// Get paginated list of metrics
     pub async fn get_metrics_list(
         &self,
         days: u32,
@@ -137,7 +134,6 @@ impl MetricStorage {
         })
     }
 
-    /// Get detail for a specific metric
     pub async fn get_metric_detail(
         &self,
         metric_name: &str,

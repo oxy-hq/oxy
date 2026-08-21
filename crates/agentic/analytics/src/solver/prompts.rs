@@ -7,9 +7,7 @@ use agentic_core::orchestrator::CompletedTurn;
 use crate::AnalyticsDomain;
 use crate::types::{ConversationTurn, QuestionType, SpecHint};
 
-// ---------------------------------------------------------------------------
 // Shared definitions
-// ---------------------------------------------------------------------------
 
 /// Shared question-type definitions referenced by multiple prompts.
 ///
@@ -749,9 +747,7 @@ pub(super) fn specify_query_request_type_addendum(question_type: &QuestionType) 
     }
 }
 
-// ---------------------------------------------------------------------------
 // Solve
-// ---------------------------------------------------------------------------
 
 /// System prompt base for the **Solve** stage.
 ///
@@ -830,9 +826,7 @@ pub(super) fn solve_type_addendum(question_type: &QuestionType) -> &'static str 
     }
 }
 
-// ---------------------------------------------------------------------------
 // General Inquiry
-// ---------------------------------------------------------------------------
 
 /// System prompt for the **GeneralInquiry** short-circuit path.
 pub(super) const GENERAL_INQUIRY_SYSTEM_PROMPT: &str = "\
@@ -853,9 +847,7 @@ single aggregate values, distributions).
 - Do not mention SQL or internal implementation details.
 </guidelines>";
 
-// ---------------------------------------------------------------------------
 // Root Cause
-// ---------------------------------------------------------------------------
 
 /// System prompt for the **RootCause** short-circuit handler.
 ///
@@ -945,9 +937,7 @@ the findings directly.
 than inventing an answer.
 </constraints>";
 
-// ---------------------------------------------------------------------------
 // Interpret
-// ---------------------------------------------------------------------------
 
 /// Additional instructions appended to `INTERPRET_SYSTEM_PROMPT` when the
 /// result contains multiple independent query outputs (fan-out).
@@ -1054,9 +1044,7 @@ Suggested and previous chart configs may be provided in the query results sectio
 - If more than 15 rows, show top 10 and note how many were omitted.
 </table_formatting>";
 
-// ---------------------------------------------------------------------------
 // Shared formatting helpers
-// ---------------------------------------------------------------------------
 
 /// Format a retry context block to append to LLM prompts on back-edges.
 ///

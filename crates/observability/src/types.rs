@@ -26,7 +26,6 @@ pub struct SpanRecord {
     pub timestamp: String,
 }
 
-/// A metric usage record to be inserted into the metric usage table.
 #[derive(Debug, Clone)]
 pub struct MetricUsageRecord {
     pub metric_name: String,
@@ -38,7 +37,6 @@ pub struct MetricUsageRecord {
     pub trace_id: String,
 }
 
-/// An intent classification record.
 #[derive(Debug, Clone)]
 pub struct ClassificationRecord {
     pub trace_id: String,
@@ -58,7 +56,6 @@ pub struct ClusterRecord {
     pub intent_name: String,
     pub intent_description: String,
     pub centroid: Vec<f32>,
-    /// JSON array string of sample questions
     pub sample_questions: String,
     pub question_count: i64,
 }
@@ -297,7 +294,6 @@ pub struct LatencyPercentiles {
     pub p99_ms: f64,
 }
 
-/// One daily latency-percentile point.
 #[derive(Debug, Clone)]
 pub struct LatencyPercentilePoint {
     pub date: String,

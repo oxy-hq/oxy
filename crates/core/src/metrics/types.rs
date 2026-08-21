@@ -95,7 +95,6 @@ impl std::fmt::Display for ContextType {
     }
 }
 
-/// A context item in the context JSON array
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextItem {
     /// Type of context (question, response, sql, semantic)
@@ -129,7 +128,6 @@ pub struct MetricUsage {
     pub source_ref: String,
     /// Context types indicating how the metric was used
     pub context_types: Vec<ContextType>,
-    /// Trace ID for correlation
     pub trace_id: String,
     /// JSON array of all context items (question, response, sql, semantic)
     pub context: Option<String>,
@@ -148,7 +146,6 @@ pub struct MetricAnalytics {
     pub trend: Option<String>,
 }
 
-/// Breakdown by source type
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SourceTypeBreakdown {
     pub agent: u64,
@@ -158,7 +155,6 @@ pub struct SourceTypeBreakdown {
     pub analytics: u64,
 }
 
-/// Breakdown by context type
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ContextTypeBreakdown {
     pub sql: u64,
@@ -170,25 +166,19 @@ pub struct ContextTypeBreakdown {
 /// Overall analytics response (summary stats only)
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct MetricAnalyticsResponse {
-    /// Total queries tracked
     pub total_queries: u64,
-    /// Number of unique metrics
     pub unique_metrics: u64,
     /// Average queries per metric
     pub avg_per_metric: f64,
     /// Most popular metric name
     pub most_popular: Option<String>,
-    /// Most popular metric query count
     pub most_popular_count: Option<u64>,
     /// Trend vs last period (e.g., "+15%" or "-10%")
     pub trend_vs_last_period: Option<String>,
-    /// Breakdown by source type
     pub by_source_type: SourceTypeBreakdown,
-    /// Breakdown by context type
     pub by_context_type: ContextTypeBreakdown,
 }
 
-/// Paginated metrics list response
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct MetricsListResponse {
     /// Metrics for the current page
@@ -201,7 +191,6 @@ pub struct MetricsListResponse {
     pub offset: usize,
 }
 
-/// Usage trend data point
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UsageTrendPoint {
     /// Date (YYYY-MM-DD)
@@ -219,10 +208,8 @@ pub struct RelatedMetric {
     pub co_occurrence_count: u64,
 }
 
-/// Recent usage record
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct RecentUsage {
-    /// Source type
     pub source_type: String,
     /// Source reference
     pub source_ref: String,
@@ -230,20 +217,16 @@ pub struct RecentUsage {
     pub context_types: Vec<String>,
     /// The full context JSON (contains all context items for UI display)
     pub context: Option<String>,
-    /// Trace ID
     pub trace_id: String,
     /// Timestamp
     pub created_at: String,
 }
 
-/// Detail response for a single metric
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct MetricDetailResponse {
     /// Metric name
     pub name: String,
-    /// Total queries
     pub total_queries: u64,
-    /// Trend vs last period
     pub trend_vs_last_period: Option<String>,
     /// Usage via agents
     pub via_agent: u64,
@@ -251,8 +234,6 @@ pub struct MetricDetailResponse {
     pub via_workflow: u64,
     /// Usage trend over time
     pub usage_trend: Vec<UsageTrendPoint>,
-    /// Related metrics
     pub related_metrics: Vec<RelatedMetric>,
-    /// Recent usage examples
     pub recent_usage: Vec<RecentUsage>,
 }

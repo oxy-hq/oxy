@@ -43,9 +43,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-// ---------------------------------------------------------------------------
 // Top-level
-// ---------------------------------------------------------------------------
 
 /// Validation section of the agent YAML config.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
@@ -95,9 +93,7 @@ fn bool_true() -> bool {
     true
 }
 
-// ---------------------------------------------------------------------------
 // Per-rule parameter structs
-// ---------------------------------------------------------------------------
 
 /// Parameters for the `sql_syntax` rule.
 #[derive(Debug, Clone, Deserialize)]
@@ -195,9 +191,7 @@ impl Default for DuplicateRowCheckParams {
     }
 }
 
-// ---------------------------------------------------------------------------
 // ValidationConfig helpers
-// ---------------------------------------------------------------------------
 
 impl ValidationConfig {
     /// Build the default configuration with all 14 built-in rules enabled
@@ -248,9 +242,7 @@ impl ValidationConfig {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

@@ -37,9 +37,7 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/{revision_id}/promote", post(crud::promote_to_revision))
 }
 
-// ---------------------------------------------------------------------------
 // DB connect helper
-// ---------------------------------------------------------------------------
 
 pub(super) async fn connect() -> Result<DatabaseConnection, Response> {
     oxy::database::client::establish_connection()
@@ -54,9 +52,7 @@ pub(super) async fn connect() -> Result<DatabaseConnection, Response> {
         })
 }
 
-// ---------------------------------------------------------------------------
 // Shared enqueue helper
-// ---------------------------------------------------------------------------
 
 /// Materialise the `agentic_runs` row, then enqueue the Compile task.
 /// `agentic_task_queue.run_id` FKs to `agentic_runs.id`, so the run row MUST
@@ -105,9 +101,7 @@ pub(super) async fn insert_run_and_enqueue_compile(
     Ok(task_id)
 }
 
-// ---------------------------------------------------------------------------
 // Promotion (shared by single + batch promote handlers)
-// ---------------------------------------------------------------------------
 
 /// Outcome of a single promote, kept separate from HTTP concerns so the
 /// batch path can collect successes/failures without short-circuiting.
@@ -167,18 +161,14 @@ pub(super) async fn promote_one(
     Ok(rev.workspace_id)
 }
 
-// ---------------------------------------------------------------------------
 // Batch limits
-// ---------------------------------------------------------------------------
 
 /// Hard cap on ids accepted per batch request — bounds the per-request
 /// wall-clock (sequential enqueues) and the resulting compile herd. Shared by
 /// both batch endpoints.
 pub(super) const BATCH_MAX_IDS: usize = 200;
 
-// ---------------------------------------------------------------------------
 // Error helpers
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
 struct ErrorBody {

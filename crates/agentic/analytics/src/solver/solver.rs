@@ -22,9 +22,7 @@ use agentic_core::subrun::SubrunRunner;
 
 use super::prompts::QUESTION_TYPE_DEFS;
 
-// ---------------------------------------------------------------------------
 // AnalyticsSolver
-// ---------------------------------------------------------------------------
 
 /// Solver for the analytics domain.
 ///
@@ -248,7 +246,6 @@ impl AnalyticsSolver {
         self
     }
 
-    /// Attach an event stream.
     pub fn with_events(mut self, tx: EventStream<AnalyticsEvent>) -> Self {
         self.event_tx = Some(tx);
         self

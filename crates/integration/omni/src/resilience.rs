@@ -314,7 +314,6 @@ pub struct TimeoutWrapper {
 }
 
 impl TimeoutWrapper {
-    /// Create a new timeout wrapper with the specified timeout
     pub fn new(timeout: Duration) -> Self {
         Self { timeout }
     }

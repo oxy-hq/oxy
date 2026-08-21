@@ -25,9 +25,7 @@ use super::tools::get_mcp_tools;
 use super::types::OxyMcpServer;
 use super::variables::extract_meta_variables;
 
-// =============================================================================
 // ServerHandler Implementation
-// =============================================================================
 
 impl ServerHandler for OxyMcpServer {
     fn get_info(&self) -> ServerInfo {
@@ -94,9 +92,7 @@ impl ServerHandler for OxyMcpServer {
     }
 }
 
-// =============================================================================
 // OxyMcpServer Implementation
-// =============================================================================
 
 impl OxyMcpServer {
     /// Creates a new OxyMcpServer instance

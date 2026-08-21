@@ -627,7 +627,6 @@ impl Default for TopicBuilder {
     }
 }
 
-/// Builder for creating SemanticLayer instances
 #[derive(Debug, Clone)]
 pub struct SemanticLayerBuilder {
     views: Vec<View>,

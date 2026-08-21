@@ -145,7 +145,6 @@ pub struct AgentConfig {
     #[serde(default)]
     pub states: HashMap<String, StateConfig>,
 
-    /// LLM configuration.
     #[serde(default)]
     pub llm: LlmConfigYaml,
 
@@ -188,7 +187,6 @@ pub struct AgentConfig {
     pub semantic_engine: Option<SemanticEngineConfig>,
 }
 
-/// Per-state configuration overrides.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct StateConfig {
     /// Additional instructions injected for this state only.
@@ -314,7 +312,6 @@ pub enum LlmVendor {
     OpenAiCompat,
 }
 
-/// LLM configuration section.
 #[derive(Debug, Deserialize, JsonSchema, Default)]
 pub struct LlmConfigYaml {
     /// Named model reference from the project's `config.yml`.

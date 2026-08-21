@@ -273,7 +273,6 @@ impl LookerSyncService {
         &self.merger
     }
 
-    /// Get the integration name
     pub fn integration_name(&self) -> &str {
         &self.integration_name
     }

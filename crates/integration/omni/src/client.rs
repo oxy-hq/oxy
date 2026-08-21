@@ -18,7 +18,6 @@ pub struct OmniApiClient {
 }
 
 impl OmniApiClient {
-    /// Validate basic client configuration parameters
     fn validate_client_config(base_url: &str, api_token: &str) -> Result<(), OmniError> {
         if base_url.is_empty() {
             return Err(OmniError::config_invalid(
@@ -75,7 +74,6 @@ impl OmniApiClient {
         Ok(())
     }
 
-    /// Validate timeout configuration with enhanced checks
     fn validate_timeout_config(timeout_config: &TimeoutConfig) -> Result<(), OmniError> {
         debug!(
             timeout_config = ?timeout_config,
@@ -158,7 +156,6 @@ impl OmniApiClient {
         Ok(())
     }
 
-    /// Create a new Omni API client
     pub fn new(base_url: String, api_token: String) -> Result<Self, OmniError> {
         Self::validate_client_config(&base_url, &api_token)?;
 
@@ -225,7 +222,6 @@ impl OmniApiClient {
         Self::with_retry_config(base_url, api_token, RetryConfig::for_metadata_sync())
     }
 
-    /// Add authentication headers to a request
     fn add_auth_headers(&self, request: RequestBuilder) -> RequestBuilder {
         request.header("Authorization", format!("Bearer {}", self.api_token))
     }
@@ -493,7 +489,6 @@ impl OmniApiClient {
         self.add_auth_headers(request)
     }
 
-    /// Execute a request and handle the response
     pub async fn execute_request<T>(&self, request: RequestBuilder) -> Result<T, OmniError>
     where
         T: for<'de> Deserialize<'de>,
@@ -586,7 +581,6 @@ impl OmniApiClient {
         result
     }
 
-    /// List all topics for the specified base model ID
     pub async fn list_topics(&self, base_model_id: &str) -> Result<ModelsResponse, OmniError> {
         if base_model_id.is_empty() {
             return Err(OmniError::ConfigError(

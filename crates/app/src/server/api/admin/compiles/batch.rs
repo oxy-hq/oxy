@@ -10,9 +10,7 @@ use uuid::Uuid;
 
 use super::{BATCH_MAX_IDS, connect, error_body, insert_run_and_enqueue_compile, promote_one};
 
-// ---------------------------------------------------------------------------
 // POST /admin/compiles/batch/run — enqueue a compile per workspace
-// ---------------------------------------------------------------------------
 
 #[derive(Deserialize, Debug)]
 pub struct BatchRunRequest {
@@ -107,9 +105,7 @@ async fn run_one_compile(
         })
 }
 
-// ---------------------------------------------------------------------------
 // POST /admin/compiles/batch/promote — repoint many workspaces at once
-// ---------------------------------------------------------------------------
 
 #[derive(Deserialize, Debug)]
 pub struct BatchPromoteRequest {

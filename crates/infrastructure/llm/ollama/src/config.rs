@@ -1,7 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Ollama model configuration
 #[derive(Deserialize, Debug, Clone, Serialize, JsonSchema)]
 pub struct OllamaModelConfig {
     pub name: String,

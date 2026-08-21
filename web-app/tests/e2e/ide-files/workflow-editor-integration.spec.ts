@@ -51,9 +51,7 @@ async function switchMode(page: Page, mode: string): Promise<boolean> {
   return false;
 }
 
-// ============================================================================
 // EDITOR PAGE WRAPPER TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - EditorPageWrapper Integration", () => {
   test.beforeEach(async ({ page }) => {
@@ -162,9 +160,7 @@ test.describe("Workflow Editor - EditorPageWrapper Integration", () => {
   });
 });
 
-// ============================================================================
 // PREVIEW PANEL TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Preview Panel", () => {
   test.beforeEach(async ({ page }) => {
@@ -270,9 +266,7 @@ test.describe("Workflow Editor - Preview Panel", () => {
   });
 });
 
-// ============================================================================
 // VALIDATION & ERROR DISPLAY TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Validation Display", () => {
   test.beforeEach(async ({ page }) => {
@@ -362,9 +356,7 @@ test.describe("Workflow Editor - Validation Display", () => {
   });
 });
 
-// ============================================================================
 // WORKFLOW-SPECIFIC FEATURE TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Workflow Features", () => {
   test.beforeEach(async ({ page }) => {
@@ -508,9 +500,7 @@ test.describe("Workflow Editor - Workflow Features", () => {
   });
 });
 
-// ============================================================================
 // RESPONSIVE & LAYOUT TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Responsive Layout", () => {
   test.beforeEach(async ({ page }) => {
@@ -602,9 +592,7 @@ test.describe("Workflow Editor - Responsive Layout", () => {
   });
 });
 
-// ============================================================================
 // CONCURRENT USER SIMULATION
-// ============================================================================
 
 test.describe("Workflow Editor - Concurrent Operations", () => {
   test.beforeEach(async ({ page }) => {
@@ -678,9 +666,7 @@ test.describe("Workflow Editor - Concurrent Operations", () => {
   });
 });
 
-// ============================================================================
 // ACCESSIBILITY TESTS
-// ============================================================================
 
 test.describe("Workflow Editor - Accessibility", () => {
   test.beforeEach(async ({ page }) => {

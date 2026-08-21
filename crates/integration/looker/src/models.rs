@@ -2,9 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-// ============================================================================
 // Authentication Models
-// ============================================================================
 
 /// Response from the Looker login endpoint (`POST /api/4.0/login`).
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -17,9 +15,7 @@ pub struct LoginResponse {
     pub expires_in: u64,
 }
 
-// ============================================================================
 // LookML Model Response Models
-// ============================================================================
 
 /// Represents a LookML model returned from the Looker API.
 ///
@@ -66,11 +62,9 @@ pub struct LookmlModelExplore {
     pub description: Option<String>,
     /// The base view name for this explore (used as the `view` parameter in queries)
     pub view_name: Option<String>,
-    /// The fields available in this explore
     pub fields: Option<ExploreFields>,
     /// The LookML source file defining this explore
     pub source_file: Option<String>,
-    /// The SQL table name this explore is based on
     pub sql_table_name: Option<String>,
 }
 
@@ -86,7 +80,6 @@ pub struct ExploreFields {
     /// Filter-only fields
     #[serde(default)]
     pub filters: Vec<LookmlModelExploreField>,
-    /// Parameter fields
     #[serde(default)]
     pub parameters: Vec<LookmlModelExploreField>,
 }
@@ -118,9 +111,7 @@ pub struct LookmlModelExploreField {
     pub suggest_explore: Option<String>,
 }
 
-// ============================================================================
 // Query Models
-// ============================================================================
 
 /// Request body for running an inline query via `POST /api/4.0/queries/run/{result_format}`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -143,7 +134,6 @@ pub struct InlineQueryRequest {
     /// Maximum number of rows to return (-1 for unlimited)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<i64>,
-    /// Timezone to use for query results
     #[serde(skip_serializing_if = "Option::is_none")]
     pub query_timezone: Option<String>,
     /// Fields to pivot on
@@ -168,7 +158,6 @@ pub struct QueryResponse {
     pub sql: Option<String>,
 }
 
-/// Metadata about a field in query results.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct QueryFieldMetadata {
     /// The field name
@@ -202,7 +191,6 @@ pub struct Query {
     /// Filter conditions
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filters: Option<std::collections::HashMap<String, String>>,
-    /// Looker filter expression
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter_expression: Option<String>,
     /// Sort fields
@@ -216,9 +204,7 @@ pub struct Query {
     pub sql: Option<String>,
 }
 
-// ============================================================================
 // Metadata Storage Models
-// ============================================================================
 
 /// Metadata for an explore, used for storage and agent context.
 ///
@@ -248,7 +234,6 @@ pub struct ExploreMetadata {
 pub struct ViewMetadata {
     /// The unique name of the view
     pub name: String,
-    /// Dimension fields in this view
     #[serde(default)]
     pub dimensions: Vec<FieldMetadata>,
     /// Measure fields in this view
@@ -278,7 +263,6 @@ pub struct FieldMetadata {
     /// Hint for agents on how to use this field
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_hint: Option<String>,
-    /// Example queries using this field
     #[serde(skip_serializing_if = "Option::is_none")]
     pub examples: Option<Vec<QueryExample>>,
 }
@@ -296,9 +280,7 @@ pub struct QueryExample {
     pub fields: Option<Vec<String>>,
 }
 
-// ============================================================================
 // Overlay Metadata Models
-// ============================================================================
 
 /// User overlay metadata for an explore.
 ///
@@ -314,12 +296,10 @@ pub struct OverlayExploreMetadata {
     pub views: Option<Vec<OverlayViewMetadata>>,
 }
 
-/// User overlay metadata for a view.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OverlayViewMetadata {
     /// The view name to apply customizations to
     pub name: String,
-    /// Dimension field customizations
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dimensions: Option<Vec<OverlayFieldMetadata>>,
     /// Measure field customizations
@@ -327,7 +307,6 @@ pub struct OverlayViewMetadata {
     pub measures: Option<Vec<OverlayFieldMetadata>>,
 }
 
-/// User overlay metadata for a field.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OverlayFieldMetadata {
     /// The field name to apply customizations to
@@ -338,7 +317,6 @@ pub struct OverlayFieldMetadata {
     /// Hint for agents on how to use this field
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_hint: Option<String>,
-    /// Example queries using this field
     #[serde(skip_serializing_if = "Option::is_none")]
     pub examples: Option<Vec<QueryExample>>,
 }

@@ -37,9 +37,7 @@ members exist in the catalog.",
     )
 }
 
-// ---------------------------------------------------------------------------
 // Delegation helpers
-// ---------------------------------------------------------------------------
 
 /// Build the `(request, context)` pair for a builder delegation that asks the
 /// builder agent to create the given missing semantic members.

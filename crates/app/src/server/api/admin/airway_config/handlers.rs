@@ -200,9 +200,7 @@ pub(crate) async fn list_airway_config(
     Ok(AirwayConfigResponse { kinds })
 }
 
-// ---------------------------------------------------------------------------
 // Writes (Task 2)
-// ---------------------------------------------------------------------------
 
 /// Body for both `PUT` routes. `None` on either field clears it back to
 /// "inherit" — this is a replace, not a patch: a caller that wants to keep

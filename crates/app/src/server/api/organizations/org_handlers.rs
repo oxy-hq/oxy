@@ -20,9 +20,7 @@ use crate::server::api::middlewares::role_guards::{OrgAdmin, OrgOwner};
 use super::dto::*;
 use super::ops::*;
 
-// ---------------------------------------------------------------------------
 // Organization CRUD
-// ---------------------------------------------------------------------------
 
 /// POST /orgs
 pub async fn create_org(

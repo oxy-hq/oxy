@@ -24,9 +24,7 @@ use crate::config::{SemanticFilterType, SemanticQueryConfig, TimeGranularity};
 use crate::error::SemanticError;
 use crate::refresh_key_cache::RefreshKeyCache;
 
-// ---------------------------------------------------------------------------
 // Public types
-// ---------------------------------------------------------------------------
 
 /// Result of compiling a semantic query.
 ///
@@ -54,9 +52,7 @@ pub enum CompiledQuery {
     },
 }
 
-// ---------------------------------------------------------------------------
 // Public API
-// ---------------------------------------------------------------------------
 
 /// Resolve a semantic query against the semantic layer and compile to SQL.
 ///
@@ -245,9 +241,7 @@ pub fn get_database_from_views(views: &[airlayer::View]) -> Option<String> {
     views.iter().find_map(|v| v.datasource.clone())
 }
 
-// ---------------------------------------------------------------------------
 // Internal: topic resolution
-// ---------------------------------------------------------------------------
 
 fn resolve_topic(
     semantic_layer: &airlayer::SemanticLayer,
@@ -302,9 +296,7 @@ fn resolve_topic(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Internal: date field tracking
-// ---------------------------------------------------------------------------
 
 fn collect_date_fields(views: &[&airlayer::View]) -> HashSet<String> {
     use airlayer::schema::models::DimensionType;
@@ -336,9 +328,7 @@ fn normalize_date_value(date: &str) -> Result<String, SemanticError> {
     Ok(result.format("%Y-%m-%d").to_string())
 }
 
-// ---------------------------------------------------------------------------
 // Internal: query request building
-// ---------------------------------------------------------------------------
 
 fn build_query_request(
     task: &SemanticQueryConfig,
@@ -435,9 +425,7 @@ fn granularity_to_string(g: &TimeGranularity) -> String {
     .to_string()
 }
 
-// ---------------------------------------------------------------------------
 // Internal: filter conversion
-// ---------------------------------------------------------------------------
 
 fn convert_topic_filter_type(
     ft: &TopicFilterType,
@@ -592,9 +580,7 @@ fn jv2s(
     Ok(s)
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

@@ -15,7 +15,6 @@ const POLL_INTERVAL_SLOW: Duration = Duration::from_millis(500);
 
 #[derive(Parser, Debug)]
 pub struct ExportChartArgs {
-    /// Path to the app file
     #[clap(long, short = 'a', value_name = "PATH")]
     pub app_path: String,
 

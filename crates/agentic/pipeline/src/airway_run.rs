@@ -91,7 +91,6 @@ pub struct AirwayRunSummary {
     pub backfill_to: Option<String>,
 }
 
-/// Errors from seeding an airway run.
 #[derive(Debug, Error)]
 pub enum AirwayRunError {
     #[error("invalid input: {0}")]

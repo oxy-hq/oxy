@@ -251,7 +251,6 @@ pub enum OrchestratorError<D: Domain> {
         reason: SuspendReason,
         /// Minimal payload needed to resume the pipeline.
         resume_data: SuspendedRunData,
-        /// Trace ID for this run.
         trace_id: String,
     },
 }

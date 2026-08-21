@@ -5,7 +5,6 @@ use axum::{
 
 use crate::types::AuthenticatedUser;
 
-/// Extractor for authenticated user in route handlers
 #[derive(Clone)]
 pub struct AuthenticatedUserExtractor(pub AuthenticatedUser);
 

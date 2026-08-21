@@ -47,9 +47,7 @@ pub use validator::Validator;
 
 // Backward-compatible free functions — delegate to Validator::default().
 
-// ---------------------------------------------------------------------------
 // Shared helper: extract table.column references from a SQL expression
-// ---------------------------------------------------------------------------
 
 /// Extract all `table.column` references from a SQL expression.
 ///
@@ -189,9 +187,7 @@ fn read_unquoted_ident(bytes: &[u8], start: usize) -> (String, usize) {
     (ident, i)
 }
 
-// ---------------------------------------------------------------------------
 // Shared test fixtures
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 pub(crate) mod test_fixtures {
@@ -401,9 +397,7 @@ dimensions:
     }
 }
 
-// ---------------------------------------------------------------------------
 // Tests for extract_table_column_refs
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

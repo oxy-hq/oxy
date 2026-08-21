@@ -502,7 +502,6 @@ pub fn encrypt_value(key: &[u8; 32], value: &str) -> Result<String, OxyError> {
     Ok(general_purpose::STANDARD.encode(&combined))
 }
 
-/// Decrypt a secret value
 pub fn decrypt_value(key: &[u8; 32], encrypted_value: &str) -> Result<String, OxyError> {
     let combined = general_purpose::STANDARD
         .decode(encrypted_value)

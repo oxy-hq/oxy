@@ -356,7 +356,6 @@ pub(super) fn rows_to_responses(
         .collect()
 }
 
-// ===========================================================================
 // Shared single-app mutations + batch endpoints
 //
 // The publish/unpublish/delete handlers above and the batch endpoints below
@@ -364,7 +363,6 @@ pub(super) fn rows_to_responses(
 // its single-app counterpart. Batch endpoints are best-effort: every id is
 // attempted independently and its outcome recorded, so one failure never
 // aborts the rest.
-// ===========================================================================
 
 /// Shared failure type for the single-app and batch mutation paths. `status`
 /// drives the one-shot routes' HTTP code; `message` names the failure in a

@@ -43,9 +43,7 @@ use agentic_llm::retry::{
 /// a log-only canary; the prompt is never truncated.
 const SOLVE_PROMPT_TOKEN_WARN_THRESHOLD: usize = 100_000;
 
-// ---------------------------------------------------------------------------
 // Prompt builder
-// ---------------------------------------------------------------------------
 
 pub(super) fn build_solve_user_prompt(
     spec: &QuerySpec,
@@ -169,9 +167,7 @@ pub(super) fn build_solve_user_prompt(
     )
 }
 
-// ---------------------------------------------------------------------------
 // Solver impl method
-// ---------------------------------------------------------------------------
 
 impl AnalyticsSolver {
     /// Core solve logic; `retry_ctx` is appended to the prompt on retries.
@@ -510,15 +506,12 @@ impl AnalyticsSolver {
         })
     }
 
-    /// Returns the tool list for the solving state.
     pub(super) fn tools_for_state_solving() -> Vec<agentic_core::tools::ToolDef> {
         crate::tools::solving_tools()
     }
 }
 
-// ---------------------------------------------------------------------------
 // State handler
-// ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **solving** state.
 ///

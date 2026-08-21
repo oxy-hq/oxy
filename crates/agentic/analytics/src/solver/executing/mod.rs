@@ -41,9 +41,7 @@ pub(crate) fn execution_type_for(source: &SolutionSource) -> (&'static str, bool
     }
 }
 
-// ---------------------------------------------------------------------------
 // Compact result formatter (for retry context)
-// ---------------------------------------------------------------------------
 
 /// Format an [`AnalyticsResult`] as a compact single-line summary for
 /// back-edge retry context.
@@ -81,9 +79,7 @@ pub(super) fn format_compact_result(result: &AnalyticsResult) -> String {
     out
 }
 
-// ---------------------------------------------------------------------------
 // execute_solution body
-// ---------------------------------------------------------------------------
 
 impl AnalyticsSolver {
     /// Execute a SQL solution against the appropriate connector.
@@ -586,9 +582,7 @@ impl AnalyticsSolver {
     }
 }
 
-// ---------------------------------------------------------------------------
 // SQL-generation mode helper
-// ---------------------------------------------------------------------------
 
 /// Outcome of `terminate_with_sql_if_enabled` — the executing handler
 /// uses these to pick between "terminate the run now" and "fall through
@@ -707,9 +701,7 @@ impl AnalyticsSolver {
     }
 }
 
-// ---------------------------------------------------------------------------
 // State handler
-// ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **executing** state.
 ///
@@ -1009,9 +1001,7 @@ pub(super) fn build_executing_handler()
     }
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /// Convert a [`SubrunOutput`] into an [`AnalyticsResult`] that the
 /// Interpreting stage can consume.

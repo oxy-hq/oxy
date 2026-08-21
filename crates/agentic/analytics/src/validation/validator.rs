@@ -23,9 +23,7 @@ use super::config::ValidationConfig;
 use super::registry::{RegistryError, RuleRegistry};
 use super::rule::{SolvableCtx, SolvableRule, SolvedCtx, SolvedRule, SpecifiedCtx, SpecifiedRule};
 
-// ---------------------------------------------------------------------------
 // Validator
-// ---------------------------------------------------------------------------
 
 /// Holds the active, ordered rule lists for all three validation stages.
 ///
@@ -131,9 +129,7 @@ impl Validator {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

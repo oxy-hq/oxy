@@ -363,7 +363,6 @@ pub struct ChildCompletion {
 /// A task assigned by the coordinator to a worker.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskAssignment {
-    /// Unique identifier for this task.
     pub task_id: String,
     /// If this is a child task, the parent's task_id.
     pub parent_task_id: Option<String>,

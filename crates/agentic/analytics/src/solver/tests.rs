@@ -1722,7 +1722,6 @@ fn problem_state_from_resume_solving_reconstructs_as_specifying() {
     }
 }
 
-/// Resuming from "solving" with a corrupt spec falls back to Clarifying.
 #[test]
 fn problem_state_from_resume_solving_bad_spec_falls_back_to_clarifying() {
     use crate::solver::resuming::problem_state_from_resume;

@@ -396,7 +396,6 @@ impl ConfigManager {
         &self.config.repositories
     }
 
-    /// Adds a repository to the configuration
     pub async fn add_repository(
         &self,
         repo: crate::config::model::Repository,

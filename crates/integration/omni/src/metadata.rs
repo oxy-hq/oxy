@@ -96,7 +96,6 @@ impl MetadataMerger {
         merged_views
     }
 
-    /// Merge individual view metadata with overlay precedence
     fn merge_view_metadata(base: ViewMetadata, overlay: ViewMetadata) -> ViewMetadata {
         ViewMetadata {
             name: overlay.name, // Should match, but overlay takes precedence

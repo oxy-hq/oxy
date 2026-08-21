@@ -29,7 +29,6 @@ use tracing::warn;
 use super::storage::MetricStorage;
 use super::types::{ContextItem, ContextType, MetricUsage, SemanticContextItem, SourceType};
 
-/// Shared metric context type for use in ExecutionContext
 pub type SharedMetricCtx = Arc<RwLock<MetricContext>>;
 
 /// Metric collection context that can be passed through ExecutionContext.
@@ -56,7 +55,6 @@ pub type SharedMetricCtx = Arc<RwLock<MetricContext>>;
 /// ```
 #[derive(Debug, Clone)]
 pub struct MetricContext {
-    /// Trace ID for correlation
     pub trace_id: String,
     /// Parent's trace ID (for nested execution correlation)
     pub parent_trace_id: Option<String>,
@@ -129,7 +127,6 @@ impl MetricContext {
         self.question = Some(question.into());
     }
 
-    /// Set the response
     pub fn set_response(&mut self, response: impl Into<String>) {
         self.response = Some(response.into());
     }

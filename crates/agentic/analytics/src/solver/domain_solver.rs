@@ -27,9 +27,7 @@ use super::AnalyticsSolver;
 use super::diagnosing;
 use super::resuming::{self, ask_user_tool_def};
 
-// ---------------------------------------------------------------------------
 // DomainSolver impl
-// ---------------------------------------------------------------------------
 
 #[async_trait]
 impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {

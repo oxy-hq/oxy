@@ -42,19 +42,16 @@ impl ParserConfig {
 /// Result of parsing semantic layer files
 #[derive(Debug, Clone)]
 pub struct ParseResult {
-    /// The parsed semantic layer
     pub semantic_layer: SemanticLayer,
     /// Validation result if validation was enabled
     pub validation: Option<ValidationResult>,
     /// Warnings encountered during parsing
     pub warnings: Vec<String>,
-    /// List of files that were parsed
     pub parsed_files: Vec<PathBuf>,
     /// All variables found across the semantic layer
     pub variables_found: HashSet<String>,
 }
 
-/// Parser for semantic layer configurations
 pub struct SemanticLayerParser {
     config: ParserConfig,
 }
@@ -229,7 +226,6 @@ impl SemanticLayerParser {
         })
     }
 
-    /// Parses a single view file
     pub fn parse_view_file(&self, path: &Path) -> Result<View, SemanticLayerError> {
         // Read raw YAML content as a string
         let content = fs::read_to_string(path).map_err(|e| {
@@ -273,7 +269,6 @@ impl SemanticLayerParser {
         Ok(view)
     }
 
-    /// Parses a single topic file
     pub fn parse_topic_file(&self, path: &Path) -> Result<Topic, SemanticLayerError> {
         let content = fs::read_to_string(path).map_err(|e| {
             SemanticLayerError::IOError(format!("Failed to read file {}: {}", path.display(), e))
@@ -536,14 +531,12 @@ impl SemanticLayerParser {
         Ok(semantic_layer)
     }
 
-    /// Exports a semantic layer to YAML format
     pub fn export_to_yaml(semantic_layer: &SemanticLayer) -> Result<String, SemanticLayerError> {
         serde_yaml::to_string(semantic_layer).map_err(|e| {
             SemanticLayerError::ParsingError(format!("Failed to serialize to YAML: {}", e))
         })
     }
 
-    /// Exports a semantic layer to JSON format
     pub fn export_to_json(semantic_layer: &SemanticLayer) -> Result<String, SemanticLayerError> {
         serde_json::to_string_pretty(semantic_layer).map_err(|e| {
             SemanticLayerError::ParsingError(format!("Failed to serialize to JSON: {}", e))
@@ -628,7 +621,6 @@ fn reject_legacy_globals(content: &str, path: &Path) -> Result<(), SemanticLayer
     Ok(())
 }
 
-/// Convenience function to parse semantic layer from a directory
 pub fn parse_semantic_layer_from_dir<P: AsRef<Path>>(
     path: P,
 ) -> Result<ParseResult, SemanticLayerError> {
@@ -647,7 +639,6 @@ mod tests {
         TempDir::new().unwrap()
     }
 
-    /// Creates a minimal view YAML content.
     fn minimal_view_yaml(name: &str) -> String {
         format!(
             r#"name: {name}

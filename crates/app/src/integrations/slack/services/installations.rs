@@ -158,7 +158,6 @@ impl InstallationsService {
         Ok(())
     }
 
-    /// Resolve the decrypted bot token for an installation.
     pub async fn decrypt_bot_token(inst: &slack_installations::Model) -> Result<String, OxyError> {
         OrgSecretsService::get_by_id(inst.bot_token_secret_id).await
     }

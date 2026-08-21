@@ -535,7 +535,6 @@ async fn handle_looker_test(args: LookerTestArgs) -> Result<(), OxyError> {
     Ok(())
 }
 
-/// Print a sync result with formatting
 fn print_sync_result(result: &SyncResult) {
     println!(
         "   {}",

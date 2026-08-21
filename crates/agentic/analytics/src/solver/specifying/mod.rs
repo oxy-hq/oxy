@@ -40,9 +40,7 @@ use super::{
     strip_json_fences,
 };
 
-// ---------------------------------------------------------------------------
 // LLM response types
-// ---------------------------------------------------------------------------
 
 #[derive(serde::Deserialize)]
 struct SpecifyResponseItem {
@@ -60,17 +58,13 @@ struct SpecifyResponseEnvelope {
     specs: Vec<SpecifyResponseItem>,
 }
 
-// ---------------------------------------------------------------------------
 // Prompt builder
-// ---------------------------------------------------------------------------
 
 pub mod prompts;
 use prompts::build_specify_query_request_user_prompt;
 pub(crate) use prompts::build_specify_user_prompt;
 
-// ---------------------------------------------------------------------------
 // Solver impl methods
-// ---------------------------------------------------------------------------
 
 impl AnalyticsSolver {
     /// Core specify logic; uses the LLM with specifying tools to resolve an
@@ -1070,9 +1064,7 @@ impl AnalyticsSolver {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Translation context builder
-// ---------------------------------------------------------------------------
 
 /// Build a [`TranslationContext`] from catalog trait calls for a given intent.
 ///
@@ -1125,9 +1117,7 @@ fn build_translation_context(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Free helpers
-// ---------------------------------------------------------------------------
 
 fn spec_source_label(source: &SolutionSource) -> String {
     match source {
@@ -1307,9 +1297,7 @@ fn parse_query_request_response(
     Ok(envelope)
 }
 
-// ---------------------------------------------------------------------------
 // State handler (hybrid routing + fan-out)
-// ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **specifying** state.
 ///

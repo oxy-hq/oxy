@@ -69,7 +69,6 @@ pub struct GetAppDataResponse {
     error: Option<String>,
 }
 
-/// Error response wrapper
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ApiErrorResponse {
     pub error: String,

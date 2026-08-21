@@ -7,9 +7,7 @@ use agentic_core::{back_target::BackTarget, orchestrator::RunContext, state::Pro
 
 use crate::{AnalyticsDomain, AnalyticsError, AnalyticsIntent};
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /// Extract the intent to use for recovery.
 ///
@@ -33,9 +31,7 @@ fn intent_for_recovery(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Routing table
-// ---------------------------------------------------------------------------
 
 /// Route a domain error to the appropriate recovery [`ProblemState`].
 ///

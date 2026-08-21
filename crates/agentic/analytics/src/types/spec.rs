@@ -10,9 +10,7 @@ use crate::catalog::QueryContext;
 use super::intent::AnalyticsIntent;
 use super::query_request::QueryRequestItem;
 
-// ---------------------------------------------------------------------------
 // Spec
-// ---------------------------------------------------------------------------
 
 /// The shape of the result set the query is expected to return.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,7 +77,6 @@ pub struct QuerySpec {
     pub resolved_tables: Vec<String>,
     /// Ordered list of `(left_table, right_table, join_key)` pairs.
     pub join_path: Vec<(String, String, String)>,
-    /// Expected shape of the result set.
     pub expected_result_shape: ResultShape,
     /// Assumptions made during resolution (surfaced to the user).
     pub assumptions: Vec<String>,
@@ -135,9 +132,7 @@ pub struct QuerySpec {
     #[serde(skip)]
     pub compile_error: Option<String>,
 }
-// ---------------------------------------------------------------------------
 // Domain marker
-// ---------------------------------------------------------------------------
 
 /// Which path produced the [`QuerySpec`] — used for path-aware diagnosis.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -305,9 +300,7 @@ pub struct ChartConfig {
     pub value: Option<String>,
     /// Optional chart title.
     pub title: Option<String>,
-    /// Optional x-axis label.
     pub x_axis_label: Option<String>,
-    /// Optional y-axis label.
     pub y_axis_label: Option<String>,
 }
 
