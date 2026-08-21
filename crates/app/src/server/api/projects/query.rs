@@ -336,18 +336,18 @@ pub(crate) async fn execute_function_query(
 }
 
 /// Production
-/// [`FunctionQueryExecutor`](crate::server::api::custom_apps_functions::runtime::FunctionQueryExecutor)
+/// [`FunctionQueryExecutor`](crate::server::api::custom_apps_functions::seam::FunctionQueryExecutor)
 /// — delegates to [`execute_function_query`] so the read-only gate and
 /// outer-LIMIT wrap stay shared with the custom-app `/query` endpoint.
 ///
 /// Stateless: constructed at the composition root (the serve router / the
 /// scheduled-function worker) and handed to the function runtime as a trait
 /// object, so the runtime never imports this module. See
-/// `custom_apps_functions::runtime::FunctionQueryExecutor`.
+/// `custom_apps_functions::seam::FunctionQueryExecutor`.
 pub struct DataPlaneQueryExecutor;
 
 #[async_trait::async_trait]
-impl crate::server::api::custom_apps_functions::runtime::FunctionQueryExecutor
+impl crate::server::api::custom_apps_functions::seam::FunctionQueryExecutor
     for DataPlaneQueryExecutor
 {
     async fn execute(

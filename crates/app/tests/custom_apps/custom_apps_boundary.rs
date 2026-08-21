@@ -65,7 +65,7 @@ const ALLOWED_SEAMS: &[Seam] = &[
     Seam {
         prefix: "crate::agentic_wiring",
         why: "OxyProjectContext — the pipeline adapter. The function runtime's *consumption* is \
-               now inverted behind `custom_apps_functions::runtime::FunctionProjectContext` \
+               now inverted behind `custom_apps_functions::seam::FunctionProjectContext` \
                (host.rs no longer imports this); the only remaining importer is \
                `custom_apps_gates`, which CONSTRUCTS the per-request context — a builder shared \
                with the non-boundary /query + /semantic-query handlers. Fully deleting this seam \

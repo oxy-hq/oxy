@@ -19,10 +19,8 @@ use oxy::service::secret_manager::SecretManagerService;
 
 use crate::server::api::custom_apps_storage::RetentionPolicy;
 
-use super::runtime::{
-    FUNCTION_MAX_ROWS, FUNCTION_STREAM_MAX_ROWS, FunctionHost, FunctionProjectContext,
-    FunctionQueryExecutor,
-};
+use super::runtime::{FUNCTION_MAX_ROWS, FUNCTION_STREAM_MAX_ROWS, FunctionHost};
+use super::seam::{FunctionProjectContext, FunctionQueryExecutor};
 
 /// Outbound fetch response size cap (design doc §11.9).
 const FETCH_MAX_BYTES: u64 = 10 * 1024 * 1024;

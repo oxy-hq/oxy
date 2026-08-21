@@ -1,5 +1,5 @@
 use crate::cli::ServeArgs;
-use crate::server::api::custom_apps_functions::runtime::FunctionQueryExecutor;
+use crate::server::api::custom_apps_functions::seam::FunctionQueryExecutor;
 use crate::server::api::custom_apps_serve::wants_html;
 use crate::server::api::projects::query::DataPlaneQueryExecutor;
 use crate::server::http_cache::{if_none_match, weak_etag};

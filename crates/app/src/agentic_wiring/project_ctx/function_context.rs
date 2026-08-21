@@ -1,8 +1,9 @@
 //! `FunctionProjectContext` impl for [`OxyProjectContext`].
 //!
 //! The Oxy Functions runtime (`custom_apps_functions`) depends on the
-//! runtime-owned `FunctionProjectContext` trait, not on this adapter — so its
-//! files don't import `agentic_wiring`. This is the production impl, named
+//! `FunctionProjectContext` trait in the always-compiled `custom_apps_functions::seam`
+//! module, not on this adapter — so its files don't import `agentic_wiring`. This is
+//! the production impl, named
 //! here (outside the custom-apps boundary) and reaching the runtime as a trait
 //! object built from the context `custom_apps_gates::build_project_context`
 //! already resolves per invocation.
@@ -18,7 +19,7 @@ use oxy_shared::errors::OxyError;
 use sea_orm::DatabaseConnection;
 
 use super::OxyProjectContext;
-use crate::server::api::custom_apps_functions::runtime::FunctionProjectContext;
+use crate::server::api::custom_apps_functions::seam::FunctionProjectContext;
 
 #[async_trait::async_trait]
 impl FunctionProjectContext for OxyProjectContext {

@@ -67,7 +67,7 @@ use super::custom_apps_auth::user_can_access_app;
 use super::custom_apps_cache::{
     ResolvedApp, cached_app_resolution, cached_user, set_cached_app_resolution, set_cached_user,
 };
-use super::custom_apps_functions::runtime::FunctionQueryExecutor;
+use super::custom_apps_functions::seam::FunctionQueryExecutor;
 
 mod headers;
 // The admin SPA's static handler answers the same navigation-vs-subresource

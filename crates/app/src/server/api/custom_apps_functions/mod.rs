@@ -21,6 +21,8 @@ pub mod host;
 mod result_cache;
 #[cfg(feature = "custom-app-functions")]
 pub mod runtime;
+/// The always-compiled dependency-inversion seam (see `seam.rs`).
+pub mod seam;
 /// Per-invocation registry of open `ctx.tx()` transactions.
 #[cfg(feature = "custom-app-functions")]
 mod tx;
@@ -646,7 +648,7 @@ pub async fn handle_function_request(
     headers: HeaderMap,
     body: axum::body::Bytes,
     refresh: bool,
-    query_exec: std::sync::Arc<dyn runtime::FunctionQueryExecutor>,
+    query_exec: std::sync::Arc<dyn seam::FunctionQueryExecutor>,
 ) -> Response {
     // §11.10 — POST-only, before any gate/runtime work.
     if method != Method::POST {
@@ -985,7 +987,7 @@ pub(crate) async fn run_scheduled_function(
     input: Vec<u8>,
     cancel: tokio_util::sync::CancellationToken,
     events: Option<RunEventSink>,
-    query_exec: std::sync::Arc<dyn runtime::FunctionQueryExecutor>,
+    query_exec: std::sync::Arc<dyn seam::FunctionQueryExecutor>,
 ) -> Result<String, String> {
     let app = entity::apps::Entity::find_by_id(app_id)
         .one(db)
@@ -1180,7 +1182,7 @@ struct RunArgs<'a> {
     db: &'a sea_orm::DatabaseConnection,
     /// Runs `ctx.query`/`ctx.queryStream`; injected at the composition root so
     /// the runtime depends on the trait, not on `projects::query`.
-    query_exec: std::sync::Arc<dyn runtime::FunctionQueryExecutor>,
+    query_exec: std::sync::Arc<dyn seam::FunctionQueryExecutor>,
     app: &'a entity::apps::Model,
     artifact_js: String,
     body: Vec<u8>,
@@ -1243,7 +1245,7 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         // Hand the runtime the project context behind its trait, so the host
         // depends on `FunctionProjectContext`, not on `agentic_wiring`. The
         // concrete `OxyProjectContext` is only named here (outside the runtime).
-        std::sync::Arc::new(proj_ctx) as std::sync::Arc<dyn runtime::FunctionProjectContext>,
+        std::sync::Arc::new(proj_ctx) as std::sync::Arc<dyn seam::FunctionProjectContext>,
         args.query_exec.clone(),
         args.db.clone(),
         args.write_destinations.clone(),

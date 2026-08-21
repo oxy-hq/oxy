@@ -417,6 +417,14 @@ jobs:
             # fail-fast, so enforcing now would block every PR. Flip to
             # `-- -D warnings` in a dedicated PR after a warning-cleanup pass.
             cargo clippy --workspace
+            # Gate the feature-off build: the custom-app-functions (V8) feature is
+            # compiled out by the `cf`/`bf`/`rf` aliases in .cargo/config.toml (`cf` is
+            # this exact command), and an ungated `use` of a gated symbol only breaks
+            # for whoever runs them — which is how the seam-trait regression this guards
+            # against reached main. `clippy` (not `check`) so the workspace-member
+            # fingerprints from the line above are reused; the check pass runs first, so
+            # an E0433 fails it identically.
+            cargo clippy --no-default-features -p oxy-app
           elif [[ "${{ matrix.task }}" == "test" ]]; then
             touch examples/bigquery-sample.key
             echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key

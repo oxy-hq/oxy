@@ -97,7 +97,7 @@ impl TaskExecutor for AppFunctionTaskExecutor {
                 // module never imports `projects::query`.
                 std::sync::Arc::new(crate::server::api::projects::query::DataPlaneQueryExecutor)
                     as std::sync::Arc<
-                        dyn crate::server::api::custom_apps_functions::runtime::FunctionQueryExecutor,
+                        dyn crate::server::api::custom_apps_functions::seam::FunctionQueryExecutor,
                     >,
             )
             .await
