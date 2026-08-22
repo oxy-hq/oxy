@@ -669,7 +669,8 @@ launcher ask box to an agent). `env` / `target` / `project` are **not** baked
 into the manifest — CI or CLI flags supply them (`OXY_TARGET`, `OXY_ORG`,
 `OXY_ENV`, `--project`).
 
-**Three load-bearing files** (missing any one breaks the publish, not local dev):
+**Three load-bearing rules** (getting any one wrong breaks the publish, not
+local dev):
 
 1. `oxy-app.json` at the module root.
 2. `vite.config.ts` with `base: process.env.OXY_APP_BASE_PATH || "/"` (so
@@ -680,9 +681,20 @@ into the manifest — CI or CLI flags supply them (`OXY_TARGET`, `OXY_ORG`,
    server captures launcher-card metadata from the bundle's own `oxy-app.json`
    (`app_builds.manifest_json`) — a manifest left only at the module root never
    reaches the server.
-3. `pnpm-workspace.yaml` with `allowBuilds: { esbuild: true }` — pnpm 10+ blocks
-   dependency build scripts by default, and esbuild (transitive via Vite) needs
-   its postinstall or `vite build` fails with `ERR_PNPM_IGNORED_BUILDS`.
+3. **The workspace root belongs to whoever owns the repo.** An app inside the
+   customer-apps monorepo must NOT carry its own `pnpm-workspace.yaml`: pnpm
+   resolves a workspace root as the nearest ancestor, so one at
+   `apps/<org>/<app>/` makes that app its own root and cuts it off from the
+   monorepo's overrides, catalog, and `workspace:` links to the shared packages
+   its bundle imports. The monorepo root owns that file — including any
+   `allowBuilds` entry the app's dependencies need. A *standalone* app,
+   scaffolded by `create-oxy-app` outside the monorepo, does own its root, and
+   needs `allowBuilds: { esbuild: false }` there **only if it depends on esbuild
+   directly**: under Vite 8 esbuild is an **optional peer**, not a dependency,
+   so it is not pulled in transitively and a frontend-only app needs no
+   build-script declaration at all. (`false` rather than `true` because esbuild
+   ships its platform binary as an optional dependency and runs fine without its
+   postinstall.)
 
 **Publish flow:** run `oxy publish` from the module dir — it builds, tars
 `dist/`, and uploads the app as a **draft**; an Oxy admin promotes the draft to

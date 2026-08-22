@@ -1,7 +1,7 @@
-import Editor, { DiffEditor, type Monaco } from "@monaco-editor/react";
+import Editor, { DiffEditor } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import { useEffect, useRef } from "react";
-import { configureMonaco } from "@/components/FileEditor/monacoConfig";
+import { configureMonaco, type MonacoNamespace } from "@/components/FileEditor/monacoConfig";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 import useTheme from "@/stores/useTheme";
@@ -25,7 +25,7 @@ interface BaseMonacoEditorOptions {
 export interface BaseMonacoEditorProps {
   value: string;
   onChange?: (value: string) => void;
-  onMount?: (editor: editor.IStandaloneCodeEditor, monaco: Monaco) => void;
+  onMount?: (editor: editor.IStandaloneCodeEditor, monaco: MonacoNamespace) => void;
   language?: string;
   theme?: "github-dark" | "vs-dark" | "vs" | "light";
   height?: string;

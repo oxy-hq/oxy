@@ -13,13 +13,13 @@ overrides:
   dompurify: '>=3.4.11'
 peerDependencyRules:
   allowedVersions:
-    '@typescript-eslint/parser>typescript': '6'
-    '@typescript-eslint/eslint-plugin>typescript': '6'
-    '@typescript-eslint/utils>typescript': '6'
-    '@typescript-eslint/type-utils>typescript': '6'
-    '@typescript-eslint/project-service>typescript': '6'
-    '@typescript-eslint/tsconfig-utils>typescript': '6'
-    '@typescript-eslint/typescript-estree>typescript': '6'
+    '@typescript-eslint/parser>typescript': '7'
+    '@typescript-eslint/eslint-plugin>typescript': '7'
+    '@typescript-eslint/utils>typescript': '7'
+    '@typescript-eslint/type-utils>typescript': '7'
+    '@typescript-eslint/project-service>typescript': '7'
+    '@typescript-eslint/tsconfig-utils>typescript': '7'
+    '@typescript-eslint/typescript-estree>typescript': '7'
     vite-plugin-node-polyfills>vite: '8'
 allowBuilds:
   '@sentry/cli': false

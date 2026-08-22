@@ -90,6 +90,21 @@ function slugify(name: string): string {
     .replace(/-{2,}/g, "-");
 }
 
+/** Filename a template entry is written under in a scaffolded app.
+ *
+ * Both `.example` spellings are stripped, matching the server-side filter in
+ * `crates/app/src/custom_app_template/mod.rs`, which skips `.yml.example` AND
+ * `.yaml.example`. The two must agree: anything the server filters out, the CLI
+ * has to rename back, or a standalone scaffold silently loses the file.
+ */
+export function templateDestName(entryName: string): string {
+  if (entryName === "_gitignore") return ".gitignore";
+  if (entryName.endsWith(".yml.example") || entryName.endsWith(".yaml.example")) {
+    return entryName.slice(0, -".example".length);
+  }
+  return entryName;
+}
+
 async function copyTemplate(
   templateDir: string,
   targetDir: string,
@@ -101,17 +116,14 @@ async function copyTemplate(
     const src = path.join(templateDir, entry.name);
     // Rename `_gitignore` → `.gitignore` so npm doesn't strip
     // dotfiles from the published package. Same trick as create-vite.
-    // Also rename `.example` workflow files to the real path the
-    // scaffolded app wants — the `.example` suffix exists so the
-    // server-side admin-scaffold can filter them (the customer-apps
-    // repo has a shared workflow at root and per-app ones would
-    // conflict), but a standalone CLI scaffold genuinely wants a
-    // ready-to-edit workflow file.
-    let destName = entry.name;
-    if (destName === "_gitignore") destName = ".gitignore";
-    else if (destName.endsWith(".yml.example")) {
-      destName = destName.slice(0, -".example".length);
-    }
+    // Also rename `.example` files to the real path the scaffolded app
+    // wants. The suffix exists so the server-side admin-scaffold can filter
+    // them: that path writes into `apps/<org>/<app>/` of the customer-apps
+    // monorepo, where a per-app copy would conflict with something the repo
+    // already owns at its root — a shared deploy workflow, and (for the
+    // functions template) the pnpm workspace root itself. A standalone CLI
+    // scaffold owns its whole directory and genuinely wants both files.
+    const destName = templateDestName(entry.name);
     const dest = path.join(targetDir, destName);
     if (entry.isDirectory()) {
       await copyTemplate(src, dest, vars);

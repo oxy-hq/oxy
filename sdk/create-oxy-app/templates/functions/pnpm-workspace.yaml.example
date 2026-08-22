@@ -1,0 +1,21 @@
+# Present only to declare the build-script decision below — this app is a single
+# package, not a workspace.
+#
+# `.example`, like the deploy workflows: the CLI renames it back on a standalone
+# scaffold, but the server-side scaffold
+# (crates/app/src/custom_app_template/mod.rs) filters it, because that path
+# writes into `apps/<org>/<app>/` of the customer-apps MONOREPO. pnpm resolves a
+# workspace root as the nearest ancestor `pnpm-workspace.yaml`, so shipping one
+# there would make the app its own root and cut it off from the monorepo's
+# overrides, catalog, and `workspace:` links to shared packages.
+#
+# pnpm 10+ refuses to run a dependency's install scripts unless the project says
+# so, and `pnpm install` EXITS NON-ZERO on an undeclared one. esbuild has such a
+# script, so without this a freshly scaffolded app fails its very first install,
+# and `oxy publish` (which shells out to `pnpm exec esbuild`) fails with it.
+#
+# `false`, not `true`: esbuild ships its platform binary as an optional
+# dependency, so the install script is not needed to run it — the oxy repo root
+# makes the same call for the same reason.
+allowBuilds:
+  esbuild: false

@@ -1,6 +1,6 @@
 import { useMonaco } from "@monaco-editor/react";
 import { useEffect, useRef } from "react";
-import { configureMonaco, configureMonacoEnvironment } from "../monacoConfig";
+import { configureMonaco, configureMonacoEnvironment, type MonacoNamespace } from "../monacoConfig";
 
 configureMonacoEnvironment();
 
@@ -9,7 +9,8 @@ interface UseMonacoEditorProps {
 }
 
 const useMonacoEditor = ({ saveFile }: UseMonacoEditorProps) => {
-  const monaco = useMonaco();
+  // Annotated off the pinned mapping — see MonacoNamespace in monacoConfig.ts.
+  const monaco: MonacoNamespace | null = useMonaco();
   const isConfigured = useRef<boolean>(false);
 
   useEffect(() => {

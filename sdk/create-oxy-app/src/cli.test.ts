@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseArgs, slugify } from "./cli.js";
+import { parseArgs, slugify, templateDestName } from "./cli.js";
 
 describe("parseArgs", () => {
   test("captures the first positional as name, default template is vite", () => {
@@ -59,5 +59,28 @@ describe("slugify", () => {
 
   test("strips non-alphanumeric characters", () => {
     expect(slugify("hello!world@2024")).toBe("hello-world-2024");
+  });
+});
+
+describe("templateDestName", () => {
+  test("_gitignore becomes .gitignore (npm strips real dotfiles)", () => {
+    expect(templateDestName("_gitignore")).toBe(".gitignore");
+  });
+
+  // Both spellings must be stripped: the server-side scaffold
+  // (crates/app/src/custom_app_template/mod.rs) filters `.yml.example` AND
+  // `.yaml.example` so those files never land in the customer-apps monorepo,
+  // so a standalone CLI scaffold has to rename both back or it loses them.
+  test("strips .yml.example (shared deploy workflow)", () => {
+    expect(templateDestName("deploy.yml.example")).toBe("deploy.yml");
+  });
+
+  test("strips .yaml.example (the functions template's pnpm workspace root)", () => {
+    expect(templateDestName("pnpm-workspace.yaml.example")).toBe("pnpm-workspace.yaml");
+  });
+
+  test("leaves ordinary filenames alone", () => {
+    expect(templateDestName("package.json")).toBe("package.json");
+    expect(templateDestName("vite.config.ts")).toBe("vite.config.ts");
   });
 });

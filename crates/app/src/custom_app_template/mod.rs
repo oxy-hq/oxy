@@ -59,10 +59,15 @@ impl Substitutions<'_> {
 /// Used by the admin-triggered GitHub scaffold to POST files through
 /// the Contents API.
 ///
-/// Filters out `.example` workflow files — the customer-apps repo
-/// has a shared CI workflow at the root, per-app workflows would
-/// conflict. Also filters `template.json` (registry metadata) and
-/// `screenshot.png` (gallery image) from the emitted bundle.
+/// Filters out `.example` files — anything the customer-apps monorepo
+/// already owns at its root, which a per-app copy would fight with.
+/// Two cases today: the shared CI workflow (`deploy.yml.example`), and
+/// the `functions` template's `pnpm-workspace.yaml.example`, which must
+/// never land at `apps/<org>/<app>/` because pnpm resolves a workspace
+/// root as the nearest ancestor and one there would detach the app from
+/// the monorepo's overrides, catalog, and `workspace:` links. Also
+/// filters `template.json` (registry metadata) and `screenshot.png`
+/// (gallery image) from the emitted bundle.
 pub fn render_template_files(
     template_id: &str,
     sub: &Substitutions<'_>,
@@ -206,13 +211,64 @@ mod tests {
             app_display_name: "X",
             app_base_path: "/customer-apps/acme/x/",
         };
-        let files = render_template_files("vite", &sub).expect("vite template present");
-        for (p, _) in &files {
+        for template in ["vite", "functions", "dashboard", "single-store"] {
+            let files = render_template_files(template, &sub).expect("template present");
+            for (p, _) in &files {
+                assert!(
+                    !p.ends_with(".yml.example") && !p.ends_with(".yaml.example"),
+                    "{template}: example file leaked into scaffold output: {p}",
+                );
+            }
+        }
+    }
+
+    // This path writes into `apps/<org>/<app>/` of the customer-apps MONOREPO.
+    // pnpm resolves a workspace root as the nearest ancestor
+    // `pnpm-workspace.yaml`, so one emitted here would make the app its own root
+    // and silently detach it from the monorepo's overrides, catalog, and
+    // `workspace:` links to the shared packages bundles import. The functions
+    // template keeps its copy as `.yaml.example`, which the filter above drops
+    // and `create-oxy-app`'s `templateDestName` renames back for a standalone
+    // scaffold.
+    #[test]
+    fn render_template_files_never_emits_a_nested_pnpm_workspace_root() {
+        let sub = Substitutions {
+            app_slug: "x",
+            app_display_name: "X",
+            app_base_path: "/customer-apps/acme/x/",
+        };
+        for template in ["vite", "functions", "dashboard", "single-store"] {
+            let files = render_template_files(template, &sub).expect("template present");
             assert!(
-                !p.ends_with(".yml.example") && !p.ends_with(".yaml.example"),
-                "example workflow leaked into scaffold output: {p}",
+                !files
+                    .iter()
+                    .any(|(p, _)| p.ends_with("pnpm-workspace.yaml")),
+                "{template}: nested pnpm workspace root leaked into scaffold output",
             );
         }
+    }
+
+    // The two assertions above are negative — they pass just as happily if
+    // `pnpm-workspace.yaml.example` is deleted outright, which would silently
+    // regress the STANDALONE scaffold to the pnpm-10+ `ERR_PNPM_IGNORED_BUILDS`
+    // install failure the file exists to prevent (the CLI can only rename back
+    // a file that is there). Pin its presence so the pair is complete.
+    #[test]
+    fn functions_template_still_ships_the_workspace_root_example() {
+        // Matched the way `collect_template_files` above matches names, rather
+        // than `Dir::get_file`, which compares whole entry paths — this asserts
+        // presence without depending on how `include_dir!` spells them.
+        let dir = get_template("functions").expect("functions template").dir;
+        let present = dir
+            .entries()
+            .iter()
+            .filter_map(|e| e.path().file_name().and_then(|n| n.to_str()))
+            .any(|n| n == "pnpm-workspace.yaml.example");
+        assert!(
+            present,
+            "functions template lost pnpm-workspace.yaml.example — a standalone \
+             scaffold now installs with esbuild's build script undeclared",
+        );
     }
 
     // Templates store the ignore file as `_gitignore` so it survives npm
