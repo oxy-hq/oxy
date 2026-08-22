@@ -13,8 +13,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use aes_gcm::aead::OsRng;
-use aes_gcm::{Aes256Gcm, KeyInit};
+use aes_gcm::aead::Generate;
+use aes_gcm::{Aes256Gcm, Key};
 use base64::{Engine as _, engine::general_purpose, engine::general_purpose::STANDARD as BASE64};
 use oxy_shared::errors::OxyError;
 
@@ -73,7 +73,7 @@ pub fn get_encryption_key() -> [u8; 32] {
         }
     }
 
-    let key = Aes256Gcm::generate_key(&mut OsRng);
+    let key = Key::<Aes256Gcm>::generate();
 
     // Ensure directory exists
     if let Some(parent) = key_file_path.parent()

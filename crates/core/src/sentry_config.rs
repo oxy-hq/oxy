@@ -28,15 +28,22 @@ pub fn init_sentry() -> Option<sentry::ClientInitGuard> {
             .unwrap_or(0.0) // always disable for now
     };
 
-    let options = sentry::ClientOptions {
-        dsn: dsn?.parse().ok(),
-        environment: Some(environment.clone().into()),
-        release: Some(release.clone().into()),
-        traces_sample_rate,
-        attach_stacktrace: true,
-        send_default_pii: false, // Don't send personally identifiable information
-        max_breadcrumbs: 100,
-        before_send: Some(std::sync::Arc::new(|mut event| {
+    // sentry 0.49 made `ClientOptions` `#[non_exhaustive]`, so it can no longer be
+    // built with a struct literal — the consuming builder methods are the supported
+    // path. `dsn` stays a direct field assignment (still allowed on a
+    // `#[non_exhaustive]` struct) because the `.dsn()` builder *panics* on an
+    // unparseable value, and a malformed `SENTRY_DSN` must keep degrading to "no
+    // error reporting", not take the process down at startup.
+    let mut options = sentry::ClientOptions::new()
+        .environment(environment.clone())
+        .release(release.clone())
+        // 0.49 folded `traces_sample_rate` into `traces_sampling_strategy`; this
+        // setter still writes the same fixed-rate strategy.
+        .traces_sample_rate(traces_sample_rate)
+        .attach_stacktrace(true)
+        .send_default_pii(false) // Don't send personally identifiable information
+        .max_breadcrumbs(100)
+        .before_send(|mut event| {
             // Filter out sensitive information
             if let Some(exception) = event.exception.iter_mut().next()
                 && let Some(stacktrace) = &mut exception.stacktrace
@@ -52,9 +59,8 @@ pub fn init_sentry() -> Option<sentry::ClientInitGuard> {
                 }
             }
             Some(event)
-        })),
-        ..Default::default()
-    };
+        });
+    options.dsn = dsn?.parse().ok();
 
     let guard = sentry::init(options);
 

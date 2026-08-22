@@ -4,14 +4,12 @@ use serde::{Deserialize, Serialize};
 pub type SemanticEnum = (String, Vec<String>);
 
 #[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
-#[archive(check_bytes)]
 pub struct PlaceholderSpan {
     pub start: u32,
     pub end: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
-#[archive(check_bytes)]
 pub struct TemplateVar {
     pub name: String,
     pub span: PlaceholderSpan,
@@ -19,14 +17,12 @@ pub struct TemplateVar {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
-#[archive(check_bytes)]
 pub struct LexEntry {
     pub var_id: u16,
     pub value_id: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
-#[archive(check_bytes)]
 pub struct TemplateSpec {
     pub template: String,
     pub is_exclusion: bool,
@@ -38,7 +34,6 @@ pub struct TemplateSpec {
 
 /// Readable and rkyv-serializable routing blob. Designed for clarity and easy JSON diffs.
 #[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
-#[archive(check_bytes)]
 pub struct EnumRoutingBlob {
     /// Patterns used to build the Aho-Corasick automaton (surface forms)
     pub patterns: Vec<String>,

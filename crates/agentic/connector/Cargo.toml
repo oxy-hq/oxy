@@ -104,8 +104,9 @@ webpki-roots = { workspace = true, optional = true }
 
 # ClickHouse (HTTP API)
 reqwest = { workspace = true, features = [
-    "rustls-tls",
+    "rustls",
     "json",
+    "query",
 ], optional = true }
 serde_json = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"], optional = true }

@@ -115,7 +115,7 @@ oxy-unifi = { path = "crates/integration/unifi" }
 oxy-workspace-fs = { path = "crates/workspace-fs" }
 
 # External dependencies
-async-openai = { version = "0.35.0" }
+async-openai = { version = "0.41.3" }
 duckdb = { version = "=1.10501.0", features = ["bundled"] }
 axum = { version = "0.8.9", features = ["macros", "http2"] }
 axum-server = { version = "0.8.0", features = ["tls-rustls"] }
@@ -164,7 +164,7 @@ sea-orm-migration = { version = "2.0.1", features = [
   "runtime-tokio-rustls",
   "with-uuid",
 ] }
-sentry = { version = "0.47.0", features = [
+sentry = { version = "0.49.1", features = [
   "tower-axum-matched-path",
   "rustls",
   "tracing",
@@ -172,13 +172,13 @@ sentry = { version = "0.47.0", features = [
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0.151" }
 serde_yaml = { version = "0.9.34" }
-sqlparser = { version = "0.61" }
+sqlparser = { version = "0.62" }
 tempfile = { version = "3.27.0" }
 thiserror = { version = "2.0.20" }
 tokio = { version = "1.53", features = ["full"] }
 tracing = { version = "0.1.44" }
 uuid = { version = "1.24", features = ["serde", "v4"] }
-aes-gcm = "0.10.3"
+aes-gcm = "0.11.0"
 aho-corasick = "1.1"
 # Pinned to a main SHA carrying the whole opportunity-sizing line of work
 # (airlayer PRs #78–#81 plus the composite-rate-basis follow-up, all merged).
@@ -290,6 +290,10 @@ apalis = "0.7.4"
 apalis-core = "0.7.4"
 apalis-sql = "0.7.4"
 argon2 = "0.5"
+# Held at 58 — NOT a stale pin. duckdb (`=1.10501.0` below) declares `arrow ^58`,
+# connectorx 0.4.5 declares `^54`, and df-interchange's newest feature is
+# `arrow_58`. arrow 59 exists but nothing in that trio can reach it, and arrow
+# types cross every one of those boundaries. Re-check when duckdb moves.
 arrow = { version = "=58.3.0", default-features = false }
 assert_cmd = "2.2.2"
 async-std = "1.13.2"
@@ -302,8 +306,11 @@ aws-sdk-sesv2 = "1"
 aws-smithy-http-client = "1"
 aws-sigv4 = "1"
 backoff = "0.4.0"
-base64 = "0.22"
+base64 = "0.23"
 bcrypt = "0.19.3"
+# Held at 0.20 — bollard 0.21 exists, but testcontainers 0.27 (see below) needs
+# `^0.20`, and each bollard `=`-pins its own bollard-stubs prerelease, so the two
+# cannot coexist in one graph. Moves when testcontainers does.
 bollard = "0.20.2"
 brotli = "8"
 chrono-english = "0.1.8"
@@ -325,9 +332,12 @@ flate2 = "1"
 futures = "0.3.33"
 futures-core = "0.3"
 fxhash = "0.2.1"
-garde = "0.22.1"
+garde = "0.23.0"
+# Held at 0.25 — 0.28 exists, but connectorx 0.4.5 declares `^0.25` and
+# `connector/connectorx/bigquery.rs` implements connectorx's BigQuery source
+# against it. Two versions in the graph do not meet at connectorx's
+# `From<BQError>`, so this must track connectorx, not crates.io.
 gcp-bigquery-client = "0.25.1"
-git2 = "0.20.4"
 glob = "0.3.4"
 governor = "0.10"
 handlebars = "6"
@@ -341,8 +351,7 @@ humantime = "2.4.0"
 include_dir = "0.7"
 indicatif = "0.18"
 indoc = "2.0.7"
-itertools = "0.14.0"
-jsonschema = "0.33.0"
+itertools = "0.15.0"
 jsonwebtoken = "11"
 lazy_static = "1.5.0"
 # MIME assembly only — no transport. Oxy hands the composed message to SES v2
@@ -351,39 +360,81 @@ lettre = { version = "0.11.23", default-features = false, features = ["builder"]
 libc = "0.2"
 linfa = "0.8.1"
 linfa-reduction = "0.8.1"
-lru = "0.16"
+lru = "0.18"
+# Held at 0.16 — 0.17 exists, but linfa 0.8.1 (its newest release) declares `^0.16`.
 ndarray = "0.16.1"
 once_cell = "1.21.4"
 parking_lot = "0.12"
+# Must match `arrow` exactly; see the note there for why 58 is the ceiling.
 parquet = "=58.3.0"
 predicates = "3.1.4"
 pulldown-cmark = "0.13"
 rand = "0.10"
 rapidfuzz = "0.5.0"
 rayon = "1"
-reqwest = { version = "0.12", features = ["rustls-tls", "multipart"] }
+# 0.13 renamed `rustls-tls` to `rustls`, and split `form` and `query` into their
+# own features — 0.12 had neither, so `.form()`/`.query()` were always available.
+# Every crate calling them now declares the feature itself; they were compiling
+# only because something else in the graph unified it on, which a future graph
+# change would have silently broken.
+#
+# On TLS, be precise about what this line does and does not decide. 0.13 made
+# `default-tls` mean *rustls* (0.12's meant native-tls), and `rustls` pulls
+# rustls-platform-verifier — the OS trust store — where 0.12's `rustls-tls`
+# bundled webpki-roots. But native-tls is ALSO in the graph, and not from here:
+# `self_update`'s default features pull `reqwest/native-tls`, and `sentry`'s
+# `transport` pulls `reqwest/native-tls-no-alpn`. Both connectors are therefore
+# compiled, and this line alone does not determine which one a client picks —
+# nothing in `crates/` calls `.use_rustls_tls()`. That predates this bump (0.12's
+# own default-tls was native-tls and we never set `default-features = false`), so
+# it is not a regression, but it does mean the OpenSSL dependency the
+# tokio-postgres-rustls note below hopes to avoid is present regardless.
+# This bump does NOT take 0.12 out of the graph. 0.12.x stays, pulled by
+# airway, gcp-bigquery-client, object_store, reqwest-middleware, reqwest-retry
+# and snowflake-api — so the build compiles two reqwest majors, and with them
+# both TLS stacks. Not a defect (the crates above are on their own release
+# clocks, and gcp-bigquery-client is pinned for a separate reason noted in the
+# held-back list), but "we are on reqwest 0.13" is only true of the crates in
+# this workspace, not of the dependency graph.
+reqwest = { version = "0.13", features = ["rustls", "multipart"] }
 # V8-isolate runtime for Oxy Functions (custom-app `functions/*.ts`).
 # See internal-docs/customer-apps-functions.md.
-deno_core = "0.331"
-# deno_core 0.331's `op2` macro requires fallible ops to return an error type
-# implementing `deno_error::JsErrorClass` (plain `anyhow::Error` no longer
-# qualifies); `JsErrorBox` is that type. Kept on the 0.5.x line deno_core pins.
-deno_error = "0.5"
-rkyv = "0.7.46"
+deno_core = "0.410"
+# deno_core's `op2` macro requires fallible ops to return an error type
+# implementing `deno_error::JsErrorClass` (plain `anyhow::Error` does not
+# qualify); `JsErrorBox` is that type. Kept on the line deno_core pins — 0.7.x
+# for deno_core 0.410.
+deno_error = "0.7"
+rkyv = "0.8.18"
+# Held at 0.10 — DELIBERATE, not lag. rmcp 1.0 deleted the SSE *server*
+# transport (`transport-sse-server`), which is what `oxy mcp-sse` serves; 3.x
+# only offers Streamable HTTP. Moving majors therefore retires an endpoint MCP
+# clients are configured against — a product decision, not a dependency bump.
 rmcp = "0.10.0"
-rusqlite = "0.32"
+# 0.39, not 0.40: rusqlite 0.40 wants libsqlite3-sys 0.38, sqlx-sqlite 0.9 caps
+# at `<0.38`, and libsqlite3-sys carries `links = "sqlite3"` so only one version
+# may exist in the graph at all.
+rusqlite = "0.39"
 rustc_version_runtime = "0.3.0"
 rustls = "0.23.43"
+# Held at 0.8 — DELIBERATE. schemars 1.0 replaced the whole `schemars::schema`
+# tree (SchemaObject/InstanceType/SingleOrVec) with a serde_json::Value wrapper.
+# That is ~46 compile errors across 16 files, but the cost is not the errors: the
+# hand-written `JsonSchema` impls in config/model.rs exist to emit a specific
+# OpenAI-compatible shape, `schema_type_converter.rs` walks SchemaObject
+# directly, `ClickHouse.filters` carries SchemaObject as a *config* field, and
+# `json-schemas/*.json` (published, and fetched by the IDE's YAML validation)
+# would be regenerated onto draft 2020-12. Worth its own PR with its own review.
 schemars = "0.8.22"
 scopeguard = "1.2.0"
 secrecy = "0.10.3"
-self_update = "0.42.0"
+self_update = "0.44.0"
 semver = "1.0"
-serde_arrow = "0.14.2"
-serde_jcs = "0.1.0"
+serde_arrow = "0.15.0"
+serde_jcs = "0.2.0"
 serde_urlencoded = "0.7"
 serde_with = "3.22.0"
-serial_test = "3.5.0"
+serial_test = "4.0.1"
 sha1 = "0.11.0"
 sha2 = "0.11.0"
 short-uuid = "0.2.1"
@@ -395,16 +446,18 @@ sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80
 # `SqlxPostgresConnector::from_sqlx_postgres_pool`, so two sqlx versions in the
 # graph would be a type mismatch, not just duplicate code.
 sqlx = "0.9"
-statrs = "0.18"
+statrs = "0.19"
 strip-ansi-escapes = "=0.2.1"
 strsim = "0.11"
 syntect = "5.3"
-tabled = "0.20.0"
+tabled = "0.21.0"
 terminal-light = "1.9.0"
 terminal_size = "0.4.4"
 # Integration-test container harness — used as a dev-dependency by 6 crates.
 # Version centralized here; each crate opts into the features (postgres, mysql,
 # clickhouse, …) it actually spins up.
+# Held at 0.27 — 0.28 exists, but testcontainers-modules 0.15 (its newest
+# release) declares `^0.27`. This pin is also what holds bollard at 0.20.
 testcontainers = { version = "0.27" }
 testcontainers-modules = { version = "0.15" }
 tokio-postgres = "0.7"
@@ -412,12 +465,20 @@ tokio-postgres = "0.7"
 # existing rustls-based Postgres TLS stack (sqlx uses runtime-tokio + tls-rustls;
 # sqlx 0.9 split the combined runtime-tokio-rustls feature in two), avoiding a
 # parallel OpenSSL dependency.
-tokio-postgres-rustls = "0.13"
+tokio-postgres-rustls = "0.14"
 tokio-stream = "0.1.19"
-# Mozilla root certificate bundle — RDS certs chain to public CAs already
-# present here, so we don't need OS trust store integration for the
-# task-router's LISTEN connection.
-webpki-roots = "0.26"
+# Mozilla root certificate bundle, for the task-router's LISTEN connection.
+# Whether an RDS cert verifies against it depends on the CA generation
+# (`rds-ca-rsa2048-g1` chains to Amazon Root CA 1, which is here; `rds-ca-2019`
+# does not) — so don't read this line as "RDS always verifies". The Postgres
+# connector sidesteps the question entirely: see `NoCertVerification` in
+# `crates/agentic/connector/src/postgres.rs`.
+#
+# Note there are two webpki-roots in the graph: this 1.x, and 0.26 held by
+# `tokio-tungstenite`'s `rustls-tls-webpki-roots` feature below. Harmless — they
+# are separate bundles used by separate stacks, not a duplicate of one another —
+# but "the Mozilla bundle" is no longer unambiguous when reading this line.
+webpki-roots = "1.0"
 tar = "0.4"
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7.19", features = ["rt"] }

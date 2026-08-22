@@ -46,7 +46,7 @@ tokio-util = { workspace = true }
 
 # HTTP
 axum = { workspace = true }
-reqwest = { workspace = true, features = ["json", "cookies"] }
+reqwest = { workspace = true, features = ["json", "cookies", "query"] }
 bytes = "1"
 
 # Serialization

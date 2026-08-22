@@ -122,7 +122,7 @@ utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 
 # HTTP client. `stream` enables reqwest::Body::wrap_stream for the ide_proxy
 # reverse-proxy (forwards IdeOnly request bodies without buffering).
-reqwest = { workspace = true, features = ["stream"] }
+reqwest = { workspace = true, features = ["stream", "form", "query", "json"] }
 
 # Code utilities
 enum_dispatch = { workspace = true }

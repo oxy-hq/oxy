@@ -1,6 +1,6 @@
 use aes_gcm::{
     Aes256Gcm, Key, Nonce,
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    aead::{Aead, Generate, KeyInit, Nonce as AeadNonce},
 };
 use base64::{Engine as _, engine::general_purpose};
 use sea_orm::{
@@ -199,8 +199,8 @@ impl SecretManagerService {
     }
 
     fn encrypt_value(&self, value: &str) -> Result<String, OxyError> {
-        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
-        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(self.encryption_key));
+        let nonce = AeadNonce::<Aes256Gcm>::generate();
 
         let ciphertext = cipher
             .encrypt(&nonce, value.as_bytes())
@@ -213,6 +213,8 @@ impl SecretManagerService {
         Ok(general_purpose::STANDARD.encode(&combined))
     }
 
+    // Same framing and same coverage gap as `crate::utils::decrypt_value` —
+    // see the TODO(secrets) there before changing the layout below.
     fn decrypt_value(&self, encrypted_value: &str) -> Result<String, OxyError> {
         let combined = general_purpose::STANDARD
             .decode(encrypted_value)
@@ -225,9 +227,11 @@ impl SecretManagerService {
         }
 
         let (nonce_bytes, ciphertext) = combined.split_at(12);
-        let nonce = Nonce::from_slice(nonce_bytes);
+        let nonce = <&Nonce<_>>::try_from(nonce_bytes).map_err(|_| {
+            OxyError::SecretManager("Invalid encrypted value: bad nonce".to_string())
+        })?;
 
-        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
+        let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(self.encryption_key));
         let plaintext = cipher
             .decrypt(nonce, ciphertext)
             .map_err(|e| OxyError::SecretManager(format!("Decryption failed: {e}")))?;

@@ -287,7 +287,8 @@ Rules:
                 json_schema: ResponseFormatJsonSchema {
                     name: "metric_extraction".to_string(),
                     description: Some("Extract metrics with source attribution".to_string()),
-                    schema: Some(json_schema),
+                    // async-openai 0.41: `schema` is a required `Value`, no longer `Option`.
+                    schema: json_schema,
                     strict: Some(true), // Enforce strict schema compliance
                 },
             })

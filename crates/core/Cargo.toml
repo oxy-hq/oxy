@@ -130,7 +130,7 @@ tower-http = { workspace = true, features = [
 ] }
 tqdm = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 secrecy = { workspace = true }
 snowflake-api = { workspace = true }
 rmcp = { workspace = true, features = [
@@ -147,6 +147,9 @@ url = { workspace = true }
 gcp-bigquery-client = { workspace = true }
 fehler = { workspace = true }
 sqlparser = { workspace = true }
+# NOT a stale pin: this is connectorx's own sqlparser, used only to implement
+# its `Dialect` trait in connector/connectorx/bigquery.rs. It must track
+# connectorx (0.4.5 -> `^0.37`), not the workspace `sqlparser` above.
 sqlparser_connectorx = { package = "sqlparser", version = "0.37" }
 backoff = { workspace = true, features = ["tokio"] }
 sqlx = { workspace = true, features = ["runtime-tokio", "tls-rustls", "postgres"] }
@@ -170,7 +173,7 @@ urlencoding = { workspace = true }
 tempfile = { workspace = true }
 xxhash-rust = { workspace = true, features = ["xxh3"] }
 aho-corasick = { workspace = true }
-rkyv = { workspace = true, features = ["validation"] }
+rkyv = { workspace = true, features = ["bytecheck"] }
 sentry = { workspace = true }
 df-interchange = { workspace = true, features = ["arrow_54", "arrow_58"] }
 

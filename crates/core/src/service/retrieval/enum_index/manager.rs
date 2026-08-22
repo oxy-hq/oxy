@@ -2,7 +2,8 @@ use std::{fs, path::PathBuf};
 
 use aho_corasick::AhoCorasick;
 use once_cell::sync::OnceCell;
-use rkyv::{self, Archived, Deserialize as RkyvDeserialize};
+use rkyv::rancor::Error as RkyvError;
+use rkyv::{self, Archived};
 
 use crate::{
     adapters::{secrets::SecretsManager, vector_store::RetrievalObject},
@@ -235,7 +236,9 @@ impl EnumIndexManager {
         fs::write(self.config.routing_json_path(), json_bytes)
             .map_err(|e| OxyError::RuntimeError(format!("Failed to write routing JSON: {e}")))?;
 
-        let rkyv_bytes = rkyv::to_bytes::<_, 256>(&routing_blob)
+        // rkyv 0.8: the scratch-size const parameter is gone; the error type is the
+        // remaining parameter, and `rancor::Error` is the boxed-error strategy.
+        let rkyv_bytes = rkyv::to_bytes::<RkyvError>(&routing_blob)
             .map_err(|e| OxyError::RuntimeError(format!("Failed to archive routing blob: {e}")))?;
         fs::write(self.config.routing_rkyv_path(), rkyv_bytes)
             .map_err(|e| OxyError::RuntimeError(format!("Failed to write routing rkyv: {e}")))?;
@@ -254,7 +257,28 @@ impl EnumIndexManager {
                         "Failed to load rkyv routing blob: {}. Falling back to JSON.",
                         err
                     );
-                    self.try_load_json()?
+                    let blob = self.try_load_json()?;
+                    // Rewrite the blob in the current rkyv format. Without this the
+                    // fallback is permanent: rkyv 0.8 rejects an 0.7-era archive, and
+                    // the only other writer is the build/compile path — so a
+                    // deployment that serves without re-running a build would fail
+                    // validation and re-parse JSON on *every* process start, silently
+                    // losing the fast path the file exists to provide. Best-effort:
+                    // a read-only or full disk must not take the load down, since the
+                    // blob we already hold is correct either way.
+                    match rkyv::to_bytes::<RkyvError>(&blob) {
+                        Ok(bytes) => {
+                            if let Err(e) = fs::write(self.config.routing_rkyv_path(), bytes) {
+                                tracing::warn!("Could not refresh routing rkyv cache: {e}");
+                            } else {
+                                tracing::info!(
+                                    "Refreshed routing rkyv cache to the current format"
+                                );
+                            }
+                        }
+                        Err(e) => tracing::warn!("Could not re-archive routing blob: {e}"),
+                    }
+                    blob
                 }
             }
         } else {
@@ -273,13 +297,18 @@ impl EnumIndexManager {
     fn try_load_rkyv(&self) -> Result<EnumRoutingBlob, OxyError> {
         let bytes = fs::read(self.config.routing_rkyv_path())
             .map_err(|e| OxyError::RuntimeError(format!("Failed to read rkyv file: {e}")))?;
+        // rkyv 0.8 renamed the validating entry point to `access` and moved
+        // deserialization to a free function. A blob written by 0.7 fails validation
+        // here rather than being misread — which is why the caller falls back to the
+        // JSON copy written alongside it.
         let archived: &Archived<EnumRoutingBlob> =
-            rkyv::check_archived_root::<EnumRoutingBlob>(&bytes).map_err(|e| {
+            rkyv::access::<Archived<EnumRoutingBlob>, RkyvError>(&bytes).map_err(|e| {
                 OxyError::RuntimeError(format!("Failed to check archived routing blob: {e}"))
             })?;
-        let blob: EnumRoutingBlob = archived.deserialize(&mut rkyv::Infallible).map_err(|_| {
-            OxyError::RuntimeError("Failed to deserialize archived routing blob".into())
-        })?;
+        let blob: EnumRoutingBlob = rkyv::deserialize::<EnumRoutingBlob, RkyvError>(archived)
+            .map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to deserialize archived routing blob: {e}"))
+            })?;
 
         Ok(blob)
     }

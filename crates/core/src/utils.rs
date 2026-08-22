@@ -2,9 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::config::model::Dimension;
 use crate::theme::*;
-use aes_gcm::aead::Aead;
-use aes_gcm::aead::OsRng;
-use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit, Nonce};
+use aes_gcm::aead::{Aead, Generate, Nonce as AeadNonce};
+use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use arrow::array::RecordBatch;
 use async_stream::stream;
 use axum::response::sse::Event;
@@ -488,8 +487,8 @@ pub fn get_file_stem<P: AsRef<Path>>(path: P) -> String {
 }
 
 pub fn encrypt_value(key: &[u8; 32], value: &str) -> Result<String, OxyError> {
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(*key));
+    let nonce = AeadNonce::<Aes256Gcm>::generate();
 
     let ciphertext = cipher
         .encrypt(&nonce, value.as_bytes())
@@ -502,6 +501,15 @@ pub fn encrypt_value(key: &[u8; 32], value: &str) -> Result<String, OxyError> {
     Ok(general_purpose::STANDARD.encode(&combined))
 }
 
+/// TODO(secrets): no golden vector pins backward compatibility here. The
+/// aes-gcm 0.10 → 0.11 bump changed only key/nonce *generation* (the removed
+/// `aead::OsRng` → crypto-common's `Generate`), leaving the cipher, the 12-byte
+/// nonce, and the `nonce || ciphertext` framing untouched — so secrets sealed
+/// by a pre-0.11 binary still open. The round-trip tests cannot show that:
+/// they seal and open with the same build, which proves self-consistency and
+/// would keep passing even if the format had silently moved. A real vector has
+/// to be captured from a pre-0.11 binary and checked in as bytes. Until then,
+/// treat any change to the framing above as unverifiable from the test suite.
 pub fn decrypt_value(key: &[u8; 32], encrypted_value: &str) -> Result<String, OxyError> {
     let combined = general_purpose::STANDARD
         .decode(encrypted_value)
@@ -514,9 +522,10 @@ pub fn decrypt_value(key: &[u8; 32], encrypted_value: &str) -> Result<String, Ox
     }
 
     let (nonce_bytes, ciphertext) = combined.split_at(12);
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let nonce = <&Nonce<_>>::try_from(nonce_bytes)
+        .map_err(|_| OxyError::SecretManager("Invalid encrypted value: bad nonce".to_string()))?;
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(*key));
     let plaintext = cipher
         .decrypt(nonce, ciphertext)
         .map_err(|e| OxyError::SecretManager(format!("Decryption failed: {e}")))?;

@@ -366,7 +366,7 @@ fn op_ctx_log(state: &mut OpState, #[string] level: &str, #[string] message: &st
     }
 }
 
-#[op2(async)]
+#[op2]
 #[string]
 async fn op_ctx_query(
     state: Rc<RefCell<OpState>>,
@@ -386,7 +386,7 @@ async fn op_ctx_query(
     Ok(reply_json("ctx.query", result))
 }
 
-#[op2(async)]
+#[op2]
 #[string]
 async fn op_ctx_query_stream(
     state: Rc<RefCell<OpState>>,
@@ -406,7 +406,7 @@ async fn op_ctx_query_stream(
     Ok(reply_json("ctx.queryStream", result))
 }
 
-#[op2(async)]
+#[op2]
 #[string]
 async fn op_ctx_fetch(
     state: Rc<RefCell<OpState>>,
@@ -429,7 +429,7 @@ async fn op_ctx_fetch(
     Ok(reply_json("ctx.fetch", result))
 }
 
-#[op2(async)]
+#[op2]
 #[string]
 async fn op_ctx_warehouse(
     state: Rc<RefCell<OpState>>,
@@ -458,7 +458,7 @@ async fn op_ctx_warehouse(
 /// as `op_ctx_warehouse`. The transaction handle never crosses this boundary —
 /// the isolate only ever holds the integer id `begin` returns, so a script
 /// cannot fabricate a connection, only name one it was given.
-#[op2(async)]
+#[op2]
 #[string]
 async fn op_ctx_tx(
     state: Rc<RefCell<OpState>>,
@@ -482,7 +482,7 @@ async fn op_ctx_tx(
 }
 
 /// `ctx.secrets.set(key, value)` — bridge to `FunctionHost::secrets_set`.
-#[op2(async)]
+#[op2]
 #[string]
 async fn op_ctx_secrets_set(
     state: Rc<RefCell<OpState>>,
@@ -505,7 +505,7 @@ async fn op_ctx_secrets_set(
 
 /// `ctx.email.send(input)` — bridge to `FunctionHost::send_email`. `input` is
 /// the JS payload object, JSON-stringified by the bootstrap `__wrapOp`.
-#[op2(async)]
+#[op2]
 #[string]
 async fn op_ctx_email_send(
     state: Rc<RefCell<OpState>>,
@@ -530,7 +530,7 @@ async fn op_ctx_email_send(
 /// `ctx.storage.*` — bridge to `FunctionHost::storage`. `op` selects the
 /// operation ("getUploadUrl" / "getDownloadUrl" / "list" / "put" / "get"),
 /// `payload` carries its args (JSON-stringified by `__wrapOp`).
-#[op2(async)]
+#[op2]
 #[string]
 async fn op_ctx_storage(
     state: Rc<RefCell<OpState>>,
@@ -553,7 +553,7 @@ async fn op_ctx_storage(
     Ok(reply_json("ctx.storage", result))
 }
 
-#[op2(async)]
+#[op2]
 #[string]
 async fn op_ctx_semantic_query(
     state: Rc<RefCell<OpState>>,
@@ -575,7 +575,7 @@ async fn op_ctx_semantic_query(
     Ok(reply_json("ctx.semantic.query", result))
 }
 
-#[op2(async)]
+#[op2]
 #[string]
 async fn op_ctx_airway_run(
     state: Rc<RefCell<OpState>>,
@@ -1159,7 +1159,7 @@ async fn execute_isolate(
     logs: Arc<std::sync::Mutex<Vec<LogLine>>>,
 ) -> Result<FnResponse, RuntimeError> {
     let mut runtime = JsRuntime::new(RuntimeOptions {
-        extensions: vec![oxy_functions_ext::init_ops()],
+        extensions: vec![oxy_functions_ext::init()],
         ..Default::default()
     });
     let _ = handle_tx.send(runtime.v8_isolate().thread_safe_handle());
@@ -1224,7 +1224,9 @@ async fn execute_isolate(
         .await
         .map_err(|e| RuntimeError::Js(e.to_string()))?;
 
-    let scope = &mut runtime.handle_scope();
+    // deno_core 0.410 removed `JsRuntime::handle_scope()`; `scope!` is the
+    // exported replacement (it enters the runtime's main context the same way).
+    deno_core::scope!(scope, runtime);
     let local = deno_core::v8::Local::new(scope, result);
     let value: serde_json::Value = deno_core::serde_v8::from_v8(scope, local)
         .map_err(|e| RuntimeError::Internal(format!("result deserialize failed: {e}")))?;

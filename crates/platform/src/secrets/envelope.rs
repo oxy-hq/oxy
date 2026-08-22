@@ -8,8 +8,8 @@
 //! by other crates that need to seal a small value (Airhouse SA bearers,
 //! GitHub OAuth tokens, …) under the same master key.
 
-use aes_gcm::aead::{Aead, OsRng};
-use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit, Nonce};
+use aes_gcm::aead::{Aead, Generate, Nonce as AeadNonce};
+use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use oxy_shared::errors::OxyError;
 
 use super::encryption::get_encryption_key;
@@ -20,8 +20,8 @@ const TAG_LEN: usize = 16;
 /// Seal `plaintext` under the platform master key. Returns `nonce || ct`.
 pub fn seal(plaintext: &[u8]) -> Result<Vec<u8>, OxyError> {
     let key_bytes = get_encryption_key();
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(key_bytes));
+    let nonce = AeadNonce::<Aes256Gcm>::generate();
     let ciphertext = cipher
         .encrypt(&nonce, plaintext)
         .map_err(|e| OxyError::SecretManager(format!("encrypt failed: {e}")))?;
@@ -38,8 +38,9 @@ pub fn open(blob: &[u8]) -> Result<Vec<u8>, OxyError> {
     }
     let (nonce_bytes, ct) = blob.split_at(NONCE_LEN);
     let key_bytes = get_encryption_key();
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(key_bytes));
+    let nonce = <&Nonce<_>>::try_from(nonce_bytes)
+        .map_err(|_| OxyError::SecretManager("ciphertext has a malformed nonce".to_string()))?;
     cipher
         .decrypt(nonce, ct)
         .map_err(|e| OxyError::SecretManager(format!("decrypt failed: {e}")))

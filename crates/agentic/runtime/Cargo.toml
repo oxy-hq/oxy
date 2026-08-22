@@ -36,7 +36,7 @@ tokio-postgres-rustls = { workspace = true }
 rustls = { workspace = true }
 webpki-roots = { workspace = true }
 futures = { workspace = true }
-dashmap = "5"
+dashmap = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

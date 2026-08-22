@@ -11,7 +11,7 @@ exclude.workspace = true
 
 [dependencies]
 oxy-shared = { workspace = true }
-reqwest = { workspace = true, features = ["json", "multipart"] }
+reqwest = { workspace = true, features = ["json", "multipart", "form"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
