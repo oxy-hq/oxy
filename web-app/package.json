@@ -8,7 +8,7 @@
     "compile": "NODE_OPTIONS='--max-old-space-size=8192' tsc -b",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "lint:ts": "tsc --noEmit",
+    "lint:ts": "pnpm compile",
     "preview": "vite preview",
     "format": "biome check --write --diagnostic-level=error .",
     "format:check": "biome check --diagnostic-level=error .",

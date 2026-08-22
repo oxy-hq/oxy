@@ -42,9 +42,21 @@ jobs:
               - "crates/**"
               - "**/Cargo.toml"
               - "**/Cargo.lock"
+            # Named for web-app, but it gates every JS job, so it has to mean
+            # the whole pnpm workspace. It did not: `sdk/**` was outside it, so
+            # a change to the published SDK, the Vite plugin, or the
+            # create-oxy-app templates ran no build, no typecheck, no lint and
+            # no unit tests. That is how the templates drifted three majors
+            # behind what web-app ships without anything going red.
             web-app:
               - "web-app/**"
+              - "sdk/**"
+              - "scripts/ci/verify-templates.mjs"
               - "pnpm-lock.yaml"
+              - "pnpm-workspace.yaml"
+              - "package.json"
+              - "turbo.json"
+              - "biome.json"
             docker:
               - "Dockerfile*"
               - ".dockerignore"

@@ -101,3 +101,12 @@
   # admin-tenants-cockpit.
   cold_usd: 0.25
   warm_usd: 0.005
+
+- flow: ide-yaml-diagnostics
+  # One act step (focus + type a malformed line) plus three wait_fors and one
+  # judge call. No streaming run. `.world-model.yml` matches none of the
+  # `fileMatch` globs in monacoConfig.ts, so no schema is fetched and a slow or
+  # firewalled raw.githubusercontent.com cannot suppress the marker.
+  # Not in the CI matrix yet — see the flow header.
+  cold_usd: 0.30
+  warm_usd: 0.005
