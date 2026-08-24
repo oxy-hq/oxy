@@ -45,6 +45,47 @@ pub(super) fn is_html_navigation(rest: &str) -> bool {
     bare.ends_with(".html")
 }
 
+/// True when the browser told us this request is speculative — a prefetch or a
+/// prerender it started on its own, not a page the user opened.
+///
+/// Three spellings, because no two engines agree:
+///
+/// - **`Sec-Purpose: prefetch`** — the Speculation Rules spec; Chrome and Edge.
+/// - **`Purpose: prefetch`** — the long-standing de-facto header, sent by older
+///   Chrome and by intermediaries.
+/// - **`X-moz: prefetch`** — what **Firefox** actually sends for
+///   `<link rel="prefetch">`. It sends neither of the other two, so omitting
+///   this made the guard a no-op on Firefox: the launcher's hover-warm recorded
+///   an open and minted the tracking session at hover time, which the real
+///   navigation then inherited — precisely the failure the guard exists to
+///   prevent, on one of the two engines that matters.
+///
+/// All three are checked because the platform actively issues prefetches — the
+/// HQ launcher warms an app on hover (`prefetchApp`) so the click is instant —
+/// and a speculative fetch that recorded a view would make "someone opened this
+/// app" mean "someone's pointer passed over its card."
+///
+/// Also suppresses the tracking `Set-Cookie`: a prefetched response that minted
+/// a session id would start that session at hover time, and the real
+/// navigation seconds later would inherit it. Cheaper and more honest to let
+/// the actual page load start the session.
+///
+/// Not a security boundary — the header is client-supplied and a caller who
+/// wants to avoid being counted can always send it. That is fine: it costs them
+/// their own view row and nothing else.
+pub(super) fn is_speculative_request(headers: &HeaderMap) -> bool {
+    let says_prefetch = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| {
+                let v = v.to_ascii_lowercase();
+                v.contains("prefetch") || v.contains("prerender")
+            })
+    };
+    says_prefetch("sec-purpose") || says_prefetch("purpose") || says_prefetch("x-moz")
+}
+
 /// Cheap UA classifier — keeps the recorded value small + bounded so
 /// the Activity tab can group rows by class without storing the full
 /// UA string. Real browser navigations have UA strings starting with
@@ -277,6 +318,16 @@ pub(super) fn cache_control_for(request_path: &str, file_path: &StdPath) -> &'st
         return "private, no-cache";
     }
     let trimmed = request_path.trim_start_matches('/');
+    // Platform-reserved objects (`__oxy/asset-manifest.json`) are per-build state
+    // that flips the moment anyone publishes, and they sit behind the same auth
+    // gate as the bundle. `public, max-age=300` — what an unfingerprinted root
+    // file gets — would let a shared cache hand a five-minute-old precache list
+    // to a browser whose app has already moved on, and hand it to callers who
+    // never passed the gate. Neither is worth trading for a cache hit on a
+    // document the service worker deliberately fetches `no-store` anyway.
+    if crate::server::api::custom_apps_asset_manifest::is_reserved_platform_path(trimmed) {
+        return "private, no-cache";
+    }
     if trimmed.starts_with("_next/static/") || trimmed.starts_with("assets/") {
         return "public, max-age=31536000, immutable";
     }
@@ -305,5 +356,72 @@ pub(super) fn guess_content_type(path: &StdPath) -> &'static str {
         Some("txt") => "text/plain; charset=utf-8",
         Some("wasm") => "application/wasm",
         _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    fn headers_with(name: &str, value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(
+            axum::http::HeaderName::from_bytes(name.as_bytes()).expect("header name"),
+            HeaderValue::from_str(value).expect("header value"),
+        );
+        h
+    }
+
+    #[test]
+    fn speculative_requests_are_recognised_in_every_spelling() {
+        // The Speculation Rules form, which is what Chrome and Edge send.
+        assert!(is_speculative_request(&headers_with(
+            "sec-purpose",
+            "prefetch"
+        )));
+        assert!(is_speculative_request(&headers_with(
+            "sec-purpose",
+            "prefetch;prerender"
+        )));
+        // The older de-facto header — older Chrome, and intermediaries.
+        assert!(is_speculative_request(&headers_with("purpose", "prefetch")));
+        // Firefox sends ONLY this one. Missing it made the whole guard a no-op
+        // on Firefox, which is the case this assertion exists for.
+        assert!(is_speculative_request(&headers_with("x-moz", "prefetch")));
+        // Case-insensitive on the value, since no client normalises it.
+        assert!(is_speculative_request(&headers_with("Purpose", "Prefetch")));
+        assert!(is_speculative_request(&headers_with("X-moz", "Prefetch")));
+    }
+
+    /// The manifest is per-build state behind an auth gate, so it must not be
+    /// stored by a shared cache — the same reason HTML is `private`, minus the
+    /// cookie.
+    #[test]
+    fn reserved_platform_objects_are_never_shared_cacheable() {
+        assert_eq!(
+            cache_control_for(
+                "__oxy/asset-manifest.json",
+                StdPath::new("__oxy/asset-manifest.json")
+            ),
+            "private, no-cache"
+        );
+        // An app's own JSON at a non-reserved path keeps the ordinary policy.
+        assert_eq!(
+            cache_control_for("data.json", StdPath::new("data.json")),
+            "public, max-age=300"
+        );
+    }
+
+    #[test]
+    fn a_real_navigation_is_not_speculative() {
+        assert!(!is_speculative_request(&HeaderMap::new()));
+        // `Sec-Purpose` exists for non-speculative purposes too; only the
+        // speculative tokens count.
+        assert!(!is_speculative_request(&headers_with("sec-purpose", "")));
+        assert!(!is_speculative_request(&headers_with(
+            "purpose",
+            "subresource"
+        )));
     }
 }

@@ -35,7 +35,8 @@ use tar::Archive;
 use uuid::Uuid;
 
 use super::{
-    custom_apps_auth, custom_apps_build_store as store, custom_apps_bundle_cache as cache,
+    custom_apps_asset_manifest as asset_manifest, custom_apps_auth,
+    custom_apps_build_store as store, custom_apps_bundle_cache as cache,
     custom_apps_precompress as precompress,
 };
 
@@ -1065,6 +1066,31 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
     // same way in the handler.)
     let manifest_json = parse_embedded_manifest(&files)?.or_else(|| input.manifest.clone());
 
+    // Reserve the bundle's `__oxy/` namespace and write the platform's asset
+    // manifest into it — the document that gives the serve path its preload
+    // hints and the service worker its precache list. Before pre-compression so
+    // the manifest gets a `.br` sibling like any other JSON, and before
+    // `put_build` so it lands in the same immutable prefix as the files it
+    // describes.
+    let mut files = files;
+    let asset_manifest =
+        asset_manifest::install_into(&mut files, &input.build_id, manifest_json.as_ref());
+    // The entry bytes, kept aside so the cache can be warmed once the build is
+    // live. Cloned rather than referenced because `files` is about to be moved
+    // into the upload; it is a few hundred KiB and it buys the first visitor
+    // after a publish a warm critical path instead of one object-store
+    // round-trip per entry chunk.
+    let seed_entries: Vec<(String, axum::body::Bytes)> = asset_manifest
+        .entries
+        .iter()
+        .filter_map(|entry| {
+            files
+                .iter()
+                .find(|(path, _)| path.trim_start_matches('/') == entry.path)
+                .map(|(path, bytes)| (path.clone(), axum::body::Bytes::from(bytes.clone())))
+        })
+        .collect();
+
     // Emit `<asset>.br` siblings so the serve path never re-compresses an
     // immutable content-hashed asset (see `custom_apps_precompress`). Runs on
     // the blocking pool for the same reason the tar inflate does: brotli over a
@@ -1186,8 +1212,24 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
     // within `CACHE_TTL`.
     super::custom_apps_cache::invalidate_app_resolution_cache();
 
+    // Warm the bundle LRU for everything on the critical path — the shell, the
+    // asset manifest the serve path reads to build preload hints, and the entry
+    // chunks themselves. `oxy publish` is interactive: the engineer reloads
+    // within seconds, and without this every one of those is a cold
+    // object-store read on the very request they are watching.
     if let Some(bytes) = index_bytes {
         cache::seed(app_id, &input.build_id, "index.html", bytes);
+    }
+    if let Ok(bytes) = serde_json::to_vec(&asset_manifest) {
+        cache::seed(
+            app_id,
+            &input.build_id,
+            asset_manifest::ASSET_MANIFEST_PATH,
+            axum::body::Bytes::from(bytes),
+        );
+    }
+    for (path, bytes) in seed_entries {
+        cache::seed(app_id, &input.build_id, &path, bytes);
     }
 
     Ok(PublishResult {

@@ -63,6 +63,7 @@ export type {
   LoadManifestOptions,
   OxyAppFunctionManifest,
   OxyAppManifest,
+  OxyAppPerformanceManifest,
   ResolvedCustomAppManifest
 } from "./manifest";
 export {

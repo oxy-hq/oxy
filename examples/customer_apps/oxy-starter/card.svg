@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" role="img" aria-label="A single-file bundle querying the demo warehouse">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" role="img" aria-label="A dependency-free bundle querying the demo warehouse">
   <rect width="480" height="300" fill="#0a0a0a" />
 
   <!-- the bundle: one file -->

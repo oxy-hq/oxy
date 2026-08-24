@@ -137,6 +137,47 @@ export interface OxyAppManifest {
    * shares.
    */
   storage?: OxyAppStorageManifest;
+  /**
+   * Browser-runtime performance opt-outs. Both features below are **on by
+   * default** — an app that says nothing gets them — so this block exists only
+   * to turn one off.
+   *
+   * Read by the platform at **publish time** (like {@link OxyAppStorageManifest})
+   * rather than by this loader, so the field is documented here but not
+   * round-tripped through the dev-time manifest fetch.
+   */
+  performance?: OxyAppPerformanceManifest;
+  /**
+   * Opt out of the platform's automatic, zero-config usage instrumentation:
+   * SPA pageviews, Core Web Vitals, engagement time, and uncaught-error counts,
+   * posted to `<base>/__oxy/beacon` by the runtime Oxy injects into every served
+   * page. `false` silences the **client** runtime only — the server still
+   * records one view row per HTML navigation (that floor is not opt-out-able),
+   * so the Activity tab never goes dark, it just loses the in-page detail.
+   *
+   * Distinct from `useTrackEvent` (your own named events): those are additive and
+   * always on. This governs only the events the platform sends on your behalf.
+   *
+   * Honored at publish time (see {@link performance} for why it is not
+   * round-tripped here). Default: `true`.
+   */
+  analytics?: boolean;
+}
+
+/** Browser-runtime performance opt-outs — the `performance` block in `oxy-app.json`. */
+export interface OxyAppPerformanceManifest {
+  /**
+   * Opt out of the platform service worker Oxy registers at `<base>/__oxy/sw.js`.
+   * It precaches your build's entry assets and serves content-hashed files
+   * cache-first, so a repeat load of a published app is near-instant.
+   *
+   * Set `false` only if your app ships its own service worker (two workers
+   * cannot both control the same scope) or genuinely must never be cached.
+   * There is nothing to configure to opt *in* — a normal build is precached
+   * automatically, and a bundle that inlines everything into one HTML file
+   * simply has nothing to precache, which is fine. Default: `true`.
+   */
+  serviceWorker?: boolean;
 }
 
 /** How long assets under a given prefix are kept. */

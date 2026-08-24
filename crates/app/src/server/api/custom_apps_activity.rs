@@ -210,6 +210,21 @@ pub async fn post_event(
         Ok(r) => r,
         Err(e) => return err(StatusCode::BAD_REQUEST, format!("bad body: {e}")),
     };
+    // `oxy-*` belongs to the platform's own auto-instrumentation, which writes
+    // through `__oxy/beacon` instead. Refused here — and refused with an
+    // explanation, because an author who picked the name did so innocently and
+    // the fix is a rename.
+    if custom_apps_tracking::is_reserved_event_name(&req.event_name) {
+        return err(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "event names starting with `{}` are reserved for Oxy's built-in \
+                 analytics (pageviews, web vitals, engagement, errors), so your rows \
+                 don't merge with the platform's in the Activity tab. Rename the event.",
+                custom_apps_tracking::RESERVED_EVENT_PREFIX
+            ),
+        );
+    }
 
     // Find the app by project_id (the gates context has the workspace
     // membership locked in; we look up the app row to get its id +

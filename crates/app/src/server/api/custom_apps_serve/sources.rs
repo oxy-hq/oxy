@@ -14,11 +14,13 @@ use sea_orm::EntityTrait;
 use tokio::fs;
 use uuid::Uuid;
 
+use crate::server::api::custom_apps_asset_manifest::{self as asset_manifest, AssetManifest};
 use crate::server::api::custom_apps_bundle_cache;
 use crate::server::api::custom_apps_cache::{
     CACHE_CHANNEL_LOCAL, cached_build, cached_canonical_dir, invalidate_cached_canonical_dir,
     set_cached_build, set_cached_canonical_dir,
 };
+use crate::server::api::custom_apps_html_cache::{self as html_cache, RenderedHtml};
 use crate::server::api::custom_apps_precompress as precompress;
 
 use super::headers::*;
@@ -44,6 +46,24 @@ pub(crate) struct AppRuntimeConfig {
     /// future where custom apps live on a different host than the API.
     #[serde(rename = "apiBaseUrl")]
     pub api_base_url: String,
+    /// The URL prefix every asset of this app resolves under, with a trailing
+    /// slash — `"/customer-apps/<org>/<app>/"`.
+    ///
+    /// The **same value on both surfaces**, which is not obvious: a
+    /// subdomain-served app's browser URLs also carry the subpath, because the
+    /// bundle bakes it and `already_canonicalized` in
+    /// `custom_apps_host_dispatch` deliberately passes it through rather than
+    /// double-prefixing. One base means one service-worker scope and one set of
+    /// preload hints for both.
+    #[serde(rename = "basePath")]
+    pub base_path: String,
+    /// Whether the client runtime should register the platform service worker.
+    /// `false` opts an app out via its manifest.
+    #[serde(rename = "serviceWorker")]
+    pub service_worker: bool,
+    /// Whether the client runtime should auto-instrument. `false` leaves only
+    /// the server-side view rows, which no app can opt out of.
+    pub analytics: bool,
 }
 
 impl AppRuntimeConfig {
@@ -56,6 +76,13 @@ impl AppRuntimeConfig {
             project_id: app.project_id,
             branch: app.branch.clone(),
             api_base_url: String::new(),
+            base_path: format!("/customer-apps/{org_slug}/{}/", app.slug),
+            // Both default on. An app opts out through its manifest
+            // (`performance.serviceWorker`, `analytics`), and the override is
+            // applied in `render_html` — not here, because the build (and so
+            // its manifest) is not known when this config is built.
+            service_worker: true,
+            analytics: true,
         }
     }
 }
@@ -279,7 +306,20 @@ pub(crate) async fn serve_from_s3_build(
     // sent bytes differ by construction. The `CompressionLayer` still
     // compresses it on the fly.
     if mime.starts_with("text/html") {
-        return html_response(&bytes, mime, cache, resolved_path, runtime, headers);
+        return html_response(
+            HtmlBuild {
+                app_id,
+                build_id: &build.build_id,
+                object_key: &rel_used,
+            },
+            &bytes,
+            mime,
+            cache,
+            resolved_path,
+            runtime,
+            headers,
+        )
+        .await;
     }
     asset_response(bytes, mime, cache, None)
 }
@@ -319,10 +359,52 @@ async fn load_build(
     }
 }
 
-/// Build the response for an HTML entry document: base-path rewrite +
-/// `window.__OXY_APP__` injection, then a weak ETag over the FINAL bytes
-/// (the transform is what makes it weak) with `If-None-Match` short-circuit.
-fn html_response(
+/// Identity of the build an HTML document came out of — the three components
+/// that, with the org and app slugs already on `AppRuntimeConfig`, make the
+/// rendered document's cache key complete.
+///
+/// A struct rather than three more positional parameters because
+/// `html_response` already took six, and `(Uuid, &str, &str)` at a call site
+/// is exactly the shape you transpose by accident.
+pub(super) struct HtmlBuild<'a> {
+    pub app_id: Uuid,
+    pub build_id: &'a str,
+    /// The object key that actually resolved — `index.html` for an SPA
+    /// fallback, not the URL that was asked for. Two URLs resolving to the same
+    /// document must share one cache entry.
+    pub object_key: &'a str,
+}
+
+/// Build the response for an HTML entry document.
+///
+/// The transform — base-path rewrite, `window.__OXY_APP__` + client-runtime
+/// injection, weak ETag over the FINAL bytes (the transform is what makes it
+/// weak) — is **memoized per build** in `custom_apps_html_cache`. Nothing in it
+/// depends on the viewer, so redoing it per navigation was pure repetition
+/// directly in front of the app's first paint. See that module for why the key
+/// is also the whole invalidation story.
+///
+/// Three headers are added on top of the body:
+///
+/// - **`Link: rel=preload/modulepreload`** for the build's entry assets, from
+///   the asset manifest. This is the first-load win: the entry chunks start
+///   downloading while the HTML is still streaming, rather than one round trip
+///   later when the parser reaches the `<script>` tag. Emitted on the 304 as
+///   well — a revalidated shell needs its assets just as much as a fresh one,
+///   and a 304 body cannot carry the `<link>` tags.
+/// - **`x-oxy-build`** — the live build id. The service worker reads it off
+///   every navigation and re-precaches in place when it moves, so a publish is
+///   picked up without waiting for the worker itself to be replaced.
+/// - **`Cache-Tag`** — `app-<id>` and `build-<id>`. Inert at the origin, and
+///   emitted for the CDN step that has not been taken yet: a tag-capable edge
+///   (Cloudflare, Fastly's `Surrogate-Key` equivalent) can then purge exactly
+///   this app, or exactly one build, on publish. CloudFront — the candidate in
+///   `customer-apps-performance.md` — has no tag purge and would invalidate by
+///   path instead, so this is insurance rather than a plan. It costs one header
+///   now and is awkward to retrofit once an edge is already holding untagged
+///   objects.
+async fn html_response(
+    build: HtmlBuild<'_>,
     bytes: &[u8],
     mime: &str,
     cache: &str,
@@ -330,29 +412,119 @@ fn html_response(
     runtime: &AppRuntimeConfig,
     headers: &HeaderMap,
 ) -> Response {
-    let expected_prefix = format!("/customer-apps/{}/{}/", runtime.org_slug, runtime.slug);
-    let rewritten = rewrite_bundle_base_path(bytes, &expected_prefix, runtime.app_id);
-    let body_bytes = inject_app_config(&rewritten, runtime, resolved_path);
-    let etag = etag_for(&body_bytes);
-    if if_none_match(headers, &etag) {
-        return (
-            StatusCode::NOT_MODIFIED,
-            [
-                (header::ETAG, etag),
-                (header::CACHE_CONTROL, cache.to_string()),
-            ],
-        )
-            .into_response();
+    let rendered = match html_cache::get(
+        build.app_id,
+        build.build_id,
+        build.object_key,
+        &runtime.org_slug,
+        &runtime.slug,
+    ) {
+        Some(hit) => hit,
+        None => {
+            let rendered = render_html(bytes, resolved_path, runtime, build.app_id, {
+                load_asset_manifest(build.app_id, build.build_id).await
+            });
+            html_cache::put(
+                build.app_id,
+                build.build_id,
+                build.object_key,
+                &runtime.org_slug,
+                &runtime.slug,
+                rendered.clone(),
+            );
+            rendered
+        }
+    };
+    finish_html(rendered, mime, cache, build.build_id, build.app_id, headers)
+}
+
+/// The pure half: bytes in, rendered document out. Split from the caching and
+/// header work so it can be exercised without a build store — the transform is
+/// the part with the interesting failure modes.
+pub(super) fn render_html(
+    bytes: &[u8],
+    resolved_path: &StdPath,
+    runtime: &AppRuntimeConfig,
+    app_id: Uuid,
+    manifest: Option<AssetManifest>,
+) -> RenderedHtml {
+    // The build's own opt-outs ride in its asset manifest, so they are applied
+    // to a copy of the runtime config here rather than being resolved when the
+    // config is first built — which happens before we know which build is
+    // serving. A build with no manifest keeps the defaults (both on).
+    let mut runtime = runtime.clone();
+    if let Some(m) = &manifest {
+        runtime.service_worker = m.client.service_worker;
+        runtime.analytics = m.client.analytics;
     }
-    (
-        [
-            (header::CONTENT_TYPE, mime.to_string()),
-            (header::CACHE_CONTROL, cache.to_string()),
-            (header::ETAG, etag),
-        ],
-        Body::from(body_bytes),
+    let rewritten = rewrite_bundle_base_path(bytes, &runtime.base_path, app_id);
+    let body = Bytes::from(inject_app_config(&rewritten, &runtime, resolved_path));
+    let etag = etag_for(&body);
+    let link = manifest.and_then(|m| asset_manifest::preload_link_header(&m, &runtime.base_path));
+    RenderedHtml { body, etag, link }
+}
+
+/// Turn a rendered document into a 200 or a 304, with the shared header set on
+/// both.
+fn finish_html(
+    rendered: RenderedHtml,
+    mime: &str,
+    cache: &str,
+    build_id: &str,
+    app_id: Uuid,
+    headers: &HeaderMap,
+) -> Response {
+    let not_modified = if_none_match(headers, &rendered.etag);
+    let mut response = if not_modified {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else {
+        (
+            [(header::CONTENT_TYPE, mime.to_string())],
+            Body::from(rendered.body),
+        )
+            .into_response()
+    };
+    let h = response.headers_mut();
+    if let Ok(v) = header::HeaderValue::from_str(cache) {
+        h.insert(header::CACHE_CONTROL, v);
+    }
+    if let Ok(v) = header::HeaderValue::from_str(&rendered.etag) {
+        h.insert(header::ETAG, v);
+    }
+    if let Some(link) = rendered.link.as_deref()
+        && let Ok(v) = header::HeaderValue::from_str(link)
+    {
+        h.insert(header::LINK, v);
+    }
+    if let Ok(v) = header::HeaderValue::from_str(build_id) {
+        h.insert("x-oxy-build", v);
+    }
+    if let Ok(v) = header::HeaderValue::from_str(&format!("app-{app_id},build-{build_id}")) {
+        h.insert("cache-tag", v);
+    }
+    response
+}
+
+/// Read a build's asset manifest, or `None` when it has none.
+///
+/// Goes through the bundle cache, so a build published before manifests existed
+/// costs exactly one doomed probe per process — the absence is remembered — and
+/// every caller degrades to "no preload hints, no precache list" rather than
+/// failing. That is the whole compatibility story for older builds.
+async fn load_asset_manifest(app_id: Uuid, build_id: &str) -> Option<AssetManifest> {
+    let bytes = custom_apps_bundle_cache::get_or_fetch(
+        app_id,
+        build_id,
+        asset_manifest::ASSET_MANIFEST_PATH,
     )
-        .into_response()
+    .await
+    .inspect_err(|e| tracing::warn!("app {app_id}: asset manifest read failed: {e}"))
+    .ok()
+    .flatten()?;
+    serde_json::from_slice::<AssetManifest>(&bytes)
+        .inspect_err(|e| tracing::warn!("app {app_id}: asset manifest is unreadable: {e}"))
+        .ok()
+        .filter(|m| m.schema_version == asset_manifest::SCHEMA_VERSION)
 }
 
 /// Serve the `.br` sibling written at publish time, if the client accepts
@@ -592,10 +764,15 @@ async fn serve_file(
             // emit absolute base-path strings in the HTML entry; JS/CSS
             // chunks reference each other relatively at runtime.
             let body_bytes = if mime.starts_with("text/html") {
-                let expected_prefix =
-                    format!("/customer-apps/{}/{}/", runtime.org_slug, runtime.slug);
-                let rewritten = rewrite_bundle_base_path(&bytes, &expected_prefix, runtime.app_id);
-                inject_app_config(&rewritten, runtime, &canon)
+                // Same transform the build-store branch runs, minus the
+                // memoization: a local-folder bundle is a directory the dev is
+                // actively editing, so there is no build id to key a rendered
+                // copy on and caching one would serve their last save forever.
+                // No asset manifest either — it is written at publish, and this
+                // source never publishes.
+                render_html(&bytes, &canon, runtime, runtime.app_id, None)
+                    .body
+                    .to_vec()
             } else {
                 bytes
             };
@@ -762,6 +939,9 @@ mod tests {
             project_id: Uuid::nil(),
             branch: "main".to_string(),
             api_base_url: String::new(),
+            base_path: String::from("/customer-apps/acme/hello-oxy/"),
+            service_worker: true,
+            analytics: true,
         }
     }
 
@@ -829,6 +1009,168 @@ mod tests {
             String::from_utf8_lossy(&body).contains("functions page"),
             "the app's own /functions page must still be served"
         );
+    }
+
+    fn manifest_with_entries() -> AssetManifest {
+        AssetManifest {
+            schema_version: asset_manifest::SCHEMA_VERSION,
+            build_id: "build-7".into(),
+            entries: vec![
+                asset_manifest::Entry {
+                    path: "assets/app.css".into(),
+                    kind: asset_manifest::EntryKind::Style,
+                },
+                asset_manifest::Entry {
+                    path: "assets/app.js".into(),
+                    kind: asset_manifest::EntryKind::Module,
+                },
+            ],
+            assets: vec!["assets/app.css".into(), "assets/app.js".into()],
+            client: asset_manifest::ClientPrefs::default(),
+        }
+    }
+
+    fn html_headers(rendered: &RenderedHtml, request: &HeaderMap) -> (StatusCode, HeaderMap) {
+        let response = finish_html(
+            rendered.clone(),
+            "text/html; charset=utf-8",
+            "private, no-cache",
+            "build-7",
+            Uuid::nil(),
+            request,
+        );
+        (response.status(), response.headers().clone())
+    }
+
+    /// The three headers the first-load story rests on. `Link` is what starts
+    /// the entry chunks a round trip early; `x-oxy-build` is how a running
+    /// service worker notices a publish without being replaced; `Cache-Tag` is
+    /// what would let a CDN purge one app rather than a zone.
+    #[test]
+    fn html_response_carries_preload_build_and_purge_headers() {
+        let runtime = test_runtime();
+        let rendered = render_html(
+            b"<html><head></head><body></body></html>",
+            std::path::Path::new("index.html"),
+            &runtime,
+            runtime.app_id,
+            Some(manifest_with_entries()),
+        );
+        let (status, headers) = html_headers(&rendered, &HeaderMap::new());
+
+        assert_eq!(status, StatusCode::OK);
+        let link = headers
+            .get(header::LINK)
+            .and_then(|v| v.to_str().ok())
+            .expect("Link header");
+        assert!(
+            link.contains("</customer-apps/acme/hello-oxy/assets/app.css>; rel=preload; as=style"),
+            "{link}"
+        );
+        assert!(
+            link.contains("</customer-apps/acme/hello-oxy/assets/app.js>; rel=modulepreload"),
+            "{link}"
+        );
+        assert_eq!(
+            headers.get("x-oxy-build").and_then(|v| v.to_str().ok()),
+            Some("build-7")
+        );
+        assert_eq!(
+            headers.get("cache-tag").and_then(|v| v.to_str().ok()),
+            Some(format!("app-{},build-build-7", Uuid::nil()).as_str())
+        );
+    }
+
+    /// A build with no manifest — anything published before manifests existed,
+    /// and every local-folder source — must serve exactly as it did, minus the
+    /// hints. This is the whole backwards-compatibility story.
+    #[test]
+    fn html_response_omits_the_link_header_without_a_manifest() {
+        let runtime = test_runtime();
+        let rendered = render_html(
+            b"<html><head></head></html>",
+            std::path::Path::new("index.html"),
+            &runtime,
+            runtime.app_id,
+            None,
+        );
+        let (status, headers) = html_headers(&rendered, &HeaderMap::new());
+        assert_eq!(status, StatusCode::OK);
+        assert!(headers.get(header::LINK).is_none());
+        // The rest of the header set is unconditional.
+        assert!(headers.get(header::ETAG).is_some());
+        assert!(headers.get("x-oxy-build").is_some());
+    }
+
+    /// A 304 has no body, so it cannot carry the document's own `<link>` tags —
+    /// which is exactly when the preload header matters most. It must survive
+    /// the short-circuit alongside the ETag and the cache policy.
+    #[test]
+    fn a_revalidated_shell_keeps_its_preload_hints() {
+        let runtime = test_runtime();
+        let rendered = render_html(
+            b"<html><head></head></html>",
+            std::path::Path::new("index.html"),
+            &runtime,
+            runtime.app_id,
+            Some(manifest_with_entries()),
+        );
+        let mut request = HeaderMap::new();
+        request.insert(
+            header::IF_NONE_MATCH,
+            header::HeaderValue::from_str(&rendered.etag).expect("etag is a valid header"),
+        );
+
+        let (status, headers) = html_headers(&rendered, &request);
+        assert_eq!(status, StatusCode::NOT_MODIFIED);
+        assert!(headers.get(header::LINK).is_some());
+        assert_eq!(
+            headers.get(header::ETAG).and_then(|v| v.to_str().ok()),
+            Some(rendered.etag.as_str())
+        );
+        assert_eq!(
+            headers
+                .get(header::CACHE_CONTROL)
+                .and_then(|v| v.to_str().ok()),
+            Some("private, no-cache")
+        );
+    }
+
+    /// The build's manifest is what decides whether the client runtime
+    /// registers a worker and instruments the page — the config struct is built
+    /// before we know which build is serving, so the override has to happen at
+    /// render time or the opt-out silently does nothing.
+    #[test]
+    fn render_html_applies_the_builds_client_opt_outs() {
+        let runtime = test_runtime();
+        let mut manifest = manifest_with_entries();
+        manifest.client = asset_manifest::ClientPrefs {
+            service_worker: false,
+            analytics: false,
+        };
+        let rendered = render_html(
+            b"<html><head></head></html>",
+            std::path::Path::new("index.html"),
+            &runtime,
+            runtime.app_id,
+            Some(manifest),
+        );
+        let body = String::from_utf8_lossy(&rendered.body);
+        assert!(body.contains("\"serviceWorker\":false"), "{body}");
+        assert!(body.contains("\"analytics\":false"), "{body}");
+
+        // …and the default is both on, so an app that says nothing is
+        // instrumented. That is the point of the feature.
+        let on = render_html(
+            b"<html><head></head></html>",
+            std::path::Path::new("index.html"),
+            &runtime,
+            runtime.app_id,
+            Some(manifest_with_entries()),
+        );
+        let body = String::from_utf8_lossy(&on.body);
+        assert!(body.contains("\"serviceWorker\":true"));
+        assert!(body.contains("\"analytics\":true"));
     }
 
     /// The `trailingSlash: true` shape, in its own fixture: a bundler emits

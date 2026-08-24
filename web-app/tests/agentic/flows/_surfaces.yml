@@ -13,6 +13,12 @@
     - "src/pages/launcher/"
     - "src/components/Chat/"
     - "src/components/Ask/"
+    # The app dock is a flex sibling of the Ask dock and closes it on open, so
+    # a change to either can move the other's layout. Shared hook included for
+    # the same reason.
+    - "src/components/apps/AppDock/"
+    - "src/hooks/useResizableDock.ts"
+    - "src/stores/useAppDock.ts"
   flows:
     - chat-ask
     - chat-panel-agent-switch

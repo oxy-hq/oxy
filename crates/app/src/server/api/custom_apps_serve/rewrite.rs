@@ -214,6 +214,14 @@ fn is_slug_char(c: char) -> bool {
 /// any deferred scripts run). If the bundle has no `</head>`, log a
 /// warning and serve untouched — the bundle was hand-rolled or pre-Next
 /// and the admin needs to add one.
+/// Splice the platform's browser-side bootstrap into `<head>`: the app's
+/// runtime identity (`window.__OXY_APP__`) followed by the client runtime that
+/// registers the service worker and auto-instruments the page
+/// (`custom_apps_client`).
+///
+/// One injection point rather than two because they are one contract — the
+/// runtime is inert without the identity object, and a bundle with no `<head>`
+/// must lose both together rather than half of each.
 pub(crate) fn inject_app_config(
     bytes: &[u8],
     runtime: &AppRuntimeConfig,
@@ -233,8 +241,14 @@ pub(crate) fn inject_app_config(
         // The HTML spec only cares about a literal `</` after `script`,
         // but it's cheaper to escape both directions of the slash.
         .replace("</", "<\\/");
-    let snippet =
-        format!("<script>window.__OXY_APP__=JSON.parse('{escaped_for_js_string}');</script>");
+    // The identity object first, then the platform runtime that reads it. The
+    // runtime bails out if `window.__OXY_APP__` is absent, so the order is
+    // load-bearing rather than cosmetic — and both are inline so a navigation
+    // costs no extra round trip to bootstrap either one.
+    let snippet = format!(
+        "<script>window.__OXY_APP__=JSON.parse('{escaped_for_js_string}');</script>{}",
+        crate::server::api::custom_apps_client::runtime_script_tag()
+    );
 
     let needle = b"</head>";
     let Some(pos) = find_subsequence(bytes, needle) else {
@@ -269,6 +283,9 @@ mod tests {
             project_id: Uuid::nil(),
             branch: "main".to_string(),
             api_base_url: String::new(),
+            base_path: String::from("/customer-apps/acme/acme-analytics/"),
+            service_worker: true,
+            analytics: true,
         }
     }
 
@@ -297,12 +314,13 @@ mod tests {
         let out = inject_app_config(html, &rt, std::path::Path::new("x.html"));
         let s = std::str::from_utf8(&out).unwrap();
         // The literal `</script>` must NOT appear in the injected payload.
-        // (One legitimate `</script>` from the injected script tag itself
-        // is allowed.)
+        // Two legitimate closes are expected — the identity tag's own, and the
+        // client-runtime tag spliced next to it. A third means the escaped JSON
+        // broke out of its element, which is the whole point of the escaping.
         let script_count = s.matches("</script>").count();
         assert_eq!(
-            script_count, 1,
-            "should be exactly one </script> (the injected tag's own close)"
+            script_count, 2,
+            "expected the identity tag + the client runtime tag, and nothing else"
         );
     }
 

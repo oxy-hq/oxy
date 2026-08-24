@@ -38,6 +38,7 @@ use sea_orm::{
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use crate::server::api::custom_apps_asset_manifest as asset_manifest;
 use crate::server::api::custom_apps_build_store as store;
 
 type Conn = sea_orm::DatabaseConnection;
@@ -427,11 +428,19 @@ async fn deploy(
     let app_id = app_id_for(target.org_id, &target.slug);
     ensure_app(conn, target, app_id).await?;
 
+    // Same `__oxy/` namespace reservation + asset manifest a real `oxy publish`
+    // writes. The seeded app is the first bundle every new workspace opens, so
+    // it is the last one that should be missing its preload hints and its
+    // service-worker precache list — and running the shared installer here is
+    // also what keeps the seed honest as that document's shape evolves.
+    let mut files = files.to_vec();
+    asset_manifest::install_into(&mut files, build_id, manifest.as_ref());
+
     // Unconditional, even when the rows already exist: this is what heals a
     // wiped state dir (`oxy clean`, a new machine, a pruned Docker volume).
     // The DB would still name the build, but the bytes would be gone and the
     // app would 404 — so re-running `oxy seed` is the repair.
-    let prefix = store::put_build(app_id, build_id, files.to_vec())
+    let prefix = store::put_build(app_id, build_id, files)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("store example app bundle: {e}")))?;
 

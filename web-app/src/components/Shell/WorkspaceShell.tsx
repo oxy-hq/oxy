@@ -2,11 +2,14 @@ import { Handshake, House, MessagesSquare, Shield } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AskDock } from "@/components/Ask/AskDock";
+import { AppDock } from "@/components/apps/AppDock";
 import { OxygenFactoryMark } from "@/components/OxygenFactoryMark";
 import WorkspaceStatus from "@/components/WorkspaceStatus";
 import { useCustomApps } from "@/hooks/api/customApps/useCustomApps";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
+import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import useAppDock from "@/stores/useAppDock";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import { RailUserMenu } from "./RailUserMenu";
@@ -37,6 +40,19 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   // Partner admins (users who administer ≥1 partner) get a console hop. The
   // server enforces scope; this only decides whether to show the entry.
   const isPartnerAdmin = !!profile?.partner_memberships?.length;
+
+  // A docked custom app in focus mode takes the whole content column: `<main>`
+  // and the top bar go away rather than being compacted to slivers, because a
+  // sliver of HQ beside a dashboard is neither.
+  //
+  // The **rail stays**, deliberately. Focus mode has to leave a way back out,
+  // and the rail is that way — it is the app switcher and the workspace/user
+  // menu. Hiding it too would turn focus into a trap. Everything the top bar
+  // offered is still reachable: the app's name from the dock header, navigation
+  // from the rail.
+  const dockedApp = useAppDock((s) => s.app);
+  const dockFocus = useAppDock((s) => s.focus);
+  const appFocused = !!dockedApp && dockFocus;
 
   const path = location.pathname;
   const inIde = /\/ide(\/|$)/.test(path);
@@ -140,17 +156,24 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           same height as the rail's logo cell (h-12), so the logo anchors the
           top-left corner and the two bottom borders form one continuous line. */}
       <div className='flex h-full min-w-0 flex-1 flex-col'>
-        {!hideRail && <TopBar />}
+        {!hideRail && !appFocused && <TopBar />}
         {/* Follows the operator INTO the tenant — this is where an unnoticed
             impersonation would actually do damage. */}
         <div className='flex min-h-0 w-full flex-1'>
-          <main className='relative flex h-full min-w-0 flex-1 flex-col bg-background'>
+          <main
+            className={cn(
+              "relative h-full min-w-0 flex-1 flex-col bg-background",
+              appFocused ? "hidden" : "flex"
+            )}
+          >
             {!hideStatus && <WorkspaceStatus />}
             <div className='w-full min-w-0 flex-1 overflow-hidden'>{children}</div>
           </main>
-          {/* The Ask dock is a flex sibling — opening it compacts <main>
-              (Cursor-style) rather than floating over it. */}
+          {/* Both docks are flex siblings — opening one compacts <main>
+              (Cursor-style) rather than floating over it. They are mutually
+              exclusive by construction: `useAppDock.open` closes Ask. */}
           {!hideRail && <AskDock />}
+          {!hideRail && <AppDock />}
         </div>
       </div>
     </div>

@@ -109,6 +109,7 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.4",
     "@types/js-cookie": "^3.0.6",
+    "@types/jsdom": "^30.0.0",
     "@types/lodash": "^4.17.25",
     "@types/node": "^26.2.0",
     "@types/nunjucks": "3.2.6",

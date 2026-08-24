@@ -365,6 +365,27 @@ pub fn spawn_retention_cleanup() {
     });
 }
 
+/// Prefix the platform reserves for its own auto-instrumentation
+/// (`custom_apps_beacon`). Names under it are written **only** by the beacon
+/// route, which accepts a fixed allowlist and nothing else.
+///
+/// The SDK route rejects the prefix ([`is_reserved_event_name`]) so an author
+/// cannot land rows in the platform's namespace *by accident* — they get a 400
+/// naming the prefix and rename. That is the whole property: it is **not** a
+/// forgery defence, because the beacon rides the app's own auth gate and the
+/// app's own JavaScript can post to it directly. See `custom_apps_beacon`.
+pub const RESERVED_EVENT_PREFIX: &str = "oxy-";
+
+/// Is this an engineer-supplied name inside the platform's reserved namespace?
+///
+/// Checked at the SDK ingest route, not inside [`record_event`]: the beacon
+/// writes through the same recorder and its whole purpose is to use these
+/// names. Putting the check in the recorder would mean the platform having to
+/// bypass its own validator, which is how a bypass becomes general.
+pub fn is_reserved_event_name(name: &str) -> bool {
+    name.starts_with(RESERVED_EVENT_PREFIX)
+}
+
 /// `^[a-z][a-z0-9-]{0,63}$` enforced manually — pulling in a regex
 /// crate for a 10-line check would dwarf the function. Same shape the
 /// slug validator uses.

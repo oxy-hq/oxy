@@ -324,6 +324,33 @@ pub(crate) async fn serve_pretty(
 
     let runtime = AppRuntimeConfig::from_app(&app, &org.slug);
 
+    // 3a. The platform-reserved `__oxy/` namespace, answered by us rather than
+    //     by the bundle. Deliberately placed HERE — after authentication and
+    //     the access check, before the source dispatch — so it inherits the
+    //     app's exact gate: the same viewers who can load the bundle can
+    //     register its worker and post its telemetry, and nobody else can. It
+    //     also means these paths work identically on the subpath and subdomain
+    //     surfaces with no CORS involved, because they *are* the app's origin.
+    //
+    //     Not everything under the prefix is answered here — the asset manifest
+    //     is a real object inside the build — but everything under it is
+    //     *classified* here, so a name nobody claims 404s rather than reaching
+    //     the bundle. That is what makes the namespace reserved rather than
+    //     merely conventional.
+    if let Some(name) = reserved_platform_path(&rest) {
+        match classify_reserved(name, &method) {
+            Reserved::ServiceWorker => return service_worker_for(&runtime, &headers),
+            Reserved::Beacon => {
+                return ingest_beacon(body, &headers, &db, app.id, user.id, &user.email).await;
+            }
+            // A real object inside the build, written at publish — fall through
+            // to the ordinary dispatch so it rides the same LRU,
+            // pre-compression, and absence caching as every other asset.
+            Reserved::BuildObject => {}
+            Reserved::Unknown => return super::custom_apps_client::reserved_not_found(),
+        }
+    }
+
     // Detect the "user-navigation" requests (root path, trailing-slash
     // directory, or `.html`) so we record at most one view event per
     // user-visible page load — not once per asset / API fetch which
@@ -333,14 +360,10 @@ pub(crate) async fn serve_pretty(
     // build doesn't need to know about tracking. Tracking + cookie
     // injection happen in the post-dispatch wrapper at the bottom.
     let is_html_request = is_html_navigation(&rest);
-    let source_label = match oxy_app_core::custom_apps_host_dispatch::parse_subdomain(
-        headers
-            .get(axum::http::header::HOST)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or(""),
-    ) {
-        Some(_) => "subdomain",
-        None => "subpath",
+    let source_label = if on_custom_app_subdomain(&headers) {
+        "subdomain"
+    } else {
+        "subpath"
     };
 
     use super::custom_apps_source::AppSource;
@@ -462,7 +485,12 @@ pub(crate) async fn serve_pretty(
         let s = response.status();
         s.is_success() || s == StatusCode::NOT_MODIFIED
     };
-    if is_html_request && rendered {
+    // A browser-initiated speculation is not a view. The HQ launcher warms an
+    // app on card hover so the click is instant (`prefetchApp`), and without
+    // this every hover would record an open — and mint a session id at hover
+    // time that the real navigation would then inherit. See
+    // `is_speculative_request`.
+    if is_html_request && rendered && !is_speculative_request(&headers) {
         let host = headers
             .get(axum::http::header::HOST)
             .and_then(|v| v.to_str().ok())
@@ -514,4 +542,211 @@ pub(crate) async fn serve_pretty(
     }
 
     response
+}
+
+/// The tail of a request path inside the platform-reserved namespace, or `None`
+/// when the request is for the app's own files.
+///
+/// Case-insensitive on the prefix for the same reason `is_server_only_path` is:
+/// a case-insensitive filesystem would otherwise resolve `__OXY/sw.js` to a real
+/// object on one platform and not another.
+fn reserved_platform_path(rest: &str) -> Option<&str> {
+    let trimmed = rest.trim_start_matches('/');
+    let prefix = super::custom_apps_asset_manifest::RESERVED_PLATFORM_PREFIX;
+    if trimmed.len() < prefix.len() {
+        return None;
+    }
+    let (head, tail) = trimmed.split_at(prefix.len());
+    head.eq_ignore_ascii_case(prefix).then_some(tail)
+}
+
+/// What a request inside the platform-reserved `__oxy/` namespace is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reserved {
+    /// `GET __oxy/sw.js` — the platform service worker.
+    ServiceWorker,
+    /// `POST __oxy/beacon` — the client runtime's telemetry batch.
+    Beacon,
+    /// A platform object that lives *inside the build* rather than being
+    /// synthesised here — today only the asset manifest. Falls through to the
+    /// ordinary source dispatch.
+    BuildObject,
+    /// Anything else. 404, never a fall-through to the bundle: reserving the
+    /// prefix is what stops an app serving its own file at a platform URL, and
+    /// a miss that fell through would give one back.
+    Unknown,
+}
+
+/// Classify one reserved-namespace request. Pure, so the routing table is
+/// testable without a database, a build store, or a request body — which is the
+/// whole reason it is separated from the dispatch that acts on it.
+///
+/// Method is part of the decision rather than checked afterwards: `POST
+/// __oxy/sw.js` is not "the worker, wrong method", it is a request for something
+/// that does not exist, and answering it the same way as any other unknown
+/// reserved path keeps the surface from advertising which verbs it takes.
+fn classify_reserved(name: &str, method: &axum::http::Method) -> Reserved {
+    let prefix = super::custom_apps_asset_manifest::RESERVED_PLATFORM_PREFIX;
+    let sw = super::custom_apps_client::SERVICE_WORKER_PATH.trim_start_matches(prefix);
+    let beacon = super::custom_apps_client::BEACON_PATH.trim_start_matches(prefix);
+    let manifest =
+        super::custom_apps_asset_manifest::ASSET_MANIFEST_PATH.trim_start_matches(prefix);
+
+    match (name, method) {
+        (n, &axum::http::Method::GET) if n == sw => Reserved::ServiceWorker,
+        (n, &axum::http::Method::POST) if n == beacon => Reserved::Beacon,
+        (n, &axum::http::Method::GET) if n == manifest => Reserved::BuildObject,
+        _ => Reserved::Unknown,
+    }
+}
+
+/// Serve the platform worker, scoped as wide as this surface needs and no wider.
+///
+/// On a **custom-app subdomain** the whole origin is one app and the page sits
+/// at `/`, while the bundle's assets keep the `/customer-apps/<org>/<app>/`
+/// prefix (the host dispatcher passes those through rather than double-prefixing
+/// them). A worker scoped to that prefix would never control the page, so the
+/// origin has to permit `/`.
+///
+/// On the **admin host** it must not: `/` there is the Oxy console, and a custom
+/// app's worker claiming it would intercept the whole SPA. `runtime.js` computes
+/// the same answer client-side from the document's own path; this header is the
+/// half that holds if it ever gets it wrong.
+fn service_worker_for(runtime: &AppRuntimeConfig, headers: &HeaderMap) -> Response {
+    let allowed = if on_custom_app_subdomain(headers) {
+        "/"
+    } else {
+        &runtime.base_path
+    };
+    super::custom_apps_client::service_worker_response(allowed)
+}
+
+/// Read a telemetry batch and hand it to the beacon.
+///
+/// The caller has already authenticated the request and confirmed this viewer
+/// may open the app — the beacon deliberately makes no second authorization
+/// decision, because it is dispatched from inside the gate the bundle's own
+/// bytes pass through.
+async fn ingest_beacon(
+    body: axum::body::Body,
+    headers: &HeaderMap,
+    db: &sea_orm::DatabaseConnection,
+    app_id: Uuid,
+    user_id: Uuid,
+    user_email: &str,
+) -> Response {
+    let bytes = match axum::body::to_bytes(body, super::custom_apps_beacon::MAX_BODY_BYTES).await {
+        Ok(b) => b,
+        // `to_bytes` rejects an over-limit body before the size check inside
+        // `admit` ever sees it; that one is the second line, not the first.
+        Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
+    };
+    super::custom_apps_beacon::handle(
+        db.clone(),
+        app_id,
+        user_id,
+        user_email.to_string(),
+        headers,
+        bytes,
+    )
+    .await
+}
+
+/// Did this request arrive on a `<org>--<app>.customer-apps…` host?
+///
+/// One reader for a fact two places need — the recorded view's `source` label
+/// and the service worker's permitted scope. They must not be able to disagree:
+/// the label is cosmetic, but the scope decides whether a custom app's worker
+/// may claim the admin origin.
+fn on_custom_app_subdomain(headers: &HeaderMap) -> bool {
+    oxy_app_core::custom_apps_host_dispatch::parse_subdomain(
+        headers
+            .get(axum::http::header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or(""),
+    )
+    .is_some()
+}
+
+#[cfg(test)]
+mod reserved_tests {
+    use super::*;
+
+    #[test]
+    fn recognises_the_reserved_namespace_and_nothing_adjacent() {
+        assert_eq!(reserved_platform_path("__oxy/sw.js"), Some("sw.js"));
+        assert_eq!(reserved_platform_path("/__oxy/beacon"), Some("beacon"));
+        // Case-insensitive prefix, case-preserving tail.
+        assert_eq!(reserved_platform_path("__OXY/sw.js"), Some("sw.js"));
+        assert_eq!(reserved_platform_path("__oxy/"), Some(""));
+
+        // An app's own files must never be captured by the prefix.
+        assert_eq!(reserved_platform_path("assets/__oxy/x.js"), None);
+        assert_eq!(reserved_platform_path("__oxygen/x.js"), None);
+        assert_eq!(reserved_platform_path("index.html"), None);
+        assert_eq!(reserved_platform_path(""), None);
+        // Shorter than the prefix — the split must not panic.
+        assert_eq!(reserved_platform_path("__ox"), None);
+    }
+
+    use axum::http::Method;
+
+    #[test]
+    fn classifies_the_platform_endpoints_by_name_and_method() {
+        assert_eq!(
+            classify_reserved("sw.js", &Method::GET),
+            Reserved::ServiceWorker
+        );
+        assert_eq!(classify_reserved("beacon", &Method::POST), Reserved::Beacon);
+        assert_eq!(
+            classify_reserved("asset-manifest.json", &Method::GET),
+            Reserved::BuildObject
+        );
+    }
+
+    /// The manifest is written into the build prefix at publish, so it must
+    /// reach the ordinary dispatch rather than being answered here. Getting this
+    /// wrong 404s the document the service worker's whole precache depends on —
+    /// and does it silently, because a worker with no manifest simply installs
+    /// and caches nothing.
+    #[test]
+    fn the_asset_manifest_falls_through_to_the_build() {
+        assert_eq!(
+            classify_reserved("asset-manifest.json", &Method::GET),
+            Reserved::BuildObject,
+            "the manifest is an object in the build, not a synthesised response"
+        );
+    }
+
+    /// A wrong method is an unknown resource, not a 405: answering differently
+    /// would advertise which verbs each platform path takes.
+    #[test]
+    fn a_wrong_method_or_unknown_name_is_simply_not_found() {
+        assert_eq!(classify_reserved("sw.js", &Method::POST), Reserved::Unknown);
+        assert_eq!(classify_reserved("beacon", &Method::GET), Reserved::Unknown);
+        assert_eq!(classify_reserved("", &Method::GET), Reserved::Unknown);
+        assert_eq!(
+            classify_reserved("not-a-thing", &Method::GET),
+            Reserved::Unknown
+        );
+        // An app's own file under the prefix cannot be reached either — publish
+        // strips them, and this is the serve-side half of the same rule.
+        assert_eq!(
+            classify_reserved("secrets.json", &Method::GET),
+            Reserved::Unknown
+        );
+    }
+}
+
+/// Test-only view of the origin's cache policy, so
+/// `custom_apps_asset_manifest` can assert that the set of paths its service
+/// worker serves cache-first is exactly the set this route calls `immutable`.
+/// Two lists, one rule — and a divergence pins a stale chunk with no
+/// server-side remedy, which is worth a test that reaches across modules.
+#[cfg(test)]
+pub(crate) fn cache_control_for_test_only(
+    request_path: &str,
+    file_path: &std::path::Path,
+) -> &'static str {
+    headers::cache_control_for(request_path, file_path)
 }

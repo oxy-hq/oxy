@@ -215,17 +215,42 @@ async fn example_bundle_icon_and_art_resolve_to_real_files() {
 }
 
 #[tokio::test]
-async fn example_bundle_index_html_is_self_contained() {
+async fn example_bundle_self_contained() {
     // The bundle is served verbatim from Oxy's origin with no build step to
-    // inline anything, and custom apps must not depend on third-party
-    // hosts being reachable (or on what they might serve).
-    let html = body(&example_bundle().await, "index.html");
-    for needle in ["src=\"http", "href=\"http", "@import", "//cdn."] {
-        assert!(
-            !html.contains(needle),
-            "index.html references an external resource ({needle}); the example bundle \
-             must be self-contained"
-        );
+    // vendor anything, and custom apps must not depend on third-party hosts
+    // being reachable (or on what they might serve).
+    //
+    // Scans every code/style file, not just `index.html`: the split
+    // (`1b5e4d86a`) moved the app into `assets/*.js` (where a CDN `fetch` would
+    // live) and `assets/*.css` (where an `@import url(https://fonts…)` would),
+    // so pinning to the HTML checks the one file that no longer holds any of it.
+    // `.svg` is excluded on purpose — an SVG's `xmlns="http://www.w3.org/…"` is a
+    // namespace identifier, not a network dependency.
+    let files = example_bundle().await;
+    let scanned: Vec<String> = files
+        .iter()
+        .map(|(path, _)| path.clone())
+        .filter(|p| p.ends_with(".html") || p.ends_with(".js") || p.ends_with(".css"))
+        .collect();
+    assert!(
+        !scanned.is_empty(),
+        "no .html/.js/.css in the bundle — the scan would pass vacuously"
+    );
+
+    // Bare `http://`/`https://` catch an absolute URL in any shape — an HTML
+    // attribute, a CSS `url()`, or a JS `fetch()` (the last is why the old
+    // attribute-shaped needles were not enough). `//cdn.` catches a
+    // protocol-relative host; `@import` catches a stylesheet pulling in another.
+    const EXTERNAL: [&str; 4] = ["https://", "http://", "//cdn.", "@import"];
+    for path in scanned {
+        let source = body(&files, &path);
+        for needle in EXTERNAL {
+            assert!(
+                !source.contains(needle),
+                "{path} references an external resource ({needle}); the example \
+                 bundle must be self-contained"
+            );
+        }
     }
 }
 
@@ -236,12 +261,53 @@ async fn example_bundle_index_html_is_self_contained() {
 /// hardcoded id would work in whichever workspace it was copied from and read
 /// somebody else's identity — or 403 — everywhere else. Pattern 3 already makes
 /// this claim in prose; pattern 4 is the second place it has to hold.
+///
+/// Scans the whole bundle, not just `index.html`: the app's script now lives in
+/// a hashed `assets/*.js` (see the README's *Why the filenames carry a hash*),
+/// and the invariant is about the code wherever it sits — the same bundle-wide
+/// stance `example_bundle_never_writes_untrusted_strings_as_html` takes, and for
+/// the same reason (a split bundle must not exempt itself from a rule stated on
+/// the whole).
 #[tokio::test]
 async fn example_bundle_reads_the_viewer_from_the_injected_project_id() {
-    let html = body(&example_bundle().await, "index.html");
+    const NEEDLE: &str = "/api/projects/${app.projectId}/shell-context";
+    // A literal project id is a UUID; a `${app.projectId}` template is not. The
+    // positive check proves the templated call exists; this proves no code file
+    // *also* bakes a literal — the half the docstring's "never a baked one"
+    // actually claims, cheap and currently green.
+    let uuid = regex::Regex::new(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+    )
+    .expect("static UUID pattern compiles");
+
+    let files = example_bundle().await;
+    let code: Vec<String> = files
+        .iter()
+        .map(|(p, _)| p.clone())
+        .filter(|p| p.ends_with(".html") || p.ends_with(".js"))
+        .collect();
     assert!(
-        html.contains("/api/projects/${app.projectId}/shell-context"),
-        "the viewer panel must template the injected projectId into shell-context"
+        !code.is_empty(),
+        "no .html/.js in the bundle — the scan would pass vacuously"
+    );
+
+    let mut templated = false;
+    for path in &code {
+        let source = body(&files, path);
+        if source.contains(NEEDLE) {
+            templated = true;
+        }
+        assert!(
+            !uuid.is_match(&source),
+            "{path} bakes a literal id ({:?}); the viewer panel must address \
+             shell-context with the injected `${{app.projectId}}`, never a UUID",
+            uuid.find(&source).map(|m| m.as_str()).unwrap_or_default()
+        );
+    }
+    assert!(
+        templated,
+        "no bundle file templates the injected projectId into shell-context \
+         ({NEEDLE:?}) — the viewer panel must never bake a project id"
     );
 }
 
