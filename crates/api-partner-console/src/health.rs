@@ -11,9 +11,9 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
 use super::{db, internal};
-use crate::server::api::admin::workspace_health::{WorkspaceHealthRow, health_rollup};
-use crate::server::api::middlewares::partner_authz::PartnerCapability;
-use crate::server::api::middlewares::partner_context::PartnerActor;
+use crate::partner_context::PartnerActor;
+use oxy_app::server::api::admin::{WorkspaceHealthRow, health_rollup};
+use oxy_server_authz::partner_authz::PartnerCapability;
 
 /// `GET /partners/{id}/health` — health across the partner's managed clients'
 /// workspaces, worst-first. Gated on `manage_apps` (the app/data plane the health

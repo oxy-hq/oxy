@@ -475,7 +475,7 @@ pub(super) async fn finalize_login(
     Ok((token, user_info, orgs))
 }
 
-pub(crate) fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
+pub fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
     pin_org_subdomain_to_app_host(extract_base_url_raw(headers))
 }
 

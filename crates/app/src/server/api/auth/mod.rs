@@ -20,4 +20,6 @@ pub(crate) use dev_login::{
     dev_login_is_loopback_only, dev_login_reachable_by, dev_login_source, is_dev_login_enabled,
 };
 pub use handlers::*;
-pub(crate) use ops::{clear_session_cookie, extract_base_url_from_headers};
+pub(crate) use ops::clear_session_cookie;
+// `pub`: reused by the extracted `oxy-api-partner-console` surface (invite links).
+pub use ops::extract_base_url_from_headers;

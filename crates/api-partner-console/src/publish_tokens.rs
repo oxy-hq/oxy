@@ -26,10 +26,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{db, internal, require_org_scope};
-use crate::server::api::custom_apps_publish_authz::consent_enabled;
-use crate::server::api::middlewares::partner_authz::{PartnerCapability, PartnerScope};
-use crate::server::api::middlewares::partner_context::PartnerActor;
+use crate::partner_context::PartnerActor;
+use oxy_app::server::api::custom_apps_publish_authz::consent_enabled;
 use oxy_app_core::audit::{self, ActorType, AuditEntry};
+use oxy_server_authz::partner_authz::{PartnerCapability, PartnerScope};
 
 /// A token this app is allowed to have exists at most 90 days — a partner's CI
 /// credential for a client's app should not outlive review.

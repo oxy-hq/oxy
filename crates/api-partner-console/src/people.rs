@@ -26,7 +26,7 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use super::{db, internal};
-use crate::server::api::middlewares::partner_context::PartnerActor;
+use crate::partner_context::PartnerActor;
 use oxy_app_core::audit::{self, ActorType, AuditEntry};
 
 /// Who may change partner access: an **owner or admin of the partner org** (the same
@@ -57,13 +57,13 @@ async fn require_people_admin(
         None => true, // no membership + a valid scope ⇒ staff assuming the partner
     };
 
-    let allowed = crate::server::authz::enforce_for(
+    let allowed = oxy_server_authz::enforce_for(
         db,
         user.id,
         &user.email,
         "partner_console.people_admin",
-        crate::server::authz::Action::MemberSetRole,
-        crate::server::authz::Resource::org(partner_org_id),
+        oxy_server_authz::Action::MemberSetRole,
+        oxy_server_authz::Resource::org(partner_org_id),
         legacy,
     )
     .await;

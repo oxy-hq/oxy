@@ -56,7 +56,7 @@ impl From<&WorkspaceSignals> for SignalsRow {
 }
 
 #[derive(Serialize)]
-pub(crate) struct WorkspaceHealthRow {
+pub struct WorkspaceHealthRow {
     workspace_id: uuid::Uuid,
     /// Workspace display name, resolved from the `workspaces` row. `None` only
     /// when the workspace was deleted between the signal scan and this read.
@@ -124,7 +124,7 @@ async fn list_workspace_health() -> Result<Json<WorkspaceHealthResponse>, Respon
 /// None` returns every workspace (the staff cross-tenant view); `Some(ids)` scopes
 /// to that set (the partner-scoped view over its managed clients' workspaces).
 /// Reads the persisted sweep state only — no live evaluation.
-pub(crate) async fn health_rollup(
+pub async fn health_rollup(
     db: &sea_orm::DatabaseConnection,
     workspace_ids: Option<&[uuid::Uuid]>,
 ) -> Result<Vec<WorkspaceHealthRow>, sea_orm::DbErr> {

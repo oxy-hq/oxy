@@ -33,12 +33,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{ChildOrg, db, internal, require_org_scope};
-use crate::server::api::middlewares::partner_authz::PartnerCapability;
-use crate::server::api::middlewares::partner_context::PartnerActor;
-use crate::server::api::organizations::{
+use crate::partner_context::PartnerActor;
+use oxy_app::server::api::organizations::{
     is_reserved_slug, normalize_invite_email, send_invitation_email, slugify_name,
 };
 use oxy_app_core::audit::{self, ActorType, AuditEntry};
+use oxy_server_authz::partner_authz::PartnerCapability;
 
 #[derive(Deserialize)]
 pub struct CreateOrgBody {
@@ -70,7 +70,7 @@ pub async fn create_org(
     // one partner write that isn't gated on an existing assignment. `create_orgs`
     // is a per-partner ceiling flag (staff can revoke it) that mints billable
     // tenants; it's granted by default to new partnerships (see `sane_default`).
-    if !crate::server::authz::partner_allows(&scope, None, PartnerCapability::CreateOrgs) {
+    if !oxy_server_authz::partner_allows(&scope, None, PartnerCapability::CreateOrgs) {
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -215,7 +215,7 @@ pub async fn create_org(
     // Post-commit: email the Owner invitation for an unknown owner. The row +
     // token are already committed, so a send failure never fails the request.
     if let Some((to_email, token)) = pending_invite {
-        let base_url = crate::server::api::auth::extract_base_url_from_headers(&headers);
+        let base_url = oxy_app::server::api::auth::extract_base_url_from_headers(&headers);
         let inviter_name = actor.name.clone();
         let inviter_email = actor.email.clone();
         let org_name = name.clone();

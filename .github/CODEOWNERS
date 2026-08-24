@@ -68,9 +68,12 @@ crates/app/src/server/api/traces.rs                @luong-komorebi @hotay
 internal-docs/observability-analytics.md           @luong-komorebi @hotay
 
 # Partner distribution platform
-crates/app/src/server/api/partner_console/         @luong-komorebi @NTtanh
+crates/api-partner-console/                        @luong-komorebi @NTtanh
 web-app/src/pages/partners/                        @luong-komorebi @NTtanh
 internal-docs/partner-platform.md                  @luong-komorebi @NTtanh
+
+# GitHub integration — backend surface (extracted sibling crate)
+crates/api-github/                                 @luong-komorebi @NTtanh
 
 # LLM vendor infrastructure + build/CI
 crates/infrastructure/llm/                         @luong-komorebi @haitrr

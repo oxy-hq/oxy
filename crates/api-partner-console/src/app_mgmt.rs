@@ -21,14 +21,14 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use super::{db, internal, require_org_scope};
-use crate::server::api::admin::apps::handlers as admin_apps;
-use crate::server::api::middlewares::partner_authz::{PartnerCapability, PartnerScope};
-use crate::server::api::middlewares::partner_context::PartnerActor;
-use crate::server::api::org_teams::dto::{
+use crate::partner_context::PartnerActor;
+use oxy_app::server::api::admin::apps::handlers as admin_apps;
+use oxy_app::server::api::org_teams::dto::{
     AppAccessDto, AppAccessSummaryDto, OrgMemberOptionDto, SetAppAccessRequest, TeamDto,
 };
-use crate::server::api::org_teams::service as access_service;
+use oxy_app::server::api::org_teams::service as access_service;
 use oxy_app_core::audit::{self, ActorType, AuditEntry};
+use oxy_server_authz::partner_authz::{PartnerCapability, PartnerScope};
 
 #[derive(Serialize)]
 pub struct PartnerAppDto {
@@ -297,7 +297,7 @@ pub async fn publish_app(
         .await
         .map_err(|e| e.status)?;
     // Viewers' cached access must drop now, not at TTL (admin does the same).
-    crate::server::api::custom_apps_auth::invalidate_access_cache();
+    oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
 
     audit::record_best_effort(
         &db,
@@ -327,7 +327,7 @@ pub async fn unpublish_app(
     let saved = admin_apps::unpublish_one(&db, app_id)
         .await
         .map_err(|e| e.status)?;
-    crate::server::api::custom_apps_auth::invalidate_access_cache();
+    oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
 
     audit::record_best_effort(
         &db,

@@ -20,7 +20,7 @@ use oxy_auth::extractor::AuthenticatedUserExtractor;
 use std::future::Future;
 use uuid::Uuid;
 
-use super::partner_authz::{PartnerCapability, PartnerScope, resolve_scope};
+use oxy_server_authz::partner_authz::{PartnerCapability, PartnerScope, resolve_scope};
 
 #[derive(serde::Deserialize)]
 pub struct PartnerPath {
@@ -49,7 +49,7 @@ pub async fn partner_middleware(
     // A session for THIS partner org is the opposite case — that is Oxy staff
     // acting *as* the partner, which is precisely how they reach this console. So
     // only a session pointed somewhere else locks it.
-    let elsewhere = crate::server::api::admin::assume::live_sessions_for(&db, user.id)
+    let elsewhere = oxy_server_authz::assume_liveness::live_sessions_for(&db, user.id)
         .await
         .into_iter()
         .find(|s| s.org_id != partner_org_id);
@@ -88,7 +88,7 @@ impl PartnerActor {
     /// capability-only check is turned into an HTTP decision; the decision itself is
     /// made by the unified authz model.
     pub fn require(&self, cap: PartnerCapability) -> Result<(), StatusCode> {
-        if crate::server::authz::partner_allows(&self.0, None, cap) {
+        if oxy_server_authz::partner_allows(&self.0, None, cap) {
             Ok(())
         } else {
             Err(StatusCode::FORBIDDEN)
@@ -125,9 +125,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::super::partner_authz::Capabilities;
     use super::*;
     use axum::body::Body;
+    use oxy_server_authz::partner_authz::Capabilities;
 
     fn scope_with(manage_apps: bool) -> PartnerScope {
         PartnerScope {

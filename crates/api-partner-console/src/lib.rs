@@ -19,6 +19,7 @@
 mod app_mgmt;
 mod health;
 mod orgs;
+mod partner_context;
 mod people;
 mod publish_tokens;
 mod workspaces;
@@ -37,21 +38,28 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::server::api::middlewares::partner_authz::{
-    PartnerCapability, PartnerScope, scopes_for_user,
-};
-use crate::server::api::middlewares::partner_context::{PartnerActor, partner_middleware};
-use crate::server::router::AppState;
+use crate::partner_context::{PartnerActor, partner_middleware};
+use oxy_app_core::AppState;
 use oxy_app_core::audit::events_for_partner;
+use oxy_server_authz::partner_authz::{PartnerCapability, PartnerScope, scopes_for_user};
 
-/// Top-level list route + the partner-scoped subtree (wrapped in
-/// `partner_middleware`, which resolves [`PartnerScope`] and 403s anyone holding
-/// no partner role in that org).
-pub(crate) fn routes() -> Router<AppState> {
-    Router::new().route("/partners", get(list_my_partners))
+/// The whole `/api/partners` surface: the top-level list route plus the
+/// partner-scoped subtree (wrapped in `partner_middleware`, which resolves
+/// [`PartnerScope`] and 403s anyone holding no partner role in that org).
+/// Mounted by the `oxy-server` composition root.
+///
+/// Every handler here is Postgres-only, so these routes are **FleetOk by
+/// default** — they are (deliberately) unlisted in `role_manifest.rs`, which
+/// means HA-safe and not workspace-scoped. Keep them that way: a route added
+/// here that touches the workspace FS, `.git`, or the state dir would need an
+/// `IdeOnly` classification the manifest never sees for this crate.
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/partners", get(list_my_partners))
+        .nest("/partners/{partner_org_id}", scoped_routes())
 }
 
-pub(crate) fn scoped_routes() -> Router<AppState> {
+fn scoped_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(overview))
         // A partner can now ONBOARD a client itself (`create_orgs`) — the hole that
@@ -120,14 +128,14 @@ pub(crate) fn scoped_routes() -> Router<AppState> {
         .layer(axum::middleware::from_fn(partner_middleware))
 }
 
-pub(super) async fn db() -> Result<DatabaseConnection, StatusCode> {
+pub(crate) async fn db() -> Result<DatabaseConnection, StatusCode> {
     establish_connection().await.map_err(|e| {
         tracing::error!("partner_console: DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })
 }
 
-pub(super) fn internal<E: std::fmt::Display>(ctx: &'static str) -> impl Fn(E) -> StatusCode {
+pub(crate) fn internal<E: std::fmt::Display>(ctx: &'static str) -> impl Fn(E) -> StatusCode {
     move |e| {
         tracing::error!("partner_console: {ctx}: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -138,7 +146,7 @@ pub(super) fn internal<E: std::fmt::Display>(ctx: &'static str) -> impl Fn(E) ->
 /// **ceiling** of the partner being acted as holds `cap` AND the org is one of that
 /// partner's clients. Out-of-set orgs return `404` (not `403`) so a partner can't probe
 /// which orgs exist outside their subtree.
-pub(super) async fn require_org_scope(
+pub(crate) async fn require_org_scope(
     _db: &DatabaseConnection,
     scope: &PartnerScope,
     org_id: Uuid,
@@ -148,7 +156,7 @@ pub(super) async fn require_org_scope(
     // them. The unified model decides both ownership (the org is this partner's client)
     // and capability, scoped to the partner being acted as.
     let managed = &scope.org_ids;
-    if crate::server::authz::partner_allows(scope, Some(org_id), cap) {
+    if oxy_server_authz::partner_allows(scope, Some(org_id), cap) {
         return Ok(());
     }
     // Deny: 404 when the partner doesn't manage the org (don't leak existence),
@@ -292,7 +300,7 @@ pub async fn list_orgs(
     child_orgs(&db, &scope).await.map(Json)
 }
 
-pub(super) async fn child_orgs(
+pub(crate) async fn child_orgs(
     db: &DatabaseConnection,
     scope: &PartnerScope,
 ) -> Result<Vec<ChildOrg>, StatusCode> {
@@ -388,7 +396,7 @@ pub async fn partner_audit(
     PartnerActor(scope): PartnerActor,
     Query(q): Query<AuditQuery>,
 ) -> Result<Json<Vec<AuditEventDto>>, StatusCode> {
-    if !crate::server::authz::partner_allows(&scope, None, PartnerCapability::ViewAudit) {
+    if !oxy_server_authz::partner_allows(&scope, None, PartnerCapability::ViewAudit) {
         return Err(StatusCode::FORBIDDEN);
     }
     let db = db().await?;

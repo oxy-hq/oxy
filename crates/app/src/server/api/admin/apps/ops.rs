@@ -367,8 +367,8 @@ pub(super) fn rows_to_responses(
 /// Shared failure type for the single-app and batch mutation paths. `status`
 /// drives the one-shot routes' HTTP code; `message` names the failure in a
 /// batch result row.
-pub(crate) struct AppOpError {
-    pub(crate) status: StatusCode,
+pub struct AppOpError {
+    pub status: StatusCode,
     pub(super) message: String,
 }
 
@@ -443,7 +443,7 @@ pub(super) async fn load_org(
 /// Pure pointer move: stamp `published_at`/promoter, repoint the published
 /// channel at the current draft build, and drop the canonical-dir cache so the
 /// serve path resolves the freshly-published channel instead of a stale entry.
-pub(crate) async fn publish_one(
+pub async fn publish_one(
     db: &DatabaseConnection,
     id: Uuid,
     actor: Uuid,
@@ -491,10 +491,7 @@ pub(crate) async fn publish_one(
 /// Core unpublish mutation shared by [`unpublish_app`] and
 /// [`batch_unpublish_apps`]. Nulls `published_at` + the published channel
 /// pointer; the bundle bytes stay untouched.
-pub(crate) async fn unpublish_one(
-    db: &DatabaseConnection,
-    id: Uuid,
-) -> Result<apps::Model, AppOpError> {
+pub async fn unpublish_one(db: &DatabaseConnection, id: Uuid) -> Result<apps::Model, AppOpError> {
     let row = Apps::find_by_id(id)
         .one(db)
         .await

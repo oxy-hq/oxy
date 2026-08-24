@@ -16,7 +16,9 @@ mod org_handlers;
 
 pub use invitation_handlers::*;
 pub use member_handlers::*;
-pub(crate) use ops::{
+// `pub` (not `pub(crate)`): these org helpers are reused by the extracted
+// `oxy-api-partner-console` surface (invite + slug + org-creation flows).
+pub use ops::{
     find_live_invitation, is_reserved_slug, normalize_invite_email, send_invitation_email,
     slugify_name, supersede_expired_invitations,
 };

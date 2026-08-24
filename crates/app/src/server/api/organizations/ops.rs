@@ -38,7 +38,7 @@ pub(super) fn org_response(org: &organizations::Model, role: &OrgRole) -> OrgRes
 
 /// Canonical slug generation. The frontend has a preview slugify for UX, but
 /// this function is the source of truth — the stored slug always comes from here.
-pub(crate) fn slugify_name(name: &str) -> String {
+pub fn slugify_name(name: &str) -> String {
     slugify::slugify(name, "", "-", None)
 }
 
@@ -67,14 +67,14 @@ const RESERVED_ORG_SLUGS: &[&str] = &[
     "workspaces",
 ];
 
-pub(crate) fn is_reserved_slug(slug: &str) -> bool {
+pub fn is_reserved_slug(slug: &str) -> bool {
     RESERVED_ORG_SLUGS.contains(&slug)
 }
 
 /// Trims, lowercases, and validates an invitee email. Returns the normalized
 /// form on success or `BAD_REQUEST` for empty / malformed input. Centralizing
 /// here keeps the single-invite and bulk-invite paths in sync.
-pub(crate) fn normalize_invite_email(raw: &str) -> Result<String, StatusCode> {
+pub fn normalize_invite_email(raw: &str) -> Result<String, StatusCode> {
     let normalized = raw.trim().to_lowercase();
     if normalized.is_empty() || !EmailAddress::is_valid(&normalized) {
         return Err(StatusCode::BAD_REQUEST);
@@ -89,7 +89,7 @@ pub(crate) fn normalize_invite_email(raw: &str) -> Result<String, StatusCode> {
 /// An expired one must not block — [`supersede_expired_invitations`] clears
 /// it instead. Shared by the single, bulk, and partner-console invite paths
 /// so they can't drift apart.
-pub(crate) async fn find_live_invitation<C: ConnectionTrait>(
+pub async fn find_live_invitation<C: ConnectionTrait>(
     conn: &C,
     org_id: Uuid,
     email: &str,
@@ -114,7 +114,7 @@ pub(crate) async fn find_live_invitation<C: ConnectionTrait>(
 ///
 /// Deleting rather than marking them expired also retires the old token, so a
 /// stale link 404s instead of resolving to a row that then refuses it.
-pub(crate) async fn supersede_expired_invitations<C: ConnectionTrait>(
+pub async fn supersede_expired_invitations<C: ConnectionTrait>(
     conn: &C,
     org_id: Uuid,
     email: &str,
@@ -189,7 +189,7 @@ static INVITATION_TEMPLATE: Lazy<Handlebars<'static>> = Lazy::new(|| {
 /// Sends an invitation email. Piggybacks on the magic-link SES config for the
 /// sender identity; if magic-link auth is not configured, this is a no-op so
 /// the admin can still share the copy-able invite token manually.
-pub(crate) async fn send_invitation_email(
+pub async fn send_invitation_email(
     to_email: &str,
     token: &str,
     base_url: &str,

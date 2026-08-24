@@ -13,9 +13,7 @@ use crate::api::middlewares::{
     app_scope_guard, org_context, oxy_owner_or_app_admin_guard, platform_cap_guard,
     subscription_guard,
 };
-use crate::api::{
-    admin, onboarding, org_logo, org_teams, organizations, partner_console, user, workspaces,
-};
+use crate::api::{admin, onboarding, org_logo, org_teams, organizations, user, workspaces};
 
 use super::AppState;
 
@@ -35,24 +33,12 @@ pub(super) fn build_global_routes() -> Router<AppState> {
         )
         .merge(airhouse::api::router::<AppState>())
         .nest("/orgs/{org_id}", build_org_routes())
-        // Partner self-service surface. `/partners` lists the partners the caller
-        // holds a role at; `/partners/{partner_org_id}/*` runs under
-        // `partner_middleware`, which resolves their PartnerScope (role ∩ ceiling
-        // ∩ assigned clients) and 403s anyone with no partner role there.
-        //
-        // The path param is the PARTNER'S ORG ID — a partner IS an org. All
-        // Postgres-only → FleetOk by default (HA-safe), not workspace-scoped.
         // Assume-role ("act as"). Authenticated, NOT admin-gated: staff act as any
         // org, a partner acts as an assigned client with `develop_apps`. The
         // handlers authorize (`assume::may_act_as`). It must sit outside /admin
         // because acting CLOSES /admin — the exit cannot live behind the door it
         // locks.
         .merge(admin::assume::router())
-        .merge(partner_console::routes())
-        .nest(
-            "/partners/{partner_org_id}",
-            partner_console::scoped_routes(),
-        )
         // `/admin/*` runs under the permissive owner-or-app-admin guard so
         // app admins can reach feature flags, custom apps, orgs / users /
         // workspaces management, and internal jobs. The sensitive subset —

@@ -61,7 +61,6 @@ pub mod org_logo;
 pub mod org_subdomain;
 pub mod org_teams;
 pub mod organizations;
-pub mod partner_console;
 pub mod partner_publish_consent;
 pub mod pipeline;
 pub mod projects;

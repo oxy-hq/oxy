@@ -27,8 +27,13 @@ pub mod partners;
 pub mod routing;
 pub mod scope;
 pub mod users_admin;
+// `pub(crate)`: the module's handlers stay internal — only the two readers the
+// extracted `oxy-api-partner-console` surface needs are re-exported below, matching
+// the narrower `admin::apps` pattern (export the fns, not the whole module).
 pub(crate) mod workspace_health;
 pub mod workspaces_admin;
+
+pub use workspace_health::{WorkspaceHealthRow, health_rollup};
 
 use axum::Router;
 use axum::middleware;

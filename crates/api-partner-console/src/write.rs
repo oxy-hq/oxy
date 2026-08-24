@@ -25,12 +25,12 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 use super::{db, internal, require_org_scope};
-use crate::server::api::middlewares::partner_authz::PartnerCapability;
-use crate::server::api::middlewares::partner_context::PartnerActor;
-use crate::server::api::organizations::{
+use crate::partner_context::PartnerActor;
+use oxy_app::server::api::organizations::{
     find_live_invitation, normalize_invite_email, supersede_expired_invitations,
 };
 use oxy_app_core::audit::{self, ActorType, AuditEntry};
+use oxy_server_authz::partner_authz::PartnerCapability;
 
 /// Parse a target role and reject `Owner` — the partner guardrail. Returns the
 /// role or `403`.
@@ -155,11 +155,11 @@ pub async fn invite_member(
         .map_err(internal("load org"))?
         .map(|o| o.name)
         .unwrap_or_else(|| "your organization".to_string());
-    let base_url = crate::server::api::auth::extract_base_url_from_headers(&headers);
+    let base_url = oxy_app::server::api::auth::extract_base_url_from_headers(&headers);
     let (to_email, token_clone) = (invitation.email.clone(), token.clone());
     let (inviter_name, inviter_email) = (actor.name.clone(), actor.email.clone());
     tokio::spawn(async move {
-        if let Err(e) = crate::server::api::organizations::send_invitation_email(
+        if let Err(e) = oxy_app::server::api::organizations::send_invitation_email(
             &to_email,
             &token_clone,
             &base_url,

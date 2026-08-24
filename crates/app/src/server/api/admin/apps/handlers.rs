@@ -24,7 +24,10 @@ use super::dto::*;
 use super::ops::*;
 
 pub(crate) use super::dto::{CreateAppRequest, ListAppsQuery};
-pub(crate) use super::ops::{publish_one, unpublish_one, validate_display_name};
+pub(crate) use super::ops::validate_display_name;
+// `pub`: the extracted `oxy-api-partner-console` surface publishes/unpublishes a
+// client's app through these.
+pub use super::ops::{publish_one, unpublish_one};
 
 /// The org ids a **bounded** platform grant reaches — `None` for unbounded.
 ///

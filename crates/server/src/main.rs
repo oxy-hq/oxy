@@ -322,7 +322,11 @@ fn main() {
             // is the first extracted sibling; more merge in as they're pulled
             // out of oxy-app. `cli` forwards these into `serve`'s `api_router`,
             // where they join the protected tree before the auth middleware.
-            let exit_code = match cli(oxy_api_github::routes()).await {
+            let exit_code = match cli(
+                oxy_api_github::routes().merge(oxy_api_partner_console::routes())
+            )
+            .await
+            {
                 Ok(_) => 0,
                 Err(e) => {
                     tracing::error!(error = %e, "Application error");
