@@ -48,7 +48,9 @@ AREAS = [
     # NOTE: list a nested path BEFORE its parent — the AREAS loop takes the first match.
     ("crates/app/src/server/api/admin/workspace_health",  "Workspace health & reconcile"),
     ("crates/app/src/server/api/admin/airway_config",     "Airway admission (admin)"),
+    ("crates/app/src/server/api/admin/airhouse.rs",       "Airhouse fleet console (admin)"),
     ("crates/app/src/server/api/admin",                   "Admin (backend)"),
+    ("web-app/src/pages/admin/AdminAirhouse",             "Airhouse fleet console (UI)"),
     ("web-app/src/pages/admin",                           "Admin (UI)"),
     ("crates/authz",                                      "Authorization model"),
     ("crates/app/src/server/authz",                       "Authorization (app enforce)"),
