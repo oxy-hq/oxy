@@ -27,6 +27,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const { workspace } = useCurrentWorkspace();
   const wsId = workspace?.id ?? "";
   const ws = ROUTES.ORG(orgSlug).WORKSPACE(wsId);
+
   const { data: customApps = [] } = useCustomApps(wsId);
   const { data: profile } = useCurrentUser();
   // Global Owners (`OXY_OWNER`) and Global Admins (`app_admins` table) get a

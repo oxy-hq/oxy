@@ -2,6 +2,7 @@ import { askPlaceholder } from "@/components/Ask/askPlaceholder";
 import ChatPanel from "@/components/Chat/ChatPanel";
 import useAskDock from "@/stores/useAskDock";
 import useCurrentOrg from "@/stores/useCurrentOrg";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import { ASK_SUGGESTIONS } from "./constants";
 
 /**
@@ -13,6 +14,7 @@ export function DockComposer() {
   const prefill = useAskDock((s) => s.prefill);
   const open = useAskDock((s) => s.open);
   const orgName = useCurrentOrg((s) => s.org?.name);
+  const wsId = useCurrentWorkspace((s) => s.workspace?.id);
 
   return (
     <div className='flex flex-col gap-3 p-3'>
@@ -31,7 +33,10 @@ export function DockComposer() {
         </div>
       )}
       <ChatPanel
-        key={prefill?.message ?? "ask"}
+        // Include the workspace id so switching workspaces remounts the
+        // panel — a freely-typed draft (not just a prefill) must not carry
+        // over into another workspace's chat (see #2962).
+        key={`${wsId}-${prefill?.message ?? "ask"}`}
         lockMode='ask'
         hideAgentPicker
         initialMessage={prefill?.message}

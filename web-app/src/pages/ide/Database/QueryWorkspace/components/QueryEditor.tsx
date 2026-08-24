@@ -70,6 +70,7 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
     updateTab,
     removeTab,
     setActiveTab,
+    getActiveTab,
     setTabExecuting,
     setTabResults,
     setTabError
@@ -83,26 +84,32 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
+  // Reads the active tab through `getActiveTab()` instead of closing over
+  // `activeTab`: `updateTab` rebuilds `tabs` via `.map()` on every keystroke,
+  // so a dep on the tab object would change this callback's identity on every
+  // character — and `useMonacoSetup` disposes and re-registers the Cmd+Enter
+  // command whenever `onExecute` changes. Every other dep here is stable.
   const handleRunQuery = useCallback(async () => {
-    if (!activeTab?.content.trim()) {
+    const tab = getActiveTab();
+    if (!tab?.content.trim()) {
       toast.error("No query to execute");
       return;
     }
 
-    if (!activeTab.selectedDatabase) {
+    if (!tab.selectedDatabase) {
       toast.error("Please select a database");
       return;
     }
 
-    setTabExecuting(activeTab.id, true);
+    setTabExecuting(tab.id, true);
     const startTime = performance.now();
 
     try {
       const response = await DatabaseService.executeSqlQuery(
         project.id,
         branchName,
-        activeTab.content,
-        activeTab.selectedDatabase
+        tab.content,
+        tab.selectedDatabase
       );
 
       const executionTime = performance.now() - startTime;
@@ -115,7 +122,7 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
             ? `Query executed in ${executionTime.toFixed(0)}ms — showing first 10,000 rows`
             : `Query executed in ${executionTime.toFixed(0)}ms (results saved to file)`
         );
-        setTabResults(activeTab.id, {
+        setTabResults(tab.id, {
           result: [],
           resultFile: response.file_name,
           executionTime,
@@ -124,7 +131,7 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
         return;
       }
 
-      setTabResults(activeTab.id, {
+      setTabResults(tab.id, {
         result: response as string[][],
         resultFile: undefined,
         executionTime
@@ -136,9 +143,9 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
       const fallback =
         get(error, "response.data.error") || get(error, "message") || "Query execution failed";
       const message = details?.message ?? fallback;
-      setTabError(activeTab.id, message, details);
+      setTabError(tab.id, message, details);
     }
-  }, [activeTab, project.id, branchName, setTabExecuting, setTabResults, setTabError]);
+  }, [getActiveTab, project.id, branchName, setTabExecuting, setTabResults, setTabError]);
 
   useMonacoSetup({ onSave, onExecute: handleRunQuery });
 

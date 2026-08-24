@@ -28,7 +28,7 @@ const defaultSyncState: DatabaseSyncState = {
   datasets: undefined
 };
 
-const useDatabaseOperationStore = create<DatabaseOperationState>()(
+export const useDatabaseOperationStore = create<DatabaseOperationState>()(
   persistNSync(
     (set, get) => ({
       syncState: defaultSyncState,

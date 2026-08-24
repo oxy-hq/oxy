@@ -3,6 +3,7 @@ import ChatPanel from "@/components/Chat/ChatPanel";
 import { cn } from "@/libs/shadcn/utils";
 import { getGreeting } from "@/libs/utils/greeting";
 import useCurrentOrg from "@/stores/useCurrentOrg";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 
 /**
  * Empty-state home for workspaces with zero published custom apps
@@ -12,6 +13,11 @@ import useCurrentOrg from "@/stores/useCurrentOrg";
  */
 export function AskForwardFallback({ shouldDisableChat }: { shouldDisableChat: boolean }) {
   const orgName = useCurrentOrg((s) => s.org?.name);
+  // The workspace switcher navigates to this workspace's ROOT (the
+  // launcher), which is the SAME route/element across a switch — so this
+  // component instance is reused rather than remounted. Key ChatPanel by
+  // workspace id so a typed draft can't survive the switch (see #2962).
+  const wsId = useCurrentWorkspace((s) => s.workspace?.id);
   return (
     <div className='flex flex-1 flex-col items-center justify-center gap-6 px-4 sm:gap-10'>
       <p className='text-balance text-center text-xl sm:text-3xl'>
@@ -29,7 +35,12 @@ export function AskForwardFallback({ shouldDisableChat }: { shouldDisableChat: b
             shouldDisableChat && "pointer-events-none select-none opacity-40"
           )}
         >
-          <ChatPanel lockMode='ask' hideAgentPicker placeholderOverride={askPlaceholder(orgName)} />
+          <ChatPanel
+            key={wsId}
+            lockMode='ask'
+            hideAgentPicker
+            placeholderOverride={askPlaceholder(orgName)}
+          />
         </div>
       </div>
     </div>

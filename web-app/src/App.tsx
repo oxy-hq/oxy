@@ -67,6 +67,7 @@ import useAskDock from "./stores/useAskDock";
 import useBuilderDialog from "./stores/useBuilderDialog";
 import useCurrentOrg from "./stores/useCurrentOrg";
 import useCurrentWorkspace from "./stores/useCurrentWorkspace";
+import { useDatabaseOperationStore } from "./stores/useDatabaseOperation";
 import useFileQuickOpen from "./stores/useFileQuickOpen";
 import useSettingsDialog from "./stores/useSettingsDialog";
 import type { AuthConfigResponse } from "./types/auth";
@@ -166,6 +167,15 @@ const RouteFallback = () => (
   </div>
 );
 
+// Last workspace WorkspaceLayout rendered. Deliberately module-scoped rather
+// than a `useRef`: the chrome this guards (`useAskDock`, `useBuilderDialog`,
+// `useDatabaseOperationStore`) lives in module-level zustand stores that
+// outlive any unmount, so the marker has to outlive it too. A component ref
+// is re-seeded whenever WorkspaceLayout unmounts between two workspaces —
+// A → an org root / `/admin` / `/partners` / a post-login bounce → B — and
+// the reset below would silently never fire on that path (#2962).
+let lastSeenWsId: string | undefined;
+
 const WorkspaceLayout = React.memo(function WorkspaceLayout() {
   const { authConfig, isLocalMode } = useAuth();
   const { wsId: wsIdParam } = useParams<{ wsId: string }>();
@@ -225,6 +235,30 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
       setWorkspace(data);
     }
   }, [isPending, isError, setWorkspace, data]);
+
+  // Several pieces of chrome are deliberately kept mounted across route
+  // changes (the Ask dock, the ⌘I builder dialog) so collapsing/switching
+  // pages never loses a draft — but that also means they survive a
+  // workspace switch, since only the `:wsId` route param changes.
+  // `wsId` (from `useParams`) changes synchronously with navigation, so this
+  // is a more robust place for the reset than deriving it from
+  // `useCurrentWorkspace` (which only updates once the `setWorkspace(data)`
+  // effect above fires, and unmounts/remounts with WorkspaceShell while the
+  // target workspace is loading). Reset anything workspace-scoped held in
+  // that chrome so a draft, a live thread, or an in-flight sync status from
+  // one workspace can't leak into another's (see #2962). Skip the very first
+  // render of the session (no prior workspace to leak from) — see
+  // `lastSeenWsId` for why the marker is module-scoped.
+  useEffect(() => {
+    if (!wsId) return;
+    if (lastSeenWsId && lastSeenWsId !== wsId) {
+      useAskDock.getState().newChat();
+      useBuilderDialog.getState().setIsOpen(false);
+      useBuilderDialog.getState().setModelingSelection(null);
+      useDatabaseOperationStore.getState().clearSyncState();
+    }
+    lastSeenWsId = wsId;
+  }, [wsId]);
 
   // Remember the last-opened workspace per-org so the post-login dispatcher
   // can skip the picker next time. Skipped in local mode (no real orgs).
