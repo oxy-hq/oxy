@@ -30,7 +30,12 @@ import { executeCase, type RuntimeStepDebug } from "../case-runner";
 import { stageHealedActions, writeHealingArtifact } from "../healing";
 import { computeCost } from "../pricing";
 import { expandSecrets, redactArgs } from "../secrets";
-import { isSelectorTool, materializeStrategies } from "../selectors";
+import {
+  isNonDurableRecording,
+  isSelectorTool,
+  materializeStrategies,
+  normalizeSelectorArgs
+} from "../selectors";
 import { findTool, getGenericTools, isStateChanging } from "../tool-registry";
 import {
   addTokens,
@@ -234,8 +239,18 @@ async function runActStep(inputs: ActStepInputs): Promise<RuntimeStepDebug> {
 
   // Persist recordings either to the main cache (normal cold redrive)
   // or to the healing staging file (Tier 2 — UI was redesigned, needs
-  // human review before promotion).
-  if (settings.cache_actions && outcome.recorded.length > 0) {
+  // human review before promotion). Skip entirely when nonDurable: an
+  // aria-ref-only action (no testid/role/text alternative — typically an
+  // unlabeled icon button) can never resolve on replay, since replay never
+  // calls browser_snapshot to populate the ref. Caching it would guarantee
+  // a ReplayFailure — and, if staged, a healing artifact — on every future
+  // run instead of the rare genuine UI-drift case those paths exist for.
+  if (outcome.nonDurable && ctx.debug) {
+    console.warn(
+      `[bespoke] step '${step}' recorded an aria-ref-only action (no durable selector) — skipping cache/healing persistence`
+    );
+  }
+  if (settings.cache_actions && outcome.recorded.length > 0 && !outcome.nonDurable) {
     if (healingEvent) {
       stageHealedActions(HEALING_STAGING_PATH, {
         flow: ctx.flow.name,
@@ -319,12 +334,18 @@ interface LoopOutcome {
   aborted: boolean;
   stateChanged: boolean;
   recorded: RecordedAction[];
+  /** True if any recorded action's only resolvable selector was a raw
+   * aria-ref (see `isNonDurableRecording`) — the whole recording is
+   * unreplayable and must not be persisted. */
+  nonDurable: boolean;
 }
 
 interface TurnState {
   /** Sequence of state-changing tool calls observed this turn, in order, for
    * action-cache replay. */
   recorded: RecordedAction[];
+  /** See `LoopOutcome.nonDurable`. */
+  nonDurable: boolean;
 }
 
 async function runLLMLoop(inputs: LLMLoopInputs): Promise<LoopOutcome> {
@@ -348,7 +369,7 @@ async function runLLMLoop(inputs: LLMLoopInputs): Promise<LoopOutcome> {
       ]
     }
   ];
-  const turn: TurnState = { recorded: [] };
+  const turn: TurnState = { recorded: [], nonDurable: false };
   const errBaseline = debug.tool_calls.filter((c) => c.error).length;
   let aborted = false;
 
@@ -402,7 +423,12 @@ async function runLLMLoop(inputs: LLMLoopInputs): Promise<LoopOutcome> {
     }
   }
 
-  return { aborted, stateChanged: turn.recorded.length > 0, recorded: turn.recorded };
+  return {
+    aborted,
+    stateChanged: turn.recorded.length > 0,
+    recorded: turn.recorded,
+    nonDurable: turn.nonDurable
+  };
 }
 
 /**
@@ -411,13 +437,19 @@ async function runLLMLoop(inputs: LLMLoopInputs): Promise<LoopOutcome> {
  */
 async function dispatchInLoop(
   name: string,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   page: Page,
   tools: ToolDefinition[],
   turn: TurnState,
   debug: RuntimeStepDebug
 ): Promise<string> {
   const start = Date.now();
+  // Rewrite a snapshot ref (`ref=f1e14` / `[ref=f1e14]`) to Playwright's
+  // real `aria-ref=` engine before anything downstream sees it — both the
+  // live Playwright dispatch and the action-cache recording below need the
+  // selector that actually resolves. See selectors.ts for why the model
+  // emits these in the first place.
+  const args = normalizeSelectorArgs(rawArgs);
   // Egress boundary #2: Playwright sees the literal `args` (with secret
   // values inlined by the LLM); the redacted copy is what we stash on
   // disk + in the result artifact. State-changing tools are recorded
@@ -450,6 +482,10 @@ async function dispatchInLoop(
           if (strategies.length > 0) recorded.selector_strategies = strategies;
         } catch {
           // ignore — single-selector recording is still useful
+        }
+        const primary = (redactedArgs.selector ?? redactedArgs.element) as string | undefined;
+        if (isNonDurableRecording(primary, recorded.selector_strategies)) {
+          turn.nonDurable = true;
         }
       }
       turn.recorded.push(recorded);

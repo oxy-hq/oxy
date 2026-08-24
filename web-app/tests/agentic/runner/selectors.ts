@@ -41,6 +41,68 @@ export function isSelectorTool(name: string): boolean {
 }
 
 /**
+ * `browser_snapshot` returns Playwright's `ariaSnapshot({mode: "ai"})`
+ * output, which labels every element with a ref like `e14` — or `f1e14`
+ * when the element lives inside a frame with a nonzero sequence number
+ * (playwright-core `ariaSnapshotWithRefs`: `refPrefix = frameSeq ? "f" +
+ * frameSeq : ""`; a plain top-level page after at least one navigation
+ * already carries a nonzero frameSeq, so both shapes show up in practice).
+ * This is the same convention other snapshot+ref browser-automation
+ * tooling uses for ref-based clicking, and Playwright's own snapshot-linked
+ * tools resolve those refs via `page.locator("aria-ref=" + ref)`. The model
+ * reaches for these refs naturally (that's what a "ref" in a snapshot is
+ * for) in any of the shapes the snapshot text itself uses — bare, bracketed,
+ * with or without the `ref=` prefix — but our tools only documented plain
+ * Playwright selectors: `ref=f1e14` throws "Unknown engine" and
+ * `[ref=f1e14]` is parsed as a literal, nonexistent DOM attribute and just
+ * times out — both silently derail the tool call instead of failing
+ * clearly, and in practice burn the step's whole iteration budget before
+ * `wait_for` times out downstream. Rewrite to the real engine instead.
+ */
+const ARIA_REF_RE = /^\[?(?:ref=)?((?:f\d+)?e\d+)\]?$/;
+
+export function resolveAriaRefSelector(selector: string): string {
+  const match = selector.match(ARIA_REF_RE);
+  return match ? `aria-ref=${match[1]}` : selector;
+}
+
+/**
+ * Normalize `args.selector`/`args.element` for a tool call, rewriting a
+ * snapshot ref to Playwright's `aria-ref=` engine. Applied unconditionally
+ * to any string `selector`/`element` field — not gated on `isSelectorTool`,
+ * which exists for the strategy/cache machinery below and would otherwise
+ * silently exclude a selector-bearing tool (e.g. `browser_wait_for_selector`,
+ * which is read-only and never recorded) from the rewrite. Returns the same
+ * object when there's nothing to rewrite — only ever narrows toward a
+ * working selector.
+ */
+export function normalizeSelectorArgs(args: Record<string, unknown>): Record<string, unknown> {
+  if (typeof args.selector !== "string" && typeof args.element !== "string") return args;
+  const out = { ...args };
+  if (typeof out.selector === "string") out.selector = resolveAriaRefSelector(out.selector);
+  if (typeof out.element === "string") out.element = resolveAriaRefSelector(out.element);
+  return out;
+}
+
+/**
+ * True when `primary` is an `aria-ref=` selector and no durable alternative
+ * (testid / role+name / text) was materialized for it. An aria-ref only
+ * identifies an element within the page context that took the snapshot —
+ * cache replay never calls `browser_snapshot`, so a ref-only recording can
+ * never resolve there and would hard-fail every replay (a guaranteed
+ * `ReplayFailure` → cache invalidation → Tier-2 healing redrive, not a rare
+ * drift event). Callers use this to skip persisting such a recording rather
+ * than caching something that can only ever miss.
+ */
+export function isNonDurableRecording(
+  primary: string | undefined,
+  strategies: SelectorStrategy[] | undefined
+): boolean {
+  if (!primary?.startsWith("aria-ref=")) return false;
+  return !(strategies ?? []).some((s) => s.kind !== "css");
+}
+
+/**
  * Read durability-graded alternative selectors for the element the
  * given args targets. Returns an empty list if the args don't reference
  * a selector or the element can't be resolved on the page (which is

@@ -14,7 +14,7 @@ const TOOLS: ToolDefinition[] = [
   {
     name: "browser_snapshot",
     description:
-      'Return a compact accessibility-tree text snapshot of the current page. Call this at the start of each step to identify elements by their visible label and ARIA role. Truncated to ~12kB; use browser_get_page_text as a fallback if the snapshot is too noisy. Optional region: "main" scopes to the main content region; any other string is treated as a CSS selector for a subtree.',
+      'Return a compact accessibility-tree text snapshot of the current page. Call this at the start of each step to identify elements by their visible label and ARIA role. Each element is tagged with a ref like [ref=f1e14] — pass that exact string as the selector to browser_click/browser_type/etc. when the element has no stable text/role/testid (e.g. ambiguous icon buttons, list rows with duplicate labels). Truncated to ~12kB; use browser_get_page_text as a fallback if the snapshot is too noisy. Optional region: "main" scopes to the main content region; any other string is treated as a CSS selector for a subtree.',
     inputSchema: {
       type: "object",
       properties: {
@@ -33,14 +33,14 @@ const TOOLS: ToolDefinition[] = [
   {
     name: "browser_click",
     description:
-      "Click an element. Pass a Playwright selector (CSS, role=, text=, or [data-testid=...]). Prefer text= or role-based selectors over data-testid when the snapshot shows a stable visible label.",
+      "Click an element. Pass a Playwright selector (CSS, role=, text=, or [data-testid=...]), or a ref from browser_snapshot's [ref=f1e14] tags. Prefer text= or role-based selectors over a ref when the snapshot shows a stable visible label — a ref only identifies this exact render, so it won't survive a re-snapshot the way a label-based selector does.",
     inputSchema: {
       type: "object",
       properties: {
         selector: {
           type: "string",
           description:
-            'Playwright selector — e.g. "text=Submit", "role=button[name=\'Save\']", "[data-testid=foo]".'
+            'Playwright selector — e.g. "text=Submit", "role=button[name=\'Save\']", "[data-testid=foo]", or a snapshot ref "f1e14" / "[ref=f1e14]".'
         }
       },
       required: ["selector"]
@@ -58,7 +58,11 @@ const TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        selector: { type: "string", description: "Playwright selector for an editable element." },
+        selector: {
+          type: "string",
+          description:
+            'Playwright selector for an editable element (CSS, role=, text=, [data-testid=...], or a browser_snapshot ref like "f1e14"/"[ref=f1e14]").'
+        },
         text: { type: "string", description: "Text to enter." },
         append: { type: "boolean", description: "If true, type at the end without clearing." }
       },
@@ -186,7 +190,10 @@ const TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        selector: { type: "string", description: "Playwright selector." }
+        selector: {
+          type: "string",
+          description: 'Playwright selector, or a browser_snapshot ref like "f1e14"/"[ref=f1e14]".'
+        }
       },
       required: ["selector"]
     },
