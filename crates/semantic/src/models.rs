@@ -92,6 +92,7 @@ impl Display for DimensionType {
 pub struct Dimension {
     /// Unique identifier for the dimension within the view
     pub name: String,
+    /// Data type of the dimension
     #[serde(rename = "type")]
     pub dimension_type: DimensionType,
     /// Human-readable description of what this dimension represents
@@ -107,18 +108,31 @@ pub struct Dimension {
     pub synonyms: Option<Vec<String>>,
 }
 
-/// Represents the type of a measure aggregation
+/// Represents the type of a measure aggregation. `number` is a pass-through:
+/// `expr` must already contain its own aggregation.
+//
+// The pass-through contract lives in the doc comment above, on the enum, rather
+// than on the `Number` variant: schemars turns a documented unit variant into a
+// `oneOf`, which would reshape every checked-in schema that inlines this enum.
+// An enum-level doc comment lands as `description` and keeps the flat string
+// enum, so the builder copilot still gets told.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum MeasureType {
     Count,
     Sum,
+    // airlayer's parser accepts `avg` as well; the alias keeps hand-written
+    // YAML that airlayer parses from failing here. schemars reads `rename`,
+    // not `alias`, so the generated schemas still advertise only `average`.
+    #[serde(alias = "avg")]
     Average,
     Min,
     Max,
     CountDistinct,
+    CountDistinctApprox,
     Median,
     Custom,
+    Number,
 }
 
 impl Display for MeasureType {
@@ -133,8 +147,10 @@ impl Display for MeasureType {
                 MeasureType::Min => "Min",
                 MeasureType::Max => "Max",
                 MeasureType::CountDistinct => "Count Distinct",
+                MeasureType::CountDistinctApprox => "Count Distinct Approx",
                 MeasureType::Median => "Median",
                 MeasureType::Custom => "Custom",
+                MeasureType::Number => "Number",
             }
         )
     }
@@ -232,6 +248,7 @@ pub struct Driver {
 pub struct Measure {
     /// Unique identifier for the measure within the view
     pub name: String,
+    /// Type of measure aggregation
     #[serde(rename = "type")]
     pub measure_type: MeasureType,
     /// Human-readable description of what this measure represents
@@ -373,6 +390,7 @@ pub struct Topic {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub base_view: Option<String>,
+    /// Optional retrieval configuration for this topic
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub retrieval: Option<TopicRetrievalConfig>,
@@ -659,5 +677,44 @@ drivers:
         let drivers = m.drivers.expect("drivers parsed");
         assert_eq!(drivers.len(), 1);
         assert_eq!(drivers[0].measure, "marketing.ad_spend");
+    }
+
+    /// `crates/semantic/src/parser.rs` deserializes `.view.yml` through these
+    /// types, not airlayer's, so a measure type airlayer accepts and this enum
+    /// lacks fails to parse here — the drift this covers.
+    #[test]
+    fn measure_types_airlayer_accepts_deserialize() {
+        for (yaml_name, expected) in [
+            ("count", MeasureType::Count),
+            ("sum", MeasureType::Sum),
+            ("average", MeasureType::Average),
+            ("avg", MeasureType::Average),
+            ("min", MeasureType::Min),
+            ("max", MeasureType::Max),
+            ("count_distinct", MeasureType::CountDistinct),
+            ("count_distinct_approx", MeasureType::CountDistinctApprox),
+            ("median", MeasureType::Median),
+            ("custom", MeasureType::Custom),
+            ("number", MeasureType::Number),
+        ] {
+            let yaml = format!("name: m\ntype: {yaml_name}\nexpr: revenue\n");
+            let m: Measure = serde_yaml::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("type: {yaml_name} failed to parse: {e}"));
+            assert_eq!(m.measure_type, expected, "type: {yaml_name}");
+        }
+    }
+
+    /// The wire names are a contract with the checked-in builder schemas and
+    /// with airlayer's own snake_case names; `avg` is an input-only alias, so
+    /// it must never be what we serialize back.
+    #[test]
+    fn measure_type_wire_names_are_snake_case() {
+        for (expected, value) in [
+            ("count_distinct_approx", MeasureType::CountDistinctApprox),
+            ("number", MeasureType::Number),
+            ("average", MeasureType::Average),
+        ] {
+            assert_eq!(serde_json::to_value(&value).unwrap(), expected);
+        }
     }
 }

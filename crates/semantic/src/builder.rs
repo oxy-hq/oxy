@@ -298,6 +298,11 @@ impl MeasureBuilder {
         self
     }
 
+    pub fn count_distinct_approx(mut self) -> Self {
+        self.measure_type = Some(MeasureType::CountDistinctApprox);
+        self
+    }
+
     pub fn median(mut self) -> Self {
         self.measure_type = Some(MeasureType::Median);
         self
@@ -305,6 +310,11 @@ impl MeasureBuilder {
 
     pub fn custom(mut self) -> Self {
         self.measure_type = Some(MeasureType::Custom);
+        self
+    }
+
+    pub fn number(mut self) -> Self {
+        self.measure_type = Some(MeasureType::Number);
         self
     }
 

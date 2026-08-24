@@ -213,8 +213,12 @@
       ]
     },
     "description": {
+      "default": null,
       "description": "Human-readable description of the business domain",
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "name": {
       "description": "Unique identifier for the topic",
@@ -240,7 +244,6 @@
     }
   },
   "required": [
-    "description",
     "name",
     "views"
   ],

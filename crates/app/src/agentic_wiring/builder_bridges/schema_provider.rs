@@ -126,3 +126,57 @@ impl BuilderSchemaProvider for OxyBuilderSchemaProvider {
         SUPPORTED_TYPES
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxy_semantic::models as sem;
+
+    /// The embedded semantic schemas are snapshots of `schema_for!` on the
+    /// `oxy-semantic` types. Nothing at compile time ties the two together, so
+    /// a field added to `Measure` or a variant added to `MeasureType` silently
+    /// leaves the builder copilot describing a shape that no longer parses.
+    /// Regenerate the file named in the failure rather than editing it by hand.
+    macro_rules! assert_schema_matches {
+        ($name:literal, $t:ty) => {
+            let embedded = OxyBuilderSchemaProvider::new()
+                .get_schema($name)
+                .unwrap_or_else(|| panic!("no embedded schema for {}", $name));
+            let generated = serde_json::to_value(schema_for!($t)).unwrap();
+            assert_eq!(
+                embedded,
+                generated,
+                "schemas/{}.json is out of date with oxy_semantic::models::{}; \
+                 regenerate it from schema_for!()",
+                $name,
+                stringify!($t),
+            );
+        };
+    }
+
+    #[test]
+    fn embedded_semantic_schemas_match_generated() {
+        assert_schema_matches!("Dimension", sem::Dimension);
+        assert_schema_matches!("DimensionType", sem::DimensionType);
+        assert_schema_matches!("Measure", sem::Measure);
+        assert_schema_matches!("MeasureType", sem::MeasureType);
+        assert_schema_matches!("MeasureFilter", sem::MeasureFilter);
+        assert_schema_matches!("View", sem::View);
+        assert_schema_matches!("Topic", sem::Topic);
+        assert_schema_matches!("Entity", sem::Entity);
+        assert_schema_matches!("SemanticLayer", sem::SemanticLayer);
+    }
+
+    /// `SUPPORTED_TYPES` is what the copilot is told it may ask for; a name
+    /// listed there that resolves to nothing is a dead entry.
+    #[test]
+    fn every_supported_type_resolves() {
+        let provider = OxyBuilderSchemaProvider::new();
+        for name in SUPPORTED_TYPES {
+            assert!(
+                provider.get_schema(name).is_some(),
+                "SUPPORTED_TYPES lists {name}, but get_schema returns None"
+            );
+        }
+    }
+}

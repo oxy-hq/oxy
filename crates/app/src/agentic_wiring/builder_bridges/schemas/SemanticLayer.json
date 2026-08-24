@@ -73,12 +73,141 @@
       ],
       "type": "string"
     },
+    "Driver": {
+      "description": "A driver relationship: a measure that influences this measure's value.\n\nSupports two modes: qualitative (`direction`/`strength`/`confidence`) and quantitative (`coefficient`/`form`/`intercept`/`lag`).",
+      "properties": {
+        "coefficient": {
+          "description": "Marginal effect coefficient (quantitative mode).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "confidence": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DriverConfidence"
+            }
+          ],
+          "default": "medium",
+          "description": "Confidence in the relationship."
+        },
+        "description": {
+          "description": "Human-readable description of the relationship.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "direction": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DriverDirection"
+            }
+          ],
+          "default": "unknown",
+          "description": "Direction of the relationship."
+        },
+        "form": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DriverForm"
+            }
+          ],
+          "default": "linear",
+          "description": "Functional form of the relationship."
+        },
+        "intercept": {
+          "description": "Intercept term (quantitative mode).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lag": {
+          "description": "Lag in days before a change in the driver affects the target.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "measure": {
+          "description": "Fully qualified measure reference (e.g., \"marketing.ad_spend\").",
+          "type": "string"
+        },
+        "refs": {
+          "description": "Links to supporting research, experiments, or documentation.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "strength": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DriverStrength"
+            }
+          ],
+          "default": "moderate",
+          "description": "Strength of the relationship."
+        }
+      },
+      "required": [
+        "measure"
+      ],
+      "type": "object"
+    },
+    "DriverConfidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "type": "string"
+    },
+    "DriverDirection": {
+      "enum": [
+        "positive",
+        "negative",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "DriverForm": {
+      "description": "Functional form of a quantitative driver relationship.",
+      "enum": [
+        "linear",
+        "log-log",
+        "log-linear",
+        "linear-log"
+      ],
+      "type": "string"
+    },
+    "DriverStrength": {
+      "enum": [
+        "strong",
+        "moderate",
+        "weak"
+      ],
+      "type": "string"
+    },
     "Entity": {
       "description": "Represents an entity in the semantic layer",
       "properties": {
         "description": {
+          "default": null,
           "description": "Human-readable description of what this entity represents",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "key": {
           "description": "The dimension(s) that should be used as the key for the entity Can be a single key or multiple keys for composite primary keys",
@@ -111,7 +240,6 @@
         }
       },
       "required": [
-        "description",
         "name",
         "type"
       ],
@@ -143,6 +271,16 @@
           "description": "Human-readable description of what this measure represents",
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "drivers": {
+          "description": "Driver relationships: measures that influence this measure's value",
+          "items": {
+            "$ref": "#/definitions/Driver"
+          },
+          "type": [
+            "array",
             "null"
           ]
         },
@@ -237,7 +375,7 @@
       "type": "object"
     },
     "MeasureType": {
-      "description": "Represents the type of a measure aggregation",
+      "description": "Represents the type of a measure aggregation. `number` is a pass-through: `expr` must already contain its own aggregation.",
       "enum": [
         "count",
         "sum",
@@ -245,8 +383,10 @@
         "min",
         "max",
         "count_distinct",
+        "count_distinct_approx",
         "median",
-        "custom"
+        "custom",
+        "number"
       ],
       "type": "string"
     },
@@ -270,8 +410,12 @@
           ]
         },
         "description": {
+          "default": null,
           "description": "Human-readable description of the business domain",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "name": {
           "description": "Unique identifier for the topic",
@@ -297,7 +441,6 @@
         }
       },
       "required": [
-        "description",
         "name",
         "views"
       ],
@@ -506,8 +649,12 @@
           ]
         },
         "description": {
+          "default": null,
           "description": "Human-readable description of what this view represents",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "dimensions": {
           "description": "List of dimensions (attributes) available in this view",
@@ -560,7 +707,6 @@
         }
       },
       "required": [
-        "description",
         "dimensions",
         "entities",
         "name"

@@ -24,8 +24,12 @@
   "description": "Represents an entity in the semantic layer",
   "properties": {
     "description": {
+      "default": null,
       "description": "Human-readable description of what this entity represents",
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "key": {
       "description": "The dimension(s) that should be used as the key for the entity Can be a single key or multiple keys for composite primary keys",
@@ -58,7 +62,6 @@
     }
   },
   "required": [
-    "description",
     "name",
     "type"
   ],
