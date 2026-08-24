@@ -539,8 +539,8 @@ Tools are capabilities available to LLM workers within a state. They are NOT sta
 pub enum ThinkingConfig {
     Disabled,
     Adaptive,                      // Claude 4.6+
-    Manual { budget_tokens: u32 }, // Claude earlier models
-    Effort(ReasoningEffort),       // OpenAI
+    Manual { budget_tokens: u32 }, // Claude 4.6 and earlier (4.7+ returns 400)
+    Effort(ReasoningEffort),       // OpenAI, and Claude via output_config.effort
 }
 
 pub trait LlmProvider: Send + Sync {

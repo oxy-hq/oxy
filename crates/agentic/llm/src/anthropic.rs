@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_stream::stream;
 use async_trait::async_trait;
@@ -11,15 +12,156 @@ use agentic_core::tools::ToolDef;
 use super::constants::*;
 use super::sse::{ApiError, pop_sse_event, sse_data};
 use super::{
-    Chunk, ContentBlock, LlmError, LlmProvider, ResponseSchema, StopReason, ThinkingConfig,
-    ToolCallChunk, Usage,
+    Chunk, ContentBlock, LlmError, LlmProvider, ReasoningEffort, ResponseSchema, StopReason,
+    ThinkingConfig, ToolCallChunk, Usage,
 };
+
+// ── Model capability probes ──────────────────────────────────────────────────
+
+/// Leading integer of `tok`, ignoring any trailing junk.
+///
+/// Model ids pick up suffixes -- a date (`claude-haiku-4-5-20251001`), a
+/// context marker (`claude-opus-5[1m]`), a platform version (`...-v1:0`) --
+/// and a strict parse would reject the whole token and lose the version.
+fn leading_u32(tok: &str) -> Option<u32> {
+    let digits: String = tok.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
+}
+
+/// `(major, minor)` parsed out of a Claude model id, or `None` when the id is
+/// not a recognisable Claude version.
+///
+/// Parsed rather than table-matched so a model released after this code was
+/// written classifies correctly instead of silently taking a legacy path. Both
+/// id shapes work: family-first (`claude-opus-4-7`, `claude-sonnet-5`) and the
+/// older number-first (`claude-3-5-sonnet-20241022`), because the first two
+/// integers are the version in both. A vendor prefix
+/// (`us.anthropic.claude-...`) is stripped by anchoring on the last `claude-`.
+///
+/// The minor is read only from the token IMMEDIATELY after the major, and only
+/// when its leading digit run is short enough to be a minor. Two bugs live in
+/// the alternatives, and both shipped here before this shape did:
+///
+/// - Scanning later tokens for "the next number" picks up the release date on
+///   an id whose major has no minor segment -- `claude-sonnet-4-20250514`
+///   parses as 4.20250514, i.e. "4.7 or later".
+/// - Filtering on whole-token length drops a minor carrying a suffix --
+///   `claude-opus-4-7[1m]` parses as 4.0.
+///
+/// Measuring the digit run is the same quantity [`leading_u32`] parses, so the
+/// filter and the parse cannot disagree.
+fn claude_version(model: &str) -> Option<(u32, u32)> {
+    let lower = model.to_ascii_lowercase();
+    let idx = lower.rfind("claude-")?;
+    let rest = &lower[idx + "claude-".len()..];
+
+    let mut toks = rest.split(['-', '.']).filter(|t| !t.is_empty());
+    let major = toks.find_map(leading_u32)?;
+    let minor = toks
+        .next()
+        .filter(|t| t.chars().take_while(char::is_ascii_digit).count() <= 2)
+        .and_then(leading_u32)
+        .unwrap_or(0);
+    Some((major, minor))
+}
+
+/// Whether `model` is at least version `major.minor`.
+///
+/// `None` -- an unrecognised id: a proxy alias, a gateway, a local model, a
+/// fine-tune -- answers **true** at every call site below, because every one of
+/// them decides whether to rewrite the caller's config. Assuming an unknown id
+/// is current leaves that config alone; assuming it is ancient would silently
+/// downgrade a request aimed at a model this code has never heard of.
+fn claude_at_least(model: &str, major_min: u32, minor_min: u32) -> bool {
+    let Some((major, minor)) = claude_version(model) else {
+        return true;
+    };
+    major > major_min || (major == major_min && minor >= minor_min)
+}
+
+/// Whether `model` still accepts `thinking: {"type": "enabled", budget_tokens}`.
+///
+/// Anthropic removed that form on Claude 4.7 and everything after it; those
+/// models return a 400 pointing at `thinking.type.adaptive` and
+/// `output_config.effort`. 4.6 and earlier still take it.
+///
+/// An unrecognised id keeps the legacy shape rather than being translated --
+/// translating would be a guess, and this is the form that has always been sent.
+fn model_accepts_budget_tokens(model: &str) -> bool {
+    // `is_some_and` carries the unknown-id default in the expression itself:
+    // no version parsed => false => accepted, same as every probe here. Written
+    // as `match { None => true, .. }` this read as a redundant arm that was in
+    // fact load-bearing, with its rationale in another function's docstring.
+    !claude_version(model).is_some_and(|(major, minor)| major > 4 || (major == 4 && minor >= 7))
+}
+
+/// Whether `model` accepts the `xhigh` effort level.
+///
+/// `xhigh` arrived with Claude 4.7, between `high` and `max`. It is NOT the
+/// same boundary as `max`, which shipped on 4.6 -- see
+/// [`model_supports_adaptive_thinking`], where that boundary now lives.
+fn model_accepts_xhigh_effort(model: &str) -> bool {
+    claude_at_least(model, 4, 7)
+}
+
+/// Whether `model` supports `thinking: {"type": "adaptive"}`.
+///
+/// Adaptive arrived on 4.6. From 3.7 up to it, thinking is requested with
+/// `{"type": "enabled", budget_tokens}` -- so an `Effort` config, which pairs
+/// adaptive with `output_config.effort`, cannot be sent to those models at all:
+/// the effort level would be clamped exactly and the request would still 400 on
+/// the field beside it.
+///
+/// Extended thinking itself arrived on 3.7, so below THAT neither shape works
+/// and no rewrite here helps. That is not a regression -- adaptive was equally
+/// rejected -- and it does not earn a fourth version probe; it is only worth
+/// not claiming the budgeted form is universally accepted below 4.6.
+///
+/// This is also where `max` becomes available (4.6 takes
+/// `low`/`medium`/`high`/`max`; `xhigh` waits for 4.7). Those two boundaries
+/// coinciding is why `max` needs no clamp of its own -- anything below 4.6 has
+/// already been converted away from `Effort` by the time a level is written.
+fn model_supports_adaptive_thinking(model: &str) -> bool {
+    claude_at_least(model, 4, 6)
+}
+
+/// Nearest `budget_tokens` for an effort level that cannot be sent as one.
+///
+/// The inverse of [`effort_for_budget`], and coarse for the same reason: the two
+/// are different units. 1024 is the API floor for a thinking budget, so every
+/// bucket clears it.
+fn budget_for_effort(effort: ReasoningEffort) -> u32 {
+    match effort {
+        ReasoningEffort::Low => 2_048,
+        ReasoningEffort::Medium => 8_192,
+        ReasoningEffort::High | ReasoningEffort::XHigh | ReasoningEffort::Max => 16_384,
+    }
+}
+
+/// Nearest effort level for a `budget_tokens` value that can no longer be sent.
+///
+/// Coarse on purpose. The two are not the same unit -- a budget is a hard
+/// ceiling, effort is a depth hint -- so the only honest mapping is a bucket
+/// that preserves the caller's intent ("a little" / "a lot") rather than a
+/// formula implying a precision that is not there. The `warn!` at the call
+/// site tells the operator to set `effort` directly.
+fn effort_for_budget(budget_tokens: u32) -> ReasoningEffort {
+    match budget_tokens {
+        0..=4_095 => ReasoningEffort::Low,
+        4_096..=16_383 => ReasoningEffort::Medium,
+        _ => ReasoningEffort::High,
+    }
+}
 
 // ── AnthropicProvider ─────────────────────────────────────────────────────────
 
 /// Anthropic Messages API provider (streaming).
 ///
-/// Supports [`ThinkingConfig::Adaptive`] and [`ThinkingConfig::Manual`].
+/// Supports every [`ThinkingConfig`] variant on every model, by rewriting
+/// whichever it is handed into a shape the target accepts -- see
+/// [`Self::resolve_thinking`] for the four conversions and their version
+/// boundaries. A caller therefore states intent and does not have to match the
+/// variant to the model.
 /// Encrypted thinking blobs (type + thinking + signature) are emitted as
 /// [`Chunk::RawBlock`] and passed back verbatim between tool rounds.
 pub struct AnthropicProvider {
@@ -35,6 +177,26 @@ pub struct AnthropicProvider {
     /// `x-api-key` / `anthropic-version` / `content-type` set.
     headers: HashMap<String, String>,
     client: reqwest::Client,
+    /// Latches the first "your thinking config was rewritten" warning, so a
+    /// tool loop says it once rather than once per HTTP round.
+    ///
+    /// ONE latch covers all three rewrite arms in [`Self::resolve_thinking`],
+    /// because they partition on the MODEL and the model is fixed for the life
+    /// of a provider: >=4.7 translates `Manual`, <4.6 converts `Adaptive` and
+    /// `Effort` together, 4.6 clamps `xhigh`.
+    ///
+    /// Partitioning by model is the load-bearing part. Splitting the <4.6 case
+    /// into an `Adaptive` arm and an `Effort` arm would partition those two by
+    /// the caller's VARIANT instead -- which varies per request, since every
+    /// state without a `model:` override shares one provider -- and a run mixing
+    /// `adaptive` and `effort:` states would then silence one message. Hence one
+    /// arm there, and hence this note: the tempting split is the bug.
+    ///
+    /// The `xhigh` clamp's own guard is "below 4.7", which also matches
+    /// everything the conversion arm handles; only arm ORDER leaves it
+    /// 4.6-only. Said plainly because this comment is where a reader checks the
+    /// claim, and crediting the guard alone would send them to the wrong line.
+    thinking_warned: AtomicBool,
 }
 
 impl AnthropicProvider {
@@ -45,6 +207,7 @@ impl AnthropicProvider {
             base_url: ANTHROPIC_BASE_URL.to_string(),
             headers: HashMap::new(),
             client: build_llm_http_client(),
+            thinking_warned: AtomicBool::new(false),
         }
     }
 
@@ -69,6 +232,7 @@ impl AnthropicProvider {
             base_url: base,
             headers: HashMap::new(),
             client: build_llm_http_client(),
+            thinking_warned: AtomicBool::new(false),
         }
     }
 
@@ -131,15 +295,43 @@ impl AnthropicProvider {
             })
             .collect();
 
-        // Choose max_tokens based on thinking config: Manual mode
-        // requires max_tokens >= budget_tokens; Adaptive benefits from a
+        // Thinking. Two shapes exist and which one a model accepts is not a
+        // preference:
+        //
+        //   {"type": "adaptive"}                      4.6+   the current form
+        //   {"type": "enabled", "budget_tokens": N}   <=4.6  removed on 4.7+
+        //
+        // On a 4.7+ model the second returns 400 "thinking.type.enabled is not
+        // supported for this model", so a `Manual` config that parses and
+        // validates still kills the request at run time. Translate it rather
+        // than forwarding a shape the model will refuse.
+        //
+        // `Effort` used to collapse to bare `Adaptive`, which threw the level
+        // away and left callers with no way to ask for less thinking at all.
+        // It is now what the API's own error message points at: adaptive
+        // thinking plus `output_config.effort`.
+        //
+        // Resolved HERE, above max_tokens, because max_tokens is sized from
+        // the thinking config -- and it has to be the one actually sent. Sizing
+        // from the caller's original while sending a translated one reserves
+        // headroom for a `budget_tokens` the body no longer carries, so a large
+        // configured budget pushes max_tokens past the model's output cap and
+        // 400s for a different reason: one runtime failure swapped for another.
+        let effective_thinking = self.resolve_thinking(thinking);
+
+        // Choose max_tokens based on the thinking config being sent: Manual
+        // mode requires max_tokens >= budget_tokens; Adaptive benefits from a
         // larger cap so the model can allocate freely.
-        let max_tokens = max_tokens_override.unwrap_or_else(|| match thinking {
-            ThinkingConfig::Manual { budget_tokens } => {
-                std::cmp::max(THINKING_MAX_TOKENS, *budget_tokens + DEFAULT_MAX_TOKENS)
-            }
-            ThinkingConfig::Adaptive => THINKING_MAX_TOKENS,
-            _ => DEFAULT_MAX_TOKENS,
+        let max_tokens = max_tokens_override.unwrap_or_else(|| match &effective_thinking {
+            ThinkingConfig::Manual { budget_tokens } => std::cmp::max(
+                THINKING_MAX_TOKENS,
+                budget_tokens.saturating_add(DEFAULT_MAX_TOKENS),
+            ),
+            // Effort is adaptive thinking with a depth hint, so it needs the
+            // same headroom -- the model still allocates thinking tokens out
+            // of max_tokens, and DEFAULT_MAX_TOKENS would cap it far too low.
+            ThinkingConfig::Adaptive | ThinkingConfig::Effort(_) => THINKING_MAX_TOKENS,
+            ThinkingConfig::Disabled => DEFAULT_MAX_TOKENS,
         });
 
         // Mark the last message's last non-thinking content block with
@@ -190,25 +382,125 @@ impl AnthropicProvider {
             body["tools"] = json!(tools_json);
         }
 
-        // Map cross-provider thinking configs: OpenAI `Effort` → Anthropic
-        // `Adaptive` so thinking is enabled regardless of which --thinking
-        // flag the user passed.
-        let effective_thinking = match thinking {
-            ThinkingConfig::Effort(_) => &ThinkingConfig::Adaptive,
-            other => other,
-        };
-
-        match effective_thinking {
+        match &effective_thinking {
             ThinkingConfig::Adaptive => {
                 body["thinking"] = json!({"type": "adaptive"});
             }
             ThinkingConfig::Manual { budget_tokens } => {
                 body["thinking"] = json!({"type": "enabled", "budget_tokens": budget_tokens});
             }
-            ThinkingConfig::Disabled | ThinkingConfig::Effort(_) => {}
+            ThinkingConfig::Effort(effort) => {
+                body["thinking"] = json!({"type": "adaptive"});
+                // Merge, never assign: `output_config` may already carry the
+                // structured-output `format` set above, and clobbering it
+                // would silently drop constrained decoding.
+                body["output_config"]["effort"] = json!(effort.as_str());
+            }
+            ThinkingConfig::Disabled => {}
         }
 
         body
+    }
+
+    /// Warn once that an effort level was clamped for this model.
+    ///
+    /// Shares `thinking_warned` with the other rewrite warnings; see that
+    /// field for why one latch cannot hide a message here.
+    fn warn_effort_clamped(&self, level: ReasoningEffort) {
+        if !self.thinking_warned.swap(true, Ordering::Relaxed) {
+            tracing::warn!(
+                model = %self.model,
+                effort = level.as_str(),
+                "this effort level postdates the model and was clamped to `high`"
+            );
+        }
+    }
+
+    /// Resolve the caller's [`ThinkingConfig`] to the one this model accepts.
+    ///
+    /// Four adjustments, each "send a shape the model knows" rather than a
+    /// preference:
+    ///
+    /// - `Manual` on a model that removed `budget_tokens` (4.7+) becomes
+    ///   `Effort`.
+    /// - `Adaptive` on a model that predates it (below 4.6) becomes `Manual` at
+    ///   a mid-range budget. Without this, `effort` worked on a 4.5 model and a
+    ///   bare `adaptive` did not, which is backwards -- `adaptive` is the more
+    ///   ordinary thing to write.
+    /// - `Effort` on a model without adaptive thinking (below 4.6) becomes
+    ///   `Manual`. This is the only one that changes the `thinking` field's
+    ///   type, and the reason clamping the level alone was not enough: the
+    ///   level would be exact and the field beside it still rejected.
+    /// - `Effort(XHigh)` on 4.6 clamps to `High`; `xhigh` waited for 4.7.
+    ///
+    /// The warning fires ONCE per provider, not once per request.
+    /// `build_request_body` runs on every tool-loop round, so warning inline
+    /// repeated the same line a dozen times for a single run and buried it.
+    fn resolve_thinking(&self, thinking: &ThinkingConfig) -> ThinkingConfig {
+        match thinking {
+            ThinkingConfig::Manual { budget_tokens }
+                if !model_accepts_budget_tokens(&self.model) =>
+            {
+                let effort = effort_for_budget(*budget_tokens);
+                if !self.thinking_warned.swap(true, Ordering::Relaxed) {
+                    tracing::warn!(
+                        model = %self.model,
+                        budget_tokens,
+                        effort = effort.as_str(),
+                        "thinking.budget_tokens is not supported on this model and was \
+                         translated to adaptive thinking at this effort; set `effort` \
+                         directly to control it"
+                    );
+                }
+                ThinkingConfig::Effort(effort)
+            }
+            // Below 4.6 there is no adaptive thinking, so neither `Adaptive` nor
+            // `Effort` (which is adaptive plus a level) can be sent. Both become
+            // the shape those models do take.
+            //
+            // ONE arm, not two. They share a guard and differ only by the
+            // caller's variant, which varies per REQUEST -- states without a
+            // `model:` override share a provider, so a run with one state on
+            // `adaptive` and another on `effort` hits both. As two arms behind
+            // one latch, whichever fired first silenced the other; as one arm
+            // there is one message and the latch invariant holds by model again.
+            //
+            // Left alone, `effort` on a 4.5 model worked while `adaptive` on the
+            // same model 400'd -- and `adaptive` is what this repo's own agentic
+            // template and config example pair with `claude-haiku-4-5`.
+            ThinkingConfig::Adaptive | ThinkingConfig::Effort(_)
+                if !model_supports_adaptive_thinking(&self.model) =>
+            {
+                // An `Effort` level carries the caller's intent; a bare
+                // `adaptive` -- "you decide" -- has none to carry, so it lands
+                // mid-range rather than at either extreme.
+                let budget = match thinking {
+                    ThinkingConfig::Effort(level) => budget_for_effort(*level),
+                    _ => budget_for_effort(ReasoningEffort::Medium),
+                };
+                if !self.thinking_warned.swap(true, Ordering::Relaxed) {
+                    tracing::warn!(
+                        model = %self.model,
+                        budget_tokens = budget,
+                        "this model predates adaptive thinking, so the thinking config was \
+                         sent as an explicit budget instead"
+                    );
+                }
+                ThinkingConfig::Manual {
+                    budget_tokens: budget,
+                }
+            }
+            // Reached only for 4.6: the guard is "below 4.7", but the arm above
+            // has already claimed everything below 4.6. Do not reorder these.
+            // 4.6 has adaptive and `max` but not `xhigh`, which waited for 4.7.
+            ThinkingConfig::Effort(level @ ReasoningEffort::XHigh)
+                if !model_accepts_xhigh_effort(&self.model) =>
+            {
+                self.warn_effort_clamped(*level);
+                ThinkingConfig::Effort(ReasoningEffort::High)
+            }
+            other => other.clone(),
+        }
     }
 
     /// Mark the last non-thinking content block of the last message with
@@ -578,6 +870,276 @@ impl LlmProvider for AnthropicProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn body_for(model: &str, thinking: &ThinkingConfig) -> Value {
+        AnthropicProvider::new("key", model).build_request_body(
+            "sys",
+            "",
+            &[],
+            &[],
+            thinking,
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn budget_tokens_classification_tracks_the_version_not_a_model_list() {
+        // Still accepted.
+        for m in [
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5-20251001",
+            "claude-3-5-sonnet-20241022",
+            // Claude 4.0: a major with NO minor segment, so the release date
+            // sits where a minor would. Reading it as one classified these as
+            // 4.20250514 -- i.e. "4.7 or later" -- and stripped a field they
+            // accept in favour of adaptive thinking they do not support.
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-20250514",
+            "us.anthropic.claude-sonnet-4-20250514-v1:0",
+            "claude-opus-4",
+        ] {
+            assert!(model_accepts_budget_tokens(m), "{m} should accept it");
+        }
+        // Removed on 4.7 and everything after, including vendor-prefixed and
+        // suffixed spellings of the same model.
+        for m in [
+            "claude-opus-4-7",
+            "claude-opus-4-8",
+            "claude-sonnet-5",
+            "claude-opus-5",
+            "claude-fable-5",
+            "claude-opus-5[1m]",
+            "us.anthropic.claude-opus-4-7-v1:0",
+            // A context-marker suffix on the MINOR token. No such id exists
+            // yet, but a 1M variant of a 4.x model is the ordinary way this
+            // function's "classifies a future model correctly" contract gets
+            // tested -- and a whole-token length test would read this as 4.0
+            // and hand it the budget_tokens shape 4.7 rejects.
+            "claude-opus-4-7[1m]",
+        ] {
+            assert!(!model_accepts_budget_tokens(m), "{m} should reject it");
+        }
+        // Unknown ids keep the caller's config rather than guessing.
+        assert!(model_accepts_budget_tokens("my-proxy-alias"));
+    }
+
+    #[test]
+    fn a_dated_claude_4_id_keeps_its_budget_tokens_untranslated() {
+        // End to end, not just the classifier: the shape that would have
+        // regressed is a working request becoming a 400.
+        let body = body_for(
+            "claude-sonnet-4-20250514",
+            &ThinkingConfig::Manual {
+                budget_tokens: 8192,
+            },
+        );
+        assert_eq!(body["thinking"]["type"], "enabled");
+        assert_eq!(body["thinking"]["budget_tokens"], 8192);
+        assert!(
+            body["output_config"].get("effort").is_none(),
+            "a 4.0 model must not be handed adaptive thinking plus effort"
+        );
+    }
+
+    #[test]
+    fn max_tokens_follows_the_thinking_config_actually_sent() {
+        // A translated request carries no budget_tokens, so reserving
+        // budget + DEFAULT for it would push max_tokens past the output cap
+        // and 400 for a different reason than the one being fixed.
+        let translated = body_for(
+            "claude-sonnet-5",
+            &ThinkingConfig::Manual {
+                budget_tokens: 60_000,
+            },
+        );
+        assert!(translated["thinking"].get("budget_tokens").is_none());
+        assert_eq!(
+            translated["max_tokens"], THINKING_MAX_TOKENS,
+            "sized from the Effort it became, not the budget it no longer sends"
+        );
+
+        // On a model that keeps the budget, the headroom is still reserved.
+        let kept = body_for(
+            "claude-sonnet-4-20250514",
+            &ThinkingConfig::Manual {
+                budget_tokens: 60_000,
+            },
+        );
+        assert_eq!(kept["max_tokens"], 60_000 + DEFAULT_MAX_TOKENS);
+    }
+
+    #[test]
+    fn the_top_two_effort_levels_clamp_at_their_own_boundaries() {
+        // `max` shipped on 4.6, `xhigh` on 4.7 -- so 4.6 is the one model where
+        // the two answers differ, and clamping both at 4.7 would downgrade a
+        // `max` that model accepts.
+        let (xhigh, max) = (
+            ThinkingConfig::Effort(ReasoningEffort::XHigh),
+            ThinkingConfig::Effort(ReasoningEffort::Max),
+        );
+
+        assert_eq!(
+            body_for("claude-opus-4-6", &xhigh)["output_config"]["effort"],
+            "high",
+            "xhigh postdates 4.6"
+        );
+        assert_eq!(
+            body_for("claude-opus-4-6", &max)["output_config"]["effort"],
+            "max",
+            "max ships on 4.6 and must survive"
+        );
+
+        // Below 4.6 there is no adaptive thinking at all, so an Effort config
+        // becomes a budget rather than a clamped level. Asserting a clamped
+        // `effort` here would have read as "4.5 + effort works" while the
+        // `thinking` field beside it 400'd.
+        let old_model = body_for("claude-opus-4-5", &max);
+        assert_eq!(old_model["thinking"]["type"], "enabled");
+        assert_eq!(old_model["thinking"]["budget_tokens"], 16_384);
+        assert!(old_model["output_config"].get("effort").is_none());
+
+        // Above both.
+        assert_eq!(
+            body_for("claude-opus-5", &xhigh)["output_config"]["effort"],
+            "xhigh"
+        );
+        assert_eq!(
+            body_for("claude-opus-5", &max)["output_config"]["effort"],
+            "max"
+        );
+    }
+
+    #[test]
+    fn adaptive_becomes_a_budget_on_a_model_that_predates_it() {
+        // The pairing this repo's own template and config example ship:
+        // `thinking: adaptive` on a 4.5 triage model. Before the arm existed,
+        // `effort` on that model worked and a bare `adaptive` 400'd.
+        let old_model = body_for("claude-haiku-4-5", &ThinkingConfig::Adaptive);
+        assert_eq!(old_model["thinking"]["type"], "enabled");
+        assert_eq!(old_model["thinking"]["budget_tokens"], 8_192);
+
+        // 4.6 is where adaptive arrives, so it must pass straight through.
+        let supported = body_for("claude-opus-4-6", &ThinkingConfig::Adaptive);
+        assert_eq!(supported["thinking"]["type"], "adaptive");
+        assert!(supported["thinking"].get("budget_tokens").is_none());
+    }
+
+    #[test]
+    fn an_unrecognised_model_id_is_never_rewritten() {
+        // Every probe answers "supported" for an id it cannot parse, so a proxy
+        // alias or gateway keeps exactly the config the caller wrote. The
+        // alternative -- assuming an unknown id is ancient -- silently
+        // downgrades a request aimed at a model this code has not heard of.
+        let alias = "my-gateway-alias";
+        let xhigh = body_for(alias, &ThinkingConfig::Effort(ReasoningEffort::XHigh));
+        assert_eq!(xhigh["output_config"]["effort"], "xhigh");
+        let max = body_for(alias, &ThinkingConfig::Effort(ReasoningEffort::Max));
+        assert_eq!(max["output_config"]["effort"], "max");
+        let manual = body_for(
+            alias,
+            &ThinkingConfig::Manual {
+                budget_tokens: 2048,
+            },
+        );
+        assert_eq!(manual["thinking"]["type"], "enabled");
+        assert_eq!(manual["thinking"]["budget_tokens"], 2048);
+
+        // The fourth path: a bare `adaptive` must not be converted to a budget
+        // just because the id is unparseable.
+        let adaptive = body_for(alias, &ThinkingConfig::Adaptive);
+        assert_eq!(adaptive["thinking"]["type"], "adaptive");
+        assert!(adaptive["thinking"].get("budget_tokens").is_none());
+    }
+
+    #[test]
+    fn effort_sends_adaptive_thinking_plus_output_config_effort() {
+        // The whole point: before this, Effort collapsed to bare Adaptive and
+        // the level was discarded, so there was no way to ask for less.
+        let body = body_for(
+            "claude-sonnet-5",
+            &ThinkingConfig::Effort(ReasoningEffort::Low),
+        );
+        assert_eq!(body["thinking"]["type"], "adaptive");
+        assert_eq!(body["output_config"]["effort"], "low");
+    }
+
+    #[test]
+    fn effort_does_not_clobber_a_structured_output_format() {
+        // `output_config` carries `format` for constrained decoding. Assigning
+        // the effort object wholesale would silently drop it.
+        let schema = ResponseSchema {
+            name: "answer".to_string(),
+            schema: json!({"type": "object"}),
+        };
+        let body = AnthropicProvider::new("key", "claude-sonnet-5").build_request_body(
+            "sys",
+            "",
+            &[],
+            &[],
+            &ThinkingConfig::Effort(ReasoningEffort::Max),
+            Some(&schema),
+            None,
+        );
+        assert_eq!(body["output_config"]["effort"], "max");
+        assert_eq!(body["output_config"]["format"]["type"], "json_schema");
+    }
+
+    #[test]
+    fn budget_tokens_is_translated_on_a_model_that_rejects_it() {
+        // The reported failure, verbatim: a `budget_tokens` config on sonnet 5
+        // returned 400 "thinking.type.enabled is not supported for this
+        // model", killing every call the agent made.
+        let body = body_for(
+            "claude-sonnet-5",
+            &ThinkingConfig::Manual {
+                budget_tokens: 2048,
+            },
+        );
+        assert_eq!(body["thinking"]["type"], "adaptive");
+        assert!(
+            body["thinking"].get("budget_tokens").is_none(),
+            "the rejected field must not survive translation"
+        );
+        assert_eq!(body["output_config"]["effort"], "low");
+    }
+
+    #[test]
+    fn budget_tokens_is_left_alone_on_a_model_that_still_takes_it() {
+        let body = body_for(
+            "claude-haiku-4-5-20251001",
+            &ThinkingConfig::Manual {
+                budget_tokens: 8192,
+            },
+        );
+        assert_eq!(body["thinking"]["type"], "enabled");
+        assert_eq!(body["thinking"]["budget_tokens"], 8192);
+        assert!(body["output_config"].get("effort").is_none());
+    }
+
+    #[test]
+    fn effort_gets_thinking_headroom_in_max_tokens() {
+        // Effort is adaptive thinking with a depth hint, so it must not fall
+        // into the small no-thinking default.
+        let effort = body_for(
+            "claude-sonnet-5",
+            &ThinkingConfig::Effort(ReasoningEffort::Low),
+        );
+        let adaptive = body_for("claude-sonnet-5", &ThinkingConfig::Adaptive);
+        let disabled = body_for("claude-sonnet-5", &ThinkingConfig::Disabled);
+        assert_eq!(effort["max_tokens"], adaptive["max_tokens"]);
+        assert!(
+            effort["max_tokens"].as_u64() > disabled["max_tokens"].as_u64(),
+            "thinking needs more headroom than a no-thinking request"
+        );
+    }
+
+    #[test]
+    fn disabled_sends_no_thinking_field() {
+        let body = body_for("claude-sonnet-5", &ThinkingConfig::Disabled);
+        assert!(body.get("thinking").is_none());
+    }
 
     #[test]
     fn defaults_to_the_public_messages_endpoint() {

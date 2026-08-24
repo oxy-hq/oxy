@@ -45,12 +45,23 @@ impl From<&String> for InitialMessages {
 
 // ── Thinking config ───────────────────────────────────────────────────────────
 
-/// Reasoning effort level for OpenAI o-series models.
-#[derive(Debug, Clone)]
+/// Reasoning effort level.
+///
+/// Originally OpenAI-only. Anthropic now takes the same idea as
+/// `output_config.effort`, and on Claude 4.7+ it is the *only* graded control
+/// over thinking depth -- `budget_tokens` was removed there, so this enum is
+/// how a caller asks for less thinking on a current Claude model.
+///
+/// `XHigh` and `Max` exist because Anthropic accepts five levels. OpenAI's
+/// `reasoning.effort` takes three, so the OpenAI provider clamps the top two
+/// to `high` rather than sending a value that endpoint would reject.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReasoningEffort {
     Low,
     Medium,
     High,
+    XHigh,
+    Max,
 }
 
 impl ReasoningEffort {
@@ -59,38 +70,75 @@ impl ReasoningEffort {
             ReasoningEffort::Low => "low",
             ReasoningEffort::Medium => "medium",
             ReasoningEffort::High => "high",
+            ReasoningEffort::XHigh => "xhigh",
+            ReasoningEffort::Max => "max",
+        }
+    }
+
+    /// The nearest level OpenAI's `reasoning.effort` accepts.
+    pub(super) fn as_openai_str(&self) -> &'static str {
+        match self {
+            ReasoningEffort::Low => "low",
+            ReasoningEffort::Medium => "medium",
+            ReasoningEffort::High | ReasoningEffort::XHigh | ReasoningEffort::Max => "high",
         }
     }
 }
 
 /// Thinking / reasoning configuration passed to each LLM call.
 ///
-/// The variant chosen here controls what the provider sends in the request.
-/// Pick the right variant for your model family:
+/// The variant states what the CALLER wants. On Anthropic it is no longer a
+/// compatibility choice: the provider rewrites whichever variant it is handed
+/// into the shape the target model accepts, in either direction, warning once.
+/// So pick the variant that says what you mean, not the one your model happens
+/// to take. (The OpenAI providers pass `Effort` through and clamp its top two
+/// levels; they have no equivalent translation.)
 ///
-/// | Variant | Models |
-/// |---------|--------|
-/// | `Disabled` | Any model, no extended thinking |
-/// | `Adaptive` | Claude 4.6+ (model decides when/how much to think) |
-/// | `Manual` | Claude 3.x / earlier Claude 4 (explicit token budget) |
-/// | `Effort` | OpenAI o-series (low / medium / high effort) |
+/// | Variant | Means | Sent natively on |
+/// |---------|-------|------------------|
+/// | `Disabled` | no extended thinking | any model |
+/// | `Adaptive` | the model decides when and how much | Claude 4.6+ |
+/// | `Manual` | a hard token ceiling | Claude 3.7 - 4.6 |
+/// | `Effort` | a depth hint, five levels | Claude 4.6+ (`xhigh` 4.7+), OpenAI |
+///
+/// Outside a variant's native range the Anthropic provider converts: `Manual`
+/// becomes `Effort` on 4.7+, `Adaptive` and `Effort` become `Manual` below 4.6,
+/// and `xhigh` clamps to `high` below 4.7. Nothing below Claude 3.7 supports
+/// extended thinking at all, and no rewrite helps there.
 #[derive(Debug, Clone, Default)]
 pub enum ThinkingConfig {
     /// No extended thinking (default).
     #[default]
     Disabled,
-    /// Claude 4.6+ adaptive thinking: the model decides when to think and for
-    /// how long.  Sends `"thinking": {"type": "adaptive"}` in the request.
+    /// The model decides when to think and for how long. Sends
+    /// `"thinking": {"type": "adaptive"}`; below Claude 4.6, where that does
+    /// not exist, the Anthropic provider sends a mid-range budget instead.
     Adaptive,
-    /// Explicit thinking budget for Claude 3.x / earlier Claude 4 models.
-    /// Sends `"thinking": {"type": "enabled", "budget_tokens": N}`.
+    /// A hard ceiling on thinking tokens. Sends
+    /// `"thinking": {"type": "enabled", "budget_tokens": N}` -- native on
+    /// Claude 3.7 through 4.6; on 4.7+ the provider converts it to an effort
+    /// level, since that form is rejected there.
     Manual { budget_tokens: u32 },
-    /// OpenAI o-series reasoning effort.
-    /// Sends `"reasoning_effort": "low"|"medium"|"high"`.
+    /// Graded reasoning effort.
+    ///
+    /// OpenAI: `"reasoning": {"effort": ...}`.
+    /// Anthropic: `"thinking": {"type": "adaptive"}` plus
+    /// `"output_config": {"effort": ...}` -- the only way to ask a Claude 4.7+
+    /// model for less thinking, since `Manual` is rejected there.
     Effort(ReasoningEffort),
 }
 
 // ── Structured output ─────────────────────────────────────────────────────────
+
+impl ThinkingConfig {
+    /// The effort level this config carries, if any. Test/introspection helper.
+    pub fn effort_level(&self) -> Option<ReasoningEffort> {
+        match self {
+            ThinkingConfig::Effort(e) => Some(*e),
+            _ => None,
+        }
+    }
+}
 
 /// Describes a structured output schema for constrained LLM responses.
 ///

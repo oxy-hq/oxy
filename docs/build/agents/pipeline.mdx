@@ -89,6 +89,8 @@ states:
   solving:
     model: claude-opus-4-6      # stronger model for SQL
     thinking:
+      # `budget_tokens` is valid here only because this state pins a 4.6 model.
+      # On Claude 4.7+ the API rejects it — use `effort: <level>` instead.
       budget_tokens: 10000
   interpreting:
     thinking: disabled           # prose needs no reasoning

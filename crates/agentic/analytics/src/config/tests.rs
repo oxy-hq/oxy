@@ -345,6 +345,46 @@ llm:
 }
 
 #[test]
+fn effort_parses_every_level_including_the_two_claude_only_ones() {
+    // `xhigh` and `max` route through the same `_ => Medium` catch-all as a
+    // typo would, so without this a regression there is silent: the config
+    // still parses, the agent still runs, and it just thinks at the wrong
+    // depth. Shorthand and map form are separate serde variants, so both.
+    for (level, expected) in [
+        ("low", ReasoningEffort::Low),
+        ("medium", ReasoningEffort::Medium),
+        ("high", ReasoningEffort::High),
+        ("xhigh", ReasoningEffort::XHigh),
+        ("max", ReasoningEffort::Max),
+    ] {
+        let shorthand =
+            AgentConfig::from_yaml(&format!("llm:\n  thinking: effort:{level}\n")).unwrap();
+        assert_eq!(
+            shorthand
+                .llm
+                .thinking
+                .unwrap()
+                .to_thinking_config()
+                .effort_level(),
+            Some(expected),
+            "shorthand `effort:{level}`"
+        );
+
+        let map =
+            AgentConfig::from_yaml(&format!("llm:\n  thinking:\n    effort: {level}\n")).unwrap();
+        assert_eq!(
+            map.llm
+                .thinking
+                .unwrap()
+                .to_thinking_config()
+                .effort_level(),
+            Some(expected),
+            "map form `effort: {level}`"
+        );
+    }
+}
+
+#[test]
 fn thinking_in_llm_takes_precedence_over_top_level() {
     let yaml = r#"
 thinking: disabled

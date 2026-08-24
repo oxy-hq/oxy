@@ -56,7 +56,10 @@
 //!       budget_tokens: 10000
 //!     max_retries: 2
 //!     model: claude-opus-4-6    # powerful model for SQL generation
-//!   # OpenAI o-series effort (shorthand or map form):
+//!   # Reasoning effort (shorthand or map form). On Claude this is
+//!   # `output_config.effort` with adaptive thinking, and on 4.7+ it is the
+//!   # only way to ask for less thinking -- `budget_tokens` is rejected there.
+//!   # Levels: low | medium | high | xhigh | max.
 //!   diagnosing:
 //!     thinking: "effort:high"
 //!   interpreting:

@@ -58,8 +58,10 @@ llm:
 
 # ── Global thinking config ───────────────────────────────────────────────────
 # Applies to every state unless overridden under `states:`. Accepts the
-# shorthands "adaptive" / "disabled" / "effort:low|medium|high", or an
-# explicit { budget_tokens: N } map.
+# shorthands "adaptive" / "disabled" / "effort:low|medium|high|xhigh|max", or
+# an explicit { effort: <level> } map. There is also { budget_tokens: N }, but
+# that form is Claude 4.6 and earlier only -- 4.7+ rejects it, and `effort` is
+# the graded control there.
 thinking: adaptive
 
 # ── Per-state overrides ──────────────────────────────────────────────────────
@@ -84,7 +86,8 @@ states:
   solving:
     instructions: Prefer CTEs over subqueries; alias every aggregate.
     thinking:
-      budget_tokens: 10000
+      # `effort`, not `budget_tokens`: the latter is rejected on Claude 4.7+.
+      effort: medium
     model: claude-opus-4-6           # powerful model for SQL generation
     max_retries: 3
   interpreting:

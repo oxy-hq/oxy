@@ -153,11 +153,15 @@ pub struct AgentConfig {
     /// Can be overridden per-state via the `states:` section.
     ///
     /// ```yaml
-    /// thinking: adaptive       # shorthand
+    /// thinking: adaptive        # shorthand
     /// # — or —
     /// thinking:
-    ///   budget_tokens: 10000   # explicit budget
+    ///   effort: medium          # low | medium | high | xhigh | max
     /// ```
+    ///
+    /// `{ budget_tokens: N }` is also accepted, but only Claude 4.6 and earlier
+    /// take it — 4.7+ rejects that form, and `effort` is the graded control
+    /// there. Prefer `effort` unless you need a hard ceiling on an older model.
     #[serde(default)]
     pub thinking: Option<ThinkingConfigYaml>,
 
@@ -220,8 +224,15 @@ pub struct StateConfig {
 
 /// Thinking configuration as expressed in YAML.
 ///
-/// Accepts either a shorthand string (`"adaptive"`, `"disabled"`) or a
-/// map with `budget_tokens`.
+/// Accepts a shorthand string (`"adaptive"`, `"disabled"`, `"effort:<level>"`)
+/// or a map with either `budget_tokens` or `effort`.
+///
+/// Which forms a model accepts is not a preference. On Claude 4.7 and later,
+/// `budget_tokens` is rejected by the API and `effort` is the only graded
+/// control over thinking depth; on 4.6 and earlier, `budget_tokens` works and
+/// is the only way to set a hard ceiling. The provider translates a
+/// `budget_tokens` config on a model that refuses it rather than failing the
+/// request, and warns.
 ///
 /// Because this enum is `#[serde(untagged)]`, schemars emits a JSON Schema
 /// `oneOf` with each variant represented by its structural shape (a plain
@@ -235,12 +246,20 @@ pub struct StateConfig {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum ThinkingConfigYaml {
-    /// Shorthand string: `"adaptive"`, `"disabled"`, `"effort:low"`,
-    /// `"effort:medium"`, or `"effort:high"`.
+    /// Shorthand string: `"adaptive"`, `"disabled"`, or `"effort:<level>"`
+    /// for any level below.
     Shorthand(String),
     /// Explicit budget: `budget_tokens: N`.
+    ///
+    /// Claude 4.6 and earlier only. Claude 4.7+ removed this form; the
+    /// Anthropic provider translates it to an effort level there rather than
+    /// letting the request 400, and warns. Prefer `effort:` on those models.
     Manual { budget_tokens: u32 },
-    /// OpenAI o-series reasoning effort: `effort: low|medium|high`.
+    /// Reasoning effort: `effort: low|medium|high|xhigh|max`.
+    ///
+    /// On Claude this is `output_config.effort` alongside adaptive thinking --
+    /// the only graded control over thinking depth on 4.7+. On OpenAI the top
+    /// two levels clamp to `high`.
     Effort { effort: String },
 }
 
@@ -268,10 +287,15 @@ impl ThinkingConfigYaml {
 
 /// Parse an effort level string into [`ThinkingConfig::Effort`].
 /// Defaults to `Medium` for unrecognised values.
+///
+/// Five levels, because Anthropic accepts five. The OpenAI provider clamps the
+/// top two to `high` on its way out.
 fn parse_effort_level(s: &str) -> ThinkingConfig {
     let level = match s.trim().to_ascii_lowercase().as_str() {
         "low" => ReasoningEffort::Low,
         "high" => ReasoningEffort::High,
+        "xhigh" => ReasoningEffort::XHigh,
+        "max" => ReasoningEffort::Max,
         _ => ReasoningEffort::Medium,
     };
     ThinkingConfig::Effort(level)

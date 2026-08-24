@@ -50,7 +50,7 @@
       }
     },
     "thinking": {
-      "description": "Global thinking/reasoning config applied to all pipeline states.\n\nCan be overridden per-state via the `states:` section.\n\n```yaml thinking: adaptive       # shorthand # — or — thinking: budget_tokens: 10000   # explicit budget ```",
+      "description": "Global thinking/reasoning config applied to all pipeline states.\n\nCan be overridden per-state via the `states:` section.\n\n```yaml thinking: adaptive        # shorthand # — or — thinking: effort: medium          # low | medium | high | xhigh | max ```\n\n`{ budget_tokens: N }` is also accepted, but only Claude 4.6 and earlier take it — 4.7+ rejects that form, and `effort` is the graded control there. Prefer `effort` unless you need a hard ceiling on an older model.",
       "anyOf": [
         {
           "$ref": "#/definitions/ThinkingConfigYaml"
@@ -342,14 +342,14 @@
       }
     },
     "ThinkingConfigYaml": {
-      "description": "Thinking configuration as expressed in YAML.\n\nAccepts either a shorthand string (`\"adaptive\"`, `\"disabled\"`) or a map with `budget_tokens`.\n\nBecause this enum is `#[serde(untagged)]`, schemars emits a JSON Schema `oneOf` with each variant represented by its structural shape (a plain string for [`ThinkingConfigYaml::Shorthand`] and an object for [`ThinkingConfigYaml::Manual`] / [`ThinkingConfigYaml::Effort`]). Serde discriminates at runtime by trying variants in declaration order, so there is no parse ambiguity. Some IDEs, however, validate each `oneOf` branch independently and may annotate a valid string with \"invalid against variant 2 / variant 3\" warnings — those are cosmetic and the file still deserializes correctly at runtime.",
+      "description": "Thinking configuration as expressed in YAML.\n\nAccepts a shorthand string (`\"adaptive\"`, `\"disabled\"`, `\"effort:<level>\"`) or a map with either `budget_tokens` or `effort`.\n\nWhich forms a model accepts is not a preference. On Claude 4.7 and later, `budget_tokens` is rejected by the API and `effort` is the only graded control over thinking depth; on 4.6 and earlier, `budget_tokens` works and is the only way to set a hard ceiling. The provider translates a `budget_tokens` config on a model that refuses it rather than failing the request, and warns.\n\nBecause this enum is `#[serde(untagged)]`, schemars emits a JSON Schema `oneOf` with each variant represented by its structural shape (a plain string for [`ThinkingConfigYaml::Shorthand`] and an object for [`ThinkingConfigYaml::Manual`] / [`ThinkingConfigYaml::Effort`]). Serde discriminates at runtime by trying variants in declaration order, so there is no parse ambiguity. Some IDEs, however, validate each `oneOf` branch independently and may annotate a valid string with \"invalid against variant 2 / variant 3\" warnings — those are cosmetic and the file still deserializes correctly at runtime.",
       "anyOf": [
         {
-          "description": "Shorthand string: `\"adaptive\"`, `\"disabled\"`, `\"effort:low\"`, `\"effort:medium\"`, or `\"effort:high\"`.",
+          "description": "Shorthand string: `\"adaptive\"`, `\"disabled\"`, or `\"effort:<level>\"` for any level below.",
           "type": "string"
         },
         {
-          "description": "Explicit budget: `budget_tokens: N`.",
+          "description": "Explicit budget: `budget_tokens: N`.\n\nClaude 4.6 and earlier only. Claude 4.7+ removed this form; the Anthropic provider translates it to an effort level there rather than letting the request 400, and warns. Prefer `effort:` on those models.",
           "type": "object",
           "required": [
             "budget_tokens"
@@ -363,7 +363,7 @@
           }
         },
         {
-          "description": "OpenAI o-series reasoning effort: `effort: low|medium|high`.",
+          "description": "Reasoning effort: `effort: low|medium|high|xhigh|max`.\n\nOn Claude this is `output_config.effort` alongside adaptive thinking -- the only graded control over thinking depth on 4.7+. On OpenAI the top two levels clamp to `high`.",
           "type": "object",
           "required": [
             "effort"

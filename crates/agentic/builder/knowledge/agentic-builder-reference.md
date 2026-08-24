@@ -113,10 +113,31 @@ override is silently ignored.
 ```yaml
 thinking: adaptive                # shorthand
 thinking: disabled                # bare or quoted both work; never use `false`
-thinking: effort:low              # OpenAI o-series shorthand
-thinking: { budget_tokens: 10000 }
-thinking: { effort: medium }      # low | medium | high
+thinking: effort:low              # shorthand for { effort: low }
+thinking: { effort: medium }      # low | medium | high | xhigh | max
+thinking: { budget_tokens: 10000 }  # Claude 4.6 and earlier ONLY -- see below
 ```
+
+**Write the form that says what you mean.** You do not have to match it to the
+model: the provider rewrites whatever it is handed into a shape the target
+accepts, warning once. What each form natively means --
+
+- `adaptive` — the model decides when and how much (native 4.6+)
+- `{ effort: <level> }` — a depth hint, five levels (native 4.6+; `xhigh` 4.7+)
+- `{ budget_tokens: N }` — a hard token ceiling (native 3.7–4.6)
+
+-- and what happens outside that range:
+
+- `budget_tokens` on 4.7+ is sent as an effort level.
+- `adaptive` below 4.6 is sent as a mid-range thinking budget.
+- `effort` below 4.6 is sent as a thinking budget at that level.
+- `xhigh` below 4.7 is clamped to `high`; `max` is fine on 4.6.
+
+Prefer `effort` on a current model — it is the graded control there. The
+conversions are coarse buckets, because a budget is a hard ceiling and effort is
+a depth hint, so the native form is still more precise where you know the model.
+Nothing below Claude 3.7 supports extended thinking at all, and no conversion
+helps there.
 
 ## Context globs by extension
 

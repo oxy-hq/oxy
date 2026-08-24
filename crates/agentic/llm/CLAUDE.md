@@ -23,12 +23,18 @@ pub struct LlmClient {
     pub async fn run_with_tools(&self, ...) -> Result<LlmOutput>;
 }
 
-pub struct ThinkingConfig {
-    pub enabled: bool,
-    pub budget_tokens: Option<u32>,
-    pub effort: ReasoningEffort,  // Low | Medium | High
+pub enum ThinkingConfig {
+    Disabled,
+    Adaptive,                      // native 4.6+
+    Manual { budget_tokens: u32 }, // native 3.7-4.6
+    Effort(ReasoningEffort),       // Low | Medium | High | XHigh(4.7+) | Max
 }
 ```
+
+The variant says what the caller wants; the Anthropic provider converts it to
+whatever the target model accepts (`Manual`->`Effort` on 4.7+, `Adaptive`/`Effort`
+->`Manual` below 4.6, `xhigh`->`high` below 4.7), warning once per provider. So
+pick the variant that expresses intent, not the one the model happens to take.
 
 ## Thinking Support
 

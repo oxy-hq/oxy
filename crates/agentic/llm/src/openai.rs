@@ -258,8 +258,10 @@ impl LlmProvider for OpenAiProvider {
 
         match effective_thinking {
             ThinkingConfig::Effort(effort) => {
+                // `as_openai_str`, not `as_str`: the enum carries Anthropic's
+                // five levels and this endpoint accepts three.
                 body["reasoning"] = json!({
-                    "effort": effort.as_str(),
+                    "effort": effort.as_openai_str(),
                     "summary": "auto"
                 });
             }
