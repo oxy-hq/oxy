@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.130] - 2026-08-24
+
+### 🚀 Features
+
+- Google_sheets source for airway (#2945)
+- External liveness endpoint for a published custom app (#2968)
+- Custom-app user identity — ctx.user profile/role/teams, and role capture in usage tracking (#2966)
+- An admin console for the Airhouse fleet (#2970)
+- Show who is viewing the seeded starter app (#2975)
+- Make the Airhouse console answer the question it was opened for (#2976)
+- Custom apps that load instantly, and report how they're used (#2983)
+
+### 🐛 Bug Fixes
+
+- Compile with --no-default-features by ungating the custom-app function seam (#2960)
+- Stop the analytics agent answering confidently from the wrong rows (#2969)
+- Teach oxy's MeasureType the two aggregations airlayer already knows (#2987)
+- Web-app chat panel state leaking across workspace switches (#2974)
+- Agentic runner resolves snapshot refs via aria-ref locator (#2990)
+- Thinking config still targets the Claude 4 API (#2986)
+
+### 💼 Other
+
+- Drop V8 under --no-default-features by flipping github's oxy-app dep (#2972)
+- Bump pnpm dependencies to their latest major versions (#2965)
+- Bump cargo dependencies to their latest major versions (#2977)
+
+### 🚜 Refactor
+
+- Remove redundant rustdoc and banner decoration lines (#2964)
+- Streamline LLM configuration descriptions in JSON schemas
+- Extract partner-console into a sibling crate (oxy-api-partner-console) (#2978)
+
+### 📚 Documentation
+
+- Refresh ownership matrix + CODEOWNERS (weekly) (#2993)
+- Update product-context.md from recent changelogs (#2994)
+
+### ⚡ Performance
+
+- *(build)* Composition inversion + opt-in dynamic linking for a faster dev loop (#2961)
+
+### ⚙️ Miscellaneous Tasks
+
+- Run every test job on warp arm64, and keep agentic tests off the public mirror (#2967)
+- Harden Playwright browser setup against apt mirror flakiness (#2971)
+- Make dependency upgrades verifiable instead of hopeful (#2980)
+
 ## [0.5.129] - 2026-08-20
 
 ### 🐛 Bug Fixes
@@ -22,6 +70,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Remove redundant inline comments throughout codebase (#2954)
+- Release 0.5.129 (#2951)
 
 ## [0.5.128] - 2026-08-19
 
