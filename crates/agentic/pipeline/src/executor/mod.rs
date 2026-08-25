@@ -1005,11 +1005,17 @@ impl PipelineTaskExecutor {
 
     /// Fill in an omitted `base_path` for an uploadable source kind.
     ///
-    /// Only ever fills — never rewrites. A pipeline that names its own zone is
-    /// pointing at something this cannot derive, and the upload endpoint
-    /// already refuses a *declared* zone that disagrees with where it writes,
-    /// so re-checking here would only duplicate that refusal in a place where
-    /// the operator cannot see it.
+    /// Never REDIRECTS a declared zone, only normalizes it. A pipeline that
+    /// names its own zone is pointing at something this cannot derive, and the
+    /// upload endpoint already refuses a *declared* zone that disagrees with
+    /// where it writes, so re-checking here would duplicate that refusal in a
+    /// place where the operator cannot see it.
+    ///
+    /// It does normalize a declared value through
+    /// [`agentic_airway::upload_zone::normalize_base_path`] — the same helper
+    /// the upload endpoint compares with — because comparing a normalized
+    /// string and then forwarding the raw one is how `".../p/ "` passed the
+    /// check and reached the connector with a trailing space.
     ///
     /// The derivation is shared with the upload endpoint
     /// ([`agentic_airway::upload_zone`]) precisely so the zone written to and
@@ -1035,11 +1041,13 @@ impl PipelineTaskExecutor {
                 "airway: source config for `{pipeline_ref}` is not a map"
             ));
         };
-        // An explicit `null` counts as absent: it reads as "no value" in YAML
-        // and would otherwise reach the factory as a type error.
-        if obj.get("base_path").is_some_and(|v| !v.is_null()) {
+        // Everything about a DECLARED value is decided by a free function, so
+        // all four arms are testable without an executor — only the derive
+        // path below needs `self.platform`.
+        if matches!(apply_declared_base_path(obj), DeclaredZone::Keep) {
             return Ok(());
         }
+
         let derived = upload_zone::derive_base_path(
             self.platform.workspace_id(),
             &spec.source.kind,
@@ -1548,8 +1556,130 @@ mod automation;
 
 pub use automation::run_decision_task;
 
+/// What to do with a pipeline's declared `base_path`.
+#[derive(Debug, PartialEq, Eq)]
+enum DeclaredZone {
+    /// Nothing usable was declared — derive the zone.
+    Derive,
+    /// A declared value stands (normalized in place if it needed it), or is a
+    /// non-string the connector factory should reject by type.
+    Keep,
+}
+
+/// Normalize a declared `base_path` in place, and say whether one was declared
+/// at all.
+///
+/// Split out from `fill_upload_zone` so every arm is reachable in a test: the
+/// remaining half needs `self.platform` for the workspace id, this half needs
+/// nothing. The arms are exhaustive over what YAML can put here — string,
+/// blank string, null, absent, non-string.
+fn apply_declared_base_path(obj: &mut serde_json::Map<String, serde_json::Value>) -> DeclaredZone {
+    // The decision is taken while `obj` is borrowed, and the write happens
+    // after that borrow ends — `match obj.get(..)` holds the shared borrow
+    // across every arm, so inserting inside one does not compile.
+    enum Decision {
+        Derive,
+        Keep,
+        Rewrite(String),
+    }
+
+    let decision = match obj.get("base_path") {
+        // Absent, or an explicit `null` — which reads as "no value" in YAML and
+        // would otherwise reach the factory as a type error.
+        None | Some(serde_json::Value::Null) => Decision::Derive,
+        Some(serde_json::Value::String(declared)) => {
+            match agentic_airway::upload_zone::normalize_base_path(declared) {
+                // Blank, whitespace, or nothing but slashes: it names nowhere,
+                // so it has not disagreed with anything — derive.
+                None => Decision::Derive,
+                Some(normalized) if normalized != declared.as_str() => {
+                    Decision::Rewrite(normalized.to_string())
+                }
+                Some(_) => Decision::Keep,
+            }
+        }
+        // Present and not a string: left for the connector factory to reject by
+        // type rather than silently derived over.
+        Some(_) => Decision::Keep,
+    };
+
+    match decision {
+        Decision::Derive => DeclaredZone::Derive,
+        Decision::Keep => DeclaredZone::Keep,
+        Decision::Rewrite(normalized) => {
+            obj.insert("base_path".into(), serde_json::Value::String(normalized));
+            DeclaredZone::Keep
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    fn cfg(v: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+        match serde_json::json!({ "base_path": v }) {
+            serde_json::Value::Object(m) => m,
+            _ => unreachable!(),
+        }
+    }
+
+    /// `".../p/ "` is the string this whole change exists for: the endpoint
+    /// compared a normalized value and the executor forwarded the raw one, so
+    /// a trailing space reached the connector inside the object key.
+    #[test]
+    fn a_declared_zone_is_normalized_in_place() {
+        let mut obj = cfg(serde_json::json!("s3://z/p/ "));
+        assert_eq!(apply_declared_base_path(&mut obj), DeclaredZone::Keep);
+        assert_eq!(obj["base_path"], serde_json::json!("s3://z/p"));
+
+        // Slashes and whitespace collapse in one pass, in any interleaving.
+        let mut obj = cfg(serde_json::json!(" s3://z/p /"));
+        assert_eq!(apply_declared_base_path(&mut obj), DeclaredZone::Keep);
+        assert_eq!(obj["base_path"], serde_json::json!("s3://z/p"));
+
+        // Already clean: kept byte-for-byte.
+        let mut obj = cfg(serde_json::json!("/tmp/ue"));
+        assert_eq!(apply_declared_base_path(&mut obj), DeclaredZone::Keep);
+        assert_eq!(obj["base_path"], serde_json::json!("/tmp/ue"));
+    }
+
+    /// A zone that names nowhere has not disagreed with anything, so it
+    /// derives — the same reading the upload endpoint takes.
+    #[test]
+    fn a_zone_that_names_nowhere_derives() {
+        for blank in ["", "   ", "/", "///"] {
+            let mut obj = cfg(serde_json::json!(blank));
+            assert_eq!(
+                apply_declared_base_path(&mut obj),
+                DeclaredZone::Derive,
+                "`{blank}` names nowhere, so it is absent rather than wrong"
+            );
+        }
+    }
+
+    #[test]
+    fn absent_and_null_both_derive() {
+        let mut obj = cfg(serde_json::Value::Null);
+        assert_eq!(apply_declared_base_path(&mut obj), DeclaredZone::Derive);
+
+        let mut obj = serde_json::Map::new();
+        assert_eq!(apply_declared_base_path(&mut obj), DeclaredZone::Derive);
+    }
+
+    /// Not derived over: the connector factory rejects it by type, which names
+    /// the actual problem instead of silently substituting a zone.
+    #[test]
+    fn a_non_string_zone_is_left_for_the_factory() {
+        for bad in [
+            serde_json::json!(42),
+            serde_json::json!(true),
+            serde_json::json!(["s3://z"]),
+        ] {
+            let mut obj = cfg(bad.clone());
+            assert_eq!(apply_declared_base_path(&mut obj), DeclaredZone::Keep);
+            assert_eq!(obj["base_path"], bad, "left untouched: {bad}");
+        }
+    }
+
     use super::*;
 
     #[test]

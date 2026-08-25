@@ -359,6 +359,8 @@ fn check_pipeline_definition(
     // one. Only a value someone WROTE can drift, which is why the check below
     // still exists for a declared one.
     let declared = match config.and_then(|cfg| cfg.get("base_path")) {
+        // Absent, null, or blank-after-normalization all mean the run derives
+        // its zone from the same helper that produced `expected`.
         None | Some(serde_json::Value::Null) => return Ok(()),
         // A wrong TYPE gets its own refusal rather than falling through as an
         // empty string. `base_path: 42` rendered through the mismatch arm
@@ -378,7 +380,19 @@ fn check_pipeline_definition(
                 ),
             ));
         }
-        Some(v) => v.as_str().unwrap_or_default().trim().trim_end_matches('/'),
+        // Normalized through the SHARED helper, so this side and the run side
+        // cannot disagree about what a declared zone reduces to. A value that
+        // normalizes to nothing (`""`, `"  "`, `"/"`) reads as ABSENT and is
+        // derived, matching `fill_upload_zone`. Refusing it instead produced a
+        // message saying the pipeline "reads from ``" — false, since at run
+        // time it reads the derived zone.
+        Some(v) => match v
+            .as_str()
+            .and_then(agentic_airway::upload_zone::normalize_base_path)
+        {
+            Some(normalized) => normalized,
+            None => return Ok(()),
+        },
     };
 
     if declared != expected_base_path {
@@ -895,6 +909,19 @@ mod tests {
         check_pipeline_definition(&definition("ubereats", expected), "p.airway.yml", expected)
             .expect("agreement passes");
 
+        // Agreement is judged on the NORMALIZED value, so padding is not a
+        // disagreement. Without this, dropping the `normalize_base_path` call
+        // and going back to `as_str().unwrap_or_default()` breaks no test —
+        // every other fixture here is already clean.
+        for padded in [
+            "s3://oxy-dev-ue/ws-1/ubereats/",
+            "s3://oxy-dev-ue/ws-1/ubereats ",
+            "  s3://oxy-dev-ue/ws-1/ubereats/ ",
+        ] {
+            check_pipeline_definition(&definition("ubereats", padded), "p.airway.yml", expected)
+                .unwrap_or_else(|e| panic!("`{padded}` normalizes to agreement: {e:?}"));
+        }
+
         let (status, msg) = check_pipeline_definition(
             &definition("ubereats", "s3://somewhere-else/x"),
             "p.airway.yml",
@@ -904,6 +931,112 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(msg.contains("somewhere-else"), "names what it reads: {msg}");
         assert!(msg.contains(expected), "names where uploads land: {msg}");
+    }
+
+    /// THE claim of the derived-zone change: a pipeline that declares no
+    /// `base_path` agrees by construction, because the run derives its zone
+    /// from the same helper that produced `expected`.
+    ///
+    /// Worth pinning rather than trusting: the previous shape read an absent
+    /// value as `""` and refused it, so "absent means refuse" is a one-line
+    /// regression away, and it would surface as uploads failing for exactly
+    /// the config this change tells people to write.
+    #[test]
+    fn an_omitted_base_path_is_agreement() {
+        let expected = "s3://oxy-dev-ue/ws-1/ubereats";
+
+        check_pipeline_definition(
+            &serde_json::json!({ "source": { "kind": "ubereats", "config": {} } }),
+            "p.airway.yml",
+            expected,
+        )
+        .expect("an omitted base_path is derived at run time, so it cannot disagree");
+
+        // No `config` block at all — `#[serde(default)]` makes this Null, not
+        // an empty map, and it has to read the same way.
+        check_pipeline_definition(
+            &serde_json::json!({ "source": { "kind": "ubereats" } }),
+            "p.airway.yml",
+            expected,
+        )
+        .expect("an absent config block is an absent base_path");
+
+        // An explicit `base_path:` with nothing after it is YAML null, which
+        // means "no value" rather than a value of the wrong type.
+        check_pipeline_definition(
+            &serde_json::json!({
+                "source": { "kind": "ubereats", "config": { "base_path": null } }
+            }),
+            "p.airway.yml",
+            expected,
+        )
+        .expect("an explicit null is absent, not a wrong type");
+
+        // A DECLARED value that normalizes to nothing. This arm is a genuine
+        // behaviour flip — it used to be refused — and the cases above cannot
+        // reach it: absent / `{}` / null all return before the normalize arm.
+        for blank in ["", "   ", "/", "///"] {
+            check_pipeline_definition(
+                &serde_json::json!({
+                    "source": { "kind": "ubereats", "config": { "base_path": blank } }
+                }),
+                "p.airway.yml",
+                expected,
+            )
+            .unwrap_or_else(|e| panic!("`{blank}` names nowhere, so it derives: {e:?}"));
+        }
+    }
+
+    /// `Value::get` answers `None` on a string exactly as it does for a
+    /// missing key, so without an explicit shape check a `config: "oops"`
+    /// reads as "no base_path, fine" — the upload is ACCEPTED and the bytes
+    /// written, for a pipeline whose run then refuses the same shape. The two
+    /// halves agreeing is the whole claim, so the asymmetry is the bug.
+    #[test]
+    fn a_non_map_source_config_is_refused() {
+        for cfg in [
+            serde_json::json!("oops"),
+            serde_json::json!([1, 2]),
+            serde_json::json!(7),
+        ] {
+            let (status, msg) = check_pipeline_definition(
+                &serde_json::json!({ "source": { "kind": "ubereats", "config": cfg } }),
+                "p.airway.yml",
+                "s3://z",
+            )
+            .expect_err("a non-map config cannot carry a base_path");
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert!(msg.contains("source.config"), "names the field: {msg}");
+        }
+    }
+
+    /// A wrong TYPE gets its own refusal rather than falling through as an
+    /// empty string. Rendered through the mismatch arm, `base_path: 42` reads
+    /// "reads from ``" — indistinguishable from `base_path: ""`, which sends
+    /// the operator looking for a value they did not write.
+    #[test]
+    fn a_wrong_typed_base_path_is_refused_by_type() {
+        for (bad, want) in [
+            (serde_json::json!(42), "a number"),
+            (serde_json::json!(true), "a boolean"),
+            (serde_json::json!(["s3://z"]), "a list"),
+            (serde_json::json!({"bucket": "z"}), "a map"),
+        ] {
+            let (status, msg) = check_pipeline_definition(
+                &serde_json::json!({
+                    "source": { "kind": "ubereats", "config": { "base_path": bad } }
+                }),
+                "p.airway.yml",
+                "s3://z",
+            )
+            .expect_err("a base_path that is not a string is not a base_path");
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert!(
+                msg.contains("must be a string"),
+                "says what is wrong: {msg}"
+            );
+            assert!(msg.contains(want), "names the type it got: {msg}");
+        }
     }
 
     /// A payment-details report in another vendor's zone lands rows no reader
@@ -926,8 +1059,11 @@ mod tests {
         }
     }
 
-    /// A definition missing its source must refuse rather than default — an
-    /// absent `base_path` is not agreement.
+    /// A definition with no `source` at all is refused for the missing KIND,
+    /// not for the missing `base_path` — an absent `base_path` is agreement
+    /// now, and the recommended shape. The distinction matters because this
+    /// fixture would still pass if the base_path arm regressed, so it is not
+    /// the test that guards that; `an_omitted_base_path_is_agreement` is.
     #[test]
     fn a_definition_missing_its_source_is_refused() {
         let (status, _) =

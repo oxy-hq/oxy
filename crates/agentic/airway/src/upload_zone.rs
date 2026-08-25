@@ -24,7 +24,7 @@
 //! the zone a run READS from are the same string or the report is invisible —
 //! silently, since both halves look fine alone. Two copies of this arithmetic
 //! would be free to drift; one cannot.
-
+//!
 //! # `OXY_SOURCE_UPLOAD_ZONE` must be IDENTICAL on every role
 //!
 //! Not merely present on the API one. The upload endpoint reads it on the API
@@ -88,18 +88,61 @@ pub fn is_uploadable(source_kind: &str) -> bool {
 
 /// The configured zone split into `(bucket, root_prefix)`.
 pub fn zone_from_env() -> Result<(String, String), ZoneError> {
-    let raw = std::env::var(ZONE_VAR)
-        .ok()
+    zone_from_raw(std::env::var(ZONE_VAR).ok())
+}
+
+/// The pure half of [`zone_from_env`], and the ONE place the line between
+/// "unset" and "set but useless" is drawn.
+///
+/// Whitespace-only counts as UNSET, deliberately. `OXY_SOURCE_UPLOAD_ZONE: ""`
+/// in a manifest is how most deploy systems spell "not filled in yet", so the
+/// operator's next step really is to go set it — which is what
+/// [`ZoneError::NotConfigured`] tells them. A value like `"/"` is different:
+/// somebody typed it meaning something, so it is malformed rather than absent
+/// and [`parse_zone`] refuses it as such.
+///
+/// Split out so BOTH halves are testable without touching process env —
+/// `setenv` racing another thread's read is a data race, and after `parse_zone`
+/// stopped producing `NotConfigured` this filter became its only producer,
+/// leaving the variant unreachable from any test.
+fn zone_from_raw(raw: Option<String>) -> Result<(String, String), ZoneError> {
+    let raw = raw
         .filter(|v| !v.trim().is_empty())
         .ok_or(ZoneError::NotConfigured)?;
     parse_zone(&raw)
 }
 
-/// The pure half of [`zone_from_env`], split out so it is testable **without
-/// mutating process environment** — `setenv` racing another thread's
-/// `std::env::var` is a data race, and this crate reads env on several paths.
-pub fn parse_zone(raw: &str) -> Result<(String, String), ZoneError> {
-    let rest = raw.trim().trim_end_matches('/');
+/// A zone URL split into `(bucket, root_prefix)`.
+///
+/// Takes the string rather than reading env, so it is testable **without
+/// mutating process environment** — `setenv` racing another thread's read is a
+/// data race, and this crate reads env on several paths.
+///
+/// Everything reaching here is a value somebody wrote: [`zone_from_raw`] has
+/// already turned unset and whitespace-only into [`ZoneError::NotConfigured`].
+///
+/// Private is what makes that a guarantee rather than a convention, and
+/// private rather than `pub(crate)` because the claim is about this MODULE: no
+/// caller outside it exists. As `pub` an external one could hand it `""`
+/// directly and get `NotS3Url("")` — "got ``", which tells an operator
+/// nothing, out of the one door built to keep those two diagnoses apart.
+fn parse_zone(raw: &str) -> Result<(String, String), ZoneError> {
+    // Through the shared helper, not a fourth hand-rolled copy: this is the
+    // same arithmetic, and it carried the same missing re-trim, so
+    // `OXY_SOURCE_UPLOAD_ZONE="s3://bkt /"` yielded a bucket with a trailing
+    // space in every derived `base_path` on every role. Lower risk than the
+    // declared-value case — one env var, so both halves compute the same wrong
+    // bucket and it fails at S3 rather than landing rows nowhere — but it is
+    // the same expression and the header's argument applies unchanged.
+    // `NotS3Url`, NOT `NotConfigured`: a zone of `"/"` or `"///"` IS set, and
+    // "requires OXY_SOURCE_UPLOAD_ZONE" sends an operator to grep a manifest
+    // where they will find it present and be stuck. The header sells the unset
+    // case as the failure that says what to do; handing that message to a
+    // different fault spends it. Blank and whitespace never reach here —
+    // `zone_from_env` filters them — so every input that does is a value
+    // someone actually wrote.
+    let rest =
+        normalize_base_path(raw).ok_or_else(|| ZoneError::NotS3Url(raw.trim().to_string()))?;
     let rest = rest
         .strip_prefix("s3://")
         .ok_or_else(|| ZoneError::NotS3Url(rest.to_string()))?;
@@ -200,6 +243,41 @@ pub fn pipeline_base_path(
     }
 }
 
+/// A declared `base_path`, normalized — or `None` when it names nowhere.
+///
+/// The one spelling of this arithmetic. It existed in two crates verbatim
+/// (`.trim().trim_end_matches('/')`), which is exactly what the header of this
+/// module argues against for the derivation: two copies are free to drift, and
+/// the drift is silent because both halves look correct alone. Re-typing the
+/// second copy fixed the instance and left the next edit free to re-open it.
+///
+/// One predicate over slashes and whitespace, so every interleaving collapses
+/// in a single pass and the function is idempotent. The comment on the
+/// implementation carries what that replaced and why it is trailing-only.
+///
+/// `None` means "names nowhere" — empty, whitespace, or nothing but slashes.
+///
+/// The two kinds of caller read `None` differently, deliberately. A DECLARED
+/// `base_path` reads it as ABSENT and derives: a pipeline whose zone is blank
+/// has not disagreed with anything, and refusing it produced a message claiming
+/// it "reads from ``" when at run time it reads the derived zone.
+/// `parse_zone` instead REFUSES, because its input is a server-set env var,
+/// where a value naming nowhere is a misconfiguration rather than a default.
+pub fn normalize_base_path(declared: &str) -> Option<&str> {
+    // One predicate, so every interleaving collapses in a single pass and the
+    // function is IDEMPOTENT. `.trim().trim_end_matches('/').trim()` was not:
+    // `"s3://z/p/ /"` came back as `"s3://z/p/"`, still carrying the slash this
+    // exists to remove, so `normalize(normalize(x)) != normalize(x)`.
+    //
+    // Trailing only. A leading slash is content — `/tmp/ue` is a legal zone
+    // (`base_path` is not required to be `s3://`), and `trim_matches` would
+    // quietly turn it into the relative `tmp/ue`.
+    let normalized = declared
+        .trim()
+        .trim_end_matches(|c: char| c == '/' || c.is_whitespace());
+    (!normalized.is_empty()).then_some(normalized)
+}
+
 /// The whole derivation, from the environment to the string a pipeline reads.
 ///
 /// The one call every consumer should reach for. Composing the three steps by
@@ -246,6 +324,99 @@ mod tests {
             pipeline_base_path(&bucket, &root, WS, "ubereats", "p__ue"),
             "s3://bucket/reports/7067a766-a618-4aad-9104-46b24f35a47a/ubereats/p__ue"
         );
+    }
+
+    /// `normalize(normalize(x)) == normalize(x)` for every interleaving of
+    /// slashes and whitespace — the property the two-step form lacked.
+    #[test]
+    fn normalization_is_idempotent() {
+        for raw in [
+            "s3://z/p",
+            "  s3://z/p  ",
+            "s3://z/p/ /",
+            "s3://z/p/ / / ",
+            " /tmp/ue/ ",
+            "s3://z/p///",
+        ] {
+            let once = normalize_base_path(raw).expect("names somewhere");
+            assert_eq!(
+                normalize_base_path(once),
+                Some(once),
+                "`{raw}` -> `{once}` is not a fixed point"
+            );
+        }
+    }
+
+    /// A LEADING slash is content, not padding: `base_path` may be a local
+    /// path, and stripping it would turn an absolute zone into a relative one.
+    #[test]
+    fn a_leading_slash_survives_normalization() {
+        assert_eq!(normalize_base_path("/tmp/ue/"), Some("/tmp/ue"));
+        assert_eq!(normalize_base_path("  /tmp/ue  "), Some("/tmp/ue"));
+    }
+
+    /// The zone parser shares the helper, so a stray space in the env var
+    /// cannot put one inside the bucket name.
+    #[test]
+    fn a_padded_zone_var_does_not_pad_the_bucket() {
+        let (bucket, root) = parse_zone("s3://oxy-dev-ue /").expect("parses");
+        assert_eq!(bucket, "oxy-dev-ue", "a trailing space would reach S3");
+        assert_eq!(root, "");
+    }
+
+    /// Unset, and the spellings of unset a manifest actually produces.
+    ///
+    /// Reachable only since `zone_from_raw` was split out: `parse_zone` stopped
+    /// producing this variant, so nothing could pin the one case the change was
+    /// made to preserve.
+    #[test]
+    fn an_unset_or_placeholder_zone_is_not_configured() {
+        for unset in [None, Some(String::new()), Some("   ".to_string())] {
+            assert_eq!(
+                zone_from_raw(unset.clone()),
+                Err(ZoneError::NotConfigured),
+                "`{unset:?}` is how a manifest spells 'not filled in yet'"
+            );
+        }
+        // A real value still parses through the same door.
+        assert_eq!(
+            zone_from_raw(Some("s3://bkt/pre".into())),
+            Ok(("bkt".to_string(), "pre".to_string()))
+        );
+    }
+
+    /// A zone that IS set but names nowhere must not claim it is unset.
+    ///
+    /// That distinction is the whole value of the unset message: "requires
+    /// OXY_SOURCE_UPLOAD_ZONE" tells an operator to go set it, and for `"/"`
+    /// they would find it already set and have nowhere to go.
+    #[test]
+    fn a_set_zone_that_names_nowhere_is_malformed_not_absent() {
+        // Through the REAL door first. Both halves of this invariant were
+        // pinned and the seam between them was not: `zone_from_raw` spells
+        // "names nowhere" as `!v.trim().is_empty()`, and `"/"` reaches
+        // `parse_zone` only because that spelling lets it through. Tightening
+        // the filter to `normalize_base_path` — the unification this module
+        // has been doing everywhere else, so the obvious next edit — sends
+        // `"/"` back to `NotConfigured` and the operator back to the dead end,
+        // with every other assertion here still passing.
+        assert_eq!(
+            zone_from_raw(Some(" / ".to_string())),
+            Err(ZoneError::NotS3Url("/".to_string())),
+            "a set-but-useless env var must reach parse_zone and be named"
+        );
+
+        for set_but_useless in ["/", "///", " / "] {
+            match parse_zone(set_but_useless) {
+                // The payload, not just the variant: a refactor handing this
+                // `NotS3Url("")` renders "got ``", which tells an operator
+                // nothing, and a variant-only assertion would still pass.
+                Err(ZoneError::NotS3Url(got)) => {
+                    assert!(!got.is_empty(), "`{set_but_useless}` must name what it saw")
+                }
+                other => panic!("`{set_but_useless}` is set, so it is malformed: {other:?}"),
+            }
+        }
     }
 
     #[test]
@@ -305,6 +476,31 @@ mod tests {
             pipeline_slug("./pipelines/ue.airway.yml"),
             pipeline_slug("pipelines/ue.airway.yml")
         );
+    }
+
+    /// The trailing space is the reason this helper exists: it reaches the
+    /// connector inside the object key. One predicate over both character
+    /// classes closes every interleaving, which a staged trim-then-strip did
+    /// not — see [`normalization_is_idempotent`] for the property itself.
+    #[test]
+    fn normalization_collapses_slashes_and_whitespace_in_one_pass() {
+        assert_eq!(normalize_base_path("s3://z/p"), Some("s3://z/p"));
+        assert_eq!(normalize_base_path("  s3://z/p  "), Some("s3://z/p"));
+        assert_eq!(normalize_base_path("s3://z/p/"), Some("s3://z/p"));
+        assert_eq!(normalize_base_path("s3://z/p///"), Some("s3://z/p"));
+        // The case a single leading trim gets wrong.
+        assert_eq!(normalize_base_path(" s3://z/p /"), Some("s3://z/p"));
+        // A local path is a legal zone too, not only `s3://`.
+        assert_eq!(normalize_base_path("/tmp/ue/"), Some("/tmp/ue"));
+    }
+
+    /// Blank means "names nowhere", which callers read as ABSENT and derive —
+    /// not as a disagreement to refuse.
+    #[test]
+    fn a_zone_that_names_nowhere_is_none() {
+        for blank in ["", "   ", "/", "///", "  //  "] {
+            assert_eq!(normalize_base_path(blank), None, "`{blank}` names nowhere");
+        }
     }
 
     #[test]
