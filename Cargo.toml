@@ -627,7 +627,7 @@ airform-core = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e82886
 # the existing `transaction_lines` (which is `Merge` and never dropped), but
 # it is lazy — existing Parquet keeps its layout until compaction rewrites it.
 # The benefit accrues, it does not switch on.
-airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.33", default-features = false, features = [
+airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.34", default-features = false, features = [
   "duckdb",
   "postgres",
 ] }
