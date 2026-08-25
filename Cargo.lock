@@ -727,8 +727,8 @@ dependencies = [
 
 [[package]]
 name = "airway"
-version = "0.1.34"
-source = "git+https://github.com/oxy-hq/airway-internal.git?tag=0.1.34#6c1bc81196f38a1fade88a68b11abcc503a33805"
+version = "0.1.35"
+source = "git+https://github.com/oxy-hq/airway-internal.git?tag=0.1.35#091aac1b0f3dcdbd47bb797015269c4855956f91"
 dependencies = [
  "anyhow",
  "arrow 58.3.0",
@@ -6798,7 +6798,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -10829,7 +10829,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.2",
  "rustls 0.23.43",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -10867,7 +10867,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tracing",
  "windows-sys 0.59.0",
 ]
