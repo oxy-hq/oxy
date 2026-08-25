@@ -23,6 +23,7 @@ pub mod reset;
 pub mod source_factory;
 pub mod state_store;
 pub mod task_spec;
+pub mod upload_zone;
 pub mod worker;
 
 pub use admission::AirwayAdmission;

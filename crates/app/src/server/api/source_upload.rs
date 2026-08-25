@@ -16,10 +16,17 @@
 //! come from [`ZONE_VAR`]; the pipeline only ever contributes a *segment*
 //! below it.
 //!
-//! The two halves are still checked against each other rather than assumed:
-//! the pipeline's `base_path` must equal the zone this writes to, and a
-//! mismatch is refused loudly instead of landing reports where nothing reads
-//! them — see [`zone_for_pipeline`].
+//! **A pipeline does not have to declare its zone at all**, and omitting it is
+//! the recommended shape: the run derives the same value from
+//! [`agentic_airway::upload_zone`] that this endpoint does, so there is
+//! nothing for the two to disagree about. Transcribing a bucket, a workspace
+//! uuid and a path slug by hand was only ever a way to get one of them wrong.
+//!
+//! A *declared* zone is still checked against the one this writes to, because
+//! a value someone wrote can drift: a mismatch is refused loudly, naming both
+//! values, instead of landing reports where nothing reads them — see
+//! [`zone_for_pipeline`]. That check is what an omitted value makes
+//! unnecessary rather than what it skips.
 //!
 //! The key layout below is what the source derives the report **period** and
 //! the row identity from, so it cannot be changed freely — see [`object_key`].
@@ -95,37 +102,16 @@ pub struct UploadedReport {
 /// customer-supplied bucket name would be a confused deputy — the server
 /// writing customer bytes into a sibling service's bucket with its own
 /// credentials.
-const ZONE_VAR: &str = "OXY_SOURCE_UPLOAD_ZONE";
+const ZONE_VAR: &str = agentic_airway::upload_zone::ZONE_VAR;
 
 /// The configured zone split into `(bucket, root_prefix)`.
+///
+/// Parsing lives in [`agentic_airway::upload_zone`] so the run path derives
+/// the identical zone; only the status-code mapping is this layer's business.
+/// Every variant reachable here is a server-configuration fault, hence 503.
 fn zone() -> Result<(String, String), (StatusCode, String)> {
-    let raw = std::env::var(ZONE_VAR)
-        .ok()
-        .filter(|v| !v.trim().is_empty());
-    let Some(raw) = raw else {
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            format!("report uploads require {ZONE_VAR} (e.g. `s3://oxy-dev-source-uploads`)"),
-        ));
-    };
-    let rest = raw.trim().trim_end_matches('/');
-    let Some(rest) = rest.strip_prefix("s3://") else {
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            format!("{ZONE_VAR} must be an `s3://bucket/prefix` URL, got `{rest}`"),
-        ));
-    };
-    let (bucket, prefix) = match rest.split_once('/') {
-        Some((b, p)) => (b, p),
-        None => (rest, ""),
-    };
-    if bucket.is_empty() {
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            format!("{ZONE_VAR} names no bucket"),
-        ));
-    }
-    Ok((bucket.to_string(), prefix.to_string()))
+    agentic_airway::upload_zone::zone_from_env()
+        .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))
 }
 
 /// Check the pipeline agrees with where we are about to write, and return the
@@ -312,7 +298,7 @@ fn read_pipeline_from_disk(
 /// the server's refusal cannot disagree about which pipelines are uploadable.
 /// A kind here also becomes a path segment, which is why it is a fixed set
 /// rather than "whatever the definition says".
-pub const UPLOADABLE_SOURCE_KINDS: &[&str] = &["ubereats"];
+pub use agentic_airway::upload_zone::UPLOADABLE_SOURCE_KINDS;
 
 /// The two things a pipeline definition has to agree about.
 ///
@@ -327,7 +313,7 @@ fn uploadable_kind<'a>(
         .and_then(|src| src.get("kind"))
         .and_then(|k| k.as_str())
         .unwrap_or_default();
-    if !UPLOADABLE_SOURCE_KINDS.contains(&kind) {
+    if !agentic_airway::upload_zone::is_uploadable(kind) {
         // A payment-details report in another vendor's zone lands rows no
         // reader expects, and the loader would NOT refuse it — nothing
         // downstream knows the file came through the wrong door.
@@ -349,14 +335,51 @@ fn check_pipeline_definition(
 ) -> Result<(), (StatusCode, String)> {
     uploadable_kind(definition, pipeline_ref)?;
 
-    let declared = definition
-        .get("source")
-        .and_then(|src| src.get("config"))
-        .and_then(|cfg| cfg.get("base_path"))
-        .and_then(|b| b.as_str())
-        .unwrap_or_default()
-        .trim()
-        .trim_end_matches('/');
+    // The config block itself has to be a map before anything is read out of
+    // it. `Value::get` answers `None` on a string or a list exactly as it does
+    // for a missing key, so without this a `config: "oops"` would read as
+    // "no base_path, fine", the upload would be ACCEPTED and the bytes
+    // written — for a pipeline whose run then refuses the same shape
+    // (`source config for … is not a map`). Refusing here keeps the two halves
+    // agreeing, which is the entire claim of this design.
+    let config = match definition.get("source").and_then(|src| src.get("config")) {
+        None | Some(serde_json::Value::Null) => None,
+        Some(cfg) if cfg.is_object() => Some(cfg),
+        Some(_) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("`{pipeline_ref}`: `source.config` must be a map"),
+            ));
+        }
+    };
+
+    // ABSENT IS FINE, and is now the recommended shape. The run derives its
+    // zone from `agentic_airway::upload_zone` — the same helper that produced
+    // `expected_base_path` — so an omitted value cannot disagree with this
+    // one. Only a value someone WROTE can drift, which is why the check below
+    // still exists for a declared one.
+    let declared = match config.and_then(|cfg| cfg.get("base_path")) {
+        None | Some(serde_json::Value::Null) => return Ok(()),
+        // A wrong TYPE gets its own refusal rather than falling through as an
+        // empty string. `base_path: 42` rendered through the mismatch arm
+        // reads "reads from ``", which is indistinguishable from
+        // `base_path: ""` and sends the operator looking for the wrong thing.
+        Some(v) if !v.is_string() => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "`{pipeline_ref}`: `base_path` must be a string, got {}",
+                    match v {
+                        serde_json::Value::Number(_) => "a number",
+                        serde_json::Value::Bool(_) => "a boolean",
+                        serde_json::Value::Array(_) => "a list",
+                        _ => "a map",
+                    }
+                ),
+            ));
+        }
+        Some(v) => v.as_str().unwrap_or_default().trim().trim_end_matches('/'),
+    };
 
     if declared != expected_base_path {
         // The old shape left these two to be kept equal by instruction, and a
@@ -437,12 +460,13 @@ fn pipeline_base_path(
     source_kind: &str,
     pipeline_slug: &str,
 ) -> String {
-    let tail = format!("{workspace_id}/{source_kind}/{pipeline_slug}");
-    if root.is_empty() {
-        format!("s3://{bucket}/{tail}")
-    } else {
-        format!("s3://{bucket}/{root}/{tail}")
-    }
+    agentic_airway::upload_zone::pipeline_base_path(
+        bucket,
+        root,
+        workspace_id,
+        source_kind,
+        pipeline_slug,
+    )
 }
 
 /// A pipeline ref reduced to one safe path segment.
@@ -456,46 +480,7 @@ fn pipeline_base_path(
 /// Rejected rather than sanitized when nothing usable remains: the segment is
 /// part of the key, and the key is the merge identity.
 fn pipeline_slug(pipeline_ref: &str) -> Option<String> {
-    let path = std::path::Path::new(pipeline_ref);
-    let stem = path
-        .file_name()
-        .and_then(|n| n.to_str())?
-        .trim_end_matches(".yml")
-        .trim_end_matches(".airway");
-
-    // Every directory component participates, not just the file name.
-    // `file_name()` alone made `east/ue.airway.yml` and `west/ue.airway.yml`
-    // one slug, one base path, and one key prefix — and since the object name
-    // is a content hash, the same report for the same period landed on the
-    // same key for two different pipelines, merging into the wrong table. The
-    // `<kind>` segment does not disambiguate them: both are `ubereats`.
-    let mut parts: Vec<&str> = path
-        .parent()
-        .into_iter()
-        .flat_map(|p| p.components())
-        .filter_map(|c| match c {
-            std::path::Component::Normal(n) => n.to_str(),
-            // `..` and absolutes never arrive — `validate_pipeline_ref` refuses
-            // them at handler entry — and a `.` carries no identity.
-            _ => None,
-        })
-        .collect();
-    parts.push(stem);
-
-    let safe = |p: &str| {
-        !p.is_empty()
-            && p.chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
-    };
-    if !parts.iter().all(|p| safe(p)) {
-        return None;
-    }
-
-    // `__` as the separator: `/` would open a key segment the caller controls,
-    // and a single `_` is legal inside a component, so `a_b/c` and `a/b_c`
-    // would collide again.
-    let slug = parts.join("__");
-    (slug.len() <= 128).then_some(slug)
+    agentic_airway::upload_zone::pipeline_slug(pipeline_ref)
 }
 
 /// A `workflow_id` has to be safe to put in an object key.
@@ -1071,12 +1056,17 @@ mod tests {
             Some("ue_2026")
         );
 
-        // A `..` never reaches here — `validate_pipeline_ref` refuses it at
-        // handler entry — and this function drops the component rather than
-        // encoding it. This assertion previously read `Some("x")` and was
-        // offered as proof that traversal "cannot reach the key", which was
-        // true of the KEY and not of the disk read the same ref fed.
-        assert_eq!(pipeline_slug("../../x.airway.yml").as_deref(), Some("x"));
+        // A `..` is now REFUSED rather than dropped, and this assertion read
+        // `Some("x")` until the helper moved into `agentic-airway`.
+        //
+        // Dropping was defensible while this lived beside the
+        // `validate_pipeline_ref` that refuses traversal at handler entry.
+        // It is not defensible in a crate whose premise is a third caller:
+        // dropping collapses `../x.airway.yml` and `x.airway.yml` onto one
+        // slug, one key prefix and — the object name being a content hash —
+        // one merge identity. That is the collision `__` exists to prevent,
+        // reintroduced by the sanitizer meant to be harmless.
+        assert_eq!(pipeline_slug("../../x.airway.yml"), None);
 
         // A dot the suffix-stripping does NOT consume stays in the stem, and a
         // dot in a key segment is not safe.

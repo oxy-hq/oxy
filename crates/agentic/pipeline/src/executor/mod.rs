@@ -831,6 +831,12 @@ impl PipelineTaskExecutor {
             }
         }
 
+        // An uploadable source's landing zone is SERVER-owned, so a pipeline
+        // that omits `base_path` gets the derived one here rather than making
+        // an operator transcribe a bucket, a workspace uuid and a path slug by
+        // hand. A declared value is left alone: the source also reads zones
+        // nothing derives (`/data/ubereats`, a pre-existing bucket).
+        self.fill_upload_zone(&mut spec, pipeline_ref)?;
         self.resolve_airway_source_secrets(&mut spec).await?;
         let airhouse_db = self.resolve_airway_destination(&mut spec).await?;
 
@@ -995,6 +1001,56 @@ impl PipelineTaskExecutor {
                 owner_user_id,
             )
             .await
+    }
+
+    /// Fill in an omitted `base_path` for an uploadable source kind.
+    ///
+    /// Only ever fills — never rewrites. A pipeline that names its own zone is
+    /// pointing at something this cannot derive, and the upload endpoint
+    /// already refuses a *declared* zone that disagrees with where it writes,
+    /// so re-checking here would only duplicate that refusal in a place where
+    /// the operator cannot see it.
+    ///
+    /// The derivation is shared with the upload endpoint
+    /// ([`agentic_airway::upload_zone`]) precisely so the zone written to and
+    /// the zone read from cannot drift apart.
+    fn fill_upload_zone(
+        &self,
+        spec: &mut agentic_airway::AirwayPipelineSpec,
+        pipeline_ref: &str,
+    ) -> Result<(), String> {
+        use agentic_airway::upload_zone;
+
+        if !upload_zone::is_uploadable(&spec.source.kind) {
+            return Ok(());
+        }
+        // `config` is `#[serde(default)]`, so an omitted block is Null rather
+        // than an empty map — and `config: {}` is exactly the shape a pipeline
+        // that declares nothing at all now has.
+        if spec.source.config.is_null() {
+            spec.source.config = serde_json::Value::Object(Default::default());
+        }
+        let Some(obj) = spec.source.config.as_object_mut() else {
+            return Err(format!(
+                "airway: source config for `{pipeline_ref}` is not a map"
+            ));
+        };
+        // An explicit `null` counts as absent: it reads as "no value" in YAML
+        // and would otherwise reach the factory as a type error.
+        if obj.get("base_path").is_some_and(|v| !v.is_null()) {
+            return Ok(());
+        }
+        let derived = upload_zone::derive_base_path(
+            self.platform.workspace_id(),
+            &spec.source.kind,
+            pipeline_ref,
+        )
+        .map_err(|e| {
+            format!("airway: `{pipeline_ref}` omits `base_path` and one cannot be derived: {e}")
+        })?;
+        tracing::debug!(pipeline_ref, base_path = %derived, "derived the upload zone");
+        obj.insert("base_path".into(), serde_json::Value::String(derived));
+        Ok(())
     }
 
     /// Substitute a source's `*_var` credential references with values from the
