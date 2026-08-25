@@ -32,6 +32,7 @@ dev-dynamic = ["dep:oxy-app-dylib"]
 oxy-app = { path = "../app", default-features = false }
 oxy-api-github = { path = "../api-github" }
 oxy-api-partner-console = { path = "../api-partner-console" }
+oxy-api-onboarding = { path = "../api-onboarding" }
 # Dev-dynamic-linking shim, pulled in only by the `dev-dynamic` feature above.
 oxy-app-dylib = { path = "../app-dylib", optional = true }
 oxy = { workspace = true }

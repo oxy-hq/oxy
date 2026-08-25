@@ -323,7 +323,10 @@ fn main() {
             // out of oxy-app. `cli` forwards these into `serve`'s `api_router`,
             // where they join the protected tree before the auth middleware.
             let exit_code = match cli(
-                oxy_api_github::routes().merge(oxy_api_partner_console::routes())
+                oxy_api_github::routes()
+                    .merge(oxy_api_partner_console::routes())
+                    .merge(oxy_api_onboarding::routes()),
+                oxy_api_onboarding::workspace_routes(),
             )
             .await
             {

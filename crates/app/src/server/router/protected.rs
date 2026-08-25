@@ -30,10 +30,17 @@ use super::workspace::{build_external_workspace_routes, build_workspace_routes};
 pub(super) fn build_protected_routes(
     app_state: AppState,
     agentic_state: Arc<AgenticState>,
+    extra_workspace_routes: Router<AppState>,
 ) -> Router<AppState> {
     Router::new().merge(build_global_routes()).nest(
         "/{workspace_id}",
         build_workspace_routes(app_state.clone(), agentic_state, true, false)
+            // Workspace-scoped surface crates (composed by the `oxy-server` root)
+            // merge HERE — before the workspace middleware — so they inherit the
+            // workspace subscription guard + `workspace_middleware` (which resolves
+            // the workspace context) rather than reproducing them. Empty in local
+            // mode (`build_local_protected_routes` never receives it).
+            .merge(extra_workspace_routes)
             .layer(middleware::from_fn(workspace_subscription_guard_middleware))
             .layer(middleware::from_fn_with_state(
                 app_state,
@@ -77,14 +84,21 @@ pub(super) fn apply_middleware(
 pub(super) fn build_local_protected_routes(
     app_state: AppState,
     agentic_state: Arc<AgenticState>,
+    extra_workspace_routes: Router<AppState>,
 ) -> Router<AppState> {
     Router::new()
         .merge(airhouse::api::router::<AppState>())
         .nest(
             "/{workspace_id}",
-            build_workspace_routes(app_state.clone(), agentic_state, false, true).route_layer(
-                middleware::from_fn_with_state(app_state, local_context_middleware),
-            ),
+            build_workspace_routes(app_state.clone(), agentic_state, false, true)
+                // Workspace-scoped surfaces (e.g. onboarding) reach local mode too —
+                // their handlers carry live `is_local()` branches — so merge them here,
+                // before the local-context layer, to inherit it exactly as cloud does.
+                .merge(extra_workspace_routes)
+                .route_layer(middleware::from_fn_with_state(
+                    app_state,
+                    local_context_middleware,
+                )),
         )
 }
 

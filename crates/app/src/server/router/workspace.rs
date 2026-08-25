@@ -15,10 +15,10 @@ use agentic_http::{AgenticState, airway_router, automation_router, router as age
 use crate::api::{
     agent, api_keys, app, apps, artifacts, automation, chart, competitors, compile, data,
     data_repo, database, execution_analytics, exported_chart, file, foot_traffic, integration,
-    local_setup, message, metric_anomalies, metric_tree, metrics, modeling, onboarding,
-    org_subdomain, pipeline, result_files, run, schedules, semantic, task, test_file,
-    test_project_run, test_run, thread, traces, video, workspace_custom_apps, workspace_logo,
-    workspace_members, workspace_oxy_access, workspaces, world_model, world_model_graph,
+    local_setup, message, metric_anomalies, metric_tree, metrics, modeling, org_subdomain,
+    pipeline, result_files, run, schedules, semantic, task, test_file, test_project_run, test_run,
+    thread, traces, video, workspace_custom_apps, workspace_logo, workspace_members,
+    workspace_oxy_access, workspaces, world_model, world_model_graph,
 };
 
 use super::AppState;
@@ -135,12 +135,6 @@ pub(super) fn build_workspace_routes(
             "/builder-availability",
             get(agent::check_builder_availability),
         )
-        .route(
-            "/onboarding-readiness",
-            get(onboarding::onboarding_readiness),
-        )
-        .route("/onboarding/github-setup", get(onboarding::github_setup))
-        .nest("/onboarding", build_onboarding_routes())
         .route("/sql/{pathb64}", post(data::execute_sql))
         .route("/sql/query", post(data::execute_sql_query))
         // Semantic-layer endpoints the IDE uses. The legacy `/semantic`
@@ -536,23 +530,6 @@ fn build_database_routes() -> Router<AppState> {
             "/{database_name}/schema",
             get(database::get_database_schema),
         )
-}
-
-/// `/onboarding/*` subtree. Groups the file-upload route with its siblings so
-/// the oversized-body limit layer can be applied at the `Router` level rather
-/// than on an individual `MethodRouter` — the latter can interact unexpectedly
-/// with outer CORS preflight handling on axum 0.8.
-fn build_onboarding_routes() -> Router<AppState> {
-    Router::new()
-        .route("/reset", post(onboarding::reset_onboarding))
-        .route("/test-llm-key", post(onboarding::test_llm_key))
-        .route(
-            "/upload-warehouse-files",
-            post(onboarding::upload_warehouse_files),
-        )
-        .layer(axum::extract::DefaultBodyLimit::max(
-            onboarding::MAX_UPLOAD_BODY_BYTES,
-        ))
 }
 
 fn build_data_repo_routes() -> Router<AppState> {

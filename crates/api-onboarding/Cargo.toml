@@ -1,0 +1,33 @@
+[package]
+name = "oxy-api-onboarding"
+version.workspace = true
+authors.workspace = true
+description = "Onboarding HTTP surface (workspace create/demo/import, readiness checks, warehouse uploads) — a sibling crate mounted by oxy-server, so editing it no longer recompiles oxy-app"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# The only oxy-app dependency: the shared middlewares this surface reuses
+# (workspace_context readiness/lazy-compile helpers + the OrgAdmin role guard).
+# oxy-app never depends back on this crate. default-features off so a
+# `--no-default-features` build of oxy-server keeps dropping V8.
+oxy-app = { path = "../app", default-features = false }
+oxy-app-core = { workspace = true }  # AppState (the router state type)
+oxy = { workspace = true }
+oxy-auth = { workspace = true }
+oxy-shared = { workspace = true }
+oxy-project = { workspace = true }
+oxy-git = { workspace = true }
+oxy-llm = { workspace = true }               # validate_provider_key (test-llm-key)
+agentic-pipeline = { workspace = true }      # scheduler::reconcile_health_schedule (post-setup)
+entity = { workspace = true }
+
+axum = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

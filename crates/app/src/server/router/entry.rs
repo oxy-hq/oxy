@@ -55,6 +55,10 @@ pub async fn api_router(
     // mounts the org/global tree, so it drops `extra_api_routes` entirely. Correct
     // for github (cloud-only); a future local-mode surface needs its own local seam.
     extra_api_routes: Router<AppState>,
+    // Workspace-scoped surface routes, merged INSIDE the `/{workspace_id}` nest
+    // (see `build_protected_routes`) so they inherit the workspace middleware.
+    // Same cloud-only caveat as `extra_api_routes`.
+    extra_workspace_routes: Router<AppState>,
 ) -> Result<(Router, Router), OxyError> {
     // Create AgenticState first — the preagg worker needs its db + runtime.
     let agentic_state = new_agentic_state(shutdown_token, true).await?;
@@ -305,13 +309,18 @@ pub async fn api_router(
             // auth bypass). A surface still re-applies its own inner middleware
             // (e.g. github's org routes carry org_middleware + subscription_guard).
             apply_middleware(
-                build_protected_routes(app_state.clone(), agentic_state.clone())
-                    .merge(extra_api_routes),
+                build_protected_routes(
+                    app_state.clone(),
+                    agentic_state.clone(),
+                    extra_workspace_routes,
+                )
+                .merge(extra_api_routes),
             )?
         }
         ServeMode::Local => apply_local_middleware(build_local_protected_routes(
             app_state.clone(),
             agentic_state.clone(),
+            extra_workspace_routes,
         ))?,
     };
 
@@ -370,6 +379,10 @@ pub async fn internal_api_router(
     enterprise: bool,
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
     shutdown_token: CancellationToken,
+    // The internal API mirrors the main app (see below), so it takes the same
+    // surface seams `api_router` does.
+    extra_api_routes: Router<AppState>,
+    extra_workspace_routes: Router<AppState>,
 ) -> Result<Router, OxyError> {
     let app_state = AppState {
         enterprise,
@@ -391,9 +404,17 @@ pub async fn internal_api_router(
     let agentic_state = new_agentic_state(shutdown_token, false).await?;
     spawn_shutdown_hook(agentic_state.clone());
 
-    let protected_routes = build_protected_routes(app_state.clone(), agentic_state)
-        .layer(middleware::from_fn(timeout_middleware))
-        .layer(middleware::from_fn(internal_auth_middleware));
+    // The internal API is an internal-auth MIRROR of the main app, so it mounts the
+    // SAME extracted surface crates (via the seams) that `api_router` does. The
+    // agentic browser tests drive this port; a surface merged only into `api_router`
+    // (not here) 404/405s on :3001 while working on the public port — e.g.
+    // onboarding's `POST /orgs/{org_id}/onboarding/new` create-workspace call.
+    // `extra_api_routes` merges BEFORE the layers so it inherits internal auth.
+    let protected_routes =
+        build_protected_routes(app_state.clone(), agentic_state, extra_workspace_routes)
+            .merge(extra_api_routes)
+            .layer(middleware::from_fn(timeout_middleware))
+            .layer(middleware::from_fn(internal_auth_middleware));
 
     let app_routes = build_public_routes().merge(protected_routes);
 

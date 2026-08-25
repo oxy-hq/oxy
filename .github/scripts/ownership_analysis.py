@@ -84,7 +84,7 @@ AREAS = [
     ("crates/platform",                                   "Platform services"),
     ("crates/server-authz",                               "Server-authz plumbing"),
     ("web-app/src/pages/launcher",                        "Web shell / HQ launcher"),
-    ("crates/app/src/server/api/onboarding",              "Onboarding (backend)"),
+    ("crates/api-onboarding",                              "Onboarding (backend)"),
     ("web-app/src/pages/onboarding",                      "Onboarding (UI)"),
     ("web-app/src/pages/create-workspace",               "Create workspace (UI)"),
     ("web-app/tests/agentic",                             "Agentic browser tests"),

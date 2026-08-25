@@ -744,7 +744,7 @@ async fn resolve_effective_role(
 /// "Run compile now". A const, not an env flag — keep the surface small.
 const LAZY_COMPILE_BACKOFF_SECS: i64 = 300;
 
-pub(crate) async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, workspace_id: Uuid) {
+pub async fn enqueue_lazy_compile(db: &sea_orm::DatabaseConnection, workspace_id: Uuid) {
     enqueue_compile_deduped(db, workspace_id, None, None, "lazy self-heal").await
 }
 

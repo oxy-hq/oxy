@@ -55,6 +55,7 @@ const APIDOC_DESCRIPTION: &str = include_str!("apidoc.md");
 pub async fn start_server_and_web_app(
     args: ServeArgs,
     extra_api_routes: Router<crate::server::router::AppState>,
+    extra_workspace_routes: Router<crate::server::router::AppState>,
 ) -> Result<(), OxyError> {
     // OXY_ROLE → ide | serve | worker | all (default). Read once so the
     // routing middleware can enforce the FS-routing boundary.
@@ -327,6 +328,13 @@ pub async fn start_server_and_web_app(
         );
     }
 
+    // The internal API server (auth-disabled :3001) is an internal-auth MIRROR of
+    // the main app — internal callers and the agentic browser tests drive it — so it
+    // must mount the SAME extracted surface crates. Clone the seams before the main
+    // app consumes them below; axum `Router` clones are cheap.
+    let internal_extra_api = extra_api_routes.clone();
+    let internal_extra_workspace = extra_workspace_routes.clone();
+
     let app = create_web_application(
         mode,
         args.enterprise,
@@ -335,13 +343,20 @@ pub async fn start_server_and_web_app(
         shutdown_token.clone(),
         disable_inprocess_workers,
         extra_api_routes,
+        extra_workspace_routes,
     )
     .await?;
 
     let internal_app = if args.internal_port > 0 {
         Some(
-            create_internal_application(args.enterprise, observability, shutdown_token.clone())
-                .await?,
+            create_internal_application(
+                args.enterprise,
+                observability,
+                shutdown_token.clone(),
+                internal_extra_api,
+                internal_extra_workspace,
+            )
+            .await?,
         )
     } else {
         println!("serve: internal port disabled (internal_port=0)");
@@ -577,6 +592,7 @@ async fn create_web_application(
     shutdown_token: CancellationToken,
     disable_inprocess_workers: bool,
     extra_api_routes: Router<crate::server::router::AppState>,
+    extra_workspace_routes: Router<crate::server::router::AppState>,
 ) -> Result<Router, OxyError> {
     let (api_router, external_api_router) = crate::server::router::api_router(
         mode,
@@ -586,6 +602,7 @@ async fn create_web_application(
         shutdown_token,
         disable_inprocess_workers,
         extra_api_routes,
+        extra_workspace_routes,
     )
     .await
     .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
@@ -743,13 +760,18 @@ async fn create_internal_application(
     enterprise: bool,
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
     shutdown_token: CancellationToken,
+    extra_api_routes: Router<crate::server::router::AppState>,
+    extra_workspace_routes: Router<crate::server::router::AppState>,
 ) -> Result<Router, OxyError> {
-    let internal_router =
-        crate::server::router::internal_api_router(enterprise, observability, shutdown_token)
-            .await
-            .map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to create internal API router: {}", e))
-            })?;
+    let internal_router = crate::server::router::internal_api_router(
+        enterprise,
+        observability,
+        shutdown_token,
+        extra_api_routes,
+        extra_workspace_routes,
+    )
+    .await
+    .map_err(|e| OxyError::RuntimeError(format!("Failed to create internal API router: {}", e)))?;
 
     let static_service = service_fn(handle_static_files);
 

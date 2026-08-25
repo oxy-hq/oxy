@@ -15,11 +15,11 @@ use oxy_shared::errors::OxyError;
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::server::api::middlewares::role_guards::OrgAdmin;
-use crate::server::api::middlewares::workspace_context::{
+use oxy_app::server::api::middlewares::role_guards::OrgAdmin;
+use oxy_app::server::api::middlewares::workspace_context::{
     WorkspaceManagerExtractor, WorkspacePath,
 };
-use crate::server::router::AppState;
+use oxy_app_core::AppState;
 
 use super::dto::*;
 use super::ops::*;
@@ -349,7 +349,7 @@ pub async fn setup_github(
         if is_ready {
             match oxy::database::client::establish_connection().await {
                 Ok(db) => {
-                    crate::server::api::middlewares::workspace_context::enqueue_lazy_compile(
+                    oxy_app::server::api::middlewares::workspace_context::enqueue_lazy_compile(
                         &db,
                         workspace_id,
                     )

@@ -9187,6 +9187,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxy-api-onboarding"
+version = "0.5.130"
+dependencies = [
+ "agentic-pipeline",
+ "axum",
+ "chrono",
+ "entity",
+ "oxy",
+ "oxy-app",
+ "oxy-app-core",
+ "oxy-auth",
+ "oxy-git",
+ "oxy-llm",
+ "oxy-project",
+ "oxy-shared",
+ "sea-orm",
+ "serde",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "oxy-api-partner-console"
 version = "0.5.130"
 dependencies = [
@@ -9729,6 +9752,7 @@ dependencies = [
  "once_cell",
  "oxy",
  "oxy-api-github",
+ "oxy-api-onboarding",
  "oxy-api-partner-console",
  "oxy-app",
  "oxy-app-dylib",

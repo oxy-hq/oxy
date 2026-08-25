@@ -168,7 +168,7 @@ web-app/src/pages/launcher/                        @nresh @NTtanh
 internal-docs/apps-first-shell.md                  @nresh @NTtanh
 
 # Workspace onboarding (feature owner; files also churned by high-volume committers)
-crates/app/src/server/api/onboarding/              @nresh @luong-komorebi
+crates/api-onboarding/                             @nresh @luong-komorebi
 web-app/src/pages/onboarding/                      @nresh @luong-komorebi
 web-app/src/pages/create-workspace/                @nresh @luong-komorebi
 

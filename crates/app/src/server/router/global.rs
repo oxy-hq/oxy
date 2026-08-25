@@ -13,7 +13,7 @@ use crate::api::middlewares::{
     app_scope_guard, org_context, oxy_owner_or_app_admin_guard, platform_cap_guard,
     subscription_guard,
 };
-use crate::api::{admin, onboarding, org_logo, org_teams, organizations, user, workspaces};
+use crate::api::{admin, org_logo, org_teams, organizations, user, workspaces};
 
 use super::AppState;
 
@@ -369,9 +369,6 @@ fn build_org_routes() -> Router<AppState> {
             "/invitations/{invitation_id}",
             delete(organizations::revoke_invitation),
         )
-        .route("/onboarding/demo", post(onboarding::setup_demo))
-        .route("/onboarding/new", post(onboarding::setup_new))
-        .route("/onboarding/github", post(onboarding::setup_github))
         .route("/workspaces", get(workspaces::list_workspaces))
         .route("/workspaces/{id}", delete(workspaces::delete_workspace))
         .route(
