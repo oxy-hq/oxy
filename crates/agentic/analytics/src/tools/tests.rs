@@ -930,3 +930,148 @@ async fn detect_anomalies_returns_message_when_insufficient_data() {
             .contains("Not enough data")
     );
 }
+
+// ── Datasource routing on the model-callable probes ──────────────────────────
+//
+// `sample_columns` and `check_data_freshness` read a view's `datasource:` and
+// query it directly. Rerouting them is invisible in a way the semantic path is
+// not: sampled values become the literals the model writes into `WHERE ... IN
+// (...)`, and a watermark becomes a "data through <date>" the model states as
+// fact. Both must honour the declared datasource or fail naming it — the policy
+// is one deleted `.filter(...)` away from regressing.
+
+fn catalog_with_datasource(datasource: &str) -> crate::SemanticCatalog {
+    let yaml = format!(
+        r#"
+name: referrals
+description: Referrals
+table: july.referrals
+datasource: {datasource}
+dimensions:
+  - name: state
+    type: string
+    expr: state
+  - name: referral_date
+    type: date
+    expr: referral_date
+"#
+    );
+    let views = vec![crate::airlayer_compat::parse_view_yaml(&yaml).unwrap()];
+    let layer = airlayer::SemanticLayer::new(views, None);
+    let dialects = airlayer::DatasourceDialectMap::with_default(airlayer::Dialect::DuckDB);
+    let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects).unwrap();
+    crate::SemanticCatalog::from_engine(engine)
+}
+
+/// Registers `name` against a connector that PANICS if queried.
+///
+/// The panic is the assertion for the refuse-to-reroute tests: if the
+/// `.filter(...)` ever comes back, the probe silently retargets this connector
+/// and executes, and the test fails loudly at the exact wrong behaviour rather
+/// than on a string mismatch.
+fn one_connector(name: &str) -> HashMap<String, Arc<dyn DatabaseConnector>> {
+    HashMap::from([(
+        name.to_string(),
+        Arc::new(NoopConnector) as Arc<dyn DatabaseConnector>,
+    )])
+}
+
+/// A connector that answers every query with no rows.
+struct EmptyConnector;
+
+#[async_trait::async_trait]
+impl DatabaseConnector for EmptyConnector {
+    fn dialect(&self) -> agentic_connector::SqlDialect {
+        agentic_connector::SqlDialect::DuckDb
+    }
+
+    async fn execute_query(
+        &self,
+        _sql: &str,
+        _limit: u64,
+    ) -> Result<agentic_connector::ExecutionResult, agentic_connector::ConnectorError> {
+        Ok(agentic_connector::ExecutionResult::empty())
+    }
+}
+
+fn one_queryable_connector(name: &str) -> HashMap<String, Arc<dyn DatabaseConnector>> {
+    HashMap::from([(
+        name.to_string(),
+        Arc::new(EmptyConnector) as Arc<dyn DatabaseConnector>,
+    )])
+}
+
+#[tokio::test]
+async fn sample_columns_refuses_a_view_whose_datasource_is_not_registered() {
+    let catalog = catalog_with_datasource("july_airhouse");
+    let connectors = one_connector("july_warehouse");
+
+    let result = execute_specifying_tool(
+        "sample_columns",
+        json!({"columns": [{"table": "referrals", "column": "state"}]}),
+        &catalog,
+        &connectors,
+        "july_warehouse",
+    )
+    .await
+    .expect("the batch wrapper reports per-column errors inline");
+
+    let text = result.to_string();
+    assert!(
+        text.contains("july_airhouse"),
+        "the error must name the datasource the view declared, not the default it \
+         would otherwise have been sampled from: {text}"
+    );
+}
+
+#[tokio::test]
+async fn check_data_freshness_refuses_a_view_whose_datasource_is_not_registered() {
+    let catalog = catalog_with_datasource("july_airhouse");
+    let connectors = one_connector("july_warehouse");
+
+    let result = execute_specifying_tool(
+        "check_data_freshness",
+        json!({"views": ["referrals"]}),
+        &catalog,
+        &connectors,
+        "july_warehouse",
+    )
+    .await
+    .expect("the batch wrapper reports per-view errors inline");
+
+    let text = result.to_string();
+    // No `|| "no freshness target"` escape hatch. With that alternative the
+    // test passed on a view with no date dimension -- failing before the
+    // connector was ever looked up, and pinning nothing. The view now has one,
+    // so reaching the routing decision is part of what this asserts.
+    assert!(
+        text.contains("july_airhouse"),
+        "the error must name the datasource the view declared, not fail earlier \
+         or probe the default: {text}"
+    );
+}
+
+#[tokio::test]
+async fn a_datasource_differing_only_in_case_still_resolves() {
+    // Refusing to reroute is the policy; refusing on letter case alone is a
+    // false positive. airlayer matches views with `eq_ignore_ascii_case`, so a
+    // name that resolves there must resolve here.
+    let catalog = catalog_with_datasource("July_Airhouse");
+    let connectors = one_queryable_connector("july_airhouse");
+
+    let result = execute_specifying_tool(
+        "sample_columns",
+        json!({"columns": [{"table": "referrals", "column": "state"}]}),
+        &catalog,
+        &connectors,
+        "july_airhouse",
+    )
+    .await
+    .expect("sample_columns reports per-column errors inline");
+
+    let text = result.to_string();
+    assert!(
+        !text.contains("no connector registered"),
+        "a case-differing datasource is the same datasource: {text}"
+    );
+}

@@ -30,15 +30,10 @@ fn resolve_connector<'a>(
     default_connector: &str,
 ) -> Result<(String, &'a Arc<dyn DatabaseConnector>), ToolError> {
     let db_name = database.unwrap_or(default_connector);
-    // Try exact match first, then case-insensitive.
-    if let Some(conn) = connectors.get(db_name) {
-        return Ok((db_name.to_string(), conn));
-    }
-    let lower = db_name.to_lowercase();
-    for (name, conn) in connectors {
-        if name.to_lowercase() == lower {
-            return Ok((name.clone(), conn));
-        }
+    // Matching rule lives in `solver::lookup_connector` -- this was one of
+    // three copies of it. The error below is this call site's own concern.
+    if let Some((registered, conn)) = crate::solver::lookup_connector(connectors, db_name) {
+        return Ok((registered.clone(), conn));
     }
     let available: Vec<&str> = connectors.keys().map(|s| s.as_str()).collect();
     Err(ToolError::Execution(format!(

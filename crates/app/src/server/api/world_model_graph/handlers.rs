@@ -352,7 +352,11 @@ pub(crate) async fn instances_core(
         .iter()
         .map(|db| airlayer::DatabaseConfig {
             name: db.name.clone(),
-            db_type: db.database_type.to_string(),
+            // `dialect()`, not the raw type name: airhouse and motherduck
+            // speak an engine their `type:` string does not name, and
+            // airlayer drops a datasource it cannot classify -- silently
+            // inheriting whichever dialect config.yml lists first.
+            db_type: db.dialect(),
         })
         .collect();
 
@@ -524,7 +528,11 @@ pub async fn get_world_model_filter_instances(
         .iter()
         .map(|db| airlayer::DatabaseConfig {
             name: db.name.clone(),
-            db_type: db.database_type.to_string(),
+            // `dialect()`, not the raw type name: airhouse and motherduck
+            // speak an engine their `type:` string does not name, and
+            // airlayer drops a datasource it cannot classify -- silently
+            // inheriting whichever dialect config.yml lists first.
+            db_type: db.dialect(),
         })
         .collect();
     let exec = WmExecCtx {
@@ -660,7 +668,11 @@ pub async fn post_world_model_filter_counts(
         .iter()
         .map(|db| airlayer::DatabaseConfig {
             name: db.name.clone(),
-            db_type: db.database_type.to_string(),
+            // `dialect()`, not the raw type name: airhouse and motherduck
+            // speak an engine their `type:` string does not name, and
+            // airlayer drops a datasource it cannot classify -- silently
+            // inheriting whichever dialect config.yml lists first.
+            db_type: db.dialect(),
         })
         .collect();
 
@@ -1697,7 +1709,11 @@ pub async fn get_world_model_instance_detail(
         .iter()
         .map(|db| airlayer::DatabaseConfig {
             name: db.name.clone(),
-            db_type: db.database_type.to_string(),
+            // `dialect()`, not the raw type name: airhouse and motherduck
+            // speak an engine their `type:` string does not name, and
+            // airlayer drops a datasource it cannot classify -- silently
+            // inheriting whichever dialect config.yml lists first.
+            db_type: db.dialect(),
         })
         .collect();
 
@@ -2536,7 +2552,11 @@ pub(crate) async fn measure_breakdown_core(
         .iter()
         .map(|db| airlayer::DatabaseConfig {
             name: db.name.clone(),
-            db_type: db.database_type.to_string(),
+            // `dialect()`, not the raw type name: airhouse and motherduck
+            // speak an engine their `type:` string does not name, and
+            // airlayer drops a datasource it cannot classify -- silently
+            // inheriting whichever dialect config.yml lists first.
+            db_type: db.dialect(),
         })
         .collect();
     let cfgs: Vec<SemanticQueryConfig> = plan.groups.iter().map(|(_, _, c)| c.clone()).collect();

@@ -139,13 +139,25 @@ impl AnalyticsSolver {
                     source = %format!("{:?}", solution.solution_source),
                 );
 
-                let connector = self
-                    .connectors
-                    .get(&solution.connector_name)
-                    .or_else(|| self.connectors.get(&self.default_connector))
-                    .or_else(|| self.connectors.values().next())
-                    .expect("AnalyticsSolver must have at least one connector")
-                    .clone();
+                // `connector_name` carries the routing decision already made:
+                // for a semantic solution it is the `datasource:` of the
+                // topic's views. Substituting the default when it is missing
+                // does not degrade the answer, it changes which warehouse and
+                // which SQL dialect answered — silently. Refuse instead.
+                let connector = match crate::solver::resolve_solution_connector(
+                    &self.connectors,
+                    &solution.connector_name,
+                    &self.default_connector,
+                ) {
+                    Ok(connector) => connector,
+                    Err(msg) => {
+                        tracing::error!("analytics execute: {msg}");
+                        return Err((
+                            AnalyticsError::NeedsUserInput { prompt: msg },
+                            BackTarget::Execute(solution.clone(), Default::default()),
+                        ));
+                    }
+                };
                 let sql = sql.clone();
                 // Child `tool_call` span so this execution shows up in the
                 // Execution Analytics tab alongside classic agent tool calls.
@@ -602,6 +614,18 @@ pub(super) enum SqlGenOutcome {
     /// `output: { mode: sql }` is combined with an agent context that
     /// doesn't generate raw SQL.
     IncompatiblePath { reason: String },
+    /// The database the solution names isn't registered, so the smoke check
+    /// has nothing to probe.
+    ///
+    /// Distinct from [`Self::SmokeCheckFailed`] because the remedy is
+    /// completely different: no rewrite of the SQL can register a connector.
+    /// Routing this through Solve hands the LLM "database X is not available"
+    /// as a syntax hint, burns the retry budget, and reports a routing failure
+    /// as a malformed query -- with the SQL likely mangled on the way.
+    ///
+    /// Carries `sql` so the failed-query panel still shows what would have run.
+    /// It is not a repair hint here -- the SQL is fine, its destination is not.
+    ConnectorUnavailable { sql: String, message: String },
 }
 
 impl AnalyticsSolver {
@@ -666,10 +690,21 @@ impl AnalyticsSolver {
             solution.solution_source,
             SolutionSource::LlmWithSemanticContext
         );
-        if needs_smoke
-            && let Err(message) = self.smoke_check_sql(&sql, &solution.connector_name).await
-        {
-            return SqlGenOutcome::SmokeCheckFailed { sql, message };
+        if needs_smoke {
+            // Resolve first, probe second. Collapsing the two would make an
+            // unavailable database indistinguishable from SQL the engine
+            // rejected, and only one of those is the LLM's to fix.
+            let connector = match crate::solver::resolve_solution_connector(
+                &self.connectors,
+                &solution.connector_name,
+                &self.default_connector,
+            ) {
+                Ok(connector) => connector,
+                Err(message) => return SqlGenOutcome::ConnectorUnavailable { sql, message },
+            };
+            if let Err(message) = Self::smoke_check_sql(&sql, connector.as_ref()).await {
+                return SqlGenOutcome::SmokeCheckFailed { sql, message };
+            }
         }
 
         SqlGenOutcome::Terminate(crate::AnalyticsAnswer {
@@ -683,16 +718,18 @@ impl AnalyticsSolver {
     /// parses and plans but doesn't scan. Cheap smoke check used by
     /// SQL-generation mode to catch malformed LLM output before the
     /// automation caches it to disk.
-    async fn smoke_check_sql(&self, sql: &str, connector_name: &str) -> Result<(), String> {
+    ///
+    /// Takes the resolved connector rather than a name: smoke-checking against
+    /// a different warehouse than the query targets is worse than not checking
+    /// at all -- it can pass SQL the real target rejects and reject SQL it
+    /// accepts -- and resolution failure is the caller's to classify, not a
+    /// probe result.
+    async fn smoke_check_sql(
+        sql: &str,
+        connector: &dyn agentic_connector::DatabaseConnector,
+    ) -> Result<(), String> {
         let trimmed = sql.trim().trim_end_matches(';');
         let wrapped = format!("SELECT * FROM ({trimmed}) AS __oxy_smoke LIMIT 0");
-        let connector = self
-            .connectors
-            .get(connector_name)
-            .or_else(|| self.connectors.get(&self.default_connector))
-            .or_else(|| self.connectors.values().next())
-            .ok_or_else(|| "no connector available for smoke check".to_string())?
-            .clone();
         connector
             .execute_query(&wrapped, 0)
             .await
@@ -765,6 +802,32 @@ pub(super) fn build_executing_handler()
                                     message,
                                 },
                                 back: BackTarget::Solve(spec, hint),
+                            });
+                        }
+                        SqlGenOutcome::ConnectorUnavailable { sql, message } => {
+                            // Fatal, not a retry. `NeedsUserInput` +
+                            // `BackTarget::Execute` is what the two execute
+                            // paths in this change already use for the same
+                            // condition, and `diagnose_impl` escalates it
+                            // rather than looping. `will_retry: false` so the
+                            // UI does not promise a retry that cannot help.
+                            tracing::error!("analytics sql-gen: {message}");
+                            emit_domain(
+                                &solver.event_tx,
+                                AnalyticsEvent::ExecutionFailed {
+                                    // The SQL is in scope and the sibling
+                                    // branch passes it; an empty string leaves
+                                    // the failed-query panel blank for no gain.
+                                    query: sql.clone(),
+                                    error: message.clone(),
+                                    source: format!("{:?}", solution_source),
+                                    will_retry: false,
+                                },
+                            )
+                            .await;
+                            return TransitionResult::diagnosing(ProblemState::Diagnosing {
+                                error: AnalyticsError::NeedsUserInput { prompt: message },
+                                back: BackTarget::Execute(solution.clone(), Default::default()),
                             });
                         }
                         SqlGenOutcome::IncompatiblePath { reason } => {

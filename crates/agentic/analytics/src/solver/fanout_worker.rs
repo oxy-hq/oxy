@@ -348,7 +348,9 @@ impl AnalyticsFanoutWorker {
         // named connector may have been renamed or removed. Fail the sub-spec
         // gracefully instead of panicking the driver task (which would drop the
         // outcome channel and hang the SSE stream).
-        let connector = match self.connectors.get(&spec.connector_name).cloned() {
+        let connector = match super::lookup_connector(&self.connectors, &spec.connector_name)
+            .map(|(_, c)| c.clone())
+        {
             Some(connector) => connector,
             None => {
                 let msg = format!(
@@ -485,13 +487,22 @@ impl AnalyticsFanoutWorker {
         };
         let is_preagg = exec_via_preagg.is_some();
 
-        let connector = self
-            .connectors
-            .get(&solution.connector_name)
-            .or_else(|| self.connectors.get(&self.default_connector))
-            .or_else(|| self.connectors.values().next())
-            .expect("AnalyticsFanoutWorker must have at least one connector")
-            .clone();
+        // Mirrors the serial path in `executing`: a named-but-unregistered
+        // connector is a misroute, not a reason to substitute the default.
+        let connector = match crate::solver::resolve_solution_connector(
+            &self.connectors,
+            &solution.connector_name,
+            &self.default_connector,
+        ) {
+            Ok(connector) => connector,
+            Err(msg) => {
+                tracing::error!("analytics fan-out execute: {msg}");
+                return Err((
+                    AnalyticsError::NeedsUserInput { prompt: msg },
+                    BackTarget::Execute(solution.clone(), Default::default()),
+                ));
+            }
+        };
 
         // Child `tool_call` span — identical shape to the serial path so
         // fan-out sub-queries appear in the Execution Analytics tab.

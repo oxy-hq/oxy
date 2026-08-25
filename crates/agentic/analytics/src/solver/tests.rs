@@ -808,7 +808,7 @@ async fn specifying_handler_routes_sql_file_to_database_from_oxy_annotation() {
 }
 
 #[tokio::test]
-async fn specifying_handler_falls_back_to_default_when_sql_oxy_db_unknown() {
+async fn a_verified_querys_unregistered_database_survives_to_the_routing_guard() {
     let sql_content = "/*\n  oxy:\n    database: not_registered\n*/\nSELECT 1;";
     let file_path = write_temp_sql("unknown_db.sql", sql_content);
 
@@ -839,9 +839,14 @@ async fn specifying_handler_falls_back_to_default_when_sql_oxy_db_unknown() {
 
     match result.state_data {
         ProblemState::Executing(solution) => {
+            // NOT "default". Substituting it here would launder the misroute
+            // past `resolve_solution_connector`, which only sees what this
+            // stage puts in `connector_name` -- and a Verified Query is
+            // hand-written SQL bound to one dialect, so running it elsewhere
+            // is the failure this whole change exists to stop.
             assert_eq!(
-                solution.connector_name, "default",
-                "must fall back to default when the annotated database is not registered",
+                solution.connector_name, "not_registered",
+                "the annotated database must reach execute so the routing guard can reject it",
             );
         }
         other => panic!(
@@ -2280,4 +2285,88 @@ async fn sql_gen_mode_automation_path_is_rejected() {
         panic!("expected IncompatiblePath");
     };
     assert!(reason.contains("automation"));
+}
+
+// ── Connector routing policy ─────────────────────────────────────────────────
+//
+// `resolve_solution_connector` decides whether a query runs where its view says
+// it should. Getting it wrong does not fail loudly — it answers from a different
+// warehouse, in a different SQL dialect, and reports the number as fact. These
+// pin the three branches and the invariant the dialect fix rests on.
+
+fn routing_connectors(
+    names: &[&str],
+) -> std::collections::HashMap<String, std::sync::Arc<dyn agentic_connector::DatabaseConnector>> {
+    names
+        .iter()
+        .map(|n| {
+            (
+                n.to_string(),
+                std::sync::Arc::new(StubConnector)
+                    as std::sync::Arc<dyn agentic_connector::DatabaseConnector>,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_named_registered_connector_is_the_one_used() {
+    let connectors = routing_connectors(&["warehouse", "lake"]);
+    let picked = resolve_solution_connector(&connectors, "lake", "warehouse")
+        .expect("a registered name resolves");
+    // Identity by pointer: the map holds distinct Arcs per name.
+    assert!(std::sync::Arc::ptr_eq(&picked, &connectors["lake"]));
+}
+
+#[test]
+fn a_named_but_unregistered_connector_errors_and_lists_what_is_available() {
+    let connectors = routing_connectors(&["warehouse", "lake"]);
+    // `expect_err` would need Debug on the Ok type, and `dyn DatabaseConnector`
+    // has none.
+    let err = match resolve_solution_connector(&connectors, "july_airhouse", "warehouse") {
+        Ok(_) => panic!("a query must not be rerouted off the database its view names"),
+        Err(e) => e,
+    };
+    assert!(
+        err.contains("july_airhouse"),
+        "names the missing one: {err}"
+    );
+    // Sorted, so the message is stable across runs and diffable in a log.
+    assert!(err.contains("[lake, warehouse]"), "lists available: {err}");
+}
+
+#[test]
+fn only_an_empty_name_falls_back_to_the_default() {
+    let connectors = routing_connectors(&["warehouse", "lake"]);
+    let picked =
+        resolve_solution_connector(&connectors, "", "warehouse").expect("empty name means default");
+    assert!(std::sync::Arc::ptr_eq(&picked, &connectors["warehouse"]));
+}
+
+#[test]
+fn a_datasource_differing_only_in_case_resolves() {
+    // The execute-path twin of `a_datasource_differing_only_in_case_still_resolves`
+    // in tools/tests.rs. airlayer matches a view's `datasource:` with
+    // `eq_ignore_ascii_case`, so a name that resolves for airlayer must resolve
+    // here -- otherwise the query is refused for a database that exists.
+    let connectors = routing_connectors(&["july_airhouse", "july_warehouse"]);
+    let picked = resolve_solution_connector(&connectors, "July_Airhouse", "july_warehouse")
+        .expect("a case-differing name is the same database, not a missing one");
+    assert!(std::sync::Arc::ptr_eq(
+        &picked,
+        &connectors["july_airhouse"]
+    ));
+}
+
+#[test]
+fn an_unregistered_default_errors_rather_than_picking_arbitrarily() {
+    // The old tail was `.or_else(|| values().next())`, and HashMap order is
+    // nondeterministic — so this case used to land in a different warehouse
+    // depending on the process.
+    let connectors = routing_connectors(&["warehouse", "lake"]);
+    let err = match resolve_solution_connector(&connectors, "", "not_registered") {
+        Ok(_) => panic!("an unregistered default is a misconfiguration, not a choice"),
+        Err(e) => e,
+    };
+    assert!(err.contains("not_registered"), "{err}");
 }

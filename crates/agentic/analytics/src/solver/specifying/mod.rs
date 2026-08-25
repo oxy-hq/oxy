@@ -1553,12 +1553,21 @@ pub(super) fn build_specifying_handler()
                             };
                             // Honor the optional `database:` annotation in the
                             // SQL file's `/* oxy: ... */` header, falling back
-                            // to the agent's default connector when absent or
-                            // when the named connector isn't registered.
+                            // to the agent's default connector only when the
+                            // header names none.
+                            //
+                            // A named-but-unregistered database is passed
+                            // through UNCHANGED so `execute_solution` fails
+                            // with the routing error. Substituting the default
+                            // here would launder the misroute before the guard
+                            // can see it -- and this is the worst path to do
+                            // that on: a Verified Query is hand-written SQL,
+                            // bound to one dialect by whoever wrote it, so its
+                            // `database:` is a declaration and never a hint.
+                            // Rerouting it runs DuckDB SQL on ClickHouse.
                             let connector_name =
                                 agentic_core::subrun::parse_oxy_comment_block(&sql)
                                     .and_then(|b| b.database)
-                                    .filter(|db| solver.connectors.contains_key(db))
                                     .unwrap_or(default_conn);
                             return TransitionResult::ok(ProblemState::Executing(
                                 crate::AnalyticsSolution {

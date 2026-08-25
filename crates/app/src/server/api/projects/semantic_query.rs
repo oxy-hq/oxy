@@ -239,9 +239,19 @@ pub async fn run_semantic_query(
         .config_manager
         .list_databases()
         .iter()
+        // `dialect()`, not `database_type.to_string()`. The two agree for most
+        // databases and diverge for exactly the ones that matter: `airhouse` and
+        // `airhouse_managed` both speak DuckDB, and `motherduck` does too. Feed
+        // airlayer the raw type name instead and `Dialect::from_str` returns
+        // None for it, which is not inert — the datasource is dropped from the
+        // dialect map and `resolve` silently falls back to the map default,
+        // i.e. whichever database happens to be listed first in config.yml. A
+        // workspace running airhouse alongside ClickHouse then gets ClickHouse
+        // SQL compiled for its DuckDB views, and step 6 below dutifully routes
+        // that SQL to the airhouse connector.
         .map(|db| airlayer::DatabaseConfig {
             name: db.name.clone(),
-            db_type: db.database_type.to_string(),
+            db_type: db.dialect(),
         })
         .collect();
 
@@ -525,5 +535,34 @@ mod tests {
         // Defensive: airlayer doesn't emit triple-underscored names,
         // but if it ever does, the parser bails out rather than guess.
         assert_eq!(bare_member_name("view__weird__name"), None);
+    }
+
+    #[test]
+    fn airhouse_managed_reports_the_dialect_it_actually_speaks() {
+        // The invariant this file's fix rests on. `database_type` names the
+        // config keyword; `dialect()` names the engine. Handing airlayer the
+        // keyword is why a DuckDB view compiled as ClickHouse: `from_str`
+        // cannot classify "airhouse_managed", so the datasource is dropped
+        // from the dialect map and silently inherits whichever dialect
+        // config.yml happens to list first.
+        use oxy::config::model::{AirhouseManaged, Database, DatabaseType};
+
+        let db = Database {
+            name: "july_airhouse".to_string(),
+            database_type: DatabaseType::AirhouseManaged(AirhouseManaged {}),
+        };
+
+        assert_eq!(db.database_type.to_string(), "airhouse_managed");
+        assert_eq!(db.dialect(), "duckdb");
+        // Deliberately NOT asserting that airlayer cannot parse the raw keyword.
+        // oxy-hq/airlayer#93 teaches it exactly that, so the assertion would be
+        // a tripwire that fires on the pin-bump PR -- the change least equipped
+        // to interpret it, and the one where `dialect()` is still correct
+        // anyway. What matters is the mapping below, which survives the bump.
+        assert_eq!(
+            airlayer::Dialect::from_str(&db.dialect()),
+            Some(airlayer::Dialect::DuckDB),
+            "dialect() must land on the engine airhouse actually speaks"
+        );
     }
 }

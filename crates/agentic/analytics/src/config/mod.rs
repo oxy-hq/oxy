@@ -549,7 +549,11 @@ impl AgentConfig {
 
         let default_connector = build_ctx
             .extra_default_connector
-            .or_else(|| connectors.keys().next().cloned())
+            // `min()`, not `next()`: HashMap order is nondeterministic, and an
+            // arbitrary-but-stable default beats a different one per process.
+            // Unreachable on the main path, but it is the same tail
+            // `resolve_solution_connector` deletes one crate over.
+            .or_else(|| connectors.keys().min().cloned())
             .unwrap_or_default();
 
         // 3. Load semantic catalog (after connectors so we have dialect info).

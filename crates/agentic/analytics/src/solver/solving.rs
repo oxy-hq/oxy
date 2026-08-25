@@ -244,7 +244,9 @@ impl AnalyticsSolver {
         // named connector may have been renamed or removed. Fail the run
         // gracefully instead of panicking the driver task (which would drop the
         // outcome channel and hang the SSE stream).
-        let connector = match self.connectors.get(&spec.connector_name).cloned() {
+        let connector = match super::lookup_connector(&self.connectors, &spec.connector_name)
+            .map(|(_, c)| c.clone())
+        {
             Some(connector) => connector,
             None => {
                 let msg = format!(

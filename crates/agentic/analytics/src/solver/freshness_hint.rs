@@ -77,12 +77,27 @@ pub(crate) async fn compute_freshness_hint(
     let futures: Vec<_> = targets
         .iter()
         .map(|t| async {
-            let connector = t
-                .datasource
-                .as_deref()
-                .filter(|n| connectors.contains_key(*n))
-                .unwrap_or(default_connector);
-            let connector = connectors.get(connector)?;
+            // Skip the view rather than substitute the default. This probe's
+            // result becomes an ambient "data through <date>" line the model
+            // quotes to the user as fact, so measuring it on the wrong engine
+            // is worse than not measuring it: a MAX(watermark) from a
+            // different warehouse is a confident wrong date. Best-effort, so
+            // dropping one view is the right failure -- the hint just omits it.
+            let connector = match t.datasource.as_deref() {
+                Some(name) => match super::lookup_connector(connectors, name).map(|(_, c)| c) {
+                    Some(connector) => connector,
+                    None => {
+                        tracing::warn!(
+                            view = %t.view,
+                            datasource = name,
+                            "skipping freshness probe: the view's datasource is not \
+                             registered for this agent"
+                        );
+                        return None;
+                    }
+                },
+                None => super::lookup_connector(connectors, default_connector).map(|(_, c)| c)?,
+            };
             let table_sql = format!("\"{}\"", t.table.replace('"', "\"\""));
             let sql = format!("SELECT MAX({}) FROM {table_sql}", t.watermark_expr);
             let res = connector.execute_query(&sql, 1).await.ok()?;

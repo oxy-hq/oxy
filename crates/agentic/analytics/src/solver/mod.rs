@@ -23,7 +23,7 @@ pub(crate) mod specifying;
 mod helpers;
 pub(super) use helpers::{
     emit_core, emit_domain, fmt_result_shape, infer_result_shape, is_retryable_compile_error,
-    strip_json_fences,
+    lookup_connector, resolve_solution_connector, strip_json_fences,
 };
 
 mod fanout_worker;

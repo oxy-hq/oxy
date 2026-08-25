@@ -50,7 +50,20 @@ pub fn build_dialect_map(
 
     for (name, connector) in connectors {
         if let Some(dialect) = convert_dialect(connector.dialect()) {
-            map.insert(name, dialect);
+            map.insert(name, dialect.clone());
+            // A lowercase alias, because airlayer's `DatasourceDialectMap`
+            // resolves by exact `HashMap::get` while execution now tolerates a
+            // case difference. Without this, `datasource: July_Airhouse` runs
+            // on the right connector and compiles with the map's DEFAULT
+            // dialect -- this PR's own bug, entering through the case door the
+            // case-insensitive lookup opened.
+            //
+            // Skipped when the alias is already a registered name, so two
+            // connectors differing only in case keep their own dialects.
+            let lower = name.to_ascii_lowercase();
+            if lower != *name && !connectors.contains_key(&lower) {
+                map.insert(&lower, dialect);
+            }
         }
     }
 
@@ -58,7 +71,15 @@ pub fn build_dialect_map(
         if let Some(dialect) = convert_dialect(connector.dialect()) {
             map.set_default(dialect);
         }
-    } else if let Some((fallback_name, connector)) = connectors.iter().next() {
+    } else if let Some((fallback_name, connector)) =
+        // `min_by_key`, not `iter().next()`: HashMap order is nondeterministic,
+        // so the old form picked a different dialect per process. Third and
+        // last instance of this tail -- `helpers.rs` and `config/mod.rs` shed
+        // theirs in this same change. Only reachable when `default` is
+        // unregistered, which the routing guard now refuses outright, so this
+        // is belt-and-braces.
+        connectors.iter().min_by_key(|(name, _)| name.as_str())
+    {
         tracing::warn!(
             missing = default,
             chosen = %fallback_name,

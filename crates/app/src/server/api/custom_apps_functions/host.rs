@@ -347,7 +347,11 @@ impl FunctionHost for ProjectFunctionHost {
             .iter()
             .map(|db| airlayer::DatabaseConfig {
                 name: db.name.clone(),
-                db_type: db.database_type.to_string(),
+                // `dialect()`, not the raw type name: airhouse and motherduck
+                // speak an engine their `type:` string does not name, and
+                // airlayer drops a datasource it cannot classify -- silently
+                // inheriting whichever dialect config.yml lists first.
+                db_type: db.dialect(),
             })
             .collect();
 

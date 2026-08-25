@@ -203,15 +203,15 @@ async fn check_single_view_freshness(
             ))
         })?;
 
-    // Connector routing: same rule as sample_single_column.
+    // Connector routing: same rule as sample_single_column, and the same rule
+    // `solver::freshness_hint` applies to the ambient version of this probe.
+    // A view's `datasource:` is honoured or the call fails -- it is never
+    // swapped for the default, because MAX(watermark) measured on a different
+    // engine is a confident wrong date the model then states as fact.
     let connector: &dyn DatabaseConnector = {
-        let name = target
-            .datasource
-            .as_deref()
-            .filter(|n| connectors.contains_key(*n))
-            .unwrap_or(default_connector);
-        connectors
-            .get(name)
+        let name = target.datasource.as_deref().unwrap_or(default_connector);
+        crate::solver::lookup_connector(connectors, name)
+            .map(|(_, c)| c)
             .ok_or_else(|| {
                 ToolError::Execution(format!(
                     "no connector registered for '{name}' (requested for view '{view_param}')"
@@ -291,9 +291,9 @@ fn staleness_days(value: &Value) -> Option<i64> {
 /// Sample a single column: resolve via catalog, query the database for distinct
 /// values and statistics.  Used by `sample_columns` (batch) above.
 ///
-/// Picks the connector named by the view's `datasource:` (via `SampleTarget`).
-/// Falls back to `default_connector` when the view has no datasource or when
-/// the named connector isn't registered.
+/// Picks the connector named by the view's `datasource:` (via `SampleTarget`),
+/// falling back to `default_connector` only when the view names none. A
+/// named-but-unregistered datasource is an error, not a reroute.
 async fn sample_single_column(
     table_param: &str,
     column_param: &str,
@@ -305,19 +305,23 @@ async fn sample_single_column(
     // Resolve semantic view/dimension names to physical table/column.
     let resolved = catalog.resolve_sample_target(table_param, column_param);
 
-    // Select the connector matching the view's datasource, falling back to the
-    // default.  Without this routing, a view declaring `datasource: local`
-    // would still be queried against whichever connector happens to be the
-    // default — which is how `oxymart.csv` lookups used to fail with "no such
-    // file" on the `training` connector.
+    // Select the connector matching the view's datasource.  Without this
+    // routing, a view declaring `datasource: local` would still be queried
+    // against whichever connector happens to be the default — which is how
+    // `oxymart.csv` lookups used to fail with "no such file" on the `training`
+    // connector.
+    //
+    // Named-but-unregistered falls through to the error below rather than the
+    // default: these samples become the literals the model writes into
+    // `WHERE ... IN (...)`, so values read off the wrong engine are worse than
+    // no values at all.
     let connector: &dyn DatabaseConnector = {
         let name = resolved
             .as_ref()
             .and_then(|t| t.datasource.as_deref())
-            .filter(|n| connectors.contains_key(*n))
             .unwrap_or(default_connector);
-        connectors
-            .get(name)
+        crate::solver::lookup_connector(connectors, name)
+            .map(|(_, c)| c)
             .ok_or_else(|| {
                 ToolError::Execution(format!(
                     "no connector registered for '{name}' (requested for table '{table_param}')"
