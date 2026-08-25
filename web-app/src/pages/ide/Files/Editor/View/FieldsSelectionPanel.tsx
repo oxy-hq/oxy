@@ -21,6 +21,24 @@ import {
 } from "../components/SemanticExplorer/useTimeDimensionHandlers";
 import { useViewExplorerContext } from "./contexts/ViewExplorerContext";
 
+/** A rollup chip (dimension name, or measure name + aggregation suffix) that
+ * truncates with an ellipsis instead of overflowing the fixed-width hover
+ * card — full text is available on hover. */
+const RollupChip = ({ label, suffix }: { label: string; suffix?: string }) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <span className='max-w-full cursor-help truncate rounded bg-muted px-1.5 py-0.5 font-mono text-foreground'>
+        {label}
+        {suffix && <span className='ml-1 text-muted-foreground'>{suffix}</span>}
+      </span>
+    </TooltipTrigger>
+    <TooltipContent side='right'>
+      {label}
+      {suffix ? ` ${suffix}` : ""}
+    </TooltipContent>
+  </Tooltip>
+);
+
 const RollupDetail = ({ rollup }: { rollup: PreaggRollupStatus }) => (
   <div className='space-y-3 text-xs'>
     <div className='flex items-center gap-1.5'>
@@ -41,9 +59,7 @@ const RollupDetail = ({ rollup }: { rollup: PreaggRollupStatus }) => (
         </p>
         <div className='flex flex-wrap gap-1'>
           {rollup.dimensions.map((d) => (
-            <span key={d} className='rounded bg-muted px-1.5 py-0.5 font-mono text-foreground'>
-              {d}
-            </span>
+            <RollupChip key={d} label={d} />
           ))}
         </div>
       </div>
@@ -56,12 +72,11 @@ const RollupDetail = ({ rollup }: { rollup: PreaggRollupStatus }) => (
         </p>
         <div className='flex flex-wrap gap-1'>
           {rollup.measures.map((m) => (
-            <span key={m.name} className='rounded bg-muted px-1.5 py-0.5 font-mono text-foreground'>
-              {m.name}
-              {m.measure_type && (
-                <span className='ml-1 text-muted-foreground'>({m.measure_type})</span>
-              )}
-            </span>
+            <RollupChip
+              key={m.name}
+              label={m.name}
+              suffix={m.measure_type ? `(${m.measure_type})` : undefined}
+            />
           ))}
         </div>
       </div>

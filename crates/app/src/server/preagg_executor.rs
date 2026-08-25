@@ -313,7 +313,11 @@ fn skip_suffix(skipped_no_key: usize, skipped_no_datasource: usize) -> String {
     format!(" ({total} skipped: {})", parts.join(", "))
 }
 
-fn rollup_refresh_key<'a>(
+/// The refresh key that governs one rollup: the per-rollup `refresh_key:` if
+/// the declaration carries one, else the view-level key. `None` means the
+/// worker skips this rollup — `api::semantic::build_preagg_status` filters on
+/// the same rule so the IDE never lists a rollup that will never be built.
+pub(crate) fn rollup_refresh_key<'a>(
     rollup: &'a airlayer::preagg::RollupSpec,
     view: &'a airlayer::View,
 ) -> Option<&'a airlayer::RefreshKey> {
