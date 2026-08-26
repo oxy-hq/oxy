@@ -1,3 +1,4 @@
+use futures::stream::StreamExt;
 use itertools::Itertools;
 
 use crate::integrations::eval::builders::types::EvalRecord;
@@ -6,13 +7,13 @@ use oxy::{
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, utils::ConsistencyMapper},
-        types::{RelevantContextGetter, TargetOutput},
+        types::{EventKind, ProgressType, RelevantContextGetter, TargetOutput, Usage},
     },
     utils::asyncify,
 };
 use oxy_shared::errors::OxyError;
 
-use super::{target::TargetExecutable, types::AgenticInput};
+use super::{target::TargetExecutable, target_agentic::run_target, types::AgenticInput};
 
 #[derive(Clone, Debug)]
 pub(super) struct GeneratorExecutable {
@@ -156,13 +157,66 @@ impl Executable<(EvalKind, AgenticInput, Option<String>)> for GeneratorExecutabl
                     }
                 }
 
-                // Execute all runs concurrently in a single batch
-                let mut target_executable = ExecutableBuilder::new()
-                    .concurrency(self.concurrency)
-                    .executable(TargetExecutable::new(task_ref, RelevantContextGetter::Id));
-                let results = target_executable
-                    .execute(execution_context, all_targets)
-                    .await?;
+                // Execute all runs concurrently on the agentic path, with no old
+                // executor pipeline. `run_target` is scaffolding-free (see
+                // `target_agentic::run_target`), so the two side-effects the old
+                // `ExecutableBuilder`/`ConcurrencyWrapper` produced are re-emitted
+                // here at the call site, where the `ExecutionContext` lives:
+                //   - progress events (Started/Updated/Finished) — drive the CLI bar
+                //     and the Test Dashboard SSE stream (keyed on this eval source);
+                //   - per-run `EventKind::Usage` — folded into run-level `TokenStats`
+                //     by `EvalEventsHandler` (per-case tokens ride on `TargetOutput`).
+                // `buffered` preserves input order so results still line up with
+                // `expected_outputs` below. `task_ref` is always `None` here and the
+                // agentic target yields empty relevant-context, so the getter is moot.
+                let total = all_targets.len();
+                // Telemetry writes are best-effort: a failed progress/usage emit
+                // (only reachable on a closed receiver) must not cancel in-flight
+                // target runs or skip `Finished`, so log rather than propagate.
+                if let Err(e) = execution_context
+                    .write_progress(ProgressType::Started(Some(total)))
+                    .await
+                {
+                    tracing::warn!("eval: failed to emit target progress Started: {e}");
+                }
+                let workspace = execution_context.workspace.clone();
+                let mut stream = futures::stream::iter(all_targets)
+                    .map(|input| {
+                        let workspace = workspace.clone();
+                        async move { run_target(&workspace, input).await }
+                    })
+                    .buffered(self.concurrency.max(1));
+                let mut results: Vec<Result<Vec<TargetOutput>, OxyError>> =
+                    Vec::with_capacity(total);
+                // `Updated(1)` fires in input order as `buffered` yields (not at real
+                // completion) — deliberate: it keeps the `case n/m` label monotonic.
+                while let Some(result) = stream.next().await {
+                    if let Ok(outputs) = &result {
+                        for out in outputs {
+                            if let Err(e) = execution_context
+                                .write_kind(EventKind::Usage {
+                                    usage: Usage::new(out.input_tokens, out.output_tokens),
+                                })
+                                .await
+                            {
+                                tracing::warn!("eval: failed to emit target token usage: {e}");
+                            }
+                        }
+                    }
+                    if let Err(e) = execution_context
+                        .write_progress(ProgressType::Updated(1))
+                        .await
+                    {
+                        tracing::warn!("eval: failed to emit target progress Updated: {e}");
+                    }
+                    results.push(result);
+                }
+                if let Err(e) = execution_context
+                    .write_progress(ProgressType::Finished)
+                    .await
+                {
+                    tracing::warn!("eval: failed to emit target progress Finished: {e}");
+                }
 
                 // Pair results back with their expected outputs
                 let mut all_outputs = Vec::new();

@@ -20,6 +20,7 @@ mod generator;
 mod one_shot;
 mod solver;
 mod target;
+mod target_agentic;
 pub mod types;
 
 pub struct EvalLauncher {
