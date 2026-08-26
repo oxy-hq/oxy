@@ -46,19 +46,36 @@ pub fn get_state_dir() -> &'static Path {
     STATE_DIR.as_path()
 }
 
+/// The cache key for one workspace's pre-aggregations: its workspace id.
+///
+/// Deliberately NOT a hash of the workspace path, which is what this was until
+/// the Pre-aggregation tab made the difference visible. A path is not stable
+/// per workspace: the request path resolves `?branch=` to a
+/// `.worktrees/<branch>` checkout while the rebuild cycle always runs against
+/// the default-branch root, so the reader and the writer hashed to two
+/// different directories and every rollup read "Not cached" on any feature
+/// branch — the IDE's normal state. It is also not tenant-safe as a blob key:
+/// `preagg_blob` puts these under one shared multi-tenant bucket prefix, where
+/// a workspace id is the identity that belongs there.
+///
+/// One workspace has one cache, whichever branch is checked out and whichever
+/// node built it. Rollup hashes already fold in view + rollup + grain, so
+/// nothing below this key needs the branch to disambiguate.
+pub fn airlayer_cache_key(workspace_id: uuid::Uuid) -> String {
+    workspace_id.to_string()
+}
+
 /// Returns the airlayer pre-aggregation cache directory for the given workspace.
 ///
-/// Path: `<oxy_state>/airlayer/cache/<sha256_of_workspace_path[:12]>/`
+/// Path: `<oxy_state>/airlayer/cache/<workspace_id>/`
 ///
 /// Using the state directory (not the workspace) ensures the cache persists
 /// in cloud deployments where the workspace directory is ephemeral.
-pub fn get_airlayer_cache_dir(workspace_path: &Path) -> PathBuf {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(workspace_path.as_os_str().as_encoded_bytes());
-    let hash = hex::encode(hasher.finalize());
-    let key = &hash[..12];
-    get_state_dir().join("airlayer").join("cache").join(key)
+pub fn get_airlayer_cache_dir(workspace_id: uuid::Uuid) -> PathBuf {
+    get_state_dir()
+        .join("airlayer")
+        .join("cache")
+        .join(airlayer_cache_key(workspace_id))
 }
 
 #[cfg(test)]
@@ -67,7 +84,7 @@ mod tests {
 
     #[test]
     fn airlayer_cache_dir_is_under_state_dir() {
-        let cache = get_airlayer_cache_dir(std::path::Path::new("/some/workspace"));
+        let cache = get_airlayer_cache_dir(uuid::Uuid::nil());
         assert!(
             cache.starts_with(get_state_dir()),
             "cache dir {cache:?} should be under state dir {:?}",
@@ -76,15 +93,22 @@ mod tests {
     }
 
     #[test]
-    fn different_workspace_paths_produce_different_cache_dirs() {
-        let a = get_airlayer_cache_dir(std::path::Path::new("/workspace/a"));
-        let b = get_airlayer_cache_dir(std::path::Path::new("/workspace/b"));
+    fn different_workspaces_produce_different_cache_dirs() {
+        let a = get_airlayer_cache_dir(uuid::Uuid::from_u128(1));
+        let b = get_airlayer_cache_dir(uuid::Uuid::from_u128(2));
         assert_ne!(a, b);
     }
 
     #[test]
-    fn same_workspace_path_is_deterministic() {
-        let p = std::path::Path::new("/workspace/foo");
-        assert_eq!(get_airlayer_cache_dir(p), get_airlayer_cache_dir(p));
+    fn the_key_does_not_vary_with_the_checked_out_branch() {
+        // The whole point of keying on the id: the rebuild cycle (default
+        // branch root) and a `?branch=`-scoped read (a `.worktrees/<branch>`
+        // root) must land on the SAME directory.
+        let id = uuid::Uuid::from_u128(7);
+        assert_eq!(get_airlayer_cache_dir(id), get_airlayer_cache_dir(id));
+        assert_eq!(
+            get_airlayer_cache_dir(id).file_name().unwrap(),
+            std::ffi::OsStr::new(&id.to_string())
+        );
     }
 }

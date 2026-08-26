@@ -12,6 +12,7 @@ import { TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import { handleDownloadFile } from "@/libs/utils/string";
 import HeaderActions from "../HeaderActions";
+import LimitInput from "./LimitInput";
 
 const COLLAPSE_THRESHOLD = 500;
 
@@ -152,19 +153,7 @@ const TabsHeader = ({
           </>
         )}
         {limit !== undefined && onLimitChange && (
-          <div className='flex shrink-0 items-center gap-1'>
-            <span className='text-muted-foreground text-xs'>Limit</span>
-            <input
-              type='number'
-              min={1}
-              value={limit}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                if (!Number.isNaN(v) && v > 0) onLimitChange(v);
-              }}
-              className='h-7 w-20 rounded-md border bg-background px-2 text-sm'
-            />
-          </div>
+          <LimitInput limit={limit} onLimitChange={onLimitChange} />
         )}
         <div className='shrink-0'>
           <HeaderActions

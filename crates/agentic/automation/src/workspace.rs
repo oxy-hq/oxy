@@ -123,6 +123,31 @@ pub trait WorkspaceContext: Send + Sync {
         120
     }
 
+    /// The workspace this context belongs to — the pre-aggregation cache key.
+    /// `None` in contexts with no workspace row (CLI, tests), which disables
+    /// the local-rollup short-circuit rather than guessing a key.
+    fn preagg_workspace_id(&self) -> Option<uuid::Uuid> {
+        None
+    }
+
+    /// Where to read a rollup this node did not build. `None` keeps single-node
+    /// behavior: the local file is the only copy.
+    fn preagg_blob(&self) -> Option<agentic_semantic::BlobConfig> {
+        None
+    }
+
+    /// The assembled local-rollup short-circuit, or `None` to compile every
+    /// query to warehouse SQL. Assembled here, from one set of accessors, so
+    /// no caller has to remember which pieces belong together.
+    fn preagg_context(&self) -> Option<agentic_semantic::PreaggContext> {
+        Some(agentic_semantic::PreaggContext {
+            workspace_id: self.preagg_workspace_id()?,
+            cache: self.refresh_key_cache()?,
+            renewal_threshold_secs: self.preagg_renewal_threshold_secs(),
+            blob: self.preagg_blob(),
+        })
+    }
+
     /// List all `.airway.yml` pipeline files in the workspace. Default
     /// returns empty so existing impls (test fakes) need no change; the
     /// real host adapter overrides it.

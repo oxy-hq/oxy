@@ -1,4 +1,12 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState
+} from "react";
 import { useCompileSemanticQuery, useExecuteSemanticQuery } from "@/hooks/api/useSemanticQuery";
 import type { TimeDimension } from "@/types/artifact";
 import type { Variable } from "../components/SemanticQueryPanel";
@@ -136,6 +144,22 @@ export const SemanticExplorerProvider = ({
   const { mutate: executeSemanticQuery, isPending: isExecuting } = useExecuteSemanticQuery();
   const { mutate: compileSemanticQuery, isPending: isCompiling } = useCompileSemanticQuery();
 
+  // Row cap for both the SQL preview and the actual run — matches the
+  // Looker Explorer's default (1000). Without this the request goes out with
+  // no `limit` at all, and the row count is whatever the backend defaults to.
+  const [limit, setLimit] = useState(1000);
+  // The auto-compile below reads this, not `limit`. Typing "500" over "1000"
+  // is three keystrokes and the raw value would fire three compiles, of which
+  // the first two are for numbers the user never meant — and, since nothing
+  // orders the responses, a slower early one can land last and leave the SQL
+  // preview showing a limit that isn't in the box. Settling first makes one
+  // request for the number the user actually typed.
+  const [debouncedLimit, setDebouncedLimit] = useState(limit);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedLimit(limit), 300);
+    return () => clearTimeout(t);
+  }, [limit]);
+
   const loading = isExecuting || isCompiling || dataLoading;
   const sqlLoading = isCompiling;
   const executeLoading = isExecuting;
@@ -157,7 +181,8 @@ export const SemanticExplorerProvider = ({
       filters,
       orders,
       variables,
-      timeDimensions
+      timeDimensions,
+      limit: debouncedLimit
     });
 
     setGeneratedSql("");
@@ -181,6 +206,7 @@ export const SemanticExplorerProvider = ({
     orders,
     variables,
     timeDimensions,
+    debouncedLimit,
     compileSemanticQuery,
     setGeneratedSql,
     setSqlError,
@@ -197,7 +223,8 @@ export const SemanticExplorerProvider = ({
       filters,
       orders,
       variables,
-      timeDimensions
+      timeDimensions,
+      limit
     });
 
     const startTime = Date.now();
@@ -236,6 +263,7 @@ export const SemanticExplorerProvider = ({
     orders,
     variables,
     timeDimensions,
+    limit,
     executeSemanticQuery,
     setResult,
     setResultFile,
@@ -296,6 +324,8 @@ export const SemanticExplorerProvider = ({
       onAddTimeDimension: addTimeDimension,
       onUpdateTimeDimension: updateTimeDimension,
       onRemoveTimeDimension: removeTimeDimension,
+      limit,
+      onLimitChange: setLimit,
       onExecuteQuery: handleExecuteQuery,
       availableDimensions,
       setSqlError,
@@ -344,6 +374,7 @@ export const SemanticExplorerProvider = ({
       addTimeDimension,
       updateTimeDimension,
       removeTimeDimension,
+      limit,
       handleExecuteQuery,
       availableDimensions,
       setSqlError,

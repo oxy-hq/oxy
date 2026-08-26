@@ -2,7 +2,18 @@
  *  `"function"` schedules are declarative — auto-registered from a customer
  *  app's manifest at publish and reconciled there, so they're read/run-now/
  *  disable-able in the Jobs UI but not hand-created via the schedule dialog. */
-export type ScheduleTargetKind = "workflow" | "airway" | "agent" | "monitor_scan" | "function";
+/** Kinds a person creates from the catalog, plus the system-managed ones the
+ *  platform seeds itself (`health_eval`, `preagg_cycle`) — those appear in the
+ *  Jobs list like any other schedule, so the type has to admit them. See
+ *  `SYSTEM_MANAGED_TARGET_KINDS` for what the UI does differently with them. */
+export type ScheduleTargetKind =
+  | "workflow"
+  | "airway"
+  | "agent"
+  | "monitor_scan"
+  | "health_eval"
+  | "preagg_cycle"
+  | "function";
 
 export interface Schedule {
   id: string;

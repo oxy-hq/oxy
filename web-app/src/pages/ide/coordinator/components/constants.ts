@@ -206,14 +206,24 @@ const SYSTEM_SOURCE_TYPES: readonly string[] = ["preagg_cycle"];
 export const isSystemSource = (source: string | null | undefined): boolean =>
   !!source && SYSTEM_SOURCE_TYPES.includes(source);
 
-/** Whether a schedule is a system-managed job rather than user-created.
- *  No schedule is system-tagged today — every `agentic_schedules` row is
- *  user-created via the catalog. Wired through so when that changes (e.g.
- *  a future preagg schedule), the badge lights up without code shuffling. */
-export const isSystemSchedule = (schedule: { target_kind?: string; name?: string }): boolean => {
-  void schedule;
-  return false;
-};
+/** Schedule `target_kind`s the platform manages rather than a person: the row
+ *  exists so the CADENCE is configurable, but the work behind it refreshes to
+ *  the present — a monitor scan reads the warehouse as it is now; a health
+ *  evaluation and a pre-aggregation cycle bring a cache up to date.
+ *
+ *  Two things follow, and both are why this list is shared rather than
+ *  re-spelled at each site: the job-type badge would misclassify them (they are
+ *  not agent / DAG / ELT), and there is no per-occurrence run to replay, so the
+ *  server rejects a backfill for them and the UI must not offer one. */
+export const SYSTEM_MANAGED_TARGET_KINDS: readonly string[] = [
+  "monitor_scan",
+  "health_eval",
+  "preagg_cycle"
+];
+
+/** Whether a schedule is a system-managed job rather than user-created. */
+export const isSystemSchedule = (schedule: { target_kind?: string; name?: string }): boolean =>
+  !!schedule.target_kind && SYSTEM_MANAGED_TARGET_KINDS.includes(schedule.target_kind);
 
 // ── Trigger source ──────────────────────────────────────────────────────────
 

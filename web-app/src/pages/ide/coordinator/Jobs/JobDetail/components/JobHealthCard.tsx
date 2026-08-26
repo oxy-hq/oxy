@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import { cn } from "@/libs/shadcn/utils";
 import type { Schedule } from "@/types/schedule";
 import { BackfillDialog } from "../../../components/BackfillDialog";
+import { isSystemSchedule } from "../../../components/constants";
 import { formatTimestamp } from "../../../components/utils";
 
 /**
@@ -15,7 +16,9 @@ import { formatTimestamp } from "../../../components/utils";
  * Airway jobs are date-window (not cron-slot) backfilled and own "coverage" in
  * the backfill-ranges gantt, so for them this collapses to just schedule health
  * (last fire status): the missed-occurrences block and the cron backfill button
- * are hidden and the title drops "& coverage".
+ * are hidden and the title drops "& coverage". System-managed kinds hide the
+ * button for a different reason — see `isSystemSchedule` — but keep the
+ * missed-occurrences block, which is still true and worth seeing.
  */
 export const JobHealthCard: React.FC<{
   schedule: Schedule;
@@ -23,6 +26,10 @@ export const JobHealthCard: React.FC<{
   isAirway?: boolean;
 }> = ({ schedule, canManage, isAirway = false }) => {
   const [backfillOpen, setBackfillOpen] = useState(false);
+  // System-managed kinds have no past occurrence to replay — the server
+  // rejects a backfill for them, so don't offer the button. Run now is the
+  // operation they do have.
+  const canBackfill = !isAirway && !isSystemSchedule(schedule);
 
   return (
     <div className='rounded-xl border border-border bg-card'>
@@ -30,7 +37,7 @@ export const JobHealthCard: React.FC<{
         <h3 className='font-semibold text-sm'>
           {isAirway ? "Schedule health" : "Health & coverage"}
         </h3>
-        {canManage && !isAirway && (
+        {canManage && canBackfill && (
           <Button
             size='sm'
             variant='outline'
@@ -77,14 +84,16 @@ export const JobHealthCard: React.FC<{
               {schedule.missed_runs > 0
                 ? `Slots skipped during scheduler downtime (last detected ${formatTimestamp(
                     schedule.last_missed_at
-                  )}). Policy is run-once-then-resume — only the first missed slot fires automatically; backfill the rest.`
+                  )}). Policy is run-once-then-resume — only the first missed slot fires automatically${
+                    canBackfill ? "; backfill the rest." : "."
+                  }`
                 : "Every scheduled slot has fired on time."}
             </p>
           </div>
         )}
       </div>
 
-      {!isAirway && (
+      {canBackfill && (
         <BackfillDialog open={backfillOpen} onOpenChange={setBackfillOpen} schedule={schedule} />
       )}
     </div>

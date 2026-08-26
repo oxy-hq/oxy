@@ -1603,7 +1603,8 @@
             "null"
           ]
         }
-      }
+      },
+      "additionalProperties": false
     },
     "RefreshWorkerConfig": {
       "description": "Configuration for the background pre-aggregation refresh worker.",
@@ -1631,7 +1632,8 @@
             "null"
           ]
         }
-      }
+      },
+      "additionalProperties": false
     },
     "Repository": {
       "description": "An external repository (dbt, LookML, data models, etc.) linked to an Oxy project. Either `path` or `git_url` must be set.",

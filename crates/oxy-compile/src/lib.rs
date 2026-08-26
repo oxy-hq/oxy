@@ -45,6 +45,7 @@ pub mod compile;
 pub mod duckdb_mirror;
 pub mod errors;
 pub mod outcome;
+pub mod preagg_blob;
 pub mod walker;
 pub mod workspace_path;
 pub mod writer;

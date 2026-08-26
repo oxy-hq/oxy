@@ -93,16 +93,10 @@ pub struct PipelineParams {
     /// `output: { mode: sql }` block is present on the task. The
     /// natural-language `interpreting` stage is bypassed.
     pub sql_generation_mode: bool,
-    /// Layer-1 preagg refresh-key cache shared with the background worker.
-    /// `None` when no preagg worker is running. Forwarded through to the
-    /// solver so the Specifying stage can serve from local Parquet.
-    pub preagg_cache:
-        Option<Arc<std::sync::RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>>,
-    /// Renewal threshold (seconds) for the preagg refresh-key cache.
-    pub preagg_renewal_threshold_secs: u64,
-    /// Root directory the semantic layer was loaded from. Used to locate
-    /// the airlayer cache directory.
-    pub semantic_scan_path: Option<PathBuf>,
+    /// The local-rollup short-circuit, forwarded through to the solver so
+    /// the Specifying stage can serve from local Parquet. `None` when no
+    /// rebuild worker is running.
+    pub preagg: Option<agentic_semantic::compile::PreaggContext>,
 }
 
 // ── start_pipeline ───────────────────────────────────────────────────────────
@@ -155,9 +149,7 @@ pub async fn start_pipeline(
         schema_cache: params.schema_cache,
         thinking_override,
         model_override,
-        preagg_cache: params.preagg_cache,
-        preagg_renewal_threshold_secs: params.preagg_renewal_threshold_secs,
-        semantic_scan_path: params.semantic_scan_path,
+        preagg: params.preagg,
         timezone: params.timezone,
     };
 
@@ -330,9 +322,7 @@ pub async fn resume_pipeline(
         schema_cache: params.schema_cache,
         thinking_override,
         model_override,
-        preagg_cache: params.preagg_cache,
-        preagg_renewal_threshold_secs: params.preagg_renewal_threshold_secs,
-        semantic_scan_path: params.semantic_scan_path,
+        preagg: params.preagg,
         timezone: params.timezone,
     };
 

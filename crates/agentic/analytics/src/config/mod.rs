@@ -247,16 +247,9 @@ pub struct BuildContext {
     pub thinking_override: Option<ThinkingConfig>,
     /// Runtime model override (from UI "extended thinking" mode toggle).
     pub model_override: Option<String>,
-    /// Layer-1 preagg refresh-key cache, shared with the background worker.
-    /// `None` when no preagg worker is running (CLI, tests).
-    pub preagg_cache:
-        Option<Arc<std::sync::RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>>,
-    /// Renewal threshold (seconds) for the preagg refresh-key cache. Must
-    /// match the background worker's `renewal_threshold`.
-    pub preagg_renewal_threshold_secs: u64,
-    /// Root directory the semantic layer was loaded from. Used to locate
-    /// the airlayer cache directory.
-    pub semantic_scan_path: Option<PathBuf>,
+    /// The local-rollup short-circuit. `None` when no rebuild worker is
+    /// running (CLI, tests).
+    pub preagg: Option<agentic_semantic::compile::PreaggContext>,
 }
 
 // ── AgentConfig methods ───────────────────────────────────────────────────────
@@ -741,11 +734,7 @@ impl AgentConfig {
         // rollup covers the request, and the Executing stage runs DuckDB
         // against the cached Parquet instead of round-tripping to the
         // warehouse.
-        solver = solver.with_preagg(
-            build_ctx.preagg_cache,
-            build_ctx.preagg_renewal_threshold_secs,
-            build_ctx.semantic_scan_path,
-        );
+        solver = solver.with_preagg(build_ctx.preagg);
 
         Ok((solver, ctx.automation_files))
     }

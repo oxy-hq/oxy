@@ -655,9 +655,7 @@ impl PipelineBuilder {
             sql_generation_mode: self.analytics_sql_mode,
             // Forward the platform's preagg wiring so the analytics
             // Specifying stage can short-circuit to local Parquet.
-            preagg_cache: self.platform.refresh_key_cache(),
-            preagg_renewal_threshold_secs: self.platform.preagg_renewal_threshold_secs(),
-            semantic_scan_path: Some(self.platform.workspace_path().to_path_buf()),
+            preagg: self.platform.preagg_context(),
         };
 
         // Start pipeline. Connector-less narrative-wrapper agents
@@ -822,9 +820,7 @@ impl PipelineBuilder {
             sql_generation_mode: self.analytics_sql_mode,
             // Forward the platform's preagg wiring so the analytics
             // Specifying stage can short-circuit to local Parquet.
-            preagg_cache: self.platform.refresh_key_cache(),
-            preagg_renewal_threshold_secs: self.platform.preagg_renewal_threshold_secs(),
-            semantic_scan_path: Some(self.platform.workspace_path().to_path_buf()),
+            preagg: self.platform.preagg_context(),
         };
 
         let handle = agentic_analytics::resume_pipeline(params, resume_data, answer)

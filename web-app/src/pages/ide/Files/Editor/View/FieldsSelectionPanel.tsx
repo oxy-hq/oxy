@@ -1,4 +1,3 @@
-import { Zap, ZapOff } from "lucide-react";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/shadcn/hover-card";
 import {
   SidebarContent,
@@ -12,6 +11,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/
 import usePreaggStatus from "@/hooks/api/usePreaggStatus";
 import { formatDate, timeAgo } from "@/libs/utils/date";
 import type { PreaggRollupStatus } from "@/services/api/semantic";
+import {
+  builtAt,
+  CacheIcon,
+  CacheState,
+  FieldChips,
+  MeasureChips
+} from "../../../SemanticLayer/components/preagg/RollupStatus";
 import CollapsibleFieldSection from "../components/SemanticExplorer/CollapsibleFieldSection";
 import DimensionItem from "../components/SemanticExplorer/DimensionItem";
 import MeasureItem from "../components/SemanticExplorer/MeasureItem";
@@ -21,92 +27,62 @@ import {
 } from "../components/SemanticExplorer/useTimeDimensionHandlers";
 import { useViewExplorerContext } from "./contexts/ViewExplorerContext";
 
-/** A rollup chip (dimension name, or measure name + aggregation suffix) that
- * truncates with an ellipsis instead of overflowing the fixed-width hover
- * card — full text is available on hover. */
-const RollupChip = ({ label, suffix }: { label: string; suffix?: string }) => (
-  <Tooltip>
-    <TooltipTrigger asChild>
-      <span className='max-w-full cursor-help truncate rounded bg-muted px-1.5 py-0.5 font-mono text-foreground'>
-        {label}
-        {suffix && <span className='ml-1 text-muted-foreground'>{suffix}</span>}
-      </span>
-    </TooltipTrigger>
-    <TooltipContent side='right'>
-      {label}
-      {suffix ? ` ${suffix}` : ""}
-    </TooltipContent>
-  </Tooltip>
-);
+const RollupDetail = ({
+  rollup,
+  blobReads
+}: {
+  rollup: PreaggRollupStatus;
+  blobReads: boolean;
+}) => {
+  const built = builtAt(rollup);
+  return (
+    <div className='space-y-3 text-xs'>
+      <CacheState rollup={rollup} blobReads={blobReads} size='md' />
 
-const RollupDetail = ({ rollup }: { rollup: PreaggRollupStatus }) => (
-  <div className='space-y-3 text-xs'>
-    <div className='flex items-center gap-1.5'>
-      {rollup.has_parquet ? (
-        <Zap className='h-3.5 w-3.5 shrink-0 text-primary' />
-      ) : (
-        <ZapOff className='h-3.5 w-3.5 shrink-0 text-muted-foreground' />
+      {rollup.dimensions.length > 0 && (
+        <div className='space-y-1'>
+          <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
+            Dimensions
+          </p>
+          <FieldChips items={rollup.dimensions} />
+        </div>
       )}
-      <span className={rollup.has_parquet ? "font-medium text-primary" : "text-muted-foreground"}>
-        {rollup.has_parquet ? "Cached" : "Not cached"}
-      </span>
+
+      {rollup.measures.length > 0 && (
+        <div className='space-y-1'>
+          <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
+            Measures
+          </p>
+          <MeasureChips measures={rollup.measures} />
+        </div>
+      )}
+
+      {rollup.time_dimension && (
+        <div className='space-y-1'>
+          <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
+            Time dimension
+          </p>
+          <span className='font-mono text-foreground'>
+            {rollup.time_dimension}
+            {rollup.granularity && (
+              <span className='ml-1 text-muted-foreground'>/ {rollup.granularity}</span>
+            )}
+          </span>
+        </div>
+      )}
+
+      {built && (
+        <div className='space-y-0.5'>
+          <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
+            Built
+          </p>
+          <p className='text-foreground'>{formatDate(built)}</p>
+          <p className='text-muted-foreground'>{timeAgo(built)}</p>
+        </div>
+      )}
     </div>
-
-    {rollup.dimensions.length > 0 && (
-      <div className='space-y-1'>
-        <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
-          Dimensions
-        </p>
-        <div className='flex flex-wrap gap-1'>
-          {rollup.dimensions.map((d) => (
-            <RollupChip key={d} label={d} />
-          ))}
-        </div>
-      </div>
-    )}
-
-    {rollup.measures.length > 0 && (
-      <div className='space-y-1'>
-        <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
-          Measures
-        </p>
-        <div className='flex flex-wrap gap-1'>
-          {rollup.measures.map((m) => (
-            <RollupChip
-              key={m.name}
-              label={m.name}
-              suffix={m.measure_type ? `(${m.measure_type})` : undefined}
-            />
-          ))}
-        </div>
-      </div>
-    )}
-
-    {rollup.time_dimension && (
-      <div className='space-y-1'>
-        <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
-          Time dimension
-        </p>
-        <span className='font-mono text-foreground'>
-          {rollup.time_dimension}
-          {rollup.granularity && (
-            <span className='ml-1 text-muted-foreground'>/ {rollup.granularity}</span>
-          )}
-        </span>
-      </div>
-    )}
-
-    {rollup.refresh_key_checked_at && (
-      <div className='space-y-0.5'>
-        <p className='font-medium text-[10px] text-muted-foreground uppercase tracking-wide'>
-          Built
-        </p>
-        <p className='text-foreground'>{formatDate(rollup.refresh_key_checked_at)}</p>
-        <p className='text-muted-foreground'>{timeAgo(rollup.refresh_key_checked_at)}</p>
-      </div>
-    )}
-  </div>
-);
+  );
+};
 
 const FieldsSelectionPanel = () => {
   const {
@@ -130,11 +106,18 @@ const FieldsSelectionPanel = () => {
     onRemoveTimeDimension
   );
 
-  const { data: preaggStatus } = usePreaggStatus();
+  // `error` is read, not just `data`: without it a failed status fetch made the
+  // Pre-aggregations section vanish, which is indistinguishable from a view
+  // that declares none. The tab reports the same failure out loud; the sidebar
+  // should not disagree with it by staying quiet.
+  const { data: preaggStatus, error: preaggError } = usePreaggStatus();
 
   if (!viewData) return null;
 
   const viewRollups = preaggStatus?.rollups.filter((r) => r.view_name === viewData.name) ?? [];
+  // Same source the Pre-aggregation tab reads, so the two surfaces can't
+  // disagree about whether a rollup built elsewhere still skips the warehouse.
+  const blobReads = preaggStatus?.blob_reads_available ?? false;
 
   const dimensions = viewData.dimensions.map((dimension) => ({
     name: dimension.name,
@@ -213,12 +196,18 @@ const FieldsSelectionPanel = () => {
               ))}
             </CollapsibleFieldSection>
 
-            {viewRollups.length > 0 && (
+            {(viewRollups.length > 0 || preaggError) && (
               <CollapsibleFieldSection
                 title='Pre-aggregations'
                 count={viewRollups.length}
                 defaultOpen={false}
               >
+                {preaggError && (
+                  <p className='px-2 py-1 text-muted-foreground text-xs'>
+                    Pre-aggregation status is unavailable right now. Queries still run — it is this
+                    list, not the data, that is missing.
+                  </p>
+                )}
                 {viewRollups.map((rollup: PreaggRollupStatus) => {
                   const applyRollup = () => {
                     setSelectedDimensions(rollup.dimensions.map((d) => `${viewData.name}.${d}`));
@@ -229,17 +218,13 @@ const FieldsSelectionPanel = () => {
                       <HoverCard openDelay={300} closeDelay={100}>
                         <HoverCardTrigger asChild>
                           <SidebarMenuSubButton onClick={applyRollup}>
-                            {rollup.has_parquet ? (
-                              <Zap className='h-3 w-3 shrink-0 text-primary' />
-                            ) : (
-                              <ZapOff className='h-3 w-3 shrink-0 text-muted-foreground' />
-                            )}
+                            <CacheIcon rollup={rollup} blobReads={blobReads} />
                             <span className='truncate'>{rollup.rollup_name}</span>
                           </SidebarMenuSubButton>
                         </HoverCardTrigger>
                         <HoverCardContent side='right' align='start' className='w-64 p-3'>
                           <p className='mb-2 font-semibold text-sm'>{rollup.rollup_name}</p>
-                          <RollupDetail rollup={rollup} />
+                          <RollupDetail rollup={rollup} blobReads={blobReads} />
                         </HoverCardContent>
                       </HoverCard>
                     </SidebarMenuSubItem>

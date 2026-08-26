@@ -4,6 +4,7 @@ pub mod auth;
 pub mod health_check;
 pub mod model;
 mod parser;
+pub mod preagg_check;
 pub mod schema_type_converter;
 pub mod test_config;
 pub mod validate;

@@ -38,6 +38,7 @@ mod variables;
 
 /// Configuration for the background pre-aggregation refresh worker.
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct RefreshWorkerConfig {
     /// Set to `false` to disable the background worker entirely.
     #[serde(default = "default_true", skip_serializing_if = "Option::is_none")]
@@ -56,6 +57,7 @@ fn default_true() -> Option<bool> {
 
 /// Top-level `pre_aggregations:` block in `config.yml`.
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct PreaggConfig {
     /// Warehouse schema where pre-agg tables are created. Defaults to `"AIRLAYER"`.
     #[serde(skip_serializing_if = "Option::is_none")]

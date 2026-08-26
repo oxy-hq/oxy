@@ -8,9 +8,12 @@ pub mod compile;
 pub mod config;
 pub mod error;
 pub mod preagg;
+#[cfg(test)]
+mod preagg_equivalence_tests;
 pub mod refresh_key_cache;
 
 pub use compile::{
-    CompiledQuery, compile_with_engine, get_database_from_views, resolve_and_compile,
+    BlobConfig, CompiledQuery, PreaggContext, PreaggSource, compile_with_engine,
+    get_database_from_views, resolve_and_compile,
 };
 pub use error::SemanticError;

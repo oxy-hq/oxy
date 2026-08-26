@@ -1321,7 +1321,7 @@ impl WmExecCtx {
         let dbs = self.databases.clone();
         let layer = self.layer.clone();
         tokio::task::spawn_blocking(move || {
-            resolve_and_compile(&sp, &dbs, &cfg, None, 0, Some(layer)).ok()
+            resolve_and_compile(&sp, &dbs, &cfg, None, Some(layer)).ok()
         })
         .await
         .ok()

@@ -29,18 +29,20 @@ use crate::refresh_key_cache::RefreshKeyCache;
 /// Result of compiling a semantic query.
 ///
 /// - `Warehouse` — run the SQL against the named warehouse connector.
-/// - `Preaggregation` — run `preagg_sql` against an in-memory DuckDB that reads the local pre-aggregated Parquet file.
-#[derive(Debug)]
+/// - `Preaggregation` — run `preagg_sql` against an in-memory DuckDB reading
+///   the pre-aggregated Parquet, from local disk or straight from the blob
+///   store (see [`PreaggSource`]).
+#[derive(Debug, Clone)]
 pub enum CompiledQuery {
     Warehouse {
         sql: String,
         database_name: String,
     },
     Preaggregation {
-        /// DuckDB rewrite that reads the local Parquet cache.
+        /// DuckDB rewrite whose `read_parquet(...)` targets `source`.
         preagg_sql: String,
-        /// Path to the cached Parquet file backing `preagg_sql`.
-        parquet_path: PathBuf,
+        /// Where the Parquet `preagg_sql` reads actually lives.
+        source: PreaggSource,
         /// Warehouse SQL that would have been executed without the preagg
         /// short-circuit. Surfaced to users/agents so they see the logical
         /// query, not the DuckDB rewrite.
@@ -52,18 +54,110 @@ pub enum CompiledQuery {
     },
 }
 
+/// Where a rollup's Parquet is being read from.
+///
+/// The two arms are the same rollup, and the answer is identical either way —
+/// they differ only in whether this node happens to hold the bytes.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum PreaggSource {
+    /// A file in this node's own cache directory. The fast path, and the only
+    /// one a single-node deployment ever takes.
+    Local(PathBuf),
+    /// Read directly out of the blob store over DuckDB's `httpfs`, because
+    /// another node built this rollup and this one never has.
+    ///
+    /// Deliberately NOT a download. DuckDB reads Parquet over `s3://` lazily
+    /// and pushes projections and filters down, so a rollup another node built
+    /// is queryable here without copying it — the same trick
+    /// `connector::duckdb`'s S3 mirror uses to serve a local-file warehouse
+    /// from the stateless fleet.
+    Blob { uri: String, config: BlobConfig },
+}
+
+impl PreaggSource {
+    /// The local file this source reads, if it is a local one. `None` for a
+    /// blob source — there is no file to stat, which is the point.
+    pub fn local_path(&self) -> Option<&Path> {
+        match self {
+            Self::Local(path) => Some(path),
+            Self::Blob { .. } => None,
+        }
+    }
+
+    /// Whether serving this source needs a warehouse round-trip's worth of
+    /// network. Used for logging, so "Pre-aggregated" can be told apart from
+    /// "Pre-aggregated, but over the network".
+    pub fn is_remote(&self) -> bool {
+        matches!(self, Self::Blob { .. })
+    }
+}
+
+/// What a DuckDB connection needs to read this workspace's rollups from the
+/// blob store: the bucket, and the endpoint details `httpfs` wants.
+///
+/// Credentials are deliberately absent — the connection uses the pod's own
+/// credential chain (see `oxy_shared::duckdb_s3`), so nothing secret travels
+/// through the compile path.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BlobConfig {
+    pub bucket: String,
+    pub region: Option<String>,
+    pub endpoint_url: Option<String>,
+}
+
+/// Everything the rollup short-circuit needs, in one value.
+///
+/// Bundled rather than passed as four positional arguments because they are
+/// one decision — "may this query be served from a rollup, and how do I find
+/// one?" — and because the pieces were previously easy to mismatch: the cache
+/// key in particular used to be a *path*, which a caller with a materialised
+/// scan path in scope could (and did) supply by mistake.
+#[derive(Clone)]
+pub struct PreaggContext {
+    /// The cache key. Not a path: the request path resolves `?branch=` to a
+    /// `.worktrees/<branch>` checkout while the rebuild cycle runs against the
+    /// default-branch root, so a path-derived key sent reader and writer to
+    /// two different directories and every rollup read as uncached on a
+    /// feature branch.
+    pub workspace_id: uuid::Uuid,
+    /// Layer-1 in-process refresh-key cache, shared with the rebuild worker.
+    pub cache: Arc<RwLock<RefreshKeyCache>>,
+    pub renewal_threshold_secs: u64,
+    /// Where to read a rollup this node did not build. `None` → local disk
+    /// only, which is correct for a single-node deployment and for any
+    /// deployment with no blob bucket configured.
+    pub blob: Option<BlobConfig>,
+}
+
+impl PreaggContext {
+    /// Prefix every one of this workspace's rollup objects lives under.
+    /// Mirrors `oxy_compile::preagg_blob`, which writes them.
+    fn blob_key(&self, file_name: &str) -> String {
+        format!(
+            "runtime/preagg/{}/{}",
+            oxy_shared::state_dir::airlayer_cache_key(self.workspace_id),
+            file_name
+        )
+    }
+}
+
 // Public API
 
 /// Resolve a semantic query against the semantic layer and compile to SQL.
 ///
-/// `cache` is the optional Layer-1 in-process refresh key cache. When `None`
-/// (CLI, tests), local Parquet is served without freshness validation.
+/// `preagg` is the optional local-rollup short-circuit. When `None` (CLI,
+/// tests, the builder validator) the query always compiles to warehouse SQL:
+/// without a rebuild worker there is no guarantee a local Parquet is current.
+///
+/// `scan_path` is where the semantic layer is PARSED FROM
+/// (compile-boundary-safe — a materialised tempdir works fine here, and is
+/// required on a stateless node with no working copy). It is deliberately NOT
+/// the pre-aggregation cache key; that is `PreaggContext::workspace_id`.
 pub fn resolve_and_compile(
     scan_path: &Path,
     databases: &[airlayer::DatabaseConfig],
     task: &SemanticQueryConfig,
-    cache: Option<Arc<RwLock<RefreshKeyCache>>>,
-    renewal_threshold_secs: u64,
+    preagg: Option<&PreaggContext>,
     pre_loaded_layer: Option<airlayer::SemanticLayer>,
 ) -> Result<CompiledQuery, SemanticError> {
     let dialects = airlayer::DatasourceDialectMap::from_config_databases(databases);
@@ -115,18 +209,8 @@ pub fn resolve_and_compile(
     let sql = substitute_params(&result.sql, &result.params);
 
     // Check local Parquet cache with freshness validation (Layer 1).
-    // Only attempt this path when a cache (and therefore a background worker) is present.
-    // Without a running worker there is no guarantee the local Parquet is up-to-date,
-    // so CLI, tests, and the builder context always compile to warehouse SQL.
-    if let Some(ref cache_arc) = cache
-        && let Some(local) = try_resolve_local_parquet(
-            scan_path,
-            &request,
-            cache_arc,
-            renewal_threshold_secs,
-            &sql,
-            &database_name,
-        )
+    if let Some(preagg) = preagg
+        && let Some(local) = try_resolve_preagg(preagg, &request, &sql, &database_name)
     {
         return Ok(local);
     }
@@ -165,54 +249,98 @@ pub fn compile_with_engine(
     Ok(substitute_params(&result.sql, &result.params))
 }
 
-/// Look up the local-Parquet manifest, check coverage + freshness, and
-/// return a `CompiledQuery::Preaggregation` if all conditions are met.
+/// Resolve a query against this workspace's rollups: local Parquet first, the
+/// blob store second, the warehouse if neither covers it.
 ///
 /// Extracted so the analytics solver can reuse the freshness/seed dance
 /// without duplicating the manifest-loading code.
-pub fn try_resolve_local_parquet(
-    scan_path: &Path,
+///
+/// The two-tier source is what makes this work on a fleet. Only the node that
+/// ran the rebuild holds the Parquet; every other node holds at most the
+/// manifest (the status handler syncs it). Rather than downloading the file to
+/// make the local read succeed, tier 2 points the same generated SQL at
+/// `s3://…` and lets DuckDB read it in place — no copy, no staging file, no
+/// blocking the caller on a download, and no divergence between what the two
+/// tiers answer, since it is the same object and the same SQL.
+pub fn try_resolve_preagg(
+    preagg: &PreaggContext,
     request: &QueryRequest,
-    cache: &Arc<RwLock<RefreshKeyCache>>,
-    renewal_threshold_secs: u64,
     warehouse_sql: &str,
     warehouse_database: &str,
 ) -> Option<CompiledQuery> {
-    let cache_dir = oxy_shared::state_dir::get_airlayer_cache_dir(scan_path);
+    let cache_dir = oxy_shared::state_dir::get_airlayer_cache_dir(preagg.workspace_id);
     let manifest_path = cache_dir.join("manifest.json");
     let content = std::fs::read_to_string(&manifest_path).ok()?;
     let manifest: airlayer::preagg::LocalManifest = serde_json::from_str(&content).ok()?;
 
-    let covering_entry = airlayer::preagg::check_coverage(request, &manifest.rollups)?;
-    let rollup_hash = covering_entry.rollup_hash.clone();
-    let manifest_value = covering_entry.refresh_key_value.clone();
+    let entry = airlayer::preagg::check_coverage(request, &manifest.rollups)?;
     let is_fresh = check_and_seed_freshness(
-        cache,
-        &rollup_hash,
-        manifest_value.as_deref(),
-        renewal_threshold_secs,
+        &preagg.cache,
+        &entry.rollup_hash,
+        entry.refresh_key_value.as_deref(),
+        preagg.renewal_threshold_secs,
     );
-
-    let resolution = airlayer::preagg::resolve_local(request, &manifest, &cache_dir)?;
-    if let airlayer::preagg::PreaggResolution::LocalParquet {
-        reagg_sql: preagg_sql,
-        parquet_path,
-    } = resolution
-    {
-        if !is_fresh {
-            tracing::debug!(
-                rollup_hash = %rollup_hash,
-                "preagg: serving stale Parquet, background rebuild pending"
-            );
-        }
-        return Some(CompiledQuery::Preaggregation {
-            preagg_sql,
-            parquet_path: PathBuf::from(parquet_path),
-            warehouse_sql: warehouse_sql.to_string(),
-            warehouse_database: warehouse_database.to_string(),
-        });
+    if !is_fresh {
+        tracing::debug!(
+            rollup_hash = %entry.rollup_hash,
+            "preagg: serving stale rollup, background rebuild pending"
+        );
     }
-    None
+
+    let source = resolve_source(preagg, &cache_dir, &entry.file)?;
+    // `generate_reagg_sql` takes the FROM clause as a string, so the same
+    // request produces the same projection, grouping and re-aggregation for
+    // either tier — only the source differs.
+    let preagg_sql = airlayer::preagg::generate_reagg_sql(request, entry, &from_clause(&source));
+    if source.is_remote() {
+        tracing::debug!(
+            rollup_hash = %entry.rollup_hash,
+            "preagg: serving from the blob store; this node has not built this rollup"
+        );
+    }
+    Some(CompiledQuery::Preaggregation {
+        preagg_sql,
+        source,
+        warehouse_sql: warehouse_sql.to_string(),
+        warehouse_database: warehouse_database.to_string(),
+    })
+}
+
+/// Local file if this node holds it, blob store if it is configured, nothing
+/// otherwise — in which case the caller takes the warehouse, which is always a
+/// correct answer, just a slower one.
+fn resolve_source(
+    preagg: &PreaggContext,
+    cache_dir: &Path,
+    file_name: &str,
+) -> Option<PreaggSource> {
+    let local = cache_dir.join(file_name);
+    if local.is_file() {
+        return Some(PreaggSource::Local(local));
+    }
+    let config = preagg.blob.clone()?;
+    Some(PreaggSource::Blob {
+        // Stored RAW. Escaping at construction would mean every other reader
+        // of this field — a log line, the `PreaggHandle` JSON that crosses the
+        // builder boundary, a future HEAD request — got doubled quotes. Escape
+        // where it is interpolated into SQL, and only there.
+        uri: format!("s3://{}/{}", config.bucket, preagg.blob_key(file_name)),
+        config,
+    })
+}
+
+/// The `FROM` expression for a source, as `generate_reagg_sql` wants it.
+fn from_clause(source: &PreaggSource) -> String {
+    match source {
+        PreaggSource::Local(path) => format!(
+            "read_parquet('{}')",
+            oxy_shared::duckdb_s3::escape_string(&path.to_string_lossy())
+        ),
+        PreaggSource::Blob { uri, .. } => format!(
+            "read_parquet('{}')",
+            oxy_shared::duckdb_s3::escape_string(uri)
+        ),
+    }
 }
 
 /// Decide whether the cached refresh-key entry is still fresh against the
@@ -629,5 +757,192 @@ mod tests {
             },
         ];
         assert_eq!(get_database_from_views(&views), Some("my_db".to_string()));
+    }
+
+    fn count_request() -> QueryRequest {
+        serde_json::from_value(serde_json::json!({
+            "measures": ["customers.total_customers"],
+            "dimensions": []
+        }))
+        .unwrap()
+    }
+
+    fn write_manifest(cache_dir: &Path) {
+        std::fs::create_dir_all(cache_dir).unwrap();
+        let manifest = serde_json::json!({
+            "pulled_at": "2026-08-24T00:00:00Z",
+            "source_database": "local",
+            "rollups": [{
+                "view_name": "customers",
+                "rollup_name": "by_count",
+                "rollup_hash": "abc123",
+                "file": "customers__abc123.parquet",
+                "dimensions": [],
+                "measures": [{"name": "total_customers", "type": "count"}],
+                "time_dimension": null,
+                "granularity": null,
+                "build_date": "2026-08-24 00:00:00"
+            }]
+        });
+        std::fs::write(cache_dir.join("manifest.json"), manifest.to_string()).unwrap();
+    }
+
+    /// A cache directory for one throwaway workspace, removed on drop.
+    ///
+    /// `get_airlayer_cache_dir` resolves the process-wide state dir, so these
+    /// tests genuinely write under `~/.local/share/oxy/airlayer/cache/`. A
+    /// tail cleanup only runs on the happy path; a failing assertion unwinds
+    /// past it and leaves debris in a developer's real state dir, so the
+    /// cleanup is a `Drop` instead.
+    struct ScratchCache {
+        workspace_id: uuid::Uuid,
+        dir: std::path::PathBuf,
+    }
+
+    impl ScratchCache {
+        fn new() -> Self {
+            let workspace_id = uuid::Uuid::new_v4();
+            Self {
+                workspace_id,
+                dir: oxy_shared::state_dir::get_airlayer_cache_dir(workspace_id),
+            }
+        }
+    }
+
+    impl Drop for ScratchCache {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn ctx(workspace_id: uuid::Uuid, blob: Option<BlobConfig>) -> PreaggContext {
+        PreaggContext {
+            workspace_id,
+            cache: Arc::new(RwLock::new(RefreshKeyCache::new())),
+            renewal_threshold_secs: 120,
+            blob,
+        }
+    }
+
+    fn blob_config() -> BlobConfig {
+        BlobConfig {
+            bucket: "oxy-blobs".to_string(),
+            region: Some("us-east-1".to_string()),
+            endpoint_url: None,
+        }
+    }
+
+    /// The cache key is the workspace id, so a rollup this workspace built
+    /// resolves and another workspace's cache is never borrowed.
+    ///
+    /// The key used to be a hash of the workspace PATH, which broke two ways:
+    /// a per-request materialised scan path hashed to a directory nothing had
+    /// ever built, and a `?branch=`-scoped request hashed to the worktree
+    /// checkout while the rebuild wrote under the default-branch root.
+    #[test]
+    fn local_parquet_resolves_under_the_workspace_id_key() {
+        let scratch = ScratchCache::new();
+        let (workspace_id, cache_dir) = (scratch.workspace_id, scratch.dir.clone());
+        write_manifest(&cache_dir);
+        let parquet_path = cache_dir.join("customers__abc123.parquet");
+        std::fs::write(&parquet_path, b"").unwrap();
+
+        let found = try_resolve_preagg(
+            &ctx(workspace_id, None),
+            &count_request(),
+            "SELECT 1",
+            "local",
+        );
+        match found {
+            Some(CompiledQuery::Preaggregation { source, .. }) => {
+                assert_eq!(source.local_path(), Some(parquet_path.as_path()));
+                assert!(!source.is_remote());
+            }
+            other => panic!("expected a local resolution, got {other:?}"),
+        }
+
+        // A different workspace has built nothing — it must not borrow this
+        // one's Parquet, and with no blob configured it has nowhere else to
+        // look.
+        assert!(
+            try_resolve_preagg(
+                &ctx(uuid::Uuid::new_v4(), None),
+                &count_request(),
+                "SELECT 1",
+                "local"
+            )
+            .is_none(),
+            "a workspace that has built nothing must not resolve to another's Parquet"
+        );
+    }
+
+    /// A node holding the manifest but not the Parquet — the shape every node
+    /// but the builder is in — reads the rollup straight out of the blob store
+    /// rather than downloading it or dropping to the warehouse.
+    #[test]
+    fn a_rollup_this_node_never_built_is_read_from_the_blob_store() {
+        let scratch = ScratchCache::new();
+        let (workspace_id, cache_dir) = (scratch.workspace_id, scratch.dir.clone());
+        write_manifest(&cache_dir); // manifest only — no Parquet next to it
+
+        // No blob configured: local disk is the only copy, so this declines
+        // and the caller takes the warehouse.
+        assert!(
+            try_resolve_preagg(
+                &ctx(workspace_id, None),
+                &count_request(),
+                "SELECT 1",
+                "local"
+            )
+            .is_none(),
+            "a manifest entry with no local file and no blob store must not resolve"
+        );
+
+        let resolved = try_resolve_preagg(
+            &ctx(workspace_id, Some(blob_config())),
+            &count_request(),
+            "SELECT 1",
+            "local",
+        );
+        let Some(CompiledQuery::Preaggregation {
+            preagg_sql, source, ..
+        }) = resolved
+        else {
+            panic!("expected a blob resolution");
+        };
+        assert!(source.is_remote());
+        assert_eq!(source.local_path(), None, "nothing is downloaded");
+        let expected_uri =
+            format!("s3://oxy-blobs/runtime/preagg/{workspace_id}/customers__abc123.parquet");
+        match &source {
+            PreaggSource::Blob { uri, config } => {
+                assert_eq!(uri, &expected_uri);
+                assert_eq!(config, &blob_config());
+            }
+            other => panic!("expected a blob source, got {other:?}"),
+        }
+        assert!(
+            preagg_sql.contains(&format!("read_parquet('{expected_uri}')")),
+            "the generated SQL must read the object in place: {preagg_sql}"
+        );
+        assert!(
+            !cache_dir.join("customers__abc123.parquet").exists(),
+            "reading from the blob store must not write a local copy"
+        );
+    }
+
+    /// The shape of the key this crate reads under. That it MATCHES what
+    /// `oxy_compile::preagg_blob` writes under cannot be asserted here —
+    /// `agentic-semantic` can't depend on `oxy-compile` — so the cross-crate
+    /// half lives in `oxy-app`'s `preagg_context` tests, where both are
+    /// reachable. This one only pins that the shape doesn't drift silently.
+    #[test]
+    fn the_blob_key_is_workspace_scoped_under_the_runtime_prefix() {
+        let workspace_id = uuid::Uuid::from_u128(42);
+        let preagg = ctx(workspace_id, Some(blob_config()));
+        assert_eq!(
+            preagg.blob_key("orders__deadbeef.parquet"),
+            format!("runtime/preagg/{workspace_id}/orders__deadbeef.parquet")
+        );
     }
 }

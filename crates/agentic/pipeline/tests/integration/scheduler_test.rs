@@ -16,9 +16,9 @@ use std::sync::Arc;
 use agentic_airway::AirwayMigrator;
 use agentic_pipeline::scheduler::{
     ScheduleError, ScheduleInput, create_schedule, delete_schedule, delete_workspace_schedules,
-    enqueue_health_eval, get_schedule, health_interval_cron, list_schedules,
-    reconcile_health_schedule, run_schedule_now, tick_health_schedules, tick_monitor_schedules,
-    tick_schedules, update_schedule,
+    enqueue_health_eval, enqueue_preagg_cycle, get_schedule, health_interval_cron, list_schedules,
+    reconcile_health_schedule, reconcile_preagg_schedule, run_schedule_now, tick_health_schedules,
+    tick_monitor_schedules, tick_preagg_schedules, tick_schedules, update_schedule,
 };
 use agentic_runtime::migration::RuntimeMigrator;
 use async_trait::async_trait;
@@ -633,6 +633,286 @@ async fn health_tasks_for(db: &DatabaseConnection, ws: uuid::Uuid) -> Vec<Health
     .all(db)
     .await
     .unwrap()
+}
+
+// ── Pre-aggregation cycle scheduling ────────────────────────────────────────
+//
+// Mirrors the health-eval block below exactly — same fire path, same
+// task_id == run_id contract, just a different `target_kind` and a payload
+// shape that carries `force`/`target` alongside `workspace_id`.
+
+/// Preagg-cycle queue rows for a given workspace: force flag + target, so a
+/// test can tell a scheduled (unforced, untargeted) fire apart from an
+/// on-demand (`enqueue_preagg_cycle`) one from the payload alone.
+#[derive(sea_orm::FromQueryResult)]
+struct PreaggQueueRow {
+    workspace_id: String,
+    force: bool,
+    target: Option<String>,
+    scope_owned: bool,
+}
+
+async fn preagg_tasks_for(db: &DatabaseConnection, ws: uuid::Uuid) -> Vec<PreaggQueueRow> {
+    PreaggQueueRow::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT spec->'payload'->>'workspace_id' AS workspace_id, \
+                (spec->'payload'->>'force')::bool AS force, \
+                spec->'payload'->>'target' AS target, \
+                scope_owned \
+         FROM agentic_task_queue \
+         WHERE spec->>'kind' = 'preagg_cycle' \
+           AND spec->'payload'->>'workspace_id' = $1 \
+         ORDER BY created_at",
+        [ws.to_string().into()],
+    ))
+    .all(db)
+    .await
+    .unwrap()
+}
+
+/// `reconcile_preagg_schedule` creates the row when absent, and on an
+/// existing row only updates `cron_expr`/`enabled` when they actually
+/// changed — an unchanged reconcile leaves the next fire slot alone.
+#[tokio::test]
+async fn reconcile_preagg_schedule_creates_then_leaves_steady_state_alone() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+
+    reconcile_preagg_schedule(&db, ws, std::time::Duration::from_secs(600), true)
+        .await
+        .unwrap();
+    let created = get_schedule(&db, ws, &list_schedules(&db, ws).await.unwrap()[0].id)
+        .await
+        .unwrap();
+    assert_eq!(created.target_kind, "preagg_cycle");
+    assert_eq!(created.target_ref, ws.to_string());
+    assert!(created.enabled);
+
+    // Same interval, same enabled: steady state, next_run_at untouched.
+    reconcile_preagg_schedule(&db, ws, std::time::Duration::from_secs(600), true)
+        .await
+        .unwrap();
+    let unchanged = get_schedule(&db, ws, &created.id).await.unwrap();
+    assert_eq!(unchanged.next_run_at, created.next_run_at);
+
+    // A real cadence change moves the fire slot.
+    reconcile_preagg_schedule(&db, ws, std::time::Duration::from_secs(1800), true)
+        .await
+        .unwrap();
+    let recadenced = get_schedule(&db, ws, &created.id).await.unwrap();
+    assert_ne!(recadenced.cron_expr, created.cron_expr);
+
+    // Disabling flips `enabled` without deleting the row.
+    reconcile_preagg_schedule(&db, ws, std::time::Duration::from_secs(1800), false)
+        .await
+        .unwrap();
+    assert!(!get_schedule(&db, ws, &created.id).await.unwrap().enabled);
+
+    delete_workspace_schedules(&db, ws).await.unwrap();
+}
+
+/// A due per-workspace `preagg_cycle` row enqueues exactly one Global,
+/// unforced, untargeted Custom task and advances its cadence; a second tick
+/// does not double-enqueue.
+#[tokio::test]
+async fn due_preagg_row_enqueues_one_global_custom_task() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+
+    let s = create_schedule(
+        &db,
+        ws,
+        ScheduleInput {
+            name: "Pre-aggregation cycle".to_string(),
+            target_kind: "preagg_cycle".to_string(),
+            target_ref: ws.to_string(),
+            question: None,
+            variables: None,
+            cron_expr: health_interval_cron(std::time::Duration::from_secs(600)),
+            timezone: "UTC".to_string(),
+            enabled: true,
+        },
+    )
+    .await
+    .unwrap();
+    // Oldest-due by a decade — see the per-tick fire cap invariant note on
+    // `due_health_row_enqueues_one_global_custom_task`; the same shared-
+    // testcontainer reasoning applies here.
+    force_due(&db, &s.id, 10 * 365 * 24 * 3600).await;
+
+    let fired = tick_preagg_schedules(&db).await;
+    assert!(fired >= 1, "at least this workspace's row fired");
+
+    let tasks = preagg_tasks_for(&db, ws).await;
+    assert_eq!(tasks.len(), 1, "exactly one queued preagg task for the ws");
+    assert_eq!(tasks[0].workspace_id, ws.to_string());
+    assert!(
+        !tasks[0].force,
+        "a scheduled fire honors refresh keys, unforced"
+    );
+    assert!(
+        tasks[0].target.is_none(),
+        "a scheduled fire covers every rollup"
+    );
+    assert!(!tasks[0].scope_owned, "preagg task is TaskScope::Global");
+
+    let after = get_schedule(&db, ws, &s.id).await.unwrap();
+    assert!(after.next_run_at > agentic_runtime::crud::now());
+    assert!(after.last_fired_at.is_some());
+
+    tick_preagg_schedules(&db).await;
+    assert_eq!(
+        preagg_tasks_for(&db, ws).await.len(),
+        1,
+        "this workspace's row not due → no double-enqueue"
+    );
+
+    delete_workspace_schedules(&db, ws).await.unwrap();
+}
+
+/// Same regression class as `fired_health_run_is_picked_up_by_latency_worker`:
+/// the seeded root task_id must equal run_id or the pickup query never
+/// matches it and the run hangs `running` forever.
+#[tokio::test]
+async fn fired_preagg_run_is_picked_up_by_latency_worker() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+
+    let s = create_schedule(
+        &db,
+        ws,
+        ScheduleInput {
+            name: "Pre-aggregation cycle".to_string(),
+            target_kind: "preagg_cycle".to_string(),
+            target_ref: ws.to_string(),
+            question: None,
+            variables: None,
+            cron_expr: health_interval_cron(std::time::Duration::from_secs(600)),
+            timezone: "UTC".to_string(),
+            enabled: true,
+        },
+    )
+    .await
+    .unwrap();
+    force_due(&db, &s.id, 10 * 365 * 24 * 3600).await;
+
+    let fired = tick_preagg_schedules(&db).await;
+    assert!(fired >= 1, "at least this workspace's row fired");
+
+    let pending = agentic_runtime::crud::find_pending_global_runs(&db, Some(ws))
+        .await
+        .unwrap();
+    assert_eq!(
+        pending.len(),
+        1,
+        "the fired preagg run must be picked up by find_pending_global_runs"
+    );
+
+    delete_workspace_schedules(&db, ws).await.unwrap();
+}
+
+/// `enqueue_preagg_cycle` — the IDE's Rebuild buttons — always forces, and
+/// carries the target through untouched (or `None` for "Rebuild all").
+#[tokio::test]
+async fn enqueue_preagg_cycle_is_forced_and_carries_the_target() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+
+    enqueue_preagg_cycle(
+        &db,
+        ws,
+        Some(("orders".to_string(), "orders_by_month".to_string())),
+    )
+    .await
+    .unwrap();
+    let tasks = preagg_tasks_for(&db, ws).await;
+    assert_eq!(tasks.len(), 1);
+    assert!(tasks[0].force, "a Rebuild click always forces");
+    let target = tasks[0].target.as_deref().expect("target carried through");
+    assert!(target.contains("orders_by_month"));
+
+    enqueue_preagg_cycle(&db, ws, None).await.unwrap();
+    let tasks = preagg_tasks_for(&db, ws).await;
+    assert_eq!(tasks.len(), 2, "a second, distinct on-demand run");
+    assert!(tasks[1].target.is_none(), "Rebuild all carries no target");
+
+    delete_workspace_schedules(&db, ws).await.unwrap();
+}
+
+/// Regression: "Run now" on the Pre-aggregation cycle job failed with
+/// `unknown target_kind "preagg_cycle"` — `fire_schedule` only knew the
+/// user-created kinds, and unlike `monitor_scan`/`health_eval` (which the host
+/// run-now handler special-cases and runs inline) nothing else covered preagg.
+/// A manual fire seeds one unforced, untargeted Global task, exactly like the
+/// tick — the Rebuild buttons stay the forcing path.
+#[tokio::test]
+async fn run_now_on_a_preagg_schedule_seeds_an_unforced_cycle() {
+    let Some(db) = test_db().await else { return };
+    let ws = uuid::Uuid::new_v4();
+
+    let s = create_schedule(
+        &db,
+        ws,
+        ScheduleInput {
+            name: "Pre-aggregation cycle".to_string(),
+            target_kind: "preagg_cycle".to_string(),
+            target_ref: ws.to_string(),
+            question: None,
+            variables: None,
+            cron_expr: health_interval_cron(std::time::Duration::from_secs(600)),
+            timezone: "UTC".to_string(),
+            enabled: true,
+        },
+    )
+    .await
+    .unwrap();
+    let before_next = s.next_run_at;
+
+    let run_id = run_schedule_now(&db, ws, &FakeWorkspace, &s.id)
+        .await
+        .expect("run-now must fire a preagg schedule");
+
+    let tasks = preagg_tasks_for(&db, ws).await;
+    assert_eq!(tasks.len(), 1, "exactly one queued preagg task");
+    assert_eq!(tasks[0].workspace_id, ws.to_string());
+    assert!(
+        !tasks[0].force,
+        "a manual fire of the schedule still honors refresh keys"
+    );
+    assert!(tasks[0].target.is_none(), "covers every rollup");
+    assert!(!tasks[0].scope_owned, "preagg task is TaskScope::Global");
+
+    // Run-now is out-of-band: the cadence must be untouched, the run attributed
+    // to the schedule, and labelled `manual` in the run history.
+    let after = get_schedule(&db, ws, &s.id).await.unwrap();
+    assert_eq!(
+        after.next_run_at, before_next,
+        "run-now doesn't advance cron"
+    );
+    assert_eq!(after.last_run_id.as_deref(), Some(run_id.as_str()));
+    assert!(after.last_error.is_none(), "no last_error on a good fire");
+
+    #[derive(sea_orm::FromQueryResult)]
+    struct RunRow {
+        source_type: Option<String>,
+        schedule_id: Option<String>,
+        trigger: Option<String>,
+    }
+    let run = RunRow::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT source_type, schedule_id, metadata->>'trigger' AS trigger \
+         FROM agentic_runs WHERE id = $1",
+        [run_id.clone().into()],
+    ))
+    .one(&db)
+    .await
+    .unwrap()
+    .expect("seeded run row");
+    assert_eq!(run.source_type.as_deref(), Some("preagg_cycle"));
+    assert_eq!(run.schedule_id.as_deref(), Some(s.id.as_str()));
+    assert_eq!(run.trigger.as_deref(), Some("manual"));
+
+    delete_workspace_schedules(&db, ws).await.unwrap();
 }
 
 /// A due per-workspace `health_eval` row enqueues exactly one Global

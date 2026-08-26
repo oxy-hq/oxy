@@ -16,8 +16,8 @@ use crate::api::{
     agent, api_keys, app, apps, artifacts, automation, chart, competitors, compile, data,
     data_repo, database, execution_analytics, exported_chart, file, foot_traffic, integration,
     local_setup, message, metric_anomalies, metric_tree, metrics, modeling, org_subdomain,
-    pipeline, result_files, run, schedules, semantic, task, test_file, test_project_run, test_run,
-    thread, traces, video, workspace_custom_apps, workspace_logo, workspace_members,
+    pipeline, preagg, result_files, run, schedules, semantic, task, test_file, test_project_run,
+    test_run, thread, traces, video, workspace_custom_apps, workspace_logo, workspace_members,
     workspace_oxy_access, workspaces, world_model, world_model_graph,
 };
 
@@ -152,7 +152,8 @@ pub(super) fn build_workspace_routes(
             "/semantic/view/{file_path_b64}",
             get(semantic::get_view_details),
         )
-        .route("/semantic/preagg-status", get(semantic::get_preagg_status))
+        .route("/semantic/preagg-status", get(preagg::get_preagg_status))
+        .route("/semantic/preagg-rebuild", post(preagg::rebuild_preagg))
         .route("/semantic/compile", post(semantic::compile_semantic_query))
         .route("/semantic", post(semantic::execute_semantic_query))
         // Metric tree — structure + pure analysis ops over the semantic layer.

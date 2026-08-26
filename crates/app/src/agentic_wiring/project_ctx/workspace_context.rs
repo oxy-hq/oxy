@@ -93,6 +93,14 @@ impl WorkspaceContext for OxyProjectContext {
         self.preagg_renewal_threshold_secs
     }
 
+    fn preagg_workspace_id(&self) -> Option<uuid::Uuid> {
+        Some(self.workspace_manager().workspace_id)
+    }
+
+    fn preagg_blob(&self) -> Option<agentic_semantic::BlobConfig> {
+        crate::server::preagg_context::blob_config()
+    }
+
     fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
         self.workspace_manager
             .config_manager

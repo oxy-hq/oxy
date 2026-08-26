@@ -1,13 +1,12 @@
 //! `BuilderSemanticCompiler` implementation backed by `agentic-semantic`.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use agentic_automation::WorkspaceContext;
-use agentic_builder::semantic::{BuilderSemanticCompiler, SemanticCompilationResult};
+use agentic_builder::semantic::{BuilderSemanticCompiler, PreaggHandle, SemanticCompilationResult};
 use agentic_core::result::QueryResult;
 use agentic_core::tools::ToolError;
-use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
+use agentic_semantic::compile::{CompiledQuery, PreaggSource, resolve_and_compile};
 use async_trait::async_trait;
 
 use crate::agentic_wiring::OxyProjectContext;
@@ -15,8 +14,22 @@ use crate::agentic_wiring::OxyProjectContext;
 /// Bridges builder semantic compilation to `agentic_semantic::compile`.
 ///
 /// Returns either a warehouse SQL string (routed through a database
-/// connector by the tool) or a pre-aggregation rewrite + Parquet path
-/// (executed via in-process DuckDB through `execute_preagg`).
+/// connector by the tool) or a pre-aggregation rewrite plus a handle to the
+/// rollup behind it (executed via in-process DuckDB through `execute_preagg`).
+
+/// `agentic-builder` deliberately doesn't depend on `agentic-semantic`, so the
+/// source travels through its opaque [`PreaggHandle`] as JSON and comes back
+/// here to be decoded. Nothing between the two ends interprets it.
+fn encode_handle(source: &PreaggSource) -> Result<PreaggHandle, ToolError> {
+    serde_json::to_string(source)
+        .map(PreaggHandle)
+        .map_err(|e| ToolError::Execution(format!("could not encode the rollup handle: {e}")))
+}
+
+fn decode_handle(handle: &PreaggHandle) -> Result<PreaggSource, ToolError> {
+    serde_json::from_str(&handle.0)
+        .map_err(|e| ToolError::Execution(format!("could not decode the rollup handle: {e}")))
+}
 pub struct OxyBuilderSemanticCompiler {
     project_ctx: Arc<OxyProjectContext>,
 }
@@ -39,18 +52,10 @@ impl BuilderSemanticCompiler for OxyBuilderSemanticCompiler {
 
         let scan_path = self.project_ctx.workspace_path();
         let databases = self.project_ctx.database_configs();
-        let cache = self.project_ctx.refresh_key_cache();
-        let renewal_threshold_secs = self.project_ctx.preagg_renewal_threshold_secs();
+        let preagg = self.project_ctx.preagg_context();
 
-        let compiled = resolve_and_compile(
-            scan_path,
-            &databases,
-            &task,
-            cache,
-            renewal_threshold_secs,
-            None,
-        )
-        .map_err(|e| ToolError::Execution(e.to_string()))?;
+        let compiled = resolve_and_compile(scan_path, &databases, &task, preagg.as_ref(), None)
+            .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         match compiled {
             CompiledQuery::Warehouse { sql, database_name } => {
@@ -58,12 +63,12 @@ impl BuilderSemanticCompiler for OxyBuilderSemanticCompiler {
             }
             CompiledQuery::Preaggregation {
                 preagg_sql,
-                parquet_path,
+                source,
                 warehouse_sql,
                 warehouse_database,
             } => Ok(SemanticCompilationResult::Preaggregation {
                 preagg_sql,
-                parquet_path,
+                handle: encode_handle(&source)?,
                 warehouse_sql,
                 warehouse_database,
             }),
@@ -73,17 +78,13 @@ impl BuilderSemanticCompiler for OxyBuilderSemanticCompiler {
     async fn execute_preagg(
         &self,
         preagg_sql: &str,
-        parquet_path: &Path,
+        handle: &PreaggHandle,
         sample_limit: u64,
     ) -> Result<QueryResult, ToolError> {
         let preagg_sql = preagg_sql.to_string();
-        let parquet_path = parquet_path.to_path_buf();
+        let source = decode_handle(handle)?;
         let (columns, rows, total_row_count) = tokio::task::spawn_blocking(move || {
-            agentic_semantic::preagg::execute_preagg_sql_typed(
-                &preagg_sql,
-                &parquet_path,
-                sample_limit,
-            )
+            agentic_semantic::preagg::execute_preagg_sql_typed(&preagg_sql, &source, sample_limit)
         })
         .await
         .map_err(|e| ToolError::Execution(format!("preagg task panicked: {e}")))?

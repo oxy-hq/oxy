@@ -441,15 +441,15 @@ impl AnalyticsSolver {
 
             SolutionPayload::Preaggregation {
                 preagg_sql,
-                parquet_path,
+                source,
                 warehouse_sql,
             } => {
                 let preagg_sql = preagg_sql.clone();
-                let parquet_path = parquet_path.clone();
+                let source = source.clone();
                 let warehouse_sql = warehouse_sql.clone();
                 tracing::debug!(
-                    parquet_path = %parquet_path.display(),
-                    "executing preagg LocalParquet via DuckDB"
+                    remote = source.is_remote(),
+                    "executing preagg rollup via DuckDB"
                 );
 
                 // Emit the warehouse SQL as `query.input` so traces and the
@@ -463,25 +463,105 @@ impl AnalyticsSolver {
                     source = "SemanticLayer (preagg)",
                 );
 
-                let (execution_type, _is_verified) = ("semantic_query_preagg", true);
+                // Both tiers run inside this span, and which one answers isn't
+                // known until the rollup read returns — so the attributes
+                // Execution Analytics reads are left Empty and recorded below
+                // from the tier that actually served. Naming the preagg tier up
+                // front counted a warehouse fallback as a pre-aggregated query.
                 let tool_span = tracing::info_span!(
                     "analytics.tool_call",
                     oxy.name = "analytics.tool_call",
                     oxy.span_type = "tool_call",
                     oxy.agent.ref = %self.agent_id,
                     agent.prompt = %self.question,
-                    oxy.execution_type = execution_type,
-                    oxy.is_verified = true,
+                    oxy.execution_type = tracing::field::Empty,
+                    oxy.is_verified = tracing::field::Empty,
                     connector = %solution.connector_name,
                 );
 
-                let exec_result = crate::preagg_exec::execute_local_parquet(
+                // No wall-clock timeout here, matching the warehouse branch
+                // above. On a blob source this is a network scan, so what keeps
+                // it from stalling a chat run against an unreachable endpoint
+                // is `SET http_timeout` / `SET http_retries` in
+                // `oxy_shared::duckdb_s3::s3_setup_sql` — the read is bounded
+                // where it happens. Wrapping this in `tokio::time::timeout`
+                // would not help: it runs in `spawn_blocking`, where dropping
+                // the future detaches the task instead of cancelling it.
+                let rollup_result = crate::preagg_exec::execute_rollup(
                     preagg_sql.clone(),
-                    parquet_path,
+                    source.clone(),
                     DEFAULT_SAMPLE_LIMIT,
                 )
                 .instrument(tool_span.clone())
                 .await;
+
+                // A rollup that won't read is not a query the model got wrong.
+                // The same question has a warehouse answer, and the variant
+                // carries the SQL for it — so fall back rather than raising a
+                // SyntaxError, which sends the FSM back to Execute and asks an
+                // LLM to repair SQL over what is usually a missing object.
+                //
+                // Reachable in normal operation on the blob tier: the rebuild
+                // mirrors one rollup's Parquet and then the WHOLE manifest, so
+                // a node syncing that manifest can resolve entries whose
+                // objects are not in the store yet. Slower, not wrong.
+                let (exec_result, served_from_rollup) = match rollup_result {
+                    Ok(exec) => (Ok(exec), true),
+                    Err(rollup_error) => {
+                        tracing::warn!(
+                            remote = source.is_remote(),
+                            error = %rollup_error,
+                            "preagg rollup read failed; falling back to the warehouse"
+                        );
+                        let connector = match crate::solver::resolve_solution_connector(
+                            &self.connectors,
+                            &solution.connector_name,
+                            &self.default_connector,
+                        ) {
+                            Ok(connector) => connector,
+                            Err(msg) => {
+                                tracing::error!("analytics execute (preagg fallback): {msg}");
+                                // Stamp the span before returning. The rollup
+                                // read already failed, so this run is a
+                                // warehouse fallback that could not resolve a
+                                // connector — badge it as the fallback tier.
+                                // Returning first left both attributes Empty
+                                // and the run reached Execution Analytics with
+                                // `execution_type = ''`, which reads as a gap
+                                // in instrumentation rather than as the failure
+                                // it is.
+                                let (execution_type, is_verified) =
+                                    execution_type_for(&solution.solution_source);
+                                tool_span.record("oxy.execution_type", execution_type);
+                                tool_span.record("oxy.is_verified", is_verified);
+                                return Err((
+                                    AnalyticsError::NeedsUserInput { prompt: msg },
+                                    BackTarget::Execute(solution.clone(), Default::default()),
+                                ));
+                            }
+                        };
+                        (
+                            connector
+                                .execute_query(&warehouse_sql, DEFAULT_SAMPLE_LIMIT)
+                                .instrument(tool_span.clone())
+                                .await
+                                // Match `execute_rollup`'s error type so both
+                                // tiers land in one `match` below.
+                                .map_err(|e| e.to_string()),
+                            false,
+                        )
+                    }
+                };
+
+                // The rollup tier is `semantic_query_preagg`; a fallback is an
+                // ordinary semantic-layer warehouse query, and is badged as one.
+                let (execution_type, is_verified) = if served_from_rollup {
+                    ("semantic_query_preagg", true)
+                } else {
+                    execution_type_for(&solution.solution_source)
+                };
+                tool_span.record("oxy.execution_type", execution_type);
+                tool_span.record("oxy.is_verified", is_verified);
 
                 match exec_result {
                     Ok(exec) => {
@@ -529,13 +609,13 @@ impl AnalyticsSolver {
                             row_count = exec.result.rows.len(),
                             columns = %serde_json::to_string(&columns).unwrap_or_default(),
                             duration_ms = duration_ms,
-                            is_preagg = true,
+                            is_preagg = served_from_rollup,
                         );
 
                         emit_domain(
                             &self.event_tx,
                             AnalyticsEvent::QueryExecuted {
-                                query: warehouse_sql,
+                                query: warehouse_sql.clone(),
                                 row_count: exec.result.rows.len(),
                                 duration_ms,
                                 success: true,
@@ -543,7 +623,11 @@ impl AnalyticsSolver {
                                 columns,
                                 rows,
                                 source: query_source,
-                                is_preagg: true,
+                                // The badge has to report what actually
+                                // answered. A fallback that still claimed
+                                // "Pre-aggregated" would be the freshness lie
+                                // the badge exists to avoid.
+                                is_preagg: served_from_rollup,
                                 sub_spec_index: None,
                                 semantic_query: solution.semantic_query.clone(),
                             },
@@ -566,7 +650,7 @@ impl AnalyticsSolver {
                         emit_domain(
                             &self.event_tx,
                             AnalyticsEvent::QueryExecuted {
-                                query: warehouse_sql,
+                                query: warehouse_sql.clone(),
                                 row_count: 0,
                                 duration_ms,
                                 success: false,
@@ -582,7 +666,11 @@ impl AnalyticsSolver {
                         .await;
                         Err((
                             AnalyticsError::SyntaxError {
-                                query: preagg_sql,
+                                // Both tiers failed. Report the WAREHOUSE SQL:
+                                // it is the query the model can actually act
+                                // on, where the DuckDB rewrite is a rollup
+                                // detail it never wrote and cannot repair.
+                                query: warehouse_sql,
                                 message: e,
                             },
                             BackTarget::Execute(solution, Default::default()),

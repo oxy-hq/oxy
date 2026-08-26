@@ -469,11 +469,11 @@ impl AnalyticsFanoutWorker {
             SolutionPayload::Sql(sql) => (sql.clone(), None),
             SolutionPayload::Preaggregation {
                 preagg_sql,
-                parquet_path,
+                source,
                 warehouse_sql,
             } => (
                 warehouse_sql.clone(),
-                Some((preagg_sql.clone(), parquet_path.clone())),
+                Some((preagg_sql.clone(), source.clone())),
             ),
             SolutionPayload::Vendor(_) => {
                 // Vendor path is not supported in fan-out; fall through to error.
@@ -530,14 +530,10 @@ impl AnalyticsFanoutWorker {
         );
         let exec_result: Result<agentic_connector::ExecutionResult, String> = match exec_via_preagg
         {
-            Some((preagg_sql, parquet_path)) => {
-                crate::preagg_exec::execute_local_parquet(
-                    preagg_sql,
-                    parquet_path,
-                    DEFAULT_SAMPLE_LIMIT,
-                )
-                .instrument(tool_span.clone())
-                .await
+            Some((preagg_sql, source)) => {
+                crate::preagg_exec::execute_rollup(preagg_sql, source, DEFAULT_SAMPLE_LIMIT)
+                    .instrument(tool_span.clone())
+                    .await
             }
             None => connector
                 .execute_query(&sql_for_event, DEFAULT_SAMPLE_LIMIT)

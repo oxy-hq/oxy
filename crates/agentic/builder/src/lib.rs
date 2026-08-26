@@ -32,7 +32,7 @@ pub use pipeline::{BuilderPipelineParams, resume_pipeline, start_pipeline};
 pub use prompts::KnowledgeCard;
 pub use schema_provider::BuilderSchemaProvider;
 pub use secrets::BuilderSecretsProvider;
-pub use semantic::{BuilderSemanticCompiler, SemanticCompilationResult};
+pub use semantic::{BuilderSemanticCompiler, PreaggHandle, SemanticCompilationResult};
 pub use solver::{BuilderSolver, build_builder_handlers};
 pub use test_runner::BuilderTestRunner;
 pub use types::{

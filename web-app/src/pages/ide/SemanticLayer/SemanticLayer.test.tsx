@@ -10,6 +10,14 @@ vi.mock("./SemanticExplorerTab", () => ({
 vi.mock("../MetricTree", () => ({
   default: () => <div data-testid='metric-tree-tab' />
 }));
+vi.mock("./PreAggregationTab", () => ({
+  default: () => <div data-testid='pre-aggregation-tab' />
+}));
+// The page reads the anomaly badge count on mount; that hook needs a project
+// context this render has no reason to build.
+vi.mock("@/hooks/api/useMetricAnomalies", () => ({
+  useMetricAnomalies: () => ({ data: undefined })
+}));
 
 describe("SemanticLayerPage", () => {
   afterEach(cleanup);
@@ -22,6 +30,7 @@ describe("SemanticLayerPage", () => {
     );
     expect(screen.getByRole("tab", { name: "Explorer" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Metric Tree" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Pre-aggregation" })).toBeInTheDocument();
     expect(screen.getByTestId("explorer-tab")).toBeInTheDocument();
   });
 
@@ -32,5 +41,14 @@ describe("SemanticLayerPage", () => {
       </MemoryRouter>
     );
     expect(screen.getByTestId("metric-tree-tab")).toBeInTheDocument();
+  });
+
+  it("selects the Pre-aggregation tab from ?view=pre-aggregation", () => {
+    render(
+      <MemoryRouter initialEntries={["/ide/semantic?view=pre-aggregation"]}>
+        <SemanticLayerPage />
+      </MemoryRouter>
+    );
+    expect(screen.getByTestId("pre-aggregation-tab")).toBeInTheDocument();
   });
 });

@@ -412,7 +412,6 @@ pub(crate) async fn instances_core(
             &databases,
             &semantic_config,
             None,
-            0,
             Some(layer_clone),
         )
     })

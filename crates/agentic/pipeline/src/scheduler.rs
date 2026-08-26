@@ -94,10 +94,17 @@ fn validate_input(input: &ScheduleInput) -> Result<(), ScheduleError> {
     }
     if !matches!(
         input.target_kind.as_str(),
-        "workflow" | "airway" | "agent" | "monitor_scan" | "health_eval" | "function"
+        "workflow"
+            | "airway"
+            | "agent"
+            | "monitor_scan"
+            | "health_eval"
+            | "preagg_cycle"
+            | "function"
     ) {
         return Err(ScheduleError::Invalid(format!(
-            "target_kind must be 'workflow', 'airway', 'agent', 'monitor_scan', 'health_eval', or 'function', got {:?}",
+            "target_kind must be 'workflow', 'airway', 'agent', 'monitor_scan', \
+             'health_eval', 'preagg_cycle', or 'function', got {:?}",
             input.target_kind
         )));
     }
@@ -119,8 +126,9 @@ fn validate_input(input: &ScheduleInput) -> Result<(), ScheduleError> {
         ));
     }
     if input.cron_expr.starts_with(INTERVAL_PREFIX) {
-        // Interval-sentinel cadence for per-workspace `health_eval` rows —
-        // validated by `next_run_for`, not the cron engine.
+        // Interval-sentinel cadence for per-workspace `health_eval` /
+        // `preagg_cycle` rows — validated by `next_run_for`, not the cron
+        // engine.
         return Ok(());
     }
     validate_cron(&input.cron_expr, &input.timezone).map_err(ScheduleError::Invalid)
@@ -447,11 +455,18 @@ pub async fn tick_schedules(
         .filter(schedule::Column::Enabled.eq(true))
         .filter(schedule::Column::NextRunAt.lte(now))
         // Specialized tick functions own these kinds (`tick_monitor_schedules`,
-        // `tick_health_schedules`); `fire_schedule` cannot handle them. Excluding
-        // them here prevents the generic tick from CAS-advancing their
-        // `next_run_at` and then failing — which would starve the specialized
-        // tick in the same pass (the row would no longer be due).
-        .filter(schedule::Column::TargetKind.is_not_in(["monitor_scan", "health_eval"]))
+        // `tick_health_schedules`, `tick_preagg_schedules`). `fire_schedule`
+        // can in fact handle `preagg_cycle` — that arm exists so Run now works
+        // — but the OWNER is still the specialized tick. Excluding all three
+        // here prevents the generic tick from CAS-advancing their `next_run_at`
+        // and then failing, or double-firing what the specialized tick is about
+        // to claim — either of which starves that tick in the same pass (the
+        // row would no longer be due).
+        .filter(schedule::Column::TargetKind.is_not_in([
+            "monitor_scan",
+            "health_eval",
+            "preagg_cycle",
+        ]))
         .all(db)
         .await
     {
@@ -1051,6 +1066,276 @@ pub async fn reconcile_health_schedule(
     Ok(())
 }
 
+// ── Pre-aggregation cycle scheduling ────────────────────────────────────────
+//
+// Mirrors the health-eval block above exactly, one layer down: build a
+// rollup rather than evaluate one. Kept as separate functions rather than a
+// generic "reconcile a singleton per-workspace schedule" abstraction — the
+// health path is exercised by a full test suite already, and a shared
+// abstraction is not worth the risk of a subtle regression there for a
+// second caller with genuinely different payload shape (health carries only
+// `force_smoke`; a preagg cycle carries an optional rollup target).
+
+/// User-facing name for the per-workspace pre-aggregation schedule row.
+pub const PREAGG_SCHEDULE_NAME: &str = "Pre-aggregation cycle";
+
+/// Max `preagg_cycle` rows a single [`tick_preagg_schedules`] pass will fire.
+const MAX_PREAGG_FIRES_PER_TICK: u64 = 256;
+
+/// Idempotently reconcile a workspace's single `preagg_cycle` schedule row to
+/// the given cadence/enabled state. Same contract as
+/// [`reconcile_health_schedule`]: creates the row when absent, updates it only
+/// when cadence/enabled/name actually changed (preserving the next fire slot
+/// otherwise), and leaves it alone on an unchanged reconcile. Called from the
+/// compile worker (`config.yml` is the source of truth), and startup reconcile.
+pub async fn reconcile_preagg_schedule(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+    interval: std::time::Duration,
+    enabled: bool,
+) -> Result<(), ScheduleError> {
+    let cron = health_interval_cron(interval);
+    let existing = schedule::Entity::find()
+        .filter(schedule::Column::TargetKind.eq("preagg_cycle"))
+        .filter(schedule::Column::TargetRef.eq(workspace_id.to_string()))
+        .filter(schedule::Column::WorkspaceId.eq(workspace_id))
+        .one(db)
+        .await?;
+
+    match existing {
+        None => {
+            create_schedule(
+                db,
+                workspace_id,
+                ScheduleInput {
+                    name: PREAGG_SCHEDULE_NAME.to_string(),
+                    target_kind: "preagg_cycle".to_string(),
+                    target_ref: workspace_id.to_string(),
+                    question: None,
+                    variables: None,
+                    cron_expr: cron,
+                    timezone: "UTC".to_string(),
+                    enabled,
+                },
+            )
+            .await?;
+        }
+        Some(row)
+            if row.cron_expr != cron
+                || row.enabled != enabled
+                || row.name != PREAGG_SCHEDULE_NAME =>
+        {
+            let cadence_changed = row.cron_expr != cron;
+            let next = if cadence_changed {
+                Some(
+                    next_after(&cron, &row.timezone, chrono::Utc::now())
+                        .map_err(ScheduleError::Invalid)?,
+                )
+            } else {
+                None
+            };
+            let mut active: schedule::ActiveModel = row.into();
+            active.cron_expr = Set(cron);
+            active.enabled = Set(enabled);
+            active.name = Set(PREAGG_SCHEDULE_NAME.to_string());
+            if let Some(next) = next {
+                active.next_run_at = Set(next);
+            }
+            active.updated_at = Set(agentic_runtime::crud::now());
+            active.update(db).await?;
+        }
+        Some(_) => {}
+    }
+    Ok(())
+}
+
+/// Seed a `TaskScope::Global` run carrying the per-workspace preagg-cycle
+/// Custom task. The fleet's `PreaggTaskExecutor` (registered via the host's
+/// `CustomTaskRegistry`) drains it, builds a fresh workspace context from
+/// `workspace_id`, and rebuilds whatever rollups are stale (or, if `force`, all
+/// of `target` — or every declared rollup when `target` is absent).
+///
+/// Root `task_id == run_id`, same requirement as every other Global seed — see
+/// `start_health_eval_run`'s doc for why a different id makes the run invisible
+/// to the pickup query.
+async fn start_preagg_cycle_run(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+    schedule_id: Option<&str>,
+    force: bool,
+    target: Option<(String, String)>,
+    trigger: &str,
+) -> Result<String, String> {
+    use agentic_core::delegation::TaskSpec;
+    use agentic_runtime::crud::{TaskScope, enqueue_task};
+    use agentic_runtime::lifecycle::crud::runs::insert_run;
+
+    let run_id = uuid::Uuid::new_v4().to_string();
+    // Stamp the trigger (`scheduled` for a cron fire, `manual` for a run-now or
+    // a Rebuild click) so the run history labels a preagg run the same way it
+    // labels workflow/airway/agent ones.
+    let mut metadata = serde_json::json!({});
+    stamp_trigger_metadata(&mut metadata, &Some(trigger.to_string()), &None, &None);
+    match schedule_id {
+        Some(schedule_id) => insert_run_with_schedule(
+            db,
+            &run_id,
+            PREAGG_SCHEDULE_NAME,
+            None,
+            "preagg_cycle",
+            Some(metadata),
+            schedule_id,
+            workspace_id,
+        )
+        .await
+        .map_err(|e| e.to_string())?,
+        None => insert_run(
+            db,
+            &run_id,
+            PREAGG_SCHEDULE_NAME,
+            None,
+            "preagg_cycle",
+            Some(metadata),
+            workspace_id,
+        )
+        .await
+        .map_err(|e| e.to_string())?,
+    }
+
+    let target_json =
+        target.map(|(view, rollup)| serde_json::json!({ "view": view, "rollup": rollup }));
+    let spec = TaskSpec::Custom {
+        kind: "preagg_cycle".into(),
+        payload: serde_json::json!({
+            "workspace_id": workspace_id.to_string(),
+            "force": force,
+            "target": target_json,
+        }),
+    };
+    enqueue_task(db, &run_id, &run_id, None, &spec, None, TaskScope::Global)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(run_id)
+}
+
+/// Enqueue an on-demand (operator-triggered) preagg cycle for one workspace and
+/// return its `run_id` for status polling — the IDE's "Rebuild" / "Rebuild all"
+/// buttons. Always `force: true`: pressing the button is the operator's answer
+/// to "is it stale", so the cycle rebuilds `target` (or everything, if `target`
+/// is `None`) regardless of what the refresh key says.
+///
+/// Mirrors [`enqueue_health_eval`]'s shape — attributes the run to the
+/// workspace's `preagg_cycle` schedule row when one exists (so a manual click
+/// surfaces under the same run history as a scheduled fire), unattributed
+/// otherwise (before the workspace's first compile, or when pre-aggregation is
+/// disabled entirely, there is no row to attribute to — an operator can still
+/// force one rollup ad hoc).
+pub async fn enqueue_preagg_cycle(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+    target: Option<(String, String)>,
+) -> Result<String, String> {
+    let schedule_id = schedule::Entity::find()
+        .filter(schedule::Column::TargetKind.eq("preagg_cycle"))
+        .filter(schedule::Column::TargetRef.eq(workspace_id.to_string()))
+        .filter(schedule::Column::WorkspaceId.eq(workspace_id))
+        .one(db)
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|r| r.id);
+    start_preagg_cycle_run(
+        db,
+        workspace_id,
+        schedule_id.as_deref(),
+        true,
+        target,
+        "manual",
+    )
+    .await
+}
+
+/// Fire due per-workspace `preagg_cycle` schedule rows. Mirrors
+/// [`tick_health_schedules`] exactly: CAS-advances each due row's
+/// `next_run_at`, then enqueues an unforced (`force: false`, `target: None`)
+/// cycle — the executor still honors each rollup's own refresh key, so a
+/// scheduled fire only rebuilds what's actually stale. Never errors the
+/// caller; per-schedule failures are logged and skipped.
+pub async fn tick_preagg_schedules(db: &DatabaseConnection) -> usize {
+    let now = chrono::Utc::now().fixed_offset();
+    let due = match schedule::Entity::find()
+        .filter(schedule::Column::TargetKind.eq("preagg_cycle"))
+        .filter(schedule::Column::Enabled.eq(true))
+        .filter(schedule::Column::NextRunAt.lte(now))
+        .order_by_asc(schedule::Column::NextRunAt)
+        .limit(MAX_PREAGG_FIRES_PER_TICK)
+        .all(db)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!(target: "preagg", error = %e, "preagg tick: query failed");
+            return 0;
+        }
+    };
+    if due.len() as u64 == MAX_PREAGG_FIRES_PER_TICK {
+        tracing::info!(
+            target: "preagg",
+            cap = MAX_PREAGG_FIRES_PER_TICK,
+            "preagg tick hit per-tick fire cap; remaining due rows drain next tick"
+        );
+    }
+
+    let mut fired = 0;
+    for s in due {
+        let next = match next_run_for(&s, chrono::Utc::now()) {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::warn!(
+                    target: "preagg",
+                    schedule_id = %s.id,
+                    error = %e,
+                    "preagg tick: bad cadence; skipping"
+                );
+                set_schedule_last_error(db, &s.id, Some(&e)).await;
+                continue;
+            }
+        };
+        if !cas_advance_next_run(db, &s.id, s.next_run_at, next).await {
+            continue;
+        }
+        let workspace_id = match s.target_ref.parse::<uuid::Uuid>() {
+            Ok(w) => w,
+            Err(e) => {
+                tracing::warn!(
+                    target: "preagg",
+                    schedule_id = %s.id,
+                    error = %e,
+                    "preagg tick: target_ref is not a workspace uuid; skipping"
+                );
+                set_schedule_last_error(db, &s.id, Some(&format!("bad target_ref: {e}"))).await;
+                continue;
+            }
+        };
+        match start_preagg_cycle_run(db, workspace_id, Some(&s.id), false, None, "scheduled").await
+        {
+            Ok(run_id) => {
+                fired += 1;
+                record_fire_success(db, &s.id, &run_id).await;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "preagg",
+                    schedule_id = %s.id,
+                    error = %e,
+                    "preagg tick: failed to seed run"
+                );
+                set_schedule_last_error(db, &s.id, Some(&e)).await;
+            }
+        }
+    }
+    fired
+}
+
 // ── Shared firing ───────────────────────────────────────────────────────────
 
 /// What a fire attempt actually did.
@@ -1244,6 +1529,34 @@ async fn fire_schedule(
             .map_err(|e| e.to_string())?;
             Ok(FireOutcome::Seeded(run_id))
         }
+        // The per-workspace pre-aggregation cycle. Unlike `monitor_scan` /
+        // `health_eval` — which the host runs inline and therefore special-cases
+        // in its run-now handler — a preagg cycle is already a durable Custom
+        // task, so it fires here like any other kind and the fleet's
+        // `PreaggTaskExecutor` drains it.
+        //
+        // `force: false` deliberately: a run-now on the *schedule* is a manual
+        // fire of the scheduled cadence, so it still honours each rollup's
+        // refresh key and rebuilds only what is stale (same policy as the
+        // health_eval run-now arm, which doesn't force smoke probes). Forcing a
+        // rebuild regardless of staleness is the Semantic tab's Rebuild button,
+        // which goes through `enqueue_preagg_cycle`.
+        "preagg_cycle" => {
+            // `target_ref` is the workspace uuid — same convention
+            // `tick_preagg_schedules` reads.
+            let workspace_id = s.target_ref.parse::<uuid::Uuid>().map_err(|e| {
+                format!(
+                    "preagg schedule target_ref must be a workspace uuid, got {:?}: {e}",
+                    s.target_ref
+                )
+            })?;
+            start_preagg_cycle_run(db, workspace_id, Some(&s.id), false, None, trigger)
+                .await
+                .map(FireOutcome::Seeded)
+        }
+        // `backfill_schedule` rejects the system-managed kinds
+        // (`monitor_scan`, `health_eval`, `preagg_cycle`) before it gets here,
+        // so what remains really is unrecognised.
         other => Err(format!("unknown target_kind {other:?}")),
     }
 }
@@ -1377,6 +1690,27 @@ pub async fn backfill_schedule(
         ));
     }
 
+    // System-managed kinds: the schedule row exists so the cadence is
+    // configurable, but the work behind it has no per-occurrence identity to
+    // replay. A monitor scan reads whatever the warehouse holds now; a health
+    // evaluation and a pre-aggregation cycle refresh a cache to *current*.
+    // Seeding "the run that would have happened at 03:00" is meaningless for
+    // all three — it would just run the same present-tense job N times.
+    // Rejected up front, with the reason, rather than reaching
+    // `seed_backfill_occurrence` and failing there as an unknown kind (a 500
+    // that reads like a bug). `Run now` is the operation these kinds do have.
+    if matches!(
+        s.target_kind.as_str(),
+        "monitor_scan" | "health_eval" | "preagg_cycle"
+    ) {
+        return Err(ScheduleError::Invalid(format!(
+            "backfill is not supported for {} schedules: the job refreshes to the \
+             present, so replaying a past occurrence would re-run the same work \
+             under a misleading logical date. Use Run now instead.",
+            s.target_kind
+        )));
+    }
+
     // The cron evaluator's range is half-open (after, until], so step
     // back one second on the lower bound so the very first occurrence at
     // `from` is included — operators expect the inclusive range they typed
@@ -1506,6 +1840,9 @@ async fn seed_backfill_occurrence(
             .await
             .map_err(|e| e.to_string())
         }
+        // `backfill_schedule` rejects the system-managed kinds
+        // (`monitor_scan`, `health_eval`, `preagg_cycle`) before it gets here,
+        // so what remains really is unrecognised.
         other => Err(format!("unknown target_kind {other:?}")),
     }
 }

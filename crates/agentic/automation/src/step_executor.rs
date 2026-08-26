@@ -153,15 +153,12 @@ async fn execute_semantic_query(
 
     let scan_path = workspace.workspace_path();
     let databases = workspace.database_configs();
-    let cache = workspace.refresh_key_cache();
-
-    let renewal_threshold_secs = workspace.preagg_renewal_threshold_secs();
+    let preagg = workspace.preagg_context();
     let compiled = crate::semantic::resolve_and_compile(
         scan_path,
         &databases,
         &query_config,
-        cache,
-        renewal_threshold_secs,
+        preagg.as_ref(),
         None,
     )
     .map_err(|e| format!("semantic compilation failed: {e}"))?;
@@ -178,14 +175,12 @@ async fn execute_semantic_query(
             Ok(result)
         }
         crate::semantic::CompiledQuery::Preaggregation {
-            preagg_sql,
-            parquet_path,
-            ..
+            preagg_sql, source, ..
         } => {
             let sql_for_exec = preagg_sql.clone();
-            let path_for_exec = parquet_path.clone();
+            let source_for_exec = source.clone();
             let mut result = tokio::task::spawn_blocking(move || {
-                crate::preagg::execute_preagg_sql(&sql_for_exec, &path_for_exec)
+                crate::preagg::execute_preagg_sql(&sql_for_exec, &source_for_exec)
             })
             .await
             .map_err(|e| format!("local Parquet execution task panicked: {e}"))?

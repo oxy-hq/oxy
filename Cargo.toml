@@ -280,7 +280,32 @@ aho-corasick = "1.1"
 # match. `contribution` is still emitted on a passthrough row (airlayer's own
 # CLI now prints `mechanical` for those rather than the raw value, matching how
 # `group()` files them — the same precedence the web panel applies).
-airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "7e884e77db2c63eeb3b632fad81245cbd41c980f" }
+# Two pre-aggregation fixes since the metric-tree work above; ca3e72c is an
+# ancestor of this SHA, so nothing above is lost.
+#
+# PR #96 (merged to main) fixes generate_reagg_sql / generate_warehouse_reagg_sql
+# always wrapping the local-preagg re-aggregation query in GROUP BY +
+# SUM/COUNT/..., even when the requested dimensions (and time dimension, at its
+# stored granularity) exactly match the rollup's stored grain — i.e. the rollup
+# already has exactly one row per requested group, so re-aggregating was a no-op
+# that still forced a full scan+aggregate (GROUP BY is a blocking operator, so it
+# can't honor LIMIT cheaply even then). Generated SQL only; nothing stored moves.
+#
+# PR #99 — NOT yet merged; e89d1d0 is reachable only from its branch, so this pin
+# MUST be moved to a main SHA before this PR merges (see the merge gate in the PR
+# description; Cargo.lock records the same rev, so there is no fallback once the
+# branch is deleted). It resolves `{{view.member}}` / `{{member}}` refs in a
+# rollup's CTAS and folds `Measure.filters` into the stored partials.
+#
+# THIS ONE CHANGES WHAT A BUILT ROLLUP CONTAINS. A filtered measure previously
+# stored the unfiltered total and served it under the Pre-aggregated badge, and
+# `compute_rollup_hash` covers only member NAMES, granularity and time dimension
+# — not exprs or filters — so the artifact keeps its name and a rebuild is not
+# implied by the fix. `PREAGG_BUILDER_GENERATION` in
+# crates/app/src/server/preagg_executor.rs is the invalidation lever: bump it in
+# the same commit as any airlayer bump that changes stored rollup contents, and
+# every workspace rebuilds once on its next cycle. It was bumped for this pin.
+airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "e89d1d0bf1c495d130d696a8793c9b7bd014d7c0" }
 # Anomaly detection: ETS forecasting + MSTL decomposition. augurs-ets gives
 # Holt-Winters family (with auto model selection); augurs-mstl handles
 # multi-seasonality (daily + weekly + yearly). Pulled in by oxy-metric-monitoring.

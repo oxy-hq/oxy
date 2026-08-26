@@ -10,8 +10,8 @@
 //! `event_type` string column, not in the JSON body. As a consequence,
 //! **`serde_json::from_value::<PreaggEvent>(payload)` is ambiguous**: the
 //! `{view, rollup}` variants (`RollupFresh`, `RollupStarted`, `RollupDone`,
-//! `RollupSkippedNoRefreshKey`) all share the same shape and will always
-//! match the first variant. Consumers must deserialise using the
+//! `RollupRetracted`, `RollupSkippedNoRefreshKey`) all share the same shape
+//! and will always match the first variant. Consumers must deserialise using the
 //! `event_type` column from the event_log, not by directly decoding into
 //! `PreaggEvent`. If a future caller needs round-trip decoding, switch to
 //! an internally-tagged representation.
@@ -30,6 +30,15 @@ pub enum PreaggEvent {
         rollup: String,
     },
     RollupDone {
+        view: String,
+        rollup: String,
+    },
+    /// The rebuild ran and the rollup is empty NOW, so its manifest entry and
+    /// Parquet were removed rather than left serving the previous build's
+    /// numbers under the Pre-aggregated badge. Distinct from `RollupDone`
+    /// because the artifact is gone: a consumer waiting for a build timestamp
+    /// to move would otherwise wait for one that will never arrive.
+    RollupRetracted {
         view: String,
         rollup: String,
     },
@@ -59,6 +68,7 @@ impl PreaggEvent {
             Self::RollupFresh { .. } => "preagg_rollup_fresh",
             Self::RollupStarted { .. } => "preagg_rollup_started",
             Self::RollupDone { .. } => "preagg_rollup_done",
+            Self::RollupRetracted { .. } => "preagg_rollup_retracted",
             Self::RollupFailed { .. } => "preagg_rollup_failed",
             Self::RefreshKeyError { .. } => "preagg_refresh_key_error",
             Self::RollupSkippedNoRefreshKey { .. } => "preagg_rollup_skipped_no_refresh_key",
@@ -84,6 +94,17 @@ mod tests {
             rollup: "daily".into(),
         };
         assert_eq!(ev.event_type(), "preagg_rollup_done");
+    }
+
+    #[test]
+    fn retracted_is_its_own_event_type() {
+        // Same shape as RollupDone, deliberately not the same discriminant —
+        // "rebuilt" and "removed" are what a reader has to tell apart.
+        let ev = PreaggEvent::RollupRetracted {
+            view: "sales".into(),
+            rollup: "daily".into(),
+        };
+        assert_eq!(ev.event_type(), "preagg_rollup_retracted");
     }
 
     #[test]

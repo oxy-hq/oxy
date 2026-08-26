@@ -525,6 +525,10 @@ async fn recover_local(
         if health_fired > 0 {
             tracing::info!(target: "health_eval", "health schedule fired");
         }
+        let preagg_fired = agentic_pipeline::scheduler::tick_preagg_schedules(db).await;
+        if preagg_fired > 0 {
+            tracing::info!(target: "preagg", "preagg schedule fired");
+        }
         recovered + fired
     } else {
         // One-time startup backfill of per-workspace health schedule rows from
@@ -534,6 +538,7 @@ async fn recover_local(
         // Local mode: the single workspace has no `workspaces` row, so skip the
         // orphan prune (an empty table there is not evidence of orphans).
         reconcile_all_health_schedules(db, false).await;
+        reconcile_all_preagg_schedules(db).await;
         recover_active_runs(
             db.clone(),
             runtime,
@@ -688,6 +693,7 @@ async fn recover_all_workspaces(
         // (compile_worker::reconcile_health_from_compiled) — never per tick, so
         // the periodic driver never re-resolves config for every workspace.
         reconcile_all_health_schedules(db, true).await;
+        reconcile_all_preagg_schedules(db).await;
     }
     // Per-workspace health tick: fire due eval rows once per pass, but only
     // after at least one workspace context was built this pass (proxy for "this
@@ -697,6 +703,10 @@ async fn recover_all_workspaces(
         let health_fired = agentic_pipeline::scheduler::tick_health_schedules(db).await;
         if health_fired > 0 {
             tracing::info!(target: "health_eval", "cloud health schedule fired");
+        }
+        let preagg_fired = agentic_pipeline::scheduler::tick_preagg_schedules(db).await;
+        if preagg_fired > 0 {
+            tracing::info!(target: "preagg", "cloud preagg schedule fired");
         }
     }
     total
@@ -959,6 +969,7 @@ fn build_custom_task_registry(
 ) -> Arc<agentic_runtime::worker::CustomTaskRegistry> {
     use crate::server::app_function_executor::{APP_FUNCTION_KIND, AppFunctionTaskExecutor};
     use crate::server::health_eval_executor::{HEALTH_EVAL_KIND, HealthEvalTaskExecutor};
+    use crate::server::preagg_executor::PreaggTaskExecutor;
     let mut reg = agentic_runtime::worker::CustomTaskRegistry::new();
     reg.register(
         HEALTH_EVAL_KIND,
@@ -967,6 +978,14 @@ fn build_custom_task_registry(
     reg.register(
         APP_FUNCTION_KIND,
         Arc::new(AppFunctionTaskExecutor { db: db.clone() }),
+    );
+    // Same shape as health eval: one executor instance, workspace context
+    // rebuilt fresh per task from `workspace_id` in the payload. See
+    // `preagg_executor`'s module doc for why this replaced a single
+    // startup-bound worker.
+    reg.register(
+        "preagg_cycle",
+        Arc::new(PreaggTaskExecutor { db: db.clone() }),
     );
     Arc::new(reg)
 }
@@ -1290,6 +1309,30 @@ async fn reconcile_all_health_schedules(db: &DatabaseConnection, prune_orphans: 
         // reconciles its row to the configured cadence — never clobbers a
         // config-set cadence with a default.
         crate::server::compile_worker::reconcile_health_from_compiled(db, ws.id).await;
+    }
+}
+
+/// One-time startup backfill of every workspace's `preagg_cycle` schedule row
+/// from compiled config. Mirrors [`reconcile_all_health_schedules`] minus the
+/// orphan sweep and legacy-row cleanup — both are already generic across every
+/// `target_kind` and run once from the health call in the same startup pass, so
+/// running them twice would be redundant, not incorrect, and this skips that.
+/// Steady-state sync is event-driven at compile time
+/// (`compile_worker::reconcile_preagg_from_compiled`) — never per tick.
+async fn reconcile_all_preagg_schedules(db: &DatabaseConnection) {
+    let workspaces = match entity::workspaces::Entity::find().all(db).await {
+        Ok(ws) => ws,
+        Err(e) => {
+            tracing::warn!(
+                target: "preagg",
+                error = %e,
+                "startup reconcile: failed to list workspaces; skipping preagg backfill"
+            );
+            return;
+        }
+    };
+    for ws in workspaces {
+        crate::server::compile_worker::reconcile_preagg_from_compiled(db, ws.id).await;
     }
 }
 

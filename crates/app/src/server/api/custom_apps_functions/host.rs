@@ -356,7 +356,7 @@ impl FunctionHost for ProjectFunctionHost {
             .collect();
 
         let compiled = tokio::task::spawn_blocking(move || {
-            resolve_and_compile(&scan_path, &databases, &query, None, 0, None)
+            resolve_and_compile(&scan_path, &databases, &query, None, None)
         })
         .await
         .map_err(|e| format!("semantic compile task panicked: {e}"))?

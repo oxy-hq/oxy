@@ -174,15 +174,16 @@ pub enum SolutionPayload {
     Sql(String),
     /// Vendor-native query, executed via [`SemanticEngine::execute`][crate::engine::SemanticEngine].
     Vendor(crate::engine::VendorQuery),
-    /// Local Parquet hit: the preagg cache covers the request. `preagg_sql`
-    /// is intended for an in-memory DuckDB and reads from `parquet_path`
-    /// via `read_parquet('...')`; warehouse connectors must not be invoked.
-    /// `warehouse_sql` is the SQL the warehouse-side compile produced —
+    /// Rollup hit: a pre-aggregation covers the request. `preagg_sql` is
+    /// intended for an in-memory DuckDB and reads `source` via
+    /// `read_parquet('...')` — a local file, or the blob-store object when
+    /// another node built it; warehouse connectors must not be invoked either
+    /// way. `warehouse_sql` is the SQL the warehouse-side compile produced —
     /// kept for trace / metric_sink continuity so per-query observability
     /// still surfaces the logical query, not the local rewrite.
     Preaggregation {
         preagg_sql: String,
-        parquet_path: PathBuf,
+        source: agentic_semantic::compile::PreaggSource,
         warehouse_sql: String,
     },
 }

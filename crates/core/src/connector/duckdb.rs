@@ -130,35 +130,19 @@ fn init_ducklake_blocking(attach_stmts: Vec<String>) -> Result<Connection, OxyEr
 /// so DuckDB still pushes projections/filters down rather than downloading
 /// whole objects.
 pub fn build_s3_mirror_sql(mirror: &DuckDbS3Mirror) -> Vec<String> {
-    let mut stmts = vec!["INSTALL httpfs".to_string(), "LOAD httpfs".to_string()];
-
-    let region = mirror.region.as_deref().unwrap_or("us-east-1");
-    let mut secret = format!(
-        "CREATE OR REPLACE SECRET duckdb_mirror_s3 (TYPE s3, PROVIDER credential_chain, REGION '{}'",
-        escape_sql_string(region)
+    // `httpfs` + the secret come from `oxy_shared::duckdb_s3`, shared with the
+    // pre-aggregation read path. The endpoint handling in particular (DuckDB
+    // prepends the scheme itself, so a stored `http://host:9000` must be
+    // stripped to `host:9000` or every read fails with "Could not resolve
+    // hostname") is the kind of thing that must exist once.
+    let mut stmts = oxy_shared::duckdb_s3::s3_setup_sql(
+        "duckdb_mirror_s3",
+        mirror.region.as_deref(),
+        mirror.endpoint_url.as_deref(),
+        // No fallback on this path: a tripped bound is a failed query, not a
+        // slower one. See `S3ReadBounds`.
+        oxy_shared::duckdb_s3::S3ReadBounds::NO_FALLBACK,
     );
-    if let Some(endpoint) = &mirror.endpoint_url {
-        // Custom endpoint (MinIO / LocalStack) → path-style addressing. DuckDB's
-        // S3 secret ENDPOINT is host[:port] WITHOUT a scheme — it prepends
-        // http(s):// itself based on USE_SSL. The mirror records the SDK's
-        // `AWS_ENDPOINT_URL` verbatim (e.g. `http://localhost:9000`), so strip the
-        // scheme here; otherwise DuckDB builds `http://http://localhost:9000` and
-        // fails with "Could not resolve hostname", which silently drops the
-        // connector and surfaces as "no databases configured".
-        let use_ssl = !endpoint.starts_with("http://");
-        let host = endpoint
-            .strip_prefix("http://")
-            .or_else(|| endpoint.strip_prefix("https://"))
-            .unwrap_or(endpoint)
-            .trim_end_matches('/');
-        secret.push_str(&format!(
-            ", ENDPOINT '{}', URL_STYLE 'path', USE_SSL {}",
-            escape_sql_string(host),
-            use_ssl
-        ));
-    }
-    secret.push(')');
-    stmts.push(secret);
 
     if let Some(key) = &mirror.attach_key {
         stmts.push(format!(
@@ -231,6 +215,13 @@ fn s3_mirror_setup_error(stmt: &str, err: &duckdb::Error) -> OxyError {
     let hint = if stmt.contains("httpfs") {
         "could not load the DuckDB `httpfs` extension — the node needs outbound network to the \
          extension repository on first run"
+    } else if stmt.starts_with("SET ") {
+        // `SET http_timeout` / `http_retries` are registered BY `LOAD httpfs`,
+        // so a rejection here is the extension or the setting name drifting
+        // under a DuckDB bump — nothing to do with S3 objects or IAM, which is
+        // what the catch-all below would have told an operator to go check.
+        "the DuckDB build rejected an `httpfs` read-bound setting — the extension may not be \
+         loaded, or the setting name changed in this DuckDB version"
     } else if stmt.starts_with("ATTACH") {
         "could not attach the S3-mirrored DuckDB file read-only — the bundled DuckDB may not \
          support remote ATTACH, the object may be missing, or the pod's IAM role may lack \

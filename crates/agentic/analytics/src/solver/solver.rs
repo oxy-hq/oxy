@@ -129,25 +129,20 @@ pub struct AnalyticsSolver {
     /// Used to resolve workspace-relative paths returned by `search_automations`
     /// (e.g. `example_sql/total_number_of_store.sql`) before reading the file.
     pub(crate) workspace_path: Option<std::path::PathBuf>,
-    /// Layer-1 preagg refresh-key cache, shared with the background worker.
+    /// The local-rollup short-circuit: cache key, Layer-1 refresh-key cache,
+    /// renewal threshold, and the cross-node Parquet read-through.
     ///
-    /// When set together with `semantic_scan_path`, the Specifying stage
-    /// consults the local Parquet manifest after a successful airlayer
-    /// compile and swaps `SolutionPayload::Sql` for
-    /// `SolutionPayload::Preaggregation` whenever a covering rollup exists.
-    /// `None` (CLI, tests, runs with no preagg worker) always routes to the
-    /// warehouse.
-    pub(crate) preagg_cache: Option<
-        std::sync::Arc<std::sync::RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>,
-    >,
-    /// Renewal threshold (seconds) for the preagg refresh-key cache. Must
-    /// match the background worker's `renewal_threshold`. Defaults to 0 so
-    /// any cached value is treated as stale, which still serves the Parquet
-    /// but tells the background worker to refresh on the next heartbeat.
-    pub(crate) preagg_renewal_threshold_secs: u64,
-    /// Root directory the semantic layer was loaded from. Used to locate
-    /// the airlayer cache directory (`<scan>/.airlayer/cache/manifest.json`).
-    pub(crate) semantic_scan_path: Option<std::path::PathBuf>,
+    /// When set, the Specifying stage consults the local Parquet manifest
+    /// after a successful airlayer compile and swaps `SolutionPayload::Sql`
+    /// for `SolutionPayload::Preaggregation` whenever a covering rollup
+    /// exists. `None` (CLI, tests, runs with no preagg worker) always routes
+    /// to the warehouse.
+    ///
+    /// One field rather than the three it replaced (cache, threshold, scan
+    /// path) — they were never independently meaningful, and the scan path
+    /// among them was a cache key that a caller could and did set to a
+    /// directory nothing had built.
+    pub(crate) preagg: Option<agentic_semantic::compile::PreaggContext>,
 }
 
 impl AnalyticsSolver {
@@ -189,9 +184,7 @@ impl AnalyticsSolver {
             question: String::new(),
             metric_sink: None,
             sql_generation_mode: false,
-            preagg_cache: None,
-            preagg_renewal_threshold_secs: 0,
-            semantic_scan_path: None,
+            preagg: None,
             workspace_path: None,
         }
     }
@@ -233,9 +226,7 @@ impl AnalyticsSolver {
             question: String::new(),
             metric_sink: None,
             sql_generation_mode: false,
-            preagg_cache: None,
-            preagg_renewal_threshold_secs: 0,
-            semantic_scan_path: None,
+            preagg: None,
             workspace_path: None,
         }
     }
@@ -395,21 +386,12 @@ impl AnalyticsSolver {
         self
     }
 
-    /// Wire the Layer-1 preagg refresh-key cache and the scan path used to
-    /// locate the airlayer cache directory. Both are required for the
-    /// Specifying stage to consider local Parquet — passing `None` for
-    /// either field reverts the solver to warehouse-only execution.
-    pub fn with_preagg(
-        mut self,
-        cache: Option<
-            std::sync::Arc<std::sync::RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>,
-        >,
-        renewal_threshold_secs: u64,
-        semantic_scan_path: Option<std::path::PathBuf>,
-    ) -> Self {
-        self.preagg_cache = cache;
-        self.preagg_renewal_threshold_secs = renewal_threshold_secs;
-        self.semantic_scan_path = semantic_scan_path;
+    /// Wire the local-rollup short-circuit. `None` reverts the solver to
+    /// warehouse-only execution, which is what the CLI, tests, and any run
+    /// without a rebuild worker want: without one there is no guarantee a
+    /// local Parquet is current.
+    pub fn with_preagg(mut self, preagg: Option<agentic_semantic::compile::PreaggContext>) -> Self {
+        self.preagg = preagg;
         self
     }
 
@@ -429,24 +411,17 @@ impl AnalyticsSolver {
         request: &airlayer::engine::query::QueryRequest,
     ) -> crate::types::SolutionPayload {
         use crate::types::SolutionPayload;
-        match (self.preagg_cache.as_ref(), self.semantic_scan_path.as_ref()) {
-            (Some(cache), Some(scan_path)) => {
-                match agentic_semantic::compile::try_resolve_local_parquet(
-                    scan_path,
-                    request,
-                    cache,
-                    self.preagg_renewal_threshold_secs,
-                    &sql,
-                    "",
-                ) {
+        match self.preagg.as_ref() {
+            Some(preagg) => {
+                match agentic_semantic::compile::try_resolve_preagg(preagg, request, &sql, "") {
                     Some(agentic_semantic::compile::CompiledQuery::Preaggregation {
                         preagg_sql,
-                        parquet_path,
+                        source,
                         warehouse_sql,
                         ..
                     }) => SolutionPayload::Preaggregation {
                         preagg_sql,
-                        parquet_path,
+                        source,
                         warehouse_sql,
                     },
                     _ => SolutionPayload::Sql(sql),

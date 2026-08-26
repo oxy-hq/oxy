@@ -518,6 +518,34 @@ const IDE_ONLY_PATTERNS: &[ManifestEntry] = &[
         path_pattern: "/api/{workspace_id}/semantic/world-model/measure-breakdown",
         role: RouteRole::IdeOnly,
     },
+    // ── Pre-aggregation cache status → ide singleton ────────────────────────
+    // The LIST of rollups is config-derived and would be fleet-safe on its own.
+    // The CACHE COLUMNS are not: `get_preagg_status` reads the LOCAL STATE DIR
+    // — `get_airlayer_cache_dir(workspace_id)` → `manifest.json` plus an
+    // `is_file()` stat per rollup for the Parquet next to it. A replica that
+    // never built anything holds neither, so `has_parquet` would flap between
+    // refreshes depending on which replica answered, and the S3 manifest
+    // read-through narrows that without closing it (it recovers what was
+    // built, not the Parquet files themselves). Pin it to the node that owns
+    // the cache. (Previously listed in `FLEET_OK_ACKNOWLEDGED` on the false
+    // premise that it reads compiled artifacts.)
+    ManifestEntry {
+        method: "GET",
+        path_pattern: "/api/{workspace_id}/semantic/preagg-status",
+        role: RouteRole::IdeOnly,
+    },
+    // The rebuild trigger is pinned for a DIFFERENT reason than it once was.
+    // It no longer writes anything itself: it enqueues a `TaskScope::Global`
+    // `preagg_cycle` task that whichever fleet node drains it executes. What
+    // keeps it here is the validation in front of the enqueue — it resolves
+    // the semantic layer through `resolve_query_scan_source` to reject a
+    // typo'd `{view, rollup}` before spending a warehouse query on it, and
+    // that resolution wants the workspace this node has checked out.
+    ManifestEntry {
+        method: "POST",
+        path_pattern: "/api/{workspace_id}/semantic/preagg-rebuild",
+        role: RouteRole::IdeOnly,
+    },
     // ── Agentic run/exec surface → ide singleton (ephemeral-env tier 1) ──────
     // An analytics run delegates to automation subruns enqueued `TaskScope::
     // Scoped`, so a subrun's `execute_sql` runs IN-PROCESS on whichever node
@@ -1631,6 +1659,25 @@ mod tests {
                 "{method} {path} must be IdeOnly (reads the workspace working copy)"
             );
         }
+        // Same shape one route over: `/semantic/preagg-status` stats the local
+        // airlayer cache dir. It can't 500 its way to being noticed — the
+        // handler answers "missing manifest → empty list", so a replica that
+        // has no cache reports a workspace's rollups as absent.
+        assert_eq!(
+            classify("GET", "/api/d9830be4-c6a4/semantic/preagg-status"),
+            RouteRole::IdeOnly,
+            "preagg-status must be IdeOnly (stats the local airlayer cache dir)"
+        );
+        assert_eq!(
+            classify("POST", "/api/d9830be4-c6a4/semantic/preagg-rebuild"),
+            RouteRole::IdeOnly,
+            "preagg-rebuild must be IdeOnly (writes the local airlayer cache dir)"
+        );
+        // Its neighbours stay FleetOk — the pin is one route, not the prefix.
+        assert_eq!(
+            classify("GET", "/api/d9830be4-c6a4/semantic/monitors"),
+            RouteRole::FleetOk
+        );
         // Customer-apps batch mutations touch only Postgres + the S3 build
         // store (never the workspace FS), so — like their per-app siblings —
         // they classify FleetOk by default and serve from any replica.
@@ -2357,7 +2404,9 @@ mod tests {
         "/semantic",
         "/semantic/topic/{file_path_b64}",
         "/semantic/view/{file_path_b64}",
-        "/semantic/preagg-status",
+        // NB: `/semantic/preagg-{status,rebuild}` are NOT here — they read and
+        // write the local airlayer cache dir, so they're pinned IdeOnly in
+        // IDE_ONLY_PATTERNS.
         "/semantic/compile",
         "/semantic/monitors",
         "/semantic/anomalies",

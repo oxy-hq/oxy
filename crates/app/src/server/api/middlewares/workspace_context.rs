@@ -1120,6 +1120,24 @@ async fn try_attach_workspace_manager(
     if let Some(cache) = preagg_cache.clone() {
         ctx = ctx.with_preagg_cache(cache);
     }
+    // Resolve the renewal threshold from THIS workspace's own
+    // `pre_aggregations.refresh_worker.renewal_threshold`, falling back to the
+    // process-wide value and then to the shared default. The process-wide
+    // value has been `None` since the startup-bound worker was removed (see
+    // `router::entry`), so before this a workspace configuring `10m` still got
+    // 120s on every query while the rebuild cycle — which resolves the same
+    // key from the same config — honoured it. The read side and the build side
+    // now read one setting.
+    let preagg_renewal_threshold_secs = Some(preagg_renewal_threshold_secs.unwrap_or_else(|| {
+        oxy::config::preagg_check::resolve_renewal_threshold(
+            workspace_manager
+                .config_manager
+                .get_config()
+                .pre_aggregations
+                .as_ref(),
+        )
+        .as_secs()
+    }));
     if let Some(secs) = preagg_renewal_threshold_secs {
         ctx = ctx.with_preagg_renewal_threshold_secs(secs);
     }

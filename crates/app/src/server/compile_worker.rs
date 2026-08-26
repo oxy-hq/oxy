@@ -161,6 +161,7 @@ async fn drive(
                 // compiled `health_check`. Best-effort — never fail the compile.
                 if spec.promote {
                     reconcile_health_from_compiled(&db, spec.workspace_id).await;
+                    reconcile_preagg_from_compiled(&db, spec.workspace_id).await;
                 }
                 TaskOutcome::Done {
                     answer,
@@ -395,6 +396,93 @@ async fn warn_if_reconcile_goes_inert(workspace_id: uuid::Uuid, cause: &str, rem
             %workspace_id,
             "workspace has a compiled `reconcile.yml` but {cause}, so its drift checks and \
              Slack health alerts will not run — both ride inside the health eval pass. {remedy}"
+        );
+    }
+}
+
+/// Read a compiled config's `pre_aggregations` section and resolve it to a
+/// `(interval, enabled)` pair, or `None` to leave the workspace's schedule row
+/// untouched. Same three-case split as [`health_reconcile_target`]: only
+/// `Ok(Some(cfg))` — a promoted config — is a statement of intent. `Ok(None)`
+/// (no promoted revision yet) and `Err` (a DB read failure, and this runs in a
+/// loop over every workspace at startup) both say nothing, so neither may be
+/// read as "disable this workspace's pre-aggregations".
+///
+/// Unlike health, an unparseable `pre_aggregations:` block does not need its
+/// own opt-in-reason enum: pre-aggregations were already off (no block parsed)
+/// or already have a `PreaggConfig::default()` shape close enough that a stray
+/// unknown key is the only realistic parse failure, caught by
+/// `#[serde(deny_unknown_fields)]`. Warn and treat as absent either way.
+fn preagg_reconcile_target(
+    read: Result<Option<Value>, sea_orm::DbErr>,
+    workspace_id: uuid::Uuid,
+) -> Option<(std::time::Duration, bool)> {
+    match read {
+        Ok(Some(config)) => {
+            let raw = config.get("pre_aggregations");
+            let parsed = raw.and_then(|v| {
+                match serde_json::from_value::<oxy::config::model::PreaggConfig>(v.clone()) {
+                    Ok(cfg) => Some(cfg),
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "preagg",
+                            error = %e,
+                            %workspace_id,
+                            "config.yml has a `pre_aggregations:` block that could not be read \
+                             (an unknown or mistyped key); treating the workspace as opted out \
+                             of the pre-aggregation cycle"
+                        );
+                        None
+                    }
+                }
+            });
+            let interval = oxy::config::preagg_check::resolve_interval(parsed.as_ref());
+            let enabled = oxy::config::preagg_check::resolve_enabled(parsed.as_ref());
+            Some((interval, enabled))
+        }
+        Ok(None) => {
+            tracing::debug!(
+                target: "preagg",
+                %workspace_id,
+                "no promoted compiled config; leaving the preagg schedule untouched"
+            );
+            None
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "preagg",
+                error = %e,
+                %workspace_id,
+                "compiled config read failed; leaving the preagg schedule untouched rather \
+                 than reading the failure as an opt-out"
+            );
+            None
+        }
+    }
+}
+
+/// Read the workspace's promoted compiled config and reconcile its
+/// `preagg_cycle` schedule row to the configured cadence. Best-effort: a read
+/// that carries no statement of intent leaves the row alone (see
+/// [`preagg_reconcile_target`]); a reconcile error is logged.
+pub(crate) async fn reconcile_preagg_from_compiled(
+    db: &DatabaseConnection,
+    workspace_id: uuid::Uuid,
+) {
+    let read =
+        crate::server::api::compiled_reader::resolve_workspace_config(workspace_id, None).await;
+    let Some((interval, enabled)) = preagg_reconcile_target(read, workspace_id) else {
+        return;
+    };
+    if let Err(e) =
+        agentic_pipeline::scheduler::reconcile_preagg_schedule(db, workspace_id, interval, enabled)
+            .await
+    {
+        tracing::warn!(
+            target: "preagg",
+            error = %e,
+            %workspace_id,
+            "failed to reconcile preagg schedule from compiled config"
         );
     }
 }

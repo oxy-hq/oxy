@@ -19,7 +19,6 @@ use agentic_http::{AgenticState, cleanup_stale_runs};
 use oxy_auth::middleware::internal_auth_middleware;
 use oxy_shared::errors::OxyError;
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
 
 use crate::agentic_wiring::builder_bridges::OxyBuilderAppRunner;
 use crate::api::middlewares::timeout::timeout_middleware;
@@ -60,96 +59,41 @@ pub async fn api_router(
     // Same cloud-only caveat as `extra_api_routes`.
     extra_workspace_routes: Router<AppState>,
 ) -> Result<(Router, Router), OxyError> {
-    // Create AgenticState first — the preagg worker needs its db + runtime.
     let agentic_state = new_agentic_state(shutdown_token, true).await?;
 
-    // Spawn the background pre-aggregation refresh worker (Layer 2 freshness).
-    // Only when the workspace path is non-empty (i.e. `oxy serve`, not the internal API).
-    // The cache Arc is shared with per-request WorkspaceContext via AppState so that
-    // Layer 1 (per-query) and Layer 2 (background worker) observe the same entries.
-    let (preagg_cache, preagg_renewal_threshold_secs) = if !startup_cwd.as_os_str().is_empty() {
-        use crate::agentic_wiring::OxyProjectContext;
-        use crate::server::preagg_worker::{PreaggWorkerConfig, spawn_preagg_worker};
-        use agentic_semantic::refresh_key_cache::RefreshKeyCache;
-        use oxy::adapters::workspace::builder::WorkspaceBuilder;
-
-        // Read pre_aggregations config from config.yml so schema/database/worker
-        // settings are driven by the project, not hardcoded defaults.
-        let preagg_cfg: Option<oxy::config::model::PreaggConfig> =
-            match oxy::config::ConfigBuilder::new().with_workspace_path(&startup_cwd) {
-                Ok(b) => b
-                    .build_with_fallback_config()
-                    .await
-                    .ok()
-                    .and_then(|cm| cm.get_config().pre_aggregations.clone()),
-                Err(_) => None,
-            };
-
-        let worker_cfg = preagg_cfg.as_ref().and_then(|p| p.refresh_worker.as_ref());
-
-        let enabled = worker_cfg.and_then(|w| w.enabled).unwrap_or(true);
-
-        if enabled {
-            let heartbeat = worker_cfg
-                .and_then(|w| w.heartbeat.as_deref())
-                .and_then(|s| airlayer::preagg::parse_interval(s).ok())
-                .unwrap_or(std::time::Duration::from_secs(30));
-
-            let renewal_threshold = worker_cfg
-                .and_then(|w| w.renewal_threshold.as_deref())
-                .and_then(|s| airlayer::preagg::parse_interval(s).ok())
-                .unwrap_or(std::time::Duration::from_secs(120));
-
-            let schema = preagg_cfg
-                .as_ref()
-                .and_then(|p| p.schema.clone())
-                .unwrap_or_else(|| "AIRLAYER".into());
-
-            let database = preagg_cfg.as_ref().and_then(|p| p.database.clone());
-
-            // Build OxyProjectContext once at startup — shared across all heartbeat ticks.
-            // Use the *fallback* variant: cloud `oxy serve` runs with startup_cwd=/app,
-            // which has no project config.yml (it's an RDS-backed API server, not a
-            // project checkout). The strict `with_workspace_path` errors there with
-            // "Failed to read config from file: No such file or directory" and takes
-            // down the entire API router (crash loop) — see preagg_cfg above, which is
-            // already read tolerantly via build_with_fallback_config. Keep the two in
-            // sync; this matches pre-0.5.70 behavior. With no pre_aggregations defined,
-            // the spawned worker simply idles.
-            let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
-                .with_workspace_path_and_fallback_config(&startup_cwd)
-                .await
-                .map_err(|e| {
-                    OxyError::RuntimeError(format!("preagg: workspace builder init failed: {e}"))
-                })?
-                .build()
-                .await
-                .map_err(|e| {
-                    OxyError::RuntimeError(format!("preagg: workspace build failed: {e}"))
-                })?;
-
-            let cache = std::sync::Arc::new(std::sync::RwLock::new(RefreshKeyCache::new()));
-            spawn_preagg_worker(
-                PreaggWorkerConfig {
-                    workspace_path: startup_cwd.clone(),
-                    heartbeat,
-                    renewal_threshold,
-                    schema,
-                    database,
-                    db: agentic_state.db.clone(),
-                    state: agentic_state.runtime.clone(),
-                    ctx: std::sync::Arc::new(
-                        OxyProjectContext::new(workspace_manager)
-                            .with_preagg_renewal_threshold_secs(renewal_threshold.as_secs()),
-                    ),
-                    manifest_write_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
-                },
-                cache.clone(),
-            );
-            (Some(cache), Some(renewal_threshold.as_secs()))
-        } else {
-            (None, None)
-        }
+    // Layer-1 (per-query) preagg refresh-key cache, shared with every request
+    // via `AppState` → `PreaggCacheCtx`. Node-local and workspace-agnostic (a
+    // rollup hash is already unique per workspace+view+rollup, so one process
+    // -wide map is fine) — always constructed for the main API router.
+    //
+    // The BACKGROUND rebuild cycle (Layer 2) is no longer spawned here: it used
+    // to be one in-process loop bound to `startup_cwd`, which only ever built
+    // pre-aggregations for whatever workspace happened to be checked out at the
+    // server's own working directory — never a real tenant workspace in cloud
+    // mode. It is now a per-workspace `preagg_cycle` schedule row (see
+    // `agentic_pipeline::scheduler::{reconcile_preagg_schedule,
+    // tick_preagg_schedules}`), reconciled from each workspace's own compiled
+    // config and drained by the worker fleet via `PreaggTaskExecutor` — the same
+    // shape as `health_eval_workspace`. `preagg_renewal_threshold_secs` was the
+    // single global default this startup-bound worker exported; there is no
+    // longer a meaningful single value to publish here, and `None` is now the
+    // right answer rather than a silent fallback — `workspace_context` resolves
+    // the threshold per request from THAT workspace's own
+    // `pre_aggregations.refresh_worker.renewal_threshold`, which is the same
+    // key the rebuild cycle reads. Publishing a process-wide number here would
+    // outrank it.
+    let (preagg_cache, preagg_renewal_threshold_secs): (
+        Option<
+            std::sync::Arc<std::sync::RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>,
+        >,
+        Option<u64>,
+    ) = if !startup_cwd.as_os_str().is_empty() {
+        (
+            Some(std::sync::Arc::new(std::sync::RwLock::new(
+                agentic_semantic::refresh_key_cache::RefreshKeyCache::new(),
+            ))),
+            None,
+        )
     } else {
         (None, None)
     };

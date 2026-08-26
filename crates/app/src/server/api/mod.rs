@@ -66,6 +66,7 @@ pub mod org_teams;
 pub mod organizations;
 pub mod partner_publish_consent;
 pub mod pipeline;
+pub mod preagg;
 pub mod projects;
 pub mod result_files;
 pub mod run;

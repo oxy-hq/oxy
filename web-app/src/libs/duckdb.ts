@@ -86,6 +86,17 @@ export const getDuckDB = async () => {
   return duckDB;
 };
 
+// Registrations in flight, keyed by the table name a `filePath` deterministically
+// maps to (same file → same key). `registerAuthenticatedParquetFile` runs a
+// DROP-then-CREATE pair against that table; two overlapping calls for the SAME
+// file — a React 19 dev-mode StrictMode double-invoked effect, a rapid re-render,
+// a fast double-click on Run — used to race each other: both DROPs could land
+// before either CREATE, so the second CREATE hit "already exists" even though
+// nothing was actually wrong. Dedupe on the promise itself (same pattern as
+// `initPromise` above) so a second caller for the same file awaits the first
+// call's result instead of starting a competing DROP/CREATE pair.
+const registrationsInFlight = new Map<string, Promise<string>>();
+
 /**
  * Register a Parquet file from the API endpoint with authentication
  * @param filePath - The file path to register (e.g., result file path from API)
@@ -98,10 +109,39 @@ export const registerAuthenticatedParquetFile = async (
   projectId: string,
   branchName: string
 ): Promise<string> => {
-  const db = await getDuckDB();
-
-  // Base64 encode the file path to create a valid table name
+  // Table name is a pure function of filePath, so it's also the dedupe key —
+  // two calls that would create/race the same table are, by construction, the
+  // same logical request.
   const tableName = encodeBase64(filePath).replace(/[^a-zA-Z0-9]/g, "_");
+  const inFlight = registrationsInFlight.get(tableName);
+  if (inFlight) return inFlight;
+
+  const promise = registerAuthenticatedParquetFileUncached(
+    filePath,
+    projectId,
+    branchName,
+    tableName
+  );
+  registrationsInFlight.set(tableName, promise);
+  try {
+    return await promise;
+  } finally {
+    // Only this call's own promise clears the slot — a call that arrived
+    // while this one was in flight already resolved off the same promise
+    // and has nothing left to clear.
+    if (registrationsInFlight.get(tableName) === promise) {
+      registrationsInFlight.delete(tableName);
+    }
+  }
+};
+
+const registerAuthenticatedParquetFileUncached = async (
+  filePath: string,
+  projectId: string,
+  branchName: string,
+  tableName: string
+): Promise<string> => {
+  const db = await getDuckDB();
 
   const { apiClient } = await import("@/services/api/axios");
 

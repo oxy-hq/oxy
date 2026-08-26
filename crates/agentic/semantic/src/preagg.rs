@@ -1,12 +1,13 @@
 //! Thin wrappers over airlayer pre-aggregation functions and DuckDB execution.
 
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use agentic_connector::DatabaseConnector;
 use agentic_core::result::{CellValue, QueryResult, QueryRow};
 use serde_json::Value;
 
+use crate::compile::PreaggSource;
 use crate::error::SemanticError;
 
 /// Process-wide primary connection used to seed cheap per-call clones for
@@ -36,20 +37,187 @@ pub fn pooled_duckdb_connection() -> Result<duckdb::Connection, SemanticError> {
         .map_err(|e| SemanticError::Runtime(format!("DuckDB try_clone failed: {e}")))
 }
 
-/// Execute a re-aggregation SQL query against an in-memory DuckDB instance.
+/// Scopes this feature's S3 secret.
 ///
-/// `preagg_sql` is produced by `airlayer::preagg::generate_preagg_sql` and references
-/// the Parquet file via `read_parquet('...')`. We verify the file exists first to give
-/// a clear error instead of a cryptic DuckDB message.
-pub fn execute_preagg_sql(preagg_sql: &str, parquet_path: &Path) -> Result<Value, SemanticError> {
-    if !parquet_path.is_file() {
-        return Err(SemanticError::Runtime(format!(
-            "Parquet cache file not found: {}",
-            parquet_path.display()
-        )));
+/// Note the scope is the process, not the connection: every connection here is
+/// a `try_clone` of one long-lived primary, and DuckDB stores secrets per
+/// database instance — so each `CREATE OR REPLACE SECRET` mutates state shared
+/// by every concurrent rollup read. Harmless while one process reads one
+/// bucket with one credential chain, which is the only shape today; a distinct
+/// name is what keeps a second S3-using feature on this pool from silently
+/// replacing it.
+const PREAGG_S3_SECRET: &str = "oxy_preagg_s3";
+
+/// Ready a connection for the source it is about to read.
+///
+/// A local file needs nothing — the whole point of the fast path. A blob
+/// source needs `httpfs` and an S3 secret, using the recipe
+/// `connector::duckdb`'s S3 mirror already relies on
+/// (`oxy_shared::duckdb_s3`) so the two cannot drift.
+///
+/// `INSTALL httpfs` reaches the network the first time a machine runs it. A
+/// failure here is an error rather than a silent skip, and every caller of a
+/// rollup read now catches that error and re-runs the warehouse SQL the
+/// `CompiledQuery::Preaggregation` variant carries — see
+/// `api::semantic::execute_semantic_query`, the analytics executing handler,
+/// `metric_tree_runner`, and the builder's `semantic_query` tool. Returning
+/// zero rows here instead would be indistinguishable from a rollup that
+/// genuinely has none, which is why this reports rather than degrades.
+fn prepare_connection(
+    conn: &duckdb::Connection,
+    source: &PreaggSource,
+) -> Result<(), SemanticError> {
+    let PreaggSource::Blob { config, .. } = source else {
+        return Ok(());
+    };
+    let exec = |stmt: &str| {
+        conn.execute_batch(stmt).map_err(|e| {
+            SemanticError::Runtime(format!(
+                "DuckDB could not be prepared to read the pre-aggregation blob store ({stmt}): {e}"
+            ))
+        })
+    };
+
+    // Three lifetimes, not one. `INSTALL`/`LOAD` and the secret live on the
+    // DuckDB INSTANCE that every pooled connection clones, so they are
+    // process-wide; the `SET http_timeout` / `http_retries` bounds are session
+    // settings and have to be re-applied on each connection. Getting that last
+    // part wrong is what keeps an unreachable endpoint from running at DuckDB's
+    // 30s-times-4 default per range request.
+    let (extensions, rest): (Vec<String>, Vec<String>) = oxy_shared::duckdb_s3::s3_setup_sql(
+        PREAGG_S3_SECRET,
+        config.region.as_deref(),
+        config.endpoint_url.as_deref(),
+        // Every caller of a rollup read re-runs the warehouse SQL when this
+        // path errors, so a tripped bound costs a slower answer rather than a
+        // failed one — which is what buys the tight ceiling. See
+        // `S3ReadBounds`.
+        oxy_shared::duckdb_s3::S3ReadBounds::WITH_FALLBACK,
+    )
+    .into_iter()
+    .partition(|stmt| stmt.starts_with("INSTALL") || stmt.starts_with("LOAD"));
+
+    if HTTPFS_READY.get().is_none() {
+        // `INSTALL httpfs` reaches the network on a pod's first ever call.
+        for stmt in &extensions {
+            exec(stmt)?;
+        }
+        // Armed HERE, not after the whole setup. The statements below can fail
+        // — a `CREATE SECRET` whose credential chain resolves to nothing does —
+        // and the `?` on that failure used to return before this line, so the
+        // network-touching `INSTALL` was re-run on every read for as long as
+        // the condition lasted.
+        let _ = HTTPFS_READY.set(());
     }
 
+    // `CREATE OR REPLACE SECRET` is not the cheap local statement it looks
+    // like: `PROVIDER credential_chain` is validated EAGERLY (the same fact
+    // `da9075c6` established for the S3 mirror's probe), so re-issuing it per
+    // read resolves the whole provider chain inside the read path on every
+    // query. It is instance-scoped like the extensions, so it is issued once
+    // per distinct config — and keyed by that config rather than a bare
+    // `OnceLock`, so a workspace that changes region or endpoint re-issues on
+    // its next read instead of being stuck with the old credential.
+    //
+    // Caching it is only safe because the statement carries `REFRESH true`:
+    // eager resolution means the secret holds the session token the chain
+    // produced at creation, and on IRSA / IMDS that expires in about an hour.
+    // The per-read re-issue this replaced was hiding that. See `s3_setup_sql`.
+    let fingerprint = format!(
+        "{}|{}",
+        config.region.as_deref().unwrap_or(""),
+        config.endpoint_url.as_deref().unwrap_or("")
+    );
+    // Double-checked: the steady state — the secret is already this config's,
+    // and only the two `SET`s run — takes the SHARED lock, so concurrent reads
+    // do not serialize on a process-wide mutex through DuckDB execution.
+    if S3_SECRET_APPLIED
+        .read()
+        .expect("preagg S3 secret fingerprint lock poisoned")
+        .as_deref()
+        == Some(fingerprint.as_str())
+    {
+        for stmt in &rest {
+            if stmt.starts_with("CREATE OR REPLACE SECRET") {
+                continue;
+            }
+            exec(stmt)?;
+        }
+        return Ok(());
+    }
+
+    // Issuing path only. The write guard is held ACROSS the statement rather
+    // than taken after it: a read-then-write would let two threads with
+    // different configs finish in the opposite order and leave the recorded
+    // fingerprint naming a secret the instance does not have — unreachable with
+    // one config per process, but the fingerprint now PERSISTS the loser, where
+    // the old per-read `CREATE OR REPLACE` merely raced and recovered. Re-check
+    // under the write lock, since another thread may have issued it while this
+    // one waited.
+    let mut applied = S3_SECRET_APPLIED
+        .write()
+        .expect("preagg S3 secret fingerprint lock poisoned");
+    let secret_applied = applied.as_deref() == Some(fingerprint.as_str());
+
+    for stmt in &rest {
+        if secret_applied && stmt.starts_with("CREATE OR REPLACE SECRET") {
+            continue;
+        }
+        exec(stmt)?;
+    }
+    if !secret_applied {
+        *applied = Some(fingerprint);
+    }
+    Ok(())
+}
+
+/// Set once `httpfs` has been installed and loaded on the shared DuckDB
+/// instance, so the network-touching half of the setup runs once per process
+/// rather than once per query.
+static HTTPFS_READY: OnceLock<()> = OnceLock::new();
+
+/// `region|endpoint` the process-wide S3 secret was last created from, or
+/// `None` before the first blob read — see `prepare_connection` for why the
+/// secret is not re-issued per read, and why this is a fingerprint rather than
+/// a `OnceLock<()>`.
+static S3_SECRET_APPLIED: RwLock<Option<String>> = RwLock::new(None);
+
+/// A pooled connection already prepared for `source` — the only shape callers
+/// outside this module should use, so nobody can hold a connection that hasn't
+/// been taught to read `s3://`.
+pub fn prepared_duckdb_connection(
+    source: &PreaggSource,
+) -> Result<duckdb::Connection, SemanticError> {
+    check_local_file(source)?;
     let conn = pooled_duckdb_connection()?;
+    prepare_connection(&conn, source)?;
+    Ok(conn)
+}
+
+/// Guard against a local file that vanished between compile and execute, so
+/// the failure names the cache rather than surfacing as a cryptic DuckDB
+/// error. A blob source has no local file by design.
+fn check_local_file(source: &PreaggSource) -> Result<(), SemanticError> {
+    if let Some(path) = source.local_path()
+        && !path.is_file()
+    {
+        return Err(SemanticError::Runtime(format!(
+            "Parquet cache file not found: {}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+/// Execute a re-aggregation SQL query against an in-memory DuckDB instance.
+///
+/// `preagg_sql` is produced by `airlayer::preagg::generate_reagg_sql` and reads
+/// its Parquet via `read_parquet('...')` — a local path or an `s3://` URI,
+/// depending on `source`. The blob case reads the object in place over
+/// `httpfs`; DuckDB pushes projections and filters down, so this is a scan of
+/// what the query needs rather than a download of the whole rollup.
+pub fn execute_preagg_sql(preagg_sql: &str, source: &PreaggSource) -> Result<Value, SemanticError> {
+    let conn = prepared_duckdb_connection(source)?;
 
     let mut stmt = conn
         .prepare(preagg_sql)
@@ -96,28 +264,26 @@ pub fn execute_preagg_sql(preagg_sql: &str, parquet_path: &Path) -> Result<Value
 /// `min(total_row_count, sample_limit)`. Callers derive `truncated` by
 /// comparing the two.
 ///
-/// Total row count comes from a separate `SELECT COUNT(*) FROM (..)` against
-/// the same preagg SQL — cheap on Parquet (DuckDB reads metadata) and avoids
-/// materialising rows the caller would discard.
+/// **Sample first, count only if the sample filled up.** The caller wants
+/// `sample_limit` rows, so that is the only query that always runs; DuckDB
+/// stops scanning once the `LIMIT` is satisfied. A short result *is* its own
+/// count, so the common case — a rollup narrower than the limit — costs one
+/// pass and never materialises a row nobody asked for. Only a result that hits
+/// the limit pays a `COUNT(*)`, which on a local source reads Parquet metadata
+/// and on a blob source is a second trip.
+///
+/// The tempting shape here is a `CREATE TEMP TABLE … AS (preagg_sql)` so the
+/// count and the sample share one remote scan. Don't: the primary connection
+/// is `open_in_memory()` with no `temp_directory`, so a wide rollup has nowhere
+/// to spill, and hitting `memory_limit` now falls back to the warehouse — which
+/// means a big rollup would pay a full remote scan *and* a full warehouse query
+/// and silently drop off the fast path for good.
 pub fn execute_preagg_sql_typed(
     preagg_sql: &str,
-    parquet_path: &Path,
+    source: &PreaggSource,
     sample_limit: u64,
 ) -> Result<(Vec<String>, Vec<QueryRow>, u64), SemanticError> {
-    if !parquet_path.is_file() {
-        return Err(SemanticError::Runtime(format!(
-            "Parquet cache file not found: {}",
-            parquet_path.display()
-        )));
-    }
-
-    let conn = pooled_duckdb_connection()?;
-
-    let count_sql = format!("SELECT COUNT(*) FROM ({preagg_sql})");
-    let total_row_count = conn
-        .query_row(&count_sql, [], |row| row.get::<_, i64>(0))
-        .map_err(|e| SemanticError::Runtime(format!("DuckDB count failed: {e}")))?
-        as u64;
+    let conn = prepared_duckdb_connection(source)?;
 
     let limited_sql = format!("SELECT * FROM ({preagg_sql}) LIMIT {sample_limit}");
     let mut stmt = conn
@@ -133,8 +299,7 @@ pub fn execute_preagg_sql_typed(
         .map(|r| r.column_names().iter().map(|s| s.to_string()).collect())
         .unwrap_or_default();
 
-    let capacity = sample_limit.min(total_row_count) as usize;
-    let mut rows: Vec<QueryRow> = Vec::with_capacity(capacity);
+    let mut rows: Vec<QueryRow> = Vec::new();
     loop {
         match duckdb_rows.next() {
             Ok(Some(row)) => {
@@ -147,6 +312,17 @@ pub fn execute_preagg_sql_typed(
             Err(e) => return Err(SemanticError::Runtime(format!("DuckDB row error: {e}"))),
         }
     }
+
+    let sampled = rows.len() as u64;
+    let total_row_count = if sampled < sample_limit {
+        // Below the limit, the sample is the population — nothing left to count.
+        sampled
+    } else {
+        let count_sql = format!("SELECT COUNT(*) FROM ({preagg_sql})");
+        conn.query_row(&count_sql, [], |row| row.get::<_, i64>(0))
+            .map_err(|e| SemanticError::Runtime(format!("DuckDB count failed: {e}")))?
+            as u64
+    };
 
     Ok((columns, rows, total_row_count))
 }
@@ -360,7 +536,12 @@ pub fn save_local_manifest(
     std::fs::create_dir_all(cache_dir)
         .map_err(|e| SemanticError::Runtime(format!("create cache dir failed: {e}")))?;
 
-    let tmp_path = cache_dir.join("manifest.json.tmp");
+    // Pid-scoped, not a fixed `manifest.json.tmp`. The publish lock that
+    // serializes writers is process-local, so two processes over one state dir
+    // — an `oxy serve` box also running `oxy worker`, or two dev instances —
+    // would otherwise share a staging file and rename each other's half-written
+    // bytes into place, under a lock-free status poll that reads the result.
+    let tmp_path = cache_dir.join(format!("manifest.json.{}.tmp", std::process::id()));
     let final_path = cache_dir.join("manifest.json");
 
     let json = serde_json::to_string_pretty(manifest)
@@ -406,16 +587,75 @@ mod tests {
         };
         save_local_manifest(dir.path(), &manifest).unwrap();
 
-        // No .tmp file should remain after a successful save.
-        assert!(!dir.path().join("manifest.json.tmp").exists());
+        // No staging file should remain after a successful save — matched by
+        // suffix, since the name is pid-scoped.
+        let strays: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(strays.is_empty(), "staging file left behind: {strays:?}");
         assert!(dir.path().join("manifest.json").exists());
+    }
+
+    /// The `SET http_timeout` / `SET http_retries` bounds are only worth
+    /// anything if the linked DuckDB accepts them. A rejected statement is not
+    /// a soft failure here: `prepare_connection` turns it into an error, so
+    /// EVERY blob read would fall back to the warehouse and the rollup tier
+    /// would quietly stop existing. The setting names are httpfs's, not the
+    /// core engine's, so a DuckDB bump is exactly when this could break.
+    ///
+    /// `INSTALL httpfs` needs the network on a machine that has never run it;
+    /// skip rather than fail there, since the thing under test is whether the
+    /// SETs are accepted, not whether CI has egress.
+    ///
+    /// `CREATE SECRET ... PROVIDER credential_chain` is validated eagerly:
+    /// DuckDB walks the chain at create time and rejects the statement when it
+    /// finds no credentials. That is a property of the machine, not of the SQL
+    /// — CI runners have no AWS identity — so a validation failure is skipped
+    /// the same way, while any other rejection (a parser or binder error, i.e.
+    /// the syntax drifting under a DuckDB bump) still fails.
+    #[test]
+    fn the_linked_duckdb_accepts_the_http_bounds() {
+        let conn = pooled_duckdb_connection().expect("pooled connection");
+        if conn.execute_batch("INSTALL httpfs; LOAD httpfs").is_err() {
+            eprintln!("skipping: httpfs unavailable (no network / no cached extension)");
+            return;
+        }
+        for bounds in [
+            oxy_shared::duckdb_s3::S3ReadBounds::WITH_FALLBACK,
+            oxy_shared::duckdb_s3::S3ReadBounds::NO_FALLBACK,
+        ] {
+            for stmt in oxy_shared::duckdb_s3::s3_setup_sql("preagg_probe_s3", None, None, bounds) {
+                // BOTH execution modes, because the recipe's two callers do not
+                // agree on one: this module runs `execute_batch`, and the S3
+                // mirror in `connector::duckdb` runs `conn.execute(stmt, [])`,
+                // which is stricter — it takes a single statement and refuses
+                // one that returns rows. Probing only the looser API would let
+                // a statement that the mirror cannot run pass here.
+                for result in [
+                    conn.execute_batch(&stmt),
+                    conn.execute(&stmt, []).map(|_| ()),
+                ] {
+                    if let Err(e) = result {
+                        let msg = e.to_string();
+                        assert!(
+                            msg.contains("Secret Validation Failure"),
+                            "DuckDB rejected {stmt:?}: {msg}"
+                        );
+                        eprintln!("skipping secret check: no credentials on this machine ({msg})");
+                    }
+                }
+            }
+        }
     }
 
     #[test]
     fn test_execute_preagg_sql_parquet_not_found() {
         let result = execute_preagg_sql(
             "SELECT * FROM read_parquet('/does/not/exist.parquet')",
-            &PathBuf::from("/does/not/exist.parquet"),
+            &PreaggSource::Local(PathBuf::from("/does/not/exist.parquet")),
         );
         assert!(result.is_err(), "missing parquet should error");
         let err = result.unwrap_err().to_string();

@@ -5,14 +5,15 @@ import { useMetricAnomalies } from "@/hooks/api/useMetricAnomalies";
 import MetricTreeView from "../MetricTree";
 import AnomaliesInbox, { FIRST_PAGE, PAGE_SIZE } from "./AnomaliesInbox";
 import { groupIntoEvents } from "./AnomaliesInbox/components/events";
+import PreAggregationTab from "./PreAggregationTab";
 import SemanticExplorerTab from "./SemanticExplorerTab";
 
 // World Model graduated to its own first-class IDE sidebar surface
 // (`/ide/world-model`), so it is no longer a tab here.
-const TAB_VALUES = ["explorer", "metric-tree", "anomalies"] as const;
+const TAB_VALUES = ["explorer", "metric-tree", "pre-aggregation", "anomalies"] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
-/** The Semantic Layer IDE tab: topic/view Explorer + Metric Tree + Anomalies inbox. */
+/** The Semantic Layer IDE tab: Explorer + Metric Tree + Pre-aggregation + Anomalies inbox. */
 export default function SemanticLayerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   // Ask for the inbox's own first page, not a page of the badge's own size:
@@ -59,6 +60,7 @@ export default function SemanticLayerPage() {
           <TabsList className='w-fit'>
             <TabsTrigger value='explorer'>Explorer</TabsTrigger>
             <TabsTrigger value='metric-tree'>Metric Tree</TabsTrigger>
+            <TabsTrigger value='pre-aggregation'>Pre-aggregation</TabsTrigger>
             <TabsTrigger value='anomalies' className='gap-1.5'>
               Anomalies
               {newCount > 0 && (
@@ -76,6 +78,9 @@ export default function SemanticLayerPage() {
         </TabsContent>
         <TabsContent value='metric-tree' className='min-h-0 flex-1'>
           <MetricTreeView />
+        </TabsContent>
+        <TabsContent value='pre-aggregation' className='min-h-0 flex-1'>
+          <PreAggregationTab />
         </TabsContent>
         <TabsContent value='anomalies' className='min-h-0 flex-1'>
           <AnomaliesInbox />

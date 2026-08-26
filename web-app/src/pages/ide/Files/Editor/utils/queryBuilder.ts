@@ -14,6 +14,7 @@ interface BuildSemanticQueryOptions {
   orders: SemanticQueryOrder[];
   variables: Variable[];
   timeDimensions?: TimeDimension[];
+  limit?: number;
 }
 
 /**
@@ -27,7 +28,8 @@ export function buildSemanticQuery({
   filters,
   orders,
   variables,
-  timeDimensions
+  timeDimensions,
+  limit
 }: BuildSemanticQueryOptions): SemanticQueryRequest {
   const processedFilters = filters
     .filter((f) => {
@@ -98,7 +100,8 @@ export function buildSemanticQuery({
       orders: processedOrders,
       variables: processedVariables,
       ...(processedTimeDimensions &&
-        processedTimeDimensions.length > 0 && { time_dimensions: processedTimeDimensions })
+        processedTimeDimensions.length > 0 && { time_dimensions: processedTimeDimensions }),
+      ...(limit !== undefined && { limit })
     },
     result_format: "parquet"
   };

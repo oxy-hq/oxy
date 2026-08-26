@@ -789,28 +789,18 @@ pub fn build_query_executor(
 ) -> Box<QueryExecutor> {
     use agentic_connector::DatabaseConnector;
 
-    // The root the pre-aggregation cache is keyed on — DERIVED from the
-    // workspace manager, never taken from the caller.
-    //
-    // There are two roots in play and they are different things: one is where
-    // the semantic layer is parsed from, the other is a cache key. The rollup
-    // builder keys its cache directory on the workspace FS root
-    // (`preagg_rebuild::RebuildContext::workspace_path` →
-    // `state_dir::get_airlayer_cache_dir`, a hash of that path), so handing
-    // `try_resolve_local_parquet` the materialised boundary tempdir instead
-    // hashes to a directory that has never existed: the manifest read misses
-    // and every query silently takes the warehouse path — right rows, no
-    // "Pre-aggregated" badge, none of the explain headroom.
-    //
-    // This was a parameter for exactly one revision, which is one longer than
-    // it should have been: a caller with a materialised scan path in scope
-    // could pass it and it compiled. Deriving it here makes the wrong root
-    // unrepresentable at all seven call sites, every one of which hands us the
-    // manager it would have derived from anyway.
-    let preagg_scan_path = workspace_manager
-        .config_manager
-        .workspace_path()
-        .to_path_buf();
+    // The pre-aggregation short-circuit — DERIVED from the workspace manager,
+    // never taken from the caller. Its cache key is the workspace ID, so a
+    // materialised compile-boundary tempdir or a `.worktrees/<branch>`
+    // checkout in scope at a call site can no longer be mistaken for it: both
+    // used to hash to a directory nothing had ever built, and every query then
+    // silently took the warehouse path — right rows, no "Pre-aggregated"
+    // badge, none of the explain headroom.
+    let preagg_ctx = crate::server::preagg_context::preagg_context(
+        workspace_manager.workspace_id,
+        preagg_cache,
+        Some(preagg_renewal_threshold_secs),
+    );
 
     let pool: std::sync::Mutex<std::collections::HashMap<String, Vec<Arc<dyn DatabaseConnector>>>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
@@ -855,21 +845,14 @@ pub fn build_query_executor(
         // Preagg path: if a covering rollup exists in the local Parquet manifest,
         // serve from DuckDB instead of the warehouse. Any failure falls through
         // silently to the warehouse path below.
-        if let Some(ref preagg) = preagg_cache
+        if let Some(ref preagg) = preagg_ctx
             && let Some(agentic_semantic::compile::CompiledQuery::Preaggregation {
                 preagg_sql,
-                parquet_path,
+                source,
                 ..
-            }) = agentic_semantic::compile::try_resolve_local_parquet(
-                &preagg_scan_path,
-                request,
-                preagg,
-                preagg_renewal_threshold_secs,
-                &sql,
-                &database,
-            )
+            }) = agentic_semantic::compile::try_resolve_preagg(preagg, request, &sql, &database)
         {
-            match execute_preagg_and_convert(&preagg_sql, &parquet_path) {
+            match execute_preagg_and_convert(&preagg_sql, &source) {
                 Ok(rows) => {
                     tracing::info!(
                         target: "metric_tree.explain",
@@ -989,12 +972,12 @@ pub fn build_drill_query_executor(
 ) -> Box<QueryExecutor> {
     use agentic_connector::DatabaseConnector;
 
-    // Cache-key root, derived not passed — same two-roots rule (and the same
-    // reason it is not a parameter) as [`build_query_executor`].
-    let preagg_scan_path = workspace_manager
-        .config_manager
-        .workspace_path()
-        .to_path_buf();
+    // Cache key derived, not passed — same rule as [`build_query_executor`].
+    let preagg_ctx = crate::server::preagg_context::preagg_context(
+        workspace_manager.workspace_id,
+        preagg_cache,
+        Some(preagg_renewal_threshold_secs),
+    );
 
     let pool: std::sync::Mutex<std::collections::HashMap<String, Vec<Arc<dyn DatabaseConnector>>>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
@@ -1040,21 +1023,14 @@ pub fn build_drill_query_executor(
         // Preagg path: if a covering rollup exists in the local Parquet manifest,
         // serve from DuckDB instead of the warehouse. Any failure falls through
         // silently to the warehouse path below.
-        if let Some(ref preagg) = preagg_cache
+        if let Some(ref preagg) = preagg_ctx
             && let Some(agentic_semantic::compile::CompiledQuery::Preaggregation {
                 preagg_sql,
-                parquet_path,
+                source,
                 ..
-            }) = agentic_semantic::compile::try_resolve_local_parquet(
-                &preagg_scan_path,
-                request,
-                preagg,
-                preagg_renewal_threshold_secs,
-                &sql,
-                &database,
-            )
+            }) = agentic_semantic::compile::try_resolve_preagg(preagg, request, &sql, &database)
         {
-            match execute_preagg_and_convert(&preagg_sql, &parquet_path) {
+            match execute_preagg_and_convert(&preagg_sql, &source) {
                 Ok(rows) => {
                     tracing::info!(
                         target: "metric_tree.explain",
@@ -1441,9 +1417,9 @@ fn is_seasonal_or_key_dim(name: &str) -> bool {
 /// callers log the error and fall back to the warehouse path.
 fn execute_preagg_and_convert(
     preagg_sql: &str,
-    parquet_path: &std::path::Path,
+    source: &agentic_semantic::compile::PreaggSource,
 ) -> Result<Vec<Map<String, Value>>, String> {
-    let json = agentic_semantic::preagg::execute_preagg_sql(preagg_sql, parquet_path)
+    let json = agentic_semantic::preagg::execute_preagg_sql(preagg_sql, source)
         .map_err(|e| e.to_string())?;
     let rows = json
         .get("rows")
@@ -1642,8 +1618,11 @@ mod tests {
             parquet_path.display()
         );
 
-        let rows = execute_preagg_and_convert(&preagg_sql, &parquet_path)
-            .expect("preagg convert should succeed");
+        let rows = execute_preagg_and_convert(
+            &preagg_sql,
+            &agentic_semantic::compile::PreaggSource::Local(parquet_path.clone()),
+        )
+        .expect("preagg convert should succeed");
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].get("region"), Some(&json!("foo")));
@@ -1655,7 +1634,9 @@ mod tests {
     fn execute_preagg_and_convert_missing_file_returns_err() {
         let result = execute_preagg_and_convert(
             "SELECT 1",
-            std::path::Path::new("/nonexistent/path.parquet"),
+            &agentic_semantic::compile::PreaggSource::Local(std::path::PathBuf::from(
+                "/nonexistent/path.parquet",
+            )),
         );
         assert!(result.is_err(), "missing Parquet should return Err");
     }
