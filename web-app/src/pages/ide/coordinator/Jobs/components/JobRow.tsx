@@ -29,6 +29,11 @@ const toInput = (s: Schedule): ScheduleInput => ({
   name: s.name,
   target_kind: s.target_kind,
   target_ref: s.target_ref,
+  // Both carried for the same reason: the PATCH is a whole-row write, so a
+  // field this helper omits is CLEARED. `question` is load-bearing for agent
+  // schedules — `validate_input` rejects an empty one — so dropping it makes
+  // the Enabled toggle 400 on any agent job.
+  question: s.question,
   variables: s.variables,
   cron_expr: s.cron_expr,
   timezone: s.timezone,

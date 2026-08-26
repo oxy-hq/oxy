@@ -52,6 +52,31 @@ const TIMEZONE_ITEMS = TIMEZONES.map((tz) => (
 
 const FREE_TEXT = "__free_text__";
 
+/**
+ * Parse the variables textarea into what `ScheduleInput.variables` wants.
+ *
+ * Empty → `null` (no overrides). Anything else must be a JSON OBJECT: the
+ * backend folds it over the target's declared `variables:` defaults key by
+ * key, so an array or a scalar has nothing to fold and would be silently
+ * ignored rather than rejected.
+ */
+function parseVariables(
+  text: string
+): { ok: true; value: Record<string, unknown> | null } | { ok: false; error: string } {
+  const trimmed = text.trim();
+  if (!trimmed) return { ok: true, value: null };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Invalid JSON" };
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, error: 'Must be a JSON object, e.g. {"lookback_days": 3}' };
+  }
+  return { ok: true, value: parsed as Record<string, unknown> };
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -72,8 +97,13 @@ const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
   const [cron, setCron] = useState("0 9 * * *");
   const [timezone, setTimezone] = useState("UTC");
   const [enabled, setEnabled] = useState(true);
+  // Held as TEXT, not a parsed object, so a half-typed edit survives a
+  // re-render instead of being reformatted under the cursor.
+  const [variablesText, setVariablesText] = useState("");
+  const [variablesError, setVariablesError] = useState<string | null>(null);
 
   // Reset/prefill whenever the dialog opens.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on schedule.id so a refetch mid-edit cannot clobber the form — see the dep array
   useEffect(() => {
     if (!open) return;
     setName(schedule?.name ?? "");
@@ -83,7 +113,13 @@ const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
     setCron(schedule?.cron_expr ?? "0 9 * * *");
     setTimezone(schedule?.timezone ?? "UTC");
     setEnabled(schedule?.enabled ?? true);
-  }, [open, schedule]);
+    setVariablesText(schedule?.variables ? JSON.stringify(schedule.variables, null, 2) : "");
+    setVariablesError(null);
+    // Keyed on the id, not the object: `next_run_at` / `last_fired_at` /
+    // `missed_runs` advance on every fire, so depending on the row itself
+    // means a job firing while the dialog is open re-runs this prefill and
+    // overwrites whatever is half-typed — most painfully the JSON body.
+  }, [open, schedule?.id]);
 
   const { data: automationFiles } = useAgenticAutomationFiles();
   const { data: airwayFiles } = useAirwayFiles();
@@ -116,11 +152,24 @@ const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
       toast.error("Question is required for agent schedules");
       return;
     }
+    const vars = parseVariables(variablesText);
+    if (!vars.ok) {
+      setVariablesError(vars.error);
+      toast.error(`Variables: ${vars.error}`);
+      return;
+    }
     const input: ScheduleInput = {
       name: name.trim(),
       target_kind: targetKind,
       target_ref: targetRef.trim(),
       question: targetKind === "agent" ? question.trim() : null,
+      // Sent for EVERY target kind, including the ones with no editor below.
+      // The backend PATCH is a whole-row write (`variables: Set(input.variables)`),
+      // so omitting this clears whatever the schedule already had — which for a
+      // monitor_scan means dropping `granularity` and leaving the scan to fail
+      // every fire with "missing granularity in variables". Round-tripping the
+      // prefilled text keeps an edit from destroying state the form can't show.
+      variables: vars.value,
       cron_expr: cron.trim(),
       timezone,
       enabled
@@ -168,6 +217,12 @@ const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
                   setTargetKind(v as ScheduleTargetKind);
                   setTargetRef("");
                   setFreeText(false);
+                  // Variables are target-specific, and the editor only renders
+                  // for workflow/airway while parseVariables runs on EVERY
+                  // submit. Left behind, a half-typed body blocks the save
+                  // with a toast about a field that is no longer on screen.
+                  setVariablesText("");
+                  setVariablesError(null);
                 }}
                 disabled={targetKind === "monitor_scan"}
               >
@@ -245,6 +300,43 @@ const ScheduleDialog: React.FC<Props> = ({ open, onOpenChange, schedule }) => {
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
               />
+            </div>
+          )}
+
+          {(targetKind === "workflow" || targetKind === "airway") && (
+            <div className='flex flex-col gap-2'>
+              <Label htmlFor='sched-variables'>Variables</Label>
+              <Textarea
+                id='sched-variables'
+                className='font-mono text-xs'
+                rows={4}
+                placeholder={'{\n  "lookback_days": 3\n}'}
+                value={variablesText}
+                onChange={(e) => {
+                  setVariablesText(e.target.value);
+                  setVariablesError(null);
+                }}
+                aria-invalid={!!variablesError}
+                aria-describedby='sched-variables-help'
+              />
+              {variablesError ? (
+                // Same id as the help text: `aria-describedby` is always set,
+                // so the id has to resolve in this branch too or a reader
+                // announces "invalid" and nothing else. `alert` makes the
+                // message speak when it appears.
+                <p id='sched-variables-help' role='alert' className='text-destructive text-xs'>
+                  {variablesError}
+                </p>
+              ) : (
+                <p id='sched-variables-help' className='text-muted-foreground text-xs'>
+                  Optional JSON object, folded over the{" "}
+                  {targetKind === "airway" ? "pipeline" : "automation"}&rsquo;s declared defaults on
+                  every run. These values are <strong>static</strong> &mdash; the same ones are sent
+                  on every fire, so a moving window needs a relative variable the target resolves
+                  itself (say <code>lookback_days</code>), not fixed dates that would replay one
+                  frozen range forever.
+                </p>
+              )}
             </div>
           )}
 
