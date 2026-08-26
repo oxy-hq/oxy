@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.131] - 2026-08-26
+
+### 🚀 Features
+
+- Derive an uploadable source's landing zone instead of declaring it (#2992)
+- Generate HTTP route catalog from router source at build time (#2999)
+- Let a schedule carry variables, and stop the form erasing them (#3005)
+- Make pre-aggregation work across the fleet, and surface it in the factory (#2989)
+- Per-org OLTP Postgres — provisioning, writer isolation, and the admin console (#2851)
+
+### 🐛 Bug Fixes
+
+- Stop a semantic query silently answering from the wrong warehouse (#2979)
+- Render semantic pre-aggregations from the declaration, not the worker (#2988)
+- Close the second review pass on the derived landing zone (#2998)
+
+### 💼 Other
+
+- Pin airway to the 0.1.34 tag (#2995)
+
+### 🚜 Refactor
+
+- Extract onboarding into a sibling crate + build the workspace seam (#2996)
+- Begin retiring the old executor — plan + eval target on agentic (#3003)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(airway)* Bump to 0.1.35 — keyless children and employee propagation (#3000)
+
 ## [0.5.130] - 2026-08-24
 
 ### 🚀 Features
@@ -49,6 +78,7 @@ All notable changes to this project will be documented in this file.
 - Run every test job on warp arm64, and keep agentic tests off the public mirror (#2967)
 - Harden Playwright browser setup against apt mirror flakiness (#2971)
 - Make dependency upgrades verifiable instead of hopeful (#2980)
+- Release 0.5.130 (#2963)
 
 ## [0.5.129] - 2026-08-20
 
