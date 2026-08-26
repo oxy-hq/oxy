@@ -27,7 +27,7 @@ use std::future::Future;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 pub use entry::{api_router, internal_api_router};
-pub use openapi::openapi_router;
+pub use openapi::{build_openapi_doc, openapi_router};
 
 // `AppState` moved to `oxy-app-core` so the router and future per-surface crates
 // can hold it without depending on `oxy-app`. Re-exported here so every existing

@@ -52,11 +52,26 @@ oxy logout --env local
 
 ```
 oxy api <path> [-X METHOD] [-d BODY | -f key=val ...] [-H Header: value] [--env <env>]
+oxy api --routes [FILTER] [--json]
+oxy api --openapi
 ```
 
 An authenticated `curl`/`gh api`-style client.  The path is taken relative
 to the target's `/api/` surface; a leading `/` or `api/` prefix is
 normalised automatically.
+
+The command is self-describing, which matters when you (or an agent) have a
+terminal but not this page:
+
+- **`oxy api --help`** — the full usage guide plus every route the binary
+  mounts, grouped by the credential each surface expects.
+- **`oxy api --routes <filter>`** — matching routes with what the server says
+  each one does; `--json` adds the fleet role and path parameters.
+- **`oxy api --openapi`** — this very document, offline: the same spec served
+  at `/apidoc/openapi.json`, so the schemas are reachable without a server.
+
+The route table is generated from the router at build time, so it covers the
+whole surface rather than the curated subset the schemas below describe.
 
 ```bash
 # GET examples

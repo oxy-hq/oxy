@@ -42,6 +42,14 @@ depends on them.
 
 ## Route tree
 
+The tree below is a hand-written orientation map — read it to learn the *shape*
+of the surface and where a new route belongs. It is **not** the authoritative
+list: for that, run `oxy api --routes` (or `oxy api --routes --json`), which
+prints every endpoint the binary mounts from a catalog
+`crates/app/build_route_catalog.rs` extracts from these very files at build
+time. `server::route_catalog` holds the runtime side and the completeness
+tests.
+
 Legend: `🌐` public · `☁️` cloud only · `🏢` cloud + local (per-workspace)
 
 ### 🌐 Public (always mounted)

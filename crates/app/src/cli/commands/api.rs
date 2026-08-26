@@ -5,11 +5,28 @@
 //! / `X-API-Key` header while vibe-coding. The path is taken relative to the
 //! target's `/api/` surface.
 //!
+//! The command is deliberately **self-describing**, because the usual caller
+//! has the binary and nothing else — no checkout, no running server, no doc
+//! site. So everything needed to make a request against the `/api` and
+//! `/external/api` surfaces is reachable from `oxy api` itself:
+//!
+//!   - `--help` — the usage guide plus every route this build mounts there.
+//!   - `--routes [FILTER] [--json]` — the same table, narrowed, with what the
+//!     server says each route does (from `server::route_catalog`, generated
+//!     from the router source at build time).
+//!   - `--openapi` — request/response schemas, the same document `oxy serve`
+//!     publishes at `/apidoc/openapi.json`.
+//!
+//! Anything a caller needs *within those surfaces* that is not reachable that
+//! way is a bug here, not something to answer by pointing at the source. What
+//! is out of scope — the `/customer-apps` bundle tree, the worker health port,
+//! the internal loopback router — is listed in `server::route_catalog`.
+//!
 //! Examples:
+//!   oxy api --routes threads                 # discover endpoints
 //!   oxy api user --env local
 //!   oxy api projects/<id>/query --env local -f sql='select 1'
 //!   oxy api admin/compiles/run -X POST -F workspace_id=<id> -F promote=true --env dev
-//!   oxy api admin/compiles/batch/run -X POST -F promote=true -F 'workspace_ids=["<id1>","<id2>"]' --env dev
 //!   oxy api --print-token --env local        # echo the bearer for raw curl
 //!
 //! `-f`/`--field` sends every value as a JSON string; `-F`/`--field-typed`
@@ -25,15 +42,71 @@ use oxy::theme::StyledText;
 use oxy_shared::errors::OxyError;
 use serde_json::{Map, Value};
 
+use crate::server::route_catalog;
+
 use super::app_manifest::{OxyAppManifest, resolve_target};
 use super::login;
 
+/// Everything an operator (or an LLM driving the CLI) needs to make a correct
+/// request, appended to `--help` ahead of the generated route table.
+///
+/// Kept here rather than in `apidoc.md` because that file is the Swagger UI
+/// header — it describes the API to someone who already has a browser open on
+/// a running server, which is exactly the situation `oxy api` exists to avoid.
+const HELP_GUIDE: &str = "\
+AUTHENTICATION
+  `oxy login [--env <env>]` caches a token per host in ~/.config/oxy/credentials.json;
+  every later `oxy api` call against that host picks it up. `OXY_TOKEN` (or
+  `--token-env <VAR>`) overrides the cache — that is the CI path. The token is sent as
+  `Authorization: Bearer <token>`; `oxy api --print-token` echoes it for raw curl.
+
+CHOOSING A TARGET
+  --env local        http://localhost:5173   (the Vite dev server, which proxies /api)
+  --env dev          https://aip.dev.oxy.tech
+  --env staging      https://aip.staging.oxy.tech
+  --env production   https://app.oxygen-hq.com   (the default)
+  An `oxy-app.json` `environments` map in the current directory overrides these by name,
+  an --env that names no environment is read as a URL, and --target <url> wins outright.
+
+PATHS
+  The path is relative to the target's `/api/` surface, so `oxy api user` requests
+  `/api/user`; a leading `/` or `api/` is accepted and normalised. Reach the API-key-only
+  surface by passing its full path (`oxy api /external/api/<workspace_id>/sql/query`).
+
+  `{...}` segments in the route table are placeholders you substitute. To find real ids:
+    oxy api orgs                              # -> [{ id, name, ... }]
+    oxy api orgs/<org_id>/workspaces          # -> workspaces you can reach
+    oxy api <workspace_id>/agents             # workspace-scoped calls take the id first
+
+REQUEST BODIES
+  -f key=value   string field    -F key=value   JSON-typed field (true / 3 / [\"a\"])
+  -d '<json>'    raw body        -d @file       from a file       -d -   from stdin
+  Fields assemble into one JSON object; a typed -F wins a key clash. The method defaults
+  to GET, or POST when a body is present; -X overrides it.
+
+OUTPUT
+  The response body goes to stdout verbatim (pipe it to `jq`), errors to stderr with a
+  non-zero exit. -i also prints the status line and response headers.
+
+DISCOVERY — everything below works offline, with no server and no token
+  oxy api --routes                 every endpoint, grouped by surface
+  oxy api --routes threads         matching routes, each with what the server says it does
+  oxy api --routes threads --json  the same, as JSON (adds fleet role and path parameters)
+  oxy api --openapi                the OpenAPI 3.1 spec — request/response schemas for the
+                                   documented subset, the same document `oxy serve` puts at
+                                   /apidoc. Pipe to jq: `oxy api --openapi | jq .paths`
+";
+
 #[derive(Parser, Debug)]
+#[command(after_long_help = help_epilogue())]
 pub struct ApiArgs {
     /// API path, relative to the target's `/api/` surface. A leading `/` or
     /// `api/` is accepted and normalised. E.g. `user`,
     /// `projects/<id>/query`, `/api/customer-apps/oxy-access`.
-    #[arg(required_unless_present = "print_token")]
+    ///
+    /// Run `oxy api --routes` (or read the ROUTES section of `--help`) for the
+    /// complete list of paths this server mounts.
+    #[arg(required_unless_present_any = ["print_token", "routes", "openapi"])]
     path: Option<String>,
 
     /// HTTP method. Defaults to GET, or POST when a body (`-d`/`-f`) is given.
@@ -79,8 +152,147 @@ pub struct ApiArgs {
     include: bool,
 
     /// Print the resolved bearer token and exit (handy for raw `curl`).
-    #[arg(long)]
+    #[arg(long, conflicts_with = "path")]
     print_token: bool,
+
+    /// List the API routes in this binary's router and exit, optionally
+    /// filtered by a substring matched against the method, path or surface.
+    /// Needs no network, no credentials and no running server. A few mounts
+    /// are mode-conditional, so a listed path can still 404 on a given
+    /// deployment.
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "",
+        value_name = "FILTER",
+        conflicts_with_all = ["path", "openapi", "print_token"],
+    )]
+    routes: Option<String>,
+
+    /// Emit `--routes` as JSON (one object per endpoint) instead of a table.
+    ///
+    /// The conflicts are spelled out as well as the `requires`: once `routes`
+    /// carries its own `conflicts_with_all`, clap stops enforcing a `requires`
+    /// that points at it from a request invocation, and `oxy api user --json`
+    /// starts parsing as a silent no-op. Naming both directions keeps every
+    /// mode-mixing combination an error.
+    #[arg(long, requires = "routes", conflicts_with_all = ["path", "openapi", "print_token"])]
+    json: bool,
+
+    /// Print the OpenAPI 3.1 spec and exit — request/response schemas for the
+    /// documented subset of the API, offline. Same document `oxy serve` serves
+    /// at `/apidoc/openapi.json`.
+    #[arg(long, conflicts_with_all = ["path", "print_token"])]
+    openapi: bool,
+}
+
+/// `--help` epilogue: the usage guide plus the generated route table.
+///
+/// clap assembles every subcommand's help on every `oxy` invocation — `oxy
+/// serve` included — so this is built once and handed out by reference rather
+/// than re-concatenated 600 routes at a time per process.
+fn help_epilogue() -> &'static str {
+    static EPILOGUE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        format!(
+            "{HELP_GUIDE}\nROUTES — {} endpoints, read from this binary's router at build time.\n\
+             Covers the /api and /external/api surfaces. A few mounts are conditional\n\
+             (`/setup/*` and the git routes only exist in local mode), so a listed path\n\
+             can still 404 on a given deployment. Narrow with `oxy api --routes <filter>`\n\
+             to also see what each one does.\n{}",
+            route_catalog::routes().len(),
+            route_catalog::listing()
+        )
+    });
+    &EPILOGUE
+}
+
+/// Render `--routes`, honouring `--json`.
+///
+/// Unfiltered output is the compact grouped table (600+ lines is already a
+/// lot); a filter narrows it enough to afford the prose, which is the point of
+/// filtering in the first place.
+fn print_routes(filter: &str, json: bool) -> Result<(), OxyError> {
+    let filter = filter.trim();
+    let needle = (!filter.is_empty()).then_some(filter);
+    let matches = route_catalog::search(needle);
+
+    if json {
+        let described: Vec<_> = matches.into_iter().map(route_catalog::describe).collect();
+        let rendered = serde_json::to_string_pretty(&described)
+            .map_err(|e| OxyError::RuntimeError(format!("serialize routes: {e}")))?;
+        println!("{rendered}");
+        return Ok(());
+    }
+
+    if matches.is_empty() {
+        eprintln!(
+            "{}",
+            format!("no route matches {filter:?}. Run `oxy api --routes` for the full list.")
+                .as_str()
+                .warning()
+        );
+        return Ok(());
+    }
+
+    // Unfiltered output reuses the same grouped listing `--help` shows, so the
+    // two can never disagree.
+    if needle.is_none() {
+        print!("{}", route_catalog::listing());
+        return Ok(());
+    }
+
+    for (surface, label, credential) in route_catalog::surfaces() {
+        let group: Vec<_> = matches.iter().filter(|r| r.surface == *surface).collect();
+        if group.is_empty() {
+            continue;
+        }
+        println!("\n{label} — {credential}");
+        for r in group {
+            println!("  {:<7} {}", r.method, r.path);
+            for line in wrap(r.description, 86) {
+                println!("          {line}");
+            }
+            // Marked, because a mount comment is not always *about* its mount —
+            // it may be explaining the route above it, or one that was removed.
+            for (i, line) in wrap(r.note, 80).iter().enumerate() {
+                let lead = if i == 0 { "note: " } else { "      " };
+                println!("          {lead}{line}");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Greedy word wrap. Route prose is one long line by construction, and a
+/// terminal-width paragraph reads better than a 500-column one.
+fn wrap(text: &str, width: usize) -> Vec<String> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        if !current.is_empty() && current.chars().count() + 1 + word.chars().count() > width {
+            lines.push(std::mem::take(&mut current));
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(word);
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
+/// Print the OpenAPI document without starting a server.
+async fn print_openapi() -> Result<(), OxyError> {
+    let doc = crate::server::router::build_openapi_doc().await;
+    let rendered = serde_json::to_string_pretty(&doc)
+        .map_err(|e| OxyError::RuntimeError(format!("serialize openapi: {e}")))?;
+    println!("{rendered}");
+    Ok(())
 }
 
 fn env_var(name: &str) -> Option<String> {
@@ -177,6 +389,15 @@ fn resolve_token(args: &ApiArgs, target: &str) -> Result<String, OxyError> {
 }
 
 pub async fn handle_api_command(args: ApiArgs) -> Result<(), OxyError> {
+    // Discovery reads only what is compiled into this binary: no target to
+    // resolve, no token to find, nothing to fail on.
+    if let Some(filter) = args.routes.as_deref() {
+        return print_routes(filter, args.json);
+    }
+    if args.openapi {
+        return print_openapi().await;
+    }
+
     // Mirror `oxy publish`: pick up a laptop's shell exports.
     dotenv::from_filename(".env.local").ok();
     dotenv::dotenv().ok();
@@ -272,6 +493,90 @@ pub async fn handle_api_command(args: ApiArgs) -> Result<(), OxyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A bare `--routes` means "no filter", not "missing value".
+    #[test]
+    fn bare_routes_filters_nothing() {
+        let args = ApiArgs::try_parse_from(["oxy", "--routes"]).expect("--routes needs no path");
+        assert_eq!(args.routes.as_deref(), Some(""));
+        assert!(args.path.is_none());
+    }
+
+    /// `oxy api` has four modes — request, `--print-token`, `--routes` and
+    /// `--openapi` — and mixing them has to be an error, not a silent pick.
+    ///
+    /// Table-driven because the relationships are clap's to enforce and clap
+    /// resolves them jointly: adding `conflicts_with_all` to `routes` quietly
+    /// stopped `--json`'s `requires = "routes"` from firing, so
+    /// `oxy api user --json` began parsing as a no-op. Only checking every
+    /// combination catches that class.
+    #[test]
+    fn modes_do_not_mix() {
+        for (args, accepted) in [
+            // Request mode.
+            (vec!["oxy", "user"], true),
+            (vec!["oxy", "--print-token"], true),
+            (vec!["oxy"], false),
+            (vec!["oxy", "user", "--print-token"], false),
+            // Discovery modes stand alone.
+            (vec!["oxy", "--routes"], true),
+            (vec!["oxy", "--routes", "threads"], true),
+            (vec!["oxy", "--routes", "--json"], true),
+            (vec!["oxy", "--openapi"], true),
+            // Mixing them is rejected rather than silently resolved.
+            (vec!["oxy", "user", "--routes"], false),
+            (vec!["oxy", "user", "--json"], false),
+            (vec!["oxy", "user", "--openapi"], false),
+            (vec!["oxy", "--routes", "--openapi"], false),
+            (vec!["oxy", "--openapi", "--json"], false),
+            (vec!["oxy", "--json"], false),
+            // `--print-token` is a fourth mode, and was the gap: `routes` and
+            // `openapi` named each other and `path`, but not it, so the
+            // dispatch order picked a winner in silence.
+            (vec!["oxy", "--print-token", "--routes"], false),
+            (vec!["oxy", "--print-token", "--openapi"], false),
+            (vec!["oxy", "--print-token", "--json"], false),
+        ] {
+            let parsed = ApiArgs::try_parse_from(&args);
+            assert_eq!(
+                parsed.is_ok(),
+                accepted,
+                "`oxy api {}` should {}",
+                args[1..].join(" "),
+                if accepted { "parse" } else { "be rejected" }
+            );
+        }
+    }
+
+    /// A value after `--routes` is its filter, never a request path.
+    #[test]
+    fn routes_takes_its_filter_not_a_path() {
+        let args = ApiArgs::try_parse_from(["oxy", "--routes", "threads"]).unwrap();
+        assert_eq!(args.routes.as_deref(), Some("threads"));
+        assert!(args.path.is_none());
+    }
+
+    #[test]
+    fn openapi_needs_no_path() {
+        let args = ApiArgs::try_parse_from(["oxy", "--openapi"]).expect("--openapi needs no path");
+        assert!(args.openapi);
+        assert!(args.path.is_none());
+    }
+
+    /// `--help` is the discovery surface, so it has to actually carry the
+    /// routes — an epilogue that lost the generated table would still render.
+    #[test]
+    fn help_epilogue_carries_the_route_table() {
+        let help = help_epilogue();
+        assert!(help.contains("AUTHENTICATION"));
+        assert!(help.contains("GET     /api/health"));
+        assert!(help.contains("/api/{workspace_id}/threads"));
+        assert!(
+            help.lines().count() > 400,
+            "the --help route table shrank to {} lines",
+            help.lines().count()
+        );
+    }
 
     #[test]
     fn normalize_path_adds_api_prefix() {

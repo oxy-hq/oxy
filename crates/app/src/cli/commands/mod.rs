@@ -326,6 +326,12 @@ enum SubCommand {
     /// you never hand-manage an `Authorization` / `X-API-Key` header. The
     /// path is relative to the target's `/api/` surface. Handy for
     /// vibe-coding against your own workspace's data endpoints.
+    ///
+    /// Self-describing, so an agent needs nothing but this binary — no source,
+    /// no running server, no doc site. `oxy api --help` prints the full usage
+    /// guide plus every route this build mounts; `oxy api --routes [FILTER]`
+    /// adds what each one does (`--json` for machine use); `oxy api --openapi`
+    /// prints the request/response schemas.
     Api(api::ApiArgs),
     /// Publish a built custom-app bundle to oxy (one-way deploy).
     ///

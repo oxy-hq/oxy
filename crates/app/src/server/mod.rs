@@ -20,6 +20,7 @@ pub(super) mod preagg_rebuild;
 pub mod preagg_worker;
 pub mod role_manifest;
 pub mod role_middleware;
+pub mod route_catalog;
 pub mod router;
 pub mod runtime_artifact;
 pub mod serve_safety;
