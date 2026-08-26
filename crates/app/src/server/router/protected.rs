@@ -88,6 +88,7 @@ pub(super) fn build_local_protected_routes(
 ) -> Router<AppState> {
     Router::new()
         .merge(airhouse::api::router::<AppState>())
+        .merge(oxy_oltp::api::router::<AppState>())
         .nest(
             "/{workspace_id}",
             build_workspace_routes(app_state.clone(), agentic_state, false, true)

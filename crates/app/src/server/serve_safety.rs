@@ -49,7 +49,10 @@ fn database_is_serve_safe(db: &Database) -> bool {
         | DatabaseType::DOMO(_)
         | DatabaseType::MotherDuck(_)
         | DatabaseType::Airhouse(_)
-        | DatabaseType::AirhouseManaged(_) => true,
+        | DatabaseType::AirhouseManaged(_)
+        // Per-org OLTP: a remote managed Postgres, resolved from `oltp_tenants`.
+        // Nothing about it lives on the working copy.
+        | DatabaseType::PostgresManaged(_) => true,
         // DuckDB: serve-safe with a compiler-injected S3 mirror, or a natively
         // S3-backed DuckLake. A raw Local/File DuckDB without a mirror needs the
         // working tree's data files.

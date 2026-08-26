@@ -20,12 +20,13 @@ mod make;
 mod mcp;
 mod migrate;
 mod migrate_automations;
-mod proxy;
-mod publish;
-pub mod run;
 /// `pub` so integration tests can drive the seed directly (see
 /// `tests/seed_example_app.rs`) instead of shelling out to the binary — the
 /// seed is a fixture the tests are built on, not just a CLI command.
+pub mod oltp;
+mod proxy;
+mod publish;
+pub mod run;
 pub mod seed;
 mod seed_apps;
 mod seed_partners;
@@ -262,6 +263,9 @@ enum SubCommand {
     /// Run automation files with additional control over execution,
     /// error handling, and output formatting.
     Make(MakeArgs),
+
+    /// Per-org OLTP Postgres: provision, apply schema, inspect.
+    Oltp(crate::cli::commands::oltp::OltpArgs),
 
     /// Database seeding commands for development and testing
     #[clap(hide = true)]
@@ -602,6 +606,7 @@ pub async fn cli(
             SubCommand::TestTheme => "test-theme",
             SubCommand::GenConfigSchema(_) => "gen-config-schema",
             SubCommand::Make(_) => "make",
+            SubCommand::Oltp(_) => "oltp",
             SubCommand::Seed(_) => "seed",
             SubCommand::Clean(_) => "clean",
             SubCommand::Looker(_) => "looker",
@@ -857,6 +862,12 @@ pub async fn cli(
                     );
                     exit(1)
                 }
+            }
+        }
+        Some(SubCommand::Oltp(args)) => {
+            if let Err(e) = crate::cli::commands::oltp::oltp(args).await {
+                eprintln!("{}", format!("{e}").error());
+                exit(1);
             }
         }
         Some(SubCommand::Migrate) => {

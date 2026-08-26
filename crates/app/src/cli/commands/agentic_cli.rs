@@ -67,6 +67,13 @@ pub struct RunArgs {
     /// Output structured JSONL instead of pretty terminal
     #[clap(long)]
     pub json: bool,
+    /// Workspace to run as. Defaults to the local workspace (`Uuid::nil()`).
+    ///
+    /// Needed for anything that resolves per tenant — a `postgres_managed`
+    /// database maps workspace → org → `oltp_tenants`, and the nil workspace
+    /// belongs to no org. Matches `oxy airway run --workspace-id`.
+    #[clap(long)]
+    pub workspace_id: Option<Uuid>,
 }
 
 #[derive(Parser, Debug)]
@@ -170,7 +177,7 @@ fn build_event_registry() -> EventRegistry {
 async fn cmd_run(args: RunArgs) -> Result<(), OxyError> {
     let db = connect_db().await?;
     let project_path = resolve_local_workspace_path()?;
-    let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
+    let workspace_manager = WorkspaceBuilder::new(args.workspace_id.unwrap_or_else(Uuid::nil))
         .with_workspace_path(&project_path)
         .await?
         .with_runs_manager(oxy::adapters::runs::RunsManager::noop())

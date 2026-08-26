@@ -40,6 +40,11 @@
 //!
 //! Fails **closed**: an unmapped combination simply has no arm that grants.
 
+// A duplicate match arm in `allows` would silently shadow a later ring, so the
+// exhaustiveness guarantee this crate rests on gets a hard lint rather than the
+// default warning. Verified clean at the time of adding.
+#![deny(unreachable_patterns)]
+
 use uuid::Uuid;
 
 /// An action a principal may take on a resource. Oxy owns this closed vocabulary, and
@@ -183,16 +188,44 @@ pub enum Action {
     /// Oxy's own machinery: internal jobs, compiles, serve routing, platform metrics,
     /// workspace health — [`Cap::OperatePlatform`].
     PlatformOperate,
-    /// Staff provisioning a tenant's **Airhouse warehouse** from the admin
-    /// console (`/admin/airhouse`) — [`Cap::OperatePlatform`].
+    /// Provision and inspect an org's OLTP Postgres from the admin console —
+    /// [`Cap::OperatePlatform`].
     ///
-    /// Its own action rather than riding [`Action::PlatformOperate`] because
-    /// `as_str()` is what lands in an audit row and in the grant UI, and
-    /// provisioning a tenant's data plane is not "Oxy's own machinery". Same
-    /// ring: a grant that can operate the platform can provision a warehouse,
-    /// and a tier that could do one but not the other is not a distinction
-    /// anyone has asked for.
+    /// Deliberately NOT [`Cap::ManageApps`]: provisioning creates a billable
+    /// database at the provider, so an App Operator — who ships apps and
+    /// nothing else — must not reach it.
+    ///
+    /// Reading and provisioning share one action because the read already
+    /// exposes the host and the schema layout; splitting them would imply a
+    /// tier that can see a tenant's database shape but not act on it, which is
+    /// not a distinction anyone has asked for.
+    PlatformOltp,
+    /// Staff provisioning a tenant's **Airhouse warehouse** from the admin
+    /// console.
+    ///
+    /// The same ring as [`Self::PlatformOltp`] — both are "operate the
+    /// platform's data plane on a tenant's behalf", and a grant that could
+    /// create one but not the other would need a story for why. A separate
+    /// *action* even so, because the action name is what lands in an audit row
+    /// and in the grant UI: riding `PlatformOltp` recorded an Airhouse act
+    /// under OLTP's name. Same authority, honest vocabulary.
     PlatformAirhouse,
+    /// A partner provisioning OLTP for one of its client orgs —
+    /// [`Cap::ManageOrgSettings`], the same capability that already covers
+    /// changing what a client org is configured with.
+    ///
+    /// Separate from [`Self::PlatformOltp`] because the two are asked of
+    /// different resources: a platform action is pinned to the Platform
+    /// singleton and filtered by scope, a partner action names the partner and
+    /// the client org. That is why there is no single "staff or partner" ring.
+    ///
+    /// **Modeled ahead of its routes, deliberately.** No handler takes this
+    /// yet — partner-scoped OLTP management is not wired — but the ring and its
+    /// differential cases exist so the authorization is settled before the
+    /// surface ships, not bolted on after. An unrouted action is inert: nothing
+    /// grants it, so it cannot widen access. When the partner OLTP routes land,
+    /// they take this via `enforce_guard`, not a hand-rolled check.
+    PartnerManageOltp,
     /// The grant table (`/admin/app-admins`) — [`Cap::ManagePlatformGrants`].
     ///
     /// **This action is a door, not a decision.** It answers "may this principal
@@ -212,7 +245,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 35] = [
+    pub const ALL: [Action; 37] = [
         Action::OrgRead,
         Action::MemberInvite,
         Action::MemberSetRole,
@@ -236,6 +269,9 @@ impl Action {
         Action::PartnerManageSecrets,
         Action::PartnerCreateOrgs,
         Action::PartnerManageOrgSettings,
+        Action::PartnerManageOltp,
+        Action::PlatformOltp,
+        Action::PlatformAirhouse,
         Action::PlatformOps,
         Action::PlatformApps,
         Action::PlatformExplorer,
@@ -245,7 +281,6 @@ impl Action {
         Action::PlatformUsers,
         Action::PlatformPartners,
         Action::PlatformOperate,
-        Action::PlatformAirhouse,
         Action::PlatformGrants,
         Action::PlatformOwnerOnly,
     ];
@@ -280,6 +315,9 @@ impl Action {
             Action::PartnerManageSecrets => "partner_manage_secrets",
             Action::PartnerCreateOrgs => "partner_create_orgs",
             Action::PartnerManageOrgSettings => "partner_manage_org_settings",
+            Action::PartnerManageOltp => "partner_manage_oltp",
+            Action::PlatformOltp => "platform_oltp",
+            Action::PlatformAirhouse => "platform_airhouse",
             Action::PlatformOps => "platform_ops",
             Action::PlatformApps => "platform_apps",
             Action::PlatformExplorer => "platform_explorer",
@@ -289,7 +327,6 @@ impl Action {
             Action::PlatformUsers => "platform_users",
             Action::PlatformPartners => "platform_partners",
             Action::PlatformOperate => "platform_operate",
-            Action::PlatformAirhouse => "platform_airhouse",
             Action::PlatformGrants => "platform_grants",
             Action::PlatformOwnerOnly => "platform_owner_only",
         }
@@ -318,6 +355,15 @@ impl Action {
             Action::PartnerManageSecrets => Ring::PartnerCap(Cap::ManageSecrets),
             Action::PartnerCreateOrgs => Ring::PartnerCap(Cap::CreateOrgs),
             Action::PartnerManageOrgSettings => Ring::PartnerCap(Cap::ManageOrgSettings),
+            Action::PartnerManageOltp => Ring::PartnerCap(Cap::ManageOrgSettings),
+            // One arm for the three that share this ring: operating the
+            // platform, and provisioning either data plane on a tenant's
+            // behalf. Both sides of the merge added `PlatformAirhouse` to a
+            // different arm — same ring, so behaviour was identical and only
+            // the unreachable-pattern warning said so.
+            Action::PlatformOltp | Action::PlatformAirhouse | Action::PlatformOperate => {
+                Ring::PlatformCap(Cap::OperatePlatform)
+            }
             Action::PlatformOps => Ring::PlatformAny,
             Action::PlatformApps => Ring::PlatformCap(Cap::ManageApps),
             Action::PlatformExplorer => Ring::PlatformCap(Cap::ViewTenants),
@@ -326,9 +372,6 @@ impl Action {
             Action::PlatformOrgCreate => Ring::PlatformCap(Cap::CreateOrgs),
             Action::PlatformUsers => Ring::PlatformCap(Cap::ManageMembers),
             Action::PlatformPartners => Ring::PlatformCap(Cap::ManagePartners),
-            Action::PlatformOperate | Action::PlatformAirhouse => {
-                Ring::PlatformCap(Cap::OperatePlatform)
-            }
             Action::PlatformGrants => Ring::PlatformCap(Cap::ManagePlatformGrants),
             Action::PlatformOwnerOnly => Ring::GlobalOwnerOnly,
         }
@@ -2274,6 +2317,100 @@ mod policy_tests {
     // ── The capability split ──────────────────────────────────────────────────
     // What the platform tier buys once staff standing is `(scope × caps)` instead of a
     // boolean. Each test below fails against the old model.
+
+    /// Provisioning an OLTP database creates a **billable** project at the
+    /// provider, so it sits behind `OperatePlatform` rather than the staff
+    /// door. An App Operator ships apps and nothing else.
+    #[test]
+    fn oltp_provisioning_is_operator_work_not_app_work() {
+        let ga = PrincipalFacts {
+            platform: global_admin_standing(),
+            ..facts()
+        };
+        assert!(allows(&ga, Action::PlatformOltp, &Resource::platform()));
+
+        let op = PrincipalFacts {
+            platform: app_operator_standing(Scope::All),
+            ..facts()
+        };
+        assert!(
+            !allows(&op, Action::PlatformOltp, &Resource::platform()),
+            "an app operator must not provision a billable database"
+        );
+
+        // And no tenant standing reaches the operator surface, however senior.
+        let owner = PrincipalFacts {
+            owned_orgs: [org()].into(),
+            ..facts()
+        };
+        assert!(
+            !allows(&owner, Action::PlatformOltp, &Resource::platform()),
+            "an org owner has no platform reach"
+        );
+    }
+
+    /// Airhouse rides the same ring, and must answer identically for every
+    /// standing — a divergence would mean a grant that provisions one data
+    /// plane but not the other, which nothing in the product describes.
+    #[test]
+    fn airhouse_provisioning_answers_exactly_as_oltp_does() {
+        for facts in [
+            PrincipalFacts {
+                platform: global_admin_standing(),
+                ..facts()
+            },
+            PrincipalFacts {
+                platform: app_operator_standing(Scope::All),
+                ..facts()
+            },
+            PrincipalFacts {
+                owned_orgs: [org()].into(),
+                ..facts()
+            },
+            facts(),
+        ] {
+            assert_eq!(
+                allows(&facts, Action::PlatformAirhouse, &Resource::platform()),
+                allows(&facts, Action::PlatformOltp, &Resource::platform()),
+                "airhouse and oltp must not diverge"
+            );
+        }
+    }
+
+    /// A partner provisions for the client orgs it manages, and only those.
+    #[test]
+    fn a_partner_provisions_oltp_only_for_its_own_clients() {
+        let f = PrincipalFacts {
+            partners: vec![standing(partner_org(), org(), &[Cap::ManageOrgSettings])],
+            ..facts()
+        };
+        assert!(allows(
+            &f,
+            Action::PartnerManageOltp,
+            &Resource::partner_client(org(), partner_org())
+        ));
+
+        let someone_elses = Uuid::from_u128(4242);
+        assert!(
+            !allows(
+                &f,
+                Action::PartnerManageOltp,
+                &Resource::partner_client(someone_elses, partner_org())
+            ),
+            "a partner must not provision for an org it does not manage"
+        );
+
+        // The capability is the gate, not partnership itself.
+        let no_cap = PrincipalFacts {
+            partners: vec![standing(partner_org(), org(), &[Cap::DevelopApps])],
+            ..facts()
+        };
+        assert!(!allows(
+            &no_cap,
+            Action::PartnerManageOltp,
+            &Resource::partner_client(org(), partner_org())
+        ));
+    }
 
     /// **The bug this design exists to fix.** `Ring::OwnerOnly` gates
     /// `Action::OrgOwnerManage` — "delete, ownership transfer, owner-promotion" — and

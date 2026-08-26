@@ -112,6 +112,12 @@ export const CLOUD_NAV: NavGroup[] = [
       // string. Only `provision` and the catalog-index routes need an admin,
       // and those are gated inside the section.
       { value: "workspace.airhouse", label: "Airhouse", icon: AirhouseLogo },
+      // Ungated for the same reason as Airhouse, but for a stronger one: this
+      // panel returns no credentials at all. `GET /oltp/me/connection` reports
+      // which schemas exist and whether analytics can see them — metadata, not
+      // access. Queries reach the database only through `postgres_managed`,
+      // which resolves the read-only analyst server-side.
+      { value: "workspace.oltp", label: "OLTP Database", icon: Database },
       {
         value: "workspace.repositories",
         label: "Repositories",
@@ -147,6 +153,7 @@ export const LOCAL_NAV: NavGroup[] = [
     items: [
       { value: "workspace.databases", label: "Databases", icon: Database },
       { value: "workspace.airhouse", label: "Airhouse", icon: AirhouseLogo },
+      { value: "workspace.oltp", label: "OLTP Database", icon: Database },
       { value: "workspace.api_keys", label: "API Keys", icon: Key },
       { value: "workspace.secrets", label: "Secrets", icon: KeyRound },
       { value: "workspace.apps", label: "Apps", icon: AppWindow },

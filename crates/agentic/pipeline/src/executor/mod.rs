@@ -863,11 +863,12 @@ impl PipelineTaskExecutor {
         // Airhouse destinations hold/cycle one pgwire connection for the whole
         // load; attach a provider so each (re)connect re-mints a fresh
         // (non-expired) ephemeral credential instead of reusing the static DSN.
-        if let Some(database) = airhouse_db {
+        if let Some((database, dataset_name)) = airhouse_db {
             let provider: Arc<dyn agentic_airway::CredentialProvider> =
                 Arc::new(PlatformAirhouseCredentialProvider {
                     platform: self.platform.clone(),
                     database,
+                    dataset_name,
                 });
             worker = worker.with_credential_provider(provider);
         }
@@ -934,7 +935,7 @@ impl PipelineTaskExecutor {
             .resolve_airway_destination(&mut spec)
             .await
             .map_err(Internal)?;
-        let Some(database) = airhouse_db else {
+        let Some((database, dataset_name)) = airhouse_db else {
             return Err(BadRequest(
                 "reset schema is only supported for airhouse destinations".into(),
             ));
@@ -943,6 +944,7 @@ impl PipelineTaskExecutor {
             Arc::new(PlatformAirhouseCredentialProvider {
                 platform: self.platform.clone(),
                 database,
+                dataset_name,
             });
 
         let inline_config = spec
@@ -1233,7 +1235,7 @@ impl PipelineTaskExecutor {
     async fn resolve_airway_destination(
         &self,
         spec: &mut agentic_airway::AirwayPipelineSpec,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<(String, String)>, String> {
         let agentic_airway::DestinationSpec::Reference(ref_) = &spec.destination else {
             return Ok(None);
         };
@@ -1242,7 +1244,7 @@ impl PipelineTaskExecutor {
         let schema_separator = ref_.schema_separator.clone();
         let resolved = self
             .platform
-            .resolve_pipeline_destination(&database)
+            .resolve_pipeline_destination(&database, &dataset_name)
             .await
             .ok_or_else(|| {
                 format!(
@@ -1251,9 +1253,16 @@ impl PipelineTaskExecutor {
                      (postgres or airhouse)"
                 )
             })?;
+        // The resolver wins when it names a dataset: `postgres_managed` writes
+        // into `raw_<source>`, a schema Oxy owns and granted this credential
+        // rights on, so an author-chosen name would only fail at first write.
+        let effective_dataset = resolved
+            .dataset_name_override
+            .clone()
+            .unwrap_or_else(|| dataset_name.clone());
         let mut config = serde_json::json!({
             "connection_string": resolved.connection_string,
-            "dataset_name": dataset_name,
+            "dataset_name": effective_dataset,
         });
         // `schema_separator` is an airhouse-only knob. Gate on the resolved
         // kind: other destinations (`postgres`, `memory`) deny unknown fields,
@@ -1276,7 +1285,7 @@ impl PipelineTaskExecutor {
                 kind: resolved.kind,
                 config,
             });
-        Ok(is_airhouse.then_some(database))
+        Ok(is_airhouse.then_some((database, effective_dataset)))
     }
 }
 
@@ -1533,13 +1542,14 @@ impl agentic_airway::AccessTokenSource for PlatformAccessTokenSource {
 struct PlatformAirhouseCredentialProvider {
     platform: Arc<dyn PlatformContext>,
     database: String,
+    dataset_name: String,
 }
 
 #[async_trait]
 impl agentic_airway::CredentialProvider for PlatformAirhouseCredentialProvider {
     async fn connection_string(&self) -> Result<String, String> {
         self.platform
-            .resolve_pipeline_destination(&self.database)
+            .resolve_pipeline_destination(&self.database, &self.dataset_name)
             .await
             .map(|resolved| resolved.connection_string)
             .ok_or_else(|| {

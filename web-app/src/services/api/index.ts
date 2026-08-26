@@ -5,7 +5,6 @@ export {
   type AirhouseConnectionInfo,
   AirhouseService
 } from "./airhouse";
-
 export { AnalyticsService } from "./analytics";
 export { AppService } from "./apps";
 export { AuthService } from "./auth";
@@ -28,6 +27,8 @@ export { FileService } from "./files";
 export { GitHubApiService } from "./github";
 export { IntegrationService, type LookerIntegrationInfo } from "./integrations";
 export { ArtifactService, BuilderService, ChartService } from "./misc";
+export type { OltpConnectionInfo, OltpSchemaInfo } from "./oltp";
+export { OltpService } from "./oltp";
 export { OnboardingService } from "./onboarding";
 export { RepositoryService } from "./repository";
 export { RunService } from "./run";

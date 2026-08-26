@@ -247,6 +247,12 @@ pub trait FunctionHost: Send + Sync {
     /// `"upsert"`; `payload` carries `{ database, table?, rows?, sql? }`
     /// depending on `op`. Validated against the project's configured
     /// databases (§11.3) before execution.
+    /// `ctx.warehouse.query(database, sql)` — a read against a named database.
+    async fn warehouse_query(
+        &self,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, String>;
+
     async fn warehouse_write(
         &self,
         op: String,
@@ -283,6 +289,17 @@ pub trait FunctionHost: Send + Sync {
     /// and the pinned connection lives here.
     async fn tx(&self, op: String, payload: serde_json::Value)
     -> Result<serde_json::Value, String>;
+    /// `ctx.oltp.{query,exec}` — read/write the app's OWN per-org OLTP schema
+    /// (`app_<writer>`) on the managed Postgres tenant. `op` is `query` or
+    /// `exec`; `payload` carries `{ sql, params? }`. Gated by the fail-closed
+    /// `oltp` manifest capability and the OLTP kill-switch, and scoped to the
+    /// app's own writer role — so unlike `ctx.warehouse` (read-only analyst on a
+    /// managed database) it can write, and cannot see another app's data.
+    async fn oltp(
+        &self,
+        op: String,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, String>;
 }
 
 /// A request the isolate sends to the broker loop.
@@ -329,6 +346,11 @@ enum HostCall {
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
     },
     Tx {
+        op: String,
+        payload: serde_json::Value,
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    Oltp {
         op: String,
         payload: serde_json::Value,
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
@@ -479,6 +501,34 @@ async fn op_ctx_tx(
         .await
         .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
     Ok(reply_json("ctx.tx", result))
+}
+
+/// `ctx.oltp.{query,exec}` — bridge to `FunctionHost::oltp`. Single-op
+/// dispatcher shaped like `op_ctx_warehouse`: `op` is the verb, `payload_json`
+/// carries `{ sql, params? }`. The app's own per-org OLTP schema is derived
+/// host-side from the invoking app's slug (the manifest only gates), so no
+/// database name — and no app-chosen target — crosses this boundary.
+#[op2]
+#[string]
+async fn op_ctx_oltp(
+    state: Rc<RefCell<OpState>>,
+    #[string] op: String,
+    #[string] payload_json: String,
+) -> Result<String, JsErrorBox> {
+    check_cancelled(&state)?;
+    let tx = state
+        .borrow()
+        .borrow::<mpsc::UnboundedSender<HostCall>>()
+        .clone();
+    let payload: serde_json::Value =
+        serde_json::from_str(&payload_json).unwrap_or(serde_json::Value::Null);
+    let (reply, rx) = oneshot::channel();
+    tx.send(HostCall::Oltp { op, payload, reply })
+        .map_err(|_| JsErrorBox::generic("function host unavailable"))?;
+    let result = rx
+        .await
+        .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
+    Ok(reply_json("ctx.oltp", result))
 }
 
 /// `ctx.secrets.set(key, value)` — bridge to `FunctionHost::secrets_set`.
@@ -645,6 +695,7 @@ deno_core::extension!(
         op_ctx_email_send,
         op_ctx_storage,
         op_ctx_tx,
+        op_ctx_oltp,
     ],
 );
 
@@ -851,6 +902,12 @@ globalThis.__buildCtx = (ctxData) => ({
       __wrapOp("op_ctx_warehouse")("exec", { database, sql }),
     upsert: (database, table, rows, conflictColumns) =>
       __wrapOp("op_ctx_warehouse")("upsert", { database, table, rows, conflictColumns }),
+    // query(database, sql) — a READ against a named database. `ctx.query` only
+    // ever reaches the project default, so this is the one way an app reads its
+    // own OLTP store. Not gated by `destinations`: that allowlist is about
+    // writes, and postgres_managed resolves the read-only analyst regardless.
+    query: (database, sql) =>
+      __wrapOp("op_ctx_warehouse")("query", { database, sql }),
   },
   // tx(database, fn) — run `fn` inside one transaction on a pinned connection.
   // Commits when `fn` resolves, rolls back when it throws, and rethrows the
@@ -910,6 +967,31 @@ globalThis.__buildCtx = (ctxData) => ({
     closed = true;
     await call("commit", { id });
     return result;
+  },
+  // oltp.query(sql, params?) / oltp.exec(sql, params?) — read/write the app's
+  // OWN per-org OLTP schema (app_<writer>), and nothing else. This is the write
+  // half ctx.warehouse cannot give an app on a managed database (that resolves
+  // the read-only analyst, which also sees the org's raw_* extracts). The writer
+  // is derived host-side from the app's own slug — oxy-app.json's
+  // `oltp: { enabled }` only gates access, it never names the target — so no
+  // database name crosses the boundary. Each call auto-commits (a failed
+  // statement rolls back). Statements take bound parameters ($1, $2, …) — never
+  // build SQL by concatenating user input.
+  oltp: {
+    query: async (sql, params) => {
+      const r = await __wrapOp("op_ctx_oltp")("query", {
+        sql: String(sql),
+        params: params ?? [],
+      });
+      return r.rows;
+    },
+    exec: async (sql, params) => {
+      const r = await __wrapOp("op_ctx_oltp")("exec", {
+        sql: String(sql),
+        params: params ?? [],
+      });
+      return r.rowCount;
+    },
   },
   secrets: {
     // set(key, value) — both stay bare strings so they arrive as the op's
@@ -1115,10 +1197,17 @@ pub async fn run(
                                     let _ = reply.send(host.airway_run(pipeline_ref, variables).await);
                                 }
                                 HostCall::WarehouseWrite { op, payload, reply } => {
-                                    let _ = reply.send(host.warehouse_write(op, payload).await);
+                                    let _ = reply.send(if op == "query" {
+                                        host.warehouse_query(payload).await
+                                    } else {
+                                        host.warehouse_write(op, payload).await
+                                    });
                                 }
                                 HostCall::Tx { op, payload, reply } => {
                                     let _ = reply.send(host.tx(op, payload).await);
+                                }
+                                HostCall::Oltp { op, payload, reply } => {
+                                    let _ = reply.send(host.oltp(op, payload).await);
                                 }
                                 HostCall::SecretsSet { key, value, reply } => {
                                     let _ = reply.send(host.secrets_set(key, value).await);
@@ -1305,12 +1394,39 @@ mod tests {
         ) -> Result<serde_json::Value, String> {
             Err("unused".into())
         }
+        async fn warehouse_query(
+            &self,
+            payload: serde_json::Value,
+        ) -> Result<serde_json::Value, String> {
+            // Echo the database back so a test can prove the name crossed the
+            // isolate boundary rather than being defaulted host-side.
+            Ok(serde_json::json!({
+                "rows": [{ "x": 1 }],
+                "truncated": false,
+                "db": payload["database"],
+            }))
+        }
         async fn warehouse_write(
             &self,
             _op: String,
             _payload: serde_json::Value,
         ) -> Result<serde_json::Value, String> {
             Err("unused".into())
+        }
+        async fn oltp(
+            &self,
+            op: String,
+            payload: serde_json::Value,
+        ) -> Result<serde_json::Value, String> {
+            // Echo sql/params so a test can prove the call crossed the isolate
+            // boundary intact — params as an array, not a stringified blob.
+            match op.as_str() {
+                "query" => Ok(serde_json::json!({
+                    "rows": [{ "sql": payload.get("sql"), "params": payload.get("params") }]
+                })),
+                "exec" => Ok(serde_json::json!({ "rowCount": 1 })),
+                other => Err(format!("unexpected oltp op '{other}'")),
+            }
         }
         async fn secrets_set(
             &self,
@@ -1649,6 +1765,88 @@ mod tests {
             "unexpected handler body: {}",
             resp.body
         );
+    }
+
+    /// `ctx.warehouse.query` reaches a named database.
+    ///
+    /// `ctx.query` only ever hits the project default, and every other
+    /// named-database surface is a write — so before this an app had no way to
+    /// read its own OLTP store unless it happened to be the default.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn warehouse_query_reads_a_named_database() {
+        let artifact = r#"
+            export default async (req, ctx) => {
+                const r = await ctx.warehouse.query("oltp", "SELECT 1");
+                return Response.json({ rows: r.rows.length, db: r.db });
+            };
+        "#;
+        let host = Arc::new(MockHost::default());
+        let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        let resp = run(
+            artifact.to_string(),
+            test_ctx(),
+            b"{}".to_vec(),
+            host.clone(),
+            cancel_rx,
+            std::time::Duration::from_secs(10),
+            Arc::new(std::sync::Mutex::new(Vec::new())),
+        )
+        .await
+        .expect("handler should succeed");
+
+        assert!(resp.body.contains("\"rows\":1"), "body: {}", resp.body);
+        // The database name has to survive the boundary, or the read would
+        // silently target whatever the host defaulted to.
+        assert!(resp.body.contains("\"db\":\"oltp\""), "body: {}", resp.body);
+    }
+
+    /// `ctx.oltp.query(sql, params)` reaches `host.oltp("query", { sql, params })`
+    /// with `params` as an array — the whole JS → op → HostCall → dispatch wiring
+    /// for the app-writer path. No database name crosses the boundary: the app's
+    /// own writer is derived host-side from its slug (the manifest only gates).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn oltp_query_forwards_sql_and_params_to_the_host() {
+        let (result, _host) = run_with_mock(
+            r#"
+            export default async (req, ctx) => {
+                const rows = await ctx.oltp.query(
+                    "SELECT * FROM bookings WHERE party_size > $1", [4]);
+                return Response.json(rows[0]);
+            };
+        "#,
+        )
+        .await;
+
+        let resp = result.expect("handler must return");
+        assert!(
+            resp.body.contains(r#""params":[4]"#),
+            "params must cross as an array, not a stringified blob: {}",
+            resp.body
+        );
+        assert!(
+            resp.body.contains("party_size"),
+            "sql must cross the boundary intact: {}",
+            resp.body
+        );
+    }
+
+    /// `ctx.oltp.exec` omitting `params` sends `[]`, not `undefined` — the same
+    /// guarantee `ctx.tx` makes, so a no-placeholder write is not read as a
+    /// wrong-arity error host-side.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn oltp_exec_returns_row_count() {
+        let (result, _host) = run_with_mock(
+            r#"
+            export default async (req, ctx) => {
+                const n = await ctx.oltp.exec("DELETE FROM bookings WHERE cancelled");
+                return Response.json({ n });
+            };
+        "#,
+        )
+        .await;
+
+        let resp = result.expect("handler must return");
+        assert!(resp.body.contains(r#""n":1"#), "body: {}", resp.body);
     }
 
     /// Regression: this isolate is bare `deno_core` (no `deno_web`) on a V8 that

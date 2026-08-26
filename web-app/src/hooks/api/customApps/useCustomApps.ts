@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { isAxiosError } from "axios";
 import { toast } from "sonner";
 import { CustomAppsService } from "@/services/api/customApps";
+import { errMessage } from "../errMessage";
 import queryKeys from "../queryKey";
 
 /**
@@ -27,14 +27,7 @@ export const usePublishApp = () => {
       qc.invalidateQueries({ queryKey: queryKeys.customApps.list(app.project_id) });
       toast.success(`${app.name} published`);
     },
-    onError: (err) => {
-      const message = isAxiosError(err)
-        ? (err.response?.data?.message ?? err.message)
-        : err instanceof Error
-          ? err.message
-          : "Failed to publish";
-      toast.error(message);
-    }
+    onError: (err) => toast.error(errMessage(err, "Failed to publish"))
   });
 };
 
@@ -47,14 +40,7 @@ export const useUnpublishApp = () => {
       qc.invalidateQueries({ queryKey: queryKeys.customApps.list(app.project_id) });
       toast.success(`${app.name} unpublished`);
     },
-    onError: (err) => {
-      const message = isAxiosError(err)
-        ? (err.response?.data?.message ?? err.message)
-        : err instanceof Error
-          ? err.message
-          : "Failed to unpublish";
-      toast.error(message);
-    }
+    onError: (err) => toast.error(errMessage(err, "Failed to unpublish"))
   });
 };
 
@@ -126,10 +112,7 @@ export const useUpdateApp = () => {
         toast.warning(warning, { duration: 8000 });
       }
     },
-    onError: (err) => {
-      const message = err instanceof Error ? err.message : "Update failed";
-      toast.error(message);
-    }
+    onError: (err) => toast.error(errMessage(err, "Update failed"))
   });
 };
 

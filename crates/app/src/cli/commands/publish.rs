@@ -21,6 +21,7 @@ use oxy_shared::errors::OxyError;
 use serde::Deserialize;
 
 use crate::custom_app_provenance::{SourceProvenance, classify, is_recorded};
+use crate::server::api::custom_apps_publish::is_valid_function_name;
 
 use super::app_manifest::{OxyAppManifest, resolve_target};
 use super::login;
@@ -571,19 +572,6 @@ fn run_build_step(label: &str, cmd: &str, cwd: &Path, base_path: &str) -> Result
     Ok(())
 }
 
-/// Function names come straight from the untrusted `oxy-app.json` manifest and
-/// are interpolated into an output path (`functions/<name>.js`). Enforce the
-/// documented `^[a-z][a-z0-9-]{0,63}$` shape so a key like `"../../x"` can't
-/// make esbuild write outside the bundle dir.
-fn is_valid_function_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 64
-        && name.starts_with(|c: char| c.is_ascii_lowercase())
-        && name
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-}
-
 /// Bundle each declared Oxy Function into `<bundle_dir>/functions/<name>.js`
 /// via esbuild, so the server can run it in an isolated runtime. The
 /// bundled files ride along in the existing tarball — no separate upload.
@@ -787,6 +775,20 @@ pub async fn handle_publish_command(args: PublishArgs) -> Result<(), OxyError> {
                 "missing app: set oxy-app.json slug, --app, or OXY_APP".into(),
             )
         })?;
+
+    // Validate the slug BEFORE building the tarball — the same shape the server's
+    // /publish enforces (`is_valid_slug`, re-exported for this). Without it an
+    // author whose CI doesn't run the Vite plugin (or publishes a pre-built
+    // `dist/`) uploads the whole bundle and only then learns the server's 422.
+    // The slug becomes the app's OLTP schema/role name, a repo_path segment and
+    // the served base path — the same reason `is_valid_function_name` above gates
+    // the sibling field before esbuild.
+    if !crate::server::api::admin::apps::is_valid_slug(&app) {
+        return Err(OxyError::ConfigurationError(format!(
+            "invalid app slug {app:?}: must be 1-63 lowercase letters, digits and single \
+             hyphens (no leading/trailing/double hyphen, no underscore)"
+        )));
+    }
 
     // Target oxy: --target → manifest environments → built-in default.
     let target = resolve_target(manifest.as_ref(), Some(&args.env), args.target.as_deref())

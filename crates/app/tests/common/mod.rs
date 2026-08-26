@@ -73,6 +73,14 @@ const TEST_DB_PREFIXES: &[&str] = &[
     "airhouse_lc_",
     "csr_",
     "twcb_",
+    // Do NOT add a namespace the *product* names. Staleness here is decided by
+    // the absence of a nextest run tag, and only this harness puts one in a
+    // database name — so a live tenant (`oxy_org_<uuid>`, from
+    // `oltp::provisioner::project_name_for`) would look permanently stale and
+    // get dropped, both on a developer's own cluster and mid-run by whichever
+    // binary reaches `ensure_template` first. A test that creates such a
+    // database owns cleaning it up on the failure path; see `with_fx` in
+    // `platform/oltp_provisioner.rs`.
 ];
 
 /// Image tag for the test Postgres. Also the reuse-label value, so bumping it
@@ -106,6 +114,10 @@ pub enum Schema {
     Central,
     /// Central plus the airhouse warehouse tables.
     CentralAirhouse,
+    /// Central plus the per-org OLTP control-plane tables (`oltp_tenants`,
+    /// `oltp_roles`). `oltp_tenants.org_id` carries a real FK to
+    /// `organizations`, so the central chain has to be underneath it.
+    CentralOltp,
 }
 
 impl Schema {
@@ -113,6 +125,7 @@ impl Schema {
         match self {
             Schema::Central => "central",
             Schema::CentralAirhouse => "airhouse",
+            Schema::CentralOltp => "oltp",
         }
     }
 
@@ -126,6 +139,11 @@ impl Schema {
             airhouse::migration::up(db)
                 .await
                 .expect("run airhouse migrations");
+        }
+        if self == Schema::CentralOltp {
+            oxy_oltp::migration::up(db)
+                .await
+                .expect("run oltp migrations");
         }
     }
 }

@@ -358,13 +358,13 @@ pub async fn start_server_and_web_app(
 }
 
 async fn init_feature_flags() -> Result<(), OxyError> {
-    let db = establish_connection()
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to connect to database: {}", e)))?;
-    crate::server::feature_flags::cache::init(&db)
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("feature flags init failed: {}", e)))?;
-    Ok(())
+    // `cache::init` opens its own connection, wires the `oxy-oltp` flag bridge,
+    // starts the refresh, and does the first load. FAIL-FAST here (`?`): an
+    // unloaded cache reads the registry default for `billing` (OFF = paywall
+    // skipped for every org), so serve must not accept requests with an unknown
+    // billing state. The worker discards this same error because it enforces no
+    // paywall and reads only `oltp`, whose unloaded value is already safe.
+    crate::server::feature_flags::cache::init().await
 }
 
 /// One-shot bootstrap: if `OXY_GLOBAL_ADMINS` is set, ensure each email is
@@ -501,6 +501,13 @@ async fn run_all_migrators(db: &sea_orm::DatabaseConnection) -> Result<(), OxyEr
         .await
         .map_err(|e| OxyError::RuntimeError(format!("airhouse migrations failed: {}", e)))?;
     println!("migrations: airhouse migrations complete");
+
+    // Per-org OLTP migrations (separate tracking table). Must follow the
+    // central migrator — `oltp_tenants.org_id` FKs to `organizations.id`.
+    oxy_oltp::migration::up(db)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("oltp migrations failed: {}", e)))?;
+    println!("migrations: oltp migrations complete");
 
     // Camera fleet domain migrations (separate tracking table). No FK deps on
     // other domains — sites.workspace_id is a loose UUID per

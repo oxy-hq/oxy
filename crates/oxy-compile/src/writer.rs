@@ -435,6 +435,7 @@ async fn write_compiled_rows(
     let mut apps = Vec::new();
     let mut automations = Vec::new();
     let mut verified = Vec::new();
+    let mut schema_migrations = Vec::new();
     let mut pipelines = Vec::new();
     let mut references = Vec::new();
     let mut monitor_cfgs = Vec::new();
@@ -515,6 +516,14 @@ async fn write_compiled_rows(
                 content_sha256: Set(q.content_sha256.clone()),
                 content: Set(q.content.clone()),
             }),
+            CompiledRow::SchemaMigration(m) => {
+                schema_migrations.push(entity::schema_migration_definitions::ActiveModel {
+                    revision_id: Set(revision_id),
+                    file_path: Set(m.file_path.clone()),
+                    content_sha256: Set(m.content_sha256.clone()),
+                    content: Set(m.content.clone()),
+                })
+            }
             CompiledRow::Pipeline(p) => pipelines.push(entity::airway_pipelines::ActiveModel {
                 revision_id: Set(revision_id),
                 name: Set(p.name.clone()),
@@ -583,6 +592,11 @@ async fn write_compiled_rows(
     }
     if !verified.is_empty() {
         entity::verified_queries::Entity::insert_many(verified)
+            .exec(txn)
+            .await?;
+    }
+    if !schema_migrations.is_empty() {
+        entity::schema_migration_definitions::Entity::insert_many(schema_migrations)
             .exec(txn)
             .await?;
     }

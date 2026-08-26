@@ -82,13 +82,103 @@ pub async fn start_database_and_server(
         std::env::set_var("OXY_DATABASE_URL", &db_url);
     }
 
+    // 5b. Point per-org OLTP at THIS cluster — one Postgres, many databases.
+    //
+    // `oxy start` is a dev box, and spinning up a Postgres per org here is not
+    // affordable; `LocalProvider` provisions each org as a `CREATE DATABASE`
+    // inside one cluster (`oxy-org-<uuid>`), which is what fits. The container
+    // already running is a superuser cluster, so it is exactly that admin URL.
+    //
+    // This does NOT contradict `oltp::config`'s refusal to fall back to
+    // `OXY_DATABASE_URL` (its "No OXY_DATABASE_URL fallback" note). That refusal
+    // is in the config PARSER, which both `oxy start` and production `oxy serve`
+    // share: it never INFERS the control plane from a missing var, so a prod
+    // `serve` with `local` and no admin URL stays `Misconfigured`. Here the
+    // launcher makes an EXPLICIT choice instead — and `db_url` is the throwaway
+    // container `start_postgres` just created (which this command also wrote to
+    // `OXY_DATABASE_URL` above, overwriting any inherited value), never a real
+    // production control plane. Explicit launcher opt-in, local target: the one
+    // path the parser deliberately leaves to a caller.
+    //
+    // The gate reads BOTH vars, and never clobbers an admin URL the developer
+    // set. Three states:
+    //   * provider set        → the developer chose (`neon`, or `local` against
+    //                           their own cluster); touch nothing.
+    //   * admin URL set only  → they pointed us at a throwaway cluster — which
+    //                           is exactly what `refuse_if_cluster_is_in_use`
+    //                           tells them to do — so default the provider to
+    //                           `local` and KEEP their URL.
+    //   * neither set         → default both to this cluster.
+    // The inverse is the point: a dev box carrying Neon keys in its `.env` must
+    // not provision real, billable projects just because someone ran it
+    // locally. Provisioning stays local until a var says otherwise.
+    let provider_set = env_nonempty("OXY_OLTP_PROVIDER");
+    let admin_url_set = env_nonempty("OXY_OLTP_ADMIN_URL");
+    if !provider_set {
+        // Safety: same as the write above — nothing reads these until
+        // `start_server_and_web_app`, which runs after this on the same task.
+        unsafe {
+            std::env::set_var("OXY_OLTP_PROVIDER", "local");
+            if !admin_url_set {
+                std::env::set_var("OXY_OLTP_ADMIN_URL", &db_url);
+            }
+        }
+    }
+
+    // Computed here where the pre-write state is known, not re-read from env.
+    let oltp_line = if provider_set {
+        format!(
+            "provider={} (from your env)",
+            std::env::var("OXY_OLTP_PROVIDER").unwrap_or_default()
+        )
+    } else if admin_url_set {
+        "local — each org is a database in the cluster your OXY_OLTP_ADMIN_URL names".to_string()
+    } else {
+        "local — each org is a database in this cluster (set OXY_OLTP_PROVIDER=neon to change)"
+            .to_string()
+    };
+
     // 6. Connection summary — copy-pasteable for psql / OXY_DATABASE_URL
     print_connection_summary(&db_url);
+
+    if args.db_only {
+        // No OLTP line here: the process exits and both vars evaporate with it,
+        // so advertising a provisioning arrangement the next command will not
+        // have would be a lie.
+        println!(
+            "{}",
+            "✅ Databases are up. Server not started (--db-only).".success()
+        );
+        return Ok(());
+    }
+
+    println!("{}", "🔗 Per-org OLTP".text());
+    println!("   {}", oltp_line.text());
+    // Stated as a REQUIREMENT, not a state — this prints before the server runs
+    // the migrations that create the flag table, so it cannot read the live
+    // value, and asserting "disabled" would be wrong the moment the flag is on.
+    // The provider line above configures the provider; server-side OLTP also
+    // needs the flag. (The `oxy oltp` CLI is not flag-gated and works
+    // regardless; that asymmetry is deliberate.)
+    println!(
+        "   {}",
+        "server-side OLTP also requires the `oltp` feature flag (off by default) \
+         — /admin/feature-flags"
+            .text()
+    );
+    println!();
 
     // 7. Start the web server (runs on host, not in Docker). Its in-process
     // worker drains the queue; it drains on SIGINT/SIGTERM on its own.
     println!("{}", "🚀 Starting Oxygen server...".text());
     start_server_and_web_app(args.serve, extra_api_routes, extra_workspace_routes).await
+}
+
+/// A `OXY_*` var that is set to a non-blank value.
+fn env_nonempty(key: &str) -> bool {
+    std::env::var(key)
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false)
 }
 
 /// Print the Postgres connection URL with username + password so the

@@ -1,0 +1,47 @@
+[package]
+name = "oxy-oltp"
+description = "Per-org OLTP Postgres: provider abstraction + tenant/role provisioning + schema model"
+version.workspace = true
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[dependencies]
+oxy-platform = { workspace = true }
+oxy-shared = { workspace = true }
+entity = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+
+async-trait = { workspace = true }
+axum = { workspace = true }
+oxy-auth = { workspace = true }
+chrono = { workspace = true }
+tokio-postgres = { workspace = true, features = ["with-uuid-1", "with-serde_json-1"] }
+tokio-postgres-rustls = { workspace = true }
+webpki-roots = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+# Test-only: the live Neon test exercises the REAL `ctx.oltp` connection path
+# (`PostgresConnector::from_dsn` + `begin_transaction` over verified TLS). A
+# dev-dependency, so the shipped `oxy-oltp` graph stays free of `agentic-*` —
+# the platform-never-imports-agentic rule is about the library, not its tests.
+agentic-connector = { workspace = true, features = ["postgres"] }
+
+# One grouped integration binary, per the workspace rule: a new top-level
+# tests/*.rs adds a whole link to every full test run.
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"

@@ -37,6 +37,7 @@ const ROUTES = {
     PUBLISH_TOKENS: "/admin/publish-tokens",
     TENANTS: "/admin/tenants",
     ORGS: "/admin/orgs",
+    OLTP: "/admin/oltp",
     ORG_DETAIL: (orgId: string) => `/admin/orgs/${orgId}`,
     USERS: "/admin/users",
     USER_DETAIL: (userId: string) => `/admin/users/${userId}`,

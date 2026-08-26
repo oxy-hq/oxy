@@ -165,6 +165,15 @@ pub enum PublishError {
         "invalid build id {0:?} — use only letters, digits, `.`, `_` and `-` (no leading dot, max 200 chars)"
     )]
     InvalidBuildId(String),
+    /// The `app_slug` cannot safely become a schema/role name, a `repo_path`
+    /// segment, or the served `/customer-apps/{org}/{slug}/` base path. Surfaced
+    /// as 422 — see `admin::apps::is_valid_slug`. Crucially, an `_` in a slug
+    /// would alias a hyphenated sibling onto one OLTP writer (see
+    /// `oxy_oltp::schema::app_writer_name`), which `is_valid_slug` forbids.
+    #[error(
+        "invalid app slug {0:?} — use 1–63 lowercase letters, digits and single hyphens (no leading/trailing/double hyphen, no underscore)"
+    )]
+    InvalidSlug(String),
     /// A fast bundle-validation check failed (design doc §8, gate 1). Carries an
     /// actionable check/message/remediation; surfaced as 422.
     #[error("{0}")]
@@ -192,7 +201,9 @@ impl PublishError {
                 StatusCode::UNPROCESSABLE_ENTITY
             }
             PublishError::DuplicateBuild { .. } => StatusCode::CONFLICT,
-            PublishError::InvalidBuildId(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            PublishError::InvalidBuildId(_) | PublishError::InvalidSlug(_) => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
             PublishError::Db(_) | PublishError::S3(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -748,6 +759,38 @@ fn function_specs(manifest_json: Option<&serde_json::Value>) -> Vec<(String, ser
         .unwrap_or_default()
 }
 
+/// Whether `name` is safe as a `/fn/<name>` route key and an artifact-key path
+/// segment. THE canonical function-name rule (`^[a-z][a-z0-9-]{0,63}$`): the CLI
+/// (`oxy publish`), the vite-plugin build gate, and the SDK manifest loader all
+/// mirror it, and `custom_apps_serve::sources::s3_object_key` relies on every
+/// stored name matching it to prove a rewritten request path can never resolve
+/// to a function artifact. Enforced at publish by [`record_functions`] so a
+/// bundle POSTed straight to the API — bypassing the CLI — can't store a name
+/// that breaks the invariant.
+pub(crate) fn is_valid_function_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name.starts_with(|c: char| c.is_ascii_lowercase())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Reject any declared function name that isn't [`is_valid_function_name`],
+/// as one `PublishError` before any row is written. Split out so it is
+/// unit-testable without a database.
+fn validate_function_names(specs: &[(String, serde_json::Value)]) -> Result<(), PublishError> {
+    for (name, _) in specs {
+        if !is_valid_function_name(name) {
+            return Err(PublishError::BadTarball(format!(
+                "invalid function name {name:?} — must match ^[a-z][a-z0-9-]{{0,63}}$ \
+                 (a lowercase letter, then up to 63 lowercase letters, digits or hyphens)"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Build-store key of a function's bundled JS artifact, matching the layout
 /// `oxy publish` uploads (`<build_prefix>functions/<name>.js`) and the
 /// `app_functions.artifact_key` contract.
@@ -765,6 +808,11 @@ async fn record_functions(
     build_prefix: &str,
     specs: &[(String, serde_json::Value)],
 ) -> Result<(), PublishError> {
+    // Names become artifact-key path segments + `/fn/<name>` route keys; a bundle
+    // published straight through the API skips the CLI's check, so enforce the
+    // shape here — the load-bearing spot for `sources::s3_object_key`. Reject the
+    // whole publish (the caller rolls the stored build back out).
+    validate_function_names(specs)?;
     for (name, spec) in specs {
         let model = app_functions::ActiveModel {
             id: ActiveValue::Set(Uuid::new_v4()),
@@ -1024,6 +1072,15 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
     // replacement, and the two cannot disagree in a way that admits a bad id.
     if !store::is_valid_build_id(&input.build_id) {
         return Err(PublishError::InvalidBuildId(input.build_id.clone()));
+    }
+    // The slug is a raw multipart field on this route and had NO validation —
+    // it feeds the OLTP writer derivation (`app_writer_name`), a `repo_path`
+    // segment and the served base path. `app_writer_name` already refuses an `_`
+    // (which would alias a hyphenated sibling onto one writer) rather than pass
+    // it through, but reject the whole invalid-slug set here too, so a bad slug
+    // never reaches the row, the path or the store in the first place.
+    if !crate::server::api::admin::apps::is_valid_slug(&input.app_slug) {
+        return Err(PublishError::InvalidSlug(input.app_slug.clone()));
     }
     if let Some(app) = find_app(&db, org.id, &input.app_slug).await?
         && build_id_taken(&db, app.id, &input.build_id).await?
@@ -1545,6 +1602,40 @@ mod tests {
             function_artifact_key("customer-apps/abc/builds/v1/", "top-stores"),
             "customer-apps/abc/builds/v1/functions/top-stores.js"
         );
+    }
+
+    #[test]
+    fn validate_function_names_rejects_traversal() {
+        let bad = vec![("../../evil".to_string(), serde_json::json!({}))];
+        let err = validate_function_names(&bad).unwrap_err();
+        assert!(
+            matches!(&err, PublishError::BadTarball(m) if m.contains("function name")),
+            "expected a BadTarball naming the function, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_function_names_rejects_bad_shapes() {
+        // Uppercase, underscore, leading hyphen, empty, and a path separator all
+        // fail — these are exactly the names the sources.rs rewrite argument and
+        // the artifact-key path segment must never see.
+        for name in ["Notify", "send_email", "-lead", "", "a/b", "a.b"] {
+            let specs = vec![(name.to_string(), serde_json::json!({}))];
+            assert!(
+                validate_function_names(&specs).is_err(),
+                "expected {name:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_function_names_accepts_valid() {
+        let ok = vec![
+            ("notify".to_string(), serde_json::json!({})),
+            ("top-stores".to_string(), serde_json::json!({})),
+            ("f0".to_string(), serde_json::json!({})),
+        ];
+        assert!(validate_function_names(&ok).is_ok());
     }
 
     #[test]

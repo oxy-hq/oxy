@@ -15,6 +15,7 @@ import ApiKeys from "../sections/workspace/ApiKeys";
 import Apps from "../sections/workspace/Apps";
 import Databases from "../sections/workspace/Databases";
 import WorkspaceMembers from "../sections/workspace/Members";
+import Oltp from "../sections/workspace/Oltp";
 import OxyAccess from "../sections/workspace/OxyAccess";
 import Repositories from "../sections/workspace/Repositories";
 import Secrets from "../sections/workspace/Secrets";
@@ -74,6 +75,7 @@ export function ActiveSection({ activeSection, org, role, workspace, close }: Ac
       {workspace && activeSection === "workspace.members" && <WorkspaceMembers />}
       {workspace && activeSection === "workspace.databases" && <Databases />}
       {workspace && activeSection === "workspace.airhouse" && <Airhouse />}
+      {workspace && activeSection === "workspace.oltp" && <Oltp />}
       {workspace && activeSection === "workspace.repositories" && <Repositories />}
       {workspace && activeSection === "workspace.api_keys" && <ApiKeys />}
       {workspace && activeSection === "workspace.secrets" && <Secrets />}

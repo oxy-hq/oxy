@@ -132,6 +132,16 @@ pub struct StartArgs {
     /// troubleshooting or resetting the local environment.
     #[clap(long, default_value_t = false)]
     pub clean: bool,
+
+    /// Bring up the databases and exit, without starting the server.
+    ///
+    /// For scripts that need a database and then want to run their own
+    /// sequence of commands — `oxy start` otherwise blocks in the server, so a
+    /// caller had to either background it or manage Postgres itself. The demo
+    /// did the latter, which is how it ended up with a second Postgres and its
+    /// own compose file to keep in sync.
+    #[clap(long, default_value_t = false)]
+    pub db_only: bool,
 }
 
 #[cfg(test)]

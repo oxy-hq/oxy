@@ -531,11 +531,28 @@ fn scoped_admin_writes_fence_before_touching_the_database() {
             &["put_workspace_override", "delete_workspace_override"],
         ),
         (
-            // The Airhouse console. Its handlers live in the `airhouse` crate,
-            // which sits below `oxy-app` and cannot read the grant table, so
-            // this file is a shim whose whole purpose is to hold the fence.
-            // Workspace-keyed, so it calls `deny_out_of_scope_opt` — the needle
-            // below matches both spellings.
+            // The OLTP console. The handlers themselves are in `oxy-oltp`,
+            // which sits below `oxy-app` and cannot import the fence — so this
+            // file is a shim whose whole purpose is to hold it. Unfenced, a
+            // bounded grant reached `POST …/credentials` (a write DSN for any
+            // tenant) and `DELETE …/oltp`, which destroys the database.
+            //
+            // `list_tenants` is absent deliberately: it is not org-keyed and
+            // FILTERS by scope rather than refusing, which is the read-path
+            // answer everywhere else on this console.
+            "crates/app/src/server/api/admin/oltp.rs",
+            &[
+                "get_status",
+                "provision",
+                "set_visibility",
+                "deprovision",
+                "credentials",
+            ],
+        ),
+        (
+            // The Airhouse console, same shape as OLTP's: handlers in a crate
+            // below `oxy-app`, routes and fence here. Workspace-keyed, so the
+            // fence is `deny_out_of_scope_opt` — the needle below matches both.
             //
             // `list_fleet` is absent deliberately: it FILTERS by scope rather
             // than refusing, which is the read-path answer on this console.

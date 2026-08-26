@@ -424,7 +424,9 @@ fn build_schema_summary_queries(database: &Database) -> Result<Vec<String>, OxyE
                  GROUP BY schema_name"
             )])
         }
-        DatabaseType::Postgres(_) | DatabaseType::Redshift(_) => Ok(vec![
+        DatabaseType::Postgres(_)
+        | DatabaseType::PostgresManaged(_)
+        | DatabaseType::Redshift(_) => Ok(vec![
             "SELECT table_schema, COUNT(*) AS table_count
              FROM information_schema.tables
              WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
@@ -472,14 +474,15 @@ fn build_schema_tables_query(database: &Database, schema: &str) -> Result<String
              WHERE schema_name = '{escaped}'
              GROUP BY table_name"
         )),
-        DatabaseType::Postgres(_) | DatabaseType::Redshift(_) | DatabaseType::Mysql(_) => {
-            Ok(format!(
-                "SELECT table_name, COUNT(*) AS column_count
+        DatabaseType::Postgres(_)
+        | DatabaseType::PostgresManaged(_)
+        | DatabaseType::Redshift(_)
+        | DatabaseType::Mysql(_) => Ok(format!(
+            "SELECT table_name, COUNT(*) AS column_count
                  FROM information_schema.columns
                  WHERE table_schema = '{escaped}'
                  GROUP BY table_name"
-            ))
-        }
+        )),
         _ => Err(OxyError::ConfigurationError(format!(
             "Schema discovery not yet supported for database type: {:?}",
             database.database_type
@@ -570,8 +573,15 @@ fn build_inspect_queries(database: &Database) -> Result<Vec<String>, OxyError> {
                  GROUP BY schema_name, table_name"
             )])
         }
-        DatabaseType::Postgres(_) | DatabaseType::Redshift(_) => {
-            // Postgres / Redshift (via connectorx). `datasets()` is empty for
+        DatabaseType::Postgres(_)
+        | DatabaseType::PostgresManaged(_)
+        | DatabaseType::Redshift(_) => {
+            // Postgres / Redshift (via connectorx). `postgres_managed` is a real
+            // Postgres, so it introspects identically — and the analyst role's
+            // grants do the filtering for us: information_schema only exposes
+            // objects the connected role may see, so `oxy_meta` stays hidden.
+            //
+            // `datasets()` is empty for
             // these since the config has no schemas list — a single
             // information_schema.columns scan covers the whole connected
             // database.

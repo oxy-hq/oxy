@@ -247,8 +247,10 @@ mod tests {
     #[test]
     fn parse_cell_float_and_decimal() {
         assert_eq!(
-            parse_cell("3.14", &col(TypedDataType::Float64)).unwrap(),
-            TypedValue::Float64(3.14)
+            // Not 3.14: `clippy::approx_constant` is deny-by-default and reads
+            // it as a botched `PI`. Any fractional value tests the same parse.
+            parse_cell("2.75", &col(TypedDataType::Float64)).unwrap(),
+            TypedValue::Float64(2.75)
         );
         assert_eq!(
             parse_cell(

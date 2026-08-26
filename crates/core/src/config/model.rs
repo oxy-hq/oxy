@@ -597,6 +597,13 @@ pub struct Airhouse {
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Default)]
 pub struct AirhouseManaged {}
 
+/// Marker for `type: postgres_managed`. Field-free by design: host, database,
+/// user, and password all come from the caller's workspace → org →
+/// `oltp_tenants` row, so there is nothing for a project to configure — and
+/// nothing it can set that would widen the access it receives.
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Default)]
+pub struct PostgresManaged {}
+
 impl Airhouse {
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
         secret_manager
@@ -1161,6 +1168,17 @@ pub enum DatabaseType {
     /// on this variant; everything is sourced from oxy's database.
     #[serde(rename = "airhouse_managed")]
     AirhouseManaged(#[garde(skip)] AirhouseManaged),
+    /// Per-org OLTP Postgres with credentials managed by oxy. The connector
+    /// resolves host, port, dbname, user, and password from the caller's
+    /// workspace → org → `oltp_tenants` row.
+    ///
+    /// Always resolves the **read-only analyst** role, whatever the caller's
+    /// `effective_role` — unlike `airhouse_managed`, which escalates. That
+    /// database holds a customer's live business records; writes come only
+    /// from published code (an app function or an Airway pipeline), never from
+    /// a SQL prompt. No fields: everything is sourced from oxy's database.
+    #[serde(rename = "postgres_managed")]
+    PostgresManaged(#[garde(skip)] PostgresManaged),
     #[serde(rename = "redshift")]
     Redshift(#[garde(dive)] Redshift),
     #[serde(rename = "mysql")]
@@ -1182,6 +1200,7 @@ impl std::fmt::Display for DatabaseType {
             DatabaseType::Postgres(_) => write!(f, "postgres"),
             DatabaseType::Airhouse(_) => write!(f, "airhouse"),
             DatabaseType::AirhouseManaged(_) => write!(f, "airhouse_managed"),
+            DatabaseType::PostgresManaged(_) => write!(f, "postgres_managed"),
             DatabaseType::Redshift(_) => write!(f, "redshift"),
             DatabaseType::Mysql(_) => write!(f, "mysql"),
             DatabaseType::ClickHouse(_) => write!(f, "clickhouse"),
@@ -1216,6 +1235,7 @@ impl Database {
             DatabaseType::MotherDuck(_) => "motherduck",
             DatabaseType::Airhouse(_) => "airhouse",
             DatabaseType::AirhouseManaged(_) => "airhouse_managed",
+            DatabaseType::PostgresManaged(_) => "postgres_managed",
         }
     }
 
@@ -1226,6 +1246,8 @@ impl Database {
             DatabaseType::Postgres(_) => "postgres".to_owned(),
             DatabaseType::Airhouse(_) => "duckdb".to_owned(),
             DatabaseType::AirhouseManaged(_) => "duckdb".to_owned(),
+            // Real Postgres, unlike airhouse's DuckDB-over-pgwire.
+            DatabaseType::PostgresManaged(_) => "postgres".to_owned(),
             DatabaseType::Redshift(_) => "postgres".to_owned(),
             DatabaseType::Mysql(_) => "mysql".to_owned(),
             DatabaseType::ClickHouse(_) => "clickhouse".to_string(),

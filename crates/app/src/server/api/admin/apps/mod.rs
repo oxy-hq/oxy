@@ -15,6 +15,9 @@ pub mod fs;
 pub mod functions;
 pub mod handlers;
 mod ops;
+/// Slug validation, re-exported so the (non-admin) `/publish` route can reject a
+/// slug before it becomes a schema name / path — see `custom_apps_publish`.
+pub(crate) use ops::is_valid_slug;
 pub mod storage;
 pub mod templates;
 

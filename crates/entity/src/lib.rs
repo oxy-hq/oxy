@@ -152,6 +152,7 @@ pub use automation_definitions as procedure_definitions;
 pub mod compiled_references;
 pub mod monitor_configs;
 pub mod revisions;
+pub mod schema_migration_definitions;
 pub mod semantic_topics;
 pub mod semantic_views;
 pub mod verified_queries;

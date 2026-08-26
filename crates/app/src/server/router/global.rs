@@ -32,6 +32,13 @@ pub(super) fn build_global_routes() -> Router<AppState> {
             post(organizations::accept_invitation),
         )
         .merge(airhouse::api::router::<AppState>())
+        // Per-org OLTP status. Belongs here, not only in the local-mode
+        // router: cloud reaches these routes through `build_global_routes`,
+        // and mounting it solely in `build_local_protected_routes` left
+        // `/api/oltp/me/connection` unregistered under `serve --enterprise`.
+        // The SPA catch-all then answered it with index.html and HTTP 200, so
+        // the settings panel read a missing route as "not provisioned".
+        .merge(oxy_oltp::api::router::<AppState>())
         .nest("/orgs/{org_id}", build_org_routes())
         // Assume-role ("act as"). Authenticated, NOT admin-gated: staff act as any
         // org, a partner acts as an assigned client with `develop_apps`. The

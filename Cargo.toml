@@ -22,6 +22,7 @@ members = [
   "crates/oxy-compile",
   "crates/integration/omni",
   "crates/observability",
+  "crates/oltp",
   "crates/project",
   "crates/semantic",
   "crates/shared",
@@ -108,6 +109,7 @@ oxy-observability = { path = "crates/observability" }
 oxy-ollama = { path = "crates/infrastructure/llm/ollama" }
 oxy-airform = { path = "crates/airform" }
 oxy-openai = { path = "crates/infrastructure/llm/openai" }
+oxy-oltp = { path = "crates/oltp" }
 oxy-platform = { path = "crates/platform" }
 oxy-project = { path = "crates/project" }
 oxy-semantic = { path = "crates/semantic" }
@@ -653,6 +655,12 @@ airform-core = { git = "https://github.com/oxy-hq/airform.git", rev = "3e3e82886
 # the existing `transaction_lines` (which is `Merge` and never dropped), but
 # it is lazy — existing Parquet keeps its layout until compaction rewrites it.
 # The benefit accrues, it does not switch on.
+# Pinned at 0.1.35 (main's bump for keyless children + employee propagation,
+# #3000). It carries the 0.1.34 TLS fix (oxy-hq/airway-internal#141) the OLTP
+# feature relies on: the eight `tokio_postgres` call sites route through one
+# connector, so a pipeline can write to a managed Postgres — Neon, Supabase, RDS
+# with `rds.force_ssl` — instead of failing the handshake. (0.1.33 and earlier
+# connected `NoTls` and could not.)
 airway = { git = "https://github.com/oxy-hq/airway-internal.git", tag = "0.1.35", default-features = false, features = [
   "duckdb",
   "postgres",

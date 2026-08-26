@@ -689,42 +689,86 @@ pub async fn get_app(
     Ok(Json(resp))
 }
 
+/// The error the rename guard returns when an app has a provisioned OLTP store.
+/// Carries a body (via [`ApiErr`]) so the operator sees the actual instruction —
+/// a bare 409 is indistinguishable from "slug already taken", and the action it
+/// needs (per-writer deprovision) lives in another console. Shares its prose with
+/// the delete guard via [`oltp_store_blocks_message`] so the two can't drift.
+fn oltp_store_blocks(action: &str, org_id: Uuid, writer: &oxy_oltp::schema::WriterRef) -> ApiErr {
+    api_err(
+        StatusCode::CONFLICT,
+        oltp_store_blocks_message(action, org_id, writer),
+    )
+}
+
 pub async fn update_app(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateAppRequest>,
-) -> Result<Json<AppResponse>, StatusCode> {
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+) -> Result<Json<AppResponse>, ApiErr> {
+    let db = establish_connection().await.map_err(internal)?;
     let existing = Apps::find_by_id(id)
         .one(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(internal)?
+        .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "App not found."))?;
     let org_id = existing.org_id;
-    crate::server::api::admin::scope::deny_out_of_scope(&db, &user, org_id).await?;
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &user, org_id)
+        .await
+        // Status-aware so a 500 (unreadable grant) doesn't read as "App not
+        // found." The 404 IS the intended scope-hiding answer for out-of-scope.
+        .map_err(|s| {
+            let msg = if s == StatusCode::NOT_FOUND {
+                "App not found."
+            } else {
+                "Could not verify access to this app."
+            };
+            api_err(s, msg)
+        })?;
 
     if let Some(slug) = req.slug.as_deref() {
         let slug = slug.trim();
         if !is_valid_slug(slug) {
-            return Err(StatusCode::BAD_REQUEST);
+            return Err(api_err(
+                StatusCode::BAD_REQUEST,
+                "Invalid slug: use 1–63 lowercase letters, digits, or hyphens.",
+            ));
         }
-        // update_app still returns plain StatusCode; map the
-        // structured ApiErr back to its status. The richer body only
-        // matters on create today, where the dialog reads it.
+        if slug != existing.slug && slug_taken_in_org(&db, org_id, slug).await? {
+            return Err(api_err(
+                StatusCode::CONFLICT,
+                "A different app in this org already uses that slug.",
+            ));
+        }
+        // Refuse a rename that would strand a provisioned OLTP store. `ctx.oltp`
+        // derives its writer from the app's slug (`app_writer_name`), so changing
+        // the slug would (a) orphan the existing `app_<oldslug>` schema — its rows
+        // become unreachable — and (b) free the old slug for another app to claim,
+        // which would then resolve the SAME schema: the cross-app reach the
+        // derivation exists to prevent, reopened by two ordinary admin edits. The
+        // store must be deprovisioned before the app can be renamed. Checked
+        // regardless of the kill-switch, since the schema exists either way. This
+        // 409 shares its status with the slug-taken one above but carries a
+        // distinct body, so the operator gets the deprovision instruction rather
+        // than concluding the slug is taken.
         if slug != existing.slug
-            && slug_taken_in_org(&db, org_id, slug)
+            && let Some(writer) = oxy_oltp::schema::app_writer_name(&existing.slug)
+                .and_then(|w| oxy_oltp::schema::WriterRef::app(w).ok())
+            && oxy_oltp::resolver::writer_is_provisioned(&db, org_id, &writer)
                 .await
-                .map_err(|(sc, _)| sc)?
+                .map_err(internal)?
         {
-            return Err(StatusCode::CONFLICT);
+            tracing::warn!(
+                app_id = %id, org_id = %org_id, old_slug = %existing.slug, new_slug = %slug,
+                "refused app rename: a provisioned OLTP store would be orphaned and its slug freed"
+            );
+            return Err(oltp_store_blocks("renamed", org_id, &writer));
         }
     }
 
     let mut active: apps::ActiveModel = existing.into();
     if let Some(n) = req.name {
-        validate_display_name(&n).map_err(|_| StatusCode::BAD_REQUEST)?;
+        validate_display_name(&n).map_err(|msg| api_err(StatusCode::BAD_REQUEST, msg))?;
         active.name = ActiveValue::Set(n);
     }
     if let Some(s) = req.slug {
@@ -747,10 +791,13 @@ pub async fn update_app(
     active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
     let updated = active.update(&db).await.map_err(|e| {
         if oxy::database::errors::is_unique_violation(&e) {
-            return StatusCode::CONFLICT;
+            return api_err(
+                StatusCode::CONFLICT,
+                "A different app in this org already uses that slug.",
+            );
         }
         tracing::error!("Failed to update app {id}: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
+        internal(e)
     })?;
 
     // This handler can change the **slug**, which is the serve path's cache
@@ -761,8 +808,8 @@ pub async fn update_app(
     let org = Organizations::find_by_id(org_id)
         .one(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(internal)?
+        .ok_or_else(|| api_err(StatusCode::INTERNAL_SERVER_ERROR, "Organization not found."))?;
     let warnings = validate_local_source(
         &updated.source_type,
         &updated.source_config,
@@ -1003,29 +1050,40 @@ pub async fn rollback_app(
 pub async fn delete_app(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path(id): Path<Uuid>,
-) -> Result<StatusCode, StatusCode> {
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+) -> Result<StatusCode, ApiErr> {
+    let db = establish_connection().await.map_err(internal)?;
     // Resolve the app's org BEFORE deleting it, so a bounded grant can't delete an app
     // it cannot see. `delete_one` 404s on a missing id, which is the same answer an
     // out-of-scope id gets.
     let row = Apps::find_by_id(id)
         .one(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-    crate::server::api::admin::scope::deny_out_of_scope(&db, &user, row.org_id).await?;
+        .map_err(internal)?
+        .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "App not found."))?;
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &user, row.org_id)
+        .await
+        // Status-aware so a 500 (unreadable grant) doesn't read as "App not
+        // found." The 404 IS the intended scope-hiding answer for out-of-scope.
+        .map_err(|s| {
+            let msg = if s == StatusCode::NOT_FOUND {
+                "App not found."
+            } else {
+                "Could not verify access to this app."
+            };
+            api_err(s, msg)
+        })?;
     delete_app_unscoped(id).await
 }
 
 /// Delete with no scope check — the CLI path (`oxy apps delete`). See
 /// [`list_apps_scoped`] for why the CLI does not go through the extractor.
-pub async fn delete_app_unscoped(id: Uuid) -> Result<StatusCode, StatusCode> {
-    let db = establish_connection()
+pub async fn delete_app_unscoped(id: Uuid) -> Result<StatusCode, ApiErr> {
+    let db = establish_connection().await.map_err(internal)?;
+    // Surface the AppOpError's message (not just its status) so the OLTP-store
+    // refusal reaches the operator with its "deprovision first" instruction.
+    delete_one(&db, id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    delete_one(&db, id).await.map_err(|e| e.status)?;
+        .map_err(|e| api_err(e.status, e.message))?;
     Ok(StatusCode::NO_CONTENT)
 }
 

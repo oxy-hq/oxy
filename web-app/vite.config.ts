@@ -275,6 +275,25 @@ export default defineConfig(({ mode }) => {
       // crates/app/src/cli/commands/serve.rs where the api_router is nested
       // under /api) so Slack webhooks, OAuth callbacks, and API calls routed
       // through the dev tunnel all reach the Rust backend on :3000.
+      // Loopback by ADDRESS, not by name.
+      //
+      // Vite's default is `localhost`, which Node resolves to the first address
+      // the resolver returns — on macOS that is `::1`, so the server binds IPv6
+      // loopback only. A browser that reaches for 127.0.0.1 then gets a
+      // connection refused while `curl` works, which is why it reads as "the
+      // app is broken" rather than "the bind is wrong". Naming the address
+      // removes the resolver from the decision.
+      //
+      // **Not `true`.** That binds every interface, and a dev box holds real
+      // cloud credentials — so exposing it to a café, hotel or office network
+      // should be something someone types, which is what `vite --host` is, and
+      // not a default. `OXY_DEV_HOST=true` opts in for testing on a phone.
+      //
+      // Second layer, not the only one: the backend already refuses to vend the
+      // INFERRED `/dev-login` roster to non-loopback callers. An explicitly-set
+      // `OXY_DEV_LOGIN_EMAILS` is a deliberate choice to serve other hosts, and
+      // this keeps that choice from being made by a bind default nobody read.
+      host: rootEnv.OXY_DEV_HOST || "127.0.0.1",
       proxy: {
         "/api": {
           target: DEV_PROXY_TARGET,

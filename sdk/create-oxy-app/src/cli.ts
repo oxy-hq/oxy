@@ -156,9 +156,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const slug = slugify(args.name);
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
+  // Same rule as the server's `is_valid_slug` and the vite plugin: 1–63 chars,
+  // single hyphens only. `slugify` collapses `--` and trims hyphens but caps no
+  // length, so a long name would otherwise scaffold an app that 422s at publish.
+  if (slug.length > 63 || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
     console.error(
-      `error: derived slug "${slug}" is invalid; pick a name with at least one ASCII letter or digit`
+      `error: name "${args.name}" yields slug "${slug}", which is invalid; ` +
+        `pick a name that yields 1–63 lowercase letters, digits and single hyphens`
     );
     process.exit(1);
   }

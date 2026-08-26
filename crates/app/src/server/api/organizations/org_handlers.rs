@@ -329,6 +329,31 @@ pub async fn delete_org(OrgOwner(ctx): OrgOwner) -> Result<StatusCode, StatusCod
         }
     }
 
+    // OLTP is org-keyed, not workspace-keyed, so it is one call rather than a
+    // loop — and it has to happen BEFORE the delete, because the row carrying
+    // the provider's project id goes with the org (FK ON DELETE CASCADE).
+    //
+    // On Neon that project is a real, billing resource: losing the row without
+    // deleting the project leaves something nobody can find and nobody stops
+    // paying for. Failure is logged rather than fatal, matching airhouse above
+    // — a provider outage must not make an org undeletable — but it is logged
+    // at `error` with the project id, because that string is the only way back
+    // to an orphan.
+    match oxy_oltp::provisioner::from_env(db.clone()).await {
+        Ok(provisioner) => {
+            if let Err(e) = provisioner.deprovision(ctx.org.id).await {
+                tracing::error!(
+                    org_id = %ctx.org.id,
+                    "OLTP deprovisioning failed; the provider-side database may be \
+                     orphaned and still billing: {e}"
+                );
+            }
+        }
+        // Disabled or misconfigured OLTP is the common case, and an org with no
+        // OLTP database has nothing to deprovision.
+        Err(e) => tracing::debug!(org_id = %ctx.org.id, "OLTP not configured: {e}"),
+    }
+
     Organizations::delete_by_id(ctx.org.id)
         .exec(&db)
         .await

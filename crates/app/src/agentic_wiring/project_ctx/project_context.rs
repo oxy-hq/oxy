@@ -65,6 +65,7 @@ impl ProjectContext for OxyProjectContext {
     async fn resolve_pipeline_destination(
         &self,
         db_name: &str,
+        dataset_name: &str,
     ) -> Option<ResolvedPipelineDestination> {
         let db = self
             .workspace_manager
@@ -74,6 +75,45 @@ impl ProjectContext for OxyProjectContext {
         match &db.database_type {
             // Postgres/Redshift: `resolve_connector` already substituted
             // secrets into the connection params.
+            // Per-org OLTP. The pipeline writes into `raw_<dataset_name>` as
+            // that source's own writer role — NOT the analyst the query path
+            // resolves, which is read-only by design.
+            //
+            // `dataset_name` picks the writer, so two pipelines landing into one
+            // org's database each get their own credential and neither can
+            // touch the other's schema. That is why this resolver takes it:
+            // without it there is only a database name, and a database holds
+            // every source.
+            DatabaseType::PostgresManaged(_) => {
+                let workspace_id = self.workspace_manager.workspace_id;
+                let writer = oxy_oltp::schema::WriterRef::pipeline(dataset_name)
+                    .map_err(|e| {
+                        tracing::warn!(
+                            dataset_name,
+                            "airway: not a usable postgres_managed source name: {e}"
+                        );
+                    })
+                    .ok()?;
+                let db = oxy::database::client::establish_connection().await.ok()?;
+                let conn =
+                    oxy_oltp::resolver::resolve_writer_connection(&db, workspace_id, &writer)
+                        .await
+                        .map_err(|e| {
+                            tracing::warn!(
+                                db_name,
+                                dataset_name,
+                                "airway: no OLTP writer for this source — provision it with \
+                         `oxy oltp provision --org <org> --writer pipeline:{dataset_name}`: {e}"
+                            );
+                        })
+                        .ok()?;
+                Some(ResolvedPipelineDestination {
+                    kind: "postgres".to_string(),
+                    connection_string: conn.dsn,
+                    // `raw_<source>`, the only schema this credential can write.
+                    dataset_name_override: Some(conn.schema),
+                })
+            }
             DatabaseType::Postgres(_) | DatabaseType::Redshift(_) => {
                 match self.resolve_connector(db_name).await? {
                     ConnectorConfig::Postgres(c) | ConnectorConfig::Redshift(c) => {
@@ -86,6 +126,7 @@ impl ProjectContext for OxyProjectContext {
                                 c.port,
                                 &c.database,
                             ),
+                            dataset_name_override: None,
                         })
                     }
                     _ => None,
@@ -108,6 +149,7 @@ impl ProjectContext for OxyProjectContext {
                             connection_string: pg_wire_dsn(
                                 &user, &password, &host, port, &database,
                             ),
+                            dataset_name_override: None,
                         })
                     }
                     Err(e) => {
@@ -224,8 +266,10 @@ impl ProjectContext for OxyProjectContext {
 
     fn metric_sink(&self) -> Option<SharedMetricSink> {
         // Only hand back a sink when an observability store is actually
-        // registered. Non-enterprise runs leave `get_global()` as `None`
-        // and the adapter's first call would just log-and-skip anyway —
+        // registered. A run with `OXY_OBSERVABILITY_BACKEND` unset (or a
+        // removed label) leaves `get_global()` as `None` — not `--enterprise`,
+        // which does not gate observability — and the adapter's first call
+        // would just log-and-skip anyway —
         // returning `None` here keeps the pipeline hot path free of the
         // atomic load + tracing::warn on every query.
         oxy_observability::global::get_global()?;

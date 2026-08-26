@@ -793,7 +793,9 @@ pub async fn list_env_secrets(
             // Managed Airhouse has no `*_var` fields — credentials are
             // sourced from oxy's own database via the per-user provisioning
             // flow.
-            DatabaseType::AirhouseManaged(_) => {}
+            // Neither carries credentials in config.yml — airhouse resolves
+            // them per user, postgres_managed per org from `oltp_tenants`.
+            DatabaseType::AirhouseManaged(_) | DatabaseType::PostgresManaged(_) => {}
         }
         for (var, config_field) in pairs {
             if seen_vars.insert(var.clone()) {

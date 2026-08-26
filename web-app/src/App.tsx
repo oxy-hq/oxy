@@ -148,6 +148,7 @@ const AppDossierWindow = React.lazy(() => import("./pages/admin/AdminCustomApps/
 const AdminTenants = React.lazy(() => import("./pages/admin/AdminTenants"));
 const AdminTenantsCockpit = React.lazy(() => import("./pages/admin/AdminTenantsCockpit"));
 const AdminOrgs = React.lazy(() => import("./pages/admin/AdminOrgs"));
+const AdminOltp = React.lazy(() => import("./pages/admin/AdminOltp"));
 const AdminOrgDetail = React.lazy(() => import("./pages/admin/AdminOrgs/AdminOrgDetail"));
 const AdminUsers = React.lazy(() => import("./pages/admin/AdminUsers"));
 const AdminUserDetail = React.lazy(() => import("./pages/admin/AdminUsers/AdminUserDetail"));
@@ -622,6 +623,7 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             {/* Tenant-management surfaces — list + master/detail via :id tail. */}
             <Route path='admin/tenants' element={<AdminTenantsCockpit />} />
             <Route path='admin/tenants/overview' element={<AdminTenants />} />
+            <Route path='admin/oltp' element={<AdminOltp />} />
             <Route path='admin/orgs' element={<AdminOrgs />} />
             <Route path='admin/orgs/:orgId' element={<AdminOrgDetail />} />
             <Route path='admin/users' element={<AdminUsers />} />

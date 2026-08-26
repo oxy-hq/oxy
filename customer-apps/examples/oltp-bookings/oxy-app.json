@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "slug": "oltp-bookings",
+  "name": "OLTP Bookings",
+  "icon": "icon.svg",
+  "functions": {
+    "bookings": {
+      "route": true,
+      "timeoutSeconds": 30,
+      "oltp": { "enabled": true }
+    }
+  }
+}

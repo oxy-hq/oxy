@@ -63,8 +63,18 @@ pub enum AppsCommand {
         #[clap(long, default_value = "main")]
         branch: String,
     },
-    /// List all registered apps
-    List,
+    /// List registered apps. Prints a JSON array of rows. Walks every page
+    /// by default; pass `--limit` to fetch a single page instead.
+    List {
+        /// Fetch one page of this size instead of walking the whole registry.
+        /// The server clamps it to 1..=200.
+        #[clap(long)]
+        limit: Option<u64>,
+        /// Row offset to start from. With default (walk-all) paging this is
+        /// where the walk begins; with `--limit` it selects the page.
+        #[clap(long, default_value_t = 0)]
+        offset: u64,
+    },
     /// Delete a registered app by ID
     Delete {
         /// UUID of the app to delete
@@ -84,7 +94,7 @@ pub async fn handle_apps_command(args: AppsArgs) -> Result<(), OxyError> {
             project_id,
             branch,
         } => handle_create(name, org_slug, org_id, project_id, branch).await,
-        AppsCommand::List => handle_list().await,
+        AppsCommand::List { limit, offset } => handle_list(limit, offset).await,
         AppsCommand::Delete { id } => handle_delete(id).await,
     }
 }
@@ -175,23 +185,63 @@ async fn handle_create(
     Ok(())
 }
 
-async fn handle_list() -> Result<(), OxyError> {
+async fn handle_list(limit: Option<u64>, offset: u64) -> Result<(), OxyError> {
     // Unbounded: the CLI runs on the box with direct database access, so there is no
     // platform grant to narrow it by. Scope is an HTTP-principal concept.
-    let resp = handlers::list_apps_scoped(handlers::ListAppsQuery::default(), None)
-        .await
-        .map_err(|sc| OxyError::RuntimeError(format!("list_apps failed with status {sc}")))?;
+    //
+    // `ListAppsQuery::default()` is a trap here: the `default_limit()` = 50 only
+    // applies when serde fills in an *absent* query field. `Default::default()`
+    // gives `limit: 0`, which the handler clamps to 1 — so the old call returned a
+    // single row. Always hand the handler an explicit page size.
+    let items = match limit {
+        // Explicit single page. The handler still clamps the size to 1..=200.
+        Some(limit) => {
+            handlers::list_apps_scoped(handlers::ListAppsQuery { limit, offset }, None)
+                .await
+                .map_err(|sc| OxyError::RuntimeError(format!("list_apps failed with status {sc}")))?
+                .0
+                .items
+        }
+        // Default: walk every page so `oxy apps list` shows the whole registry.
+        None => {
+            const PAGE: u64 = 200; // == the handler's MAX_LIST_LIMIT
+            let mut all = Vec::new();
+            let mut off = offset;
+            loop {
+                let resp = handlers::list_apps_scoped(
+                    handlers::ListAppsQuery {
+                        limit: PAGE,
+                        offset: off,
+                    },
+                    None,
+                )
+                .await
+                .map_err(|sc| {
+                    OxyError::RuntimeError(format!("list_apps failed with status {sc}"))
+                })?;
+                let next = resp.0.next_offset;
+                all.extend(resp.0.items);
+                match next {
+                    Some(n) => off = n,
+                    None => break,
+                }
+            }
+            all
+        }
+    };
 
-    let json = serde_json::to_string_pretty(&resp.0)
+    let json = serde_json::to_string_pretty(&items)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to serialize response: {e}")))?;
-    println!("{}", json);
+    println!("{json}");
     Ok(())
 }
 
 async fn handle_delete(id: Uuid) -> Result<(), OxyError> {
     handlers::delete_app_unscoped(id)
         .await
-        .map_err(|sc| OxyError::RuntimeError(format!("delete_app failed with status {sc}")))?;
+        .map_err(|(sc, body)| {
+            OxyError::RuntimeError(format!("delete_app failed ({sc}): {}", body.0.message))
+        })?;
     println!("{}", format!("Deleted app {id}").success());
     Ok(())
 }

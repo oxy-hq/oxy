@@ -22,31 +22,19 @@ impl std::fmt::Debug for IntentStorage {
 
 impl IntentStorage {
     /// Create a new storage client.
-    /// Returns an error if observability storage has not been initialized
-    /// (e.g., server started without `--enterprise`).
+    /// Returns an error if observability storage has not been initialized —
+    /// i.e. `OXY_OBSERVABILITY_BACKEND` is unset or names a removed backend.
+    /// (NOT `--enterprise`, which does not gate observability;
+    /// [`oxy_observability::global::require_global`] carries the full message.)
     pub fn new(_config: &IntentConfig) -> Result<Self, OxyError> {
-        let storage = oxy_observability::global::get_global()
-            .ok_or_else(|| {
-                OxyError::RuntimeError(
-                    "Observability storage not initialized. Start with --enterprise to enable."
-                        .into(),
-                )
-            })?
-            .clone();
+        let storage = oxy_observability::global::require_global()?.clone();
         Ok(Self { storage })
     }
 
     /// Create from the global observability storage singleton.
     /// Returns an error if observability storage has not been initialized.
     pub fn from_env() -> Result<Self, OxyError> {
-        let storage = oxy_observability::global::get_global()
-            .ok_or_else(|| {
-                OxyError::RuntimeError(
-                    "Observability storage not initialized. Start with --enterprise to enable."
-                        .into(),
-                )
-            })?
-            .clone();
+        let storage = oxy_observability::global::require_global()?.clone();
         Ok(Self { storage })
     }
 

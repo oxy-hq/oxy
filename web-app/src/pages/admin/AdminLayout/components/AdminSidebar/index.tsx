@@ -2,6 +2,7 @@ import {
   Activity,
   AppWindow,
   Building2,
+  Database,
   FileCheck,
   Flag,
   Handshake,
@@ -90,12 +91,20 @@ export const ADMIN_NAV: AdminNavItem[] = [
     group: "operations"
   },
   {
+    to: ROUTES.ADMIN.OLTP,
+    label: "OLTP databases",
+    icon: Database,
+    // Provisioning creates a billable project, so this matches the route gate
+    // (`Action::PlatformOltp` → `operate_platform`) rather than `manage_apps`.
+    capability: "operate_platform",
+    group: "tenants"
+  },
+  {
     to: ROUTES.ADMIN.AIRHOUSE,
     label: "Airhouse warehouses",
     icon: Warehouse,
-    // Matches the route gate (`Action::PlatformAirhouse` → `operate_platform`)
-    // rather than `manage_apps`: provisioning a tenant's data plane is
-    // operator work.
+    // Same gate as OLTP: both provision a tenant's data plane, and a grant that
+    // could create one but not the other would need a story for why.
     capability: "operate_platform",
     group: "tenants"
   },

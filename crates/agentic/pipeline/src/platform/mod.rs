@@ -78,6 +78,16 @@ pub struct ResolvedPipelineDestination {
     pub kind: String,
     /// Connection string with credentials already substituted in.
     pub connection_string: String,
+    /// Overrides the reference's `dataset_name` when the destination does not
+    /// let the author choose it.
+    ///
+    /// `postgres_managed` is the case: a pipeline writes into `raw_<source>`,
+    /// a schema Oxy creates and grants, and the credential it is handed has
+    /// rights on that schema and no other. Honouring an author-supplied
+    /// `dataset_name` there would produce a permission error at first write
+    /// rather than at config time.
+    #[allow(clippy::struct_field_names)]
+    pub dataset_name_override: Option<String>,
 }
 
 /// Project config access — connectors, models, secrets.
@@ -95,9 +105,15 @@ pub trait ProjectContext: Send + Sync {
     /// Returns `None` when the database is unknown or its type has no
     /// airway destination mapping. Default `None` so adapters without
     /// airway support compile unchanged.
+    /// `dataset_name` names which dataset is being landed. Most destinations
+    /// ignore it — the connection alone identifies where writes go — but
+    /// `postgres_managed` needs it to pick the pipeline's own writer role, so
+    /// two pipelines landing into one org's database cannot use each other's
+    /// credential.
     async fn resolve_pipeline_destination(
         &self,
         _db_name: &str,
+        _dataset_name: &str,
     ) -> Option<ResolvedPipelineDestination> {
         None
     }

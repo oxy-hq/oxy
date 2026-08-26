@@ -145,6 +145,7 @@ mod m20260806_000002_create_app_storage_usage;
 mod m20260807_000001_airway_deployment_config;
 mod m20260808_000001_airway_deployment_cursor_lag_floor;
 mod m20260812_000001_metric_anomalies_event_count_index;
+mod m20260817_000001_create_schema_migration_definitions;
 mod m20260821_000001_view_event_roles;
 
 pub struct Migrator;
@@ -292,6 +293,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260807_000001_airway_deployment_config::Migration),
             Box::new(m20260808_000001_airway_deployment_cursor_lag_floor::Migration),
             Box::new(m20260812_000001_metric_anomalies_event_count_index::Migration),
+            Box::new(m20260817_000001_create_schema_migration_definitions::Migration),
             Box::new(m20260821_000001_view_event_roles::Migration),
         ]
     }

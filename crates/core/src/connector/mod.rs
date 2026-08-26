@@ -294,6 +294,69 @@ impl Connector {
                 );
                 EngineType::ConnectorX(ConnectorX::new("postgres".to_string(), db_path, None))
             }
+            DatabaseType::PostgresManaged(_) => {
+                // Resolves the per-org OLTP database for the caller's
+                // workspace. Deliberately **ignores `effective_role`**: unlike
+                // `airhouse_managed`, which escalates Owner→admin, this always
+                // yields the read-only analyst. A per-org OLTP database holds a
+                // customer's live business records, so an ad-hoc UPDATE typed
+                // into the SQL IDE would be a catastrophe rather than a feature.
+                // Writes reach it only through published code — an app function
+                // or an Airway pipeline — via `OltpProvisioner::ensure_writer`.
+                let workspace_id = workspace_id.ok_or_else(|| {
+                    OxyError::ConfigurationError(
+                        "postgres_managed requires a workspace context; no workspace_id was \
+                         threaded into Connector::from_db. This typically means the caller \
+                         needs to pass `Some(execution_context.workspace.workspace_id)`."
+                            .into(),
+                    )
+                })?;
+                let db = oxy_platform::db::establish_connection()
+                    .await
+                    .map_err(|e| OxyError::RuntimeError(format!("postgres_managed: {e}")))?;
+                let conn = oxy_oltp::resolver::resolve_analyst_connection(&db, workspace_id)
+                    .await
+                    .map_err(|e| OxyError::ConfigurationError(format!("postgres_managed: {e}")))?;
+                // Both halves matter and both were missing.
+                //
+                // The password is percent-encoded because generated ones always
+                // contain `#` (see `oxy_oltp::roles::generate_password`), which
+                // starts a URI fragment — so this DSN could not authenticate at
+                // all, and an analytics agent reaching Postgres through here via
+                // `execute_sql` never connected.
+                //
+                // TLS mode is carried from the tenant's provider. It stays at
+                // `require`/`disable` and is NOT upgraded to `verify-full` here
+                // (so `conn.verify_tls` is intentionally unread on this path,
+                // though it IS honoured on the two below that build a
+                // `PostgresConnector`), because this path runs through connectorx
+                // 0.4.5, whose `rewrite_tls_args` cannot: its `VerifyCa`/
+                // `VerifyFull` arms are commented out behind a
+                // `panic!("unexpected sslmode")`, and even `Require` verifies
+                // only when an `sslrootcert` FILE is supplied (else
+                // `SslVerifyMode::NONE`).
+                // https://docs.rs/crate/connectorx/0.4.5/source/src/sources/postgres/connection.rs
+                // So `verify-full` here would crash every managed query, not
+                // secure it. `require` therefore ENCRYPTS but does not
+                // authenticate the peer on this path — an accepted gap: the
+                // primary IDE/analytics query path goes through the agentic
+                // `PostgresConnector`, which DOES verify (see `oltp::resolver` /
+                // `verify_tls`). Closing the connectorx gap needs an `sslrootcert`
+                // bundle (verify-ca only) or a newer connectorx, gated on a live
+                // Neon test. Without any sslmode at all libpq defaults to
+                // `prefer`, which downgrades to plaintext silently, so the
+                // explicit `require` still matters.
+                let db_path = format!(
+                    "{}:{}@{}:{}/{}?sslmode={}",
+                    conn.user,
+                    oxy_oltp::roles::encode_userinfo(&conn.password),
+                    conn.host,
+                    conn.port,
+                    conn.database,
+                    conn.sslmode
+                );
+                EngineType::ConnectorX(ConnectorX::new("postgres".to_string(), db_path, None))
+            }
             DatabaseType::Redshift(rs) => {
                 let db_path = format!(
                     "{}:{}@{}:{}/{}?cxprotocol={}",

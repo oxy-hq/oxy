@@ -66,6 +66,19 @@ describe("canReachAdminRoute", () => {
     expect(canReachAdminRoute(ROUTES.ADMIN.AIRWAY, nobody)).toBe(false);
   });
 
+  it("gates OLTP on operate_platform, matching the endpoint", () => {
+    // The nav and the route gate must name the same capability. The server
+    // mounts these routes under `cap(Action::PlatformOltp)`, which resolves to
+    // `operate_platform` — deliberately NOT `manage_apps`, because provisioning
+    // creates a billable database and an App Operator ships apps and nothing
+    // else. An App Operator seeing the entry and getting a 403 would be the
+    // same nav/API disagreement the airway case above regressed on.
+    expect(canReachAdminRoute(ROUTES.ADMIN.OLTP, staff("operate_platform"))).toBe(true);
+    expect(canReachAdminRoute(ROUTES.ADMIN.OLTP, owner)).toBe(true);
+    expect(canReachAdminRoute(ROUTES.ADMIN.OLTP, staff("manage_apps"))).toBe(false);
+    expect(canReachAdminRoute(ROUTES.ADMIN.OLTP, nobody)).toBe(false);
+  });
+
   it("gates the grant console on manage_platform_grants", () => {
     expect(canReachAdminRoute("/admin/app-admins", staff("manage_platform_grants"))).toBe(true);
     expect(canReachAdminRoute("/admin/app-admins", staff("manage_apps"))).toBe(false);

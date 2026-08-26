@@ -130,6 +130,16 @@ struct FunctionManifestEntry {
     /// silo. Declare for functions that accept uploads or serve stored files.
     #[serde(default)]
     storage: Option<StorageSpec>,
+    /// Opt-in capability for `ctx.oltp` — read/write the app's OWN per-org OLTP
+    /// schema on the managed Postgres tenant, and nothing else (fail-closed:
+    /// absent → every `ctx.oltp` call rejected). A pure GATE: the target schema
+    /// is `app_<writer>` where the writer is DERIVED from the app's own slug
+    /// host-side, never taken from here — so a manifest cannot point `ctx.oltp`
+    /// at another app's schema. The resolved role has DML rights on that one
+    /// schema, reaching neither another app's data nor the analyst-visible
+    /// `raw_*` schemas. The writer must be provisioned first.
+    #[serde(default)]
+    oltp: Option<OltpSpec>,
     /// Retry policy for **background** runs (scheduled or manual job triggers) —
     /// absent → a job run is attempted once. Route invocations are request-scoped
     /// and never retried. Maps to the durable queue's `RetryPolicy` so a transient
@@ -182,6 +192,16 @@ struct StorageSpec {
     write: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, Default, Clone)]
+struct OltpSpec {
+    /// Whether `ctx.oltp` is permitted. A pure GATE — it does NOT name the
+    /// target. The writer is derived host-side from the app's own slug
+    /// (`oxy_oltp::schema::app_writer_name`), so a manifest cannot point
+    /// `ctx.oltp` at another app's schema.
+    #[serde(default)]
+    enabled: Option<bool>,
+}
+
 impl FunctionManifestEntry {
     /// The cache TTL if opted in with a positive value, else `None`.
     fn cache_ttl(&self) -> Option<Duration> {
@@ -220,6 +240,13 @@ impl FunctionManifestEntry {
     /// (fail-closed default: false).
     fn storage_write(&self) -> bool {
         self.storage.as_ref().and_then(|s| s.write).unwrap_or(false)
+    }
+
+    /// Whether `ctx.oltp` is permitted for this function (fail-closed default:
+    /// false). Only a GATE — the writer it targets is derived from the app's own
+    /// slug, never from the manifest, so this cannot name another app's schema.
+    fn oltp_enabled(&self) -> bool {
+        self.oltp.as_ref().and_then(|o| o.enabled).unwrap_or(false)
     }
 
     /// Build a `RetryPolicy` for background runs from the manifest's `retries`
@@ -873,6 +900,11 @@ pub async fn handle_function_request(
             email_send: manifest.email_send(),
             storage_read: manifest.storage_read(),
             storage_write: manifest.storage_write(),
+            // DERIVED from the invoking app's slug, gated by the manifest — never
+            // named by the manifest, so one app cannot reach another's schema.
+            // A slug that can't back a schema is a distinct fail-closed reason so
+            // the host diagnoses it as such, not as "capability missing".
+            oltp: host::OltpCapability::resolve(manifest.oltp_enabled(), &app.slug),
             storage_retention: super::custom_apps_manifest::retention_policy_from_build_manifest(
                 build.manifest_json.as_ref(),
                 app.id,
@@ -1095,6 +1127,11 @@ pub(crate) async fn run_scheduled_function(
             email_send: manifest.email_send(),
             storage_read: manifest.storage_read(),
             storage_write: manifest.storage_write(),
+            // DERIVED from the invoking app's slug, gated by the manifest — never
+            // named by the manifest, so one app cannot reach another's schema.
+            // A slug that can't back a schema is a distinct fail-closed reason so
+            // the host diagnoses it as such, not as "capability missing".
+            oltp: host::OltpCapability::resolve(manifest.oltp_enabled(), &app.slug),
             storage_retention: super::custom_apps_manifest::retention_policy_from_build_manifest(
                 build.manifest_json.as_ref(),
                 app.id,

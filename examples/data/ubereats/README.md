@@ -76,7 +76,7 @@ airway-writable type`). For a self-contained check, point it at the
 
 ```bash
 docker run -d --name oxy-source-uploads-dest -p 5432:5432 \
-  -e POSTGRES_USER=admin -e POSTGRES_PASSWORD=admin -e POSTGRES_DB=default postgres:16
+  -e POSTGRES_USER=admin -e POSTGRES_PASSWORD=admin -e POSTGRES_DB=default postgres:18-alpine
 export POSTGRES_PASSWORD=admin        # config.yml reads it via password_var
 
 # in examples/pipelines/ubereats.airway.yml, for local verification only:

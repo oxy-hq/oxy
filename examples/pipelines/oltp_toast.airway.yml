@@ -1,0 +1,42 @@
+# Land data into the org's OLTP Postgres, as the pipeline's own writer.
+#
+# This is the `raw_*` half of the per-org OLTP model: a pipeline writes
+# `raw_<source>`, a custom app writes `app_<slug>`, and neither can read the
+# other's schema. Analytics reads both through the read-only analyst.
+#
+# Provision the writer before running this:
+#
+#   oxy oltp provision --org you@oxy.tech --writer pipeline:toast
+#
+# `dataset_name` is NOT free-form here. It names the writer, so the credential
+# this pipeline is handed is `raw_toast_rw` and the schema it can write is
+# `raw_toast` — Oxy overrides `dataset_name` to that schema rather than
+# honouring an author-chosen one, because a mismatch would surface as a
+# permission error on the first row instead of at config time.
+
+name: oltp_toast
+
+source:
+  kind: sql_database
+  config:
+    # Any source Airway supports. Reading from the control-plane database keeps
+    # the example self-contained — swap for the real Toast connector.
+    connection_string: postgresql://postgres:postgres@localhost:15432/oxy
+    backend: postgres
+    tables:
+      # Stand-in for the real Toast connector. Simple types on purpose: Oxy's
+      # own tables key on `uuid`, which airway drops rather than
+      # creating — the load then fails on `column "id" ... does not exist`.
+      - name: demo_pos_sales
+        write_disposition: replace
+
+destination:
+  # `type: postgres_managed` in config.yml. No credentials here: they resolve
+  # from this workspace's org through `oltp_tenants` at run time, and they are
+  # this pipeline's writer — not the analyst the query path resolves, which is
+  # read-only by design.
+  database: oltp
+  # → writer `pipeline:toast`, schema `raw_toast`.
+  dataset_name: toast
+
+concurrency: 1

@@ -609,3 +609,270 @@ routing-check port="3000" ws="70787bb2-e11b-5488-b2c3-02e60d5fc7d3":
     echo "── tally (this sample) ──  served-by serve: $(grep -c '^serve$' "$tally" || true)   ide: $(grep -c '^ide$' "$tally" || true)"
     echo "  (the FleetOk set is the BULK of the real API — apps/agents/semantic/analytics/orgs/users/billing/… all serve)"
     rm -f "$tally" /tmp/_rch
+
+# ── Per-org OLTP POC ──────────────────────────────────────────────────────────
+# Docs: scripts/oltp/README.md · Design:
+# internal-docs/2026-08-04-per-org-oltp-postgres-design.md
+
+# ROLE is one of: analyst (read-only) | app | pipeline | owner.
+# Open psql against the demo database as one of the provisioned roles.
+oltp-psql ROLE="analyst":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ctl="postgresql://postgres:postgres@localhost:15432/oxy"
+    db="$(psql "$ctl" -tAc "SELECT database_name FROM oltp_tenants LIMIT 1")"
+    case "{{ ROLE }}" in
+      analyst)  dsn="$(./target/debug/oxy oltp dsn --org ${OLTP_ORG:-luong@oxy.tech} --role analyst)" ;;
+      app)      dsn="$(./target/debug/oxy oltp dsn --org ${OLTP_ORG:-luong@oxy.tech} --role app:bookings)" ;;
+      pipeline) dsn="$(./target/debug/oxy oltp dsn --org ${OLTP_ORG:-luong@oxy.tech} --role pipeline:toast)" ;;
+      owner)    dsn="$(./target/debug/oxy oltp dsn --org ${OLTP_ORG:-luong@oxy.tech} --role owner)" ;;
+      *) echo "unknown role '{{ ROLE }}' — try: analyst | app | pipeline | owner" >&2; exit 1 ;;
+    esac
+    psql "$dsn"
+
+# Deliberately NOT `oxy start`'s :15432: that cluster holds the control plane
+# and, since `oxy start` defaults per-org OLTP to local, tenant databases too —
+# and the suite refuses any cluster with tenants. Its own container, --rm, on a
+# port nothing else claims.
+#
+# Disposable Postgres on :15433 for the OLTP integration suite.
+oltp-test-db:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    docker rm -f oxy-oltp-test >/dev/null 2>&1 || true
+    docker run -d --rm --name oxy-oltp-test \
+      -e POSTGRES_PASSWORD=postgres -p 15433:5432 postgres:18-alpine >/dev/null
+    for _ in $(seq 1 40); do
+      docker exec oxy-oltp-test pg_isready -U postgres >/dev/null 2>&1 && break
+      sleep 1
+    done
+    if ! docker exec oxy-oltp-test pg_isready -U postgres >/dev/null 2>&1; then
+      echo "oxy-oltp-test did not become ready on :15433" >&2
+      exit 1
+    fi
+    echo "oxy-oltp-test up on :15433 — run: cargo nextest run -p oxy-oltp --test integration"
+
+# In-place per-object, NOT a volume wipe: the demo uses the shared dev Postgres
+# (`oxy start`'s :15432), so this must not touch the volume — `oxy start --clean`
+# would take workspaces, threads and apps with it. This is the dev cluster, not
+# the test one: `just oltp-test-db` on :15433 is throwaway and needs no cleanup
+# (its container is `--rm`).
+#
+# Keeps `neon` rows on purpose. Deleting one drops the row and its sealed
+# owner/analyst passwords while the billed Neon project keeps running — an
+# orphaned project nobody can reach; delete those in the Neon console. It also
+# drops the cluster-global roles the local tenants used, which are LOGIN roles
+# whose passwords this discards — re-provisioning re-mints them.
+#
+# Clear LOCAL OLTP state on the shared dev cluster (keeps neon rows; volume untouched).
+oltp-down:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # The LEDGER (oltp_tenants/oltp_roles) lives on the control plane; the tenant
+    # DATABASES and their cluster-global roles live on OXY_OLTP_ADMIN_URL, which
+    # `oxy start`'s three-state gate keeps distinct when a developer set it. When
+    # unset they are the same cluster. Conflating them deleted the ledger rows —
+    # sealed passwords and all — while the databases and roles sat untouched on
+    # the other cluster.
+    ctl="${OXY_DATABASE_URL:-postgresql://postgres:postgres@localhost:15432/oxy}"
+    admin="${OXY_OLTP_ADMIN_URL:-$ctl}"
+    # host:port of the tenant cluster, the same string `host_from_dsn` records in
+    # tenant.host: strip scheme, drop any userinfo, take up to the first '/'.
+    tmp="${admin#*://}"; tmp="${tmp##*@}"; tmp="${tmp%%/*}"; admin_host="${tmp%%\?*}"
+
+    if [ "$(psql "$ctl" -tAc "SELECT to_regclass('public.oltp_tenants') IS NOT NULL")" != "t" ]; then
+      echo "no OLTP state on this cluster (oltp_tenants absent) — nothing to clear"
+      exit 0
+    fi
+
+    neon="$(psql "$ctl" -tAc "SELECT count(*) FROM oltp_tenants WHERE provider = 'neon'")"
+    if [ "$neon" -gt 0 ]; then
+      echo "keeping $neon neon tenant row(s) — delete those projects in the Neon console"
+    fi
+    # Tenants provisioned on a DIFFERENT cluster than the one we can reach: their
+    # databases are not here, so clearing their rows would orphan those. Skip.
+    elsewhere="$(psql "$ctl" -tAc "SELECT count(*) FROM oltp_tenants WHERE provider <> 'neon' AND host <> '$admin_host'")"
+    if [ "$elsewhere" -gt 0 ]; then
+      echo "keeping $elsewhere tenant(s) on other clusters (not $admin_host) — run with OXY_OLTP_ADMIN_URL pointed there"
+    fi
+
+    # Writer + owner names from the LEDGER (control plane), for tenants on this
+    # admin cluster only. Collected BEFORE the delete cascades oltp_roles away.
+    roles="$(psql "$ctl" -tAc "
+      SELECT r.role_name FROM oltp_roles r JOIN oltp_tenants t ON t.id = r.tenant_row_id
+        WHERE t.provider <> 'neon' AND t.host = '$admin_host'
+      UNION SELECT owner_role FROM oltp_tenants
+        WHERE provider <> 'neon' AND host = '$admin_host'")"
+    # Analyst roles are catalog-based (hashed tag, not in the ledger) and live on
+    # the ADMIN cluster — query THERE, not $ctl. On $ctl (the control plane) a
+    # split setup holds no `oxy_analyst_ro*` roles, so they would have survived
+    # the sweep with the passwords the DELETE below discards.
+    #
+    # Catalog-wide on $admin, unlike the host-scoped arms above: every
+    # `oxy_analyst_ro*` on this cluster is dropped even if all its tenants were
+    # skipped as "elsewhere". Correct — by then those are orphans on THIS
+    # cluster with passwords no ledger row still holds.
+    analysts="$(psql "$admin" -tAc "SELECT rolname FROM pg_roles WHERE rolname LIKE 'oxy\_analyst\_ro%'")"
+
+    psql "$ctl" -qc "DELETE FROM oltp_tenants WHERE provider <> 'neon' AND host = '$admin_host';"
+
+    # Databases + roles on the ADMIN cluster (where they live), not $ctl.
+    # Databases first: a role owning objects cannot be dropped, and writers own
+    # the tables inside these.
+    for db in $(psql "$admin" -tAc "SELECT datname FROM pg_database WHERE datname LIKE 'oxy\_org\_%'"); do
+      psql "$admin" -qc "DROP DATABASE IF EXISTS \"$db\" WITH (FORCE)" || true
+      echo "dropped database $db"
+    done
+
+    for role in $roles $analysts; do
+      if psql "$admin" -qc "DROP ROLE IF EXISTS \"$role\"" >/dev/null 2>&1; then
+        echo "dropped role $role"
+      else
+        echo "kept role $role (still owns objects, or not on $admin_host)"
+      fi
+    done
+
+    echo "local OLTP state on $admin_host cleared. Neon projects are untouched — delete those in the console."
+
+oltp-status:
+    @docker ps --filter name=oxy- --format "table {{{{.Names}}	{{{{.Status}}	{{{{.Ports}}"
+
+# Free the ports and stop the containers the demo started. Destroys nothing.
+#
+# `oxy start --enterprise` plus `pnpm dev` is the normal local stack, and a
+# Ctrl-C that races the shutdown, a closed terminal or a `kill -9` leaves the
+# API holding :3000 and the whole turbo/vite tree holding :5173. The next run
+# then fails on a bound port, which reads as a broken build rather than as
+# leftovers.
+#
+# Ports are freed by asking WHO IS LISTENING, not by pattern-matching process
+# names: `pkill -f oxy` on a machine that also runs the real thing is how you
+# kill someone's actual work.
+#
+# Listeners are identified before they are killed: a process whose argv does not
+# point at this checkout is reported and left running, and `FORCE=1` overrides.
+#
+# **Postgres is stopped through Docker, never through its port.** :15432 is
+# bound by the Docker daemon's proxy — on OrbStack that PID *is* OrbStack, so an
+# lsof-and-kill there takes down every container on the machine.
+#
+# Free :3000 and :5173 and stop the oxy containers. Deletes nothing.
+oltp-stop:
+    #!/usr/bin/env bash
+    set -uo pipefail
+
+    # Only kill what looks like THIS repo's dev stack, unless told otherwise.
+    #
+    # The header above rejects `pkill -f oxy` for killing someone's real work,
+    # and "whatever is listening on :3000" has the same exposure with a wider
+    # blast radius — :3000 is the most-squatted dev port on any machine that
+    # also runs Node, and the kill escalates to the whole process group. So each
+    # listener is identified first, and anything whose argv does not point at
+    # this checkout is left alone with its command line printed.
+    owns_port() {
+      local argv="$1"
+      [[ "$argv" == *"$PWD"* ]] || [[ "$argv" == *oxy-web* ]] || [[ "$argv" == *"target/debug/oxy"* ]]
+    }
+
+    free_port() {
+      local port="$1" label="$2" pids pgid argv
+      pids="$(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true)"
+      if [[ -z "$pids" ]]; then echo "  :$port already free ($label)"; return; fi
+      if [[ "${FORCE:-0}" != "1" ]]; then
+        for pid in $pids; do
+          argv="$(ps -o args= -p "$pid" 2>/dev/null || true)"
+          if ! owns_port "$argv"; then
+            echo "  :$port SKIPPED — not this repo's:" >&2
+            echo "      $pid  ${argv:0:120}" >&2
+            echo "      re-run with FORCE=1 to kill it anyway" >&2
+            return
+          fi
+        done
+      fi
+      for pid in $pids; do
+        # The whole process group: `pnpm run dev` is turbo → vite → esbuild, and
+        # killing only the listener leaves the parents to respawn or linger.
+        pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')"
+        if [[ -n "$pgid" ]]; then kill -TERM -"$pgid" 2>/dev/null || true; fi
+        kill -TERM "$pid" 2>/dev/null || true
+      done
+      for _ in $(seq 1 20); do
+        lsof -ti "tcp:$port" -sTCP:LISTEN >/dev/null 2>&1 || break
+        sleep 0.25
+      done
+      pids="$(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true)"
+      if [[ -n "$pids" ]]; then
+        # SIGTERM was ignored or the handler hung; nothing here owns unflushed
+        # state worth waiting longer for.
+        for pid in $pids; do kill -9 "$pid" 2>/dev/null || true; done
+        sleep 0.5
+      fi
+      if lsof -ti "tcp:$port" -sTCP:LISTEN >/dev/null 2>&1; then
+        echo "  :$port STILL BOUND — inspect with: lsof -nP -iTCP:$port -sTCP:LISTEN" >&2
+      else
+        echo "  :$port freed ($label)"
+      fi
+    }
+
+    echo "Stopping the Oxy demo…"
+
+    # Snapshot the containers BEFORE freeing the ports.
+    #
+    # `oxy start` owns its Postgres container through bollard and stops it on
+    # shutdown, so killing the API usually takes the container with it — and a
+    # `docker ps` afterwards then finds nothing and reports "no containers",
+    # which reads as "there was nothing to clean" rather than "already handled".
+    # Taking the list first lets the summary say what actually happened.
+    # Four opening braces, TWO closing, in every docker --format below. just
+    # escapes a doubled opening brace but passes a doubled closing one straight
+    # through, so the symmetric-looking spelling reaches docker with two extra
+    # characters and prints the value with a stray brace pair glued on. That had
+    # silently broken oltp-status's table, and here it corrupts the very name
+    # this recipe then looks for.
+    # Excludes oxy-oltp-test: it is `--rm`, so `docker stop` would REMOVE it, and
+    # this recipe's whole promise is "stopped, not deleted". The test cluster is
+    # `just oltp-test-db`'s to manage.
+    before="$(docker ps --format '{{{{.Names}}' --filter 'name=oxy-' 2>/dev/null | grep -v '^oxy-oltp-test$' || true)"
+
+    # Honour the same env var `oxy start` reads, so a non-default port is freed
+    # rather than silently skipped.
+    free_port "${OXY_HTTP_PORT:-3000}" "oxy api"
+    free_port 5173 "vite dev server"
+
+    if [[ -z "$before" ]]; then
+      echo "  no oxy-* containers were running"
+    else
+      for name in $before; do
+        if docker ps -q --filter "name=^${name}$" | grep -q .; then
+          # `stop`, not `rm`: the container and its volume both survive, so the
+          # next `oxy start` comes back in seconds with every workspace, thread
+          # and app still there.
+          docker stop "$name" >/dev/null 2>&1 && echo "  stopped $name"
+        else
+          echo "  stopped $name (with the api that owns it)"
+        fi
+      done
+    fi
+
+    echo
+    # Scoped to what THIS recipe did: `oltp-clean` runs `oltp-down` first, so a
+    # flat "nothing was deleted" would be a lie about the run the reader just
+    # watched drop a tenant database.
+    echo "This deleted nothing — the Docker volume is untouched."
+    echo "  restart:      oxy start --enterprise  (+ pnpm dev)"
+    echo "  also drop OLTP state:  just oltp-down     (tenant rows, roles, oxy_org_* databases)"
+    echo "  both at once:          just oltp-clean"
+
+# Stop everything AND clear the OLTP state — the full reset.
+#
+# Still leaves the shared dev database's own contents alone: `oltp-down` drops
+# the tenant databases this POC created, not the workspaces and threads beside
+# them, and a Neon project is a real billed resource that only the console
+# deletes.
+#
+# Order matters: `oltp-down` talks to Postgres, so it has to run BEFORE
+# `oltp-stop` takes the container down. The other way round fails on a refused
+# connection, having already stopped everything — the worst of both.
+#
+# Stop everything and clear the OLTP state — the full reset.
+oltp-clean: oltp-down oltp-stop

@@ -33,17 +33,11 @@ impl MetricStorage {
     }
 
     /// Create from the global observability storage singleton.
-    /// Returns an error if the global has not been initialized.
+    /// Returns an error naming the real gate (`OXY_OBSERVABILITY_BACKEND`) when
+    /// the global has not been initialized — the fourth call site that had its
+    /// own, vaguer copy of this message.
     pub fn from_global() -> Result<Self, OxyError> {
-        let storage = oxy_observability::global::get_global()
-            .ok_or_else(|| {
-                OxyError::RuntimeError(
-                    "Observability storage has not been initialized. \
-                     Ensure observability storage is initialized during startup."
-                        .into(),
-                )
-            })?
-            .clone();
+        let storage = oxy_observability::global::require_global()?.clone();
         Ok(Self { storage })
     }
 

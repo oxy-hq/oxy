@@ -34,6 +34,7 @@ describe("visibleNavGroups", () => {
         "workspace.members",
         // Their own read-only `Reader` credential — see the note in nav.ts.
         "workspace.airhouse",
+        "workspace.oltp",
         "workspace.activity_logs",
         "preferences.appearance"
       ]);
@@ -109,6 +110,7 @@ describe("visibleNavGroups", () => {
         "workspace.members",
         "workspace.databases",
         "workspace.airhouse",
+        "workspace.oltp",
         "workspace.api_keys",
         "workspace.secrets",
         "workspace.apps",

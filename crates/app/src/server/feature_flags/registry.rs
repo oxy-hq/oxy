@@ -10,13 +10,23 @@ pub struct FlagDef {
     pub default_enabled: bool,
 }
 
-pub static FLAGS: &[FlagDef] = &[FlagDef {
-    key: "billing",
-    description: "Master switch for billing & subscription enforcement. \
+pub static FLAGS: &[FlagDef] = &[
+    FlagDef {
+        key: "billing",
+        description: "Master switch for billing & subscription enforcement. \
                       When off, paywall and subscription guards are skipped \
                       for all orgs.",
-    default_enabled: false,
-}];
+        default_enabled: false,
+    },
+    FlagDef {
+        key: "oltp",
+        description: "Master switch for per-org OLTP Postgres. Off (default) \
+                      fails provisioning and every `postgres_managed` \
+                      resolution closed, fleet-wide, without a redeploy — the \
+                      dark-launch and instant-revert lever. Flip on to enable.",
+        default_enabled: false,
+    },
+];
 
 pub fn get(key: &str) -> Option<&'static FlagDef> {
     FLAGS.iter().find(|f| f.key == key)

@@ -51,6 +51,7 @@ agentic-connector = { workspace = true, features = [
     "domo",
 ] }
 airhouse = { workspace = true, features = ["connector", "rest"] }
+oxy-oltp = { workspace = true }
 agentic-core = { workspace = true }
 agentic-http = { workspace = true }
 agentic-llm = { workspace = true }
@@ -251,6 +252,10 @@ testcontainers = { workspace = true, features = [
     "reusable-containers",
 ] }
 testcontainers-modules = { workspace = true, features = ["postgres"] }
+# The OLTP provisioner tests connect *as the minted writer role* to prove the
+# DSN it hands back actually works and lands writes in the right schema — the
+# one thing asserting on the generated SQL cannot show.
+tokio-postgres = { workspace = true }
 # Captures the SES request without a network call or an emulator, so the
 # attachment wire format is asserted against the real SDK serializer.
 aws-smithy-http-client = { workspace = true, features = ["test-util"] }

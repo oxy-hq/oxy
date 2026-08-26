@@ -417,6 +417,17 @@ const airhouseKeys = {
   adminFleet: () => ["admin", "airhouse", "fleet"] as const
 };
 
+const oltpKeys = {
+  all: ["oltp"] as const,
+  connection: (workspaceId: string) => [...oltpKeys.all, "connection", workspaceId] as const,
+  erd: (workspaceId: string) => [...oltpKeys.all, "erd", workspaceId] as const,
+  // The admin console's own reads. Separate root from the member-facing keys
+  // above because they are a different resource — org-keyed, not
+  // workspace-keyed — and an `invalidate(["oltp"])` should not sweep both.
+  admin: (orgId: string) => ["admin", "oltp", orgId] as const,
+  adminTenants: () => ["admin", "oltp", "tenants"] as const
+};
+
 const cameraKeys = {
   all: ["cameras"] as const,
   sites: (workspaceId: string) => [...cameraKeys.all, "sites", workspaceId] as const,
@@ -934,6 +945,7 @@ const metricAnomaliesKeys = {
 
 const queryKeys = {
   airhouse: airhouseKeys,
+  oltp: oltpKeys,
   camera: cameraKeys,
   billing: billingKeys,
   adminBilling: adminBillingKeys,

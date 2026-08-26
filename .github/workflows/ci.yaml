@@ -322,6 +322,46 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U admin -d default" --health-interval 10s
           --health-timeout 5s --health-retries 5
+      # A SECOND, throwaway cluster for the OLTP integration suite, and it is
+      # not redundant with the one above.
+      #
+      # That suite creates and drops whole databases and mints cluster-global
+      # roles, so it refuses to run against a cluster holding tenants — it
+      # cannot share the control-plane service. It also defaults to
+      # `postgresql://postgres:postgres@localhost:15433/postgres` when
+      # `OXY_OLTP_ADMIN_URL` is unset, and nothing set it here: every test in
+      # `crates/oltp/tests/integration/` skipped, silently, and reported as a
+      # pass. The confinement checks — the ones standing between a
+      # provider-granted `neon_superuser` and a handed-out credential — were
+      # among them.
+      #
+      # Port and credentials match that default exactly, so the suite needs no
+      # configuration and cannot drift back into skipping — and
+      # `OXY_OLTP_REQUIRE_DB=1` on the test step turns a mismatch into a red
+      # build rather than a quiet one.
+      #
+      # `services:` is job-level and this job's matrix is [check, test], so the
+      # clippy task pulls both containers and pays their health-check wait
+      # without ever opening a connection. Actions has no per-matrix services;
+      # on an alpine image that is seconds, which is why this is a clause here
+      # rather than a restructure. `AGENTIC_ONLY=true` also exits before
+      # nextest, so both containers are still pulled and waited on in a mode
+      # that never opens them, and OXY_OLTP_REQUIRE_DB protects only the
+      # full-test path — which is the only `cargo nextest` invocation in this
+      # workflow, so that guarantee is total rather than partial.
+      oltp-postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          # :15433, matching the suite's default DSN — deliberately off
+          # `oxy start`'s :15432 so the two clusters never collide locally.
+          - 15433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 5
     steps:
       - name: Free disk space
         if: matrix.task == 'test' && runner.environment == 'github-hosted'
@@ -456,7 +496,15 @@ jobs:
             # type_complexity / should_implement_trait lints), and `check` runs
             # fail-fast, so enforcing now would block every PR. Flip to
             # `-- -D warnings` in a dedicated PR after a warning-cleanup pass.
-            cargo clippy --workspace
+            # `--all-targets`, so EXAMPLES and benches compile here.
+            #
+            # Without it neither this nor `cargo build` below builds an example,
+            # and a signature change that missed one shipped: `ensure_writer`'s
+            # claimant became `Option<Uuid>`, three call sites were updated, and
+            # `examples/seed_org.rs` — the demo seeder the README points at —
+            # was left as a plain E0308 that CI could not see. The first person
+            # to hit it would have been someone setting up the demo.
+            cargo clippy --workspace --all-targets
             # Gate the feature-off build: the custom-app-functions (V8) feature is
             # compiled out by the `cf`/`bf`/`rf` aliases in .cargo/config.toml (`cf` is
             # this exact command), and an ungated `use` of a gated symbol only breaks
@@ -479,7 +527,13 @@ jobs:
             ./target/debug/oxy migrate
 
             # Run tests (no coverage instrumentation)
-            cargo nextest run --workspace --no-fail-fast
+            #
+            # OXY_OLTP_REQUIRE_DB turns "no OLTP cluster" from a skip into a
+            # failure. That suite skipped for this whole PR and reported green;
+            # the `oltp-postgres` service above is what makes it run, and this
+            # is what makes a future mismatch between the two loud instead of
+            # silent.
+            OXY_OLTP_REQUIRE_DB=1 cargo nextest run --workspace --no-fail-fast
 
             ./target/debug/oxy gen-config-schema --check
           fi

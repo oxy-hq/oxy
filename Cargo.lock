@@ -9056,6 +9056,7 @@ dependencies = [
  "oxy-looker",
  "oxy-observability",
  "oxy-ollama",
+ "oxy-oltp",
  "oxy-openai",
  "oxy-platform",
  "oxy-semantic",
@@ -9325,6 +9326,7 @@ dependencies = [
  "oxy-looker",
  "oxy-metric-monitoring",
  "oxy-observability",
+ "oxy-oltp",
  "oxy-project",
  "oxy-semantic",
  "oxy-server-authz",
@@ -9369,6 +9371,7 @@ dependencies = [
  "testcontainers-modules",
  "thiserror 2.0.20",
  "tokio",
+ "tokio-postgres",
  "tokio-stream",
  "tokio-tungstenite",
  "tokio-util",
@@ -9653,6 +9656,33 @@ dependencies = [
  "oxy-shared",
  "schemars 0.8.22",
  "serde",
+]
+
+[[package]]
+name = "oxy-oltp"
+version = "0.5.130"
+dependencies = [
+ "agentic-connector",
+ "async-trait",
+ "axum",
+ "chrono",
+ "entity",
+ "oxy-auth",
+ "oxy-platform",
+ "oxy-shared",
+ "reqwest 0.13.4",
+ "rustls 0.23.43",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-postgres",
+ "tokio-postgres-rustls",
+ "tracing",
+ "uuid",
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]

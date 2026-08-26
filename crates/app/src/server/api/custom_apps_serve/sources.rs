@@ -178,8 +178,9 @@ pub(super) fn serve_guard(rest: &str, accepts_html: bool) -> ServeGuard {
 ///
 /// Guarding first is not a hole: the rewrite only ever appends `index.html` to
 /// a directory-style path, and an artifact is `<name>.js` with `name` matching
-/// `^[a-z][a-z0-9-]{0,63}$` (`is_valid_function_name`), so the rewrite can
-/// never synthesise a key that reaches one.
+/// `^[a-z][a-z0-9-]{0,63}$` — enforced at publish by
+/// `custom_apps_publish::record_functions` (`is_valid_function_name`), so the
+/// rewrite can never synthesise a key that reaches one.
 fn s3_object_key(rest: &str, accepts_html: bool) -> Option<String> {
     match serve_guard(rest, accepts_html) {
         ServeGuard::NotFound => None,

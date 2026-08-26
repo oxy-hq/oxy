@@ -188,8 +188,23 @@ export type OxyFetchInit = RequestInit & {
   encoding?: "utf8" | "base64";
 };
 
-/** `ctx.warehouse.*` — writes to one of the app's configured destination databases. */
+/**
+ * `ctx.warehouse.*` — one of the app's configured databases by name.
+ *
+ * The writes require the database in the function's `destinations` allowlist;
+ * `query` does not, because that allowlist is about modifying a project's
+ * warehouse, and a `postgres_managed` database resolves the read-only analyst
+ * for every caller regardless.
+ */
 export interface OxyWarehouseApi {
+  /**
+   * Read from a named database.
+   *
+   * `ctx.query` only ever reaches the project's DEFAULT database, so this is
+   * how an app reads its own per-org OLTP store, which sits beside whatever
+   * warehouse the project analyses.
+   */
+  query(database: string, sql: string): Promise<{ rows: OxyFunctionRow[]; truncated: boolean }>;
   insert(database: string, table: string, rows: OxyFunctionRow[]): Promise<unknown>;
   exec(database: string, sql: string): Promise<unknown>;
   upsert(
@@ -213,6 +228,50 @@ export interface OxyWarehouseApi {
  * callback returns throws — it is not a connection you can stash.
  */
 export interface OxyTransaction {
+  /** Run a row-returning statement (including `INSERT … RETURNING`). */
+  query(sql: string, params?: unknown[]): Promise<OxyFunctionRow[]>;
+  /** Run a statement for its effect; resolves to the number of rows affected. */
+  exec(sql: string, params?: unknown[]): Promise<number>;
+}
+
+/**
+ * `ctx.oltp` — read and WRITE the app's OWN per-org OLTP schema (`app_<writer>`)
+ * on the managed Postgres tenant, and nothing else.
+ *
+ * This is the write half `ctx.warehouse` cannot give an app: for a
+ * `postgres_managed` database `ctx.warehouse` resolves the read-only analyst
+ * (org-wide read, the org's `raw_*` extracts included), so a write authenticates
+ * and then fails `permission denied`. `ctx.oltp` resolves the app's **writer**
+ * role instead — DML rights scoped to the one `app_<writer>` schema, so it is
+ * narrower on reads (no `raw_*`) and finally writable.
+ *
+ * Gated by the fail-closed `oltp` manifest capability (`"oltp": { "enabled":
+ * true }`) — a pure gate. The target schema is derived from the app's own slug
+ * (`oltp-bookings` → `app_oltp_bookings`), never named in the manifest, so a
+ * manifest cannot point `ctx.oltp` at another app's schema. The store must be
+ * provisioned first (ask whoever operates the org). No database name is passed —
+ * the app's own store is implicit.
+ *
+ * Both methods take **bound parameters** (`$1`, `$2`, …). Never build SQL by
+ * concatenating request data — a booking form is exactly the surface that takes
+ * end-user input, and placeholders are the only thing that makes it safe. Each
+ * call auto-commits; a failed statement rolls back.
+ *
+ * **Cost:** each call opens its own connection to the tenant (a TCP + TLS
+ * handshake, and a wake-up if the compute was idle) and its own transaction, so
+ * a per-row loop pays that per row. Prefer one statement over many — a
+ * multi-row `INSERT`, an `INSERT … SELECT`, or `INSERT … RETURNING` to avoid a
+ * follow-up read — and reach for `ctx.oltp` a handful of times per request, not
+ * in a hot loop.
+ *
+ * ```ts
+ * const [row] = await ctx.oltp.query(
+ *   "INSERT INTO bookings (name, party_size) VALUES ($1, $2) RETURNING id",
+ *   [name, partySize],
+ * );
+ * ```
+ */
+export interface OxyOltpApi {
   /** Run a row-returning statement (including `INSERT … RETURNING`). */
   query(sql: string, params?: unknown[]): Promise<OxyFunctionRow[]>;
   /** Run a statement for its effect; resolves to the number of rows affected. */
@@ -558,6 +617,13 @@ export interface OxyFunctionContext {
    * ```
    */
   tx<T>(database: string, fn: (tx: OxyTransaction) => Promise<T> | T): Promise<T>;
+  /**
+   * Read/write the app's OWN per-org OLTP schema (derived from its slug). The
+   * write half `ctx.warehouse` cannot give an app on a managed database. Gated
+   * by the fail-closed `oltp` manifest capability (`{ enabled: true }`). See
+   * {@link OxyOltpApi}.
+   */
+  oltp: OxyOltpApi;
   secrets: OxySecretsApi;
   semantic: OxySemanticApi;
   airway: OxyAirwayApi;

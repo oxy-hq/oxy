@@ -57,6 +57,60 @@ describe("validateManifest", () => {
     expect(errs.some((e) => e.includes("malformed"))).toBe(true);
   });
 
+  // The cases that used to build cleanly and then 422 at `oxy publish` — the
+  // whole reason to catch them at build.
+  test("rejects malformed slug (trailing dash)", () => {
+    const errs = validateManifest({ schemaVersion: 2, slug: "app-" });
+    expect(errs.some((e) => e.includes("malformed"))).toBe(true);
+  });
+
+  test("rejects malformed slug (double dash)", () => {
+    const errs = validateManifest({ schemaVersion: 2, slug: "a--b" });
+    expect(errs.some((e) => e.includes("malformed"))).toBe(true);
+  });
+
+  test("rejects malformed slug (underscore)", () => {
+    const errs = validateManifest({ schemaVersion: 2, slug: "my_app" });
+    expect(errs.some((e) => e.includes("malformed"))).toBe(true);
+  });
+
+  test("rejects malformed slug (over 63 chars)", () => {
+    const errs = validateManifest({ schemaVersion: 2, slug: "a".repeat(64) });
+    expect(errs.some((e) => e.includes("malformed"))).toBe(true);
+  });
+
+  test("accepts a valid hyphenated slug", () => {
+    const errs = validateManifest({ schemaVersion: 2, slug: "oltp-bookings" });
+    expect(errs.some((e) => e.includes("malformed"))).toBe(false);
+  });
+
+  test("rejects a path-traversal function name", () => {
+    const errs = validateManifest({
+      schemaVersion: 2,
+      slug: "app",
+      functions: { "../../x": { route: true } }
+    });
+    expect(errs.some((e) => e.includes("function name") && e.includes("malformed"))).toBe(true);
+  });
+
+  test("rejects functions declared as an array", () => {
+    const errs = validateManifest({
+      schemaVersion: 2,
+      slug: "app",
+      functions: []
+    });
+    expect(errs.some((e) => e.includes("functions must be an object"))).toBe(true);
+  });
+
+  test("accepts a valid functions map", () => {
+    const errs = validateManifest({
+      schemaVersion: 2,
+      slug: "app",
+      functions: { notify: { route: true } }
+    });
+    expect(errs.some((e) => e.includes("function name"))).toBe(false);
+  });
+
   test("rejects missing schemaVersion as if it were v1", () => {
     const errs = validateManifest({ slug: "x" });
     expect(errs.some((e) => e.includes("schemaVersion"))).toBe(true);

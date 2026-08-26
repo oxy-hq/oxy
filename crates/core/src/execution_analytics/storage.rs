@@ -31,14 +31,7 @@ impl ExecutionAnalyticsStorage {
     /// Create from the global observability storage singleton.
     /// Returns an error if the global has not been initialized.
     pub fn from_global() -> Result<Self, OxyError> {
-        let storage = oxy_observability::global::get_global()
-            .ok_or_else(|| {
-                OxyError::RuntimeError(
-                    "Observability storage not initialized. Start with --enterprise to enable."
-                        .into(),
-                )
-            })?
-            .clone();
+        let storage = oxy_observability::global::require_global()?.clone();
         Ok(Self { storage })
     }
 

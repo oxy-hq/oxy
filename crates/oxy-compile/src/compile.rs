@@ -52,6 +52,7 @@ pub enum CompiledRow {
     App(CompiledApp),
     Automation(CompiledAutomation),
     VerifiedQuery(CompiledVerifiedQuery),
+    SchemaMigration(CompiledSchemaMigration),
     Pipeline(CompiledPipeline),
     Reference(CompiledReference),
     MonitorConfig(CompiledMonitorConfig),
@@ -557,6 +558,7 @@ async fn compile_one(file: &DiscoveredFile) -> Result<Vec<CompiledRow>, FileFail
             })
         }),
         FileKind::VerifiedQuery => compile_verified_query(file, &content),
+        FileKind::SchemaMigration => compile_schema_migration(file, &content),
         FileKind::MonitorConfig => compile_monitor_config(file, &content),
         FileKind::ReconcileConfig => compile_reconcile_config(file, &content),
         FileKind::WorldModelConfig => compile_world_model_config(file, &content),
@@ -1166,6 +1168,37 @@ fn compile_automation(
     })])
 }
 
+/// A `schemas/*.sql` migration. Same shape as a verified query — the
+/// difference is what happens downstream: this gets applied to a tenant.
+#[derive(Debug, Clone)]
+pub struct CompiledSchemaMigration {
+    pub file_path: String,
+    pub content_sha256: String,
+    pub content: String,
+}
+
+/// No parsing. The content is DDL handed to Postgres verbatim, which is the
+/// point: an engineer writes what they mean and Oxy does not second-guess it.
+fn compile_schema_migration(
+    file: &DiscoveredFile,
+    content: &str,
+) -> Result<Vec<CompiledRow>, FileFailure> {
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    let hash: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    Ok(vec![CompiledRow::SchemaMigration(
+        CompiledSchemaMigration {
+            file_path: file.rel_path.clone(),
+            content_sha256: hash,
+            content: content.to_string(),
+        },
+    )])
+}
+
 fn compile_verified_query(
     file: &DiscoveredFile,
     content: &str,
@@ -1258,6 +1291,7 @@ fn row_dedupe_key(row: &CompiledRow, _kind: &FileKind) -> Option<String> {
         CompiledRow::App(a) => Some(format!("app:{}", a.file_path)),
         CompiledRow::Automation(p) => Some(format!("proc:{}", p.file_path)),
         CompiledRow::VerifiedQuery(q) => Some(format!("sql:{}", q.file_path)),
+        CompiledRow::SchemaMigration(m) => Some(format!("schema:{}", m.file_path)),
         CompiledRow::Pipeline(p) => Some(format!("pipe:{}", p.name)),
         CompiledRow::Reference(_) => None,
         CompiledRow::MonitorConfig(_) => None,

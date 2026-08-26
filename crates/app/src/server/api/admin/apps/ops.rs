@@ -395,6 +395,41 @@ impl AppOpError {
             message: detail.into(),
         }
     }
+
+    /// The app can't be deleted because it has a provisioned OLTP store. Deleting
+    /// would leave `app_<slug>` as residue a NEW app reusing the freed slug would
+    /// adopt — the same cross-app reach the rename guard blocks. Deprovision
+    /// first; the message reaches the operator (batch surfaces it per-id, and the
+    /// single-delete handler now returns it as a body too).
+    fn has_oltp_store(org_id: Uuid, writer: &oxy_oltp::schema::WriterRef) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            message: oltp_store_blocks_message("deleted", org_id, writer),
+        }
+    }
+}
+
+/// Shared message for the app-rename and app-delete guards, so the two error
+/// types that carry it — `ApiErr` in the update handler, [`AppOpError`] here —
+/// cannot drift apart. `action` is the past participle ("renamed" / "deleted").
+///
+/// Names the concrete escape hatch: the per-writer `oxy oltp deprovision`, NOT
+/// the whole-tenant one. The command is a literal copy-paste — the `--writer`
+/// is the DERIVED writer (`writer.to_string()` → `app:oltp_bookings`), never the
+/// raw slug, because the slug's hyphens are illegal in a writer name and
+/// `parse_writer` would reject them.
+pub(super) fn oltp_store_blocks_message(
+    action: &str,
+    org_id: Uuid,
+    writer: &oxy_oltp::schema::WriterRef,
+) -> String {
+    format!(
+        "This app has a provisioned OLTP store, so it cannot be {action}. The store's schema is \
+         bound to the app's slug; changing or removing the app while it exists would orphan the \
+         data — or expose it to a different app that later reused the slug. Deprovision just this \
+         app's store first (it drops that one schema, not the org's database): \
+         `oxy oltp deprovision --org {org_id} --writer {writer} --yes`."
+    )
 }
 
 /// Promotion gate (validator-can't-be-bypassed): a build may reach the live
@@ -531,6 +566,26 @@ pub(super) async fn delete_one(db: &DatabaseConnection, id: Uuid) -> Result<(), 
         .await
         .map_err(|_| AppOpError::internal())?
         .ok_or_else(AppOpError::not_found)?;
+
+    // Refuse BEFORE reclaiming anything if the app has a provisioned OLTP store —
+    // symmetric with the rename guard. `ctx.oltp` binds the writer/schema to the
+    // slug, so deleting the app would leave `app_<slug>` as residue that a new app
+    // reusing the freed slug would adopt (the asset silo below is reclaimed on
+    // delete; OLTP rows are the tenant's live data, so dropping them on an app
+    // delete is the wrong default — deprovision explicitly). Checked regardless of
+    // the kill-switch, since the schema exists either way.
+    if let Some(writer) = oxy_oltp::schema::app_writer_name(&row.slug)
+        .and_then(|w| oxy_oltp::schema::WriterRef::app(w).ok())
+        && oxy_oltp::resolver::writer_is_provisioned(db, row.org_id, &writer)
+            .await
+            .map_err(|_| AppOpError::internal())?
+    {
+        tracing::warn!(
+            app_id = %id, org_id = %row.org_id, slug = %row.slug,
+            "refused app delete: a provisioned OLTP store would be orphaned and its slug freed"
+        );
+        return Err(AppOpError::has_oltp_store(row.org_id, &writer));
+    }
 
     if let Err(e) = crate::server::api::custom_apps_build_store::delete_app(id).await {
         tracing::warn!(

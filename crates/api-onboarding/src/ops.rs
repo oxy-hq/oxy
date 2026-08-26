@@ -387,6 +387,10 @@ pub(super) fn collect_warehouse_vars(
             // No credentials in config.yml — they live in oxy's per-user
             // `airhouse_users` row.
         }
+        DatabaseType::PostgresManaged(_) => {
+            // No credentials in config.yml — they live on the org's
+            // `oltp_tenants` row, sealed with the platform master key.
+        }
     }
     out
 }

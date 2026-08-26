@@ -130,3 +130,6 @@ docs/superpowers/
 .claude/worktrees/
 # Added by code-review-graph
 .code-review-graph/
+
+# Playwright MCP scratch output (snapshots, screenshots, console logs)
+.playwright-mcp/

@@ -656,7 +656,8 @@ pub async fn database_to_connector_config(
                 password,
                 database,
                 // An author-configured database; Oxy has no opinion on its TLS,
-                // so this keeps tokio_postgres's `prefer`.
+                // so this keeps tokio_postgres's `prefer`. `postgres_managed`
+                // below is the one where Oxy DID decide.
                 sslmode: None,
             }))
         }
@@ -666,6 +667,63 @@ pub async fn database_to_connector_config(
         // below — because the connector lives in the standalone `airhouse`
         // crate, not in `agentic-connector::ConnectorConfig`.
         DatabaseType::Airhouse(_) | DatabaseType::AirhouseManaged(_) => None,
+
+        // `postgres_managed` carries no connection details in config.yml —
+        // they come from the org's `oltp_tenants` row, reached through
+        // `workspace_manager.workspace_id`.
+        //
+        // Returning `None` here does NOT fall through to another builder, as
+        // an earlier comment claimed: the caller turns `None` into
+        // "could not build connector config", which is what broke schema
+        // introspection in the IDE. Airhouse gets away with `None` only
+        // because it has a genuine second path (`resolve_pre_built_airhouse`).
+        //
+        // Always the read-only analyst — see `oxy_oltp::resolver`.
+        DatabaseType::PostgresManaged(_) => {
+            let db_conn = oxy::database::client::establish_connection().await.ok()?;
+            match oxy_oltp::resolver::resolve_analyst_connection(
+                &db_conn,
+                workspace_manager.workspace_id,
+            )
+            .await
+            {
+                // TLS posture is carried, not dropped. The resolver computes it
+                // per provider precisely so a managed tenant cannot fall back to
+                // plaintext, and this struct was where that decision used to die
+                // — leaving `postgres_managed` at `prefer`, i.e. TLS only if the
+                // server insists.
+                //
+                // `require` alone only ENCRYPTS: the connector maps it to
+                // `verify_tls = false` (a no-op cert verifier), so an active MITM
+                // could present any certificate and harvest the analyst password
+                // and every row. When the tenant demands verification we hand the
+                // connector `verify-full` instead, which checks the chain against
+                // `webpki_roots` — Neon's public cert is covered. Local stays on
+                // `disable` (loopback, no certificate). The DSN string keeps
+                // `c.sslmode` (`require`/`disable`), the only spellings libpq's
+                // parser accepts; this stronger mode lives only on the connector.
+                Ok(c) => Some(ConnectorConfig::Postgres(PostgresConfig {
+                    host: c.host,
+                    port: c.port,
+                    user: c.user,
+                    password: c.password,
+                    database: c.database,
+                    sslmode: Some(if c.verify_tls {
+                        "verify-full".to_string()
+                    } else {
+                        c.sslmode
+                    }),
+                })),
+                Err(e) => {
+                    tracing::warn!(
+                        db = %db.name,
+                        workspace_id = %workspace_manager.workspace_id,
+                        "postgres_managed resolve failed: {e}"
+                    );
+                    None
+                }
+            }
+        }
 
         DatabaseType::Redshift(rds) => {
             let host = rds

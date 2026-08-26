@@ -121,6 +121,22 @@ describe("parseOxyAppManifest — v2", () => {
     expect(resolved.projectId).toBeUndefined();
   });
 
+  it("rejects a slug with an underscore (would alias a hyphenated sibling onto one OLTP schema)", async () => {
+    mockFetchReturning({ schemaVersion: 2, slug: "my_app" });
+
+    await expect(loadCustomAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /slug.*invalid.*no underscore/i
+    );
+  });
+
+  it("rejects a slug with a leading hyphen", async () => {
+    mockFetchReturning({ schemaVersion: 2, slug: "-app" });
+
+    await expect(loadCustomAppManifest({ manifestUrl: "/oxy-app.json" })).rejects.toThrow(
+      /slug.*invalid/i
+    );
+  });
+
   it("rejects a v2 manifest that also declares products", async () => {
     mockFetchReturning({
       schemaVersion: 2,

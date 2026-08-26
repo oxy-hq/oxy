@@ -36,8 +36,13 @@ pub enum FileKind {
     /// `*.procedure.yml` (back-compat), `*.automation.yml` (canonical).
     /// The exact extension is recorded so the row carries `extension`.
     Automation(AutomationKind),
-    /// `*.sql` outside `modeling/` (modeling SQL is dbt-shaped, handled by Airform later).
+    /// `*.sql` outside `modeling/` and `schemas/` (modeling SQL is dbt-shaped,
+    /// handled by Airform later; `schemas/` is DDL, see `SchemaMigration`).
     VerifiedQuery,
+    /// `schemas/**/*.sql` — DDL applied to the org's OLTP database, in
+    /// `file_path` order. Carved out of `VerifiedQuery` because these are
+    /// migrations to run, not queries to serve.
+    SchemaMigration,
     /// `*.airway.yml`.
     AirwayPipeline,
     /// `.monitor.yml` at the workspace root — the anomaly-monitor
@@ -177,6 +182,14 @@ pub fn discover(workspace_root: &Path) -> Result<Vec<DiscoveredFile>, CompileErr
         FileKind::VerifiedQuery,
         &mut out,
     )?;
+    // Must follow the VerifiedQuery glob, which skips `schemas/` so these
+    // files are claimed here exactly once.
+    push_glob(
+        workspace_root,
+        "schemas/**/*.sql",
+        FileKind::SchemaMigration,
+        &mut out,
+    )?;
 
     out.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
     Ok(out)
@@ -224,7 +237,9 @@ fn push_glob(
         // VerifiedQuery only applies outside `modeling/` — the dbt-shaped
         // SQL files there are handled by Airform's separate compile
         // pipeline (Phase 1.6c will fold those in).
-        if matches!(kind, FileKind::VerifiedQuery) && rel.starts_with("modeling/") {
+        if matches!(kind, FileKind::VerifiedQuery)
+            && (rel.starts_with("modeling/") || rel.starts_with("schemas/"))
+        {
             continue;
         }
 

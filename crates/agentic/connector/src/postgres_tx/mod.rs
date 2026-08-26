@@ -30,8 +30,8 @@
 mod convert;
 
 use async_trait::async_trait;
+use tokio_postgres::Client;
 use tokio_postgres::types::ToSql;
-use tokio_postgres::{Client, NoTls};
 
 use crate::connector::ConnectorError;
 use crate::transaction::{SqlTransaction, TxParams};
@@ -87,6 +87,11 @@ pub struct PgTransaction {
     /// Set once we have sent a cancel for an abandoned read. From then on this
     /// connection must not carry another statement — see [`PgTransaction::finish`].
     abandoned: bool,
+    /// Whether to verify the server certificate — carried so `cancel_query`
+    /// (a fresh connection) uses the same posture as `begin`. Must match the
+    /// `sslmode` in the config, or a managed tenant's cancel would connect
+    /// plaintext against an `sslmode=require` server and fail.
+    verify_tls: bool,
 }
 
 /// Why a transaction can no longer be committed.
@@ -114,9 +119,24 @@ enum PoisonCause {
 
 impl PgTransaction {
     /// Open a dedicated connection, issue `BEGIN`, and return the handle.
-    pub(crate) async fn begin(config: &tokio_postgres::Config) -> Result<Self, ConnectorError> {
+    ///
+    /// `verify_tls` mirrors [`crate::postgres::PostgresConnector`]'s field:
+    /// `config` already carries the `sslmode` (so a managed tenant is
+    /// `Require`), and this decides whether the certificate is checked. Passing
+    /// a real TLS connector rather than `NoTls` is what lets `ctx.oltp` reach a
+    /// managed tenant at all — `Require` + `NoTls` cannot negotiate.
+    ///
+    /// This also changes `ctx.tx` on an author-configured `type: postgres`
+    /// database: at its `Prefer` default `begin` now negotiates TLS where it
+    /// never did, falling back to plaintext when the server declines. Strictly
+    /// better (opportunistic encryption, no new failure), but a behaviour change
+    /// on a path outside the OLTP feature — worth knowing when reading it.
+    pub(crate) async fn begin(
+        config: &tokio_postgres::Config,
+        verify_tls: bool,
+    ) -> Result<Self, ConnectorError> {
         let (client, connection) = config
-            .connect(NoTls)
+            .connect(crate::postgres::tls_connector(verify_tls))
             .await
             .map_err(|e| ConnectorError::ConnectionError(format!("ctx.tx: connect failed: {e}")))?;
         let driver = tokio::spawn(async move {
@@ -130,6 +150,7 @@ impl PgTransaction {
             statements: 0,
             poisoned: None,
             abandoned: false,
+            verify_tls,
         };
         // One round trip: the guards must be in force before the author's first
         // statement, and `SET` inside the block scopes them to this transaction.
@@ -390,7 +411,12 @@ impl SqlTransaction for PgTransaction {
                     // rather than merely conservative. Best-effort: it races
                     // the query finishing on its own, and losing that race only
                     // costs us a transaction we were ending anyway.
-                    match tokio::time::timeout(CANCEL_TIMEOUT, cancel.cancel_query(NoTls)).await {
+                    match tokio::time::timeout(
+                        CANCEL_TIMEOUT,
+                        cancel.cancel_query(crate::postgres::tls_connector(self.verify_tls)),
+                    )
+                    .await
+                    {
                         Ok(Ok(())) => {}
                         Ok(Err(e)) => {
                             tracing::debug!("ctx.tx: cancelling an abandoned read failed: {e}")

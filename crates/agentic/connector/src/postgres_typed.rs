@@ -269,7 +269,9 @@ mod tests {
 
     #[test]
     fn format_decimal_renders_fractional_values() {
-        assert_eq!(format_decimal(3.14), "3.14");
+        // Not 3.14: `clippy::approx_constant` is deny-by-default and reads it
+        // as a botched `PI`. The test wants any fractional value.
+        assert_eq!(format_decimal(2.75), "2.75");
         assert_eq!(format_decimal(-0.5), "-0.5");
     }
 }

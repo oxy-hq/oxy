@@ -55,7 +55,20 @@ const DEFAULT_DEV_PROXY_TARGET = "http://localhost:3000";
 // a v1-rejection warning find current SDK + manifest guidance under §5.
 const MIGRATION_DOC_URL =
   "https://github.com/oxy-hq/oxygen-internal/blob/main/internal-docs/customer-apps.md";
-const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+// Mirrors the server's `is_valid_slug` (admin/apps/ops.rs) and the SDK loader's
+// SLUG_RE: lowercase alphanumerics and SINGLE hyphens, no leading/trailing/double
+// hyphen, no underscore. The old pattern allowed a trailing/double hyphen and had
+// no length bound, so `app-`, `a--b` and a 100-char slug built cleanly and then
+// 422'd at `oxy publish` — the "author learns it in CI" gap this gate closes. The
+// slug becomes the app's OLTP schema/role name, a repo path segment and the
+// served base path.
+const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const SLUG_MAX_LEN = 63;
+// Mirrors `is_valid_function_name` (cli/commands/publish.rs) — a function key is
+// interpolated into `functions/<name>.js`, so `../../x` must be rejected before
+// esbuild. Checked here so a bad name fails at `oxy build` too, not only at
+// publish.
+const FUNCTION_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 
 export interface OxyAppPluginOptions {
   /**
@@ -100,6 +113,7 @@ interface OxyManifest {
   projectId?: string;
   products?: unknown;
   writers?: unknown;
+  functions?: unknown;
 }
 
 export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
@@ -365,11 +379,33 @@ export function validateManifest(m: OxyManifest): string[] {
   }
   if (!m.slug || typeof m.slug !== "string") {
     errors.push("slug is required.");
-  } else if (!SLUG_PATTERN.test(m.slug)) {
+  } else if (m.slug.length > SLUG_MAX_LEN || !SLUG_PATTERN.test(m.slug)) {
     errors.push(
-      `slug "${m.slug}" is malformed; must match ${SLUG_PATTERN}. ` +
-        `Lowercase, alphanumeric + dashes, starts with a letter or digit.`
+      `slug "${m.slug}" is malformed; must be 1–${SLUG_MAX_LEN} lowercase letters, ` +
+        `digits and single hyphens (no leading/trailing/double hyphen, no underscore). ` +
+        `It becomes the app's OLTP schema name and served path, which oxy publish rejects otherwise.`
     );
+  }
+  // Function keys become `functions/<name>.js`, so a name like `../../x` is a
+  // path traversal — reject at build, the same shape `oxy publish` enforces.
+  if (m.functions !== undefined) {
+    // `typeof [] === "object"`, so an array would otherwise slip through with no
+    // keys to check — reject it explicitly (a manifest `functions` is a map).
+    if (
+      typeof m.functions !== "object" ||
+      m.functions === null ||
+      Array.isArray(m.functions)
+    ) {
+      errors.push("functions must be an object keyed by function name.");
+    } else {
+      for (const name of Object.keys(m.functions as Record<string, unknown>)) {
+        if (!FUNCTION_NAME_PATTERN.test(name)) {
+          errors.push(
+            `function name "${name}" is malformed; must match ${FUNCTION_NAME_PATTERN.source}.`
+          );
+        }
+      }
+    }
   }
   return errors;
 }

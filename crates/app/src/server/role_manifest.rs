@@ -1341,6 +1341,85 @@ mod tests {
         );
     }
 
+    /// The per-org OLTP surface reads Postgres and nothing else — no workspace
+    /// working copy, no `.git`, no state dir — so every route must serve from
+    /// any replica.
+    ///
+    /// There is no manifest entry for these (FleetOk is the default); this test
+    /// exists because the *default* is what protects them. A future broad
+    /// `IdeOnly` pattern — an `/api/{workspace_id}/{*rest}` say, where
+    /// `workspace_id` would happily match the literal `oltp` — would silently
+    /// pin a tenant's live business data behind the singleton, and the symptom
+    /// is an HA outage rather than a compile error.
+    #[test]
+    fn tenant_data_plane_routes_are_fleet_ok() {
+        let org = "8f14e45f-ceea-167a-5a36";
+        // A workspace id, not the org one — the airhouse route below takes a
+        // workspace, and reusing `org` for it read as a copy-paste slip even
+        // though classification is by path shape.
+        let ws = "3c6e0b8a-9c15-224a-8236";
+        for (method, path) in [
+            // Data plane: status + read-only ERD for the caller's own org.
+            ("GET", "/api/oltp/me/connection".to_string()),
+            ("GET", "/api/oltp/me/erd".to_string()),
+            // Staff plane: provisioning and credential issue. Authorization is
+            // a `route_layer` (Action::PlatformOltp); placement is orthogonal
+            // to it, and neither touches node-local disk.
+            ("GET", format!("/api/admin/orgs/{org}/oltp")),
+            ("POST", format!("/api/admin/orgs/{org}/oltp/provision")),
+            ("POST", format!("/api/admin/orgs/{org}/oltp/credentials")),
+            // Added with the admin UI. Both are org-keyed writes against
+            // Postgres and a provider API — no node-local state — so the
+            // default is right; this list is what pins it.
+            ("POST", format!("/api/admin/orgs/{org}/oltp/visibility")),
+            ("DELETE", format!("/api/admin/orgs/{org}/oltp")),
+            // Airhouse's admin surface, same shape: Postgres plus an HTTP
+            // client, no node-local state. Pinning, not a fix — the default is
+            // already right, and this is what keeps a future broad `IdeOnly`
+            // pattern from quietly capturing it.
+            ("GET", "/api/admin/airhouse".to_string()),
+            (
+                "POST",
+                format!("/api/admin/workspaces/{ws}/airhouse/provision"),
+            ),
+        ] {
+            assert_eq!(
+                classify(method, &path),
+                RouteRole::FleetOk,
+                "{method} {path} is a Postgres-only read/write — pinning it to \
+                 the ide makes a tenant's OLTP surface die with the singleton"
+            );
+        }
+    }
+
+    /// Both routers must mount the OLTP surface.
+    ///
+    /// This guards a failure that already happened once and is recorded in the
+    /// design doc: `/oltp/me/connection` was mounted only in
+    /// `build_local_protected_routes`, but cloud reaches these through
+    /// `build_global_routes`. A missing route is not a 404 here — the SPA
+    /// catch-all answers unknown paths with **HTTP 200 and `index.html`**, so
+    /// the settings panel read it as "not provisioned" and the bug looked like
+    /// a data problem. Source-level, like
+    /// `fully_fs_builder_routes_classify_ide_only`, because the failure is a
+    /// missing line rather than a wrong value.
+    #[test]
+    fn the_oltp_router_is_mounted_in_both_global_and_protected_routers() {
+        for (file, src) in [
+            ("router/global.rs", include_str!("router/global.rs")),
+            ("router/protected.rs", include_str!("router/protected.rs")),
+        ] {
+            assert!(
+                // `.merge(` is part of the needle on purpose: matching the bare
+                // path would let a doc comment — or a commented-out mount, which
+                // is exactly how this broke the first time — satisfy the test.
+                src.contains(".merge(oxy_oltp::api::router"),
+                "{file} must merge oxy_oltp::api::router — a route missing from \
+                 one of the two routers answers 200 + index.html, not 404"
+            );
+        }
+    }
+
     #[test]
     fn agentic_run_history_reads_are_fleet_ok() {
         let ws = "d9830be4-c6a4";

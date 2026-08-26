@@ -180,6 +180,45 @@ impl PostgresConnector {
         }
     }
 
+    /// Build a connector from a full libpq DSN, honouring a caller-resolved
+    /// verify posture.
+    ///
+    /// Unlike [`Self::with_sslmode`] this PARSES the DSN, so an
+    /// `options=-csearch_path=…` parameter is carried through — which discrete
+    /// host/port/user/password/database cannot express. That is what pins a
+    /// per-org OLTP writer to its own `app_<slug>` schema (see
+    /// `oxy_oltp::schema::with_search_path`).
+    ///
+    /// `verify_tls` is a SEPARATE argument, not read from the DSN, because a
+    /// DSN's `sslmode=require` means "encrypt", not "verify" — and libpq's
+    /// parser accepts only `disable`/`prefer`/`require`, never `verify-full`.
+    /// The managed OLTP writer's DSN says `require` for libpq's sake, but its
+    /// peer (Neon, public cert) must still be authenticated, so the caller
+    /// passes `true` there.
+    pub fn from_dsn(dsn: &str, verify_tls: bool) -> Result<Self, ConnectorError> {
+        let config: tokio_postgres::Config = dsn.parse().map_err(|e| {
+            ConnectorError::ConnectionError(format!("invalid OLTP writer DSN: {e}"))
+        })?;
+        // If we intend to verify, the DSN must have carried `sslmode=require`
+        // (→ `SslMode::Require`). Landing on `Prefer` means the DSN lost its
+        // sslmode and would connect plaintext despite `verify_tls` — the exact
+        // pairing this constructor exists to keep, so pin it in debug builds.
+        debug_assert!(
+            !verify_tls || config.get_ssl_mode() == tokio_postgres::config::SslMode::Require,
+            "from_dsn: verify_tls=true but sslmode resolved to {:?}, not Require — \
+             the DSN lost its sslmode",
+            config.get_ssl_mode()
+        );
+        Ok(Self {
+            config,
+            verify_tls,
+            client: tokio::sync::Mutex::new(None),
+            cached_schema: std::sync::RwLock::new(SchemaInfo::default()),
+            schema_error: std::sync::RwLock::new(None),
+            result_cap: ResultCap::default(),
+        })
+    }
+
     /// Override the [`ResultCap`] memory backstop. Primarily for tests that need
     /// to trip the guard on a small result.
     pub fn with_result_cap(mut self, cap: ResultCap) -> Self {
@@ -267,7 +306,7 @@ impl rustls::client::danger::ServerCertVerifier for NoCertVerification {
 /// would break every RDS and CloudNativePG target that worked yesterday —
 /// including author-configured `type: postgres` databases, which is the path
 /// this change was supposed to leave alone.
-fn tls_connector(verify: bool) -> tokio_postgres_rustls::MakeRustlsConnect {
+pub(crate) fn tls_connector(verify: bool) -> tokio_postgres_rustls::MakeRustlsConnect {
     static VERIFYING: std::sync::OnceLock<tokio_postgres_rustls::MakeRustlsConnect> =
         std::sync::OnceLock::new();
     static ENCRYPT_ONLY: std::sync::OnceLock<tokio_postgres_rustls::MakeRustlsConnect> =
@@ -356,7 +395,12 @@ impl DatabaseConnector for PostgresConnector {
     async fn begin_transaction(
         &self,
     ) -> Result<Box<dyn crate::transaction::SqlTransaction>, ConnectorError> {
-        let tx = crate::postgres_tx::PgTransaction::begin(&self.config).await?;
+        // `self.verify_tls` is threaded in so the transaction's own dedicated
+        // connection uses the SAME TLS posture as the query path — without it
+        // `begin` connected with `NoTls`, which against a managed tenant
+        // (`sslmode=require`) cannot negotiate at all, and locally would be
+        // silent plaintext. This is the path `ctx.oltp` takes.
+        let tx = crate::postgres_tx::PgTransaction::begin(&self.config, self.verify_tls).await?;
         Ok(Box::new(tx))
     }
 

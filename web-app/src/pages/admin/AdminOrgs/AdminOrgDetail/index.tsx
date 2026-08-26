@@ -37,6 +37,7 @@ import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import ROUTES from "@/libs/utils/routes";
 import GrantPartnershipDialog from "@/pages/admin/AdminTenantsCockpit/components/GrantPartnershipDialog";
 import { CopyableId } from "@/pages/admin/components/CopyableId";
+import { OltpTenantPanel } from "@/pages/admin/components/OltpTenantPanel";
 import { OrgLogoEditor } from "@/pages/admin/components/OrgLogoEditor";
 import { AdminDetailEyebrow, AdminDetailHeader } from "../../components/AdminDetailHeader";
 import { AdminDetailStats } from "../../components/AdminDetailStats";
@@ -348,6 +349,11 @@ export default function AdminOrgDetail({
       <section id='org-section-compiles' className='scroll-mt-4 space-y-3'>
         <AdminSectionLabel>Compiles</AdminSectionLabel>
         <OrgCompilesTab orgId={detail.id} workspaceNames={workspaceNames} />
+      </section>
+
+      <section id='org-section-oltp' className='scroll-mt-4 space-y-3'>
+        <AdminSectionLabel>OLTP database</AdminSectionLabel>
+        <OltpTenantPanel orgId={detail.id} />
       </section>
 
       {isOwner ? (

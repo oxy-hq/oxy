@@ -5,5 +5,6 @@ export type OrgTabId =
   | "workspaces"
   | "activity"
   | "compiles"
+  | "oltp"
   | "billing"
   | "settings";

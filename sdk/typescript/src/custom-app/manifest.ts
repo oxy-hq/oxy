@@ -71,6 +71,23 @@ export interface OxyAppFunctionManifest {
    */
   email?: { send?: boolean };
   /**
+   * Capability for `ctx.oltp` — read/write the app's OWN per-org OLTP schema on
+   * the managed Postgres tenant (fail-closed: omit → every `ctx.oltp` call
+   * rejected). A pure GATE: the target schema is derived from the app's own slug
+   * host-side (`oltp-bookings` → `app_oltp_bookings`), never named here, so a
+   * manifest cannot point `ctx.oltp` at another app's schema. The resolved role
+   * has DML rights on that one schema and nothing else — reaching neither another
+   * app's data nor the analyst-visible `raw_*` schemas. The store must be
+   * provisioned first (ask whoever operates the org).
+   *
+   * NOTE: this shape is `{ enabled }`, not the earlier `{ writer }` — an app
+   * had no business naming its own writer (that was the cross-app hole). A
+   * manifest still carrying `"oltp": { "writer": "…" }` deserializes to
+   * `enabled: undefined` → **disabled**, and `ctx.oltp` then reports the
+   * capability as missing. Switch it to `{ "enabled": true }`.
+   */
+  oltp?: { enabled?: boolean };
+  /**
    * Retry policy for **background** runs (a `schedule` fire or a manual job
    * trigger). Omit → a job run is attempted once. Route (HTTP) invocations are
    * request-scoped and never retried. `maxAttempts` counts the first try
@@ -389,6 +406,15 @@ function validateManifest(raw: unknown, url: string): OxyAppManifest {
   if (typeof raw.slug !== "string" || !raw.slug.trim()) {
     throw new Error("oxy-app.json: `slug` is required and must be a non-empty string");
   }
+  if (!isValidSlug(raw.slug)) {
+    // The slug becomes the app's OLTP schema/role name, a repo_path segment and
+    // the served `/customer-apps/<org>/<slug>/` base path — `oxy publish` (and
+    // `app_writer_name`) reject a bad one, so fail here at build, not in CI.
+    throw new Error(
+      `oxy-app.json: \`slug\` ${JSON.stringify(raw.slug)} is invalid — use 1–63 lowercase ` +
+        `letters, digits and single hyphens (no leading/trailing/double hyphen, no underscore)`
+    );
+  }
 
   const name = typeof raw.name === "string" ? raw.name : undefined;
   const slug = raw.slug;
@@ -407,13 +433,28 @@ function validateManifest(raw: unknown, url: string): OxyAppManifest {
   return { schemaVersion: 2, name, slug, orgSlug, projectId, functions, ask };
 }
 
+// Mirrors the server's `is_valid_slug` (admin/apps/ops.rs): 1–63 chars of
+// lowercase alphanumerics and single hyphens, no leading/trailing/double hyphen,
+// no underscore. The regex forbids a leading/trailing/double hyphen structurally;
+// the length is checked separately. (The vite plugin's build-time gate is the
+// primary one; this runtime check only fires on standalone `pnpm dev`.)
+const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+function isValidSlug(s: string): boolean {
+  return s.length <= 63 && SLUG_RE.test(s);
+}
+
 const FUNCTION_NAME_RE = /^[a-z][a-z0-9-]{0,63}$/;
 
 /**
- * Validate the optional `functions` map. Each key is a function name;
- * each value declares how the function is invoked. Mirrors the
- * server-side validation in `custom_apps_publish.rs` so a bad
- * manifest fails at build, not at publish.
+ * Validate the optional `functions` map. Each key is a function name; each value
+ * declares how the function is invoked. Mirrors the server-side function-name
+ * rule enforced at publish in `custom_apps_publish.rs` — `is_valid_function_name`,
+ * checked in `record_functions` before any row is written.
+ *
+ * This runs at manifest LOAD (app boot / `pnpm dev`), not at `oxy build` — the
+ * build-time gate is the vite plugin's `validateManifest`, which now checks
+ * function names too. `oxy publish` also validates them locally before esbuild,
+ * so a bad name fails before the upload regardless.
  */
 function validateFunctions(raw: unknown): Record<string, OxyAppFunctionManifest> {
   if (!isRecord(raw)) {

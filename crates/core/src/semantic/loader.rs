@@ -327,6 +327,38 @@ impl GetSchemaQuery for Database {
                     .collect::<Result<Vec<_>, OxyError>>()
             }
 
+            DatabaseType::Postgres(_)
+            | DatabaseType::PostgresManaged(_)
+            | DatabaseType::Redshift(_) => {
+                // One scan of information_schema covers the whole connected
+                // database — Postgres configs carry no `datasets` list, so
+                // `self.datasets()` is empty and the per-dataset builder used
+                // by MotherDuck/Snowflake would emit zero queries.
+                //
+                // Column aliases are load-bearing: they must match
+                // `SchemaRecord`'s field names / serde aliases.
+                //
+                // `NULL::text` rather than bare `NULL` — Postgres types an
+                // untyped NULL as `unknown`, which the Arrow bridge cannot
+                // map. Comments are skipped rather than joined from
+                // pg_description, whose regclass cast fails on any table the
+                // connected role cannot see (the analyst role hits exactly
+                // that on `oxy_meta`).
+                let query = "SELECT table_schema,
+                            current_database() as database_name,
+                            table_name,
+                            column_name,
+                            data_type,
+                            FALSE as is_partitioning_column,
+                            NULL::text as description
+                     FROM information_schema.columns
+                     WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+                     ORDER BY table_schema, table_name, ordinal_position"
+                    .to_string();
+                tracing::debug!("Postgres schema query: {}", query);
+                Ok(vec![query])
+            }
+
             _ => Err(OxyError::ConfigurationError(
                 "Unsupported database type".to_string(),
             )),
@@ -388,6 +420,15 @@ impl GetSchemaQuery for Database {
                 tracing::debug!(
                     "MotherDuck: Skipping DDL queries (not supported via information_schema)"
                 );
+                Ok(vec![])
+            }
+
+            DatabaseType::Postgres(_)
+            | DatabaseType::PostgresManaged(_)
+            | DatabaseType::Redshift(_) => {
+                // information_schema exposes no DDL text. Not critical for
+                // semantic-model generation — the same call MotherDuck makes.
+                tracing::debug!("Postgres: skipping DDL queries (no information_schema source)");
                 Ok(vec![])
             }
 
@@ -576,9 +617,15 @@ impl SchemaLoader {
             | DatabaseType::Bigquery(_)
             | DatabaseType::Snowflake(_)
             | DatabaseType::DuckDB(_)
-            | DatabaseType::MotherDuck(_) => {
+            | DatabaseType::MotherDuck(_)
+            | DatabaseType::Postgres(_)
+            | DatabaseType::PostgresManaged(_)
+            | DatabaseType::Redshift(_) => {
                 let db_type = match &self.database.database_type {
                     DatabaseType::ClickHouse(_) => "ClickHouse",
+                    DatabaseType::Postgres(_) => "Postgres",
+                    DatabaseType::PostgresManaged(_) => "PostgresManaged",
+                    DatabaseType::Redshift(_) => "Redshift",
                     DatabaseType::Bigquery(_) => "BigQuery",
                     DatabaseType::Snowflake(_) => "Snowflake",
                     DatabaseType::MotherDuck(_) => "MotherDuck",
