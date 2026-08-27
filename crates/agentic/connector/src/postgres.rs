@@ -26,63 +26,18 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use crate::connector::{
-    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, QueryFailedDetails, ResultCap,
-    ResultSummary, SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, estimate_row_bytes,
+    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultCap, ResultSummary,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, estimate_row_bytes,
     is_returning_statement, normalize_sql, plan_sql_script,
 };
 use crate::postgres_typed::{decode_row, pg_typname_to_typed, select_expr_for_pg_type};
 
 // ── Error helpers ─────────────────────────────────────────────────────────────
-
-/// Flatten a `tokio_postgres` error into a single human-readable string.
-///
-/// Used at sites that don't carry the originating SQL (e.g. transport / TLS
-/// failures, schema introspection). Query-execution sites should use
-/// [`pg_query_failed`] so SQLSTATE / DETAIL / HINT / POSITION reach the
-/// caller as separate fields.
-fn pg_error_message(e: &tokio_postgres::Error) -> String {
-    if let Some(db) = e.as_db_error() {
-        let mut msg = format!("[{}] {}", db.code().code(), db.message());
-        if let Some(detail) = db.detail() {
-            msg.push_str(&format!(" — {detail}"));
-        }
-        if let Some(hint) = db.hint() {
-            msg.push_str(&format!(" (hint: {hint})"));
-        }
-        msg
-    } else {
-        e.to_string()
-    }
-}
-
-/// Build a structured [`QueryFailedDetails`] from a `tokio_postgres` error.
-///
-/// For server-side errors the SQLSTATE, message, DETAIL, HINT, and POSITION
-/// each land in their own field so the IDE can render them as a structured
-/// block (and highlight the offending token via `position`). Transport-level
-/// errors only populate `message`.
-fn pg_query_failed(sql: &str, e: &tokio_postgres::Error) -> QueryFailedDetails {
-    let sql = sql.to_string();
-    if let Some(db) = e.as_db_error() {
-        QueryFailedDetails {
-            sql,
-            message: db.message().to_string(),
-            code: Some(db.code().code().to_string()),
-            detail: db.detail().map(|s| s.to_string()),
-            hint: db.hint().map(|s| s.to_string()),
-            position: db.position().and_then(|p| match p {
-                tokio_postgres::error::ErrorPosition::Original(n) => Some(*n),
-                tokio_postgres::error::ErrorPosition::Internal { .. } => None,
-            }),
-        }
-    } else {
-        QueryFailedDetails {
-            sql,
-            message: e.to_string(),
-            ..Default::default()
-        }
-    }
-}
+//
+// Moved to `crate::pg_error` so the TRANSACTION path shares them. It had its own
+// `format!("ctx.tx: {e}")`, which rendered every server error as the literal
+// string "db error" — see that module's docs.
+use crate::pg_error::{pg_error_message, pg_query_failed};
 
 // ── Value helpers ─────────────────────────────────────────────────────────────
 

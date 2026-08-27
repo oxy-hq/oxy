@@ -489,8 +489,17 @@ async fn an_unbounded_query_inside_a_transaction_is_refused() {
     tx.rollback().await.expect("close");
     assert!(err.contains("LIMIT"), "names the fix: {err}");
     assert!(
-        err.contains("ctx.query"),
+        err.contains("outside a transaction"),
         "points outside the transaction: {err}"
+    );
+    // It must NOT name `ctx.query`, which this test used to require. This
+    // connection backs `ctx.oltp` as well, where `ctx.query` resolves the
+    // project's default WAREHOUSE — a different database, with none of the
+    // app's tables in it. Advice that sends half the callers to the wrong
+    // store is worse than advice that names no surface at all.
+    assert!(
+        !err.contains("ctx.query") && !err.contains("ctx.tx"),
+        "names no surface the caller might not be on: {err}"
     );
 }
 
@@ -680,4 +689,112 @@ async fn an_undecodable_column_is_rejected_even_when_no_rows_match() {
         .to_string();
     tx.rollback().await.expect("close");
     assert!(err.contains("amount"), "{err}");
+}
+
+// ── The error a caller actually receives ────────────────────────────────────
+//
+// `tokio_postgres::Error`'s `Display` is the literal string "db error" — every
+// field that identifies the failure hangs off its `source()`. These tests exist
+// because this path formatted with `{e}` and shipped exactly that: a missing
+// table, a permission denial and a syntax error were the same three characters
+// to an Oxy Function author, who cannot read the server logs and cannot branch
+// on a cause that never arrived.
+//
+// They are the whole point of the fix, so they assert on the message text
+// rather than on a code path.
+
+#[tokio::test]
+async fn a_missing_relation_names_the_relation_and_its_sqlstate() {
+    let c = connector_or_skip!();
+
+    let mut tx = c.begin_transaction().await.expect("begin");
+    let err = tx
+        .query("SELECT * FROM tx_no_such_table_here", &[])
+        .await
+        .expect_err("the table does not exist")
+        .to_string();
+    tx.rollback().await.expect("close");
+
+    assert!(
+        !err.contains("db error"),
+        "the driver's opaque Display leaked through: {err}"
+    );
+    assert!(
+        err.contains("tx_no_such_table_here"),
+        "names the relation: {err}"
+    );
+    assert!(err.contains("42P01"), "carries the SQLSTATE: {err}");
+}
+
+/// The same for a statement run with `exec` rather than `query` — a different
+/// call site, and it had its own `format!` to lose the detail in.
+#[tokio::test]
+async fn a_failed_exec_reports_the_server_message() {
+    let c = connector_or_skip!();
+
+    let mut tx = c.begin_transaction().await.expect("begin");
+    let err = tx
+        .exec("DELETE FROM tx_no_such_table_either", &[])
+        .await
+        .expect_err("the table does not exist")
+        .to_string();
+    tx.rollback().await.expect("close");
+
+    assert!(!err.contains("db error"), "{err}");
+    assert!(err.contains("tx_no_such_table_either"), "{err}");
+}
+
+/// A syntax error must be distinguishable from a missing table — that is the
+/// property the opaque message destroyed, and the reason a handler could not
+/// tell "run the migration" from "fix the SQL".
+#[tokio::test]
+async fn a_syntax_error_is_distinguishable_from_a_missing_table() {
+    let c = connector_or_skip!();
+
+    let mut tx = c.begin_transaction().await.expect("begin");
+    let syntax = tx
+        .query("SELECT FROM WHERE", &[])
+        .await
+        .expect_err("not valid SQL")
+        .to_string();
+    tx.rollback().await.expect("close");
+
+    let mut tx = c.begin_transaction().await.expect("begin");
+    let missing = tx
+        .query("SELECT * FROM tx_still_no_such_table", &[])
+        .await
+        .expect_err("the table does not exist")
+        .to_string();
+    tx.rollback().await.expect("close");
+
+    assert_ne!(syntax, missing, "two causes, two messages");
+    assert!(syntax.contains("42601"), "syntax error SQLSTATE: {syntax}");
+    assert!(
+        missing.contains("42P01"),
+        "undefined table SQLSTATE: {missing}"
+    );
+}
+
+/// Postgres reports DETAIL and HINT separately from the message, and both are
+/// the actionable half for a constraint violation. `QueryFailedDetails` keeps
+/// them as fields; this pins that they survive to the rendered string.
+#[tokio::test]
+async fn a_constraint_violation_carries_its_detail() {
+    let c = connector_or_skip!();
+    let t = scratch_table(&c, "tx_uniq_t", "id int4 PRIMARY KEY").await;
+
+    let mut tx = c.begin_transaction().await.expect("begin");
+    tx.exec(&format!("INSERT INTO {t} (id) VALUES (1)"), &[])
+        .await
+        .expect("first insert");
+    let err = tx
+        .exec(&format!("INSERT INTO {t} (id) VALUES (1)"), &[])
+        .await
+        .expect_err("duplicate key")
+        .to_string();
+    tx.rollback().await.expect("close");
+
+    assert!(err.contains("23505"), "unique_violation SQLSTATE: {err}");
+    // The DETAIL line is what names the offending value.
+    assert!(err.contains("(id)=(1)"), "carries DETAIL: {err}");
 }

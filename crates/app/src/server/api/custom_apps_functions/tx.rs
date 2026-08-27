@@ -48,7 +48,7 @@ impl TxRegistry {
             // `tx` drops here, rolling back the transaction we just opened —
             // rejecting the call must not leak the connection it cost.
             return Err(format!(
-                "ctx.tx: this invocation already has {MAX_OPEN} transactions open. \
+                "this invocation already has {MAX_OPEN} transactions open. \
                  Commit or roll one back before opening another."
             ));
         }
@@ -132,7 +132,7 @@ impl TxRegistry {
 /// after its callback returned, or a fabricated id — and the message covers
 /// both without confirming which, so it is not an oracle for probing ids.
 fn unknown_handle() -> String {
-    "ctx.tx: no open transaction for this handle — it was already committed or rolled back".into()
+    "no open transaction for this handle — it was already committed or rolled back".into()
 }
 
 #[cfg(test)]

@@ -31,6 +31,12 @@ pub mod postgres_tx;
 #[cfg(feature = "postgres")]
 mod postgres_typed;
 
+/// Driver-error → author-readable, shared by BOTH Postgres paths. See the
+/// module docs for why `format!("{e}")` on a `tokio_postgres::Error` loses
+/// everything that identifies the failure.
+#[cfg(feature = "postgres")]
+mod pg_error;
+
 #[cfg(feature = "mysql")]
 pub mod mysql;
 

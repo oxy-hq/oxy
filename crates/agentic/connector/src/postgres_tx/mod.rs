@@ -34,6 +34,7 @@ use tokio_postgres::Client;
 use tokio_postgres::types::ToSql;
 
 use crate::connector::ConnectorError;
+use crate::pg_error::{pg_error_message, pg_query_failed};
 use crate::transaction::{SqlTransaction, TxParams};
 
 use convert::{OwnedParam, check_decodable, json_to_param, row_to_json};
@@ -138,10 +139,12 @@ impl PgTransaction {
         let (client, connection) = config
             .connect(crate::postgres::tls_connector(verify_tls))
             .await
-            .map_err(|e| ConnectorError::ConnectionError(format!("ctx.tx: connect failed: {e}")))?;
+            .map_err(|e| {
+                ConnectorError::ConnectionError(format!("connect failed: {}", pg_error_message(&e)))
+            })?;
         let driver = tokio::spawn(async move {
             if let Err(e) = connection.await {
-                tracing::debug!("ctx.tx: transaction connection closed: {e}");
+                tracing::debug!("transaction connection closed: {e}");
             }
         });
         let tx = Self {
@@ -167,11 +170,11 @@ impl PgTransaction {
         let client = self
             .client
             .as_ref()
-            .ok_or_else(|| ConnectorError::Other("ctx.tx: transaction already closed".into()))?;
+            .ok_or_else(|| ConnectorError::Other("transaction already closed".into()))?;
         client
             .batch_execute(sql)
             .await
-            .map_err(|e| ConnectorError::query_failed(sql, format!("ctx.tx: {e}")))
+            .map_err(|e| ConnectorError::QueryFailed(pg_query_failed(sql, &e)))
     }
 
     /// Prepare `sql`, bind `params` to the types Postgres inferred, and hand
@@ -187,7 +190,7 @@ impl PgTransaction {
         self.statements += 1;
         if self.statements > MAX_STATEMENTS {
             return Err(ConnectorError::Other(format!(
-                "ctx.tx: a single transaction may issue at most {MAX_STATEMENTS} statements. \
+                "a single transaction may issue at most {MAX_STATEMENTS} statements. \
                  Batch the work (one INSERT with many rows) or split it across transactions."
             )));
         }
@@ -203,14 +206,14 @@ impl PgTransaction {
         let client = self
             .client
             .as_ref()
-            .ok_or_else(|| ConnectorError::Other("ctx.tx: transaction already closed".into()))?;
+            .ok_or_else(|| ConnectorError::Other("transaction already closed".into()))?;
         // `prepare` is a server round trip, so a rejection here (syntax error,
         // unknown relation) aborts the transaction block just as a failed
         // execute does — leave it armed.
         let stmt = client
             .prepare(sql)
             .await
-            .map_err(|e| ConnectorError::query_failed(sql, format!("ctx.tx: {e}")))?;
+            .map_err(|e| ConnectorError::QueryFailed(pg_query_failed(sql, &e)))?;
 
         let expected = stmt.params();
         if expected.len() != params.len() {
@@ -220,7 +223,7 @@ impl PgTransaction {
             return Err(ConnectorError::query_failed(
                 sql,
                 format!(
-                    "ctx.tx: this statement takes {} parameter(s) but {} were passed",
+                    "this statement takes {} parameter(s) but {} were passed",
                     expected.len(),
                     params.len()
                 ),
@@ -312,7 +315,7 @@ impl Drop for PgTransaction {
     fn drop(&mut self) {
         if self.client.is_some() {
             tracing::warn!(
-                "ctx.tx: transaction handle dropped without commit/rollback; \
+                "transaction handle dropped without commit/rollback; \
                  closing the connection so Postgres rolls it back"
             );
         }
@@ -333,7 +336,7 @@ impl SqlTransaction for PgTransaction {
         let client = self
             .client
             .as_ref()
-            .ok_or_else(|| ConnectorError::Other("ctx.tx: transaction already closed".into()))?;
+            .ok_or_else(|| ConnectorError::Other("transaction already closed".into()))?;
 
         // `query_raw`, not `query`: the latter collects every row before we
         // could check the cap, so a `SELECT *` over a large table spikes pod
@@ -357,21 +360,15 @@ impl SqlTransaction for PgTransaction {
             let stream = client
                 .query_raw(&stmt, as_refs(&owned))
                 .await
-                .map_err(|e| {
-                    (
-                        ConnectorError::query_failed(sql, format!("ctx.tx: {e}")),
-                        false,
-                    )
-                })?;
+                .map_err(|e| (ConnectorError::QueryFailed(pg_query_failed(sql, &e)), false))?;
             futures::pin_mut!(stream);
 
             let mut out = Vec::new();
-            while let Some(row) = stream.try_next().await.map_err(|e| {
-                (
-                    ConnectorError::query_failed(sql, format!("ctx.tx: {e}")),
-                    false,
-                )
-            })? {
+            while let Some(row) = stream
+                .try_next()
+                .await
+                .map_err(|e| (ConnectorError::QueryFailed(pg_query_failed(sql, &e)), false))?
+            {
                 if out.len() >= MAX_ROWS {
                     // An error, not a truncation flag like `ctx.query`:
                     // silently returning a prefix from inside a transaction
@@ -381,10 +378,11 @@ impl SqlTransaction for PgTransaction {
                         ConnectorError::query_failed(
                             sql,
                             format!(
-                                "ctx.tx: this query returned more than {MAX_ROWS} rows. Add a \
+                                "this query returned more than {MAX_ROWS} rows. Add a \
                                  LIMIT — a transaction holds its locks for as long as it reads, \
-                                 so bulk reads belong outside ctx.tx (use ctx.query). Note this \
-                                 ends the transaction: rerun the fixed query in a new ctx.tx."
+                                 so a bulk read belongs on your normal read path, outside a \
+                                 transaction. Note this ends the transaction: rerun the fixed \
+                                 query in a new one."
                             ),
                         ),
                         true,
@@ -419,10 +417,10 @@ impl SqlTransaction for PgTransaction {
                     {
                         Ok(Ok(())) => {}
                         Ok(Err(e)) => {
-                            tracing::debug!("ctx.tx: cancelling an abandoned read failed: {e}")
+                            tracing::debug!("cancelling an abandoned read failed: {e}")
                         }
                         Err(_) => tracing::debug!(
-                            "ctx.tx: cancelling an abandoned read timed out after {:?}",
+                            "cancelling an abandoned read timed out after {:?}",
                             CANCEL_TIMEOUT
                         ),
                     }
@@ -439,11 +437,11 @@ impl SqlTransaction for PgTransaction {
         let client = self
             .client
             .as_ref()
-            .ok_or_else(|| ConnectorError::Other("ctx.tx: transaction already closed".into()))?;
+            .ok_or_else(|| ConnectorError::Other("transaction already closed".into()))?;
         let outcome = client
             .execute(&stmt, &as_refs(&owned))
             .await
-            .map_err(|e| ConnectorError::query_failed(sql, format!("ctx.tx: {e}")));
+            .map_err(|e| ConnectorError::QueryFailed(pg_query_failed(sql, &e)));
         if outcome.is_ok() {
             self.disarm(armed);
         }
@@ -469,8 +467,8 @@ impl SqlTransaction for PgTransaction {
                 PoisonCause::ServerRejected => {
                     "an earlier statement failed and aborted this transaction, so committing \
                      would silently persist nothing. The transaction has been rolled back. Let \
-                     the error propagate out of the ctx.tx callback instead of catching it, or \
-                     roll back deliberately."
+                     the error propagate out of the callback instead of catching it, or roll \
+                     back deliberately."
                 }
                 // Deliberately does NOT claim the statement failed — it did not.
                 // We stopped reading and cancelled it, which is what ended the
@@ -478,10 +476,10 @@ impl SqlTransaction for PgTransaction {
                 // work, so say where it belongs instead.
                 PoisonCause::AbandonedMidRead => {
                     "this transaction stopped reading a result part-way (the row cap, or a \
-                     column ctx.tx cannot decode) and was cancelled, so it can no longer be \
+                     column that cannot be decoded) and was cancelled, so it can no longer be \
                      committed. The statement itself did not fail. Apply the fix the original \
-                     error named and run the work again in a NEW ctx.tx — retrying inside this \
-                     one cannot succeed."
+                     error named and run the work again in a NEW transaction — retrying inside \
+                     this one cannot succeed."
                 }
             };
             return Err(ConnectorError::query_failed(p.sql, explanation.to_string()));

@@ -225,18 +225,20 @@ impl ProjectFunctionHost {
     /// transaction is a write by definition; splitting them would let a
     /// transaction reach a database the same function may not `insert` into.
     ///
-    /// `surface` names the caller so the error says which API was denied.
-    fn check_write_destination(&self, surface: &str, database: &str) -> Result<(), String> {
+    /// The message names no surface: `reply_json` prefixes the one that asked
+    /// (`ctx.warehouse` or `ctx.tx`), and spelling it here too was how this
+    /// error came out as `ctx.tx: ctx.tx: database '…' is not in …`.
+    fn check_write_destination(&self, database: &str) -> Result<(), String> {
         if !self.write_destinations.iter().any(|d| d == database) {
             return Err(format!(
-                "{surface}: database '{database}' is not in this function's \
+                "database '{database}' is not in this function's \
                  `destinations` allowlist (declare it in oxy-app.json to permit writes)"
             ));
         }
         let cm = &self.proj_ctx.workspace_manager().config_manager;
         if !cm.list_databases().iter().any(|db| db.name == database) {
             return Err(format!(
-                "{surface}: database '{database}' is not configured for this project"
+                "database '{database}' is not configured for this project"
             ));
         }
         Ok(())
@@ -256,11 +258,11 @@ impl ProjectFunctionHost {
         let id = payload
             .get("id")
             .and_then(|v| v.as_u64())
-            .ok_or_else(|| "ctx.tx: `id` is required".to_string())?;
+            .ok_or_else(|| "`id` is required".to_string())?;
         let sql = payload
             .get("sql")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "ctx.tx: `sql` is required".to_string())?
+            .ok_or_else(|| "`sql` is required".to_string())?
             .to_string();
         // Absent means "no parameters"; present-but-not-an-array is an author
         // error and must say so. Collapsing both to `[]` reported the far more
@@ -270,7 +272,7 @@ impl ProjectFunctionHost {
             Some(serde_json::Value::Array(a)) => a.clone(),
             Some(other) => {
                 return Err(format!(
-                    "ctx.tx: `params` must be an array of values, got {}. \
+                    "`params` must be an array of values, got {}. \
                      Pass positional arguments for $1, $2, … — e.g. [tableNo, sku].",
                     match other {
                         serde_json::Value::Object(_) => "an object",
@@ -297,13 +299,13 @@ impl ProjectFunctionHost {
         let sql = payload
             .get("sql")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "ctx.oltp: `sql` is required".to_string())?
+            .ok_or_else(|| "`sql` is required".to_string())?
             .to_string();
         let params = match payload.get("params") {
             None | Some(serde_json::Value::Null) => Vec::new(),
             Some(serde_json::Value::Array(a)) => a.clone(),
             Some(_) => {
-                return Err("ctx.oltp: `params` must be an array of values. Pass \
+                return Err("`params` must be an array of values. Pass \
                      positional arguments for $1, $2, … — e.g. [name, partySize]."
                     .to_string());
             }
@@ -526,9 +528,9 @@ impl FunctionHost for ProjectFunctionHost {
         let database = payload
             .get("database")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "warehouse write: `database` is required".to_string())?;
+            .ok_or_else(|| "`database` is required".to_string())?;
 
-        self.check_write_destination("warehouse write", database)?;
+        self.check_write_destination(database)?;
 
         let sql = match op.as_str() {
             "exec" => payload
@@ -538,7 +540,7 @@ impl FunctionHost for ProjectFunctionHost {
                 .to_string(),
             "insert" => build_insert_sql(&payload, false)?,
             "upsert" => build_insert_sql(&payload, true)?,
-            other => return Err(format!("warehouse write: unknown op '{other}'")),
+            other => return Err(format!("unknown op '{other}'")),
         };
 
         let connector = self.connect(database).await?;
@@ -573,13 +575,14 @@ impl FunctionHost for ProjectFunctionHost {
                 let database = payload
                     .get("database")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "ctx.tx: `database` is required".to_string())?;
-                self.check_write_destination("ctx.tx", database)?;
+                    .ok_or_else(|| "`database` is required".to_string())?;
+                self.check_write_destination(database)?;
                 let connector = self.connect(database).await?;
-                let tx = with_db_timeout("ctx.tx begin", async {
-                    connector.begin_transaction().await.map_err(|e| {
-                        format!("ctx.tx: could not open a transaction on '{database}': {e}")
-                    })
+                let tx = with_db_timeout("begin", async {
+                    connector
+                        .begin_transaction()
+                        .await
+                        .map_err(|e| format!("could not open a transaction on '{database}': {e}"))
                 })
                 .await?;
                 let id = self.transactions.insert(tx).await?;
@@ -588,8 +591,7 @@ impl FunctionHost for ProjectFunctionHost {
             "query" => {
                 let (id, sql, params) = Self::tx_statement(&payload)?;
                 let rows =
-                    with_db_timeout("ctx.tx query", self.transactions.query(id, &sql, &params))
-                        .await?;
+                    with_db_timeout("query", self.transactions.query(id, &sql, &params)).await?;
                 let result = serde_json::json!({ "rows": rows });
                 enforce_result_byte_cap(&result)?;
                 Ok(result)
@@ -597,25 +599,20 @@ impl FunctionHost for ProjectFunctionHost {
             "exec" => {
                 let (id, sql, params) = Self::tx_statement(&payload)?;
                 let count =
-                    with_db_timeout("ctx.tx exec", self.transactions.exec(id, &sql, &params))
-                        .await?;
+                    with_db_timeout("exec", self.transactions.exec(id, &sql, &params)).await?;
                 Ok(serde_json::json!({ "rowCount": count }))
             }
             "commit" | "rollback" => {
                 let id = payload
                     .get("id")
                     .and_then(|v| v.as_u64())
-                    .ok_or_else(|| "ctx.tx: `id` is required".to_string())?;
+                    .ok_or_else(|| "`id` is required".to_string())?;
                 // Bounded like the other ops: `take` waits on the slot lock, so
                 // a commit racing a statement on the same handle (an author bug)
                 // would otherwise wait unbounded on that statement.
-                let tx = with_db_timeout("ctx.tx take", self.transactions.take(id)).await?;
+                let tx = with_db_timeout("take", self.transactions.take(id)).await?;
                 let committing = op == "commit";
-                let label = if committing {
-                    "ctx.tx commit"
-                } else {
-                    "ctx.tx rollback"
-                };
+                let label = if committing { "commit" } else { "rollback" };
                 // Taken from the registry first, so a timeout here still drops
                 // the handle — which closes the connection, which rolls back.
                 with_db_timeout(label, async move {
@@ -624,12 +621,12 @@ impl FunctionHost for ProjectFunctionHost {
                     } else {
                         tx.rollback().await
                     };
-                    outcome.map_err(|e| format!("ctx.tx {op} failed: {e}"))
+                    outcome.map_err(|e| format!("{op} failed: {e}"))
                 })
                 .await?;
                 Ok(serde_json::json!({ "ok": true }))
             }
-            other => Err(format!("ctx.tx: unknown op '{other}'")),
+            other => Err(format!("unknown op '{other}'")),
         }
     }
 
@@ -673,8 +670,8 @@ impl FunctionHost for ProjectFunctionHost {
                 // below does NOT cover, so a slug like `my_app` would otherwise
                 // be refused against a message every clause of which it satisfies.
                 return Err(format!(
-                    "ctx.oltp is enabled, but this app's slug '{slug}' cannot back an OLTP \
-                     schema: to do so a slug must start with a letter, be at most {max} \
+                    "the capability is enabled, but this app's slug '{slug}' cannot back an \
+                     OLTP schema: to do so a slug must start with a letter, be at most {max} \
                      characters, and use only lowercase letters, digits and hyphens (a `_` is \
                      refused — it would collide with the hyphenated form). A leading digit is a \
                      legal app slug but not a legal schema name. Rename the app to one that \
@@ -699,8 +696,8 @@ impl FunctionHost for ProjectFunctionHost {
                 Some(c) => c.clone(),
                 None => {
                     let writer = oxy_oltp::schema::WriterRef::app(writer_name)
-                        .map_err(|e| format!("ctx.oltp: invalid writer '{writer_name}': {e}"))?;
-                    let c = with_db_timeout("ctx.oltp resolve", async {
+                        .map_err(|e| format!("invalid writer '{writer_name}': {e}"))?;
+                    let c = with_db_timeout("resolve", async {
                         oxy_oltp::resolver::resolve_writer_connection_for_org(
                             &self.db,
                             self.org_id,
@@ -711,7 +708,7 @@ impl FunctionHost for ProjectFunctionHost {
                             // Names the app's own writer, and points at the org
                             // operator rather than a CLI the app author can't run.
                             format!(
-                                "ctx.oltp: this app's OLTP store ('{writer_name}') is not \
+                                "this app's OLTP store ('{writer_name}') is not \
                                  provisioned yet — ask whoever operates this org to provision \
                                  it: {e}"
                             )
@@ -726,42 +723,36 @@ impl FunctionHost for ProjectFunctionHost {
         // Verify the managed peer's certificate (see `WriterConnection::verify_tls`);
         // the DSN's `sslmode=require` only encrypts.
         let connector: Arc<dyn DatabaseConnector> = Arc::new(
-            PostgresConnector::from_dsn(&conn.dsn, conn.verify_tls).map_err(|e| {
-                format!(
-                    "ctx.oltp: could not build a connection to '{}': {e}",
-                    conn.schema
-                )
-            })?,
+            PostgresConnector::from_dsn(&conn.dsn, conn.verify_tls)
+                .map_err(|e| format!("could not build a connection to '{}': {e}", conn.schema))?,
         );
-        let mut tx = with_db_timeout("ctx.oltp begin", async {
+        let mut tx = with_db_timeout("begin", async {
             connector
                 .begin_transaction()
                 .await
-                .map_err(|e| format!("ctx.oltp: could not open a transaction: {e}"))
+                .map_err(|e| format!("could not open a transaction: {e}"))
         })
         .await?;
         let outcome = match op.as_str() {
-            "query" => with_db_timeout("ctx.oltp query", async {
+            "query" => with_db_timeout("query", async {
                 tx.query(&sql, &params).await.map_err(|e| e.to_string())
             })
             .await
             .map(|rows| serde_json::json!({ "rows": rows })),
-            "exec" => with_db_timeout("ctx.oltp exec", async {
+            "exec" => with_db_timeout("exec", async {
                 tx.exec(&sql, &params).await.map_err(|e| e.to_string())
             })
             .await
             .map(|count| serde_json::json!({ "rowCount": count })),
             other => {
                 // Nothing ran; dropping `tx` rolls back the empty transaction.
-                return Err(format!("ctx.oltp: unknown op '{other}'"));
+                return Err(format!("unknown op '{other}'"));
             }
         };
         match outcome {
             Ok(result) => {
-                with_db_timeout("ctx.oltp commit", async move {
-                    tx.commit()
-                        .await
-                        .map_err(|e| format!("ctx.oltp commit failed: {e}"))
+                with_db_timeout("commit", async move {
+                    tx.commit().await.map_err(|e| format!("commit failed: {e}"))
                 })
                 .await?;
                 enforce_result_byte_cap(&result)?;
@@ -771,7 +762,7 @@ impl FunctionHost for ProjectFunctionHost {
                 // Roll back explicitly; a rollback failure is moot (the dropped
                 // connection rolls back anyway) and must not mask the real error.
                 let _ = tx.rollback().await;
-                Err(format!("ctx.oltp {op}: {e}"))
+                Err(format!("{op}: {e}"))
             }
         }
     }
@@ -1141,28 +1132,28 @@ fn build_insert_sql(payload: &serde_json::Value, upsert: bool) -> Result<String,
     let table = payload
         .get("table")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| "warehouse write: `table` is required".to_string())?;
+        .ok_or_else(|| "`table` is required".to_string())?;
     let rows = payload
         .get("rows")
         .and_then(|v| v.as_array())
         .filter(|rows| !rows.is_empty())
-        .ok_or_else(|| "warehouse write: `rows` must be a non-empty array".to_string())?;
+        .ok_or_else(|| "`rows` must be a non-empty array".to_string())?;
 
     let first = rows[0]
         .as_object()
-        .ok_or_else(|| "warehouse write: each row must be an object".to_string())?;
+        .ok_or_else(|| "each row must be an object".to_string())?;
     let columns: Vec<String> = first.keys().cloned().collect();
 
     let mut values_sql = Vec::with_capacity(rows.len());
     for row in rows {
         let obj = row
             .as_object()
-            .ok_or_else(|| "warehouse write: each row must be an object".to_string())?;
+            .ok_or_else(|| "each row must be an object".to_string())?;
         let mut literals = Vec::with_capacity(columns.len());
         for col in &columns {
             let value = obj
                 .get(col)
-                .ok_or_else(|| format!("warehouse write: row missing column '{col}'"))?;
+                .ok_or_else(|| format!("row missing column '{col}'"))?;
             literals.push(json_value_to_sql_literal(value));
         }
         values_sql.push(format!("({})", literals.join(", ")));

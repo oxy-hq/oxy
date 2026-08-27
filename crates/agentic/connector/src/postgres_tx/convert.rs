@@ -134,14 +134,14 @@ fn int_param(
         .ok_or_else(|| bad_param(position, "an integer", "a whole JSON number"))?;
     fit(i).ok_or_else(|| {
         ConnectorError::Other(format!(
-            "ctx.tx: parameter ${position} value {i} is out of range for the column's integer type"
+            "parameter ${position} value {i} is out of range for the column's integer type"
         ))
     })
 }
 
 fn bad_param(position: usize, pg_type: &str, wanted: &str) -> ConnectorError {
     ConnectorError::Other(format!(
-        "ctx.tx: parameter ${position} maps to Postgres `{pg_type}`, which needs {wanted}"
+        "parameter ${position} maps to Postgres `{pg_type}`, which needs {wanted}"
     ))
 }
 
@@ -155,7 +155,7 @@ fn unsupported_param(
 ) -> ConnectorError {
     let shape = json_shape(value);
     ConnectorError::Other(format!(
-        "ctx.tx: cannot bind {shape} to parameter ${position}, which Postgres inferred as \
+        "cannot bind {shape} to parameter ${position}, which Postgres inferred as \
          `{expected}`. Bind it as text and let Postgres cast — write `${position}::text::{expected}` \
          in the SQL and pass a string."
     ))
@@ -296,7 +296,7 @@ fn opt<T>(
 ) -> Result<Option<T>, ConnectorError> {
     got.map_err(|e| {
         ConnectorError::Other(format!(
-            "ctx.tx: failed to decode column `{name}` (Postgres type `{ty}`): {e}"
+            "failed to decode column `{name}` (Postgres type `{ty}`): {e}"
         ))
     })
 }
@@ -305,7 +305,7 @@ fn opt<T>(
 /// cast in the SELECT list rather than asking us to grow a decoder.
 fn unsupported_column(name: &str, ty: &Type) -> ConnectorError {
     ConnectorError::Other(format!(
-        "ctx.tx: result column `{name}` has Postgres type `{ty}`, which ctx.tx cannot return \
+        "result column `{name}` has Postgres type `{ty}`, which cannot be returned \
          directly. Cast it to text in the SELECT list and parse it in your function — cast the \
          whole expression, not the output name (`avg(qty)::text`, `amount::text`). Note \
          `avg`/`sum` over any numeric type, and a bare decimal literal, are all `numeric`. \

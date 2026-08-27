@@ -670,6 +670,14 @@ fn check_cancelled(state: &Rc<RefCell<OpState>>) -> Result<(), JsErrorBox> {
 
 /// Encode a host reply as the JSON envelope the bootstrap `__wrapOp` reads:
 /// either the value itself, or `{ __oxyError, message }` on failure.
+///
+/// `what` is the surface name (`ctx.query`, `ctx.oltp`, …) and this is its ONE
+/// owner: host methods, the transaction registry and the Postgres connector all
+/// return BARE messages, and the prefix is added here. They used to spell it
+/// themselves as well, which rendered `ctx.oltp: ctx.oltp query: query failed:
+/// ctx.tx: db error` — the surface named three times, the cause not once. The
+/// connector is the reason this has to be a rule rather than a habit: it backs
+/// both `ctx.tx` and `ctx.oltp` and cannot know which one called it.
 fn reply_json(what: &str, result: Result<serde_json::Value, String>) -> String {
     match result {
         Ok(value) => value.to_string(),
