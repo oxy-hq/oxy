@@ -234,6 +234,11 @@ pub const SOURCE_DIRS: &[&str] = &[
     "crates/api-github/src",
     "crates/api-partner-console/src",
     "crates/api-onboarding/src",
+    // Mounts `/oltp/me/connection` and `/oltp/me/erd`, merged into the served
+    // app as `oxy_oltp::api::router` — `role_manifest.rs` asserts that merge.
+    // Missing here since #2851, so both routes were live and absent from
+    // `oxy api --routes`, which is exactly what this list exists to prevent.
+    "crates/oltp/src/api",
 ];
 
 /// Ceiling on how deep an inline `Router::new()` chain may nest before the
