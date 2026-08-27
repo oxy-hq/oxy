@@ -12,6 +12,7 @@ use oxy_shared::errors::OxyError;
 use super::types::{
     DatasetInfo, SemanticKey, SemanticTableRef, SyncDimension, SyncOperationResult,
 };
+use crate::config::WorkingCopy;
 
 #[enum_dispatch::enum_dispatch]
 trait Storage {
@@ -40,7 +41,7 @@ pub struct SemanticFileStorage {
 
 impl SemanticFileStorage {
     pub async fn from_config(
-        config: &ConfigManager,
+        config: &ConfigManager<WorkingCopy>,
         override_mode: bool,
     ) -> Result<Self, OxyError> {
         let base_path = config.database_semantic_path();
@@ -93,6 +94,22 @@ impl Storage for SemanticFileStorage {
     async fn load_datasets(&self, database_ref: &str) -> Result<Vec<DatasetInfo>, OxyError> {
         let db_dir = self.get_database_dir(database_ref);
         if !db_dir.exists() {
+            // Two answers, and the caller maps `IOError` to "not synced yet".
+            // That is right on a node that owns the working copy: the sync
+            // directory is simply not there because nobody has synced. On a node
+            // that owns no working copy it is a guess presented as a fact, and
+            // gets an error the caller does not swallow.
+            //
+            // The predicate is the process, not the directory. Testing
+            // `base_path.is_dir()` reads an ide that was never synced as "cannot
+            // know", which trades one wrong answer for another.
+            if !crate::workspace_fs_probe::process_owns_workspace_files() {
+                return Err(OxyError::ConfigurationError(format!(
+                    "semantic sync directory {} is not on this node, so whether \
+                     {database_ref} is synced is unknown",
+                    self.base_path
+                )));
+            }
             return Err(OxyError::IOError(format!(
                 "Failed to load file: {}",
                 db_dir.display()
@@ -384,7 +401,7 @@ pub struct SemanticStorage {
 
 impl SemanticStorage {
     pub async fn from_config(
-        config: &ConfigManager,
+        config: &ConfigManager<WorkingCopy>,
         override_mode: bool,
     ) -> Result<Self, OxyError> {
         let storage = SemanticFileStorage::from_config(config, override_mode).await?;

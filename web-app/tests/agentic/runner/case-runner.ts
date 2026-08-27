@@ -6,6 +6,7 @@
 
 import type { BrowserContext, Page } from "@playwright/test";
 import { runSetup } from "../fixtures/reset";
+import { applyPathPrefix } from "./backend";
 import { evaluateExpectations } from "./judge";
 import { computeCost } from "./pricing";
 import { runWaitFor } from "./tool-registry";
@@ -95,7 +96,7 @@ export async function executeCase(inputs: CaseRunInputs): Promise<CaseRunResult>
   try {
     await runSetup(flow.setup, {
       goto: async (url) => {
-        await page.goto(url);
+        await page.goto(applyPathPrefix(url));
       }
     });
 

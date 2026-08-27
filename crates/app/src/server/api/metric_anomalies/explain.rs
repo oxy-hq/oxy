@@ -18,7 +18,7 @@ use uuid::Uuid;
 use super::error::AnomalyError;
 use crate::agentic_wiring::OxyMetricTreeRunner;
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, WorkspaceManagerExtractor,
+    EffectiveWorkspaceRole, WorkspaceManagerWorkingCopy,
 };
 
 #[derive(Debug, Deserialize, Default)]
@@ -36,7 +36,7 @@ pub struct ExplainAnomalyQuery {
 /// survives page refreshes without re-running the 20-30s recursive search.
 /// `?refresh=true` busts the cache for the rescan affordance in the UI.
 pub async fn explain_anomaly(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     Extension(state): Extension<Arc<AgenticState>>,
@@ -78,7 +78,7 @@ pub async fn explain_anomaly(
     let filters = agentic_analytics::anomaly_store::segment_query_filters(&row.filters);
 
     use agentic_analytics::MetricTreeRunner as _;
-    let runner = OxyMetricTreeRunner::new(workspace_manager, user.id, role);
+    let runner = OxyMetricTreeRunner::new(workspace_manager.into_read_only(), user.id, role);
     let mut config = airlayer::engine::metric_tree_ops::ExplainConfig::default();
     config.deep = false;
 

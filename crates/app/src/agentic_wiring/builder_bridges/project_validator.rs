@@ -7,15 +7,16 @@ use agentic_builder::validator::{BuilderProjectValidator, ValidatedFile, Validat
 use agentic_core::tools::ToolError;
 use async_trait::async_trait;
 use oxy::adapters::workspace::manager::WorkspaceManager;
+use oxy::config::WorkingCopy;
 
 /// Bridges builder project validation to oxy's config validation (for agents,
 /// automations, apps) and airlayer parsing (for semantic views/topics).
 pub struct OxyBuilderProjectValidator {
-    workspace_manager: WorkspaceManager,
+    workspace_manager: WorkspaceManager<WorkingCopy>,
 }
 
 impl OxyBuilderProjectValidator {
-    pub fn new(workspace_manager: WorkspaceManager) -> Self {
+    pub fn new(workspace_manager: WorkspaceManager<WorkingCopy>) -> Self {
         Self { workspace_manager }
     }
 }
@@ -23,10 +24,10 @@ impl OxyBuilderProjectValidator {
 #[async_trait]
 impl BuilderProjectValidator for OxyBuilderProjectValidator {
     async fn validate_file(&self, abs_path: &Path) -> Result<(), String> {
-        let config = oxy::config::ConfigBuilder::new()
+        let config: oxy::config::ConfigManager<WorkingCopy> = oxy::config::ConfigBuilder::new()
             .with_workspace_path(self.workspace_manager.config_manager.workspace_path())
             .map_err(|e| format!("config error: {e}"))?
-            .build()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Fail)
             .await
             .map_err(|e| format!("config error: {e}"))?;
 
@@ -43,10 +44,10 @@ impl BuilderProjectValidator for OxyBuilderProjectValidator {
             .workspace_path()
             .to_path_buf();
 
-        let config = oxy::config::ConfigBuilder::new()
+        let config: oxy::config::ConfigManager<WorkingCopy> = oxy::config::ConfigBuilder::new()
             .with_workspace_path(&project_path)
             .map_err(|e| ToolError::Execution(format!("config error: {e}")))?
-            .build()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Fail)
             .await
             .map_err(|e| ToolError::Execution(format!("config error: {e}")))?;
 

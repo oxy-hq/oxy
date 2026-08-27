@@ -25,7 +25,17 @@ impl MonitorScanPort for OxyProjectContext {
             "month" => Granularity::Month,
             other => return Err(format!("unknown granularity: {other:?}")),
         };
-        let config_path = oxy_metric_monitoring::default_config_path(self.workspace_path());
+        // `.monitor.yml` off the working copy. The compiled arm is
+        // `ConfigManager::monitor_config` + `scan::materialise_monitor_config`,
+        // which the HTTP `/scan` handler already uses; this system path has not
+        // moved yet, so it says what it cannot do instead of resolving against
+        // a directory that is not on this node.
+        let workspace_root = self.workspace_path().ok_or_else(|| {
+            "monitor scan: this node holds no workspace files, so `.monitor.yml` \
+             cannot be read"
+                .to_string()
+        })?;
+        let config_path = oxy_metric_monitoring::default_config_path(workspace_root);
         let open_events = oxy_metric_monitoring::load_open_events(db, workspace_id)
             .await
             .map_err(|e| e.to_string())?;

@@ -117,8 +117,8 @@ struct CompiledOnlyWorkspace {
 
 #[async_trait]
 impl agentic_automation::WorkspaceContext for CompiledOnlyWorkspace {
-    fn workspace_path(&self) -> &Path {
-        &self.root
+    fn workspace_path(&self) -> Option<&Path> {
+        Some(&self.root)
     }
     fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
         vec![]
@@ -138,7 +138,10 @@ impl agentic_automation::WorkspaceContext for CompiledOnlyWorkspace {
     async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String> {
         Ok(vec![])
     }
-    async fn resolve_automation_yaml(&self, _r: &str) -> Result<String, String> {
+    async fn resolve_automation_yaml(
+        &self,
+        _r: &str,
+    ) -> Result<String, agentic_pipeline::WorkspaceReadError> {
         Err("not available".into())
     }
     async fn resolve_pipeline_yaml(&self, _pipeline_ref: &str) -> Result<Option<String>, String> {

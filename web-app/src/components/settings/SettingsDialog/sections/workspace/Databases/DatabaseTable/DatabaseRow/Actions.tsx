@@ -17,7 +17,9 @@ interface Props {
 }
 
 const Actions: React.FC<Props> = ({ database, isLoading, onSync }) => {
-  const datasetKeys = Object.keys(database.datasets);
+  // `null` = this instance has no view of the sync directory; offering
+  // per-dataset sync actions from a list nobody read would be guesswork.
+  const datasetKeys = Object.keys(database.datasets ?? {});
 
   return (
     <DropdownMenu>

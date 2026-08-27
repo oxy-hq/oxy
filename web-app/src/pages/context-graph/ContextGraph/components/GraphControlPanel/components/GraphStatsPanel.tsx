@@ -5,9 +5,17 @@ interface GraphStatsPanelProps {
   nodes: ContextGraphNode[];
   edges: ContextGraphEdge[];
   typeCounts: Record<string, number>;
+  /** See `ContextGraph.tablesUnknown` — the instance could not look, which is
+   *  not the same as there being nothing to see. */
+  tablesUnknown?: boolean;
 }
 
-export function GraphStatsPanel({ nodes, edges, typeCounts }: GraphStatsPanelProps) {
+export function GraphStatsPanel({
+  nodes,
+  edges,
+  typeCounts,
+  tablesUnknown = false
+}: GraphStatsPanelProps) {
   return (
     <>
       <div className='mb-2 font-semibold text-sidebar-foreground text-sm'>
@@ -42,6 +50,17 @@ export function GraphStatsPanel({ nodes, edges, typeCounts }: GraphStatsPanelPro
               <span className='font-medium text-sidebar-foreground'>{count}</span>
             </div>
           ))}
+          {tablesUnknown && (
+            <div className='flex justify-between gap-4' data-testid='context-graph-tables-unknown'>
+              <span>Tables:</span>
+              <span
+                className='font-medium text-sidebar-foreground/60'
+                title='This instance has no working copy, so it cannot enumerate database tables. They are not missing — they are not visible from here.'
+              >
+                not visible from here
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </>

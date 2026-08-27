@@ -35,6 +35,29 @@ export function isIdeUnavailableError(error: unknown): boolean {
 }
 
 /**
+ * True when the failure is about REACHING the node that owns the working copy,
+ * rather than about what that node would have said.
+ *
+ * Two shapes, both stamped `x-oxy-required-role: ide`: the `421` a replica
+ * returns for an `IdeOnly` route with no upstream wired, and the `502` above
+ * when an upstream IS wired and down.
+ *
+ * Distinct from `isIdeUnavailableError`, which is only the second — that one
+ * drives the global outage banner, and a `421` on a fleet with no ide is a
+ * deployment shape, not an outage. This is the wider question a surface asks
+ * before speaking: any component whose vocabulary is about the TENANT's
+ * configuration must stay silent on both, because "your `config.yml` is broken"
+ * is a claim a pod that never reached the files is in no position to make.
+ */
+export function isIdeRoutingError(error: unknown): boolean {
+  if (!isAxiosError(error)) return false;
+  const res = error.response;
+  if (res?.status !== 421 && res?.status !== 502) return false;
+  const headers = res.headers as Record<string, string | undefined> | undefined;
+  return headers?.["x-oxy-required-role"] === "ide";
+}
+
+/**
  * True when `error` is the workspace-materializing `503`: the ide OWNS this
  * workspace but its working copy is not on disk yet (pod restart / k8s rolling
  * update, before the volume is populated).

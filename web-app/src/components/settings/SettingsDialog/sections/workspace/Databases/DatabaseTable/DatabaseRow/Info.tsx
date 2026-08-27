@@ -41,12 +41,23 @@ export const DatabaseInfo: React.FC<DatabaseInfoDisplayProps> = ({ database }) =
 );
 
 interface DatasetInfoDisplayProps {
-  datasets: Record<string, unknown>;
+  datasets: Record<string, unknown> | null;
 }
 
 export const DatasetInfo: React.FC<DatasetInfoDisplayProps> = ({ datasets }) => {
-  const datasetCount = Object.keys(datasets).length;
+  // `null` means the instance that answered has no view of the sync directory.
+  // Saying "No specific datasets configured" there states something about the
+  // customer's setup that nobody checked.
+  if (datasets === null) {
+    return (
+      <div className='flex items-center gap-2'>
+        <div className='min-w-0 text-muted-foreground'>Not available on this instance</div>
+      </div>
+    );
+  }
+
   const datasetKeys = Object.keys(datasets);
+  const datasetCount = datasetKeys.length;
 
   return (
     <div className='flex items-center gap-2'>

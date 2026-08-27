@@ -1,6 +1,6 @@
 use super::types::{APP_DATA_EXTENSION, APP_FILE_EXTENSION, AppResult, DATA_DIR_NAME};
-use oxy::config::ConfigManager;
 use oxy::config::model::Task;
+use oxy::config::{ConfigManager, DiskSlot, WorkingCopy};
 use oxy::execute::types::{DataContainer, OutputContainer};
 use oxy_shared::errors::OxyError;
 use std::collections::HashMap;
@@ -9,15 +9,15 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use xxhash_rust::xxh3::xxh3_64;
 
-pub struct AppCache {
-    config_manager: ConfigManager,
+pub struct AppCache<S = WorkingCopy> {
+    config_manager: ConfigManager<S>,
     /// Owning workspace — scopes the S3 mirror key so a stateless serve replica
     /// can read back a cache written by the ide.
     workspace_id: Uuid,
 }
 
-impl AppCache {
-    pub fn new(config_manager: ConfigManager, workspace_id: Uuid) -> Self {
+impl<S: DiskSlot> AppCache<S> {
+    pub fn new(config_manager: ConfigManager<S>, workspace_id: Uuid) -> Self {
         Self {
             config_manager,
             workspace_id,
@@ -41,7 +41,7 @@ impl AppCache {
 
     pub async fn clean_up_data(&self, app_path: &PathBuf, tasks: &[Task]) -> AppResult<()> {
         let (data_path, _) = self.get_data_paths(app_path, tasks)?;
-        let state_dir = self.config_manager.resolve_state_dir().await?;
+        let state_dir = self.config_manager.runtime_state_dir();
         let data_path = state_dir.join(data_path);
         if data_path.exists() {
             std::fs::remove_dir_all(&data_path).map_err(|e| {
@@ -54,14 +54,7 @@ impl AppCache {
     pub async fn try_load_data(&self, app_path: &PathBuf, tasks: &[Task]) -> Option<DataContainer> {
         let (_data_path, data_file_path) = self.get_data_paths(app_path, tasks).ok()?;
 
-        let state_dir = self
-            .config_manager
-            .resolve_state_dir()
-            .await
-            .map_err(|e| {
-                tracing::warn!("Failed to resolve state directory: {}", e);
-            })
-            .ok()?;
+        let state_dir = self.config_manager.runtime_state_dir();
 
         let full_cache_path = state_dir.join(&data_file_path);
 
@@ -96,7 +89,7 @@ impl AppCache {
         data: DataContainer,
     ) -> AppResult<DataContainer> {
         let (_data_path, data_file_path) = self.get_data_paths(app_path, tasks)?;
-        let state_dir = self.config_manager.resolve_state_dir().await?;
+        let state_dir = self.config_manager.runtime_state_dir();
         let full_cache_path = state_dir.join(&data_file_path);
         if let Some(parent) = full_cache_path.parent() {
             self.ensure_directory(&parent.to_path_buf())?;
@@ -130,7 +123,7 @@ impl AppCache {
         output_container: OutputContainer,
     ) -> AppResult<DataContainer> {
         let (data_path, data_file_path) = self.get_data_paths(app_path, tasks)?;
-        let state_dir = self.config_manager.resolve_state_dir().await?;
+        let state_dir = self.config_manager.runtime_state_dir();
 
         let full_data_path = state_dir.join(&data_path);
         self.ensure_directory(&full_data_path)?;
@@ -158,7 +151,7 @@ impl AppCache {
         let params_hash = self.generate_params_hash(params)?;
         let params_data_path = data_path.join(format!("params_{params_hash}"));
 
-        let state_dir = self.config_manager.resolve_state_dir().await?;
+        let state_dir = self.config_manager.runtime_state_dir();
         let full_params_data_path = state_dir.join(&params_data_path);
         self.ensure_directory(&full_params_data_path)?;
 

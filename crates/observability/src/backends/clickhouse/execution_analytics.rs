@@ -71,7 +71,13 @@ struct AgentStatsDbRow {
 struct ExecutionDetailDbRow {
     trace_id: String,
     span_id: String,
-    timestamp: String,
+    // Deliberately NOT named `timestamp`: ClickHouse resolves a bare `WHERE
+    // timestamp …`/`ORDER BY timestamp` reference against a SELECT-list alias
+    // of the same name in preference to the source column, even though the
+    // alias's expression (`formatDateTime(...)`, a String) shares no type
+    // with the DateTime `since()` compares it against — `NO_COMMON_TYPE`
+    // (ClickHouse error code 386). See `execution_list_sql`.
+    timestamp_iso: String,
     execution_type: String,
     is_verified: String,
     source_type: String,
@@ -243,6 +249,50 @@ pub(super) async fn get_execution_agent_stats(
         .collect())
 }
 
+/// Builds the paginated `data_sql` for [`get_execution_list`]. Pulled out of
+/// the `async fn` so a unit test can assert on its shape without a live
+/// ClickHouse (see `execution_list_sql_alias_does_not_shadow_the_where_column`).
+///
+/// The output alias must NOT be named `timestamp` — see the doc comment on
+/// `ExecutionDetailDbRow::timestamp_iso`. `WHERE`/`ORDER BY` stay on the bare,
+/// unaliased `timestamp`, which now unambiguously means the real DateTime
+/// column `since()` filters on.
+fn execution_list_data_sql(extra_where: &str, days: u32, limit: usize, offset: usize) -> String {
+    let ts = super::iso_utc("timestamp");
+    let since_clause = since(days);
+    format!(
+        "SELECT
+            trace_id,
+            span_id,
+            {ts} AS timestamp_iso,
+            execution_type,
+            if(is_verified = 1, 'true', 'false') AS is_verified,
+            source_type,
+            source_ref,
+            if(is_success = 1, 'success', 'error') AS status,
+            duration_ns,
+            database,
+            topic,
+            semantic_query_params,
+            generated_sql,
+            integration,
+            endpoint,
+            sql,
+            sql_ref,
+            user_question,
+            workflow_ref,
+            agent_ref,
+            tool_input,
+            tool_input AS input,
+            tool_output AS output,
+            error_message AS error
+        FROM observability_executions FINAL
+        WHERE {since_clause}{extra_where}
+        ORDER BY timestamp DESC
+        LIMIT {limit} OFFSET {offset}"
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn get_execution_list(
     storage: &ClickHouseObservabilityStorage,
@@ -292,39 +342,7 @@ pub(super) async fn get_execution_list(
         .map(|r| r.count)
         .map_err(|e| OxyError::RuntimeError(format!("Count query failed: {e}")))?;
 
-    let ts = super::iso_utc("timestamp");
-    let data_sql = format!(
-        "SELECT
-            trace_id,
-            span_id,
-            {ts} AS timestamp,
-            execution_type,
-            if(is_verified = 1, 'true', 'false') AS is_verified,
-            source_type,
-            source_ref,
-            if(is_success = 1, 'success', 'error') AS status,
-            duration_ns,
-            database,
-            topic,
-            semantic_query_params,
-            generated_sql,
-            integration,
-            endpoint,
-            sql,
-            sql_ref,
-            user_question,
-            workflow_ref,
-            agent_ref,
-            tool_input,
-            tool_input AS input,
-            tool_output AS output,
-            error_message AS error
-        FROM observability_executions FINAL
-        WHERE {}{extra_where}
-        ORDER BY timestamp DESC
-        LIMIT {limit} OFFSET {offset}",
-        since(days)
-    );
+    let data_sql = execution_list_data_sql(&extra_where, days, limit, offset);
 
     let rows: Vec<ExecutionDetailDbRow> = storage
         .read_client()
@@ -338,7 +356,7 @@ pub(super) async fn get_execution_list(
         .map(|r| ExecutionDetailData {
             trace_id: r.trace_id,
             span_id: r.span_id,
-            timestamp: r.timestamp,
+            timestamp: r.timestamp_iso,
             execution_type: r.execution_type,
             is_verified: r.is_verified,
             source_type: r.source_type,
@@ -369,4 +387,34 @@ pub(super) async fn get_execution_list(
         limit,
         offset,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::execution_list_data_sql;
+
+    /// Regression for "Recent Executions" swallowing a `NO_COMMON_TYPE`
+    /// (ClickHouse error code 386): `since(days)` filters `WHERE timestamp >=
+    /// now() - INTERVAL n DAY` on the bare column, so a SELECT-list alias of
+    /// the same name gets resolved by ClickHouse's analyzer in place of the
+    /// column even inside WHERE — comparing the alias's `formatDateTime(...)`
+    /// String against a DateTime. The frontend then reads the failed request
+    /// as an empty list (`data?.executions ?? []`), which is what makes this
+    /// worse than a visible 500. Reverting `execution_list_data_sql` to alias
+    /// the formatted column back to `timestamp` reproduces the collision this
+    /// asserts against.
+    #[test]
+    fn execution_list_sql_alias_does_not_shadow_the_where_column() {
+        let sql = execution_list_data_sql("", 7, 10, 0);
+        assert!(
+            sql.contains("AS timestamp_iso"),
+            "expected the formatted column aliased to a name distinct from \
+             the raw `timestamp` column:\n{sql}"
+        );
+        assert!(
+            !sql.contains("AS timestamp,") && !sql.contains("AS timestamp\n"),
+            "the SELECT list re-introduced `timestamp` as an alias, which \
+             shadows the bare `timestamp` filtered in WHERE:\n{sql}"
+        );
+    }
 }

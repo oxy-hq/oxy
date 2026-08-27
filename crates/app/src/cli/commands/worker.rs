@@ -173,6 +173,29 @@ pub struct WorkerArgs {
 /// Bootstraps the orchestrator, logs config, then blocks on SIGINT/SIGTERM.
 #[tracing::instrument(skip_all, fields(worker_id = tracing::field::Empty, version = tracing::field::Empty))]
 pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
+    // Same first line as `start_server_and_web_app`, and for a sharper reason
+    // here. `current_process_role()` falls back to `Role::All` when nothing set
+    // the `OnceLock`, so a standalone `oxy worker` declared itself the node that
+    // owns the workspace files:
+    //
+    //   - `OxyProjectContext::context_root` branches on `Serve | Worker` and
+    //     took the filesystem arm instead, globbing an absent working copy —
+    //     the "no databases configured" failure its own comment names.
+    //   - `process_owns_workspace_files()` was true, so the workspace
+    //     middleware published the `WorkingCopy` extension on a pod with none.
+    //   - `process_is_fs_writable()` was true, so a missing root read as
+    //     "materializing" (503) rather than as the normal state of a worker.
+    //
+    // Only a deployment that already sets `OXY_ROLE=worker` changes behaviour —
+    // which is the deployment that was being mis-described.
+    // Defaults to `Worker`, not `All`: running this command IS the declaration,
+    // and `All` is the value that claims the workspace filesystem. A chart that
+    // never sets `OXY_ROLE` would otherwise get all three wrong branches below
+    // anyway. An explicit `OXY_ROLE` still wins.
+    crate::server::role_manifest::init_process_role_from_env_with_default(
+        crate::server::role_manifest::Role::Worker,
+    );
+
     require_database_url()?;
 
     if args.skip_migrations || serve::skip_migrations_requested() {

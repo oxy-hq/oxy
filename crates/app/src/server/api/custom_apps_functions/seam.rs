@@ -50,7 +50,9 @@ pub trait FunctionQueryExecutor: Send + Sync {
 pub trait FunctionProjectContext: Send + Sync {
     /// The workspace manager — read `config_manager` for the configured
     /// databases, the default database, and the semantics scan path.
-    fn workspace_manager(&self) -> &oxy::adapters::workspace::manager::WorkspaceManager;
+    fn workspace_manager(
+        &self,
+    ) -> &oxy::adapters::workspace::manager::WorkspaceManager<oxy::config::WorkingCopy>;
 
     /// Build a warehouse connector for `db_name`.
     async fn build_connector_for(

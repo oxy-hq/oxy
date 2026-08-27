@@ -20,10 +20,11 @@ use sea_orm::DatabaseConnection;
 
 use super::OxyProjectContext;
 use crate::server::api::custom_apps_functions::seam::FunctionProjectContext;
+use oxy::config::WorkingCopy;
 
 #[async_trait::async_trait]
 impl FunctionProjectContext for OxyProjectContext {
-    fn workspace_manager(&self) -> &WorkspaceManager {
+    fn workspace_manager(&self) -> &WorkspaceManager<WorkingCopy> {
         // Inherent method — disambiguated from this trait method of the same name.
         OxyProjectContext::workspace_manager(self)
     }

@@ -1,4 +1,4 @@
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 use arrow::datatypes::SchemaRef;
 use arrow::record_batch::RecordBatch;
 use axum::body::Body;
@@ -6,6 +6,7 @@ use axum::extract::Path;
 use axum::http::{StatusCode, header};
 use axum::response::Response;
 use oxy::adapters::workspace::manager::WorkspaceManager;
+use oxy::config::WorkingCopy;
 use oxy::connector::load_result;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use parquet::arrow::ArrowWriter;
@@ -33,17 +34,17 @@ use uuid::Uuid;
 /// * `Ok(String)` - The filename of the Parquet result file
 /// * `Err(String)` - Error message if any step fails
 pub async fn store_result_file(
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
     temp_file_path: &str,
 ) -> Result<String, String> {
     let (batches, schema) =
         load_result(temp_file_path).map_err(|e| format!("Failed to load Arrow result: {}", e))?;
 
-    let results_dir = workspace_manager
-        .config_manager
-        .get_results_dir()
-        .await
-        .map_err(|e| format!("Failed to get results directory: {}", e))?;
+    // The capability-free accessor, paired with the writer in `typed_stream`.
+    // A result parquet is a runtime artifact, not a workspace file — it is
+    // mirrored to S3 and read back through that mirror — so the local copy has
+    // to be writable on a replica too.
+    let results_dir = workspace_manager.config_manager.results_dir();
 
     // Generate a new filename with .parquet extension
     let file_name = format!("{}.parquet", uuid::Uuid::new_v4());
@@ -102,7 +103,7 @@ fn write_parquet(
 /// Files are named with UUIDs and stored in the state directory
 pub async fn get_result_file(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path((_workspace_id, file_name)): Path<(Uuid, String)>,
 ) -> Result<Response, StatusCode> {
     if !file_name.ends_with(".parquet") {
@@ -120,14 +121,9 @@ pub async fn get_result_file(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let results_dir = workspace_manager
-        .config_manager
-        .get_results_dir()
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get results directory: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    // Must match the writer's directory, or every cross-request read misses the
+    // local fast path and falls all the way through to S3.
+    let results_dir = workspace_manager.config_manager.results_dir();
 
     // Construct the full file path
     let file_path = results_dir.join(&file_name);
@@ -196,7 +192,7 @@ pub async fn get_result_file(
 /// This endpoint allows cleanup of temporary result files
 pub async fn delete_result_file(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path((_workspace_id, file_id)): Path<(Uuid, String)>,
 ) -> Result<StatusCode, StatusCode> {
     if !file_id.ends_with(".parquet") {
@@ -215,28 +211,48 @@ pub async fn delete_result_file(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let results_dir = workspace_manager
+    // Every write path mirrors the parquet to S3 (`store_result_file`,
+    // `typed_stream`), and `get_result_file` reads through to that mirror on a
+    // local miss — which is what makes the GET fleet-safe. The delete never
+    // removed it, so a 204 here was followed by a 200 from the same `file_id` on
+    // any replica: the user is told the file is gone and it keeps being served.
+    //
+    // Removal comes first and is unconditional, because the node handling the
+    // DELETE is often not the node holding the local copy. Gating it behind the
+    // local unlink would leave the durable copy undeletable from anywhere else.
+    let mirror_removed = crate::server::runtime_artifact::remove(
+        &crate::server::runtime_artifact::result_key(_workspace_id, &file_id),
+    )
+    .await;
+
+    // The local copy, on whichever node has one. An absent results dir is not a
+    // failure here — a replica that never held the parquet has still satisfied
+    // the request once the mirror is gone.
+    let file_path = workspace_manager
         .config_manager
-        .get_results_dir()
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get results directory: {}", e);
+        .results_dir()
+        .join(&file_id);
+    let local_removed = if file_path.exists() {
+        tokio::fs::remove_file(&file_path).await.map_err(|e| {
+            tracing::error!("Failed to delete result file: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+        true
+    } else {
+        false
+    };
 
-    // Construct the full file path
-    let file_path = results_dir.join(&file_id);
-
-    if !file_path.exists() {
-        tracing::warn!("Result file not found for deletion: {:?}", file_path);
+    // Nothing anywhere: the caller named a file that does not exist.
+    if !local_removed && !mirror_removed {
+        tracing::warn!("Result file not found for deletion: {}", file_id);
         return Err(StatusCode::NOT_FOUND);
     }
 
-    tokio::fs::remove_file(&file_path).await.map_err(|e| {
-        tracing::error!("Failed to delete result file: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    tracing::info!("Successfully deleted result file: {}", file_id);
+    tracing::info!(
+        file_id,
+        local_removed,
+        mirror_removed,
+        "deleted result file"
+    );
     Ok(StatusCode::NO_CONTENT)
 }

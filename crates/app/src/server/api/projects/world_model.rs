@@ -45,13 +45,12 @@ pub async fn get_world_model(
         Ok(l) => l,
         Err(resp) => return resp,
     };
-    let workspace_path = boundary
-        .proj_ctx
-        .workspace_manager()
-        .config_manager
-        .workspace_path()
-        .to_path_buf();
-    match build_world_model_response(&layer, project_id, &workspace_path).await {
+    // The manager knows whether there is a working copy to fall back to. On a
+    // replica the compiled row is the only source, and it says `NoSource`
+    // rather than `None` — which is what keeps "not compiled" from reading as
+    // "no display overrides" on the public custom-app router.
+    let config_manager = &boundary.proj_ctx.workspace_manager().config_manager;
+    match build_world_model_response(&layer, config_manager).await {
         Ok(resp) => cache_store(project_id, "wm-graph", "", &resp),
         Err(message) => err_with_code(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -76,19 +75,12 @@ pub async fn get_world_model_instances(
         Ok(l) => l,
         Err(resp) => return resp,
     };
-    let workspace_path = boundary
-        .proj_ctx
-        .workspace_manager()
-        .config_manager
-        .workspace_path()
-        .to_path_buf();
     match instances_core(
         boundary.proj_ctx.workspace_manager(),
         boundary.app.user.id,
         WorkspaceRole::Viewer,
         &layer,
         project_id,
-        &workspace_path,
         boundary.scan.path_buf(),
         &q,
     )

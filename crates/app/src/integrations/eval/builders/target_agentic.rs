@@ -43,7 +43,7 @@ use super::types::AgenticInput;
 /// (where `task_ref` is `None`). Returns a single-element `Vec` to mirror the
 /// original's `Vec<TargetOutput>` shape that `GeneratorExecutable` consumes.
 pub(super) async fn run_target(
-    workspace: &WorkspaceManager,
+    workspace: &WorkspaceManager<oxy::config::WorkingCopy>,
     input: AgenticInput,
 ) -> Result<Vec<TargetOutput>, OxyError> {
     let start = std::time::Instant::now();

@@ -51,4 +51,21 @@ describe("GraphStatsPanel", () => {
     render(<GraphStatsPanel nodes={[]} edges={[]} typeCounts={{}} />);
     expect(screen.getByText("Context Graph Overview")).toBeInTheDocument();
   });
+
+  // A zero-count category renders no row, which is right for a category the
+  // workspace genuinely has none of and wrong for one this instance could not
+  // enumerate: a stateless replica has no working copy, so it never sees the
+  // semantic sync directory that lists tables. Both arrive as zero table nodes,
+  // so without the flag the page silently drops its Tables row and reads as
+  // complete.
+  it("says tables are not visible from here when the instance could not look", () => {
+    render(<GraphStatsPanel nodes={[]} edges={[]} typeCounts={{}} tablesUnknown={true} />);
+    expect(screen.getByTestId("context-graph-tables-unknown")).toBeInTheDocument();
+    expect(screen.getByText("not visible from here")).toBeInTheDocument();
+  });
+
+  it("stays silent when the instance answered and there is simply nothing", () => {
+    render(<GraphStatsPanel nodes={[]} edges={[]} typeCounts={{}} tablesUnknown={false} />);
+    expect(screen.queryByTestId("context-graph-tables-unknown")).not.toBeInTheDocument();
+  });
 });

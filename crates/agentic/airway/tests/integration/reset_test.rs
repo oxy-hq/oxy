@@ -34,6 +34,11 @@ async fn test_db() -> Option<DatabaseConnection> {
                     Arc::new(
                         Postgres::default()
                             .with_tag("18-alpine")
+                            // 64 MB (Docker default) is too small: a parallel plan wants a 32 MB
+                            // DSM segment and a REUSED container accumulates them.
+                            // Must match at every setup site — reuse hashes the config.
+                            // See internal-docs/workspace-source.md.
+                            .with_shm_size(1024 * 1024 * 1024)
                             .with_reuse(ReuseDirective::Always)
                             .start()
                             .await

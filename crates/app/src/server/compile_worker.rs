@@ -126,6 +126,17 @@ async fn drive(
         return;
     }
 
+    if !crate::server::role_manifest::process_can_compile() {
+        let _ = outcome_tx
+            .send(TaskOutcome::Failed(format!(
+                "compile requires a workspace working copy, which OXY_ROLE={} does not own. \
+                 Route Compile tasks to an ide or all node.",
+                crate::server::role_manifest::current_process_role().as_str()
+            )))
+            .await;
+        return;
+    }
+
     let outcome = compile_workspace(CompileRequest {
         db: &db,
         workspace_id: spec.workspace_id,
@@ -341,13 +352,25 @@ pub(crate) async fn reconcile_health_from_compiled(
     db: &DatabaseConnection,
     workspace_id: uuid::Uuid,
 ) {
-    let read =
-        crate::server::api::compiled_reader::resolve_workspace_config(workspace_id, None).await;
+    // One revision for the whole pass: the schedule this writes and the
+    // `reconcile.yml` the warning below looks for must describe the same
+    // compile, or a promote landing mid-pass warns about the wrong one.
+    let Some(revision_id) =
+        crate::server::api::compiled_reader::resolve_request_revision(workspace_id, None).await
+    else {
+        tracing::debug!(
+            target: "health_eval",
+            %workspace_id,
+            "no promoted compiled config; leaving the health schedule untouched"
+        );
+        return;
+    };
+    let read = crate::server::api::compiled_reader::resolve_workspace_config_at(revision_id).await;
     let Some((interval, opt_in)) = health_reconcile_target(read, workspace_id) else {
         return;
     };
     if let Some((cause, remedy)) = opt_in.inert_reconcile_warning() {
-        warn_if_reconcile_goes_inert(workspace_id, cause, remedy).await;
+        warn_if_reconcile_goes_inert(workspace_id, revision_id, cause, remedy).await;
     }
     if let Err(e) = agentic_pipeline::scheduler::reconcile_health_schedule(
         db,
@@ -387,9 +410,14 @@ pub(crate) async fn reconcile_health_from_compiled(
 /// then, not only in the logs of whichever instance first saw the change. The
 /// repetition is the feature; don't "fix" it. Best-effort: a read failure is
 /// not worth a log line of its own here.
-async fn warn_if_reconcile_goes_inert(workspace_id: uuid::Uuid, cause: &str, remedy: &str) {
+async fn warn_if_reconcile_goes_inert(
+    workspace_id: uuid::Uuid,
+    revision_id: uuid::Uuid,
+    cause: &str,
+    remedy: &str,
+) {
     if let Ok(Some(_)) =
-        crate::server::api::compiled_reader::resolve_reconcile_config(workspace_id, None).await
+        crate::server::api::compiled_reader::resolve_reconcile_config_at(revision_id).await
     {
         tracing::warn!(
             target: "health_eval",

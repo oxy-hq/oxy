@@ -10,12 +10,12 @@ use crate::server::api::middlewares::role_guards::{
     OrgAdmin, WorkspaceAdmin, WorkspaceEditor, ensure_org_admin_or_workspace_creator,
 };
 use crate::server::api::middlewares::workspace_context::{
-    BranchQuery, EffectiveWorkspaceRole, WorkspaceManagerExtractor, WorkspacePath,
+    BranchQuery, EffectiveWorkspaceRole, WorkspaceManagerWorkingCopy, WorkspacePath,
+    WorkspaceRootWorkingCopy,
 };
 use crate::server::authz;
 use crate::server::router::AppState;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
-use oxy::adapters::workspace::effective_workspace_path;
 use oxy::api_types::{
     BranchOrigin, BranchType, ProjectBranch, RecentCommitsResponse, RevisionInfoResponse,
 };
@@ -26,6 +26,7 @@ use oxy_git::{GitClient, ResetOutcome};
 
 use super::dto::*;
 use super::ops::*;
+use oxy::config::WorkingCopy;
 
 /// Detect the workspace's git mode from disk + environment. The
 /// `GIT_REPOSITORY_URL` env var is treated as "remote configured" — cloud
@@ -51,7 +52,7 @@ pub async fn pull_changes(
     State(app_state): State<AppState>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     Query(query): Query<BranchQuery>,
 ) -> Result<ResponseJson<PullChangesResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
@@ -131,7 +132,7 @@ pub async fn fetch_changes(
     _: WorkspaceEditor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     Query(query): Query<BranchQuery>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
@@ -154,7 +155,7 @@ pub async fn fetch_changes(
 
 pub async fn resolve_conflict_with_content(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     Query(query): Query<ResolveConflictWithContentQuery>,
     Json(body): Json<ResolveConflictWithContentBody>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
@@ -179,7 +180,7 @@ pub async fn resolve_conflict_with_content(
 
 pub async fn resolve_conflict_file(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     Query(query): Query<ResolveConflictQuery>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     let use_mine = query.side == "mine";
@@ -204,7 +205,7 @@ pub async fn resolve_conflict_file(
 
 pub async fn unresolve_conflict_file(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     Query(query): Query<UnresolveConflictQuery>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
@@ -230,7 +231,7 @@ pub async fn force_push_branch(
     _: WorkspaceAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
     match git_force_push(worktree, &ws, user.id).await {
@@ -249,7 +250,7 @@ pub async fn force_push_branch(
 }
 
 pub async fn get_recent_commits(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     Query(query): Query<RecentCommitsQuery>,
 ) -> Result<ResponseJson<RecentCommitsResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
@@ -263,7 +264,7 @@ pub async fn get_recent_commits(
 pub async fn reset_to_commit(
     _: WorkspaceAdmin,
     Extension(ws): Extension<entity::workspaces::Model>,
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     Query(query): Query<ResetToCommitQuery>,
 ) -> Result<ResponseJson<ResetToCommitResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
@@ -325,7 +326,7 @@ pub async fn reset_to_commit(
 
 pub async fn abort_rebase(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
     match default_git_client().abort_rebase(worktree).await {
@@ -345,7 +346,7 @@ pub async fn abort_rebase(
 
 pub async fn continue_rebase(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
     match default_git_client().continue_rebase(worktree).await {
@@ -365,7 +366,7 @@ pub async fn continue_rebase(
 
 pub async fn discard_all_changes(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
     match default_git_client().discard_all_changes(worktree).await {
@@ -387,7 +388,7 @@ pub async fn push_changes(
     _: WorkspaceEditor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     Json(request): Json<PushChangesRequest>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
@@ -411,12 +412,99 @@ pub async fn push_changes(
 }
 
 pub async fn get_revision_info(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     Query(query): Query<BranchQuery>,
 ) -> Result<ResponseJson<RevisionInfoResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
     let branch = resolve_branch(query.branch, worktree).await;
     Ok(ResponseJson(git_revision_info(worktree, &branch).await))
+}
+
+/// `GET /{workspace_id}/meta` — the Postgres half of `/details`.
+///
+/// Additive: `/details` is untouched and still serves both halves. This exists
+/// so the frontend can move one query at a time, and so the half that needs no
+/// working copy stops being unavailable whenever the ide is.
+///
+/// It delegates rather than duplicating the local-mode short-circuit and the
+/// storage-key computation, both of which have earned their comments. Splitting
+/// the *surface* is what unblocks the frontend; splitting the *bodies* can wait
+/// until the old route is retired.
+pub async fn get_workspace_meta(
+    state: State<AppState>,
+    user: AuthenticatedUserExtractor,
+    EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
+    project: Extension<entity::workspaces::Model>,
+    path: Path<Uuid>,
+) -> Result<ResponseJson<WorkspaceMetaResponse>, Response> {
+    // Local mode keeps the delegation. Both of the fields that can only be
+    // answered from disk — `requires_local_setup` and `workspace_error` — are
+    // set nowhere else, and the short-circuit that computes them has earned
+    // its comments.
+    if state.mode.is_local() {
+        let ResponseJson(d) =
+            get_workspace(state, user, EffectiveWorkspaceRole(role), project, path).await?;
+        return Ok(ResponseJson(WorkspaceMetaResponse {
+            id: d.id,
+            name: d.name,
+            workspace_id: d.workspace_id,
+            created_at: d.created_at,
+            updated_at: d.updated_at,
+            workspace_error: d.workspace_error,
+            storage_key: d.storage_key,
+            current_user_role: d.current_user_role,
+            requires_local_setup: d.requires_local_setup,
+        }));
+    }
+
+    // Cloud: not one field of this response comes off the filesystem.
+    // `workspace_id`, `created_at` and `updated_at` are the same constants in
+    // both arms of `build_workspace_details_response`; `workspace_error` is
+    // only ever `Some` under `is_local`; `requires_local_setup` is `false`.
+    //
+    // Delegating anyway meant inheriting `get_workspace`'s work AND its
+    // failures: four git subprocesses and an `Origin::Disk` ConfigManager per
+    // request on a node that owns the files, and — worse — the 503 that
+    // `build_workspace_details_response` raises when the workspace root is not
+    // there yet on an fs-writable pod. `/meta` was returning "materializing"
+    // for data no volume holds. FleetOk was safe only because a replica has no
+    // files to trip over; now it is safe because there is nothing to ask.
+    let Path(workspace_id) = path;
+    let Extension(project) = project;
+    let now = chrono::Utc::now().to_string();
+    Ok(ResponseJson(WorkspaceMetaResponse {
+        id: workspace_id,
+        name: project.name,
+        workspace_id: Uuid::nil(),
+        created_at: now.clone(),
+        updated_at: now,
+        workspace_error: None,
+        storage_key: compute_workspace_storage_key(workspace_id, None),
+        current_user_role: role.as_str().to_string(),
+        requires_local_setup: false,
+    }))
+}
+
+/// `GET /{workspace_id}/git-state` — the `.git` half of `/details`.
+///
+/// Live state, so it cannot be compiled and the route stays IdeOnly. A 502 when
+/// the ide is down is the honest answer, and the frontend already knows what to
+/// do with an absent branch — it is what today's degraded `/details` produces.
+pub async fn get_workspace_git_state(
+    state: State<AppState>,
+    user: AuthenticatedUserExtractor,
+    role: EffectiveWorkspaceRole,
+    project: Extension<entity::workspaces::Model>,
+    path: Path<Uuid>,
+) -> Result<ResponseJson<WorkspaceGitStateResponse>, Response> {
+    let ResponseJson(d) = get_workspace(state, user, role, project, path).await?;
+    Ok(ResponseJson(WorkspaceGitStateResponse {
+        active_branch: d.active_branch,
+        git_mode: d.git_mode,
+        capabilities: d.capabilities,
+        default_branch: d.default_branch,
+        protected_branches: d.protected_branches,
+    }))
 }
 
 /// Get detailed information about a specific workspace including its active branch.
@@ -491,12 +579,9 @@ pub async fn get_workspace(
     let storage_key = compute_workspace_storage_key(workspace_id, local_path_for_key);
 
     // A missing working copy is "not ready yet" only when THIS instance owns the
-    // workspace filesystem. On a stateless serve replica it means something
-    // else entirely — the ide is unreachable and we are serving the DOCUMENTED
-    // degrade (`role_manifest::degrades_when_ide_unreachable` lists `/details`
-    // precisely so a dead ide doesn't take the workspace page down). A replica
-    // has no PVC, so `exists()` is false there in normal operation; answering
-    // 503 would turn a benign degraded page into an unusable one.
+    // workspace filesystem. A stateless serve replica has no PVC, so `exists()`
+    // is false there in normal operation; answering 503 would turn a benign
+    // degraded page into an unusable one.
     let missing_copy_is_transient =
         !app_state.mode.is_local() && crate::server::role_manifest::process_is_fs_writable();
 
@@ -655,7 +740,10 @@ pub async fn build_workspace_details_response(
     // Fall back to [default_branch] on any error or when there's no local repo.
     let protected_branches: Vec<String> = if has_local_repo {
         let config_branches = match ConfigBuilder::new().with_workspace_path(workspace_root) {
-            Ok(builder) => match builder.build_with_fallback_config().await {
+            Ok(builder) => match builder
+                .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
+                .await
+            {
                 Ok(manager) => manager.protected_branches().map(|b| b.to_vec()),
                 Err(err) => {
                     tracing::warn!(
@@ -731,10 +819,11 @@ pub async fn build_workspace_details_response(
 pub async fn get_workspace_branches(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
+    root: WorkspaceRootWorkingCopy,
 ) -> Result<ResponseJson<WorkspaceBranchesResponse>, StatusCode> {
     info!("Getting branches for workspace: {}", ws.id);
 
-    let root = workspace_root(&ws).await?;
+    let root = root.root_path().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     let branches = git_list_branches(&root, Some(&ws), ws.id, Some(user.id)).await;
     info!("Found {} branches", branches.len());
     Ok(ResponseJson(WorkspaceBranchesResponse { branches }))
@@ -744,8 +833,10 @@ pub async fn delete_branch(
     _: WorkspaceAdmin,
     Extension(ws): Extension<entity::workspaces::Model>,
     Path((_workspace_id, branch_name)): Path<(Uuid, String)>,
+    root: WorkspaceRootWorkingCopy,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
-    let root = workspace_root(&ws).await?;
+    let _ = &ws;
+    let root = root.root_path().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     match git_delete_branch(&root, &branch_name).await {
         Ok(()) => Ok(ResponseJson(ProjectResponse {
             success: true,
@@ -766,11 +857,12 @@ pub async fn switch_workspace_branch(
     State(app_state): State<AppState>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
+    root: WorkspaceRootWorkingCopy,
     Json(request): Json<SwitchBranchRequest>,
 ) -> Result<ResponseJson<ProjectBranch>, StatusCode> {
     info!("Switching branch for workspace: {}", ws.id);
 
-    let root = workspace_root(&ws).await?;
+    let root = root.root_path().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     // Validate branch name before it reaches the shell.
     if let Err(e) = default_git_client().validate_branch_name(&request.branch) {
         error!("Invalid branch name '{}': {}", request.branch, e);
@@ -796,7 +888,7 @@ pub async fn switch_workspace_branch(
 
 pub async fn get_workspace_status(
     State(_app_state): State<AppState>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Extension(workspace): Extension<entity::workspaces::Model>,
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
 ) -> Result<axum::response::Json<ProjectStatus>, StatusCode> {
@@ -818,16 +910,17 @@ pub async fn get_workspace_status(
 
     let workspace_path = workspace_manager.config_manager.workspace_path();
 
-    let (is_config_valid, required_secrets, error) = match WorkspaceBuilder::new(workspace_id)
-        .with_workspace_path(&workspace_path)
-        .await
-    {
-        Ok(_builder) => (true, Some(Vec::new()), None),
-        Err(e) => {
-            error!("Failed to create workspace builder: {}", e);
-            (false, None, Some(e.to_string()))
-        }
-    };
+    let (is_config_valid, required_secrets, error) =
+        match WorkspaceBuilder::<WorkingCopy>::new(workspace_id)
+            .with_working_copy(&workspace_path, None, oxy::config::OnMissing::Fail)
+            .await
+        {
+            Ok(_builder) => (true, Some(Vec::new()), None),
+            Err(e) => {
+                error!("Failed to create workspace builder: {}", e);
+                (false, None, Some(e.to_string()))
+            }
+        };
 
     let status = ProjectStatus {
         required_secrets,
@@ -902,14 +995,18 @@ pub async fn list_workspaces(
                                 let dir = dir.clone();
                                 move || {
                                     (
-                                        count_yml_suffix(&dir, "agent"),
-                                        count_yml_suffix(&dir, "workflow"),
-                                        count_yml_suffix(&dir, "app"),
+                                        Some(count_yml_suffix(&dir, "agent")),
+                                        Some(
+                                            count_yml_suffix(&dir, "automation")
+                                                + count_yml_suffix(&dir, "procedure")
+                                                + count_yml_suffix(&dir, "workflow"),
+                                        ),
+                                        Some(count_yml_suffix(&dir, "app")),
                                     )
                                 }
                             })
                             .await
-                            .unwrap_or((0, 0, 0));
+                            .unwrap_or((None, None, None));
                         let git = default_git_client();
                         let (remote, (sha, msg), updated_at) = tokio::join!(
                             git.get_remote_url(&dir),
@@ -930,10 +1027,10 @@ pub async fn list_workspaces(
                             updated_at,
                         )
                     } else {
-                        (0, 0, 0, None, None, None)
+                        (None, None, None, None, None, None)
                     }
                 } else {
-                    (0, 0, 0, None, None, None)
+                    (None, None, None, None, None, None)
                 };
 
             WorkspaceSummary {
@@ -1081,13 +1178,15 @@ pub async fn rename_workspace(
 }
 
 pub async fn delete_workspace(
+    // `OrgAdmin` FIRST: axum runs extractors in argument order, and resolving a
+    // workspace path before checking authority would leak existence.
     _: OrgAdmin,
     State(_app_state): State<AppState>,
     Path((org_id, workspace_id)): Path<(Uuid, Uuid)>,
     Query(query): Query<DeleteProjectQuery>,
+    root: WorkspaceRootWorkingCopy,
 ) -> Result<StatusCode, StatusCode> {
-    use entity::prelude::Workspaces;
-    use sea_orm::{EntityTrait, ModelTrait};
+    use sea_orm::ModelTrait;
 
     let db = oxy::database::client::establish_connection()
         .await
@@ -1096,21 +1195,21 @@ pub async fn delete_workspace(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let workspace = Workspaces::find_by_id(workspace_id)
-        .one(&db)
-        .await
-        .map_err(|e| {
-            error!("Failed to find workspace {}: {}", workspace_id, e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    // The extractor already loaded it, and building the manager needed it — so
+    // querying again here would be a second round trip for the same row.
+    let workspace = root.workspace.clone().ok_or(StatusCode::NOT_FOUND)?;
 
     if workspace.org_id != Some(org_id) {
         return Err(StatusCode::NOT_FOUND);
     }
 
-    // Capture the workspace path before deleting the record
-    let workspace_path = effective_workspace_path(&workspace, None).await.ok();
+    // From the extractor, so the signature states that this handler reaches a
+    // working copy. It used to resolve the path here by hand, which is how a
+    // filesystem delete came to be described by a signature naming no manager.
+    let workspace_path = root
+        .manager
+        .as_ref()
+        .map(|m| m.config_manager.workspace_path().to_path_buf());
 
     workspace.delete(&db).await.map_err(|e| {
         error!("Failed to delete workspace {}: {}", workspace_id, e);
@@ -1130,12 +1229,25 @@ pub async fn delete_workspace(
     // the directory intact so an accidental delete can be recovered.
     if query.delete_files
         && let Some(path) = workspace_path
-        && path.exists()
     {
-        if let Err(e) = std::fs::remove_dir_all(&path) {
-            tracing::warn!("Failed to delete workspace directory {:?}: {}", path, e);
-        } else {
-            info!("Deleted workspace directory {:?}", path);
+        if path.exists() {
+            if let Err(e) = std::fs::remove_dir_all(&path) {
+                tracing::warn!("Failed to delete workspace directory {:?}: {}", path, e);
+            } else {
+                info!("Deleted workspace directory {:?}", path);
+            }
+        } else if !oxy::workspace_fs_probe::process_owns_workspace_files() {
+            // The route is IdeOnly so this should be unreachable, but a missing
+            // directory means two different things and only one of them is
+            // "nothing to delete". On a pod with no working copy it means the
+            // files are elsewhere, still there, and the 200 below is a lie.
+            tracing::error!(
+                %workspace_id,
+                path = %path.display(),
+                "delete_files requested on a process that owns no working copy; the \
+                 directory was NOT deleted and still exists on the ide. This route is \
+                 classified IdeOnly — reaching here means routing did not hold."
+            );
         }
     }
 

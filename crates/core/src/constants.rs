@@ -1,4 +1,3 @@
-pub const UNPUBLISH_APP_DIR: &str = "generated";
 pub const AUTOMATION_FILE_EXTENSION: &str = ".automation.yml";
 pub const PROCEDURE_FILE_EXTENSION: &str = ".procedure.yml";
 pub const WORKFLOW_SAVED_FROM_QUERY_DIR: &str = "workflows/saved";

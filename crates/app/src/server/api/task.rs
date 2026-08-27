@@ -6,7 +6,7 @@
 //! the only handler that survives here.
 
 use crate::{
-    api::middlewares::workspace_context::WorkspaceManagerExtractor, service::statics::BROADCASTER,
+    api::middlewares::workspace_context::WorkspaceManagerReadOnly, service::statics::BROADCASTER,
 };
 use axum::extract::Query;
 use axum::http::StatusCode;
@@ -20,7 +20,7 @@ pub struct AgenticEventsRequest {
 }
 
 pub async fn agentic_events(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(request): Query<AgenticEventsRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {

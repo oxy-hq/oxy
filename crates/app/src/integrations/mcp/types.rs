@@ -12,6 +12,7 @@ use serde_json::Value;
 use oxy::{adapters::workspace::manager::WorkspaceManager, config::model::SemanticFilter};
 
 use super::executor::ToolExecutor;
+use oxy::config::WorkingCopy;
 
 // Constants
 
@@ -50,7 +51,7 @@ pub struct OxyTool {
 
 #[derive(Debug, Clone)]
 pub struct OxyMcpServer {
-    pub workspace_manager: WorkspaceManager,
+    pub workspace_manager: WorkspaceManager<WorkingCopy>,
     pub tools: HashMap<String, OxyTool>,
 }
 

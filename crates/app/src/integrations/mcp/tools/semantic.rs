@@ -4,6 +4,7 @@ use crate::integrations::mcp::types::{
 use oxy::adapters::semantic_tool_description::build_semantic_topic_description;
 use oxy::adapters::session_filters::SessionFilters;
 use oxy::config::ConfigManager;
+use oxy::config::WorkingCopy;
 use oxy_semantic::parse_semantic_layer_from_dir;
 use oxy_shared::errors::OxyError;
 use rmcp::model::Tool;
@@ -18,7 +19,7 @@ pub fn get_semantic_tool_name(topic_name: &str) -> String {
 /// Creates an MCP tool for a semantic topic file
 /// Generates input schema with dimensions, metrics, filters, limit, and order_by
 pub async fn resolve_semantic_tool(
-    config_manager: ConfigManager,
+    config_manager: ConfigManager<WorkingCopy>,
     topic_path: PathBuf,
 ) -> Result<(String, OxyTool), OxyError> {
     use oxy_semantic::models::Topic;
@@ -82,7 +83,7 @@ pub async fn resolve_semantic_tool(
 /// `/agentic-workflows` HTTP surface uses, instead of duplicating the
 /// semantic plumbing into the MCP layer.
 pub async fn run_semantic_topic_tool(
-    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager<WorkingCopy>,
     topic_name: String,
     arguments: Option<Map<String, Value>>,
     _filters: Option<SessionFilters>,
@@ -189,7 +190,7 @@ fn serde_json_array<T: serde::Serialize>(items: Vec<T>) -> Vec<Value> {
 }
 
 fn create_execution_context(
-    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager<WorkingCopy>,
     kind: &str,
 ) -> (
     oxy::execute::ExecutionContext,

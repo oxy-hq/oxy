@@ -70,10 +70,7 @@ impl ServerHandler for OxyMcpServer {
 
         // Build execution context from request metadata
         let context = ToolExecutionContext::new()
-            .with_session_filters(extract_session_filters(
-                Some(&ctx.meta.0),
-                &self.workspace_manager.config_manager,
-            )?)
+            .with_session_filters(extract_session_filters(Some(&ctx.meta.0))?)
             .with_connection_overrides(extract_connection_overrides(
                 Some(&ctx.meta.0),
                 &self.workspace_manager.config_manager,
@@ -98,7 +95,7 @@ impl OxyMcpServer {
     /// Creates a new OxyMcpServer instance
     pub async fn new(workspace_path: PathBuf) -> Result<Self, OxyError> {
         let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
-            .with_workspace_path(&workspace_path)
+            .with_working_copy(&workspace_path, None, oxy::config::OnMissing::Fail)
             .await
             .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create config manager: {e}")))?
             .with_secrets_manager(SecretsManager::from_environment().map_err(|e| {

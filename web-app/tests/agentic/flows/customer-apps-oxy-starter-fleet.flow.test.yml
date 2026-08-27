@@ -1,0 +1,176 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Open a PUBLISHED custom app and confirm it actually serves and works. No
+# existing flow drives `/customer-apps/...` — `admin-custom-apps-tabs` only
+# covers the ADMIN console's Apps tab (the publish/promote UI), never the
+# served app itself. `oxy seed` publishes `oxy-starter` into org `local`
+# (internal-docs/customer-apps.md §1); this drives that exact URL.
+#
+# ACTUALLY OBSERVED (this run, not a prediction): on THIS deployment the page
+# load itself never gets far enough to test the data panels below —
+# `GET /customer-apps/local/oxy-starter/` returns a bare 404 on BOTH public
+# replica ports (:3000, :3001; confirmed via curl with a real session cookie
+# AND via this flow's own Playwright run — step 0 timed out waiting for
+# `#contract dd`), while the identical request against the ide's port (:3010)
+# returns 200. Root cause: `docker-compose.fleet.yml` sets no
+# `OXY_CUSTOMER_APPS_S3_BUCKET` (no MinIO/S3 service is defined in that file at
+# all, unlike `docker-compose.airhouse.yml`), so the custom-apps build store
+# falls back to "the local filesystem under OXY_STATE_DIR"
+# (internal-docs/customer-apps.md §4) — which is the SAME `ide-state` named
+# volume the compose file's own header says is deliberately absent from the
+# `serve` replicas. So `oxy seed`'s app deploy (run against the `ide`
+# container) wrote a build only the ide can see; the app-serving route, while
+# framed in §4 as "any replica serves" the bytes, is not actually fleet-safe
+# on this fixture. This is a gap in the FLEET FIXTURE, not something any
+# existing `FLEET_FLOWS` entry in `scripts/fleet-assert.sh` exercises — none
+# of them touch `/customer-apps/*`. If step 0 below times out, this is why;
+# it is the finding this flow exists to surface, not a flow bug.
+#
+# WHY THIS IS ALSO FLEET-SENSITIVE ONE LEVEL DEEPER — two request shapes, one
+# route NOT proxied
+# --------------------------------------------------------------------------
+# Assuming the 404 above is ever fixed (S3 configured, or the fleet's local
+# store made shared), there is a SECOND, independent gap behind it. The page
+# load itself would then be bytes from S3/the build-store LRU cache — any
+# replica serves it (§4 of the doc). But the two data panels call
+# `POST /api/projects/<id>/query`
+# (crates/app/src/server/api/projects/query.rs), and that route is mounted
+# directly on the PUBLIC router (crates/app/src/server/router/public.rs:121-128)
+# rather than under the classified workspace tree `enforce_role` wraps. It has
+# NO entry in `role_manifest.rs`'s DECLARED table (grep confirms zero matches
+# for "project" in that file), so `classify()` falls through to its documented
+# default — FleetOk — and the request is answered LOCALLY on whichever replica
+# it lands on, never proxied to the ide.
+#
+# That default is fine for a network-reachable connector (Postgres, Snowflake,
+# Airhouse, an S3-mirrored/DuckLake DuckDB — internal-docs/local-split-fleet-
+# testing.md, Scenario 6, "serve-safe"). `oxy-starter`'s query targets the
+# `local` database in examples/config.yml:24-26 — `type: duckdb, dataset:
+# .db/` — a PLAIN directory on disk, not S3-mirrored, not DuckLake. The compile
+# boundary only materialises compiled YAML definitions (config, semantic
+# layer), never arbitrary data-directory bytes like `.db/*.csv`
+# (crates/app/src/server/api/custom_apps_gates.rs:401-408, which claims these
+# routes are "pinned IdeOnly" — a claim the DECLARED table above does not back
+# up for `/query`/`/semantic-query` specifically; see the finding logged in the
+# authoring session for this flow).
+#
+# CONFIRMED DURING AUTHORING (curl, not the browser): hitting
+# `POST /api/projects/<id>/query {sql: "...", database: "local"}` directly
+# against BOTH public replica ports of this deployment (oxy-fleet-serve-1 on
+# :3000 and oxy-fleet-serve-2 on :3001) returned
+# `{"message":"DuckDB 'local': cannot resolve path '.db/': Failed to
+# canonicalize project path: No such file or directory (os error 2)"}` with
+# `x-oxy-served-by: serve@...` (answered locally, not proxied) on both. The
+# SAME query against the ide's own port (:3010) returned real rows
+# (`{"stores":45,...}`) with `x-oxy-served-by: ide@...`. So if this flow's
+# data-panel assertions fail on this fleet, that is very likely THIS gap, not
+# a flow bug — do not weaken the assertions to route around it; report it.
+#
+# WHAT TO ANCHOR ON (examples/customer_apps/oxy-starter/index.html — a single
+# static HTML file, zero data-testid attributes, so selectors below are ids/
+# text): `#contract` (runtime identity: Organization "local", Project <uuid>,
+# App "oxy-starter · <app_id>", Branch "main" — injected server-side into
+# `window.__OXY_APP__`, independent of the data plane); `#viewer` (viewer
+# identity via `/shell-context`: Name, Email, Organization, Workspace — also
+# independent of the data plane); `#kpis` and `#top-stores` (the two REAL
+# queries — the only panels this route's classification gap can break). A
+# failed query renders a `.error` panel with title "Query failed", not a
+# generic blank — `renderKpis`/`renderTopStores` catch and format it.
+#
+# GROUND TRUTH (queried against the ide node during authoring, so these are
+# the fixture's real numbers, not guesses): 45 distinct stores, total sales
+# $6,737.2M, avg weekly sales $1,046,965 (all via `Number.toLocaleString()`),
+# top store by sales is Store 20 at $301.4M.
+#
+# IDENTITY: `flow@oxy.local` — an org owner of `local` with NO platform
+# standing, correct for an app/workspace surface (see the fleet's dev-login
+# note in `docker-compose.fleet.yml`). Do NOT run this in the same invocation
+# as a staff-identity flow (e.g. `partners-console-fleet`) — the runner
+# injects exactly one session per invocation.
+#
+# COST: zero `act` steps — every step is a deterministic wait, like
+# `apps-data-app-charts`. Cold and warm cost are both just the judge call.
+
+name: published custom app serves and its data panels resolve
+target: any
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  # No act steps — waits and expectations only.
+  max_steps: 10
+
+setup:
+  - "goto:/customer-apps/local/oxy-starter/"
+
+cases:
+  - name: oxy-starter renders identity and its two data panels resolve real numbers
+    tags: [customer-apps, fleet, compile-boundary, critical]
+    steps:
+      # #contract is populated synchronously by renderContract() off
+      # window.__OXY_APP__ — no fetch involved, so this also proves the
+      # server actually injected app identity (a bare fetch of the file, or a
+      # request that fell through `notServedByOxy()`, would leave it empty).
+      - wait_for: "selector:#contract dd"
+
+      # Each async panel replaces its own `.skeleton` placeholder once its
+      # fetch settles — success or error, so waiting for these to clear is
+      # the "still loading" gate, distinct from the "did it error" assertions
+      # below.
+      - wait_for: "selector_hidden:#kpis .skeleton;timeout_ms=30000"
+      - wait_for: "selector_hidden:#top-stores .skeleton;timeout_ms=30000"
+      - wait_for: "selector_hidden:#viewer .skeleton;timeout_ms=30000"
+      - wait_for: network_idle
+
+    expect:
+      # Structural, $0.
+      - assert: 'text "Oxy Starter" is visible'
+      - assert: "selector #contract is visible"
+
+      # Absence-of-degraded-state, the way apps-data-app-charts asserts
+      # [data-testid=ide-unavailable-panel] is absent rather than tolerating
+      # it. `.error` is the class `errorPanel()` adds — its presence in any
+      # of these three sections is a definitively wrong state, not a
+      # judgment call.
+      - assert: "selector #kpis .error is not visible"
+      - assert: "selector #top-stores .error is not visible"
+      - assert: "selector #viewer .error is not visible"
+
+      # The one deterministic, $0 proof that the KPI query's RESULT (not just
+      # its query text, which never contains "45") reached the browser.
+      - assert: 'text "45" is visible'
+      - assert: "selector #top-stores table is visible"
+
+      - judge: |
+          The page shows "Oxy Starter" with four panels:
+
+          1. A runtime-identity contract list showing Organization "local", a
+             Project value that looks like a UUID, App "oxy-starter" (with an
+             app id after it), and Branch "main".
+          2. A viewer-identity list showing a Name, an Email of
+             "flow@oxy.local", an Organization "Local", and a Workspace
+             "Demo" — not placeholders, not an error.
+          3. A KPI panel with THREE real numeric tiles: Stores around 45,
+             Total sales ($M) around 6,737, and Avg weekly sales ($) around
+             1,046,965 — not empty, not a red error panel.
+          4. A "Top stores by sales" table listing at least 5 rows, each with
+             a Store number and a sales figure, the top row being Store 20 at
+             roughly 301.
+
+          Fail if ANY of the following is true:
+          (a) the KPI panel or the top-stores panel shows a red-bordered
+              "Query failed" panel instead of the real numbers described
+              above;
+          (b) any visible text contains "cannot resolve path", "os error",
+              "No such file or directory", "Failed to canonicalize", or any
+              other filesystem/IO error detail;
+          (c) the viewer panel shows "Could not read the viewer" or a
+              "no session" message;
+          (d) a loading skeleton (pulsing gray bars) is still visible in any
+              of the four panels;
+          (e) the contract panel shows "—" placeholders instead of real
+              Organization / Project / App / Branch values;
+          (f) the page shows "Not served by Oxy" (window.__OXY_APP__ never
+              got injected — the whole page would be one error panel).

@@ -48,7 +48,23 @@ export default function useCurrentWorkspaceBranch() {
     // Non-null assertion: this hook is only used inside authenticated/workspace-scoped routes
     // where workspace is guaranteed to be set. The null case is handled at the route level.
     workspace: workspace!,
-    branchName: selectedBranch,
+    // Only the IDE needs a branch. Everywhere else `selectedBranch` is
+    // `active_branch` — the branch the working copy happens to be checked out
+    // on — and sending it makes `escalate_for_branch` route the request to the
+    // ide singleton, even when the value is "main". That cancels the compile
+    // boundary for /apps, /agents, /databases and friends in normal operation.
+    //
+    // Empty, not `undefined`: that is the server's existing contract for "no
+    // branch" — `normalize_branch_hint` filters it to `None`
+    // (`normalize_branch_hint_strips_empty` pins it) and `escalate_for_branch`
+    // tests `!v.is_empty()`. It also keeps this a `string`, so the ~179
+    // consumers do not each have to handle an optional.
+    //
+    // The server then reads the promoted revision, which is what every surface
+    // outside the IDE should see: a working copy parked on a feature branch is
+    // the IDE's business, and on a stateless replica the boundary is the only
+    // answer there is.
+    branchName: insideIDE ? selectedBranch : "",
     capabilities,
     isMainEditMode,
     gitEnabled

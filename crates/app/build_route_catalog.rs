@@ -424,7 +424,12 @@ fn collect_file(
         });
     }
 
-    if !src.contains(".route(") && !src.contains(".nest(") && !src.contains(".merge(") {
+    if !src.contains(".route(")
+        && !src.contains(".route_fleet(")
+        && !src.contains(".route_ide(")
+        && !src.contains(".nest(")
+        && !src.contains(".merge(")
+    {
         return;
     }
     let (imports, glob_imports) = parse_imports(&src);
@@ -1026,16 +1031,35 @@ impl Walker {
             };
             let args = &expr[open + 1..close];
             match marker {
-                ".route(" => self.emit_route(args, prefix, surface, caller),
-                ".nest(" | ".nest_service(" => {
+                // `route_split` puts the path first too, then alternating
+                // method/handler pairs; `method_calls` picks the handlers out of
+                // the tail either way.
+                ".route(" | ".route_fleet(" | ".route_ide(" | ".route_split(" => {
+                    self.emit_route(args, prefix, surface, caller)
+                }
+                ".nest(" | ".nest_service(" | ".nest_declared(" | ".nest_typed(" | ".nest_all(" => {
                     let parts = split_top_level(args, ',');
-                    if let (Some(seg), Some(inner)) = (parts.first(), parts.get(1))
+                    // `nest_all` and `nest_typed` put the ROLE second and the
+                    // router third — `(prefix, role, router, …)`. Descending into
+                    // `RouteRole::FleetOk` finds nothing, which is how the whole
+                    // `/api/admin` subtree went missing from the catalog without
+                    // anything failing to compile.
+                    let inner_at = match marker {
+                        ".nest_all(" | ".nest_typed(" => 2,
+                        _ => 1,
+                    };
+                    if let (Some(seg), Some(inner)) = (parts.first(), parts.get(inner_at))
                         && let Some(seg) = string_literal(seg)
                     {
                         self.descend(inner, &join(prefix, &seg), surface, caller, lets);
                     }
                 }
-                ".merge(" => self.descend(args, prefix, surface, caller, lets),
+                // The declared/undeclared variants carry a second argument
+                // (declarations, or the reason a merge has none). `descend`
+                // scans text for markers, so the extra argument is inert.
+                ".merge(" | ".merge_declared(" | ".merge_undeclared(" => {
+                    self.descend(args, prefix, surface, caller, lets)
+                }
                 _ => {}
             }
             i = close + 1;
@@ -1322,7 +1346,26 @@ fn chain_start(expr: &str, at: usize) -> usize {
 
 /// Next `.route(` / `.nest(` / `.nest_service(` / `.merge(` at or after `from`.
 fn next_marker(s: &str, from: usize) -> Option<(&'static str, usize)> {
-    const MARKERS: &[&str] = &[".route(", ".nest(", ".nest_service(", ".merge("];
+    // The declaring doors count too. `RoleRouter` (crates/app/src/server/router/
+    // role_router.rs) replaced bare `.route(` across the workspace and public
+    // trees so a route's pod is a type rather than a note — and a catalog that
+    // only knows `.route(` sees an empty router and says so with an empty
+    // table, which is the silence this whole area exists to remove. `.route(` is
+    // not a prefix of `.route_fleet(`: the trailing `(` makes every match exact.
+    const MARKERS: &[&str] = &[
+        ".route(",
+        ".route_fleet(",
+        ".route_ide(",
+        ".route_split(",
+        ".nest(",
+        ".nest_service(",
+        ".nest_declared(",
+        ".nest_typed(",
+        ".nest_all(",
+        ".merge(",
+        ".merge_declared(",
+        ".merge_undeclared(",
+    ];
     let mut best: Option<(&'static str, usize)> = None;
     for m in MARKERS {
         if let Some(rel) = s[from..].find(m) {

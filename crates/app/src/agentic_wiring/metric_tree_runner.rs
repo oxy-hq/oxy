@@ -32,7 +32,8 @@ use oxy::adapters::workspace::manager::WorkspaceManager;
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-use crate::agentic_wiring::OxyProjectContext;
+use crate::agentic_wiring::project_ctx::build_connector_for_db;
+use oxy::config::{ReadOnly, WorkingCopy};
 
 /// Adapter that exposes Oxy's semantic-layer + connector pool as a
 /// [`MetricTreeRunner`].
@@ -41,7 +42,7 @@ use crate::agentic_wiring::OxyProjectContext;
 /// layer and (b) execute SQL through `run_via_agentic_connector`. Built once
 /// per pipeline run from [`crate::agentic_wiring::OxyProjectContext`].
 pub struct OxyMetricTreeRunner {
-    workspace_manager: WorkspaceManager,
+    workspace_manager: WorkspaceManager<ReadOnly>,
     user_id: Uuid,
     role: WorkspaceRole,
     preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
@@ -58,7 +59,11 @@ pub struct OxyMetricTreeRunner {
 }
 
 impl OxyMetricTreeRunner {
-    pub fn new(workspace_manager: WorkspaceManager, user_id: Uuid, role: WorkspaceRole) -> Self {
+    pub fn new(
+        workspace_manager: WorkspaceManager<ReadOnly>,
+        user_id: Uuid,
+        role: WorkspaceRole,
+    ) -> Self {
         Self {
             workspace_manager,
             user_id,
@@ -85,7 +90,10 @@ impl OxyMetricTreeRunner {
     fn default_timezone(&self) -> Option<String> {
         self.default_timezone
             .get_or_init(|| {
-                read_default_timezone(self.workspace_manager.config_manager.workspace_path())
+                self.workspace_manager
+                    .config_manager
+                    .working_copy()
+                    .and_then(|wc| read_default_timezone(wc.root()))
             })
             .clone()
     }
@@ -93,22 +101,23 @@ impl OxyMetricTreeRunner {
     /// Parse the semantic layer from `scan_path` instead of the workspace FS
     /// scan path — the compile-boundary path for the stateless serve fleet.
     /// The `scan_path` must remain valid for the lifetime of every run (hold
-    /// the `MaterialisedScan` tempdir guard in the caller).
+    /// the `ScanDir` tempdir guard in the caller).
     pub fn with_scan_path(mut self, scan_path: PathBuf) -> Self {
         self.scan_path_override = Some(scan_path);
         self
     }
 
     /// The directory the semantic layer is parsed from: the override when set
-    /// (compile boundary), else the workspace FS scan path.
-    fn effective_scan_path(&self) -> PathBuf {
+    /// (compile boundary), else this node's working copy. `None` means neither
+    /// exists — a stateless replica that was not handed a materialised root.
+    fn effective_scan_path(&self) -> Option<PathBuf> {
         match &self.scan_path_override {
-            Some(p) => p.clone(),
+            Some(p) => Some(p.clone()),
             None => self
                 .workspace_manager
                 .config_manager
-                .semantics_scan_path()
-                .to_path_buf(),
+                .working_copy()
+                .map(|wc| wc.root().to_path_buf()),
         }
     }
 
@@ -129,7 +138,9 @@ impl OxyMetricTreeRunner {
 
     /// List configured databases as airlayer `DatabaseConfig`s. The
     /// `DatasourceDialectMap` is built from these by the caller.
-    pub fn list_databases_sync(workspace_manager: &WorkspaceManager) -> Vec<DatabaseConfig> {
+    pub fn list_databases_sync<S: oxy::config::DiskSlot>(
+        workspace_manager: &WorkspaceManager<S>,
+    ) -> Vec<DatabaseConfig> {
         workspace_manager
             .config_manager
             .list_databases()
@@ -149,7 +160,14 @@ impl OxyMetricTreeRunner {
 #[async_trait]
 impl MetricTreeRunner for OxyMetricTreeRunner {
     async fn load_layer(&self) -> Result<SemanticLayer, MetricTreeRunnerError> {
-        let scan_path = self.effective_scan_path();
+        let scan_path = self.effective_scan_path().ok_or_else(|| {
+            MetricTreeRunnerError::LayerLoad(
+                "no semantic scan root on this node — resolve one through the \
+                 compile boundary (with_scan_path) or run where the working \
+                 copy lives"
+                    .to_string(),
+            )
+        })?;
         oxy_airlayer_compat::load_layer_from_dir(&scan_path)
             .map_err(|e| MetricTreeRunnerError::LayerLoad(e.to_string()))
     }
@@ -529,7 +547,7 @@ struct RunInputs {
     layer: SemanticLayer,
     databases: Vec<DatabaseConfig>,
     engine: airlayer::SemanticEngine,
-    workspace_manager: WorkspaceManager,
+    workspace_manager: WorkspaceManager<ReadOnly>,
     user_id: Uuid,
     role: WorkspaceRole,
     handle: tokio::runtime::Handle,
@@ -780,7 +798,7 @@ pub fn build_query_executor(
     _target_measure: &str,
     engine: airlayer::SemanticEngine,
     databases: Vec<DatabaseConfig>,
-    workspace_manager: WorkspaceManager,
+    workspace_manager: WorkspaceManager<ReadOnly>,
     user_id: Uuid,
     role: WorkspaceRole,
     handle: tokio::runtime::Handle,
@@ -892,11 +910,13 @@ pub fn build_query_executor(
             (c, true)
         } else {
             let build_start = std::time::Instant::now();
-            let ctx = OxyProjectContext::new(workspace_manager.clone())
-                .with_subject(user_id)
-                .with_role(role.clone());
             let built = handle
-                .block_on(ctx.build_connector_for(&database))
+                .block_on(build_connector_for_db(
+                    &workspace_manager,
+                    &database,
+                    Some(user_id),
+                    Some(role.clone()),
+                ))
                 .map_err(|e| EngineError::QueryError(e.to_string()))?;
             tracing::info!(
                 target: "metric_tree.explain",
@@ -963,7 +983,7 @@ pub fn build_drill_query_executor(
     shared_layer: metric_tree_ops::SharedLayer,
     dialects: airlayer::DatasourceDialectMap,
     databases: Vec<DatabaseConfig>,
-    workspace_manager: WorkspaceManager,
+    workspace_manager: WorkspaceManager<ReadOnly>,
     user_id: Uuid,
     role: WorkspaceRole,
     handle: tokio::runtime::Handle,
@@ -1070,11 +1090,13 @@ pub fn build_drill_query_executor(
             (c, true)
         } else {
             let build_start = std::time::Instant::now();
-            let ctx = OxyProjectContext::new(workspace_manager.clone())
-                .with_subject(user_id)
-                .with_role(role.clone());
             let built = handle
-                .block_on(ctx.build_connector_for(&database))
+                .block_on(build_connector_for_db(
+                    &workspace_manager,
+                    &database,
+                    Some(user_id),
+                    Some(role.clone()),
+                ))
                 .map_err(|e| EngineError::QueryError(e.to_string()))?;
             tracing::info!(
                 target: "metric_tree.explain",
@@ -1181,14 +1203,16 @@ fn rows_to_maps(rows: Vec<Vec<String>>) -> Vec<Map<String, Value>> {
 /// triple. Used by [`crate::agentic_wiring::OxyProjectContext::metric_tree_runner`]
 /// to populate the agentic platform port.
 pub fn make_runner(
-    workspace_manager: WorkspaceManager,
+    workspace_manager: WorkspaceManager<WorkingCopy>,
     user_id: Uuid,
     role: WorkspaceRole,
     preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
     preagg_renewal_threshold_secs: u64,
 ) -> Arc<dyn MetricTreeRunner> {
+    // The runner only needs the read capability; `into_read_only` keeps the
+    // working copy, so the FS scan-path fallback still works on this node.
     Arc::new(
-        OxyMetricTreeRunner::new(workspace_manager, user_id, role)
+        OxyMetricTreeRunner::new(workspace_manager.into_read_only(), user_id, role)
             .with_preagg(preagg_cache, preagg_renewal_threshold_secs),
     )
 }

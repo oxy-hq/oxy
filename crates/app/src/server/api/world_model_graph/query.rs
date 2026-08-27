@@ -13,13 +13,14 @@ use uuid::Uuid;
 use crate::server::api::data::{build_connector, run_with_connector};
 
 use super::types::*;
+use oxy::config::WorkingCopy;
 
 /// Load the semantic layer and build its promotion closure — the preamble the
 /// world-model handlers otherwise repeat verbatim (`semantics_scan_path →
 /// get_or_load → Promotions::build`). Returns the transport error tuple ready to
 /// `?`-propagate from a handler so the load path lives in one place.
 pub(super) async fn load_layer_and_promotions(
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
     layer_cache: &crate::server::api::middlewares::workspace_context::SemanticLayerCacheCtx,
 ) -> Result<
     (std::sync::Arc<airlayer::SemanticLayer>, Promotions),
@@ -54,12 +55,10 @@ pub(super) async fn load_layer_and_promotions(
 /// world-model handlers otherwise repeat this `resolve(..).ok().flatten()`
 /// incantation verbatim, so it lives here in one place.
 pub(super) async fn resolve_world_model_config(
-    workspace_id: Uuid,
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
 ) -> Option<crate::server::api::world_model_config::WorldModelConfig> {
     crate::server::api::world_model_config::WorldModelConfig::resolve(
-        workspace_id,
-        workspace_manager.config_manager.workspace_path(),
+        &workspace_manager.config_manager,
     )
     .await
     .ok()
@@ -1306,7 +1305,7 @@ pub(super) fn build_entity_metas(
 /// engine cache) — the sample-browser is an on-demand, low-QPS surface where the
 /// simpler path is fine.
 pub(super) struct WmExecCtx {
-    pub(super) workspace_manager: WorkspaceManager,
+    pub(super) workspace_manager: WorkspaceManager<WorkingCopy>,
     pub(super) user_id: Uuid,
     pub(super) role: WorkspaceRole,
     pub(super) scan_path: std::path::PathBuf,
@@ -1361,7 +1360,7 @@ impl WmExecCtx {
         else {
             return empty();
         };
-        let rows = run_with_connector(&connector, &sql, &self.workspace_manager).await;
+        let rows = run_with_connector(&connector, &sql).await;
         parse_expansion_rows(&rows, plan)
     }
 }

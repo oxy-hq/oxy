@@ -25,6 +25,7 @@ use super::{
     types::{Chunk, Event, EventKind, ProgressType, Source},
     writer::Writer,
 };
+use crate::config::WorkingCopy;
 
 #[async_trait::async_trait]
 pub trait Executable<I> {
@@ -42,7 +43,7 @@ pub struct ExecutionContext {
     pub source: Source,
     pub writer: Sender<Event>,
     pub renderer: Renderer,
-    pub workspace: WorkspaceManager,
+    pub workspace: WorkspaceManager<WorkingCopy>,
     pub checkpoint: Option<CheckpointContext>,
     /// Filters to apply to all SQL queries in this execution context
     /// Set by API request, transparent to automations/agents
@@ -72,7 +73,7 @@ impl ExecutionContext {
     pub fn new(
         source: Source,
         renderer: Renderer,
-        workspace: WorkspaceManager,
+        workspace: WorkspaceManager<WorkingCopy>,
         writer: Sender<Event>,
         checkpoint: Option<CheckpointContext>,
         user_id: Option<uuid::Uuid>,
@@ -486,7 +487,7 @@ impl Writer for ExecutionContext {
 pub struct ExecutionContextBuilder {
     source: Option<Source>,
     renderer: Option<Renderer>,
-    workspace: Option<WorkspaceManager>,
+    workspace: Option<WorkspaceManager<WorkingCopy>>,
     writer: Option<Sender<Event>>,
     checkpoint: Option<CheckpointContext>,
     filters: Option<SessionFilters>,
@@ -536,7 +537,7 @@ impl ExecutionContextBuilder {
         self
     }
 
-    pub fn with_workspace_manager(mut self, workspace: WorkspaceManager) -> Self {
+    pub fn with_workspace_manager(mut self, workspace: WorkspaceManager<WorkingCopy>) -> Self {
         self.workspace = Some(workspace);
         self
     }
@@ -610,9 +611,9 @@ impl ExecutionContextBuilder {
         let renderer = self
             .renderer
             .ok_or(OxyError::RuntimeError("Renderer is required".to_string()))?;
-        let workspace: WorkspaceManager = self.workspace.ok_or(OxyError::RuntimeError(
-            "WorkspaceManager is required".to_string(),
-        ))?;
+        let workspace: WorkspaceManager<WorkingCopy> = self.workspace.ok_or(
+            OxyError::RuntimeError("WorkspaceManager is required".to_string()),
+        )?;
 
         Ok(ExecutionContext {
             source,

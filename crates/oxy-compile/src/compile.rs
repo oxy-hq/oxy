@@ -24,6 +24,7 @@ use crate::writer::{
     FinaliseInput, FinaliseOutcome, RevisionContext, finalise_revision, insert_compiling_revision,
     mark_failed,
 };
+use entity::workspace_compiled_configs::CompiledConfig;
 use sea_orm::DatabaseConnection;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -73,17 +74,6 @@ pub struct CompiledReconcileConfig {
 #[derive(Debug, Clone)]
 pub struct CompiledWorldModelConfig {
     pub definition: Value,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct CompiledConfig {
-    pub databases: Value,
-    pub models: Option<Value>,
-    pub integrations: Option<Value>,
-    pub repositories: Option<Value>,
-    pub builder_agent: Option<Value>,
-    pub mcp: Option<Value>,
-    pub other: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -178,8 +168,8 @@ pub struct CompileRequest<'a> {
     /// When true AND the compile succeeds AND `kind == "main"`,
     /// atomically updates `workspaces.current_revision_id` to the
     /// new revision inside the finalise transaction. Defaults to
-    /// false so observation-mode behaviour is the no-op (the
-    /// foundation PR's contract).
+    /// false: writing rows is safe, changing what the runtime reads
+    /// is the decision, so it has to be asked for.
     pub promote: bool,
     /// `main` (default) or `draft`. Drafts are scoped to a single
     /// `owner_user_id` and are never promoted to current_revision_id
@@ -681,35 +671,6 @@ pub fn build_compiled_config(
     Ok(cfg)
 }
 
-/// Merge the split config columns back into the single top-level object that
-/// `config.yml` deserialises from. ONE canonical merge shared by the runtime
-/// reader (`compiled_reader::resolve_workspace_config`), the compile-time gate,
-/// and the round-trip test — so the three can never drift. Field order mirrors
-/// the reader exactly.
-pub fn merge_compiled_config(cfg: &CompiledConfig) -> Value {
-    let mut merged = match &cfg.other {
-        Some(Value::Object(map)) => map.clone(),
-        _ => serde_json::Map::new(),
-    };
-    merged.insert("databases".into(), cfg.databases.clone());
-    if let Some(v) = &cfg.models {
-        merged.insert("models".into(), v.clone());
-    }
-    if let Some(v) = &cfg.integrations {
-        merged.insert("integrations".into(), v.clone());
-    }
-    if let Some(v) = &cfg.repositories {
-        merged.insert("repositories".into(), v.clone());
-    }
-    if let Some(v) = &cfg.builder_agent {
-        merged.insert("builder_agent".into(), v.clone());
-    }
-    if let Some(v) = &cfg.mcp {
-        merged.insert("mcp".into(), v.clone());
-    }
-    Value::Object(merged)
-}
-
 /// Value written over a stripped inline secret literal: the EMPTY STRING, never
 /// `null`. Two properties matter, and only `""` has both:
 ///   1. It deserialises into a REQUIRED `String`/`PathBuf` field (Ollama
@@ -1071,7 +1032,7 @@ custom_section:
 "#;
         let value: Value = serde_yaml::from_str(yaml).unwrap();
         let cfg = build_compiled_config(value, None).unwrap();
-        let merged = merge_compiled_config(&cfg);
+        let merged = entity::workspace_compiled_configs::merge_compiled_config(&cfg);
         let expected = json!({
             "databases": [
                 {
@@ -1260,7 +1221,7 @@ fn shape_err(file: &DiscoveredFile, message: &str) -> FileFailure {
 /// nameless YAML row still gets a sensible identifier — e.g.
 /// `agents/clarify.agentic.yml` → `agents/clarify`. Used as a fallback
 /// when the `name` field is missing.
-fn derive_name_from_path(rel_path: &str) -> String {
+pub fn derive_name_from_path(rel_path: &str) -> String {
     const STRIPS: &[&str] = &[
         ".agentic.yml",
         ".view.yml",

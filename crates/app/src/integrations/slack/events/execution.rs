@@ -23,8 +23,6 @@ use crate::integrations::slack::resolution::thread_context::{
 };
 use entity::slack_installations::Model as InstallationRow;
 use entity::slack_user_links::Model as UserLinkRow;
-use oxy::adapters::workspace::builder::WorkspaceBuilder;
-use oxy::adapters::workspace::resolve_workspace_path;
 use oxy::database::client::establish_connection;
 use oxy::types::AnswerStream;
 use oxy_shared::errors::OxyError;
@@ -219,15 +217,16 @@ async fn run_agentic_for_slack(
     client: &SlackClient,
     bot_token: &str,
 ) -> Result<AgentExecOutput, OxyError> {
-    let repo_path = resolve_workspace_path(workspace_id).await?;
     // No `.try_with_intent_classifier()` — the agentic pipeline doesn't read
     // `WorkspaceManager.intent_classifier`, and loading one would mean an
     // OpenAI client init on every Slack message for nothing.
-    let workspace_manager = WorkspaceBuilder::new(workspace_id)
-        .with_workspace_path_and_fallback_config(&repo_path)
-        .await?
-        .build()
-        .await?;
+    let workspace_manager =
+        crate::integrations::slack::workspace::build_manager(workspace_id, "slack_agentic_run")
+            .await?;
+    let repo_path = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
 
     let project_ctx = Arc::new(crate::agentic_wiring::OxyProjectContext::new(
         workspace_manager,

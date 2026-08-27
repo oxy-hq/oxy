@@ -20,7 +20,7 @@ use utoipa::ToSchema;
 use oxy_app_core::app_state::AppState;
 
 use crate::server::api::middlewares::workspace_context::{
-    SemanticLayerCacheCtx, WorkspaceManagerExtractor, WorkspacePath,
+    SemanticLayerCacheCtx, WorkspaceManagerReadOnly, WorkspacePath,
 };
 use crate::server::api::semantic::{ErrorResponse, resolve_query_scan_source, semantic_err};
 
@@ -425,7 +425,7 @@ pub(crate) fn declared_rollups(
 /// node-local — a replica that never built the cache would report every rollup
 /// uncached — so the route stays pinned `IdeOnly` in `role_manifest.rs`.
 pub async fn get_preagg_status(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     layer_cache: SemanticLayerCacheCtx,
     Path(WorkspacePath {
         workspace_id: _workspace_id,
@@ -952,7 +952,7 @@ pub struct PreaggRebuildResponse {
 /// for anyone who needs the whole story.
 pub async fn rebuild_preagg(
     State(state): State<AppState>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     layer_cache: SemanticLayerCacheCtx,
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     Json(req): Json<PreaggRebuildRequest>,

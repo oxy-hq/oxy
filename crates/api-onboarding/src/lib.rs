@@ -18,6 +18,7 @@ use axum::routing::{get, post};
 use oxy_app::server::api::middlewares::org_context::org_middleware;
 use oxy_app::server::api::middlewares::subscription_guard::subscription_guard_middleware;
 use oxy_app_core::AppState;
+use oxy_shared::fleet_role::{RouteRole, RouteRoleDecl};
 
 pub use handlers::*;
 pub use ops::MAX_UPLOAD_BODY_BYTES;
@@ -43,6 +44,73 @@ pub use ops::MAX_UPLOAD_BODY_BYTES;
 /// path-keyed classifier to match (a bare `/onboarding/*` silently falls through
 /// to FleetOk and lets a stateless serve replica clone into a checkout it doesn't
 /// own).
+/// Every route this crate mounts, and which pod may serve it.
+///
+/// Stated here rather than at the mount because `oxy-app` owns `RoleRouter` and
+/// cannot see these handlers — the same reason `agentic-http` carries
+/// `router_roles()`. Paths are absolute: both seams MERGE this crate rather than
+/// nesting it, so there is no prefix to join against.
+///
+/// All IdeOnly, and none of it is a judgement call. `demo`/`new`/`github` clone
+/// a repository and scaffold `config.yml` through raw `std::fs` and git; reset
+/// rewrites that checkout; the readiness and key checks read it; and uploads
+/// write warehouse files into it. Not one of them can be answered by a replica
+/// with no working copy, and the failure would be silent — a clone into a
+/// directory the process does not own.
+pub fn route_roles() -> &'static [RouteRoleDecl] {
+    const IDE: RouteRole = RouteRole::IdeOnly;
+    &[
+        RouteRoleDecl {
+            method: "POST",
+            path: "/orgs/{org_id}/onboarding/demo",
+            role: IDE,
+        },
+        RouteRoleDecl {
+            method: "POST",
+            path: "/orgs/{org_id}/onboarding/new",
+            role: IDE,
+        },
+        RouteRoleDecl {
+            method: "POST",
+            path: "/orgs/{org_id}/onboarding/github",
+            role: IDE,
+        },
+    ]
+}
+
+/// The workspace-scoped half, merged inside the `/{workspace_id}` nest. Paths
+/// are relative to that nest, which is where the seam merges them.
+pub fn workspace_route_roles() -> &'static [RouteRoleDecl] {
+    const IDE: RouteRole = RouteRole::IdeOnly;
+    &[
+        RouteRoleDecl {
+            method: "GET",
+            path: "/onboarding-readiness",
+            role: IDE,
+        },
+        RouteRoleDecl {
+            method: "GET",
+            path: "/onboarding/github-setup",
+            role: IDE,
+        },
+        RouteRoleDecl {
+            method: "POST",
+            path: "/onboarding/reset",
+            role: IDE,
+        },
+        RouteRoleDecl {
+            method: "POST",
+            path: "/onboarding/test-llm-key",
+            role: IDE,
+        },
+        RouteRoleDecl {
+            method: "POST",
+            path: "/onboarding/upload-warehouse-files",
+            role: IDE,
+        },
+    ]
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .nest("/orgs/{org_id}/onboarding", global_onboarding_routes())

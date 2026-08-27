@@ -34,7 +34,7 @@ impl BuilderTestRunner for OxyTestRunner {
         let abs_path = workspace_root.join(test_file);
 
         let workspace_manager = WorkspaceBuilder::new(uuid::Uuid::new_v4())
-            .with_workspace_path(workspace_root)
+            .with_working_copy(workspace_root, None, oxy::config::OnMissing::Fail)
             .await
             .map_err(|e| e.to_string())?
             .build()

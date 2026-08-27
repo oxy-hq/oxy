@@ -96,9 +96,11 @@ async fn execute_sql(
         // upstream data (a SQL row value substituted via Jinja) must
         // stay inside the workspace. Mirrors the read-side containment
         // applied to `WorkspaceContext::resolve_automation_yaml`.
-        let full_path =
-            validate_workspace_relative_path(workspace.workspace_path(), &resolved_path)
-                .map_err(|e| format!("sql_file {resolved_path:?}: {e}"))?;
+        let root = workspace.workspace_path().ok_or_else(|| {
+            format!("sql_file {resolved_path:?}: this node holds no workspace files")
+        })?;
+        let full_path = validate_workspace_relative_path(root, &resolved_path)
+            .map_err(|e| format!("sql_file {resolved_path:?}: {e}"))?;
         tokio::fs::read_to_string(&full_path)
             .await
             .map_err(|e| format!("failed to read SQL file {}: {e}", full_path.display()))?
@@ -151,7 +153,11 @@ async fn execute_semantic_query(
     let query_config: SemanticQueryConfig = serde_json::from_value(cfg.clone())
         .map_err(|e| format!("failed to parse semantic query config: {e}"))?;
 
-    let scan_path = workspace.workspace_path();
+    // BACKLOG: same as the solver — the semantic scan directory is
+    // `context_root()`, not the workspace root.
+    let scan_path = workspace
+        .workspace_path()
+        .ok_or_else(|| "semantic_query: this node holds no workspace files".to_string())?;
     let databases = workspace.database_configs();
     let preagg = workspace.preagg_context();
     let compiled = crate::semantic::resolve_and_compile(

@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 use crate::agentic_wiring::OxyProjectContext;
 use crate::server::api::custom_apps_gates::{CustomAppContext, check_custom_app_gates};
-use crate::server::api::semantic_scan::{MaterialisedScan, materialise_semantic_scan};
+use crate::server::api::semantic_scan::{ScanDir, scan_dir};
 
 #[derive(Serialize)]
 struct ApiErr {
@@ -67,18 +67,18 @@ pub(crate) fn err_with_code(
 /// in scope for the duration of the request.
 pub(crate) enum ScanHandle {
     /// Compile-boundary tempdir (the serve-fleet path).
-    Materialised(MaterialisedScan),
+    Materialised(ScanDir),
     /// Workspace FS scan path (local / ide path, when the boundary is empty
     /// but we're not on a stateless replica).
-    Fs(PathBuf),
+    WorkingCopy(PathBuf),
 }
 
 impl ScanHandle {
     /// Directory to parse the semantic layer from.
     pub(crate) fn path(&self) -> &Path {
         match self {
-            ScanHandle::Materialised(m) => &m.scan_path,
-            ScanHandle::Fs(p) => p.as_path(),
+            ScanHandle::Materialised(m) => m.path(),
+            ScanHandle::WorkingCopy(p) => p.as_path(),
         }
     }
 
@@ -124,13 +124,13 @@ pub(crate) async fn enter_semantic_boundary(
     let proj_ctx = app.build_project_context().await?;
 
     // 3. Resolve the scan directory.
-    let materialised = match materialise_semantic_scan(project_id).await {
-        Ok(m) => m,
+    let materialised = match scan_dir(&proj_ctx.workspace_manager().config_manager).await {
+        Ok(scan) => Some(scan),
         Err(e) => {
             tracing::warn!(
                 project_id = %project_id,
-                error = ?e,
-                "semantic-analysis: materialise failed; falling through to FS"
+                error = %e,
+                "semantic-analysis: no scan directory available"
             );
             None
         }
@@ -139,13 +139,13 @@ pub(crate) async fn enter_semantic_boundary(
     let scan = match materialised {
         Some(m) => ScanHandle::Materialised(m),
         None => {
-            // Stateless-fleet guard: no working copy on a serve replica, so
-            // the FS fallback points at a non-existent dir. Return the
-            // NeedsRecompile contract and enqueue a lazy compile instead of
-            // parsing an empty layer.
-            if crate::server::role_manifest::current_process_role()
-                == crate::server::role_manifest::Role::Serve
-            {
+            // Stateless-fleet guard: no working copy, so the FS fallback
+            // points at a non-existent dir. Return the NeedsRecompile contract
+            // and enqueue a lazy compile instead of parsing an empty layer.
+            //
+            // Asks the manager, not `role == Serve` — a Worker is equally
+            // diskless and fell straight through.
+            if !proj_ctx.workspace_manager().config_manager.can_read_disk() {
                 if let Ok(db) = oxy::database::client::establish_connection().await {
                     crate::server::api::middlewares::workspace_context::enqueue_lazy_compile(
                         &db, project_id,
@@ -165,7 +165,7 @@ pub(crate) async fn enter_semantic_boundary(
                 }
                 return Err(response);
             }
-            ScanHandle::Fs(
+            ScanHandle::WorkingCopy(
                 proj_ctx
                     .workspace_manager()
                     .config_manager

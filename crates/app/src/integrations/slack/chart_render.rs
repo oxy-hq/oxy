@@ -26,6 +26,7 @@ use headless_chrome::Browser;
 use headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption;
 use oxy::adapters::workspace::resolve_workspace_path;
 use oxy::config::ConfigBuilder;
+use oxy::config::WorkingCopy;
 use oxy_shared::errors::OxyError;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -49,7 +50,7 @@ pub async fn cached_chart_png_path(
     chart_json_filename: &str,
 ) -> Result<PathBuf, OxyError> {
     let config_manager = build_config_manager(workspace_id).await?;
-    let state_dir = config_manager.get_charts_dir().await?;
+    let state_dir = config_manager.charts_dir();
     // `get_charts_dir` returns `<state>/charts`; jump one level up to
     // sit at `<state>/slack-chart-images` so we don't pollute the JSON
     // dir that the frontend `useChart` hook scans.
@@ -78,7 +79,7 @@ pub async fn write_chart_json(
     json: &serde_json::Value,
 ) -> Result<PathBuf, OxyError> {
     let config_manager = build_config_manager(workspace_id).await?;
-    let charts_dir = config_manager.get_charts_dir().await?;
+    let charts_dir = config_manager.charts_dir();
     tokio::fs::create_dir_all(&charts_dir).await.map_err(|e| {
         OxyError::RuntimeError(format!(
             "failed to create charts dir {}: {e}",
@@ -94,6 +95,21 @@ pub async fn write_chart_json(
             path.display()
         ))
     })?;
+
+    // Mirror on WRITE, not on the ide's first read.
+    //
+    // The read-path mirror meant a chart nobody had viewed yet existed on
+    // exactly one pod, so `GET /charts/{file}` had to be pinned to the ide to
+    // guarantee a hit. Mirroring here makes every chart readable from any
+    // replica the moment it exists, which is what lets that route serve from the
+    // fleet. No-op when no blob bucket is configured.
+    crate::server::runtime_artifact::mirror(
+        &crate::server::runtime_artifact::chart_key(workspace_id, filename),
+        bytes,
+        "application/json",
+    )
+    .await;
+
     Ok(path)
 }
 
@@ -105,7 +121,7 @@ pub async fn chart_json_path(
     chart_json_filename: &str,
 ) -> Result<Option<PathBuf>, OxyError> {
     let config_manager = build_config_manager(workspace_id).await?;
-    let charts_dir = config_manager.get_charts_dir().await?;
+    let charts_dir = config_manager.charts_dir();
     let path = charts_dir.join(chart_json_filename);
     if tokio::fs::try_exists(&path).await.unwrap_or(false) {
         Ok(Some(path))
@@ -114,11 +130,13 @@ pub async fn chart_json_path(
     }
 }
 
-async fn build_config_manager(workspace_id: Uuid) -> Result<oxy::config::ConfigManager, OxyError> {
+async fn build_config_manager(
+    workspace_id: Uuid,
+) -> Result<oxy::config::ConfigManager<WorkingCopy>, OxyError> {
     let workspace_path = resolve_workspace_path(workspace_id).await?;
     ConfigBuilder::new()
         .with_workspace_path(workspace_path)?
-        .build_with_fallback_config()
+        .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
         .await
 }
 

@@ -580,7 +580,10 @@ pub async fn list_airway_files(
                 .into_response();
         }
     };
-    let root = workspace.workspace_path().to_path_buf();
+    let root = workspace
+        .workspace_path()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
     let files: Vec<AirwayFile> = paths
         .into_iter()
         .map(|abs| {

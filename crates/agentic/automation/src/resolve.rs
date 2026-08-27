@@ -151,8 +151,8 @@ mod tests {
 
     #[async_trait]
     impl WorkspaceContext for FakeWorkspace {
-        fn workspace_path(&self) -> &std::path::Path {
-            std::path::Path::new("/fake")
+        fn workspace_path(&self) -> Option<&std::path::Path> {
+            Some(std::path::Path::new("/fake"))
         }
         fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
             vec![]
@@ -160,13 +160,21 @@ mod tests {
         async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String> {
             Ok(vec![])
         }
-        async fn resolve_automation_yaml(&self, automation_ref: &str) -> Result<String, String> {
+        async fn resolve_automation_yaml(
+            &self,
+            automation_ref: &str,
+        ) -> Result<String, crate::WorkspaceReadError> {
             self.yamls
                 .lock()
                 .unwrap()
                 .get(automation_ref)
                 .cloned()
-                .ok_or_else(|| format!("no such automation: {automation_ref}"))
+                .ok_or_else(|| {
+                    // A fake with the map in hand genuinely knows it is absent.
+                    crate::WorkspaceReadError::Missing(format!(
+                        "no such automation: {automation_ref}"
+                    ))
+                })
         }
         async fn get_connector(
             &self,

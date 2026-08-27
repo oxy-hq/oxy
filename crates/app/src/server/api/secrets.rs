@@ -1,5 +1,5 @@
 use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerWorkingCopy;
 use crate::server::service::secret_manager::{
     CreateSecretParams, SecretInfo, SecretManagerService, UpdateSecretParams,
 };
@@ -552,7 +552,7 @@ pub struct EnvSecretInfo {
 pub async fn list_env_secrets(
     _: WorkspaceAdmin,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path(_workspace_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let config = workspace_manager.config_manager.get_config();
@@ -893,12 +893,30 @@ pub async fn reveal_secret(
 
     let secret_manager = SecretManagerService::new(workspace_id);
 
+    // 404 and 500 are different answers and the caller acts on them differently:
+    // a missing secret gets re-created, an unreadable one gets investigated. The
+    // old code returned 404 for both, under a message that admitted the
+    // ambiguity ("Secret not found or decryption failed") while the status code
+    // asserted one half of it.
     match secret_manager.get_secret_value_by_id(secret_id).await {
-        Some(value) => Ok((StatusCode::OK, axum::Json(json!({ "value": value }))).into_response()),
-        None => Ok((
+        Ok(Some(value)) => {
+            Ok((StatusCode::OK, axum::Json(json!({ "value": value }))).into_response())
+        }
+        Ok(None) => Ok((
             StatusCode::NOT_FOUND,
-            axum::Json(json!({ "error": "Secret not found or decryption failed" })),
+            axum::Json(json!({ "error": "Secret not found" })),
         )
             .into_response()),
+        Err(e) => {
+            tracing::error!(secret_id = %secret_id, "reveal_secret failed: {e}");
+            Ok((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(json!({
+                    "error": "Secret exists but could not be read by this instance",
+                    "detail": e.to_string(),
+                })),
+            )
+                .into_response())
+        }
     }
 }

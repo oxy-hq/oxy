@@ -1,4 +1,4 @@
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerWorkingCopy;
 use axum::body::Body;
 use axum::extract::Path;
 use axum::http::{StatusCode, header};
@@ -29,7 +29,7 @@ use uuid::Uuid;
     )
 )]
 pub async fn get_exported_chart(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, file_name)): Path<(Uuid, String)>,
 ) -> Result<Response, StatusCode> {
     // Validate file format - must be a PNG file

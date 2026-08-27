@@ -13,7 +13,7 @@
 //!   `pipeline_ref::load_pipeline_yaml`  (containment guard, agentic-pipeline)
 //!     → `WorkspaceContext::resolve_pipeline_yaml`   (port)
 //!       → `OxyProjectContext`                        (host adapter, oxy-app)
-//!         → `compiled_reader::resolve_pipeline`      (open_compiled_revision)
+//!         → `ConfigManager::pipeline_definition`      (Origin decides the source)
 //!
 //! with the workspace directory **absent from disk entirely**, which is what
 //! makes them fail before the change and pass after.
@@ -24,10 +24,9 @@
 use std::path::PathBuf;
 
 use entity::workspaces::WorkspaceStatus;
-use entity::{airway_pipelines, organizations, revisions, workspaces};
+use entity::{airway_pipelines, organizations, revisions, workspace_compiled_configs, workspaces};
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy_app::agentic_wiring::OxyProjectContext;
-use oxy_app::server::api::compiled_reader::resolve_pipeline;
 use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, EntityTrait};
 use serde_json::json;
 use uuid::Uuid;
@@ -124,6 +123,26 @@ async fn seed_promoted_workspace(db: &DatabaseConnection) -> (Uuid, Uuid) {
         .expect("load workspace")
         .expect("workspace exists")
         .into();
+    // A promoted revision always carries a compiled config in production —
+    // `oxy-compile` writes both in the same pass. Without it `load_config`
+    // downgrades the manager's `Origin` to `Disk` (its documented behaviour for
+    // a revision with no readable config) and the boundary is never queried, so
+    // a fixture that promotes without one is not modelling a promoted
+    // workspace.
+    workspace_compiled_configs::ActiveModel {
+        revision_id: ActiveValue::Set(rev_id),
+        databases: ActiveValue::Set(json!([])),
+        models: ActiveValue::Set(Some(json!([]))),
+        integrations: ActiveValue::Set(None),
+        repositories: ActiveValue::Set(None),
+        builder_agent: ActiveValue::Set(None),
+        mcp: ActiveValue::Set(None),
+        other: ActiveValue::Set(None),
+    }
+    .insert(db)
+    .await
+    .expect("seed compiled config");
+
     ws.current_revision_id = ActiveValue::Set(Some(rev_id));
     ws.update(db).await.expect("promote revision");
 
@@ -165,7 +184,10 @@ async fn seed_pipeline(db: &DatabaseConnection, rev_id: Uuid, name: &str, file_p
 
 /// An `OxyProjectContext` whose workspace path points at a directory that does
 /// NOT exist — a stateless durable worker that never cloned the repo.
-async fn worker_context_without_working_copy(ws_id: Uuid) -> (OxyProjectContext, PathBuf) {
+async fn worker_context_without_working_copy(
+    db: &DatabaseConnection,
+    ws_id: Uuid,
+) -> (OxyProjectContext, PathBuf) {
     // Make this process look like a worker replica, so the host adapter takes
     // the "no working copy → no branch hint" arm.
     // SAFETY: single-threaded test setup; nextest gives each test its own process.
@@ -177,14 +199,68 @@ async fn worker_context_without_working_copy(ws_id: Uuid) -> (OxyProjectContext,
     let absent = PathBuf::from(format!("/nonexistent-oxy-workspace/{}", Uuid::new_v4()));
     assert!(!absent.exists(), "precondition: no working copy on disk");
 
+    // Pinned to whatever revision the workspace has promoted, which is what
+    // `workspace_middleware` does per request — `ConfigManager` reads its
+    // `Origin`, it does not go looking for a revision of its own. `None` here
+    // yields `Origin::Disk`, and the absent root below then reports the miss.
+    let revision_id = current_revision_id(db, ws_id).await;
+
+    // A root that does NOT exist: the manager carries the capability, and
+    // `disk()` turns the absent directory into a retryable error rather than
+    // an empty answer. Same shape a durable worker sees.
     let wm = WorkspaceBuilder::new(ws_id)
-        .with_workspace_path_and_fallback_config(&absent)
+        .with_working_copy(&absent, revision_id, oxy::config::OnMissing::Empty)
         .await
         .expect("workspace builder")
         .build()
         .await
         .expect("workspace manager");
     (OxyProjectContext::new(wm), absent)
+}
+
+/// The workspace's promoted revision, read the way the middleware reads it.
+///
+/// Takes the per-test connection rather than calling `establish_connection`:
+/// this module is on `common::fresh_db`, and `shared_db_registry` counts a
+/// literal `establish_connection` here as a claim on the SHARED database — it
+/// would then race the serial-db packages on `public`.
+async fn current_revision_id(db: &DatabaseConnection, ws_id: Uuid) -> Option<Uuid> {
+    workspaces::Entity::find_by_id(ws_id)
+        .one(db)
+        .await
+        .expect("load workspace")
+        .and_then(|w| w.current_revision_id)
+}
+
+/// The production reader, reached the way a request reaches it: a manager
+/// pinned to whatever revision this workspace has promoted.
+///
+/// `compiled_reader::resolve_pipeline` is gone — `ConfigManager` owns the
+/// compiled-vs-disk choice now, so a test that called the raw query would be
+/// asserting about a path no request takes. `None` here means the boundary had
+/// no row AND there was no working copy to fall through to, which is the same
+/// clean miss the old reader reported.
+async fn resolve_pipeline_definition(
+    db: &DatabaseConnection,
+    ws_id: Uuid,
+    file_path: &str,
+) -> Option<serde_json::Value> {
+    let (ctx, _absent) = worker_context_without_working_copy(db, ws_id).await;
+    ctx.workspace_manager()
+        .config_manager
+        .pipeline_definition(file_path)
+        .await
+        .unwrap_or(None)
+}
+
+/// The `name:` the fixture wrote into the definition, which is how a resolved
+/// row identifies itself now that the reader returns the document rather than
+/// a row wrapper.
+fn definition_name(definition: &serde_json::Value) -> &str {
+    definition
+        .get("name")
+        .and_then(|v| v.as_str())
+        .expect("the fixture writes a name")
 }
 
 /// THE regression: the run path resolves a pipeline with no workspace
@@ -198,7 +274,7 @@ async fn airway_pipeline_yaml_resolves_with_no_workspace_directory() {
     let (ws_id, rev_id) = seed_promoted_workspace(&db).await;
     seed_pipeline(&db, rev_id, "toast_orders", "pipelines/toast.airway.yml").await;
 
-    let (ctx, absent_root) = worker_context_without_working_copy(ws_id).await;
+    let (ctx, absent_root) = worker_context_without_working_copy(&db, ws_id).await;
 
     // The FS path is genuinely impossible here — pin that, so a future change
     // that quietly re-creates a working copy can't make this test vacuous.
@@ -245,7 +321,7 @@ async fn airway_pipeline_ref_containment_holds_without_a_working_copy() {
     let (ws_id, rev_id) = seed_promoted_workspace(&db).await;
     seed_pipeline(&db, rev_id, "toast_orders", "pipelines/toast.airway.yml").await;
 
-    let (ctx, _absent) = worker_context_without_working_copy(ws_id).await;
+    let (ctx, _absent) = worker_context_without_working_copy(&db, ws_id).await;
 
     for bad in ["", "   ", "/etc/passwd", "../../etc/passwd", "a/../../b"] {
         let err = agentic_pipeline::pipeline_ref::load_pipeline_yaml(&ctx, bad)
@@ -269,17 +345,14 @@ async fn airway_compiled_reader_keys_by_file_path_not_name() {
     let (ws_id, rev_id) = seed_promoted_workspace(&db).await;
     seed_pipeline(&db, rev_id, "toast_orders", "pipelines/toast.airway.yml").await;
 
-    let row = resolve_pipeline(ws_id, None, "pipelines/toast.airway.yml")
+    let definition = resolve_pipeline_definition(&db, ws_id, "pipelines/toast.airway.yml")
         .await
-        .expect("query")
         .expect("must resolve by workspace-relative file_path");
-    assert_eq!(row.name, "toast_orders");
-    assert_eq!(row.file_path, "pipelines/toast.airway.yml");
+    assert_eq!(definition_name(&definition), "toast_orders");
 
     assert!(
-        resolve_pipeline(ws_id, None, "toast_orders")
+        resolve_pipeline_definition(&db, ws_id, "toast_orders")
             .await
-            .expect("query-by-name")
             .is_none(),
         "the YAML name must not resolve a row — the reader keys by file_path"
     );
@@ -287,9 +360,8 @@ async fn airway_compiled_reader_keys_by_file_path_not_name() {
     // An uncompiled / unknown path is a clean miss so the caller can fall
     // back, not an error.
     assert!(
-        resolve_pipeline(ws_id, None, "pipelines/missing.airway.yml")
+        resolve_pipeline_definition(&db, ws_id, "pipelines/missing.airway.yml")
             .await
-            .expect("missing-path query")
             .is_none()
     );
 }
@@ -306,20 +378,15 @@ async fn airway_pipeline_ref_cannot_reach_another_workspace() {
     seed_pipeline(&db, rev_b, "b_pipeline", "pipelines/secret_b.airway.yml").await;
 
     assert!(
-        resolve_pipeline(ws_a, None, "pipelines/secret_b.airway.yml")
+        resolve_pipeline_definition(&db, ws_a, "pipelines/secret_b.airway.yml")
             .await
-            .expect("cross-workspace query")
             .is_none(),
         "workspace A must not resolve workspace B's pipeline"
     );
-    assert_eq!(
-        resolve_pipeline(ws_b, None, "pipelines/secret_b.airway.yml")
-            .await
-            .expect("own query")
-            .expect("B resolves its own pipeline")
-            .name,
-        "b_pipeline"
-    );
+    let own = resolve_pipeline_definition(&db, ws_b, "pipelines/secret_b.airway.yml")
+        .await
+        .expect("B resolves its own pipeline");
+    assert_eq!(definition_name(&own), "b_pipeline");
 }
 
 /// A workspace with no promoted revision is a clean `None` — the caller falls
@@ -342,9 +409,8 @@ async fn airway_unpromoted_workspace_falls_through_to_fs() {
     ws.update(&db).await.expect("un-promote");
 
     assert!(
-        resolve_pipeline(ws_id, None, "pipelines/toast.airway.yml")
+        resolve_pipeline_definition(&db, ws_id, "pipelines/toast.airway.yml")
             .await
-            .expect("query")
             .is_none(),
         "an unpromoted workspace must read the FS, not a stale revision"
     );

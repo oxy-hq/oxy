@@ -14,6 +14,7 @@ use ::oxy::connector::Connector;
 use ::oxy::execute::types::utils::record_batches_to_table;
 use ::oxy::sentry_config;
 use ::oxy::utils::print_colored_sql;
+use oxy::config::WorkingCopy;
 use oxy_shared::errors::OxyError;
 
 type Variable = (String, String);
@@ -141,7 +142,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
         (Some("sql"), _) => {
             let config = ConfigBuilder::new()
                 .with_workspace_path(&resolve_local_workspace_path()?)?
-                .build()
+                .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Fail)
                 .await?;
             let database = run_args
                 .database
@@ -188,7 +189,7 @@ async fn handle_automation_file(
     // CLI runs are stateless: nil ids and a noop runs manager so the user
     // doesn't need OXY_DATABASE_URL set just to execute an automation.
     let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
-        .with_workspace_path(&workspace_path)
+        .with_working_copy(&workspace_path, None, oxy::config::OnMissing::Fail)
         .await?
         .with_runs_manager(RunsManager::noop())
         .build()
@@ -236,7 +237,7 @@ async fn handle_automation_file(
 async fn handle_sql_file(
     file_path: &PathBuf,
     database: String,
-    config: &ConfigManager,
+    config: &ConfigManager<WorkingCopy>,
     variables: &[(String, String)],
     dry_run: bool,
 ) -> Result<String, OxyError> {

@@ -24,7 +24,13 @@ settings:
   max_steps: 25
 
 setup:
-  - "goto:/"
+      # `/home`, not `/`. Bare `/` is deliberately exempt from OXY_PATH_PREFIX
+      # (runner/backend.ts) and lands wherever the post-login dispatcher picks,
+      # which is fine with one workspace and a coin flip with two. This org now
+      # has two, so `/` silently ran a case against the wrong workspace. `/home`
+      # is the same page on a workspace-scoped route, so the prefix applies and
+      # the target is whatever OXY_PATH_PREFIX names.
+  - "goto:/home"
 
 cases:
   - name: submit on the chat page, then reopen the thread from search
@@ -69,6 +75,16 @@ cases:
       # The thread detail's message input marks the routed page as loaded —
       # a hard gate that fails loudly if the click did not navigate.
       - wait_for: "selector:[data-testid=message-input-send-button]"
+
+      # THE CONVERSATION. The send button belongs to the composer, which mounts
+      # with the page shell — before the thread's history has been fetched. The
+      # judge below asks for a user message AND an agent response, so gating on
+      # the composer judges a spinner: that is exactly what it reported on the
+      # 2026-08-19 12:05 run, and only on the warm-cache pass, where the replay
+      # arrives faster than the fetch. `agent-response-text` is the rendered
+      # answer itself (components/AnswerContent/index.tsx:17), so it cannot be
+      # visible before there is an answer to see.
+      - wait_for: "selector:[data-testid=agent-response-text];timeout_ms=60000"
 
     expect:
       - judge: |

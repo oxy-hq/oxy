@@ -16,9 +16,9 @@ use utoipa_axum::routes;
 
 use crate::api::{agent, api_keys, app, database, healthcheck, run, thread, workspaces};
 
-use super::{AppState, build_cors_layer};
+use super::{IdeState, build_cors_layer};
 
-pub async fn openapi_router() -> OpenApiRouter<AppState> {
+pub async fn openapi_router() -> OpenApiRouter<IdeState> {
     OpenApiRouter::new()
         .routes(routes!(healthcheck::health_check))
         .routes(routes!(healthcheck::readiness_check))

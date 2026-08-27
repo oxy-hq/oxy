@@ -19,7 +19,9 @@ use entity::workspace_members::WorkspaceRole;
 // header reference into a literal, so both paths resolve headers identically.
 use oxy::adapters::openai::HeaderValueExt;
 use oxy::adapters::workspace::manager::WorkspaceManager;
+use oxy::config::WorkingCopy;
 use oxy::config::model::{DatabaseType, DuckDBOptions, Model, SnowflakeAuthType};
+use oxy::config::{ConfigManager, DiskSlot, ResolveWorkspaceFile};
 use oxy_shared::errors::OxyError;
 
 // The three big trait impls live in sibling child modules; as `impl` blocks
@@ -38,7 +40,7 @@ mod workspace_context;
 /// cache is per-instance; callers that want to share it should wrap in `Arc`
 /// before handing the context around.
 pub struct OxyProjectContext {
-    workspace_manager: WorkspaceManager,
+    workspace_manager: WorkspaceManager<WorkingCopy>,
     /// Oxy user id of the requester, when known. Threaded into
     /// `airhouse_managed` credential resolution so each query runs as that
     /// user's provisioned Airhouse role. `None` falls back to single-row
@@ -74,7 +76,7 @@ pub struct OxyProjectContext {
 }
 
 impl OxyProjectContext {
-    pub fn new(workspace_manager: WorkspaceManager) -> Self {
+    pub fn new(workspace_manager: WorkspaceManager<WorkingCopy>) -> Self {
         Self {
             workspace_manager,
             subject: None,
@@ -84,6 +86,29 @@ impl OxyProjectContext {
             preagg_renewal_threshold_secs: 120,
             db: None,
         }
+    }
+
+    /// The compile-boundary revision this context's `Config` came from, or
+    /// `None` when it was built from the working copy.
+    ///
+    pub(super) async fn compiled_automation(
+        &self,
+        file_path: &str,
+    ) -> Result<Option<serde_json::Value>, oxy::config::ArtifactError> {
+        self.workspace_manager
+            .config_manager
+            .automation_definition(file_path)
+            .await
+    }
+
+    pub(super) async fn compiled_agent(
+        &self,
+        name: &str,
+    ) -> Result<Option<serde_json::Value>, oxy::config::ArtifactError> {
+        self.workspace_manager
+            .config_manager
+            .agent_definition(name)
+            .await
     }
 
     /// Attach the database connection. The HTTP workspace middleware and the
@@ -130,7 +155,7 @@ impl OxyProjectContext {
         self
     }
 
-    pub fn workspace_manager(&self) -> &WorkspaceManager {
+    pub fn workspace_manager(&self) -> &WorkspaceManager<WorkingCopy> {
         &self.workspace_manager
     }
 
@@ -171,79 +196,113 @@ impl OxyProjectContext {
     /// `database_to_connector_config` would (so the routing stays in one
     /// place), but propagates errors through `OxyError` instead of
     /// dropping them on the floor.
+    /// See [`build_connector_for_db`]. The body lives in a free function generic
+    /// over the capability so a handler holding a read-only manager can build a
+    /// connector without genericizing `OxyProjectContext` (26 construction
+    /// sites). This stays a delegation so every existing caller is untouched.
     pub async fn build_connector_for(
         &self,
         db_name: &str,
     ) -> Result<Arc<dyn DatabaseConnector>, OxyError> {
-        let db = self
-            .workspace_manager
-            .config_manager
-            .resolve_database(db_name)
-            .map_err(|e| {
-                OxyError::ConfigurationError(format!(
-                    "database '{db_name}' not found in config.yml: {e}"
-                ))
-            })?;
+        build_connector_for_db(
+            &self.workspace_manager,
+            db_name,
+            self.subject,
+            self.role.clone(),
+        )
+        .await
+    }
+}
 
-        // Airhouse types live outside `agentic-connector`'s vendor-neutral
-        // dispatcher; the helper builds them directly with full error
-        // propagation. Other types go through the config + dispatcher path.
-        match &db.database_type {
-            DatabaseType::Airhouse(_) | DatabaseType::AirhouseManaged(_) => {
-                build_airhouse_connector(
-                    &db,
-                    &self.workspace_manager,
-                    self.subject,
-                    self.role.clone(),
-                )
+/// Build a connector for one database, on either capability.
+///
+/// The three arms that need a disk go through `try_resolve_file`
+/// ([`ResolveWorkspaceFile`]), which has an impl for each capability: on a node
+/// with a working copy it resolves; on one without it returns the error naming
+/// the fix. Every other database — remote warehouses, DuckDB with an S3 mirror,
+/// airhouse — never touches a file and works anywhere.
+pub async fn build_connector_for_db<S: DiskSlot>(
+    workspace_manager: &WorkspaceManager<S>,
+    db_name: &str,
+    subject: Option<uuid::Uuid>,
+    role: Option<WorkspaceRole>,
+) -> Result<Arc<dyn DatabaseConnector>, OxyError>
+where
+    ConfigManager<S>: ResolveWorkspaceFile,
+{
+    let db = workspace_manager
+        .config_manager
+        .resolve_database(db_name)
+        .map_err(|e| {
+            OxyError::ConfigurationError(format!(
+                "database '{db_name}' not found in config.yml: {e}"
+            ))
+        })?;
+
+    // Airhouse types live outside `agentic-connector`'s vendor-neutral
+    // dispatcher; the helper builds them directly with full error
+    // propagation. Other types go through the config + dispatcher path.
+    match &db.database_type {
+        DatabaseType::Airhouse(_) | DatabaseType::AirhouseManaged(_) => {
+            build_airhouse_connector(&db, workspace_manager, subject, role).await
+        }
+        // DuckDB Local: use the process-wide pool so CSV/Parquet files are
+        // loaded only once and subsequent calls get a cheap try_clone().
+        // This is the same pool that oxy-core's DuckDB connector uses,
+        // avoiding the fresh-connection-per-request cost.
+        // `s3_mirror.is_none()` is the whole point of this guard. A mirrored
+        // DuckDB must NOT take the local-file path: it falls through to the
+        // wildcard arm below, which delegates to `database_to_connector_config`,
+        // whose own mirror arm attaches from S3 when the process is Serve or
+        // Worker. Without this clause the `Local` pattern matched first and a
+        // mirrored database on a diskless node resolved a file that is not
+        // there — contradicting this function's own doc comment above, which
+        // already promises that "DuckDB with an S3 mirror … never touches a
+        // file and works anywhere".
+        DatabaseType::DuckDB(duck)
+            if duck.s3_mirror.is_none() && matches!(&duck.options, DuckDBOptions::Local { .. }) =>
+        {
+            let DuckDBOptions::Local { file_search_path } = &duck.options else {
+                unreachable!()
+            };
+            let resolved = workspace_manager
+                .config_manager
+                .try_resolve_file(file_search_path)
                 .await
-            }
-            // DuckDB Local: use the process-wide pool so CSV/Parquet files are
-            // loaded only once and subsequent calls get a cheap try_clone().
-            // This is the same pool that oxy-core's DuckDB connector uses,
-            // avoiding the fresh-connection-per-request cost.
-            DatabaseType::DuckDB(duck) if matches!(&duck.options, DuckDBOptions::Local { .. }) => {
-                let DuckDBOptions::Local { file_search_path } = &duck.options else {
-                    unreachable!()
-                };
-                let resolved = self
-                    .workspace_manager
-                    .config_manager
-                    .resolve_file(file_search_path)
-                    .await
-                    .map_err(|e| {
-                        OxyError::ConfigurationError(format!(
-                            "DuckDB '{db_name}': cannot resolve path '{file_search_path}': {e}"
-                        ))
-                    })?;
-                let conn = tokio::task::spawn_blocking(move || {
-                    oxy::connector::checkout_local_connection(&resolved)
-                })
+                .map_err(|e| {
+                    OxyError::ConfigurationError(format!(
+                        "DuckDB '{db_name}': cannot resolve path '{file_search_path}': {e}"
+                    ))
+                })?;
+            let conn = tokio::task::spawn_blocking(move || {
+                oxy::connector::checkout_local_connection(&resolved)
+            })
+            .await
+            .map_err(|e| OxyError::DBError(format!("DuckDB pool join error: {e}")))?
+            .map_err(|e| OxyError::DBError(format!("DuckDB pool checkout failed: {e}")))?;
+            Ok(Arc::new(agentic_connector::DuckDbConnector::new(conn))
+                as Arc<dyn DatabaseConnector>)
+        }
+        _ => {
+            let cfg = database_to_connector_config(&db, workspace_manager)
                 .await
-                .map_err(|e| OxyError::DBError(format!("DuckDB pool join error: {e}")))?
-                .map_err(|e| OxyError::DBError(format!("DuckDB pool checkout failed: {e}")))?;
-                Ok(Arc::new(agentic_connector::DuckDbConnector::new(conn))
-                    as Arc<dyn DatabaseConnector>)
-            }
-            _ => {
-                let cfg = database_to_connector_config(&db, &self.workspace_manager)
-                    .await
-                    .ok_or_else(|| {
-                        OxyError::ConfigurationError(format!(
-                            "could not build connector config for database '{db_name}' (type {})",
-                            db.database_type_name()
-                        ))
-                    })?;
-                let built = agentic_connector::build_connector_async(cfg)
-                    .await
-                    .map_err(|e| {
-                        OxyError::DBError(format!("failed to build connector for '{db_name}': {e}"))
-                    })?;
-                Ok(Arc::from(built))
-            }
+                .ok_or_else(|| {
+                    OxyError::ConfigurationError(format!(
+                        "could not build connector config for database '{db_name}' (type {})",
+                        db.database_type_name()
+                    ))
+                })?;
+            let built = agentic_connector::build_connector_async(cfg)
+                .await
+                .map_err(|e| {
+                    OxyError::DBError(format!("failed to build connector for '{db_name}': {e}"))
+                })?;
+            Ok(Arc::from(built))
         }
     }
+}
 
+impl OxyProjectContext {
     /// Build (and cache) a single connector by name. Other databases in
     /// the workspace config are not touched, so a slow Snowflake handshake
     /// no longer delays a request that only needs `local` (DuckDB).
@@ -290,7 +349,7 @@ impl OxyProjectContext {
 /// `workflow_ref` — so a failed traversal attempt cannot be used to probe
 /// workspace layout.
 async fn resolve_workspace_relative(
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
     workflow_ref: &str,
 ) -> Result<PathBuf, String> {
     validate_automation_ref_syntax(workflow_ref)?;
@@ -427,7 +486,7 @@ mod tests {
         // Same builder path the global driver uses — falls back to a default
         // config, so an empty workspace dir is enough for this unit test.
         let wm = WorkspaceBuilder::new(uuid::Uuid::new_v4())
-            .with_workspace_path_and_fallback_config(fixture.path())
+            .with_working_copy(fixture.path(), None, oxy::config::OnMissing::Empty)
             .await
             .expect("config builder")
             .build()
@@ -482,7 +541,7 @@ mod tests {
             )
             .expect("write config.yml");
         let wm = WorkspaceBuilder::new(uuid::Uuid::new_v4())
-            .with_workspace_path(fixture.path())
+            .with_working_copy(fixture.path(), None, oxy::config::OnMissing::Fail)
             .await
             .expect("config builder")
             .build()
@@ -515,7 +574,7 @@ mod tests {
 
 async fn resolve_connector_impl(
     db_name: &str,
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
 ) -> Option<ConnectorConfig> {
     let db = match workspace_manager.config_manager.resolve_database(db_name) {
         Ok(d) => d,
@@ -545,10 +604,13 @@ async fn resolve_connector_impl(
 /// handle — today, Snowflake browser-auth and Snowflake private-key auth
 /// both fall into this bucket. The test-connection handler uses that as a
 /// signal to fall back to the legacy `oxy::connector::Connector` path.
-pub async fn database_to_connector_config(
+pub async fn database_to_connector_config<S: DiskSlot>(
     db: &oxy::config::model::Database,
-    workspace_manager: &WorkspaceManager,
-) -> Option<ConnectorConfig> {
+    workspace_manager: &WorkspaceManager<S>,
+) -> Option<ConnectorConfig>
+where
+    ConfigManager<S>: ResolveWorkspaceFile,
+{
     match &db.database_type {
         // Stateless fleet only (Serve/Worker): the local DuckDB data file is
         // absent here. The compile worker mirrored this local-file warehouse to
@@ -583,7 +645,7 @@ pub async fn database_to_connector_config(
             DuckDBOptions::Local { file_search_path } => {
                 let path = match workspace_manager
                     .config_manager
-                    .resolve_file(file_search_path)
+                    .try_resolve_file(file_search_path)
                     .await
                 {
                     Ok(p) => std::path::PathBuf::from(p),
@@ -598,7 +660,11 @@ pub async fn database_to_connector_config(
                 }))
             }
             DuckDBOptions::File { path } => {
-                let resolved = match workspace_manager.config_manager.resolve_file(path).await {
+                let resolved = match workspace_manager
+                    .config_manager
+                    .try_resolve_file(path)
+                    .await
+                {
                     Ok(p) => p,
                     Err(e) => {
                         tracing::warn!(db = %db.name, "DuckDB file: cannot resolve path: {e}");
@@ -845,7 +911,7 @@ pub async fn database_to_connector_config(
             };
             let key_path = workspace_manager
                 .config_manager
-                .resolve_file(&key_path)
+                .try_resolve_file(&key_path)
                 .await
                 .unwrap_or(key_path);
             let project_id = extract_project_id_from_key(&key_path).unwrap_or_default();
@@ -955,7 +1021,7 @@ fn extract_project_id_from_key(key_path: &str) -> Option<String> {
 /// instead, which propagates the same errors so the user sees what's wrong.
 async fn resolve_pre_built_airhouse(
     db_name: &str,
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
     subject: Option<uuid::Uuid>,
     role: Option<WorkspaceRole>,
 ) -> Option<Arc<dyn DatabaseConnector>> {
@@ -989,9 +1055,9 @@ async fn resolve_pre_built_airhouse(
 /// (and a fresh server-side DuckLake session) per warehouse query. On a warm
 /// hit no credential is minted and no connection is opened; the closure below
 /// runs only on a miss or dead-connection rebuild.
-async fn build_airhouse_connector(
+async fn build_airhouse_connector<S: DiskSlot>(
     db: &oxy::config::model::Database,
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<S>,
     subject: Option<uuid::Uuid>,
     role: Option<WorkspaceRole>,
 ) -> Result<Arc<dyn DatabaseConnector>, OxyError> {
@@ -1082,9 +1148,9 @@ fn pg_wire_dsn(user: &str, password: &str, host: &str, port: u16, database: &str
 /// `airhouse_managed` database. For `airhouse_managed` this mints an
 /// ephemeral per-subject credential via the SA broker. Shared by the
 /// connector builder and the airway destination resolver.
-async fn airhouse_wire_params(
+async fn airhouse_wire_params<S>(
     db: &oxy::config::model::Database,
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<S>,
     subject: Option<uuid::Uuid>,
     role: Option<WorkspaceRole>,
 ) -> Result<(String, u16, String, String, String), OxyError> {
@@ -1139,8 +1205,8 @@ async fn airhouse_wire_params(
 /// crawl, agentic background runs) leave `subject = None` and fall through
 /// to `mint_for_system` with a `system:workspace:<uuid>:agentic-bg`
 /// audit subject.
-async fn mint_airhouse_managed_creds(
-    workspace_manager: &WorkspaceManager,
+async fn mint_airhouse_managed_creds<S>(
+    workspace_manager: &WorkspaceManager<S>,
     subject: Option<uuid::Uuid>,
     role: Option<WorkspaceRole>,
 ) -> Result<(String, u16, String, String, String), OxyError> {
@@ -1203,7 +1269,7 @@ async fn mint_airhouse_managed_creds(
 async fn resolve_model_impl(
     model_ref: Option<&str>,
     has_explicit_model: bool,
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
 ) -> Option<ResolvedModelInfo> {
     let name = if let Some(ref_name) = model_ref {
         ref_name
@@ -1331,5 +1397,67 @@ async fn resolve_model_impl(
             tracing::warn!(model = name, "could not resolve model from config.yml: {e}");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod read_error_shape_tests {
+    use agentic_automation::WorkspaceContext;
+
+    /// The three shapes must be told apart by what failed, not by where the
+    /// call sat.
+    ///
+    /// `resolve_automation_yaml` briefly labelled every error from
+    /// `ConfigManager::definition` `Unavailable`, on the stated grounds that
+    /// `definition` only fails when there is no working copy. It does not: it
+    /// also propagates `definition_from_disk`, which returns
+    /// `ConfigurationError` for unparseable YAML. So a typo in an automation
+    /// opened in the IDE answered 503 with `Retry-After` — a retryable status
+    /// for a permanent condition, and the loss of the only status that could
+    /// say the file is broken.
+    #[tokio::test]
+    async fn a_typo_is_invalid_and_an_absent_source_is_unavailable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        tokio::fs::write(dir.path().join("config.yml"), "models: []\ndatabases: []\n")
+            .await
+            .expect("config");
+        tokio::fs::create_dir_all(dir.path().join("automations"))
+            .await
+            .expect("mkdir");
+        tokio::fs::write(
+            dir.path().join("automations/broken.automation.yml"),
+            "tasks: [\n  - unclosed\n",
+        )
+        .await
+        .expect("automation");
+
+        let manager = oxy::adapters::workspace::builder::WorkspaceBuilder::new(uuid::Uuid::nil())
+            .with_working_copy(dir.path(), None, oxy::config::OnMissing::Empty)
+            .await
+            .expect("builder")
+            .build()
+            .await
+            .expect("workspace manager");
+
+        let ctx = super::OxyProjectContext::new(manager);
+
+        let err = ctx
+            .resolve_automation_yaml("automations/broken.automation.yml")
+            .await
+            .expect_err("a file that does not parse is not content");
+        assert!(
+            err.is_invalid(),
+            "a YAML typo is the caller's to fix — 422, never a retry: {err:?}"
+        );
+        assert!(!err.is_unavailable());
+
+        let missing = ctx
+            .resolve_automation_yaml("automations/nope.automation.yml")
+            .await
+            .expect_err("a file that is not there is not content either");
+        assert!(
+            !missing.is_unavailable() && !missing.is_invalid(),
+            "an absent file on a node holding the workspace is a plain 404: {missing:?}"
+        );
     }
 }

@@ -50,7 +50,11 @@ impl BuilderSemanticCompiler for OxyBuilderSemanticCompiler {
             serde_json::from_value(params.clone())
                 .map_err(|e| ToolError::BadParams(format!("invalid semantic query params: {e}")))?;
 
-        let scan_path = self.project_ctx.workspace_path();
+        // BACKLOG: the semantic scan directory is `context_root()`, which
+        // serves the compiled boundary; the workspace root is the ide's answer.
+        let scan_path = self.project_ctx.workspace_path().ok_or_else(|| {
+            ToolError::Execution("semantic query: this node holds no workspace files".to_string())
+        })?;
         let databases = self.project_ctx.database_configs();
         let preagg = self.project_ctx.preagg_context();
 

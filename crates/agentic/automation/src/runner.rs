@@ -50,7 +50,14 @@ impl OxyAutomationRunner {
 #[async_trait::async_trait]
 impl SubrunRunner for OxyAutomationRunner {
     async fn search(&self, query: &str) -> Vec<SubrunRef> {
-        let workspace_path = self.workspace.workspace_path().to_path_buf();
+        // Only `strip_prefix` arithmetic. A node with no files has nothing to
+        // strip, and `make_workspace_relative` returns a relative path
+        // unchanged, so the empty root is the identity here.
+        let workspace_path = self
+            .workspace
+            .workspace_path()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_default();
 
         // Use context-resolved paths when available; fall back to full project scan.
         let paths = if !self.automation_files.is_empty() {

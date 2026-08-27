@@ -398,10 +398,23 @@ pub(crate) async fn build_project_context(
             }
         }
     };
-    let mut builder = match WorkspaceBuilder::new(project_id)
-        .with_workspace_path_and_fallback_config(&effective_path)
-        .await
-    {
+    // Compile boundary first, filesystem second — the same order the workspace
+    // middleware and the Slack entry point use.
+    //
+    // This went straight to the working copy, which is the reason nine
+    // `/api/projects/*` routes are pinned IdeOnly: the custom-app data plane
+    // could only be served by the one pod holding a checkout. Reading the
+    // promoted revision here is what lets them run on a replica, so a custom app
+    // survives an ide restart instead of going down with it.
+    //
+    // `Origin` is recorded, so every boundary read downstream resolves at the
+    // revision picked here rather than deriving its own.
+    let revision_id =
+        crate::server::api::compiled_reader::resolve_request_revision(project_id, branch_opt).await;
+    let init = WorkspaceBuilder::new(project_id)
+        .with_working_copy(&effective_path, revision_id, oxy::config::OnMissing::Empty)
+        .await;
+    let mut builder = match init {
         Ok(b) => b,
         Err(e) => {
             error!("workspace builder failed: {e}");

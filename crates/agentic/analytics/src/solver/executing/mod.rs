@@ -1053,10 +1053,27 @@ pub(super) fn build_executing_handler()
                                             BackTarget::Specify(intent, hint)
                                         }
                                         SolutionSource::LlmWithSemanticContext => {
-                                            let spec = run_ctx.spec.clone().expect(
-                                                "run_ctx.spec must be set before executing",
-                                            );
-                                            BackTarget::Solve(spec, hint)
+                                            // The Mode 2 fast path
+                                            // (`spec_to_executing` calling
+                                            // `solve_impl` inline right after a
+                                            // failed semantic compile) reaches
+                                            // Executing without ever entering
+                                            // `ProblemState::Solving`, so on this
+                                            // first attempt `run_ctx.spec` is
+                                            // still None — only a later retry
+                                            // through `BackTarget::Solve`
+                                            // populates it. Fall back to
+                                            // re-Specifying from the intent
+                                            // instead of panicking, mirroring the
+                                            // SemanticLayer arm above.
+                                            if let Some(spec) = run_ctx.spec.clone() {
+                                                BackTarget::Solve(spec, hint)
+                                            } else {
+                                                let intent = run_ctx.intent.clone().expect(
+                                                    "run_ctx.intent must be set before executing",
+                                                );
+                                                BackTarget::Specify(intent, hint)
+                                            }
                                         }
                                     }
                                 };
@@ -1095,50 +1112,67 @@ pub(super) fn build_executing_handler()
                             if let Some(sql) = failing_sql {
                                 hint.previous_output = Some(format!("Failing SQL: {sql}"));
                             }
-                            let back = match solution_source {
-                                SolutionSource::SqlFile { .. } => {
-                                    // Pre-written SQL files are authoritative — the
-                                    // file content won't change between attempts, so
-                                    // re-running Specify would just re-execute the
-                                    // same failing SQL. Route back to Clarify with
-                                    // the error so the LLM can either pick a
-                                    // different file or fall through to LLM SQL
-                                    // generation, instead of looping on the same
-                                    // file until the retry budget is exhausted.
-                                    let intent = run_ctx
-                                        .spec
-                                        .as_ref()
-                                        .map(|s| s.intent.clone())
-                                        .or_else(|| run_ctx.intent.clone())
-                                        .expect("run_ctx.intent must be set before executing");
-                                    BackTarget::Clarify(intent, hint)
-                                }
-                                SolutionSource::SemanticLayer
-                                | SolutionSource::Automation { .. }
-                                | SolutionSource::VendorEngine(_) => {
-                                    // When spec is available (normal path), retry
-                                    // from Specify. When it's None (semantic
-                                    // shortcut skipped Specifying/Solving), fall
-                                    // back to Clarify via run_ctx.intent.
-                                    if let Some(intent) =
-                                        run_ctx.spec.as_ref().map(|s| s.intent.clone())
-                                    {
-                                        BackTarget::Specify(intent, hint)
-                                    } else {
+                            let back =
+                                match solution_source {
+                                    SolutionSource::SqlFile { .. } => {
+                                        // Pre-written SQL files are authoritative — the
+                                        // file content won't change between attempts, so
+                                        // re-running Specify would just re-execute the
+                                        // same failing SQL. Route back to Clarify with
+                                        // the error so the LLM can either pick a
+                                        // different file or fall through to LLM SQL
+                                        // generation, instead of looping on the same
+                                        // file until the retry budget is exhausted.
                                         let intent = run_ctx
-                                            .intent
-                                            .clone()
+                                            .spec
+                                            .as_ref()
+                                            .map(|s| s.intent.clone())
+                                            .or_else(|| run_ctx.intent.clone())
                                             .expect("run_ctx.intent must be set before executing");
                                         BackTarget::Clarify(intent, hint)
                                     }
-                                }
-                                SolutionSource::LlmWithSemanticContext => {
-                                    let spec = run_ctx.spec.clone().expect(
-                                        "run_ctx.spec must be set for LlmWithSemanticContext path",
-                                    );
-                                    BackTarget::Solve(spec, hint)
-                                }
-                            };
+                                    SolutionSource::SemanticLayer
+                                    | SolutionSource::Automation { .. }
+                                    | SolutionSource::VendorEngine(_) => {
+                                        // When spec is available (normal path), retry
+                                        // from Specify. When it's None (semantic
+                                        // shortcut skipped Specifying/Solving), fall
+                                        // back to Clarify via run_ctx.intent.
+                                        if let Some(intent) =
+                                            run_ctx.spec.as_ref().map(|s| s.intent.clone())
+                                        {
+                                            BackTarget::Specify(intent, hint)
+                                        } else {
+                                            let intent = run_ctx.intent.clone().expect(
+                                                "run_ctx.intent must be set before executing",
+                                            );
+                                            BackTarget::Clarify(intent, hint)
+                                        }
+                                    }
+                                    SolutionSource::LlmWithSemanticContext => {
+                                        // Same shortcut-skips-Solving gap as the
+                                        // validation-failure arm above: the Mode 2
+                                        // fast path never populates run_ctx.spec on
+                                        // its first attempt, so a first-attempt
+                                        // execution failure (e.g. the LLM's
+                                        // generated SQL references a table that
+                                        // doesn't exist) must not assume spec is
+                                        // set. Fall back to Clarify via
+                                        // run_ctx.intent instead of panicking —
+                                        // this was observed live as `panicked at
+                                        // .../executing/mod.rs:985:69: run_ctx.spec
+                                        // must be set for LlmWithSemanticContext
+                                        // path`.
+                                        if let Some(spec) = run_ctx.spec.clone() {
+                                            BackTarget::Solve(spec, hint)
+                                        } else {
+                                            let intent = run_ctx.intent.clone().expect(
+                                                "run_ctx.intent must be set before executing",
+                                            );
+                                            BackTarget::Clarify(intent, hint)
+                                        }
+                                    }
+                                };
                             TransitionResult::diagnosing(ProblemState::Diagnosing {
                                 error: err,
                                 back,

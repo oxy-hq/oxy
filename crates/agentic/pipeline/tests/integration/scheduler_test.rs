@@ -45,6 +45,11 @@ async fn test_db() -> Option<DatabaseConnection> {
                     Arc::new(
                         Postgres::default()
                             .with_tag("18-alpine")
+                            // 64 MB (Docker default) is too small: a parallel plan wants a 32 MB
+                            // DSM segment and a REUSED container accumulates them.
+                            // Must match at every setup site — reuse hashes the config.
+                            // See internal-docs/workspace-source.md.
+                            .with_shm_size(1024 * 1024 * 1024)
                             .with_reuse(ReuseDirective::Always)
                             .start()
                             .await
@@ -105,8 +110,8 @@ struct FakeWorkspace;
 
 #[async_trait]
 impl agentic_automation::WorkspaceContext for FakeWorkspace {
-    fn workspace_path(&self) -> &std::path::Path {
-        std::path::Path::new("")
+    fn workspace_path(&self) -> Option<&std::path::Path> {
+        Some(std::path::Path::new(""))
     }
     fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
         vec![]
@@ -126,7 +131,10 @@ impl agentic_automation::WorkspaceContext for FakeWorkspace {
     async fn list_automation_files(&self) -> Result<Vec<std::path::PathBuf>, String> {
         Ok(vec![])
     }
-    async fn resolve_automation_yaml(&self, _r: &str) -> Result<String, String> {
+    async fn resolve_automation_yaml(
+        &self,
+        _r: &str,
+    ) -> Result<String, agentic_pipeline::WorkspaceReadError> {
         Err("unused".into())
     }
 }
@@ -1478,8 +1486,8 @@ impl agentic_pipeline::platform::ProjectContext for FakePlatform {
 
 #[async_trait]
 impl agentic_automation::WorkspaceContext for FakePlatform {
-    fn workspace_path(&self) -> &std::path::Path {
-        std::path::Path::new("")
+    fn workspace_path(&self) -> Option<&std::path::Path> {
+        Some(std::path::Path::new(""))
     }
     fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
         vec![]
@@ -1499,7 +1507,10 @@ impl agentic_automation::WorkspaceContext for FakePlatform {
     async fn list_automation_files(&self) -> Result<Vec<std::path::PathBuf>, String> {
         Ok(vec![])
     }
-    async fn resolve_automation_yaml(&self, _r: &str) -> Result<String, String> {
+    async fn resolve_automation_yaml(
+        &self,
+        _r: &str,
+    ) -> Result<String, agentic_pipeline::WorkspaceReadError> {
         Err("unused".into())
     }
 }

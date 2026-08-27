@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     api::middlewares::role_guards::{WorkspaceAdmin, WorkspaceEditor},
-    api::middlewares::workspace_context::WorkspaceManagerExtractor,
+    api::middlewares::workspace_context::WorkspaceManagerReadOnly,
     server::service::test_runs::{TestProjectRunInfo, TestRunsManager},
 };
 
@@ -19,7 +19,7 @@ pub struct CreateProjectRunBody {
 pub async fn create_project_run(
     _: WorkspaceEditor,
     Path(workspace_id): Path<Uuid>,
-    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(_pm): WorkspaceManagerReadOnly,
     extract::Json(body): extract::Json<CreateProjectRunBody>,
 ) -> Result<extract::Json<TestProjectRunInfo>, StatusCode> {
     let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
@@ -35,7 +35,7 @@ pub async fn create_project_run(
 
 pub async fn list_project_runs(
     Path(workspace_id): Path<Uuid>,
-    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(_pm): WorkspaceManagerReadOnly,
 ) -> Result<extract::Json<Vec<TestProjectRunInfo>>, StatusCode> {
     let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
         tracing::error!("Failed to create TestRunsManager: {e}");
@@ -51,7 +51,7 @@ pub async fn list_project_runs(
 pub async fn delete_project_run(
     _: WorkspaceAdmin,
     Path((workspace_id, project_run_id)): Path<(Uuid, Uuid)>,
-    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(_pm): WorkspaceManagerReadOnly,
 ) -> Result<StatusCode, StatusCode> {
     let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
         tracing::error!("Failed to create TestRunsManager: {e}");

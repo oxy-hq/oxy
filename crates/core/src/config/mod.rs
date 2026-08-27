@@ -9,10 +9,14 @@ pub mod schema_type_converter;
 pub mod test_config;
 pub mod validate;
 use garde::Validate;
+mod artifacts;
 mod builder;
+mod compiled;
 pub mod constants;
 mod manager;
+mod naming;
 pub mod oxy;
+pub mod scan;
 mod storage;
 
 use anyhow;
@@ -24,8 +28,14 @@ use validate::{DataAppValidationContext, ValidationContext, ValidationContextMet
 
 use oxy_shared::errors::OxyError;
 
-pub use builder::ConfigBuilder;
-pub use manager::ConfigManager;
+pub use artifacts::{
+    AgentEntry, AppEntry, ArtifactError, AutomationEntry, CompiledArtifact, PipelineEntry,
+    VerifiedQueryEntry, pipeline_source_kind,
+};
+pub use builder::{ConfigBuilder, OnMissing};
+pub use manager::{ConfigManager, DiskSlot, Origin, ReadOnly, ResolveWorkspaceFile, WorkingCopy};
+pub use naming::artifact_name;
+pub use scan::{ScanDir, SemanticEntity};
 
 impl Config {
     pub fn validate_config(&self) -> anyhow::Result<()> {

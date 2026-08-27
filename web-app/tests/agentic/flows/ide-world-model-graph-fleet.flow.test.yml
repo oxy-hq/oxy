@@ -1,0 +1,168 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Open the World Model graph and confirm the workspace's entities actually
+# render, then select one and confirm its detail resolves. No existing flow
+# touches this surface — `metric-tree` covers the Metric Tree tab, which is a
+# different graph over different data (the product docs call out World Model /
+# Context Graph / Metric Tree as three distinct surfaces).
+#
+# WHY THIS FLOW EXISTS — it is the OTHER half of the split fleet
+# --------------------------------------------------------------
+# Every other flow added alongside this one asserts a FleetOk route: a replica
+# must answer it from Postgres. This one asserts the opposite classification.
+# From crates/app/src/server/router/workspace.rs:
+#
+#   .route_ide("/semantic/world-model",                  get(...get_world_model))      L210
+#   .route_ide("/semantic/world-model/instances",        get(...))                     L214
+#   .route_ide("/semantic/world-model/filter-counts",    post(...))                    L222
+#   .route_ide("/semantic/world-model/instance-detail",  get(...))                     L226
+#
+# IdeOnly. The graph is driven by `.world-model.yml`, which the compile boundary
+# does not materialise (internal-docs/compile-boundary.md § "Not covered by the
+# boundary"), so on a stateless replica this page only works if `enforce_role`
+# reverse-proxies the request to the ide StatefulSet over OXY_IDE_UPSTREAM. That
+# hop is invisible from the single all-in-one process CI runs today, where the
+# files are always local and the proxy is never exercised.
+#
+# The failure is not a crash. web-app/src/pages/ide/WorldModel/index.tsx has
+# exactly two degraded states and both look ordinary:
+#   L149-155  a Spinner over "Loading world model…"   — hangs forever
+#   L158-163  `error.message` or "Failed to load world model" — one grey line
+# and a proxy that answers 200-with-nothing produces a graph with zero entity
+# nodes, which reads as "this workspace has no world model configured". All
+# three are asserted against below.
+#
+# THE FLEET TWIN of `ide-world-model-graph.flow.test.yml`. Same assertions,
+# different entity ids, because the two deployments are seeded from two
+# genuinely different fixtures — `demo_project/` for the `--local` backend the
+# sibling drives, `examples/` for the split-fleet Docker deployment this one
+# drives. Their `.world-model.yml` files share ZERO entity ids, so one
+# hardcoded selector list cannot satisfy both and the harness has no per-target
+# templating for values outside the `SECRET_ENV_VARS` allowlist.
+#
+# Two files rather than one parameterised file on purpose: the ids are the
+# assertion here. Asserting on NAMED ids — not a count, not a prefix match — is
+# what separates "the real model arrived" from "something rendered", and a
+# templated id would give that up for both.
+#
+# Run this one against the fleet, never the default way:
+#   scripts/fleet-assert.sh docker --flows        (it is in FLEET_FLOWS)
+# `backend_mode: local` below is left as-is because that field does NOT select
+# a fixture — it only picks which backend the runner auto-spawns when you do
+# not hand it one (runner/backend.ts `spawnArgs`), and the fleet path hands it
+# one via --no-auto-backend + OXY_BASE_URL.
+#
+# FIXTURE: `demo_project/.world-model.yml` (the `--local` fixture) declares
+# four entities — `store_week`, `store`, `time_period`, `economic_observation`
+# — the oxymart sales_semantics model. The split-fleet Docker deployment's
+# workspace is seeded from `examples/` instead (see
+# tests/agentic/README.md's cloud-mode section), whose `.world-model.yml` is a
+# DIFFERENT, unrelated fixture: 19 entities over a fruit-business commerce
+# model, none of them named `store_week` — confirmed by driving
+# /ide/world-model against the fleet directly and reading the rendered
+# `[data-testid^=wm-entity-]` list. So the entity ids below are
+# `examples/.world-model.yml`'s, not `demo_project`'s: `fruit_category` (L2,
+# the first entity), `fruit` (L25), `supplier` (L50), `customer` (L102) — a
+# connected cluster (fruit belongs to fruit_category, fruit and supplier join
+# via fruit_supplier_relationship, customer's orders line-item fruit), same as
+# the `--local` fixture's four picks were a connected cluster in ITS model.
+# Their ids go straight into the node testids, so asserting on named ids (not
+# on a count, not on a prefix match) is what distinguishes "the real model
+# arrived" from "something rendered".
+#
+# Navigation is rail-driven (`goto:/` then [data-testid=rail-core] then
+# [data-testid=ide-nav-world-model]) so the flow carries no workspace path
+# prefix and resolves identically in local mode and behind a cloud replica's
+# org/workspace routing.
+#
+# COST: two act steps, no agent run, no query execution.
+
+name: IDE world model graph renders and selects an entity (fleet fixture)
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  # 3 act steps + waits. In line with metric-tree (20) but leaner.
+  max_steps: 15
+
+setup:
+      # `/home`, not `/`. Bare `/` is deliberately exempt from OXY_PATH_PREFIX
+      # (runner/backend.ts) and lands wherever the post-login dispatcher picks,
+      # which is fine with one workspace and a coin flip with two. This org now
+      # has two, so `/` silently ran a case against the wrong workspace. `/home`
+      # is the same page on a workspace-scoped route, so the prefix applies and
+      # the target is whatever OXY_PATH_PREFIX names.
+  - "goto:/home"
+
+cases:
+  - name: the world model graph renders its entities and opens one
+    tags: [ide, world-model, fleet, regression]
+    steps:
+      # data-testid='rail-core' — web-app/src/components/Shell/WorkspaceShell.tsx:84
+      - wait_for: "selector:[data-testid=rail-core]"
+
+      - act: |
+          browser_click [data-testid=rail-core] — the Oxygen Factory tile in the
+          left icon rail. The IDE opens.
+
+      # data-testid='ide-nav-world-model'
+      #   — web-app/src/pages/ide/Sidebar/index.tsx:117
+      - wait_for: "selector:[data-testid=ide-nav-world-model];timeout_ms=60000"
+
+      - act: |
+          browser_click [data-testid=ide-nav-world-model] — the Globe icon
+          button in the narrow IDE sidebar rail. The URL ends with
+          /ide/world-model and the interactive map of the semantic layer loads.
+
+      # THE GRAPH READ. GET /{project}/semantic/world-model (IdeOnly — proxied
+      # to the ide node from a replica). Gating on a NAMED entity id is the
+      # assertion: the loading state and the error state both render instead of
+      # any node, and a wrong-empty response renders a graph with no nodes at
+      # all, so all three failure shapes time out here rather than passing.
+      # testid template `wm-entity-${entity.id}`
+      #   — web-app/src/pages/ide/WorldModel/components/WorldModelEntityNode.tsx:171
+      # `fruit_category` is the first entity in examples/.world-model.yml:2.
+      # Generous ceiling: on a replica this is a cross-pod hop, and the model is
+      # assembled from the workspace's semantic views.
+      - wait_for: "selector:[data-testid=wm-entity-fruit_category];timeout_ms=90000"
+
+      - act: |
+          browser_click [data-testid=wm-entity-fruit_category] — the "Fruit
+          Category" entity node in the graph. Selecting it highlights the node
+          and opens its detail panel on the right, listing the entity's
+          dimensions and measures.
+
+      - wait_for: network_idle
+
+    expect:
+      # Deterministic, $0. Four separate ids, so a graph that rendered one
+      # placeholder node cannot pass, and a partial model is named in the
+      # failure rather than averaged into a judge verdict.
+      - assert: "selector [data-testid=wm-entity-fruit_category] is visible"
+      - assert: "selector [data-testid=wm-entity-fruit] is visible"
+      - assert: "selector [data-testid=wm-entity-supplier] is visible"
+      - assert: "selector [data-testid=wm-entity-customer] is visible"
+
+      - judge: |
+          The page is on /ide/world-model showing the World Model graph: several
+          connected entity cards (including "Fruit Category"), with the Fruit
+          Category entity selected and a detail panel on the right describing
+          it — its dimensions and/or measures.
+
+          Fail if ANY of the following is true:
+          (a) the text "Loading world model…" or a spinner is still on screen —
+              the read never resolved;
+          (b) the text "Failed to load world model" is visible, or the page
+              shows a bare error message in place of the graph;
+          (c) the graph area is empty — no entity cards at all — or the page
+              otherwise suggests the workspace has no world model;
+          (d) any visible text contains "retry shortly", "a compile has been
+              enqueued", or "needs_recompile";
+          (e) any visible text contains a raw filesystem path or IO error —
+              "No such file or directory", "os error", "Workspace directory not
+              found", or an absolute path such as one starting "/var/lib/oxy";
+          (f) any visible text reports a bad gateway, a proxy failure, or a 421
+              misdirected-request error.

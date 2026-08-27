@@ -5,8 +5,6 @@ use entity::prelude::Workspaces;
 use entity::slack_installations::Model as InstallationRow;
 use entity::slack_user_links::Model as UserLinkRow;
 use entity::workspaces;
-use oxy::adapters::workspace::builder::WorkspaceBuilder;
-use oxy::adapters::workspace::resolve_workspace_path;
 use oxy::database::client::establish_connection;
 use oxy_shared::errors::OxyError;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -263,35 +261,61 @@ pub struct WorkspaceAgents {
 
 /// Read the agent inventory for a workspace: every agent path (relative to
 /// workspace root) plus the configured default (if any).
+///
+/// Reads the compile boundary first. `/slack/events` and `/slack/interactivity`
+/// are mounted on the public router as `FleetOk`, so they run on stateless
+/// `serve` replicas that hold no working copy —
+/// walking the filesystem there returned an empty list, and every Slack mention
+/// answered "this workspace has no agents". Same shape as the Toast webhook
+/// before #2816.
+///
+/// A Slack message carries no branch context, so the hint is `None`: read the
+/// promoted default-branch revision.
 pub async fn read_workspace_agents(workspace_id: Uuid) -> Result<WorkspaceAgents, OxyError> {
-    let path = resolve_workspace_path(workspace_id).await?;
-    let wm = WorkspaceBuilder::new(workspace_id)
-        .with_workspace_path_and_fallback_config(&path)
-        .await?
-        .build()
-        .await?;
+    read_agents(
+        &crate::integrations::slack::workspace::build_manager(workspace_id, "slack_agents").await?,
+    )
+    .await
+}
 
-    let workspace_path = wm.config_manager.workspace_path().to_path_buf();
-    let absolute_agents = wm
+/// The inventory for a manager the caller already built, so the agent chosen
+/// here and the run that executes it read one revision rather than each
+/// resolving their own.
+pub async fn read_agents(
+    wm: &oxy::adapters::workspace::manager::WorkspaceManager<oxy::config::WorkingCopy>,
+) -> Result<WorkspaceAgents, OxyError> {
+    // `ConfigManager` picks the source; `file_path` is workspace-relative on
+    // both arms, so there is no prefix to strip either way.
+    let mut agents: Vec<String> = wm
         .config_manager
         .list_analytics_agents()
         .await
-        .unwrap_or_default();
-    let agents: Vec<String> = absolute_agents
-        .iter()
-        .map(|abs| {
-            abs.strip_prefix(&workspace_path)
-                .unwrap_or(abs.as_path())
-                .to_string_lossy()
-                .to_string()
-        })
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| entry.file_path)
         .collect();
-    // Classic .agent.yml had a `default_agent` config field. Agentic
-    // agents don't; the picker falls back to the alphabetically first
-    // agentic file so first-time users land on a working selection.
-    let default = agents.first().cloned();
+    agents.sort();
 
-    Ok(WorkspaceAgents { agents, default })
+    if agents.is_empty() {
+        tracing::warn!(
+            workspace = %wm.workspace_id,
+            "slack: the workspace lists no agents. On a stateless serve replica \
+             this means it has no promoted revision to read from — the Slack \
+             reply will say the workspace has no agents."
+        );
+    }
+
+    Ok(WorkspaceAgents {
+        default: default_agent(&agents),
+        agents,
+    })
+}
+
+/// Classic `.agent.yml` had a `default_agent` config field. Agentic agents
+/// don't, so the picker falls back to the alphabetically first agentic file and
+/// first-time users land on a working selection.
+fn default_agent(agents: &[String]) -> Option<String> {
+    agents.first().cloned()
 }
 
 /// Returns all agent paths for a workspace as relative paths

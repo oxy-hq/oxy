@@ -419,8 +419,8 @@ mod resolution_classification_tests {
 
     #[async_trait::async_trait]
     impl agentic_automation::WorkspaceContext for Host {
-        fn workspace_path(&self) -> &Path {
-            &self.root
+        fn workspace_path(&self) -> Option<&Path> {
+            Some(&self.root)
         }
         fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
             vec![]
@@ -440,7 +440,10 @@ mod resolution_classification_tests {
         async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String> {
             Ok(vec![])
         }
-        async fn resolve_automation_yaml(&self, _r: &str) -> Result<String, String> {
+        async fn resolve_automation_yaml(
+            &self,
+            _r: &str,
+        ) -> Result<String, crate::WorkspaceReadError> {
             Err("unused".into())
         }
         async fn resolve_pipeline_yaml(&self, _r: &str) -> Result<Option<String>, String> {

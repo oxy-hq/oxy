@@ -46,6 +46,11 @@ async fn test_db() -> Option<DatabaseConnection> {
                     Arc::new(
                         Postgres::default()
                             .with_tag("18-alpine")
+                            // 64 MB (Docker default) is too small: a parallel plan wants a 32 MB
+                            // DSM segment and a REUSED container accumulates them.
+                            // Must match at every setup site — reuse hashes the config.
+                            // See internal-docs/workspace-source.md.
+                            .with_shm_size(1024 * 1024 * 1024)
                             .with_reuse(ReuseDirective::Always)
                             .start()
                             .await
@@ -117,8 +122,8 @@ impl agentic_pipeline::platform::ProjectContext for TmpWorkspace {
 
 #[async_trait]
 impl agentic_automation::WorkspaceContext for TmpWorkspace {
-    fn workspace_path(&self) -> &Path {
-        &self.root
+    fn workspace_path(&self) -> Option<&Path> {
+        Some(&self.root)
     }
     fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
         vec![]
@@ -138,7 +143,10 @@ impl agentic_automation::WorkspaceContext for TmpWorkspace {
     async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String> {
         Ok(vec![])
     }
-    async fn resolve_automation_yaml(&self, _workflow_ref: &str) -> Result<String, String> {
+    async fn resolve_automation_yaml(
+        &self,
+        _workflow_ref: &str,
+    ) -> Result<String, agentic_pipeline::WorkspaceReadError> {
         Err("tmp workspace: not available".into())
     }
 }

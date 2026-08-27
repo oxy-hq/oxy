@@ -9,6 +9,7 @@ use motherduck::MotherDuck;
 use snowflake::Snowflake;
 use std::collections::HashMap;
 
+use crate::config::ResolveWorkspaceFile;
 use crate::{
     adapters::{
         secrets::SecretsManager,
@@ -66,8 +67,8 @@ pub struct Connector {
 /// normally. An unknown `database_ref` also returns `Ok(())` so the
 /// caller's own resolver gets to produce the canonical "not found"
 /// error.
-pub fn reject_airhouse_managed_for_system_path(
-    config_manager: &ConfigManager,
+pub fn reject_airhouse_managed_for_system_path<S>(
+    config_manager: &ConfigManager<S>,
     database_ref: &str,
     operation: &str,
 ) -> Result<(), OxyError> {
@@ -87,9 +88,9 @@ pub fn reject_airhouse_managed_for_system_path(
 }
 
 impl Connector {
-    pub async fn from_database(
+    pub async fn from_database<S>(
         database_ref: &str,
-        config_manager: &ConfigManager,
+        config_manager: &ConfigManager<S>,
         secrets_manager: &SecretsManager,
         dry_run_limit: Option<u64>,
         filters: Option<SessionFilters>,
@@ -97,7 +98,10 @@ impl Connector {
         subject: Option<uuid::Uuid>,
         workspace_id: Option<uuid::Uuid>,
         effective_role: Option<entity::workspace_members::WorkspaceRole>,
-    ) -> Result<Self, OxyError> {
+    ) -> Result<Self, OxyError>
+    where
+        ConfigManager<S>: ResolveWorkspaceFile,
+    {
         let database = config_manager.resolve_database(database_ref)?;
         Self::from_db(
             &database,
@@ -134,9 +138,9 @@ impl Connector {
     /// the supported way to grant write access to Automation /
     /// agent SQL steps; the IDE Database panel does this automatically
     /// via `OxyProjectContext::build_connector_for`.
-    pub async fn from_db(
+    pub async fn from_db<S>(
         database: &Database,
-        config_manager: &ConfigManager,
+        config_manager: &ConfigManager<S>,
         secrets_manager: &SecretsManager,
         dry_run_limit: Option<u64>,
         filters: Option<SessionFilters>,
@@ -145,12 +149,15 @@ impl Connector {
         subject: Option<uuid::Uuid>,
         workspace_id: Option<uuid::Uuid>,
         effective_role: Option<entity::workspace_members::WorkspaceRole>,
-    ) -> Result<Self, OxyError> {
+    ) -> Result<Self, OxyError>
+    where
+        ConfigManager<S>: ResolveWorkspaceFile,
+    {
         let engine = match &database.database_type {
             DatabaseType::Bigquery(bigquery) => {
                 let key_path_str = bigquery.get_key_path(secrets_manager).await?;
                 let key_path = if bigquery.key_path.is_some() {
-                    config_manager.resolve_file(&key_path_str).await?
+                    config_manager.try_resolve_file(&key_path_str).await?
                 } else {
                     key_path_str
                 };
@@ -175,7 +182,7 @@ impl Connector {
                         } else {
                             DuckDBOptions::Local {
                                 file_search_path: config_manager
-                                    .resolve_file(file_search_path)
+                                    .try_resolve_file(file_search_path)
                                     .await?,
                             }
                         };
@@ -186,7 +193,7 @@ impl Connector {
                             DuckDBOptions::File { path: path.clone() }
                         } else {
                             DuckDBOptions::File {
-                                path: config_manager.resolve_file(path).await?,
+                                path: config_manager.try_resolve_file(path).await?,
                             }
                         };
                         EngineType::DuckDB(DuckDB::new(options, mirror, secrets_manager.clone()))
@@ -398,7 +405,7 @@ impl Connector {
                 let mut snowflake_connector = Snowflake::new(
                     snowflake.clone(),
                     secrets_manager.clone(),
-                    config_manager.clone(),
+                    config_manager.workspace_file_resolver(),
                 );
                 if let Some(filters) = validated_filters {
                     snowflake_connector = snowflake_connector.with_filters(filters);

@@ -35,7 +35,6 @@ use entity::workspaces::{Model as WorkspaceModel, WorkspaceStatus};
 use oxy::adapters::runs::RunsManager;
 use oxy::adapters::secrets::SecretsManager;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
-use oxy::adapters::workspace::effective_workspace_path;
 use oxy::config::resolve_local_workspace_path;
 use oxy_app_core::serve_mode::LOCAL_WORKSPACE_ID;
 use uuid::Uuid;
@@ -149,18 +148,19 @@ async fn attach_workspace_manager(
         crate::server::router::workspace_cache::SemanticLayerCache,
     >,
 ) -> Result<(), StatusCode> {
-    let effective_path = effective_workspace_path(workspace_row, None)
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                "local_context: effective_workspace_path failed on fabricated workspace: {}",
-                e
-            );
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    // The caller already resolved this path and put it on the fabricated row.
+    // Asking `effective_workspace_path` for it back was a round trip: with
+    // `branch = None` that function returns `row.path` verbatim. It also put
+    // this file on the backdoor allowlist, which is supposed to name places that
+    // reach the working copy WITHOUT a manager — and a list that overstates the
+    // problem is a list people stop reading.
+    let effective_path = workspace_row.path.as_ref().ok_or_else(|| {
+        tracing::error!("local_context: fabricated workspace row has no path");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let mut builder = match WorkspaceBuilder::new(LOCAL_WORKSPACE_ID)
-        .with_workspace_path(&effective_path)
+        .with_working_copy(effective_path, None, oxy::config::OnMissing::Fail)
         .await
     {
         Ok(b) => b,
@@ -230,6 +230,20 @@ async fn attach_workspace_manager(
     let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> =
         project_ctx.clone();
     let bridges = crate::agentic_wiring::build_builder_bridges(project_ctx.clone());
+    // BOTH extensions, like `workspace_middleware`. `WorkspaceManagerReadOnly`
+    // reads its own — it does not downgrade the disk one — so publishing only
+    // `WorkingCopy` here left every read-only handler with no extension to
+    // find, and its extractor answers a missing extension with 503. In
+    // `--local` that is every request from boot, because local mode owns its
+    // files and no route is proxied anywhere else to cover it.
+    //
+    // `into_read_only`, not `without_working_copy`: local mode HAS the files,
+    // and the read-only slot carries them so a boundary miss still falls
+    // through to the working copy — which in local mode is the only source
+    // there is.
+    request
+        .extensions_mut()
+        .insert(workspace_manager.clone().into_read_only());
     request.extensions_mut().insert(workspace_manager);
     request.extensions_mut().insert(platform);
     request.extensions_mut().insert(project_ctx);

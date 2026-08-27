@@ -21,16 +21,17 @@ use super::{
     storage::SemanticStorage,
     types::{DatabaseInfo, SyncMetrics},
 };
+use crate::config::WorkingCopy;
 
 pub struct SemanticManager {
-    config: ConfigManager,
+    config: ConfigManager<WorkingCopy>,
     secrets_manager: SecretsManager,
     storage: SemanticStorage,
 }
 
 impl SemanticManager {
     pub async fn from_config(
-        config: ConfigManager,
+        config: ConfigManager<WorkingCopy>,
         secrets_manager: SecretsManager,
         override_mode: bool,
     ) -> Result<Self, OxyError> {
@@ -135,7 +136,7 @@ impl SemanticManager {
         );
 
         tracing::debug!("Loading schema for database: {}", database.name);
-        let semantics = match loader.load_schema(&self.config).await {
+        let semantics = match loader.load_schema().await {
             Ok(semantics) => {
                 tracing::debug!(
                     "Schema loaded for database: {} - found {} datasets",
@@ -182,7 +183,7 @@ impl SemanticManager {
             dimensions.extend_from_slice(result.dimensions.as_slice());
         }
 
-        let ddls = loader.load_ddl(&self.config).await?;
+        let ddls = loader.load_ddl().await?;
         for (dataset, ddl) in ddls {
             let key = SemanticKey::new(database.name.to_string(), dataset);
             let result = self.storage.save_ddl(&key, ddl).await?;

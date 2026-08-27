@@ -594,9 +594,11 @@ routing-check port="3000" ws="70787bb2-e11b-5488-b2c3-02e60d5fc7d3":
     probe GET  /api/{{ ws }}/blocks
     probe GET  /api/{{ ws }}/world-model/cameras
     probe GET  /api/{{ ws }}/results/files/abc.parquet
+    # The IDE page is only the SPA shell — the same embedded index.html on every
+    # pod. Its ACTIONS are IdeOnly and proxy individually; the page itself is not.
+    probe GET  /ide
     echo
     echo "IdeOnly — genuinely needs the working copy / .git / node-local state → ide:"
-    probe GET  /ide
     probe GET  /api/{{ ws }}/files
     probe POST /api/{{ ws }}/compile
     probe GET  /api/{{ ws }}/branches
@@ -610,6 +612,34 @@ routing-check port="3000" ws="70787bb2-e11b-5488-b2c3-02e60d5fc7d3":
     echo "  (the FleetOk set is the BULK of the real API — apps/agents/semantic/analytics/orgs/users/billing/… all serve)"
     rm -f "$tally" /tmp/_rch
 
+# Both halves of the suite in one command: every declared route across a real
+# three-node fleet, then all 35 browser flows with the backings and identities
+# each group needs. Handles the session plumbing, the cloud ordering, and the
+# ClickHouse seed itself — getting any of those wrong fails as a locator
+# timeout that reads exactly like a product bug.
+#   just verify              # everything, against what is already built
+#   just verify --build      # rebuild the fleet image first
+#   just verify --group a    # HTTP only    /  --group b  # flows only
+#   just verify --keep       # leave the stacks up
+#   just verify --expensive  # add ide-pipeline-quickbooks (~$3.20/run on a cold cache)
+#   just verify --dry-run    # print every flow invocation, run none of them
+verify *FLAGS:
+    ./scripts/verify-all.sh {{ FLAGS }}
+
+# Assert the split-fleet CONTRACT over HTTP — no browser, no LLM, CI-safe.
+# `routing-check` above prints a table for a human to read; this decides.
+# Brings up its own postgres + ide + two serve replicas, seeds and promotes a
+# revision, then asserts: FleetOk routes are answered by the replica itself,
+# IdeOnly routes are proxied to the ide, both replicas agree, and killing the
+# ide leaves persisted reads at 200 while IdeOnly fails loudly. Exits non-zero
+# on any violation. `--keep` leaves the fleet up.
+#   just fleet-assert --build          after a code change — build, then assert
+#   just fleet-assert docker --build   same, against the compose fleet whose
+#                                      replicas genuinely have no working copy
+#   just fleet-assert                  assert whatever is already built
+#   just fleet-assert --keep           leave the fleet running to poke at
+fleet-assert *FLAGS:
+    ./scripts/fleet-assert.sh {{ FLAGS }}
 # ── Per-org OLTP POC ──────────────────────────────────────────────────────────
 # Docs: scripts/oltp/README.md · Design:
 # internal-docs/2026-08-04-per-org-oltp-postgres-design.md

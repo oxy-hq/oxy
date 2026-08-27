@@ -23,5 +23,6 @@ pub mod theme;
 pub mod tools;
 pub mod types;
 pub mod utils;
+pub mod workspace_fs_probe;
 pub use oxy_shared as shared;
 pub use render::{ClientRenderer, render_stream};

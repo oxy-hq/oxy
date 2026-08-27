@@ -18,7 +18,6 @@ use oxy::config::health_check::{
 use super::probes::{self, SemanticTarget};
 use super::{SmokeProbeKind, SmokeVerdict, failed, note, unavailable};
 use crate::agentic_wiring::project_ctx::OxyProjectContext;
-use crate::server::api::compiled_reader::{list_semantic_topics, list_semantic_views};
 
 /// One thing to probe. `kind`/`label` drive the verdict's identity, so they are
 /// derived here rather than threaded through every probe.
@@ -66,7 +65,7 @@ impl Target {
 /// should appear in the checks table regardless of what the probes find.
 pub(super) async fn collect_targets(
     ctx: &Arc<OxyProjectContext>,
-    workspace_id: uuid::Uuid,
+    _workspace_id: uuid::Uuid,
     cfg: &SmokeTestConfig,
 ) -> (Vec<Target>, Vec<SmokeVerdict>) {
     let mut targets = Vec::new();
@@ -87,7 +86,7 @@ pub(super) async fn collect_targets(
     }
 
     if cfg.semantic.enabled() {
-        match semantic_targets(workspace_id, &cfg.semantic, max).await {
+        match semantic_targets(ctx, &cfg.semantic, max).await {
             Ok((kept, mut semantic_notes)) => {
                 notes.append(&mut semantic_notes);
                 targets.extend(kept.into_iter().map(Target::Semantic));
@@ -115,18 +114,17 @@ pub(super) async fn collect_targets(
 /// just the named ones for a selection. `Err` when there is no compiled revision
 /// to read topics from (a draft branch on a non-serve node).
 async fn semantic_targets(
-    workspace_id: uuid::Uuid,
+    ctx: &Arc<OxyProjectContext>,
     cfg: &SemanticProbeConfig,
     max: usize,
 ) -> Result<(Vec<SemanticTarget>, Vec<SmokeVerdict>), String> {
-    let topics = list_semantic_topics(workspace_id, None)
+    let config_manager = &ctx.workspace_manager().config_manager;
+    // The smoke test probes what was PROMOTED, so a manager reading the working
+    // copy is an error rather than an empty probe list.
+    let (views, topics) = config_manager
+        .promoted_semantic_entities()
         .await
-        .map_err(|e| format!("could not read topics: {e}"))?
-        .ok_or_else(|| "no compiled revision to read topics from".to_string())?;
-    let views = list_semantic_views(workspace_id, None)
-        .await
-        .map_err(|e| format!("could not read views: {e}"))?
-        .unwrap_or_default();
+        .map_err(|e| format!("could not read the promoted semantic entities: {e}"))?;
 
     let plan = match cfg.selection() {
         Some(selection) => probes::plan_selected(selection, &topics, &views),
@@ -157,8 +155,20 @@ async fn app_targets(
     cfg: &AppsProbeConfig,
     max: usize,
 ) -> (Vec<Target>, Vec<SmokeVerdict>) {
-    let available = match ctx.workspace_manager().config_manager.list_apps().await {
-        Ok(paths) => paths,
+    // Workspace-relative now that `list_apps` returns entries rather than absolute
+    // paths. `path_matches` compares trailing components and `resolve_app` joins
+    // onto the workspace root, so both are indifferent — and a relative path is
+    // what the compiled arm carries.
+    let available: Vec<PathBuf> = match ctx
+        .workspace_manager()
+        .config_manager
+        .list_apps(false)
+        .await
+    {
+        Ok(entries) => entries
+            .into_iter()
+            .map(|e| PathBuf::from(e.file_path))
+            .collect(),
         Err(e) => {
             return (
                 Vec::new(),

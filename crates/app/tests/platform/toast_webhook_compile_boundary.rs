@@ -1,7 +1,7 @@
 //! Regression test for the Toast webhook's config source.
 //!
-//! `POST /api/webhooks/toast/orders` has no `IDE_ONLY_PATTERNS` entry, so it is
-//! `RouteRole::FleetOk` and runs on stateless `serve` replicas — which hold no
+//! `POST /api/webhooks/toast/orders` is mounted `RouteRole::FleetOk`, so it
+//! runs on stateless `serve` replicas — which hold no
 //! workspace working copy. It used to resolve `config.yml` from
 //! `workspace.path` via `build_with_fallback_config`, and that helper
 //! *silently* substitutes an empty `Config` when the file isn't there. The

@@ -15,8 +15,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::server::api::compiled_reader;
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 use crate::server::api::pipeline::decode_path_b64;
 
 #[derive(Debug, Deserialize)]
@@ -48,46 +47,32 @@ fn to_file(relative_path: String) -> AutomationFileInfo {
 /// compile boundary, falling through to the filesystem only in local /
 /// not-yet-promoted mode (the boundary is best-effort, exactly like `list_apps`).
 pub async fn list_automations(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    Query(query): Query<ListAutomationsQuery>,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
+    Query(_query): Query<ListAutomationsQuery>,
 ) -> Result<extract::Json<Vec<AutomationFileInfo>>, StatusCode> {
-    match compiled_reader::list_automation_artifacts(
-        workspace_manager.workspace_id,
-        query.branch.as_deref(),
-    )
-    .await
-    {
-        Ok(Some(rows)) => {
-            let files = rows.into_iter().map(|r| to_file(r.file_path)).collect();
-            return Ok(extract::Json(files));
-        }
-        Ok(None) => {
-            // Local / not-yet-promoted — fall through to the filesystem.
-        }
-        Err(e) => {
-            tracing::warn!(
-                workspace_id = %workspace_manager.workspace_id,
-                error = ?e,
-                "list_automations compile-boundary error; falling through to FS"
-            );
-        }
-    }
-
-    let workspace_path = workspace_manager.config_manager.workspace_path();
-    let paths = workspace_manager
+    let automations = workspace_manager
         .config_manager
-        .list_workflows()
+        .list_automations()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to list automations: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            tracing::warn!(
+                workspace_id = %workspace_manager.workspace_id,
+                error = %e,
+                "list_automations failed"
+            );
+            if e.retryable() {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         })?;
-    let files = paths
-        .iter()
-        .filter_map(|p| p.strip_prefix(workspace_path).ok())
-        .map(|rel| to_file(rel.to_string_lossy().to_string()))
-        .collect();
-    Ok(extract::Json(files))
+
+    Ok(extract::Json(
+        automations
+            .into_iter()
+            .map(|a| to_file(a.file_path))
+            .collect(),
+    ))
 }
 
 /// One automation's raw YAML — matches the `agentic-http` `AutomationFileContent`
@@ -104,55 +89,44 @@ pub struct AutomationContent {
 /// mode. (`/agentic-workflows/files/{path_b64}` is boundary-CAPABLE but classed
 /// IdeOnly, so a serve node proxies it to the dead ide and 502s.)
 pub async fn get_automation(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     extract::Path((_workspace_id, path_b64)): extract::Path<(Uuid, String)>,
-    Query(query): Query<ListAutomationsQuery>,
+    Query(_query): Query<ListAutomationsQuery>,
 ) -> Result<extract::Json<AutomationContent>, StatusCode> {
     let file_path = decode_path_b64(&path_b64).ok_or(StatusCode::BAD_REQUEST)?;
 
-    match compiled_reader::resolve_automation(
-        workspace_manager.workspace_id,
-        query.branch.as_deref(),
-        &file_path,
-    )
-    .await
-    {
-        Ok(Some(artifact)) => {
-            // The compiled `definition` is the parsed YAML re-serialised to text:
-            // semantically equal to the source file but NOT byte-identical
-            // (comments dropped, key order + formatting normalised). RENDER-ONLY
-            // — the FE parses this for the automation diagram. It is NOT a
-            // source-of-truth read: the verbatim working-copy file is served by
-            // the IdeOnly file/edit path, never from here.
-            let content = serde_yaml::to_string(&artifact.definition).map_err(|e| {
-                tracing::error!(file_path, "serialise compiled automation: {e}");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-            return Ok(extract::Json(AutomationContent {
-                path: file_path,
-                content,
-            }));
-        }
-        Ok(None) => {
-            // Local / not-yet-promoted — fall through to the filesystem.
-        }
-        Err(e) => {
-            tracing::warn!(
-                workspace_id = %workspace_manager.workspace_id,
-                error = ?e,
-                "get_automation compile-boundary error; falling through to FS"
-            );
-        }
-    }
-
-    let full_path = workspace_manager
+    // One call, because compiled-vs-disk is the manager's decision. This
+    // handler used to spell the choice itself — a three-arm match plus a
+    // second extractor to hold the disk it might need — which is the shape
+    // that has to be re-derived correctly in every handler that reads an
+    // artifact, and was not.
+    let definition = workspace_manager
         .config_manager
-        .resolve_file(&file_path)
+        .automation_definition(&file_path)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
-    let content = tokio::fs::read_to_string(&full_path)
-        .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|e| {
+            tracing::warn!(file_path, error = %e, "get_automation: no source");
+            // Retryable means "not compiled yet, ask again", not "your
+            // workspace is wrong". A 404 here blames the customer for a
+            // platform state.
+            if e.retryable() {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // RENDER-ONLY: the FE parses this for the automation diagram. Both arms
+    // now return the parsed YAML re-serialised — semantically equal to the
+    // source but not byte-identical (comments dropped, key order normalised).
+    // Previously the disk arm returned the file verbatim, so the same URL
+    // answered differently depending on which node served it. The verbatim
+    // file is the IdeOnly file/edit path's job, never this one's.
+    let content = serde_yaml::to_string(&definition).map_err(|e| {
+        tracing::error!(file_path, "serialise automation: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     Ok(extract::Json(AutomationContent {
         path: file_path,
         content,

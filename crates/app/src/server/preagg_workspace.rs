@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::adapters::workspace::manager::WorkspaceManager;
+use oxy::config::WorkingCopy;
 use sea_orm::{DatabaseConnection, EntityTrait};
 use tokio::sync::Mutex as TokioMutex;
 use uuid::Uuid;
@@ -30,7 +31,7 @@ use uuid::Uuid;
 pub(super) async fn build_workspace_manager(
     db: &DatabaseConnection,
     workspace_id: Uuid,
-) -> Result<WorkspaceManager, String> {
+) -> Result<WorkspaceManager<WorkingCopy>, String> {
     let row = entity::workspaces::Entity::find_by_id(workspace_id)
         .one(db)
         .await
@@ -41,32 +42,25 @@ pub(super) async fn build_workspace_manager(
         .as_deref()
         .ok_or_else(|| format!("workspace {workspace_id} has no path"))?;
 
-    let compiled = crate::server::api::compiled_reader::resolve_workspace_config_typed(
-        workspace_id,
-        None,
-        std::path::Path::new(path),
-        "preagg_executor",
-    )
-    .await;
-
-    let builder = match compiled {
-        Some(cfg) => WorkspaceBuilder::new(workspace_id)
-            .with_workspace_path_and_compiled_config(path, cfg)
-            .map_err(|e| format!("preagg: compiled config build failed: {e}"))?,
-        None => WorkspaceBuilder::new(workspace_id)
-            .with_workspace_path_and_fallback_config(path)
-            .await
-            .map_err(|e| {
-                format!(
-                    "preagg: FS fallback build failed (no compiled config, and \
-                 this node has no working copy for {workspace_id}): {e}"
-                )
-            })?,
-    };
-    builder
+    // `with_working_copy` is the one terminal this branch kept: it takes the
+    // root, an optional pinned revision, and what to do when `config.yml` is
+    // absent. The pre-aggregation cycle always targets the default branch, so
+    // the revision hint is `None` — the builder resolves the promoted one.
+    //
+    // `OnMissing::Empty` rather than a hard error because a workspace that has
+    // never been compiled is a real state here, and the rebuild has nothing to
+    // do rather than something to fail at.
+    WorkspaceBuilder::new(workspace_id)
+        .with_working_copy(
+            std::path::Path::new(path),
+            None,
+            oxy::config::OnMissing::Empty,
+        )
+        .await
+        .map_err(|e| format!("preagg: workspace build failed: {e}"))?
         .build()
         .await
-        .map_err(|e| format!("workspace build failed: {e}"))
+        .map_err(|e| format!("preagg: workspace build failed: {e}"))
 }
 
 /// Per-workspace manifest write lock, keyed by workspace id.

@@ -25,33 +25,59 @@ use oxy_app_core::serve_mode::ServeMode;
 
 use super::AppState;
 use super::global::build_global_routes;
+use super::role_router::{Decl, RoleRouter};
 use super::workspace::{build_external_workspace_routes, build_workspace_routes};
 
 pub(super) fn build_protected_routes(
     app_state: AppState,
     agentic_state: Arc<AgenticState>,
+    // Workspace-scoped surface crates (composed by the `oxy-server` root) merge
+    // HERE — before the workspace middleware — so they inherit the workspace
+    // subscription guard + `workspace_middleware` rather than reproducing them.
+    // Empty in local mode.
+    //
+    // They carry their own role declarations because a merge has no prefix to
+    // hang one on, and unlike the Postgres-only surfaces this seam also carries
+    // `oxy-api-onboarding`, which clones and scaffolds a checkout on disk. Left
+    // undeclared it would fall to the FleetOk default and let a stateless
+    // replica clone into a workspace it does not own.
     extra_workspace_routes: Router<AppState>,
-) -> Router<AppState> {
-    Router::new().merge(build_global_routes()).nest(
-        "/{workspace_id}",
-        build_workspace_routes(app_state.clone(), agentic_state, true, false)
-            // Workspace-scoped surface crates (composed by the `oxy-server` root)
-            // merge HERE — before the workspace middleware — so they inherit the
-            // workspace subscription guard + `workspace_middleware` (which resolves
-            // the workspace context) rather than reproducing them. Empty in local
-            // mode (`build_local_protected_routes` never receives it).
-            .merge(extra_workspace_routes)
-            .layer(middleware::from_fn(workspace_subscription_guard_middleware))
-            .layer(middleware::from_fn_with_state(
-                app_state,
-                workspace_middleware,
-            )),
-    )
+    extra_workspace_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
+) -> (Router<AppState>, Vec<Decl>) {
+    let root = RoleRouter::new(app_state.clone()).merge(build_global_routes(&app_state));
+    let workspace = build_workspace_routes(app_state.clone(), agentic_state, true, false)
+        .merge_declared(extra_workspace_routes, &extra_workspace_decls)
+        .map_router(|r| {
+            r.layer(middleware::from_fn(workspace_subscription_guard_middleware))
+                .layer(middleware::from_fn_with_state(
+                    app_state,
+                    workspace_middleware,
+                ))
+        });
+
+    let (router, decls, _) = root.nest("/{workspace_id}", workspace).into_parts();
+    let mut decls = crate::server::role_manifest::api_prefixed(decls);
+    // `/customer-apps/{*path}` is mounted on the OUTER router in serve.rs, not
+    // here, but this is the declaration set that gets installed — so the split
+    // that module declares rides along rather than living in a table.
+    decls.extend(
+        crate::server::api::custom_apps_serve::serve_dispatch_roles()
+            .iter()
+            .map(|d| (d.method, d.path.to_string(), d.role)),
+    );
+    (router, decls)
 }
 
+/// Takes the declarations as well as the routes, and installs them, because a
+/// served router that never installed them classifies every workspace route
+/// FleetOk — a replica would answer git and file requests locally, off a working
+/// copy it does not have. Dropping the call used to break nothing that any test
+/// could see; asking for the value here makes forgetting it a compile error.
 pub(super) fn apply_middleware(
     protected_routes: Router<AppState>,
+    declarations: Vec<Decl>,
 ) -> Result<Router<AppState>, OxyError> {
+    crate::server::role_manifest::install_declarations(declarations);
     Ok(protected_routes
         // Innermost: runs AFTER auth has attached identity + any admin-token
         // marker, so it can confine admin-token requests to the customer-apps
@@ -84,28 +110,43 @@ pub(super) fn apply_middleware(
 pub(super) fn build_local_protected_routes(
     app_state: AppState,
     agentic_state: Arc<AgenticState>,
+    // Local mode reaches these too — their handlers carry live `is_local()`
+    // branches — so merge before the local-context layer, exactly as cloud does.
     extra_workspace_routes: Router<AppState>,
-) -> Router<AppState> {
-    Router::new()
-        .merge(airhouse::api::router::<AppState>())
-        .merge(oxy_oltp::api::router::<AppState>())
-        .nest(
-            "/{workspace_id}",
-            build_workspace_routes(app_state.clone(), agentic_state, false, true)
-                // Workspace-scoped surfaces (e.g. onboarding) reach local mode too —
-                // their handlers carry live `is_local()` branches — so merge them here,
-                // before the local-context layer, to inherit it exactly as cloud does.
-                .merge(extra_workspace_routes)
-                .route_layer(middleware::from_fn_with_state(
-                    app_state,
-                    local_context_middleware,
-                )),
+    extra_workspace_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
+) -> (Router<AppState>, Vec<Decl>) {
+    let root = RoleRouter::new(app_state.clone());
+    let workspace = build_workspace_routes(app_state.clone(), agentic_state, false, true)
+        .merge_declared(extra_workspace_routes, &extra_workspace_decls)
+        .map_router(|r| {
+            r.route_layer(middleware::from_fn_with_state(
+                app_state,
+                local_context_middleware,
+            ))
+        });
+
+    let (router, decls, _) = root
+        .merge_undeclared(
+            airhouse::api::router::<AppState>(),
+            "airhouse provisioning is per-user and per-org, never per-workspace",
         )
+        .merge_undeclared(
+            oxy_oltp::api::router::<AppState>(),
+            "per-org OLTP status is Postgres-only; no workspace files on any path",
+        )
+        .nest("/{workspace_id}", workspace)
+        .into_parts();
+    // Same as the cloud arm: absolute paths, because `install_declarations` no
+    // longer prefixes.
+    (router, crate::server::role_manifest::api_prefixed(decls))
 }
 
+/// See [`apply_middleware`] — same reason, local mode.
 pub(super) fn apply_local_middleware(
     protected_routes: Router<AppState>,
+    declarations: Vec<Decl>,
 ) -> Result<Router<AppState>, OxyError> {
+    crate::server::role_manifest::install_declarations(declarations);
     Ok(protected_routes
         .route_layer(middleware::from_fn(timeout_middleware))
         .route_layer(middleware::from_fn_with_state(
@@ -150,7 +191,7 @@ pub(super) fn build_external_api_router(
     agentic_state: Arc<AgenticState>,
     mode: ServeMode,
 ) -> Router {
-    let curated = build_external_workspace_routes(agentic_state);
+    let curated = build_external_workspace_routes(&app_state, agentic_state).into_router();
 
     // Resolve the `{workspace_id}` context exactly as the main surface does,
     // per mode. Runs AFTER auth (it needs the authenticated user).
@@ -182,4 +223,130 @@ pub(super) fn build_external_api_router(
         .layer(middleware::from_fn(api_key_query_middleware))
         .layer(super::build_external_cors_layer())
         .with_state(app_state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::role_manifest::{RouteRole, declared_role};
+
+    /// No two declarations may tie on specificity while disagreeing on pod.
+    ///
+    /// When they do, `declared_role_in` keeps whichever was mounted first, so
+    /// reordering a `.route_*` call silently reclassifies a route — an IdeOnly
+    /// route becoming FleetOk is a replica answering a request off a working
+    /// copy it does not have, with nothing red to show for it.
+    ///
+    /// This is the check that found `/secrets/env` vs `/secrets/{id}` and
+    /// `/tests/project-runs` vs `/tests/{pathb64}`. Both were classified
+    /// correctly, but only because the literal pattern happened to be mounted
+    /// first.
+    #[test]
+    fn no_two_declarations_tie_on_specificity_with_different_pods() {
+        use crate::server::role_manifest::{pattern_matches, specificity};
+
+        let app_state = super::super::bare_app_state();
+        let (_routes, decls) = build_protected_routes(
+            app_state,
+            super::super::test_agentic_state(),
+            Router::new(),
+            Vec::new(),
+        );
+
+        let mut ambiguous = Vec::new();
+        for (i, (m1, p1, r1)) in decls.iter().enumerate() {
+            for (m2, p2, r2) in decls.iter().skip(i + 1) {
+                if r1 == r2 || specificity(m1, p1) != specificity(m2, p2) {
+                    continue;
+                }
+                // Different concrete methods can never collide on one request.
+                if m1 != m2 && *m1 != "*" && *m2 != "*" {
+                    continue;
+                }
+                // Probe from BOTH sides. The pair loop visits each pair once
+                // with `p1` the earlier declaration, so probing `p1` alone
+                // missed every case where `p2`'s own path is what the other
+                // pattern also claims.
+                //
+                // Each probe is a pattern's OWN path with params filled by a
+                // token no literal equals — i.e. a request some route is really
+                // mounted at. Merging the two patterns' literals instead
+                // (taking `orgs` from one and `git-state` from the other) build
+                // paths nothing serves: it flagged eleven pairs like
+                // `/api/orgs/{org_id}` vs `/api/{workspace_id}/git-state`,
+                // which collide only if an org id is literally "git-state".
+                let collides = [skeleton(p1), skeleton(p2)]
+                    .iter()
+                    .any(|probe| pattern_matches(p1, probe) && pattern_matches(p2, probe));
+                if collides {
+                    ambiguous.push(format!("{m1} {p1} {r1:?} vs {m2} {p2} {r2:?}"));
+                }
+            }
+        }
+
+        assert!(
+            ambiguous.is_empty(),
+            "these declarations tie on specificity but disagree on pod, so mount \
+             order decides which one wins:\n  {}",
+            ambiguous.join("\n  ")
+        );
+    }
+
+    /// A pattern's own path, with params filled by a token no literal equals.
+    ///
+    /// The point is a path something is really mounted at, so a collision found
+    /// here is one a real request can reach.
+    ///
+    /// The alternative — merging the two patterns' literals segment-wise, one
+    /// probe per pair — was tried and rejected: it proposes paths nothing
+    /// serves. Taking `orgs` from `/api/orgs/{org_id}` and `git-state` from
+    /// `/api/{workspace_id}/git-state` builds `/api/orgs/git-state`, which
+    /// collides only if an org id is literally "git-state". It flagged eleven
+    /// such pairs.
+    fn skeleton(pattern: &str) -> String {
+        pattern
+            .split('/')
+            .map(|seg| {
+                if seg.starts_with('{') {
+                    // Not a UUID: the nil UUID is `LOCAL_WORKSPACE_ID`
+                    // elsewhere in this crate, and a token that means nothing
+                    // reads better in the failure message.
+                    "__param__"
+                } else {
+                    seg
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("/")
+    }
+
+    /// The SERVER path must install the declarations. `classify` reads what the
+    /// router declared; with nothing installed every workspace route classifies
+    /// FleetOk and a replica answers git and file requests locally, off a
+    /// working copy it does not have.
+    ///
+    /// `apply_middleware` takes them by value so they cannot be dropped on the
+    /// way through. This covers the other half — that it installs them — by
+    /// going through `apply_middleware` itself rather than calling the
+    /// installer, which is what a test of this can get wrong.
+    #[test]
+    fn apply_middleware_installs_the_route_roles() {
+        let app_state = super::super::bare_app_state();
+        let (routes, decls) = build_protected_routes(
+            app_state,
+            super::super::test_agentic_state(),
+            Router::new(),
+            Vec::new(),
+        );
+        assert!(decls.len() > 150, "only {} declarations", decls.len());
+
+        let _installed = apply_middleware(routes, decls).expect("middleware applies");
+
+        let git = "/api/d9830be4-c6a4-4f89-11d3-9a0c0305e82c/pull-changes";
+        assert_eq!(
+            declared_role("POST", git),
+            Some(RouteRole::IdeOnly),
+            "the registry must answer for a git route — apply_middleware did not install"
+        );
+    }
 }

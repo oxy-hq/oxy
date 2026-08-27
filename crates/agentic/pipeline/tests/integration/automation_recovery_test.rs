@@ -51,6 +51,11 @@ async fn test_db() -> Option<DatabaseConnection> {
                     std::sync::Arc::new(
                         Postgres::default()
                             .with_tag("18-alpine")
+                            // 64 MB (Docker default) is too small: a parallel plan wants a 32 MB
+                            // DSM segment and a REUSED container accumulates them.
+                            // Must match at every setup site — reuse hashes the config.
+                            // See internal-docs/workspace-source.md.
+                            .with_shm_size(1024 * 1024 * 1024)
                             .with_reuse(ReuseDirective::Always)
                             .start()
                             .await
@@ -1567,8 +1572,8 @@ impl agentic_pipeline::platform::ProjectContext for FakePlatform {
 
 #[async_trait]
 impl agentic_automation::WorkspaceContext for FakePlatform {
-    fn workspace_path(&self) -> &std::path::Path {
-        std::path::Path::new("")
+    fn workspace_path(&self) -> Option<&std::path::Path> {
+        Some(std::path::Path::new(""))
     }
 
     fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
@@ -1593,7 +1598,10 @@ impl agentic_automation::WorkspaceContext for FakePlatform {
         Ok(vec![])
     }
 
-    async fn resolve_automation_yaml(&self, _workflow_ref: &str) -> Result<String, String> {
+    async fn resolve_automation_yaml(
+        &self,
+        _workflow_ref: &str,
+    ) -> Result<String, agentic_pipeline::WorkspaceReadError> {
         Err("fake platform: automation yaml not available".into())
     }
 }

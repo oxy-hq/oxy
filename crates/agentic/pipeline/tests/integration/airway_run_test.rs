@@ -127,8 +127,8 @@ impl agentic_pipeline::platform::ProjectContext for TmpWorkspace {
 
 #[async_trait]
 impl agentic_automation::WorkspaceContext for TmpWorkspace {
-    fn workspace_path(&self) -> &Path {
-        &self.root
+    fn workspace_path(&self) -> Option<&Path> {
+        Some(&self.root)
     }
     fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
         vec![]
@@ -148,7 +148,10 @@ impl agentic_automation::WorkspaceContext for TmpWorkspace {
     async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String> {
         Ok(vec![])
     }
-    async fn resolve_automation_yaml(&self, _workflow_ref: &str) -> Result<String, String> {
+    async fn resolve_automation_yaml(
+        &self,
+        _workflow_ref: &str,
+    ) -> Result<String, agentic_pipeline::WorkspaceReadError> {
         Err("tmp workspace: not available".into())
     }
     async fn resolve_pipeline_yaml(&self, _pipeline_ref: &str) -> Result<Option<String>, String> {

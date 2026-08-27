@@ -291,8 +291,9 @@ pub enum TaskSpec {
     /// `workspaces.current_revision_id`). Driven by `oxy-compile`.
     ///
     /// Atomic from the queue's perspective: one TaskSpec, one revision.
-    /// Webhook-triggered compiles set `promote = true`; observation-mode
-    /// compiles leave it `false`.
+    /// Webhook-triggered compiles set `promote = true`; a dry-run
+    /// compile leaves it `false`, writing rows without moving what
+    /// the runtime reads.
     Compile {
         /// Workspace UUID whose source to compile.
         workspace_id: Uuid,

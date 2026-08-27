@@ -1,6 +1,6 @@
 ---
 name: oxy-route-classification
-description: Use when adding, moving, or renaming an HTTP route under `crates/app/src/server/router/` (any `.route(...)` / `.nest(...)` mount), or writing a request handler that reads the workspace working copy, `.git`, or the local state dir (`config_manager.workspace_path()`, `ConfigManager::resolve_*`, `resolve_state_dir()`, `fs::read*(workspace_path…)`, a `glob` of the workspace dir, a `GitClient`). Also triggers on "add an endpoint", "new API route", "421", "x-oxy-required-role", "served on serve but the file isn't there", "role_manifest", "IdeOnly", "self-routing", and the HIGH-AVAILABILITY side: "FLEET_OK_READ_PATTERNS", "high availability", "thread/conversation won't load when the ide is down", "a read is pinned to the singleton", "viewing needs the factory". Every route that touches node-local disk MUST be classified IdeOnly or it 404s/421s on the stateless serve fleet — and conversely, every persisted-data READ must stay FleetOk (any replica) or HA hinges on one instance.
+description: Use when adding, moving, or renaming an HTTP route under `crates/app/src/server/router/` (any `.route(...)` / `.nest(...)` mount), or writing a request handler that reads the workspace working copy, `.git`, or the local state dir (`config_manager.workspace_path()`, `ConfigManager::resolve_*`, `resolve_state_dir()`, `fs::read*(workspace_path…)`, a `glob` of the workspace dir, a `GitClient`). Also triggers on "add an endpoint", "new API route", "421", "x-oxy-required-role", "served on serve but the file isn't there", "role_manifest", "RoleRouter", "route_ide", "route_fleet", "IdeState", "IdeOnly", "self-routing", and the HIGH-AVAILABILITY side: "high availability", "thread/conversation won't load when the ide is down", "a read is pinned to the singleton", "viewing needs the factory". Every route that touches node-local disk MUST be classified IdeOnly or it 404s/421s on the stateless serve fleet — and conversely, every persisted-data READ must stay FleetOk (any replica) or HA hinges on one instance.
 ---
 
 # Classify every workspace-FS route IdeOnly
@@ -11,13 +11,19 @@ Oxy runs as a split fleet (see `internal-docs/multi-instance-fleet.md`):
 - **serve** — a stateless fleet of replicas reading Postgres + S3 only. **No working copy.**
 - **worker** — a TaskSpec drainer.
 
-`crates/app/src/server/role_manifest.rs` is the single source of truth for which routes need the ide. `enforce_role` classifies every request: an `IdeOnly` route that lands on a serve replica is reverse-proxied to the ide; an **unlisted route defaults to `FleetOk` and is served locally on serve** — where the working copy doesn't exist.
+**A route states its role where it is mounted.** `RoleRouter` (`crates/app/src/server/router/role_router.rs`) has no plain `.route()`: every mount goes through `route_ide` or `route_fleet`, and the declaration it records is what `role_manifest::classify` reads at runtime. `enforce_role` then reverse-proxies an `IdeOnly` request that lands on a serve replica.
 
-So a new FS route you forget to classify doesn't fail at compile time — it 404s/500s at runtime, **only on the fleet**. That's exactly how `GET /apps/source/<file>` shipped: `get_source_file` reads `workspace_path()`, it wasn't in the manifest, and it returned `404 File not found` served by `serve@…` (no `x-oxy-forwarded-via`).
+The two doors take differently-typed handlers, and that is the real guard. `WorkspaceManagerExtractor` resolves only from `IdeState`, so a handler that asks for a working copy produces a `MethodRouter<IdeState>` and **will not compile** through `route_fleet`:
+
+```
+error[E0308]: expected `MethodRouter<FleetState>`, found `MethodRouter<IdeState>`
+```
+
+This replaced a hand-written path table where an unlisted route silently defaulted to `FleetOk`. That default is how `GET /apps/source/<file>` shipped: `get_source_file` reads `workspace_path()`, nobody added the entry, and it returned `404 File not found` from `serve@…` (no `x-oxy-forwarded-via`). A route can no longer be unlisted — there is no mount that does not declare.
 
 ## The rule
 
-**If a handler reads or writes node-local disk, its route MUST have an `IdeOnly` entry in `IDE_ONLY_PATTERNS` (role_manifest.rs).** Node-local disk =
+**If a handler reads or writes node-local disk, its route MUST be mounted with `route_ide`.** Node-local disk =
 
 - the **workspace working copy** — `config_manager.workspace_path()`, `ConfigManager::resolve_*`, `fs::read_to_string(workspace_path…)`, `glob::glob(workspace_path…)`;
 - **`.git`** — any `GitClient` / shelling out to git;
@@ -27,11 +33,14 @@ If the handler reads only Postgres / S3 / the compile boundary / an LLM, leave i
 
 ## The recipe
 
-1. Add a `ManifestEntry { method, path_pattern, role: RouteRole::IdeOnly }` to `IDE_ONLY_PATTERNS`. `path_pattern` is the FULL path including the `/api/{workspace_id}` prefix **and** the nest prefix. A route `/source/{pathb64}` mounted by `build_app_routes` (nested at `/apps`) → `/api/{workspace_id}/apps/source/{pathb64}`. `{name}` matches one segment, `{*name}` one-or-more, `method: "*"` any verb.
-2. **Test it:**
-   - Route in a **fully-FS builder** (`build_git_routes`, `build_file_routes`, `build_data_repo_routes`)? The `fully_fs_builder_routes_classify_ide_only` test already covers it — it parses the route paths from the router source, so a new route is checked automatically.
-   - Route in a **mixed builder** (`build_app_routes` — `/run` is fleet-served)? Add an explicit per-route assertion (see `app_data_and_source_file_reads_are_ide_only`). The auto-derived test deliberately can't blanket-assert mixed builders, so this is on you + the reviewer.
-3. **No external route table to touch.** The manifest IS the routing authority — a serve replica self-proxies an `IdeOnly` request to the Factory via `ide_proxy` (`OXY_IDE_UPSTREAM`). There is no ALB/Envoy `ideRoutes` list to keep in sync (that drift-prone table caused three outages and was removed). Add the manifest entry + the test; routing follows automatically.
+1. **Mount it through the right door.** `route_ide(path, method_router)` if the handler reaches node-local disk, `route_fleet(path, method_router)` if it reads only persisted data. Nothing else to write: the declaration is the mount, and the path is relative to the builder — nesting prefixes it.
+2. **Let the compiler check you.** Guess `route_fleet` for a handler that takes `WorkspaceManagerExtractor` and the build fails with the E0308 above. The reverse is not checked — `route_ide` compiles for anything — so an IdeOnly guess costs a wasted hop, which is why it is the safe guess when unsure.
+3. **No external route table to touch.** A serve replica self-proxies an `IdeOnly` request to the Factory via `ide_proxy` (`OXY_IDE_UPSTREAM`). There is no ALB/Envoy `ideRoutes` list to keep in sync (that drift-prone table caused three outages and was removed).
+
+### The two doors that are not those
+
+- **`route_split(path, ide_method, ide, fleet_method, fleet)`** — one path whose verbs sit on opposite sides. `GET /databases` degrades without a working copy and the launcher calls it on every page load; `POST /databases` writes `config.yml`.
+- **`route_fleet_optional_working_copy(path, method_router, why)`** — a fleet route whose handler holds a `WorkspaceManager<WorkingCopy>` for a FALLBACK arm only: it reads the compile boundary first and reaches for the working copy on a miss. There are 24, each with its reason at the mount, and `fleet_routes_holding_a_working_copy_are_accounted_for` asserts the count. **Do not add a 25th to make a build pass** — that is the escape hatch, not the recipe. If the handler genuinely needs the boundary-first shape, say so in the `why` and raise the count deliberately.
 
 ## The other half: reads must stay HA — even under an IdeOnly wildcard
 
@@ -41,16 +50,34 @@ The split exists so that **reads scale and survive the ide going down**; only wr
 
 Some surfaces are pinned IdeOnly with a wildcard for *execution* safety — `/analytics/{*rest}`, `/agentic-workflows/{*rest}`, `/agentic-airway/{*rest}` (a live run executes in-process on the ide and touches the FS). That wildcard also swallows the **run-history READS** sitting next to the execution endpoints (`list_runs_by_thread`, `get_workflow_run`, `list_runs_for_pipeline`, …), which are pure `state.db` reads. Loading a thread is *data*, not a live run — pinning it to the ide made conversations unviewable whenever the ide restarted.
 
-**Recipe — carve the read back out to FleetOk:** add a `ManifestEntry { method: "GET", path_pattern, role: RouteRole::FleetOk }` to **`FLEET_OK_READ_PATTERNS`** in `role_manifest.rs`. `classify` checks that list *before* `IDE_ONLY_PATTERNS`, so a FleetOk read wins over the IdeOnly wildcard.
+**Recipe — carve the read back out to FleetOk:** a sub-router crate declares its own routes' roles beside them (`agentic_http::router_roles()` and its two siblings), and `oxy-app` mounts them with `nest_declared`, which prefixes the declarations exactly as it prefixes the routes. So the carve-out is a `RouteRoleDecl { method: "GET", path, role: RouteRole::FleetOk }` next to the route in the crate that owns it — not an entry written from outside.
 
 **STRICT RULE (the const carries it too):** only carve out after verifying the handler touches **no** workspace FS / `.git` / local state dir and is **not** a live in-process stream — a pure Postgres / S3 read. Anything that executes, edits, or streams a live run stays `IdeOnly`. Mind the segment counts: the live `/runs/{id}/events` SSE has one MORE segment than a carved-out `/runs/{id}`, so it isn't shadowed — assert both directions in a test (see `agentic_run_history_reads_are_fleet_ok`).
 
 **Mental model:** writes + execution + live streams → `IdeOnly` (the singleton). Reads of persisted data → `FleetOk` (any replica). If loading or *viewing* something needs the ide, that's an HA bug — find the read and carve it out. Full stateful-vs-HA matrix: `internal-docs/multi-instance-fleet.md` §4.
 
+## The type parameter tells you which extractor — not which role
+
+A handler's manager carries the same fact per *pod* that the manifest carries per *route*, and the two are easy to conflate.
+
+- **Take `WorkspaceManagerReadOnly` by default.** It yields `WorkspaceManager<NoWorkingCopy>`, so the compiler refuses `workspace_path()`, `resolve_state_dir()` and the file walks. If it compiles, the handler didn't need a disk and the manifest question is settled — leave the route `FleetOk`.
+- **`WorkspaceManagerExtractor` yields `WorkspaceManager<WorkingCopy>`.** Reaching for it is the signal to write the `IdeOnly` entry.
+- **Check the bound before you accept it.** A `&ConfigManager<WorkingCopy>` in a callee is frequently over-constrained. If its body only calls methods on the generic `impl<S> ConfigManager<S>`, or needs `ResolveWorkspaceFile` (which has an impl for each capability), state the weaker bound and both satisfy it. Grep can't see a requirement that lives in a callee; the compiler can, and half of what it objects to is a bound nobody meant to write.
+
+**Do not classify by signature.** It was measured: `takes WorkspaceManagerExtractor ⇒ IdeOnly` gets 62 of 92 entries right, and fails **open** on the whole `/analytics` + `/agentic-*` surface because `agentic-http` sits below `oxy-app` and structurally cannot take the extractor. `WorkingCopy` is a *permission* type — `WorkspaceManagerExtractor` resolves fine on a diskless replica — so it does not answer "which pod". Disk is also not the only reason to pin: `/events` correctly takes `WorkspaceManagerReadOnly` and must still be IdeOnly, because it subscribes to a process-local broadcaster. Classify by hand, and see `internal-docs/workspace-source.md` for the full count.
+
+## Two counters that catch what this skill misses
+
+A static list can only cover the routes someone remembered. Both of these are zero on a healthy fleet and asserted in `crates/app/tests/fleet_canary.rs`:
+
+- `oxy::workspace_fs_probe::leaks()` — a workspace path was resolved on a pod that owns no working copy.
+- `compiled_reader::branch_hints_dropped()` — a request arrived with `?branch=` that a replica cannot honour. **A branch-aware route must be `IdeOnly`**: a replica skips the branch gate by design and answers with the promoted `main` revision, so the caller gets the wrong branch with no error. Non-zero names the misclassified route in the WARN.
+
 ## What's NOT in scope
 
-- A route that reads only the compile boundary / Postgres / S3 — `FleetOk` by design; do **not** pin it to the singleton. If it 404s on serve because the data isn't compiled, the fix is the compile boundary (`oxy-compile-boundary` skill), not IdeOnly. If it's a read buried under an IdeOnly wildcard, carve it out to `FLEET_OK_READ_PATTERNS` (above).
+- A route that reads only the compile boundary / Postgres / S3 — `FleetOk` by design; do **not** pin it to the singleton. If it 404s on serve because the data isn't compiled, the fix is the compile boundary (`oxy-compile-boundary` skill), not IdeOnly. If it's a read inside a sub-router crate's IdeOnly surface, declare it FleetOk beside the route in that crate (above).
 - Pure IDE-editor / git-write routes — already IdeOnly; nothing to do.
+- Routes `oxy-app` does not mount itself. A merge at a tree's ROOT has no prefix to hang a declaration on, so `oxy-cameras` and `airhouse` go through `merge_undeclared` with a reason and fall to `classify`'s default. That is the one hole left; if you add a working-copy route there, nothing catches it.
 
 ## Related
 

@@ -11,6 +11,7 @@ use crate::{
 };
 use oxy_shared::errors::OxyError;
 
+use crate::config::WorkingCopy;
 use futures::StreamExt;
 use itertools::Itertools;
 use serde::Deserialize;
@@ -540,7 +541,7 @@ pub(super) struct DDLRecord {
 impl SchemaLoader {
     pub async fn from_database(
         database: &Database,
-        config: &ConfigManager,
+        config: &ConfigManager<WorkingCopy>,
         secrets_manager: &SecretsManager,
     ) -> Result<Self, OxyError> {
         // System-side schema load has no user / workspace context —
@@ -575,7 +576,6 @@ impl SchemaLoader {
 
     pub async fn load_schema(
         &self,
-        _config: &ConfigManager,
     ) -> Result<HashMap<String, HashMap<String, SemanticModels>>, OxyError> {
         match &self.database.database_type {
             DatabaseType::DOMO(domo) => {
@@ -726,10 +726,7 @@ impl SchemaLoader {
         }
     }
 
-    pub async fn load_ddl(
-        &self,
-        _config: &ConfigManager,
-    ) -> Result<HashMap<String, String>, OxyError> {
+    pub async fn load_ddl(&self) -> Result<HashMap<String, String>, OxyError> {
         match &self.database.database_type {
             DatabaseType::ClickHouse(_)
             | DatabaseType::DuckDB(_)

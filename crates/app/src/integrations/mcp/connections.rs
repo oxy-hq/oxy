@@ -1,3 +1,4 @@
+use oxy::config::WorkingCopy;
 use oxy::config::{ConfigManager, model::ConnectionOverrides};
 use serde_json::Value;
 
@@ -25,7 +26,7 @@ use serde_json::Value;
 /// - Override type doesn't match the database type (e.g., ClickHouse override for Snowflake database)
 pub fn extract_connection_overrides(
     meta: Option<&serde_json::Map<String, Value>>,
-    config_manager: &ConfigManager,
+    config_manager: &ConfigManager<WorkingCopy>,
 ) -> Result<Option<ConnectionOverrides>, rmcp::ErrorData> {
     let connections_value = meta.and_then(|m| m.get("connections")).cloned();
 
@@ -71,7 +72,7 @@ pub fn extract_connection_overrides(
 /// * `Err(rmcp::ErrorData)` - Validation failed
 fn validate_connection_overrides(
     overrides: &ConnectionOverrides,
-    config_manager: &ConfigManager,
+    config_manager: &ConfigManager<WorkingCopy>,
 ) -> Result<(), rmcp::ErrorData> {
     use oxy::config::model::{ConnectionOverride, DatabaseType};
 

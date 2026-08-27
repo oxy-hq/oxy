@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use super::cap::cap_buckets_per_event;
 use super::error::AnomalyError;
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 
 #[derive(Debug, Deserialize, Default)]
 pub struct ListQuery {
@@ -135,38 +135,51 @@ async fn load_coverage(
 /// `.monitor.yml`, plus per-segment scan coverage. Returns an empty list when
 /// the file is missing or empty. Returns 400 when it exists but fails to parse.
 pub async fn list_monitors(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Extension(state): Extension<Arc<AgenticState>>,
 ) -> Result<Json<ListMonitorsResponse>, (StatusCode, String)> {
     let workspace_id = workspace_manager.workspace_id;
     let coverage = load_coverage(&state.db, workspace_id).await;
 
-    // Compile-boundary fast path. When the workspace is promoted, hydrate the
-    // MonitorConfig from `monitor_configs` and skip the .monitor.yml disk read.
-    if let Ok(Some(definition)) =
-        crate::server::api::compiled_reader::resolve_monitor_config(workspace_id, None).await
-    {
-        match serde_json::from_value::<monitoring::config::MonitorConfig>(definition) {
-            Ok(cfg) => {
-                return Ok(Json(ListMonitorsResponse {
-                    monitors: cfg.monitors,
-                    coverage,
-                }));
-            }
-            Err(e) => tracing::warn!(
+    // `monitor_config()` IS both arms. It reads the compiled row, and on a miss
+    // reads `<root>/.monitor.yml` itself (`ConfigManager::root_singleton`) —
+    // the same path `monitoring::config::default_config_path` returns. The
+    // filesystem fallback that used to live here read the file the manager had
+    // just read, and needed a working copy in the signature to do it.
+    let definition = match workspace_manager.config_manager.monitor_config().await {
+        Ok(Some(definition)) => definition,
+        // No monitor file, from either source. The documented answer.
+        Ok(None) => {
+            return Ok(Json(ListMonitorsResponse {
+                monitors: vec![],
+                coverage,
+            }));
+        }
+        // Retryable means no source could be read — not compiled yet, or no
+        // working copy on this node. Anything else is the file itself failing
+        // to parse, which is the customer's YAML and a 400. This used to be an
+        // unconditional 503, so a broken `.monitor.yml` was reported as a
+        // platform fault.
+        Err(e) => {
+            let status = if e.retryable() {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            tracing::warn!(
                 workspace_id = %workspace_id,
                 error = ?e,
-                "list_monitors: compiled monitor config deserialise failed; falling through to FS"
-            ),
+                retryable = e.retryable(),
+                "list_monitors: could not read the monitor config"
+            );
+            return Err((status, e.to_string()));
         }
-    }
+    };
 
-    let workspace_root = workspace_manager.config_manager.workspace_path();
-    let config_path = monitoring::config::default_config_path(workspace_root);
-    let config = monitoring::config::load_from_file(&config_path)
+    let cfg = serde_json::from_value::<monitoring::config::MonitorConfig>(definition)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     Ok(Json(ListMonitorsResponse {
-        monitors: config.monitors,
+        monitors: cfg.monitors,
         coverage,
     }))
 }
@@ -187,7 +200,7 @@ pub async fn list_monitors(
 /// continuation bucket is filed `low`, so a row-limited severity sort would
 /// strand those buckets off the page.
 pub async fn list_anomalies(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Extension(state): Extension<Arc<AgenticState>>,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<ListResponse>, AnomalyError> {

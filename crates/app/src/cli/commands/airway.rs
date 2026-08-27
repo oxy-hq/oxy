@@ -290,7 +290,7 @@ async fn cmd_run(args: AirwayRunArgs) -> Result<(), OxyError> {
     let project_path = resolve_local_workspace_path()?;
     let workspace_id = args.workspace_id.unwrap_or_else(Uuid::nil);
     let workspace_manager = WorkspaceBuilder::new(workspace_id)
-        .with_workspace_path(&project_path)
+        .with_working_copy(&project_path, None, oxy::config::OnMissing::Fail)
         .await?
         .with_runs_manager(oxy::adapters::runs::RunsManager::noop())
         .build()
@@ -475,7 +475,7 @@ async fn airway_context(
     let db = connect_db().await?;
     let project_path = resolve_local_workspace_path()?;
     let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
-        .with_workspace_path(&project_path)
+        .with_working_copy(&project_path, None, oxy::config::OnMissing::Fail)
         .await?
         .with_runs_manager(oxy::adapters::runs::RunsManager::noop())
         .build()

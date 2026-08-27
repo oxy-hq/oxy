@@ -1,12 +1,58 @@
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-use crate::constants::UNPUBLISH_APP_DIR;
 use crate::state_dir::resolve_state_dir_with_fallback;
 use oxy_shared::errors::OxyError;
 
+use super::artifacts::{AgentEntry, AppEntry, AutomationEntry, PipelineEntry};
 use super::model::{AppConfig, Automation, AutomationWithRawVariables, Config};
+use super::naming::artifact_name;
 use super::test_config::TestFileConfig;
+
+/// `name` / `title` / `published` off the YAML root mapping, parsed leniently so
+/// a validation error deeper in the file cannot make an app vanish from the
+/// listing or read as unpublished. The three defaults must match
+/// `oxy_compile::compile::compile_app`, which is what fills the same columns on
+/// the compiled arm — `crates/app/tests/artifact_naming_agrees.rs` pins `name`.
+/// The `name:` field, or the path rule the compiler falls back to. Shared so a
+/// second entity kind cannot invent a third spelling.
+async fn yaml_name(path: &Path, relative: &str) -> String {
+    yaml_root(path)
+        .await
+        .and_then(|m| {
+            m.get(serde_yaml::Value::String("name".to_string()))
+                .and_then(|v| v.as_str().map(str::to_string))
+        })
+        .unwrap_or_else(|| artifact_name(relative))
+}
+
+async fn yaml_root(path: &Path) -> Option<serde_yaml::Mapping> {
+    fs::read_to_string(path)
+        .await
+        .ok()
+        .and_then(|yaml| serde_yaml::from_str::<serde_yaml::Value>(&yaml).ok())
+        .and_then(|value| value.as_mapping().cloned())
+}
+
+async fn read_app_entry(path: &Path, relative: String) -> AppEntry {
+    let mapping = yaml_root(path).await;
+    let field = |key: &str| {
+        mapping
+            .as_ref()
+            .and_then(|m| m.get(serde_yaml::Value::String(key.to_string())).cloned())
+    };
+
+    AppEntry {
+        name: field("name")
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_else(|| artifact_name(&relative)),
+        title: field("title").and_then(|v| v.as_str().map(str::to_string)),
+        published: field("published")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        file_path: relative,
+    }
+}
 
 const DEFAULT_CONFIG_PATH: &str = "config.yml";
 const AUTOMATION_EXTENSION: &str = ".automation";
@@ -14,7 +60,6 @@ const PROCEDURE_EXTENSION: &str = ".procedure";
 #[allow(dead_code)]
 const TEST_EXTENSION: &str = ".test";
 
-#[enum_dispatch::enum_dispatch]
 pub(super) trait ConfigStorage {
     async fn load_config(&self) -> Result<Config, OxyError>;
     async fn load_config_with_fallback(&self) -> Config;
@@ -29,11 +74,21 @@ pub(super) trait ConfigStorage {
     ) -> Result<AutomationWithRawVariables, OxyError>;
     async fn fs_link<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError>;
     async fn resolve_state_dir(&self) -> Result<PathBuf, OxyError>;
-    async fn glob<P: AsRef<Path>>(&self, path: P) -> Result<Vec<String>, OxyError>;
-    async fn list_analytics_agents(&self) -> Result<Vec<PathBuf>, OxyError>;
-    async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError>;
-    async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError>;
-    async fn list_pipelines(&self) -> Result<Vec<PathBuf>, OxyError>;
+    /// The four listers below all report `file_path` **workspace-relative**,
+    /// `/`-separated — NOT absolute, which is what they used to return.
+    ///
+    /// It is the form the compiled arm carries: `automation_definitions` is
+    /// keyed by exactly this string, so the two sources only agree in this
+    /// shape. It is also what the downstream contract wants — an absolute
+    /// `workflow_ref` is rejected as a `..`-traversal guard, so every caller
+    /// was undoing an absolute path anyway.
+    ///
+    /// Join with `project_path()` if you need an absolute one; do not read
+    /// `file_path` off the filesystem directly.
+    async fn list_analytics_agents(&self) -> Result<Vec<AgentEntry>, OxyError>;
+    async fn list_apps(&self) -> Result<Vec<AppEntry>, OxyError>;
+    async fn list_workflows(&self) -> Result<Vec<AutomationEntry>, OxyError>;
+    async fn list_pipelines(&self) -> Result<Vec<PipelineEntry>, OxyError>;
     async fn load_app_config<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError>;
     async fn get_charts_dir(&self) -> Result<PathBuf, OxyError>;
     async fn get_results_dir(&self) -> Result<PathBuf, OxyError>;
@@ -47,30 +102,21 @@ pub(super) trait ConfigStorage {
 }
 
 #[derive(Debug)]
-#[enum_dispatch::enum_dispatch(ConfigStorage)]
-pub(super) enum ConfigSource {
-    LocalSource,
-}
-
-impl ConfigSource {
-    pub fn local<P: AsRef<Path>>(project_path: P) -> Result<Self, OxyError> {
-        let local_source = LocalSource::new(project_path)?;
-        Ok(ConfigSource::LocalSource(local_source))
-    }
-}
-
-#[derive(Debug)]
-pub(super) struct LocalSource {
+pub(super) struct FsStorage {
     project_path: PathBuf,
     config_path: String,
 }
 
-impl LocalSource {
+impl FsStorage {
     pub fn new<P: AsRef<Path>>(project_path: P) -> Result<Self, OxyError> {
-        Ok(LocalSource {
+        Ok(FsStorage {
             project_path: project_path.as_ref().to_path_buf(),
             config_path: DEFAULT_CONFIG_PATH.to_string(),
         })
+    }
+
+    pub(super) fn project_path(&self) -> &Path {
+        &self.project_path
     }
 
     fn get_stem_by_extension(&self, path: &PathBuf, extension: &str) -> Result<String, OxyError> {
@@ -84,6 +130,23 @@ impl LocalSource {
             .strip_suffix(extension)
             .unwrap_or(file_stem)
             .to_string())
+    }
+
+    /// A workspace root that is not on this disk is not an empty workspace.
+    ///
+    /// `read_dir` on a missing directory yields nothing, so every lister below
+    /// used to answer "this workspace has no agents" when the truth was "this
+    /// process holds no working copy for it". That is the shape behind both
+    /// shipped incidents. Every lister passes through here, so an eighth one
+    /// cannot lose the distinction by forgetting to check.
+    fn require_root(&self) -> Result<(), OxyError> {
+        if self.project_path.is_dir() {
+            return Ok(());
+        }
+        Err(OxyError::ConfigurationError(format!(
+            "workspace directory not found: {}",
+            self.project_path.display()
+        )))
     }
 
     fn list_by_sub_extension(&self, dir: Option<&PathBuf>, sub_extension: &str) -> Vec<PathBuf> {
@@ -195,7 +258,32 @@ impl LocalSource {
     }
 }
 
-impl ConfigStorage for LocalSource {
+impl FsStorage {
+    /// The "nothing configured" value. Explicit rather than `Default` because
+    /// `Config` deliberately does not derive it — an empty config is a fallback,
+    /// never a thing you construct on purpose.
+    fn empty_config(&self) -> Config {
+        Config {
+            defaults: None,
+            workspace_path: self.project_path.clone(),
+            models: [].to_vec(),
+            databases: [].to_vec(),
+            builder_agent: None,
+            timezone: None,
+            integrations: vec![],
+            slack_legacy: None,
+            mcp: None,
+            protected_branches: None,
+            base_branch: None,
+            repositories: vec![],
+            admins: vec![],
+            health_check: None,
+            pre_aggregations: None,
+        }
+    }
+}
+
+impl ConfigStorage for FsStorage {
     async fn load_config(&self) -> Result<Config, OxyError> {
         let resolved_path = PathBuf::from(&self.project_path).join(&self.config_path);
         let config_yml = fs::read_to_string(resolved_path).await.map_err(|e| {
@@ -223,24 +311,61 @@ impl ConfigStorage for LocalSource {
 
     async fn load_config_with_fallback(&self) -> Config {
         let resolved_path = PathBuf::from(&self.project_path).join(&self.config_path);
-        let config_yml = std::fs::read_to_string(resolved_path).unwrap_or_default();
-        let mut config: Config = serde_yaml::from_str(&config_yml).unwrap_or_else(|_| Config {
-            defaults: None,
-            workspace_path: self.project_path.clone(),
-            models: [].to_vec(),
-            databases: [].to_vec(),
-            builder_agent: None,
-            timezone: None,
-            integrations: vec![],
-            slack_legacy: None,
-            mcp: None,
-            protected_branches: None,
-            base_branch: None,
-            repositories: vec![],
-            admins: vec![],
-            health_check: None,
-            pre_aggregations: None,
-        });
+
+        // Three outcomes, only one of which is legitimate. They used to collapse
+        // into the same empty `Config`, which is how a platform-side miss came
+        // to be reported as the customer's configuration:
+        //
+        //   POST /api/webhooks/toast/orders  ->  no config.yml on this replica
+        //     -> empty Config -> no `integrations:` -> resolve_toast == Ok(None)
+        //     -> 401 "toast integration not configured for this workspace"
+        //
+        // 2,072 of those an hour for four days (#2816), with nothing in the logs,
+        // because "file absent" and "customer configured nothing" were the same
+        // value by the time anything looked. Absent is still tolerated — that is
+        // the point of this method, and a workspace mid-onboarding has no
+        // config.yml yet — but unreadable and unparseable now say so.
+        let config_yml = match std::fs::read_to_string(&resolved_path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                tracing::debug!(
+                    path = %resolved_path.display(),
+                    "no config.yml; continuing with an empty config"
+                );
+                String::new()
+            }
+            Err(e) => {
+                // Permissions, a broken mount, an I/O fault. The file is
+                // supposed to be here and we could not read it — that is a fault
+                // on this node, not a workspace without configuration.
+                tracing::error!(
+                    path = %resolved_path.display(),
+                    error = %e,
+                    "config.yml exists but could not be read; continuing with an \
+                     empty config. Anything that reads `integrations:`, \
+                     `databases:` or `models:` will behave as if the workspace \
+                     were unconfigured — treat a downstream \"not configured\" as \
+                     THIS, not as the customer's doing."
+                );
+                String::new()
+            }
+        };
+
+        let mut config: Config = match serde_yaml::from_str(&config_yml) {
+            Ok(config) => config,
+            Err(e) => {
+                if !config_yml.trim().is_empty() {
+                    tracing::error!(
+                        path = %resolved_path.display(),
+                        error = %e,
+                        "config.yml is present but does not parse; continuing with \
+                         an empty config. Every integration, database and model \
+                         declared in it is being ignored."
+                    );
+                }
+                self.empty_config()
+            }
+        };
         config.workspace_path = self.project_path.clone();
         config
     }
@@ -322,55 +447,117 @@ impl ConfigStorage for LocalSource {
         Ok(resolved_path.display().to_string())
     }
 
+    /// The state dir, created on the way out.
+    ///
+    /// The guard covers the *fallback* only. `OXY_STATE_DIR` points outside the
+    /// workspace and wins, so there is nothing to protect on that path — but the
+    /// fallback is `<root>/.oxy_state`, and creating it on a node with no
+    /// working copy manufactures the workspace root. That is exactly what
+    /// `WorkingCopy::new` was stopped from doing; fixing the constructor and leaving this
+    /// accessor would have reopened it through the back door. The creating
+    /// resolver calls `std::process::exit(1)` on failure, so the fallout would
+    /// not even be a catchable error.
     async fn resolve_state_dir(&self) -> Result<PathBuf, OxyError> {
         let fallback = PathBuf::from(&self.project_path).join(".oxy_state");
-        let path = resolve_state_dir_with_fallback(Some(fallback));
-        Ok(path)
+        if std::env::var("OXY_STATE_DIR").is_err() {
+            self.require_root()?;
+        }
+        Ok(resolve_state_dir_with_fallback(Some(fallback)))
     }
 
-    async fn glob<P: AsRef<Path>>(&self, path: P) -> Result<Vec<String>, OxyError> {
-        let path = self.project_path.join(path);
-        let pattern = path.to_str().unwrap();
-        let glob = glob::glob(pattern).map_err(|err| {
-            OxyError::IOError(format!("Failed to expand glob pattern '{pattern}': {err}"))
-        })?;
-        Ok(glob
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.is_file())
-            .map(|entry| entry.display().to_string())
-            .collect())
+    async fn list_analytics_agents(&self) -> Result<Vec<AgentEntry>, OxyError> {
+        self.require_root()?;
+        let mut out = Vec::new();
+        for path in self.list_by_sub_extension(None, "agentic") {
+            let Ok(relative) = path.strip_prefix(&self.project_path) else {
+                continue;
+            };
+            let relative = relative.to_string_lossy().replace('\\', "/");
+            let root = yaml_root(&path).await;
+            let field = |key: &str| {
+                root.as_ref()
+                    .and_then(|m| m.get(serde_yaml::Value::String(key.to_string())).cloned())
+            };
+            out.push(AgentEntry {
+                name: field("name")
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .unwrap_or_else(|| artifact_name(&relative)),
+                model_ref: field("llm").and_then(|llm| {
+                    llm.as_mapping()?
+                        .get(serde_yaml::Value::String("ref".to_string()))?
+                        .as_str()
+                        .map(str::to_string)
+                }),
+                timezone: field("timezone").and_then(|v| v.as_str().map(str::to_string)),
+                file_path: relative,
+            });
+        }
+        Ok(out)
     }
 
-    async fn list_analytics_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
-        Ok(self.list_by_sub_extension(None, "agentic"))
+    async fn list_workflows(&self) -> Result<Vec<AutomationEntry>, OxyError> {
+        self.require_root()?;
+        let mut out = Vec::new();
+        for (sub_extension, extension) in [
+            ("procedure", ".procedure.yml"),
+            ("workflow", ".workflow.yml"),
+            ("automation", ".automation.yml"),
+        ] {
+            for path in self.list_by_sub_extension(None, sub_extension) {
+                let Ok(relative) = path.strip_prefix(&self.project_path) else {
+                    continue;
+                };
+                let relative = relative.to_string_lossy().replace('\\', "/");
+                out.push(AutomationEntry {
+                    name: yaml_name(&path, &relative).await,
+                    extension: extension.to_string(),
+                    file_path: relative,
+                });
+            }
+        }
+        Ok(out)
     }
 
-    async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
-        let mut automations = self.list_by_sub_extension(None, "procedure");
-        automations.extend(self.list_by_sub_extension(None, "workflow"));
-        automations.extend(self.list_by_sub_extension(None, "automation"));
-        Ok(automations)
+    async fn list_pipelines(&self) -> Result<Vec<PipelineEntry>, OxyError> {
+        self.require_root()?;
+        let mut out = Vec::new();
+        for path in self.list_by_sub_extension(None, "airway") {
+            let Ok(relative) = path.strip_prefix(&self.project_path) else {
+                continue;
+            };
+            let relative = relative.to_string_lossy().replace('\\', "/");
+            // Read the kind here too, not just on the compiled arm. Local mode
+            // never promotes a revision, so a kind supplied only by the
+            // boundary would be absent for every pipeline, forever, and any UI
+            // gated on it could never appear locally. A file that will not
+            // parse yields `None` rather than failing the listing: a broken
+            // pipeline should still be visible so it can be fixed.
+            let source_kind = fs::read_to_string(&path)
+                .await
+                .ok()
+                .and_then(|text| serde_yaml::from_str::<serde_json::Value>(&text).ok())
+                .as_ref()
+                .and_then(crate::config::artifacts::pipeline_source_kind);
+            out.push(PipelineEntry {
+                name: yaml_name(&path, &relative).await,
+                file_path: relative,
+                source_kind,
+            });
+        }
+        Ok(out)
     }
 
-    async fn list_pipelines(&self) -> Result<Vec<PathBuf>, OxyError> {
-        Ok(self.list_by_sub_extension(None, "airway"))
-    }
-
-    async fn list_apps(&self) -> Result<Vec<PathBuf>, OxyError> {
-        let apps = self.list_by_sub_extension(None, "app");
-        let project_path = self.project_path.clone();
-        Ok(apps
-            .iter()
-            .filter(|path| {
-                path.strip_prefix(&project_path)
-                    .map(|p| {
-                        !p.to_string_lossy()
-                            .starts_with(&format!("{UNPUBLISH_APP_DIR}/"))
-                    })
-                    .unwrap_or(true)
-            })
-            .cloned()
-            .collect())
+    async fn list_apps(&self) -> Result<Vec<AppEntry>, OxyError> {
+        self.require_root()?;
+        let mut out = Vec::new();
+        for path in self.list_by_sub_extension(None, "app") {
+            let Ok(relative) = path.strip_prefix(&self.project_path) else {
+                continue;
+            };
+            let relative = relative.to_string_lossy().replace('\\', "/");
+            out.push(read_app_entry(&path, relative).await);
+        }
+        Ok(out)
     }
 
     async fn load_app_config<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError> {
@@ -448,6 +635,7 @@ impl ConfigStorage for LocalSource {
     }
 
     async fn list_tests(&self) -> Result<Vec<PathBuf>, OxyError> {
+        self.require_root()?;
         let candidates = self.list_by_sub_extension(None, "test");
         let mut test_files = Vec::new();
         for path in candidates {

@@ -70,6 +70,8 @@ csv = { workspace = true }
 dirs = { workspace = true }
 duckdb = { workspace = true }
 entity = { workspace = true }
+oxy-compile = { workspace = true }
+lru = { workspace = true }
 omni = { workspace = true }
 oxy-looker = { workspace = true }
 oxy-observability = { workspace = true }

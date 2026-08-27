@@ -62,9 +62,9 @@ pub struct CompileArgs {
 
     /// Atomically promote the new revision into
     /// `workspaces.current_revision_id` when the compile succeeds.
-    /// Off by default to preserve the observation-mode contract of
-    /// the foundation PR; opt in when you want runtime reads to start
-    /// using the new revision.
+    /// Off by default so a manual `oxy compile` is a dry run — it
+    /// proves the workspace compiles without moving what the runtime
+    /// serves. The worker and the CLI's production paths pass it.
     #[clap(long)]
     pub promote: bool,
 

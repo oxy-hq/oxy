@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 
 const UNIFI_LIST_DEVICES_URL: &str = "https://api.ui.com/v1/devices?pageSize=200";
 const CACHE_TTL: Duration = Duration::from_secs(60);
@@ -120,7 +120,7 @@ fn cache() -> &'static Mutex<HashMap<Uuid, CachedCameras>> {
 /// handlers resolve theirs instead of reading a raw process env var. Returns
 /// `None` when no `unifi` integration is configured — `list_cameras` surfaces
 /// that as a 503 so the world-model FE renders the empty camera state cleanly.
-async fn unifi_key(workspace: &WorkspaceManager) -> Option<String> {
+async fn unifi_key<S>(workspace: &WorkspaceManager<S>) -> Option<String> {
     match apps_helpers::resolve_unifi(
         workspace.config_manager.get_config(),
         &workspace.secrets_manager,
@@ -208,7 +208,7 @@ async fn fetch_from_unifi(key: &str) -> Result<WorldModelCamerasResponse, (Statu
 #[axum::debug_handler]
 #[tracing::instrument(skip_all)]
 pub async fn list_cameras(
-    WorkspaceManagerExtractor(workspace): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace): WorkspaceManagerReadOnly,
 ) -> Result<Json<WorldModelCamerasResponse>, (StatusCode, String)> {
     let workspace_id = workspace.workspace_id;
     {
@@ -345,7 +345,7 @@ pub struct WeatherTilePath {
 /// `integrations.openweathermap` config entry. Returns `None` when no
 /// `openweathermap` integration is configured — both weather handlers
 /// surface that as a 503 so the world-model FE falls back gracefully.
-async fn owm_key(workspace: &WorkspaceManager) -> Option<String> {
+async fn owm_key<S>(workspace: &WorkspaceManager<S>) -> Option<String> {
     match apps_helpers::resolve_openweather(
         workspace.config_manager.get_config(),
         &workspace.secrets_manager,
@@ -367,7 +367,7 @@ async fn owm_key(workspace: &WorkspaceManager) -> Option<String> {
 #[axum::debug_handler]
 #[tracing::instrument(skip_all, fields(layer = %path.layer, z = path.z, x = path.x, y = path.y))]
 pub async fn weather_tile(
-    WorkspaceManagerExtractor(workspace): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace): WorkspaceManagerReadOnly,
     AxumPath(path): AxumPath<WeatherTilePath>,
 ) -> Result<Response, (StatusCode, String)> {
     if !OWM_LAYERS.contains(&path.layer.as_str()) {
@@ -606,7 +606,7 @@ async fn fetch_one(
 #[axum::debug_handler]
 #[tracing::instrument(skip_all)]
 pub async fn weather_current_batch(
-    WorkspaceManagerExtractor(workspace): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace): WorkspaceManagerReadOnly,
     axum::Json(coords): axum::Json<Vec<WeatherCoordRequest>>,
 ) -> Result<Json<Vec<WeatherCurrent>>, (StatusCode, String)> {
     let workspace_id = workspace.workspace_id;

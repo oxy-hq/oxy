@@ -36,6 +36,17 @@ export interface ContextGraphEdge {
 export interface ContextGraph {
   nodes: ContextGraphNode[];
   edges: ContextGraphEdge[];
+  /**
+   * True when at least one database answered `datasets: null` — the instance
+   * that served the request could not look, because the semantic sync directory
+   * lives in the working copy and a stateless replica does not have one.
+   *
+   * It is NOT the same as "this workspace has no tables", and the graph cannot
+   * tell the difference on its own: both produce zero table nodes. Carrying the
+   * flag is what lets the overview say "not visible from here" instead of
+   * quietly dropping the row and looking complete.
+   */
+  tablesUnknown: boolean;
 }
 
 export interface View {

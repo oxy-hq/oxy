@@ -177,8 +177,13 @@ fn build_event_registry() -> EventRegistry {
 async fn cmd_run(args: RunArgs) -> Result<(), OxyError> {
     let db = connect_db().await?;
     let project_path = resolve_local_workspace_path()?;
+    // main's `--workspace-id` (falling back to nil) with this branch's builder
+    // terminal: `with_workspace_path` is gone, and `with_working_copy` is the
+    // door that states what it needs — a root, an optional pinned revision, and
+    // what to do when `config.yml` is absent. `Fail` here because a CLI run
+    // against a project without one has nothing to do.
     let workspace_manager = WorkspaceBuilder::new(args.workspace_id.unwrap_or_else(Uuid::nil))
-        .with_workspace_path(&project_path)
+        .with_working_copy(&project_path, None, oxy::config::OnMissing::Fail)
         .await?
         .with_runs_manager(oxy::adapters::runs::RunsManager::noop())
         .build()

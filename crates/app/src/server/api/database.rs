@@ -2,7 +2,7 @@ use crate::agentic_wiring::OxyProjectContext;
 use crate::agentic_wiring::project_ctx::database_to_connector_config;
 use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, WorkspaceManagerExtractor, WorkspacePath,
+    EffectiveWorkspaceRole, WorkspaceManagerReadOnly, WorkspaceManagerWorkingCopy, WorkspacePath,
 };
 use crate::{
     cli::commands::clean::{clean_all, clean_cache, clean_database_folder, clean_vectors},
@@ -20,6 +20,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response, sse::Sse},
 };
+use oxy::config::ResolveWorkspaceFile;
 use oxy::config::model::{DatabaseType, SemanticModels, SnowflakeAuthType};
 use oxy::connector::Connector;
 use oxy::semantic::SemanticManager;
@@ -44,7 +45,12 @@ pub struct DatabaseInfo {
     /// Raw config type from `config.yml` (e.g. `"airhouse_managed"`, `"duckdb"`).
     /// Use this for display (icons, labels) — `dialect` is for query engine selection.
     pub db_type: String,
-    pub datasets: HashMap<String, HashMap<String, SemanticModels>>,
+    /// `None` when this instance could not look — the semantic sync directory
+    /// lives in the working copy, so a replica has no view of it. `Some({})`
+    /// means it looked and the database has no synced datasets. The UI says
+    /// "No specific datasets configured" for the second, which is a statement
+    /// about the customer's setup that only the first shape may not make.
+    pub datasets: Option<HashMap<String, HashMap<String, SemanticModels>>>,
     pub synced: bool,
 }
 
@@ -72,7 +78,7 @@ pub struct DatabaseSchemaPath {
 }
 
 pub async fn get_database_schema(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path(DatabaseSchemaPath {
         workspace_id: _,
         database_name,
@@ -80,14 +86,24 @@ pub async fn get_database_schema(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
 ) -> Result<Json<DatabaseSchemaResponse>, StatusCode> {
-    // `build_connector_for` dispatches both the config + `agentic-connector`
+    // `build_connector_for_db` dispatches both the config + `agentic-connector`
     // path AND the host-built path (where airhouse lives), so this handler
     // works uniformly for every database type. Resolution / build failures
     // surface a 500 with the actual error logged — no more 422 swallowing.
-    let ctx = OxyProjectContext::new(workspace_manager.clone())
-        .with_subject(user.id)
-        .with_role(role);
-    let connector = ctx.build_connector_for(&database_name).await.map_err(|e| {
+    //
+    // The free function rather than `OxyProjectContext::build_connector_for`:
+    // the context is pinned to `<WorkingCopy>` and genericizing it would touch 26
+    // construction sites, while this handler needs no disk. A database that
+    // does — a local DuckDB file, a BigQuery key — still says so, through
+    // `try_resolve_file`.
+    let connector = crate::agentic_wiring::project_ctx::build_connector_for_db(
+        &workspace_manager,
+        &database_name,
+        Some(user.id),
+        Some(role),
+    )
+    .await
+    .map_err(|e| {
         tracing::error!(
             "Failed to build connector for schema introspection of {}: {}",
             database_name,
@@ -186,7 +202,7 @@ pub struct SyncDatabaseQuery {
 
 pub async fn sync_database(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path(WorkspacePath {
         workspace_id: _workspace_id,
     }): Path<WorkspacePath>,
@@ -269,23 +285,55 @@ pub async fn sync_database(
 }
 
 pub async fn list_databases(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    // The listing is an in-memory `Config` read; only `datasets` needs the
+    // working copy, because `SemanticStorage` resolves
+    // `database_semantic_path()` under the workspace root. So the handler asks
+    // for the files rather than requiring them, and the three answers this
+    // endpoint already distinguishes — synced / not synced / could not look —
+    // carry the difference the whole way to the UI (`DatasetInfo` renders the
+    // third as "Not available on this instance", never as "none configured").
+    //
+    // Staying FleetOk matters: `useWorkspaceReadiness` calls this on every page
+    // load and reads `databases.length` alone. Pinning it to the ide would put
+    // the launcher behind the singleton for a field it never touches.
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<DatabaseInfo>>, StatusCode> {
     let config_manager = &workspace_manager.config_manager;
     let secrets_manager = &workspace_manager.secrets_manager;
 
-    let semantic_manager =
-        SemanticManager::from_config(config_manager.clone(), secrets_manager.clone(), false)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to create semantic manager: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+    // `Some` on a node that owns the workspace files, `None` on one that does
+    // not. Not an error either way — "could not look" is one of this
+    // endpoint's three answers.
+    let semantic_manager = match config_manager.workspace_file_resolver() {
+        Some(with_files) => Some(
+            SemanticManager::from_config(with_files, secrets_manager.clone(), false)
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to create semantic manager: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?,
+        ),
+        None => None,
+    };
 
     let mut databases = Vec::new();
 
     for db in config_manager.list_databases() {
+        let Some(semantic_manager) = semantic_manager.as_ref() else {
+            // No files on this node, so whether the database is synced is
+            // unknown. Same answer `load_datasets` gives when it can see the
+            // root is missing — reached without asking, because there is
+            // nothing to ask.
+            databases.push(DatabaseInfo {
+                name: db.name.clone(),
+                dialect: db.dialect(),
+                db_type: db.database_type.to_string(),
+                datasets: None,
+                synced: false,
+            });
+            continue;
+        };
         // Try to load cached database info (without triggering sync)
         let (datasets, synced) = match semantic_manager
             .try_load_cached_database_info(&db.name)
@@ -325,15 +373,39 @@ pub async fn list_databases(
                         (dataset_name, tables)
                     })
                     .collect();
-                (datasets, true)
+                (Some(datasets), true)
             }
             Ok(None) => {
-                // Not synced yet - return empty datasets
-                (HashMap::new(), false)
+                // Genuinely not synced yet: the sync root is here and this
+                // database has nothing under it.
+                (Some(HashMap::new()), false)
             }
-            Err(_) => {
-                // Error loading - return empty datasets
-                (HashMap::new(), false)
+            // Both shapes answer "unknown", and `datasets: None` is how that
+            // is carried — `datasets: {}` would render as "No specific datasets
+            // configured", a claim about the customer's setup made by a node
+            // that never looked. `ConfigurationError` is how
+            // `SemanticFileStorage::load_datasets` reports an absent sync root,
+            // so it is worth naming in the log; it does not change the answer.
+            Err(e) => {
+                // Same answer either way; only the volume differs. The known
+                // shape is routine on a replica and would be noise at `warn`;
+                // anything else is a real fault, and merging both into `debug`
+                // would have made it invisible at production log levels — the
+                // loudness regression this branch exists to remove.
+                if matches!(e, oxy_shared::errors::OxyError::ConfigurationError(_)) {
+                    tracing::debug!(
+                        database = %db.name,
+                        error = ?e,
+                        "list_databases: sync root not on this node; datasets unknown"
+                    );
+                } else {
+                    tracing::warn!(
+                        database = %db.name,
+                        error = ?e,
+                        "list_databases: dataset enrichment failed; datasets unknown"
+                    );
+                }
+                (None, false)
             }
         };
 
@@ -374,7 +446,7 @@ pub struct CleanResponse {
 
 pub async fn clean_data(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Query(params): Query<CleanRequest>,
 ) -> Result<Json<CleanResponse>, StatusCode> {
     let target = params.target.unwrap_or(CleanTarget::All);
@@ -463,7 +535,7 @@ pub struct CreateDatabaseConfigResponse {
 )]
 pub async fn create_database_config(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(warehouses_form): Json<WarehousesFormData>,
@@ -483,6 +555,16 @@ pub async fn create_database_config(
     .await?;
 
     let database_names: Vec<String> = databases.iter().map(|db| db.name.clone()).collect();
+
+    // Defense in depth: this handler mutates `config.yml`. If the route is ever
+    // misclassified `FleetOk` and lands on a stateless replica, fail loudly here
+    // rather than write to an ephemeral disk nobody else will read.
+    crate::server::role_manifest::ensure_fs_writable("add databases to config.yml").map_err(
+        |e| {
+            tracing::error!(error = %e, "add_databases refused");
+            StatusCode::INTERNAL_SERVER_ERROR
+        },
+    )?;
 
     // Add databases to the config and write to config.yml
     match workspace_manager
@@ -576,7 +658,7 @@ pub enum ConnectionTestEvent {
     tag = "Databases"
 )]
 pub async fn test_database_connection(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
@@ -920,7 +1002,7 @@ pub struct InspectDatabaseQuery {
 /// `POST /databases/sync?tables=...` once the user picks tables.
 pub async fn inspect_database_handler(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path(WorkspacePath {
         workspace_id: _workspace_id,
     }): Path<WorkspacePath>,
@@ -1001,7 +1083,7 @@ pub async fn inspect_database_handler(
 /// scanning every column in the warehouse.
 pub async fn inspect_schemas_handler(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path(WorkspacePath {
         workspace_id: _workspace_id,
     }): Path<WorkspacePath>,
@@ -1049,7 +1131,7 @@ pub struct InspectSchemaTablesQuery {
 /// onboarding picker.
 pub async fn inspect_schema_tables_handler(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path(WorkspacePath {
         workspace_id: _workspace_id,
     }): Path<WorkspacePath>,

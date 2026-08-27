@@ -668,7 +668,7 @@ async fn run_inline_automation_internal(
     let workflow_yaml_hash = agentic_automation::hash::canonical_hash(&automation)
         .map_err(|e| AutomationRunError::Inline(format!("hash automation config: {e}")))?;
     let workflow_context = serde_json::json!({
-        "workspace_path": workspace.workspace_path().to_string_lossy(),
+        "workspace_path": workspace.workspace_path().map(|p| p.to_string_lossy().to_string()),
     });
     // Fold effective variables (automation `variables:` declarations +
     // runtime overrides) into the seed render context so templates can

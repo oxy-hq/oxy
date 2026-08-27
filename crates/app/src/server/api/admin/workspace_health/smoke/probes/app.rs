@@ -22,7 +22,7 @@ pub(crate) async fn run(
     app_path: &PathBuf,
     variables: &HashMap<String, serde_json::Value>,
 ) -> Result<(), ProbeFailure> {
-    let mut service = AppService::new(ctx.workspace_manager().clone(), ctx.clone());
+    let mut service = AppService::new(ctx.workspace_manager().clone());
     service
         .run(app_path, variables.clone())
         .await

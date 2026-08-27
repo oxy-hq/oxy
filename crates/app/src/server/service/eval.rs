@@ -15,6 +15,7 @@ use oxy::{
 use oxy_shared::errors::OxyError;
 
 use crate::integrations::eval::{EvalInput, EvalLauncher, EvalResult};
+use oxy::config::WorkingCopy;
 
 /// Global token stats accumulated across all eval runs, shared between
 /// the event handler and the calling command.
@@ -265,7 +266,7 @@ impl EventHandler for EvalEventsHandler {
 }
 
 pub async fn run_eval<P: AsRef<Path>, H: EventHandler + Send + 'static>(
-    workspace_manager: WorkspaceManager,
+    workspace_manager: WorkspaceManager<WorkingCopy>,
     path: P,
     index: Option<usize>,
     event_handler: H,
@@ -274,7 +275,7 @@ pub async fn run_eval<P: AsRef<Path>, H: EventHandler + Send + 'static>(
 }
 
 pub async fn run_eval_with_tag<P: AsRef<Path>, H: EventHandler + Send + 'static>(
-    workspace_manager: WorkspaceManager,
+    workspace_manager: WorkspaceManager<WorkingCopy>,
     path: P,
     index: Option<usize>,
     tag: Option<String>,

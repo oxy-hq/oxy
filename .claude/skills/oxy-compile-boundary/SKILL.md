@@ -46,6 +46,15 @@ Skip this contract only when:
 
 If you find yourself adding a `glob::glob(workspace_path)` or `fs::read_to_string(workspace_path.join(...))` in a request handler and the path is not already a compiled entity, you are on the wrong path. Open this skill and add the file type to the compile boundary first.
 
+### Absent is not empty (and two rules that keep it that way)
+
+A fallback that reads a filesystem which is not there must fail, not return nothing. Every enumeration that returned `[]` for a missing workspace root is how a platform-side miss got reported as the customer's configuration — both shipped incidents are that sentence.
+
+1. **A new lister goes through `require_root()`** (`crates/core/src/config/storage.rs`). It turns a missing workspace root into an `Err`. The seven existing listers call it; an eighth that forgets is a silent regression, not a compile error.
+2. **Nothing on a manager-construction path may create a directory.** `WorkingCopy::new` once resolved `<root>/.oxy_state` through a resolver that creates what it resolves, so merely building a manager brought the workspace root into existence. That defeated every other guard here, including ones written specifically to catch it — by the time anything stat-ed the root, it was there. Resolve with `oxy_shared::state_dir::state_dir_path`; create only where you write.
+
+`crates/app/tests/walker_storage_divergence.rs` pins both. Full account: `internal-docs/compile-boundary.md` § "Why an absent working copy used to be undiagnosable".
+
 ## Related skills + design docs
 
 - `oxy-scaling-design` — broader multi-instance context.

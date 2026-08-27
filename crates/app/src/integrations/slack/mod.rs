@@ -22,3 +22,4 @@ pub mod signature;
 pub mod socket_mode;
 pub mod types;
 pub mod webhooks;
+pub mod workspace;

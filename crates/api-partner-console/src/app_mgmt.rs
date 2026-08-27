@@ -114,18 +114,32 @@ async fn load_manageable_app(
     Ok(app)
 }
 
-/// The caller is an officer of `org_id` in their own right.
+/// The caller is an officer of `org_id` in their own right — either a REAL
+/// owner/admin membership, or a live assume-role session over `org_id`.
 ///
-/// `existing_allow` is a REAL owner/admin membership read, not a hand-waved `true`,
-/// so the decision stays the conjunction the authz crate is built on and the model
-/// can only subtract.
+/// `existing_allow` is that fact, not a hand-waved `true`, so the decision
+/// stays the conjunction the authz crate is built on and the model can only
+/// subtract.
+///
+/// The assume-role half matters because it is the ONLY way Oxy staff reach
+/// this console at all (`PartnerActor`'s extraction already proved the caller
+/// is a real operator or holds a live assume session over the partner org —
+/// see `resolve_scope`'s "Real operator first; failing that, a live assume
+/// session"), and an assume session deliberately never creates a real
+/// `org_members` row (this module's own doc comment: "never injected as a
+/// synthetic membership"). Without this, `is_officer` was always false for
+/// every staff-driven visit, and `AssumeRoleDialog` explicitly promises
+/// "Owner-level access to this organization" for the session's duration.
+/// `is_session_live` is the same enforcement primitive `org_context` /
+/// `workspace_context` use before synthesizing an Owner membership, and it
+/// fails closed on a DB error like the membership read below.
 async fn require_own_org_authority(
     db: &sea_orm::DatabaseConnection,
     actor: &oxy_auth::types::AuthenticatedUser,
     org_id: Uuid,
 ) -> Result<(), StatusCode> {
     use entity::org_members;
-    let is_officer = entity::prelude::OrgMembers::find()
+    let is_real_officer = entity::prelude::OrgMembers::find()
         .filter(org_members::Column::OrgId.eq(org_id))
         .filter(org_members::Column::UserId.eq(actor.id))
         .filter(
@@ -136,6 +150,8 @@ async fn require_own_org_authority(
         .await
         .map_err(internal("check own-org role"))?
         .is_some();
+    let is_officer = is_real_officer
+        || oxy_server_authz::assume_liveness::is_session_live(db, actor.id, org_id).await;
 
     let allowed = oxy_server_authz::enforce_for(
         db,

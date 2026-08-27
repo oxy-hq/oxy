@@ -10,6 +10,7 @@ use serde_json::{Map, Value};
 use oxy::adapters::workspace::manager::WorkspaceManager;
 
 use super::context::ToolExecutionContext;
+use oxy::config::WorkingCopy;
 
 /// Trait for executing MCP tools.
 ///
@@ -33,7 +34,7 @@ pub trait ToolExecutor: Send + Sync {
     /// * `Err(rmcp::ErrorData)` - Tool execution error
     async fn execute(
         &self,
-        workspace_manager: &WorkspaceManager,
+        workspace_manager: &WorkspaceManager<WorkingCopy>,
         tool_name: String,
         arguments: Option<Map<String, Value>>,
         context: ToolExecutionContext,
@@ -46,7 +47,7 @@ pub struct AutomationExecutor;
 impl ToolExecutor for AutomationExecutor {
     async fn execute(
         &self,
-        workspace_manager: &WorkspaceManager,
+        workspace_manager: &WorkspaceManager<WorkingCopy>,
         tool_name: String,
         arguments: Option<Map<String, Value>>,
         context: ToolExecutionContext,
@@ -70,7 +71,7 @@ pub struct SemanticExecutor;
 impl ToolExecutor for SemanticExecutor {
     async fn execute(
         &self,
-        workspace_manager: &WorkspaceManager,
+        workspace_manager: &WorkspaceManager<WorkingCopy>,
         tool_name: String,
         arguments: Option<Map<String, Value>>,
         context: ToolExecutionContext,
@@ -94,7 +95,7 @@ pub struct SqlExecutor;
 impl ToolExecutor for SqlExecutor {
     async fn execute(
         &self,
-        workspace_manager: &WorkspaceManager,
+        workspace_manager: &WorkspaceManager<WorkingCopy>,
         tool_name: String,
         arguments: Option<Map<String, Value>>,
         context: ToolExecutionContext,

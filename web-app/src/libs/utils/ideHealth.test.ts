@@ -17,13 +17,10 @@ function axiosErr(status: number, headers: Record<string, string>): AxiosError {
 
 describe("isIdeUnavailableError", () => {
   it("is true for the ide-down 502 (required-role: ide)", () => {
+    // This header IS the whole contract. The 502 used to also carry
+    // `x-oxy-unavailable: workspace-{runtime,editing}`; nothing branched on it,
+    // so the backend stopped sending it — detection was never affected.
     expect(isIdeUnavailableError(axiosErr(502, { "x-oxy-required-role": "ide" }))).toBe(true);
-    // The capability class is irrelevant to detection — both are ide-down.
-    expect(
-      isIdeUnavailableError(
-        axiosErr(502, { "x-oxy-required-role": "ide", "x-oxy-unavailable": "workspace-runtime" })
-      )
-    ).toBe(true);
   });
 
   it("is false for a generic 502 without the ide marker", () => {
@@ -66,12 +63,12 @@ describe("isWorkspaceMaterializingError", () => {
     expect(isWorkspaceMaterializingError(axiosErr(503, {}))).toBe(false);
   });
 
-  it("is false for the other unavailable classes", () => {
+  it("is false for any other value of the class", () => {
+    // `workspace-materializing` is the only value the backend emits today, so
+    // this guards the direction that matters: a future class added to this
+    // header must not be swallowed as "still coming up".
     expect(
-      isWorkspaceMaterializingError(axiosErr(503, { "x-oxy-unavailable": "workspace-editing" }))
-    ).toBe(false);
-    expect(
-      isWorkspaceMaterializingError(axiosErr(503, { "x-oxy-unavailable": "workspace-runtime" }))
+      isWorkspaceMaterializingError(axiosErr(503, { "x-oxy-unavailable": "workspace-elsewhere" }))
     ).toBe(false);
   });
 

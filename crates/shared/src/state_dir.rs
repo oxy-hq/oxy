@@ -9,22 +9,32 @@ use std::path::{Path, PathBuf};
 /// # Arguments
 /// * `fallback` - Optional fallback path to use if OXY_STATE_DIR is not set
 pub fn resolve_state_dir_with_fallback(fallback: Option<PathBuf>) -> PathBuf {
+    let path = state_dir_path(fallback);
+    ensure_dir_exists(&path);
+    path
+}
+
+/// The same resolution, creating nothing.
+///
+/// Constructing a workspace manager must not bring a workspace root into
+/// existence. The fallback state dir lives *inside* the workspace root, so
+/// creating it on a node that has never cloned that workspace leaves an empty
+/// root behind — and from then on "this node holds no working copy" and "the
+/// customer configured nothing" are the same directory, which is the shape
+/// behind both shipped incidents. Whoever writes into the state dir calls
+/// [`resolve_state_dir_with_fallback`] and gets it created then.
+pub fn state_dir_path(fallback: Option<PathBuf>) -> PathBuf {
     if let Ok(env_dir) = std::env::var("OXY_STATE_DIR") {
-        let path = PathBuf::from(env_dir);
-        ensure_dir_exists(&path);
-        return path;
+        return PathBuf::from(env_dir);
     }
 
-    let path = fallback.unwrap_or_else(|| {
+    fallback.unwrap_or_else(|| {
         let homedir = home::home_dir().unwrap_or_else(|| {
             eprintln!("Error: Could not determine home directory.");
             std::process::exit(1);
         });
         homedir.join(".local/share/oxy")
-    });
-
-    ensure_dir_exists(&path);
-    path
+    })
 }
 
 fn resolve_state_dir() -> PathBuf {

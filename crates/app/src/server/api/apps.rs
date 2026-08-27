@@ -19,7 +19,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::{
+    WorkspaceManagerReadOnly, WorkspaceManagerWorkingCopy,
+};
 
 /// Subset of the integration entry returned to the settings UI. Never
 /// includes resolved secret values — only the `*_var` reference so the
@@ -69,7 +71,7 @@ pub enum UpsertAppRequest {
 
 /// `GET /api/{workspace_id}/apps`
 pub async fn list_apps(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path(workspace_id): Path<Uuid>,
 ) -> Result<Json<Vec<AppSummary>>, (StatusCode, String)> {
     let _ = workspace_id;
@@ -85,10 +87,15 @@ pub async fn list_apps(
 /// `POST /api/{workspace_id}/apps`
 pub async fn upsert_app(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path(workspace_id): Path<Uuid>,
     Json(body): Json<UpsertAppRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    // Defense in depth: this handler mutates `config.yml`. If the route is
+    // ever misclassified `FleetOk` and reaches a stateless replica, fail
+    // loudly here rather than write to a disk nobody else reads.
+    crate::server::role_manifest::ensure_fs_writable("upsert app integration in config.yml")
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let integration = build_integration(body);
     workspace_manager
         .config_manager
@@ -108,10 +115,15 @@ pub async fn upsert_app(
 /// `openweathermap`, or `besttime`. Idempotent.
 pub async fn delete_app(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((workspace_id, kind)): Path<(Uuid, String)>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     validate_app_kind(&kind)?;
+    // Defense in depth: this handler mutates `config.yml`. If the route is
+    // ever misclassified `FleetOk` and reaches a stateless replica, fail
+    // loudly here rather than write to a disk nobody else reads.
+    crate::server::role_manifest::ensure_fs_writable("remove app integration from config.yml")
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     workspace_manager
         .config_manager
         .remove_integration_by_kind(&kind)

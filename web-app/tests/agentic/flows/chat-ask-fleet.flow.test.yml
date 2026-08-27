@@ -1,0 +1,233 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Ask a sales question via the "Ask Oxygen" dock and verify the analytics
+# agent returns a real, data-backed answer — driven against the split-fleet
+# Docker deployment (a stateless `serve` replica's public port), not an
+# auto-spawned single-process backend.
+#
+# WHY THIS FLOW EXISTS. The product's core loop is "connect a warehouse and
+# ask a question" — and until this flow, no committed flow proved that loop
+# survives on a diskless replica:
+#   - `chat-ask.flow.test.yml` declares no `backend_mode` (defaults to
+#     `local`, chat-ask.flow.test.yml:15-19) and is absent from `FLEET_FLOWS`
+#     (scripts/fleet-assert.sh:114-122) — it has only ever run against a
+#     single all-in-one process where the ide proxy is never exercised.
+#   - `semantic-builder-ask.flow.test.yml` is the one flow in
+#     `FLEET_FLOWS`'s own exclusion list that "fails outright" — its premise
+#     (an edit is visible to a semantic read without an explicit compile)
+#     doesn't hold anywhere, fleet or not; see that file's header.
+# `internal-docs/local-split-fleet-testing.md`'s "Flows identified but not
+# yet built" section (item 3, P0) names this exact gap.
+#
+# WHY THIS IS FLEET-SENSITIVE — `/analytics` is IdeOnly by default, PROXIED,
+# never executed locally on this fixture
+# --------------------------------------------------------------------------
+# `crates/app/src/server/router/workspace.rs:450-454` mounts the whole
+# analytics sub-router via `nest_declared("/analytics", ...,
+# agentic_http::router_roles())`. That role table
+# (`crates/agentic/http/src/lib.rs:76-92`) makes run-history reads FleetOk
+# (`GET /threads/{id}/run(s)`, a Postgres-only read — viewing a past
+# conversation must never need the ide) but everything else — crucially
+# `POST /runs` (create_run) and the SSE `/runs/{id}/events` stream — falls
+# through the trailing `"*", "/{*rest}" -> IdeOnly` wildcard
+# (crates/agentic/http/src/lib.rs:89-92): "Everything else executes a run
+# in-process against the local connector, or streams one that is executing."
+#
+# There IS a conditional un-pin (`crates/app/src/server/serve_safety.rs`) that
+# lets a *serve-safe* workspace run analytics locally on the replica instead
+# of proxying — but it is gated by `OXY_ANALYTICS_FLEET_UNPIN`, default OFF
+# (serve_safety.rs:17-24, "when unset the serve fleet proxies every
+# `/analytics` request to the ide, exactly as before"), and this fixture
+# would not qualify even if it were on: `examples/config.yml`'s `local`
+# database is `type: duckdb, dataset: .db/` — a raw local DuckDB with no
+# `s3_mirror` and no DuckLake, which `database_is_serve_safe`
+# (serve_safety.rs:53-58) explicitly treats as FS-pinned, not serve-safe.
+# So on THIS fleet, asking a question always crosses the serve→ide proxy —
+# this flow's green run is a genuine end-to-end proof of that hop working
+# from the browser's own network tab, streamed back through the replica's
+# public port, not merely a router-classification check.
+#
+# CONFIRMED LIVE (this session, 2026-08-25) — before authoring, drove the
+# exact same request this flow drives, via curl, against workspace
+# 70787bb2-e11b-5488-b2c3-02e60d5fc7d3 on the public port (:3000):
+#   POST /api/<ws>/analytics/runs {"agent_id":"analytics.agentic.yml",
+#     "question":"What were the total weekly sales by store?", ...}
+#   -> 200, headers: x-oxy-served-by: ide@...   x-oxy-forwarded-via: serve@...
+#   (i.e. serve answered the client, but genuinely forwarded execution to the
+#   ide node — the proxy this flow exists to exercise, observed directly).
+#   Polled GET /api/<ws>/analytics/threads/{tid}/run to status "done" (~55s):
+#     "weekly sales averaged **$1,046,965** per store-week, ranging from a
+#      low of **$209,986** to a high of **$3,818,686**. ... High-volume
+#      stores like Store 2 and Store 4 consistently post weekly sales around
+#      **$1.8M-$3.0M** ... Low-volume stores like Store 3 and Store 5 hover
+#      around **$300K-$440K** ..."
+# Independently cross-checked against examples/.db/oxymart.csv directly
+# (python csv aggregation, this session): 45 stores, 6,435 store-week rows,
+# grand total $6,737,218,987.11, average weekly sales per store-week
+# $1,046,964.88 — matching the agent's reported $1,046,965 to the dollar.
+# So a real answer with real, verifiable numbers is achievable here; a run
+# that comes back generic, numberless, or erroring is a genuine regression,
+# not a flaky fixture.
+#
+# NOTE ON DETERMINISM: the exact numbers/stores the agent chooses to surface
+# can vary between runs (it samples/aggregates differently run to run — see
+# the "only the first 1,000 [rows] were fetched" caveat in the transcript
+# above). The judge below checks for the SHAPE of a real, numeric,
+# data-backed answer rather than pinning literal figures, the same tradeoff
+# `context-graph-fleet.flow.test.yml`'s header explains for its node/edge
+# counts. The deterministic asserts below are what pin the "not faked, not
+# degraded" half.
+#
+# WHAT TO ANCHOR ON (deterministic, $0):
+#   [data-testid=ask-dock]            — components/Ask/AskDock/index.tsx:31
+#   [data-testid^=reasoning-pill-]    — AnalyticsStepRow.tsx:154-169. Rendered
+#     ONLY when the run's trace contains an artifact/sql/chart item
+#     (collectPills, AnalyticsStepRow.tsx:868-901) — i.e. a query genuinely
+#     executed and returned something to show, not just prose. The prefix
+#     match (rather than a fixed label) is deliberate: this question's
+#     pill could legitimately render as "SQL Query" or "Semantic Query"
+#     depending on which path the hybrid analytics agent takes (see
+#     semantic-builder-ask.flow.test.yml's header on that hybrid behavior) —
+#     pinning either literal label would make the assertion depend on an
+#     implementation detail this flow doesn't care about.
+#   [data-testid=ide-unavailable-banner] — components/IdeUnavailableBanner/
+#     index.tsx:39. Mounted app-wide, driven by the Axios interceptor
+#     watching ide-proxied calls; this is the exact banner a real user sees
+#     when the serve→ide hop this flow exercises fails ("Oxygen Factory is
+#     temporarily unavailable ... Chat and your saved data keep working").
+#     Its absence is the assertion that the hop genuinely succeeded, the
+#     same "absence of the degraded state" pattern `apps-data-app-charts.
+#     flow.test.yml` uses for `[data-testid=ide-unavailable-panel]`.
+#
+# FIXTURE: this workspace's `examples/` project (the split-fleet Docker
+# deployment is seeded from `examples/`, not `demo_project/` — see
+# `ide-world-model-graph-fleet.flow.test.yml`'s header and
+# `tests/agentic/README.md`'s fleet section). `examples/sales_semantics/
+# views/oxymart.view.yml` and `examples/.db/oxymart.csv` are the same
+# retail-weekly-sales shape as `demo_project`'s (both ship the file), so the
+# question `chat-ask.flow.test.yml` already uses against `demo_project`
+# ports over unchanged.
+#
+# RUN THIS AGAINST THE FLEET, NEVER THE DEFAULT WAY. `backend_mode: local`
+# below does NOT select a fixture — it only picks what the runner
+# auto-spawns when not handed a backend already (`runner/backend.ts`
+# `spawnArgs`); driving the fleet means `--no-auto-backend` plus
+# `OXY_BASE_URL` / `OXY_HEALTH_URL` / `OXY_SESSION_TOKEN` / `OXY_SESSION_USER`
+# / `OXY_PATH_PREFIX` pointed at a running replica (see "Driving a fleet or
+# remote deployment" in `tests/agentic/README.md`). Not registered in
+# `scripts/fleet-assert.sh`'s `FLEET_FLOWS` array in this change (out of
+# scope — that file is off limits here) but a natural candidate for it.
+#
+# NAVIGATION FINDING (this session): `goto:/` — the pattern
+# `ide-world-model-graph-fleet.flow.test.yml` uses — is UNRELIABLE for
+# reaching a SPECIFIC workspace once the org has more than one. `target ===
+# "/"` is deliberately exempt from `OXY_PATH_PREFIX`
+# (runner/backend.ts:83), on the assumption that org "local" has exactly one
+# workspace so any landing page resolves to it. That assumption broke live
+# in this session: a first cold run against this exact setup landed on
+# `agentic-fixture-empty` (workspace `c5b8d83a-…`, evidently created by a
+# concurrent agent's own flow work on this shared fleet) instead of the
+# intended `70787bb2-…` — confirmed from the Playwright trace's
+# `trace.network`, whose very first API calls after `goto:/` are scoped to
+# `/api/c5b8d83a-…/...`, not `/api/70787bb2-…/...`. The dock opened fine but
+# the submit step then burned 15 iterations against a workspace with no real
+# agent to answer, and `streaming_complete` correctly timed out — a bad
+# fixture landing, not a bug in the Ask dock. `goto:/home` is used instead:
+# `ROUTES.ORG(slug).WORKSPACE(id).HOME` is `${wsBase}/home`
+# (libs/utils/routes.ts:68-72), a workspace-scoped path — NOT the bare `/`
+# — so it IS subject to `OXY_PATH_PREFIX` and lands on the exact workspace
+# this flow's setup env vars name, deterministically, regardless of how many
+# other workspaces a concurrent agent has created in the same org.
+#
+# COST: two act steps (open the dock, submit the question) plus one
+# streaming wait and one judge call — no builder run, no onboarding prelude.
+# Wall-clock is dominated by the agent run itself (~55s measured live above).
+
+name: chat ask returns a real, data-backed answer (fleet fixture)
+target: chat
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  max_steps: 15
+
+setup:
+  # NOT "goto:/" — see the header's NAVIGATION FINDING. "/home" is
+  # workspace-scoped so OXY_PATH_PREFIX applies and this lands on the exact
+  # intended workspace even when the org has other workspaces too.
+  - "goto:/home"
+
+cases:
+  - name: ask a sales question and get a real numeric answer through the serve-to-ide proxy
+    tags: [chat, fleet, compile-boundary, critical]
+    steps:
+      - act: |
+          browser_click [data-testid=ask-oxygen-button] in the top bar
+          (web-app/src/components/Shell/TopBar/index.tsx:16). The right-side
+          Ask dock ([data-testid=ask-dock]) opens with a ChatPanel composer
+          inside.
+
+      - wait_for: "selector:[data-testid=ask-dock]"
+
+      - act: |
+          Submit a question to the analytics agent via the Ask dock:
+          1. browser_type into the SCOPED selector
+             `[data-testid=ask-dock] textarea[name=question]`:
+             "What were the total weekly sales by store?"
+             Scoped, not bare: this page renders TWO composers — the launcher's
+             behind the dock and the dock's own — so a bare
+             `textarea[name=question]` matches the one underneath, leaves the
+             dock's box empty, and the submit button stays disabled
+             (`ChatPanel/index.tsx` disables on `!message`). The click then
+             lands on a dead button and nothing streams, which surfaces as
+             "the previous act step probably never submitted".
+          2. browser_click the SCOPED selector
+             `[data-testid=ask-dock] [data-testid=chat-panel-submit-button]`.
+             Scoped for the same reason as step 1 and it is the same two
+             components: `AskForwardFallback` (launcher/index.tsx:105, the
+             no-custom-apps branch the demo workspace takes) and
+             `AskDock/DockComposer` both render `ChatPanel`, so the page carries
+             TWO buttons with this testid as well as two textareas. A bare
+             selector takes the first — the launcher's, underneath — and the
+             click never reaches the dock.
+          The dock switches to its thread view and the answer streams in
+          place. This run executes on the ide node via the serve→ide proxy
+          (see this file's header) — allow it the full streaming window.
+
+      - wait_for: streaming_complete
+
+    expect:
+      # Deterministic, $0. The dock is still open/rendered post-stream, an
+      # artifact pill of SOME kind rendered (proving a query actually ran and
+      # returned something, not just prose), and the degraded-proxy banner
+      # never appeared.
+      - assert: "selector [data-testid=ask-dock] is visible"
+      - assert: "selector [data-testid^=reasoning-pill-] is visible"
+      - assert: "selector [data-testid=ide-unavailable-banner] is not visible"
+
+      - judge: |
+          The Ask dock on the right shows the analytics agent's answer to
+          "What were the total weekly sales by store?" — a coherent,
+          data-backed result that includes REAL numeric dollar figures (e.g.
+          per-store weekly sales amounts, an average, a min/max range, or a
+          per-store breakdown table/chart with actual numbers plotted) — not
+          a placeholder, not a generic non-numeric description, not a
+          request for clarification.
+
+          Fail if ANY of the following is true:
+          (a) an error banner or message is visible (e.g. "failed", "error
+              running query", a red/destructive alert);
+          (b) the "Oxygen Factory is temporarily unavailable" banner is
+              visible, or any text mentions "ide backend unreachable";
+          (c) the agentic run is suspended awaiting a clarifying question
+              instead of answering (a prompt back to the user, not an
+              answer);
+          (d) the answer contains NO real numeric figures at all — e.g. it
+              only describes the dataset in prose with no dollar amounts or
+              numbers;
+          (e) a loading spinner or streaming indicator is still visible;
+          (f) any visible text contains "retry shortly", "a compile has been
+              enqueued", "Workspace directory not found", "No such file or
+              directory", "os error", "502", or an absolute filesystem path.

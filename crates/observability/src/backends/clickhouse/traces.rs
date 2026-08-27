@@ -49,7 +49,14 @@ struct ClusterMapQueryRow {
     cluster_id: i32,
     intent_name: String,
     confidence: f32,
-    classified_at: String,
+    // Deliberately NOT named `classified_at`: ClickHouse resolves a `WHERE
+    // classified_at …` reference against a SELECT-list alias of the same name
+    // instead of the source column, even though the alias's expression
+    // (`formatDateTime(...)`, a String) shares no type with the DateTime the
+    // WHERE clause compares it against — `NO_COMMON_TYPE`. Keeping this name
+    // distinct from the raw `classified_at` column used in `WHERE`/`ORDER BY`
+    // below is the fix; see `get_cluster_map_data`.
+    classified_at_iso: String,
     source: String,
 }
 
@@ -326,6 +333,33 @@ pub(super) async fn get_trace_detail(
         .collect())
 }
 
+/// Builds the `get_cluster_map_data` query text. Pulled out of the `async fn`
+/// so `cluster_map_sql_alias_does_not_shadow_the_where_column` can assert on
+/// its shape without a live ClickHouse.
+///
+/// The output alias must NOT be named `classified_at` — see the doc comment on
+/// `ClusterMapQueryRow::classified_at_iso`. `WHERE`/`ORDER BY` stay on the
+/// bare, unaliased `classified_at`, which now unambiguously means the real
+/// DateTime column.
+fn cluster_map_sql(where_clause: &str, limit: usize) -> String {
+    let ca = super::iso_utc("classified_at");
+    format!(
+        "SELECT
+            trace_id,
+            question,
+            embedding,
+            cluster_id,
+            intent_name,
+            confidence,
+            {ca} AS classified_at_iso,
+            source
+        FROM observability_intent_classifications FINAL
+        WHERE {where_clause}
+        ORDER BY classified_at DESC
+        LIMIT {limit}"
+    )
+}
+
 pub(super) async fn get_cluster_map_data(
     storage: &ClickHouseObservabilityStorage,
     days: u32,
@@ -338,23 +372,7 @@ pub(super) async fn get_cluster_map_data(
     }
 
     let where_clause = conditions.join(" AND ");
-
-    let ca = super::iso_utc("classified_at");
-    let sql = format!(
-        "SELECT
-            trace_id,
-            question,
-            embedding,
-            cluster_id,
-            intent_name,
-            confidence,
-            {ca} AS classified_at,
-            source
-        FROM observability_intent_classifications FINAL
-        WHERE {where_clause}
-        ORDER BY classified_at DESC
-        LIMIT {limit}"
-    );
+    let sql = cluster_map_sql(&where_clause, limit);
 
     let rows: Vec<ClusterMapQueryRow> = storage
         .read_client()
@@ -372,7 +390,7 @@ pub(super) async fn get_cluster_map_data(
             cluster_id: r.cluster_id,
             intent_name: r.intent_name,
             confidence: r.confidence,
-            classified_at: r.classified_at,
+            classified_at: r.classified_at_iso,
             source: r.source,
         })
         .collect())
@@ -496,7 +514,30 @@ fn parse_timestamp_ns(ts: &str) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_like_pattern, escape_sql_literal};
+    use super::{cluster_map_sql, escape_like_pattern, escape_sql_literal};
+
+    /// Regression for the cluster map's `NO_COMMON_TYPE` (ClickHouse error
+    /// code 386): the query filters `WHERE classified_at >= now() - INTERVAL
+    /// n DAY` on the bare column, so a SELECT-list alias of the same name
+    /// gets resolved by ClickHouse's analyzer in place of the column even
+    /// inside WHERE — comparing the alias's `formatDateTime(...)` String
+    /// against a DateTime. Reverting `cluster_map_sql` to alias the formatted
+    /// column back to `classified_at` reproduces the collision this asserts
+    /// against (verified with `git stash` — see the branch's test commit).
+    #[test]
+    fn cluster_map_sql_alias_does_not_shadow_the_where_column() {
+        let sql = cluster_map_sql("classified_at >= now() - INTERVAL 7 DAY", 50);
+        assert!(
+            sql.contains("AS classified_at_iso"),
+            "expected the formatted column aliased to a name distinct from \
+             the raw `classified_at` column:\n{sql}"
+        );
+        assert!(
+            !sql.contains("AS classified_at,") && !sql.contains("AS classified_at\n"),
+            "the SELECT list re-introduced `classified_at` as an alias, which \
+             shadows the bare `classified_at` filtered in WHERE:\n{sql}"
+        );
+    }
 
     #[test]
     fn sql_literal_doubles_single_quotes() {

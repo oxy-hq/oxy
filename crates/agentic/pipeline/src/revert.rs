@@ -86,7 +86,15 @@ pub async fn revert_builder_file_changes(
         file_paths.to_vec()
     };
 
-    let workspace_root = platform.workspace_path().to_path_buf();
+    let workspace_root = platform
+        .workspace_path()
+        .ok_or_else(|| {
+            PipelineError::Config(
+                "revert: this node holds no workspace files, so a builder change cannot be undone"
+                    .to_string(),
+            )
+        })?
+        .to_path_buf();
     let mut next_seq = agentic_runtime::crud::get_max_seq(db, run_id).await? + 1;
     let mut reverted = Vec::with_capacity(targets.len());
 

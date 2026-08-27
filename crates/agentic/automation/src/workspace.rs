@@ -11,6 +11,72 @@ use agentic_connector::DatabaseConnector;
 
 use crate::refresh_key_cache::RefreshKeyCache;
 
+/// Why a workspace read failed, when the caller has to tell the two apart.
+///
+/// Three answers, because a read can fail three ways and they want three
+/// statuses:
+///
+/// - `Missing` — not in the workspace. 404.
+/// - `Invalid` — it IS here and does not parse. 422. A permanent condition;
+///   calling it retryable tells a client to come back for a file that will
+///   never load, and removes the only status that could say "your YAML is
+///   broken".
+/// - `Unavailable` — this node could not look. 503.
+///
+/// Reporting `Unavailable` as `Missing` tells a caller their automation does
+/// not exist because a database blipped; reporting `Invalid` as `Unavailable`
+/// tells them to retry a typo. The host must label by the SHAPE of the
+/// failure, never by which call site produced it — the first version of this
+/// inferred `Unavailable` from position and swept both other shapes into it.
+///
+/// A plain enum, not `oxy`'s `ArtifactError`: `agentic-automation` is a domain
+/// crate and must not depend on the platform (see `backend-architecture.md`).
+///
+/// `From<String>` / `From<&str>` land on `Missing`, so a host that cannot tell
+/// the two apart keeps today's behaviour rather than over-claiming that a
+/// failure is worth retrying.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkspaceReadError {
+    Missing(String),
+    Invalid(String),
+    Unavailable(String),
+}
+
+impl WorkspaceReadError {
+    /// Whether the caller should come back rather than conclude anything.
+    pub fn is_unavailable(&self) -> bool {
+        matches!(self, Self::Unavailable(_))
+    }
+
+    /// Whether the artifact is present and unusable — the caller's content
+    /// problem, and not worth a retry.
+    pub fn is_invalid(&self) -> bool {
+        matches!(self, Self::Invalid(_))
+    }
+}
+
+impl std::fmt::Display for WorkspaceReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing(m) | Self::Invalid(m) | Self::Unavailable(m) => f.write_str(m),
+        }
+    }
+}
+
+impl std::error::Error for WorkspaceReadError {}
+
+impl From<String> for WorkspaceReadError {
+    fn from(message: String) -> Self {
+        Self::Missing(message)
+    }
+}
+
+impl From<&str> for WorkspaceReadError {
+    fn from(message: &str) -> Self {
+        Self::Missing(message.to_string())
+    }
+}
+
 /// Resolved integration credentials ready for use.
 ///
 /// The pipeline layer resolves secrets and passes plain values.
@@ -67,15 +133,24 @@ impl ContextRoot {
 /// Implemented by the pipeline layer for `oxy::adapters::workspace::WorkspaceManager`.
 #[async_trait::async_trait]
 pub trait WorkspaceContext: Send + Sync {
-    /// Root path of the workspace/project.
-    fn workspace_path(&self) -> &Path;
+    /// Root path of the workspace/project, when this process holds one.
+    ///
+    /// `None` on a stateless replica. The callers that resolve a ref against it
+    /// and then OPEN the result — `export`, `sql_file`, `resolve_pipeline_ref`,
+    /// the builder revert — genuinely cannot run there, and saying so beats
+    /// resolving against a directory that is not present and failing with
+    /// "No such file or directory" on a path the customer never wrote.
+    ///
+    /// It is NOT the semantic scan directory. [`Self::context_root`] is, and it
+    /// serves the compiled boundary on a node with no files.
+    fn workspace_path(&self) -> Option<&Path>;
 
     /// Directory an agent's `context:` globs resolve against. Defaults to the
     /// on-disk workspace path; the host adapter overrides it to materialise the
     /// compiled context from the boundary on a stateless replica that has no
     /// working copy. The returned guard must outlive context resolution.
     async fn context_root(&self) -> ContextRoot {
-        ContextRoot::fs(self.workspace_path().to_path_buf())
+        ContextRoot::fs(self.workspace_path().unwrap_or(Path::new("")).to_path_buf())
     }
 
     /// Database configurations for dialect mapping.
@@ -107,7 +182,14 @@ pub trait WorkspaceContext: Send + Sync {
     async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String>;
 
     /// Read the raw YAML content of an automation file.
-    async fn resolve_automation_yaml(&self, automation_ref: &str) -> Result<String, String>;
+    ///
+    /// The error distinguishes "not in this workspace" from "this node could
+    /// not look" — see [`WorkspaceReadError`]. The HTTP route answers 404 for
+    /// the first and 503 for the second.
+    async fn resolve_automation_yaml(
+        &self,
+        automation_ref: &str,
+    ) -> Result<String, WorkspaceReadError>;
 
     /// Return the shared in-process refresh key cache, if the server has one configured.
     ///

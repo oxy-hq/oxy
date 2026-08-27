@@ -19,6 +19,7 @@ use super::{
     builder, renderer,
     types::{EnumRoutingBlob, RenderedRetrievalTemplate, SemanticEnum},
 };
+use crate::config::WorkingCopy;
 
 #[derive(Debug, Clone)]
 pub struct EnumIndexConfig {
@@ -53,7 +54,7 @@ impl EnumIndexManager {
     /// Create EnumIndexManager from ConfigManager
     /// If build_retrieval_objects is true, builds all retrieval objects from config.
     /// If false, uses empty retrieval objects (useful for minimal setups like VectorStore).
-    pub async fn from_config(config: &ConfigManager) -> Result<Self, OxyError> {
+    pub async fn from_config(config: &ConfigManager<WorkingCopy>) -> Result<Self, OxyError> {
         let cache_root = config
             .resolve_file(RETRIEVAL_CACHE_PATH)
             .await
@@ -67,7 +68,7 @@ impl EnumIndexManager {
 
     /// One-shot initialization: create manager from config and initialize index
     /// Returns Ok(()) even if cache files don't exist (graceful degradation)
-    pub async fn init_from_config(config: ConfigManager) -> Result<(), OxyError> {
+    pub async fn init_from_config(config: ConfigManager<WorkingCopy>) -> Result<(), OxyError> {
         let manager = Self::from_config(&config).await?;
 
         let cache_exists = manager.config.routing_rkyv_path().exists()
@@ -97,7 +98,7 @@ impl EnumIndexManager {
 
     /// One-shot build and persist: create manager from config and build cache
     pub async fn build_from_config(
-        config: &ConfigManager,
+        config: &ConfigManager<WorkingCopy>,
         secrets_manager: &SecretsManager,
         retrieval_objects: &Vec<RetrievalObject>,
     ) -> Result<(), OxyError> {

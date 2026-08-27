@@ -34,7 +34,12 @@ cases:
           browser_click selector "[data-testid^=metric-node-]"). This
           selects the measure and updates the right-hand panel.
     expect:
-      - assert: "[data-testid=metric-tree-view] is visible"
+      # `selector <sel> is visible` — the leading keyword is what makes this a
+      # deterministic DOM assert (judge.ts:54). Without it the claim matches no
+      # pattern and the runner fails the case with "unsupported assert pattern",
+      # which is indistinguishable in the summary from the view being missing.
+      # This assert had never once evaluated.
+      - assert: "selector [data-testid=metric-tree-view] is visible"
       - judge: |
           the left side shows a graph of measure nodes, and the
           right-hand panel has tabs labelled Definition and Drivers

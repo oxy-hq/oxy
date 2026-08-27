@@ -77,7 +77,9 @@ impl PipelineTaskExecutor {
     ) -> Result<ExecutingTask, String> {
         let workspace: Arc<dyn agentic_automation::WorkspaceContext> = self.platform.clone();
         let workflow_context = serde_json::json!({
-            "workspace_path": workspace.workspace_path().to_string_lossy(),
+            // A template value, not a file handle. A node with no files says
+            // so rather than rendering a path that resolves to nothing.
+            "workspace_path": workspace.workspace_path().map(|p| p.to_string_lossy().to_string()),
         });
 
         // Inline-body path: a loop iteration's `{name, tasks}` body is
@@ -275,7 +277,12 @@ impl PipelineTaskExecutor {
         // `AutomationRunState`.
         let workspace: std::sync::Arc<dyn agentic_automation::WorkspaceContext> =
             self.platform.clone();
-        let workspace_path: std::path::PathBuf = workspace.workspace_path().to_path_buf();
+        // `decide` takes `Option<&Path>` and skips the file-cache probe when it
+        // is `None` (`step_decider::probe_file_cache`), so a node with no files
+        // degrades to "cache miss" instead of resolving against a directory
+        // that is not there.
+        let workspace_path: Option<std::path::PathBuf> =
+            workspace.workspace_path().map(|p| p.to_path_buf());
         // An airway step inside this automation queues the same
         // `TaskSpec::Airway` a schedule does, so it must be admitted under the
         // same `airway_source_config` policy. The domain crate has neither a
@@ -295,7 +302,7 @@ impl PipelineTaskExecutor {
                 state,
                 pending_child_answer,
                 prior_state_owned.as_ref(),
-                Some(&workspace_path),
+                workspace_path.as_deref(),
             )
             .await;
 

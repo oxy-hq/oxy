@@ -1,3 +1,4 @@
+use crate::config::WorkingCopy;
 use crate::{adapters::secrets::SecretsManager, config::ConfigManager};
 use oxy_shared::errors::OxyError;
 
@@ -5,7 +6,7 @@ pub mod enum_index;
 pub use enum_index::{EnumIndexConfig, EnumIndexManager};
 
 pub struct ReindexInput {
-    pub config: ConfigManager,
+    pub config: ConfigManager<WorkingCopy>,
     pub secrets_manager: SecretsManager,
     /// Retained for callers; the legacy LanceDB ingestion path is gone, so
     /// dropping tables no longer applies. Accepted for forward-compatible

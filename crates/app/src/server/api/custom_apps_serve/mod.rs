@@ -58,6 +58,7 @@ use oxy::database::client::establish_connection;
 use oxy_auth::authenticator::Authenticator;
 use oxy_auth::built_in::BuiltInAuthenticator;
 use oxy_auth::user::UserService;
+use oxy_shared::fleet_role::{RouteRole, RouteRoleDecl};
 use sea_orm::ColumnTrait;
 use sea_orm::EntityTrait;
 use sea_orm::QueryFilter;
@@ -89,6 +90,26 @@ pub(crate) use sources::serve_from_s3_build;
 /// Auth lives inside [`serve_resolved`] so the legacy-uuid redirect path
 /// can still bounce anonymous visitors through `/login?return_to=...`
 /// before they ever learn whether a given uuid is a real app.
+/// One route, two pods. `serve_dispatch` answers everything under
+/// `/customer-apps/{*path}`: bundle bytes from S3, which any replica can serve,
+/// and `POST .../fn/<name>`, which EXECUTES an Oxy Function against the working
+/// copy. A mount cannot state one role for both, so the module that owns the
+/// split states it — the same shape `agentic_http::router_roles()` uses.
+pub fn serve_dispatch_roles() -> &'static [RouteRoleDecl] {
+    &[
+        RouteRoleDecl {
+            method: "*",
+            path: "/customer-apps/{org}/{app}/fn/{name}",
+            role: RouteRole::IdeOnly,
+        },
+        RouteRoleDecl {
+            method: "*",
+            path: "/customer-apps/{*path}",
+            role: RouteRole::FleetOk,
+        },
+    ]
+}
+
 pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Request) -> Response {
     let (parts, body) = request.into_parts();
     let headers = parts.headers;

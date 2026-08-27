@@ -451,7 +451,7 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
         // schemas so we preserve per-schema `tableCount` + `loaded` state.
         const hydratedBySchema = new Map<string, Map<string, SchemaInfo["tables"][number]>>();
         for (const db of databases) {
-          for (const [schemaName, tableMap] of Object.entries(db.datasets)) {
+          for (const [schemaName, tableMap] of Object.entries(db.datasets ?? {})) {
             let tablesForSchema = hydratedBySchema.get(schemaName);
             if (!tablesForSchema) {
               tablesForSchema = new Map();

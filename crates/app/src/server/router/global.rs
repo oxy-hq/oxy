@@ -15,53 +15,70 @@ use crate::api::middlewares::{
 };
 use crate::api::{admin, org_logo, org_teams, organizations, user, workspaces};
 
-use super::AppState;
+use oxy_shared::fleet_role::RouteRole;
 
-pub(super) fn build_global_routes() -> Router<AppState> {
-    Router::new()
-        .route("/logout", get(user::logout))
-        .route("/orgs", post(organizations::create_org))
-        .route("/orgs", get(organizations::list_orgs))
-        .route(
+use super::AppState;
+use super::role_router::RoleRouter;
+
+pub(super) fn build_global_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        .route_fleet("/logout", get(user::logout))
+        .route_fleet(
+            "/orgs",
+            post(organizations::create_org).get(organizations::list_orgs),
+        )
+        .route_fleet(
             "/apps/mine",
             get(crate::server::api::admin::apps::handlers::list_my_apps),
         )
-        .route("/invitations/mine", get(organizations::list_my_invitations))
-        .route(
+        .route_fleet("/invitations/mine", get(organizations::list_my_invitations))
+        .route_fleet(
             "/invitations/{token}/accept",
             post(organizations::accept_invitation),
         )
-        .merge(airhouse::api::router::<AppState>())
-        // Per-org OLTP status. Belongs here, not only in the local-mode
-        // router: cloud reaches these routes through `build_global_routes`,
-        // and mounting it solely in `build_local_protected_routes` left
-        // `/api/oltp/me/connection` unregistered under `serve --enterprise`.
-        // The SPA catch-all then answered it with index.html and HTTP 200, so
+        .merge_undeclared(
+            airhouse::api::router::<AppState>(),
+            "airhouse provisioning is per-user and per-org, never per-workspace",
+        )
+        // Per-org OLTP status. Belongs here, not only in the local-mode router:
+        // cloud reaches these through `build_global_routes`, and mounting it
+        // solely in `build_local_protected_routes` left
+        // `/api/oltp/me/connection` unregistered under `serve --enterprise` —
+        // the SPA catch-all then answered it with index.html and HTTP 200, so
         // the settings panel read a missing route as "not provisioned".
-        .merge(oxy_oltp::api::router::<AppState>())
-        .nest("/orgs/{org_id}", build_org_routes())
+        .merge_undeclared(
+            oxy_oltp::api::router::<AppState>(),
+            "per-org OLTP status is Postgres-only; no workspace files on any path",
+        )
+        .nest("/orgs/{org_id}", build_org_routes(app_state))
         // Assume-role ("act as"). Authenticated, NOT admin-gated: staff act as any
         // org, a partner acts as an assigned client with `develop_apps`. The
         // handlers authorize (`assume::may_act_as`). It must sit outside /admin
         // because acting CLOSES /admin — the exit cannot live behind the door it
         // locks.
-        .merge(admin::assume::router())
+        .merge_undeclared(
+            admin::assume::router(),
+            "assume-role sessions are Postgres rows; the exit cannot live behind the door it locks",
+        )
         // `/admin/*` runs under the permissive owner-or-app-admin guard so
         // app admins can reach feature flags, custom apps, orgs / users /
         // workspaces management, and internal jobs. The sensitive subset —
         // billing operations and the `app_admins` table itself — escalates
         // to strict OXY_OWNER via `route_layer` inside `admin::router()`.
-        .nest(
+        .nest_all(
             "/admin",
+            RouteRole::FleetOk,
             admin::router().layer(middleware::from_fn(
                 oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
             )),
+            "admin CRUD is Postgres; the one FS read under it (reconcile.yml) runs on the worker, not the request path",
         )
         // Internal Jobs is mounted as a sibling nest because its routes
         // were flattened (no `/internal-jobs/` prefix on each route). The
         // outer guard mirrors the broader `/admin/*` permissive guard.
-        .nest(
+        .nest_all(
             "/admin/internal-jobs",
+            RouteRole::FleetOk,
             admin::internal_jobs::router()
                 // Operating the durable task fleet is Oxy's own machinery, not tenant
                 // data — `Cap::OperatePlatform`. A sibling nest gets no capability gate
@@ -79,12 +96,14 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 .layer(middleware::from_fn(
                     oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
                 )),
+            "job admin reads the task queue tables",
         )
         // Compile boundary operator surface (Phase 1.6a+). List recent
         // revisions, drill into one, manually enqueue a Compile task.
         // Same guard layering as internal-jobs.
-        .nest(
+        .nest_all(
             "/admin/compiles",
+            RouteRole::FleetOk,
             admin::compiles::router()
                 // Compile history is platform machinery — `Cap::OperatePlatform`.
                 .layer(middleware::from_fn(platform_cap_guard::require(
@@ -95,12 +114,14 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                 .layer(middleware::from_fn(
                     oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
                 )),
+            "the compile operator surface reads the revisions tables",
         )
         // Parallel customer-apps surface for OXY_GLOBAL_ADMINS. Reuses the same
         // handlers as /admin/apps but gated by a separate role so app admins
         // can manage custom-app registrations without org/billing access.
-        .nest(
+        .nest_all(
             "/customer-apps",
+            RouteRole::FleetOk,
             Router::new()
                 .route(
                     "/",
@@ -303,6 +324,7 @@ pub(super) fn build_global_routes() -> Router<AppState> {
                     post(crate::server::api::custom_apps_publish::publish_handler)
                         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024)),
                 ),
+            "app registration rows plus S3 bundles",
         )
     // NOTE: Slack webhook + OAuth-callback + magic-link routes are NOT
     // registered here. They must live in `public.rs` because the routes
@@ -316,90 +338,109 @@ pub(super) fn build_global_routes() -> Router<AppState> {
     //     first would 401 every unauth'd user.
 }
 
-fn build_org_routes() -> Router<AppState> {
+fn build_org_routes(app_state: &AppState) -> RoleRouter {
     // Two sub-routers under the same `org_middleware`:
     //   - `gated` covers everything that requires an active subscription
     //     (members, invitations, onboarding, workspace CRUD, github)
     //   - `bypass` covers `/billing/*`, the only org-scoped tree the user
     //     can hit while paywalled (so they can subscribe / open the portal)
-    let gated = Router::new()
-        .route("/", get(organizations::get_org))
-        .route("/", patch(organizations::update_org))
-        .route("/", delete(organizations::delete_org))
-        .route(
+    let gated = RoleRouter::new(app_state.clone())
+        .route_fleet(
+            "/",
+            get(organizations::get_org)
+                .patch(organizations::update_org)
+                .delete(organizations::delete_org),
+        )
+        .route_fleet(
             "/logo",
             put(org_logo::upload_org_logo).delete(org_logo::delete_org_logo),
         )
-        .route(
+        .route_fleet(
             "/partner-publish-consent",
             get(crate::server::api::partner_publish_consent::get_consent)
                 .put(crate::server::api::partner_publish_consent::set_consent),
         )
-        .route("/members", get(organizations::list_members))
+        .route_fleet("/members", get(organizations::list_members))
         // Teams + per-app access — the control plane for restricted custom apps.
         // Pure Postgres (no FS, no git), so every route here is FleetOk.
-        .route(
+        .route_fleet(
             "/teams",
             get(org_teams::handlers::list_teams).post(org_teams::handlers::create_team),
         )
-        .route(
+        .route_fleet(
             "/teams/{team_id}",
             get(org_teams::handlers::get_team)
                 .patch(org_teams::handlers::update_team)
                 .delete(org_teams::handlers::delete_team),
         )
-        .route(
+        .route_fleet(
             "/teams/{team_id}/members",
             post(org_teams::handlers::add_team_member),
         )
-        .route(
+        .route_fleet(
             "/teams/{team_id}/members/{user_id}",
             delete(org_teams::handlers::remove_team_member),
         )
-        .route("/apps", get(org_teams::app_access::list_org_apps))
-        .route(
+        .route_fleet("/apps", get(org_teams::app_access::list_org_apps))
+        .route_fleet(
             "/apps/{app_id}/access",
             get(org_teams::app_access::get_app_access).put(org_teams::app_access::set_app_access),
         )
-        .route(
+        .route_fleet(
             "/members/{user_id}",
-            patch(organizations::update_member_role),
+            patch(organizations::update_member_role).delete(organizations::remove_member),
         )
-        .route("/members/{user_id}", delete(organizations::remove_member))
-        .route("/invitations", post(organizations::create_invitation))
-        .route(
+        .route_fleet(
+            "/invitations",
+            post(organizations::create_invitation).get(organizations::list_invitations),
+        )
+        .route_fleet(
             "/invitations/bulk",
             post(organizations::create_bulk_invitations),
         )
-        .route("/invitations", get(organizations::list_invitations))
-        .route(
+        .route_fleet(
             "/invitations/{invitation_id}",
             delete(organizations::revoke_invitation),
         )
-        .route("/workspaces", get(workspaces::list_workspaces))
-        .route("/workspaces/{id}", delete(workspaces::delete_workspace))
-        .route(
+        // The three workspace-creating onboarding routes moved to the
+        // `oxy-api-onboarding` sibling crate. They CREATE a checkout on disk
+        // through raw `std::fs` and git rather than an extractor, so no type
+        // gate can see them — and the crate sits outside this router, so
+        // `route_ide` cannot reach them either. They are declared by hand at
+        // the `nest_declared` seam that mounts the crate.
+        .route_fleet("/workspaces", get(workspaces::list_workspaces))
+        // Deletes the working copy. The compiler found this one: the handler
+        // takes `WorkspaceRootWorkingCopy`, which resolves only from `IdeState`.
+        .route_ide("/workspaces/{id}", delete(workspaces::delete_workspace))
+        .route_fleet(
             "/workspaces/{id}/rename",
             patch(workspaces::rename_workspace),
         )
         // Slack installation management. The admin check is the `OrgAdmin` extractor on the
         // handlers themselves, not a hand-rolled role match — `get_status` is member-level.
-        .route(
+        .route_fleet(
             "/slack/install",
             post(crate::integrations::slack::oauth::install::start_install),
         )
-        .route(
+        .route_fleet(
             "/slack/installation",
             get(crate::integrations::slack::oauth::status::get_status)
                 .delete(crate::integrations::slack::oauth::disconnect::disconnect),
         )
-        .layer(middleware::from_fn(
-            subscription_guard::subscription_guard_middleware,
-        ));
+        .map_router(|r| {
+            r.layer(middleware::from_fn(
+                subscription_guard::subscription_guard_middleware,
+            ))
+        });
 
-    let bypass = Router::new().nest("/billing", billing::router());
-
+    // `/billing/*` is the only org-scoped tree a paywalled user may reach, so it
+    // sits outside the subscription guard above.
     gated
-        .merge(bypass)
-        .layer(middleware::from_fn(org_context::org_middleware))
+        .nest_all(
+            "/billing",
+            RouteRole::FleetOk,
+            billing::router(),
+            "Stripe customer + subscription rows",
+        )
+        .map_router(|r| r.layer(middleware::from_fn(org_context::org_middleware)))
 }

@@ -16,6 +16,7 @@ pub use oxy_openai::{ConfigType, CustomOpenAIConfig, OpenAIClient, StreamChunk};
 use std::collections::HashMap;
 use tokio_stream::StreamExt;
 
+use crate::config::WorkingCopy;
 use crate::{
     adapters::{secrets::SecretsManager, workspace::manager::WorkspaceManager},
     config::model::{HeaderValue, Model, ReasoningConfig, ReasoningEffort},
@@ -193,7 +194,7 @@ pub struct OpenAIAdapter {
 
 impl OpenAIAdapter {
     pub async fn from_config(
-        workspace: WorkspaceManager,
+        workspace: WorkspaceManager<WorkingCopy>,
         model_ref: &str,
     ) -> Result<Self, OxyError> {
         let model = workspace.config_manager.resolve_model(model_ref)?;

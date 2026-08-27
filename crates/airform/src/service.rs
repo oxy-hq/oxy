@@ -16,6 +16,7 @@ use oxy::config::model::DatabaseType;
 use crate::config::OxyProjectConfig;
 use crate::error::AirformIntegrationError;
 use crate::types::*;
+use oxy::config::WorkingCopy;
 
 /// Scan `<root>/modeling/` for directories that contain a `dbt_project.yml`.
 pub fn list_projects(root: &std::path::Path) -> Vec<DbtProjectInfo> {
@@ -46,7 +47,7 @@ pub fn list_projects(root: &std::path::Path) -> Vec<DbtProjectInfo> {
 /// Oxy connector context for bridging sources and outputs.
 #[derive(Clone)]
 struct OxyContext {
-    config_manager: ConfigManager,
+    config_manager: ConfigManager<WorkingCopy>,
     secrets_manager: SecretsManager,
 }
 
@@ -72,7 +73,7 @@ impl AirformService {
     /// databases and register outputs back into the config manager.
     pub fn with_oxy_context(
         mut self,
-        config_manager: ConfigManager,
+        config_manager: ConfigManager<WorkingCopy>,
         secrets_manager: SecretsManager,
     ) -> Self {
         self.oxy = Some(OxyContext {

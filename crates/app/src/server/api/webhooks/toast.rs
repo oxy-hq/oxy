@@ -45,6 +45,7 @@ use uuid::Uuid;
 use crate::server::api::world_model::{OrderEvent, publish_order};
 use crate::server::router::AppState;
 use crate::server::service::secret_manager::SecretManagerService;
+use oxy::config::ReadOnly;
 use oxy_app_core::serve_mode::LOCAL_WORKSPACE_ID;
 
 #[derive(Debug, Deserialize)]
@@ -221,7 +222,7 @@ pub async fn load_toast_config(
 /// replica with no working copy can still verify a signature end-to-end.
 async fn build_workspace_manager(
     project_id: Uuid,
-) -> Result<WorkspaceManager, (StatusCode, String)> {
+) -> Result<WorkspaceManager<ReadOnly>, (StatusCode, String)> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!(workspace = %project_id, error = %e, "db connect failed");
         (
@@ -291,7 +292,7 @@ async fn resolve_manager_path(
 /// `WorkspaceBuilder` carrying this workspace's `Config`.
 ///
 /// The compile boundary is the *primary* source here, not an optimisation:
-/// this route is `RouteRole::FleetOk` (no `IDE_ONLY_PATTERNS` entry), so it
+/// this route is `RouteRole::FleetOk` — declared so at its mount — so it
 /// runs on stateless `serve` replicas whose state dir holds no working copy at
 /// all, and an FS read there returns nothing. A public webhook carries no
 /// branch context, so the hint is `None`: read the promoted default-branch
@@ -299,7 +300,7 @@ async fn resolve_manager_path(
 async fn config_builder(
     project_id: Uuid,
     path: &std::path::Path,
-) -> Result<WorkspaceBuilder, (StatusCode, String)> {
+) -> Result<WorkspaceBuilder<ReadOnly>, (StatusCode, String)> {
     let failed = |e: oxy_shared::errors::OxyError| {
         tracing::error!(workspace = %project_id, error = %e, "workspace builder failed");
         (
@@ -307,16 +308,12 @@ async fn config_builder(
             "workspace builder failed".to_string(),
         )
     };
-    if let Some(config) = crate::server::api::compiled_reader::resolve_workspace_config_typed(
-        project_id,
-        None,
-        path,
-        "toast_webhook",
-    )
-    .await
+    if let Some(revision_id) =
+        crate::server::api::compiled_reader::resolve_request_revision(project_id, None).await
     {
         return WorkspaceBuilder::new(project_id)
-            .with_workspace_path_and_compiled_config(path, config)
+            .without_working_copy(path, Some(revision_id), oxy::config::OnMissing::Empty)
+            .await
             .map_err(failed);
     }
 
@@ -340,7 +337,7 @@ async fn config_builder(
         );
     }
     WorkspaceBuilder::new(project_id)
-        .with_workspace_path_and_fallback_config(path)
+        .without_working_copy(path, None, oxy::config::OnMissing::Empty)
         .await
         .map_err(failed)
 }

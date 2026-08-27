@@ -3,6 +3,7 @@ import { useCopyTimeout } from "@/components/automation/output/useCopyTimeout";
 import { Button } from "@/components/ui/shadcn/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import { useWorkspaceStatus } from "@/hooks/api/workspaces/useWorkspaceStatus";
+import { isIdeRoutingError, isWorkspaceMaterializingError } from "@/libs/utils/ideHealth";
 
 /**
  * Workspace/project configuration status indicator shown in the sidebar and the
@@ -16,6 +17,19 @@ const WorkspaceConfigStatus = () => {
   const { copied, handleCopy } = useCopyTimeout();
 
   if (isPending) {
+    return null;
+  }
+
+  // `/status` is `IdeOnly` — it reads `config.yml` off disk — and this
+  // component renders on every NON-IDE page. So on a fleet with no ide wired
+  // (`421`) or with one that is down (`502`), every request from here fails,
+  // and this banner's words are about the tenant's configuration: it would
+  // paint a persistent red "your workspace is broken" for what is a routing
+  // fact. Same for the materializing `503`, which is a readiness state.
+  //
+  // Silence is the honest answer — the global ide banner already reports an
+  // outage, in the vocabulary that fits it.
+  if (isIdeRoutingError(error) || isWorkspaceMaterializingError(error)) {
     return null;
   }
 

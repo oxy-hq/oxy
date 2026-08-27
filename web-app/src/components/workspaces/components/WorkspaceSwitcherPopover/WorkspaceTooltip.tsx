@@ -35,17 +35,23 @@ export function WorkspaceTooltipContent({ workspace }: { workspace: WorkspaceSum
   const statusLabel = STATUS_LABEL[workspace.status];
   const statusClass = STATUS_CLASS[workspace.status];
   // Counts reflect parsed project contents — meaningless (and misleading) when
-  // the clone failed or there's no config.yml.
-  const showCounts = workspace.status !== "failed" && workspace.status !== "not_oxy_project";
+  // the clone failed, when there's no config.yml, or when the instance that
+  // answered holds no working copy and returned `null` rather than counting.
+  // That last case used to render "0 agents · 0 automations · 0 apps" for a
+  // perfectly healthy workspace.
+  const { agent_count, workflow_count, app_count } = workspace;
+  const counted = agent_count !== null && workflow_count !== null && app_count !== null;
+  const showCounts =
+    counted && workspace.status !== "failed" && workspace.status !== "not_oxy_project";
   return (
     <div className='flex flex-col gap-1.5'>
       <p className={`font-medium text-xs ${statusClass}`}>{statusLabel}</p>
       {workspace.error && <p className='break-words text-destructive text-xs'>{workspace.error}</p>}
-      {showCounts && (
+      {showCounts && agent_count !== null && workflow_count !== null && app_count !== null && (
         <p className='text-muted-foreground text-xs'>
-          {pluralize(workspace.agent_count, "agent", "agents")} ·{" "}
-          {pluralize(workspace.workflow_count, "automation", "automations")} ·{" "}
-          {pluralize(workspace.app_count, "app", "apps")}
+          {pluralize(agent_count, "agent", "agents")} ·{" "}
+          {pluralize(workflow_count, "automation", "automations")} ·{" "}
+          {pluralize(app_count, "app", "apps")}
         </p>
       )}
       {workspace.git_remote && (

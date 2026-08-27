@@ -355,6 +355,8 @@ fn default_lookback_days() -> u32 {
 pub enum LoadError {
     #[error("monitor config not found at {0}")]
     NotFound(PathBuf),
+    #[error("workspace directory {0} is not on this node, so whether it has monitors is unknown")]
+    WorkspaceAbsent(PathBuf),
     #[error("failed to read monitor config at {path}: {source}")]
     Io {
         path: PathBuf,
@@ -371,10 +373,23 @@ pub enum LoadError {
     InvalidTimezone { path: PathBuf, name: String },
 }
 
-/// Load a single `.monitor.yml` from disk. Missing file returns an empty
-/// config (monitoring is opt-in; the absence of a config is not an error).
+/// Load a single `.monitor.yml` from disk. A missing file returns an empty
+/// config — monitoring is opt-in, so its absence is not an error.
+///
+/// A missing *directory* is a different answer. It means this process does not
+/// hold the workspace, and reporting "no monitors" for it is how anomaly
+/// detection came to switch off silently on the stateless fleet: the scan
+/// endpoint returned `200 {"monitors_scanned": 0}` and recorded the run DONE.
+/// The opt-in contract only makes sense once you know you are looking at the
+/// right tree.
 pub fn load_from_file(path: &Path) -> Result<MonitorConfig, LoadError> {
     if !path.exists() {
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+            && !parent.is_dir()
+        {
+            return Err(LoadError::WorkspaceAbsent(parent.to_path_buf()));
+        }
         return Ok(MonitorConfig::default());
     }
     let text = std::fs::read_to_string(path).map_err(|source| LoadError::Io {
@@ -655,5 +670,32 @@ monitors:
             matches!(err, LoadError::InvalidTimezone { .. }),
             "expected InvalidTimezone, got {err:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod absence_tests {
+    use super::*;
+
+    /// Monitoring is opt-in, so a workspace with no `.monitor.yml` has no
+    /// monitors. That is a real answer and must keep working.
+    #[test]
+    fn a_missing_file_in_a_real_workspace_is_still_opt_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = load_from_file(&dir.path().join(".monitor.yml"))
+            .expect("an absent config in a present workspace is not an error");
+        assert!(cfg.monitors.is_empty());
+    }
+
+    /// A missing *directory* is a different answer. Reporting "no monitors" for
+    /// a workspace this node does not hold is how the scan endpoint came to
+    /// return `200 {"monitors_scanned": 0}` and record the run DONE.
+    #[test]
+    fn a_missing_workspace_directory_is_not_opt_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let absent = dir.path().join("never-cloned-here");
+        let err = load_from_file(&absent.join(".monitor.yml"))
+            .expect_err("an absent workspace must not read as an opted-out one");
+        assert!(matches!(err, LoadError::WorkspaceAbsent(_)), "{err:?}");
     }
 }

@@ -20,27 +20,9 @@ use axum::response::{IntoResponse, Response};
 use entity::{organizations, workspaces};
 use oxy::database::client::establish_connection;
 use sea_orm::EntityTrait;
-use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
-
-/// Candidate file names in precedence order, with their content types.
-const LOGO_CANDIDATES: [(&str, &str); 5] = [
-    ("logo.svg", "image/svg+xml"),
-    ("logo.png", "image/png"),
-    ("logo.jpg", "image/jpeg"),
-    ("logo.jpeg", "image/jpeg"),
-    ("logo.webp", "image/webp"),
-];
-
-/// First existing candidate under `root`, with its content type.
-fn find_logo(root: impl AsRef<Path>) -> Option<(PathBuf, &'static str)> {
-    LOGO_CANDIDATES.iter().find_map(|(name, mime)| {
-        let p = root.as_ref().join(name);
-        p.is_file().then_some((p, *mime))
-    })
-}
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 
 /// Build a logo response with stored-XSS hardening headers.
 ///
@@ -101,15 +83,35 @@ async fn uploaded_org_logo(workspace_id: Uuid) -> Option<Response> {
 
 pub async fn get_workspace_logo(
     AxumPath(workspace_id): AxumPath<Uuid>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
 ) -> Result<Response, StatusCode> {
     // 1. Org-level uploaded logo wins (white-label).
     if let Some(resp) = uploaded_org_logo(workspace_id).await {
         return Ok(resp);
     }
     // 2. Fall back to the code-first file at the workspace root.
-    let root = workspace_manager.config_manager.workspace_path();
-    let Some((path, mime)) = find_logo(root) else {
+    //
+    // This route stays `FleetOk` on purpose even though the read is FS-bound:
+    // the logo loads on every page, so proxying it to the ide would put the
+    // whole product's chrome behind the singleton. The cost is that a
+    // code-first logo appears on the ide and not on a replica, and the caller
+    // gets a clean 404 that the frontend already renders as a monogram.
+    //
+    // The durable fix is compiling the logo like every other workspace artifact
+    // so it is served from the boundary. Until then this is a known, bounded
+    // inconsistency rather than a silent one.
+    //
+    // Both absences are a 404 to the caller, and they are logged apart:
+    // `Ok(None)` is this workspace having no logo, `Err` is this NODE having no
+    // files. Only the first is a fact about the customer.
+    let path_and_mime = match workspace_manager.config_manager.workspace_logo().await {
+        Ok(found) => found,
+        Err(e) => {
+            tracing::debug!(error = %e, "workspace logo: no source on this node");
+            None
+        }
+    };
+    let Some((path, mime)) = path_and_mime else {
         return Err(StatusCode::NOT_FOUND);
     };
     let bytes = tokio::fs::read(&path).await.map_err(|e| {
@@ -137,41 +139,5 @@ mod tests {
         );
         assert_eq!(h.get(header::X_CONTENT_TYPE_OPTIONS).unwrap(), "nosniff");
         assert_eq!(h.get(header::CACHE_CONTROL).unwrap(), "no-cache");
-    }
-
-    #[test]
-    fn absent_logo_yields_none() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(find_logo(dir.path()).is_none());
-    }
-
-    #[test]
-    fn precedence_svg_beats_png() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("logo.png"), b"png").unwrap();
-        std::fs::write(dir.path().join("logo.svg"), b"svg").unwrap();
-        let (path, mime) = find_logo(dir.path()).unwrap();
-        assert!(path.ends_with("logo.svg"));
-        assert_eq!(mime, "image/svg+xml");
-    }
-
-    #[test]
-    fn content_types_map_by_extension() {
-        for (name, expected) in LOGO_CANDIDATES {
-            let dir = tempfile::tempdir().unwrap();
-            std::fs::write(dir.path().join(name), b"x").unwrap();
-            let (_, mime) = find_logo(dir.path()).unwrap();
-            assert_eq!(mime, expected, "for {name}");
-        }
-    }
-
-    #[test]
-    fn directories_named_logo_are_ignored() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("logo.svg")).unwrap();
-        std::fs::write(dir.path().join("logo.png"), b"png").unwrap();
-        let (path, mime) = find_logo(dir.path()).unwrap();
-        assert!(path.ends_with("logo.png"));
-        assert_eq!(mime, "image/png");
     }
 }

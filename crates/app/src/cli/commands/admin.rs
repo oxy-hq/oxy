@@ -167,7 +167,7 @@ async fn handle_seed_global_run(args: SeedGlobalRunArgs) -> Result<(), OxyError>
             // `oxy airway` does.
             let project_path = resolve_local_workspace_path()?;
             let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
-                .with_workspace_path(&project_path)
+                .with_working_copy(&project_path, None, oxy::config::OnMissing::Fail)
                 .await?
                 .with_runs_manager(oxy::adapters::runs::RunsManager::noop())
                 .build()

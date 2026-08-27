@@ -2,22 +2,33 @@ use super::app_service::read_app_yaml_file;
 use super::types::{AppResult, DISPLAY_KEY, DisplayWithError, ErrorDisplay, TASKS_KEY};
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::model::{ControlConfig, Display, Task, TaskType};
+use oxy::config::{ConfigManager, DiskSlot, ResolveWorkspaceFile};
+use oxy_shared::errors::OxyError;
 use std::path::PathBuf;
 
 const CONTROLS_KEY: &str = "controls";
 
-pub async fn get_app_displays(
-    workspace_manager: WorkspaceManager,
-    branch_hint: Option<&str>,
+/// Displays, controls, and the parsed task list, from ONE read of the app YAML.
+///
+/// The tasks come back with the rest because the caller needs them and this has
+/// already parsed them. Fetching them separately meant a second resolution
+/// through `AppService`, which is pinned to a working copy — so a handler that
+/// otherwise reads only the compile boundary had to claim a disk for a list it
+/// was holding.
+pub async fn get_app_displays<S: DiskSlot + Send + Sync>(
+    workspace_manager: WorkspaceManager<S>,
     path: &PathBuf,
-) -> AppResult<(Vec<DisplayWithError>, Vec<ControlConfig>)> {
+) -> AppResult<(Vec<DisplayWithError>, Vec<ControlConfig>, Vec<Task>)>
+where
+    ConfigManager<S>: ResolveWorkspaceFile,
+{
     let mut displays = Vec::new();
 
-    let yaml_content = match resolve_app_yaml(&workspace_manager, branch_hint, path).await {
+    let yaml_content = match resolve_app_yaml(&workspace_manager, path).await {
         Ok(content) => content,
         Err(e) => {
             displays.push(create_error_display("App config", &e.to_string()));
-            return Ok((displays, vec![]));
+            return Ok((displays, vec![], vec![]));
         }
     };
 
@@ -25,11 +36,11 @@ pub async fn get_app_displays(
         Ok(map) => map,
         Err(e) => {
             displays.push(create_error_display("App config", &e.to_string()));
-            return Ok((displays, vec![]));
+            return Ok((displays, vec![], vec![]));
         }
     };
 
-    validate_tasks_section(&root_map, &mut displays);
+    let tasks = validate_tasks_section(&root_map, &mut displays);
     process_displays_section(&root_map, &mut displays);
     let mut controls = parse_controls_section(&root_map, &mut displays);
 
@@ -50,7 +61,7 @@ pub async fn get_app_displays(
     });
     controls.extend(inline_controls);
 
-    Ok((displays, controls))
+    Ok((displays, controls, tasks))
 }
 
 /// Resolve the app's YAML body, preferring the compile boundary so the
@@ -59,33 +70,26 @@ pub async fn get_app_displays(
 /// definition is re-serialised to YAML so the tolerant per-block parser below
 /// is unchanged — one malformed display still degrades to a single error card
 /// instead of blanking the dashboard.
-async fn resolve_app_yaml(
-    workspace_manager: &WorkspaceManager,
-    branch_hint: Option<&str>,
+async fn resolve_app_yaml<S: DiskSlot + Send + Sync>(
+    workspace_manager: &WorkspaceManager<S>,
     path: &PathBuf,
-) -> AppResult<String> {
+) -> AppResult<String>
+where
+    ConfigManager<S>: ResolveWorkspaceFile,
+{
     let path_str = path.to_string_lossy().to_string();
-    match crate::server::api::compiled_reader::resolve_app(
-        workspace_manager.workspace_id,
-        branch_hint,
-        &path_str,
-    )
-    .await
+    // `app_definition` already falls back to the working copy, so `Err` here
+    // means there was no source to read — not "not compiled". `unwrap_or(None)`
+    // used to collapse those and hand the miss to `read_app_yaml_file`, which
+    // on a replica reads a directory that is not there.
+    if let Some(definition) = workspace_manager
+        .config_manager
+        .app_definition(&path_str)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("{path_str}: {e}")))?
+        && let Ok(yaml) = serde_yaml::to_string(&definition)
     {
-        Ok(Some(artifact)) => match serde_yaml::to_string(&artifact.definition) {
-            Ok(yaml) => return Ok(yaml),
-            Err(e) => tracing::warn!(
-                file_path = %path_str,
-                error = ?e,
-                "app displays: compiled definition re-serialise failed; falling through to FS"
-            ),
-        },
-        Ok(None) => {}
-        Err(e) => tracing::warn!(
-            file_path = %path_str,
-            error = ?e,
-            "app displays: compile boundary error; falling through to FS"
-        ),
+        return Ok(yaml);
     }
     read_app_yaml_file(workspace_manager, path).await
 }
@@ -161,23 +165,32 @@ fn process_sequence_with_error_handling<T, F>(
     }
 }
 
-fn validate_tasks_section(root_map: &serde_yaml::Mapping, displays: &mut Vec<DisplayWithError>) {
-    process_sequence_with_error_handling(
-        root_map,
-        TASKS_KEY,
-        displays,
-        "Task",
-        |task_value, _index| match serde_yaml::from_value::<Task>(task_value.clone()) {
-            Ok(task) => {
-                if matches!(task.task_type, TaskType::Unknown) {
-                    Err("Unknown task type".to_string())
-                } else {
-                    Ok(None::<DisplayWithError>)
-                }
-            }
-            Err(e) => Err(e.to_string()),
-        },
-    );
+/// Validate the `tasks:` section AND hand back what it parsed.
+///
+/// It was already deserialising every task to check the type; discarding the
+/// result meant the only other caller had to read the file again through a
+/// filesystem-bound path.
+fn validate_tasks_section(
+    root_map: &serde_yaml::Mapping,
+    displays: &mut Vec<DisplayWithError>,
+) -> Vec<Task> {
+    let mut tasks = Vec::new();
+    let Some(serde_yaml::Value::Sequence(seq)) = root_map.get(yaml_string_value(TASKS_KEY)) else {
+        return tasks;
+    };
+    for (index, task_value) in seq.iter().enumerate() {
+        match serde_yaml::from_value::<Task>(task_value.clone()) {
+            Ok(task) if matches!(task.task_type, TaskType::Unknown) => displays.push(
+                create_error_display(&format!("Task at index {index}"), "Unknown task type"),
+            ),
+            Ok(task) => tasks.push(task),
+            Err(e) => displays.push(create_error_display(
+                &format!("Task at index {index}"),
+                &e.to_string(),
+            )),
+        }
+    }
+    tasks
 }
 
 fn process_displays_section(root_map: &serde_yaml::Mapping, displays: &mut Vec<DisplayWithError>) {

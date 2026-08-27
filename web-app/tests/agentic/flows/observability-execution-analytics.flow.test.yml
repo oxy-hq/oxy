@@ -1,0 +1,144 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Execution Analytics page. Nothing covered it before this flow.
+#
+# THE "Recent Executions" ASSERTION IS EXPECTED TO FAIL against the
+# current build — read before weakening it back to green.
+# -----------------------------------------------------------------------
+# Third instance of the same root cause documented in
+# `observability-clusters.flow.test.yml` and
+# `observability-metrics.flow.test.yml` (case 2): a query builds its
+# WHERE clause against a bare, unqualified timestamp column, then aliases
+# `iso_utc(col) AS col` in the SELECT list, and ClickHouse's alias
+# substitution turns the WHERE predicate into a String-vs-DateTime
+# comparison it rejects.
+#
+# `crates/observability/src/backends/clickhouse/execution_analytics.rs`,
+# `get_execution_list` (L247-334, used by the "Recent Executions" card
+# only — the summary/percentile/histogram/cost/agent-breakdown queries on
+# this same page do NOT call `iso_utc()` and are unaffected):
+#
+#   let count_sql = format!(
+#       "SELECT count() AS count FROM observability_executions FINAL
+#        WHERE {}{extra_where}", since(days));                            // L280-283, `since()` = "timestamp >= now() - INTERVAL {days} DAY"
+#   ...
+#   let ts = super::iso_utc("timestamp");                                 // L295
+#   let data_sql = format!(
+#       "SELECT ... {ts} AS timestamp, ... FROM observability_executions
+#        WHERE {}{extra_where} ORDER BY timestamp DESC ...", since(days)); // L296-322
+#
+# Confirmed live via curl before writing this flow:
+#
+#   GET /{workspace}/execution-analytics/executions -> 500
+#   ERROR oxy_app::server::api::execution_analytics: Execution analytics
+#   query failed: Execution list query failed: bad response: Code: 386.
+#   DB::Exception: There is no supertype for types String, DateTime ...
+#   while executing function greaterOrEquals on arguments
+#   formatDateTime(__table1.timestamp, ...) String,
+#   _CAST(...,'DateTime') DateTime ... (NO_COMMON_TYPE)
+#
+# WORSE THAN A 500 ON SCREEN: the frontend swallows this even more
+# quietly than the metrics-detail case. `ExecutionList` (execution-
+# analytics/components/ExecutionList.tsx:50) destructures only `{ data,
+# isLoading }` from `useExecutions(...)` — it never reads `error` at all.
+# When the query 500s, `data` stays `undefined`, `isLoading` settles to
+# `false`, so `executions = data?.executions ?? []` (L62) is an empty
+# array and the component renders its ordinary zero-results copy: "No
+# executions found matching the current filters" (L192-195) — literally
+# indistinguishable in the DOM from "you have no executions yet" or "your
+# filters excluded everything". There is no error banner, no retry
+# button, nothing on this card that would make a human reading the page
+# suspect a broken query rather than an empty account. Every OTHER widget
+# on this same page (Total Executions summary card, percentile tiles,
+# latency histogram, cost-by-model, agent breakdown) reads from different,
+# unaffected endpoints and renders correctly — so the page as a whole
+# looks completely healthy while one card is silently lying.
+#
+# Per this session's instructions: do not weaken the "Recent Executions"
+# assertions to force green. They assert the CORRECT behavior (real
+# execution rows rendering); they are expected to fail against the
+# current backend, and that failure is the finding, not a flow bug.
+#
+# FIXTURE / PORTABILITY: same standalone ClickHouse-backed server as the
+# sibling observability flows — see observability-traces.flow.test.yml's
+# header for how it was stood up. `observability_executions` had exactly
+# 1 seeded row (a `semantic_query` execution from the "top 5 stores"
+# analytics run) when this was authored; `GET
+# /{workspace}/execution-analytics/summary` reports
+# `"totalExecutions":1` successfully (that endpoint has no `iso_utc()`
+# call and is unaffected), which is what the passing half of this flow
+# asserts on.
+#
+# NO TESTIDS on this page either — see observability-traces.flow.test.yml.
+#
+# COST: zero `act` steps, one judge call.
+
+name: observability execution analytics page
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  max_steps: 10
+
+setup:
+  - "goto:/ide/observability/execution-analytics"
+
+cases:
+  - name: summary card is real; Recent Executions silently drops real rows (expected red)
+    tags: [ide, observability, execution-analytics, regression, known-broken]
+    steps:
+      # PageHeader title — execution-analytics/index.tsx:84.
+      - wait_for: "selector:text=Execution Analytics;timeout_ms=45000"
+
+      # SummaryCards "Total Executions" tile — execution-analytics/
+      # components/SummaryCards.tsx:55. This endpoint (execution-analytics/
+      # summary) has no iso_utc() call and is unaffected by the bug below.
+      - wait_for: "selector:text=Total Executions;timeout_ms=45000"
+
+      # `ExecutionList` never reads `error` from `useExecutions(...)`
+      # (execution-analytics/components/ExecutionList.tsx:50), but the
+      # underlying query still goes through the app's default `retry:
+      # failureCount < 3` (web-app/src/main.tsx:38) before `isLoading`
+      # settles false — up to ~7-8s of exponential backoff, with the
+      # network genuinely idle in the gaps between attempts. Wait on the
+      # card's own terminal empty-state text rather than `network_idle`,
+      # same rationale as observability-clusters.flow.test.yml.
+      - wait_for: "selector:text=No executions found matching the current filters;timeout_ms=20000"
+
+    expect:
+      # PASSES today — the summary endpoint is a plain count/aggregate
+      # query, not exposed to the WHERE-vs-alias collision.
+      - assert: text "Total Executions" is visible
+
+      # ExecutionAnalytics:87-93 shows a page-level ErrorAlert only when
+      # the SUMMARY query itself errors — must be absent since that query
+      # succeeds.
+      - assert: "selector text=Failed to load metrics data is not visible"
+
+      # EXPECTED TO FAIL today: ExecutionList.tsx:192-195 renders this
+      # exact string whenever `executions` is empty — which it always is
+      # right now, per the swallowed 500 described above, even though a
+      # real execution row exists in observability_executions.
+      - assert: "selector text=No executions found matching the current filters is not visible"
+
+      - judge: |
+          The Execution Analytics page shows a "Total Executions" summary
+          stat that is a real positive number (not "0" or "—"), AND the
+          "Recent Executions" card below the charts shows at least one real
+          execution row — with a query type badge, a status, and a
+          question or SQL snippet — NOT the placeholder text "No
+          executions found matching the current filters".
+
+          Fail if ANY of the following is true:
+          (a) the "Total Executions" tile shows 0 or a dash;
+          (b) the "Recent Executions" card shows "No executions found
+              matching the current filters" while the summary above it
+              shows a nonzero total — that specific combination (nonzero
+              summary, empty list) is the signature of this bug, distinct
+              from a genuinely empty workspace where both would be zero;
+          (c) the page shows an error message instead of dashboard
+              content;
+          (d) the page is blank.

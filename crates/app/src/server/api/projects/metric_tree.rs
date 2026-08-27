@@ -58,7 +58,11 @@ async fn boundary_with_layer(
 /// The caller must keep `boundary` alive for the whole run (tempdir guard).
 fn runner_for(boundary: &SemanticBoundary) -> OxyMetricTreeRunner {
     OxyMetricTreeRunner::new(
-        boundary.proj_ctx.workspace_manager().clone(),
+        boundary
+            .proj_ctx
+            .workspace_manager()
+            .clone()
+            .into_read_only(),
         boundary.app.user.id,
         WorkspaceRole::Viewer,
     )

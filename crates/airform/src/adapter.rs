@@ -21,11 +21,12 @@ use oxy::connector::checkout_file_connection;
 
 use crate::config::OxyProjectConfig;
 use crate::error::AirformIntegrationError;
+use oxy::config::WorkingCopy;
 
 /// Build an airform `WarehouseAdapter` from a resolved Oxy `Database`.
 pub async fn build_adapter_from_db(
     db: &Database,
-    config_manager: &ConfigManager,
+    config_manager: &ConfigManager<WorkingCopy>,
     secrets_manager: &SecretsManager,
     target_schema: &str,
 ) -> anyhow::Result<Box<dyn WarehouseAdapter>> {
@@ -99,7 +100,7 @@ pub async fn build_adapter_from_db(
 pub async fn build_adapter(
     load_state: &LoadState,
     oxy_config: &OxyProjectConfig,
-    config_manager: &ConfigManager,
+    config_manager: &ConfigManager<WorkingCopy>,
     secrets_manager: &SecretsManager,
 ) -> Result<Box<dyn WarehouseAdapter>, AirformIntegrationError> {
     let profile = load_state
@@ -278,7 +279,7 @@ async fn bigquery_service_account_token(key: &serde_json::Value) -> anyhow::Resu
 
 async fn duckdb_to_dbt_target(
     duckdb: &DuckDB,
-    config_manager: &ConfigManager,
+    config_manager: &ConfigManager<WorkingCopy>,
     target_schema: &str,
 ) -> anyhow::Result<DbtTarget> {
     let mut extra: HashMap<String, serde_yaml::Value> = HashMap::new();
@@ -636,7 +637,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_workspace_path(&dir_path)
             .unwrap()
-            .build_with_fallback_config()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
             .await
             .unwrap();
         let result = duckdb_to_dbt_target(&duckdb, &config, "dbt_dev").await;
@@ -756,7 +757,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_workspace_path("/tmp")
             .unwrap()
-            .build_with_fallback_config()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
             .await
             .unwrap();
         let result = build_adapter_from_db(&db, &config, &secrets, "public").await;
@@ -785,7 +786,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_workspace_path(dir.path())
             .unwrap()
-            .build_with_fallback_config()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
             .await
             .unwrap();
         let result = build_adapter_from_db(&db, &config, &secrets, "main").await;
@@ -821,7 +822,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_workspace_path(dir.path())
             .unwrap()
-            .build_with_fallback_config()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
             .await
             .unwrap();
         let result = build_adapter_from_db(&db, &config, &secrets, "dbt_dev").await;
@@ -854,7 +855,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_workspace_path(dir.path())
             .unwrap()
-            .build_with_fallback_config()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
             .await
             .unwrap();
         let result = build_adapter_from_db(&db, &config, &secrets, "dbt_dev").await;
@@ -880,7 +881,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_workspace_path(dir.path())
             .unwrap()
-            .build_with_fallback_config()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
             .await
             .unwrap();
         let result = build_adapter_from_db(&db, &config, &secrets, "dbt_dev").await;
@@ -909,7 +910,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_workspace_path(dir.path())
             .unwrap()
-            .build_with_fallback_config()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
             .await
             .unwrap();
         let result = build_adapter_from_db(&db, &config, &secrets, "dbt_dev").await;
@@ -942,7 +943,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_workspace_path(dir.path())
             .unwrap()
-            .build_with_fallback_config()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
             .await
             .unwrap();
         let result = build_adapter_from_db(&db, &config, &secrets, "public").await;
@@ -975,7 +976,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_workspace_path(dir.path())
             .unwrap()
-            .build_with_fallback_config()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
             .await
             .unwrap();
         let result = build_adapter_from_db(&db, &config, &secrets, "public").await;
@@ -1014,7 +1015,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_workspace_path(dir.path())
             .unwrap()
-            .build_with_fallback_config()
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
             .await
             .unwrap();
         let result = build_adapter_from_db(&db, &config, &secrets, "dbt_dev").await;

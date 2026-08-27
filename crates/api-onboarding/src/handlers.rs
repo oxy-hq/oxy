@@ -5,6 +5,7 @@ use axum::{
 };
 use oxy::adapters::secrets::SecretsManager;
 use oxy::config::ConfigBuilder;
+use oxy::config::ResolveWorkspaceFile;
 use oxy::github::{GitHubClient, default_git_client, github_token_for_namespace};
 use oxy::service::retrieval::{ReindexInput, reindex};
 use oxy::service::secret_manager::SecretManagerService;
@@ -17,7 +18,7 @@ use uuid::Uuid;
 
 use oxy_app::server::api::middlewares::role_guards::OrgAdmin;
 use oxy_app::server::api::middlewares::workspace_context::{
-    WorkspaceManagerExtractor, WorkspacePath,
+    WorkspaceManagerReadOnly, WorkspaceManagerWorkingCopy, WorkspacePath,
 };
 use oxy_app_core::AppState;
 
@@ -84,7 +85,7 @@ pub async fn setup_demo(
         let result = async {
             let config = ConfigBuilder::new()
                 .with_workspace_path(&dir_clone)?
-                .build_with_fallback_config()
+                .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Empty)
                 .await?;
 
             let secrets_manager = SecretsManager::from_environment()?;
@@ -374,7 +375,7 @@ pub async fn setup_github(
 /// workspace is already verified.
 pub async fn onboarding_readiness(
     State(app_state): State<AppState>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
 ) -> Json<ReadinessResponse> {
     // Route is under /{workspace_id}/ behind workspace_middleware, which has
@@ -463,7 +464,7 @@ pub async fn test_llm_key(
 /// before a GitHub-imported workspace can be queried. See `GithubSetupResponse`.
 pub async fn github_setup(
     State(app_state): State<AppState>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<GithubSetupResponse>, (StatusCode, String)> {
@@ -552,11 +553,40 @@ pub async fn github_setup(
 /// of a partial onboarding run (secrets, warehouse entries in `config.yml`, and
 /// generated files). Intended to back the "Start over" UI.
 pub async fn reset_onboarding(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    // `ReadOnly`, not `<WorkingCopy>`: this crate builds a `Router<AppState>`
+    // and the working-copy extractor resolves only from `IdeState`, so asking
+    // for one here does not compile across the crate line. The route is declared
+    // IdeOnly in `lib.rs::workspace_route_roles` and the presence of a working
+    // copy is checked below, loudly.
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Json(request): Json<OnboardingResetRequest>,
 ) -> Result<Json<OnboardingResetResponse>, StatusCode> {
+    // Defense in depth: the reset removes databases and models from
+    // `config.yml`. If this route is ever misclassified `FleetOk` and lands
+    // on a stateless replica, fail loudly rather than half-reset a workspace.
+    oxy_app::server::role_manifest::ensure_fs_writable("reset onboarding (rewrites config.yml)")
+        .map_err(|e| {
+            tracing::error!(error = %e, "onboarding reset refused");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // A half-reset workspace is worse than a refused one, so an absent working
+    // copy is an error here rather than a no-op that reports success. The
+    // config writes below (`remove_database`, `remove_model`, `resolve_file`)
+    // exist only on `ConfigManager<WorkingCopy>`, which is what this recovers.
+    let files = workspace_manager
+        .config_manager
+        .workspace_file_resolver()
+        .ok_or_else(|| {
+            tracing::error!(
+                workspace_id = %workspace_id,
+                "onboarding reset refused: no working copy on this node"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
     let db = oxy::database::client::establish_connection()
         .await
         .map_err(|e| {
@@ -606,11 +636,7 @@ pub async fn reset_onboarding(
     // Remove databases from config.yml (idempotent — "not found" is a warning,
     // not an error).
     for db_name in &request.database_names {
-        match workspace_manager
-            .config_manager
-            .remove_database(db_name)
-            .await
-        {
+        match files.remove_database(db_name).await {
             Ok(()) => response.databases_removed.push(db_name.clone()),
             Err(e) => {
                 let msg = e.to_string();
@@ -628,14 +654,9 @@ pub async fn reset_onboarding(
         }
     }
 
-    // Remove model entries from config.yml. Each call rewrites config.yml, so
-    // this serialises after the database removals above to avoid overwrites.
+    // Remove model entries from config.yml.
     for model_name in &request.model_names {
-        match workspace_manager
-            .config_manager
-            .remove_model(model_name)
-            .await
-        {
+        match files.remove_model(model_name).await {
             Ok(()) => response.models_removed.push(model_name.clone()),
             Err(e) => {
                 let msg = e.to_string();
@@ -676,17 +697,10 @@ pub async fn reset_onboarding(
     }
 
     // Delete files. Follows the same resolution pattern as `file::delete_file`.
-    let workspace_root = workspace_manager
-        .config_manager
-        .workspace_path()
-        .to_path_buf();
+    let workspace_root = files.workspace_path().to_path_buf();
 
     for path in &request.file_paths {
-        let resolved = match workspace_manager
-            .config_manager
-            .resolve_file(path.clone())
-            .await
-        {
+        let resolved = match files.resolve_file(path.clone()).await {
             Ok(r) => r,
             Err(e) => {
                 response
@@ -712,11 +726,7 @@ pub async fn reset_onboarding(
 
     // Recursively delete directories (e.g. `.databases/<warehouse>/` metadata).
     for path in &request.directory_paths {
-        let resolved = match workspace_manager
-            .config_manager
-            .resolve_file(path.clone())
-            .await
-        {
+        let resolved = match files.resolve_file(path.clone()).await {
             Ok(r) => r,
             Err(e) => {
                 response
@@ -761,13 +771,22 @@ pub async fn reset_onboarding(
 /// expected to then submit a warehouse config with `file_search_path = subdir`,
 /// which the connector will scan for the just-uploaded files.
 pub async fn upload_warehouse_files(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    // See `reset_onboarding` — same crate-line constraint, same recovery.
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     mut multipart: axum::extract::Multipart,
 ) -> Result<(StatusCode, Json<UploadWarehouseFilesResponse>), (StatusCode, String)> {
     let workspace_root = workspace_manager
         .config_manager
+        .workspace_file_resolver()
+        .ok_or_else(|| {
+            tracing::error!("warehouse upload refused: no working copy on this node");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "this instance holds no working copy for the workspace".to_string(),
+            )
+        })?
         .workspace_path()
         .to_path_buf();
 

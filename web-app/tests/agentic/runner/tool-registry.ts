@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { applyPathPrefix } from "./backend";
 import { resolveRepoFile } from "./files";
 import { captureSnapshot } from "./snapshot";
 import type { ToolDefinition } from "./types";
@@ -170,7 +171,12 @@ const TOOLS: ToolDefinition[] = [
       required: ["url"]
     },
     invoke: async (args, page) => {
-      await page.goto(String(args.url));
+      // Same workspace scoping as a flow's `goto:` — an act that says
+      // "navigate to /threads" means the surface, and where that surface lives
+      // is a property of the deployment, not of the instruction. Without this
+      // the two navigation doors disagree: setup lands scoped and a mid-flow
+      // browser_navigate silently drops back to the org home.
+      await page.goto(applyPathPrefix(String(args.url)));
       return { ok: true };
     }
   },

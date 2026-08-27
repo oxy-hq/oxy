@@ -21,7 +21,10 @@ use crate::api::{
     workspace_oxy_access, workspaces, world_model, world_model_graph,
 };
 
+use oxy_shared::fleet_role::RouteRole;
+
 use super::AppState;
+use super::role_router::RoleRouter;
 use super::secrets::build_secret_routes;
 
 pub(super) fn build_workspace_routes(
@@ -29,14 +32,17 @@ pub(super) fn build_workspace_routes(
     agentic_state: Arc<AgenticState>,
     include_git_features: bool,
     include_local_setup: bool,
-) -> Router<AppState> {
-    let mut router = Router::new()
-        .route("/details", get(workspaces::get_workspace))
-        .route("/status", get(workspaces::get_workspace_status))
+) -> RoleRouter {
+    let mut router = RoleRouter::new(app_state.clone())
+        // `/details` served both halves and was the last route needing the
+        // ide-down degrade mechanism. The frontend fetches these two instead.
+        .route_fleet("/meta", get(workspaces::get_workspace_meta))
+        .route_ide("/git-state", get(workspaces::get_workspace_git_state))
+        .route_ide("/status", get(workspaces::get_workspace_status))
         // Diagnostic: the workspace's live git-worktree lifecycle on the ide
         // (branch / idle / clean / would-reap). IdeOnly — the registry is
         // ide-local, so the serve fleet forwards here.
-        .route(
+        .route_ide(
             "/worktrees",
             get(crate::server::worktree_registry::get_worktree_status),
         )
@@ -47,9 +53,10 @@ pub(super) fn build_workspace_routes(
         // resource-ownership checks. The edge-facing `/control/*` tree
         // is mounted separately at the app root (bearer auth resolves
         // workspace_id from the device token).
-        .merge(oxy_cameras::routes::workspace_routes::<AppState>(
-            agentic_state.db.clone(),
-        ))
+        .merge_undeclared(
+            oxy_cameras::routes::workspace_routes::<AppState>(agentic_state.db.clone()),
+            "oxy-cameras owns these paths; every one reads Postgres or S3",
+        )
         // Legacy `/workflows` and `/automations` routes have been retired.
         // Workflow execution + the single-file fetch live under
         // `/agentic-workflows` (IdeOnly), mounted below. The automation LIST,
@@ -57,86 +64,109 @@ pub(super) fn build_workspace_routes(
         // customer-nav sidebar renders on a stateless serve replica with no
         // working copy — `/agentic-workflows` is IdeOnly and lives in a crate
         // that can't reach `compiled_reader`.
-        .route("/procedures", get(automation::list_automations))
+        .route_fleet("/procedures", get(automation::list_automations))
         // Single-automation YAML, also from the boundary, so clicking an automation
         // renders its diagram on a serve node when the ide is down.
-        .route("/procedures/{path_b64}", get(automation::get_automation))
+        .route_fleet("/procedures/{path_b64}", get(automation::get_automation))
         // Canonical "automations" aliases for the procedure list/get (the term
         // Procedure/Workflow was renamed to Automation). Same FleetOk handlers,
         // classified identically in `role_manifest.rs`. `/procedures` is kept
         // for backward compatibility.
-        .route("/automations", get(automation::list_automations))
-        .route("/automations/{path_b64}", get(automation::get_automation))
+        .route_fleet("/automations", get(automation::list_automations))
+        .route_fleet("/automations/{path_b64}", get(automation::get_automation))
         // Same boundary-backed pattern for Airway pipelines (`/agentic-airway`
         // is IdeOnly + in a crate that can't reach `compiled_reader`).
-        .route("/airway-pipelines", get(pipeline::list_pipelines))
-        .nest("/threads", build_thread_routes())
-        .nest("/agents", build_agent_routes())
-        .nest("/api-keys", build_api_key_routes())
-        .nest("/files", build_file_routes(include_git_features))
+        .route_fleet("/airway-pipelines", get(pipeline::list_pipelines))
+        .nest("/threads", build_thread_routes(&app_state))
+        .nest("/agents", build_agent_routes(&app_state))
+        .nest("/api-keys", build_api_key_routes(&app_state))
+        .nest(
+            "/files",
+            build_file_routes(&app_state, include_git_features),
+        )
         // Compile boundary surface: the user-facing Compile button in
         // the IDE header. Gated by `WorkspaceEditor` and the active
         // branch must match the workspace's default branch.
-        .route("/compile", post(compile::enqueue_compile))
-        .route("/compile/status", get(compile::compile_status))
-        .nest("/databases", build_database_routes())
-        .nest("/integrations", build_integration_routes())
-        .nest("/secrets", build_secret_routes(app_state))
-        .route("/members", get(workspace_members::list_workspace_members))
-        .route(
+        .route_ide("/compile", post(compile::enqueue_compile))
+        .route_ide("/compile/status", get(compile::compile_status))
+        .nest("/databases", build_database_routes(&app_state))
+        .nest("/integrations", build_integration_routes(&app_state))
+        .nest("/secrets", build_secret_routes(app_state.clone()))
+        .route_fleet("/members", get(workspace_members::list_workspace_members))
+        .route_fleet(
             "/members/{user_id}",
-            put(workspace_members::set_workspace_role_override),
-        )
-        .route(
-            "/members/{user_id}",
-            delete(workspace_members::remove_workspace_role_override),
+            put(workspace_members::set_workspace_role_override)
+                .delete(workspace_members::remove_workspace_role_override),
         )
         // POST = lock Oxy staff OUT; DELETE = lift the lockdown (default is
         // access-granted). Only a REAL org officer may do either.
-        .route(
+        .route_fleet(
             "/oxy-access",
             get(workspace_oxy_access::get_oxy_access)
                 .post(workspace_oxy_access::lock_oxy_access)
                 .delete(workspace_oxy_access::unlock_oxy_access),
         )
-        .route("/org-subdomain", get(org_subdomain::get_org_subdomain))
-        .route("/custom-apps", get(workspace_custom_apps::list_custom_apps))
-        .route("/logo", get(workspace_logo::get_workspace_logo))
-        .nest("/apps", build_app_routes())
-        .nest("/app-integrations", build_app_integration_routes())
-        .nest("/tests", build_test_file_routes())
+        .route_fleet("/org-subdomain", get(org_subdomain::get_org_subdomain))
+        .route_fleet("/custom-apps", get(workspace_custom_apps::list_custom_apps))
+        .route_fleet("/logo", get(workspace_logo::get_workspace_logo))
+        .nest("/apps", build_app_routes(&app_state))
         // NOT under `/agentic-airway`, which is an `IdeOnly` `{*rest}` wildcard
         // for execution safety. This writes to S3 and reads nothing node-local,
-        // so pinning it to the singleton would cost HA for no reason — it stays
-        // `FleetOk`, the default for an unlisted route.
-        .nest("/source-uploads", build_source_upload_routes())
-        .nest("/traces", traces::traces_routes())
-        .nest("/metrics", metrics::metrics_routes())
-        .nest(
-            "/execution-analytics",
-            execution_analytics::execution_analytics_routes(),
+        // so pinning it to the singleton would cost HA for no reason.
+        .nest_all(
+            "/source-uploads",
+            RouteRole::FleetOk,
+            build_source_upload_routes(),
+            "report uploads write to the shared S3 landing zone, nothing node-local",
         )
-        .route("/artifacts/{id}", get(artifacts::get_artifact))
-        .route("/charts/{file_path}", get(chart::get_chart))
-        .route(
+        .nest(
+            "/app-integrations",
+            build_app_integration_routes(&app_state),
+        )
+        .nest("/tests", build_test_file_routes(&app_state))
+        .nest_all(
+            "/traces",
+            RouteRole::FleetOk,
+            traces::traces_routes(),
+            "trace reads come from the runtime tables",
+        )
+        .nest_all(
+            "/metrics",
+            RouteRole::FleetOk,
+            metrics::metrics_routes(),
+            "metric reads come from the runtime tables",
+        )
+        .nest_all(
+            "/execution-analytics",
+            RouteRole::FleetOk,
+            execution_analytics::execution_analytics_routes(),
+            "run analytics aggregate the runtime tables",
+        )
+        .route_fleet("/artifacts/{id}", get(artifacts::get_artifact))
+        .route_fleet("/charts/{file_path}", get(chart::get_chart))
+        .route_ide(
             "/exported-charts/{file_name}",
             get(exported_chart::get_exported_chart),
         )
-        .route("/logs", get(thread::get_logs))
-        .route("/events", get(run::automation_events))
-        .route("/events/lookup", get(task::agentic_events))
-        .route("/events/sync", get(run::automation_events_sync))
-        .route("/blocks", get(run::get_blocks))
-        .route(
+        .route_fleet("/logs", get(thread::get_logs))
+        .route_ide("/events", get(run::automation_events))
+        .route_ide("/events/lookup", get(task::agentic_events))
+        .route_ide("/events/sync", get(run::automation_events_sync))
+        .route_fleet("/blocks", get(run::get_blocks))
+        .route_fleet(
             "/runs/{source_id}/{run_index}",
             delete(run::cancel_automation_run),
         )
-        .route(
+        .route_fleet(
             "/builder-availability",
             get(agent::check_builder_availability),
         )
-        .route("/sql/{pathb64}", post(data::execute_sql))
-        .route("/sql/query", post(data::execute_sql_query))
+        // `/onboarding-readiness`, `/onboarding/github-setup` and the
+        // `/onboarding/*` subtree moved to the `oxy-api-onboarding` sibling
+        // crate; they are merged into this nest by `oxy-server` and declared
+        // at that seam, since `route_ide` cannot reach across the crate line.
+        .route_fleet("/sql/{pathb64}", post(data::execute_sql))
+        .route_fleet("/sql/query", post(data::execute_sql_query))
         // Semantic-layer endpoints the IDE uses. The legacy `/semantic`
         // execute route was retired alongside `oxy-workflow`; execution
         // now flows through the agentic pipeline. Compile + the
@@ -144,69 +174,80 @@ pub(super) fn build_workspace_routes(
         // explorer + SQL preview panel keep working without re-introducing
         // a workflow dependency on the request path. Compile reaches
         // into airlayer via `agentic_automation::semantic_bridge`.
-        .route(
+        .route_fleet(
             "/semantic/topic/{file_path_b64}",
             get(semantic::get_topic_details),
         )
-        .route(
+        .route_fleet(
             "/semantic/view/{file_path_b64}",
             get(semantic::get_view_details),
         )
-        .route("/semantic/preagg-status", get(preagg::get_preagg_status))
-        .route("/semantic/preagg-rebuild", post(preagg::rebuild_preagg))
-        .route("/semantic/compile", post(semantic::compile_semantic_query))
-        .route("/semantic", post(semantic::execute_semantic_query))
+        // Moved to `api::preagg` by #2989, which also added the rebuild verb.
+        // Both stay FleetOk: the list comes from the DECLARATIONS (resolved
+        // through the compile boundary first), and a rollup built on another
+        // node is readable here when a blob bucket is configured.
+        .route_fleet("/semantic/preagg-status", get(preagg::get_preagg_status))
+        .route_fleet("/semantic/preagg-rebuild", post(preagg::rebuild_preagg))
+        .route_fleet("/semantic/compile", post(semantic::compile_semantic_query))
+        .route_fleet("/semantic", post(semantic::execute_semantic_query))
         // Metric tree — structure + pure analysis ops over the semantic layer.
-        .route("/semantic/metric-tree", get(metric_tree::get_metric_tree))
-        .route(
+        // FleetOk on every route: the scan root resolves through the compile
+        // boundary first (`semantic::resolve_query_scan_source`), working copy
+        // second, and warehouse execution needs only config + secrets — so a
+        // replica answers these. Pinned by
+        // `workspace_metric_tree_routes_are_fleet_ok`; the outage behind it is
+        // oxy-hq/oxygen#878 (every call 500'd on the serve fleet when these
+        // read `semantics_scan_path()` directly).
+        .route_fleet("/semantic/metric-tree", get(metric_tree::get_metric_tree))
+        .route_fleet(
             "/semantic/metric-tree/{measure_id}/sensitivity",
             get(metric_tree::get_sensitivity),
         )
-        .route(
+        .route_fleet(
             "/semantic/metric-tree/predict",
             post(metric_tree::post_predict),
         )
-        .route(
+        .route_fleet(
             "/semantic/metric-tree/explain",
             post(metric_tree::post_explain),
         )
-        .route(
+        .route_fleet(
             "/semantic/metric-tree/opportunity",
             post(metric_tree::post_opportunity),
         )
-        .route(
+        .route_fleet(
             "/semantic/metric-tree/drill",
             post(metric_tree::post_opportunity_drill),
         )
-        .route(
+        .route_fleet(
             "/semantic/metric-tree/time-dimensions",
             get(metric_tree::get_time_dimensions),
         )
-        .route(
+        .route_fleet(
             "/semantic/metric-tree/distribution",
             post(metric_tree::post_distribution),
         )
-        .route(
+        .route_ide(
             "/semantic/world-model",
             get(world_model_graph::get_world_model),
         )
-        .route(
+        .route_ide(
             "/semantic/world-model/instances",
             get(world_model_graph::get_world_model_instances),
         )
-        .route(
+        .route_ide(
             "/semantic/world-model/filter-instances",
             get(world_model_graph::get_world_model_filter_instances),
         )
-        .route(
+        .route_ide(
             "/semantic/world-model/filter-counts",
             post(world_model_graph::post_world_model_filter_counts),
         )
-        .route(
+        .route_ide(
             "/semantic/world-model/instance-detail",
             get(world_model_graph::get_world_model_instance_detail),
         )
-        .route(
+        .route_ide(
             "/semantic/world-model/measure-breakdown",
             get(world_model_graph::get_world_model_measure_breakdown),
         )
@@ -222,77 +263,91 @@ pub(super) fn build_workspace_routes(
         // `/semantic/monitors/`, which nothing calls.
         .merge({
             use axum::Extension;
-            Router::new()
-                .route("/semantic/monitors", get(metric_anomalies::list_monitors))
-                .layer(Extension(agentic_state.clone()))
+            RoleRouter::new(app_state.clone())
+                .route_fleet("/semantic/monitors", get(metric_anomalies::list_monitors))
+                .map_router(|r| r.layer(Extension(agentic_state.clone())))
         })
         .nest(
             "/semantic/anomalies",
-            build_metric_anomaly_routes(agentic_state.clone()),
+            build_metric_anomaly_routes(&app_state, agentic_state.clone()),
         )
-        .route(
+        .route_ide(
             "/world-model/events",
             get(world_model::world_model_events_sse),
         )
-        .route("/world-model/cameras", get(video::list_cameras))
-        .route(
+        .route_fleet("/world-model/cameras", get(video::list_cameras))
+        .route_fleet(
             "/world-model/weather/{layer}/{z}/{x}/{y}",
             get(video::weather_tile),
         )
-        .route(
+        .route_fleet(
             "/world-model/weather/current",
             post(video::weather_current_batch),
         )
-        .route(
+        .route_fleet(
             "/world-model/foot-traffic/current",
             post(foot_traffic::foot_traffic_current_batch),
         )
-        .route(
+        .route_fleet(
             "/world-model/foot-traffic/radar",
             post(foot_traffic::foot_traffic_radar_batch),
         )
-        .route(
+        .route_fleet(
             "/world-model/competitors",
             post(competitors::get_competitors),
         )
-        .route(
+        .route_fleet(
             "/results/files/{file_id}",
-            get(result_files::get_result_file),
+            get(result_files::get_result_file).delete(result_files::delete_result_file),
         )
-        .route(
-            "/results/files/{file_id}",
-            delete(result_files::delete_result_file),
+        .nest_declared(
+            "/analytics",
+            agentic_router(agentic_state.clone()),
+            agentic_http::router_roles(),
         )
-        .nest("/analytics", agentic_router(agentic_state.clone()))
         // New agentic-workflow surface — coexists with the legacy `/workflows`
         // routes during migration. Will subsume them in the cleanup task.
-        .nest(
+        .nest_declared(
             "/agentic-workflows",
             automation_router(agentic_state.clone()),
+            agentic_http::automation_router_roles(),
         )
         // Canonical execution surface alias (Procedures/Workflows -> Automations).
         // Same handlers as `/agentic-workflows`, mirrored in `role_manifest.rs`.
-        .nest(
+        .nest_declared(
             "/agentic-automations",
             automation_router(agentic_state.clone()),
+            agentic_http::automation_router_roles(),
         )
-        .nest("/agentic-airway", airway_router(agentic_state.clone()))
+        .nest_declared(
+            "/agentic-airway",
+            airway_router(agentic_state.clone()),
+            agentic_http::airway_router_roles(),
+        )
         // Relocated from agentic-http (§12 FU4b): the schedule handlers
         // need WorkspaceAdmin from app/role_guards which agentic-http
         // cannot depend on.
-        .nest("/agentic-schedules", build_schedule_routes(agentic_state))
-        .nest("/modeling", modeling::build_modeling_routes());
+        .nest(
+            "/agentic-schedules",
+            build_schedule_routes(&app_state, agentic_state),
+        )
+        .nest_typed(
+            "/modeling",
+            RouteRole::IdeOnly,
+            modeling::build_modeling_routes(),
+            super::IdeState(app_state.clone()),
+        );
 
     if include_git_features {
         router = router
-            .merge(build_git_routes())
-            .nest("/repositories", build_data_repo_routes());
+            .merge(build_git_routes(&app_state))
+            .nest("/repositories", build_data_repo_routes(&app_state));
     }
 
     if include_local_setup {
         router = router
-            .route("/setup/empty", post(local_setup::setup_empty))
-            .route("/setup/demo", post(local_setup::setup_demo));
+            .route_fleet("/setup/empty", post(local_setup::setup_empty))
+            .route_fleet("/setup/demo", post(local_setup::setup_demo));
     }
 
     router
@@ -306,23 +361,26 @@ pub(super) fn build_workspace_routes(
 /// handler functions as `build_workspace_routes`, so behavior is identical —
 /// only the auth + CORS wrapper differs.
 pub(super) fn build_external_workspace_routes(
+    app_state: &AppState,
     agentic_state: Arc<AgenticState>,
-) -> Router<AppState> {
-    Router::new()
-        .route("/sql/query", post(data::execute_sql_query))
-        .route("/semantic", post(semantic::execute_semantic_query))
-        .route("/semantic/compile", post(semantic::compile_semantic_query))
-        .route(
+) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        .route_fleet("/sql/query", post(data::execute_sql_query))
+        .route_fleet("/semantic", post(semantic::execute_semantic_query))
+        .route_fleet("/semantic/compile", post(semantic::compile_semantic_query))
+        .route_ide(
             "/world-model/events",
             get(world_model::world_model_events_sse),
         )
-        .route("/world-model/cameras", get(video::list_cameras))
+        .route_fleet("/world-model/cameras", get(video::list_cameras))
         // Camera live streaming for standalone apps: registry, WHEP
         // signaling, HLS proxy. Same handlers as the operator tree —
         // only the auth wrapper differs.
-        .nest(
+        .nest_all(
             "/world-model/camera-stream",
+            RouteRole::FleetOk,
             oxy_cameras::routes::external_stream_routes::<AppState>(agentic_state.db.clone()),
+            "camera streaming signals against Postgres + the media edge",
         )
         // Evidence/compliance clip playback for standalone apps — mints a
         // presigned S3 GET (workspace-prefix checked). Without this the
@@ -333,24 +391,27 @@ pub(super) fn build_external_workspace_routes(
         // like the streaming nest — already-shipped customer apps call this
         // exact path. Don't "tidy" it under the stream prefix; that silently
         // re-breaks playback and would need a coordinated app+server deploy.
-        .merge(oxy_cameras::routes::external_clip_routes::<AppState>())
-        .route(
+        .merge_undeclared(
+            oxy_cameras::routes::external_clip_routes::<AppState>(),
+            "oxy-cameras clip playback mints a presigned S3 GET",
+        )
+        .route_fleet(
             "/world-model/weather/{layer}/{z}/{x}/{y}",
             get(video::weather_tile),
         )
-        .route(
+        .route_fleet(
             "/world-model/weather/current",
             post(video::weather_current_batch),
         )
-        .route(
+        .route_fleet(
             "/world-model/foot-traffic/current",
             post(foot_traffic::foot_traffic_current_batch),
         )
-        .route(
+        .route_fleet(
             "/world-model/foot-traffic/radar",
             post(foot_traffic::foot_traffic_radar_batch),
         )
-        .route(
+        .route_fleet(
             "/world-model/competitors",
             post(competitors::get_competitors),
         )
@@ -358,7 +419,7 @@ pub(super) fn build_external_workspace_routes(
         // Anthropic Messages payload (system + messages + optional tools),
         // resolves the workspace Anthropic key server-side, and returns the raw
         // content blocks — so the app never ships a provider key in the browser.
-        .route(
+        .route_fleet(
             "/world-model/llm/messages",
             post(world_model::proxy_llm_messages),
         )
@@ -375,184 +436,215 @@ pub(super) fn build_external_workspace_routes(
         // before returning `pending: true`; an uncached explain runs a 20-30 s
         // recursive search) but bounded by the same `timeout_middleware` the rest
         // of this surface carries — no separate budget needed.
-        .nest("/semantic/anomalies", {
-            use axum::Extension;
-            Router::new()
-                .route("/", get(metric_anomalies::list_anomalies))
-                .route("/scan", post(metric_anomalies::run_scan))
-                // Static `/status` (bulk) and `/{id}/status` (single) differ in
-                // segment count, so they don't compete for a match.
-                .route("/status", post(metric_anomalies::update_status_bulk))
-                .route("/{id}/status", post(metric_anomalies::update_status))
-                .route("/{id}/explain", post(metric_anomalies::explain_anomaly))
-                .layer(Extension(agentic_state.clone()))
-        })
+        // The same builder the internal surface nests, rather than a copy of
+        // it. The two differed only in a path-parameter NAME (`{id}` vs
+        // `{anomaly_id}`), which no handler reads — both take
+        // `Path<(Uuid, Uuid)>`, positionally. Keeping the copy also hid these
+        // routes from `route_role_derivation`, whose parser resolves a nest
+        // prefix through the `build_*` call and cannot see into an inline
+        // block: `/scan` reached that guard with no prefix and classified as
+        // FleetOk by default.
+        .nest(
+            "/semantic/anomalies",
+            build_metric_anomaly_routes(&app_state, agentic_state.clone()),
+        )
         // Agentic analytics: POST /analytics/runs, the SSE events stream,
         // /answer, /cancel, /threads/* — the chat surface external apps drive.
-        .nest("/analytics", agentic_router(agentic_state))
+        .nest_declared(
+            "/analytics",
+            agentic_router(agentic_state),
+            agentic_http::router_roles(),
+        )
 }
 
 /// Git-backed workspace routes: local and remote git operations on the
 /// workspace itself. Mounted only when `include_git_features` is true —
 /// local mode (`ServeMode::Local`) omits the entire set.
-fn build_git_routes() -> Router<AppState> {
-    Router::new()
-        .route("/branches", get(workspaces::get_workspace_branches))
-        .route("/branches/{branch_name}", delete(workspaces::delete_branch))
-        .route("/switch-branch", post(workspaces::switch_workspace_branch))
-        .route("/pull-changes", post(workspaces::pull_changes))
-        .route("/fetch", post(workspaces::fetch_changes))
-        .route("/push-changes", post(workspaces::push_changes))
-        .route("/abort-rebase", post(workspaces::abort_rebase))
-        .route("/continue-rebase", post(workspaces::continue_rebase))
-        .route(
+fn build_git_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        .route_ide("/branches", get(workspaces::get_workspace_branches))
+        .route_ide("/branches/{branch_name}", delete(workspaces::delete_branch))
+        .route_ide("/switch-branch", post(workspaces::switch_workspace_branch))
+        .route_ide("/pull-changes", post(workspaces::pull_changes))
+        .route_ide("/fetch", post(workspaces::fetch_changes))
+        .route_ide("/push-changes", post(workspaces::push_changes))
+        .route_ide("/abort-rebase", post(workspaces::abort_rebase))
+        .route_ide("/continue-rebase", post(workspaces::continue_rebase))
+        .route_ide(
             "/resolve-conflict-file",
             post(workspaces::resolve_conflict_file),
         )
-        .route(
+        .route_ide(
             "/unresolve-conflict-file",
             post(workspaces::unresolve_conflict_file),
         )
-        .route(
+        .route_ide(
             "/resolve-conflict-with-content",
             post(workspaces::resolve_conflict_with_content),
         )
-        .route("/force-push", post(workspaces::force_push_branch))
-        .route("/discard-all", post(workspaces::discard_all_changes))
-        .route("/recent-commits", get(workspaces::get_recent_commits))
-        .route("/revision-info", get(workspaces::get_revision_info))
-        .route("/reset-to-commit", post(workspaces::reset_to_commit))
+        .route_ide("/force-push", post(workspaces::force_push_branch))
+        .route_ide("/discard-all", post(workspaces::discard_all_changes))
+        .route_ide("/recent-commits", get(workspaces::get_recent_commits))
+        .route_ide("/revision-info", get(workspaces::get_revision_info))
+        .route_ide("/reset-to-commit", post(workspaces::reset_to_commit))
 }
 
 // `build_workflow_routes` and `build_automation_routes` were retired
 // alongside `oxy-workflow`. The agentic-pipeline workflow surface mounted
 // at `/agentic-workflows` replaces every endpoint they exposed.
 
-fn build_thread_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(thread::get_threads))
-        .route("/", post(thread::create_thread))
-        .route("/", delete(thread::delete_all_threads))
-        .route("/bulk-delete", post(thread::bulk_delete_threads))
-        .route("/{id}", get(thread::get_thread))
-        .route("/{id}", delete(thread::delete_thread))
+fn build_thread_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        .route_fleet(
+            "/",
+            get(thread::get_threads)
+                .post(thread::create_thread)
+                .delete(thread::delete_all_threads),
+        )
+        .route_fleet("/bulk-delete", post(thread::bulk_delete_threads))
+        .route_fleet(
+            "/{id}",
+            get(thread::get_thread).delete(thread::delete_thread),
+        )
         // Thread-bound legacy `/workflow` and `/workflow-sync` routes were
         // retired with `oxy-workflow`. Use the agentic-pipeline workflow
         // surface (`/agentic-workflows/runs`) instead.
-        .route("/{id}/messages", get(message::get_messages_by_thread))
-        .route("/{id}/stop", post(thread::stop_thread))
+        .route_fleet("/{id}/messages", get(message::get_messages_by_thread))
+        .route_fleet("/{id}/stop", post(thread::stop_thread))
 }
 
-fn build_agent_routes() -> Router<AppState> {
-    Router::new().route("/", get(agent::get_agents))
+fn build_agent_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone()).route_fleet("/", get(agent::get_agents))
 }
 
-fn build_api_key_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(api_keys::list_api_keys))
-        .route("/", post(api_keys::create_api_key))
-        .route("/{id}", get(api_keys::get_api_key))
-        .route("/{id}", delete(api_keys::delete_api_key))
+fn build_api_key_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        .route_fleet(
+            "/",
+            get(api_keys::list_api_keys).post(api_keys::create_api_key),
+        )
+        .route_fleet(
+            "/{id}",
+            get(api_keys::get_api_key).delete(api_keys::delete_api_key),
+        )
 }
 
 /// Schedule CRUD + run-now (§12 FU4b). Lives in the app crate so the
 /// handlers can use `WorkspaceAdmin` from `role_guards` (agentic-http is
 /// a lower layer and must not depend on `app`). AgenticState is attached
 /// as an Extension here so the handlers can extract it.
-fn build_metric_anomaly_routes(agentic_state: Arc<AgenticState>) -> Router<AppState> {
+fn build_metric_anomaly_routes(
+    app_state: &AppState,
+    agentic_state: Arc<AgenticState>,
+) -> RoleRouter {
     use axum::Extension;
-    Router::new()
-        .route("/", get(metric_anomalies::list_anomalies))
-        .route("/scan", post(metric_anomalies::run_scan))
-        .route("/status", post(metric_anomalies::update_status_bulk))
-        .route(
+    RoleRouter::new(app_state.clone())
+        .route_fleet("/", get(metric_anomalies::list_anomalies))
+        // See the mirror of these two in `build_external_workspace_routes`:
+        // the runner reads the semantic layer off the workspace root, so
+        // FleetOk was a promise a replica could not keep.
+        .route_ide("/scan", post(metric_anomalies::run_scan))
+        // Static `/status` (bulk) and `/{anomaly_id}/status` (single) differ in
+        // segment count, so they don't compete for a match. Bulk triage writes
+        // Postgres rows only — any replica can take it.
+        .route_fleet("/status", post(metric_anomalies::update_status_bulk))
+        .route_fleet(
             "/{anomaly_id}/status",
             post(metric_anomalies::update_status),
         )
-        .route(
+        .route_ide(
             "/{anomaly_id}/explain",
             post(metric_anomalies::explain_anomaly),
         )
-        .layer(Extension(agentic_state))
+        .map_router(|r| r.layer(Extension(agentic_state)))
 }
 
-fn build_schedule_routes(agentic_state: Arc<AgenticState>) -> Router<AppState> {
+fn build_schedule_routes(app_state: &AppState, agentic_state: Arc<AgenticState>) -> RoleRouter {
     use axum::Extension;
-    Router::new()
-        .route("/", get(schedules::list).post(schedules::create))
-        .route(
+    RoleRouter::new(app_state.clone())
+        .route_fleet("/", get(schedules::list).post(schedules::create))
+        .route_fleet(
             "/{id}",
             get(schedules::get)
                 .patch(schedules::update)
                 .delete(schedules::delete),
         )
-        .route("/{id}/run-now", post(schedules::run_now))
-        .route("/{id}/backfill", post(schedules::backfill))
-        .layer(Extension(agentic_state))
+        .route_fleet("/{id}/run-now", post(schedules::run_now))
+        .route_fleet("/{id}/backfill", post(schedules::backfill))
+        .map_router(|r| r.layer(Extension(agentic_state)))
 }
 
-fn build_file_routes(include_git_features: bool) -> Router<AppState> {
-    let mut router = Router::new()
-        .route("/", get(file::get_file_tree))
-        .route("/{pathb64}", get(file::get_file))
-        .route("/{pathb64}", post(file::save_file))
-        .route("/{pathb64}/delete-file", delete(file::delete_file))
-        .route("/{pathb64}/delete-folder", delete(file::delete_folder))
-        .route("/{pathb64}/rename-file", put(file::rename_file))
-        .route("/{pathb64}/rename-folder", put(file::rename_folder))
-        .route("/{pathb64}/new-file", post(file::create_file))
-        .route("/{pathb64}/new-folder", post(file::create_folder));
+fn build_file_routes(app_state: &AppState, include_git_features: bool) -> RoleRouter {
+    let mut router = RoleRouter::new(app_state.clone())
+        .route_ide("/", get(file::get_file_tree))
+        .route_ide("/{pathb64}", get(file::get_file).post(file::save_file))
+        .route_ide("/{pathb64}/delete-file", delete(file::delete_file))
+        .route_ide("/{pathb64}/delete-folder", delete(file::delete_folder))
+        .route_ide("/{pathb64}/rename-file", put(file::rename_file))
+        .route_ide("/{pathb64}/rename-folder", put(file::rename_folder))
+        .route_ide("/{pathb64}/new-file", post(file::create_file))
+        .route_ide("/{pathb64}/new-folder", post(file::create_folder));
 
     if include_git_features {
         router = router
-            .route("/diff-summary", get(file::get_diff_summary))
-            .route("/{pathb64}/from-git", get(file::get_file_from_git))
-            .route("/{pathb64}/revert", post(file::revert_file));
+            .route_ide("/diff-summary", get(file::get_diff_summary))
+            .route_ide("/{pathb64}/from-git", get(file::get_file_from_git))
+            .route_ide("/{pathb64}/revert", post(file::revert_file));
     }
 
     router
 }
 
-fn build_database_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(database::list_databases))
-        .route("/", post(database::create_database_config))
-        .route("/test-connection", post(database::test_database_connection))
-        .route("/inspect", post(database::inspect_database_handler))
-        .route("/inspect-schemas", post(database::inspect_schemas_handler))
-        .route(
+fn build_database_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        // The list degrades to `datasets: null` without a working copy and the
+        // launcher readiness check calls it on every page load; creating one
+        // writes `config.yml`.
+        .route_split(
+            "/",
+            "POST",
+            post(database::create_database_config),
+            "GET",
+            get(database::list_databases),
+        )
+        .route_ide("/test-connection", post(database::test_database_connection))
+        .route_fleet("/inspect", post(database::inspect_database_handler))
+        .route_fleet("/inspect-schemas", post(database::inspect_schemas_handler))
+        .route_fleet(
             "/inspect-schema-tables",
             post(database::inspect_schema_tables_handler),
         )
-        .route("/sync", post(database::sync_database))
-        .route("/build", post(data::build_embeddings))
-        .route("/clean", post(database::clean_data))
-        .route(
+        .route_ide("/sync", post(database::sync_database))
+        .route_ide("/build", post(data::build_embeddings))
+        .route_ide("/clean", post(database::clean_data))
+        .route_fleet(
             "/{database_name}/schema",
             get(database::get_database_schema),
         )
 }
 
-fn build_data_repo_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(data_repo::list_repositories))
-        .route("/", post(data_repo::add_repository))
-        .route("/{name}", delete(data_repo::remove_repository))
-        .route("/{name}/branch", get(data_repo::get_repo_branch))
-        .route("/{name}/branches", get(data_repo::list_repo_branches))
-        .route("/{name}/checkout", post(data_repo::checkout_repo_branch))
-        .route("/{name}/diff", get(data_repo::get_repo_diff))
-        .route("/{name}/commit", post(data_repo::commit_repo))
-        .route("/{name}/files", get(data_repo::get_repo_file_tree))
-        .route("/github", post(data_repo::add_repo_from_github))
+fn build_data_repo_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        .route_ide(
+            "/",
+            get(data_repo::list_repositories).post(data_repo::add_repository),
+        )
+        .route_ide("/{name}", delete(data_repo::remove_repository))
+        .route_ide("/{name}/branch", get(data_repo::get_repo_branch))
+        .route_ide("/{name}/branches", get(data_repo::list_repo_branches))
+        .route_ide("/{name}/checkout", post(data_repo::checkout_repo_branch))
+        .route_ide("/{name}/diff", get(data_repo::get_repo_diff))
+        .route_ide("/{name}/commit", post(data_repo::commit_repo))
+        .route_ide("/{name}/files", get(data_repo::get_repo_file_tree))
+        .route_ide("/github", post(data_repo::add_repo_from_github))
 }
 
-fn build_integration_routes() -> Router<AppState> {
-    Router::new()
-        .route("/looker", get(integration::list_looker_integrations))
-        .route("/looker/query", post(integration::execute_looker_query))
-        .route("/looker/query/sql", post(integration::compile_looker_query))
-        .route(
+fn build_integration_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        .route_ide("/looker", get(integration::list_looker_integrations))
+        .route_ide("/looker/query", post(integration::execute_looker_query))
+        .route_ide("/looker/query/sql", post(integration::compile_looker_query))
+        .route_fleet(
             "/quickbooks/authorize",
             post(crate::integrations::quickbooks::oauth::authorize::authorize),
         )
@@ -570,22 +662,22 @@ fn build_integration_routes() -> Router<AppState> {
 // the `every_app_sub_route_is_classified` test now backstops THIS builder so a
 // new sub-route fails CI unless it is IdeOnly or explicitly acknowledged FleetOk.
 // See `.claude/skills/oxy-route-classification/SKILL.md`.
-fn build_app_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(app::list_apps))
-        .route("/{pathb64}", get(app::get_app_data))
-        .route("/{pathb64}/run", post(app::run_app))
-        .route("/{pathb64}/result", post(app::get_app_result))
-        .route("/{pathb64}/displays", get(app::get_displays))
+fn build_app_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        .route_fleet("/", get(app::list_apps))
+        .route_ide("/{pathb64}", get(app::get_app_data))
+        .route_ide("/{pathb64}/run", post(app::run_app))
+        .route_ide("/{pathb64}/result", post(app::get_app_result))
+        .route_fleet("/{pathb64}/displays", get(app::get_displays))
         // Read-only cached data (boundary def + disk/S3 cache, no execution), so
         // a serve replica shows a dashboard's last data when the ide is down.
-        .route("/{pathb64}/data-cached", get(app::get_app_data_cached))
-        .route("/{pathb64}/charts/{chart_path}", get(app::get_chart_image))
-        .route("/{pathb64}/publish", post(app::publish_app))
-        .route("/{pathb64}/unpublish", post(app::unpublish_app))
-        .route("/file/{pathb64}", get(app::get_data))
-        .route("/source/{pathb64}", get(app::get_source_file))
-        .route("/save-from-run/{run_id}", post(app::save_app_builder_run))
+        .route_fleet("/{pathb64}/data-cached", get(app::get_app_data_cached))
+        .route_fleet("/{pathb64}/charts/{chart_path}", get(app::get_chart_image))
+        .route_ide("/{pathb64}/publish", post(app::publish_app))
+        .route_ide("/{pathb64}/unpublish", post(app::unpublish_app))
+        .route_ide("/file/{pathb64}", get(app::get_data))
+        .route_ide("/source/{pathb64}", get(app::get_source_file))
+        .route_ide("/save-from-run/{run_id}", post(app::save_app_builder_run))
 }
 
 /// Report uploads for file-based sources, into the shared landing zone.
@@ -602,7 +694,7 @@ fn build_source_upload_routes() -> Router<AppState> {
         // Without this, axum 0.8's 2 MiB default governs and the handler's own
         // ceiling is unreachable — a larger report fails inside `field.bytes()`
         // as a 400, never the 413 the handler writes. At `Router` level rather
-        // than on the `MethodRouter` for the same reason `build_onboarding_routes`
+        // than on the `MethodRouter` for the same reason `oxy-api-onboarding`
         // gives: the latter can interact unexpectedly with outer CORS preflight
         // handling on axum 0.8.
         // `MAX_REPORT_BYTES` plus slack, because this bounds the whole
@@ -617,35 +709,43 @@ fn build_source_upload_routes() -> Router<AppState> {
         ))
 }
 
-fn build_test_file_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(test_file::list_test_files))
-        .route(
+fn build_test_file_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        // `.test.yml` is the one workspace artifact the compile boundary
+        // deliberately does not carry: `oxy_compile::walker` skips every path
+        // containing `.test.`, so there is nothing in Postgres to fall back to
+        // and `list_tests`/`resolve_test` are `ConfigManager<WorkingCopy>`
+        // methods by construction. `IdeOnly` is the honest classification —
+        // a replica forwards to the ide upstream instead of reporting an
+        // absent directory as an empty test suite. Not a hot path: only the
+        // ide opens these.
+        .route_ide("/", get(test_file::list_test_files))
+        .route_fleet(
             "/project-runs",
             get(test_project_run::list_project_runs).post(test_project_run::create_project_run),
         )
-        .route(
+        .route_fleet(
             "/project-runs/{project_run_id}",
             delete(test_project_run::delete_project_run),
         )
-        .route("/{pathb64}", get(test_file::get_test_file))
-        .route(
+        .route_ide("/{pathb64}", get(test_file::get_test_file))
+        .route_ide(
             "/{pathb64}/cases/{case_index}",
             post(test_file::run_test_case),
         )
-        .route(
+        .route_fleet(
             "/{pathb64}/runs",
             get(test_run::list_runs).post(test_run::create_run),
         )
-        .route(
+        .route_fleet(
             "/{pathb64}/runs/{run_index}",
             get(test_run::get_run).delete(test_run::delete_run),
         )
-        .route(
+        .route_fleet(
             "/{pathb64}/runs/{run_index}/human-verdicts",
             get(test_run::list_human_verdicts),
         )
-        .route(
+        .route_fleet(
             "/{pathb64}/runs/{run_index}/cases/{case_index}/human-verdict",
             put(test_run::set_human_verdict),
         )
@@ -654,10 +754,16 @@ fn build_test_file_routes() -> Router<AppState> {
 /// World-model "Apps" configuration routes — Toast / OpenWeatherMap /
 /// BestTime integration entries surfaced in the Workspace Settings →
 /// Apps tab. Separate from `build_app_routes` (data apps).
-fn build_app_integration_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(apps::list_apps).post(apps::upsert_app))
-        .route("/{kind}", delete(apps::delete_app))
+fn build_app_integration_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        .route_split(
+            "/",
+            "POST",
+            post(apps::upsert_app),
+            "GET",
+            get(apps::list_apps),
+        )
+        .route_ide("/{kind}", delete(apps::delete_app))
 }
 
 #[cfg(test)]
@@ -726,6 +832,7 @@ mod tests {
     async fn git_routes_absent_when_flag_disabled() {
         let state = test_app_state();
         let router = build_workspace_routes(state.clone(), test_agentic_state(), false, false)
+            .into_router()
             .with_state(state);
 
         let cases: &[(&str, &str)] = &[
@@ -768,6 +875,7 @@ mod tests {
     async fn git_routes_present_when_flag_enabled() {
         let state = test_app_state();
         let router = build_workspace_routes(state.clone(), test_agentic_state(), true, false)
+            .into_router()
             .with_state(state);
 
         let status = status_for(router, "GET", "/branches").await;
@@ -783,6 +891,7 @@ mod tests {
     async fn setup_routes_present_when_include_local_setup_true() {
         let state = test_app_state();
         let router = build_workspace_routes(state.clone(), test_agentic_state(), false, true)
+            .into_router()
             .with_state(state);
 
         for path in ["/setup/empty", "/setup/demo"] {
@@ -802,6 +911,7 @@ mod tests {
     async fn setup_routes_absent_when_include_local_setup_false() {
         let state = test_app_state();
         let router = build_workspace_routes(state.clone(), test_agentic_state(), true, false)
+            .into_router()
             .with_state(state);
 
         for path in ["/setup/empty", "/setup/demo"] {
@@ -828,6 +938,7 @@ mod tests {
     async fn camera_operator_routes_mounted_inside_workspace_tree() {
         let state = test_app_state();
         let router = build_workspace_routes(state.clone(), test_agentic_state(), false, false)
+            .into_router()
             .with_state(state);
 
         // One representative from each operator sub-area. Wildcard
@@ -858,7 +969,9 @@ mod tests {
     #[tokio::test]
     async fn external_surface_exposes_full_anomaly_inbox() {
         let state = test_app_state();
-        let router = build_external_workspace_routes(test_agentic_state()).with_state(state);
+        let router = build_external_workspace_routes(&state, test_agentic_state())
+            .into_router()
+            .with_state(state);
 
         let anomaly_id = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
 
@@ -913,72 +1026,5 @@ mod tests {
                  route resolves differently — check the extractor stack, not just the mount."
             );
         }
-    }
-
-    /// Drift guard: the external anomaly mount mirrors
-    /// `build_metric_anomaly_routes` verb-for-verb. Adding a route to the
-    /// internal builder without mirroring it here silently leaves custom apps
-    /// a version behind, so compare the two route sets from the source.
-    #[test]
-    fn external_anomaly_routes_mirror_internal_builder() {
-        let src = include_str!("workspace.rs");
-
-        // Route paths registered inside a named fn/nest body, normalised so
-        // `{anomaly_id}` and `{id}` compare equal (axum extracts positionally).
-        fn routes_in(body: &str) -> std::collections::BTreeSet<String> {
-            let mut out = std::collections::BTreeSet::new();
-            let mut rest = body;
-            while let Some(idx) = rest.find(".route(") {
-                rest = &rest[idx + ".route(".len()..];
-                let Some(open) = rest.find('"') else { break };
-                let after = &rest[open + 1..];
-                let Some(close) = after.find('"') else { break };
-                let path = &after[..close];
-                // Normalise the param NAME away; only the shape matters.
-                let normalised: Vec<&str> = path
-                    .split('/')
-                    .map(|seg| if seg.starts_with('{') { "{p}" } else { seg })
-                    .collect();
-                out.insert(normalised.join("/"));
-                rest = &after[close..];
-            }
-            out
-        }
-
-        fn body_after<'a>(src: &'a str, marker: &str) -> &'a str {
-            let start = src
-                .find(marker)
-                .unwrap_or_else(|| panic!("{marker} present"));
-            let body = &src[start..];
-            let end = body.find("\n}\n").unwrap_or(body.len());
-            &body[..end]
-        }
-
-        let internal = routes_in(body_after(src, "fn build_metric_anomaly_routes"));
-
-        // The external mount is an inline `.nest("/semantic/anomalies", { .. })`
-        // block; slice from the nest to the end of the builder.
-        let external_builder = body_after(src, "fn build_external_workspace_routes");
-        let nest_start = external_builder
-            .find(r#".nest("/semantic/anomalies""#)
-            .expect("external anomalies nest present");
-        let nest_body = &external_builder[nest_start..];
-        let nest_end = nest_body.find("})").unwrap_or(nest_body.len());
-        let external = routes_in(&nest_body[..nest_end]);
-
-        assert!(
-            !internal.is_empty() && internal.len() >= 4,
-            "parser found only {} internal anomaly routes — the builder shape changed",
-            internal.len()
-        );
-        assert_eq!(
-            internal,
-            external,
-            "build_metric_anomaly_routes and the external /semantic/anomalies nest have \
-             drifted. Every anomaly route must exist on BOTH surfaces — custom apps reach \
-             anomalies only through /external/api. Internal-only: {:?}; external-only: {:?}",
-            internal.difference(&external).collect::<Vec<_>>(),
-            external.difference(&internal).collect::<Vec<_>>(),
-        );
     }
 }

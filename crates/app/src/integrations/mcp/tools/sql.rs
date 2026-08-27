@@ -10,6 +10,7 @@ use crate::integrations::mcp::types::{
     EVENT_CHANNEL_SIZE, OxyTool, SQL_TOOL_PREFIX, SqlFileToolInput, ToolType,
 };
 use crate::integrations::mcp::utils::extract_sql_description;
+use oxy::config::WorkingCopy;
 
 pub fn get_sql_tool_name(sql_name: &str) -> String {
     format!("{SQL_TOOL_PREFIX}{sql_name}")
@@ -18,7 +19,7 @@ pub fn get_sql_tool_name(sql_name: &str) -> String {
 /// Creates an MCP tool for a SQL file
 /// Generates input schema with database field
 pub async fn resolve_execute_sql_tool(
-    config_manager: ConfigManager,
+    config_manager: ConfigManager<WorkingCopy>,
     sql_path: PathBuf,
 ) -> Result<(String, OxyTool), OxyError> {
     // Convert absolute path to relative path from project root
@@ -90,7 +91,7 @@ pub async fn resolve_execute_sql_tool(
 }
 
 pub async fn run_sql_file_tool(
-    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager<WorkingCopy>,
     sql_file_path: String,
     arguments: Option<Map<String, Value>>,
     filters: Option<SessionFilters>,
@@ -164,7 +165,7 @@ pub async fn run_sql_file_tool(
     }
 }
 fn create_execution_context(
-    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager<WorkingCopy>,
     kind: &str,
 ) -> (
     oxy::execute::ExecutionContext,

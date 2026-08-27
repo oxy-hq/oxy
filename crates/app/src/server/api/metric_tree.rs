@@ -32,7 +32,7 @@ use crate::agentic_wiring::metric_tree_runner::{
     OxyMetricTreeRunner, build_drill_query_executor, build_query_executor,
 };
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, PreaggCacheCtx, WorkspaceManagerExtractor,
+    EffectiveWorkspaceRole, PreaggCacheCtx, WorkspaceManagerReadOnly,
 };
 use crate::server::api::semantic::{QueryScanSource, resolve_query_scan_source};
 
@@ -98,8 +98,8 @@ impl IntoResponse for MetricTreeError {
 /// drops the guard and deletes the directory underneath it. Keep it that way;
 /// the invariant "hold the guard across the blocking task" is not one the
 /// handler can actually enforce.
-async fn resolve_scan(
-    workspace_manager: &WorkspaceManager,
+async fn resolve_scan<S: oxy::config::DiskSlot>(
+    workspace_manager: &WorkspaceManager<S>,
 ) -> Result<QueryScanSource, MetricTreeError> {
     resolve_query_scan_source(workspace_manager)
         .await
@@ -118,7 +118,9 @@ fn load_tree_at(scan_path: &std::path::Path) -> Result<MetricTree, MetricTreeErr
     Ok(oxy_semantic::build_metric_tree(&layer))
 }
 
-fn workspace_databases(workspace_manager: &WorkspaceManager) -> Vec<airlayer::DatabaseConfig> {
+fn workspace_databases<S: oxy::config::DiskSlot>(
+    workspace_manager: &WorkspaceManager<S>,
+) -> Vec<airlayer::DatabaseConfig> {
     OxyMetricTreeRunner::list_databases_sync(workspace_manager)
 }
 
@@ -132,7 +134,7 @@ pub struct TreeQuery {
 
 /// `GET .../semantic/metric-tree` — the full tree, or `?root=<id>` subtree.
 pub async fn get_metric_tree(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Query(q): Query<TreeQuery>,
 ) -> Result<Json<MetricTree>, MetricTreeError> {
     let source = resolve_scan(&workspace_manager).await?;
@@ -147,7 +149,7 @@ pub async fn get_metric_tree(
 
 /// `GET .../semantic/metric-tree/{measure_id}/sensitivity` — ranked drivers.
 pub async fn get_sensitivity(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path((_workspace_id, measure_id)): Path<(Uuid, String)>,
 ) -> Result<Json<airlayer::engine::metric_tree_ops::SensitivityResult>, MetricTreeError> {
     let source = resolve_scan(&workspace_manager).await?;
@@ -170,7 +172,7 @@ pub struct PredictChange {
 
 /// `POST .../semantic/metric-tree/predict` — propagate hypothetical deltas.
 pub async fn post_predict(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Json(req): Json<PredictRequest>,
 ) -> Result<Json<airlayer::engine::metric_tree_ops::PredictResult>, MetricTreeError> {
     let source = resolve_scan(&workspace_manager).await?;
@@ -251,7 +253,7 @@ const EXPLAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
 /// the agentic path apply the same dim-pruning policy (the runner strips
 /// high-cardinality numeric dims before passing the layer to airlayer).
 pub async fn post_explain(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     preagg_ctx: PreaggCacheCtx,
@@ -392,7 +394,7 @@ fn target_supports_rate_basis(layer: &airlayer::SemanticLayer, target: &str) -> 
 
 /// `POST .../semantic/metric-tree/opportunity` — segment opportunity sizing.
 pub async fn post_opportunity(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     preagg_ctx: PreaggCacheCtx,
@@ -535,7 +537,7 @@ fn opportunity_scope_from_drill(
 /// shared layer (so the drill's mid-recursion synthetic measures compile), and
 /// it calls `opportunity_drill` instead of `opportunity`.
 pub async fn post_opportunity_drill(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     preagg_ctx: PreaggCacheCtx,
@@ -637,7 +639,7 @@ pub struct TimeDimensionsResponse {
 /// dimensions per view. Lets clients (the metric-tree UI in particular)
 /// drop hardcoded curated maps and discover what's actually queryable.
 pub async fn get_time_dimensions(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
 ) -> Result<Json<TimeDimensionsResponse>, MetricTreeError> {
     use airlayer::schema::models::DimensionType;
 
@@ -678,7 +680,7 @@ pub struct DistributionRequest {
 /// window immediately before `period`. Callers only specify the period of
 /// interest; ignore the delta fields when rendering a pure distribution.
 pub async fn post_distribution(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     preagg_ctx: PreaggCacheCtx,

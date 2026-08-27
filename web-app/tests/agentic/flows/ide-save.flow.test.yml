@@ -15,14 +15,20 @@ settings:
 
 setup:
   - reset_test_file
-  - "goto:/ide"
+  # Straight to the file, the way ide-compile-error already does it. `/ide`
+  # redirects to the World Model (App.tsx:442, unconditional in every mode), and
+  # `/ide/files` opens the tree on its Objects view — a curated list of
+  # automations, agents and apps that a gitignored scratch file like `test.sql`
+  # is not in. So neither entry point can reach this file by clicking, and the
+  # step that tried to was buying an LLM search of the whole IDE ($1.09 on the
+  # 2026-08-19 full run) for a navigation the URL states exactly.
+  # dGVzdC5zcWw= is base64("test.sql").
+  - "goto:/ide/files/dGVzdC5zcWw="
 
 cases:
   - name: open test.sql, append a comment, save
     tags: [ide, critical]
     steps:
-      - act: "In the IDE file tree on the left, click 'test.sql' (root). URL changes to /ide/files/<base64>; Monaco loads the file."
-
       # The editor is a child route of /ide (Files/index.tsx renders an
       # <Outlet />), so no Monaco exists until the file route mounts. Without
       # this gate the next step could click and type into a page that has no
@@ -31,7 +37,7 @@ cases:
       # invisible to `assert: save button is not visible` (which passes when
       # the button never appeared at all), so it surfaced only as a confusing
       # judge verdict on the content claim. Same gate `ide-compile-error` uses.
-      - wait_for: "selector:.monaco-editor"
+      - wait_for: "selector:.monaco-editor;timeout_ms=60000"
 
       - act: |
           Append '-- agentic test edit' to the open file:

@@ -3,6 +3,7 @@
 use clap::Parser;
 use oxy::adapters::runs::RunsManager;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
+use oxy::config::WorkingCopy;
 use oxy::config::model::IntegrationType;
 use oxy::config::resolve_local_workspace_path;
 use oxy::service::looker_sync::{LookerSyncService, SyncResult};
@@ -82,7 +83,7 @@ pub async fn handle_looker_sync(args: LookerSyncArgs) -> Result<(), OxyError> {
     let workspace_path = resolve_local_workspace_path()?;
 
     let project = WorkspaceBuilder::new(Uuid::nil())
-        .with_workspace_path(&workspace_path)
+        .with_working_copy(&workspace_path, None, oxy::config::OnMissing::Fail)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
         .build()
@@ -310,7 +311,7 @@ async fn handle_looker_list(args: LookerListArgs) -> Result<(), OxyError> {
     let workspace_path = resolve_local_workspace_path()?;
 
     let project = WorkspaceBuilder::new(Uuid::nil())
-        .with_workspace_path(&workspace_path)
+        .with_working_copy(&workspace_path, None, oxy::config::OnMissing::Fail)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
         .build()
@@ -401,8 +402,8 @@ async fn handle_looker_list(args: LookerListArgs) -> Result<(), OxyError> {
 async fn handle_looker_test(args: LookerTestArgs) -> Result<(), OxyError> {
     let workspace_path = resolve_local_workspace_path()?;
 
-    let project = WorkspaceBuilder::new(Uuid::nil())
-        .with_workspace_path(&workspace_path)
+    let project = WorkspaceBuilder::<WorkingCopy>::new(Uuid::nil())
+        .with_working_copy(&workspace_path, None, oxy::config::OnMissing::Fail)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
         .build()

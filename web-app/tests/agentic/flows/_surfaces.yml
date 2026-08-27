@@ -21,6 +21,7 @@
     - "src/stores/useAppDock.ts"
   flows:
     - chat-ask
+    - chat-ask-fleet
     - chat-panel-agent-switch
     - launcher-home
 
@@ -29,7 +30,9 @@
     - "src/pages/ide/"
   flows:
     - ide-save
+    - ide-create-file
     - ide-compile-error
+    - ide-database-fleet
 
 - surface: builder
   paths:
@@ -76,3 +79,122 @@
     - "src/pages/admin/AdminPublishTokens/"
   flows:
     - admin-custom-apps-tabs
+    - customer-apps-oxy-starter-fleet
+
+- surface: partners-console
+  paths:
+    - "src/pages/partners/"
+    - "src/components/admin/AssumeRoleDialog.tsx"
+    - "src/components/admin/AssumeBanner.tsx"
+    - "src/hooks/api/partners/"
+    - "src/hooks/api/adminAssume/"
+  flows:
+    - partners-console-fleet
+
+- surface: automations
+  paths:
+    - "src/pages/automation/"
+    - "src/components/automation/"
+    - "src/hooks/api/agentic-automations/"
+    - "src/services/api/automations.ts"
+  flows:
+    - automations-run-from-list
+
+- surface: data-apps
+  paths:
+    - "src/pages/app/"
+    - "src/components/AppPreview/"
+    - "src/hooks/api/apps/"
+    - "src/services/api/apps.ts"
+  flows:
+    - apps-data-app-charts
+    - ide-unavailable-fleet
+
+- surface: ide-availability
+  paths:
+    - "src/components/IdeUnavailableBanner/"
+    - "src/components/ui/IdeUnavailablePanel.tsx"
+    - "src/libs/utils/ideHealth.ts"
+    - "src/hooks/useIdeHealth.ts"
+  flows:
+    - ide-unavailable-fleet
+
+- surface: semantic-layer-explorer
+  paths:
+    - "src/pages/ide/SemanticLayer/"
+    - "src/pages/ide/Files/Editor/Topic/"
+    - "src/pages/ide/Files/Editor/View/"
+    - "src/pages/ide/Files/Editor/components/SemanticExplorer/"
+    - "src/pages/ide/Files/Editor/components/SemanticQueryPanel/"
+    - "src/hooks/api/useTopicFiles.ts"
+    - "src/hooks/api/useViewFiles.ts"
+  flows:
+    - semantic-object-detail
+    - semantic-builder-ask
+    - chat-early-run-failure
+
+- surface: analytics-run-lifecycle
+  paths:
+    - "src/hooks/useAnalyticsRun.ts"
+    - "src/pages/thread/analytics/"
+  flows:
+    - chat-early-run-failure
+
+- surface: world-model
+  paths:
+    - "src/pages/ide/WorldModel/"
+    - "src/services/api/worldModel.ts"
+  flows:
+    - ide-world-model-graph
+
+- surface: observability
+  paths:
+    - "src/pages/ide/observability/"
+    - "src/services/api/traces.ts"
+    - "src/services/api/metrics.ts"
+    - "src/services/api/executionAnalytics.ts"
+    - "src/hooks/api/traces/"
+    - "src/hooks/api/metrics/"
+    - "src/hooks/api/useExecutionAnalytics.ts"
+  flows:
+    - observability-traces
+    - observability-clusters
+    - observability-metrics
+    - observability-execution-analytics
+
+- surface: context-graph
+  paths:
+    - "src/pages/context-graph/"
+    - "src/hooks/api/contextGraph/"
+    - "src/services/api/contextGraph.ts"
+    - "src/types/contextGraph.ts"
+  flows:
+    - context-graph-fleet
+
+- surface: admin-airhouse
+  paths:
+    - "src/pages/admin/AdminAirhouse/"
+    - "src/hooks/api/airhouse/useAdminAirhouse.ts"
+    - "src/services/api/airhouseAdmin.ts"
+  flows:
+    - admin-airhouse-fleet
+
+- surface: admin-airway
+  paths:
+    - "src/pages/admin/AdminAirway/"
+    - "src/hooks/api/airwayConfig/"
+    - "src/services/api/airwayConfig.ts"
+  flows:
+    - admin-airway-config
+
+- surface: airway-pipelines
+  paths:
+    - "src/pages/airway/"
+    - "src/components/airway/"
+    - "src/pages/ide/pipelines/"
+    - "src/pages/ide/Files/Editor/Airway/"
+    - "src/hooks/api/airway/"
+    - "src/services/api/airway.ts"
+  flows:
+    - ide-pipeline-quickbooks
+    - airway-pipeline-run

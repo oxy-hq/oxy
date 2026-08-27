@@ -8,7 +8,9 @@ use oxy_shared::errors::OxyError;
 pub async fn start_database_and_server(
     args: StartArgs,
     extra_api_routes: axum::Router<crate::server::router::AppState>,
+    extra_api_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
     extra_workspace_routes: axum::Router<crate::server::router::AppState>,
+    extra_workspace_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
 ) -> Result<(), OxyError> {
     println!(
         "{}",
@@ -171,7 +173,14 @@ pub async fn start_database_and_server(
     // 7. Start the web server (runs on host, not in Docker). Its in-process
     // worker drains the queue; it drains on SIGINT/SIGTERM on its own.
     println!("{}", "🚀 Starting Oxygen server...".text());
-    start_server_and_web_app(args.serve, extra_api_routes, extra_workspace_routes).await
+    start_server_and_web_app(
+        args.serve,
+        extra_api_routes,
+        extra_api_decls,
+        extra_workspace_routes,
+        extra_workspace_decls,
+    )
+    .await
 }
 
 /// A `OXY_*` var that is set to a non-blank value.

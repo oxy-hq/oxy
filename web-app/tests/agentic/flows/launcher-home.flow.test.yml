@@ -26,6 +26,49 @@
 #
 # Backend mode: local (`oxy start --local --enterprise` at demo_project/).
 # Auth is disabled, so there is no login step.
+#
+# CLOUD/FLEET PORTABILITY — `fallback-home` and `rail-chat-and-home` need a
+# workspace with ZERO published custom apps; the fleet's shared workspace
+# fixture (`examples/`, seeded via `oxy seed` as part of
+# docker-compose.fleet.yml's documented bootstrap, scripts/fleet-assert.sh)
+# UNCONDITIONALLY publishes one ("Oxy Starter"). Confirmed by navigating `/`
+# against the fleet as `flow@oxy.local`: an apps grid, not the ask-forward
+# fallback — `demo_project/` (the `--local` fixture) never publishes an app,
+# so this precondition only ever holds there by default. `ask-dock-roundtrip`
+# is unaffected either way — the Ask dock is reachable from the universal top
+# bar regardless of published-app count — and DOES pass against the fleet's
+# shared workspace (verified 2026-08-24).
+#
+# THE FIX IS A SEPARATE FIXTURE WORKSPACE, NOT A FLOW CHANGE. The shared
+# fleet workspace is long-running and other agents assert against it, so
+# unpublishing its seeded app is out of scope. Instead, create a SECOND,
+# dedicated workspace in the same org via the product's own onboarding API —
+# the "New workspace" (blank) option (`POST /orgs/{orgId}/onboarding/new`,
+# what `WorkspaceCreator.tsx`'s "New workspace" card calls) — which does NOT
+# seed any app. Verified live (2026-08-24, org `local` /
+# `00000000-0000-0000-0000-000000000000`): `POST .../onboarding/new` returns
+# a `workspace_id` immediately in `status: ready`, and
+# `GET /<that-id>/custom-apps` returns `[]` where the shared workspace
+# returns the seeded `oxy-starter` entry. This is a workspace-selection
+# concern, not something a `setup:` command in this file can express — the
+# three setup commands (`goto:`, `reset_test_file`, `restore_demo_file:`) act
+# on ONE already-chosen workspace, and which workspace that is comes from
+# `OXY_FIXTURE_WORKSPACE` / `OXY_PATH_PREFIX`, set once for the whole runner
+# invocation (`runner/backend.ts`) — a single flow file cannot address two
+# workspaces in one invocation. Hardcoding a fleet-specific workspace UUID
+# into `goto:` would also break `--local`, which has no workspace-scoped
+# routing at all (`--local` is a single fixed project). So: run
+# `fallback-home` and `rail-chat-and-home` — tagged `fleet-empty-workspace`
+# below — in a SEPARATE invocation pointed at a dedicated empty workspace's
+# `OXY_FIXTURE_WORKSPACE`/`OXY_PATH_PREFIX`; run `ask-dock-roundtrip` (not
+# tagged) against the normal shared workspace as usual. Both were run this
+# way against the fleet and passed — see the per-case tag note below.
+#
+# `chat-panel-agent-switch.flow.test.yml` hit the identical zero-apps
+# precondition and was ported by switching its entry point from the home
+# fallback to the Ask dock; that adaptation does not fit here because this
+# flow's OWN subject is the fallback rendering itself, not just "a composer
+# with no agent picker".
 
 name: launcher home surfaces
 target: chat
@@ -38,11 +81,36 @@ settings:
   max_steps: 20
 
 setup:
-  - "goto:/"
+  # `/home` on purpose, NOT bare `/` — `applyPathPrefix` (runner/backend.ts)
+  # special-cases `target === "/"` to pass it through UNPREFIXED (so `goto:/`
+  # always lands on the POST-LOGIN DISPATCHER's org-default workspace,
+  # ignoring OXY_FIXTURE_WORKSPACE/OXY_PATH_PREFIX entirely, however many
+  # workspaces the org has). `/home` is a registered sibling route to the
+  # workspace root (`<Route path='home' element={<LauncherPage />} />`,
+  # web-app/src/App.tsx) rendering the identical page, but — not being the
+  # literal string "/" — it DOES get prefixed, so it actually resolves inside
+  # the workspace OXY_PATH_PREFIX names. Found live (2026-08-24): pointing
+  # OXY_FIXTURE_WORKSPACE/OXY_PATH_PREFIX at a second, empty workspace in the
+  # same org and running with `goto:/` still landed on the ORIGINAL shared
+  # workspace (the dispatcher's `pickWorkspace` tie-breaks equal
+  # `last_opened_at` by array order, which put the pre-existing shared
+  # workspace first) — `fallback-home` timed out waiting for the ask-forward
+  # greeting because the apps grid rendered instead. Switching to `goto:/home`
+  # fixed it with no other change. No-op for `--local` (prefix unset) and for
+  # any invocation pointed at a single-workspace org — `/home` renders the
+  # same page `/` does either way.
+  - "goto:/home"
 
 cases:
   - name: fallback-home shows greeting, chat composer, rail, and top bar
-    tags: [launcher, chat, critical]
+    tags: [launcher, chat, critical, fleet-empty-workspace]
+    # See the file header's "CLOUD/FLEET PORTABILITY" note — this case's
+    # precondition (zero published apps) does not hold on the shared fleet
+    # workspace. Against a fleet, point OXY_FIXTURE_WORKSPACE /
+    # OXY_PATH_PREFIX at a dedicated empty workspace and run with
+    # `--tag fleet-empty-workspace` to select just this case and
+    # rail-chat-and-home below (NOT ask-dock-roundtrip, which needs the
+    # shared workspace's actual data and has no zero-apps precondition).
     steps:
       # The fallback greeting is time-of-day-aware ("Good Morning/Afternoon/
       # Evening"); the selector covers the outer paragraph regardless.
@@ -110,7 +178,12 @@ cases:
           visible and the run is not suspended awaiting a clarifying question.
 
   - name: rail-chat-and-home navigates the Chat page and back via the rail
-    tags: [launcher, regression]
+    tags: [launcher, regression, fleet-empty-workspace]
+    # Same fleet-precondition gap as fallback-home above (see the file
+    # header) — the trailing wait_for re-checks the ask-forward fallback
+    # greeting after returning to HQ, which needs a zero-apps workspace.
+    # Run with `--tag fleet-empty-workspace` against a dedicated empty
+    # workspace on a fleet; passes unmodified under `--local`.
     steps:
       - wait_for: "selector:[data-testid=rail-chat]"
 

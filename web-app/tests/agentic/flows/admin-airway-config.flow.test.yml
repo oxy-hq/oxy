@@ -1,0 +1,92 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Verify the admin Airway configuration page (`/admin/airway`) mounts and
+# both its tiers resolve: the per-source-kind admission-policy cards and the
+# deployment-wide operational config (web-app/src/pages/admin/AdminAirway/
+# index.tsx). Global-Owner-only surface (see AdminSidebar's `ownerOnly` gate
+# and `App.tsx`'s comment on this route). Nothing under /admin covers Airway
+# today.
+#
+# Backend: `--enterprise` (cloud) with OXY_OWNER set — same requirement as
+# admin-workspace-health / admin-tenants-cockpit / admin-airhouse-fleet.
+# Do NOT use `--local`.
+#
+# WHY THIS GOES THROUGH /dev-login INSTEAD OF A BARE `goto:/admin/airway` —
+# see admin-airhouse-fleet.flow.test.yml's header for the full writeup and
+# evidence. Short version: `AdminLayout`'s owner/app-admin gate reads
+# `GET /api/user`, which (crates/app/src/server/api/user.rs:174-203)
+# re-authenticates from raw headers instead of honoring the identity
+# `internal_auth_middleware` injects for every other route on the
+# auth-disabled internal port — so a cookie-less session there gets bounced
+# to `/` before any admin content renders, reproduced identically against
+# the pre-existing `admin-workspace-health` flow. dev-login sidesteps it with
+# a real session cookie; this flow must run against the PUBLIC port.
+#
+# Unlike the fleet pages, the source-kind list here is NOT seed-dependent:
+# it enumerates the fixed set of connector kinds wired in
+# `agentic_airway::source_factory` (toast, quickbooks, weather, rest_api,
+# netsuite), each decorated with whatever admission-policy override rows
+# exist (possibly none). Verified directly against a freshly-migrated,
+# zero-seed database (`GET /api/admin/airway/config` before any `oxy seed`
+# ran) that all five kinds are present with `global: null, overrides: []` —
+# so, unlike the fleet pages, this flow can assert on the specific kind
+# cards rather than falling back to an "empty state" tolerance.
+#
+# Read-only: tightening a kind's contract policy "can silently halt every
+# pipeline whose resources don't satisfy it" (index.tsx's own doc comment),
+# so this flow only navigates and reads — it does not touch the Preview,
+# Save, or Clear controls on any card.
+
+name: admin Airway configuration page
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: cloud
+  # No act steps — waits and expectations only, like apps-data-app-charts.
+  max_steps: 10
+
+setup:
+  - "goto:/dev-login?email=e2e@oxy.tech&next=/admin/airway"
+
+cases:
+  - name: source-kind policy cards and deployment config both resolve
+    tags: [admin, airway, regression]
+    steps:
+      # data-testid='admin-airway-source-kind-list'
+      #   — web-app/src/pages/admin/AdminAirway/index.tsx:64
+      - wait_for: "selector:[data-testid=admin-airway-source-kind-list];timeout_ms=30000"
+
+      # data-testid='admin-airway-card-weather' — one of the fixed kinds
+      #   — web-app/src/pages/admin/AdminAirway/SourceKindCard/index.tsx:125
+      - wait_for: "selector:[data-testid=admin-airway-card-weather]"
+
+      # The Deployment section (airway's operational tier) is its own query,
+      # independent of the source-kind cards above — wait for its heading
+      # separately so a failure in one tier doesn't mask the other.
+      - wait_for: "selector:text=Deployment;timeout_ms=30000"
+
+    expect:
+      - assert: "selector [data-testid=admin-airway-source-kind-list] is visible"
+      - assert: "selector [data-testid=admin-airway-card-weather] is visible"
+      - assert: "selector [data-testid=admin-airway-card-toast] is visible"
+      - assert: "selector [data-testid=admin-airway-card-quickbooks] is visible"
+      - assert: "selector [data-testid=admin-airway-error] is not visible"
+      - assert: "selector [data-testid=admin-airway-empty] is not visible"
+
+      - judge: |
+          The page is at /admin/airway and shows the "Airway configuration"
+          heading and intro text, followed by a stack of source-kind cards —
+          at minimum "weather", "toast", and "quickbooks" — each naming its
+          admission contract policy, and a separate "Deployment" section
+          below the cards for airway's deployment-wide operational settings.
+
+          Fail if ANY of the following is true:
+          (a) an error banner reading "Failed to load airway admission
+              config" is visible;
+          (b) the page shows "No known source kinds." instead of real cards;
+          (c) the page is a blank white screen or a loading skeleton that
+              never resolved;
+          (d) any visible text contains a raw filesystem path or "os error".

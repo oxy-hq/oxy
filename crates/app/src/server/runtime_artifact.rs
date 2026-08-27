@@ -79,6 +79,27 @@ pub async fn fetch(key: &str) -> Option<Vec<u8>> {
     }
 }
 
+/// Remove the mirrored copy, so a delete on one node is a delete everywhere.
+///
+/// Best-effort and idempotent: `false` means no bucket is configured (a single
+/// node has nothing to mirror) or the removal failed, and neither is worth
+/// failing the caller's delete over — the local file is already gone. It is
+/// worth a WARN, though: a mirror that outlives its local file is served to
+/// every replica by [`fetch`], which is the shape where a user is told an
+/// artifact was deleted and it keeps loading.
+pub async fn remove(key: &str) -> bool {
+    match oxy_compile::blob_store::delete_object(key).await {
+        Ok(deleted) => deleted,
+        Err(e) => {
+            tracing::warn!(
+                error = %e, key,
+                "runtime artifact S3 removal failed; the mirrored copy will still be served"
+            );
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

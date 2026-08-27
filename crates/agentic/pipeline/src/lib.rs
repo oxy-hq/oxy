@@ -49,7 +49,7 @@ pub use agentic_analytics::extension::AnalyticsMigrator;
 pub use agentic_analytics::{AnalyticsMetricSink, SharedMetricSink};
 pub use agentic_automation::{
     AutomationMigrator, SOURCE_TYPE as WORKFLOW_SOURCE_TYPE,
-    WorkspaceContext as WorkflowWorkspaceContext,
+    WorkspaceContext as WorkflowWorkspaceContext, WorkspaceReadError,
 };
 pub use agentic_builder::BuilderAppRunner as BuilderAppRunnerTrait;
 pub use agentic_builder::BuilderTestRunner as BuilderTestRunnerTrait;

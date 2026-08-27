@@ -186,43 +186,10 @@ impl ProjectContext for OxyProjectContext {
             .rsplit('/')
             .next()
             .unwrap_or(agent_id);
-        match crate::server::api::compiled_reader::resolve_analytics_agent(
-            self.workspace_manager.workspace_id,
-            None,
-            name,
-        )
-        .await
-        {
-            Ok(Some(artifact)) => match serde_yaml::to_string(&artifact.definition) {
-                Ok(yaml) => {
-                    tracing::debug!(
-                        workspace_id = %self.workspace_manager.workspace_id,
-                        agent_id,
-                        "resolve_agent_yaml served from compile boundary"
-                    );
-                    Some(yaml)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        workspace_id = %self.workspace_manager.workspace_id,
-                        agent_id,
-                        error = ?e,
-                        "compile boundary agent YAML re-serialise failed; falling through to FS"
-                    );
-                    None
-                }
-            },
-            Ok(None) => None,
-            Err(e) => {
-                tracing::warn!(
-                    workspace_id = %self.workspace_manager.workspace_id,
-                    agent_id,
-                    error = ?e,
-                    "compile boundary agent lookup error; falling through to FS"
-                );
-                None
-            }
-        }
+        self.compiled_agent(name)
+            .await
+            .unwrap_or(None)
+            .and_then(|definition| serde_yaml::to_string(&definition).ok())
     }
 
     async fn resolve_secret(&self, var_name: &str) -> Option<String> {

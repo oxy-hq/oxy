@@ -80,7 +80,13 @@ struct RecentUsageRow {
     source_ref: String,
     context_types: String,
     trace_id: String,
-    created_at: String,
+    // Deliberately NOT named `created_at`: ClickHouse resolves a bare `WHERE
+    // created_at …`/`ORDER BY created_at` reference against a SELECT-list
+    // alias of the same name in preference to the source column, even though
+    // the alias's expression (`formatDateTime(...)`, a String) shares no type
+    // with the DateTime the WHERE clause compares it against —
+    // `NO_COMMON_TYPE` (ClickHouse error code 386). See `recent_usage_sql`.
+    created_at_iso: String,
     context: String,
 }
 
@@ -333,6 +339,32 @@ pub(super) async fn get_metrics_list(
     })
 }
 
+/// Builds the "Recent Usage" query for [`get_metric_detail`]. Pulled out of
+/// the `async fn` so a unit test can assert on its shape without a live
+/// ClickHouse (see `recent_usage_sql_alias_does_not_shadow_the_where_column`).
+///
+/// The output alias must NOT be named `created_at` — see the doc comment on
+/// `RecentUsageRow::created_at_iso`. `WHERE`/`ORDER BY` stay on the bare,
+/// unaliased `created_at`, which now unambiguously means the real DateTime
+/// column. `escaped_metric_name` must already be [`escape_sql_literal`]-ed.
+fn recent_usage_sql(escaped_metric_name: &str, days: u32) -> String {
+    let ca = super::iso_utc("created_at");
+    format!(
+        "SELECT
+            source_type,
+            source_ref,
+            context_types,
+            trace_id,
+            {ca} AS created_at_iso,
+            context
+        FROM observability_metric_usage
+        WHERE metric_name = '{escaped_metric_name}'
+          AND created_at >= now() - INTERVAL {days} DAY
+        ORDER BY created_at DESC
+        LIMIT 20"
+    )
+}
+
 pub(super) async fn get_metric_detail(
     storage: &ClickHouseObservabilityStorage,
     metric_name: &str,
@@ -465,34 +497,20 @@ pub(super) async fn get_metric_detail(
         })
         .collect();
 
-    let ca = super::iso_utc("created_at");
-    let recent_sql = format!(
-        "SELECT
-            source_type,
-            source_ref,
-            context_types,
-            trace_id,
-            {ca} AS created_at,
-            context
-        FROM observability_metric_usage
-        WHERE metric_name = '{escaped}'
-          AND created_at >= now() - INTERVAL {days} DAY
-        ORDER BY created_at DESC
-        LIMIT 20"
-    );
+    let recent_sql = recent_usage_sql(&escaped, days);
     let recent_usage = storage
         .read_client()
         .query(&recent_sql)
         .fetch_all::<RecentUsageRow>()
         .await
-        .unwrap_or_default()
+        .map_err(|e| OxyError::RuntimeError(format!("Recent usage query failed: {e}")))?
         .into_iter()
         .map(|r| RecentUsageData {
             source_type: r.source_type,
             source_ref: r.source_ref,
             context_types: r.context_types,
             trace_id: r.trace_id,
-            created_at: r.created_at,
+            created_at: r.created_at_iso,
             context: r.context,
         })
         .collect();
@@ -507,4 +525,32 @@ pub(super) async fn get_metric_detail(
         related_metrics,
         recent_usage,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::recent_usage_sql;
+
+    /// Regression for "Recent Usage" swallowing a `NO_COMMON_TYPE` (ClickHouse
+    /// error code 386) through `.unwrap_or_default()` with no error path: the
+    /// query filters `WHERE created_at >= now() - INTERVAL n DAY` on the bare
+    /// column, so a SELECT-list alias of the same name gets resolved by
+    /// ClickHouse's analyzer in place of the column even inside WHERE —
+    /// comparing the alias's `formatDateTime(...)` String against a DateTime.
+    /// Reverting `recent_usage_sql` to alias the formatted column back to
+    /// `created_at` reproduces the collision this asserts against.
+    #[test]
+    fn recent_usage_sql_alias_does_not_shadow_the_where_column() {
+        let sql = recent_usage_sql("oxymart.total_sales", 7);
+        assert!(
+            sql.contains("AS created_at_iso"),
+            "expected the formatted column aliased to a name distinct from \
+             the raw `created_at` column:\n{sql}"
+        );
+        assert!(
+            !sql.contains("AS created_at,") && !sql.contains("AS created_at\n"),
+            "the SELECT list re-introduced `created_at` as an alias, which \
+             shadows the bare `created_at` filtered in WHERE:\n{sql}"
+        );
+    }
 }

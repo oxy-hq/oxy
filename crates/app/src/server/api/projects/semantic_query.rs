@@ -180,18 +180,21 @@ pub async fn run_semantic_query(
     // When the compile boundary is enabled, materialise the semantic_views /
     // semantic_topics rows into a tempdir and scan that instead of the
     // workspace dir; the tempdir handle is dropped at end of request.
-    let materialised =
-        match crate::server::api::semantic_scan::materialise_semantic_scan(project_id).await {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::warn!(
-                    project_id = %project_id,
-                    error = ?e,
-                    "semantic scan: materialise failed; falling through to FS"
-                );
-                None
-            }
-        };
+    let materialised = match crate::server::api::semantic_scan::scan_dir(
+        &proj_ctx.workspace_manager().config_manager,
+    )
+    .await
+    {
+        Ok(scan) => Some(scan),
+        Err(e) => {
+            tracing::warn!(
+                project_id = %project_id,
+                error = %e,
+                "semantic scan: no scan directory available"
+            );
+            None
+        }
+    };
     // Stateless-fleet guard: on a serve replica there is no working copy, so
     // the FS fallback below (`semantics_scan_path()`) points at a directory
     // that doesn't exist — airlayer would compile against an empty dir and
@@ -204,10 +207,9 @@ pub async fn run_semantic_query(
     // own enqueue wouldn't have fired. (`materialise_semantic_scan` downgrades
     // real DB errors to `None`, so this also covers the transient-DB case — a
     // 503 retry is the right behavior there too.)
-    if materialised.is_none()
-        && crate::server::role_manifest::current_process_role()
-            == crate::server::role_manifest::Role::Serve
-    {
+    // The predicate is the manager's, not `role == Serve`: a Worker is equally
+    // diskless and fell straight through to a scan path that is not there.
+    if materialised.is_none() && !proj_ctx.workspace_manager().config_manager.can_read_disk() {
         if let Ok(db) = oxy::database::client::establish_connection().await {
             crate::server::api::middlewares::workspace_context::enqueue_lazy_compile(
                 &db, project_id,
@@ -228,7 +230,7 @@ pub async fn run_semantic_query(
         return response;
     }
     let scan_path = match materialised.as_ref() {
-        Some(m) => m.scan_path.clone(),
+        Some(m) => m.path().to_path_buf(),
         None => proj_ctx
             .workspace_manager()
             .config_manager

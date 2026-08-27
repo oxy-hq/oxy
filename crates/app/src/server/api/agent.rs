@@ -5,7 +5,7 @@
 //! panel's agent selector — and the built-in builder readiness check remain
 //! here, both serving the agentic-only world.
 
-use crate::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 use axum::{extract, http::StatusCode};
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +23,7 @@ pub struct BuilderAvailabilityResponse {
 }
 
 pub async fn check_builder_availability(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
 ) -> Result<extract::Json<BuilderAvailabilityResponse>, StatusCode> {
     use oxy::config::model::BuilderAgentConfig;
 
@@ -43,26 +43,6 @@ pub async fn check_builder_availability(
             model: None,
         })),
     }
-}
-
-/// Minimal subset of the agentic.yml schema — we only need `llm.ref` to
-/// populate `AgentConfigResponse.model` and `timezone` for the workspace
-/// clock. Avoids importing the full `agentic_analytics::AgentConfig` (which
-/// pulls solver build types) into this listing endpoint.
-#[derive(Deserialize)]
-struct AgenticAgentSnippet {
-    #[serde(default)]
-    llm: Option<AgenticAgentLlmSnippet>,
-    /// IANA timezone (e.g. `America/Los_Angeles`) the agent resolves
-    /// relative dates in; surfaced so the UI clock can show local time.
-    #[serde(default)]
-    timezone: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct AgenticAgentLlmSnippet {
-    #[serde(default)]
-    r#ref: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -97,9 +77,9 @@ impl AgentConfigResponse {
 
 #[derive(serde::Deserialize, Default)]
 pub struct GetAgentsQuery {
-    /// Active branch in the IDE. When set and not equal to the
-    /// workspace's default branch, the compile-boundary path is
-    /// bypassed (FS walk) so the user sees their working-copy edits.
+    /// Active branch in the IDE. Consumed by `workspace_middleware`, which
+    /// applies the branch gate once and records the outcome as the manager's
+    /// `Origin`. Declared here so it stays part of the documented contract.
     #[serde(default)]
     pub branch: Option<String>,
 }
@@ -119,103 +99,45 @@ pub struct GetAgentsQuery {
     )
 )]
 pub async fn get_agents(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    extract::Query(query): extract::Query<GetAgentsQuery>,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
+    extract::Query(_query): extract::Query<GetAgentsQuery>,
 ) -> Result<extract::Json<Vec<AgentConfigResponse>>, StatusCode> {
     // Hybrid path: when the workspace has been promoted on its default
     // branch, serve the listing from `agent_definitions`. `llm.ref` is
     // pulled from the JSONB to keep the same response shape without
-    // re-parsing every `.agentic.yml`. `compiled_reader` handles the
-    // branch carve-out internally; on any error we fall through to FS.
-    match crate::server::api::compiled_reader::list_analytics_agents(
-        workspace_manager.workspace_id,
-        query.branch.as_deref(),
-    )
-    .await
-    {
-        Ok(Some(rows)) => {
-            tracing::debug!(
-                workspace_id = %workspace_manager.workspace_id,
-                row_count = rows.len(),
-                "get_agents served from compile boundary"
-            );
-            let items: Vec<AgentConfigResponse> = rows
-                .into_iter()
-                .map(|r| {
-                    let mut resp = AgentConfigResponse::new(r.name, r.file_path, true);
-                    resp.model = r.model_ref;
-                    resp.timezone = r.timezone;
-                    resp
-                })
-                .collect();
-            return Ok(extract::Json(items));
-        }
-        Ok(None) => {
-            // Branch is non-default, workspace not promoted, kill
-            // switch on, or DB hiccup. Fall through to FS.
-        }
-        Err(e) => {
-            tracing::warn!(
-                workspace_id = %workspace_manager.workspace_id,
-                error = ?e,
-                "get_agents compile-boundary error; falling through to FS"
-            );
-        }
-    }
-
-    let config_manager = &workspace_manager.config_manager;
-    let workspace_path = config_manager.workspace_path();
-
-    let analytics_paths = config_manager.list_analytics_agents().await.map_err(|e| {
-        tracing::error!("Failed to list analytics agents: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let agent_relative_paths: Vec<String> = analytics_paths
-        .iter()
-        .filter_map(|agent| {
-            agent
-                .strip_prefix(workspace_path)
-                .ok()
-                .map(|path| path.to_string_lossy().to_string())
-        })
-        .collect();
-
-    let agent_futures = agent_relative_paths
-        .into_iter()
-        .map(|path| async move {
-            // `.agentic.yml` or `.agentic.yaml` — parse the file directly for
-            // `llm.ref` to avoid pulling the analytics crate's solver-build
-            // dependencies into the listing path.
-            let agent_id = std::path::Path::new(&path)
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or(&path)
-                .trim_end_matches(".agentic.yaml")
-                .trim_end_matches(".agentic.yml")
-                .to_string();
-            let abs_path = workspace_path.join(&path);
-            // Parse the snippet once and pull both `llm.ref` and `timezone`
-            // from it (avoids re-reading the file for each field).
-            let snippet = tokio::fs::read_to_string(&abs_path)
-                .await
-                .ok()
-                .and_then(|content| serde_yaml::from_str::<AgenticAgentSnippet>(&content).ok());
-            let mut resp = AgentConfigResponse::new(agent_id, path, true);
-            if let Some(snippet) = snippet {
-                resp.model = snippet.llm.and_then(|l| l.r#ref);
-                resp.timezone = snippet.timezone;
-            }
-            Ok::<AgentConfigResponse, anyhow::Error>(resp)
-        })
-        .collect::<Vec<_>>();
-
-    let agents: Vec<AgentConfigResponse> = futures::future::try_join_all(agent_futures)
+    // re-parsing every `.agentic.yml`.
+    //
+    // The revision comes off the manager rather than being re-derived from
+    // `query.branch`: the middleware already applied the branch gate and the
+    // last-known-good walk to produce it, so this reads the revision the rest of
+    // the request is pinned to. `None` means the middleware chose the working
+    // copy, which is the same fall-through as an empty listing.
+    let agents = workspace_manager
+        .config_manager
+        .list_analytics_agents()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to resolve agent configs: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            tracing::warn!(
+                workspace_id = %workspace_manager.workspace_id,
+                error = %e,
+                "get_agents failed"
+            );
+            if e.retryable() {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         })?;
 
-    Ok(extract::Json(agents))
+    Ok(extract::Json(
+        agents
+            .into_iter()
+            .map(|entry| {
+                let mut resp = AgentConfigResponse::new(entry.name, entry.file_path, true);
+                resp.model = entry.model_ref;
+                resp.timezone = entry.timezone;
+                resp
+            })
+            .collect(),
+    ))
 }

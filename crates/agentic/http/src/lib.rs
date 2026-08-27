@@ -57,7 +57,42 @@ use axum::{
     Router,
     routing::{get, patch, post},
 };
+use oxy_shared::fleet_role::{RouteRole, RouteRoleDecl};
 use std::sync::Arc;
+
+/// What each analytics route needs from the pod serving it.
+///
+/// Declared HERE, beside the routes, because this crate owns them. `oxy-app`
+/// previously covered the whole sub-router with one `IdeOnly` wildcard and then
+/// carved the Postgres-only reads back out by path from the outside — two lists
+/// describing one thing, in two crates, free to drift.
+///
+/// Paths are relative to the mount point; the mounting crate prepends its prefix.
+pub fn router_roles() -> &'static [RouteRoleDecl] {
+    use RouteRole::{FleetOk, IdeOnly};
+    &[
+        // Run history is a `state.db` read. Viewing a past conversation must
+        // never need the ide — that is the difference between a slow ide and an
+        // unreadable product.
+        RouteRoleDecl {
+            method: "GET",
+            path: "/threads/{thread_id}/run",
+            role: FleetOk,
+        },
+        RouteRoleDecl {
+            method: "GET",
+            path: "/threads/{thread_id}/runs",
+            role: FleetOk,
+        },
+        // Everything else executes a run in-process against the local connector,
+        // or streams one that is executing.
+        RouteRoleDecl {
+            method: "*",
+            path: "/{*rest}",
+            role: IdeOnly,
+        },
+    ]
+}
 
 /// Build the analytics sub-router.  Mount with `.nest("/analytics", router::<YourState>(state))`.
 pub fn router<S>(state: Arc<AgenticState>) -> Router<S>
@@ -102,6 +137,41 @@ where
         .layer(axum::Extension(state))
 }
 
+/// What each automation route needs. See [`router_roles`].
+///
+/// Mounted TWICE by `oxy-app` — at `/agentic-workflows` and at
+/// `/agentic-automations` — and declared once here, which is the point: a
+/// second mount cannot acquire a different, drifting classification.
+pub fn automation_router_roles() -> &'static [RouteRoleDecl] {
+    use RouteRole::{FleetOk, IdeOnly};
+    &[
+        // Postgres run history. Listing and opening a past run must survive the
+        // ide being down.
+        RouteRoleDecl {
+            method: "GET",
+            path: "/runs",
+            role: FleetOk,
+        },
+        RouteRoleDecl {
+            method: "GET",
+            path: "/runs/{id}",
+            role: FleetOk,
+        },
+        RouteRoleDecl {
+            method: "GET",
+            path: "/threads/{thread_id}/run",
+            role: FleetOk,
+        },
+        // Starting a run, cancelling one, streaming a live one, and reading
+        // automation FILES all need the node driving the run.
+        RouteRoleDecl {
+            method: "*",
+            path: "/{*rest}",
+            role: IdeOnly,
+        },
+    ]
+}
+
 /// Build the automation sub-router. Mount with `.nest("/agentic-workflows", automation_router(state))`.
 ///
 /// Reuses the same [`AgenticState`] as the analytics router so cancellation
@@ -129,6 +199,37 @@ where
         .route("/files", get(routes::list_automation_files))
         .route("/files/{path_b64}", get(routes::get_automation_file))
         .layer(axum::Extension(state))
+}
+
+/// What each airway route needs. See [`router_roles`].
+pub fn airway_router_roles() -> &'static [RouteRoleDecl] {
+    use RouteRole::{FleetOk, IdeOnly};
+    &[
+        // Postgres reads: run list, coverage, and the backfill ranges the UI
+        // draws. None of them touches the pipeline definition on disk.
+        RouteRoleDecl {
+            method: "GET",
+            path: "/runs",
+            role: FleetOk,
+        },
+        RouteRoleDecl {
+            method: "GET",
+            path: "/coverage",
+            role: FleetOk,
+        },
+        RouteRoleDecl {
+            method: "GET",
+            path: "/backfill-ranges",
+            role: FleetOk,
+        },
+        // Everything else starts, resumes or resets a pipeline, or reads its
+        // `.airway.yml` — all of which run where the working copy is.
+        RouteRoleDecl {
+            method: "*",
+            path: "/{*rest}",
+            role: IdeOnly,
+        },
+    ]
 }
 
 /// Build the airway sub-router. Mount with

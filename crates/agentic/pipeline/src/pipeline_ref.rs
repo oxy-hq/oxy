@@ -126,8 +126,11 @@ pub async fn load_pipeline_yaml(
         }
     }
 
-    let root = workspace.workspace_path();
-    if !root.is_dir() {
+    // `workspace_path()` is an `Option`: `None` is a node that declares no
+    // working copy, `Some(p)` with `!p.is_dir()` is one that declares one and
+    // does not have it. Both mean the same thing here.
+    let root = workspace.workspace_path().filter(|p| p.is_dir());
+    let Some(root) = root else {
         // Deliberately checked before `resolve_pipeline_ref`, which folds this
         // into the same `Err(String)` as "not found" and so cannot be told
         // apart downstream.
@@ -138,7 +141,7 @@ pub async fn load_pipeline_yaml(
             "pipeline_ref `{pipeline_ref}` could not be resolved on this node (nothing served from \
              the compile boundary, no working copy here)"
         )));
-    }
+    };
 
     let path = resolve_pipeline_ref(root, trimmed).map_err(PipelineRefError::Invalid)?;
     tokio::fs::read_to_string(&path)
@@ -191,8 +194,8 @@ mod tests {
 
     #[async_trait::async_trait]
     impl agentic_automation::WorkspaceContext for FakeHost {
-        fn workspace_path(&self) -> &Path {
-            &self.root
+        fn workspace_path(&self) -> Option<&Path> {
+            Some(&self.root)
         }
         fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
             vec![]
@@ -212,7 +215,10 @@ mod tests {
         async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String> {
             Ok(vec![])
         }
-        async fn resolve_automation_yaml(&self, _r: &str) -> Result<String, String> {
+        async fn resolve_automation_yaml(
+            &self,
+            _r: &str,
+        ) -> Result<String, crate::WorkspaceReadError> {
             Err("unused".into())
         }
         async fn resolve_pipeline_yaml(

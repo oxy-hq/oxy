@@ -1,4 +1,4 @@
-//! `oxy-compile` — Phase 1.6a foundation of the compile boundary.
+//! `oxy-compile` — the write half of the compile boundary.
 //!
 //! Walks a workspace, parses every recognised YAML/SQL file, and
 //! writes the result into the compile-boundary Postgres schema
@@ -8,15 +8,25 @@
 //! all tagged with the new `revision_id`.
 //!
 //! See `internal-docs/compile-boundary.md` for the operator runbook.
-//! Phase 1.6a is deliberately observation-mode:
 //!
-//!   - Compiles run.
-//!   - Rows get written.
-//!   - `workspaces.current_revision_id` is NOT updated.
-//!   - Runtime keeps reading YAML from disk.
+//! **This is live, not observation-mode.** Promotion updates
+//! `workspaces.current_revision_id`, and the runtime serves from these
+//! rows: `ConfigManager` reads them whenever its `Origin` is
+//! `Compiled`, falling through to the working copy only when there is
+//! no revision to read. An earlier version of this header described
+//! the staged rollout — compiles running while the runtime still read
+//! YAML from disk — which stopped being true when the read paths
+//! landed.
 //!
-//! That gives us production telemetry on what compiles cost and what
-//! the rows look like before any read path depends on them.
+//! Reading is NOT here. Per-revision queries live in
+//! `crates/core/src/config/compiled.rs`, and choosing *which* revision
+//! a request reads lives in `oxy-app` (it needs the process role and a
+//! `git` call for the default branch). What this crate owns on the
+//! read side is the meaning of a row — see
+//! [`entity::workspace_compiled_configs::merge_compiled_config`], which
+//! is re-exported here and used by both the compile-time gate and the
+//! runtime reader so the shape one validated and the other serves
+//! cannot drift.
 //!
 //! Public surface:
 //!
@@ -51,9 +61,12 @@ pub mod workspace_path;
 pub mod writer;
 
 pub use compile::{
-    CURRENT_SCHEMA_VERSION, CompileRequest, CompiledConfig, ConfigGate, RevisionKind,
-    build_compiled_config, compile_workspace, merge_compiled_config,
+    CURRENT_SCHEMA_VERSION, CompileRequest, ConfigGate, RevisionKind, build_compiled_config,
+    compile_workspace,
 };
+// The shape and its merge live next to the columns, in `entity`. Re-exported so
+// existing `oxy_compile::` call sites keep compiling.
+pub use entity::workspace_compiled_configs::{CompiledConfig, merge_compiled_config};
 pub use errors::CompileError;
 pub use outcome::{CompileOutcome, FailureKind, FileFailure, RevisionStatus};
 pub use workspace_path::resolve_workspace_path;

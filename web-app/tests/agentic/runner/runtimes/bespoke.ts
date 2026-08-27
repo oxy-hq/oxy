@@ -118,6 +118,45 @@ async function runWithBrowser(browser: Browser, ctx: RuntimeContext): Promise<Ca
   // cloud-mode flows use 3001 for the auth-disabled internal port).
   const baseURL = process.env.OXY_BASE_URL ?? "http://localhost:3000";
   const context = await browser.newContext({ baseURL });
+
+  // A session for the PUBLIC port. The auth-disabled internal port (3001) is
+  // the easy target, but it carries neither `enforce_role` nor the ide proxy —
+  // so an IdeOnly route is served locally there instead of forwarded, and a
+  // replica answers it off a working copy it does not have. Driving the public
+  // port is the only way a browser test sees the routing a user sees, and that
+  // port needs a real session.
+  //
+  // `MAGIC_LINK_LOCAL_TEST=1` makes the backend write the sign-in email to a
+  // file instead of sending it, so the harness can mint one without a mailbox;
+  // the caller passes the resulting cookie in here.
+  //
+  // BOTH halves are required. The backend reads the `oxy_session` cookie, but
+  // `AuthContext` decides whether the app is signed in by reading
+  // `localStorage.auth_token` — set the cookie alone and every route still
+  // redirects to /login, with the API perfectly willing to answer.
+  const sessionToken = process.env.OXY_SESSION_TOKEN;
+  const sessionUser = process.env.OXY_SESSION_USER;
+  if (sessionToken) {
+    const { hostname } = new URL(baseURL);
+    await context.addCookies([
+      {
+        name: "oxy_session",
+        value: sessionToken,
+        domain: hostname,
+        path: "/",
+        httpOnly: true,
+        sameSite: "Lax"
+      }
+    ]);
+    await context.addInitScript(
+      ([token, user]: [string, string]) => {
+        localStorage.setItem("auth_token", token);
+        if (user) localStorage.setItem("user", user);
+      },
+      [sessionToken, sessionUser ?? ""] as [string, string]
+    );
+  }
+
   const page = await context.newPage();
 
   const tools = getGenericTools();

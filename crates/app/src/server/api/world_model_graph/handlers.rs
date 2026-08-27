@@ -20,7 +20,7 @@ use crate::server::api::data::{
 };
 use crate::server::api::middlewares::workspace_context::{
     EffectiveWorkspaceRole, SemanticEngineCacheCtx, SemanticLayerCacheCtx,
-    WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy,
 };
 use crate::server::api::semantic::{ErrorResponse, WorkspacePath};
 use entity::workspace_members::WorkspaceRole;
@@ -29,6 +29,7 @@ use oxy::utils::create_sse_stream;
 
 use super::query::*;
 use super::types::*;
+use oxy::config::WorkingCopy;
 
 /// `GET /{workspace_id}/semantic/world-model`
 ///
@@ -36,7 +37,7 @@ use super::types::*;
 /// semantic layer, its own and induced measures (with operator and
 /// additivity metadata), and the promotion edges between entities.
 pub async fn get_world_model(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     layer_cache: SemanticLayerCacheCtx,
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
 ) -> Result<extract::Json<WorldModelResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
@@ -51,8 +52,7 @@ pub async fn get_world_model(
         )
     })?;
 
-    let workspace_path = workspace_manager.config_manager.workspace_path();
-    build_world_model_response(&layer, layer_cache.workspace_id, workspace_path)
+    build_world_model_response(&layer, &workspace_manager.config_manager)
         .await
         .map(extract::Json)
         .map_err(|message| {
@@ -207,10 +207,9 @@ fn build_entity_node(
 /// ([`crate::server::api::projects::world_model`]) — they differ only in how
 /// the layer and workspace path are obtained (FS scan-path cache vs. the
 /// compile-boundary materialised tempdir).
-pub(crate) async fn build_world_model_response(
+pub(crate) async fn build_world_model_response<S: oxy::config::DiskSlot>(
     layer: &airlayer::SemanticLayer,
-    workspace_id: uuid::Uuid,
-    workspace_path: &std::path::Path,
+    config_manager: &oxy::config::ConfigManager<S>,
 ) -> Result<WorldModelResponse, String> {
     let promotions = Promotions::build(&layer.views)
         .map_err(|e| format!("Failed to build promotion closure: {e}"))?;
@@ -229,11 +228,8 @@ pub(crate) async fn build_world_model_response(
     // Apply .world-model.yml display config if present (filter + label
     // overrides). Compile boundary first (serve replicas have no working
     // copy), FS fallback — see `WorldModelConfig::resolve`.
-    if let Some(cfg) = crate::server::api::world_model_config::WorldModelConfig::resolve(
-        workspace_id,
-        workspace_path,
-    )
-    .await?
+    if let Some(cfg) =
+        crate::server::api::world_model_config::WorldModelConfig::resolve(config_manager).await?
     {
         apply_world_model_config(&mut entities, &mut edges, &cfg);
     }
@@ -244,7 +240,7 @@ pub(crate) async fn build_world_model_response(
 
 /// `GET /{workspace_id}/semantic/world-model/instances`
 pub async fn get_world_model_instances(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     layer_cache: SemanticLayerCacheCtx,
@@ -264,14 +260,12 @@ pub async fn get_world_model_instances(
                 }),
             )
         })?;
-    let workspace_path = workspace_manager.config_manager.workspace_path();
     instances_core(
         &workspace_manager,
         user.id,
         role,
         &layer,
         workspace_id,
-        workspace_path,
         semantics_path,
         &q,
     )
@@ -289,12 +283,11 @@ pub async fn get_world_model_instances(
 /// caller — the FS scan path for the IDE, the compile-boundary tempdir for the
 /// gate.
 pub(crate) async fn instances_core(
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
     user_id: uuid::Uuid,
     role: WorkspaceRole,
     layer: &airlayer::SemanticLayer,
-    workspace_id: uuid::Uuid,
-    workspace_path: &std::path::Path,
+    _workspace_id: uuid::Uuid,
     scan_path: std::path::PathBuf,
     q: &WmInstancesQuery,
 ) -> Result<WmInstancesResponse, (StatusCode, extract::Json<ErrorResponse>)> {
@@ -333,8 +326,7 @@ pub(crate) async fn instances_core(
     // the instances endpoint is a picker convenience, not security-critical).
     // Compile boundary first (serve replicas have no working copy), FS fallback.
     let display_field = crate::server::api::world_model_config::WorldModelConfig::resolve(
-        workspace_id,
-        workspace_path,
+        &workspace_manager.config_manager,
     )
     .await
     .ok()
@@ -489,18 +481,17 @@ pub(crate) async fn instances_core(
 /// only previews as a handful of sample chips. Backs the "+N more" sample
 /// browser popover.
 pub async fn get_world_model_filter_instances(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     layer_cache: SemanticLayerCacheCtx,
     axum::extract::State(_app_state): axum::extract::State<crate::server::router::AppState>,
-    Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     axum::extract::Query(q): axum::extract::Query<WmFilterInstancesQuery>,
 ) -> Result<extract::Json<WmInstancesResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     let err = |code: StatusCode, message: String| (code, extract::Json(ErrorResponse { message }));
 
     let (layer, promotions) = load_layer_and_promotions(&workspace_manager, &layer_cache).await?;
-    let wm_cfg = resolve_world_model_config(workspace_id, &workspace_manager).await;
+    let wm_cfg = resolve_world_model_config(&workspace_manager).await;
     let entity_metas = build_entity_metas(&layer, &promotions, wm_cfg.as_ref());
 
     let target_view = primary_view_of(&layer, &q.entity).ok_or_else(|| {
@@ -639,7 +630,7 @@ pub async fn get_world_model_filter_instances(
 
 /// `POST /{workspace_id}/semantic/world-model/filter-counts`
 pub async fn post_world_model_filter_counts(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     layer_cache: SemanticLayerCacheCtx,
@@ -655,7 +646,7 @@ pub async fn post_world_model_filter_counts(
 
     // World-model config supplies per-entity display fields used to render sample
     // labels on descendant cards (mirrors the instance-detail handler).
-    let wm_cfg = resolve_world_model_config(layer_cache.workspace_id, &workspace_manager).await;
+    let wm_cfg = resolve_world_model_config(&workspace_manager).await;
 
     // Collect per-entity metadata needed to build semantic queries (struct
     // hoisted to module scope so the expansion-plan helpers can share it).
@@ -796,7 +787,7 @@ pub async fn post_world_model_filter_counts(
                             };
                             let build_ms = t0.elapsed().as_millis();
                             let q0 = std::time::Instant::now();
-                            let cnt = run_with_connector(&connector, &w.sql, &wm)
+                            let cnt = run_with_connector(&connector, &w.sql)
                                 .await
                                 .into_iter()
                                 .next()
@@ -1086,7 +1077,7 @@ pub async fn post_world_model_filter_counts(
                                     Some(c) => tokio::join!(
                                         async {
                                             match count_sql {
-                                                Some(sql) => run_with_connector(c, &sql, &wm)
+                                                Some(sql) => run_with_connector(c, &sql)
                                                     .await
                                                     .into_iter()
                                                     .next()
@@ -1098,7 +1089,7 @@ pub async fn post_world_model_filter_counts(
                                         },
                                         async {
                                             match sample_sql {
-                                                Some(sql) => run_with_connector(c, &sql, &wm)
+                                                Some(sql) => run_with_connector(c, &sql)
                                                     .await
                                                     .into_iter()
                                                     .map(|r| {
@@ -1190,7 +1181,7 @@ pub async fn post_world_model_filter_counts(
                         else {
                             return empty();
                         };
-                        let rows = run_with_connector(&connector, &sql, &wm).await;
+                        let rows = run_with_connector(&connector, &sql).await;
                         parse_expansion_rows(&rows, &plan)
                     }
                 };
@@ -1516,7 +1507,7 @@ pub async fn post_world_model_filter_counts(
                                         Some(c) => tokio::join!(
                                             async {
                                                 match primary_sql {
-                                                    Some(sql) => run_with_connector(c, &sql, &wm)
+                                                    Some(sql) => run_with_connector(c, &sql)
                                                         .await
                                                         .into_iter()
                                                         .next()
@@ -1528,7 +1519,7 @@ pub async fn post_world_model_filter_counts(
                                             },
                                             async {
                                                 match sample_sql {
-                                                    Some(sql) => run_with_connector(c, &sql, &wm)
+                                                    Some(sql) => run_with_connector(c, &sql)
                                                         .await
                                                         .into_iter()
                                                         .map(|r| {
@@ -1633,7 +1624,7 @@ pub async fn post_world_model_filter_counts(
 /// `init` (attributes) appears first, then `parent`, then individual `child` events,
 /// then `measures`, then `done`.
 pub async fn get_world_model_instance_detail(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     layer_cache: SemanticLayerCacheCtx,
@@ -1659,7 +1650,7 @@ pub async fn get_world_model_instance_detail(
     // Load .world-model.yml config once — used for display_field across primary, child,
     // and parent entities. Silently ignore load errors (display degrades to PK fallback).
     // Compile boundary first (serve replicas have no working copy), FS fallback.
-    let wm_cfg = resolve_world_model_config(layer_cache.workspace_id, &workspace_manager).await;
+    let wm_cfg = resolve_world_model_config(&workspace_manager).await;
     // Per-entity allowlist + labels for the PRIMARY entity, used to filter and relabel
     // the attribute and measure sections (mirrors apply_world_model_config for the graph).
     // `None` means no allowlist → show everything observed in the view (current behavior).
@@ -2110,16 +2101,13 @@ pub async fn get_world_model_instance_detail(
     let connector_a = connector.clone();
     let connector_b = connector.clone();
     let connector_c = connector;
-    let wm_a = workspace_manager.clone();
-    let wm_b = workspace_manager.clone();
-    let wm_c = workspace_manager;
 
     tokio::spawn(async move {
         tokio::join!(
             // ── Task A: attrs row → Init event → Phase 2 parent → Parent event ──
             async move {
                 let attr_rows = match attrs_sql {
-                    Some(ref sql) => run_with_connector(&connector_a, sql, &wm_a).await,
+                    Some(ref sql) => run_with_connector(&connector_a, sql).await,
                     None => vec![],
                 };
                 let attr_row = attr_rows.into_iter().next().unwrap_or_default();
@@ -2240,7 +2228,7 @@ pub async fn get_world_model_instance_detail(
                     .ok()
                     .and_then(|r| r.ok());
                     let parent_rows = match parent_sql {
-                        Some(ref sql) => run_with_connector(&connector_a, sql, &wm_a).await,
+                        Some(ref sql) => run_with_connector(&connector_a, sql).await,
                         None => vec![],
                     };
                     let parent_display = parent_rows
@@ -2268,20 +2256,18 @@ pub async fn get_world_model_instance_detail(
                     .zip(child_sample_sqls.into_iter().zip(child_count_sqls))
                     .map(|(cc, (sample_sql, count_sql))| {
                         let c = connector_b.clone();
-                        let wm = wm_b.clone();
                         async move {
                             let c2 = c.clone();
-                            let wm2 = wm.clone();
                             let (sample_rows, count_rows) = tokio::join!(
                                 async move {
                                     match sample_sql {
-                                        Some(ref sql) => run_with_connector(&c, sql, &wm).await,
+                                        Some(ref sql) => run_with_connector(&c, sql).await,
                                         None => vec![],
                                     }
                                 },
                                 async move {
                                     match count_sql {
-                                        Some(ref sql) => run_with_connector(&c2, sql, &wm2).await,
+                                        Some(ref sql) => run_with_connector(&c2, sql).await,
                                         None => vec![],
                                     }
                                 },
@@ -2352,10 +2338,9 @@ pub async fn get_world_model_instance_detail(
 
                 for (idx, sql_opt) in own_group_sqls.into_iter().enumerate() {
                     let c = connector_c.clone();
-                    let wm = wm_c.clone();
                     futs.push(Box::pin(async move {
                         let rows = match sql_opt {
-                            Some(ref sql) => run_with_connector(&c, sql, &wm).await,
+                            Some(ref sql) => run_with_connector(&c, sql).await,
                             None => vec![],
                         };
                         (GroupTag::Own(idx), rows)
@@ -2368,8 +2353,6 @@ pub async fn get_world_model_instance_detail(
                 {
                     let c = connector_c.clone();
                     let c2 = connector_c.clone();
-                    let wm = wm_c.clone();
-                    let wm2 = wm_c.clone();
                     futs.push(Box::pin(async move {
                         // Value query and its fiber-count query run concurrently; the
                         // count is appended as the trailing column so the induced
@@ -2377,13 +2360,13 @@ pub async fn get_world_model_instance_detail(
                         let (val_rows, cnt_rows) = tokio::join!(
                             async move {
                                 match val_sql {
-                                    Some(ref sql) => run_with_connector(&c, sql, &wm).await,
+                                    Some(ref sql) => run_with_connector(&c, sql).await,
                                     None => vec![],
                                 }
                             },
                             async move {
                                 match cnt_sql {
-                                    Some(ref sql) => run_with_connector(&c2, sql, &wm2).await,
+                                    Some(ref sql) => run_with_connector(&c2, sql).await,
                                     None => vec![],
                                 }
                             },
@@ -2461,7 +2444,7 @@ pub async fn get_world_model_instance_detail(
 /// Streams the metric-tree subtree for `measure` at `entity`, valued at the
 /// instance `key`: `init` (structure) → per-node `value` events → `done`.
 pub async fn get_world_model_measure_breakdown(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     layer_cache: SemanticLayerCacheCtx,
@@ -2498,7 +2481,7 @@ pub async fn get_world_model_measure_breakdown(
 /// resolves. Errors are the transport-agnostic `(StatusCode, ErrorResponse)`
 /// tuple so each caller wraps the body its own way.
 pub(crate) async fn measure_breakdown_core(
-    workspace_manager: WorkspaceManager,
+    workspace_manager: WorkspaceManager<WorkingCopy>,
     user_id: uuid::Uuid,
     role: WorkspaceRole,
     layer: &airlayer::SemanticLayer,
@@ -2622,10 +2605,9 @@ pub(crate) async fn measure_breakdown_core(
             .zip(group_node_ids)
             .map(|(sql, node_ids)| {
                 let connector = connector.clone();
-                let wm = workspace_manager.clone();
                 async move {
                     let rows = match sql {
-                        Some(ref s) => run_with_connector(&connector, s, &wm).await,
+                        Some(ref s) => run_with_connector(&connector, s).await,
                         None => vec![],
                     };
                     (node_ids, rows.into_iter().next().unwrap_or_default())

@@ -37,9 +37,10 @@ use crate::server::api::data::{
     agentic_error_response, run_via_agentic_connector,
 };
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, PreaggCacheCtx, SemanticLayerCacheCtx, WorkspaceManagerExtractor,
+    EffectiveWorkspaceRole, PreaggCacheCtx, SemanticLayerCacheCtx, WorkspaceManagerReadOnly,
 };
-use crate::server::api::semantic_scan::{self, MaterialisedScan, SemanticEntity};
+use crate::server::api::semantic_scan::{self, ScanDir, SemanticEntity};
+use oxy::config::{ConfigManager, DiskSlot, ResolveWorkspaceFile};
 
 #[derive(Serialize, ToSchema)]
 pub struct ErrorResponse {
@@ -120,7 +121,7 @@ fn decode_b64_path(
 }
 
 pub async fn get_view_details(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     layer_cache: SemanticLayerCacheCtx,
     Path(ViewPath {
         workspace_id: _,
@@ -192,7 +193,7 @@ pub async fn get_view_details(
 }
 
 pub async fn get_topic_details(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     layer_cache: SemanticLayerCacheCtx,
     Path(TopicPath {
         workspace_id: _,
@@ -300,21 +301,20 @@ pub async fn get_topic_details(
 /// into a tempdir) when the workspace is promoted, else the working-copy FS.
 /// Returns `(scan_root, file_path, guard)` — HOLD `guard` until parsing finishes
 /// (dropping it deletes the materialised tempdir).
-async fn resolve_semantic_source(
-    workspace_manager: &WorkspaceManager,
+async fn resolve_semantic_source<S: DiskSlot>(
+    workspace_manager: &WorkspaceManager<S>,
     entity: SemanticEntity,
     file_path_str: &str,
     label: &str,
 ) -> Result<
-    (
-        std::path::PathBuf,
-        std::path::PathBuf,
-        Option<MaterialisedScan>,
-    ),
+    (std::path::PathBuf, std::path::PathBuf, Option<ScanDir>),
     (StatusCode, extract::Json<ErrorResponse>),
-> {
+>
+where
+    ConfigManager<S>: ResolveWorkspaceFile,
+{
     if let Some((scan, file)) = semantic_scan::materialise_semantic_entity(
-        workspace_manager.workspace_id,
+        &workspace_manager.config_manager,
         entity,
         file_path_str,
     )
@@ -325,12 +325,15 @@ async fn resolve_semantic_source(
             format!("Failed to materialise semantic scan: {e}"),
         )
     })? {
-        return Ok((scan.scan_path.clone(), file, Some(scan)));
+        return Ok((scan.path().to_path_buf(), file, Some(scan)));
     }
 
+    // The boundary missed. `try_resolve_file` has an impl for each capability,
+    // so a node without a working copy says so instead of failing to compile —
+    // and instead of resolving a path under a root that is not there.
     let full_path_str = workspace_manager
         .config_manager
-        .resolve_file(file_path_str)
+        .try_resolve_file(file_path_str)
         .await
         .map_err(|e| {
             semantic_err(
@@ -345,11 +348,21 @@ async fn resolve_semantic_source(
             format!("{label} file {file_path_str} not found"),
         ));
     }
-    Ok((
-        workspace_manager.config_manager.semantics_scan_path(),
-        full_path,
-        None,
-    ))
+    // Reaching here means `try_resolve_file` succeeded, which only the `WorkingCopy` impl
+    // can do — so there is a working copy and its root is the scan path.
+    let scan_path = workspace_manager
+        .config_manager
+        .working_copy()
+        .map(|fs| fs.root().to_path_buf())
+        .ok_or_else(|| {
+            semantic_err(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!(
+                    "{label} {file_path_str} is not compiled and this node has no working copy"
+                ),
+            )
+        })?;
+    Ok((scan_path, full_path, None))
 }
 
 pub(crate) fn semantic_err(
@@ -366,7 +379,7 @@ pub(crate) fn semantic_err(
 /// until compilation finishes or the scan root is deleted out from under it.
 pub(crate) struct QueryScanSource {
     pub(crate) scan_path: std::path::PathBuf,
-    _guard: Option<MaterialisedScan>,
+    _guard: Option<ScanDir>,
 }
 
 /// The workspace has no compiled semantic layer and this node has no working
@@ -408,27 +421,24 @@ impl ScanUnavailable {
 /// `None` for a non-default branch on a node that HAS a working copy. The IDE
 /// previewing uncommitted edits on a feature branch therefore still reads the
 /// FS, exactly as before.
-pub(crate) async fn resolve_query_scan_source(
-    workspace_manager: &WorkspaceManager,
+pub(crate) async fn resolve_query_scan_source<S: oxy::config::DiskSlot>(
+    workspace_manager: &WorkspaceManager<S>,
 ) -> Result<QueryScanSource, ScanUnavailable> {
     let workspace_id = workspace_manager.workspace_id;
-    let materialised = match semantic_scan::materialise_semantic_scan(workspace_id).await {
-        Ok(m) => m,
-        Err(e) => {
-            tracing::warn!(
-                workspace_id = %workspace_id,
-                error = ?e,
-                "semantic query: materialise failed; falling through to FS"
-            );
-            None
+    // `scan_dir` covers both arms — the working copy's own path, or the compiled
+    // rows written out — so it only fails when neither is available.
+    match semantic_scan::scan_dir(&workspace_manager.config_manager).await {
+        Ok(scan) => {
+            return Ok(QueryScanSource {
+                scan_path: scan.path().to_path_buf(),
+                _guard: Some(scan),
+            });
         }
-    };
-
-    if let Some(scan) = materialised {
-        return Ok(QueryScanSource {
-            scan_path: scan.scan_path.clone(),
-            _guard: Some(scan),
-        });
+        Err(e) => tracing::warn!(
+            workspace_id = %workspace_id,
+            error = %e,
+            "semantic query: no scan directory available"
+        ),
     }
 
     // Stateless-fleet guard, mirroring `projects::semantic_query`: refuse the FS
@@ -436,9 +446,18 @@ pub(crate) async fn resolve_query_scan_source(
     // so the next request succeeds without operator action. Note
     // `materialise_semantic_scan` downgrades real DB errors to `None`, so this
     // also covers a transient DB failure — a retry is the right answer there too.
-    if crate::server::role_manifest::current_process_role()
-        == crate::server::role_manifest::Role::Serve
-    {
+    //
+    // One question, asked once — and asked of `semantics_scan_dir`, which goes
+    // through `disk()`.
+    //
+    // This asked `working_copy()`, i.e. "is there a handle?", and on a replica
+    // the answer is always yes: `effective_workspace_path` returns the database
+    // column without stat-ing it and `ReadOnly` keeps the slot. So the `Ok` arm
+    // always won, handing airlayer a directory the node does not have — the
+    // "Topic not found. Available: []" this guard exists to prevent — and the
+    // `ScanUnavailable` arm below, the one that enqueues the compile, could
+    // never run.
+    let Ok(scan_path) = workspace_manager.config_manager.semantics_scan_dir() else {
         if let Ok(db) = oxy::database::client::establish_connection().await {
             crate::server::api::middlewares::workspace_context::enqueue_lazy_compile(
                 &db,
@@ -447,13 +466,19 @@ pub(crate) async fn resolve_query_scan_source(
             .await;
         }
         return Err(ScanUnavailable { workspace_id });
-    }
+    };
 
     Ok(QueryScanSource {
-        scan_path: workspace_manager.config_manager.semantics_scan_path(),
+        scan_path,
         _guard: None,
     })
 }
+
+// Pre-aggregation status moved to `api::preagg` (#2989), which also made a
+// rollup built on one node readable from another through a blob bucket. The
+// `Option` third state this file carried is gone with it: the list comes from
+// the DECLARATIONS, so `[]` now means "declares none" and cannot mean "could
+// not look".
 
 /// Append induced (promoted) measures for `view_name` to `measures`.
 ///
@@ -524,7 +549,7 @@ pub struct SemanticQueryCompileResponse {
 /// `semantic_query` step uses, so the IDE preview and runtime stay in
 /// lockstep.
 pub async fn compile_semantic_query(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     extract::Json(query): extract::Json<SemanticQueryConfig>,
 ) -> Result<extract::Json<SemanticQueryCompileResponse>, (StatusCode, extract::Json<ErrorResponse>)>
@@ -620,7 +645,7 @@ pub struct SemanticQueryExecuteRequest {
 /// the wrong warehouse — `resolve_and_compile` is the source of truth
 /// for both the SQL and the database name.
 pub async fn execute_semantic_query(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     PreaggCacheCtx {
@@ -723,8 +748,21 @@ pub async fn execute_semantic_query(
                 // DuckDB reagg result to a file in the workspace results
                 // dir and return its handle so the FE can fetch it the
                 // same way it does for warehouse queries.
+                // `get_results_dir` lives on `ConfigManager<WorkingCopy>` — writing
+                // a Parquet handle needs somewhere on this node to write it, and
+                // this route is FleetOk. Ask for the capability explicitly and
+                // refuse loudly when the node has none, rather than degrading to
+                // a path that does not exist.
                 let results_dir = workspace_manager
                     .config_manager
+                    .workspace_file_resolver()
+                    .ok_or_else(|| {
+                        sql_error_503(
+                            "this instance holds no working copy, so it cannot \
+                             write a Parquet result here"
+                                .to_string(),
+                        )
+                    })?
                     .get_results_dir()
                     .await
                     .map_err(|e| sql_error_500(format!("results dir: {e}")))?;
@@ -790,8 +828,8 @@ pub async fn execute_semantic_query(
     }
 }
 
-/// Write the result of `preagg_sql` (which `read_parquet(...)`s the rollup —
-/// local file or blob object) into `dest_path` as a Parquet file via DuckDB's
+/// Write the result of `preagg_sql` (which `read_parquet(...)`s from the
+/// local rollup cache) into `dest_path` as a Parquet file via DuckDB's
 /// `COPY ... TO ... (FORMAT PARQUET)`. Keeps every byte inside DuckDB so
 /// we never round-trip rows through Rust just to serialize them again.
 fn write_preagg_parquet(
@@ -894,4 +932,47 @@ fn sql_error_500(message: String) -> (StatusCode, extract::Json<SqlErrorResponse
             sql: None,
         }),
     )
+}
+
+#[cfg(test)]
+mod scan_source_tests {
+    use super::*;
+
+    /// A node that does not hold the files must refuse, not hand back a path.
+    ///
+    /// This asked `working_copy()` — "is there a handle?" — and on a replica the
+    /// answer is always yes: `effective_workspace_path` returns the database
+    /// column without stat-ing it, and `ReadOnly` keeps the slot. So the `Ok`
+    /// arm always won and airlayer scanned a directory that is not on the node,
+    /// finding nothing: the "Topic not found. Available: []" this guard exists
+    /// to prevent. The `ScanUnavailable` arm — the one that enqueues a compile
+    /// so the next request succeeds — was unreachable in production.
+    ///
+    /// Built the replica way: slot FULL, directory absent.
+    #[tokio::test]
+    async fn a_node_without_the_files_refuses_instead_of_scanning_thin_air() {
+        let parent = tempfile::tempdir().expect("tempdir");
+        let absent = parent.path().join("never-cloned");
+
+        let manager = oxy::adapters::workspace::builder::WorkspaceBuilder::new(uuid::Uuid::nil())
+            .with_working_copy(&absent, None, oxy::config::OnMissing::Empty)
+            .await
+            .expect("a manager builds from the database column, unstat-ed")
+            .build()
+            .await
+            .expect("workspace manager");
+
+        assert!(
+            manager.config_manager.working_copy().is_some(),
+            "the slot is full — that is the trap this guards"
+        );
+        assert!(!absent.is_dir(), "and the directory is not there");
+
+        let refused = resolve_query_scan_source(&manager).await;
+        assert!(
+            refused.is_err(),
+            "a scan path from a node that holds nothing is worse than an error: \
+             airlayer reports an empty layer and the caller blames the workspace"
+        );
+    }
 }

@@ -13,8 +13,7 @@ use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 
-use crate::server::api::compiled_reader;
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 
 /// Decode a `path_b64` route param tolerantly — accept both the
 /// `URL_SAFE_NO_PAD` form our listers emit and the standard-padded form the FE
@@ -63,6 +62,9 @@ pub struct PipelineFile {
     pub source_kind: Option<String>,
 }
 
+/// Test-only: the listing itself always goes through `to_file_with_kind`,
+/// with the kind coming from `PipelineEntry` (both origins fill it in core).
+#[cfg(test)]
 fn to_file(relative_path: String) -> PipelineFile {
     to_file_with_kind(relative_path, None)
 }
@@ -76,82 +78,41 @@ fn to_file_with_kind(relative_path: String, source_kind: Option<String>) -> Pipe
     }
 }
 
-/// `source.kind` out of a compiled pipeline definition, if it names one.
-fn source_kind_of(definition: &serde_json::Value) -> Option<String> {
-    definition
-        .get("source")
-        .and_then(|src| src.get("kind"))
-        .and_then(|k| k.as_str())
-        .filter(|k| !k.is_empty())
-        .map(str::to_string)
-}
+/// `source.kind` out of a pipeline definition — now shared with both listing
+/// origins in core (`oxy::config::pipeline_source_kind`), so the compiled row
+/// and the working-copy read cannot drift. The handler no longer extracts it
+/// (entries arrive with the kind filled in); the pin tests still exercise the
+/// extraction under its old name.
+#[cfg(test)]
+use oxy::config::pipeline_source_kind as source_kind_of;
 
 /// `GET /{workspace_id}/airway-pipelines` — FleetOk. Boundary first, FS fallback.
 pub async fn list_pipelines(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    Query(query): Query<ListPipelinesQuery>,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
+    Query(_query): Query<ListPipelinesQuery>,
 ) -> Result<extract::Json<Vec<PipelineFile>>, StatusCode> {
-    match compiled_reader::list_pipeline_artifacts(
-        workspace_manager.workspace_id,
-        query.branch.as_deref(),
-    )
-    .await
-    {
-        Ok(Some(rows)) => {
-            let files = rows
-                .into_iter()
-                .map(|r| {
-                    let kind = source_kind_of(&r.definition);
-                    to_file_with_kind(r.file_path, kind)
-                })
-                .collect();
-            return Ok(extract::Json(files));
-        }
-        Ok(None) => {
-            // Local / not-yet-promoted — fall through to the filesystem.
-        }
-        Err(e) => {
-            tracing::warn!(
-                workspace_id = %workspace_manager.workspace_id,
-                error = ?e,
-                "list_pipelines compile-boundary error; falling through to FS"
-            );
-        }
-    }
-
-    let workspace_path = workspace_manager.config_manager.workspace_path();
-    let paths = workspace_manager
+    let pipelines = workspace_manager
         .config_manager
         .list_pipelines()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to list pipelines: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            tracing::warn!(
+                workspace_id = %workspace_manager.workspace_id,
+                error = %e,
+                "list_pipelines failed"
+            );
+            if e.retryable() {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         })?;
-    let files = paths
-        .iter()
-        .filter_map(|p| {
-            let rel = p.strip_prefix(workspace_path).ok()?;
-            // Read the kind here too, not just on the boundary path.
-            //
-            // Local mode NEVER promotes a revision — `open_compiled_revision`
-            // returns `None` for `LOCAL_WORKSPACE_ID` unconditionally — so a
-            // `source_kind` supplied only by the boundary is absent for every
-            // pipeline, forever, and any UI gated on it can never appear
-            // locally. That is not "hidden until compiled", it is "hidden".
-            //
-            // One small YAML read per pipeline, on a path that only runs in
-            // local or briefly before promotion. A file that will not parse
-            // yields `None` rather than failing the listing: a broken pipeline
-            // should still be visible in the sidebar so it can be fixed.
-            let kind = std::fs::read_to_string(p)
-                .ok()
-                .and_then(|text| serde_yaml::from_str::<serde_json::Value>(&text).ok())
-                .and_then(|def| source_kind_of(&def));
-            Some(to_file_with_kind(rel.to_string_lossy().to_string(), kind))
-        })
-        .collect();
-    Ok(extract::Json(files))
+    Ok(extract::Json(
+        pipelines
+            .into_iter()
+            .map(|p| to_file_with_kind(p.file_path, p.source_kind))
+            .collect(),
+    ))
 }
 
 #[cfg(test)]

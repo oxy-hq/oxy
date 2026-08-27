@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use oxy::{adapters::session_filters::SessionFilters, config::ConfigManager};
+use oxy::adapters::session_filters::SessionFilters;
 
 /// Extracts and validates session filters from MCP meta parameter.
 ///
@@ -37,7 +37,6 @@ use oxy::{adapters::session_filters::SessionFilters, config::ConfigManager};
 /// - Required filters are missing
 pub fn extract_session_filters(
     meta: Option<&serde_json::Map<String, Value>>,
-    _config_manager: &ConfigManager,
 ) -> Result<Option<SessionFilters>, rmcp::ErrorData> {
     let filters_value = meta.and_then(|m| m.get("filters")).cloned();
 

@@ -1,0 +1,214 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Monitors / Insights Inbox (/ide/semantic, Anomalies tab) — nothing covers
+# this surface today. Two things this flow proves, and neither is provable
+# from the rendered page alone unless both are checked together:
+#
+#   1. The Monitors sub-tab lists real `.monitor.yml` configuration — proof
+#      the config READ succeeded and returned actual objects.
+#   2. The Inbox sub-tab is empty *because it resolved to a confirmed zero
+#      result*, not because a read failed and rendered indistinguishably from
+#      "nothing to show".
+#
+# WHY THIS DISTINCTION IS THE WHOLE POINT — `MonitorsTab.tsx` and
+# `AnomaliesInbox/index.tsx` both branch on `error` BEFORE they branch on
+# "zero rows": a genuinely failed read renders `error instanceof Error ?
+# error.message : "Failed to load monitor config."` / "Failed to load
+# anomalies." in a `text-destructive` block, distinct from the friendly empty
+# state. But `useQuery().data` returning `[]` (a real empty array — the
+# request succeeded and the server truly has nothing to say) is
+# INDISTINGUISHABLE, by construction, from an error silently swallowed
+# upstream into an empty array — both render nothing, and nothing looks like
+# nothing. The only way to tell them apart from the browser is to force the
+# ADJACENT signal — the Monitors read on the SAME page, over the SAME
+# workspace, at the SAME time — and confirm it came back with real content,
+# not empty and not erroring. Two reads of the same failure class covering
+# each other's blind spot.
+#
+# WHY THE INBOX BEING EMPTY IS EXPECTED HERE, NOT A BUG — internal-docs/
+# anomaly-monitoring.md and product-context.md's "Metric Tree & Anomaly
+# Monitoring" bullet: a scan excludes the current incomplete period, and a
+# series isn't scanned until it clears `min_history_buckets` (8 seasonal
+# cycles — 56 daily buckets, 2 for month). So "13 monitors configured, 0
+# anomalies" is an ordinary, healthy state on a workspace with real monitors.
+#
+# GENUINE PRODUCT FINDING (2026-08-25, driven against the split-fleet Docker
+# deployment, workspace 70787bb2-e11b-5488-b2c3-02e60d5fc7d3) — the emptiness
+# here is real, but the reason is narrower than "still warming up per-history
+# floors" and worth recording precisely:
+#   - `GET /api/<ws>/semantic/monitors` returns 13 monitor entries (confirmed
+#     — every label below is real response content) AND `coverage: []`.
+#   - Per anomaly-monitoring.md, a coverage row is written for EVERY scanned
+#     segment on EVERY scan attempt, including a skipped/warming one
+#     (`persist::upsert_coverage`, described there as "a skip is reported,
+#     not just performed"). Zero coverage rows therefore means this
+#     workspace has never been scanned at all — not that all 13 monitors are
+#     mid-warm-up (that state would still produce 13+ coverage rows, each
+#     flagged "Warming up").
+#   - Consistent with anomaly-monitoring.md's own gate: "Firing is gated
+#     behind OXY_INPROC_GLOBAL_WORKER... With it off, monitor CRUD works but
+#     nothing fires." Most likely explanation on this fleet: the global
+#     singleton worker that drives scheduled `monitor_scan` rows is off, or
+#     no scan has been manually triggered yet for this workspace.
+#   - This flow deliberately does NOT assert *which* of "never scanned" vs
+#     "scanned, all warming" is true, and does NOT click "Scan now" (that
+#     would write real anomaly/coverage rows into the shared fixture
+#     workspace other agents assert against — out of scope here). Both are
+#     legitimate "not broken" explanations; the flow's job is only to rule
+#     out the illegitimate one (a failed read rendering as empty), which it
+#     does by checking the Monitors read next to it.
+#
+# Navigation is rail-driven (`rail-core` -> `ide-nav-semantic` -> the
+# "Anomalies" tab), matching semantic-object-detail.flow.test.yml, so the
+# flow carries no workspace path prefix and resolves identically under
+# `--local` and behind a fleet/cloud replica's org/workspace routing.
+#
+# COST: no agent/builder run, no query execution — pure navigation + reads.
+# Two cases, ~4 act steps each. No testids exist anywhere in
+# AnomaliesInbox/index.tsx or MonitorsTab.tsx (grepped; none found), so
+# several selectors below are text-based rather than testid — a real gap in
+# the source, flagged rather than routed around, since this task's file
+# scope is `flows/` only.
+
+name: monitors load and the insights inbox is confirmed quiet, not broken
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  max_steps: 20
+
+setup:
+      # `/home`, not `/`. Bare `/` is deliberately exempt from OXY_PATH_PREFIX
+      # (runner/backend.ts) and lands wherever the post-login dispatcher picks,
+      # which is fine with one workspace and a coin flip with two. This org now
+      # has two, so `/` silently ran a case against the wrong workspace. `/home`
+      # is the same page on a workspace-scoped route, so the prefix applies and
+      # the target is whatever OXY_PATH_PREFIX names.
+  - "goto:/home"
+
+cases:
+  - name: the Monitors sub-tab lists real configured monitors, not an error or an empty read
+    tags: [semantic, monitors, anomalies, fleet, critical]
+    steps:
+      # data-testid='rail-core' — web-app/src/components/Shell/WorkspaceShell.tsx
+      - wait_for: "selector:[data-testid=rail-core]"
+
+      - act: |
+          browser_click [data-testid=rail-core] — the Oxygen Factory tile in the
+          left icon rail. The IDE opens.
+
+      # data-testid='ide-nav-semantic' — web-app/src/pages/ide/Sidebar/index.tsx:225
+      - wait_for: "selector:[data-testid=ide-nav-semantic];timeout_ms=60000"
+
+      - act: |
+          browser_click [data-testid=ide-nav-semantic] — the Semantic Layer icon
+          button in the narrow IDE sidebar rail. The URL ends with
+          /ide/semantic and the page opens on its default "Explorer" tab.
+
+      - wait_for: "selector:role=tab[name='Anomalies'];timeout_ms=30000"
+
+      - act: |
+          browser_click the "Anomalies" tab (role=tab, accessible name
+          "Anomalies") in the Explorer / Metric Tree / Anomalies tab bar. The
+          Insights Inbox opens, defaulting to its "Inbox" sub-tab.
+
+      - act: |
+          Inside the Insights Inbox, click its "Monitors" sub-tab — a second,
+          nested tab bar reading "Inbox" / "Monitors" — NOT the outer
+          Explorer/Metric Tree/Anomalies bar clicked above. Use a text
+          selector scoped to that inner tab bar, e.g. browser_click
+          "text=Monitors".
+
+      # "Sensitivity" is a table column header (MonitorsTab.tsx) that only
+      # renders once real monitor rows exist — absent in both the loading
+      # state ("Loading monitors…") and the zero-monitors state ("No
+      # monitors configured.").
+      - wait_for: "selector:text=Sensitivity;timeout_ms=30000"
+
+      # A specific configured label, not just the table shell — proves the
+      # read returned genuine content, not a structurally-rendered empty
+      # table. Confirmed live via `GET /<ws>/semantic/monitors` before
+      # writing this flow (see header).
+      - wait_for: "selector:text=Daily order revenue;timeout_ms=15000"
+
+    expect:
+      - assert: 'text "Daily order revenue" is visible'
+      # Last of the 13 confirmed entries — proves the whole list rendered,
+      # not just the first row.
+      - assert: 'text "Monthly operating profit" is visible'
+      # Rules out the zero-monitors empty state. (`selector text=…`, not the
+      # `text "…" is visible` assert form — that form has no negation in
+      # runner/judge.ts; `selector <sel> is not visible` does.)
+      - assert: "selector text=No monitors configured. is not visible"
+      # Rules out the Monitors read's own error path.
+      - assert: "selector text=Failed to load monitor config. is not visible"
+      - judge: |
+          The Semantic Layer's Anomalies tab is open on its Monitors
+          sub-tab, showing a table of configured monitors (columns include
+          Metric, Granularity, Sensitivity) with multiple real rows — not a
+          loading spinner, not an empty-state message, not an error.
+
+          Fail if ANY of the following is true: an error alert or
+          destructive-styled text is visible; the page says monitors could
+          not be loaded; a raw filesystem path or IO error string is
+          visible ("No such file or directory", "os error", an absolute
+          path); the table is empty or missing; a loading spinner is still
+          on screen.
+
+  - name: the Inbox sub-tab is confirmed empty, not silently broken
+    tags: [semantic, monitors, anomalies, fleet, critical]
+    steps:
+      - wait_for: "selector:[data-testid=rail-core]"
+
+      - act: |
+          browser_click [data-testid=rail-core] — the Oxygen Factory tile in the
+          left icon rail. The IDE opens.
+
+      - wait_for: "selector:[data-testid=ide-nav-semantic];timeout_ms=60000"
+
+      - act: |
+          browser_click [data-testid=ide-nav-semantic] — the Semantic Layer icon
+          button in the narrow IDE sidebar rail. The URL ends with
+          /ide/semantic and the page opens on its default "Explorer" tab.
+
+      - wait_for: "selector:role=tab[name='Anomalies'];timeout_ms=30000"
+
+      - act: |
+          browser_click the "Anomalies" tab (role=tab, accessible name
+          "Anomalies"). The Insights Inbox opens on its default "Inbox"
+          sub-tab — no further click needed.
+
+      # The friendly, fully-resolved zero-result state (EmptyState in
+      # AnomaliesInbox/index.tsx) — rendered only once `isLoading` is false,
+      # `error` is unset, AND the list truly came back with zero events.
+      # Distinct in the DOM from BOTH the loading spinner and the error
+      # branch (`error && <div>...Failed to load anomalies...</div>`), which
+      # is what makes this a positive assertion of "confirmed quiet" rather
+      # than a mere absence of failure.
+      - wait_for: "selector:text=No anomalies in this view.;timeout_ms=30000"
+
+    expect:
+      - assert: 'text "No anomalies in this view." is visible'
+      # The Inbox's own error path, ruled out by name. (`selector text=…`,
+      # not `text "…" is visible` — see the sibling case's comment.)
+      - assert: "selector text=Failed to load anomalies. is not visible"
+      # The "Scan now" button is part of the fully-rendered empty state
+      # (EmptyState component) — its presence is further proof the page
+      # settled into the real empty-state branch rather than a stuck
+      # loading spinner or a differently-shaped failure.
+      - assert: 'selector role=button[name*="Scan now"] is visible'
+      - judge: |
+          The Semantic Layer's Anomalies tab is open on its Inbox sub-tab,
+          showing the friendly "no anomalies in this view" empty state with
+          a working "Scan now" affordance — not a loading spinner stuck on
+          screen, not an error banner, not a blank/broken page.
+
+          Fail if ANY of the following is true: an error alert or
+          destructive-styled text is visible, including "Failed to load
+          anomalies"; a raw filesystem path or IO error string is visible
+          ("No such file or directory", "os error", an absolute path); a
+          loading spinner is still on screen; the page is blank or shows
+          neither the empty-state message nor an error.

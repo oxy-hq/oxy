@@ -15,7 +15,7 @@ use oxy::config::health_check::SemanticProbeTarget;
 
 use super::ProbeFailure;
 use crate::agentic_wiring::project_ctx::OxyProjectContext;
-use crate::server::api::compiled_reader::CompiledArtifact;
+use oxy::config::CompiledArtifact;
 
 /// One topic and the fully-qualified `view.measure` references chosen to
 /// exercise it. Never empty — a target with nothing to query is a `MissingTopic`.
@@ -223,7 +223,7 @@ mod tests {
             file_path: format!("semantics/{name}.yml"),
             name: name.to_string(),
             definition,
-            compiled_sql_blob_key: None,
+            blob_key: None,
         }
     }
 

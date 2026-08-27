@@ -93,13 +93,22 @@ jobs:
           # backend mode (the runner refuses a mixed-mode invocation).
           # `local` hits the auth-disabled public port (3000); `cloud`
           # hits the auth-disabled internal port (3001).
+          #
+          # FULL FILENAMES, not bare names. The runner selects a flow whose
+          # filename CONTAINS a positional argument (runner/cli.ts, `globs`),
+          # so a bucket naming `chat-ask` also ran `chat-ask-fleet` — a flow
+          # that exists to prove the serve-to-ide proxy carries an analytics
+          # run, silently executed here in `local` mode where there is no
+          # proxy at all. It failed, and the failure said nothing about the
+          # product. Adding a flow whose name extends an existing one widens
+          # that bucket without touching this file; the suffix stops it.
           ALL='[
-            {"name":"builder","flows":"builder-edits-app","mode":"local","port":3000},
-            {"name":"semantic","flows":"semantic-builder-ask","mode":"local","port":3000},
-            {"name":"ask-agent","flows":"chat-ask chat-panel-agent-switch","mode":"local","port":3000},
-            {"name":"threads","flows":"threads-list","mode":"local","port":3000},
-            {"name":"ide","flows":"ide-save","mode":"local","port":3000},
-            {"name":"onboarding","flows":"onboarding-blank-workspace","mode":"cloud","port":3001}
+            {"name":"builder","flows":"builder-edits-app.flow.test.yml","mode":"local","port":3000},
+            {"name":"semantic","flows":"semantic-builder-ask.flow.test.yml","mode":"local","port":3000},
+            {"name":"ask-agent","flows":"chat-ask.flow.test.yml chat-panel-agent-switch.flow.test.yml","mode":"local","port":3000},
+            {"name":"threads","flows":"threads-list.flow.test.yml","mode":"local","port":3000},
+            {"name":"ide","flows":"ide-save.flow.test.yml","mode":"local","port":3000},
+            {"name":"onboarding","flows":"onboarding-blank-workspace.flow.test.yml","mode":"cloud","port":3001}
           ]'
           if [ -z "$FLOW_BUCKET" ] || [ "$FLOW_BUCKET" = "all" ]; then
             FLOWS=$(echo "$ALL" | jq -c .)

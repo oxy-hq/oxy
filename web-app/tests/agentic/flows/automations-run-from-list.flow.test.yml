@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# The automation journey end to end: LIST an automation, OPEN it, RUN it, READ
+# its output. Every hop is a compile-boundary read, and all three fail
+# *silently* on a stateless `serve` replica when the boundary is wrong — an
+# empty list, a diagram that never draws, a permanent 503 — so nothing here is
+# observable from the single all-in-one process CI runs today.
+#
+# WHY THIS FLOW EXISTS — the shipped bug it re-creates
+# ----------------------------------------------------
+# `crates/app/src/server/api/projects/automation_run.rs` (see the doc comment on
+# `matches_automation_id`, and the regression test
+# `an_automation_is_found_by_its_filename_not_its_declared_name`): the compiled
+# lookup matched `AutomationEntry::name` — the YAML `name:` — while the caller
+# passes a FILENAME. Every automation whose declared name differs from its file
+# stem missed on a node with no working copy, and the miss answers
+#
+#     503 "… a compile has been enqueued — retry shortly"
+#
+# which recompiling can never clear, because recompiling cannot change the name.
+#
+# The demo fixture already has the exact shape, no new fixture needed:
+#
+#     file : demo_project/workflows/external-factors-correlation.automation.yml
+#     name : external_factors_correlation      ← kebab file stem, snake YAML name
+#
+# ROUTE CLASSIFICATION (crates/app/src/server/router/workspace.rs)
+#   .route_fleet("/automations",             get(automation::list_automations))  L74
+#   .route_fleet("/automations/{path_b64}",  get(automation::get_automation))    L75
+# Both are FleetOk: a replica MUST answer them from Postgres. There is no ide
+# proxy hop to save them, so a boundary miss degrades to wrong-empty rather than
+# erroring — which is precisely why a human never notices and a browser
+# assertion has to.
+#
+# COST: the demo automation is six `execute_sql` tasks + one `formatter`
+# (verified: no `type: agent`, no LLM task), so the run is DuckDB-only and costs
+# nothing in tokens. Only the act steps and one judge call are billed.
+#
+# PORTABILITY CAVEAT: `/automations` is the LOCAL-mode flat path. In cloud mode
+# the same page is workspace-prefixed (`/<org>/workspaces/<uuid>/automations` —
+# see `ROUTES.ORG(...).WORKSPACE(...)` in web-app/src/libs/utils/routes.ts), and
+# there is no rail affordance for automations to click instead. Driving this
+# flow against a cloud replica therefore needs the prefixed path; the assertions
+# themselves are mode-independent.
+
+name: automation lists, opens, runs, and reports output
+target: any
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  # 3 act steps + waits. In line with ide-pipeline-quickbooks (20).
+  max_steps: 20
+
+setup:
+  # AutomationsListPage — web-app/src/pages/automation/AutomationsListPage.tsx
+  - "goto:/automations"
+
+cases:
+  - name: run external-factors-correlation and read its output
+    tags: [automations, compile-boundary, fleet, critical]
+    steps:
+      # data-testid='automations-list-page'
+      #   — web-app/src/pages/automation/AutomationsListPage.tsx:26
+      - wait_for: "selector:[data-testid=automations-list-page]"
+
+      # THE LIST READ. GET /{project}/automations (FleetOk). On a replica whose
+      # boundary read wrongly answers `[]` the page renders "No automations
+      # found. Create a `.automation.yml` …" — a legible sentence that reads
+      # like a correct empty workspace, not like a bug. Gating on the row's
+      # visible text makes that indistinguishable-empty state a hard failure.
+      #
+      # The rows carry no testid: each is a react-router <Link> rendering
+      # `{file.path}` verbatim (AutomationsListPage.tsx:57-64), so the file path
+      # IS the row label. Matching it also proves the list returned the real
+      # workspace paths rather than a placeholder.
+      - wait_for: "selector:text=workflows/external-factors-correlation.automation.yml;timeout_ms=30000"
+
+      - act: |
+          browser_click the row labelled
+          "workflows/external-factors-correlation.automation.yml" inside
+          [data-testid=automations-list-page]. It is a link; clicking it changes
+          the URL to /workflows/<base64-of-that-path> — the automation run page.
+
+      # THE CONFIG READ. GET /{project}/automations/{path_b64} (FleetOk), keyed
+      # by PATH. `useAgenticAutomationConfig` parses the returned YAML and the
+      # page renders <AutomationDiagram> only when the parse yields a config;
+      # otherwise it renders a LoadingSkeleton forever
+      # (web-app/src/pages/automation/index.tsx). So waiting for a real TASK
+      # NAME from the YAML is the assertion that the config read resolved with
+      # substance — a degraded/empty read leaves the skeleton spinning and this
+      # times out, which is the "spinner that never resolves" symptom failing
+      # loudly instead of silently.
+      #
+      # `temperature_correlation` is the first task in
+      # demo_project/workflows/external-factors-correlation.automation.yml:16.
+      - wait_for: "selector:text=temperature_correlation;timeout_ms=60000"
+
+      # THE RUN. This is the 503 surface. The Run button carries no testid — it
+      # is a plain shadcn <Button> with a PlayIcon and the text "Run"
+      # (web-app/src/pages/automation/components/RunControls.tsx:76-79), so its
+      # accessible name is "Run". `role=` is the documented fallback when no
+      # testid exists.
+      - act: |
+          browser_click `role=button[name='Run']` — the Run control at the top
+          right of the diagram. It starts the automation and swaps itself for a
+          "Stop" button while the run is in flight; the output sidebar opens on
+          the right.
+
+      # THE OUTPUT. This wait is deliberately BEFORE the completion wait below,
+      # and that order is load-bearing. `selector_hidden:` passes the instant
+      # nothing matches, so gating completion on "the Stop button is gone" as
+      # the first post-click wait would pass VACUOUSLY on the exact failure this
+      # flow exists to catch: a run that 503s before it ever starts never mounts
+      # a Stop button, so "Stop is hidden" is true immediately. Requiring a real
+      # output item first means the run genuinely started and produced results;
+      # a 503'd run produces none and this times out instead.
+      # data-testid='automation-output-item'
+      #   — web-app/src/components/automation/output/Item.tsx:57 and :94
+      - wait_for: "selector:[data-testid=automation-output-item];timeout_ms=300000"
+
+      # Now that output exists the run has demonstrably started, so the Stop
+      # button was mounted and waiting for it to disappear is a meaningful
+      # completion gate — the automation equivalent of `streaming_complete`
+      # (which is chat-only). RunControls renders Stop while
+      # phase is starting/running and swaps back to Run/Retry afterwards
+      # (web-app/src/pages/automation/components/RunControls.tsx:66-77).
+      - wait_for: "selector_hidden:role=button[name='Stop'];timeout_ms=300000"
+
+    expect:
+      # Structural, $0: the run produced at least one output item. A 503'd run
+      # produces none.
+      - assert: "selector [data-testid=automation-output-item] is visible"
+
+      # The named symptoms, phrased so a correct page passes and each failure
+      # mode fails. Kept as a judge because "retry shortly" / a raw path string
+      # / a stuck spinner are text the DOM only shows on failure — there is no
+      # selector to assert against for their ABSENCE that would also confirm the
+      # positive case.
+      - judge: |
+          The automation run page for
+          workflows/external-factors-correlation.automation.yml has finished a
+          run and is showing its output: the diagram lists the automation's
+          tasks (temperature_correlation, fuel_price_impact, unemployment_impact
+          and similar), and the output panel on the right shows completed step
+          results or logs.
+
+          Fail if ANY of the following is true:
+          (a) any text on the page contains "retry shortly", "a compile has been
+              enqueued", or "needs_recompile";
+          (b) an error banner or red alert is visible anywhere on the page;
+          (c) the diagram area is still a blank loading skeleton, or the output
+              panel shows only a spinner with no results — i.e. something is
+              still loading and never resolved;
+          (d) any visible text contains a raw filesystem path or IO error, e.g.
+              "No such file or directory", "os error", "Workspace directory not
+              found", or an absolute path such as one starting "/var/lib/oxy";
+          (e) the page claims there are no automations, or the diagram shows no
+              tasks at all.

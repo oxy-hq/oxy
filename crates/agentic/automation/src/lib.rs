@@ -35,7 +35,7 @@ pub use runner::OxyAutomationRunner;
 pub use step_decider::{AutomationDecider, AutomationDecision};
 pub use step_executor::{extract_automation_steps, run_automation_step};
 pub use step_orchestrator::AutomationStepOrchestrator;
-pub use workspace::{ContextRoot, WorkspaceContext};
+pub use workspace::{ContextRoot, WorkspaceContext, WorkspaceReadError};
 
 // ── Back-compat aliases (Procedures/Workflows → Automations rename) ───────────
 // The canonical types above are now `Automation*`. These aliases keep the old

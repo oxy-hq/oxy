@@ -8,6 +8,7 @@ interface GraphControlPanelProps {
   nodes: ContextGraphNode[];
   edges: ContextGraphEdge[];
   typeCounts: Record<string, number>;
+  tablesUnknown?: boolean;
   focusType: FocusType;
   onFocusTypeChange: (type: FocusType) => void;
   expandAll: boolean;
@@ -20,6 +21,7 @@ export function GraphControlPanel({
   nodes,
   edges,
   typeCounts,
+  tablesUnknown,
   focusType,
   onFocusTypeChange,
   expandAll,
@@ -32,7 +34,12 @@ export function GraphControlPanel({
       position='top-left'
       className='rounded-lg border border-sidebar-border bg-sidebar-background p-4 shadow-lg'
     >
-      <GraphStatsPanel nodes={nodes} edges={edges} typeCounts={typeCounts} />
+      <GraphStatsPanel
+        nodes={nodes}
+        edges={edges}
+        typeCounts={typeCounts}
+        tablesUnknown={tablesUnknown}
+      />
       <GraphFilterPanel
         focusType={focusType}
         onFocusTypeChange={onFocusTypeChange}

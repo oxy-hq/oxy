@@ -4,24 +4,22 @@ use std::path::PathBuf;
 use crate::cli::commands::export_chart::export_charts_to_dir;
 use crate::server::api::middlewares::role_guards::WorkspaceEditor;
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, WorkspaceManagerExtractor,
+    EffectiveWorkspaceRole, WorkspaceManagerReadOnly, WorkspaceManagerWorkingCopy,
 };
 use crate::server::service::app::{
     AppResultChartDisplay, AppResultData, AppResultDisplay, AppResultMarkdownDisplay,
     AppResultTableDisplay, AppService, DisplayWithError, GetAppResultResponse, TaskKind,
     TaskOutput, TaskResult, get_app_displays, render_control_default,
 };
-use axum::Extension;
 use axum::body::Body;
 use axum::extract::{self, Path};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
-use std::sync::Arc;
 
-use crate::agentic_wiring::OxyProjectContext;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use entity::workspace_members::WorkspaceRole;
+use oxy::config::WorkingCopy;
 use oxy::config::model::{
     AppTaskMode, ControlConfig, DatabaseType, Display, DuckDBOptions, SQL, TaskType,
 };
@@ -119,37 +117,6 @@ fn create_error_response(error_msg: String) -> GetAppDataResponse {
     }
 }
 
-/// Best-effort read of `title` and `published` from an app YAML file by parsing
-/// just the root mapping — no schema validation, no `deny_unknown_fields`. We
-/// only need these two surface fields for sidebar/listing, so a downstream
-/// validation error elsewhere in the file shouldn't make the app vanish from
-/// the IDE or get accidentally un-published.
-async fn read_app_metadata(app_path: &std::path::Path) -> (Option<String>, bool) {
-    let Ok(yaml) = tokio::fs::read_to_string(app_path).await else {
-        tracing::warn!(path = %app_path.display(), "Failed to read app file");
-        return (None, false);
-    };
-    let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(&yaml) else {
-        tracing::warn!(path = %app_path.display(), "Failed to parse app YAML");
-        return (None, false);
-    };
-    let Some(map) = value.as_mapping() else {
-        return (None, false);
-    };
-
-    let title = map
-        .get(serde_yaml::Value::String("title".to_string()))
-        .and_then(|v| v.as_str())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let published = map
-        .get(serde_yaml::Value::String("published".to_string()))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
-    (title, published)
-}
-
 /// List all apps in the project
 ///
 /// Retrieves all app configurations available in the project. Returns app metadata
@@ -170,12 +137,11 @@ async fn read_app_metadata(app_path: &std::path::Path) -> (Option<String>, bool)
     )
 )]
 pub async fn list_apps(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     role: Option<EffectiveWorkspaceRole>,
     extract::Query(query): extract::Query<ListAppsQuery>,
 ) -> Result<extract::Json<Vec<AppItem>>, StatusCode> {
     let config_manager = &workspace_manager.config_manager;
-    let workspace_path = config_manager.workspace_path();
 
     // In local mode there's no role plumbing — treat the caller as an Owner so the
     // publish toggle is available. In cloud mode the workspace_middleware always
@@ -185,86 +151,37 @@ pub async fn list_apps(
         None => true,
     };
 
-    // Hybrid path: when the workspace has been promoted by a successful
-    // Compile TaskSpec (`workspaces.current_revision_id IS NOT NULL`)
-    // AND the request is on the workspace's default branch, serve the
-    // sidebar list from `app_definitions` instead of walking YAML
-    // files. `compiled_reader` handles the branch carve-out internally;
-    // we just pass the active branch hint along.
-    match crate::server::api::compiled_reader::list_apps(
-        workspace_manager.workspace_id,
-        query.branch.as_deref(),
-        query.published_only,
-    )
-    .await
-    {
-        Ok(Some(rows)) => {
-            tracing::debug!(
-                workspace_id = %workspace_manager.workspace_id,
-                row_count = rows.len(),
-                "list_apps served from compile boundary"
-            );
-            let items: Vec<AppItem> = rows
-                .into_iter()
-                .map(|r| AppItem {
-                    name: r.name,
-                    path: r.file_path,
-                    title: r.title,
-                    published: r.published,
-                    can_publish,
-                })
-                .collect();
-            return Ok(extract::Json(items));
-        }
-        Ok(None) => {
-            // Workspace not yet promoted; fall through to FS.
-        }
-        Err(e) => {
+    // Compiled revision or working copy — the manager owns that choice, and the
+    // middleware already pinned the revision this request reads. A retryable
+    // error means "not compiled here yet", which is a 503 the frontend polls
+    // through, not a 500 describing a fault on this node.
+    let apps = config_manager
+        .list_apps(query.published_only)
+        .await
+        .map_err(|e| {
             tracing::warn!(
                 workspace_id = %workspace_manager.workspace_id,
-                error = ?e,
-                "list_apps compile-boundary error; falling through to FS"
+                error = %e,
+                "list_apps failed"
             );
-            // Fall through to FS — compile boundary is best-effort.
-        }
-    }
+            if e.retryable() {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        })?;
 
-    let apps = config_manager.list_apps().await.map_err(|e| {
-        tracing::error!("Failed to list apps: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let mut app_items: Vec<AppItem> = Vec::with_capacity(apps.len());
-    for app_path in &apps {
-        let Ok(relative_path) = app_path.strip_prefix(workspace_path) else {
-            continue;
-        };
-        let name = relative_path
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .to_string()
-            .replace(".app.yml", "");
-
-        // Read `title` and `published` directly from the YAML root mapping so that a
-        // schema or validation error elsewhere in the file (e.g. a typo in `tasks:`)
-        // doesn't silently unpublish an app or hide its title from the IDE.
-        let (title, published) = read_app_metadata(app_path).await;
-
-        if query.published_only && !published {
-            continue;
-        }
-
-        app_items.push(AppItem {
-            name,
-            path: relative_path.to_string_lossy().to_string(),
-            title,
-            published,
-            can_publish,
-        });
-    }
-
-    Ok(extract::Json(app_items))
+    Ok(extract::Json(
+        apps.into_iter()
+            .map(|entry| AppItem {
+                name: entry.name,
+                path: entry.file_path,
+                title: entry.title,
+                published: entry.published,
+                can_publish,
+            })
+            .collect(),
+    ))
 }
 
 /// Set `published: true` on the app's YAML file. Authoring permission
@@ -273,7 +190,7 @@ pub async fn list_apps(
 pub async fn publish_app(
     _: WorkspaceEditor,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
 ) -> Result<extract::Json<AppItem>, StatusCode> {
     set_publish_state(workspace_manager, &pathb64, true).await
 }
@@ -282,13 +199,13 @@ pub async fn publish_app(
 pub async fn unpublish_app(
     _: WorkspaceEditor,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
 ) -> Result<extract::Json<AppItem>, StatusCode> {
     set_publish_state(workspace_manager, &pathb64, false).await
 }
 
 async fn set_publish_state(
-    workspace_manager: oxy::adapters::workspace::manager::WorkspaceManager,
+    workspace_manager: oxy::adapters::workspace::manager::WorkspaceManager<WorkingCopy>,
     pathb64: &str,
     published: bool,
 ) -> Result<extract::Json<AppItem>, StatusCode> {
@@ -424,14 +341,12 @@ fn extract_sql_source_files(sql: &str) -> Vec<String> {
 
 pub async fn get_displays(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
-    extract::Query(branch): extract::Query<BranchHintQuery>,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
 ) -> Result<extract::Json<GetDisplaysResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let (displays, controls) =
-        match get_app_displays(workspace_manager.clone(), branch.branch.as_deref(), &path).await {
+    let (displays, controls, parsed_tasks) =
+        match get_app_displays(workspace_manager.clone(), &path).await {
             Ok(result) => result,
             Err(e) => {
                 tracing::debug!("Failed to get app displays: {:?}", e);
@@ -442,13 +357,10 @@ pub async fn get_displays(
     // Collect SQL templates for execute_sql tasks so the frontend can run them
     // client-side in DuckDB WASM without a server round-trip on control changes.
     let databases = workspace_manager.config_manager.list_databases();
-    let app_service =
-        AppService::new_with_branch(workspace_manager.clone(), project_ctx, branch.branch);
-    let tasks: HashMap<String, TaskClientInfo> = app_service
-        .get_config(&path)
-        .await
-        .map(|c| c.tasks)
-        .unwrap_or_default()
+    // The tasks come from the same parse that produced the displays above.
+    // Re-reading them through `AppService` meant a second resolution down a
+    // filesystem-bound path, for a list this function was already holding.
+    let tasks: HashMap<String, TaskClientInfo> = parsed_tasks
         .into_iter()
         .filter_map(|task| {
             let sql_task = match &task.task_type {
@@ -524,14 +436,12 @@ pub async fn get_displays(
 
 pub async fn get_app_data(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
-    extract::Query(branch): extract::Query<BranchHintQuery>,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
+    extract::Query(_branch): extract::Query<BranchHintQuery>,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let mut app_service =
-        AppService::new_with_branch(workspace_manager.clone(), project_ctx, branch.branch);
+    let mut app_service = AppService::new(workspace_manager.clone());
 
     let app_tasks = match app_service.get_tasks(&path).await {
         Ok(tasks) => tasks,
@@ -569,14 +479,16 @@ pub async fn get_app_data(
 /// cache, falling back to the S3 mirror (`runtime_artifact::app_data_key`), and
 /// `get_tasks` resolves the app definition from the compile boundary. `404` when
 /// nothing has been cached (the FE then keeps its "restarting" placeholder).
+/// The ide-down degradation route: serve a cached answer when the singleton is
+/// unreachable. It must therefore not need a working copy to do it — every read
+/// on this path is the compile boundary, the local runtime state dir, or S3.
 pub async fn get_app_data_cached(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
-    extract::Query(branch): extract::Query<BranchHintQuery>,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
+    extract::Query(_branch): extract::Query<BranchHintQuery>,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
-    let app_service = AppService::new_with_branch(workspace_manager, project_ctx, branch.branch);
+    let app_service = AppService::new(workspace_manager);
     let app_tasks = app_service.get_tasks(&path).await.map_err(|e| {
         // A genuine boundary/DB fault reads to the FE as "no cache" (it keeps the
         // placeholder either way), so log it here — otherwise a real failure on
@@ -591,7 +503,7 @@ pub async fn get_app_data_cached(
 }
 
 pub async fn get_data(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> impl IntoResponse {
     let path_string = match decode_path(&pathb64) {
@@ -641,7 +553,7 @@ pub async fn get_data(
 ///
 /// Search order: (1) project root, (2) each local DuckDB database's file_search_path.
 pub async fn get_source_file(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> impl IntoResponse {
     let path_string = match decode_path(&pathb64) {
@@ -749,16 +661,14 @@ pub struct RunAppBody {
 
 pub async fn run_app(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
-    extract::Query(branch): extract::Query<BranchHintQuery>,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
+    extract::Query(_branch): extract::Query<BranchHintQuery>,
     body: Option<extract::Json<RunAppBody>>,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
     let params = body.map(|b| b.0.params).unwrap_or_default();
 
-    let mut app_service =
-        AppService::new_with_branch(workspace_manager.clone(), project_ctx, branch.branch);
+    let mut app_service = AppService::new(workspace_manager.clone());
     let data = match app_service.run(&path, params).await {
         Ok(data) => data,
         Err(e) => {
@@ -828,8 +738,7 @@ fn get_result_cache_filename(app_path: &PathBuf) -> String {
 pub async fn get_app_result(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     extract::Query(query): extract::Query<AppResultQuery>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    Extension(project_ctx): Extension<Arc<OxyProjectContext>>,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
 ) -> (StatusCode, extract::Json<GetAppResultResponse>) {
     let path = match decode_path(&pathb64) {
         Ok(p) => p,
@@ -855,8 +764,7 @@ pub async fn get_app_result(
     // Execute the app to get task results. Branch comes from the
     // existing `AppResultQuery` so feature-branch users see their
     // working-copy edits when the Postgres-first path is on.
-    let mut app_service =
-        AppService::new_with_branch(workspace_manager.clone(), project_ctx, query.branch.clone());
+    let mut app_service = AppService::new(workspace_manager.clone());
 
     // Get task names first (needed for response even if execution fails)
     let task_configs = match app_service.get_tasks(&path).await {
@@ -930,14 +838,13 @@ pub async fn get_app_result(
         .filter_map(|t| t.output.as_ref().map(|o| (t.task_name.clone(), o.clone())))
         .collect();
 
-    let typed_displays =
-        match get_app_displays(workspace_manager.clone(), query.branch.as_deref(), &path).await {
-            Ok((displays, _controls)) => displays,
-            Err(e) => {
-                tracing::debug!("Failed to get app displays: {:?}", e);
-                vec![]
-            }
-        };
+    let typed_displays = match get_app_displays(workspace_manager.clone(), &path).await {
+        Ok((displays, _controls, _tasks)) => displays,
+        Err(e) => {
+            tracing::debug!("Failed to get app displays: {:?}", e);
+            vec![]
+        }
+    };
 
     // Check if there are any chart displays that need PNG export
     let has_charts = typed_displays.iter().any(|d| {
@@ -952,11 +859,14 @@ pub async fn get_app_result(
     // Export charts to PNG if needed
     let mut chart_export_error: Option<String> = None;
     let chart_file_map: HashMap<i64, String> = if has_charts {
-        let charts_dir = workspace_manager
-            .config_manager
-            .get_charts_dir()
-            .await
-            .unwrap_or_default();
+        // `charts_dir()`, the same resolver the reader 250 lines below uses.
+        // `get_charts_dir()` is fallible — `resolve_state_dir` goes through
+        // `require_root()` — and `unwrap_or_default()` turns that failure into
+        // `PathBuf::new()`, so on a node whose root is not there yet the export
+        // wrote PNGs relative to the process working directory and then
+        // mirrored THOSE to S3. `export_charts_to_dir` creates the directory
+        // itself, so nothing is lost by taking the infallible one.
+        let charts_dir = workspace_manager.config_manager.charts_dir();
         let app_path_str = path.to_string_lossy().to_string();
         match export_charts_to_dir(&app_path_str, &charts_dir).await {
             Ok(map) => {
@@ -1104,7 +1014,7 @@ fn data_container_to_output(data: &DataContainer) -> Option<TaskOutput> {
 }
 
 async fn load_cached_result(
-    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager<WorkingCopy>,
     app_path: &PathBuf,
 ) -> Option<GetAppResultResponse> {
     let cache_name = get_result_cache_filename(app_path);
@@ -1134,7 +1044,7 @@ async fn load_cached_result(
 }
 
 async fn save_cached_result(
-    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager<WorkingCopy>,
     app_path: &PathBuf,
     response: &GetAppResultResponse,
 ) {
@@ -1192,7 +1102,7 @@ async fn save_cached_result(
 )]
 pub async fn get_chart_image(
     Path((workspace_id, pathb64, chart_path)): Path<(Uuid, String, String)>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
 ) -> Result<impl IntoResponse, StatusCode> {
     let _app_path = decode_path(&pathb64)?;
 
@@ -1203,14 +1113,11 @@ pub async fn get_chart_image(
         HeaderValue::from_static("private, max-age=3600"),
     );
 
-    let charts_dir = workspace_manager
-        .config_manager
-        .get_charts_dir()
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get charts directory: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    // `charts_dir()`, not `get_charts_dir()`: same directory, but resolved
+    // through `runtime_state_dir()`, whose working copy is an `Option`. A
+    // replica has no working copy and still has a state dir, so the fast path
+    // below simply misses and the S3 read-through under it answers.
+    let charts_dir = workspace_manager.config_manager.charts_dir();
 
     // Fast path: the PNG is on THIS node's disk (it ran the export). Keep the
     // canonicalize + starts_with traversal guard.
@@ -1256,7 +1163,7 @@ pub struct SaveAppBuilderRunResponse {
 /// The file is written to `generated/{run_id}.app.yml` within the project root.
 pub async fn save_app_builder_run(
     Path((_workspace_id, run_id)): Path<(Uuid, String)>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
 ) -> Result<extract::Json<SaveAppBuilderRunResponse>, StatusCode> {
     use agentic_runtime::entity::run as agentic_run;
     use sea_orm::EntityTrait;

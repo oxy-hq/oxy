@@ -2178,6 +2178,65 @@ fn make_sql_solution(source: SolutionSource, sql: &str) -> AnalyticsSolution {
     }
 }
 
+/// Regression test for a live panic observed on the split-fleet `ide` node.
+///
+/// The Mode 2 LLM SQL-generation fast path (`spec_to_executing` calling
+/// `solve_impl` inline right after a failed semantic compile) reaches
+/// `ProblemState::Executing` with `solution_source: LlmWithSemanticContext`
+/// WITHOUT ever passing through `ProblemState::Solving` — the only place the
+/// orchestrator loop populates `run_ctx.spec` (`run_loop.rs`: "Fields are
+/// populated by the orchestrator loop after each successful state
+/// transition: ... `spec` after Specifying" really means "after Solving").
+/// So on the very first execution attempt down this path, `run_ctx.spec` is
+/// still `None` — only a later retry through `BackTarget::Solve` populates
+/// it. The executing handler used to do
+/// `run_ctx.spec.clone().expect("run_ctx.spec must be set for
+/// LlmWithSemanticContext path")` on a first-attempt execution failure,
+/// which panics for exactly this shape of `RunContext`. It must instead
+/// degrade gracefully — the same way the SemanticLayer/Automation/
+/// VendorEngine arm already does when its own spec is unavailable — by
+/// falling back to `BackTarget::Clarify` via `run_ctx.intent`.
+#[tokio::test]
+async fn executing_llm_with_semantic_context_failure_does_not_panic_when_spec_unset() {
+    let mut solver = make_solver(); // StubConnector always errors on execute_query
+    let handlers = build_analytics_handlers();
+    let execute_fn = {
+        let h = handlers
+            .get("executing")
+            .expect("executing handler must exist");
+        std::sync::Arc::clone(&h.execute)
+    };
+    let solution = make_sql_solution(SolutionSource::LlmWithSemanticContext, "SELECT 1");
+    // spec: None, intent: Some — exactly the RunContext shape the Mode 2 fast
+    // path produces on its first attempt down this source.
+    let run_ctx = make_run_ctx_with_intent();
+    let memory = agentic_core::orchestrator::SessionMemory::new(0);
+
+    let result = execute_fn(
+        &mut solver,
+        ProblemState::Executing(solution),
+        &None,
+        &run_ctx,
+        &memory,
+    )
+    .await;
+
+    match result.state_data {
+        ProblemState::Diagnosing { back, .. } => {
+            assert!(
+                matches!(back, BackTarget::Clarify(_, _)),
+                "expected BackTarget::Clarify (spec unavailable, fall back via \
+                 run_ctx.intent) — got back-target discriminant {:?}",
+                std::mem::discriminant(&back)
+            );
+        }
+        other => panic!(
+            "expected ProblemState::Diagnosing (graceful fallback, not a panic), got: {:?}",
+            std::mem::discriminant(&other)
+        ),
+    }
+}
+
 /// SQL-gen mode disabled — the helper short-circuits to `Disabled` so
 /// the executing handler falls through to the normal execute path.
 #[tokio::test]

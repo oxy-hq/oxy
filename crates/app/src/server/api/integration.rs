@@ -1,7 +1,8 @@
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerWorkingCopy;
 use crate::server::api::result_files::store_result_file;
 use axum::{extract, http::StatusCode, response::Json};
 use oxy::adapters::workspace::manager::WorkspaceManager;
+use oxy::config::WorkingCopy;
 use oxy::config::model::{IntegrationType, LookerQueryParams, LookerSortField};
 use oxy::execute::ExecutionContext;
 use oxy::execute::renderer::Renderer;
@@ -29,7 +30,7 @@ pub struct LookerIntegrationInfo {
 }
 
 pub async fn list_looker_integrations(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<LookerIntegrationInfo>>, StatusCode> {
     let config_manager = &workspace_manager.config_manager;
@@ -120,7 +121,7 @@ pub struct LookerQueryRequest {
     pub limit: Option<i64>,
 }
 
-fn build_execution_context(workspace_manager: WorkspaceManager) -> ExecutionContext {
+fn build_execution_context(workspace_manager: WorkspaceManager<WorkingCopy>) -> ExecutionContext {
     let (tx, _rx) = mpsc::channel(100);
     let renderer = Renderer::new(minijinja::Value::default());
     ExecutionContext {
@@ -144,7 +145,7 @@ fn build_execution_context(workspace_manager: WorkspaceManager) -> ExecutionCont
 }
 
 pub async fn compile_looker_query(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     extract::Json(payload): extract::Json<LookerQueryRequest>,
 ) -> Result<Json<String>, (StatusCode, String)> {
@@ -182,7 +183,7 @@ pub struct LookerQueryResponse {
 }
 
 pub async fn execute_looker_query(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     extract::Json(payload): extract::Json<LookerQueryRequest>,
 ) -> Result<Json<LookerQueryResponse>, (StatusCode, String)> {

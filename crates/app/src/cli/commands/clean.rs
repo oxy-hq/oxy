@@ -1,3 +1,4 @@
+use oxy::config::WorkingCopy;
 use oxy::{
     config::{
         ConfigManager,
@@ -30,7 +31,7 @@ fn confirm_deletion(item_description: &str, require_confirmation: bool) -> Resul
 
 pub async fn clean_all(
     require_confirmation: bool,
-    config_manager: &ConfigManager,
+    config_manager: &ConfigManager<WorkingCopy>,
 ) -> Result<(), OxyError> {
     println!("🧹 {} ephemeral data...", "Cleaning".text());
     clean_vectors(require_confirmation, config_manager).await?;
@@ -42,7 +43,7 @@ pub async fn clean_all(
 
 pub async fn clean_database_folder(
     require_confirmation: bool,
-    config_manager: &ConfigManager,
+    config_manager: &ConfigManager<WorkingCopy>,
 ) -> Result<(), OxyError> {
     println!("🗂️  {} .database folder...", "Clearing".text());
     let database_dir = config_manager.resolve_file(DATABASE_SEMANTIC_PATH).await?;
@@ -76,7 +77,7 @@ pub async fn clean_database_folder(
 
 pub async fn clean_vectors(
     require_confirmation: bool,
-    config_manager: &ConfigManager,
+    config_manager: &ConfigManager<WorkingCopy>,
 ) -> Result<(), OxyError> {
     println!("🔍 {} vector embeddings...", "Clearing".text());
 
@@ -110,7 +111,7 @@ pub async fn clean_vectors(
 
 pub async fn clean_cache(
     require_confirmation: bool,
-    config_manager: &ConfigManager,
+    config_manager: &ConfigManager<WorkingCopy>,
 ) -> Result<(), OxyError> {
     println!("🗂️  {} cache folder...", "Clearing".text());
     let state_dir = config_manager.resolve_state_dir().await?;

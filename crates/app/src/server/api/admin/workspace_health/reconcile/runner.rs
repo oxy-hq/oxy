@@ -23,7 +23,7 @@ use super::window::resolve_window;
 use super::{
     DriftVerdict, ResolvedWindow, VerdictMeta, compare, error_verdict, unreachable_verdict,
 };
-use crate::server::api::compiled_reader::resolve_reconcile_config;
+use crate::agentic_wiring::OxyProjectContext;
 use crate::server::router::recovery::build_workspace_ctx;
 use oxy::config::model::ToastAnalyticsIntegration;
 use oxy::service::secret_manager::SecretManagerService;
@@ -104,68 +104,19 @@ impl LiveReconcileRunner {
         self
     }
 
-    /// Filesystem fallback for the reconcile config, taken when the compiled
-    /// reader returns `None` (local mode / draft branch on a working-copy node).
-    /// Reads the workspace working copy's root `reconcile.yml` (resolved via the
-    /// `WorkspaceManager`, which handles git-subdirectory layouts). `None` when
-    /// there's no DB handle, no resolvable workspace path, or no file on disk —
-    /// a genuinely reconcile-less workspace, which is not an error.
-    async fn read_reconcile_config_fs(
-        &self,
-        workspace_id: uuid::Uuid,
-    ) -> Option<serde_json::Value> {
-        let db = self.db.as_ref()?;
-        let ctx = build_workspace_ctx(workspace_id, db).await?;
-        let path = ctx
-            .workspace_manager()
-            .config_manager
-            .workspace_path()
-            .join("reconcile.yml");
-        let text = match tokio::fs::read_to_string(&path).await {
-            Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-            Err(e) => {
-                tracing::warn!(target: "health_eval", %workspace_id, error = %e,
-                    "reconcile config FS read failed");
-                return None;
-            }
-        };
-        match serde_yaml::from_str::<serde_json::Value>(&text) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                tracing::warn!(target: "health_eval", %workspace_id, error = %e,
-                    "reconcile config FS parse failed");
-                None
-            }
-        }
-    }
-
     /// Build the SYSTEM-mode metric-tree runner for this workspace once, reused
-    /// across all of its checks. `None` when there's no DB handle or the
-    /// workspace context can't be built (semantic operands then surface as an
-    /// error, the safe default).
-    async fn build_measure_runner(
-        &self,
-        workspace_id: uuid::Uuid,
-    ) -> Option<Arc<dyn MetricTreeRunner>> {
-        let db = self.db.as_ref()?;
-        let ctx = build_workspace_ctx(workspace_id, db).await?;
+    /// across all of its checks. `None` when the runner can't be built —
+    /// semantic operands then surface as an error, the safe default.
+    fn build_measure_runner(ctx: &OxyProjectContext) -> Option<Arc<dyn MetricTreeRunner>> {
         ctx.metric_tree_runner_system()
     }
 
     /// Resolve every `toast_analytics` integration in `config.yml` (paired with
     /// its name), so an operand can bind to a specific account by name. Empty
-    /// when there's no DB handle, no workspace context, or none declared.
-    async fn resolve_toast_integrations(
-        &self,
-        workspace_id: uuid::Uuid,
+    /// when none are declared.
+    fn resolve_toast_integrations(
+        ctx: &OxyProjectContext,
     ) -> Vec<(String, ToastAnalyticsIntegration)> {
-        let Some(db) = self.db.as_ref() else {
-            return Vec::new();
-        };
-        let Some(ctx) = build_workspace_ctx(workspace_id, db).await else {
-            return Vec::new();
-        };
         ctx.workspace_manager()
             .config_manager
             .toast_analytics_integrations()
@@ -442,17 +393,33 @@ fn pick_toast<'a>(
 #[async_trait]
 impl ReconcileRunner for LiveReconcileRunner {
     async fn run_checks(&self, workspace_id: uuid::Uuid) -> Vec<DriftVerdict> {
-        // The compiled reader returns `None` for local mode and for a
-        // draft/non-default branch on a working-copy node (see
-        // `open_compiled_revision`). Per the compile-boundary contract, readers
-        // fall through to the filesystem on a miss — so read the workspace's
-        // on-disk `reconcile.yml` rather than silently skipping reconciliation.
-        let (raw, source) = match resolve_reconcile_config(workspace_id, None).await {
-            Ok(Some(v)) => (v, "compiled"),
-            Ok(None) => match self.read_reconcile_config_fs(workspace_id).await {
-                Some(v) => (v, "fs"),
-                None => return Vec::new(),
-            },
+        // One context for the whole pass, so the config, the measure runner and
+        // the toast bindings all describe the same revision. Building it per
+        // helper let a compile landing mid-run split a verdict across two.
+        let Some(db) = self.db.as_ref() else {
+            return Vec::new();
+        };
+        let Some(ctx) = build_workspace_ctx(workspace_id, db).await else {
+            return Vec::new();
+        };
+
+        // Per the compile-boundary contract, readers fall through to the
+        // filesystem on a miss — so a workspace with no compiled
+        // `reconcile.yml` still reconciles from the working copy.
+        let (raw, source) = match ctx
+            .workspace_manager()
+            .config_manager
+            .reconcile_config()
+            .await
+        {
+            Ok(Some(v)) => (
+                v,
+                match ctx.workspace_manager().config_manager.origin() {
+                    oxy::config::Origin::Compiled { .. } => "compiled",
+                    oxy::config::Origin::Disk => "fs",
+                },
+            ),
+            Ok(None) => return Vec::new(),
             Err(e) => {
                 tracing::warn!(target: "health_eval", %workspace_id, error = %e,
                     "reconcile config read failed");
@@ -476,10 +443,10 @@ impl ReconcileRunner for LiveReconcileRunner {
         );
 
         // One workspace-scoped measure runner, reused across every check.
-        let measure_runner = self.build_measure_runner(workspace_id).await;
+        let measure_runner = Self::build_measure_runner(&ctx);
         // Every toast integration the workspace declares, resolved once; each
         // external operand binds to the one it names.
-        let toast_integrations = self.resolve_toast_integrations(workspace_id).await;
+        let toast_integrations = Self::resolve_toast_integrations(&ctx);
 
         // Resolve each check's window once (shared by both operands), then
         // batch-fetch every external operand across all checks.

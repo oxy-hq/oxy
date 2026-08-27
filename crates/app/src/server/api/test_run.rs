@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     api::middlewares::role_guards::{WorkspaceAdmin, WorkspaceEditor},
-    api::middlewares::workspace_context::WorkspaceManagerExtractor,
+    api::middlewares::workspace_context::WorkspaceManagerReadOnly,
     server::service::test_runs::{
         HumanVerdictInfo, TestRunInfo, TestRunWithCases, TestRunsManager,
     },
@@ -34,7 +34,7 @@ pub struct CreateRunBody {
 pub async fn create_run(
     _: WorkspaceEditor,
     Path((workspace_id, pathb64)): Path<(Uuid, String)>,
-    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(_pm): WorkspaceManagerReadOnly,
     extract::Json(body): extract::Json<CreateRunBody>,
 ) -> Result<extract::Json<TestRunInfo>, StatusCode> {
     let source_id = decode_path_from_base64(pathb64)?;
@@ -54,7 +54,7 @@ pub async fn create_run(
 
 pub async fn list_runs(
     Path((workspace_id, pathb64)): Path<(Uuid, String)>,
-    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(_pm): WorkspaceManagerReadOnly,
 ) -> Result<extract::Json<Vec<TestRunInfo>>, StatusCode> {
     let source_id = decode_path_from_base64(pathb64)?;
     let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
@@ -70,7 +70,7 @@ pub async fn list_runs(
 
 pub async fn get_run(
     Path((workspace_id, pathb64, run_index)): Path<(Uuid, String, i32)>,
-    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(_pm): WorkspaceManagerReadOnly,
 ) -> Result<extract::Json<TestRunWithCases>, StatusCode> {
     let source_id = decode_path_from_base64(pathb64)?;
     let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
@@ -91,7 +91,7 @@ pub async fn get_run(
 pub async fn delete_run(
     _: WorkspaceAdmin,
     Path((workspace_id, pathb64, run_index)): Path<(Uuid, String, i32)>,
-    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(_pm): WorkspaceManagerReadOnly,
 ) -> Result<StatusCode, StatusCode> {
     let source_id = decode_path_from_base64(pathb64)?;
     let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
@@ -116,7 +116,7 @@ pub struct SetHumanVerdictBody {
 pub async fn set_human_verdict(
     _: WorkspaceEditor,
     Path((workspace_id, pathb64, run_index, case_index)): Path<(Uuid, String, i32, i32)>,
-    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(_pm): WorkspaceManagerReadOnly,
     extract::Json(body): extract::Json<SetHumanVerdictBody>,
 ) -> Result<extract::Json<Option<HumanVerdictInfo>>, StatusCode> {
     if let Some(ref v) = body.verdict
@@ -142,7 +142,7 @@ pub async fn set_human_verdict(
 
 pub async fn list_human_verdicts(
     Path((workspace_id, pathb64, run_index)): Path<(Uuid, String, i32)>,
-    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(_pm): WorkspaceManagerReadOnly,
 ) -> Result<extract::Json<Vec<HumanVerdictInfo>>, StatusCode> {
     let source_id = decode_path_from_base64(pathb64)?;
     let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {

@@ -740,7 +740,9 @@ fn skip_suffix(skipped_no_key: usize, skipped_no_datasource: usize) -> String {
 /// direct `**/*.view.yml` FS glob, which only ever worked on the ide node and
 /// is exactly the limitation this rewrite exists to lift.
 async fn load_views(
-    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager<
+        oxy::config::WorkingCopy,
+    >,
     database_override: Option<&str>,
 ) -> Result<Vec<(airlayer::View, String)>, String> {
     let scan = crate::server::api::semantic::resolve_query_scan_source(workspace_manager)

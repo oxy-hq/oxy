@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::config::WorkingCopy;
 use crate::{
     adapters::secrets::SecretsManager,
     config::ConfigManager,
@@ -50,7 +51,7 @@ impl SyncFilter {
 }
 
 pub async fn sync_databases(
-    config: ConfigManager,
+    config: ConfigManager<WorkingCopy>,
     secrets_manager: SecretsManager,
     filter: Option<SyncFilter>,
     overwrite: bool,

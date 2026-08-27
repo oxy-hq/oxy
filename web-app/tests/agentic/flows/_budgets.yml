@@ -11,6 +11,14 @@
   cold_usd: 0.50
   warm_usd: 0.005
 
+- flow: chat-ask-fleet
+  # Fleet fixture, driven with --no-auto-backend against a running replica.
+  # Same shape as chat-ask (2 act steps + streaming_complete + one judge
+  # call) — cost is dominated by the analytics run's own wall-clock (~55s
+  # measured live), not LLM tool-pick iterations.
+  cold_usd: 0.50
+  warm_usd: 0.005
+
 - flow: builder-edits-app
   # Local-mode: 1 act + 1 wait_for to start, then the builder run. No
   # cloud-mode prelude. Cold cost is dominated by the Cmd+I act and
@@ -19,6 +27,13 @@
   warm_usd: 0.005
 
 - flow: ide-save
+  cold_usd: 0.30
+  warm_usd: 0.005
+
+- flow: ide-create-file
+  # 2 act steps (switch to Files tab, click New File + type + Enter) + 2
+  # structural waits + one judge call. No streaming/build phase, comparable
+  # to ide-save's own shape.
   cold_usd: 0.30
   warm_usd: 0.005
 
@@ -110,3 +125,138 @@
   # Not in the CI matrix yet — see the flow header.
   cold_usd: 0.30
   warm_usd: 0.005
+
+- flow: automations-run-from-list
+  # List an automation, open it, run it, read its output. The demo automation is
+  # 6 execute_sql + 1 formatter over the committed DuckDB CSV — no `type: agent`,
+  # so the run itself costs no tokens. Cold is 2 act steps plus one judge call.
+  cold_usd: 0.35
+  warm_usd: 0.005
+
+- flow: apps-data-app-charts
+  # ZERO act steps — every step is a deterministic wait, so there is no LLM
+  # tool-pick loop at all. Cold and warm are both just the single judge call.
+  cold_usd: 0.10
+  warm_usd: 0.005
+
+- flow: semantic-object-detail
+  # Two cases. Case 1: rail -> IDE -> Semantic Layer, open a topic, select a
+  # measure, run the query (5 act steps + judge). Case 2 repeats the 2-step
+  # navigation and opens a view (3 act steps + judge). No agent/builder run.
+  cold_usd: 0.45
+  warm_usd: 0.008
+
+- flow: ide-world-model-graph
+  # rail -> IDE -> World Model, then select an entity. 3 act steps, four
+  # deterministic asserts, one judge call. No query execution.
+  cold_usd: 0.30
+  warm_usd: 0.005
+
+- flow: customer-apps-oxy-starter-fleet
+  # ZERO act steps — every step is a deterministic wait, same shape as
+  # apps-data-app-charts. Cold and warm are both just the single judge call.
+  cold_usd: 0.10
+  warm_usd: 0.005
+
+- flow: partners-console-fleet
+  # Four cases, but only case 1 pays for the full admin ceremony (~6 act
+  # steps: switch tab, select row, open dialog, type+submit, click sidebar).
+  # Cases 2-4 are one act step each (one sidebar click) since the assumed
+  # session already persists. All text-based selectors (no testids in the
+  # un-instrumented partner-console tree in places), so cold cost per act
+  # step runs a bit higher than a testid-only flow.
+  cold_usd: 0.90
+  warm_usd: 0.02
+
+- flow: semantic-monitors-inbox
+  # Two cases, each rail -> IDE -> Semantic Layer -> Anomalies (4 act steps),
+  # one adding a Monitors sub-tab click. No agent/builder run, no query
+  # execution — pure navigation + deterministic text/selector reads plus one
+  # judge call per case.
+  cold_usd: 0.35
+  warm_usd: 0.01
+
+- flow: context-graph-fleet
+  # Two act steps (filter to SQL Queries, click one node) — no agent run, no
+  # query execution. Nodes have no testids (ReactFlow generic), so clicking
+  # by visible label costs a bit more than a testid-anchored click. Measured
+  # cold on the fleet: $0.51 (57s wall clock, dominated by the ~145-file
+  # bulk hydration wait, not LLM iterations).
+  cold_usd: 0.55
+  warm_usd: 0.01
+
+- flow: ide-database-fleet
+  # Four act steps (expand a connection, open a query tab + pick the
+  # database, type SQL into Monaco, run it). Zero testids anywhere on this
+  # page (see the flow's header), so every step is text/role-selector-based
+  # — cold cost per step runs higher than a testid-anchored flow, similar to
+  # partners-console-fleet.
+  cold_usd: 0.55
+  warm_usd: 0.01
+
+- flow: admin-airhouse-fleet
+  # ZERO act steps — every step is a deterministic wait, same shape as
+  # apps-data-app-charts. Cold and warm are both just the single judge call.
+  cold_usd: 0.15
+  warm_usd: 0.005
+
+- flow: admin-airway-config
+  # ZERO act steps — every step is a deterministic wait, same shape as
+  # apps-data-app-charts. Cold and warm are both just the single judge call.
+  cold_usd: 0.15
+  warm_usd: 0.005
+
+- flow: airway-pipeline-run
+  # One act step (click Run, aria-label only — no testid on this surface
+  # yet). Cold cost is dominated by that click's tool-pick plus the judge
+  # call; the run itself (Open-Meteo extract -> in-memory load) costs no
+  # LLM tokens. Measured against a manually-seeded backend: ~30-40s wall
+  # clock from click to a "done" status badge.
+  cold_usd: 0.40
+  warm_usd: 0.008
+
+- flow: observability-traces
+  # ZERO act steps, two cases (list + detail), same shape as
+  # apps-data-app-charts — every step is a deterministic wait against
+  # already-seeded ClickHouse data, so cost is just two judge calls.
+  cold_usd: 0.20
+  warm_usd: 0.008
+
+- flow: observability-clusters
+  # ZERO act steps, one case, one judge call. Currently expected to fail
+  # (see the flow header) — failing faster than a passing run, if
+  # anything, since there is no retry/backoff on the assertion path.
+  cold_usd: 0.10
+  warm_usd: 0.005
+
+- flow: observability-metrics
+  # ZERO act steps, two cases (list + detail), one judge call each.
+  cold_usd: 0.20
+  warm_usd: 0.008
+
+- flow: observability-execution-analytics
+  # ZERO act steps, one case, one judge call.
+  cold_usd: 0.10
+  warm_usd: 0.005
+
+- flow: ide-unavailable-fleet
+  # Two cases, run as two separate invocations (--tag ide-down /
+  # --tag ide-recovery) bracketing an external `docker compose stop/start
+  # ide` — see the flow header. Case ide-down: one rail click + one chat
+  # submit (one analytics run) + one judge. Case ide-recovery: ZERO act
+  # steps, pure waits, one judge — same shape as apps-data-app-charts.
+  # Budgeted per-invocation, not combined, since they never run together.
+  cold_usd: 0.55
+  warm_usd: 0.01
+
+- flow: chat-early-run-failure
+  # Local-mode, isolated instance (NOT the docker-compose fleet — see the
+  # flow header). One act to switch the `.view.yml` editor out of its
+  # structured Explorer mode, one act to break the file (select-all +
+  # collapse + type — see header for why), one act for the Meta+s save,
+  # one navigate + one chat submit. No LLM tokens spent on the run itself —
+  # it 400s before any model call. Measured cold during authoring: $0.02–
+  # $0.10 depending on how many iterations the selector-picking steps took;
+  # warm is the judge floor (~$0.002).
+  cold_usd: 0.35
+  warm_usd: 0.01

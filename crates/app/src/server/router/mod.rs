@@ -14,10 +14,12 @@ mod openapi;
 mod protected;
 mod public;
 pub(crate) mod recovery;
+pub(crate) mod role_router;
 mod secrets;
 mod workspace;
 pub(crate) mod workspace_cache;
 
+use axum::Router;
 use axum::extract::FromRequestParts;
 use axum::http::header::{HeaderName, HeaderValue};
 use axum::http::request::Parts;
@@ -33,6 +35,130 @@ pub use openapi::{build_openapi_doc, openapi_router};
 // can hold it without depending on `oxy-app`. Re-exported here so every existing
 // `crate::server::router::AppState` call site (~52 files) is unchanged.
 pub use oxy_app_core::AppState;
+
+/// An `AppState` carrying nothing but its caches. The router needs a state value
+/// to finish each route's handlers with, and a test that mounts one handler
+/// needs the same — the semantic caches are `pub(crate)`, so it cannot build one
+/// itself.
+pub fn bare_app_state() -> AppState {
+    AppState {
+        enterprise: false,
+        internal: false,
+        mode: oxy_app_core::serve_mode::ServeMode::Cloud,
+        observability: None,
+        startup_cwd: std::path::PathBuf::new(),
+        preagg_cache: None,
+        preagg_renewal_threshold_secs: None,
+        agentic_state: None,
+        semantic_layer_cache: workspace_cache::new_semantic_layer_cache(),
+        semantic_engine_cache: workspace_cache::new_semantic_engine_cache(),
+    }
+}
+
+/// An `AgenticState` over a disconnected database, for tests that need to build
+/// a router but never reach one.
+#[cfg(test)]
+pub(crate) fn test_agentic_state() -> std::sync::Arc<agentic_http::AgenticState> {
+    use agentic_pipeline::platform::ThreadOwnerLookup;
+
+    struct NoThreadOwner;
+
+    #[async_trait::async_trait]
+    impl ThreadOwnerLookup for NoThreadOwner {
+        async fn thread_owner(
+            &self,
+            _thread_id: uuid::Uuid,
+        ) -> Result<Option<Option<uuid::Uuid>>, String> {
+            Ok(None)
+        }
+    }
+
+    std::sync::Arc::new(agentic_http::AgenticState::new(
+        tokio_util::sync::CancellationToken::new(),
+        sea_orm::DatabaseConnection::default(),
+        std::sync::Arc::new(NoThreadOwner),
+    ))
+}
+
+/// Build the protected router purely to read back the roles it declared.
+///
+/// The server installs the real build's declarations at startup, for the mode it
+/// is running; this exists for the guards that assert policy about routes, which
+/// need the routes themselves rather than a description of them. It unions both
+/// modes, because git features and local setup are mounted by different ones and
+/// a guard has to see every route the server can serve.
+pub fn route_declarations() -> Vec<role_router::Decl> {
+    use agentic_http::AgenticState;
+    use agentic_pipeline::platform::ThreadOwnerLookup;
+    use std::sync::Arc;
+
+    struct NoThreadOwner;
+
+    #[async_trait::async_trait]
+    impl ThreadOwnerLookup for NoThreadOwner {
+        async fn thread_owner(
+            &self,
+            _thread_id: uuid::Uuid,
+        ) -> Result<Option<Option<uuid::Uuid>>, String> {
+            Ok(None)
+        }
+    }
+
+    let app_state = bare_app_state();
+    let agentic_state = Arc::new(AgenticState::new(
+        tokio_util::sync::CancellationToken::new(),
+        sea_orm::DatabaseConnection::default(),
+        Arc::new(NoThreadOwner),
+    ));
+    // No surface crates here: this collects oxy-app's OWN declarations for the
+    // tests, and a seam's routes are the composition root's to supply.
+    let (_, cloud) = protected::build_protected_routes(
+        app_state.clone(),
+        agentic_state.clone(),
+        Router::new(),
+        Vec::new(),
+    );
+    let (_, local) = protected::build_local_protected_routes(
+        app_state.clone(),
+        agentic_state,
+        Router::new(),
+        Vec::new(),
+    );
+    // The public tree is served in BOTH modes and now declares its own routes,
+    // so the guards have to see it too — otherwise `classify` answers correctly
+    // at runtime while every test still reads the FleetOk default and cannot
+    // tell a declaration from an omission.
+    let (_, public, _) = public::build_public_routes(&app_state).into_parts();
+    cloud
+        .into_iter()
+        .chain(local)
+        .chain(crate::server::role_manifest::api_prefixed(public))
+        .collect()
+}
+
+/// The two halves of the split. A route's role is a permission — `IdeState`
+/// means "this pod has a working copy, so a handler here may reach for one" —
+/// and the compiler enforces it: `WorkspaceManagerWorkingCopy` resolves only from
+/// `IdeState`, so a handler that asks for a working copy cannot be mounted on a
+/// fleet route. `AppState` comes from either, so `State<AppState>` handlers are
+/// unaffected.
+#[derive(Clone)]
+pub struct IdeState(pub AppState);
+
+#[derive(Clone)]
+pub struct FleetState(pub AppState);
+
+impl axum::extract::FromRef<IdeState> for AppState {
+    fn from_ref(state: &IdeState) -> Self {
+        state.0.clone()
+    }
+}
+
+impl axum::extract::FromRef<FleetState> for AppState {
+    fn from_ref(state: &FleetState) -> Self {
+        state.0.clone()
+    }
+}
 
 #[derive(Clone)]
 pub struct WorkspaceExtractor(pub workspace_entity::Model);
@@ -293,7 +419,9 @@ mod router_split_tests {
             tokio_util::sync::CancellationToken::new(),
             false,
             axum::Router::new(),
+            Vec::new(),
             axum::Router::new(),
+            Vec::new(),
         )
         .await
         .expect("router built");
@@ -319,7 +447,9 @@ mod router_split_tests {
             tokio_util::sync::CancellationToken::new(),
             false,
             axum::Router::new(),
+            Vec::new(),
             axum::Router::new(),
+            Vec::new(),
         )
         .await
         .expect("router built");
@@ -344,7 +474,9 @@ mod router_split_tests {
             tokio_util::sync::CancellationToken::new(),
             false,
             axum::Router::new(),
+            Vec::new(),
             axum::Router::new(),
+            Vec::new(),
         )
         .await
         .expect("router built");
@@ -373,7 +505,9 @@ mod router_split_tests {
             tokio_util::sync::CancellationToken::new(),
             false,
             axum::Router::new(),
+            Vec::new(),
             axum::Router::new(),
+            Vec::new(),
         )
         .await
         .expect("router built");
@@ -409,7 +543,9 @@ mod router_split_tests {
             tokio_util::sync::CancellationToken::new(),
             false,
             axum::Router::new(),
+            Vec::new(),
             axum::Router::new(),
+            Vec::new(),
         )
         .await
         .expect("router built");

@@ -2,6 +2,7 @@ use minijinja::Value;
 use tracing::Instrument;
 
 use eval::build_eval_executable;
+use oxy::config::WorkingCopy;
 use oxy::{
     adapters::workspace::manager::WorkspaceManager,
     config::constants::EVAL_SOURCE_ROOT,
@@ -42,7 +43,10 @@ impl EvalLauncher {
         }
     }
 
-    pub async fn with_workspace(mut self, workspace: WorkspaceManager) -> Result<Self, OxyError> {
+    pub async fn with_workspace(
+        mut self,
+        workspace: WorkspaceManager<WorkingCopy>,
+    ) -> Result<Self, OxyError> {
         self.execution_context = Some(
             ExecutionContextBuilder::new()
                 .with_workspace_manager(workspace)

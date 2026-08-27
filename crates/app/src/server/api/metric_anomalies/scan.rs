@@ -16,7 +16,7 @@ use uuid::Uuid;
 use super::error::AnomalyError;
 use crate::agentic_wiring::OxyMetricTreeRunner;
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, WorkspaceManagerExtractor,
+    EffectiveWorkspaceRole, WorkspaceManagerWorkingCopy,
 };
 
 #[derive(Debug, Serialize)]
@@ -91,7 +91,7 @@ pub struct ScanQuery {
 /// task continues to completion in the background — the anomalies list will
 /// reflect the new results on the next fetch.
 pub async fn run_scan(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     Extension(state): Extension<Arc<AgenticState>>,
@@ -117,7 +117,7 @@ pub async fn run_scan(
     }
 
     let runner = Arc::new(OxyMetricTreeRunner::new(
-        workspace_manager.clone(),
+        workspace_manager.clone().into_read_only(),
         user.id,
         role,
     ));
@@ -126,7 +126,7 @@ pub async fn run_scan(
     // Postgres and pass THAT path to scan_workspace. The tempdir is
     // owned by the spawned task below so it lives for the whole scan.
     let materialised_monitor = match crate::server::api::semantic_scan::materialise_monitor_config(
-        workspace_id,
+        &workspace_manager.config_manager,
     )
     .await
     {

@@ -17,6 +17,7 @@ use std::time::Instant;
 
 use crate::adapters::secrets::SecretsManager;
 use crate::config::ConfigManager;
+use crate::config::ResolveWorkspaceFile;
 use crate::config::model::{Database, DatabaseType};
 use crate::connector::Connector;
 use oxy_shared::errors::OxyError;
@@ -143,12 +144,15 @@ where
 /// Inspect a database for its schemas and tables (with per-table column
 /// counts). Emits one `Progress` event before the query, then returns the
 /// aggregated result.
-pub async fn inspect_database(
+pub async fn inspect_database<S>(
     database: &Database,
-    config: &ConfigManager,
+    config: &ConfigManager<S>,
     secrets_manager: &SecretsManager,
     progress_tx: Option<mpsc::Sender<InspectEvent>>,
-) -> Result<InspectionResult, OxyError> {
+) -> Result<InspectionResult, OxyError>
+where
+    ConfigManager<S>: ResolveWorkspaceFile,
+{
     crate::connector::reject_airhouse_managed_for_system_path(
         config,
         &database.name,
@@ -232,11 +236,14 @@ pub async fn inspect_database(
 /// `INFORMATION_SCHEMA.TABLES` scan per database. Used by the onboarding
 /// table picker so the user can expand one schema at a time instead of
 /// waiting for the whole warehouse to inspect.
-pub async fn inspect_schemas(
+pub async fn inspect_schemas<S>(
     database: &Database,
-    config: &ConfigManager,
+    config: &ConfigManager<S>,
     secrets_manager: &SecretsManager,
-) -> Result<SchemaListResult, OxyError> {
+) -> Result<SchemaListResult, OxyError>
+where
+    ConfigManager<S>: ResolveWorkspaceFile,
+{
     crate::connector::reject_airhouse_managed_for_system_path(
         config,
         &database.name,
@@ -297,12 +304,15 @@ pub async fn inspect_schemas(
 
 /// List tables (with column counts) for a single schema. Called lazily when
 /// the user expands a schema in the onboarding picker.
-pub async fn inspect_schema_tables(
+pub async fn inspect_schema_tables<S>(
     database: &Database,
     schema_name: &str,
-    config: &ConfigManager,
+    config: &ConfigManager<S>,
     secrets_manager: &SecretsManager,
-) -> Result<SchemaTablesResult, OxyError> {
+) -> Result<SchemaTablesResult, OxyError>
+where
+    ConfigManager<S>: ResolveWorkspaceFile,
+{
     crate::connector::reject_airhouse_managed_for_system_path(
         config,
         &database.name,

@@ -23,6 +23,7 @@ use arrow::array::{
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use futures::StreamExt;
 use oxy::adapters::workspace::manager::WorkspaceManager;
+use oxy::config::DiskSlot;
 use oxy_shared::errors::OxyError;
 use parquet::arrow::ArrowWriter;
 use parquet::basic::Compression;
@@ -62,9 +63,9 @@ const BATCH_SIZE: usize = 10_000;
 /// attempting to read a Parquet file — DuckDB WASM rejects schema-less files.
 pub const EMPTY_RESULT_SENTINEL: &str = "__empty__";
 
-pub async fn typed_stream_to_parquet(
+pub async fn typed_stream_to_parquet<S: DiskSlot>(
     stream: TypedRowStream,
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<S>,
 ) -> Result<(String, usize, bool), OxyError> {
     let TypedRowStream {
         columns,
@@ -83,11 +84,11 @@ pub async fn typed_stream_to_parquet(
 
     let arrow_schema: Arc<Schema> = Arc::new(build_arrow_schema(&columns));
 
-    let results_dir = workspace_manager
-        .config_manager
-        .get_results_dir()
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("results dir: {e}")))?;
+    // `results_dir`, not `get_results_dir`: a result parquet is a runtime
+    // artifact mirrored to S3 and read back through that mirror, so it must be
+    // writable on a replica too. The `WorkingCopy` accessor routes through the storage
+    // layer and is unreachable without a working copy.
+    let results_dir = workspace_manager.config_manager.results_dir();
     tokio::fs::create_dir_all(&results_dir)
         .await
         .map_err(|e| OxyError::IOError(format!("mkdir results dir: {e}")))?;

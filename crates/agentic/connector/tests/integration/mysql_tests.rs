@@ -57,6 +57,11 @@ async fn test_dsn() -> Option<Dsn> {
             let container = TEST_CONTAINER
                 .get_or_try_init(|| async {
                     Mysql::default()
+                        // 64 MB (Docker default) is too small: a parallel plan wants a 32 MB
+                        // DSM segment and a REUSED container accumulates them.
+                        // Must match at every setup site — reuse hashes the config.
+                        // See internal-docs/workspace-source.md.
+                        .with_shm_size(1024 * 1024 * 1024)
                         .with_reuse(ReuseDirective::Always)
                         .start()
                         .await

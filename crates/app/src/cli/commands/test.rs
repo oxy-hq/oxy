@@ -25,6 +25,7 @@ use crate::integrations::eval::{EvalResult, JsonReporter, MetricKind, PrettyRepo
 use crate::server::service::eval::{
     EvalEventsHandler, SharedTokenStats, TokenStats, run_eval_with_tag,
 };
+use oxy::config::WorkingCopy;
 
 const TEST_FILE_SUFFIX: &str = ".test.yml";
 
@@ -73,7 +74,7 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
 
     let workspace_path = resolve_local_workspace_path()?;
     let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
-        .with_workspace_path(&workspace_path)
+        .with_working_copy(&workspace_path, None, oxy::config::OnMissing::Fail)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
         .build()
@@ -149,7 +150,7 @@ fn validate_args(test_args: &TestArgs) -> Result<(), OxyError> {
 ///
 /// The `.test.yml` suffix is already enforced by [`validate_args`].
 async fn resolve_test_files(
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
     file: Option<&str>,
 ) -> Result<Vec<PathBuf>, OxyError> {
     let Some(file) = file else {
@@ -177,7 +178,7 @@ async fn resolve_test_files(
 /// Resolves `--case` to a 0-based index. Accepts an integer index, a case
 /// `name`, or an exact `prompt` string.
 async fn resolve_case_index(
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
     case_str: &str,
     file_path: &Path,
 ) -> Result<Option<usize>, OxyError> {
@@ -225,7 +226,7 @@ async fn resolve_case_index(
 /// Case labels and per-case run count, used to drive the progress bar so it can
 /// show which case is currently being worked on.
 async fn collect_case_info(
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
     file_path: &Path,
     test_args: &TestArgs,
     case_index: Option<usize>,
@@ -266,7 +267,7 @@ fn case_label(name: Option<&str>, prompt: &str) -> String {
 }
 
 async fn run_one_file(
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
     file_path: &Path,
     test_args: &TestArgs,
     case_index: Option<usize>,

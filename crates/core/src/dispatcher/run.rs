@@ -1,5 +1,6 @@
 use uuid::Uuid;
 
+use crate::config::WorkingCopy;
 use crate::{
     adapters::{runs::TopicRef, workspace::manager::WorkspaceManager},
     checkpoint::types::RetryStrategy,
@@ -10,14 +11,14 @@ use crate::{
 use oxy_shared::errors::OxyError;
 
 pub struct Dispatcher {
-    pm: WorkspaceManager,
+    pm: WorkspaceManager<WorkingCopy>,
 }
 
 #[async_trait::async_trait]
 pub trait Dispatch {
     async fn run(
         &self,
-        workspace_manager: WorkspaceManager,
+        workspace_manager: WorkspaceManager<WorkingCopy>,
         topic_ref: TopicRef<EventKind>,
         source_id: String,
         retry_strategy: RetryStrategy,
@@ -25,7 +26,7 @@ pub trait Dispatch {
 }
 
 impl Dispatcher {
-    pub fn new(pm: WorkspaceManager) -> Self {
+    pub fn new(pm: WorkspaceManager<WorkingCopy>) -> Self {
         Self { pm }
     }
 

@@ -1,8 +1,5 @@
 use serde::Deserialize;
 use std::path::Path;
-use uuid::Uuid;
-
-use crate::server::api::compiled_reader;
 
 /// Top-level config parsed from `.world-model.yml` at the workspace root.
 /// If the file is absent the world model falls back to showing all entities.
@@ -43,31 +40,25 @@ pub struct WmFieldConfig {
 }
 
 impl WorldModelConfig {
-    /// Resolve the world-model config, compile boundary first, FS fallback.
+    /// The world-model config, from whichever source the manager reads.
     ///
-    /// On a promoted workspace the config is served from Postgres
-    /// (`world_model_configs`), so a stateless serve replica — which has no
-    /// working copy — still gets the labels/allowlist. On a boundary miss
-    /// (not promoted / no row / lookup error) we fall through to the working
-    /// copy via [`Self::load`], exactly like every other compile-boundary
-    /// reader. `Ok(None)` means "no config" → show all entities.
-    pub async fn resolve(
-        workspace_id: Uuid,
-        workspace_path: &Path,
+    /// `Ok(None)` means "no config" → show all entities. It is NOT the same as
+    /// a replica with nothing to read: `ConfigManager` returns `NoSource`
+    /// there, and mapping that to `None` would report "the tenant configured no
+    /// display overrides" for a node that simply could not look.
+    pub async fn resolve<S: oxy::config::DiskSlot>(
+        config_manager: &oxy::config::ConfigManager<S>,
     ) -> Result<Option<Self>, String> {
-        match compiled_reader::resolve_world_model_config(workspace_id, None).await {
+        match config_manager.world_model_config().await {
             Ok(Some(value)) => serde_json::from_value::<Self>(value)
                 .map(Some)
-                .map_err(|e| format!("Failed to parse compiled .world-model.yml: {e}")),
-            Ok(None) => Self::load(workspace_path),
-            Err(e) => {
-                tracing::warn!(
-                    workspace_id = %workspace_id,
-                    error = ?e,
-                    "world-model config: boundary lookup failed; falling through to FS"
-                );
-                Self::load(workspace_path)
+                .map_err(|e| format!("Failed to parse .world-model.yml: {e}")),
+            Ok(None) => Ok(None),
+            Err(e) if e.retryable() => {
+                tracing::debug!(error = %e, "world-model config unavailable here");
+                Ok(None)
             }
+            Err(e) => Err(format!("world-model config read failed: {e}")),
         }
     }
 

@@ -884,7 +884,9 @@ async fn make_service(
         let config_manager = oxy::config::ConfigBuilder::new()
             .with_workspace_path(workspace_root)
             .map_err(|e| ToolError::Execution(format!("config error: {e}")))?
-            .build()
+            // Airform drives dbt against a project directory on disk, so it reads
+            // config.yml from there rather than from a compiled revision.
+            .build_with_working_copy(oxy::config::Origin::Disk, oxy::config::OnMissing::Fail)
             .await
             .map_err(|e| ToolError::Execution(format!("config error: {e}")))?;
         svc.with_oxy_context(config_manager, sm.clone())

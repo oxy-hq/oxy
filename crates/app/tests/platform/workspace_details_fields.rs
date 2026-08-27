@@ -161,10 +161,9 @@ async fn missing_workspace_directory_in_cloud_is_a_transient_503() {
 }
 
 /// SERVE REPLICA: a missing working copy is NORMAL here — a stateless replica
-/// has no PVC. `/details` is listed in
-/// `role_manifest::degrades_when_ide_unreachable` precisely so that when the ide
-/// is down, a replica serves this from its own handler and the workspace page
-/// still renders with git shown as unavailable.
+/// has no PVC. The workspace page's data half is `FleetOk`, so a replica serves
+/// it from its own handler and the page still renders with git shown as
+/// unavailable.
 ///
 /// So this must stay a flagged `200`, NOT the materializing 503. Answering 503
 /// here turns a benign degraded page into an unusable one: the shell would spin

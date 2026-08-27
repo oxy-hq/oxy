@@ -54,10 +54,16 @@ pub async fn api_router(
     // mounts the org/global tree, so it drops `extra_api_routes` entirely. Correct
     // for github (cloud-only); a future local-mode surface needs its own local seam.
     extra_api_routes: Router<AppState>,
+    // What those surfaces declare about themselves. Most mount Postgres-only
+    // routes and the FleetOk default is the truth; `oxy-api-onboarding` clones a
+    // checkout onto node-local disk, and it is the exception that makes this
+    // parameter necessary.
+    extra_api_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
     // Workspace-scoped surface routes, merged INSIDE the `/{workspace_id}` nest
     // (see `build_protected_routes`) so they inherit the workspace middleware.
     // Same cloud-only caveat as `extra_api_routes`.
     extra_workspace_routes: Router<AppState>,
+    extra_workspace_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
 ) -> Result<(Router, Router), OxyError> {
     let agentic_state = new_agentic_state(shutdown_token, true).await?;
 
@@ -236,6 +242,13 @@ pub async fn api_router(
         semantic_engine_cache: super::workspace_cache::new_semantic_engine_cache(),
     };
 
+    // Built here rather than at the merge below because `install_declarations`
+    // sets a OnceLock: there is exactly one install, and a declaration that
+    // misses it is decorative. The public tree's own routes have to be in the
+    // vector that install receives.
+    let (public_router, public_decls, _) = build_public_routes(&app_state).into_parts();
+    let public_decls = crate::server::role_manifest::api_prefixed(public_decls);
+
     let protected_routes = match mode {
         ServeMode::Cloud => {
             // Billing applies to cloud mode only. The reconciliation job no-ops
@@ -246,26 +259,47 @@ pub async fn api_router(
             // spawn_billing_reconciler().await;
             //
             // Surface crates mounted by the composition root (`oxy-server`) —
-            // e.g. `oxy-api-github` — are merged into the protected tree HERE,
-            // before `apply_middleware`, so they inherit the exact standard auth
-            // stack (auth / api-key / timeout / publish-token-scope) rather than
-            // re-applying it themselves (a reproduction that could drift into an
-            // auth bypass). A surface still re-applies its own inner middleware
-            // (e.g. github's org routes carry org_middleware + subscription_guard).
-            apply_middleware(
-                build_protected_routes(
-                    app_state.clone(),
-                    agentic_state.clone(),
-                    extra_workspace_routes,
-                )
-                .merge(extra_api_routes),
-            )?
+            // e.g. `oxy-api-github`, `oxy-api-partner-console`, `oxy-api-onboarding`
+            // — are merged into the protected tree HERE, before `apply_middleware`,
+            // so they inherit the exact standard auth stack (auth / api-key /
+            // timeout / publish-token-scope) rather than re-applying it themselves
+            // (a reproduction that could drift into an auth bypass). A surface
+            // still re-applies its own inner middleware (e.g. github's org routes
+            // carry org_middleware + subscription_guard).
+            //
+            // `extra_api_decls` is what keeps the seam honest: most of these mount
+            // Postgres-only routes and the FleetOk default is right for them, but
+            // onboarding clones a checkout onto node-local disk, so it declares.
+            let (routes, decls) = build_protected_routes(
+                app_state.clone(),
+                agentic_state.clone(),
+                extra_workspace_routes,
+                extra_workspace_decls,
+            );
+            // `build_protected_routes` already returned these `/api`-prefixed;
+            // a seam's declarations are relative to the same tree, so they need
+            // the same prefix or `classify` never matches them and the route
+            // silently takes the FleetOk default.
+            let mut decls = decls;
+            decls.extend(crate::server::role_manifest::api_prefixed(
+                extra_api_decls
+                    .iter()
+                    .map(|d| (d.method, d.path.to_string(), d.role))
+                    .collect(),
+            ));
+            decls.extend(public_decls.clone());
+            apply_middleware(routes.merge(extra_api_routes), decls)?
         }
-        ServeMode::Local => apply_local_middleware(build_local_protected_routes(
-            app_state.clone(),
-            agentic_state.clone(),
-            extra_workspace_routes,
-        ))?,
+        ServeMode::Local => {
+            let (routes, mut decls) = build_local_protected_routes(
+                app_state.clone(),
+                agentic_state.clone(),
+                extra_workspace_routes,
+                extra_workspace_decls,
+            );
+            decls.extend(public_decls.clone());
+            apply_local_middleware(routes, decls)?
+        }
     };
 
     // Camera-fleet routes split across two mounting points:
@@ -277,9 +311,7 @@ pub async fn api_router(
     //     so it sits behind workspace_middleware + auth_middleware and
     //     trusts the URL's workspace_id.
     let camera_routes = oxy_cameras::routes::router::<AppState>(agentic_state.db.clone());
-    let app_routes = build_public_routes()
-        .merge(protected_routes)
-        .merge(camera_routes);
+    let app_routes = public_router.merge(protected_routes).merge(camera_routes);
 
     // External API surface (`/external/api`): curated routes, API-key-only
     // auth, wide-open CORS. Built from the SAME shared `app_state` +
@@ -326,7 +358,12 @@ pub async fn internal_api_router(
     // The internal API mirrors the main app (see below), so it takes the same
     // surface seams `api_router` does.
     extra_api_routes: Router<AppState>,
+    // Taken for signature parity with `api_router` and deliberately unused: the
+    // primary router owns the declaration registry, and installing a second one
+    // from here would race it.
+    _extra_api_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
     extra_workspace_routes: Router<AppState>,
+    extra_workspace_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
 ) -> Result<Router, OxyError> {
     let app_state = AppState {
         enterprise,
@@ -348,19 +385,29 @@ pub async fn internal_api_router(
     let agentic_state = new_agentic_state(shutdown_token, false).await?;
     spawn_shutdown_hook(agentic_state.clone());
 
-    // The internal API is an internal-auth MIRROR of the main app, so it mounts the
-    // SAME extracted surface crates (via the seams) that `api_router` does. The
-    // agentic browser tests drive this port; a surface merged only into `api_router`
-    // (not here) 404/405s on :3001 while working on the public port — e.g.
-    // onboarding's `POST /orgs/{org_id}/onboarding/new` create-workspace call.
-    // `extra_api_routes` merges BEFORE the layers so it inherits internal auth.
-    let protected_routes =
-        build_protected_routes(app_state.clone(), agentic_state, extra_workspace_routes)
-            .merge(extra_api_routes)
-            .layer(middleware::from_fn(timeout_middleware))
-            .layer(middleware::from_fn(internal_auth_middleware));
+    // The internal API is an internal-auth MIRROR of the main app, so it mounts
+    // the SAME extracted surface crates (via the seams) that `api_router` does.
+    // The agentic browser tests drive this port; a surface merged only into
+    // `api_router` 404/405s on :3001 while working on the public port — e.g.
+    // onboarding's `POST /orgs/{org_id}/onboarding/new`. `extra_api_routes`
+    // merges BEFORE the layers so it inherits internal auth.
+    //
+    // The primary `api_router` owns the declaration registry, so this build
+    // discards its copy rather than racing to install a second one.
+    let (protected_routes, _decls) = build_protected_routes(
+        app_state.clone(),
+        agentic_state,
+        extra_workspace_routes,
+        extra_workspace_decls,
+    );
+    let protected_routes = protected_routes
+        .merge(extra_api_routes)
+        .layer(middleware::from_fn(timeout_middleware))
+        .layer(middleware::from_fn(internal_auth_middleware));
 
-    let app_routes = build_public_routes().merge(protected_routes);
+    let app_routes = build_public_routes(&app_state)
+        .into_router()
+        .merge(protected_routes);
 
     Ok(finalize_router(app_routes, app_state))
 }

@@ -26,7 +26,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex, OnceCell};
 
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 
 const BESTTIME_LIVE_URL: &str = "https://besttime.app/api/v1/forecasts/live";
 // `/radar/filter` serves BestTime's web UI (HTML). The JSON equivalent
@@ -128,7 +128,7 @@ impl BesttimeOpen {
 /// config entry. Returns `None` when no `besttime` integration is configured —
 /// both handlers surface that as a 503 so the world-model FE renders the empty
 /// foot-traffic state cleanly.
-async fn besttime_key(workspace: &WorkspaceManager) -> Option<String> {
+async fn besttime_key<S>(workspace: &WorkspaceManager<S>) -> Option<String> {
     match apps_helpers::resolve_besttime(
         workspace.config_manager.get_config(),
         &workspace.secrets_manager,
@@ -296,7 +296,7 @@ async fn fetch_one(
 #[axum::debug_handler]
 #[tracing::instrument(skip_all)]
 pub async fn foot_traffic_current_batch(
-    WorkspaceManagerExtractor(workspace): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace): WorkspaceManagerReadOnly,
     axum::Json(stores): axum::Json<Vec<FootTrafficRequest>>,
 ) -> Result<Json<Vec<FootTrafficCurrent>>, (StatusCode, String)> {
     let api_key = besttime_key(&workspace).await.ok_or((
@@ -528,7 +528,7 @@ async fn fetch_radar(
 #[axum::debug_handler]
 #[tracing::instrument(skip_all)]
 pub async fn foot_traffic_radar_batch(
-    WorkspaceManagerExtractor(workspace): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace): WorkspaceManagerReadOnly,
     axum::Json(stores): axum::Json<Vec<RadarRequest>>,
 ) -> Result<Json<Vec<RadarVenue>>, (StatusCode, String)> {
     let api_key = besttime_key(&workspace).await.ok_or((

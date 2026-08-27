@@ -1,6 +1,6 @@
 use crate::{
     api::middlewares::role_guards::WorkspaceEditor,
-    api::middlewares::workspace_context::WorkspaceManagerExtractor,
+    api::middlewares::workspace_context::WorkspaceManagerWorkingCopy,
     server::service::test::TestCasePersistContext, server::service::test::run_test,
     server::service::test_runs::TestRunsManager,
 };
@@ -61,7 +61,7 @@ pub struct TestFileSummary {
 }
 
 pub async fn list_test_files(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
 ) -> Result<extract::Json<Vec<TestFileSummary>>, StatusCode> {
     let paths = workspace_manager
         .config_manager
@@ -92,7 +92,7 @@ pub async fn list_test_files(
 
 pub async fn get_test_file(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
 ) -> Result<impl IntoResponse, StatusCode> {
     let path = decode_path_from_base64(pathb64).map_err(|_| StatusCode::BAD_REQUEST)?;
 
@@ -114,7 +114,7 @@ pub async fn run_test_case(
     _: WorkspaceEditor,
     Path((workspace_id, pathb64, case_index)): Path<(Uuid, String, usize)>,
     Query(query): Query<RunTestCaseQuery>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
 ) -> Result<impl IntoResponse, StatusCode> {
     let path = match decode_path_from_base64(pathb64) {
         Ok(path) => path,

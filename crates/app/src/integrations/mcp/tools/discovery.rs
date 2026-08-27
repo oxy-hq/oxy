@@ -7,14 +7,15 @@ use oxy_shared::errors::OxyError;
 
 use super::{automation, semantic, sql};
 use crate::integrations::mcp::types::OxyTool;
+use oxy::config::WorkingCopy;
 
 /// Handles resolution of MCP tools from different resource types
 struct McpToolResolver {
-    config_manager: ConfigManager,
+    config_manager: ConfigManager<WorkingCopy>,
 }
 
 impl McpToolResolver {
-    fn new(config_manager: ConfigManager) -> Self {
+    fn new(config_manager: ConfigManager<WorkingCopy>) -> Self {
         Self { config_manager }
     }
 
@@ -54,7 +55,7 @@ impl McpToolResolver {
 /// 2. **Default Behavior**: When no MCP configuration exists, all automations
 ///    in the project are automatically exposed as MCP tools.
 pub async fn get_mcp_tools(
-    config_manager: ConfigManager,
+    config_manager: ConfigManager<WorkingCopy>,
 ) -> Result<HashMap<String, OxyTool>, OxyError> {
     let resource_patterns = {
         let config = config_manager.get_config();
@@ -86,7 +87,7 @@ pub async fn get_mcp_tools(
 
 /// Default discovery strategy: exposes all automations as MCP tools
 async fn get_default_tools(
-    config_manager: ConfigManager,
+    config_manager: ConfigManager<WorkingCopy>,
 ) -> Result<HashMap<String, OxyTool>, OxyError> {
     let tools_map = automation::get_all_automation_tools(config_manager.clone()).await?;
 
@@ -96,7 +97,7 @@ async fn get_default_tools(
 
 /// Discovers tools by resolving glob patterns from explicit MCP configuration
 async fn get_tools(
-    config_manager: ConfigManager,
+    config_manager: ConfigManager<WorkingCopy>,
     patterns: &[String],
 ) -> Result<HashMap<String, OxyTool>, OxyError> {
     let config = config_manager.get_config();

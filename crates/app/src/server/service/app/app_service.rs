@@ -3,6 +3,7 @@ use super::types::{AppResult, TASKS_KEY};
 use crate::agentic_wiring::OxyProjectContext;
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::model::{AppConfig, ControlConfig, Display, Task};
+use oxy::config::{ConfigManager, DiskSlot, ResolveWorkspaceFile, WorkingCopy};
 use oxy::execute::renderer::Renderer;
 use oxy::execute::types::{Data, DataContainer, TableData};
 use oxy_shared::errors::OxyError;
@@ -41,121 +42,59 @@ pub fn render_control_default(val: JsonValue) -> JsonValue {
     }
 }
 
-pub struct AppService {
-    workspace_manager: WorkspaceManager,
-    project_ctx: Arc<OxyProjectContext>,
-    cache: AppCache,
-    /// Active branch in the IDE / request context. When the workspace has a
-    /// promoted revision and the active branch is its default branch,
-    /// `get_config` resolves the AppConfig from `app_definitions` instead of
-    /// walking the YAML file. `None` for callers without branch context (e.g.
-    /// background sync jobs) — those stay on the FS path.
-    branch_hint: Option<String>,
+pub struct AppService<S = WorkingCopy> {
+    workspace_manager: WorkspaceManager<S>,
+    cache: AppCache<S>,
 }
 
-impl AppService {
-    pub fn new(workspace_manager: WorkspaceManager, project_ctx: Arc<OxyProjectContext>) -> Self {
-        Self::new_with_branch(workspace_manager, project_ctx, None)
-    }
-
-    pub fn new_with_branch(
-        workspace_manager: WorkspaceManager,
-        project_ctx: Arc<OxyProjectContext>,
-        branch_hint: Option<String>,
-    ) -> Self {
+impl<S: DiskSlot + Send + Sync> AppService<S>
+where
+    ConfigManager<S>: ResolveWorkspaceFile,
+{
+    /// The `OxyProjectContext` this used to take was stored and never read —
+    /// the one place that needs one builds it locally from the same manager.
+    /// Carrying it pinned the whole service to `WorkingCopy`, so a route whose
+    /// entire job is to serve a cached answer when the ide is down required a
+    /// disk to say so.
+    ///
+    /// A `branch_hint` went the same way. The manager already carries the
+    /// `Origin` the middleware resolved — branch gate included — so a second
+    /// copy of the branch could only agree with it or drift from it.
+    pub fn new(workspace_manager: WorkspaceManager<S>) -> Self {
         let config_manager = workspace_manager.config_manager.clone();
         let workspace_id = workspace_manager.workspace_id;
         Self {
             workspace_manager,
-            project_ctx,
             cache: AppCache::new(config_manager, workspace_id),
-            branch_hint,
         }
     }
 
     pub async fn get_config(&self, app_path: &PathBuf) -> AppResult<AppConfig> {
-        // Hydrate the AppConfig from `app_definitions` — falls through to the FS
-        // read on any miss/error so a Postgres hiccup never blanks an app page;
-        // a feature branch always sees its working-copy edits, not compiled main.
-        let path_str = app_path.to_string_lossy().to_string();
-        match crate::server::api::compiled_reader::resolve_app(
-            self.workspace_manager.workspace_id,
-            self.branch_hint.as_deref(),
-            &path_str,
-        )
-        .await
-        {
-            Ok(Some(artifact)) => match serde_json::from_value::<AppConfig>(artifact.definition) {
-                Ok(cfg) => {
-                    tracing::debug!(
-                        workspace_id = %self.workspace_manager.workspace_id,
-                        file_path = %path_str,
-                        "AppService::get_config served from compile boundary"
-                    );
-                    return Ok(cfg);
-                }
-                Err(e) => tracing::warn!(
-                    workspace_id = %self.workspace_manager.workspace_id,
-                    file_path = %path_str,
-                    error = ?e,
-                    "compile boundary returned an app row but JSON deserialize failed; falling through to FS"
-                ),
-            },
-            Ok(None) => {
-                // Workspace not promoted, branch is non-default, or no matching
-                // row. Fall through to FS.
-            }
-            Err(e) => tracing::warn!(
-                workspace_id = %self.workspace_manager.workspace_id,
-                file_path = %path_str,
-                error = ?e,
-                "compile boundary error; falling through to FS"
-            ),
-        }
-
-        let config_manager = &self.workspace_manager.config_manager;
-        let app = config_manager.resolve_app(app_path).await?;
-        Ok(app)
+        Ok(self
+            .workspace_manager
+            .config_manager
+            .resolve_app(app_path)
+            .await?)
     }
 
     pub async fn get_tasks(&self, app_path: &PathBuf) -> AppResult<Vec<Task>> {
-        // Same compile-boundary path as `get_config`: extract `tasks:` from the
-        // compiled definition, else fall through to the FS read.
         let path_str = app_path.to_string_lossy().to_string();
-        match crate::server::api::compiled_reader::resolve_app(
-            self.workspace_manager.workspace_id,
-            self.branch_hint.as_deref(),
-            &path_str,
-        )
-        .await
+        // `app_definition` owns the compiled-vs-disk choice AND the fallback,
+        // so an `Err` is "no source", not "not compiled". `unwrap_or(None)`
+        // swallowed a DB fault into a miss and fell through to
+        // `read_yaml_file` — which on a replica reads a workspace directory
+        // that is not on the node. Same defect `list_monitors` documents.
+        if let Some(definition) = self
+            .workspace_manager
+            .config_manager
+            .app_definition(&path_str)
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("{path_str}: {e}")))?
+            && let Some(tasks_value) = definition.as_object().and_then(|m| m.get(TASKS_KEY))
         {
-            Ok(Some(artifact)) => {
-                if let Some(tasks_value) = artifact
-                    .definition
-                    .as_object()
-                    .and_then(|m| m.get(TASKS_KEY))
-                {
-                    let tasks: Vec<Task> =
-                        serde_json::from_value(tasks_value.clone()).map_err(|e| {
-                            OxyError::ConfigurationError(format!(
-                                "Failed to parse compiled tasks: {e}"
-                            ))
-                        })?;
-                    tracing::debug!(
-                        workspace_id = %self.workspace_manager.workspace_id,
-                        file_path = %path_str,
-                        "AppService::get_tasks served from compile boundary"
-                    );
-                    return Ok(tasks);
-                }
-            }
-            Ok(None) => {}
-            Err(e) => tracing::warn!(
-                workspace_id = %self.workspace_manager.workspace_id,
-                file_path = %path_str,
-                error = ?e,
-                "compile boundary get_tasks error; falling through to FS"
-            ),
+            return serde_json::from_value(tasks_value.clone()).map_err(|e| {
+                OxyError::ConfigurationError(format!("Failed to parse compiled tasks: {e}")).into()
+            });
         }
 
         let yaml_content = self.read_yaml_file(app_path).await?;
@@ -171,6 +110,37 @@ impl AppService {
             .map_err(|e| OxyError::ConfigurationError(format!("Failed to parse tasks: {e}")))
     }
 
+    pub async fn try_load_cached_data(
+        &self,
+        app_path: &PathBuf,
+        tasks: &[Task],
+    ) -> Option<DataContainer> {
+        self.cache.try_load_data(app_path, tasks).await
+    }
+
+    pub async fn read_yaml_file(&self, path: &PathBuf) -> AppResult<String> {
+        read_app_yaml_file(&self.workspace_manager, path).await
+    }
+
+    fn parse_yaml_to_mapping(&self, yaml_content: &str) -> AppResult<serde_yaml::Mapping> {
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(yaml_content)
+            .map_err(|e| OxyError::ConfigurationError(format!("Failed to parse YAML: {e}")))?;
+
+        match yaml_value {
+            serde_yaml::Value::Mapping(map) => Ok(map),
+            _ => Err(OxyError::ConfigurationError(
+                "Expected YAML object at root".to_string(),
+            )),
+        }
+    }
+}
+
+/// Running an app's automation inline needs an `OxyProjectContext`, which is
+/// pinned to a working copy — so this one method is not generic. That is the
+/// right shape: executing is the thing that genuinely needs the ide, and the
+/// reads around it (`get_config`, `get_tasks`, `try_load_cached_data`) stay
+/// available on any replica.
+impl AppService<WorkingCopy> {
     pub async fn run(
         &mut self,
         app_path: &PathBuf,
@@ -327,41 +297,24 @@ impl AppService {
             .await?;
         Ok(data)
     }
-
-    pub async fn try_load_cached_data(
-        &self,
-        app_path: &PathBuf,
-        tasks: &[Task],
-    ) -> Option<DataContainer> {
-        self.cache.try_load_data(app_path, tasks).await
-    }
-
-    pub async fn read_yaml_file(&self, path: &PathBuf) -> AppResult<String> {
-        read_app_yaml_file(&self.workspace_manager, path).await
-    }
-
-    fn parse_yaml_to_mapping(&self, yaml_content: &str) -> AppResult<serde_yaml::Mapping> {
-        let yaml_value: serde_yaml::Value = serde_yaml::from_str(yaml_content)
-            .map_err(|e| OxyError::ConfigurationError(format!("Failed to parse YAML: {e}")))?;
-
-        match yaml_value {
-            serde_yaml::Value::Mapping(map) => Ok(map),
-            _ => Err(OxyError::ConfigurationError(
-                "Expected YAML object at root".to_string(),
-            )),
-        }
-    }
 }
 
-pub async fn read_app_yaml_file(
-    workspace_manager: &WorkspaceManager,
+pub async fn read_app_yaml_file<S: DiskSlot>(
+    workspace_manager: &WorkspaceManager<S>,
     path: &PathBuf,
-) -> AppResult<String> {
+) -> AppResult<String>
+where
+    ConfigManager<S>: ResolveWorkspaceFile,
+{
     let config_manager = &workspace_manager.config_manager;
-    let full_path = config_manager.resolve_file(path).await.map_err(|e| {
-        tracing::debug!("Failed to resolve file: {:?} {}", path, e);
-        OxyError::ConfigurationError(format!("Failed to resolve file: {e}"))
-    })?;
+    let path_ref = path.to_string_lossy();
+    let full_path = config_manager
+        .try_resolve_file(&path_ref)
+        .await
+        .map_err(|e| {
+            tracing::debug!("Failed to resolve file: {:?} {}", path, e);
+            OxyError::ConfigurationError(format!("Failed to resolve file: {e}"))
+        })?;
 
     std::fs::read_to_string(&full_path).map_err(|e| {
         tracing::info!("Failed to read file: {:?}", e);

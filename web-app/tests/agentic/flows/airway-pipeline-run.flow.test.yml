@@ -1,0 +1,147 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Run a real Airway (ELT) pipeline from its standalone landing page and
+# follow it onto the run-detail route — `/pipelines/:pathb64` then
+# `/pipelines/:pathb64/runs/:runId` (web-app/src/pages/airway/index.tsx:
+# AirwayPipelinePage + AirwayRunDetailPage). Nothing exercises the STANDALONE
+# run page today: `ide-pipeline-quickbooks` only reaches the New Pipeline
+# wizard's Details step and never clicks Create, and the IDE's embedded
+# pipeline editor (Files/Editor/Airway/index.tsx) deliberately keeps a run's
+# id in local React state rather than the URL — "the standalone airway url
+# doesn't exist inside the IDE shell" — so that surface can never land here.
+# This flow goes straight to the flat, non-IDE route the way
+# apps-data-app-charts goes straight to /apps/<b64>.
+#
+# FIXTURE — examples/pipelines/weather.airway.yml, already committed. Chosen
+# because it is the one pipeline built to be run from the UI with zero setup:
+# source is Open-Meteo's keyless public forecast API (no credentials, no
+# secret manager entry), and the destination is `kind: memory` (in-process,
+# ephemeral — no warehouse/Postgres/Airhouse destination to provision). Its
+# own header calls this out explicitly: "so the pipeline runs live in the UI
+# (IDE -> Pipelines -> Run) with no warehouse infra". Verified directly
+# (POST /agentic-airway/runs against a manually-run backend) that a run
+# completes in well under a minute: task_status flips queued -> running ->
+# done, with a real extract/normalize/load event trace for the
+# weather_daily + weather_daily_forecast resources.
+#
+# demo_project (the `--local` fixture) has no `.airway.yml` at all, so this
+# flow needs `backend_mode: cloud`. Unlike the two admin/airway flows, cloud
+# mode's bare `oxy start --enterprise --clean` is NOT enough by itself: the
+# harness's setup-command surface is deliberately read-only (no DB seeding,
+# no fixture creation — 2026-05-06 incident rule) and cannot register a
+# pipeline or compile a workspace at runtime. Reaching this page requires the
+# backend to have been prepared BEFORE the run, same acknowledged limitation
+# as admin-tenants-cockpit's "that path can't live in the read-only agentic
+# harness":
+#
+#   set -a; source .env.airhouse; set +a   # or any reachable Postgres
+#   cargo run -p migration --bin migration
+#   cargo run -p oxy-server -- seed        # binds OXY_GLOBAL_ADMINS as Owner
+#                                           # of the deterministic "Local" org
+#                                           # (slug `local`) + Demo workspace
+#                                           # at examples/, workspace_id
+#                                           # 70787bb2-e11b-5488-b2c3-02e60d5fc7d3
+#                                           # (both fixed by `oxy seed`'s own
+#                                           # source, not chosen by this flow)
+#   cargo run -p oxy-server -- compile --workspace-path "$PWD/examples" \
+#     --workspace-id 70787bb2-e11b-5488-b2c3-02e60d5fc7d3 --enterprise --promote
+#   OXY_OWNER=<...>,<caller-email> cargo run -p oxy-server -- serve --enterprise
+#
+# The org slug ("local") and workspace id above are `oxy seed`'s own fixed
+# constants, so the goto: path below is reproducible by anyone who runs that
+# exact recipe — not a value this flow invented. See
+# internal-docs/local-split-fleet-testing.md for the same recipe applied to
+# the split ide/serve fleet.
+#
+# COST: one real act (click Run) plus two structural waits and a judge call.
+# The pipeline itself costs no LLM tokens (it is a DuckDB-free HTTP
+# extract), so cold cost is dominated by the single act's tool-pick.
+
+name: Airway pipeline run page
+target: any
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: cloud
+  max_steps: 20
+
+setup:
+  # pathb64 for `pipelines/weather.airway.yml`, exactly as returned by
+  # `GET /{workspace}/airway-pipelines` (unpadded base64 — do not add `==`).
+  # Workspace/org prefix per the recipe above.
+  - "goto:/local/workspaces/70787bb2-e11b-5488-b2c3-02e60d5fc7d3/pipelines/cGlwZWxpbmVzL3dlYXRoZXIuYWlyd2F5LnltbA"
+
+cases:
+  - name: run weather.airway.yml and land on its completed run page
+    tags: [airway, pipelines, compile-boundary, critical]
+    steps:
+      # The pipeline landing page's Run button. No data-testid on this
+      # surface yet (a follow-up worth filing); `aria-label='Run this
+      # pipeline'` — web-app/src/pages/airway/index.tsx:144 — is unique and
+      # stable across copy/icon changes.
+      - wait_for: "selector:role=button[name='Run this pipeline'];timeout_ms=30000"
+
+      - act: "Click the \"Run\" button (role=button[name='Run this pipeline']) at the top right of the pipeline page. It launches a new run and navigates to that run's detail page."
+
+      # THE NAVIGATION GATE. `role=button[name='Back to pipeline']` only
+      # exists on AirwayRunDetailPage (index.tsx:251) — it is absent from
+      # the landing page we started on. Waiting for it first, before
+      # anything status-related, is the "did the submit even succeed" proof:
+      # a 400 at submit time (bad pipeline_ref, spec/config parse failure)
+      # surfaces a toast and leaves us on the landing page, where this
+      # selector never appears and the step times out instead of the flow
+      # limping on to check a status badge that was never going to exist.
+      - wait_for: "selector:role=button[name='Back to pipeline'];timeout_ms=30000"
+
+      # THE COMPLETION GATE. `AirwayRunView.status` defaults to "running"
+      # before the first SSE event lands (web-app/src/utils/airwayReducer.ts
+      # emptyView()), so gating on the badge alone would risk a step that
+      # passes before real events ever arrive. The navigation gate above
+      # already proves the run was accepted; this one proves it actually
+      # finished. Budget generous — Open-Meteo + normalize + in-memory load
+      # for two resources measured well under a minute end to end, but this
+      # leaves headroom for a cold DNS/TLS handshake to the public API.
+      - wait_for: "selector:text=done;timeout_ms=180000"
+
+    expect:
+      # Structural, $0. `done` is the RUN_STATUS_LABEL text for the top
+      # status badge (pages/airway/index.tsx:58-64) — distinct from
+      # "running" / "completed with errors" / "failed" / "cancelled".
+      - assert: "selector text=done is visible"
+
+      # The PhaseBar's three labels are always rendered regardless of state
+      # (pages/airway/index.tsx PhaseBar — Extract/Normalize/Load), so their
+      # presence confirms the run page's own chrome mounted, not just that
+      # some element somewhere contains the word "done".
+      - assert: "selector text=Extract is visible"
+      - assert: "selector text=Normalize is visible"
+      - assert: "selector text=Load is visible"
+
+      # The failed-run banner is a `role='alert'` div (index.tsx:276-290),
+      # present only when `view.status === 'failed'`. Its absence is the
+      # assertion that this really is the happy path, not a failed run that
+      # merely rendered a badge.
+      - assert: "selector [role=alert] is not visible"
+
+      - judge: |
+          The page is a completed Airway pipeline run for
+          pipelines/weather.airway.yml: the header shows the pipeline path
+          and a status badge reading "done" (not "running", "failed",
+          "cancelled", or "completed with errors"), a three-segment
+          Extract / Normalize / Load phase bar, and a Lineage tab showing
+          the pipeline's resources (weather_daily, weather_daily_forecast)
+          feeding an in-memory destination.
+
+          Fail if ANY of the following is true:
+          (a) the status badge reads "running", "failed", "cancelled", or
+              "completed with errors";
+          (b) a destructive-toned error banner or alert is visible anywhere
+              on the page;
+          (c) the page is still showing the pipeline LANDING page (a "Run"
+              button, no status badge, no phase bar) — i.e. the click never
+              navigated anywhere;
+          (d) any visible text contains "os error", "No such file or
+              directory", a raw absolute filesystem path, or "retry
+              shortly".

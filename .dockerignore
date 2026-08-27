@@ -43,9 +43,20 @@ json-schemas/
 .github/
 internal-docs/
 scripts/
+# Not consumed by any build stage, but it sits in the context, so editing it
+# invalidates `COPY . .` and costs a full release rebuild of the workspace —
+# ~25 minutes to ship a change the image cannot even observe.
+justfile
 tests/
 assets/
 sdk/
+# ...but the build needs two things out of it, and finding that out took two
+# failed builds: the pnpm workspace manifests, and the three custom-app
+# templates `crates/app/src/custom_app_template/registry.rs` embeds with
+# `include_dir!`. Excluding either fails the build, which is how you learn no
+# workflow has ever built this image.
+!sdk/*/package.json
+!sdk/create-oxy-app/templates/**
 oss/
 .claude/
 .husky/
@@ -61,6 +72,11 @@ crates/semantic/tests/
 # markdowns
 docs/
 **/*.md
+# ...except the four the Rust build embeds with `include_str!`. Excluding them
+# makes `cargo build` fail on a missing file, which is how you learn nothing has
+# ever built this image.
+!crates/agentic/builder/knowledge/*.md
+!crates/app/src/cli/commands/apidoc.md
 
 # log
 *.log

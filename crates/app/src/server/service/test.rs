@@ -15,6 +15,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 use super::eval::run_eval;
+use oxy::config::WorkingCopy;
 
 #[derive(Serialize, Clone)]
 #[serde(tag = "type")]
@@ -104,7 +105,7 @@ pub struct TestCasePersistContext {
 }
 
 pub async fn run_test<P: AsRef<Path> + Send + 'static>(
-    workspace_manager: WorkspaceManager,
+    workspace_manager: WorkspaceManager<WorkingCopy>,
     target_ref: P,
     index: usize,
     persist: Option<TestCasePersistContext>,

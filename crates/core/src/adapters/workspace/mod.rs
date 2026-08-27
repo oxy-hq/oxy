@@ -50,20 +50,23 @@ pub async fn effective_workspace_path(
         })?;
 
     let Some(branch) = branch.map(str::trim).filter(|b| !b.is_empty()) else {
+        crate::workspace_fs_probe::note_workspace_path_resolved(Some(workspace_row.id), &root);
         return Ok(root);
     };
 
     let git = default_git_client();
     git.validate_branch_name(branch)?;
 
-    if branch == git.get_default_branch(&root).await {
-        return Ok(root);
-    }
-
-    match git.get_worktree_path(&root, branch) {
-        Some(worktree) => Ok(worktree_project_path(&root, worktree)),
-        None => Ok(root),
-    }
+    let resolved = if branch == git.get_default_branch(&root).await {
+        root
+    } else {
+        match git.get_worktree_path(&root, branch) {
+            Some(worktree) => worktree_project_path(&root, worktree),
+            None => root,
+        }
+    };
+    crate::workspace_fs_probe::note_workspace_path_resolved(Some(workspace_row.id), &resolved);
+    Ok(resolved)
 }
 
 /// Re-apply the workspace's in-repo subdirectory onto a worktree path.
@@ -89,6 +92,7 @@ fn worktree_project_path(root: &Path, worktree: PathBuf) -> PathBuf {
 
 pub async fn resolve_workspace_path(workspace_id: Uuid) -> Result<PathBuf, OxyError> {
     if workspace_id.is_nil() {
+        // The nil workspace is local mode by definition; it always owns its files.
         return resolve_local_workspace_path().map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to resolve local project path: {}", e))
         });

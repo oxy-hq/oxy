@@ -1,0 +1,246 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Read a TOPIC's detail and a VIEW's detail from the Semantic Layer page, and
+# run a query off the topic. These are the per-artifact detail reads, which no
+# existing flow covers: `semantic-builder-ask` drives the VIEW explorer inside
+# the FILE EDITOR route (/ide/files/<b64>) against `oxymart`, and never touches
+# a topic or the /ide/semantic page at all.
+#
+# WHY THIS FLOW EXISTS — two shipped bugs, one page
+# -------------------------------------------------
+# 1. "Topic not found. Available: []" — the scan directory handed to airlayer
+#    did not exist on that node, so the topic list came back empty and the
+#    lookup reported the topic missing rather than reporting that it could not
+#    look. The guard and its comment live at
+#    crates/app/src/server/api/semantic.rs:449 ("the 'Topic not found.
+#    Available: []' this guard exists to prevent"). Running a query off the
+#    topic is what exercises that path.
+# 2. A view/topic detail read surfaced a RAW FILESYSTEM IO ERROR instead of a
+#    legible message. Both explorers render whatever string comes back straight
+#    into an ErrorAlert — `<ErrorAlert title='Error loading topic'
+#    message={loadingTopicError} />`
+#    (web-app/src/pages/ide/Files/Editor/Topic/index.tsx:15) and
+#    `title='Error loading view'` (.../View/index.tsx:13) — so an "os error 2"
+#    reaches the user verbatim.
+#
+# ROUTE CLASSIFICATION (crates/app/src/server/router/workspace.rs)
+#   .route_fleet("/semantic/topic/{file_path_b64}", get(semantic::get_topic_details)) L168
+#   .route_fleet("/semantic/view/{file_path_b64}",  get(semantic::get_view_details))  L172
+#   .route_fleet("/semantic/compile",  post(semantic::compile_semantic_query))        L177
+#   .route_fleet("/semantic",          post(semantic::execute_semantic_query))        L179
+# All FleetOk — a replica answers them itself, with no ide proxy to fall back
+# on. `crates/app/src/server/api/projects/semantic_boundary.rs:159` is where the
+# same surface answers the 503 "… a (re)compile has been enqueued — retry
+# shortly", so that string is a symptom here too.
+#
+# ONE READ THIS FLOW DELIBERATELY LEANS ON: the object LIST in the left sidebar
+# is NOT a boundary read. `SemanticObjectsList` sources it from `useTopicFiles()`
+# / `useViewFiles()`, both of which wrap `useFileTree()` — the working-copy file
+# tree, an IdeOnly read (web-app/src/hooks/api/useTopicFiles.ts,
+# .../useViewFiles.ts). So this flow crosses BOTH sides in one journey: the list
+# has to survive the in-binary self-proxy to the ide node, and the detail has to
+# be served from Postgres by the replica itself. Its labels are file stems (the
+# hooks strip `.topic.yml` / `.view.yml`), which is why the testids below read
+# `retail_analytics` and `economic_factors`.
+#
+# Navigation is rail-driven rather than URL-driven (`goto:/` then
+# [data-testid=rail-core] then [data-testid=ide-nav-semantic]) so the flow
+# carries no workspace path prefix and resolves identically in local mode and
+# behind a cloud replica's org/workspace routing.
+#
+# COST: no agent or builder run — DuckDB query execution only. The Explorer tab
+# is the default tab (`?view=` absent falls through to "explorer",
+# web-app/src/pages/ide/SemanticLayer/index.tsx:26-29), so there is no tab click.
+
+name: semantic topic and view detail reads
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  # ~5 act steps across two cases plus waits.
+  max_steps: 20
+
+setup:
+      # `/home`, not `/`. Bare `/` is deliberately exempt from OXY_PATH_PREFIX
+      # (runner/backend.ts) and lands wherever the post-login dispatcher picks,
+      # which is fine with one workspace and a coin flip with two. This org now
+      # has two, so `/` silently ran a case against the wrong workspace. `/home`
+      # is the same page on a workspace-scoped route, so the prefix applies and
+      # the target is whatever OXY_PATH_PREFIX names.
+  - "goto:/home"
+
+cases:
+  - name: open the retail_analytics topic and run a query from it
+    tags: [semantic, topic, compile-boundary, fleet, critical]
+    steps:
+      # data-testid='rail-core' — web-app/src/components/Shell/WorkspaceShell.tsx:84
+      # (the Oxygen Factory / IDE rail tile; launcher-home asserts the same id).
+      - wait_for: "selector:[data-testid=rail-core]"
+
+      - act: |
+          browser_click [data-testid=rail-core] — the Oxygen Factory tile in the
+          left icon rail. The IDE opens.
+
+      # data-testid='ide-nav-semantic' — web-app/src/pages/ide/Sidebar/index.tsx:225
+      - wait_for: "selector:[data-testid=ide-nav-semantic];timeout_ms=60000"
+
+      - act: |
+          browser_click [data-testid=ide-nav-semantic] — the Semantic Layer icon
+          button in the narrow IDE sidebar rail. The URL ends with
+          /ide/semantic and the page opens on its default "Explorer" tab.
+
+      # data-testid='semantic-objects-list'
+      #   — web-app/src/pages/ide/SemanticLayer/SemanticObjectsList.tsx:44
+      - wait_for: "selector:[data-testid=semantic-objects-list];timeout_ms=30000"
+
+      # THE LIST. Gate on the specific row rather than the container: the
+      # container renders even when `items` is empty (it then shows "No topics
+      # or views yet.", SemanticObjectsList.tsx:65), which is the "empty list
+      # where content is expected" symptom reading as a legitimate empty
+      # workspace. testid template is
+      # `semantic-objects-item-${item.kind}-${item.label}` (same file, :57);
+      # label is the file stem of
+      # demo_project/sales_semantics/topics/retail_analytics.topic.yml.
+      - wait_for: "selector:[data-testid=semantic-objects-item-topic-retail_analytics];timeout_ms=30000"
+
+      - act: |
+          browser_click [data-testid=semantic-objects-item-topic-retail_analytics]
+          to open that topic in the inline explorer on the right.
+
+      # THE TOPIC DETAIL READ. `TopicExplorer` renders "Loading topic data..."
+      # until `topicData` arrives and an ErrorAlert if it fails, so a populated
+      # Fields panel is the proof the detail read resolved with substance.
+      # `total_sales` is a measure of the `oxymart` view, which this topic
+      # declares as its `base_view` (retail_analytics.topic.yml:5). Views and
+      # their Dimensions/Measures sections are both expanded by default
+      # (FieldsSelectionPanel.tsx:49; CollapsibleFieldSection.tsx:15
+      # `defaultOpen = true`), so no expansion click is needed.
+      # testid template `semantic-field-measure-${name}`
+      #   — .../SemanticExplorer/MeasureItem.tsx:18
+      - wait_for: "selector:[data-testid=semantic-field-measure-total_sales];timeout_ms=60000"
+
+      - act: |
+          browser_click [data-testid=semantic-field-measure-total_sales] to add
+          that measure to the query. Selecting it marks the sidebar item active
+          and enables the Run-query button (which stays disabled until at least
+          one field is selected).
+
+      # Gate on the active state so the Run click below cannot fire while the
+      # button is still disabled — the warm-replay race semantic-builder-ask
+      # documents.
+      - wait_for: "selector:[data-testid=semantic-field-measure-total_sales][data-active=true];timeout_ms=15000"
+
+      - act: |
+          browser_click [data-testid=semantic-run-query] — the Run-query play
+          button in the results panel header. This compiles the topic selection
+          to SQL and executes it against the DuckDB warehouse.
+
+      # THE QUERY. This is the "Topic not found. Available: []" surface: the
+      # compile step has to resolve the topic by name from the scan directory.
+      # On success the execution-time indicator renders; on a compile/execution
+      # failure the error panel renders instead and this times out.
+      # data-testid='semantic-query-execution-time'
+      #   — .../SemanticQueryPanel/components/ResultsView.tsx:70
+      - wait_for: "selector:[data-testid=semantic-query-execution-time];timeout_ms=120000"
+
+      # THE ROWS. The execution-time badge renders the instant the POST returns
+      # (measured 4ms), but the rows arrive on a SECOND request — the parquet
+      # under /results/files — and VirtualizedTable shows a bare "Loading..."
+      # until it lands (measured 1.8s on both the ide and a replica). Gating on
+      # the badge alone judges the grid mid-load, where it reads
+      # "Page 1 of 0 - Showing 1 - 0 of 0" — which is exactly what a genuinely
+      # empty result looks like, i.e. the failure this flow exists to detect,
+      # reported as a pass or a fail depending on how fast the preceding steps
+      # happened to run. It passed on cold LLM-driven runs (whose round-trips
+      # supplied the missing delay) and failed on warm cache replay; both were
+      # the same screen.
+      # "Loading..." — web-app/src/components/ui/VirtualizedTable.tsx:350,
+      # which carries no testid, hence the text selector.
+      - wait_for: "selector_hidden:[data-testid=semantic-query-results] >> text=Loading...;timeout_ms=60000"
+
+    expect:
+      # Deterministic, $0.
+      - assert: "selector [data-testid=semantic-query-execution-time] is visible"
+      # data-testid='semantic-query-error' — .../ResultsView.tsx:42. Replaces the
+      # results table on a compile/execution failure, so it must be absent.
+      - assert: "selector [data-testid=semantic-query-error] is not visible"
+      # data-testid='semantic-query-results' — .../ResultsView.tsx:78
+      - assert: "selector [data-testid=semantic-query-results] is visible"
+
+      - judge: |
+          The Semantic Layer Explorer has the retail_analytics topic open: the
+          left Fields panel lists the topic's views with their dimensions and
+          measures, and the results panel shows a returned result set for the
+          selected total_sales measure.
+
+          Fail if ANY of the following is true:
+          (a) any visible text says a topic could not be found, or lists the
+              available topics as empty — e.g. "Topic not found", "Available:
+              []";
+          (b) an error alert is visible, including "Error loading topic" or
+              "Error loading view";
+          (c) any visible text contains "retry shortly", "a compile has been
+              enqueued", or "needs_recompile";
+          (d) any visible text contains a raw filesystem path or IO error —
+              "No such file or directory", "os error", "Workspace directory not
+              found", or an absolute path such as one starting "/var/lib/oxy";
+          (e) the Fields panel is empty or says no views were found, or the
+              object list on the far left says there are no topics or views;
+          (f) the explorer is still showing "Loading topic data..." or a
+              spinner that never resolved.
+
+  - name: open the economic_factors view detail
+    tags: [semantic, view, compile-boundary, fleet]
+    steps:
+      - wait_for: "selector:[data-testid=rail-core]"
+
+      - act: |
+          browser_click [data-testid=rail-core] — the Oxygen Factory tile in the
+          left icon rail. The IDE opens.
+
+      - wait_for: "selector:[data-testid=ide-nav-semantic];timeout_ms=60000"
+
+      - act: |
+          browser_click [data-testid=ide-nav-semantic] — the Semantic Layer icon
+          button in the narrow IDE sidebar rail. The URL ends with
+          /ide/semantic and the page opens on its default "Explorer" tab.
+
+      - wait_for: "selector:[data-testid=semantic-objects-list];timeout_ms=30000"
+
+      # `economic_factors` rather than `oxymart`: semantic-builder-ask already
+      # covers oxymart, and `economic_factors` is the only demo view whose stem
+      # is not also a topic stem (`store_performance` is both), so the
+      # kind-qualified testid cannot be satisfied by the wrong artifact kind.
+      - wait_for: "selector:[data-testid=semantic-objects-item-view-economic_factors];timeout_ms=30000"
+
+      - act: |
+          browser_click [data-testid=semantic-objects-item-view-economic_factors]
+          to open that view in the inline explorer on the right.
+
+      # THE VIEW DETAIL READ. `temp_sales_correlation` is defined only on
+      # demo_project/sales_semantics/views/economic_factors.view.yml, so its
+      # presence proves the detail read returned THIS view rather than a stale
+      # or default one. A failed read renders "Error loading view" instead, and
+      # a hung read leaves "Loading view data..." on screen.
+      - wait_for: "selector:[data-testid=semantic-field-measure-temp_sales_correlation];timeout_ms=60000"
+
+    expect:
+      - assert: "selector [data-testid=semantic-field-measure-temp_sales_correlation] is visible"
+
+      - judge: |
+          The Semantic Layer Explorer has the economic_factors view open, with a
+          Fields panel listing its dimensions and measures.
+
+          Fail if ANY of the following is true:
+          (a) an error alert is visible, including "Error loading view";
+          (b) any visible text contains "retry shortly", "a compile has been
+              enqueued", or "needs_recompile";
+          (c) any visible text contains a raw filesystem path or IO error —
+              "No such file or directory", "os error", "Workspace directory not
+              found", or an absolute path such as one starting "/var/lib/oxy";
+          (d) the Fields panel is empty, or the object list on the far left says
+              there are no topics or views;
+          (e) "Loading view data..." or a spinner is still on screen.

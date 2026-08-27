@@ -50,6 +50,41 @@ export interface ResetToCommitResponse {
   discarded_commits?: CommitEntry[];
 }
 
+/**
+ * What the git half of a workspace looks like when the ide is unreachable.
+ *
+ * Typed as an exact `Pick` on purpose. Written inline as an object literal it
+ * was silently wrong — five capability fields missing and one invented — and
+ * `tsc` did not object, because a spread into an object literal does not have
+ * to be exhaustive. The annotation is what makes the compiler check it.
+ *
+ * These values are what the old `/details` returned when it degraded, so
+ * nothing downstream sees a new shape.
+ */
+const GIT_STATE_UNAVAILABLE: Pick<
+  Workspace,
+  "active_branch" | "git_mode" | "capabilities" | "default_branch" | "protected_branches"
+> = {
+  active_branch: null,
+  git_mode: "none",
+  capabilities: {
+    can_commit: false,
+    can_browse_history: false,
+    can_reset_to_commit: false,
+    can_switch_branch: false,
+    can_diff: false,
+    can_push: false,
+    can_pull: false,
+    can_fetch: false,
+    can_force_push: false,
+    can_rebase: false,
+    can_open_pr: false,
+    auto_feature_branch_on_protected: false
+  },
+  default_branch: "",
+  protected_branches: []
+};
+
 export const WorkspaceService = {
   async getGithubRevisionInfo(workspaceId: string, branchName: string): Promise<RevisionInfo> {
     const response = await apiClient.get(`/${workspaceId}/revision-info`, {
@@ -58,9 +93,28 @@ export const WorkspaceService = {
     return response.data;
   },
 
+  /**
+   * The workspace, assembled from its two halves.
+   *
+   * `/meta` is Postgres-only and served by any replica. `/git-state` needs the
+   * ide's `.git` and 502s when the ide is unreachable — which is the point:
+   * the workspace page keeps rendering, and the git chrome degrades.
+   *
+   * A failed git half yields `active_branch: null` and `git_mode: "none"`,
+   * exactly what the old `/details` returned when it degraded. Every consumer
+   * downstream reads the merged object out of the store, so nothing else
+   * changes — including `useWorkspaceStatus`, which is gated on a branch being
+   * present and must stay closed when there is none.
+   */
   async getWorkspace(workspaceId: string): Promise<Workspace> {
-    const response = await apiClient.get(`/${workspaceId}/details`);
-    return response.data;
+    const [meta, gitState] = await Promise.all([
+      apiClient.get(`/${workspaceId}/meta`),
+      apiClient.get(`/${workspaceId}/git-state`).catch(() => null)
+    ]);
+    return {
+      ...meta.data,
+      ...(gitState?.data ?? GIT_STATE_UNAVAILABLE)
+    };
   },
 
   async getWorkspaceBranches(workspaceId: string): Promise<WorkspaceBranchesResponse> {
@@ -281,9 +335,15 @@ export interface WorkspaceSummary {
   created_by_name: string | null;
   status: WorkspaceStatus;
   error: string | null;
-  agent_count: number;
-  workflow_count: number;
-  app_count: number;
+  /**
+   * `null` when the serving instance holds no working copy for the workspace
+   * and therefore did not count. Distinct from `0`, which means it counted and
+   * found none — rendering the two the same is how a healthy workspace came to
+   * read "0 agents · 0 automations · 0 apps" on a stateless replica.
+   */
+  agent_count: number | null;
+  workflow_count: number | null;
+  app_count: number | null;
   git_remote: string | null;
   git_commit: string | null;
   git_updated_at: string | null;

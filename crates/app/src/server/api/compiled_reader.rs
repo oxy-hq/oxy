@@ -24,7 +24,7 @@
 //! 3. Read `workspaces.current_revision_id`. If null → `Ok(None)`.
 //! 4. Query the per-entity table keyed by that revision_id.
 
-use crate::server::role_manifest::{Role, current_process_role};
+use crate::server::role_manifest::current_process_role;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -169,39 +169,6 @@ async fn last_known_good_revision(
     None
 }
 
-/// Lightweight row shape carrying the fields the apps endpoint needs.
-#[derive(Debug, Clone)]
-pub struct CompiledApp {
-    pub file_path: String,
-    pub name: String,
-    pub published: bool,
-    /// Pulled out of the `definition` JSONB for the sidebar. Falls
-    /// back to `name` when absent.
-    pub title: Option<String>,
-}
-
-/// Row shape for the analytics-agent listing endpoint. Includes the
-/// `llm.ref` value pulled from the JSONB so the home page can flag
-/// readiness gaps against the agent the chat will actually use, plus the
-/// `timezone` so the UI clock can render the workspace's local time.
-#[derive(Debug, Clone)]
-pub struct CompiledAgent {
-    pub file_path: String,
-    pub name: String,
-    pub model_ref: Option<String>,
-    pub timezone: Option<String>,
-}
-
-/// Row shape for the automation listing. The legacy extensions
-/// (`.procedure.yml`, `.automation.yml`) are
-/// preserved on the row so the file-tree grouping can show them.
-#[derive(Debug, Clone)]
-pub struct CompiledAutomation {
-    pub file_path: String,
-    pub name: String,
-    pub extension: String,
-}
-
 /// Single-entity resolver result. Carries the full `definition` JSONB
 /// so the runtime can deserialize into its strict type.
 #[derive(Debug, Clone)]
@@ -250,147 +217,12 @@ impl CompiledVerifiedQuery {
     }
 }
 
-/// Return `Ok(Some(apps))` when the workspace has a promoted revision
-/// on its default branch; `Ok(None)` otherwise (caller falls through to FS).
-pub async fn list_apps(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-    published_only: bool,
-) -> Result<Option<Vec<CompiledApp>>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-
-    let mut find = entity::app_definitions::Entity::find()
-        .filter(entity::app_definitions::Column::RevisionId.eq(revision_id));
-    if published_only {
-        find = find.filter(entity::app_definitions::Column::Published.eq(true));
-    }
-    let rows = find.all(&db).await?;
-    Ok(Some(
-        rows.into_iter()
-            .map(|m| CompiledApp {
-                file_path: m.file_path,
-                title: extract_title(&m.definition),
-                name: m.name,
-                published: m.published,
-            })
-            .collect(),
-    ))
-}
-
-/// Listing equivalent for `get_agents`. Pulls `llm.ref` out of the
-/// JSONB to match the existing handler's response shape without re-
-/// reading the YAML.
-pub async fn list_analytics_agents(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-) -> Result<Option<Vec<CompiledAgent>>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let rows = entity::agent_definitions::Entity::find()
-        .filter(entity::agent_definitions::Column::RevisionId.eq(revision_id))
-        .all(&db)
-        .await?;
-    Ok(Some(
-        rows.into_iter()
-            .map(|m| CompiledAgent {
-                file_path: m.file_path,
-                model_ref: extract_model_ref(&m.definition),
-                timezone: extract_timezone(&m.definition),
-                name: m.name,
-            })
-            .collect(),
-    ))
-}
-
-/// Listing equivalent for the automation file enumeration.
-pub async fn list_automations(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-) -> Result<Option<Vec<CompiledAutomation>>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let rows = entity::automation_definitions::Entity::find()
-        .filter(entity::automation_definitions::Column::RevisionId.eq(revision_id))
-        .all(&db)
-        .await?;
-    Ok(Some(
-        rows.into_iter()
-            .map(|m| CompiledAutomation {
-                file_path: m.file_path,
-                name: m.name,
-                extension: m.extension,
-            })
-            .collect(),
-    ))
-}
-
-/// Single-app resolver. Lookup by `file_path` since the UI references
-/// apps that way (`/apps/<pathb64>`) and a workspace can carry
-/// duplicate `name`s in different folders.
-pub async fn resolve_app(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-    file_path: &str,
-) -> Result<Option<CompiledArtifact>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let row = entity::app_definitions::Entity::find_by_id((revision_id, file_path.to_string()))
-        .one(&db)
-        .await?;
-    Ok(row.map(|m| CompiledArtifact {
-        file_path: m.file_path,
-        name: m.name,
-        definition: m.definition,
-        compiled_sql_blob_key: None,
-    }))
-}
-
-/// Single-agent resolver. Keyed by `name` because the analytics
-/// pipeline references agents by name (`AgenticAgent.name`) rather
-/// than path.
-pub async fn resolve_analytics_agent(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-    name: &str,
-) -> Result<Option<CompiledArtifact>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let row = entity::agent_definitions::Entity::find_by_id((revision_id, name.to_string()))
-        .one(&db)
-        .await?;
-    Ok(row.map(|m| CompiledArtifact {
-        file_path: m.file_path,
-        name: m.name,
-        definition: m.definition,
-        compiled_sql_blob_key: None,
-    }))
-}
-
-/// Single-automation resolver, keyed by `file_path` (the PK column).
-pub async fn resolve_automation(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-    file_path: &str,
-) -> Result<Option<CompiledArtifact>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let row =
-        entity::automation_definitions::Entity::find_by_id((revision_id, file_path.to_string()))
-            .one(&db)
-            .await?;
-    Ok(row.map(|m| CompiledArtifact {
-        file_path: m.file_path,
-        name: m.name,
-        definition: m.definition,
-        compiled_sql_blob_key: None,
-    }))
+/// [`list_analytics_agents`] against a revision the caller already holds.
+///
+async fn conn() -> Result<DatabaseConnection, sea_orm::DbErr> {
+    oxy::database::client::establish_connection()
+        .await
+        .map_err(|e| sea_orm::DbErr::Conn(sea_orm::RuntimeErr::Internal(e.to_string())))
 }
 
 /// Resolve the workspace's compiled `config.yml`. The
@@ -405,59 +237,34 @@ pub async fn resolve_workspace_config(
     workspace_id: Uuid,
     branch_hint: Option<&str>,
 ) -> Result<Option<Value>, sea_orm::DbErr> {
+    Ok(
+        resolve_workspace_config_with_revision(workspace_id, branch_hint)
+            .await?
+            .map(|(value, _)| value),
+    )
+}
+
+/// [`resolve_workspace_config`] carrying the revision the value came from, so a
+/// caller can record it on the manager and later read the same revision instead
+/// of re-resolving one. Re-resolution is what leaves the six non-HTTP entry
+/// points without the last-known-good walk.
+pub async fn resolve_workspace_config_with_revision(
+    workspace_id: Uuid,
+    branch_hint: Option<&str>,
+) -> Result<Option<(Value, Uuid)>, sea_orm::DbErr> {
     let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
         return Ok(None);
     };
-    load_config_value(&db, revision_id).await
+    Ok(load_config_value(&db, revision_id)
+        .await?
+        .map(|value| (value, revision_id)))
 }
 
-/// [`resolve_workspace_config`] as a typed [`Config`], with `workspace_path`
-/// re-injected — it is `#[serde(skip)]`, so the JSON round-trip always leaves
-/// it empty and downstream resolvers depend on it.
-///
-/// The single place the compile-boundary config contract is decoded. Callers
-/// that need a `Config` (the workspace-context middleware, the public Toast
-/// webhook) go through here so a future `#[serde(skip)]` field only has to be
-/// re-injected once.
-///
-/// `None` means "fall through to the filesystem" and covers every miss: no
-/// promoted revision, non-default branch on a working-copy node,
-/// undeserialisable config, DB error. `caller` only labels the logs so a miss
-/// is attributable to the route that hit it.
-pub async fn resolve_workspace_config_typed(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-    workspace_path: &std::path::Path,
-    caller: &str,
-) -> Option<oxy::config::model::Config> {
-    let json = match resolve_workspace_config(workspace_id, branch_hint).await {
-        Ok(Some(json)) => json,
-        Ok(None) => return None,
-        Err(e) => {
-            tracing::warn!(
-                workspace_id = %workspace_id, caller, error = ?e,
-                "compiled config lookup failed; falling through to FS"
-            );
-            return None;
-        }
-    };
-    match serde_json::from_value::<oxy::config::model::Config>(json) {
-        Ok(mut config) => {
-            config.workspace_path = workspace_path.to_path_buf();
-            tracing::debug!(
-                workspace_id = %workspace_id, caller,
-                "config.yml served from compile boundary"
-            );
-            Some(config)
-        }
-        Err(e) => {
-            tracing::warn!(
-                workspace_id = %workspace_id, caller, error = ?e,
-                "compiled config deserialise failed; falling through to FS"
-            );
-            None
-        }
-    }
+/// [`resolve_workspace_config`] against a revision the caller already holds.
+pub async fn resolve_workspace_config_at(
+    revision_id: Uuid,
+) -> Result<Option<Value>, sea_orm::DbErr> {
+    load_config_value(&conn().await?, revision_id).await
 }
 
 /// Load and merge the compiled config for a specific revision into the single
@@ -486,81 +293,14 @@ async fn load_config_value(
     Ok(Some(oxy_compile::merge_compiled_config(&cfg)))
 }
 
-/// Resolve the workspace's compiled `.monitor.yml`. Singleton per
-/// revision, so the row's `definition` JSONB is the full
-/// `MonitorConfig` (schedule + monitors) ready to round-trip back
-/// into the strict-typed struct.
-pub async fn resolve_monitor_config(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
+/// [`resolve_reconcile_config`] against a revision the caller already holds.
+pub async fn resolve_reconcile_config_at(
+    revision_id: Uuid,
 ) -> Result<Option<Value>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let row = entity::monitor_configs::Entity::find_by_id(revision_id)
-        .one(&db)
-        .await?;
-    Ok(row.map(|m| m.definition))
-}
-
-/// Resolve the workspace's compiled `reconcile.yml` (singleton per revision).
-/// `Ok(None)` on draft/local mode, no promoted revision, or no file — callers
-/// fall through to the FS path.
-pub async fn resolve_reconcile_config(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-) -> Result<Option<Value>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let row = entity::reconcile_configs::Entity::find_by_id(revision_id)
-        .one(&db)
-        .await?;
-    Ok(row.map(|m| m.definition))
-}
-
-/// Resolve the workspace's compiled `.world-model.yml`. Singleton per
-/// revision, so the row's `definition` JSONB is the full
-/// `WorldModelConfig` (top-level `entities`) ready to round-trip back
-/// into the strict-typed struct.
-pub async fn resolve_world_model_config(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-) -> Result<Option<Value>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let row = entity::world_model_configs::Entity::find_by_id(revision_id)
-        .one(&db)
-        .await?;
-    Ok(row.map(|m| m.definition))
-}
-
-/// List every `.view.yml` row for the workspace's current revision.
-/// Used by callers that want to enumerate semantic views without
-/// touching FS — typically to populate Postgres-only "scan" paths
-/// that replace the airlayer FS walker.
-pub async fn list_semantic_views(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-) -> Result<Option<Vec<CompiledArtifact>>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let rows = entity::semantic_views::Entity::find()
-        .filter(entity::semantic_views::Column::RevisionId.eq(revision_id))
-        .all(&db)
-        .await?;
-    Ok(Some(
-        rows.into_iter()
-            .map(|m| CompiledArtifact {
-                file_path: m.file_path,
-                name: m.name,
-                definition: m.definition,
-                compiled_sql_blob_key: m.compiled_sql_blob_key,
-            })
-            .collect(),
-    ))
+    Ok(entity::reconcile_configs::Entity::find_by_id(revision_id)
+        .one(&conn().await?)
+        .await?
+        .map(|m| m.definition))
 }
 
 /// Single semantic-view resolver, keyed by `name`.
@@ -591,30 +331,6 @@ pub async fn resolve_semantic_view(
     }))
 }
 
-/// List every `.topic.yml` row for the workspace's current revision.
-pub async fn list_semantic_topics(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-) -> Result<Option<Vec<CompiledArtifact>>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let rows = entity::semantic_topics::Entity::find()
-        .filter(entity::semantic_topics::Column::RevisionId.eq(revision_id))
-        .all(&db)
-        .await?;
-    Ok(Some(
-        rows.into_iter()
-            .map(|m| CompiledArtifact {
-                file_path: m.file_path,
-                name: m.name,
-                definition: m.definition,
-                compiled_sql_blob_key: m.compiled_sql_blob_key,
-            })
-            .collect(),
-    ))
-}
-
 /// Single semantic-topic resolver, keyed by workspace-relative `file_path`
 /// (the row's PK `name` is the YAML `name:` field, which the caller doesn't have
 /// — see `resolve_semantic_view`).
@@ -639,132 +355,10 @@ pub async fn resolve_semantic_topic(
     }))
 }
 
-/// List every verified-query (`.sql`) row for the workspace's current
-/// revision. The compile worker already WRITES these (walker →
-/// `compile_verified_query` → writer into `verified_queries`), but until
-/// now nothing read them back — so a stateless `serve` replica running a
-/// verified query (`agentic/analytics/.../solver/specifying`) had to fall
-/// through to the workspace filesystem, which on a no-working-copy node is
-/// the `FileReadError` leak the compile boundary exists to close. The
-/// general agent-context materialiser consumes this list to write the
-/// `.sql` bodies into the request tempdir so the solver's read resolves
-/// without ever touching the real FS.
-pub async fn list_verified_queries(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-) -> Result<Option<Vec<CompiledVerifiedQuery>>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let rows = entity::verified_queries::Entity::find()
-        .filter(entity::verified_queries::Column::RevisionId.eq(revision_id))
-        .all(&db)
-        .await?;
-    Ok(Some(
-        rows.into_iter()
-            .map(|m| CompiledVerifiedQuery {
-                file_path: m.file_path,
-                content_sha256: m.content_sha256,
-                content: m.content,
-            })
-            .collect(),
-    ))
-}
-
-/// Single verified-query resolver, keyed by `file_path`. Verified queries
-/// are referenced by their workspace-relative path (the agent `context:`
-/// glob discovers them on disk by path; on the boundary that same path is
-/// the row's PK alongside `revision_id`), so unlike the named entities we
-/// look up by `file_path` — mirroring `resolve_app`.
-///
-/// TRACKING (PR #2557): the §8 materialiser wires `list_verified_queries` into
-/// the agent context, so the analytics agent already resolves verified `.sql`
-/// from the boundary via the materialised tree. This single-row resolver is the
-/// reader for a future *direct* per-request lookup (e.g. a `GET
-/// /verified-queries/{path}` handler) and is intentionally caller-less until
-/// that surface lands; remove it if that surface is dropped.
-pub async fn resolve_verified_query(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-    file_path: &str,
-) -> Result<Option<CompiledVerifiedQuery>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let row = entity::verified_queries::Entity::find_by_id((revision_id, file_path.to_string()))
-        .one(&db)
-        .await?;
-    Ok(row.map(|m| CompiledVerifiedQuery {
-        file_path: m.file_path,
-        content_sha256: m.content_sha256,
-        content: m.content,
-    }))
-}
-
-/// List every automation (`.procedure.yml` / `.automation.yml`)
-/// row for the workspace's current revision, carrying the full `definition` so
-/// it can be materialised back to a YAML file — unlike `list_automations`, which
-/// returns only listing metadata (no body). Feeds the agent-context materialiser
-/// so the analytics solver discovers and runs automations FS-free on the serve
-/// fleet.
-pub async fn list_automation_artifacts(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-) -> Result<Option<Vec<CompiledArtifact>>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let rows = entity::automation_definitions::Entity::find()
-        .filter(entity::automation_definitions::Column::RevisionId.eq(revision_id))
-        .all(&db)
-        .await?;
-    Ok(Some(
-        rows.into_iter()
-            .map(|m| CompiledArtifact {
-                file_path: m.file_path,
-                name: m.name,
-                definition: m.definition,
-                compiled_sql_blob_key: None,
-            })
-            .collect(),
-    ))
-}
-
-/// List the workspace's compiled Airway pipelines (`airway_pipelines`) as
-/// path-addressed artifacts, mirroring [`list_automation_artifacts`]. The
-/// `.airway.yml` body is already compiled (walker → `CompiledRow::Pipeline` →
-/// `airway_pipelines`); this is the missing reader.
-pub async fn list_pipeline_artifacts(
-    workspace_id: Uuid,
-    branch_hint: Option<&str>,
-) -> Result<Option<Vec<CompiledArtifact>>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
-        return Ok(None);
-    };
-    let rows = entity::airway_pipelines::Entity::find()
-        .filter(entity::airway_pipelines::Column::RevisionId.eq(revision_id))
-        .all(&db)
-        .await?;
-    Ok(Some(
-        rows.into_iter()
-            .map(|m| CompiledArtifact {
-                file_path: m.file_path,
-                name: m.name,
-                definition: m.definition,
-                compiled_sql_blob_key: None,
-            })
-            .collect(),
-    ))
-}
-
-/// Single Airway-pipeline resolver, keyed by workspace-relative `file_path`.
-///
-/// The table's PK is `(revision_id, name)` — the YAML `name:` field — but a
-/// `pipeline_ref` is always a workspace-relative path (that's what the UI's
-/// `path_b64` carries, what `start_airway_run` stamps into run metadata, and
-/// what rides the queued `TaskSpec::Airway`). Keying by `name` would miss for
-/// every pipeline whose `name:` differs from its path, so we filter on
-/// `file_path` — same reasoning as `resolve_semantic_view`. One file → one row.
+/// Single pipeline resolver, keyed by `file_path`. `oxy_compile::walker`
+/// derives a fallback `name` from the file stem, so name-keyed lookup misses
+/// every pipeline whose `name:` differs from its path — we filter on
+/// `file_path`, same reasoning as `resolve_semantic_view`. One file → one row.
 ///
 /// Cross-tenant containment comes for free: `revision_id` belongs to exactly
 /// one workspace, so a `pipeline_ref` can only ever address a row inside the
@@ -790,6 +384,12 @@ pub async fn resolve_pipeline(
     }))
 }
 
+/// Single verified-query resolver, keyed by `file_path`. Verified queries
+/// are referenced by their workspace-relative path (the agent `context:`
+/// glob discovers them on disk by path; on the boundary that same path is
+/// the row's PK alongside `revision_id`), so unlike the named entities we
+/// look up by `file_path` — mirroring `resolve_app`.
+///
 /// Shared gate consulted at the top of every public reader. Returns
 /// `Some((db, revision_id))` when the request should be served from
 /// Postgres, `None` when the caller should fall through to FS.
@@ -848,7 +448,35 @@ async fn open_compiled_revision(
     // the compiled revision is the only (and freshest) thing it can serve.
     // See oxygen-internal#2528.
     let effective_branch = normalize_branch_hint(branch_hint);
-    if current_process_role() != Role::Serve
+    // A replica cannot honour a branch, so a route that accepts one is either
+    // misclassified or is asking a question this pod cannot answer. The reply is
+    // the promoted default-branch revision either way — the caller asked for a
+    // feature branch and gets `main` with no error, which is the one shape that
+    // looks like working software. Count it, so a misclassified route shows up
+    // on a dashboard rather than as "the IDE isn't showing my edits".
+    //
+    // The predicate is "does this process own workspace files", NOT
+    // `role == Serve`. They are not the same set: `role_owns_workspace_files`
+    // is `Ide | All`, so a WORKER is equally diskless — and under the old check
+    // a worker took the branch-gate arm below, falling through to a working
+    // copy it does not have. Nothing had reported it because workers rarely
+    // carry a branch hint, which is exactly why it would have been found late.
+    let owns_files = oxy::workspace_fs_probe::process_owns_workspace_files();
+    if !owns_files
+        && let Some(branch) = effective_branch
+        && !is_default_branch(&db, workspace_id, branch).await
+    {
+        BRANCH_HINTS_DROPPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        tracing::warn!(
+            workspace_id = %workspace_id,
+            branch,
+            role = ?current_process_role(),
+            "compiled_reader: this process holds no working copy, so it cannot honour \
+             a branch hint; serving the promoted default-branch revision. A route that \
+             takes `?branch=` belongs on the ide (role_manifest IdeOnly)."
+        );
+    }
+    if owns_files
         && let Some(branch) = effective_branch
         && !is_default_branch(&db, workspace_id, branch).await
     {
@@ -866,6 +494,21 @@ async fn open_compiled_revision(
         return Ok(None);
     };
     Ok(Some((db, revision_id)))
+}
+
+/// How many times a serve replica has been handed a non-default branch hint it
+/// cannot honour, since startup.
+///
+/// The static counterpart of the route classification: `role_manifest` says
+/// which routes should reach a replica, and this says which ones actually did
+/// while carrying a question only the ide can answer. Non-zero means a route
+/// takes `?branch=` and is not `IdeOnly` — plan rule 6, measured rather than
+/// reviewed.
+static BRANCH_HINTS_DROPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// See [`BRANCH_HINTS_DROPPED`]. Readable so a fleet canary can assert zero.
+pub fn branch_hints_dropped() -> u64 {
+    BRANCH_HINTS_DROPPED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Treat an empty `branch` query param the same as `None`. Most FE calls
@@ -899,43 +542,6 @@ async fn is_default_branch(db: &DatabaseConnection, workspace_id: Uuid, branch: 
     }
 }
 
-/// Pull `title` out of the compiled `definition` JSONB without a
-/// full struct deserialize. The full strict parse happens at compile
-/// time; runtime only wants the sidebar label.
-fn extract_title(definition: &Value) -> Option<String> {
-    definition
-        .as_object()?
-        .get("title")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-}
-
-/// Pull `llm.ref` out of the compiled agent `definition` JSONB —
-/// matches the YAML-parsing helper the legacy `get_agents` handler
-/// uses to surface "this agent needs a key for provider X" on the
-/// home page.
-fn extract_model_ref(definition: &Value) -> Option<String> {
-    definition
-        .as_object()?
-        .get("llm")?
-        .as_object()?
-        .get("ref")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-}
-
-/// Pull the top-level `timezone` out of the compiled agent `definition`
-/// JSONB — the compiler stores the full parsed YAML, so the agentic
-/// config's `timezone:` field is a top-level key here. Surfaced so the
-/// workspace clock can render local time instead of UTC.
-fn extract_timezone(definition: &Value) -> Option<String> {
-    definition
-        .as_object()?
-        .get("timezone")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -951,28 +557,6 @@ mod tests {
         // We don't trim whitespace; a literal space is technically a legal
         // git branch name, so we treat it as a real branch hint.
         assert_eq!(normalize_branch_hint(Some(" ")), Some(" "));
-    }
-
-    #[test]
-    fn extract_timezone_reads_top_level_field() {
-        use serde_json::json;
-        // The compiler stores the full parsed YAML, so `timezone` is a
-        // top-level key alongside `llm`.
-        let def = json!({
-            "name": "restaurant_analyst",
-            "llm": { "ref": "claude-sonnet-4-6" },
-            "timezone": "America/Los_Angeles"
-        });
-        assert_eq!(
-            extract_timezone(&def),
-            Some("America/Los_Angeles".to_string())
-        );
-        // Absent timezone → None (the frontend supplies the default).
-        let no_tz = json!({ "name": "x", "llm": { "ref": "gpt-4o" } });
-        assert_eq!(extract_timezone(&no_tz), None);
-        // A non-string timezone is ignored rather than panicking.
-        let bad = json!({ "timezone": 42 });
-        assert_eq!(extract_timezone(&bad), None);
     }
 
     #[test]

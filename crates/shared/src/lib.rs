@@ -12,6 +12,7 @@
 pub mod domain;
 pub mod duckdb_s3;
 pub mod errors;
+pub mod fleet_role;
 pub mod infrastructure;
 pub mod key_validation;
 pub mod openai_config;

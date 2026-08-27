@@ -12,7 +12,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::server::api::middlewares::role_guards::{WorkspaceAdmin, WorkspaceEditor};
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerWorkingCopy;
+use oxy::config::WorkingCopy;
 
 /// Validate a repository name to prevent path traversal attacks.
 ///
@@ -98,7 +99,7 @@ pub struct CommitRepoRequest {
 
 /// Resolves the repo filesystem path for a named repository, returning 404 if not found.
 fn resolve_repo(
-    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager<WorkingCopy>,
     name: &str,
 ) -> Result<std::path::PathBuf, StatusCode> {
     let workspace_root =
@@ -170,7 +171,7 @@ async fn get_namespace_token(
 // ─── handlers ────────────────────────────────────────────────────────────────
 
 pub async fn list_repositories(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path(_workspace_id): Path<Uuid>,
 ) -> ResponseJson<Vec<DataRepoResponse>> {
     let repos: Vec<DataRepoResponse> = workspace_manager
@@ -184,7 +185,7 @@ pub async fn list_repositories(
 
 pub async fn add_repository(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path(_workspace_id): Path<Uuid>,
     Json(body): Json<AddDataRepoRequest>,
 ) -> Result<ResponseJson<DataRepoResponse>, StatusCode> {
@@ -218,7 +219,7 @@ pub async fn add_repository(
 
 pub async fn add_repo_from_github(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path(workspace_id): Path<Uuid>,
     Json(body): Json<AddRepoFromGitHubRequest>,
@@ -299,9 +300,18 @@ pub async fn add_repo_from_github(
 
 pub async fn remove_repository(
     _: WorkspaceAdmin,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, name)): Path<(Uuid, String)>,
 ) -> Result<StatusCode, StatusCode> {
+    // Defense in depth: this handler mutates `config.yml`. If the route is
+    // ever misclassified `FleetOk` and reaches a stateless replica, fail
+    // loudly here rather than write to a disk nobody else reads.
+    crate::server::role_manifest::ensure_fs_writable("remove repository from config.yml").map_err(
+        |e| {
+            tracing::error!(error = %e, "config write refused");
+            StatusCode::INTERNAL_SERVER_ERROR
+        },
+    )?;
     workspace_manager
         .config_manager
         .remove_repository(&name)
@@ -315,7 +325,7 @@ pub async fn remove_repository(
 }
 
 pub async fn get_repo_branch(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, name)): Path<(Uuid, String)>,
 ) -> Result<ResponseJson<RepoBranchResponse>, StatusCode> {
     let repo_path = resolve_repo(&workspace_manager, &name)?;
@@ -327,7 +337,7 @@ pub async fn get_repo_branch(
 }
 
 pub async fn get_repo_diff(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, name)): Path<(Uuid, String)>,
 ) -> Result<ResponseJson<Vec<FileStatus>>, StatusCode> {
     let repo_path = resolve_repo(&workspace_manager, &name)?;
@@ -340,7 +350,7 @@ pub async fn get_repo_diff(
 
 pub async fn commit_repo(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path((workspace_id, name)): Path<(Uuid, String)>,
     Json(body): Json<CommitRepoRequest>,
@@ -421,7 +431,7 @@ pub async fn commit_repo(
 }
 
 pub async fn get_repo_file_tree(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, name)): Path<(Uuid, String)>,
 ) -> Result<ResponseJson<Vec<crate::server::api::file::FileTree>>, StatusCode> {
     let repo_path = resolve_repo(&workspace_manager, &name)?;
@@ -441,7 +451,7 @@ pub async fn get_repo_file_tree(
 }
 
 pub async fn list_repo_branches(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path((workspace_id, name)): Path<(Uuid, String)>,
 ) -> Result<ResponseJson<RepoBranchesResponse>, StatusCode> {
@@ -478,7 +488,7 @@ pub async fn list_repo_branches(
 
 pub async fn checkout_repo_branch(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path((workspace_id, name)): Path<(Uuid, String)>,
     Json(body): Json<CheckoutBranchRequest>,

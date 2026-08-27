@@ -382,24 +382,40 @@ impl SecretManagerService {
     }
 
     /// Get a decrypted secret value by UUID — single DB roundtrip.
-    pub async fn get_secret_value_by_id(&self, id: Uuid) -> Option<String> {
-        let db = establish_connection().await.ok()?;
+    /// `Ok(None)` means the row is genuinely absent. `Err` means the row is
+    /// there and this process could not read it.
+    ///
+    /// The distinction is the point. Collapsing both into `None` made the
+    /// caller answer 404 — "this secret does not exist" — when the truth was
+    /// "this node cannot decrypt it", which is what happens on a fleet where
+    /// the encryption key lives in each node's own OXY_STATE_DIR. A secret
+    /// written through one replica then reads as missing from another, and a
+    /// missing secret is something an operator goes and re-creates rather than
+    /// investigates. The failure has to be able to say it is a failure.
+    pub async fn get_secret_value_by_id(&self, id: Uuid) -> Result<Option<String>, OxyError> {
+        let db = establish_connection()
+            .await
+            .map_err(|e| OxyError::SecretManager(format!("database connection failed: {e}")))?;
         let secret = Secret::find()
             .filter(secrets::Column::Id.eq(id))
             .filter(secrets::Column::IsActive.eq(true))
             .filter(secrets::Column::ProjectId.eq(self.project_id))
             .one(&db)
             .await
-            .ok()
-            .flatten()?;
+            .map_err(|e| OxyError::SecretManager(format!("secret lookup failed: {e}")))?;
+        let Some(secret) = secret else {
+            return Ok(None);
+        };
         match self.decrypt_value(&secret.encrypted_value) {
             Ok(value) => {
                 self.cache_value(&secret.name, &value).await;
-                Some(value)
+                Ok(Some(value))
             }
             Err(e) => {
                 tracing::error!("Failed to decrypt secret {}: {}", id, e);
-                None
+                Err(OxyError::SecretManager(format!(
+                    "secret {id} exists but could not be decrypted by this process: {e}"
+                )))
             }
         }
     }

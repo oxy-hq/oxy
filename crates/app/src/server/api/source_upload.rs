@@ -65,7 +65,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::server::api::middlewares::role_guards::WorkspaceEditor;
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 
 /// Body ceiling for an upload.
 ///
@@ -123,36 +123,54 @@ fn zone() -> Result<(String, String), (StatusCode, String)> {
 /// is what replaces the old unenforced "keep these equal" instruction: a drift
 /// now fails the upload naming both values, instead of landing reports
 /// somewhere no loader looks.
-#[allow(clippy::too_many_arguments)]
 async fn zone_for_pipeline(
-    workspace: &oxy::adapters::workspace::manager::WorkspaceManager,
+    workspace: &oxy::adapters::workspace::manager::WorkspaceManager<impl oxy::config::DiskSlot>,
     workspace_id: Uuid,
-    branch: Option<&str>,
     pipeline_ref: &str,
     bucket: &str,
     root: &str,
     pipeline_slug: &str,
 ) -> Result<(String, Option<std::collections::HashSet<String>>), (StatusCode, String)> {
-    let artifact =
-        crate::server::api::compiled_reader::resolve_pipeline(workspace_id, branch, pipeline_ref)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = ?e, pipeline_ref, "resolving the pipeline failed");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "could not read the pipeline".to_string(),
-                )
-            })?;
-
     // Boundary first, FS fallback — the same shape `list_pipelines` uses, and
-    // `FleetOk` for the same reason: `open_compiled_revision` answers `None`
-    // for a LOCAL workspace unconditionally, so treating that as fatal made
-    // this endpoint unusable in local mode entirely. The FS path is reached
-    // only there (one instance, working copy present) or briefly before a
-    // workspace is promoted.
-    let definition = match artifact {
-        Some(artifact) => artifact.definition,
-        None => read_pipeline_from_disk(workspace, pipeline_ref)?,
+    // `FleetOk` for the same reason: the compiled revision is `None` for a
+    // LOCAL workspace unconditionally, so treating that as fatal made this
+    // endpoint unusable in local mode entirely. The FS path is reached only
+    // there (one instance, working copy present) or briefly before a workspace
+    // is promoted.
+    //
+    // Both arms come from `ConfigManager`, which owns the choice, rather than
+    // from `compiled_reader` plus a hand-written fallback beside it. The caller
+    // already holds a manager whose revision the middleware pinned, so reading
+    // around it would decide compiled-vs-disk a second time, at a call site
+    // that cannot see which revision this request is on.
+    let definition = match workspace
+        .config_manager
+        .pipeline_definition(pipeline_ref)
+        .await
+        .map_err(|e| pipeline_read_error(pipeline_ref, e))?
+    {
+        Some(definition) => definition,
+        // `Ok(None)` is already the answer from BOTH sources. `definition()`
+        // falls through to the working copy on a compiled miss and only returns
+        // `None` for a genuine not-found; when there is no disk at all it
+        // returns `None` without reading one. Either way a re-read here found
+        // the same nothing and phrased the same 503 — so it re-derived the
+        // workspace root through `working_copy().root()` to learn nothing, and
+        // that synonym is invisible to `workspace_path_escape_hatch`.
+        //
+        // Still 503 rather than 404: the caller cannot tell a typo from a
+        // workspace mid-compile, and "no such pipeline" during a deploy sends
+        // an operator looking for a file that is there.
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!(
+                    "`{pipeline_ref}` is not in the compiled workspace and could not be read \
+                     from the working copy — it may not exist, or the workspace may not be \
+                     compiled yet. Retry, and check the path if it persists."
+                ),
+            ));
+        }
     };
 
     // The kind is read BEFORE the expected path is derived, because the kind
@@ -258,38 +276,55 @@ fn validate_pipeline_ref(pipeline_ref: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The pipeline's YAML from the working copy, for the local / not-yet-promoted
-/// case the compile boundary cannot serve.
+/// How a failed pipeline read reaches the caller.
 ///
-/// Not-found here is still 503 rather than 404: the caller cannot tell a typo
-/// from a workspace mid-compile, and reporting "no such pipeline" during a
-/// deploy would send an operator looking for a file that is there.
-fn read_pipeline_from_disk(
-    workspace: &oxy::adapters::workspace::manager::WorkspaceManager,
+/// `pipeline_definition` owns the DISK read as well as the boundary one, so its
+/// errors carry both kinds and they must not answer the same way. The rule is
+/// `manager.rs`'s own, stated there in as many words: a root that is not on this
+/// node is transient, while a file that fails to parse is a real fault, and
+/// collapsing them turns a 503 into a 500.
+///
+/// This existed before as two separate shapes and was lost when the read moved
+/// onto the manager: a malformed `.airway.yml` used to answer 400 naming the
+/// parse error, and it briefly answered 500 with the error dropped. Sibling
+/// callers draw the same line — `list_monitors` answers 400, `get_automation_file`
+/// 422.
+fn pipeline_read_error(
     pipeline_ref: &str,
-) -> Result<serde_json::Value, (StatusCode, String)> {
-    // Confinement is `validate_pipeline_ref`'s, run at handler entry. Not
-    // re-checked with `starts_with` here: that test is lexical and passes a
-    // `..`-bearing join, which is exactly how this read was escapable.
-    let root = workspace.config_manager.workspace_path();
-    let path = root.join(pipeline_ref);
-
-    let text = std::fs::read_to_string(&path).map_err(|_| {
-        (
+    err: oxy::config::ArtifactError,
+) -> (StatusCode, String) {
+    // `retryable()` tests the WRAPPER, and `ArtifactError::Config` is
+    // `#[from] OxyError` — so it carries more than a parse failure.
+    // `definition_from_disk` reaches `fs_link` → `validate_path_within_project`,
+    // which answers `OxyError::IOError("Failed to canonicalize project path")`
+    // on an EACCES, or on the root vanishing between `disk()`'s check and the
+    // read. Keying the 400 on the variant alone reported that node-local IO
+    // fault as the customer's YAML, non-retryable, naming a parse that never
+    // ran. Match the INNER error instead: only a configuration error is theirs.
+    let their_yaml = matches!(
+        &err,
+        oxy::config::ArtifactError::Config(oxy_shared::errors::OxyError::ConfigurationError(_))
+    );
+    if !their_yaml {
+        // A root this node does not hold, an unreadable file, a boundary that
+        // is not there yet — all the same state to the caller, and all worth
+        // retrying. Same phrasing `read_pipeline_from_disk` produces, because
+        // the caller cannot tell which of the two produced it.
+        tracing::warn!(error = %err, pipeline_ref, "pipeline not readable here");
+        return (
             StatusCode::SERVICE_UNAVAILABLE,
             format!(
                 "`{pipeline_ref}` is not in the compiled workspace and could not be read from \
                  the working copy — it may not exist, or the workspace may not be compiled \
                  yet. Retry, and check the path if it persists."
             ),
-        )
-    })?;
-    serde_yaml::from_str(&text).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("`{pipeline_ref}` is not valid YAML: {e}"),
-        )
-    })
+        );
+    }
+    // The customer's YAML. Carry the parse error: it names the line.
+    (
+        StatusCode::BAD_REQUEST,
+        format!("`{pipeline_ref}` could not be parsed: {err}"),
+    )
 }
 
 /// Source kinds that accept an upload.
@@ -537,7 +572,7 @@ pub async fn upload_report(
     // `workspace_middleware` proves the caller may *access* the workspace, not
     // that they may change it, so a Viewer would otherwise pass.
     _editor: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace): WorkspaceManagerReadOnly,
     Path(workspace_id): Path<Uuid>,
     mut multipart: Multipart,
 ) -> Result<axum::Json<UploadedReport>, (StatusCode, String)> {
@@ -703,7 +738,6 @@ pub async fn upload_report(
     let (kind, allowed_stores) = zone_for_pipeline(
         &workspace,
         workspace_id,
-        None,
         &pipeline_ref,
         &bucket,
         &root,
@@ -1331,5 +1365,101 @@ mod tests {
         ] {
             assert!(!valid_workflow_id(bad), "`{bad}` must be refused");
         }
+    }
+}
+
+#[cfg(test)]
+mod pipeline_read_error_tests {
+    use super::*;
+    use oxy::config::ArtifactError;
+    use oxy_shared::errors::OxyError;
+
+    /// A customer's malformed `.airway.yml` is not a server fault, and the
+    /// parse error is the only thing that tells them which line.
+    ///
+    /// This is the case that regressed. The read moved onto
+    /// `ConfigManager::pipeline_definition`, which owns the disk arm too, and a
+    /// blanket `map_err` sent every variant to `500 could not read the
+    /// pipeline` — dropping the parse error and reporting the customer's typo
+    /// as a platform failure. Nothing caught it: every arm compiled, and no
+    /// test covered the 400.
+    #[test]
+    fn a_malformed_pipeline_is_the_customers_four_hundred() {
+        let (status, body) = pipeline_read_error(
+            "p.airway.yml",
+            ArtifactError::Config(OxyError::ConfigurationError(
+                "p.airway.yml: did not find expected key at line 4".to_string(),
+            )),
+        );
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            body.contains("line 4"),
+            "the parse error names the line; dropping it is what made this a \
+             server error to the customer: {body}"
+        );
+    }
+
+    /// Everything else is transient and must stay retryable — a root this node
+    /// does not hold, a half-mounted volume, a boundary that has not landed.
+    /// `ArtifactError::retryable()` is the split, and `manager.rs` states the
+    /// rule this pins: collapsing the two turns a 503 into a 500.
+    #[test]
+    fn an_unreadable_pipeline_stays_a_retryable_five_oh_three() {
+        for err in [
+            ArtifactError::WorkspaceUnavailable(
+                "`p.airway.yml` exists but could not be read: EIO".to_string(),
+            ),
+            ArtifactError::WorkspaceUnavailable("no working copy on this node".to_string()),
+        ] {
+            let (status, body) = pipeline_read_error("p.airway.yml", err);
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+            assert!(
+                body.contains("Retry"),
+                "must tell the caller to retry: {body}"
+            );
+        }
+    }
+
+    /// `ArtifactError::Config` is `#[from] OxyError`, so it carries an IO
+    /// failure as readily as a parse one — `definition_from_disk` reaches
+    /// `fs_link` → `validate_path_within_project`, which answers
+    /// `OxyError::IOError("Failed to canonicalize project path")` on an EACCES
+    /// or on the root vanishing mid-deploy.
+    ///
+    /// Keying the 400 on the wrapper variant made that a customer error: a
+    /// node-local IO fault, answered non-retryable, with a message naming a
+    /// parse that never ran. That is this branch's own subject pointed the
+    /// wrong way, so it is pinned rather than left to the variant's shape.
+    #[test]
+    fn an_io_failure_wearing_config_is_still_ours_to_retry() {
+        let (status, body) = pipeline_read_error(
+            "p.airway.yml",
+            ArtifactError::Config(OxyError::IOError(
+                "Failed to canonicalize project path: Permission denied".to_string(),
+            )),
+        );
+        assert_eq!(
+            status,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "an EACCES on the root is not the customer's YAML: {body}"
+        );
+        assert!(
+            !body.contains("could not be parsed"),
+            "must not name a parse that never ran: {body}"
+        );
+    }
+
+    /// The two answers must not be the same, which is the whole point.
+    #[test]
+    fn the_two_kinds_do_not_share_a_response() {
+        let bad_yaml = pipeline_read_error(
+            "p.airway.yml",
+            ArtifactError::Config(OxyError::ConfigurationError("boom".to_string())),
+        );
+        let unreadable = pipeline_read_error(
+            "p.airway.yml",
+            ArtifactError::WorkspaceUnavailable("io".to_string()),
+        );
+        assert_ne!(bad_yaml.0, unreadable.0);
     }
 }

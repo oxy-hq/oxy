@@ -1,6 +1,6 @@
 use crate::agentic_wiring::OxyProjectContext;
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, WorkspaceManagerExtractor, WorkspacePath,
+    EffectiveWorkspaceRole, WorkspaceManagerReadOnly, WorkspaceManagerWorkingCopy, WorkspacePath,
 };
 use crate::server::api::typed_stream::{
     EMPTY_RESULT_SENTINEL, typed_stream_to_json_array, typed_stream_to_parquet,
@@ -42,6 +42,7 @@ use axum::response::{IntoResponse, Response};
 use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::{session_filters::SessionFilters, workspace::manager::WorkspaceManager};
 use oxy::config::model::ConnectionOverrides;
+use oxy::config::{ConfigManager, DiskSlot, ResolveWorkspaceFile, WorkingCopy};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
@@ -252,16 +253,22 @@ fn cap_ide_result_rows(sql: &str) -> (String, bool) {
 /// according to the requested `result_format`. Every `DatabaseType` in
 /// `oxy::config::model` has a landing spot in `OxyProjectContext`, so this
 /// is now the single path for every Dev Portal query.
-pub(crate) async fn run_via_agentic_connector(
-    workspace_manager: &WorkspaceManager,
+pub(crate) async fn run_via_agentic_connector<S: DiskSlot>(
+    workspace_manager: &WorkspaceManager<S>,
     user_id: Uuid,
     role: WorkspaceRole,
     payload: &SQLParams,
-) -> Result<SemanticQueryResponse, SqlExecuteError> {
-    let ctx = OxyProjectContext::new(workspace_manager.clone())
-        .with_subject(user_id)
-        .with_role(role);
-    let connector = ctx.build_connector_for(&payload.database).await?;
+) -> Result<SemanticQueryResponse, SqlExecuteError>
+where
+    ConfigManager<S>: ResolveWorkspaceFile,
+{
+    let connector = crate::agentic_wiring::project_ctx::build_connector_for_db(
+        workspace_manager,
+        &payload.database,
+        Some(user_id),
+        Some(role),
+    )
+    .await?;
 
     // The 10k cap applies to *every* caller of this shared function — not just
     // the IDE Database tab, but also `/semantic`, `world_model_graph`, and the
@@ -338,7 +345,6 @@ pub(crate) async fn run_via_agentic_connector(
 pub(crate) async fn run_with_connector(
     connector: &Arc<dyn DatabaseConnector>,
     sql: &str,
-    _workspace_manager: &WorkspaceManager,
 ) -> Vec<Vec<String>> {
     match connector.execute_query_full(sql).await {
         Ok(stream) => typed_stream_to_json_array(stream)
@@ -356,7 +362,7 @@ pub(crate) async fn run_with_connector(
 
 /// Build a connector for the given database name, scoped to `user_id`/`role`.
 pub(crate) async fn build_connector(
-    workspace_manager: &WorkspaceManager,
+    workspace_manager: &WorkspaceManager<WorkingCopy>,
     user_id: Uuid,
     role: WorkspaceRole,
     database: &str,
@@ -390,7 +396,7 @@ fn truncate_sql_for_log(sql: &str) -> String {
 }
 
 pub async fn execute_sql(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     Path(WorkspacePath {
@@ -405,7 +411,7 @@ pub async fn execute_sql(
 }
 
 pub async fn execute_sql_query(
-    workspace: WorkspaceManagerExtractor,
+    workspace: WorkspaceManagerReadOnly,
     user: AuthenticatedUserExtractor,
     role: EffectiveWorkspaceRole,
     path: Path<WorkspacePath>,
@@ -420,7 +426,7 @@ pub async fn execute_sql_query(
 //         - calculating inclusion radius for each retrieval item
 //         - caching enum values for each variable so they can be detected at query time
 pub async fn build_embeddings(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path(WorkspacePath {
         workspace_id: _workspace_id,
     }): Path<WorkspacePath>,
@@ -453,7 +459,7 @@ pub async fn build_embeddings(
     }
 }
 
-async fn handle_omni_sync(workspace: &WorkspaceManager) -> Result<(), OxyError> {
+async fn handle_omni_sync(workspace: &WorkspaceManager<WorkingCopy>) -> Result<(), OxyError> {
     use crate::server::service::omni_sync::OmniSyncService;
     use omni::{OmniApiClient, OmniError as AdapterOmniError};
 

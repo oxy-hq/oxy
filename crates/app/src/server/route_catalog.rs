@@ -219,6 +219,21 @@ mod tests {
         "crates/app/src/cli/commands/serve.rs",
         // The `oxy worker --health-port` surface: /healthz, /readyz, /metrics.
         "crates/app/src/server/worker_health.rs",
+        // `oxy-oltp`'s router, merged at the protected-tree root. Wiring it
+        // into SOURCE_DIRS needs a seed, and a seed resolves a builder by
+        // module-path SUFFIX — this crate's entry point is `api::router`,
+        // which collides with `airhouse`'s and `cameras`'s. The walker has no
+        // way to say "the one in crates/oltp", so the tree indexes and
+        // contributes nothing, which trips `every_scanned_tree_contributes_routes`
+        // instead. Listed here rather than half-wired: `oxy api --routes` does
+        // not show `/api/oltp/*`, and saying so is better than a seed that
+        // silently points at the wrong crate.
+        "crates/oltp/src/api/mod.rs",
+        // Test files, not route trees. They name `route_fleet` / `route_ide` in
+        // assertions and fixtures, and the walker learned those markers when the
+        // routers moved to `RoleRouter` — so they started looking like mounts.
+        "crates/app/src/server/role_manifest_tests.rs",
+        "crates/app/src/server/role_middleware_tests.rs",
     ];
 
     /// The floor exists so a router refactor the lexical walker can no longer
@@ -478,6 +493,13 @@ mod tests {
 
     #[test]
     fn describe_reports_the_fleet_role() {
+        // `describe` asks `role_manifest::classify`, which reads the
+        // declarations the routers install at startup. A unit test builds no
+        // server, so without this the registry is empty and every route reports
+        // the FleetOk default — the assertion below would fail for the one
+        // reason that says nothing about the catalog.
+        crate::server::role_manifest::install_route_declarations_for_tests();
+
         // `/files` reads the working copy, so it is pinned to the ide; the
         // thread list is served from Postgres and runs anywhere.
         let files = routes()

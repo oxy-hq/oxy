@@ -176,6 +176,7 @@ export async function materializeStrategies(
     }
 
     await handle.dispose();
+    return uniqueByRank(await keepUnambiguous(page, candidates));
   } catch {
     // Best effort. Materialization failure should never break a successful
     // recording — the primary selector still gets cached as a single
@@ -183,6 +184,39 @@ export async function materializeStrategies(
   }
 
   return uniqueByRank(candidates);
+}
+
+/**
+ * Drop derived strategies that do not identify the element on their own.
+ *
+ * The derived alternates are guesses read off the recorded element, and
+ * `uniqueByRank` promotes them above the primary by kind — text beats css,
+ * because a label usually outlives a class name. That reasoning holds for a
+ * label and fails for content: clicking Monaco records the editor's `innerText`,
+ * which for an empty file is the line-number gutter, so the top-ranked strategy
+ * became `text=1`. Replaying it clicked the gutter, the keystrokes went nowhere,
+ * nothing threw, and the step reported a cache hit while doing nothing — the
+ * failure surfaced three steps later as a save button that never appeared.
+ *
+ * Ambiguity is the signal that separates the two cases: `text=1` matched two
+ * elements. A strategy that cannot say WHICH element it means has no business
+ * outranking the one the model used and the run proved. The primary is always
+ * kept — it is the selector that actually worked.
+ */
+async function keepUnambiguous(
+  page: Page,
+  candidates: Array<{ kind: SelectorKind; selector: string }>
+): Promise<Array<{ kind: SelectorKind; selector: string }>> {
+  const [primary, ...derived] = candidates;
+  const kept = [primary];
+  for (const c of derived) {
+    const count = await page
+      .locator(c.selector)
+      .count()
+      .catch(() => 0);
+    if (count === 1) kept.push(c);
+  }
+  return kept;
 }
 
 function uniqueByRank(

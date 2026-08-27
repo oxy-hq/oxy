@@ -20,12 +20,16 @@ use oxy_shared::errors::OxyError;
 use super::constants::{CREATE_CONN, EXECUTE_QUERY, SNOWFLAKE_SESSION_VAR_LIMIT};
 use super::engine::Engine;
 use super::utils::connector_internal_error;
+use crate::config::WorkingCopy;
 
 #[derive(Debug)]
 pub(super) struct Snowflake {
     pub config: SnowflakeConfig,
     pub secret_manager: SecretsManager,
-    pub config_manager: ConfigManager,
+    /// `None` on a process with no working copy. Only the private-key auth
+    /// types need it, so the failure surfaces there instead of blocking every
+    /// Snowflake connection.
+    pub config_manager: Option<ConfigManager<WorkingCopy>>,
     pub filters: Option<SessionFilters>,
     pub overrides: Option<SnowflakeConnectionOverride>,
     pub sso_url_sender: Option<mpsc::Sender<String>>,
@@ -35,7 +39,7 @@ impl Snowflake {
     pub fn new(
         config: SnowflakeConfig,
         secret_manager: SecretsManager,
-        config_manager: ConfigManager,
+        config_manager: Option<ConfigManager<WorkingCopy>>,
     ) -> Self {
         Self {
             config,
@@ -239,16 +243,25 @@ impl Snowflake {
                     "🔐 Snowflake: Using private key authentication from: {}",
                     private_key_path.display()
                 );
-                let private_key_path = self
-                    .config_manager
-                    .resolve_file(private_key_path)
-                    .await
-                    .map_err(|err| {
-                        OxyError::ConfigurationError(format!(
-                            "Failed to resolve private key path: {}",
-                            err
-                        ))
-                    })?;
+                let resolver = self.config_manager.as_ref().ok_or_else(|| {
+                    OxyError::ConfigurationError(
+                        "this Snowflake connection authenticates with a private key \
+                         file in the workspace, which this process does not have. \
+                         Run it on the filesystem-owning node, or switch to an auth \
+                         type that does not read a local file."
+                            .to_string(),
+                    )
+                })?;
+                let private_key_path =
+                    resolver
+                        .resolve_file(private_key_path)
+                        .await
+                        .map_err(|err| {
+                            OxyError::ConfigurationError(format!(
+                                "Failed to resolve private key path: {}",
+                                err
+                            ))
+                        })?;
                 let private_key_content =
                     std::fs::read_to_string(private_key_path).map_err(|err| {
                         OxyError::ConfigurationError(format!(

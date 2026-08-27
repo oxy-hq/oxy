@@ -32,8 +32,20 @@ export class ContextGraphService {
     const nodes: ContextGraphNode[] = [];
     const edges: ContextGraphEdge[] = [];
 
-    // Add table nodes
+    // Add table nodes.
+    //
+    // `datasets` is `null` when the answering instance could not look, and `{}`
+    // when it looked and found none — see the field's doc in types/database.ts,
+    // which says only the second may be rendered as "none configured". Treating
+    // null as `{}` produced zero table nodes either way, so the overview simply
+    // omitted its Tables row and the page looked complete while being short a
+    // whole category. Record the distinction instead of erasing it.
+    let tablesUnknown = false;
     databases.forEach((db) => {
+      if (db.datasets == null) {
+        tablesUnknown = true;
+        return;
+      }
       Object.entries(db.datasets).forEach(([dataset, tables]) => {
         Object.keys(tables).forEach((table) => {
           const tableId = `table:${db.name}.${dataset}.${table}`;
@@ -495,7 +507,7 @@ export class ContextGraphService {
       }
     }
 
-    return { nodes, edges };
+    return { nodes, edges, tablesUnknown };
   }
 
   /**

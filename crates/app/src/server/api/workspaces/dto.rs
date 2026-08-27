@@ -160,6 +160,48 @@ pub struct WorkspaceDetailsResponse {
     pub storage_key: String,
 }
 
+/// The half of [`WorkspaceDetailsResponse`] that comes from Postgres.
+///
+/// Split out because `/details` does two jobs, and the git half is the only
+/// reason the route needs the ide. Served from any replica.
+///
+/// `active_branch` is deliberately NOT here — it comes from
+/// `git.get_current_branch()`, not a column. There is no branch field on the
+/// workspaces entity.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct WorkspaceMetaResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub workspace_id: Uuid,
+    pub created_at: String,
+    pub updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_error: Option<String>,
+    /// See `compute_workspace_storage_key`.
+    pub storage_key: String,
+    /// The authenticated user's effective role in this workspace.
+    pub current_user_role: String,
+    /// True when this workspace is in local mode and no `config.yml` is
+    /// resolvable — the frontend renders the setup dialog instead of the app.
+    #[serde(default)]
+    pub requires_local_setup: bool,
+}
+
+/// The half of [`WorkspaceDetailsResponse`] that needs `.git`.
+///
+/// Live state — branch, mode, capabilities — so it cannot be compiled and the
+/// route stays IdeOnly. When the ide is unreachable this 502s, and the frontend
+/// treats a missing git half exactly as it treats today's degraded
+/// `git_mode: None`: no branch, so the queries gated on one stay closed.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct WorkspaceGitStateResponse {
+    pub active_branch: Option<ProjectBranch>,
+    pub git_mode: GitMode,
+    pub capabilities: GitCapabilities,
+    pub default_branch: String,
+    pub protected_branches: Vec<String>,
+}
+
 // BranchType and ProjectBranch imported from oxy::api_types
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -249,12 +291,19 @@ pub struct WorkspaceSummary {
     pub last_opened_at: Option<DateTime<Utc>>,
     /// Display name of the user who created this workspace, if known.
     pub created_by_name: Option<String>,
-    /// Number of `.agent.yml` files found (recursive).
-    pub agent_count: usize,
-    /// Number of `.automation.yml` files found (recursive).
-    pub workflow_count: usize,
-    /// Number of `.app.yml` files found (recursive).
-    pub app_count: usize,
+    /// Number of `.agent.yml` files found (recursive), or `None` when this
+    /// instance holds no working copy for the workspace and therefore did not
+    /// look. Zero means "counted, and there are none" — a replica reporting the
+    /// two as the same number is how a healthy workspace came to render
+    /// "0 agents · 0 automations · 0 apps".
+    pub agent_count: Option<usize>,
+    /// Number of automation files found (recursive) — `.automation.yml` plus the
+    /// `.procedure.yml` / `.workflow.yml` legacy spellings, matching
+    /// `ConfigManager::list_workflows` and the "automations" the UI labels them.
+    /// `None` as above.
+    pub workflow_count: Option<usize>,
+    /// Number of `.app.yml` files found (recursive). `None` as above.
+    pub app_count: Option<usize>,
     /// Git remote URL (e.g. `https://github.com/org/repo`), if set.
     pub git_remote: Option<String>,
     /// Short commit hash + message of HEAD, if available.

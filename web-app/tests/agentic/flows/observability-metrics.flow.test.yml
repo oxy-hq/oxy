@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Metrics list + metric detail. Nothing covered either page before this flow.
+#
+# Case 2 (detail page, "Recent Usage") IS EXPECTED TO FAIL against the
+# current build — read before weakening it back to green.
+# -----------------------------------------------------------------------
+# Same root cause as `observability-clusters.flow.test.yml`, a different
+# blast radius. `crates/observability/src/backends/clickhouse/metrics.rs`,
+# inside `get_metric_detail`'s `recent_sql` (L468-482):
+#
+#   let ca = super::iso_utc("created_at");                                // L468
+#   let recent_sql = format!(
+#       "SELECT ... {ca} AS created_at, context
+#        FROM observability_metric_usage
+#        WHERE metric_name = '{escaped}'
+#          AND created_at >= now() - INTERVAL {days} DAY                  // L477
+#        ORDER BY created_at DESC LIMIT 20"
+#   );
+#
+# Identical shape to the clusters bug: WHERE filters the bare `created_at`
+# DateTime column, SELECT aliases `formatDateTime(created_at, ...)` back
+# onto the same name, ClickHouse substitutes the alias into the WHERE
+# predicate, and the query throws `NO_COMMON_TYPE` (String vs DateTime).
+#
+# The difference — and the reason this is a WORSE bug than the clusters
+# one, not a milder duplicate — is what happens next. metrics.rs:483-487:
+#
+#   let recent_usage = storage.read_client().query(&recent_sql)
+#       .fetch_all::<RecentUsageRow>().await
+#       .unwrap_or_default()                                              // L487
+#       ...
+#
+# `.unwrap_or_default()` swallows the query error and returns an empty
+# Vec. The API call itself returns 200 (verified: `GET
+# /{workspace}/metrics/oxymart.total_sales` succeeds with
+# `"recent_usage":[]`). The frontend then renders a page that looks
+# entirely healthy: RecentUsageSection (MetricsDetailPage/components/
+# RecentUsage/RecentUsageSection.tsx:55,70) shows "Last 0 queries
+# referencing this metric" and "No recent usage data available" — a
+# calm, plausible, ZERO-signal empty state, even though
+# `observability_metric_usage` had 2 real rows (both from this metric)
+# when this was authored. There is no error banner anywhere on this page
+# for a human to notice; the only way to tell the data is being silently
+# dropped is to know independently that usage exists and isn't showing.
+#
+# This is exactly the failure class `apps-data-app-charts.flow.test.yml`'s
+# header describes: "a human reading one would blame a restart [or,
+# here, 'no usage yet'], not a routing bug" — except here there is not
+# even a degraded-but-honest banner, just silence. See
+# `observability-clusters.flow.test.yml` and
+# `observability-execution-analytics.flow.test.yml` for the other two
+# call sites sharing this exact anti-pattern (WHERE on a bare column +
+# `iso_utc(col) AS col` in the same query); this is the only one of the
+# three where the failure is swallowed rather than surfaced.
+#
+# Per this session's instructions: do not weaken case 2's assertions to
+# force green. It asserts the CORRECT behavior (real usage rows
+# rendering); it is expected to fail against the current backend, and
+# that failure is the finding, not a flow bug.
+#
+# Case 1 (metrics list) has no known bug and is expected to pass — it
+# exercises `GET /{workspace}/metrics/list`, a plain count/aggregate query
+# with no `iso_utc()` timestamp formatting in its WHERE-adjacent SELECT
+# list, so it is not exposed to this bug class.
+#
+# FIXTURE / PORTABILITY: same standalone ClickHouse-backed server as the
+# sibling observability flows — see observability-traces.flow.test.yml's
+# header for how it was stood up. Two metric names were seeded by the
+# same two analytics runs described there: `oxymart.total_sales` and
+# `oxymart.store_id`, both referenced together by the "top 5 stores by
+# total sales" question (confirmed via GET /metrics/list and
+# GET /metrics/oxymart.total_sales before writing this flow).
+#
+# NO TESTIDS on this page either — see observability-traces.flow.test.yml.
+#
+# COST: zero `act` steps, one judge call per case.
+
+name: observability metrics list and metric detail
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  max_steps: 10
+
+setup:
+  - "goto:/ide/observability/metrics"
+
+cases:
+  - name: metrics list shows both real seeded metrics
+    tags: [ide, observability, metrics, regression]
+    steps:
+      # MetricCard renders `metric.name` directly as its heading —
+      # metrics/MetricsListPage/components/MetricsGrid/MetricCard.tsx:44.
+      - wait_for: "selector:text=oxymart.total_sales;timeout_ms=45000"
+
+    expect:
+      - assert: text "oxymart.total_sales" is visible
+      - assert: text "oxymart.store_id" is visible
+
+      # MetricsListPage:21-27 shows a bare ErrorAlert on a query failure —
+      # must be absent since this endpoint has no known bug.
+      - assert: "selector text=Failed to load metrics data is not visible"
+
+      - judge: |
+          The Metrics page shows a grid or list of metric cards, including
+          one named "oxymart.total_sales" and one named "oxymart.store_id",
+          each showing a usage count and a last-used date (not "—" or
+          "Invalid Date").
+
+          Fail if ANY of the following is true:
+          (a) an error message or "Failed to load metrics data" is visible;
+          (b) the page is blank or shows no metric cards at all;
+          (c) a date field reads "Invalid Date" or "NaN".
+
+  - name: metric detail page — Recent Usage silently drops real usage rows (expected red)
+    tags: [ide, observability, metrics, regression, known-broken]
+    steps:
+      # setup landed on the metrics LIST; navigate on to this metric's
+      # detail page. One cheap, atomic act step, same rationale as
+      # observability-traces.flow.test.yml's detail case.
+      - act: |
+          Use browser_navigate to go directly to the URL
+          /ide/observability/metrics/oxymart.total_sales (relative to the
+          current origin). Do not click any links — call browser_navigate
+          with this exact path.
+
+      # DetailHeader — metrics/MetricsDetailPage/index.tsx:60,
+      # decodeURIComponent(metricName) rendered verbatim as the h1.
+      - wait_for: "selector:text=oxymart.total_sales;timeout_ms=45000"
+
+      # RecentUsageSection — MetricsDetailPage/components/RecentUsage/
+      # RecentUsageSection.tsx:44. Card title is always present regardless
+      # of whether usage data loaded, so this just confirms the section
+      # mounted before the assertions below inspect its content.
+      - wait_for: "selector:text=Recent Usage;timeout_ms=45000"
+
+    expect:
+      # EXPECTED TO FAIL today: RecentUsageSection.tsx:70 renders this
+      # exact string whenever `recent_usage` is empty — which it always is
+      # right now, per the swallowed query error described above, even
+      # though real usage rows exist in observability_metric_usage.
+      - assert: "selector text=No recent usage data available is not visible"
+
+      - judge: |
+          The metric detail page for "oxymart.total_sales" shows a "Recent
+          Usage" section containing at least one real usage card — a
+          question or SQL snippet with a source-type badge and a
+          relative timestamp, NOT the placeholder text "No recent usage
+          data available" and NOT "Last 0 queries referencing this
+          metric".
+
+          Fail if ANY of the following is true:
+          (a) the Recent Usage section shows "No recent usage data
+              available" or "Last 0 queries referencing this metric";
+          (b) the page shows an error message instead of metric detail
+              content;
+          (c) the page is blank.

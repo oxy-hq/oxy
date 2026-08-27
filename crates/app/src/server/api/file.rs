@@ -1,6 +1,6 @@
 use crate::server::api::middlewares::role_guards::WorkspaceEditor;
 use crate::server::api::middlewares::workspace_context::{
-    SemanticEngineCacheCtx, SemanticLayerCacheCtx, WorkspaceManagerExtractor,
+    SemanticEngineCacheCtx, SemanticLayerCacheCtx, WorkspaceManagerWorkingCopy,
 };
 use crate::server::router::AppState;
 use axum::Json;
@@ -9,6 +9,7 @@ use axum::http::StatusCode;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use futures::TryFutureExt;
+use oxy::config::WorkingCopy;
 use oxy::github::default_git_client;
 use oxy_git::{FileStatus, GitClient, cli::repo::find_git_root};
 use oxy_project::data_repo_service::{parse_data_repo_path, resolve_data_repo_path};
@@ -27,7 +28,7 @@ pub struct SaveFileRequest {
 
 pub async fn create_file(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD
@@ -57,7 +58,7 @@ pub async fn create_file(
 
 pub async fn create_folder(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD
@@ -79,7 +80,7 @@ pub async fn create_folder(
 
 pub async fn delete_file(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD
@@ -101,7 +102,7 @@ pub async fn delete_file(
 
 pub async fn delete_folder(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD
@@ -128,7 +129,7 @@ pub struct RenameFileRequest {
 
 pub async fn rename_file(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<RenameFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
@@ -158,7 +159,7 @@ pub async fn rename_file(
 
 pub async fn rename_folder(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<RenameFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
@@ -186,10 +187,12 @@ pub async fn rename_folder(
     Ok(extract::Json("success".to_string()))
 }
 
-#[axum::debug_handler]
+// `save_file` writes the working copy, so it resolves from `IdeState`; the
+// attribute has to be told which state it is checking against.
+#[axum::debug_handler(state = crate::server::router::IdeState)]
 pub async fn save_file(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     layer_cache: SemanticLayerCacheCtx,
     engine_cache: SemanticEngineCacheCtx,
     axum::extract::State(_app_state): axum::extract::State<crate::server::router::AppState>,
@@ -261,7 +264,7 @@ fn is_semantic_file(path: &std::path::Path) -> bool {
 }
 
 pub async fn get_diff_summary(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
 ) -> Result<Json<Vec<FileStatus>>, StatusCode> {
     let repo_path = workspace_manager.config_manager.workspace_path();
 
@@ -292,7 +295,7 @@ pub async fn get_diff_summary(
 
 pub async fn get_file(
     State(_app_state): State<AppState>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD
@@ -334,7 +337,7 @@ pub async fn get_file(
 
 pub async fn get_file_from_git(
     State(_app_state): State<AppState>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD
@@ -370,7 +373,7 @@ pub async fn get_file_from_git(
 /// - Newly added (untracked) files: `git clean -f -- <path>` (removes the file)
 pub async fn revert_file(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD
@@ -460,7 +463,7 @@ const HIDDEN_DIRS: &[&str] = &[".git", ".worktrees", ".repositories"];
 
 pub async fn get_file_tree(
     State(_app_state): State<AppState>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
 ) -> Result<extract::Json<FileTreeResponse>, StatusCode> {
     let workspace_root = PathBuf::from(workspace_manager.config_manager.workspace_path());
     let serve_root = workspace_root.clone();
@@ -524,7 +527,7 @@ pub async fn get_file_tree(
 /// Resolves a decoded file path to an absolute filesystem path.
 /// Handles both regular project paths and `@repo-name/relative/path` repository paths.
 async fn resolve_file_path(
-    workspace_manager: &oxy::config::ConfigManager,
+    workspace_manager: &oxy::config::ConfigManager<WorkingCopy>,
     workspace_root: &PathBuf,
     decoded_path: &str,
 ) -> Result<PathBuf, StatusCode> {

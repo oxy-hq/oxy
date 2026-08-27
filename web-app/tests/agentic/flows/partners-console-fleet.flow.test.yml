@@ -1,0 +1,315 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Drive the Partner console (/partners/apps, /partners/team,
+# /partners/activity) end to end against a seeded partner org. No existing
+# flow covers it — `admin-tenants-cockpit` only proves the ADMIN registry's
+# Partners tab resolves rows-or-empty; nothing opens the console those rows
+# actually grant.
+#
+# ACTUALLY OBSERVED (this run, not a prediction): case 1's Apps-tab
+# assertions fail — the "Your own apps" section never shows Acme's two apps
+# (Oxy Starter, Oxy Starter (Private)); it stays on its loading state. Root
+# cause, confirmed by calling the endpoint directly while holding a live
+# assume session as e2e@oxy.tech: `GET /partners/<acme>/own-apps` returns
+# 403. `require_own_org_authority`
+# (crates/api-partner-console/src/app_mgmt.rs:122-149) requires a REAL
+# `org_members` Owner/Admin row for the caller in the partner org — which an
+# assume-role session deliberately never synthesizes
+# (crates/server-authz/src/partner_authz.rs's "never injected as a synthetic
+# membership" design note). But an assume-role session is THE documented way
+# staff reaches this console at all (PartnerPane.tsx: "that is Oxy staff
+# acting as the partner, which is precisely how they reach this console"),
+# and `AssumeRoleDialog` explicitly promises "Owner-level access to this
+# organization" for the session's duration. So every staff person who enters
+# the Partner console the only way they can hits a permanently-loading "Your
+# own apps" panel. This is a real product gap independent of the split
+# fleet — do not weaken the Apps-tab assertions to tolerate it; report it.
+# The other three cases (Team, Activity, stop-acting) pass with real,
+# verified content and are not affected — the ceiling-gated endpoints
+# (`require_org_scope`) use a different authority path that the assume
+# session DOES satisfy.
+#
+# IDENTITY — WHY THIS MUST BE ITS OWN INVOCATION
+# --------------------------------------------------------------------------
+# `/partners` is capability-gated, NOT an org membership
+# (product-context.md, "Partner"). Its people are real `org_members` of the
+# partner org who additionally hold a `partner_role_bindings` row
+# (crates/server-authz/src/partner_authz.rs). `oxy seed` creates that
+# membership for generated `*.test` emails (e.g. `maya.nguyen@acme.test`),
+# none of which are in this fleet's `OXY_DEV_LOGIN_EMAILS` allowlist
+# (`e2e@oxy.tech,flow@oxy.local` — docker-compose.fleet.yml), so this flow
+# cannot sign in as a real operator. The only reachable path is STAFF:
+# `e2e@oxy.tech` (OXY_OWNER on this fleet) holds `Cap::ManagePartners`, so it
+# can open an audited **assume-role session** as the partner org and enter
+# the console that way (`resolve_scope`'s `assumed_partners` branch,
+# partner_authz.rs:255-270 — "Neither a real operator nor a live assume
+# session ⇒ a plain 403"). `flow@oxy.local` (org owner of `local`, no
+# platform standing) cannot reach `/partners` at all.
+#
+# The runner injects exactly ONE session per invocation
+# (`runner/runtimes/bespoke.ts:122-156`), so this flow must never run in the
+# same invocation as a non-staff flow (e.g. `customer-apps-oxy-starter-
+# fleet`, which needs `flow@oxy.local`) — each needs its own
+# `pnpm test:agentic <flow> --no-auto-backend` call with a different
+# OXY_SESSION_TOKEN/OXY_SESSION_USER pair.
+#
+# BLAST RADIUS ON A SHARED FLEET: starting the assume session below makes
+# `e2e@oxy.tech` "act as" Acme for up to 60 minutes — during that window ANY
+# other flow signed in as `e2e@oxy.tech` that expects `/admin/*` (e.g.
+# `admin-tenants-cockpit`, `admin-custom-apps-tabs`) gets client-side
+# redirected to `/partners` instead (`AdminLayout`'s `acting.isActing` guard)
+# and fails looking like an unrelated broken page. The final case here stops
+# the session again so the fleet is left clean, but do not run this
+# concurrently with another `e2e@oxy.tech` flow — the two will race.
+#
+# WHY FLEET-SENSITIVE: `crates/api-partner-console/src/lib.rs:51-55` states
+# the whole `/api/partners` surface is Postgres-only and deliberately
+# UNLISTED in `role_manifest.rs` — "FleetOk by default... a route added here
+# that touches the workspace FS ... would need an IdeOnly classification the
+# manifest never sees for this crate." So this exercises the OTHER
+# half of the split-fleet contract from `customer-apps-oxy-starter-fleet`:
+# proving a whole console answers correctly from Postgres alone, no working
+# copy involved anywhere in the chain (org membership, ceiling, audit log).
+#
+# THE ROUTE IN: /admin/tenants (Partners tab) -> select the partner row ->
+# "Act as" -> AssumeRoleDialog -> "Start session" -> hard navigation lands on
+# /partners because the session is flagged is_partner
+# (web-app/src/hooks/api/adminAssume/useActingSession.ts:14-17,
+# PartnerPane.tsx:70-83). No setup command can do this (starting an
+# assume-role session is a real, audited state change the harness's
+# read-only setup surface deliberately cannot reach), so it is the first
+# case's job.
+#
+# FOUR CASES, STRICT ORDER, SHARED STATE ON PURPOSE: `setup: goto:/admin/
+# tenants` runs before every case (cli.ts iterates `cases` sequentially, so
+# order is guaranteed). Case 1 is not yet acting, so it lands on the real
+# admin cockpit and runs the ceremony. Cases 2-4 ARE acting (session started
+# by case 1 persists server-side, keyed by the session cookie/JWT, across
+# the fresh Playwright browser context each case gets — see
+# `runWithBrowser` in bespoke.ts), so `goto:/admin/tenants` client-side
+# redirects them straight to /partners; each just clicks one more sidebar
+# link. If case 1 fails to start the session, cases 2-4 fail immediately and
+# visibly (stuck on the admin cockpit / a 403), not silently.
+#
+# GROUND TRUTH (queried via /api/admin/partners as e2e@oxy.tech during
+# authoring): Acme Consulting manages 2 clients (Northwind Traders, Globex
+# Corporation), ceiling grants manage_members/manage_apps/develop_apps/
+# view_audit/create_orgs/manage_org_settings but NOT manage_billing/
+# manage_secrets, and 7 org members of whom 6 have partner access —
+# maya.nguyen@acme.test (owner) through liam.haddad@acme.test, with
+# amara.larsson@acme.test the deliberate no-access case (seed_partners.rs's
+# "acme_leaves_one_employee_without_partner_access" test). Acme owns 2 apps
+# of its own (Oxy Starter, Oxy Starter (Private)); Northwind and Globex own
+# none, so the cross-client Apps section is the empty state.
+#
+# Backend: `--enterprise` (cloud-shaped), exactly like admin-tenants-cockpit
+# — the assume-role + partner surfaces are enterprise-only. `backend_mode`
+# below does not select a fixture (see the "Driving a fleet" section of
+# tests/agentic/README.md) — it only picks what the runner auto-spawns when
+# not handed a backend; this flow is always driven with --no-auto-backend
+# against the fleet, so the value is inert but must be a valid enum member.
+
+name: partner console renders a real partner's apps, team and activity
+target: any
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: local
+  # Longest single step is the admin ceremony (open dialog, type, submit) —
+  # a handful of tool calls at most.
+  max_steps: 15
+
+setup:
+  - "goto:/admin/tenants"
+
+cases:
+  - name: staff assumes Acme and the Apps tab shows its own apps
+    tags: [partners, admin, assume-role, fleet, critical]
+    steps:
+      # data-testid='admin-tenants-cockpit' — AdminTenantsCockpit/index.tsx:33
+      - wait_for: "selector:[data-testid=admin-tenants-cockpit]"
+
+      # data-testid='tenant-type-partners' — TenantHeader's entity switcher.
+      - act: |
+          Click [data-testid=tenant-type-partners] to switch the tenant
+          registry to Partners.
+
+      - wait_for: network_idle
+
+      # data-testid='tenant-rail-row' — TenantRail.tsx:130. Two rows exist
+      # (Acme Consulting, Initech); disambiguate by name.
+      - act: |
+          Click the [data-testid=tenant-rail-row] whose text is "Acme
+          Consulting" to open its detail pane.
+
+      # The pane's "Act as" button (PartnerPane.tsx) has no testid; role+name
+      # is unambiguous once the pane has loaded.
+      - wait_for: "selector:role=button[name=\"Act as\"]"
+
+      - act: |
+          Click the "Act as" button (role=button[name="Act as"], amber
+          ShieldAlert icon) in the partner detail pane. This opens the
+          assume-role dialog.
+
+      # #assume-reason — AssumeRoleDialog.tsx:73.
+      - wait_for: "selector:#assume-reason"
+
+      - act: |
+          1. Type "agentic flow test — verifying the partner console renders
+             Acme's real data" into #assume-reason.
+          2. Click the "Start session" button (role=button[name="Start
+             session"]) to begin the assume-role session.
+
+      # Hard navigation (window.location.assign), so this is a real page
+      # load, not a client-side wait. data-testid='partner-clients-page' —
+      # PartnerClients/index.tsx:25. Landing here (not an error, not still on
+      # /admin) is itself the proof the session started and was flagged
+      # is_partner.
+      - wait_for: "selector:[data-testid=partner-clients-page];timeout_ms=30000"
+
+      - act: |
+          Click the "Custom apps" link in the left sidebar
+          (role=link[name="Custom apps"]) to open the partner's Apps tab.
+
+      # data-testid='partner-custom-apps-page' — PartnerCustomApps/index.tsx:38.
+      - wait_for: "selector:[data-testid=partner-custom-apps-page]"
+      - wait_for: network_idle
+
+    expect:
+      - assert: "selector [data-testid=partner-custom-apps-page] is visible"
+      - assert: 'text "Your own apps" is visible'
+      - assert: 'text "Oxy Starter" is visible'
+      - assert: 'text "Oxy Starter (Private)" is visible'
+
+      - judge: |
+          The page is on the partner console's Custom apps tab (title "Custom
+          apps", eyebrow "Your clients"), acting as Acme. It shows a "Your own
+          apps" section listing "Oxy Starter" and "Oxy Starter (Private)" as
+          Acme's own apps (published/Live, not "unpublished"), and — because
+          Acme manages two clients (Northwind Traders, Globex Corporation)
+          that own no apps of their own — the cross-client apps section shows
+          an empty state such as "No custom apps across your clients yet."
+          rather than a table.
+
+          Fail if ANY of the following is true:
+          (a) an error message, 403, or "not found" is visible instead of the
+              apps content;
+          (b) the page is still the admin console (never redirected to
+              /partners after starting the session);
+          (c) "Your own apps" is missing or shows zero apps;
+          (d) a loading spinner is still on screen.
+
+  - name: the assumed session persists — Team tab shows Acme's real roster
+    tags: [partners, fleet, regression]
+    steps:
+      # Still "acting" from case 1 (session persists server-side ~60 min), so
+      # /admin/tenants client-side redirects straight to /partners
+      # (AdminLayout's `acting.isActing` guard) before the admin cockpit ever
+      # mounts. Landing here is itself proof the session from case 1 is
+      # still live.
+      - wait_for: "selector:[data-testid=partner-clients-page];timeout_ms=15000"
+
+      - act: |
+          Click the "Team" link in the left sidebar (role=link[name="Team"])
+          to open the partner's Team tab.
+
+      # data-testid='partner-team-page' — PartnerTeam/index.tsx:33.
+      - wait_for: "selector:[data-testid=partner-team-page]"
+      - wait_for: network_idle
+
+    expect:
+      - assert: "selector [data-testid=partner-team-page] is visible"
+      # Owner, present with access.
+      - assert: 'text "maya.nguyen@acme.test" is visible'
+      # The seed's deliberate no-access case — must be listed, toggle OFF.
+      - assert: 'text "amara.larsson@acme.test" is visible'
+
+      - judge: |
+          The page is the partner console's Team tab, showing "Who at your
+          organization can act on your clients" and a ceiling summary
+          sentence naming several capabilities an operator can use (things
+          like managing members, publishing apps, app data access, viewing
+          the audit log, onboarding clients, changing org settings) but
+          NOT mentioning billing or secrets. Below it, a table with columns
+          Person / Org role / Partner access lists 7 people, each with an
+          email ending "@acme.test". maya.nguyen@acme.test is badged as the
+          org Owner with an ON access toggle. amara.larsson@acme.test's
+          access toggle is OFF (unchecked) while the others are ON.
+
+          Fail if ANY of the following is true:
+          (a) an error message ("Failed to load your team") is visible
+              instead of the table;
+          (b) fewer than 7 people are listed, or the table is empty
+              ("Nobody here yet");
+          (c) the ceiling summary claims Acme can manage billing or manage
+              secrets (both are false for this partner's ceiling);
+          (d) amara.larsson's toggle appears ON (checked) — that would mean
+              the deliberate no-access seed case regressed.
+
+  - name: the assumed session persists — Activity tab resolves
+    tags: [partners, fleet, regression]
+    steps:
+      - wait_for: "selector:[data-testid=partner-clients-page];timeout_ms=15000"
+
+      - act: |
+          Click the "Activity" link in the left sidebar
+          (role=link[name="Activity"]) to open the partner's Activity tab.
+
+      # data-testid='partner-activity-page' — PartnerActivity/index.tsx:112.
+      - wait_for: "selector:[data-testid=partner-activity-page]"
+      - wait_for: network_idle
+
+    expect:
+      - assert: "selector [data-testid=partner-activity-page] is visible"
+
+      # No seeded partner-attributed audit rows exist for THIS partner on a
+      # fresh fleet (events_for_partner scopes to events the partner itself
+      # emitted, or its clients' own admins acting in their own org — the
+      # assume-session-start event in case 1 is attributed to `org=acme`
+      # with no `partner_id`, so it does not surface here either). Other
+      # agents sharing this fleet could have generated real client-org
+      # activity since, so this asserts the surface RESOLVES (rows or the
+      # named empty state), not a specific row count — same pattern as
+      # admin-tenants-cockpit's partner-registry assertion.
+      - judge: |
+          The page is the partner console's Activity tab (title "Activity",
+          description mentioning "Every permission change and client action
+          in your subtree"). It shows EITHER a table of audit events with
+          columns When / Who / Did what / Client / Target / Outcome, OR the
+          exact empty-state text "No activity has been recorded yet." — not
+          a loading skeleton and not an error.
+
+          Fail if ANY of the following is true:
+          (a) the text "Failed to load the activity log" is visible;
+          (b) a loading skeleton is still on screen;
+          (c) the page shows neither a populated table nor the named empty
+              state (e.g. a blank white area).
+
+  - name: stop acting — the session ends cleanly for the next flow on this fleet
+    tags: [partners, admin, assume-role, fleet, cleanup]
+    steps:
+      - wait_for: "selector:[data-testid=partner-clients-page];timeout_ms=15000"
+
+      # data-testid='assume-banner' — AssumeBanner.tsx:48. Rendered app-wide
+      # while a session is live, so it is present on /partners too.
+      - wait_for: "selector:[data-testid=assume-banner]"
+
+      - act: |
+          Inside the amber banner at the top of the page
+          ([data-testid=assume-banner]), click the "Stop & return to admin"
+          button to end the assume-role session.
+
+      # Hard navigation back to /admin/tenants, now reachable again because
+      # the session has ended.
+      - wait_for: "selector:[data-testid=admin-tenants-cockpit];timeout_ms=30000"
+
+    expect:
+      - assert: "selector [data-testid=admin-tenants-cockpit] is visible"
+      - assert: "selector [data-testid=assume-banner] is not visible"
+      - judge: |
+          The page is back on the normal admin Tenants cockpit
+          (/admin/tenants) with no amber "acting as" banner anywhere on
+          screen — the assume-role session has genuinely ended, not just
+          navigated away from.

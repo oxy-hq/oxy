@@ -34,7 +34,13 @@ export interface DatabaseInfo {
   dialect: string;
   /** Raw config type from config.yml (`"airhouse_managed"`, `"duckdb"`, …). Use for icons/labels. */
   db_type: string;
-  datasets: Record<string, Record<string, SemanticModels>>;
+  /**
+   * `null` when the instance that answered could not look — the semantic sync
+   * directory lives in the working copy, which a stateless replica does not
+   * have. `{}` means it looked and found none. Only the second may be rendered
+   * as "No specific datasets configured"; the first is not ours to claim.
+   */
+  datasets: Record<string, Record<string, SemanticModels>> | null;
   synced: boolean;
 }
 

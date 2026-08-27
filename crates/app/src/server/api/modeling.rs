@@ -13,10 +13,10 @@ use oxy_airform::types::{
     RunOutput, RunRequest, RunStreamEvent, SeedOutput, TestOutput,
 };
 
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
-use crate::server::router::AppState;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerWorkingCopy;
+use oxy::config::WorkingCopy;
 
-pub fn build_modeling_routes() -> Router<AppState> {
+pub fn build_modeling_routes() -> Router<crate::server::router::IdeState> {
     let project_routes = Router::new()
         .route("/", get(get_project_info))
         .route("/nodes", get(list_nodes))
@@ -35,7 +35,9 @@ pub fn build_modeling_routes() -> Router<AppState> {
         .nest("/{project_name}", project_routes)
 }
 
-fn root_path(wm: &oxy::adapters::workspace::manager::WorkspaceManager) -> std::path::PathBuf {
+fn root_path(
+    wm: &oxy::adapters::workspace::manager::WorkspaceManager<WorkingCopy>,
+) -> std::path::PathBuf {
     wm.config_manager.workspace_path().to_path_buf()
 }
 
@@ -48,7 +50,7 @@ fn validate_project_name(name: &str) -> Result<(), StatusCode> {
 }
 
 fn make_service(
-    wm: &oxy::adapters::workspace::manager::WorkspaceManager,
+    wm: &oxy::adapters::workspace::manager::WorkspaceManager<WorkingCopy>,
     project_name: &str,
 ) -> Result<AirformService, StatusCode> {
     validate_project_name(project_name)?;
@@ -58,14 +60,14 @@ fn make_service(
 }
 
 pub async fn list_projects(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
 ) -> Json<Vec<DbtProjectInfo>> {
     let root = root_path(&wm);
     Json(service::list_projects(&root))
 }
 
 pub async fn get_project_info(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     AxumPath((_pid, project_name)): AxumPath<(Uuid, String)>,
 ) -> Result<Json<DbtProjectInfo>, StatusCode> {
     make_service(&wm, &project_name)?
@@ -78,7 +80,7 @@ pub async fn get_project_info(
 }
 
 pub async fn list_nodes(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     AxumPath((_pid, project_name)): AxumPath<(Uuid, String)>,
 ) -> Result<Json<Vec<NodeSummary>>, StatusCode> {
     let svc = make_service(&wm, &project_name)?;
@@ -96,7 +98,7 @@ pub async fn list_nodes(
 }
 
 pub async fn compile_project(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     AxumPath((_pid, project_name)): AxumPath<(Uuid, String)>,
 ) -> Result<Json<CompileOutput>, StatusCode> {
     let svc = make_service(&wm, &project_name)?;
@@ -114,7 +116,7 @@ pub async fn compile_project(
 }
 
 pub async fn compile_model(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     AxumPath((_pid, project_name, model_name)): AxumPath<(Uuid, String, String)>,
 ) -> Result<Json<String>, StatusCode> {
     let svc = make_service(&wm, &project_name)?;
@@ -143,7 +145,7 @@ pub async fn compile_model(
 }
 
 pub async fn run_models(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     AxumPath((_pid, project_name)): AxumPath<(Uuid, String)>,
     Json(req): Json<RunRequest>,
 ) -> Result<Json<RunOutput>, (StatusCode, String)> {
@@ -159,7 +161,7 @@ pub async fn run_models(
 }
 
 pub async fn run_models_stream(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     AxumPath((_pid, project_name)): AxumPath<(Uuid, String)>,
     Json(req): Json<RunRequest>,
 ) -> Result<
@@ -184,7 +186,7 @@ pub async fn run_models_stream(
 }
 
 pub async fn run_tests(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     AxumPath((_pid, project_name)): AxumPath<(Uuid, String)>,
     Json(req): Json<RunRequest>,
 ) -> Result<Json<TestOutput>, (StatusCode, String)> {
@@ -210,7 +212,7 @@ fn modeling_error(e: oxy_airform::error::AirformIntegrationError) -> (StatusCode
 }
 
 pub async fn analyze_project(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     AxumPath((_pid, project_name)): AxumPath<(Uuid, String)>,
 ) -> Result<Json<AnalyzeOutput>, StatusCode> {
     let svc = make_service(&wm, &project_name)?;
@@ -229,7 +231,7 @@ pub async fn analyze_project(
 }
 
 pub async fn seed_project(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     AxumPath((_pid, project_name)): AxumPath<(Uuid, String)>,
 ) -> Result<Json<SeedOutput>, (StatusCode, String)> {
     let svc = make_service(&wm, &project_name).map_err(|s| (s, "bad request".into()))?;
@@ -248,7 +250,7 @@ pub async fn seed_project(
 }
 
 pub async fn get_lineage(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     AxumPath((_pid, project_name)): AxumPath<(Uuid, String)>,
 ) -> Result<Json<LineageOutput>, StatusCode> {
     let svc = make_service(&wm, &project_name)?;
@@ -266,7 +268,7 @@ pub async fn get_lineage(
 }
 
 pub async fn get_column_lineage(
-    WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
+    WorkspaceManagerWorkingCopy(wm): WorkspaceManagerWorkingCopy,
     AxumPath((_pid, project_name)): AxumPath<(Uuid, String)>,
 ) -> Result<Json<ColumnLineageOutput>, StatusCode> {
     let svc = make_service(&wm, &project_name)?;

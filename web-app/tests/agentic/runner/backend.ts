@@ -60,6 +60,64 @@ export function resolveHealthUrl(mode: BackendMode): string {
   return process.env.OXY_HEALTH_URL ?? `${resolveBaseUrl(mode)}/api/health`;
 }
 
+/**
+ * Scope a flow's `goto:` path to a workspace when the target deployment needs
+ * one.
+ *
+ * A flow says `goto:/automations` because that is what the surface is called.
+ * In the single-workspace `--local` backend that path resolves directly; in a
+ * cloud deployment the same surface lives under
+ * `/<org>/workspaces/<workspace-id>/automations`, and the bare path silently
+ * lands on the org home instead. The flow is not wrong — the deployment shape
+ * is a property of where the run points, so the prefix belongs here next to
+ * `OXY_BASE_URL`, not duplicated into every YAML file.
+ *
+ * Bare `/` is left alone deliberately: it already means "app root, route me",
+ * which every deployment handles, and prefixing it would change the entry
+ * point of flows that pass today.
+ *
+ * Every membership test below runs against the PATH ONLY, with any query string
+ * or fragment stripped first. Comparing the whole target instead is a bug that
+ * shipped here and cost a flow: `admin-airhouse-fleet`'s setup is
+ * `goto:/dev-login?email=…&next=/admin/airhouse`, which is neither `/dev-login`
+ * nor a `/dev-login/…` and so escaped the top-level list and got prefixed into
+ * `/local/workspaces/<id>/dev-login?…`. The SPA rendered its fallback and the
+ * flow timed out on its first locator after 30 seconds, reading exactly like a
+ * broken admin page. Covered by backend.test.ts.
+ */
+export function applyPathPrefix(target: string): string {
+  const prefix = process.env.OXY_PATH_PREFIX?.replace(/\/+$/, "");
+  if (!prefix) return target;
+  if (!target.startsWith("/")) return target; // absolute URL — caller means it
+  if (target === "/") return target;
+  const path = target.split(/[?#]/, 1)[0];
+  if (path === prefix || path.startsWith(`${prefix}/`)) return target;
+  if (TOP_LEVEL_SURFACES.some((p) => path === p || path.startsWith(`${p}/`))) return target;
+  return `${prefix}${target}`;
+}
+
+/**
+ * Surfaces that are NOT workspace-scoped, so the prefix must not reach them.
+ *
+ * The prefix exists because `goto:/automations` means a different URL in a
+ * cloud deployment than in `--local`. But `/admin/workspace-health` means the
+ * SAME url in both — it hangs off the app root, not off a workspace. Prefixing
+ * it produces `/<org>/workspaces/<id>/admin/workspace-health`, which routes
+ * nowhere; the SPA renders its fallback and the flow times out waiting for a
+ * testid that was never going to appear. Three admin flows failed exactly that
+ * way before this list existed, and none of the failures looked like a routing
+ * problem — they looked like three unrelated broken pages.
+ */
+const TOP_LEVEL_SURFACES = [
+  "/admin",
+  "/partners",
+  "/customer-apps",
+  "/login",
+  "/dev-login",
+  "/invite",
+  "/cli-auth"
+];
+
 function defaultBaseUrl(mode: BackendMode): string {
   return mode === "cloud" ? "http://localhost:3001" : "http://localhost:3000";
 }

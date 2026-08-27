@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 use crate::server::service::statics::BROADCASTER;
 use crate::server::service::task_manager::TASK_MANAGER;
 use crate::server::service::types::pagination::{Paginated, Pagination};
@@ -53,7 +53,7 @@ pub struct PaginationQuery {
 )]
 pub async fn get_automation_runs(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<extract::Json<Paginated<RunInfo>>, StatusCode> {
@@ -152,7 +152,7 @@ pub struct CreateRunResponse {
 pub async fn create_automation_run(
     Path((_workspace_id, _pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    WorkspaceManagerExtractor(_workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(_workspace_manager): WorkspaceManagerReadOnly,
     crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(_effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
     extract::Json(_payload): extract::Json<CreateRunRequest>,
 ) -> Result<extract::Json<CreateRunResponse>, StatusCode> {
@@ -195,7 +195,7 @@ pub struct CancelRunRequest {
 )]
 pub async fn cancel_automation_run(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    WorkspaceManagerExtractor(_project_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(_project_manager): WorkspaceManagerReadOnly,
     payload: Path<CancelRunRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD
@@ -252,7 +252,7 @@ impl From<AutomationEventsRequest> for RunInfo {
     )
 )]
 pub async fn automation_events(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(request): Query<AutomationEventsRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
@@ -337,7 +337,7 @@ pub struct AutomationEventsResponse {
     tag = "Runs"
 )]
 pub async fn automation_events_sync(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(request): Query<AutomationEventsRequest>,
 ) -> Result<axum::extract::Json<AutomationEventsResponse>, StatusCode> {
@@ -480,7 +480,7 @@ pub struct BlocksRequest {
     )
 )]
 pub async fn get_blocks(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(block_request): Query<BlocksRequest>,
 ) -> Result<extract::Json<RunDetails>, StatusCode> {
@@ -561,7 +561,7 @@ pub async fn get_blocks(
 pub async fn delete_automation_run(
     _: WorkspaceAdmin,
     Path((_workspace_id, pathb64, run_id)): Path<(Uuid, String, i32)>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::error!("Failed to decode path: {:?}", e);
@@ -629,7 +629,7 @@ pub struct BulkDeleteRunsResponse {
 pub async fn bulk_delete_automation_runs(
     _: WorkspaceAdmin,
     Path(_workspace_id): Path<Uuid>,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     extract::Json(payload): extract::Json<BulkDeleteRunsRequest>,
 ) -> Result<extract::Json<BulkDeleteRunsResponse>, StatusCode> {
     let runs_manager = workspace_manager.runs_manager.ok_or_else(|| {

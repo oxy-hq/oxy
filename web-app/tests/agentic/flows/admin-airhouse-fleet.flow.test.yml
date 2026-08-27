@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Verify the admin Airhouse fleet page (`/admin/airhouse`) mounts and its
+# triage-queue shell resolves — the "which workspaces have a warehouse, and
+# is anything wrong" surface (web-app/src/pages/admin/AdminAirhouse/index.tsx).
+# Nothing under /admin covers Airhouse today.
+#
+# Backend: `--enterprise` (cloud) with OXY_OWNER set — same requirement as
+# admin-workspace-health / admin-tenants-cockpit: the admin surface + the
+# `GET /api/admin/airhouse` fleet endpoint require the enterprise code path
+# and server-side OXY_OWNER gating. Do NOT use `--local`.
+#
+# WHY THIS GOES THROUGH /dev-login INSTEAD OF A BARE `goto:/admin/airhouse`
+# (as admin-workspace-health / admin-tenants-cockpit both do) — a real,
+# reproduced infra gap, not a style choice:
+#
+# `AdminLayout` (web-app/src/pages/admin/AdminLayout/index.tsx:54-61) gates
+# every /admin/* route on `useCurrentUser()` — which calls `GET /api/user`
+# (web-app/src/services/api/users.ts:6) — and bounces to `/` when that user
+# is null. `get_current_user_public`
+# (crates/app/src/server/api/user.rs:174-203), mounted on the PUBLIC router,
+# re-authenticates from raw headers via `BuiltInAuthenticator` itself; it does
+# NOT read the `Extension<User>` that `internal_auth_middleware`
+# (crates/auth/src/middleware.rs:229-253) injects for every other route on
+# the auth-disabled internal port. A cookie-less Playwright session hitting
+# the internal port therefore gets `null` from `/api/user` even though every
+# OTHER internal-port request resolves as `internal@localhost` — so
+# `isOwner`/`isAppAdmin` are both `false` and `AdminLayout` redirects away
+# before any admin content ever renders.
+#
+# CONFIRMED not new to this flow: `admin-workspace-health` reproduces
+# identically against the same backend (`pnpm test:agentic
+# admin-workspace-health` with `OXY_BASE_URL` pointed at the internal port —
+# `[FAIL] ... waiting for locator('[data-testid=admin-workspace-health-page]')`,
+# same timeout, same root cause). Neither pre-existing admin-* flow is wired
+# into any CI bucket today, which is consistent with this never having been
+# exercised end-to-end.
+#
+# THE FIX HERE: dev-login (DEVELOPMENT.md "Dev sign-in") issues a REAL session
+# cookie against whichever port it's driven on — sidestepping the internal
+# port's `/api/user` gap entirely rather than depending on it. `e2e@oxy.tech`
+# is the browser-suite's existing synthetic staff identity (see
+# `docker-compose.fleet.yml`'s `OXY_DEV_LOGIN_EMAILS` / `OXY_OWNER`
+# comments) — add it to `OXY_GLOBAL_ADMINS` (or `OXY_OWNER`) before serving.
+# This flow must therefore be pointed at the PUBLIC port (`OXY_BASE_URL` —
+# :3200 on the manual backend below), not the internal one, since the
+# dev-login cookie and the subsequent page load must share an origin.
+#
+# No seed data assumed beyond the identity above: the Provisioned section
+# always renders (either real rows or "No workspace has a warehouse yet."),
+# so the flow asserts the shell resolves rather than any specific row count —
+# same pattern as admin-tenants-cockpit.
+#
+# Verified against a manually-seeded + Airhouse-integrated backend (real
+# `docker-compose.airhouse.yml` stack + `oxy seed` + compile/promote of
+# `examples/`) that the endpoint genuinely returns live tenant rows (9
+# workspaces, all `status: "none"` pre-provisioning) rather than only ever
+# exercising the empty-state path — see internal-docs/local-split-fleet-testing.md.
+
+name: admin Airhouse fleet page
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: cloud
+  # No act steps — waits and expectations only, like apps-data-app-charts.
+  max_steps: 10
+
+setup:
+  - "goto:/dev-login?email=e2e@oxy.tech&next=/admin/airhouse"
+
+cases:
+  - name: fleet shell mounts and the Provisioned section resolves
+    tags: [admin, airhouse, regression]
+    steps:
+      # data-testid='admin-airhouse' (page root)
+      #   — web-app/src/pages/admin/AdminAirhouse/index.tsx:140
+      - wait_for: "selector:[data-testid=admin-airhouse]"
+
+      # data-testid='admin-airhouse-filter' (the workspace/org/tenant/bucket
+      # search box) — confirms the header + search chrome rendered, not just
+      # a bare div.
+      - wait_for: "selector:[data-testid=admin-airhouse-filter]"
+
+      # data-testid='admin-airhouse-provisioned' (the Provisioned section
+      # container) ALWAYS renders regardless of data volume — it holds either
+      # real fleet rows or the "No workspace has a warehouse yet." empty
+      # state. Waiting on the container, not on a specific child, is what
+      # keeps this flow portable across a freshly-seeded org and a totally
+      # empty `--clean` backend.
+      - wait_for: "selector:[data-testid=admin-airhouse-provisioned];timeout_ms=30000"
+
+    expect:
+      - assert: "selector [data-testid=admin-airhouse] is visible"
+      - assert: "selector [data-testid=admin-airhouse-filter] is visible"
+      - assert: "selector [data-testid=admin-airhouse-provisioned] is visible"
+
+      - judge: |
+          The page is at /admin/airhouse and shows the "Airhouse warehouses"
+          heading, a workspace/org/tenant/bucket search box, and a row of
+          severity filter chips, above a "Provisioned" section.
+
+          Pass whether the Provisioned section shows real workspace rows
+          (each naming a workspace and an org) OR the text "No workspace has
+          a warehouse yet." — either is a correct resolved state.
+
+          Fail if ANY of the following is true:
+          (a) an error banner or "Could not list Airhouse tenants" message is
+              visible;
+          (b) the page is a blank white screen or a loading skeleton that
+              never resolved;
+          (c) any visible text contains a raw filesystem path, "os error", or
+              "500 Internal Server Error".

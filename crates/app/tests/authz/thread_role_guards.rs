@@ -31,11 +31,16 @@ fn inject_role(
     }
 }
 
+// `delete_all_threads` asks for a working copy (a best-effort chart sweep), so
+// it resolves from `IdeState` and the test router must carry one.
 fn build_router(role: WorkspaceRole) -> Router {
     Router::new()
         .route("/threads", delete(delete_all_threads))
         .route("/threads/bulk-delete", post(bulk_delete_threads))
         .layer(middleware::from_fn(inject_role(role)))
+        .with_state(oxy_app::server::router::IdeState(
+            oxy_app::server::router::bare_app_state(),
+        ))
 }
 
 async fn status_for(router: Router, method: &str, path: &str) -> StatusCode {

@@ -1,5 +1,5 @@
 use crate::server::api::middlewares::role_guards::WorkspaceEditor;
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 use crate::server::router::WorkspaceExtractor;
 use crate::server::service::task_manager::TASK_MANAGER;
 use axum::{
@@ -519,7 +519,7 @@ fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
 )]
 pub async fn delete_all_threads(
     _: WorkspaceEditor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     WorkspaceExtractor(project): WorkspaceExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
@@ -537,15 +537,38 @@ pub async fn delete_all_threads(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // Note: Only removing charts for this user would require more complex logic
-    // For now, we'll keep the current behavior but you may want to change this
-    {
-        let charts_dir = workspace_manager.config_manager.get_charts_dir().await?;
-        // The dir-walk + per-file removals are blocking fs calls; run them on a
-        // blocking thread so they don't stall a Tokio worker. Best-effort — the
-        // helper already ignores individual fs errors.
-        let _ = tokio::task::spawn_blocking(move || remove_all_files_in_dir(charts_dir)).await;
-    }
+    // Chart cleanup is node-local and best-effort, and deliberately does NOT
+    // pin this route to the ide: deleting threads is a Postgres operation and
+    // must stay available on every replica.
+    //
+    // Two consequences worth knowing rather than discovering. The charts
+    // directory only exists on a node that owns a disk, so on a serve replica
+    // this is a no-op — `remove_all_files_in_dir` starts with `dir.exists()`
+    // and returns. And charts are mirrored to S3 (`runtime_artifact::chart_key`)
+    // to survive the round-robin, so even on the ide the local sweep leaves the
+    // mirrored copies behind. Thread rows are gone either way; what lingers is
+    // orphaned image data.
+    //
+    // The durable fix is deleting through the same store that writes them,
+    // rather than reaching for a directory. Tracked separately — doing it here
+    // would widen a thread-deletion change into an artifact-lifecycle one.
+    //
+    // Best-effort means best-effort: the rows above are already committed, so a
+    // node without a charts dir must not turn a successful deletion into a 500.
+    // `charts_dir()` resolves through `runtime_state_dir()`, whose working copy
+    // is an `Option`, so it answers on a replica too — and the sweep is a no-op
+    // there because `remove_all_files_in_dir` starts with `dir.exists()`. That
+    // is the whole reason this route does not need a working copy to delete
+    // Postgres rows.
+    //
+    // "No-op" only holds because `runtime_state_dir` now declines the
+    // workspace-root fallback when the root is not a directory. It used to take
+    // that fallback and CREATE it, so the sweep reached `dir.exists()` on a
+    // directory it had just made — and left the workspace root behind.
+    let charts_dir = workspace_manager.config_manager.charts_dir();
+    // The dir-walk + per-file removals are blocking fs calls; run them on a
+    // blocking thread so they don't stall a Tokio worker.
+    let _ = tokio::task::spawn_blocking(move || remove_all_files_in_dir(charts_dir)).await;
 
     Ok(StatusCode::OK)
 }

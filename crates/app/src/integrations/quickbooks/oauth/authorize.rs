@@ -6,7 +6,7 @@
 //! hand off to (popup or full-page redirect).
 
 use crate::integrations::quickbooks::oauth::state::{CreateState, QuickbooksOauthStateService};
-use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerReadOnly;
 use axum::Json;
 use axum::http::{HeaderMap, StatusCode, header};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
@@ -40,7 +40,7 @@ pub struct AuthorizeResponse {
 
 pub async fn authorize(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     headers: HeaderMap,
     Json(req): Json<AuthorizeRequest>,
 ) -> Result<Json<AuthorizeResponse>, (StatusCode, String)> {

@@ -76,6 +76,7 @@ function ContextGraphInner({ data }: ContextGraphProps) {
           nodes={data.nodes}
           edges={data.edges}
           typeCounts={typeCounts}
+          tablesUnknown={data.tablesUnknown}
           focusType={focusType}
           onFocusTypeChange={changeFocusType}
           expandAll={expandAll}

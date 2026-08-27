@@ -17,6 +17,7 @@ use oxy::adapters::secrets::SecretsManager;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::adapters::workspace::effective_workspace_path;
 use oxy::adapters::workspace::manager::WorkspaceManager;
+use oxy::config::{ReadOnly, WorkingCopy};
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::EntityTrait;
@@ -24,7 +25,174 @@ use std::future::Future;
 use uuid::Uuid;
 
 #[derive(Clone)]
-pub struct WorkspaceManagerExtractor(pub WorkspaceManager);
+pub struct WorkspaceManagerWorkingCopy(pub WorkspaceManager<WorkingCopy>);
+
+/// The same workspace manager with the filesystem capability dropped.
+///
+/// A handler that only reads data the compile boundary carries takes this
+/// instead, and the compiler then refuses `workspace_path()`, `resolve_state_dir()`
+/// and the workspace-file walks. The point is not that the value differs — it is
+/// the same manager — but that the handler's signature now states what it needs,
+/// and a later edit that reaches for the disk fails to build instead of failing
+/// on three pods out of four.
+///
+/// It reads its own extension rather than downgrading the `WorkingCopy` one, so that a
+/// pod which stops publishing `WorkspaceManager<WorkingCopy>` keeps serving every handler
+/// that never needed a disk.
+pub struct WorkspaceManagerReadOnly(pub WorkspaceManager<ReadOnly>);
+
+impl<S> FromRequestParts<S> for WorkspaceManagerReadOnly
+where
+    S: Send + Sync,
+{
+    type Rejection = WorkspaceManagerMissing;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let result = parts
+            .extensions
+            .get::<WorkspaceManager<ReadOnly>>()
+            .cloned()
+            .map(WorkspaceManagerReadOnly)
+            .ok_or_else(|| WorkspaceManagerMissing {
+                needs_recompile: parts
+                    .extensions
+                    .get::<NeedsRecompileMarker>()
+                    .map(|m| m.workspace_id),
+            });
+
+        async move { result }
+    }
+}
+
+/// The workspace row plus a manager for its working copy, resolved by the
+/// extractor rather than the middleware.
+///
+/// For handlers on the ORG router (`/api/orgs/{org_id}/workspaces/{id}`), which
+/// runs `org_middleware` and never `workspace_middleware` — so no manager is in
+/// the extensions to take. `delete_workspace` is the case: it deletes the
+/// workspace directory while its signature named no manager at all, so a rule
+/// reading signatures would call it FleetOk, and it returned 200 for a deletion
+/// it skipped on a replica.
+///
+/// **`manager` is `Option`, deliberately.** A workspace row with a NULL `path`
+/// must still be deletable; a rejecting extractor would make a pathless
+/// workspace permanently undeletable. Absence here means "no working copy to
+/// act on", not "refuse the request".
+///
+/// **Declare it after the authz guard.** axum runs `FromRequestParts` in
+/// argument order, so `_: OrgAdmin` must come first — resolving a path before
+/// checking authority would leak existence.
+///
+/// **The path is always the workspace ROOT, never a branch worktree.** This is
+/// the reason to take this extractor rather than the middleware's manager, whose
+/// path IS branch-resolved: `effective_workspace_path` returns a worktree for a
+/// non-default branch. Deleting a workspace would delete the worktree and report
+/// success for the whole thing; switching or deleting a branch would run inside
+/// a worktree, where git refuses to touch a branch that is checked out.
+pub struct WorkspaceRootWorkingCopy {
+    /// The workspace row, loaded here so the handler need not query for it
+    /// again. `None` when the id does not resolve — the handler still decides
+    /// what that means (404 for a delete).
+    pub workspace: Option<entity::workspaces::Model>,
+    pub manager: Option<WorkspaceManager<WorkingCopy>>,
+}
+
+impl WorkspaceRootWorkingCopy {
+    /// The workspace root, when this node holds it. `None` means there is no
+    /// working copy here — a git operation cannot be faked, so callers turn this
+    /// into a 503 rather than acting on a path that is not there.
+    pub fn root_path(&self) -> Option<std::path::PathBuf> {
+        self.manager
+            .as_ref()
+            .map(|m| m.config_manager.workspace_path().to_path_buf())
+    }
+}
+
+/// Resolves only from `IdeState`, like [`WorkspaceManagerWorkingCopy`]. It hands
+/// back a path into the working copy, so a handler holding one is a handler that
+/// needs the pod to have one — the gate has to cover it or `delete_workspace`
+/// could be mounted on a fleet route with nothing to say so.
+impl FromRequestParts<crate::server::router::IdeState> for WorkspaceRootWorkingCopy {
+    type Rejection = std::convert::Infallible;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        state: &crate::server::router::IdeState,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        // Two sources, because this serves routers with different middleware.
+        // On the workspace router the row is already in extensions; on the org
+        // router only `OrgContext` is, so the row has to be loaded. Reading only
+        // the extension would yield `None` for every org-router request and
+        // silently stop the work happening.
+        let from_extension = parts.extensions.get::<entity::workspaces::Model>().cloned();
+        let path = Path::<(Uuid, Uuid)>::from_request_parts(parts, state);
+        async move {
+            let workspace = match from_extension {
+                Some(row) => Some(row),
+                None => {
+                    let Ok(Path((_org_id, workspace_id))) = path.await else {
+                        return Ok(Self {
+                            workspace: None,
+                            manager: None,
+                        });
+                    };
+                    // `workspace: None` is what `delete_workspace` turns into
+                    // a 404 — "already gone". Reached here it means we could
+                    // not look, which is not the same claim. The handler makes
+                    // its own connection before reading the field, so a full
+                    // outage 500s there first and only a blip between the two
+                    // lands on the 404; say so in the log rather than leaving
+                    // an operator to infer it.
+                    let db = match establish_connection().await {
+                        Ok(db) => db,
+                        Err(e) => {
+                            tracing::warn!(
+                                %workspace_id,
+                                error = %e,
+                                "workspace root extractor: database unreachable; \
+                                 reporting no workspace"
+                            );
+                            return Ok(Self {
+                                workspace: None,
+                                manager: None,
+                            });
+                        }
+                    };
+                    entity::workspaces::Entity::find_by_id(workspace_id)
+                        .one(&db)
+                        .await
+                        .ok()
+                        .flatten()
+                }
+            };
+            let Some(workspace) = workspace else {
+                return Ok(Self {
+                    workspace: None,
+                    manager: None,
+                });
+            };
+            let manager = match effective_workspace_path(&workspace, None).await {
+                // The tolerant terminal: a half-cloned workspace with a missing
+                // or unparseable `config.yml` is exactly what gets deleted.
+                Ok(root) => match WorkspaceBuilder::new(workspace.id)
+                    .with_working_copy(&root, None, oxy::config::OnMissing::Empty)
+                    .await
+                {
+                    Ok(builder) => builder.build().await.ok(),
+                    Err(_) => None,
+                },
+                Err(_) => None,
+            };
+            Ok(Self {
+                workspace: Some(workspace),
+                manager,
+            })
+        }
+    }
+}
 
 /// Why the workspace manager wasn't attached to this request. The two
 /// flavors carry different operator + UX semantics:
@@ -58,14 +226,34 @@ impl IntoResponse for WorkspaceManagerMissing {
                     })),
                 )
                     .into_response();
-                // FE checks this header to distinguish "compile is stale,
-                // retry me" from "the platform is unhappy". Header value is
-                // the workspace_id so an interceptor can correlate.
+                // Correlation only — the workspace_id, for an interceptor and
+                // for the logs. Nothing in the frontend branches on it.
                 if let Ok(value) = axum::http::HeaderValue::from_str(&workspace_id.to_string()) {
                     response
                         .headers_mut()
                         .insert("x-oxy-needs-recompile", value);
                 }
+                // What the frontend actually branches on. `shouldRetryWorkspaceQuery`
+                // gives a materialising workspace 24 retries at `Retry-After`
+                // (~2 minutes) behind a spinner, and everything else three.
+                // Without these two headers this 503 took the three-retry path
+                // and surfaced as a generic load failure — for a workspace whose
+                // compile had already been enqueued one line above and would have
+                // landed well inside the long leash.
+                //
+                // Same state as `workspaces::handlers`' producer from the caller's
+                // side: the workspace's data is not ready on this instance yet,
+                // and waiting is the correct response. That the ide is missing a
+                // working copy and a replica is missing a revision is a difference
+                // the frontend has no use for.
+                response.headers_mut().insert(
+                    crate::server::ide_proxy::HEADER_UNAVAILABLE,
+                    axum::http::HeaderValue::from_static("workspace-materializing"),
+                );
+                response.headers_mut().insert(
+                    axum::http::header::RETRY_AFTER,
+                    axum::http::HeaderValue::from_static("5"),
+                );
                 response
             }
             None => (
@@ -149,7 +337,7 @@ impl IntoResponse for WorkspaceAccessError {
 }
 
 /// Marker inserted by the workspace middleware when a serve replica
-/// refuses to fall through to FS. The `WorkspaceManagerExtractor`
+/// refuses to fall through to FS. The `WorkspaceManagerWorkingCopy`
 /// promotes it to a structured rejection so handlers don't have to
 /// know about role-aware short-circuiting.
 #[derive(Clone)]
@@ -157,21 +345,18 @@ struct NeedsRecompileMarker {
     workspace_id: Uuid,
 }
 
-impl<S> FromRequestParts<S> for WorkspaceManagerExtractor
-where
-    S: Send + Sync,
-{
+impl FromRequestParts<crate::server::router::IdeState> for WorkspaceManagerWorkingCopy {
     type Rejection = WorkspaceManagerMissing;
 
     fn from_request_parts(
         parts: &mut Parts,
-        _state: &S,
+        _state: &crate::server::router::IdeState,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
         let result = parts
             .extensions
-            .get::<WorkspaceManager>()
+            .get::<WorkspaceManager<WorkingCopy>>()
             .cloned()
-            .map(WorkspaceManagerExtractor)
+            .map(WorkspaceManagerWorkingCopy)
             .ok_or_else(|| {
                 // A serve replica that short-circuited the FS fallback left
                 // this marker behind; promote it to a structured rejection.
@@ -968,14 +1153,9 @@ async fn try_attach_workspace_manager(
     // working-copy `config.yml` edits via FS, matching the branch-aware
     // contract every other compiled reader honours. On any miss (no promoted
     // revision, non-default branch, deserialise fails) we fall through to FS.
-    let compiled_config: Option<oxy::config::model::Config> =
-        crate::server::api::compiled_reader::resolve_workspace_config_typed(
-            workspace_id,
-            branch_name,
-            &effective_path,
-            "workspace_context",
-        )
-        .await;
+    let pinned_revision: Option<uuid::Uuid> =
+        crate::server::api::compiled_reader::resolve_request_revision(workspace_id, branch_name)
+            .await;
 
     // ── Stateless-fleet short-circuit ──────────────────────────────────────
     // A serve replica has no workspace working copy (emptyDir OXY_STATE_DIR,
@@ -988,7 +1168,7 @@ async fn try_attach_workspace_manager(
     //
     // We still lazy-enqueue a Compile TaskSpec on the way out so the next
     // request can succeed without operator action. The
-    // `WorkspaceManagerExtractor` promotes `NeedsRecompileMarker` to a 503
+    // `WorkspaceManagerWorkingCopy` promotes `NeedsRecompileMarker` to a 503
     // with `X-Oxy-Needs-Recompile: <workspace_id>` so the FE can render a
     // proper "retrying compile" toast instead of a generic platform error —
     // UNLESS `OXY_IDE_UPSTREAM` is set (the serve fleet), in which case
@@ -997,7 +1177,7 @@ async fn try_attach_workspace_manager(
     // local / single-node fallback when there's no ide upstream to forward to.
     //
     // Regression context: oxy-hq/oxygen-internal#1619.
-    if compiled_config.is_none()
+    if pinned_revision.is_none()
         && crate::server::role_manifest::current_process_role()
             == crate::server::role_manifest::Role::Serve
     {
@@ -1025,14 +1205,13 @@ async fn try_attach_workspace_manager(
         return Ok(());
     }
 
-    let builder_init = if let Some(cfg) = compiled_config {
-        WorkspaceBuilder::new(workspace_id)
-            .with_workspace_path_and_compiled_config(&effective_path, cfg)
-    } else {
-        WorkspaceBuilder::new(workspace_id)
-            .with_workspace_path_and_fallback_config(&effective_path)
-            .await
-    };
+    let builder_init = WorkspaceBuilder::new(workspace_id)
+        .with_working_copy(
+            &effective_path,
+            pinned_revision,
+            oxy::config::OnMissing::Empty,
+        )
+        .await;
     let mut builder = match builder_init {
         Ok(b) => b,
         Err(e) => {
@@ -1163,7 +1342,33 @@ async fn try_attach_workspace_manager(
     let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> =
         project_ctx.clone();
     let bridges = crate::agentic_wiring::build_builder_bridges(project_ctx.clone());
-    request.extensions_mut().insert(workspace_manager);
+    request
+        .extensions_mut()
+        .insert(workspace_manager.clone().into_read_only());
+    // The `WorkingCopy` extension only exists on a process that owns the files.
+    // Without this the extension was published everywhere, so a MISCLASSIFIED
+    // route — one declared FleetOk whose handler requires a disk — received a
+    // manager rooted at a directory that is not on this node, and failed deep
+    // in the call stack with an IO error naming a path the caller never wrote.
+    // Absent, `WorkspaceManagerWorkingCopy` rejects at the door instead.
+    //
+    // This is a backstop, not a fix: `role_middleware` classifies and proxies
+    // an `IdeOnly` route to the ide BEFORE the handler runs, so a correctly
+    // classified handler never reaches here on a replica. Three test guards
+    // already catch the misclassification
+    // (`a_handler_that_asks_for_a_working_copy_is_on_an_ide_only_route`,
+    // `the_optional_working_copy_door_stays_shut`,
+    // `undeclared_mounts_stay_diskless`). This is what happens when one slips
+    // past all three.
+    //
+    // The read-only extension is NOT gated the same way. The flag is a
+    // declaration made at startup; the filesystem is the fact, and `disk()`
+    // checks `is_dir()` on the way through. A process that declares no files
+    // but has them keeps serving its fallbacks, which is the safer direction
+    // for a flag that could be set wrong.
+    if oxy::workspace_fs_probe::process_owns_workspace_files() {
+        request.extensions_mut().insert(workspace_manager);
+    }
     request.extensions_mut().insert(platform);
     request.extensions_mut().insert(project_ctx);
     request.extensions_mut().insert(bridges);
@@ -1175,6 +1380,175 @@ mod tests {
     use super::*;
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
+
+    /// The boundary-miss 503 has to speak the protocol the frontend listens on.
+    ///
+    /// `shouldRetryWorkspaceQuery` keys the 24-retry spinner off
+    /// `x-oxy-unavailable: workspace-materializing`. This response carried only
+    /// `x-oxy-needs-recompile`, which nothing in the frontend reads, so it took
+    /// the three-retry path and surfaced as a generic load failure — for a
+    /// workspace whose compile had already been enqueued.
+    #[test]
+    fn the_boundary_miss_503_asks_the_frontend_to_wait() {
+        let workspace_id = Uuid::new_v4();
+        let response = WorkspaceManagerMissing {
+            needs_recompile: Some(workspace_id),
+        }
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.headers().get("x-oxy-unavailable").unwrap(),
+            "workspace-materializing"
+        );
+        assert_eq!(response.headers().get("retry-after").unwrap(), "5");
+        assert_eq!(
+            response.headers().get("x-oxy-needs-recompile").unwrap(),
+            &workspace_id.to_string()
+        );
+    }
+
+    /// The other flavour is not transient — the workspace path or config.yml is
+    /// unreachable and retrying changes nothing. Asking for a spinner there
+    /// would hide a real fault behind two minutes of polling.
+    #[test]
+    fn the_unreachable_workspace_503_does_not_ask_the_frontend_to_wait() {
+        let response = WorkspaceManagerMissing {
+            needs_recompile: None,
+        }
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(response.headers().get("x-oxy-unavailable").is_none());
+        assert!(response.headers().get("retry-after").is_none());
+    }
+
+    /// EVERY middleware that publishes a workspace manager must publish BOTH
+    /// extensions. `WorkspaceManagerReadOnly` reads its own — deliberately, so
+    /// a pod can stop publishing the disk one — which means a middleware that
+    /// inserts only `WorkingCopy` leaves every read-only handler with nothing
+    /// to find, and its extractor answers a missing extension with 503.
+    ///
+    /// `local_context` did exactly that, and nothing in the type system or the
+    /// suite noticed: `--local` is the mode the agentic browser flows boot, so
+    /// the first sign was four of them failing in CI with 503s from the moment
+    /// the server came up. A source scan is crude, but it is the only thing
+    /// here that can see "this file publishes one and not the other".
+    #[test]
+    fn every_context_middleware_publishes_both_managers() {
+        for (name, src) in [
+            ("workspace_context.rs", include_str!("workspace_context.rs")),
+            ("local_context.rs", include_str!("local_context.rs")),
+        ] {
+            let body = &src[..src.find("#[cfg(test)]").unwrap_or(src.len())];
+            assert!(
+                body.contains(".insert(workspace_manager)") || body.contains(".insert(manager)"),
+                "{name} should publish the WorkingCopy manager"
+            );
+            assert!(
+                body.contains("into_read_only()"),
+                "{name} publishes a `WorkspaceManager<WorkingCopy>` but no \
+                 `ReadOnly` one. The read-only extractor reads its OWN \
+                 extension rather than downgrading the disk one, so every \
+                 handler taking `WorkspaceManagerReadOnly` gets a 503 on this \
+                 surface — from the first request, with nothing in the type \
+                 system to say so."
+            );
+        }
+    }
+
+    /// The publish gate, which is the one change in this area that no compiler
+    /// checks: `workspace_middleware` inserts the `WorkingCopy` extension only
+    /// on a process that owns the files.
+    ///
+    /// Asserted on the extension map rather than through the extractor, because
+    /// the map IS the mechanism — `WorkspaceManagerWorkingCopy` ignores the
+    /// state it is handed and reads this one type. That the extractor rejects a
+    /// missing extension is covered by
+    /// `read_only_resolves_without_the_disk_manager` beside it.
+    #[tokio::test]
+    async fn a_diskless_process_publishes_no_working_copy_extension() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        tokio::fs::write(dir.path().join("config.yml"), "models: []\ndatabases: []\n")
+            .await
+            .expect("write config");
+        let manager = WorkspaceBuilder::new(Uuid::new_v4())
+            .with_working_copy(dir.path(), None, oxy::config::OnMissing::Empty)
+            .await
+            .expect("builder")
+            .build()
+            .await
+            .expect("manager");
+
+        // Exactly what the middleware does, both ways round.
+        let publish = |owns_files: bool| {
+            let mut ext = axum::http::Extensions::new();
+            ext.insert(manager.clone().into_read_only());
+            if owns_files {
+                ext.insert(manager.clone());
+            }
+            ext
+        };
+
+        let ide = publish(true);
+        assert!(
+            ide.get::<WorkspaceManager<WorkingCopy>>().is_some(),
+            "the ide owns its files, so a handler that requires them gets them"
+        );
+
+        let replica = publish(false);
+        assert!(
+            replica.get::<WorkspaceManager<ReadOnly>>().is_some(),
+            "a read-only handler keeps working — that is the whole point of the split"
+        );
+        assert!(
+            replica.get::<WorkspaceManager<WorkingCopy>>().is_none(),
+            "a handler that REQUIRES the files must be refused at the door, not \
+             handed a manager rooted at a directory that is not here"
+        );
+    }
+
+    /// The two extractors read two extensions, so a pod can publish the
+    /// capability-free manager without publishing the disk one. Until that
+    /// split existed, `WorkspaceManagerReadOnly` downgraded from `WorkingCopy` and would
+    /// have died with it — taking every handler that never needed a disk.
+    #[tokio::test]
+    async fn read_only_resolves_without_the_disk_manager() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        tokio::fs::write(dir.path().join("config.yml"), "models: []\ndatabases: []\n")
+            .await
+            .expect("write config");
+        let manager = WorkspaceBuilder::new(Uuid::new_v4())
+            .with_working_copy(dir.path(), None, oxy::config::OnMissing::Empty)
+            .await
+            .expect("builder")
+            .build()
+            .await
+            .expect("manager");
+
+        let mut parts = axum::http::Request::builder()
+            .body(())
+            .expect("request")
+            .into_parts()
+            .0;
+        parts.extensions.insert(manager.into_read_only());
+
+        assert!(
+            WorkspaceManagerReadOnly::from_request_parts(&mut parts, &())
+                .await
+                .is_ok(),
+            "the capability-free manager is all a read-only handler needs"
+        );
+        assert!(
+            WorkspaceManagerWorkingCopy::from_request_parts(
+                &mut parts,
+                &crate::server::router::IdeState(crate::server::router::bare_app_state()),
+            )
+            .await
+            .is_err(),
+            "a handler asking for a disk must be told there isn't one, not handed an empty one"
+        );
+    }
 
     /// An ordinary status denial stays opaque — same bytes as before this
     /// type existed, so nothing that mapped a bare code changes shape.

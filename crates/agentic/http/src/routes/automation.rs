@@ -371,14 +371,12 @@ pub async fn list_automation_files(
                 .into_response();
         }
     };
-    let workspace_root = workspace.workspace_path().to_path_buf();
+    // `list_automation_files` returns workspace-relative paths, so the strip
+    // this used to do was already the identity. Dropping it also drops the last
+    // reason this lister needed a workspace root.
     let mut files: Vec<AutomationFile> = Vec::with_capacity(paths.len());
-    for abs in paths {
-        let rel = abs
-            .strip_prefix(&workspace_root)
-            .unwrap_or(&abs)
-            .to_string_lossy()
-            .to_string();
+    for rel_path in paths {
+        let rel = rel_path.to_string_lossy().to_string();
         let path_b64 = URL_SAFE_NO_PAD.encode(rel.as_bytes());
         let description = read_automation_description(&workspace, &rel).await;
         files.push(AutomationFile {
@@ -440,6 +438,24 @@ pub async fn get_automation_file(
     let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
     match workspace.resolve_automation_yaml(&path).await {
         Ok(content) => Json(AutomationFileContent { path, content }).into_response(),
+        // Present and unparseable. Permanent, and the caller's to fix — so
+        // neither 404 (it exists) nor 503 (retrying cannot help).
+        Err(e) if e.is_invalid() => {
+            (StatusCode::UNPROCESSABLE_ENTITY, format!("read file: {e}")).into_response()
+        }
+        // Could not look: no working copy and a boundary lookup that failed, or
+        // a read that failed on a node that has the files. 503 + Retry-After,
+        // matching the airway start path. Answering 404 told the caller their
+        // automation had been deleted and told a retrying scheduler to stop.
+        Err(e) if e.is_unavailable() => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(
+                axum::http::header::RETRY_AFTER,
+                agentic_pipeline::executor::AIRWAY_UNAVAILABLE_RETRY_SECS.to_string(),
+            )],
+            format!("read file: {e}"),
+        )
+            .into_response(),
         Err(e) => (StatusCode::NOT_FOUND, format!("read file: {e}")).into_response(),
     }
 }

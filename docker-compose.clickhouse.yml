@@ -40,10 +40,16 @@ services:
     container_name: oxy-clickhouse-local
     environment:
       # Auto-creates the database oxy's obs backend connects to
-      # (OXY_CLICKHOUSE_DATABASE=observability). oxy connects as the built-in
-      # `default` user with an empty password (OXY_CLICKHOUSE_USER=default,
-      # OXY_CLICKHOUSE_PASSWORD unset), which the image provides by default.
+      # (OXY_CLICKHOUSE_DATABASE=observability).
       CLICKHOUSE_DB: observability
+      # `default` with an empty password is NOT usable over the network on this
+      # image: `clickhouse-client` inside the container works (local socket,
+      # trusted) but HTTP answers 401 "Authentication failed", which oxy reports
+      # as "ClickHouse schema init failed" at boot and nothing else. Set one
+      # explicitly and keep `.env.clickhouse` matching it. Local dev only.
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: oxy-local
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     ports:
       - "8123:8123" # HTTP — oxy's ClickHouse client connects here
       - "9010:9000" # native TCP (host 9010 avoids the Airhouse MinIO 9000)

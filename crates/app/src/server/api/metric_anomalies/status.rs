@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use super::error::AnomalyError;
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, WorkspaceManagerExtractor,
+    EffectiveWorkspaceRole, WorkspaceManagerReadOnly,
 };
 
 #[derive(Debug, Deserialize)]
@@ -161,7 +161,7 @@ pub(super) const MAX_BULK_ROWS: u64 = 20_000;
 /// id from another workspace silently updates nothing instead of leaking or
 /// writing across tenants.
 pub async fn update_status_bulk(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     _role: EffectiveWorkspaceRole,
     Extension(state): Extension<Arc<AgenticState>>,
     Path(_workspace_id): Path<Uuid>,
@@ -402,7 +402,7 @@ pub struct StatusWriteCounts {
 /// `POST /workspaces/{workspace_id}/semantic/anomalies/{id}/status`
 /// with body `{"status": "acknowledged" | "dismissed" | "new"}`.
 pub async fn update_status(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     _role: EffectiveWorkspaceRole,
     Extension(state): Extension<Arc<AgenticState>>,
     Path((_workspace_id, anomaly_id)): Path<(Uuid, Uuid)>,

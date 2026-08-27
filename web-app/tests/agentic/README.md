@@ -194,6 +194,24 @@ Asserts cost $0; judge calls cost ~$0.002 each. Use asserts wherever the claim i
 
 The set is intentionally small. New setup commands are subject to the read-only-against-external-systems policy at the top of this file — propose any addition that needs network access on the followups doc first.
 
+### Seeding the data a flow reads — `scripts/seed-fixtures.sh`
+
+Because the list above cannot reach a database, **no flow seeds its own fixtures**. Anything a flow needs to exist — a workspace, a compiled + promoted revision, a published custom app, a partner org — is stood up from the shell before the runner starts:
+
+```bash
+scripts/seed-fixtures.sh fleet     # the docker fleet: seeds via the ide container, verifies at a replica
+scripts/seed-fixtures.sh native    # a running `oxy serve`/`oxy start`: seeds via ./target/debug/oxy
+scripts/seed-fixtures.sh check     # verify only, no writes
+scripts/seed-observability.sh      # ClickHouse spans + metric usage for the four observability flows
+```
+
+`just verify` runs the right one for each phase, so you usually do not call these by hand.
+
+Two things worth knowing before you debug a red flow:
+
+- **It verifies over HTTP, not SQL.** Every check is a real request against the same routes the browser uses, because a row that exists but 403s, 404s, or hangs off an unpromoted revision is indistinguishable from no row at all from where Playwright sits. Exit 1 means "seeded, but a fixture is missing from the node the flows drive" — start there before blaming the product.
+- **Identity is half the fixture.** The runner injects exactly one session per invocation. `flow@oxy.local` is an org owner with no platform standing and is what every workspace-scoped flow needs; the SPA bounces staff off a tenant workspace into `/admin`, so a workspace flow signed in as staff times out on a testid that was never going to render. The admin and partner surfaces need the opposite. `scripts/verify-all.sh --group b --dry-run` prints which identity each invocation uses, for free.
+
 ### Environment-variable substitution in `act:` text
 
 `act:` step text supports `${VAR_NAME}` placeholders. The runner validates them at YAML load time (a missing variable throws), and substitutes the real values **only at the egress boundaries** — when the prompt is sent to the Anthropic API and when a state-changing tool dispatches into Playwright. Everywhere else (step text in result JSON, recorded actions in `.cache/bespoke-actions.json`, debug `tool_calls` args) the placeholder is what's stored.
@@ -220,6 +238,46 @@ Flows that test the multi-tenant onboarding (org → workspace) declare `backend
 Driving the **authenticated** public port (3000) instead — worth it when you're debugging something auth-shaped by hand, or pointing Playwright MCP at a running server — no longer requires OAuth or the magic-link email preview: set `OXY_DEV_LOGIN_EMAILS` and navigate to `/dev-login` (see the "Dev sign-in" section in `DEVELOPMENT.md`). Committed flows still use 3001; nothing here changes.
 
 `onboarding-blank-workspace` is the canonical cloud-mode flow and runs in CI. It uses DuckDB as the warehouse and uploads the committed `demo_project/.db/oxymart.csv` (a Walmart-style retail dataset) via `browser_file_upload`. DuckDB is file:// only with no network credentials, so this flow is structurally incapable of hitting a port-forward to production — the failure mode of the 2026-05-06 incident. `builder-edits-app` used to run in cloud mode against a freshly-onboarded Demo Workspace, but the cloud-mode prelude duplicated coverage from `onboarding-blank-workspace`; it now runs in local mode against `demo_project/insights.app.yml` directly with a `restore_demo_file:insights.app.yml` setup command to revert the builder's edits between runs.
+
+### Driving a fleet or remote deployment (bypassing `backend_mode`)
+
+`backend_mode` only controls what the runner **auto-spawns** — `local` runs `oxy
+start --local --enterprise`, `cloud` runs `oxy start --enterprise --clean`
+(`runner/backend.ts:172`, `spawnArgs`). It is not a fixture selector and does not
+declare which deployment topology a flow supports. Pass `--no-auto-backend` to skip
+spawning entirely (`runner/cli.ts:170-172`) and set `OXY_BASE_URL` / `OXY_HEALTH_URL`
+/ `OXY_SESSION_TOKEN` / `OXY_SESSION_USER` yourself to point the runner at an
+already-running backend — including one replica of the Docker split fleet
+([`docker-compose.fleet.yml`](../../../docker-compose.fleet.yml), see
+[`internal-docs/local-split-fleet-testing.md`](../../../internal-docs/local-split-fleet-testing.md)).
+`scripts/fleet-assert.sh --flows` does exactly this. The mixed-`backend_mode` refusal
+still applies to whatever flows are loaded in one invocation, though —
+`pickBackendMode` runs unconditionally, before `--no-auto-backend` is even checked
+(`runner/cli.ts:159`, `:289-297`) — so `--no-auto-backend` only skips the spawn, not
+the one-mode-per-invocation rule. This is also why the fleet-eligible flows stay on
+the default `local` mode rather than flipping to `cloud`: `cloud` only changes which
+command gets auto-spawned, so flipping it would break the plain `--local` path for
+flows driven directly at a fleet, for no gain.
+
+Two structural limits worth knowing before trying to widen fleet coverage:
+
+- **One session per invocation.** `runtimes/bespoke.ts` reads `OXY_SESSION_TOKEN` /
+  `OXY_SESSION_USER` once and injects them into a single Playwright browser context
+  used for every case in the run (`runner/runtimes/bespoke.ts:122-156`). Admin flows
+  need a staff identity; workspace-scoped flows need a non-staff one — staff reach is
+  not standing, so a Global Owner gets bounced off every tenant workspace into
+  `/admin` (see `product-context.md`, "Roles"). No single invocation can cover both
+  today; that needs a per-flow `identity:` field in the schema, which doesn't exist
+  yet.
+- **`applyPathPrefix` and non-workspace-scoped routes.** `goto:` targets are prefixed
+  with `OXY_PATH_PREFIX` so the same flow text resolves to a different URL under
+  `--local` vs. a fleet/cloud deployment (`runner/backend.ts:79-86`). Routes that hang
+  off the app root instead of a workspace — `TOP_LEVEL_SURFACES`: `/admin`,
+  `/partners`, `/customer-apps`, `/login`, `/dev-login`, `/invite`, `/cli-auth`
+  (`runner/backend.ts:101-109`) — must be listed there, or the prefix produces a URL
+  that routes nowhere. Three admin flows failed exactly that way before the list
+  existed, each looking like an unrelated broken page rather than one misconfigured
+  harness.
 
 ### Runbook: onboarding-blank-workspace (local manual run)
 

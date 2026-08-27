@@ -218,6 +218,29 @@ pub async fn object_exists(key: &str) -> Result<bool, BlobError> {
     }
 }
 
+/// Delete the object at `key`. `Ok(false)` when no bucket is configured, so a
+/// single-node deployment is a no-op rather than an error.
+///
+/// Idempotent by design — S3 `DeleteObject` succeeds on a key that was never
+/// there, and a caller deleting an artifact wants "it is gone", not "it was
+/// there and now is not". This is the verb the store was missing: every write
+/// path mirrored, and nothing removed, so a deleted result file kept being
+/// served from the mirror to every replica.
+pub async fn delete_object(key: &str) -> Result<bool, BlobError> {
+    let Some(bucket) = bucket() else {
+        return Ok(false);
+    };
+    let client = s3_client().await;
+    let send = client.delete_object().bucket(&bucket).key(key).send();
+    match tokio::time::timeout(BLOB_OP_TIMEOUT, send).await {
+        Ok(Ok(_)) => Ok(true),
+        Ok(Err(e)) => Err(BlobError::Transport(format!("{}", e.into_service_error()))),
+        Err(_) => Err(BlobError::Transport(format!(
+            "S3 delete timed out after {BLOB_OP_TIMEOUT:?}"
+        ))),
+    }
+}
+
 /// Upload `body` to an explicit `key` (unlike `put_blob`, which content-
 /// addresses the key). Used by the DuckDB S3 mirror, whose keys follow a
 /// `workspaces/{id}/duckdb/{revision}/…` scheme. `Ok(None)` when no bucket is

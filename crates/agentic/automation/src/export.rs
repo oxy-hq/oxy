@@ -45,7 +45,12 @@ pub async fn write_export(
     // create traversal directories along the way). Block both
     // shapes here, even when the path looks innocuous in the YAML
     // but the substituted Jinja value is hostile.
-    let abs_path = validate_workspace_relative_path(workspace.workspace_path(), &rendered_path)
+    let root = workspace.workspace_path().ok_or_else(|| {
+        format!(
+            "export[{task_name}]: this node holds no workspace files, so there is nowhere to write"
+        )
+    })?;
+    let abs_path = validate_workspace_relative_path(root, &rendered_path)
         .map_err(|e| format!("export[{task_name}]: {e}"))?;
     if let Some(parent) = abs_path.parent() {
         fs::create_dir_all(parent)
@@ -102,7 +107,12 @@ pub async fn write_cache(
             cache.path
         )
     })?;
-    let abs_path = validate_workspace_relative_path(workspace.workspace_path(), &rendered_path)
+    let root = workspace.workspace_path().ok_or_else(|| {
+        format!(
+            "cache[{task_name}]: this node holds no workspace files, so there is nowhere to write"
+        )
+    })?;
+    let abs_path = validate_workspace_relative_path(root, &rendered_path)
         .map_err(|e| format!("cache[{task_name}]: {e}"))?;
     if let Some(parent) = abs_path.parent() {
         fs::create_dir_all(parent)
