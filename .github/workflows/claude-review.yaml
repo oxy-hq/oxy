@@ -59,11 +59,36 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Please review this pull request with a focus on:
-            - Code quality and best practices
-            - Potential bugs or issues
+            SCOPE — this PR's diff, and what its own changes can break.
+
+            In scope: the lines this PR adds or modifies, plus their direct side
+            effects — callers and callees of changed code, and the persisted,
+            wire, or config contracts those edits can violate. Read as much
+            surrounding code as you need to judge those lines, but every finding
+            must be *caused by this diff*: name the changed line it comes from.
+
+            Out of scope, however true it may be:
+            - pre-existing bugs, debt, or style in code this PR did not touch
+            - "while you're here" refactors, renames, or extra abstraction
+            - features, tests, or docs the PR never set out to add
+            - repo-wide patterns the PR merely happens to follow
+
+            At most one trailing line, `Out of scope (FYI): …`, for something
+            genuinely serious you noticed outside the diff. Never as a finding,
+            never a reason to withhold LGTM.
+
+            This review re-runs on every push. Reaching for new, unrelated code
+            after the author fixes what you flagged is what makes a PR never
+            converge — each round invents fresh demands and the author can never
+            finish. When a push only addresses earlier findings, check those and
+            whether the fixes introduced new defects, then stop.
+
+            Within that scope, focus on:
+            - Correctness and potential bugs
             - Security implications
             - Performance considerations
+            - Conflicts with existing repo guidance (root and crate-local
+              CLAUDE.md, internal-docs)
 
             Post one summary via `gh pr comment` with:
             - one-line verdict: `LGTM` / `LGTM with nits` / `Needs changes` / `Blocking`
