@@ -127,6 +127,34 @@ async fn drive(
     }
 
     if !crate::server::role_manifest::process_can_compile() {
+        // FAIL, do not defer.
+        //
+        // An earlier revision deferred here, reasoning that "cannot compile" is
+        // a property of this process rather than of the task. The reasoning was
+        // right and the mechanism was wrong: deferral hands the row back to the
+        // queue, but only the process holding the run's DRIVER LEASE can claim
+        // it (every `Worker::new` binds a run-scoped transport; there is no
+        // unscoped pool). So the deferring process re-claims its own row every
+        // `delay_secs` while its heartbeat keeps every other node excluded from
+        // `find_pending_global_runs`, until dead-letter at `max_wait_secs`
+        // leaves the run `task_status = 'running'` forever with a leaked lease.
+        // That is strictly worse than failing: a fast, visible failure that
+        // clears the enqueue dedup became a ten-minute stall that blocks it.
+        //
+        // The real gate is at SELECTION, in
+        // `agentic_pipeline::recovery::recover_pending_global_runs`, which
+        // drops `compile` runs before `try_acquire_driver` when this process
+        // cannot compile. (`tick_cloud` also partitions them out of its
+        // discovery probe, but that is an optimisation — an earlier revision
+        // put the gate there and it did not hold, because `drive_pending`
+        // re-selects per workspace.)
+        //
+        // Not claimed to be unreachable. On a diskless pod
+        // `OxyCompileDispatcher::dispatch` fails on `!workspace_path.is_dir()`
+        // before this runs, so the message an operator sees is the
+        // dispatcher's, not this one. This arm is the backstop for a node that
+        // lost the capability after taking the lease, where terminating loudly
+        // is right.
         let _ = outcome_tx
             .send(TaskOutcome::Failed(format!(
                 "compile requires a workspace working copy, which OXY_ROLE={} does not own. \

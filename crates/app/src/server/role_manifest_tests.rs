@@ -1394,6 +1394,12 @@ fn every_long_running_entry_point_declares_its_role() {
         ("oxy serve", include_str!("../cli/commands/serve.rs")),
         ("oxy worker", include_str!("../cli/commands/worker.rs")),
     ] {
+        // Comments stripped first. `worker.rs` carries a NOTE block explaining
+        // why a SECOND bare init must never come back, and that prose contains
+        // this very literal — so without stripping, deleting the real call
+        // would leave this guard green. A test satisfied by a comment about
+        // the thing is not a test of the thing.
+        let src = &strip_line_comments(src);
         assert!(
             src.contains(INIT),
             "`{command}` never calls `{INIT}`, so `current_process_role()` \
@@ -1401,6 +1407,57 @@ fn every_long_running_entry_point_declares_its_role() {
              Nothing fails loudly; the pod just starts describing itself wrong.",
         );
     }
+}
+
+/// Strip `//` comments so a source-grep guard cannot be satisfied by prose.
+///
+/// Deliberately crude — it does not understand strings or block comments —
+/// which is fine for the two entry points it reads, and the failure direction
+/// is safe: at worst it strips something it should not and a guard gets
+/// stricter.
+fn strip_line_comments(src: &str) -> String {
+    src.lines()
+        .map(|l| match l.find("//") {
+            Some(i) => &l[..i],
+            None => l,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `oxy worker` must seed the role EXACTLY once, and with an explicit default.
+///
+/// The bug this pins actually shipped: main's #2822 added
+/// `_with_default(Worker)` while this branch had already added a bare
+/// `init_process_role_from_env()` below it. They do not conflict textually, so
+/// the merge kept both — and the second is not idempotent. `PROCESS_ROLE` is a
+/// `OnceLock` so the role stays `Worker`, but `set_process_owns_workspace_files`
+/// is an `AtomicBool::store`, and the bare form resolves `Role::All` when
+/// `OXY_ROLE` is unset, storing `true` over the `false` written moments before.
+///
+/// The pod then answers `process_can_compile() == false` (reads the `OnceLock`)
+/// and `process_owns_workspace_files() == true` (reads the atomic) — the exact
+/// split-brain the role manifest exists to prevent, and worse than either end
+/// alone because the two disagree.
+#[test]
+fn oxy_worker_seeds_the_role_once_and_never_with_the_bare_default() {
+    let src = strip_line_comments(include_str!("../cli/commands/worker.rs"));
+    assert!(
+        src.contains("init_process_role_from_env_with_default("),
+        "`oxy worker` must declare its role explicitly; running the command IS \
+         the declaration."
+    );
+    // The bare form, as a call. `_with_default(` does not match this because
+    // the next char after the fn name is `_`, not `(`.
+    assert!(
+        !src.contains("init_process_role_from_env()"),
+        "`oxy worker` calls the bare `init_process_role_from_env()` as well as \
+         `_with_default`. That is not a harmless duplicate: the bare form \
+         resolves `Role::All` when `OXY_ROLE` is unset, and its \
+         `set_process_owns_workspace_files(true)` overwrites the `false` the \
+         explicit call just stored — leaving the process claiming a workspace \
+         working copy it does not have."
+    );
 }
 
 /// The flag the omission above actually moves.

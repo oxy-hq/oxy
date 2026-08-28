@@ -222,11 +222,11 @@ pub(crate) async fn await_shutdown_hooks(shutdown_token: &tokio_util::sync::Canc
 /// node). Firing is exactly-once across replicas via the scheduler `next_run_at`
 /// CAS, so several eligible nodes running it concurrently is safe — no leader
 /// election needed.
-pub(super) const INPROC_GLOBAL_WORKER_ENV: &str = "OXY_INPROC_GLOBAL_WORKER";
+pub(crate) const INPROC_GLOBAL_WORKER_ENV: &str = "OXY_INPROC_GLOBAL_WORKER";
 const INPROC_GLOBAL_WORKER_INTERVAL_ENV: &str = "OXY_INPROC_GLOBAL_WORKER_INTERVAL_SECS";
 const DEFAULT_INPROC_GLOBAL_WORKER_INTERVAL_SECS: u64 = 30;
 
-pub(super) fn inproc_global_worker_enabled() -> bool {
+pub(crate) fn inproc_global_worker_enabled() -> bool {
     // Explicit env override wins, in both directions.
     if let Ok(v) = std::env::var(INPROC_GLOBAL_WORKER_ENV) {
         return matches!(v.as_str(), "1" | "true" | "yes" | "on");
@@ -248,19 +248,65 @@ fn inproc_global_worker_interval() -> std::time::Duration {
     std::time::Duration::from_secs(secs)
 }
 
+/// Whether this process may run the **one-shot startup pass** of
+/// [`spawn_recovery`] — the `recover_active_runs` sweep that resumes every
+/// interrupted run, as opposed to the periodic stranded-run tick.
+///
+/// The two passes select differently, and only one of them is safe to run from
+/// a process that did not host the coordinators:
+///
+/// - The periodic tick (`find_stuck_runs`) and the latency worker
+///   (`find_pending_global_runs`) both carry a **queue predicate**. A run a
+///   live coordinator is driving always has a `claimed` — or `queued` +
+///   `scope_owned = true` — entry in `agentic_task_queue`, and both queries
+///   exclude exactly that. They cannot poach a live run, from any process.
+/// - The one-shot pass (`get_resumable_root_runs`) has **no queue predicate**.
+///   Its only guard is the driver lease, and the direct-drive path
+///   (`spawn_airway_run_drive`, still the executor for every interactive
+///   airway submit) never calls `try_acquire_driver` — the lease is taken
+///   only inside `recover_single_run`. So a run being direct-driven right now
+///   has `driver_id IS NULL` and the one-shot pass selects it.
+///
+/// That is sound in `oxy serve`, where the pass runs once at boot and the
+/// coordinators it would collide with died with the previous process. It is
+/// **not** sound in `oxy worker`: a worker restart (rolling deploy, OOM, HPA
+/// scale-up) says nothing about whether the IDE node is mid-run, so a
+/// worker-side one-shot pass would re-drive live work. Hence the split.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StartupPass {
+    /// Run it — this process is the one whose death orphaned the runs
+    /// (`oxy serve`, whose own direct-drives went down with it).
+    Run,
+    /// Skip it and go straight to the queue-gated loops (`oxy worker`, which
+    /// hosts no coordinators of its own and cannot tell a live peer's run from
+    /// an orphan). Costs at most `STRANDED_GRACE_SECS` + one tick of latency:
+    /// `find_stuck_runs` selects `needs_resume` / `shutdown` too, so nothing
+    /// is lost, only delayed.
+    Skip,
+}
+
 /// Spawn startup recovery in the background. Returns immediately.
 ///
 /// The spawned task rebuilds per-workspace `PlatformContext` + `BuilderBridges`
 /// and hands them to [`recover_active_runs`] so runs interrupted by a server
-/// restart actually resume instead of sitting in `needs_resume` forever.
+/// restart actually resume instead of sitting in `needs_resume` forever — see
+/// [`StartupPass`] for which callers may do that.
 ///
 /// When [`INPROC_GLOBAL_WORKER_ENV`] is set, the task does not stop after the
 /// one-shot pass: it re-runs recovery on an interval (tied to the shutdown
-/// token) so the queue has a durable in-process consumer for
-/// `scope_owned = false` work. This is safe to call repeatedly because
-/// `get_resumable_root_runs` is driver-lease-gated (F1) — an in-flight run a
-/// live driver owns is excluded from re-selection.
-pub(super) fn spawn_recovery(
+/// token) so the queue has a durable consumer for `scope_owned = false` work.
+/// Safe to run from several processes at once: every selection funnels through
+/// `recover_single_run`'s `try_acquire_driver` CAS, so the loser of a race
+/// skips.
+///
+/// NOTE: an earlier version of this comment justified repeat calls with
+/// "`get_resumable_root_runs` is driver-lease-gated (F1), so an in-flight run a
+/// live driver owns is excluded". The function is lease-gated, but that premise
+/// is false — `spawn_airway_run_drive` never takes the lease, so a
+/// direct-driven run has `driver_id IS NULL` and IS selected. What actually
+/// keeps callers apart is the queue predicate, which is why the one-shot pass
+/// is gated behind [`StartupPass`] rather than run unconditionally.
+pub(crate) fn spawn_recovery(
     agentic_state: Arc<AgenticState>,
     mode: ServeMode,
     // The node's Layer-1 preagg cache, from the same `AppState` the HTTP
@@ -269,6 +315,7 @@ pub(super) fn spawn_recovery(
     // rollups on the tier its request-driven twin does. Default (no cache) simply
     // compiles to warehouse SQL.
     preagg: PreaggCacheCtx,
+    startup: StartupPass,
 ) {
     let db = agentic_state.db.clone();
     let runtime = agentic_state.runtime.clone();
@@ -326,26 +373,38 @@ pub(super) fn spawn_recovery(
     }
 
     tokio::spawn(async move {
-        let recovered = run_recovery(
-            &db,
-            runtime.clone(),
-            schema_cache.clone(),
-            builder_test_runner.clone(),
-            builder_app_runner.clone(),
-            router.clone(),
-            mode,
-            false, // one-shot startup recovery: every coordinator is dead
-            ws_cache.clone(),
-            preagg.clone(),
-        )
-        .await;
-        if recovered > 0 {
-            tracing::info!(
+        match startup {
+            StartupPass::Run => {
+                let recovered = run_recovery(
+                    &db,
+                    runtime.clone(),
+                    schema_cache.clone(),
+                    builder_test_runner.clone(),
+                    builder_app_runner.clone(),
+                    router.clone(),
+                    mode,
+                    false, // one-shot startup recovery: every coordinator is dead
+                    ws_cache.clone(),
+                    preagg.clone(),
+                )
+                .await;
+                if recovered > 0 {
+                    tracing::info!(
+                        target: "recovery",
+                        recovered,
+                        mode = mode.label(),
+                        "startup recovery resumed interrupted runs"
+                    );
+                }
+            }
+            StartupPass::Skip => tracing::info!(
                 target: "recovery",
-                recovered,
                 mode = mode.label(),
-                "startup recovery resumed interrupted runs"
-            );
+                "skipping the one-shot startup pass: this process hosts no \
+                 coordinators, so a resumable-looking run may belong to a live \
+                 peer. Stranded work is picked up by the queue-gated loops \
+                 below instead"
+            ),
         }
 
         if !inproc_global_worker_enabled() {
@@ -925,6 +984,47 @@ async fn tick_cloud(
     if pending.is_empty() {
         return 0;
     }
+
+    // A cheap probe-level skip, NOT the gate.
+    //
+    // This filters only which workspaces are visited: `drive_pending` re-selects
+    // per workspace, and that second selection is what feeds the driver lease.
+    // The real gate is the `exclude_source_types` argument threaded into
+    // `recover_pending_global_runs`. An earlier revision had only this
+    // partition and believed it sufficient — it is not, because a workspace
+    // with a compile AND any other pending Global run still reached the drive.
+    //
+    // Decline compile runs BEFORE the lease, not after the claim.
+    //
+    // `claim_task` has no `task_kind` predicate, so any eligible driver wins a
+    // Compile row — but only a node that owns a workspace working copy can
+    // actually run one (`process_can_compile()` is the role, not the checkout,
+    // since #2822). Failing after the claim makes success a coin flip on poll
+    // phase; deferring after the claim is worse still, because only the
+    // lease-holder may claim the row, so the deferring process re-selects its
+    // own work every few seconds while its heartbeat excludes the ide node
+    // from `find_pending_global_runs` entirely — ending in a dead-lettered
+    // queue row and a run stuck non-terminal.
+    //
+    // Skipping at selection leaves the run untouched, `driver_id IS NULL`, and
+    // therefore selectable by the next ide/all tick. That is the handoff the
+    // other approaches only claimed.
+    let can_compile = crate::server::role_manifest::process_can_compile();
+    let (pending, declined): (Vec<_>, Vec<_>) = pending.into_iter().partition(|r| {
+        can_compile
+            || r.source_type.as_deref() != Some(agentic_runtime::coordinator::COMPILE_SOURCE_TYPE)
+    });
+    if !declined.is_empty() {
+        tracing::debug!(
+            target: "recovery",
+            count = declined.len(),
+            role = crate::server::role_manifest::current_process_role().as_str(),
+            "latency worker: leaving compile runs for a node that owns a working copy"
+        );
+    }
+    if pending.is_empty() {
+        return 0;
+    }
     let workspaces: HashSet<uuid::Uuid> = pending.iter().map(|r| r.workspace_id).collect();
 
     let mut total = 0usize;
@@ -1047,6 +1147,15 @@ async fn drive_pending(
     // `health_eval_workspace` Custom tasks) are drained, so inject the host's
     // Custom-kind executors here. Cheap to build per call (a few Arc clones).
     let custom_executors = Some(build_custom_task_registry(db, preagg));
+    // Compiles need a workspace working copy, and since #2822 that is a
+    // property of the ROLE, not of what happens to be on disk. A worker that
+    // drove one would fail it — so decline it before the lease, leaving it for
+    // an ide/all node.
+    let exclude: &[&str] = if crate::server::role_manifest::process_can_compile() {
+        &[]
+    } else {
+        &[agentic_runtime::coordinator::COMPILE_SOURCE_TYPE]
+    };
     agentic_pipeline::recovery::recover_pending_global_runs(
         db.clone(),
         runtime.clone(),
@@ -1058,6 +1167,7 @@ async fn drive_pending(
         router.clone(),
         workspace_id,
         custom_executors,
+        exclude,
     )
     .await
 }

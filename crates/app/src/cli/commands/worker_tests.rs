@@ -290,3 +290,39 @@ fn require_database_url_rejects_unknown_auth_mode() {
 
     clear_iam_env();
 }
+
+/// The kill switch the run-driving comment in `run_worker` promises.
+///
+/// `oxy worker` drives runs by spawning `server::router::recovery`'s loops,
+/// and both of them are gated on `inproc_global_worker_enabled()`. That gate
+/// derives from `OXY_ROLE` by default — and `worker` derives to ON, which is
+/// what we want — but an operator putting a fleet back to reaper-only
+/// behaviour without a rollback depends on the explicit `=0` override winning
+/// over the derived default. It is the only way to turn driving off, so pin it
+/// rather than trusting the derivation to keep an escape hatch.
+#[test]
+fn inproc_global_worker_env_override_wins_in_both_directions() {
+    use crate::server::router::recovery::{INPROC_GLOBAL_WORKER_ENV, inproc_global_worker_enabled};
+
+    let _g = ENV_LOCK.lock().unwrap();
+    let prev = std::env::var(INPROC_GLOBAL_WORKER_ENV).ok();
+
+    // SAFETY: env mutation is serialized via ENV_LOCK above.
+    unsafe { std::env::set_var(INPROC_GLOBAL_WORKER_ENV, "0") };
+    assert!(
+        !inproc_global_worker_enabled(),
+        "OXY_INPROC_GLOBAL_WORKER=0 must stop the worker driving runs, whatever \
+         OXY_ROLE derives to — this is the documented kill switch"
+    );
+
+    unsafe { std::env::set_var(INPROC_GLOBAL_WORKER_ENV, "1") };
+    assert!(
+        inproc_global_worker_enabled(),
+        "and =1 must force it on, which is what the cloud worker deployment sets"
+    );
+
+    match prev {
+        Some(v) => unsafe { std::env::set_var(INPROC_GLOBAL_WORKER_ENV, v) },
+        None => unsafe { std::env::remove_var(INPROC_GLOBAL_WORKER_ENV) },
+    }
+}

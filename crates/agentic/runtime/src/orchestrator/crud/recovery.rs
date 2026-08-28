@@ -214,6 +214,14 @@ pub struct StuckRun {
     /// cached `PlatformContext` before driving the run. Nil UUID for
     /// local serve mode (== `LOCAL_WORKSPACE_ID`).
     pub workspace_id: Uuid,
+    /// What kind of work this run is (`compile`, `airway`, `workflow`, …).
+    ///
+    /// Carried so a driver can decline a run it is structurally unable to
+    /// execute BEFORE acquiring the lease. Declining after the claim does not
+    /// work: only the lease-holder can claim the row, so handing it back
+    /// re-selects it in the same process while the live heartbeat excludes
+    /// every other node.
+    pub source_type: Option<String>,
 }
 
 /// Find automation runs that are stranded: `task_status` is non-terminal but no
@@ -240,6 +248,7 @@ pub async fn find_stuck_automation_runs(
         id: String,
         task_status: Option<String>,
         workspace_id: Uuid,
+        source_type: Option<String>,
     }
 
     // Active statuses from `get_active_root_runs` / `cleanup_stale_runs` — a
@@ -247,7 +256,7 @@ pub async fn find_stuck_automation_runs(
     // We intentionally exclude `awaiting_input` (HITL suspension — driven by
     // a user action, not a queue row).
     let sql = "\
-        SELECT r.id, r.task_status, r.workspace_id \
+        SELECT r.id, r.task_status, r.workspace_id, r.source_type \
         FROM agentic_runs r \
         WHERE r.source_type = 'workflow' \
           AND r.task_status IN ('running', 'delegating', 'waiting_on_child', 'waiting_on_children') \
@@ -272,6 +281,7 @@ pub async fn find_stuck_automation_runs(
             run_id: r.id,
             task_status: r.task_status,
             workspace_id: r.workspace_id,
+            source_type: r.source_type,
         })
         .collect())
 }
@@ -320,6 +330,7 @@ pub async fn find_stuck_runs(
         id: String,
         task_status: Option<String>,
         workspace_id: Uuid,
+        source_type: Option<String>,
     }
 
     // The workspace filter is conditional, but every binding must be the
@@ -337,7 +348,7 @@ pub async fn find_stuck_runs(
     };
     let sql = format!(
         "\
-        SELECT r.id, r.task_status, r.workspace_id \
+        SELECT r.id, r.task_status, r.workspace_id, r.source_type \
         FROM agentic_runs r \
         WHERE r.source_type IN ('workflow', 'airway') \
           AND r.parent_run_id IS NULL \
@@ -371,6 +382,7 @@ pub async fn find_stuck_runs(
             run_id: r.id,
             task_status: r.task_status,
             workspace_id: r.workspace_id,
+            source_type: r.source_type,
         })
         .collect())
 }
@@ -412,6 +424,7 @@ pub async fn find_pending_global_runs(
         id: String,
         task_status: Option<String>,
         workspace_id: Uuid,
+        source_type: Option<String>,
     }
 
     let mut values: Vec<Value> = vec![(DRIVER_LEASE_TTL_SECS as i32).into()];
@@ -423,7 +436,7 @@ pub async fn find_pending_global_runs(
     };
     let sql = format!(
         "\
-        SELECT r.id, r.task_status, r.workspace_id \
+        SELECT r.id, r.task_status, r.workspace_id, r.source_type \
         FROM agentic_runs r \
         WHERE r.parent_run_id IS NULL \
           AND r.task_status IN ('running', 'delegating', 'waiting_on_child', 'waiting_on_children', 'needs_resume', 'shutdown') \
@@ -452,6 +465,7 @@ pub async fn find_pending_global_runs(
             run_id: r.id,
             task_status: r.task_status,
             workspace_id: r.workspace_id,
+            source_type: r.source_type,
         })
         .collect())
 }

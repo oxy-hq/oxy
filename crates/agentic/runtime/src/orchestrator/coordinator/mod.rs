@@ -375,6 +375,18 @@ pub(super) enum RetryAction {
     },
 }
 
+/// The `source_type` a compile run is stamped with.
+///
+/// Named because it is load-bearing outside this crate: the driver gate that
+/// stops a worker claiming compiles it cannot run matches on this exact string
+/// (`agentic_pipeline::recovery::may_drive`), as does the test that pins it.
+///
+/// This does NOT make a rename safe by itself — `&'static str` and a literal
+/// are the same type, so a site left spelled out still compiles and silently
+/// disarms the gate. What it buys is one definition on the production path
+/// instead of four.
+pub const COMPILE_SOURCE_TYPE: &str = "compile";
+
 /// Derive the `source_type` for a child run from its `TaskSpec`.
 ///
 /// Crate-visible so the worker can stamp `spec_kind` on lifecycle events
@@ -396,7 +408,7 @@ pub(crate) fn source_type_for_spec(spec: &TaskSpec) -> String {
         // Match agentic_airway::SOURCE_TYPE — inlined here to keep the
         // runtime free of a dep on the airway domain crate.
         TaskSpec::Airway { .. } => "airway".to_string(),
-        TaskSpec::Compile { .. } => "compile".to_string(),
+        TaskSpec::Compile { .. } => COMPILE_SOURCE_TYPE.to_string(),
         TaskSpec::Custom { kind, .. } => kind.clone(),
     }
 }

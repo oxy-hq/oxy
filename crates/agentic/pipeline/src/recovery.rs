@@ -187,6 +187,19 @@ pub async fn recover_stranded_runs(
     recovered
 }
 
+/// May this process drive a run of this `source_type`?
+///
+/// Public and separate so the test suite exercises the predicate the driver
+/// actually uses, rather than a copy of it. A test that re-implements the rule
+/// it is checking passes just as happily when the production call site stops
+/// applying it — which is the failure mode this gate has already had twice, in
+/// two different layers.
+///
+/// A `None` source_type is drivable: absent is not excluded.
+pub fn may_drive(source_type: Option<&str>, exclude_source_types: &[&str]) -> bool {
+    !source_type.is_some_and(|t| exclude_source_types.contains(&t))
+}
+
 /// §12 FU4c latency-worker entrypoint. Drives runs that already have a
 /// `queued scope_owned = false` queue entry — freshly-seeded Global runs
 /// (scheduler tick / `run-now`) — at claim-time, without the periodic
@@ -202,6 +215,21 @@ pub async fn recover_stranded_runs(
 /// worker passes `None` (single workspace); the cloud-mode worker passes
 /// the iteration's workspace id so it routes per-row to the right
 /// `PlatformContext`.
+///
+/// `exclude_source_types` — run kinds this process must not drive, matched on
+/// `source_type`. Checked HERE rather than by the caller because this is where
+/// the driver lease is taken. A caller-side filter covers only the selection
+/// the caller made; this function re-selects per workspace, and it is that
+/// second selection which feeds `recover_single_run` → `try_acquire_driver`.
+/// Filtering upstream therefore misses any workspace holding excluded work
+/// alongside work this process CAN drive — the common shape, since health,
+/// preagg and schedule ticks seed Global runs per workspace continuously.
+///
+/// Declining before the lease is what makes the handoff work: the run keeps
+/// `driver_id IS NULL`, so a node that can drive it selects it on its next
+/// tick. Declining AFTER the claim cannot hand off at all — only the
+/// lease-holder may claim the row, so it re-selects its own work while its
+/// heartbeat excludes everyone else. See [`may_drive`].
 #[allow(clippy::too_many_arguments)]
 pub async fn recover_pending_global_runs(
     db: DatabaseConnection,
@@ -214,6 +242,7 @@ pub async fn recover_pending_global_runs(
     router: Arc<dyn agentic_runtime::router::TaskRouter>,
     workspace_id: Option<uuid::Uuid>,
     custom_executors: Option<Arc<agentic_runtime::worker::CustomTaskRegistry>>,
+    exclude_source_types: &[&str],
 ) -> usize {
     let pending = match agentic_runtime::crud::find_pending_global_runs(&db, workspace_id).await {
         Ok(p) => p,
@@ -229,6 +258,16 @@ pub async fn recover_pending_global_runs(
             return 0;
         }
     };
+    let (pending, declined): (Vec<_>, Vec<_>) = pending
+        .into_iter()
+        .partition(|s| may_drive(s.source_type.as_deref(), exclude_source_types));
+    if !declined.is_empty() {
+        tracing::debug!(
+            target: "recovery",
+            count = declined.len(),
+            "latency loop: leaving runs this process cannot drive for a node that can"
+        );
+    }
     if pending.is_empty() {
         return 0;
     }
@@ -1016,4 +1055,36 @@ fn spawn_virtual_worker(
             heartbeat_cancel.cancel();
         }
     });
+}
+
+#[cfg(test)]
+mod may_drive_tests {
+    use super::may_drive;
+
+    /// The gate itself. Two earlier attempts at this failed by being applied
+    /// in the wrong place rather than by computing the wrong answer, so this
+    /// pins the answer and the call site keeps the placement honest.
+    #[test]
+    fn excluded_kinds_are_declined_and_everything_else_is_driven() {
+        assert!(!may_drive(Some("compile"), &["compile"]));
+        assert!(may_drive(Some("airway"), &["compile"]));
+        assert!(may_drive(Some("workflow"), &["compile"]));
+    }
+
+    /// An empty exclusion list is the `oxy serve` / `all` case: drive
+    /// everything. Getting this wrong would strand every run on the node that
+    /// CAN do the work.
+    #[test]
+    fn an_empty_exclusion_list_drives_everything() {
+        assert!(may_drive(Some("compile"), &[]));
+        assert!(may_drive(None, &[]));
+    }
+
+    /// Absent is not excluded. A run row with a NULL `source_type` must still
+    /// be driven — silently dropping it would strand it forever, since nothing
+    /// else selects a run whose driver never claims it.
+    #[test]
+    fn a_missing_source_type_is_drivable() {
+        assert!(may_drive(None, &["compile"]));
+    }
 }

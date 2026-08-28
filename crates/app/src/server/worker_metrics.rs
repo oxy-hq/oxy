@@ -192,16 +192,17 @@ impl ConcurrencyCaps {
 /// then abandoned (`cli/commands/worker.rs`). Since `release_queue_claims`
 /// runs AFTER `drain_background` rather than inside it, a parked scrape
 /// therefore DELAYS the release by up to that 5s — it cannot hang it. At the
-/// default recovery interval this 5s is the ENTIRE shutdown budget, not a
-/// slice of it: both DB-touching terms are gated on `interval < 30`. The 30s
-/// recovery drain because `tick_once` short-circuits at
-/// `interval >= REAPER_INTERVAL`; the 10s `release_queue_claims` because it
-/// early-returns unless `PROCESS_WORKER_ID` was minted, and the only thing
-/// that mints it in this process is the `DurableTransport` that same tick
-/// builds *after* the short-circuit. So: ~0s with no `--health-port`, 5s with
-/// it, 45s only below the default interval — budget for 45s, see the k8s
+/// default recovery interval this 5s used to be the ENTIRE shutdown budget,
+/// because both DB-touching terms were gated on `interval < 30`. **One of
+/// them no longer is.** The 30s recovery drain still is (`tick_once`
+/// short-circuits at `interval >= REAPER_INTERVAL`), but the 10s
+/// `release_queue_claims` is now reachable at any interval: the worker drives
+/// runs, so its driver loops build a `DurableTransport` — and mint
+/// `PROCESS_WORKER_ID` — the first time they pick one up, rather than only
+/// inside a sub-default reaper tick. So: ~10s with no `--health-port`, ~15s
+/// with it, 45s only below the default interval — budget for 45s, see the k8s
 /// recipe in `internal-docs/worker-fleet.md`. The cost of a parked scrape is
-/// a lost series set and the whole default-interval budget, not a stuck pod.
+/// a lost series set and 5s added to that budget, not a stuck pod.
 pub async fn metrics(State(state): State<MetricsState>) -> Response {
     let mut body = String::new();
 

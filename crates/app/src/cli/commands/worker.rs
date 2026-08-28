@@ -4,8 +4,17 @@
 //! and write to `agentic_task_queue`; one or more worker processes drain
 //! the queue via the durable transport's `SELECT ... FOR UPDATE SKIP
 //! LOCKED` claim path. The subcommand only adds the long-running process
-//! that owns the orchestrator + recovery loop — no HTTP surface beyond the
+//! that owns the orchestrator + driver loops — no HTTP surface beyond the
 //! optional k8s probe port.
+//!
+//! **The worker drives runs (Phase 1).** It runs the same loops `oxy serve`
+//! does — `server::router::recovery`'s latency worker and periodic
+//! stranded-run tick — so scheduler-seeded and orphaned work executes on a
+//! worker pod rather than on the node serving HTTP. It is an *additional*
+//! driver: the request-time direct-drive still executes interactive submits
+//! in-process on the node that accepted them, and removing that is Phase 2.
+//! What the worker needs from its deployment to be useful (workspace paths on
+//! disk, in particular) is in `internal-docs/worker-fleet.md`.
 //!
 //! See `internal-docs/worker-fleet.md` for full deployment guidance.
 //!
@@ -35,6 +44,11 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::cli::commands::serve;
+// Aliased: this module already has a `spawn_recovery` (the reaper pre-pass
+// loop below), and the two are genuinely different jobs — one reaps stale
+// queue rows, the other drives runs.
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
+use crate::server::router::recovery::{StartupPass, spawn_recovery as spawn_run_drivers};
 use crate::server::worker_health::{self, WorkerHealthState};
 use crate::server::worker_runtime::WorkerRuntime;
 
@@ -45,9 +59,18 @@ const DEFAULT_RECOVERY_INTERVAL_SECS: u64 = 30;
 // The shutdown budget documented in `internal-docs/worker-fleet.md` (the
 // `terminationGracePeriodSeconds` bullet's `reachable when` column, both
 // "graceful shutdown takes…" troubleshooting rows) and in `metrics()`'s doc
-// comment all rest on ONE property: at the default recovery interval,
-// `tick_once` short-circuits before touching the DB, so neither the 30s
-// recovery drain nor the 10s `release_queue_claims` is reachable.
+// comment rest on ONE property: at the default recovery interval, `tick_once`
+// short-circuits before touching the DB, so the 30s recovery drain is not
+// reachable.
+//
+// It used to cover the 10s `release_queue_claims` too, because the transport
+// `tick_once` built was the only thing in the process that minted
+// `PROCESS_WORKER_ID`. That stopped being true when the worker started driving
+// runs: the driver loops spawned in `run_worker` build a `DurableTransport` on
+// the first run they pick up, at any interval. So the release is now
+// unconditional and only the drain is gated — which is what the doc's table
+// says, and why this assert still matters for one of the two terms rather than
+// both.
 //
 // That property is `DEFAULT_RECOVERY_INTERVAL_SECS >= REAPER_INTERVAL`, and it
 // currently holds at exact equality (30 >= 30) between two constants in
@@ -139,12 +162,18 @@ pub struct WorkerArgs {
     #[clap(long, default_value_t = false)]
     pub skip_migrations: bool,
 
-    /// Override the recovery loop interval in seconds.
+    /// Override the reaper pre-pass interval in seconds.
     ///
-    /// Falls back to `OXY_WORKER_RECOVERY_INTERVAL_SECS`, then to 30s. The
-    /// loop drives `scope_owned = false` runs (scheduler-seeded, crash-
-    /// orphaned) on a periodic tick — same engine the in-process global
-    /// driver uses inside `oxy serve` today.
+    /// Falls back to `OXY_WORKER_RECOVERY_INTERVAL_SECS`, then to 30s. At the
+    /// default it is a no-op: the pass only fires below the background
+    /// reaper's own cadence, so this is an incident-triage knob
+    /// (`--recovery-interval-secs 5`), not the one that paces run driving.
+    ///
+    /// **Run driving is paced separately**, by
+    /// `OXY_INPROC_GLOBAL_WORKER_INTERVAL_SECS` (periodic stranded-run tick,
+    /// default 30s) and `OXY_LATENCY_WORKER_INTERVAL_MS` (freshly-seeded
+    /// Global runs, default 1s) — the same two knobs that pace the loops
+    /// inside `oxy serve`, because it is the same code.
     #[clap(long)]
     pub recovery_interval_secs: Option<u64>,
 
@@ -197,6 +226,19 @@ pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
     );
 
     require_database_url()?;
+
+    // NOTE: do not add a second `init_process_role_from_env()` here. This PR
+    // originally did, before main's #2822 added the `_with_default(Worker)`
+    // call above, and the merge kept both. The second one is not an idempotent
+    // no-op: `PROCESS_ROLE` is a `OnceLock` so the role stays `Worker`, but
+    // `set_process_owns_workspace_files` is an `AtomicBool::store`, and with
+    // `OXY_ROLE` unset the bare call recomputes `Role::All` and stores `true`
+    // over the `false` the first call just wrote. The process then answers
+    // `process_can_compile() == false` (reads the OnceLock) and
+    // `process_owns_workspace_files() == true` (reads the atomic) — the exact
+    // split-brain #2822 exists to remove, and worse than either end alone
+    // because the two disagree. It also logs two contradictory
+    // "role manifest initialised" lines.
 
     if args.skip_migrations || serve::skip_migrations_requested() {
         tracing::info!("worker: skipping migrations (--skip-migrations or OXY_SKIP_MIGRATIONS)");
@@ -276,15 +318,66 @@ pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
     // Router is connected once `WorkerRuntime::start` returns; record it.
     router_connected.store(true, std::sync::atomic::Ordering::Relaxed);
 
-    // Recovery loop drives stranded / pending Global runs back to
-    // completion via the same PostgresTaskRouter the HTTP server uses, but
-    // without HTTP-only concerns (cleanup banners, SSE notifiers).
-    //
-    // TODO: first cut only runs the reaper pre-pass. Cloud-mode
-    // workspace enumeration in the worker process isn't wired up yet —
-    // see internal-docs/worker-fleet.md for the punted scope.
+    // Reaper pre-pass loop. Narrow by design — it only runs `run_reaper` at a
+    // faster-than-default cadence, and short-circuits entirely at the default
+    // interval (see `tick_once`). The actual run-driving is `spawn_run_drivers`
+    // just below; this loop stays separate because `/readyz` and the shutdown
+    // drain are keyed on it.
     recovery_alive.store(true, std::sync::atomic::Ordering::Relaxed);
     let recovery_handle = spawn_recovery(&runtime, shutdown.clone(), recovery_interval);
+
+    // Phase 1 of moving execution off the app node: the worker now runs the
+    // same per-workspace driving loops `oxy serve` does — the latency worker
+    // (`queued scope_owned = false` rows, sub-second) and the periodic
+    // stranded-run tick — instead of relying on an HTTP node to drive
+    // everything. It is an ADDITIONAL driver, not a replacement: the
+    // request-time direct-drive (`spawn_airway_run_drive`) is untouched and
+    // still executes interactive submits on the node that accepted them.
+    // Dropping it is Phase 2, and that ordering is not stylistic — the
+    // previous attempt inverted it (made runs Global, removed direct-drive,
+    // with nothing draining the queue) and had to be reverted in 54355b198.
+    //
+    // `StartupPass::Skip` is the one thing that is NOT a copy of the serve
+    // path, and it is load-bearing; see `StartupPass` for the full argument.
+    // Short version: the one-shot pass selects on the driver lease alone, and
+    // direct-drive never takes that lease, so a worker restart would re-drive
+    // whatever the app node happens to be running.
+    //
+    // `ServeMode::Cloud` unconditionally: a worker fleet only exists in a
+    // deployment that has a `workspaces` table to enumerate. Local development
+    // runs the production path (`oxy serve --enterprise`), which is Cloud mode
+    // too, so this is also what a local split-fleet box wants.
+    //
+    // Turn it off with `OXY_INPROC_GLOBAL_WORKER=0` — the same switch that
+    // governs the loops inside `oxy serve`, and the kill switch if a fleet
+    // needs to be put back to reaper-only behaviour without a rollback.
+    spawn_run_drivers(
+        runtime.agentic_state(shutdown.clone()),
+        oxy_app_core::serve_mode::ServeMode::Cloud,
+        // No Layer-1 preagg cache on this pod. `#3013` threaded the serve
+        // node's cache into background work so queued runs resolve rollups on
+        // the same tier their request-driven twins do; a standalone worker
+        // builds no `AppState`, so it has none to pass.
+        //
+        // Correct but NOT free, and worth naming rather than discovering: a
+        // run driven here compiles to warehouse SQL where the same run on an
+        // `oxy serve` node would have hit a pre-aggregation. That is a
+        // performance difference on exactly the work this change relocates.
+        // Giving the worker its own cache is a follow-up, not a blocker.
+        //
+        // Not "identical either way", which is what this said first and is
+        // stronger than the code supports: `RollupFreshness::ServeStale` is the
+        // default posture, so a preagg-backed run on `oxy serve` can legitimately
+        // answer from a rollup that is BEHIND the warehouse. The worker's
+        // uncached answer is the fresher one. Same query, same semantics,
+        // possibly different staleness — which is fine, and worth stating
+        // accurately because "identical" is what someone will quote later.
+        PreaggCacheCtx {
+            cache: None,
+            renewal_threshold_secs: None,
+        },
+        StartupPass::Skip,
+    );
 
     // Optional health probe + Prometheus metrics server (off unless
     // --health-port / OXY_WORKER_HEALTH_PORT is set). Metrics share the
@@ -449,12 +542,13 @@ const RELEASE_CLAIMS_TIMEOUT: Duration = Duration::from_secs(10);
 /// rolling deploy evicts exactly this process, so a bounced task must not
 /// exhaust `max_claims` and dead-letter despite never failing.
 ///
-/// **This is forward-looking wiring today.** The standalone `oxy worker`
-/// claims nothing yet — its `tick_once` only runs the reaper, and the file's
-/// TODO above still has it relying on the HTTP node to drive runs — so in the
-/// current shape the drain returns `Ok(0)` every time. It is here so the
-/// release exists the moment the worker starts claiming, rather than being an
-/// easily forgotten follow-up on the eviction path.
+/// **Live as of the run-driving change.** This was forward-looking wiring
+/// while `oxy worker` claimed nothing; now the driver loops spawned in
+/// [`run_worker`] build a `DurableTransport` and claim on the first run they
+/// pick up, so the mark + drain below has real rows to move on every eviction.
+/// It also no longer depends on the recovery interval: a claim can exist at any
+/// interval, so the `reachable when` cell for this row in
+/// `internal-docs/worker-fleet.md` is `always`.
 ///
 /// Best-effort and bounded: an error or a timeout degrades to the pre-existing
 /// behaviour (the reaper reclaims the claim once its visibility timeout
@@ -546,12 +640,15 @@ async fn release_queue_claims(db: &sea_orm::DatabaseConnection) {
     }
 }
 
-/// Periodic recovery tick: drive stranded / pending Global runs back to
-/// completion. Mirrors the in-process global driver's contract inside
-/// `oxy serve`, scoped to local-mode workspace resolution for the first
-/// cut. The pure-async entry point already CAS-protects against double-
-/// drive across replicas via the driver-lease table, so multiple worker
-/// processes are safe to run side-by-side.
+/// Periodic reaper tick. **Not** the run driver — that is
+/// `spawn_run_drivers` in [`run_worker`], which spawns
+/// `server::router::recovery`'s loops. This one exists only to run
+/// `run_reaper` faster than the background reaper's own cadence when an
+/// operator asks for it, and no-ops otherwise; see [`tick_once`].
+///
+/// Kept as a separate loop rather than folded into the driver because
+/// `/readyz` (`recovery_alive`) and the bounded shutdown drain
+/// ([`RECOVERY_DRAIN_TIMEOUT`]) are both keyed on its join handle.
 #[tracing::instrument(skip_all, fields(interval_secs = interval.as_secs()))]
 async fn run_recovery_loop(
     db: sea_orm::DatabaseConnection,
@@ -588,22 +685,23 @@ async fn run_recovery_loop(
     }
 }
 
-/// One recovery pass: reaper pre-pass (conditional) + future stranded-run
-/// sweep. We deliberately do not build a PlatformContext here yet — the
-/// standalone worker first cut relies on the HTTP node to actually drive
-/// runs. The reaper alone makes the queue resilient to crashes; the
-/// stranded-run sweep is what kicks off background scheduler jobs once we
-/// wire up cloud-mode workspace iteration.
+/// One reaper pass, conditionally.
 ///
-/// The pre-pass is skipped when the recovery interval is >= the background
+/// The pass is skipped when the recovery interval is >= the background
 /// reaper's own interval — running both at the same cadence is pure churn
 /// against `agentic_task_queue`. Short `--recovery-interval-secs` still gets
-/// the benefit (e.g. `--recovery-interval-secs 5` for incident triage).
+/// the benefit (e.g. `--recovery-interval-secs 5` for incident triage). At the
+/// default interval this function therefore returns before touching the DB,
+/// which is the property the shutdown budget documented at the top of this
+/// file used to rest on for BOTH its terms.
 ///
-/// TODO: integrate `agentic_pipeline::recovery::recover_stranded_runs` with
-/// per-workspace PlatformContext construction so this loop actually drives
-/// runs from the worker process. For now the reaper pre-pass is the active
-/// work and recovery is best-effort.
+/// It now rests on it for one. Driving runs means claiming queue rows, so
+/// `release_queue_claims` has real work to do on every shutdown regardless of
+/// this interval — the `reachable when` column in
+/// `internal-docs/worker-fleet.md`'s `terminationGracePeriodSeconds` table
+/// says `always` for that row now. The recovery-drain term is still gated
+/// here, because this early return is still "return from `tick_once`" rather
+/// than "skip the reaper pre-pass".
 async fn tick_once(
     db: &sea_orm::DatabaseConnection,
     router: &Arc<dyn agentic_runtime::router::TaskRouter>,

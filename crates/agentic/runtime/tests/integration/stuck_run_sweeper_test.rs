@@ -548,6 +548,14 @@ async fn seed_pending_global(db: &DatabaseConnection, source_type: &str) -> Stri
             question: "Q".into(),
             extra: None,
         },
+        t if t == agentic_runtime::coordinator::COMPILE_SOURCE_TYPE => TaskSpec::Compile {
+            workspace_id: uuid::Uuid::nil(),
+            git_sha: None,
+            branch: None,
+            promote: false,
+            kind: None,
+            owner_user_id: None,
+        },
         other => panic!("unsupported source_type {other:?}"),
     };
     crud::enqueue_task(
@@ -773,4 +781,236 @@ async fn clear_run_error_nulls_error_but_preserves_answer_and_driver_lease() {
         Some("needs_resume"),
         "clear_run_error must not touch task_status either"
     );
+}
+
+// ── Which selections a WORKER process may safely run ────────────────────────
+//
+// `oxy worker` now runs the same driving loops `oxy serve` does
+// (`crates/app/src/server/router/recovery.rs`), which makes it a second driver
+// alongside the request-time direct-drive that still executes interactive
+// submits on the node that accepted them. That is only safe because the two
+// loops the worker runs carry a QUEUE predicate on top of the driver lease:
+//
+//   - the periodic tick  → `find_stuck_runs`          (excludes `claimed`, and
+//                                                      `queued scope_owned`)
+//   - the latency worker → `find_pending_global_runs` (requires `queued` +
+//                                                      `scope_owned = false`)
+//
+// The one-shot startup pass does NOT. `get_resumable_root_runs` gates on the
+// driver lease alone, and `spawn_airway_run_drive` — the direct-drive — never
+// calls `try_acquire_driver`; the lease is taken only inside
+// `recover_single_run`. So a run being direct-driven right now has
+// `driver_id IS NULL` and the one-shot pass selects it. In `oxy serve` that is
+// fine (the pass runs once, at boot, and those coordinators died with the
+// previous process); from a worker it would re-drive live work, which is why
+// `oxy worker` passes `StartupPass::Skip`.
+//
+// These two tests pin that asymmetry, in both directions. If someone teaches
+// direct-drive to take the lease, the `get_resumable_root_runs` assertions
+// below start failing — and that is the signal that `StartupPass::Skip` can be
+// revisited, not that the assertion is wrong.
+
+/// Shape of a run the app node is direct-driving RIGHT NOW: root queue row
+/// `claimed` by a live worker under `TaskScope::Scoped`, and no driver lease.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_live_direct_driven_run_is_excluded_by_the_queue_gated_selections_only() {
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_id = seed_run(&db, "airway").await;
+    // Aged past the stranded grace window, so `find_stuck_runs` excluding it
+    // proves the QUEUE predicate did the work rather than the grace check.
+    age_run(&db, &run_id, 120).await;
+
+    crud::enqueue_task(
+        &db,
+        &run_id,
+        &run_id,
+        None,
+        &TaskSpec::Airway {
+            pipeline_ref: "dummy.airway.yml".into(),
+            variables: None,
+            resources: Vec::new(),
+            backfill_from: None,
+            backfill_to: None,
+            contract_policy: None,
+            environment: None,
+        },
+        None,
+        // Scoped here because this fixture models an INTERACTIVE submit, which
+        // is co-located with a direct-drive.
+        //
+        // Do NOT read this as "every airway submit is Scoped" — an earlier
+        // version of this comment said exactly that and it is false:
+        // `agentic_wiring/project_ctx/function_context.rs` (the custom-app
+        // `airway_run` function) and `pipeline/src/retry.rs` both submit
+        // `TaskScope::Global`. The invariant that actually holds is that scope
+        // decides who drives, and the two never overlap.
+        crud::TaskScope::Scoped,
+    )
+    .await
+    .unwrap();
+    // The direct-drive's in-process Worker claims the root. `_under_root`, not
+    // the global `claim_task`, because `spawn_airway_run_drive` builds a
+    // run-scoped `DurableTransport` — and the global claim path skips
+    // `scope_owned = true` rows anyway, so using it here would leave the row
+    // `queued` and quietly turn this into a duplicate of the test below.
+    crud::claim_task_under_root(&db, "the-app-node", &run_id)
+        .await
+        .unwrap()
+        .expect("the scoped claim must succeed");
+
+    let stuck = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(
+        !stuck.iter().any(|r| r.run_id == run_id),
+        "the periodic tick must not select a run whose root queue row is \
+         claimed — that is the anti-poaching predicate the worker relies on"
+    );
+
+    let pending = crud::find_pending_global_runs(&db, Some(uuid::Uuid::nil()))
+        .await
+        .unwrap();
+    assert!(
+        !pending.iter().any(|r| r.run_id == run_id),
+        "the latency worker must not select a scope_owned row"
+    );
+
+    // The finding that motivates `StartupPass::Skip`: the lease is NOT what
+    // excludes this run, because direct-drive never took one.
+    let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
+    assert!(
+        run.driver_id.is_none(),
+        "direct-drive does not acquire the driver lease; if this ever becomes \
+         Some, the whole reason oxy worker skips the one-shot startup pass has \
+         changed — see StartupPass in server/router/recovery.rs"
+    );
+    let resumable = crud::get_resumable_root_runs(&db, Some(uuid::Uuid::nil()))
+        .await
+        .unwrap();
+    assert!(
+        resumable.iter().any(|r| r.id == run_id),
+        "get_resumable_root_runs has no queue predicate, so it DOES select a \
+         live direct-driven run. This is why a worker restart must not run the \
+         one-shot startup pass"
+    );
+}
+
+/// Same asymmetry in the enqueue→claim window, where the root row is still
+/// `queued`. `find_stuck_runs` excludes it via `scope_owned = true` rather
+/// than via `claimed`, so this covers the other half of that predicate.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_just_submitted_scoped_run_is_excluded_by_the_queue_gated_selections_only() {
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_id = seed_run(&db, "airway").await;
+    age_run(&db, &run_id, 120).await;
+
+    crud::enqueue_task(
+        &db,
+        &run_id,
+        &run_id,
+        None,
+        &TaskSpec::Airway {
+            pipeline_ref: "dummy.airway.yml".into(),
+            variables: None,
+            resources: Vec::new(),
+            backfill_from: None,
+            backfill_to: None,
+            contract_policy: None,
+            environment: None,
+        },
+        None,
+        crud::TaskScope::Scoped,
+    )
+    .await
+    .unwrap();
+    // Deliberately NOT claimed: the coordinator is about to claim it.
+
+    let stuck = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(
+        !stuck.iter().any(|r| r.run_id == run_id),
+        "a `queued scope_owned = true` root belongs to a coordinator that is \
+         about to claim it; selecting it would race the submit"
+    );
+
+    let pending = crud::find_pending_global_runs(&db, Some(uuid::Uuid::nil()))
+        .await
+        .unwrap();
+    assert!(
+        !pending.iter().any(|r| r.run_id == run_id),
+        "the latency worker is the Global path; a scoped row is not its work"
+    );
+
+    let resumable = crud::get_resumable_root_runs(&db, Some(uuid::Uuid::nil()))
+        .await
+        .unwrap();
+    assert!(
+        resumable.iter().any(|r| r.id == run_id),
+        "unleased, so the one-shot pass still selects it — the same hazard as \
+         the claimed case, one moment earlier"
+    );
+}
+
+/// The per-workspace re-select carries `source_type`, and returns compiles
+/// alongside everything else.
+///
+/// This is the fact two successive fixes to the compile gate got wrong, so it
+/// is worth pinning as a fact rather than as a behaviour.
+///
+/// `tick_cloud` runs an unfiltered probe to discover which workspaces have
+/// work, then `drive_pending` re-selects **per workspace** — and it is that
+/// second selection which feeds `recover_single_run` → `try_acquire_driver`.
+/// A filter applied to the probe therefore protects nothing: a workspace with
+/// a compile AND any other pending Global run keeps its place in the visit set
+/// on the strength of the other run, and the re-select hands back both.
+///
+/// So the exclusion has to be applied to THIS result, downstream of here. The
+/// assertions below are what makes a caller-side-only filter fail loudly.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_per_workspace_reselect_returns_compiles_next_to_other_work() {
+    let Some(db) = test_db().await else { return };
+
+    // The const, not the literal: renaming the source_type must break this
+    // test rather than silently disarming the gate that matches on it.
+    let compile = seed_pending_global(&db, agentic_runtime::coordinator::COMPILE_SOURCE_TYPE).await;
+    let airway = seed_pending_global(&db, "airway").await;
+
+    // Nil workspace: what `seed_pending_global` inserts, and what the latency
+    // worker passes for the local/serve case.
+    let pending = crud::find_pending_global_runs(&db, Some(uuid::Uuid::nil()))
+        .await
+        .expect("re-select must succeed");
+
+    let ids: Vec<&str> = pending.iter().map(|r| r.run_id.as_str()).collect();
+    assert!(
+        ids.contains(&compile.as_str()),
+        "the per-workspace re-select returns compiles — filtering only the \
+         discovery probe cannot stop the worker taking this run's lease"
+    );
+    assert!(
+        ids.contains(&airway.as_str()),
+        "and the other work alongside it"
+    );
+
+    // `source_type` must survive the query, or the exclusion downstream has
+    // nothing to match on and silently excludes nothing.
+    let compile_row = pending
+        .iter()
+        .find(|r| r.run_id == compile)
+        .expect("seeded compile must be selected");
+    assert_eq!(
+        compile_row.source_type.as_deref(),
+        Some(agentic_runtime::coordinator::COMPILE_SOURCE_TYPE),
+        "StuckRun must carry source_type; without it the gate is a no-op"
+    );
+
+    // NOTE on scope. This test pins the two FACTS the gate depends on — that
+    // the per-workspace re-select returns compiles, and that `source_type`
+    // survives the query. It does not exercise the exclusion itself:
+    // `agentic-runtime` does not depend on `agentic-pipeline`, so
+    // `may_drive` is not reachable from here. That predicate has its own unit
+    // tests beside it. Re-implementing it here would have looked like coverage
+    // while passing just as happily if the production call site stopped
+    // applying it.
 }

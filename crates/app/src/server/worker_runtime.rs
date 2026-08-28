@@ -106,4 +106,42 @@ impl WorkerRuntime {
             background_cancel,
         })
     }
+
+    /// Build the `AgenticState` the run-driving loops in
+    /// [`crate::server::router::recovery`] take, reusing the DB handle and
+    /// router this runtime already owns.
+    ///
+    /// This is `new_agentic_state`'s tail, and deliberately only its tail. The
+    /// two halves that are NOT reproduced here are the two that would be wrong
+    /// in a worker process:
+    ///
+    /// - **Router + `background::start`** — [`Self::start`] already did both.
+    ///   Repeating them would give the process a second LISTEN connection
+    ///   (which the pool-sizing budget in `internal-docs/worker-fleet.md`
+    ///   accounts as `P+1`, not `P+2`) and a second reaper.
+    /// - **`cleanup_stale_runs`** — it flips every non-terminal run to
+    ///   `needs_resume` on the premise that the process starting up is the one
+    ///   that died. A worker restart carries no such premise: the IDE node may
+    ///   be mid-run, and stamping its runs `needs_resume` would put a red
+    ///   banner over live work. Same asymmetry that makes the worker pass
+    ///   [`StartupPass::Skip`](crate::server::router::recovery::StartupPass).
+    ///
+    /// `shutdown` must be the same umbrella token passed to [`Self::start`], so
+    /// the driver loops exit with the router and the reaper rather than
+    /// outliving them.
+    pub fn agentic_state(&self, shutdown: CancellationToken) -> Arc<agentic_http::AgenticState> {
+        let thread_owner: Arc<dyn agentic_pipeline::platform::ThreadOwnerLookup> = Arc::new(
+            crate::agentic_wiring::OxyThreadOwnerLookup::new(self.db.clone()),
+        );
+        Arc::new(
+            agentic_http::AgenticState::new(shutdown, self.db.clone(), thread_owner)
+                .with_builder_test_runner(Arc::new(
+                    crate::server::builder_test_runner::OxyTestRunner,
+                ))
+                .with_builder_app_runner(Arc::new(
+                    crate::agentic_wiring::builder_bridges::OxyBuilderAppRunner,
+                ))
+                .with_router(self.router.clone()),
+        )
+    }
 }

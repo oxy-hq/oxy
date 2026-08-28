@@ -31,7 +31,7 @@ use super::protected::{
     build_local_protected_routes, build_protected_routes,
 };
 use super::public::build_public_routes;
-use super::recovery::{spawn_recovery, spawn_shutdown_hook};
+use super::recovery::{StartupPass, spawn_recovery, spawn_shutdown_hook};
 use super::{AppState, build_cors_layer};
 
 /// Builds the main API router (mounted under `/api`) and, alongside it, the
@@ -112,9 +112,14 @@ pub async fn api_router(
              fleet must drive the agentic_task_queue."
         );
     } else {
-        // The in-process driver is what actually drains the queue (the standalone
-        // `oxy worker` builds no platform context yet), so this is where queued
-        // work gets its rollup short-circuit. Same `Arc` the request path uses.
+        // `StartupPass::Run`: this process hosts the request-time coordinators
+        // (and their direct-drives), so anything left resumable in the DB at
+        // boot was orphaned by the process this one replaces. `oxy worker`
+        // cannot make that claim and passes `Skip` — see [`StartupPass`].
+        //
+        // The preagg cache is the same `Arc` the request path uses, so queued
+        // work — scheduled monitor scans, automations, agentic runs — resolves
+        // rollups on the tier its request-driven twin does.
         spawn_recovery(
             agentic_state.clone(),
             mode,
@@ -122,6 +127,7 @@ pub async fn api_router(
                 cache: preagg_cache.clone(),
                 renewal_threshold_secs: preagg_renewal_threshold_secs,
             },
+            StartupPass::Run,
         );
     }
     spawn_shutdown_hook(agentic_state.clone());
