@@ -128,7 +128,7 @@ jobs:
               repository(owner:$owner, name:$name) {
                 pullRequest(number:$pr) {
                   comments(last:100) {
-                    nodes { id createdAt isMinimized author { login } }
+                    nodes { id createdAt isMinimized author { login __typename } }
                   }
                 }
               }
@@ -136,12 +136,24 @@ jobs:
 
           # Bot-authored, not already collapsed, and older than this run — so the
           # comments this run just posted survive and only their predecessors fold.
+          #
+          # Match the login WITHOUT the `[bot]` suffix. That suffix is a REST-API
+          # convention; GraphQL's `Bot` type returns the bare `claude`, so a
+          # `^claude\[bot\]$` regex here matches nothing and the whole step
+          # no-ops while still exiting green. `__typename` carries the "is a bot"
+          # half of the test, so the login only has to name WHICH bot; the
+          # optional group keeps it correct if GitHub ever spells it either way.
           ids=$(jq -r --arg since "$SINCE" '
             .data.repository.pullRequest.comments.nodes[]
             | select(.isMinimized == false)
             | select(.createdAt < $since)
-            | select(.author.login | test("^(claude|github-actions)\\[bot\\]$"))
+            | select(.author.__typename == "Bot")
+            | select(.author.login | test("^(claude|github-actions)(\\[bot\\])?$"))
             | .id' comments.json)
+
+          # Say what was found. The bug above was invisible precisely because an
+          # empty match list is indistinguishable from "nothing to collapse".
+          echo "Found $(printf '%s' "$ids" | grep -c . || true) superseded comment(s) to minimize."
 
           for id in $ids; do
             echo "Minimizing $id"
