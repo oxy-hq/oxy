@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.132] - 2026-08-28
+
+### 🐛 Bug Fixes
+
+- Ctx.tx and ctx.oltp errors said "db error" and nothing else (#3017)
+- A custom app opens in its own tab, and can actually be driven there (#3020)
+
+### 💼 Other
+
+- *(deps)* Bump rui314/setup-mold from 9c9c13bf4c3f1adef0cc596abc155580bcb04444 to 7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 (#3009)
+- *(deps)* Bump astral-sh/setup-uv from 9.0.0 to 10.0.1 (#3008)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 8 updates (#3011)
+- *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 11 updates (#3010)
+
+### 🚜 Refactor
+
+- Make the working copy a capability, and absence loud (#2822)
+
 ## [0.5.131] - 2026-08-26
 
 ### 🚀 Features
@@ -30,6 +48,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - *(airway)* Bump to 0.1.35 — keyless children and employee propagation (#3000)
+- Release 0.5.131 (#2997)
 
 ## [0.5.130] - 2026-08-24
 
