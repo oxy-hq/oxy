@@ -44,6 +44,12 @@ jobs:
       # `audit::` also matches every comment discussing auditing.
       - uses: ./.github/actions/claude-search-tools
 
+      # Everything the bot posts from here on belongs to *this* review (the
+      # progress tracker included); the collapse step below only touches what
+      # predates this mark.
+      - id: mark
+        run: echo "since=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -75,3 +81,49 @@ jobs:
 
           claude_args: |
             --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(ast-grep:*),Bash(jq:*)"
+
+      # Keep one live review comment per PR. Every push re-runs the review, so
+      # without this the PR accumulates a stack of stale verdicts and readers
+      # can't tell which one still applies. Minimize (not delete) so the history
+      # stays readable behind GitHub's "show resolved" fold.
+      - name: Collapse superseded Claude comments
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          SINCE: ${{ steps.mark.outputs.since }}
+        run: |
+          set -euo pipefail
+          owner="${REPO%/*}"
+          name="${REPO#*/}"
+
+          gh api graphql -f query='
+            query($owner:String!, $name:String!, $pr:Int!) {
+              repository(owner:$owner, name:$name) {
+                pullRequest(number:$pr) {
+                  comments(last:100) {
+                    nodes { id createdAt isMinimized author { login } }
+                  }
+                }
+              }
+            }' -f owner="$owner" -f name="$name" -F pr="$PR" > comments.json
+
+          # Bot-authored, not already collapsed, and older than this run — so the
+          # comments this run just posted survive and only their predecessors fold.
+          ids=$(jq -r --arg since "$SINCE" '
+            .data.repository.pullRequest.comments.nodes[]
+            | select(.isMinimized == false)
+            | select(.createdAt < $since)
+            | select(.author.login | test("^(claude|github-actions)\\[bot\\]$"))
+            | .id' comments.json)
+
+          for id in $ids; do
+            echo "Minimizing $id"
+            gh api graphql -f query='
+              mutation($id:ID!) {
+                minimizeComment(input:{subjectId:$id, classifier:OUTDATED}) {
+                  minimizedComment { isMinimized }
+                }
+              }' -F id="$id"
+          done
