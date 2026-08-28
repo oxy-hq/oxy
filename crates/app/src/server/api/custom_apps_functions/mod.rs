@@ -677,6 +677,10 @@ pub async fn handle_function_request(
     body: axum::body::Bytes,
     refresh: bool,
     query_exec: std::sync::Arc<dyn seam::FunctionQueryExecutor>,
+    // Layer-1 preagg cache + renewal threshold, injected at the serve router.
+    // Default (both `None`) means no rollup short-circuit, so `ctx.semantic`
+    // compiles to warehouse SQL.
+    preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
 ) -> Response {
     // §11.10 — POST-only, before any gate/runtime work.
     if method != Method::POST {
@@ -914,6 +918,7 @@ pub async fn handle_function_request(
         // Route path: cancellation is the `cancel_requested_at` DB flag (set on
         // client-gone / dashboard cancel), so a never-fired token suffices here.
         cancel: tokio_util::sync::CancellationToken::new(),
+        preagg,
     })
     .await;
 
@@ -1024,6 +1029,9 @@ pub(crate) async fn run_scheduled_function(
     cancel: tokio_util::sync::CancellationToken,
     events: Option<RunEventSink>,
     query_exec: std::sync::Arc<dyn seam::FunctionQueryExecutor>,
+    // Layer-1 preagg cache from the node draining the queue, so a scheduled
+    // `ctx.semantic` resolves rollups like its HTTP-invoked twin.
+    preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
 ) -> Result<String, String> {
     let app = entity::apps::Entity::find_by_id(app_id)
         .one(db)
@@ -1139,6 +1147,7 @@ pub(crate) async fn run_scheduled_function(
         },
         logs: logs.clone(),
         cancel,
+        preagg,
     })
     .await;
 
@@ -1266,6 +1275,9 @@ struct RunArgs<'a> {
     /// run task's token so a fleet/operator cancel stops the isolate; the route
     /// path passes a never-fired token (its cancellation is the DB flag alone).
     cancel: tokio_util::sync::CancellationToken,
+    /// Layer-1 preagg cache + renewal threshold for `ctx.semantic`. Default on
+    /// the scheduled path (see `run_scheduled_function`).
+    preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
 }
 
 /// Build the project context + host, spawn the cancel watchdog, and drive
@@ -1316,6 +1328,7 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         args.user_id,
         args.app.name.clone(),
         args.caps.clone(),
+        args.preagg.clone(),
     ));
 
     // Everything the isolate needs before it can start, resolved together.

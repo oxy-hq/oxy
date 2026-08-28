@@ -264,11 +264,12 @@ pub async fn post_explain(
     // re-parses the layer from `scan_path` once per run it performs (in the
     // async `snapshot_for_blocking`, not inside the blocking task).
     let source = resolve_scan(&workspace_manager).await?;
+    let config_manager = workspace_manager.config_manager.clone();
     let runner = OxyMetricTreeRunner::new(workspace_manager, user.id, role)
         .with_scan_path(source.scan_path.clone())
         .with_preagg(
-            preagg_ctx.cache,
-            preagg_ctx.renewal_threshold_secs.unwrap_or(120),
+            preagg_ctx.cache.clone(),
+            preagg_ctx.renewal_threshold_secs_or(&config_manager),
         );
     let config = explain_config(req.config);
 
@@ -432,8 +433,14 @@ pub async fn post_opportunity(
     let databases = workspace_databases(&workspace_manager);
     let engine = build_engine(layer.clone(), &databases)?;
     let handle = tokio::runtime::Handle::current();
-    let preagg_cache = preagg_ctx.cache;
-    let preagg_renewal_threshold_secs = preagg_ctx.renewal_threshold_secs.unwrap_or(120);
+    let preagg = crate::agentic_wiring::metric_tree_runner::RunnerPreagg {
+        cache: preagg_ctx.cache.clone(),
+        renewal_threshold_secs: preagg_ctx
+            .renewal_threshold_secs_or(&workspace_manager.config_manager),
+        // A read surface: an opportunity sizing is a display of the data, so a
+        // rollup a cycle behind beats a warehouse scan.
+        freshness: crate::server::preagg_context::RollupFreshness::ServeStale,
+    };
 
     let result = tokio::task::spawn_blocking(move || {
         let executor = build_query_executor(
@@ -444,8 +451,7 @@ pub async fn post_opportunity(
             user.id,
             role,
             handle,
-            preagg_cache,
-            preagg_renewal_threshold_secs,
+            preagg,
         );
         airlayer::engine::metric_tree_ops::opportunity(
             &tree,
@@ -571,8 +577,14 @@ pub async fn post_opportunity_drill(
     let shared: airlayer::engine::metric_tree_ops::SharedLayer =
         std::sync::Arc::new(std::sync::RwLock::new(clean_layer));
     let handle = tokio::runtime::Handle::current();
-    let preagg_cache = preagg_ctx.cache;
-    let preagg_renewal_threshold_secs = preagg_ctx.renewal_threshold_secs.unwrap_or(120);
+    let preagg = crate::agentic_wiring::metric_tree_runner::RunnerPreagg {
+        cache: preagg_ctx.cache.clone(),
+        renewal_threshold_secs: preagg_ctx
+            .renewal_threshold_secs_or(&workspace_manager.config_manager),
+        // A read surface: an opportunity sizing is a display of the data, so a
+        // rollup a cycle behind beats a warehouse scan.
+        freshness: crate::server::preagg_context::RollupFreshness::ServeStale,
+    };
     let default_config = airlayer::engine::metric_tree_ops::DrillConfig::default();
     let config = airlayer::engine::metric_tree_ops::DrillConfig {
         max_depth: req.max_depth.unwrap_or(default_config.max_depth),
@@ -590,8 +602,7 @@ pub async fn post_opportunity_drill(
             user.id,
             role,
             handle,
-            preagg_cache,
-            preagg_renewal_threshold_secs,
+            preagg,
         );
         airlayer::engine::metric_tree_ops::opportunity_drill(
             &tree,
@@ -693,11 +704,12 @@ pub async fn post_distribution(
 
     // `source` owns the materialised tempdir; keep it alive for the whole run.
     let source = resolve_scan(&workspace_manager).await?;
+    let config_manager = workspace_manager.config_manager.clone();
     let runner = OxyMetricTreeRunner::new(workspace_manager, user.id, role)
         .with_scan_path(source.scan_path.clone())
         .with_preagg(
-            preagg_ctx.cache,
-            preagg_ctx.renewal_threshold_secs.unwrap_or(120),
+            preagg_ctx.cache.clone(),
+            preagg_ctx.renewal_threshold_secs_or(&config_manager),
         );
     let config = ExplainConfig::default();
 

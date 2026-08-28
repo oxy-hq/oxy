@@ -76,8 +76,11 @@ async fn run_once(
                 if let Err(e) = ws.send(Message::text(ack)).await {
                     tracing::warn!("slack socket mode: ack failed: {e}");
                 }
+                // Socket mode runs outside the Axum stack, so there is no
+                // AppState to take the node's rollup cache from; agent runs
+                // started here compile their semantic queries to warehouse SQL.
                 tokio::spawn(async move {
-                    if let Err(e) = dispatch_event(payload).await {
+                    if let Err(e) = dispatch_event(payload, Default::default()).await {
                         tracing::error!("slack socket mode event dispatch: {e}");
                     }
                 });
@@ -91,7 +94,7 @@ async fn run_once(
                     tracing::warn!("slack socket mode: ack failed: {e}");
                 }
                 tokio::spawn(async move {
-                    dispatch_interactivity(payload).await;
+                    dispatch_interactivity(payload, Default::default()).await;
                 });
             }
             SocketEvent::SlashCommands { envelope_id, .. } => {

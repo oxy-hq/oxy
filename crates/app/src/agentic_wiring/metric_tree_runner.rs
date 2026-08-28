@@ -33,6 +33,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::agentic_wiring::project_ctx::build_connector_for_db;
+use crate::server::preagg_context::RollupFreshness;
 use oxy::config::{ReadOnly, WorkingCopy};
 
 /// Adapter that exposes Oxy's semantic-layer + connector pool as a
@@ -41,12 +42,51 @@ use oxy::config::{ReadOnly, WorkingCopy};
 /// Holds the smallest set of fields needed to (a) load the on-disk semantic
 /// layer and (b) execute SQL through `run_via_agentic_connector`. Built once
 /// per pipeline run from [`crate::agentic_wiring::OxyProjectContext`].
+/// The rollup short-circuit a runner carries: the shared Layer-1 cache, the
+/// renewal threshold its freshness check runs against, and what to do with a
+/// rollup that check calls stale.
+///
+/// One struct rather than three arguments because they are only ever correct
+/// together — a call site that attached the cache and forgot the threshold got
+/// 120s while the rebuild cycle honoured the workspace's own setting, and one
+/// that forgot the freshness posture got a read surface's tolerance on a path
+/// that writes anomalies to the Insights Inbox.
+///
+/// `Default` is the no-rollup posture: no cache, so every query compiles to
+/// warehouse SQL.
+#[derive(Clone, Default)]
+pub struct RunnerPreagg {
+    pub cache: Option<Arc<RwLock<RefreshKeyCache>>>,
+    pub renewal_threshold_secs: u64,
+    pub freshness: RollupFreshness,
+}
+
+impl RunnerPreagg {
+    /// This short-circuit, or a cache-less copy of it when the request buckets
+    /// in a non-UTC timezone.
+    ///
+    /// Rollups are built UTC-truncated, and airlayer's rollup match predicate
+    /// considers granularity but not timezone — so a tz'd query served from a
+    /// rollup would get silently UTC-bucketed data. Withholding the cache makes
+    /// the executor take the warehouse path, which is correct by construction.
+    /// UTC monitors keep their rollups. (Timezone-aware rollups are an upstream
+    /// airlayer change.)
+    fn for_timezone(&self, timezone: Option<&str>) -> Self {
+        match timezone {
+            Some(tz) if tz != "UTC" => Self {
+                cache: None,
+                ..self.clone()
+            },
+            _ => self.clone(),
+        }
+    }
+}
+
 pub struct OxyMetricTreeRunner {
     workspace_manager: WorkspaceManager<ReadOnly>,
     user_id: Uuid,
     role: WorkspaceRole,
-    preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
-    preagg_renewal_threshold_secs: u64,
+    preagg: RunnerPreagg,
     /// Memoized file-level `.monitor.yml` timezone, read on first use.
     default_timezone: std::sync::OnceLock<Option<String>>,
     /// When set, the semantic layer is parsed from this directory instead
@@ -68,8 +108,7 @@ impl OxyMetricTreeRunner {
             workspace_manager,
             user_id,
             role,
-            preagg_cache: None,
-            preagg_renewal_threshold_secs: 120,
+            preagg: RunnerPreagg::default(),
             default_timezone: std::sync::OnceLock::new(),
             scan_path_override: None,
         }
@@ -80,8 +119,25 @@ impl OxyMetricTreeRunner {
         cache: Option<Arc<RwLock<RefreshKeyCache>>>,
         renewal_threshold_secs: u64,
     ) -> Self {
-        self.preagg_cache = cache;
-        self.preagg_renewal_threshold_secs = renewal_threshold_secs;
+        self.preagg.cache = cache;
+        self.preagg.renewal_threshold_secs = renewal_threshold_secs;
+        self
+    }
+
+    /// Attach an already-assembled short-circuit, freshness posture included.
+    pub fn with_preagg_ctx(mut self, preagg: RunnerPreagg) -> Self {
+        self.preagg = preagg;
+        self
+    }
+
+    /// Decline a rollup the freshness check calls stale rather than serve it.
+    ///
+    /// For the anomaly scan and its explain, which persist what they compute
+    /// to the Insights Inbox: a rollup whose newest buckets are missing reads
+    /// as a drop, and an unhealthy transition pages Slack. See
+    /// `PreaggContext::require_fresh` for the full argument.
+    pub fn requiring_fresh_rollups(mut self) -> Self {
+        self.preagg.freshness = RollupFreshness::RequireFresh;
         self
     }
 
@@ -200,8 +256,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                preagg_cache,
-                preagg_renewal_threshold_secs,
+                preagg,
             } = inputs;
             // Members pinned by the base filter (the monitor's group_by /
             // segment) carry no signal as split candidates once we scope to
@@ -219,8 +274,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                preagg_cache,
-                preagg_renewal_threshold_secs,
+                preagg,
             );
             // Scope every query the explain issues to the anomaly's segment by
             // appending the base filters before delegating to the executor.
@@ -311,8 +365,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                preagg_cache,
-                preagg_renewal_threshold_secs,
+                preagg,
                 ..
             } = inputs;
             let executor = build_query_executor(
@@ -323,8 +376,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                preagg_cache,
-                preagg_renewal_threshold_secs,
+                preagg,
             );
             // Try with date filter first; fall back to unfiltered on error
             // (some views don't have a `business_date` dimension).
@@ -394,8 +446,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                preagg_cache,
-                preagg_renewal_threshold_secs,
+                preagg,
                 ..
             } = inputs;
             let executor = build_query_executor(
@@ -406,8 +457,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                preagg_for(&preagg_cache, timezone.as_deref()),
-                preagg_renewal_threshold_secs,
+                preagg.for_timezone(timezone.as_deref()),
             );
             let rows =
                 (executor)(&request).map_err(|e| MetricTreeRunnerError::Op(e.to_string()))?;
@@ -460,8 +510,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                preagg_cache,
-                preagg_renewal_threshold_secs,
+                preagg,
                 ..
             } = inputs;
             let executor = build_query_executor(
@@ -472,8 +521,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                preagg_cache,
-                preagg_renewal_threshold_secs,
+                preagg,
             );
             let rows =
                 (executor)(&request).map_err(|e| MetricTreeRunnerError::Op(e.to_string()))?;
@@ -506,8 +554,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                preagg_cache,
-                preagg_renewal_threshold_secs,
+                preagg,
             } = inputs;
             let tree = MetricTree::build(&layer);
             let executor = build_query_executor(
@@ -518,8 +565,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 user_id,
                 role,
                 handle,
-                preagg_cache,
-                preagg_renewal_threshold_secs,
+                preagg,
             );
             metric_tree_ops::opportunity(
                 &tree,
@@ -551,8 +597,7 @@ struct RunInputs {
     user_id: Uuid,
     role: WorkspaceRole,
     handle: tokio::runtime::Handle,
-    preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
-    preagg_renewal_threshold_secs: u64,
+    preagg: RunnerPreagg,
 }
 
 impl OxyMetricTreeRunner {
@@ -570,26 +615,8 @@ impl OxyMetricTreeRunner {
             user_id: self.user_id,
             role: self.role.clone(),
             handle: tokio::runtime::Handle::current(),
-            preagg_cache: self.preagg_cache.clone(),
-            preagg_renewal_threshold_secs: self.preagg_renewal_threshold_secs,
+            preagg: self.preagg.clone(),
         })
-    }
-}
-
-/// Withhold the pre-aggregation cache for non-UTC requests.
-///
-/// Rollups are built UTC-truncated, and airlayer's rollup match predicate
-/// considers granularity but not timezone — so a tz'd query could be served
-/// silently UTC-bucketed data. Passing `None` here makes the executor take the
-/// warehouse path, which is correct by construction. UTC monitors keep their
-/// rollups. (Timezone-aware rollups are an upstream airlayer change.)
-fn preagg_for(
-    cache: &Option<Arc<RwLock<RefreshKeyCache>>>,
-    timezone: Option<&str>,
-) -> Option<Arc<RwLock<RefreshKeyCache>>> {
-    match timezone {
-        Some(tz) if tz != "UTC" => None,
-        _ => cache.clone(),
     }
 }
 
@@ -802,8 +829,7 @@ pub fn build_query_executor(
     user_id: Uuid,
     role: WorkspaceRole,
     handle: tokio::runtime::Handle,
-    preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
-    preagg_renewal_threshold_secs: u64,
+    preagg: RunnerPreagg,
 ) -> Box<QueryExecutor> {
     use agentic_connector::DatabaseConnector;
 
@@ -816,8 +842,9 @@ pub fn build_query_executor(
     // badge, none of the explain headroom.
     let preagg_ctx = crate::server::preagg_context::preagg_context(
         workspace_manager.workspace_id,
-        preagg_cache,
-        Some(preagg_renewal_threshold_secs),
+        preagg.cache,
+        Some(preagg.renewal_threshold_secs),
+        preagg.freshness,
     );
 
     let pool: std::sync::Mutex<std::collections::HashMap<String, Vec<Arc<dyn DatabaseConnector>>>> =
@@ -987,16 +1014,16 @@ pub fn build_drill_query_executor(
     user_id: Uuid,
     role: WorkspaceRole,
     handle: tokio::runtime::Handle,
-    preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
-    preagg_renewal_threshold_secs: u64,
+    preagg: RunnerPreagg,
 ) -> Box<QueryExecutor> {
     use agentic_connector::DatabaseConnector;
 
     // Cache key derived, not passed — same rule as [`build_query_executor`].
     let preagg_ctx = crate::server::preagg_context::preagg_context(
         workspace_manager.workspace_id,
-        preagg_cache,
-        Some(preagg_renewal_threshold_secs),
+        preagg.cache,
+        Some(preagg.renewal_threshold_secs),
+        preagg.freshness,
     );
 
     let pool: std::sync::Mutex<std::collections::HashMap<String, Vec<Arc<dyn DatabaseConnector>>>> =
@@ -1206,14 +1233,13 @@ pub fn make_runner(
     workspace_manager: WorkspaceManager<WorkingCopy>,
     user_id: Uuid,
     role: WorkspaceRole,
-    preagg_cache: Option<Arc<RwLock<RefreshKeyCache>>>,
-    preagg_renewal_threshold_secs: u64,
+    preagg: RunnerPreagg,
 ) -> Arc<dyn MetricTreeRunner> {
     // The runner only needs the read capability; `into_read_only` keeps the
     // working copy, so the FS scan-path fallback still works on this node.
     Arc::new(
         OxyMetricTreeRunner::new(workspace_manager.into_read_only(), user_id, role)
-            .with_preagg(preagg_cache, preagg_renewal_threshold_secs),
+            .with_preagg_ctx(preagg),
     )
 }
 
@@ -1891,20 +1917,34 @@ mod tests {
     fn non_utc_timezone_bypasses_preagg() {
         // Rollups are built UTC-truncated and preagg's match predicate ignores
         // timezone entirely, so a tz'd monitor served from a rollup would get
-        // silently UTC-bucketed data. `preagg_for` must withhold the cache.
-        let cache = Some(Arc::new(RwLock::new(RefreshKeyCache::default())));
+        // silently UTC-bucketed data. `for_timezone` must withhold the cache.
+        let preagg = RunnerPreagg {
+            cache: Some(Arc::new(RwLock::new(RefreshKeyCache::default()))),
+            renewal_threshold_secs: 120,
+            freshness: RollupFreshness::ServeStale,
+        };
 
         assert!(
-            preagg_for(&cache, None).is_some(),
+            preagg.for_timezone(None).cache.is_some(),
             "no timezone -> rollups still serve"
         );
         assert!(
-            preagg_for(&cache, Some("UTC")).is_some(),
+            preagg.for_timezone(Some("UTC")).cache.is_some(),
             "explicit UTC -> rollups still serve"
         );
         assert!(
-            preagg_for(&cache, Some("America/Los_Angeles")).is_none(),
+            preagg
+                .for_timezone(Some("America/Los_Angeles"))
+                .cache
+                .is_none(),
             "non-UTC -> must bypass the rollup path"
+        );
+        assert_eq!(
+            preagg
+                .for_timezone(Some("America/Los_Angeles"))
+                .renewal_threshold_secs,
+            120,
+            "withholding the cache must not disturb the rest of the posture"
         );
     }
 }

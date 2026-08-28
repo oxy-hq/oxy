@@ -66,6 +66,12 @@ pub struct ProjectFunctionHost {
     /// Transactions `ctx.tx()` has open. Per-invocation like the counter above,
     /// which is what makes cleanup automatic — see `tx`'s module docs.
     transactions: super::tx::TxRegistry,
+    /// Layer-1 preagg cache + renewal threshold for `ctx.semantic`. Injected
+    /// at the serve router and threaded through the invocation, because this
+    /// route is mounted outside the API router and so has no `AppState` to read
+    /// it from. Both fields `None` (the scheduled path, or a composition with no
+    /// rebuild worker) means every semantic query compiles to warehouse SQL.
+    preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
     /// Resolved `ctx.oltp` writer connection, cached for this invocation so N
     /// calls cost one control-plane resolve (a query + decrypt) rather than N.
     /// The per-call TCP+TLS connect to the tenant still happens (each call is a
@@ -154,6 +160,7 @@ impl ProjectFunctionHost {
         actor: Uuid,
         app_name: String,
         caps: FunctionCapabilities,
+        preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
     ) -> Self {
         Self {
             proj_ctx,
@@ -166,6 +173,7 @@ impl ProjectFunctionHost {
             actor,
             app_name,
             caps,
+            preagg,
             email_send_count: std::sync::atomic::AtomicUsize::new(0),
             transactions: super::tx::TxRegistry::default(),
             oltp_conn: tokio::sync::Mutex::new(None),
@@ -431,8 +439,30 @@ impl FunctionHost for ProjectFunctionHost {
             })
             .collect();
 
+        // The rollup short-circuit, resolved exactly as
+        // `/api/projects/{id}/semantic-query` resolves it — a bundle asking the
+        // same question through `ctx.semantic` instead of the HTTP route must
+        // not silently drop to the warehouse. `preagg_context` yields `None`
+        // when this composition carries no Layer-1 cache (the scheduled path),
+        // and `try_resolve_preagg` yields `None` when no rollup covers the
+        // request, so both fall through to the warehouse below.
+        //
+        // The threshold comes from THIS workspace's own
+        // `pre_aggregations.refresh_worker.renewal_threshold` when the process
+        // publishes no global value — the same key the rebuild cycle reads.
+        let workspace_id = self.proj_ctx.workspace_manager().workspace_id;
+        let renewal_threshold_secs = self.preagg.renewal_threshold_secs_or(cm);
+        let preagg = crate::server::preagg_context::preagg_context(
+            workspace_id,
+            self.preagg.cache.clone(),
+            Some(renewal_threshold_secs),
+            // A read surface: `ctx.semantic` renders a number for a bundle to
+            // display, and the badge says which tier answered.
+            crate::server::preagg_context::RollupFreshness::ServeStale,
+        );
+
         let compiled = tokio::task::spawn_blocking(move || {
-            resolve_and_compile(&scan_path, &databases, &query, None, None)
+            resolve_and_compile(&scan_path, &databases, &query, preagg.as_ref(), None)
         })
         .await
         .map_err(|e| format!("semantic compile task panicked: {e}"))?
@@ -441,10 +471,29 @@ impl FunctionHost for ProjectFunctionHost {
         let (sql, database_name) = match compiled {
             CompiledQuery::Warehouse { sql, database_name } => (sql, database_name),
             CompiledQuery::Preaggregation {
+                preagg_sql,
+                source,
                 warehouse_sql,
                 warehouse_database,
-                ..
-            } => (warehouse_sql, warehouse_database),
+            } => {
+                // A rollup that won't read is not a failed query — the same
+                // question has a warehouse answer, and the variant carries the
+                // SQL for it. Same posture as the `/semantic-query` route.
+                match read_rollup(&preagg_sql, &source, FUNCTION_MAX_ROWS).await {
+                    Ok(result) => {
+                        enforce_result_byte_cap(&result)?;
+                        return Ok(result);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            remote = source.is_remote(),
+                            error = %e,
+                            "ctx.semantic: preagg rollup read failed; answering from the warehouse instead"
+                        );
+                        (warehouse_sql, warehouse_database)
+                    }
+                }
+            }
         };
 
         let connector = self.connect(&database_name).await?;
@@ -1106,6 +1155,42 @@ fn enforce_result_byte_cap(result: &serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
+/// Read a covering rollup and shape it like `ctx.semantic`'s warehouse answer.
+///
+/// The row cap is pushed into the SQL rather than applied after the fact: the
+/// preagg connection is `open_in_memory()` with no `temp_directory`, so a
+/// high-cardinality `group_by` would build a `serde_json::Value` per cell for
+/// rows the cap then throws away, with nowhere to spill. `max_rows + 1` keeps
+/// `truncated` exact instead of a `len() == max_rows` guess — the same
+/// treatment both branches of the `/semantic-query` route give it, so a
+/// function sees one row ceiling however the question was answered.
+async fn read_rollup(
+    preagg_sql: &str,
+    source: &agentic_semantic::compile::PreaggSource,
+    max_rows: usize,
+) -> Result<serde_json::Value, String> {
+    // The same wrap `/semantic-query` applies, called rather than copied: the
+    // parity claim above only holds while the two produce identical SQL, and a
+    // fourth hand-rolled copy is how that stops being true.
+    let read_sql =
+        crate::server::api::projects::semantic_query::wrap_with_limit(preagg_sql, max_rows + 1);
+    let src = source.clone();
+    let value = tokio::task::spawn_blocking(move || {
+        agentic_semantic::preagg::execute_preagg_sql(&read_sql, &src)
+    })
+    .await
+    .map_err(|e| format!("preagg task panicked: {e}"))?
+    .map_err(|e| e.to_string())?;
+
+    let mut rows = match value.get("rows") {
+        Some(serde_json::Value::Array(rows)) => rows.clone(),
+        _ => Vec::new(),
+    };
+    let truncated = rows.len() > max_rows;
+    rows.truncate(max_rows);
+    Ok(serde_json::json!({ "rows": rows, "truncated": truncated }))
+}
+
 /// Run the injected query executor with a one-row overfetch so `truncated` is
 /// reported correctly: a result of exactly `max_rows` rows is NOT truncated,
 /// but `exec.execute(.., max_rows)` alone can't distinguish "exactly
@@ -1636,5 +1721,75 @@ mod tests {
         let resolved = vec![sa("93.184.216.34:0"), sa("1.1.1.1:0")];
         let kept = keep_public_addrs("api.example.com", resolved.clone()).unwrap();
         assert_eq!(kept, resolved);
+    }
+
+    /// Write a one-column Parquet with `n` rows and return its path (plus the
+    /// tempdir guard the caller must keep alive).
+    fn rollup_fixture(n: usize) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let path = dir.path().join("rollup.parquet");
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        conn.execute_batch(&format!(
+            "COPY (SELECT i AS n FROM range({n}) t(i)) TO '{}' (FORMAT PARQUET);",
+            path.display()
+        ))
+        .unwrap();
+        (dir, path)
+    }
+
+    #[tokio::test]
+    async fn read_rollup_shapes_the_result_like_the_warehouse_branch() {
+        let (_guard, path) = rollup_fixture(3);
+        let sql = format!(
+            "SELECT n FROM read_parquet('{}') ORDER BY n",
+            path.display()
+        );
+        let result = read_rollup(
+            &sql,
+            &agentic_semantic::compile::PreaggSource::Local(path),
+            10,
+        )
+        .await
+        .expect("rollup read");
+        let rows = result["rows"].as_array().expect("rows array");
+        assert_eq!(rows.len(), 3);
+        // Objects keyed by column name — the same shape `query_with_truncation`
+        // hands back, so a function cannot tell which tier answered.
+        assert_eq!(rows[0]["n"], serde_json::json!(0));
+        assert_eq!(result["truncated"], serde_json::json!(false));
+    }
+
+    #[tokio::test]
+    async fn read_rollup_caps_rows_and_flags_truncation() {
+        let (_guard, path) = rollup_fixture(5);
+        let sql = format!(
+            "SELECT n FROM read_parquet('{}') ORDER BY n",
+            path.display()
+        );
+        let result = read_rollup(
+            &sql,
+            &agentic_semantic::compile::PreaggSource::Local(path),
+            2,
+        )
+        .await
+        .expect("rollup read");
+        assert_eq!(result["rows"].as_array().unwrap().len(), 2);
+        assert_eq!(result["truncated"], serde_json::json!(true));
+    }
+
+    #[tokio::test]
+    async fn read_rollup_reports_a_missing_parquet_rather_than_zero_rows() {
+        // The caller answers from the warehouse on this error. Returning an
+        // empty result instead would be indistinguishable from a rollup that
+        // genuinely has no rows.
+        let missing = std::path::PathBuf::from("/nonexistent/rollup.parquet");
+        let err = read_rollup(
+            "SELECT 1",
+            &agentic_semantic::compile::PreaggSource::Local(missing),
+            10,
+        )
+        .await
+        .expect_err("a missing Parquet must be an error");
+        assert!(!err.is_empty());
     }
 }

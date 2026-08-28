@@ -293,11 +293,30 @@ aho-corasick = "1.1"
 # that still forced a full scan+aggregate (GROUP BY is a blocking operator, so it
 # can't honor LIMIT cheaply even then). Generated SQL only; nothing stored moves.
 #
-# PR #99 — NOT yet merged; e89d1d0 is reachable only from its branch, so this pin
-# MUST be moved to a main SHA before this PR merges (see the merge gate in the PR
-# description; Cargo.lock records the same rev, so there is no fallback once the
-# branch is deleted). It resolves `{{view.member}}` / `{{member}}` refs in a
-# rollup's CTAS and folds `Measure.filters` into the stored partials.
+# a729c18 is reachable only from #102's branch, so this pin MUST be moved to a
+# main SHA before this PR merges (see the merge gate in the PR description;
+# Cargo.lock records the same rev, so there is no fallback once the branch is
+# deleted).
+#
+# It is 27 commits ahead of the previous pin (e89d1d0), not two — the full range
+# is `e89d1d0..a729c18`, and only the first and last items below are preagg:
+#
+#   * #99 (077aeef, merged) — resolves `{{view.member}}` / `{{member}}` refs in a
+#     rollup's CTAS and folds `Measure.filters` into the stored partials. This is
+#     the one that changes what a build WRITES; see the generation note below.
+#   * #100 (e0bca28, merged) — the metric-tree fitting/response model: driver
+#     response shapes, fitted coefficients, and `AggregateSpace`. NOT preagg, and
+#     the reason `world_model_graph/query.rs`'s fixtures move in this PR —
+#     `MetricNode.aggregate_space`, `MetricEdge.{coefficients,form_declared,
+#     moments,domain}` and `MetricTree.warnings` are new required fields. Nothing
+#     here DEserializes a stored `MetricTree` (it is built from the semantic layer
+#     per request and serialized outward), so the additions are additive on the
+#     wire; a consumer that ignores unknown fields is unaffected.
+#   * #101 (b16548d, merged) — a nullable grouping key no longer refuses a rollup.
+#   * #102 (7b68799, a729c18, NOT merged) — READ-SIDE ONLY: binds `date_trunc`
+#     over the stored VARCHAR time column so a coarser-than-stored request stops
+#     falling back to the warehouse, and makes an `InDateRange` filter decline the
+#     rollup instead of being erased from the WHERE.
 #
 # THIS ONE CHANGES WHAT A BUILT ROLLUP CONTAINS. A filtered measure previously
 # stored the unfiltered total and served it under the Pre-aggregated badge, and
@@ -306,8 +325,10 @@ aho-corasick = "1.1"
 # implied by the fix. `PREAGG_BUILDER_GENERATION` in
 # crates/app/src/server/preagg_executor.rs is the invalidation lever: bump it in
 # the same commit as any airlayer bump that changes stored rollup contents, and
-# every workspace rebuilds once on its next cycle. It was bumped for this pin.
-airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "e89d1d0bf1c495d130d696a8793c9b7bd014d7c0" }
+# every workspace rebuilds once on its next cycle. It was bumped for #99; nothing
+# in #100–#102 writes a rollup, so none of them add a reason to bump it again —
+# which is why preagg_executor.rs is not in this diff.
+airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "a729c18c58dd1497612eb432834958807f71b32e" }
 # Anomaly detection: ETS forecasting + MSTL decomposition. augurs-ets gives
 # Holt-Winters family (with auto model selection); augurs-mstl handles
 # multi-seasonality (daily + weekly + yearly). Pulled in by oxy-metric-monitoring.

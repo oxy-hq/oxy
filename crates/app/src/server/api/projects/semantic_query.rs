@@ -29,7 +29,7 @@ use agentic_connector::{ConnectorError, DatabaseConnector};
 use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
 use agentic_semantic::config::SemanticQueryConfig;
 use axum::Json;
-use axum::extract::{Path, Query as AxumQuery};
+use axum::extract::{Path, Query as AxumQuery, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use oxy_shared::errors::OxyError;
@@ -41,6 +41,7 @@ use uuid::Uuid;
 use crate::server::api::custom_apps_gates::{check_custom_app_gates, parse_versioned_body};
 use crate::server::api::projects::query::{QueryResponse, json_objects_to_table};
 use crate::server::api::typed_stream::typed_stream_to_json_objects;
+use crate::server::router::AppState;
 
 const MAX_ROWS: usize = 10_000;
 
@@ -79,7 +80,12 @@ pub struct DebugQuery {
     /// default so production responses don't leak warehouse SQL
     /// shape to the browser (compile output may include column
     /// expressions that an operator hasn't seen). Bundle authors
-    /// flip this on while debugging.
+    /// flip this on while debugging. When a rollup answered, the SQL
+    /// is the rollup's re-aggregation. Either way its
+    /// `read_parquet(...)` arguments are redacted — see
+    /// `redact_parquet_sources`; that also applies to the warehouse
+    /// path, whose compiled SQL can legitimately contain one when the
+    /// view is backed by DuckDB or airhouse.
     #[serde(default)]
     debug: Option<u8>,
 }
@@ -100,6 +106,7 @@ pub struct SemanticQueryResponse {
 pub async fn run_semantic_query(
     Path(project_id): Path<Uuid>,
     AxumQuery(debug): AxumQuery<DebugQuery>,
+    State(app_state): State<AppState>,
     uri: Uri,
     headers: HeaderMap,
     body: axum::body::Bytes,
@@ -257,9 +264,37 @@ pub async fn run_semantic_query(
         })
         .collect();
 
+    // 5b. Attach the rollup short-circuit.
+    //
+    // This route is `IdeOnly` (`role_manifest`), so it executes on the node
+    // that holds the Layer-1 cache and the rollup Parquet — the same node the
+    // IDE's `/semantic` route reads from. Nothing here forces a rollup:
+    // `preagg_context` yields `None` when the process has no cache (the
+    // internal API router, or no workspace path), and `try_resolve_preagg`
+    // yields `None` when no rollup covers the request or the manifest is
+    // stale. Both fall through to the warehouse path below.
+    //
+    // The threshold is resolved from THIS workspace's own
+    // `pre_aggregations.refresh_worker.renewal_threshold` when the process
+    // carries no global value, matching what `workspace_context` does for the
+    // IDE — the read side and the rebuild side must resolve one setting, or a
+    // workspace configuring `10m` silently gets 120s on every query.
+    let preagg_ctx = crate::server::api::middlewares::workspace_context::PreaggCacheCtx {
+        cache: app_state.preagg_cache.clone(),
+        renewal_threshold_secs: app_state.preagg_renewal_threshold_secs,
+    };
+    let preagg = crate::server::preagg_context::preagg_context(
+        proj_ctx.workspace_manager().workspace_id,
+        preagg_ctx.cache.clone(),
+        Some(preagg_ctx.renewal_threshold_secs_or(&proj_ctx.workspace_manager().config_manager)),
+        // A read surface: the route badges its answer **Pre-aggregated**, so a
+        // rollup a cycle behind is a labelled number, not a wrong one.
+        crate::server::preagg_context::RollupFreshness::ServeStale,
+    );
+
     let req_clone = req;
     let compiled = match tokio::task::spawn_blocking(move || {
-        resolve_and_compile(&scan_path, &databases, &req_clone, None, None)
+        resolve_and_compile(&scan_path, &databases, &req_clone, preagg.as_ref(), None)
     })
     .await
     {
@@ -285,48 +320,101 @@ pub async fn run_semantic_query(
         }
     };
 
-    // We pass `preagg=None` to `resolve_and_compile` above, so we
-    // should only ever see the `Warehouse` arm here. Treat
-    // `Preaggregation` defensively (fall back to the warehouse SQL
-    // it carries) in case airlayer ever decides to short-circuit
-    // anyway — bundles should always see the warehouse path.
+    // 6. Read the rollup when one covered the request.
+    //
+    // A rollup that won't read is not a failed query: the same question has a
+    // warehouse answer, and the `Preaggregation` variant carries the SQL for
+    // it. Surfacing the DuckDB/HTTP error instead would turn a routine state —
+    // a manifest listing a rollup whose object hasn't been mirrored to this
+    // node yet — into a 500 on exactly the nodes the blob tier exists to
+    // serve. Same posture as the IDE's `/semantic` route.
+    let mut rollup: Option<(JsonValue, String)> = None;
     let (sql, database_name) = match compiled {
         CompiledQuery::Warehouse { sql, database_name } => (sql, database_name),
         CompiledQuery::Preaggregation {
+            preagg_sql,
+            source,
             warehouse_sql,
             warehouse_database,
-            ..
-        } => (warehouse_sql, warehouse_database),
+        } => {
+            // Push the row cap into the rollup SQL the same way the warehouse
+            // branch does. Without it DuckDB drains every row of a
+            // high-cardinality `group_by` and builds a `serde_json::Value` per
+            // cell before `preagg_columns_and_rows` throws the excess away —
+            // and this connection is `open_in_memory()` with no
+            // `temp_directory`, so a wide result has nowhere to spill.
+            // `MAX_ROWS + 1` so the overflow is still visible as `truncated`.
+            let read_sql = wrap_with_limit(&preagg_sql, MAX_ROWS + 1);
+            // `?debug=1` gets the SQL *without* the wrap, matching what the
+            // warehouse branch returns. The wrapper is transport, and showing
+            // it on one path only would be a second incidental tell for which
+            // path answered.
+            let executed_preagg_sql = preagg_sql.clone();
+            let src = source.clone();
+            match tokio::task::spawn_blocking(move || {
+                agentic_semantic::preagg::execute_preagg_sql(&read_sql, &src)
+            })
+            .await
+            {
+                Ok(Ok(value)) => rollup = Some((value, executed_preagg_sql)),
+                Ok(Err(e)) => warn!(
+                    remote = source.is_remote(),
+                    error = %e,
+                    "preagg rollup read failed; answering from the warehouse instead"
+                ),
+                Err(e) => warn!(
+                    error = %e,
+                    "preagg task panicked; answering from the warehouse instead"
+                ),
+            }
+            (warehouse_sql, warehouse_database)
+        }
     };
 
-    // 6. Resolve connector for the database the topic compiled
-    //    against. airlayer's resolver may pick a different db than
-    //    the project's default if the topic's first view declares
-    //    `datasource:` — honor that decision.
-    let connector = match proj_ctx.build_connector_for(&database_name).await {
-        Ok(c) => c,
-        Err(OxyError::ConfigurationError(msg)) => {
-            return err(StatusCode::BAD_REQUEST, msg);
+    // 7. Execute, unless step 6 already answered. The warehouse branch keeps
+    //    the outer-LIMIT wrap `/query` uses so a semantic query producing
+    //    millions of rows still respects the row cap; the rollup branch caps
+    //    in `preagg_columns_and_rows` for the same reason, so a bundle sees
+    //    one row ceiling however the question was answered.
+    let (raw_columns, raw_rows, truncated, executed_sql) = match rollup {
+        Some((value, preagg_sql)) => {
+            let (columns, rows, truncated) = preagg_columns_and_rows(value, MAX_ROWS);
+            (columns, rows, truncated, preagg_sql)
         }
-        Err(e) => {
-            // Surface the underlying error to the bundle author —
-            // mirrors `query.rs`. Agentic-connector error strings are
-            // host/protocol diagnostics, no secret values.
-            error!("connector build failed for '{database_name}': {e}");
-            return err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("failed to connect to database '{database_name}': {e}"),
-            );
+        None => {
+            // Resolve connector for the database the topic compiled against.
+            // airlayer's resolver may pick a different db than the project's
+            // default if the topic's first view declares `datasource:` — honor
+            // that decision. Only reached on the warehouse path: a rollup read
+            // never needs a warehouse connection.
+            let connector = match proj_ctx.build_connector_for(&database_name).await {
+                Ok(c) => c,
+                Err(OxyError::ConfigurationError(msg)) => {
+                    return err(StatusCode::BAD_REQUEST, msg);
+                }
+                Err(e) => {
+                    // Surface the underlying error to the bundle author —
+                    // mirrors `query.rs`. Agentic-connector error strings are
+                    // host/protocol diagnostics, no secret values.
+                    error!("connector build failed for '{database_name}': {e}");
+                    return err(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("failed to connect to database '{database_name}': {e}"),
+                    );
+                }
+            };
+            // `MAX_ROWS + 1` for the same reason the rollup branch uses it:
+            // asking for one row past the cap makes `truncated` exact instead
+            // of a `len() == MAX_ROWS` guess that fires on a result which
+            // happens to be exactly MAX_ROWS rows. Both paths now answer the
+            // question the same way.
+            let limited_sql = wrap_with_limit(&sql, MAX_ROWS + 1);
+            let response = match execute_compiled_sql(connector, &limited_sql).await {
+                Ok(r) => r,
+                Err(resp) => return resp,
+            };
+            (response.columns, response.rows, response.truncated, sql)
         }
-    };
-
-    // 7. Execute. Same outer-LIMIT wrap pattern as `/query` so a
-    //    semantic query that produces millions of rows still respects
-    //    the row cap.
-    let limited_sql = wrap_with_limit(&sql, MAX_ROWS);
-    let response = match execute_compiled_sql(connector, &limited_sql).await {
-        Ok(r) => r,
-        Err(resp) => return resp,
     };
 
     // Airlayer emits column aliases as `view__member` (dot in the
@@ -337,13 +425,29 @@ pub async fn run_semantic_query(
     // with another column in the same row. Multi-view queries that
     // would collide keep the qualified form so the bundle never sees
     // ambiguous data.
-    let (columns, rows) = strip_view_prefix(response.columns, response.rows);
+    //
+    // Applied to BOTH paths on purpose. `generate_reagg_sql` aliases its
+    // projection the same `view__member` way the warehouse SQL does, and a
+    // bundle must not see its row keys change depending on whether a rollup
+    // happened to cover the request — that break would be silent and
+    // intermittent.
+    let (columns, rows) = strip_view_prefix(raw_columns, raw_rows);
 
     let semantic_response = SemanticQueryResponse {
         columns,
         rows,
-        truncated: response.truncated,
-        sql: if include_sql { Some(sql) } else { None },
+        truncated,
+        // Under `?debug=1` this is the compiled SQL — the rollup's
+        // re-aggregation when one served the request, the warehouse SQL
+        // otherwise. Both are pre-wrap: neither carries the outer
+        // `LIMIT MAX_ROWS + 1` that actually executed, so the transport is
+        // invisible on both paths rather than one. A caller comparing the two
+        // is the only way to tell from outside that a rollup answered.
+        sql: if include_sql {
+            Some(redact_parquet_sources(&executed_sql))
+        } else {
+            None
+        },
     };
 
     let bytes = match serde_json::to_vec(&semantic_response) {
@@ -360,6 +464,56 @@ pub async fn run_semantic_query(
         (*arc).clone(),
     )
         .into_response()
+}
+
+/// Reshape `execute_preagg_sql`'s result into the bundle's row-major form.
+///
+/// DuckDB hands back `{ "columns": [...], "rows": [ { col: value, ... } ] }`;
+/// this route answers with `columns` plus positional `Vec<Vec<JsonValue>>`.
+/// Values keep their JSON types — a number stays a number — unlike the IDE's
+/// stringified table, because a bundle reads these straight into TypeScript.
+///
+/// `max_rows` is applied here rather than left to the rollup's own size: the
+/// warehouse path wraps its SQL in `LIMIT MAX_ROWS + 1` and drops the overflow
+/// row, and a bundle that got 50k rows from a rollup and 10k from the warehouse
+/// for the same question would be reading the transport, not the data. Both
+/// paths fetch one row past the cap, so `truncated` is exact on both.
+fn preagg_columns_and_rows(
+    value: JsonValue,
+    max_rows: usize,
+) -> (Vec<String>, Vec<Vec<JsonValue>>, bool) {
+    let columns: Vec<String> = value
+        .get("columns")
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter()
+                .map(|v| v.as_str().unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let all = value.get("rows").and_then(|r| r.as_array());
+    let total = all.map(|a| a.len()).unwrap_or(0);
+    let truncated = total > max_rows;
+
+    let rows = all
+        .map(|arr| {
+            arr.iter()
+                .take(max_rows)
+                .map(|row| {
+                    columns
+                        .iter()
+                        // A column the row object lacks is null, not a gap:
+                        // the positional form has no way to say "absent", and
+                        // a short row would desync every column after it.
+                        .map(|col| row.get(col).cloned().unwrap_or(JsonValue::Null))
+                        .collect()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    (columns, rows, truncated)
 }
 
 /// Rewrite columns that look like `view__member` to bare `member`,
@@ -410,9 +564,100 @@ fn bare_member_name(col: &str) -> Option<&str> {
 /// Wrap compiled SQL in `SELECT * FROM (...) LIMIT N`. Same pattern
 /// `query.rs` uses — keeps the row cap consistent across endpoints
 /// without forcing airlayer to know about it.
-fn wrap_with_limit(sql: &str, max_rows: usize) -> String {
+///
+/// `pub(crate)` because a bundle's `ctx.semantic` reads its rollup through the
+/// identical wrap (`custom_apps_functions::host::read_rollup`), and "a function
+/// sees one row ceiling however the question was answered" is only true while
+/// the two are the same code.
+pub(crate) fn wrap_with_limit(sql: &str, max_rows: usize) -> String {
     let sql_trimmed = sql.trim_end().trim_end_matches(';').trim_end();
     format!("SELECT * FROM (\n{sql_trimmed}\n) AS oxy_semantic_query LIMIT {max_rows}")
+}
+
+/// Replace the argument of every `read_parquet('...')` with a placeholder.
+///
+/// `?debug=1` exists to show the *shape* of the query that ran, not where the
+/// bytes live: a rollup's SQL embeds an `s3://<bucket>/<key>` URI or an
+/// absolute state-dir path, neither of which the bundle author needs and both
+/// of which describe server-side storage layout. No credentials appear in the
+/// string either way — this keeps the disclosure surface the same as the
+/// warehouse path's.
+fn redact_parquet_sources(sql: &str) -> String {
+    let mut out = String::with_capacity(sql.len());
+    let mut rest = sql;
+    // The call-site search itself is quote-unaware: a string literal whose
+    // *contents* were `read_parquet(` would start a redaction. Caller-supplied
+    // filter values DO reach this string — airlayer inlines them as literals,
+    // there are no bind parameters — so a bundle can inject that text. It
+    // can't hide anything, though: `generate_reagg_sql` puts the real
+    // `read_parquet(` in the `FROM`, ahead of any `WHERE` literal, so the
+    // genuine path is always consumed first and an injected call can only
+    // mangle the caller's own `?debug=1` output. Left as is on that basis —
+    // and the `None` arm below redacts rather than emitting the remainder, so
+    // the argument does not have to assume airlayer keeps emitting exactly one
+    // call the way it does today.
+    while let Some(idx) = rest.find("read_parquet(") {
+        let (head, tail) = rest.split_at(idx + "read_parquet(".len());
+        out.push_str(head);
+        // Balance parens rather than stopping at the first `)`: airlayer emits
+        // a single quoted path today, but a list or glob helper
+        // (`read_parquet(list_value('a','b'))`) would otherwise be cut mid-call
+        // and leave unbalanced SQL in the response.
+        let mut depth = 1usize;
+        let mut in_quote = false;
+        let mut end = None;
+        for (i, c) in tail.char_indices() {
+            // Parens inside a string literal are path characters, not
+            // structure: `read_parquet('/data/a)b.parquet')` would otherwise
+            // close at the quoted `)` and leak the rest of the path.
+            match c {
+                '\'' => in_quote = !in_quote,
+                '(' if !in_quote => depth += 1,
+                ')' if !in_quote => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        match end {
+            Some(close) => {
+                out.push_str("'<redacted>'");
+                rest = &tail[close..];
+            }
+            // Unbalanced input — an injected filter literal can leave the
+            // quote state stuck. Redact and stop: emitting the remainder
+            // verbatim would disclose every later `read_parquet(` path to a
+            // request that controls the injection. Debug SQL is best-effort by
+            // then, so a truncation is the right trade.
+            None => {
+                out.push_str("'<redacted>'");
+                rest = "";
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Apply the row cap to a warehouse result and say whether anything was cut.
+///
+/// The caller wraps in `LIMIT MAX_ROWS + 1`, so an extra row is evidence, not
+/// payload: drop it before answering. `connector_truncated` is ORed in because
+/// the connector's byte/row backstop can stop *below* `MAX_ROWS` on wide rows,
+/// which the length check alone would miss.
+///
+/// Split out from `execute_compiled_sql` so the warehouse half of this route's
+/// row-cap parity is testable without a connector — the rollup half is tested
+/// through `preagg_columns_and_rows`.
+fn cap_and_flag(mut objects: Vec<JsonValue>, connector_truncated: bool) -> (Vec<JsonValue>, bool) {
+    let truncated = objects.len() > MAX_ROWS || connector_truncated;
+    objects.truncate(MAX_ROWS);
+    (objects, truncated)
 }
 
 async fn execute_compiled_sql(
@@ -452,10 +697,7 @@ async fn execute_compiled_sql(
         }
     };
 
-    // Truncated if the soft row cap filled OR the connector hit its byte/row
-    // backstop — the latter can stop *below* MAX_ROWS on wide rows, which the
-    // length check alone would miss.
-    let truncated = objects.len() == MAX_ROWS || connector_truncated;
+    let (objects, truncated) = cap_and_flag(objects, connector_truncated);
     Ok(json_objects_to_table(objects, truncated))
 }
 
@@ -537,6 +779,148 @@ mod tests {
         // Defensive: airlayer doesn't emit triple-underscored names,
         // but if it ever does, the parser bails out rather than guess.
         assert_eq!(bare_member_name("view__weird__name"), None);
+    }
+
+    #[test]
+    fn preagg_columns_and_rows_reshapes_to_positional() {
+        let value = serde_json::json!({
+            "columns": ["store_id", "total"],
+            "rows": [
+                { "store_id": 1, "total": 10.5 },
+                { "store_id": 2, "total": 20.0 },
+            ],
+        });
+        let (cols, rows, truncated) = preagg_columns_and_rows(value, 10);
+        assert_eq!(cols, vec!["store_id", "total"]);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], vec![JsonValue::from(1), JsonValue::from(10.5)]);
+        assert_eq!(rows[1], vec![JsonValue::from(2), JsonValue::from(20.0)]);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn preagg_columns_and_rows_fills_missing_keys_with_null() {
+        // The desync guard: a row object lacking a column must yield an
+        // explicit null, not a short row that shifts every later column.
+        let value = serde_json::json!({
+            "columns": ["a", "b", "c"],
+            "rows": [ { "a": 1, "c": 3 } ],
+        });
+        let (_, rows, _) = preagg_columns_and_rows(value, 10);
+        assert_eq!(
+            rows[0],
+            vec![JsonValue::from(1), JsonValue::Null, JsonValue::from(3)]
+        );
+    }
+
+    #[test]
+    fn preagg_columns_and_rows_truncates_at_the_boundary() {
+        let mk = |n: usize| {
+            serde_json::json!({
+                "columns": ["a"],
+                "rows": (0..n).map(|i| serde_json::json!({ "a": i })).collect::<Vec<_>>(),
+            })
+        };
+        // Exactly at the cap: kept whole, not flagged.
+        let (_, rows, truncated) = preagg_columns_and_rows(mk(3), 3);
+        assert_eq!(rows.len(), 3);
+        assert!(!truncated);
+        // One over — which is what the `MAX_ROWS + 1` SQL limit produces.
+        let (_, rows, truncated) = preagg_columns_and_rows(mk(4), 3);
+        assert_eq!(rows.len(), 3);
+        assert!(truncated);
+    }
+
+    #[test]
+    fn preagg_columns_and_rows_tolerates_a_shapeless_value() {
+        let (cols, rows, truncated) = preagg_columns_and_rows(serde_json::json!({}), 10);
+        assert!(cols.is_empty());
+        assert!(rows.is_empty());
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn preagg_sql_limit_uses_the_same_wrapper_as_the_warehouse_path() {
+        // Parity: both branches cap in SQL, and the rollup asks for one extra
+        // row so `preagg_columns_and_rows` can still see the overflow.
+        let wrapped = wrap_with_limit("SELECT 1", MAX_ROWS + 1);
+        assert!(wrapped.ends_with(&format!("LIMIT {}", MAX_ROWS + 1)));
+    }
+
+    #[test]
+    fn redact_parquet_sources_hides_storage_locations() {
+        let sql = "SELECT a FROM read_parquet('s3://bucket/key/part.parquet') GROUP BY a";
+        let out = redact_parquet_sources(sql);
+        assert!(!out.contains("s3://"), "{out}");
+        assert_eq!(
+            out, "SELECT a FROM read_parquet('<redacted>') GROUP BY a",
+            "the query shape must survive redaction"
+        );
+    }
+
+    #[test]
+    fn cap_and_flag_matches_the_rollup_boundary() {
+        let obj = |i: usize| JsonValue::from(i);
+        // Exactly at the cap: kept whole, not flagged — the same boundary
+        // `preagg_columns_and_rows_truncates_at_the_boundary` asserts.
+        let (rows, truncated) = cap_and_flag((0..MAX_ROWS).map(obj).collect(), false);
+        assert_eq!(rows.len(), MAX_ROWS);
+        assert!(!truncated);
+        // One over, which is what the `MAX_ROWS + 1` wrap produces: flagged,
+        // and the evidence row is dropped rather than served.
+        let (rows, truncated) = cap_and_flag((0..MAX_ROWS + 1).map(obj).collect(), false);
+        assert_eq!(rows.len(), MAX_ROWS);
+        assert!(truncated);
+    }
+
+    #[test]
+    fn cap_and_flag_honours_the_connector_backstop() {
+        // A wide-row byte truncation stops below MAX_ROWS; the length check
+        // alone would call that a complete result.
+        let (rows, truncated) = cap_and_flag(vec![JsonValue::from(1)], true);
+        assert_eq!(rows.len(), 1);
+        assert!(truncated);
+    }
+
+    #[test]
+    fn redact_parquet_sources_ignores_parens_inside_the_path() {
+        // A `)` in an S3 key or state-dir path is structure to a naive counter
+        // and would leak the rest of the path.
+        let out = redact_parquet_sources("SELECT 1 FROM read_parquet('/data/a)b.parquet')");
+        assert_eq!(out, "SELECT 1 FROM read_parquet('<redacted>')");
+        assert!(!out.contains("b.parquet"));
+    }
+
+    #[test]
+    fn redact_parquet_sources_balances_nested_parens() {
+        // Not a shape airlayer emits today, but a list/glob helper would
+        // otherwise be cut mid-call and leave unbalanced SQL in the response.
+        let out = redact_parquet_sources("SELECT 1 FROM read_parquet(list_value('a','b')) t");
+        assert_eq!(out, "SELECT 1 FROM read_parquet('<redacted>') t");
+    }
+
+    #[test]
+    fn redact_parquet_sources_handles_several_and_leaves_other_sql_alone() {
+        let sql = "SELECT * FROM read_parquet('/a.parquet')                    JOIN read_parquet('/b.parquet') USING (id)";
+        let out = redact_parquet_sources(sql);
+        assert_eq!(out.matches("'<redacted>'").count(), 2);
+        assert!(!out.contains(".parquet"));
+        assert_eq!(redact_parquet_sources("SELECT 1"), "SELECT 1");
+        // Malformed input must not loop forever — and must not fall back to
+        // emitting the remainder, which is how an injected unbalanced quote
+        // would disclose a later real path.
+        assert_eq!(
+            redact_parquet_sources("read_parquet('unclosed"),
+            "read_parquet('<redacted>'"
+        );
+        assert_eq!(
+            redact_parquet_sources(
+                "SELECT * FROM read_parquet('/real.parquet') \
+                 WHERE a = 'read_parquet('x'"
+            ),
+            "SELECT * FROM read_parquet('<redacted>') WHERE a = 'read_parquet('<redacted>'",
+            "an injected unbalanced quote truncates instead of leaking the rest"
+        );
     }
 
     #[test]

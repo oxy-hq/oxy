@@ -395,7 +395,78 @@ fn row_value_to_json(row: &duckdb::Row<'_>, idx: usize) -> Value {
         ValueRef::Text(s) => Value::String(String::from_utf8_lossy(s).into_owned()),
         ValueRef::Blob(b) => Value::String(format!("<blob {} bytes>", b.len())),
         ValueRef::Boolean(b) => serde_json::json!(b),
+        // Dates and timestamps, for the same reason `Decimal` is handled above:
+        // the catch-all debug-formats them, so a coarsened time dimension came
+        // back as the literal string "Date32(20148)". A rollup read at its
+        // stored grain projects the raw VARCHAR column and never lands here,
+        // which is why only coarser-than-stored reads showed it.
+        //
+        // Canonical rendering — see `render_naive_datetime`: one shape for a
+        // given instant whether it arrives as a DATE or a TIMESTAMP, and the
+        // same shape the stored-grain VARCHAR carries, so a bundle's x-axis
+        // keys don't change when a rollup's grain does.
+        ValueRef::Date32(days) => date_from_epoch_days(days as i64)
+            .map(|d| Value::String(d.to_string()))
+            .unwrap_or_else(|| Value::String(days.to_string())),
+        ValueRef::Timestamp(unit, v) => {
+            let (secs, nanos) = match unit {
+                duckdb::types::TimeUnit::Second => (v, 0),
+                duckdb::types::TimeUnit::Millisecond => (
+                    v.div_euclid(1_000),
+                    (v.rem_euclid(1_000) * 1_000_000) as u32,
+                ),
+                duckdb::types::TimeUnit::Microsecond => (
+                    v.div_euclid(1_000_000),
+                    (v.rem_euclid(1_000_000) * 1_000) as u32,
+                ),
+                duckdb::types::TimeUnit::Nanosecond => (
+                    v.div_euclid(1_000_000_000),
+                    v.rem_euclid(1_000_000_000) as u32,
+                ),
+            };
+            chrono::DateTime::from_timestamp(secs, nanos)
+                .map(|d| Value::String(render_naive_datetime(d.naive_utc())))
+                .unwrap_or_else(|| Value::String(v.to_string()))
+        }
         other => Value::String(format!("{other:?}")),
+    }
+}
+
+/// DuckDB's `DATE` is a day count from the Unix epoch, not a timestamp.
+///
+/// Spelled out rather than routed through `DateTime::from_timestamp(days *
+/// 86_400, 0)`, which reads as if the input were seconds.
+fn date_from_epoch_days(days: i64) -> Option<chrono::NaiveDate> {
+    chrono::NaiveDate::from_ymd_opt(1970, 1, 1)?.checked_add_signed(chrono::TimeDelta::days(days))
+}
+
+/// Canonical rendering for a time value coming out of a rollup read.
+///
+/// Coarsening a day-grain rollup to week/month makes DuckDB's `date_trunc`
+/// return a TIMESTAMP at midnight, while a read at the stored grain projects
+/// the stored VARCHAR. Whether a request is coarsened is decided by the rollup
+/// manifest and is invisible to the caller, so those two must not render
+/// differently — an exactly-midnight instant renders as a bare `YYYY-MM-DD`
+/// date. Anything with a time-of-day renders RFC3339-style with a `T`
+/// separator (`NaiveDateTime`'s own `Display` uses a space, which is not
+/// ISO-8601).
+///
+/// **The parity guarantee is for a `type: date` time dimension**, whose stored
+/// VARCHAR already is `YYYY-MM-DD`. A `type: datetime` dimension stores
+/// whatever the source warehouse's JSON emitted for the truncated timestamp
+/// (ClickHouse `2026-08-01 00:00:00`, Snowflake `2026-08-01T00:00:00.000`),
+/// and that string passes through `ValueRef::Text` untouched at the stored
+/// grain — so a coarsened read of the same rollup still renders it differently.
+/// Normalising the `Text` passthrough for the time column would close that,
+/// and needs the stored grain's column type, which this function does not see.
+fn render_naive_datetime(dt: chrono::NaiveDateTime) -> String {
+    use chrono::Timelike;
+    if dt.time() == chrono::NaiveTime::MIN {
+        dt.date().to_string()
+    } else if dt.nanosecond() == 0 {
+        dt.format("%Y-%m-%dT%H:%M:%S").to_string()
+    } else {
+        dt.format("%Y-%m-%dT%H:%M:%S%.f").to_string()
     }
 }
 
@@ -561,6 +632,49 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+
+    #[test]
+    fn midnight_renders_as_a_bare_date() {
+        // A coarsened read (`date_trunc` → TIMESTAMP at midnight) must produce
+        // the same key shape as a stored-grain read (raw `YYYY-MM-DD` VARCHAR),
+        // or a bundle's x-axis silently changes when a rollup's grain does.
+        let dt = chrono::NaiveDate::from_ymd_opt(2026, 8, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        assert_eq!(render_naive_datetime(dt), "2026-08-01");
+    }
+
+    #[test]
+    fn a_time_of_day_renders_iso_with_a_t_separator() {
+        let dt = chrono::NaiveDate::from_ymd_opt(2026, 8, 1)
+            .unwrap()
+            .and_hms_opt(13, 5, 9)
+            .unwrap();
+        // NaiveDateTime's own Display would emit a space here, which is not
+        // ISO-8601 and which some browsers parse as local time.
+        assert_eq!(render_naive_datetime(dt), "2026-08-01T13:05:09");
+
+        let sub = chrono::NaiveDate::from_ymd_opt(2026, 8, 1)
+            .unwrap()
+            .and_hms_milli_opt(13, 5, 9, 250)
+            .unwrap();
+        assert_eq!(render_naive_datetime(sub), "2026-08-01T13:05:09.250");
+    }
+
+    #[test]
+    fn date32_days_are_epoch_relative() {
+        // 20_301 days after 1970-01-01. The previous shape multiplied by
+        // 86_400 and went through a timestamp constructor, which is easy to
+        // misread as "this value is seconds".
+        assert_eq!(
+            date_from_epoch_days(20_301).unwrap().to_string(),
+            "2025-08-01"
+        );
+        // And the epoch itself, plus a pre-epoch day, stay sane.
+        assert_eq!(date_from_epoch_days(0).unwrap().to_string(), "1970-01-01");
+        assert_eq!(date_from_epoch_days(-1).unwrap().to_string(), "1969-12-31");
+    }
 
     #[test]
     fn save_and_load_manifest_roundtrip() {

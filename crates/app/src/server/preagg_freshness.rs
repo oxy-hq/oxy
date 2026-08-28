@@ -83,9 +83,15 @@ pub(super) fn eval_every_refresh_key(
     };
 
     // Layer 1: in-memory cache (survives heartbeats within the same process).
+    // Only entries the BUILD side wrote count — a read-path seed says a query
+    // looked at the rollup, not that anything rebuilt it, and treating the two
+    // alike lets an actively-read rollup postpone its own cadence forever.
     {
         let guard = cache.read().expect("preagg cache lock poisoned");
-        if guard.get(rollup_hash, interval).is_some() {
+        if guard
+            .get(rollup_hash, interval)
+            .is_some_and(|e| !e.seeded_by_read)
+        {
             return (None, false);
         }
     }
@@ -247,6 +253,47 @@ mod tests {
         let cache = Arc::new(RwLock::new(RefreshKeyCache::new()));
         let (_, stale) = super::eval_every_refresh_key("1ms", "empty", dir.path(), &cache);
         assert!(stale, "a 1ms interval has elapsed by now");
+    }
+
+    // ── Read-path seeds vs. build recency ─────────────────────────────────
+
+    /// One cache, two meanings — and only one of them is a build.
+    ///
+    /// `check_and_seed_freshness` writes an entry meaning *a reader looked at
+    /// this rollup*; layer 1 below reads an entry as *the rollup was built
+    /// within the interval*. Conflated, an actively-read rollup keeps a young
+    /// entry forever, layer 1 says "not stale", and it never rebuilds — so the
+    /// manifest never advances and the scan's `RequireFresh` gate keeps
+    /// calling the ageing rollup fresh. The read path must not be able to
+    /// postpone the cadence it is waiting on.
+    #[tokio::test]
+    async fn a_read_path_seed_does_not_stand_in_for_a_build() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = Arc::new(RwLock::new(RefreshKeyCache::new()));
+
+        // Exactly what a read surface leaves behind when it serves a rollup.
+        agentic_semantic::compile::check_and_seed_freshness(&cache, "hot", None, 120);
+
+        let (_, stale) = super::eval_every_refresh_key("24h", "hot", dir.path(), &cache);
+        assert!(
+            stale,
+            "a read seed is not evidence of a build; the rollup is still due"
+        );
+    }
+
+    /// ...and the worker's own seed still is, or layer 1 would stop being a
+    /// cache and every heartbeat would re-read the manifest.
+    #[tokio::test]
+    async fn a_build_seed_still_satisfies_the_interval() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = Arc::new(RwLock::new(RefreshKeyCache::new()));
+        cache
+            .write()
+            .expect("preagg cache lock poisoned")
+            .insert("built".to_string(), None);
+
+        let (_, stale) = super::eval_every_refresh_key("24h", "built", dir.path(), &cache);
+        assert!(!stale, "the rebuild worker's seed is the build record");
     }
 
     /// A rollup nothing has ever touched is stale, so a fresh workspace still

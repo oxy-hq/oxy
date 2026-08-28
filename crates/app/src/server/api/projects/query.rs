@@ -295,6 +295,13 @@ async fn run_sql_query(
     // Truncated if the soft row cap filled OR the connector hit its byte/row
     // backstop — the latter can stop *below* MAX_ROWS on wide rows, which the
     // length check alone would miss.
+    //
+    // `/semantic-query` fetches `MAX_ROWS + 1` and compares `>` to make this
+    // exact. This endpoint is left as-is deliberately: changing its truncation
+    // semantics was out of scope for that change, and the false positive on a
+    // result that is exactly MAX_ROWS rows is conservative in the safe
+    // direction. So the two endpoints can answer "is this complete?"
+    // differently at the boundary — that divergence is known, not an oversight.
     let truncated = objects.len() == MAX_ROWS || connector_truncated;
     Ok(json_objects_to_table(objects, truncated))
 }

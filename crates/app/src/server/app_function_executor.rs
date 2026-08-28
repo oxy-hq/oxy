@@ -18,6 +18,10 @@ pub const APP_FUNCTION_KIND: &str = "app_function";
 
 pub struct AppFunctionTaskExecutor {
     pub db: DatabaseConnection,
+    /// The node's Layer-1 preagg cache, injected by `build_custom_task_registry`
+    /// so a scheduled function's `ctx.semantic` resolves rollups the same way an
+    /// HTTP-invoked one does. Default (no cache) compiles to warehouse SQL.
+    pub preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
 }
 
 #[async_trait]
@@ -72,6 +76,7 @@ impl TaskExecutor for AppFunctionTaskExecutor {
         // mid-flight instead of running to its timeout.
         let cancel_child = cancel.clone();
         let db = self.db.clone();
+        let preagg = self.preagg.clone();
 
         tokio::spawn(async move {
             let _ = event_tx
@@ -99,6 +104,7 @@ impl TaskExecutor for AppFunctionTaskExecutor {
                     as std::sync::Arc<
                         dyn crate::server::api::custom_apps_functions::seam::FunctionQueryExecutor,
                     >,
+                preagg,
             )
             .await
             {

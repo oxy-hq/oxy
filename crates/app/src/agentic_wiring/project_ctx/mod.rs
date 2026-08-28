@@ -65,7 +65,14 @@ pub struct OxyProjectContext {
     /// check on the query read-path. Mirrors the worker's
     /// `pre_aggregations.refresh_worker.renewal_threshold` so operators who
     /// change one see the matching read-side behaviour.
-    preagg_renewal_threshold_secs: u64,
+    ///
+    /// `None` means **nobody set one**, not "120". The distinction is what lets
+    /// a context handed to `with_preagg` fall back to the workspace's own
+    /// config instead of a literal: a `u64` field cannot say "unset", so every
+    /// derived `PreaggCacheCtx` would carry the struct default and defeat that
+    /// fallback. `preagg_renewal_threshold_secs()` still answers 120 for the
+    /// trait, which is where a concrete number is actually required.
+    preagg_renewal_threshold_secs: Option<u64>,
     /// Database connection. Set from `AgenticState.db` by the HTTP workspace
     /// middleware AND the in-process global driver (`recovery.rs`). Powers
     /// anomaly-store queries and `compile_dispatcher()` — so any path that
@@ -83,7 +90,7 @@ impl OxyProjectContext {
             role: None,
             connectors: tokio::sync::Mutex::new(HashMap::new()),
             preagg_cache: None,
-            preagg_renewal_threshold_secs: 120,
+            preagg_renewal_threshold_secs: None,
             db: None,
         }
     }
@@ -151,8 +158,72 @@ impl OxyProjectContext {
     /// Attach the preagg renewal threshold (seconds). Must match the
     /// background worker's `refresh_worker.renewal_threshold`.
     pub fn with_preagg_renewal_threshold_secs(mut self, secs: u64) -> Self {
-        self.preagg_renewal_threshold_secs = secs;
+        self.preagg_renewal_threshold_secs = Some(secs);
         self
+    }
+
+    /// This context's rollup short-circuit as a `PreaggCacheCtx`, for handing
+    /// to another context's `with_preagg`.
+    ///
+    /// The threshold stays `None` when nothing explicitly set one, so the
+    /// receiving context resolves it from the workspace config rather than
+    /// inheriting a default that was never a decision.
+    pub fn preagg_cache_ctx(
+        &self,
+    ) -> crate::server::api::middlewares::workspace_context::PreaggCacheCtx {
+        crate::server::api::middlewares::workspace_context::PreaggCacheCtx {
+            cache: self.preagg_cache.clone(),
+            renewal_threshold_secs: self.preagg_renewal_threshold_secs,
+        }
+    }
+
+    /// Attach the node's Layer-1 rollup short-circuit in one call.
+    ///
+    /// The cache and the threshold belong together and had started being paired
+    /// by hand at every composition root that builds a context outside an HTTP
+    /// request — the background driver, the Slack bridge, the Data App runner.
+    /// One helper is what keeps a new one from attaching the cache and
+    /// forgetting the threshold, which silently gives that path 120s while the
+    /// rebuild cycle honours the workspace's own setting.
+    ///
+    /// A context with no cache resolves no rollup: every semantic query it runs
+    /// compiles to warehouse SQL, which is always a correct answer and only a
+    /// slower one.
+    pub fn with_preagg(
+        self,
+        preagg: &crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
+    ) -> Self {
+        let Some(cache) = preagg.cache.clone() else {
+            return self;
+        };
+        // Resolved from THIS workspace's own
+        // `pre_aggregations.refresh_worker.renewal_threshold` when the process
+        // publishes no global value — the same key the rebuild cycle reads, and
+        // the same fallback `workspace_context` applies on the request path.
+        let secs = preagg.renewal_threshold_secs_or(&self.workspace_manager().config_manager);
+        self.with_preagg_cache(cache)
+            .with_preagg_renewal_threshold_secs(secs)
+    }
+
+    /// This context's rollup short-circuit, shaped for a metric-tree runner.
+    ///
+    /// `freshness` is the caller's, not the context's: the same context builds
+    /// the request-driven runner (which serves a stale rollup — it is a
+    /// display, badged as pre-aggregated) and the system runner behind the
+    /// scheduled monitor scan (which must not, because it persists what it
+    /// computes). A threshold nobody set resolves from this workspace's own
+    /// config rather than a literal, same as `with_preagg`.
+    pub(super) fn runner_preagg(
+        &self,
+        freshness: crate::server::preagg_context::RollupFreshness,
+    ) -> crate::agentic_wiring::metric_tree_runner::RunnerPreagg {
+        crate::agentic_wiring::metric_tree_runner::RunnerPreagg {
+            cache: self.preagg_cache.clone(),
+            renewal_threshold_secs: self
+                .preagg_cache_ctx()
+                .renewal_threshold_secs_or(&self.workspace_manager.config_manager),
+            freshness,
+        }
     }
 
     pub fn workspace_manager(&self) -> &WorkspaceManager<WorkingCopy> {

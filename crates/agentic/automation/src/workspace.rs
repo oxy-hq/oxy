@@ -218,6 +218,13 @@ pub trait WorkspaceContext: Send + Sync {
         None
     }
 
+    /// Whether this context's queries must decline a stale rollup rather than
+    /// serve it. `false` is the read-surface posture every automation and Data
+    /// App task wants; see `PreaggContext::require_fresh` for who sets it.
+    fn preagg_require_fresh(&self) -> bool {
+        false
+    }
+
     /// The assembled local-rollup short-circuit, or `None` to compile every
     /// query to warehouse SQL. Assembled here, from one set of accessors, so
     /// no caller has to remember which pieces belong together.
@@ -227,6 +234,7 @@ pub trait WorkspaceContext: Send + Sync {
             cache: self.refresh_key_cache()?,
             renewal_threshold_secs: self.preagg_renewal_threshold_secs(),
             blob: self.preagg_blob(),
+            require_fresh: self.preagg_require_fresh(),
         })
     }
 

@@ -601,7 +601,7 @@ async fn create_web_application(
     extra_workspace_routes: Router<crate::server::router::AppState>,
     extra_workspace_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
 ) -> Result<Router, OxyError> {
-    let (api_router, external_api_router) = crate::server::router::api_router(
+    let (api_router, external_api_router, preagg_ctx) = crate::server::router::api_router(
         mode,
         enterprise,
         observability,
@@ -654,7 +654,14 @@ async fn create_web_application(
                     // so `custom_apps_functions` runs `ctx.query` through the
                     // trait without importing `projects::query`.
                     .layer(axum::Extension(std::sync::Arc::new(DataPlaneQueryExecutor)
-                        as std::sync::Arc<dyn FunctionQueryExecutor>)),
+                        as std::sync::Arc<dyn FunctionQueryExecutor>))
+                    // Inject the Layer-1 preagg cache the API router owns, so a
+                    // function's `ctx.semantic` compiles through the same
+                    // rollup-aware path as `/api/projects/{id}/semantic-query`.
+                    // This route is mounted outside the API router and so has no
+                    // `AppState` to read it from; the extension is the same seam
+                    // the query executor already uses.
+                    .layer(axum::Extension(preagg_ctx)),
             ),
         )
         .merge(

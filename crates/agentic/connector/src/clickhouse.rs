@@ -15,7 +15,8 @@
 //! - Sample: `SELECT * FROM ({sql}) LIMIT {n} FORMAT JSONCompact`
 //! - Stats:  per-column aggregation inside `FROM ({sql})`
 //!
-//! Schema is introspected from `system.columns` and cached at construction.
+//! Schema is introspected from `system.columns` on `prepare_schema` and cached
+//! from then on — never at construction, which every query would otherwise pay.
 
 use std::collections::HashMap;
 
@@ -132,7 +133,20 @@ pub struct ClickHouseConnector {
     user: String,
     password: String,
     database: String,
-    cached_schema: SchemaInfo,
+    /// Filled by [`prepare_schema`](DatabaseConnector::prepare_schema), NOT by
+    /// [`new`](Self::new). Fetching it eagerly cost a full `system.columns`
+    /// scan on every connector build, and connectors are built per request —
+    /// so every query, `SELECT 1` included, paid for a catalog read it then
+    /// threw away. The SQL execution paths never call `introspect_schema`; the
+    /// two that do — the schema browser and the analytics agent's
+    /// `list_tables` / `describe_table` — await `prepare_schema` first.
+    ///
+    /// `None` until `prepare_schema` has run, so "never prepared" is
+    /// distinguishable from "prepared, and the credential sees no tables":
+    /// a missed `prepare_schema` then errors instead of answering "no tables".
+    cached_schema: std::sync::RwLock<Option<SchemaInfo>>,
+    /// Set when the pre-fetch fails so `introspect_schema` can surface it.
+    schema_error: std::sync::RwLock<Option<String>>,
     /// Per-result byte ceiling sent with every query (see `MAX_RESULT_BYTES`).
     /// A field rather than a constant so tests can force the overflow guard to
     /// trip on a small result.
@@ -140,26 +154,31 @@ pub struct ClickHouseConnector {
 }
 
 impl ClickHouseConnector {
-    /// Connect to ClickHouse via its HTTP interface and pre-fetch the schema.
+    /// Build a connector that talks to ClickHouse over its HTTP interface.
     ///
-    /// `url` should be the base URL including scheme and port, e.g.
-    /// `http://localhost:8123`.
+    /// Does no I/O: schema is fetched lazily by `prepare_schema`, the same
+    /// posture `PostgresConnector` takes. `url` should be the base URL
+    /// including scheme and port, e.g. `http://localhost:8123`.
+    ///
+    /// Because it does no I/O, `new` is **no longer a connectivity check**: a
+    /// bad URL or credential now first surfaces at query time (or at
+    /// `prepare_schema`), not at connector build. Still `async` and still
+    /// fallible so every call site keeps compiling — and so a future version
+    /// can go back to doing work here.
     pub async fn new(
         url: String,
         user: String,
         password: String,
         database: String,
     ) -> Result<Self, ConnectorError> {
-        let client = reqwest::Client::new();
-        let cached_schema = fetch_schema(&client, &url, &user, &password, &database).await?;
-
         Ok(Self {
-            client,
+            client: reqwest::Client::new(),
             url,
             user,
             password,
             database,
-            cached_schema,
+            cached_schema: std::sync::RwLock::new(None),
+            schema_error: std::sync::RwLock::new(None),
             max_result_bytes: MAX_RESULT_BYTES,
         })
     }
@@ -491,8 +510,71 @@ impl DatabaseConnector for ClickHouseConnector {
         Ok(TypedRowStream::from_rows(columns, typed_rows))
     }
 
+    /// Fetch and cache the schema. Idempotent: a second call is a no-op once
+    /// the first has populated the cache.
+    async fn prepare_schema(&self) -> Result<(), ConnectorError> {
+        if self
+            .cached_schema
+            .read()
+            .map(|s| s.is_some())
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+        // Two concurrent callers can both pass the check above and both scan.
+        // Harmless: the scan is an idempotent read and the last write wins.
+        match fetch_schema(
+            &self.client,
+            &self.url,
+            &self.user,
+            &self.password,
+            &self.database,
+        )
+        .await
+        {
+            Ok(info) => {
+                *self
+                    .cached_schema
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(info);
+                *self.schema_error.write().unwrap_or_else(|e| e.into_inner()) = None;
+                Ok(())
+            }
+            Err(e) => {
+                *self.schema_error.write().unwrap_or_else(|e| e.into_inner()) = Some(e.to_string());
+                Err(e)
+            }
+        }
+    }
+
+    /// A cached schema wins over a recorded error, deliberately.
+    ///
+    /// `schema_error` is a *fallback explanation* for an absent cache, not a
+    /// veto over a present one. Checking it first would let a stale failure
+    /// outlive the success that replaced it: `prepare_schema` early-returns
+    /// once the cache is `Some`, so nothing clears an error written after a
+    /// successful prepare — interleave a failing preparer with a succeeding
+    /// one and the connector would report failure for the rest of its life
+    /// while holding a perfectly good schema.
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {
-        Ok(self.cached_schema.clone())
+        if let Some(info) = self
+            .cached_schema
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
+            return Ok(info);
+        }
+        if let Ok(err_guard) = self.schema_error.read()
+            && let Some(ref err) = *err_guard
+        {
+            return Err(ConnectorError::ConnectionError(format!(
+                "schema introspection failed: {err}"
+            )));
+        }
+        Err(ConnectorError::ConnectionError(
+            "schema not prepared: call prepare_schema() before introspect_schema()".to_string(),
+        ))
     }
 }
 
@@ -588,6 +670,47 @@ fn detect_join_keys(tables: &[SchemaTableInfo]) -> Vec<(String, String, String)>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `new` does no I/O, so an un-prepared connector must say so rather than
+    /// answer "no tables" — the difference between a loud misconfiguration and
+    /// a silently empty warehouse.
+    #[tokio::test]
+    async fn introspect_before_prepare_is_an_error_not_an_empty_schema() {
+        let conn = ClickHouseConnector::new(
+            "http://127.0.0.1:1".to_string(),
+            "u".to_string(),
+            "p".to_string(),
+            "db".to_string(),
+        )
+        .await
+        .expect("new does no I/O and cannot fail");
+
+        let err = DatabaseConnector::introspect_schema(&conn)
+            .expect_err("un-prepared introspection must error");
+        assert!(err.to_string().contains("schema not prepared"), "got {err}");
+    }
+
+    /// A cached schema must win over a recorded error: `prepare_schema` never
+    /// clears `schema_error` once the cache is populated, so checking the error
+    /// first would let a stale failure outlive the success that replaced it.
+    #[tokio::test]
+    async fn a_cached_schema_wins_over_a_recorded_error() {
+        let conn = ClickHouseConnector::new(
+            "http://127.0.0.1:1".to_string(),
+            "u".to_string(),
+            "p".to_string(),
+            "db".to_string(),
+        )
+        .await
+        .unwrap();
+
+        *conn.schema_error.write().unwrap() = Some("transient failure".to_string());
+        *conn.cached_schema.write().unwrap() = Some(SchemaInfo::default());
+
+        let info = DatabaseConnector::introspect_schema(&conn)
+            .expect("a populated cache answers even with an error recorded");
+        assert!(info.tables.is_empty());
+    }
 
     #[test]
     fn result_guard_caps_bytes_and_breaks() {

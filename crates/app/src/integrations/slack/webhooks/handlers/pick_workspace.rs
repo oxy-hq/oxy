@@ -6,6 +6,7 @@ use crate::integrations::slack::resolution::user::{ResolvedUser, resolve as reso
 use crate::integrations::slack::resolution::workspace_agent::pick_default_agent_path;
 use crate::integrations::slack::types::{InteractivityAction, InteractivityPayload};
 use crate::integrations::slack::webhooks::tenant_resolver;
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use oxy_shared::errors::OxyError;
 use serde_json::Value;
 use uuid::Uuid;
@@ -18,6 +19,10 @@ use uuid::Uuid;
 pub async fn handle(
     payload: &InteractivityPayload,
     action: &InteractivityAction,
+    // The node's Layer-1 pre-aggregation cache for the run this dispatches. A
+    // default carries no cache, so the agent's semantic queries compile to
+    // warehouse SQL — the right answer, just without the rollup shortcut.
+    preagg: &PreaggCacheCtx,
 ) -> Result<(), OxyError> {
     let value = action
         .selected_option
@@ -100,6 +105,7 @@ pub async fn handle(
         question,
         channel_id,
         thread_ts,
+        preagg: preagg.clone(),
     };
     tokio::spawn(async move {
         if let Err(e) = run_for_slack(req).await {

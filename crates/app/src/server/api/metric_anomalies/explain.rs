@@ -18,7 +18,7 @@ use uuid::Uuid;
 use super::error::AnomalyError;
 use crate::agentic_wiring::OxyMetricTreeRunner;
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, WorkspaceManagerWorkingCopy,
+    EffectiveWorkspaceRole, PreaggCacheCtx, WorkspaceManagerWorkingCopy,
 };
 
 #[derive(Debug, Deserialize, Default)]
@@ -40,6 +40,7 @@ pub async fn explain_anomaly(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     Extension(state): Extension<Arc<AgenticState>>,
+    preagg_ctx: PreaggCacheCtx,
     Path((_workspace_id, anomaly_id)): Path<(Uuid, Uuid)>,
     Query(q): Query<ExplainAnomalyQuery>,
 ) -> Result<Json<serde_json::Value>, AnomalyError> {
@@ -78,7 +79,18 @@ pub async fn explain_anomaly(
     let filters = agentic_analytics::anomaly_store::segment_query_filters(&row.filters);
 
     use agentic_analytics::MetricTreeRunner as _;
-    let runner = OxyMetricTreeRunner::new(workspace_manager.into_read_only(), user.id, role);
+    // Explain is the heaviest metric-tree op there is — a recursive driver
+    // search that fires tens of queries — so it is the one that gains most from
+    // a rollup. Attached the same way the IDE's `/metric-tree/explain` does; a
+    // request no rollup covers still falls through to the warehouse.
+    // Fresh rollups only, for the same reason the scan requires them: this
+    // explains an anomaly the scan already persisted, and a stale rollup would
+    // attribute the drop it invented to whichever driver lags with it.
+    let renewal_threshold_secs =
+        preagg_ctx.renewal_threshold_secs_or(&workspace_manager.config_manager);
+    let runner = OxyMetricTreeRunner::new(workspace_manager.into_read_only(), user.id, role)
+        .with_preagg(preagg_ctx.cache.clone(), renewal_threshold_secs)
+        .requiring_fresh_rollups();
     let mut config = airlayer::engine::metric_tree_ops::ExplainConfig::default();
     config.deep = false;
 

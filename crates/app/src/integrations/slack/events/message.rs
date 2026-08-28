@@ -20,6 +20,7 @@ use crate::integrations::slack::linking::magic_link::new_link_url;
 use crate::integrations::slack::resolution::entrypoint::run_or_prompt;
 use crate::integrations::slack::resolution::thread_context::ThreadContextService;
 use crate::integrations::slack::resolution::user::{ResolvedUser, resolve};
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use entity::slack_installations::Model as InstallationRow;
 
 pub struct MessageArgs {
@@ -33,6 +34,10 @@ pub struct MessageArgs {
     pub channel_type: Option<String>,
     pub subtype: Option<String>,
     pub bot_id: Option<String>,
+    /// The node's Layer-1 pre-aggregation cache, threaded down to the agent
+    /// run. A default carries no cache, which only costs the run a rollup
+    /// read — the semantic queries compile to warehouse SQL instead.
+    pub preagg: PreaggCacheCtx,
 }
 
 pub async fn handle(args: MessageArgs) -> Result<(), SlackError> {
@@ -62,6 +67,7 @@ pub async fn handle(args: MessageArgs) -> Result<(), SlackError> {
             args.ts,
             args.channel,
             args.thread_ts,
+            args.preagg,
         )
         .await;
     }
@@ -79,6 +85,7 @@ async fn handle_dm(
     ts: String,
     channel: String,
     thread_ts_opt: Option<String>,
+    preagg: PreaggCacheCtx,
 ) -> Result<(), SlackError> {
     let thread_ts = thread_ts_opt.unwrap_or_else(|| ts.clone());
 
@@ -107,6 +114,7 @@ async fn handle_dm(
             question: text,
             channel_id: channel,
             thread_ts,
+            preagg,
         })
         .await;
     }
@@ -119,6 +127,7 @@ async fn handle_dm(
         channel,
         thread_ts,
         true,
+        preagg,
     )
     .await
 }

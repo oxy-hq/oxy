@@ -43,7 +43,12 @@ fn resolve_connector<'a>(
 }
 
 /// Ensure the schema for `connector_name` is cached, then return it.
-fn cached_schema(
+///
+/// Lazily-connecting connectors (ClickHouse, Postgres) only populate their
+/// schema in `prepare_schema`; without that await `introspect_schema` answers
+/// "no tables" rather than erroring. The trait default is a no-op, so eager
+/// connectors pay nothing.
+async fn cached_schema(
     connector_name: &str,
     connector: &dyn DatabaseConnector,
     cache: &SchemaCache,
@@ -54,6 +59,10 @@ fn cached_schema(
             return Ok(info.clone());
         }
     }
+    connector
+        .prepare_schema()
+        .await
+        .map_err(|e| ToolError::Execution(format!("schema introspection failed: {e}")))?;
     let info = connector
         .introspect_schema()
         .map_err(|e| ToolError::Execution(format!("schema introspection failed: {e}")))?;
@@ -105,13 +114,13 @@ async fn execute_database_lookup_tool_inner(
             let mut tables: Vec<Value> = Vec::new();
             if let Some(db) = database {
                 let (db_name, conn) = resolve_connector(Some(db), connectors, default_connector)?;
-                let info = cached_schema(&db_name, conn.as_ref(), cache)?;
+                let info = cached_schema(&db_name, conn.as_ref(), cache).await?;
                 for t in &info.tables {
                     tables.push(json!({ "name": t.name, "database": &db_name }));
                 }
             } else {
                 for (db_name, conn) in connectors {
-                    let info = cached_schema(db_name, conn.as_ref(), cache)?;
+                    let info = cached_schema(db_name, conn.as_ref(), cache).await?;
                     for t in &info.tables {
                         tables.push(json!({ "name": t.name, "database": db_name }));
                     }
@@ -126,7 +135,7 @@ async fn execute_database_lookup_tool_inner(
                 .ok_or_else(|| ToolError::BadParams("missing 'table'".into()))?;
             let database = params["database"].as_str();
             let (db_name, conn) = resolve_connector(database, connectors, default_connector)?;
-            let info = cached_schema(&db_name, conn.as_ref(), cache)?;
+            let info = cached_schema(&db_name, conn.as_ref(), cache).await?;
 
             // Find the table (case-insensitive).
             let table_lower = table.to_lowercase();

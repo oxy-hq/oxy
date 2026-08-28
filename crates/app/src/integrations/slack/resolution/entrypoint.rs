@@ -10,6 +10,7 @@ use crate::integrations::slack::events::execution::{SlackRunRequest, run_for_sla
 use crate::integrations::slack::pickers::workspace::workspace_picker_blocks;
 use crate::integrations::slack::resolution::thread_context::ThreadContextService;
 use crate::integrations::slack::resolution::workspace_agent::{Resolution, resolve as resolve_ws};
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use entity::slack_installations::Model as InstallationRow;
 use entity::slack_user_links::Model as UserLinkRow;
 use oxy::database::client::establish_connection;
@@ -25,6 +26,10 @@ pub async fn run_or_prompt(
     channel_id: String,
     thread_ts: String,
     is_dm: bool,
+    // The node's Layer-1 pre-aggregation cache, handed to whichever run this
+    // dispatches. A default means no rollup: the run's semantic queries compile
+    // to warehouse SQL, a correct answer that is merely slower.
+    preagg: PreaggCacheCtx,
 ) -> Result<(), SlackError> {
     let client = SlackClient::new();
 
@@ -44,6 +49,7 @@ pub async fn run_or_prompt(
             question,
             channel_id,
             thread_ts,
+            preagg,
         })
         .await;
     }
@@ -81,6 +87,7 @@ pub async fn run_or_prompt(
                 question,
                 channel_id,
                 thread_ts,
+                preagg,
             })
             .await?;
         }

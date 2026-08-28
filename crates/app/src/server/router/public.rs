@@ -81,7 +81,7 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
         )
         .route_fleet(
             "/slack/events",
-            post(crate::integrations::slack::webhooks::events::handle_events),
+            post(crate::integrations::slack::webhooks::events::handle_events_route),
         )
         .route_fleet(
             "/slack/interactivity",

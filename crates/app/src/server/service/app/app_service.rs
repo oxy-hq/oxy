@@ -1,6 +1,7 @@
 use super::cache::AppCache;
 use super::types::{AppResult, TASKS_KEY};
 use crate::agentic_wiring::OxyProjectContext;
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::model::{AppConfig, ControlConfig, Display, Task};
 use oxy::config::{ConfigManager, DiskSlot, ResolveWorkspaceFile, WorkingCopy};
@@ -45,17 +46,22 @@ pub fn render_control_default(val: JsonValue) -> JsonValue {
 pub struct AppService<S = WorkingCopy> {
     workspace_manager: WorkspaceManager<S>,
     cache: AppCache<S>,
+    /// The node's Layer-1 rollup short-circuit, when the caller has one. Only
+    /// `run` reads it: a Data App's tasks must resolve rollups the same way
+    /// `/semantic-query` does. Default-empty, which resolves no rollup and
+    /// compiles every task to warehouse SQL — correct, just slower.
+    preagg: PreaggCacheCtx,
 }
 
 impl<S: DiskSlot + Send + Sync> AppService<S>
 where
     ConfigManager<S>: ResolveWorkspaceFile,
 {
-    /// The `OxyProjectContext` this used to take was stored and never read —
-    /// the one place that needs one builds it locally from the same manager.
-    /// Carrying it pinned the whole service to `WorkingCopy`, so a route whose
-    /// entire job is to serve a cached answer when the ide is down required a
-    /// disk to say so.
+    /// The `OxyProjectContext` this used to take was stored only for the
+    /// preagg fields `run` needs, which now arrive on their own via
+    /// [`Self::with_preagg`] — carrying a whole context pinned the service to
+    /// `WorkingCopy`, so a route whose entire job is to serve a cached answer
+    /// when the ide is down required a disk to say so.
     ///
     /// A `branch_hint` went the same way. The manager already carries the
     /// `Origin` the middleware resolved — branch gate included — so a second
@@ -66,7 +72,16 @@ where
         Self {
             workspace_manager,
             cache: AppCache::new(config_manager, workspace_id),
+            preagg: PreaggCacheCtx::default(),
         }
+    }
+
+    /// Attach the request's rollup short-circuit, so tasks this service runs
+    /// answer from a rollup wherever `/semantic-query` would. Callers that
+    /// only read cached data need not bother.
+    pub fn with_preagg(mut self, preagg: PreaggCacheCtx) -> Self {
+        self.preagg = preagg;
+        self
     }
 
     pub async fn get_config(&self, app_path: &PathBuf) -> AppResult<AppConfig> {
@@ -233,8 +248,23 @@ impl AppService<WorkingCopy> {
         // common case (`execute_sql` tasks driven by Data App
         // controls) doesn't depend on inline-agent execution, so
         // `None` here is correct for current customer-apps usage.
-        let project_ctx = Arc::new(OxyProjectContext::new(self.workspace_manager.clone()));
-        let workspace: Arc<dyn agentic_automation::WorkspaceContext> = project_ctx;
+        // Carry the caller's rollup short-circuit onto the context the
+        // automation runs under. A Data App's tasks go through
+        // `step_executor::execute_semantic_query`, which asks the workspace
+        // context for a `PreaggContext`; a bare `OxyProjectContext::new` has
+        // none, so every Data App query compiled to warehouse SQL while the
+        // same measure asked over `/semantic-query` came from a rollup. Only
+        // the preagg fields travel — no subject/role, so the app's connector
+        // identity stays what this path has always used.
+        //
+        // Held as a `PreaggCacheCtx` rather than as a concrete threshold: its
+        // `renewal_threshold_secs` is an `Option`, so "nobody set one" stays
+        // expressible and `with_preagg`'s config fallback still fires. A
+        // concrete `u64` here would pin this path to the 120s default — the
+        // exact desync that fallback exists to prevent.
+        let workspace: Arc<dyn agentic_automation::WorkspaceContext> = Arc::new(
+            OxyProjectContext::new(self.workspace_manager.clone()).with_preagg(&self.preagg),
+        );
         let results = agentic_pipeline::automation_run::run_inline_automation_with_render_context(
             workspace.as_ref(),
             automation_config,

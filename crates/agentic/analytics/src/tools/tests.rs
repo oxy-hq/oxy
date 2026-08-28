@@ -508,6 +508,103 @@ fn make_connectors(stub: Arc<IntrospectableStub>) -> HashMap<String, Arc<dyn Dat
     map
 }
 
+/// Stub with the lazy shape ClickHouse and Postgres have: `introspect_schema`
+/// answers "no tables" until `prepare_schema` has run.
+struct LazyStub {
+    schema: SchemaInfo,
+    prepared: std::sync::atomic::AtomicBool,
+}
+
+impl LazyStub {
+    fn new(schema: SchemaInfo) -> Self {
+        Self {
+            schema,
+            prepared: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl DatabaseConnector for LazyStub {
+    fn dialect(&self) -> agentic_connector::SqlDialect {
+        agentic_connector::SqlDialect::DuckDb
+    }
+
+    async fn execute_query(
+        &self,
+        _sql: &str,
+        _limit: u64,
+    ) -> Result<agentic_connector::ExecutionResult, agentic_connector::ConnectorError> {
+        panic!("LazyStub: execute_query must not be called")
+    }
+
+    async fn prepare_schema(&self) -> Result<(), agentic_connector::ConnectorError> {
+        self.prepared
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn introspect_schema(
+        &self,
+    ) -> Result<agentic_connector::SchemaInfo, agentic_connector::ConnectorError> {
+        if self.prepared.load(std::sync::atomic::Ordering::Relaxed) {
+            Ok(self.schema.clone())
+        } else {
+            Ok(SchemaInfo::default())
+        }
+    }
+}
+
+/// Regression: a lazily-connecting connector must be prepared before it is
+/// introspected. Without the `prepare_schema().await` in `cached_schema`,
+/// `list_tables` answers `{"tables": []}` — the analytics agent is told the
+/// warehouse is empty rather than getting an error.
+#[tokio::test]
+async fn list_tables_prepares_a_lazy_connector_first() {
+    let stub: Arc<dyn DatabaseConnector> = Arc::new(LazyStub::new(sample_schema()));
+    let mut connectors: HashMap<String, Arc<dyn DatabaseConnector>> = HashMap::new();
+    connectors.insert("default".to_string(), stub);
+    let cache = new_schema_cache();
+
+    let result = execute_database_lookup_tool(
+        "list_tables",
+        json!({ "database": null }),
+        &connectors,
+        "default",
+        &cache,
+    )
+    .await
+    .unwrap();
+
+    let tables = result["tables"].as_array().unwrap();
+    let names: Vec<&str> = tables.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"orders"), "got {names:?}");
+    assert!(names.contains(&"customers"), "got {names:?}");
+}
+
+/// Same guarantee for `describe_table`, which fails loudly (`available: []`)
+/// rather than quietly when the schema is missing.
+#[tokio::test]
+async fn describe_table_prepares_a_lazy_connector_first() {
+    let stub: Arc<dyn DatabaseConnector> = Arc::new(LazyStub::new(sample_schema()));
+    let mut connectors: HashMap<String, Arc<dyn DatabaseConnector>> = HashMap::new();
+    connectors.insert("default".to_string(), stub);
+    let cache = new_schema_cache();
+
+    let result = execute_database_lookup_tool(
+        "describe_table",
+        json!({ "table": "orders" }),
+        &connectors,
+        "default",
+        &cache,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result["table"].as_str(), Some("orders"));
+    assert_eq!(result["columns"].as_array().unwrap().len(), 2);
+}
+
 #[tokio::test]
 async fn list_tables_returns_table_names() {
     let stub = Arc::new(IntrospectableStub::new(sample_schema()));

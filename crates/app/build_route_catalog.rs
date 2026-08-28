@@ -216,6 +216,13 @@ const DOC_DIRS: &[&str] = &[
     "crates/api-github/src",
     "crates/api-partner-console/src",
     "crates/api-onboarding/src",
+    // `crates/oltp/src/api`, not the whole crate: every handler the OLTP routes
+    // name (`handlers::get_connection`, `erd::get_erd`) lives under `api/`, so
+    // the wider path would only pull ~15 unrelated modules (`provisioner`,
+    // `resolver`, `migration`, …) into the `FnDoc` pool. Free to watch —
+    // `oxy-app` already depends on this crate, so editing it recompiles
+    // `oxy-app` regardless and the marginal cost is one build-script re-run.
+    "crates/oltp/src/api",
 ];
 
 /// Trees walked for `.route(...)` / `.nest(...)` / `.merge(...)` mounts.

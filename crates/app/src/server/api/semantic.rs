@@ -692,6 +692,7 @@ pub async fn execute_semantic_query(
         workspace_manager.workspace_id,
         preagg_cache.clone(),
         renewal_threshold_secs,
+        crate::server::preagg_context::RollupFreshness::ServeStale,
     );
     let compiled = tokio::task::spawn_blocking(move || {
         resolve_and_compile(

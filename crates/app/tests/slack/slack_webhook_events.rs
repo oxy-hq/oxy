@@ -8,6 +8,7 @@ use axum::body::Bytes;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use hmac::{Hmac, KeyInit, Mac};
+use oxy_app::api::middlewares::workspace_context::PreaggCacheCtx;
 use oxy_app::integrations::slack::webhooks::events::handle_events;
 use sha2::Sha256;
 use std::sync::Mutex;
@@ -70,7 +71,7 @@ async fn url_verification_echoes_challenge() {
     let sig = sign_body(TEST_SIGNING_SECRET, ts, body);
     let headers = build_headers(ts, &sig);
 
-    let response = handle_events(headers, Bytes::from_static(body))
+    let response = handle_events(headers, PreaggCacheCtx::default(), Bytes::from_static(body))
         .await
         .into_response();
 
@@ -109,9 +110,13 @@ async fn unknown_team_id_drops_silently() {
     let sig = sign_body(TEST_SIGNING_SECRET, ts, body);
     let headers = build_headers(ts, &sig);
 
-    let response = handle_events(headers, Bytes::copy_from_slice(body))
-        .await
-        .into_response();
+    let response = handle_events(
+        headers,
+        PreaggCacheCtx::default(),
+        Bytes::copy_from_slice(body),
+    )
+    .await
+    .into_response();
 
     // Must be 200 — we don't 4xx unknown teams (Slack would retry forever).
     assert_eq!(response.status(), StatusCode::OK);
@@ -133,7 +138,7 @@ async fn bad_signature_rejected() {
         "v0=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
     );
 
-    let response = handle_events(headers, Bytes::from_static(body))
+    let response = handle_events(headers, PreaggCacheCtx::default(), Bytes::from_static(body))
         .await
         .into_response();
 

@@ -183,6 +183,15 @@ pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Re
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
         };
+        // Layer-1 preagg cache, injected alongside the query executor at the
+        // serve router. Absent (default = no cache) in any composition that
+        // does not run a rebuild worker, in which case `ctx.semantic` compiles
+        // straight to warehouse SQL — the same posture the CLI takes.
+        let preagg = parts
+            .extensions
+            .get::<crate::server::api::middlewares::workspace_context::PreaggCacheCtx>()
+            .cloned()
+            .unwrap_or_default();
         return super::custom_apps_functions::handle_function_request(
             first,
             app_slug,
@@ -192,6 +201,7 @@ pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Re
             body_bytes,
             refresh,
             query_exec,
+            preagg,
         )
         .await;
     }

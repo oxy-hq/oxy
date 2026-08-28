@@ -6,14 +6,42 @@ use crate::integrations::slack::error::SlackError;
 use crate::integrations::slack::signature::verify_request;
 use crate::integrations::slack::types::{Event, EventCallback, EventPayload};
 use crate::integrations::slack::webhooks::tenant_resolver::{ResolvedTenant, resolve};
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use axum::Json;
 use axum::body::Bytes;
+use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use chrono::Utc;
 use serde_json::json;
 
-pub async fn handle_events(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
+/// Axum entry point. Its only job is to lift the node's rollup cache out of
+/// `AppState` — this route is public and never passes through the workspace
+/// middleware, so nothing else inserts a `PreaggCacheCtx` for it.
+///
+/// The signature-verification and dispatch logic lives in [`handle_events`],
+/// which takes the cache directly so the webhook smoke tests can drive it
+/// without standing up an `AppState`.
+pub async fn handle_events_route(
+    headers: HeaderMap,
+    State(app_state): State<crate::server::router::AppState>,
+    body: Bytes,
+) -> impl IntoResponse {
+    let preagg = PreaggCacheCtx {
+        cache: app_state.preagg_cache.clone(),
+        renewal_threshold_secs: app_state.preagg_renewal_threshold_secs,
+    };
+    handle_events(headers, preagg, body).await
+}
+
+pub async fn handle_events(
+    headers: HeaderMap,
+    // The node's Layer-1 pre-aggregation cache, handed to the agent run below;
+    // without it every semantic query the agent issues compiles to warehouse
+    // SQL.
+    preagg: PreaggCacheCtx,
+    body: Bytes,
+) -> impl IntoResponse {
     let cfg = match SlackConfig::cached().as_runtime() {
         Some(c) => c,
         None => {
@@ -59,7 +87,7 @@ pub async fn handle_events(headers: HeaderMap, body: Bytes) -> impl IntoResponse
         EventPayload::EventCallback(cb) => {
             let team = cb.team_id.clone();
             tokio::spawn(async move {
-                if let Err(e) = dispatch(cb).await {
+                if let Err(e) = dispatch(cb, preagg).await {
                     tracing::error!(team = team, "slack event dispatch: {e}");
                 }
             });
@@ -68,7 +96,13 @@ pub async fn handle_events(headers: HeaderMap, body: Bytes) -> impl IntoResponse
     }
 }
 
-pub(crate) async fn dispatch(cb: EventCallback) -> Result<(), oxy_shared::errors::OxyError> {
+pub(crate) async fn dispatch(
+    cb: EventCallback,
+    // The node's Layer-1 pre-aggregation cache. Only the message/app_mention
+    // arms use it; a default carries no cache, which costs the run its rollup
+    // shortcut but never its correctness.
+    preagg: PreaggCacheCtx,
+) -> Result<(), oxy_shared::errors::OxyError> {
     // Deduplicate: Slack delivers events at-least-once; skip retries.
     if let Some(event_id) = cb.event_id.as_deref() {
         match crate::integrations::slack::services::seen_events::SeenEventsService::claim(event_id)
@@ -125,6 +159,7 @@ pub(crate) async fn dispatch(cb: EventCallback) -> Result<(), oxy_shared::errors
                     channel,
                     thread_ts,
                     ts,
+                    preagg,
                 ),
             )
             .await;
@@ -161,6 +196,7 @@ pub(crate) async fn dispatch(cb: EventCallback) -> Result<(), oxy_shared::errors
                         channel_type,
                         subtype,
                         bot_id,
+                        preagg,
                     },
                 ),
             )

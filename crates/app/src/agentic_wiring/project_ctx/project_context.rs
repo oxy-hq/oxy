@@ -10,6 +10,8 @@ use async_trait::async_trait;
 use entity::workspace_members::WorkspaceRole;
 use oxy::config::model::DatabaseType;
 
+use crate::server::preagg_context::RollupFreshness;
+
 use super::{
     OxyProjectContext, airhouse_wire_params, pg_wire_dsn, resolve_connector_impl,
     resolve_model_impl, resolve_pre_built_airhouse,
@@ -255,8 +257,7 @@ impl ProjectContext for OxyProjectContext {
             self.workspace_manager.clone(),
             user_id,
             role,
-            self.preagg_cache.clone(),
-            self.preagg_renewal_threshold_secs,
+            self.runner_preagg(RollupFreshness::ServeStale),
         ))
     }
 
@@ -272,12 +273,20 @@ impl ProjectContext for OxyProjectContext {
         // consider restricting the inbox payload for non-admin roles or
         // running the system scan with a read-only service account that
         // matches the most restrictive tenant RLS policy.
+        // The rollup short-circuit the request-driven sibling gets, with one
+        // difference: `RequireFresh`. The scheduled scan persists what it
+        // computes to the Insights Inbox and an unhealthy transition pages
+        // Slack, so a rollup whose newest buckets are missing must fall
+        // through to the warehouse rather than read as a drop. Without the
+        // cache here at all, the scheduled scan and the manual
+        // `POST /semantic/anomalies/scan` of the SAME monitor answered from
+        // different tiers and could write different anomalies for the same
+        // monitor and granularity.
         Some(super::super::metric_tree_runner::make_runner(
             self.workspace_manager.clone(),
             uuid::Uuid::nil(),
             WorkspaceRole::Owner,
-            None,
-            120,
+            self.runner_preagg(RollupFreshness::RequireFresh),
         ))
     }
 

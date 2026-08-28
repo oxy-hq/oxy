@@ -22,6 +22,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agentic_wiring::builder_bridges::OxyBuilderAppRunner;
 use crate::api::middlewares::timeout::timeout_middleware;
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use crate::server::builder_test_runner::OxyTestRunner;
 use oxy_app_core::serve_mode::ServeMode;
 
@@ -64,7 +65,7 @@ pub async fn api_router(
     // Same cloud-only caveat as `extra_api_routes`.
     extra_workspace_routes: Router<AppState>,
     extra_workspace_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
-) -> Result<(Router, Router), OxyError> {
+) -> Result<(Router, Router, PreaggCacheCtx), OxyError> {
     let agentic_state = new_agentic_state(shutdown_token, true).await?;
 
     // Layer-1 (per-query) preagg refresh-key cache, shared with every request
@@ -111,7 +112,17 @@ pub async fn api_router(
              fleet must drive the agentic_task_queue."
         );
     } else {
-        spawn_recovery(agentic_state.clone(), mode);
+        // The in-process driver is what actually drains the queue (the standalone
+        // `oxy worker` builds no platform context yet), so this is where queued
+        // work gets its rollup short-circuit. Same `Arc` the request path uses.
+        spawn_recovery(
+            agentic_state.clone(),
+            mode,
+            PreaggCacheCtx {
+                cache: preagg_cache.clone(),
+                renewal_threshold_secs: preagg_renewal_threshold_secs,
+            },
+        );
     }
     spawn_shutdown_hook(agentic_state.clone());
     // Periodic maintenance for custom-app procedure runs: TTL
@@ -320,7 +331,21 @@ pub async fn api_router(
     // lets its own permissive CORS govern preflight for these routes.
     let external_router = build_external_api_router(app_state.clone(), agentic_state, mode);
 
-    Ok((finalize_router(app_routes, app_state), external_router))
+    // The Layer-1 cache is handed back so the caller can reach the surfaces it
+    // mounts OUTSIDE this router — today the `/customer-apps/{*path}` serve
+    // route, whose Oxy Functions run `ctx.semantic` through the same
+    // preagg-aware compile every other semantic surface uses. It is the same
+    // `Arc` `AppState` carries, not a second cache: the read side and the
+    // rebuild side must observe each other's writes.
+    let preagg = PreaggCacheCtx {
+        cache: app_state.preagg_cache.clone(),
+        renewal_threshold_secs: app_state.preagg_renewal_threshold_secs,
+    };
+    Ok((
+        finalize_router(app_routes, app_state),
+        external_router,
+        preagg,
+    ))
 }
 
 /// 6-hour background loop that reconciles Stripe seat quantity for every

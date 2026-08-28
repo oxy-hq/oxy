@@ -127,6 +127,35 @@ pub struct PreaggContext {
     /// only, which is correct for a single-node deployment and for any
     /// deployment with no blob bucket configured.
     pub blob: Option<BlobConfig>,
+    /// Decline a rollup [`check_and_seed_freshness`] does not call fresh,
+    /// instead of serving it while the rebuild catches up.
+    ///
+    /// **Know what the gate measures.** It is a *cold-cache* guard, not a lag
+    /// detector: "fresh" means this rollup's refresh key was checked within
+    /// `renewal_threshold_secs` and still matches the manifest's value. It
+    /// cannot see how far behind the rollup's own `preagg_cycle` is — a cache
+    /// hit seeded from that same manifest agrees with it by construction. So
+    /// `true` declines on a cold or expired entry (including the first look of
+    /// any process, which seeds it) and on a manifest the rebuild has moved
+    /// under a live entry; it does not decline a rollup that is uniformly and
+    /// quietly behind. Widening it to real lag means comparing the manifest's
+    /// `build_date` against the rollup's refresh interval, which this context
+    /// does not carry.
+    ///
+    /// `false` — the read-surface posture — is right for a chart or a chat
+    /// answer: a rollup a few minutes behind beats a warehouse scan, the
+    /// **Pre-aggregated** badge says where the number came from, and the
+    /// seeding this check does is what triggers the rebuild.
+    ///
+    /// `true` is for the surfaces that turn a number into an *assertion about
+    /// the data* rather than a display of it — the anomaly scan and its
+    /// explain. A rollup whose newest buckets are missing or partial reads as
+    /// a drop, `persist_scan` writes that to the Insights Inbox, and an
+    /// unhealthy transition pages Slack. `.monitor.yml`'s `freshness` horizon
+    /// guards *warehouse* lag and knows nothing about rollup lag, so the cheap
+    /// guard is worth having — it costs those paths a warehouse scan on the
+    /// ticks where the cache cannot vouch for the rollup at all.
+    pub require_fresh: bool,
 }
 
 impl PreaggContext {
@@ -281,6 +310,16 @@ pub fn try_resolve_preagg(
         preagg.renewal_threshold_secs,
     );
     if !is_fresh {
+        if preagg.require_fresh {
+            // The freshness check above already seeded the cache, so the
+            // rebuild is pending either way — this caller just declines to
+            // answer from the rollup while it is.
+            tracing::debug!(
+                rollup_hash = %entry.rollup_hash,
+                "preagg: declining stale rollup, caller requires a fresh one"
+            );
+            return None;
+        }
         tracing::debug!(
             rollup_hash = %entry.rollup_hash,
             "preagg: serving stale rollup, background rebuild pending"
@@ -347,6 +386,14 @@ fn from_clause(source: &PreaggSource) -> String {
 /// manifest's stored value. On a cache miss, seeds the cache from the
 /// manifest and reports stale so the background worker picks it up next
 /// heartbeat.
+///
+/// "Fresh" here is *recency of the check*, not currency of the rollup: a hit
+/// means somebody resolved this `rollup_hash` within `renewal_threshold_secs`
+/// and the manifest has not moved since. Because a miss seeds from the
+/// manifest, cached and manifest values agree by construction after any touch
+/// — so this answers "is the memoised check still usable?", and no caller may
+/// read it as "the rollup is up to date". The seed is a *read* seed; see
+/// [`RefreshKeyCache::insert_read_seed`].
 pub fn check_and_seed_freshness(
     cache: &Arc<RwLock<RefreshKeyCache>>,
     rollup_hash: &str,
@@ -360,7 +407,10 @@ pub fn check_and_seed_freshness(
     }
     drop(guard);
     let mut wguard = cache.write().expect("preagg cache lock poisoned");
-    wguard.insert(rollup_hash.to_string(), manifest_value.map(String::from));
+    // A READ seed: it memoises this check for the next reader, and deliberately
+    // does not read as build recency to the rebuild worker's `Every` evaluator,
+    // which shares this cache.
+    wguard.insert_read_seed(rollup_hash.to_string(), manifest_value.map(String::from));
     false
 }
 
@@ -821,6 +871,10 @@ mod tests {
             cache: Arc::new(RwLock::new(RefreshKeyCache::new())),
             renewal_threshold_secs: 120,
             blob,
+            // These tests exercise source resolution and SQL generation, not
+            // the freshness gate; declining on staleness would take the rollup
+            // out of every one of them.
+            require_fresh: false,
         }
     }
 

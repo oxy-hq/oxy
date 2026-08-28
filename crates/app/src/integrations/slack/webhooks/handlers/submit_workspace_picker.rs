@@ -10,6 +10,7 @@ use crate::integrations::slack::services::channel_defaults::{
 use crate::integrations::slack::types::{InteractivityAction, InteractivityPayload};
 use crate::integrations::slack::webhooks::handlers::pick_workspace::extract_channel_and_thread;
 use crate::integrations::slack::webhooks::tenant_resolver;
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use oxy_shared::errors::OxyError;
 use uuid::Uuid;
 
@@ -23,6 +24,10 @@ use uuid::Uuid;
 pub async fn handle(
     payload: &InteractivityPayload,
     action: &InteractivityAction,
+    // The node's Layer-1 pre-aggregation cache for the run this dispatches. A
+    // default carries no cache, so the agent's semantic queries compile to
+    // warehouse SQL — the right answer, just without the rollup shortcut.
+    preagg: &PreaggCacheCtx,
 ) -> Result<(), OxyError> {
     // 1. Decode the original question from action.value.
     let encoded_q = action.value.as_deref().unwrap_or_default();
@@ -137,6 +142,7 @@ pub async fn handle(
         question,
         channel_id,
         thread_ts,
+        preagg: preagg.clone(),
     };
     tokio::spawn(async move {
         let (client, bot_token, channel, thread_ts, user) = dispatch_ctx;

@@ -190,6 +190,9 @@ fn preagg_ctx(workspace: &ScratchWorkspace, blob: Option<BlobConfig>) -> PreaggC
         // these tests are measuring.
         renewal_threshold_secs: 0,
         blob,
+        // These tests compare the two tiers' *answers*; declining on staleness
+        // would take the rollup out of the comparison entirely.
+        require_fresh: false,
     }
 }
 

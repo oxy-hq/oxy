@@ -21,6 +21,7 @@ use crate::integrations::slack::render::{CapturedSqlArtifact, QueuedChart, Slack
 use crate::integrations::slack::resolution::thread_context::{
     CreateThreadContext, ThreadContextService,
 };
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use entity::slack_installations::Model as InstallationRow;
 use entity::slack_user_links::Model as UserLinkRow;
 use oxy::database::client::establish_connection;
@@ -55,6 +56,11 @@ pub struct SlackRunRequest {
     pub question: String,
     pub channel_id: String,
     pub thread_ts: String,
+    /// The node's Layer-1 pre-aggregation cache. A default carries no cache,
+    /// which is always a correct answer and only a slower one: the agent's
+    /// semantic queries compile to warehouse SQL instead of reading a local
+    /// Parquet rollup.
+    pub preagg: PreaggCacheCtx,
 }
 
 // Public API
@@ -131,6 +137,7 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
         upload_charts,
         &client,
         &bot_token,
+        req.preagg,
     )
     .await
     .map_err(&internal)?;
@@ -216,6 +223,7 @@ async fn run_agentic_for_slack(
     upload_charts: bool,
     client: &SlackClient,
     bot_token: &str,
+    preagg: PreaggCacheCtx,
 ) -> Result<AgentExecOutput, OxyError> {
     // No `.try_with_intent_classifier()` — the agentic pipeline doesn't read
     // `WorkspaceManager.intent_classifier`, and loading one would mean an
@@ -228,9 +236,12 @@ async fn run_agentic_for_slack(
         .workspace_path()
         .to_path_buf();
 
-    let project_ctx = Arc::new(crate::agentic_wiring::OxyProjectContext::new(
-        workspace_manager,
-    ));
+    // Without the node's cache the agent still answers correctly, it just
+    // compiles every semantic query to warehouse SQL rather than reading a
+    // rollup, so an absent cache is a slowdown and never a wrong result.
+    let project_ctx = Arc::new(
+        crate::agentic_wiring::OxyProjectContext::new(workspace_manager).with_preagg(&preagg),
+    );
     let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> = project_ctx;
 
     let resolved_path = resolve_agent_config_path(&repo_path, agent_path);

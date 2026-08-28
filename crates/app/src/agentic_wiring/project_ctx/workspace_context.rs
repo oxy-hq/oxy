@@ -96,7 +96,10 @@ impl WorkspaceContext for OxyProjectContext {
     }
 
     fn preagg_renewal_threshold_secs(&self) -> u64 {
+        // The trait wants a number; `None` here means nobody set one, which is
+        // the trait's own documented 120s default.
         self.preagg_renewal_threshold_secs
+            .unwrap_or(oxy::config::preagg_check::DEFAULT_RENEWAL_SECS)
     }
 
     fn preagg_workspace_id(&self) -> Option<uuid::Uuid> {

@@ -16,7 +16,7 @@ use uuid::Uuid;
 use super::error::AnomalyError;
 use crate::agentic_wiring::OxyMetricTreeRunner;
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, WorkspaceManagerWorkingCopy,
+    EffectiveWorkspaceRole, PreaggCacheCtx, WorkspaceManagerWorkingCopy,
 };
 
 #[derive(Debug, Serialize)]
@@ -95,6 +95,7 @@ pub async fn run_scan(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     Extension(state): Extension<Arc<AgenticState>>,
+    preagg_ctx: PreaggCacheCtx,
     Query(q): Query<ScanQuery>,
 ) -> Result<Json<ScanResponse>, AnomalyError> {
     let workspace_id = workspace_manager.workspace_id;
@@ -116,11 +117,23 @@ pub async fn run_scan(
         }));
     }
 
-    let runner = Arc::new(OxyMetricTreeRunner::new(
-        workspace_manager.clone().into_read_only(),
-        user.id,
-        role,
-    ));
+    // Same rollup short-circuit the IDE's metric-tree handlers attach. A scan
+    // fires one time-series query per monitor entry per granularity, which is
+    // exactly the shape a rollup covers; without this the scheduled path and
+    // the manual one answered the same question from different tiers.
+    // `requiring_fresh_rollups` because a scan persists what it computes: a
+    // rollup whose newest buckets are missing or partial reads as a drop,
+    // `persist_scan` writes that to the Insights Inbox, and an unhealthy
+    // transition pages Slack. `.monitor.yml`'s `freshness` guards *warehouse*
+    // lag and knows nothing about a rollup whose `preagg_cycle` is behind.
+    let runner = Arc::new(
+        OxyMetricTreeRunner::new(workspace_manager.clone().into_read_only(), user.id, role)
+            .with_preagg(
+                preagg_ctx.cache.clone(),
+                preagg_ctx.renewal_threshold_secs_or(&workspace_manager.config_manager),
+            )
+            .requiring_fresh_rollups(),
+    );
     // Compile-boundary fast path. When the workspace is promoted +
     // flag is on, we materialise `.monitor.yml` into a tempdir from
     // Postgres and pass THAT path to scan_workspace. The tempdir is

@@ -1327,7 +1327,16 @@ impl WmExecCtx {
         .flatten()
         .map(|compiled| match compiled {
             CompiledQuery::Warehouse { sql, database_name } => (sql, database_name),
-            CompiledQuery::Preaggregation { preagg_sql, .. } => (preagg_sql, String::new()),
+            // No `PreaggContext` is passed above, so this variant is
+            // unreachable today. Take the warehouse SQL rather than the
+            // rollup's if that ever changes: the rollup SQL reads Parquet
+            // through DuckDB and `run_expansion` runs whatever comes back
+            // through a warehouse connector.
+            CompiledQuery::Preaggregation {
+                warehouse_sql,
+                warehouse_database,
+                ..
+            } => (warehouse_sql, warehouse_database),
         })
     }
 
@@ -1951,7 +1960,9 @@ mod breakdown_tests {
     use airlayer::engine::metric_tree::{
         EdgeKind, EdgeOperator, MetricEdge, MetricNode, MetricTree,
     };
-    use airlayer::schema::models::{DriverConfidence, DriverDirection, DriverForm, DriverStrength};
+    use airlayer::schema::models::{
+        AggregateSpace, DriverConfidence, DriverDirection, DriverForm, DriverStrength,
+    };
 
     fn node(id: &str, view: &str, measure: &str, composite: bool) -> MetricNode {
         MetricNode {
@@ -1966,6 +1977,9 @@ mod breakdown_tests {
             // Irrelevant to these tests — they exercise breakdown/edge
             // resolution, not drill eligibility.
             drillable: false,
+            // Every node here is `type: number`; the sample tree's root is a
+            // product, so neither a sum nor a mean carries over a window.
+            aggregate_space: AggregateSpace::Unaggregatable,
         }
     }
 
@@ -1981,8 +1995,14 @@ mod breakdown_tests {
             strength: DriverStrength::Strong,
             confidence: DriverConfidence::High,
             coefficient: None,
+            // Qualitative edges: no fitted response, so no basis terms,
+            // moments or observed domain.
+            coefficients: vec![],
             form: DriverForm::default(),
+            form_declared: true,
             intercept: None,
+            moments: None,
+            domain: None,
             lag: None,
             description: None,
             refs: None,
@@ -1998,6 +2018,7 @@ mod breakdown_tests {
                 mul("store.aov", "store.revenue"),
             ],
             root: None,
+            warnings: vec![],
         }
     }
 

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crate::cli::commands::export_chart::export_charts_to_dir;
 use crate::server::api::middlewares::role_guards::WorkspaceEditor;
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, WorkspaceManagerReadOnly, WorkspaceManagerWorkingCopy,
+    EffectiveWorkspaceRole, PreaggCacheCtx, WorkspaceManagerReadOnly, WorkspaceManagerWorkingCopy,
 };
 use crate::server::service::app::{
     AppResultChartDisplay, AppResultData, AppResultDisplay, AppResultMarkdownDisplay,
@@ -437,11 +437,12 @@ pub async fn get_displays(
 pub async fn get_app_data(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
+    preagg_ctx: PreaggCacheCtx,
     extract::Query(_branch): extract::Query<BranchHintQuery>,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let mut app_service = AppService::new(workspace_manager.clone());
+    let mut app_service = AppService::new(workspace_manager.clone()).with_preagg(preagg_ctx);
 
     let app_tasks = match app_service.get_tasks(&path).await {
         Ok(tasks) => tasks,
@@ -662,13 +663,14 @@ pub struct RunAppBody {
 pub async fn run_app(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
+    preagg_ctx: PreaggCacheCtx,
     extract::Query(_branch): extract::Query<BranchHintQuery>,
     body: Option<extract::Json<RunAppBody>>,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
     let params = body.map(|b| b.0.params).unwrap_or_default();
 
-    let mut app_service = AppService::new(workspace_manager.clone());
+    let mut app_service = AppService::new(workspace_manager.clone()).with_preagg(preagg_ctx);
     let data = match app_service.run(&path, params).await {
         Ok(data) => data,
         Err(e) => {
@@ -739,6 +741,7 @@ pub async fn get_app_result(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     extract::Query(query): extract::Query<AppResultQuery>,
     WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
+    preagg_ctx: PreaggCacheCtx,
 ) -> (StatusCode, extract::Json<GetAppResultResponse>) {
     let path = match decode_path(&pathb64) {
         Ok(p) => p,
@@ -764,7 +767,7 @@ pub async fn get_app_result(
     // Execute the app to get task results. Branch comes from the
     // existing `AppResultQuery` so feature-branch users see their
     // working-copy edits when the Postgres-first path is on.
-    let mut app_service = AppService::new(workspace_manager.clone());
+    let mut app_service = AppService::new(workspace_manager.clone()).with_preagg(preagg_ctx);
 
     // Get task names first (needed for response even if execution fails)
     let task_configs = match app_service.get_tasks(&path).await {

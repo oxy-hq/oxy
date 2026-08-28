@@ -22,6 +22,7 @@ use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use sea_orm::{DatabaseConnection, EntityTrait};
 
 use crate::agentic_wiring::{OxyProjectContext, build_builder_bridges};
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use crate::server::service::secret_manager::SecretManagerService;
 use oxy::config::WorkingCopy;
 use oxy_app_core::serve_mode::{LOCAL_WORKSPACE_ID, ServeMode};
@@ -259,7 +260,16 @@ fn inproc_global_worker_interval() -> std::time::Duration {
 /// `scope_owned = false` work. This is safe to call repeatedly because
 /// `get_resumable_root_runs` is driver-lease-gated (F1) — an in-flight run a
 /// live driver owns is excluded from re-selection.
-pub(super) fn spawn_recovery(agentic_state: Arc<AgenticState>, mode: ServeMode) {
+pub(super) fn spawn_recovery(
+    agentic_state: Arc<AgenticState>,
+    mode: ServeMode,
+    // The node's Layer-1 preagg cache, from the same `AppState` the HTTP
+    // middleware reads. Threaded down to the two background context builders so
+    // queued work — scheduled monitor scans, automations, agentic runs — resolves
+    // rollups on the tier its request-driven twin does. Default (no cache) simply
+    // compiles to warehouse SQL.
+    preagg: PreaggCacheCtx,
+) {
     let db = agentic_state.db.clone();
     let runtime = agentic_state.runtime.clone();
     let schema_cache = Some(agentic_state.schema_cache.clone());
@@ -293,6 +303,7 @@ pub(super) fn spawn_recovery(agentic_state: Arc<AgenticState>, mode: ServeMode) 
             mode,
             shutdown.clone(),
             ws_cache.clone(),
+            preagg.clone(),
         );
     } else if matches!(mode, ServeMode::Cloud) {
         // Reached only when the global driver was explicitly disabled
@@ -325,6 +336,7 @@ pub(super) fn spawn_recovery(agentic_state: Arc<AgenticState>, mode: ServeMode) 
             mode,
             false, // one-shot startup recovery: every coordinator is dead
             ws_cache.clone(),
+            preagg.clone(),
         )
         .await;
         if recovered > 0 {
@@ -373,6 +385,7 @@ pub(super) fn spawn_recovery(agentic_state: Arc<AgenticState>, mode: ServeMode) 
                         mode,
                         true, // periodic tick: stranded runs only (never poach a live interactive run)
                         ws_cache.clone(),
+                        preagg.clone(),
                     )
                     .await;
                     if n > 0 {
@@ -408,6 +421,7 @@ pub(super) async fn run_recovery(
     // `false` = one-shot startup recovery (drive all resumable runs).
     periodic: bool,
     ws_cache: Arc<super::workspace_cache::WorkspaceContextCache>,
+    preagg: PreaggCacheCtx,
 ) -> usize {
     match mode {
         ServeMode::Local => {
@@ -420,6 +434,7 @@ pub(super) async fn run_recovery(
                 router,
                 periodic,
                 ws_cache,
+                preagg,
             )
             .await
         }
@@ -433,6 +448,7 @@ pub(super) async fn run_recovery(
                 router,
                 periodic,
                 ws_cache,
+                preagg,
             )
             .await
         }
@@ -454,6 +470,7 @@ async fn recover_local(
     router: Arc<dyn agentic_runtime::router::TaskRouter>,
     periodic: bool,
     ws_cache: Arc<super::workspace_cache::WorkspaceContextCache>,
+    preagg: PreaggCacheCtx,
 ) -> usize {
     let cwd = match std::env::current_dir() {
         Ok(p) => p,
@@ -465,7 +482,7 @@ async fn recover_local(
 
     let Some(project_ctx) = ws_cache
         .get_or_build(LOCAL_WORKSPACE_ID, || async {
-            build_local_project_ctx(&cwd, db).await
+            build_local_project_ctx(&cwd, db, &preagg).await
         })
         .await
     else {
@@ -493,7 +510,7 @@ async fn recover_local(
             builder_app_runner,
             router,
             Some(LOCAL_WORKSPACE_ID),
-            Some(build_custom_task_registry(db)),
+            Some(build_custom_task_registry(db, &preagg)),
         )
         .await;
         // Periodic tick drives the cron scheduler, scoped to this
@@ -550,7 +567,7 @@ async fn recover_local(
             builder_app_runner,
             router,
             Some(LOCAL_WORKSPACE_ID),
-            Some(build_custom_task_registry(db)),
+            Some(build_custom_task_registry(db, &preagg)),
         )
         .await
     }
@@ -571,6 +588,7 @@ async fn recover_all_workspaces(
     router: Arc<dyn agentic_runtime::router::TaskRouter>,
     periodic: bool,
     ws_cache: Arc<super::workspace_cache::WorkspaceContextCache>,
+    preagg: PreaggCacheCtx,
 ) -> usize {
     let workspaces = match entity::workspaces::Entity::find().all(db).await {
         Ok(ws) => ws,
@@ -597,7 +615,7 @@ async fn recover_all_workspaces(
 
         let Some(project_ctx) = ws_cache
             .get_or_build(ws.id, || async {
-                build_cloud_project_ctx(ws.id, path, db).await
+                build_cloud_project_ctx(ws.id, path, db, &preagg).await
             })
             .await
         else {
@@ -630,7 +648,7 @@ async fn recover_all_workspaces(
                 builder_app_runner.clone(),
                 router.clone(),
                 Some(ws.id),
-                Some(build_custom_task_registry(db)),
+                Some(build_custom_task_registry(db, &preagg)),
             )
             .await;
             // Per-workspace scheduler tick (§12 FU4b). Each workspace
@@ -673,7 +691,7 @@ async fn recover_all_workspaces(
                 builder_app_runner.clone(),
                 router.clone(),
                 Some(ws.id),
-                Some(build_custom_task_registry(db)),
+                Some(build_custom_task_registry(db, &preagg)),
             )
             .await
         };
@@ -747,6 +765,7 @@ fn spawn_latency_worker(
     mode: ServeMode,
     shutdown: tokio_util::sync::CancellationToken,
     ws_cache: Arc<super::workspace_cache::WorkspaceContextCache>,
+    preagg: PreaggCacheCtx,
 ) {
     // Configurable for soak tuning; default 1s.
     let poll = match std::env::var("OXY_LATENCY_WORKER_INTERVAL_MS")
@@ -790,6 +809,7 @@ fn spawn_latency_worker(
                                     builder_app_runner.as_ref(),
                                     &router,
                                     &ws_cache,
+                                    &preagg,
                                 )
                                 .await
                             }
@@ -802,6 +822,7 @@ fn spawn_latency_worker(
                                     builder_app_runner.as_ref(),
                                     &router,
                                     &ws_cache,
+                                    &preagg,
                                 )
                                 .await
                             }
@@ -844,13 +865,14 @@ async fn tick_local(
     builder_app_runner: Option<&Arc<dyn BuilderAppRunnerTrait>>,
     router: &Arc<dyn agentic_runtime::router::TaskRouter>,
     ws_cache: &Arc<super::workspace_cache::WorkspaceContextCache>,
+    preagg: &PreaggCacheCtx,
 ) -> usize {
     let Ok(cwd) = std::env::current_dir() else {
         return 0;
     };
     let Some(ctx) = ws_cache
         .get_or_build(LOCAL_WORKSPACE_ID, || async {
-            build_local_project_ctx(&cwd, db).await
+            build_local_project_ctx(&cwd, db, preagg).await
         })
         .await
     else {
@@ -865,6 +887,7 @@ async fn tick_local(
         builder_app_runner,
         router,
         Some(LOCAL_WORKSPACE_ID),
+        preagg,
     )
     .await
 }
@@ -889,6 +912,7 @@ async fn tick_cloud(
     builder_app_runner: Option<&Arc<dyn BuilderAppRunnerTrait>>,
     router: &Arc<dyn agentic_runtime::router::TaskRouter>,
     ws_cache: &Arc<super::workspace_cache::WorkspaceContextCache>,
+    preagg: &PreaggCacheCtx,
 ) -> usize {
     use std::collections::HashSet;
     let pending = match agentic_runtime::crud::find_pending_global_runs(db, None).await {
@@ -940,7 +964,7 @@ async fn tick_cloud(
 
         let Some(ctx) = ws_cache
             .get_or_build(ws_id, || async {
-                build_cloud_project_ctx(ws_id, &path, db).await
+                build_cloud_project_ctx(ws_id, &path, db, preagg).await
             })
             .await
         else {
@@ -955,6 +979,7 @@ async fn tick_cloud(
             builder_app_runner,
             router,
             Some(ws_id),
+            preagg,
         )
         .await;
     }
@@ -967,6 +992,7 @@ async fn tick_cloud(
 /// ("One-shot queue work: `TaskSpec::Custom` + `CustomTaskRegistry`").
 fn build_custom_task_registry(
     db: &sea_orm::DatabaseConnection,
+    preagg: &PreaggCacheCtx,
 ) -> Arc<agentic_runtime::worker::CustomTaskRegistry> {
     use crate::server::app_function_executor::{APP_FUNCTION_KIND, AppFunctionTaskExecutor};
     use crate::server::health_eval_executor::{HEALTH_EVAL_KIND, HealthEvalTaskExecutor};
@@ -978,7 +1004,12 @@ fn build_custom_task_registry(
     );
     reg.register(
         APP_FUNCTION_KIND,
-        Arc::new(AppFunctionTaskExecutor { db: db.clone() }),
+        // A scheduled Oxy Function's `ctx.semantic` resolves rollups on the node
+        // draining the queue, the same way its HTTP-invoked twin does.
+        Arc::new(AppFunctionTaskExecutor {
+            db: db.clone(),
+            preagg: preagg.clone(),
+        }),
     );
     // Same shape as health eval: one executor instance, workspace context
     // rebuilt fresh per task from `workspace_id` in the payload. See
@@ -1008,13 +1039,14 @@ async fn drive_pending(
     builder_app_runner: Option<&Arc<dyn BuilderAppRunnerTrait>>,
     router: &Arc<dyn agentic_runtime::router::TaskRouter>,
     workspace_id: Option<uuid::Uuid>,
+    preagg: &PreaggCacheCtx,
 ) -> usize {
     let platform: Arc<dyn PlatformContext> = ctx.clone();
     let bridges: Option<BuilderBridges> = Some(build_builder_bridges(ctx));
     // The latency worker is where freshly-seeded Global runs (incl. per-workspace
     // `health_eval_workspace` Custom tasks) are drained, so inject the host's
     // Custom-kind executors here. Cheap to build per call (a few Arc clones).
-    let custom_executors = Some(build_custom_task_registry(db));
+    let custom_executors = Some(build_custom_task_registry(db, preagg));
     agentic_pipeline::recovery::recover_pending_global_runs(
         db.clone(),
         runtime.clone(),
@@ -1033,6 +1065,7 @@ async fn drive_pending(
 async fn build_local_project_ctx(
     cwd: &std::path::Path,
     db: &DatabaseConnection,
+    preagg: &PreaggCacheCtx,
 ) -> Option<Arc<OxyProjectContext>> {
     let mut builder = match WorkspaceBuilder::new(LOCAL_WORKSPACE_ID)
         .with_working_copy(cwd, None, oxy::config::OnMissing::Empty)
@@ -1073,7 +1106,9 @@ async fn build_local_project_ctx(
     // unless `db` is set — without it every compile fails with
     // "compile_dispatcher() returned None". See OxyProjectContext::with_db.
     Some(Arc::new(
-        OxyProjectContext::new(wm).with_db(Arc::new(db.clone())),
+        OxyProjectContext::new(wm)
+            .with_db(Arc::new(db.clone()))
+            .with_preagg(preagg),
     ))
 }
 
@@ -1120,7 +1155,12 @@ pub(crate) async fn build_workspace_ctx(
             return None;
         }
     };
-    build_cloud_project_ctx(workspace_id, &path, db).await
+    // No preagg context: this builder serves the workspace-health smoke probes
+    // and the reconciliation check, both of which exist to test the WAREHOUSE.
+    // Reconciliation compares an Oxy measure against a live external source, so
+    // answering the Oxy side from a rollup would report drift that is really
+    // rollup lag — the check would be measuring its own cache.
+    build_cloud_project_ctx(workspace_id, &path, db, &PreaggCacheCtx::default()).await
 }
 
 /// Deserialize a compiled `config.yml` and stamp the workspace path onto it.
@@ -1134,6 +1174,7 @@ async fn build_cloud_project_ctx(
     workspace_id: uuid::Uuid,
     path: &str,
     db: &DatabaseConnection,
+    preagg: &PreaggCacheCtx,
 ) -> Option<Arc<OxyProjectContext>> {
     // Resolve the config the same way the request middleware does: the promoted
     // compiled revision first, the working copy only on a miss.
@@ -1203,7 +1244,9 @@ async fn build_cloud_project_ctx(
     // unless `db` is set — without it every compile fails with
     // "compile_dispatcher() returned None". See OxyProjectContext::with_db.
     Some(Arc::new(
-        OxyProjectContext::new(wm).with_db(Arc::new(db.clone())),
+        OxyProjectContext::new(wm)
+            .with_db(Arc::new(db.clone()))
+            .with_preagg(preagg),
     ))
 }
 

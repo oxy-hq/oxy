@@ -214,9 +214,11 @@ pub async fn typed_stream_to_json_array(
 ///
 /// Returns `(rows, connector_truncated)`. `connector_truncated` is `true` when
 /// the connector stopped early at its [`ResultCap`](agentic_connector::ResultCap)
-/// backstop — the external `/query` + `/semantic-query` proxies must OR this into
-/// their `objects.len() == MAX_ROWS` check, or a wide-row byte-truncation that
-/// stopped below `MAX_ROWS` reads as a complete result.
+/// backstop — the external `/query` + `/semantic-query` proxies must OR this
+/// into their own length check (`len() == MAX_ROWS` for `/query`, which wraps
+/// at the cap; `len() > MAX_ROWS` for `/semantic-query`, which wraps at
+/// `MAX_ROWS + 1`), or a wide-row byte-truncation that stopped below
+/// `MAX_ROWS` reads as a complete result.
 
 pub async fn typed_stream_to_json_objects(
     stream: TypedRowStream,
@@ -240,7 +242,7 @@ pub async fn typed_stream_to_json_objects(
     }
     // Read the producer truncation flag now that the stream is drained, and
     // return it alongside the rows: the custom-app `/query` + `/semantic-query`
-    // proxies infer truncation from `len() == MAX_ROWS`, which misses a wide-row
+    // proxies infer truncation from the row count, which misses a wide-row
     // byte-truncation that stopped *below* MAX_ROWS. Callers OR this in.
     let connector_truncated = agentic_core::result::truncation_flag_set(&truncated);
     Ok((out, connector_truncated))

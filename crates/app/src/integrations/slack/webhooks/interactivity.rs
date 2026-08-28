@@ -2,12 +2,18 @@ use crate::integrations::slack::config::SlackConfig;
 use crate::integrations::slack::signature::verify_request;
 use crate::integrations::slack::types::InteractivityPayload;
 use crate::integrations::slack::webhooks::handlers;
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use axum::body::Bytes;
+use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use chrono::Utc;
 
-pub async fn handle_interactivity(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
+pub async fn handle_interactivity(
+    headers: HeaderMap,
+    State(app_state): State<crate::server::router::AppState>,
+    body: Bytes,
+) -> impl IntoResponse {
     let cfg = match SlackConfig::cached().as_runtime() {
         Some(c) => c,
         None => return (StatusCode::SERVICE_UNAVAILABLE, "slack disabled").into_response(),
@@ -40,11 +46,23 @@ pub async fn handle_interactivity(headers: HeaderMap, body: Bytes) -> impl IntoR
         }
     };
 
-    dispatch_interactivity(payload).await;
+    // The picker actions below start an agent run, so they need the node's
+    // rollup cache the same way an inbound event does.
+    let preagg = PreaggCacheCtx {
+        cache: app_state.preagg_cache.clone(),
+        renewal_threshold_secs: app_state.preagg_renewal_threshold_secs,
+    };
+    dispatch_interactivity(payload, preagg).await;
     (StatusCode::OK, "").into_response()
 }
 
-pub(crate) async fn dispatch_interactivity(payload: InteractivityPayload) {
+pub(crate) async fn dispatch_interactivity(
+    payload: InteractivityPayload,
+    // The node's Layer-1 pre-aggregation cache, used only by the two actions
+    // that dispatch an agent run. A default means those runs compile their
+    // semantic queries to warehouse SQL instead of reading a rollup.
+    preagg: PreaggCacheCtx,
+) {
     tracing::info!(
         actions = ?payload.actions.iter().map(|a| &a.action_id).collect::<Vec<_>>(),
         "interactivity payload received"
@@ -52,9 +70,11 @@ pub(crate) async fn dispatch_interactivity(payload: InteractivityPayload) {
 
     for action in &payload.actions {
         let outcome = match action.action_id.as_str() {
-            "slack_pick_workspace" => handlers::pick_workspace::handle(&payload, action).await,
+            "slack_pick_workspace" => {
+                handlers::pick_workspace::handle(&payload, action, &preagg).await
+            }
             "slack_submit_workspace_picker" => {
-                handlers::submit_workspace_picker::handle(&payload, action).await
+                handlers::submit_workspace_picker::handle(&payload, action, &preagg).await
             }
             "slack_reopen_picker" => handlers::reopen_picker::handle(&payload, action).await,
             "slack_make_default" => handlers::make_default::handle(&payload, action).await,

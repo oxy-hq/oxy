@@ -426,7 +426,18 @@ pub(crate) async fn instances_core(
     })
     .map(|compiled| match compiled {
         CompiledQuery::Warehouse { sql, database_name } => (sql, database_name),
-        CompiledQuery::Preaggregation { preagg_sql, .. } => (preagg_sql, String::new()),
+        // This call passes no `PreaggContext`, so the compiler never returns
+        // this variant — but if one is ever attached here, take the warehouse
+        // SQL the variant carries rather than the rollup's. The rollup SQL is
+        // DuckDB `read_parquet(...)` and is executed by
+        // `agentic_semantic::preagg`, never by the warehouse connector this
+        // path hands it to; the old arm also blanked the database name, which
+        // would have routed it to whichever database `config.yml` lists first.
+        CompiledQuery::Preaggregation {
+            warehouse_sql,
+            warehouse_database,
+            ..
+        } => (warehouse_sql, warehouse_database),
     })?;
 
     let payload = SQLParams {

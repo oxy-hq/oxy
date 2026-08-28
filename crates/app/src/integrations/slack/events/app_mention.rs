@@ -10,6 +10,7 @@ use crate::integrations::slack::error::SlackError;
 use crate::integrations::slack::linking::magic_link::new_link_url;
 use crate::integrations::slack::resolution::entrypoint::run_or_prompt;
 use crate::integrations::slack::resolution::user::{ResolvedUser, resolve};
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use entity::slack_installations::Model as InstallationRow;
 
 pub async fn handle(
@@ -20,6 +21,10 @@ pub async fn handle(
     channel: String,
     thread_ts: Option<String>,
     event_ts: String,
+    // The node's Layer-1 pre-aggregation cache. A default carries no cache, so
+    // the agent's semantic queries compile to warehouse SQL — correct, just
+    // without the rollup shortcut.
+    preagg: PreaggCacheCtx,
 ) -> Result<(), SlackError> {
     let effective_ts = thread_ts.unwrap_or_else(|| event_ts.clone());
     let cleaned = strip_bot_mention(&text);
@@ -46,6 +51,7 @@ pub async fn handle(
         channel,
         effective_ts,
         false,
+        preagg,
     )
     .await
 }

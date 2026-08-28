@@ -22,7 +22,7 @@
 //! request so the tempdir outlives the run.
 
 use airlayer::schema::models::DimensionType;
-use axum::extract::{Path, Query};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use entity::workspace_members::WorkspaceRole;
@@ -39,6 +39,7 @@ use crate::server::api::projects::semantic_boundary::{
     SemanticBoundary, cache_lookup, cache_store, enter_semantic_boundary, err_with_code,
     load_layer, wants_refresh,
 };
+use crate::server::router::AppState;
 
 /// Soft cap on explain/distribution — matches the workspace handler. A rich
 /// schema can fire 50+ warehouse queries; failing loud beats hanging.
@@ -56,17 +57,35 @@ async fn boundary_with_layer(
 
 /// Build a read-only runner pinned to the boundary's materialised scan path.
 /// The caller must keep `boundary` alive for the whole run (tempdir guard).
-fn runner_for(boundary: &SemanticBoundary) -> OxyMetricTreeRunner {
+///
+/// The rollup short-circuit is attached here rather than at each call site so
+/// every query-executing op on this surface answers from the same tier as its
+/// IDE twin in [`crate::server::api::metric_tree`] — the two render the same
+/// analysis, and a bundle reading a measure the IDE serves from a rollup should
+/// not silently pay for a warehouse scan. These ops are `IdeOnly`
+/// (`role_manifest`), so the node running them is the one holding the Layer-1
+/// cache; `preagg_context` and `try_resolve_preagg` both fall through to the
+/// warehouse when there is no cache or no covering rollup.
+///
+/// The threshold resolves from THIS workspace's own
+/// `pre_aggregations.refresh_worker.renewal_threshold` when the process carries
+/// no global value — same rule as `workspace_context` and `semantic_query`, so
+/// the read side and the rebuild side never disagree about one setting.
+fn runner_for(boundary: &SemanticBoundary, app_state: &AppState) -> OxyMetricTreeRunner {
+    let workspace_manager = boundary.proj_ctx.workspace_manager().clone();
+    let preagg_ctx = crate::server::api::middlewares::workspace_context::PreaggCacheCtx {
+        cache: app_state.preagg_cache.clone(),
+        renewal_threshold_secs: app_state.preagg_renewal_threshold_secs,
+    };
+    let renewal_threshold_secs =
+        preagg_ctx.renewal_threshold_secs_or(&workspace_manager.config_manager);
     OxyMetricTreeRunner::new(
-        boundary
-            .proj_ctx
-            .workspace_manager()
-            .clone()
-            .into_read_only(),
+        workspace_manager.into_read_only(),
         boundary.app.user.id,
         WorkspaceRole::Viewer,
     )
     .with_scan_path(boundary.scan.path_buf())
+    .with_preagg(preagg_ctx.cache, renewal_threshold_secs)
 }
 
 // ── Pure ops ────────────────────────────────────────────────────────────────
@@ -199,6 +218,7 @@ pub async fn post_explain(
     Path(project_id): Path<Uuid>,
     uri: Uri,
     headers: HeaderMap,
+    State(app_state): State<AppState>,
     body: axum::body::Bytes,
 ) -> Response {
     use agentic_analytics::MetricTreeRunner as _;
@@ -215,7 +235,7 @@ pub async fn post_explain(
         Ok(r) => r,
         Err(resp) => return resp,
     };
-    let runner = runner_for(&boundary);
+    let runner = runner_for(&boundary, &app_state);
     let config = mt::explain_config(req.config);
     let result = tokio::time::timeout(
         EXPLAIN_TIMEOUT,
@@ -249,6 +269,7 @@ pub async fn post_opportunity(
     Path(project_id): Path<Uuid>,
     uri: Uri,
     headers: HeaderMap,
+    State(app_state): State<AppState>,
     body: axum::body::Bytes,
 ) -> Response {
     use agentic_analytics::MetricTreeRunner as _;
@@ -276,7 +297,7 @@ pub async fn post_opportunity(
             "opportunity_instance_unsupported",
         );
     }
-    let runner = runner_for(&boundary);
+    let runner = runner_for(&boundary, &app_state);
     match runner
         .run_opportunity(req.target, req.time_dimension, (req.period.0, req.period.1))
         .await
@@ -292,6 +313,7 @@ pub async fn post_distribution(
     Path(project_id): Path<Uuid>,
     uri: Uri,
     headers: HeaderMap,
+    State(app_state): State<AppState>,
     body: axum::body::Bytes,
 ) -> Response {
     use agentic_analytics::MetricTreeRunner as _;
@@ -318,7 +340,7 @@ pub async fn post_distribution(
             );
         }
     };
-    let runner = runner_for(&boundary);
+    let runner = runner_for(&boundary, &app_state);
     let result = tokio::time::timeout(
         EXPLAIN_TIMEOUT,
         runner.run_explain(

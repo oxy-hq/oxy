@@ -473,7 +473,7 @@ mod router_split_tests {
         if db_unavailable() {
             return;
         }
-        let (router, _external_router) = api_router(
+        let (router, _external_router, _preagg) = api_router(
             ServeMode::Local,
             false,
             None,
@@ -501,7 +501,7 @@ mod router_split_tests {
         if db_unavailable() {
             return;
         }
-        let (router, _external_router) = api_router(
+        let (router, _external_router, _preagg) = api_router(
             ServeMode::Local,
             false,
             None,
@@ -528,7 +528,7 @@ mod router_split_tests {
             return;
         }
         use oxy_app_core::serve_mode::LOCAL_WORKSPACE_ID;
-        let (router, _external_router) = api_router(
+        let (router, _external_router, _preagg) = api_router(
             ServeMode::Local,
             false,
             None,
@@ -559,7 +559,7 @@ mod router_split_tests {
         if db_unavailable() {
             return;
         }
-        let (router, _external_router) = api_router(
+        let (router, _external_router, _preagg) = api_router(
             ServeMode::Cloud,
             false,
             None,
@@ -597,7 +597,7 @@ mod router_split_tests {
         // (The matching valid-key → 404-JSON assertion — proving nested misses
         // reach this fallback and not `with_context`'s own — needs a seeded API
         // key; left as a follow-up.)
-        let (_router, external_router) = api_router(
+        let (_router, external_router, _preagg) = api_router(
             ServeMode::Cloud,
             false,
             None,
