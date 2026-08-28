@@ -10,8 +10,9 @@
 # load itself never gets far enough to test the data panels below —
 # `GET /customer-apps/local/oxy-starter/` returns a bare 404 on BOTH public
 # replica ports (:3000, :3001; confirmed via curl with a real session cookie
-# AND via this flow's own Playwright run — step 0 timed out waiting for
-# `#contract dd`), while the identical request against the ide's port (:3010)
+# AND via this flow's own Playwright run — step 0 timed out on its first
+# wait; the flow anchored on `#contract dd` then, `.skeleton` now), while
+# the identical request against the ide's port (:3010)
 # returns 200. Root cause: `docker-compose.fleet.yml` sets no
 # `OXY_CUSTOMER_APPS_S3_BUCKET` (no MinIO/S3 service is defined in that file at
 # all, unlike `docker-compose.airhouse.yml`), so the custom-apps build store
@@ -66,16 +67,37 @@
 # data-panel assertions fail on this fleet, that is very likely THIS gap, not
 # a flow bug — do not weaken the assertions to route around it; report it.
 #
-# WHAT TO ANCHOR ON (examples/customer_apps/oxy-starter/index.html — a single
-# static HTML file, zero data-testid attributes, so selectors below are ids/
-# text): `#contract` (runtime identity: Organization "local", Project <uuid>,
-# App "oxy-starter · <app_id>", Branch "main" — injected server-side into
-# `window.__OXY_APP__`, independent of the data plane); `#viewer` (viewer
-# identity via `/shell-context`: Name, Email, Organization, Workspace — also
-# independent of the data plane); `#kpis` and `#top-stores` (the two REAL
-# queries — the only panels this route's classification gap can break). A
-# failed query renders a `.error` panel with title "Query failed", not a
-# generic blank — `renderKpis`/`renderTopStores` catch and format it.
+# WHAT TO ANCHOR ON. The app is a four-screen router now (one screen per URL,
+# `history.pushState`), not the single static page this flow first drove — so
+# every panel no longer coexists and the old id anchors (`#contract`, `#kpis`,
+# `#top-stores`, `#viewer`) are gone. It carries `data-testid` attributes for
+# exactly this flow's benefit:
+#
+#   `[data-testid=starter-nav-overview|stores|identity]`  the screen switcher
+#   `[data-testid=starter-kpis]`          overview — the REAL scalar query
+#   `[data-testid=starter-stores]`        /stores — the REAL list query
+#   `[data-testid=starter-store-detail]`  /stores/<n> — REAL, per-store
+#   `[data-testid=starter-identity]`      /identity — injected `window.__OXY_APP__`
+#   `[data-testid=starter-viewer]`        /identity — `/shell-context`
+#   `[data-testid=starter-history]`       the navigation panel (path, query,
+#                                         history entries, last move)
+#
+# The three data panels are the only ones the route-classification gap above
+# can break; identity is injected server-side and independent of the data
+# plane. A failed query renders a `.error` panel — titled "Query failed" for a
+# generic failure, "Origin refused" for a 403, "Session expired" for a 401
+# (`queryFailed` branches on status). Assert on the `.error` CLASS, not on any
+# of those titles, so a new branch can't slip past the flow.
+#
+# NOTE ON COVERAGE THIS RUNTIME CANNOT PROVIDE. The rewrite exists so the app
+# owns its URL — Back and Forward walk its screens. The runner has no
+# `goBack`/`goForward` tool (`runner/tool-registry.ts` exposes ten tools;
+# `browser_navigate` is the only history-adjacent one), so browser Back is NOT
+# expressible here and this flow does not pretend to cover it. What it does
+# cover is the half that makes Back work at all: every screen renders from the
+# URL, so a cold `browser_navigate` straight to a deep link lands on the same
+# screen a click would have produced. If a `goBack` tool ever lands, the
+# obvious case to add is click-through-then-back.
 #
 # GROUND TRUTH (queried against the ide node during authoring, so these are
 # the fixture's real numbers, not guesses): 45 distinct stores, total sales
@@ -88,8 +110,8 @@
 # as a staff-identity flow (e.g. `partners-console-fleet`) — the runner
 # injects exactly one session per invocation.
 #
-# COST: zero `act` steps — every step is a deterministic wait, like
-# `apps-data-app-charts`. Cold and warm cost are both just the judge call.
+# COST: three `act` steps (two nav clicks, one deep-link navigate); everything
+# else is a deterministic wait or a $0 assert. Warm replay is the judge calls.
 
 name: published custom app serves and its data panels resolve
 target: any
@@ -99,78 +121,149 @@ settings:
   trace: on-failure
   cache_actions: true
   backend_mode: local
-  # No act steps — waits and expectations only.
-  max_steps: 10
+  max_steps: 12
 
 setup:
   - "goto:/customer-apps/local/oxy-starter/"
 
 cases:
-  - name: oxy-starter renders identity and its two data panels resolve real numbers
+  - name: the overview screen resolves the scalar query against real data
     tags: [customer-apps, fleet, compile-boundary, critical]
     steps:
-      # #contract is populated synchronously by renderContract() off
-      # window.__OXY_APP__ — no fetch involved, so this also proves the
-      # server actually injected app identity (a bare fetch of the file, or a
-      # request that fell through `notServedByOxy()`, would leave it empty).
-      - wait_for: "selector:#contract dd"
-
-      # Each async panel replaces its own `.skeleton` placeholder once its
-      # fetch settles — success or error, so waiting for these to clear is
-      # the "still loading" gate, distinct from the "did it error" assertions
-      # below.
-      - wait_for: "selector_hidden:#kpis .skeleton;timeout_ms=30000"
-      - wait_for: "selector_hidden:#top-stores .skeleton;timeout_ms=30000"
-      - wait_for: "selector_hidden:#viewer .skeleton;timeout_ms=30000"
+      # Two gates, and the order matters. `.skeleton` is the loading
+      # placeholder and clears on EITHER outcome, so it proves only that the
+      # fetch settled. The success anchor is the second wait: the testid is
+      # attached to the RESOLVED panel, so it never appears if the query
+      # errored — which makes this fail loudly at the wait rather than
+      # quietly at an assert whose selector matches nothing.
+      - wait_for: "selector_hidden:.skeleton;timeout_ms=30000"
+      - wait_for: "selector:[data-testid=starter-kpis]"
       - wait_for: network_idle
 
     expect:
-      # Structural, $0.
       - assert: 'text "Oxy Starter" is visible'
-      - assert: "selector #contract is visible"
+      - assert: "selector [data-testid=starter-kpis] is visible"
 
       # Absence-of-degraded-state, the way apps-data-app-charts asserts
       # [data-testid=ide-unavailable-panel] is absent rather than tolerating
-      # it. `.error` is the class `errorPanel()` adds — its presence in any
-      # of these three sections is a definitively wrong state, not a
-      # judgment call.
-      - assert: "selector #kpis .error is not visible"
-      - assert: "selector #top-stores .error is not visible"
-      - assert: "selector #viewer .error is not visible"
+      # it. `.error` is the class `errorPanel()` adds; asserting the class
+      # rather than a title survives `queryFailed` growing another branch.
+      - assert: "selector .error is not visible"
 
-      # The one deterministic, $0 proof that the KPI query's RESULT (not just
-      # its query text, which never contains "45") reached the browser.
+      # The one deterministic, $0 proof that the query's RESULT (not its query
+      # text, which never contains "45") reached the browser.
       - assert: 'text "45" is visible'
-      - assert: "selector #top-stores table is visible"
 
       - judge: |
-          The page shows "Oxy Starter" with four panels:
-
-          1. A runtime-identity contract list showing Organization "local", a
-             Project value that looks like a UUID, App "oxy-starter" (with an
-             app id after it), and Branch "main".
-          2. A viewer-identity list showing a Name, an Email of
-             "flow@oxy.local", an Organization "Local", and a Workspace
-             "Demo" — not placeholders, not an error.
-          3. A KPI panel with THREE real numeric tiles: Stores around 45,
-             Total sales ($M) around 6,737, and Avg weekly sales ($) around
-             1,046,965 — not empty, not a red error panel.
-          4. A "Top stores by sales" table listing at least 5 rows, each with
-             a Store number and a sales figure, the top row being Store 20 at
-             roughly 301.
+          The page shows "Oxy Starter" with a screen switcher (Overview,
+          Stores, Identity) and a KPI panel of THREE real numeric tiles:
+          Stores around 45, Total sales ($M) around 6,737, and Avg weekly
+          sales ($) around 1,046,965. Below it a "Navigation" panel lists a
+          Path, a Query, History entries, and a Last move.
 
           Fail if ANY of the following is true:
-          (a) the KPI panel or the top-stores panel shows a red-bordered
-              "Query failed" panel instead of the real numbers described
-              above;
+          (a) a red-bordered error panel is visible anywhere on the page —
+              whatever its title ("Query failed", "Origin refused", "Session
+              expired") — instead of the real numbers described above;
           (b) any visible text contains "cannot resolve path", "os error",
               "No such file or directory", "Failed to canonicalize", or any
               other filesystem/IO error detail;
-          (c) the viewer panel shows "Could not read the viewer" or a
-              "no session" message;
-          (d) a loading skeleton (pulsing gray bars) is still visible in any
-              of the four panels;
-          (e) the contract panel shows "—" placeholders instead of real
-              Organization / Project / App / Branch values;
-          (f) the page shows "Not served by Oxy" (window.__OXY_APP__ never
-              got injected — the whole page would be one error panel).
+          (c) a loading skeleton (pulsing gray bars) is still visible;
+          (d) the KPI tiles show "—" placeholders instead of real numbers;
+          (e) the page shows "Not served by Oxy" (window.__OXY_APP__ never got
+              injected — the whole page would be one error panel).
+
+  - name: navigating to a store is a URL, and the list query resolves on the way
+    tags: [customer-apps, fleet, compile-boundary]
+    steps:
+      - act: |
+          Click [data-testid=starter-nav-stores] to open the Stores screen.
+      - wait_for: "selector_hidden:.skeleton;timeout_ms=30000"
+      - wait_for: "selector:[data-testid=starter-stores] table"
+
+      # The first cell of each row links onward to that store's own screen —
+      # the path segment IS the parameter, so the row and its URL are one fact.
+      - act: |
+          In the [data-testid=starter-stores] table, click the link in the
+          first row's first column (the top store's number).
+      - wait_for: "selector_hidden:.skeleton;timeout_ms=30000"
+      - wait_for: "selector:[data-testid=starter-store-detail] table"
+      - wait_for: network_idle
+
+    expect:
+      - assert: "selector [data-testid=starter-store-detail] is visible"
+      - assert: "selector .error is not visible"
+      # Store 20 is the fixture's top store, so its screen is the one a click
+      # on the first row reaches. Deterministic, $0, and it proves the path
+      # segment reached SQL rather than just being rendered into a heading.
+      - assert: 'text "Store 20" is visible'
+
+      - judge: |
+          The page shows a single store's detail: a heading naming Store 20,
+          a link back to all stores, and a table splitting that store's weeks
+          into Holiday and Regular rows with week counts and average weekly
+          sales — real numbers, not placeholders. The Navigation panel's Path
+          ends in /stores/20.
+
+          Fail if a red-bordered error panel is visible, if the table is empty
+          or shows "No weeks recorded", if a loading skeleton is still visible,
+          or if the page says the store number was not a store.
+
+  - name: a deep link renders its screen on a cold load
+    tags: [customer-apps, fleet, critical]
+    steps:
+      # The point of the rewrite: the app rebuilds itself from the address bar.
+      # A cold navigate straight to a screen — no clicks, no in-app history —
+      # has to land exactly where a click would have, query string included.
+      # This is also the closest this runtime can get to Back/Forward, which it
+      # has no tool for (see the header note).
+      - act: |
+          Navigate to /customer-apps/local/oxy-starter/stores?limit=20 using
+          browser_navigate.
+      - wait_for: "selector_hidden:.skeleton;timeout_ms=30000"
+      - wait_for: "selector:[data-testid=starter-stores] table"
+      - wait_for: network_idle
+
+    expect:
+      - assert: "selector [data-testid=starter-stores] is visible"
+      - assert: "selector .error is not visible"
+      - assert: "selector [data-testid=starter-history] is visible"
+
+      - judge: |
+          The Stores screen rendered from the URL alone, with the "20" option
+          in its Show row selected (highlighted) rather than the default 5, and
+          the table listing about 20 rows of Store / sales figures. The
+          Navigation panel shows a Path ending in /stores and a Query of
+          "?limit=20".
+
+          Fail if the page shows the Overview screen instead of Stores, if the
+          selected Show option is 5 rather than 20, if the Query row reads
+          "(none)", if a red-bordered error panel is visible, or if a loading
+          skeleton is still visible.
+
+  - name: identity comes from the injected config and the session cookie
+    tags: [customer-apps, fleet]
+    steps:
+      - act: |
+          Click [data-testid=starter-nav-identity] to open the Identity screen.
+      - wait_for: "selector:[data-testid=starter-identity]"
+      - wait_for: "selector_hidden:.skeleton;timeout_ms=30000"
+      - wait_for: "selector:[data-testid=starter-viewer]"
+      - wait_for: network_idle
+
+    expect:
+      - assert: "selector [data-testid=starter-identity] is visible"
+      - assert: "selector [data-testid=starter-viewer] is visible"
+      - assert: "selector .error is not visible"
+
+      - judge: |
+          The Identity screen shows two lists. The first is runtime identity
+          injected server-side: Organization "local", a Project value that
+          looks like a UUID, App "oxy-starter" with an app id after it, Branch
+          "main", and a Base path ending in /customer-apps/local/oxy-starter/.
+          The second is viewer identity: a Name, an Email of "flow@oxy.local",
+          an Organization "Local", and a Workspace "Demo".
+
+          Fail if either list shows "—" placeholders instead of real values, if
+          the viewer panel shows "Viewer unavailable" or a "no session"
+          message, or if a loading skeleton is still visible.

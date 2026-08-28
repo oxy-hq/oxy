@@ -23,9 +23,15 @@ function SignalRow({ signal }: { signal: HqSignal }) {
       <ChevronRight className='size-3.5 shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground' />
     </>
   );
-  // Customer apps are full-page (outside the SPA); Oxygen Factory is in-SPA.
+  // A custom app gets its own tab (`signal.target`, per `appWindowName`);
+  // Oxygen Factory is in-SPA.
   return signal.href ? (
-    <a href={signal.href} data-testid={`hq-signal-${signal.id}`} className={rowClass}>
+    <a
+      href={signal.href}
+      target={signal.target}
+      data-testid={`hq-signal-${signal.id}`}
+      className={rowClass}
+    >
       {content}
     </a>
   ) : (

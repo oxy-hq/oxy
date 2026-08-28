@@ -39,7 +39,7 @@ if (typeof window !== "undefined" && !window.matchMedia) {
 // `new JSDOM("", { url }).window.localStorage`, which is a real `Storage`.)
 //
 // This landed with the vitest 3 → 4 bump and it is not a niche gap: anything
-// that remembers a user choice — dock widths, focus mode, the onboarding
+// that remembers a user choice — the Ask dock's width, the onboarding
 // "skip for now" flag — throws on first access, so the failure shows up as
 // eighteen unrelated component tests dying in `beforeEach`.
 //

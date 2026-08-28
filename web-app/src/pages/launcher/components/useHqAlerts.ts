@@ -1,5 +1,6 @@
 import { useCustomApps } from "@/hooks/api/customApps/useCustomApps";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { appWindowName } from "@/libs/utils/appWindowName";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 
@@ -27,8 +28,11 @@ export interface HqSignal {
   category: string;
   title: string;
   destLabel: string;
-  /** Full-page link to a custom app (absolute, same-origin). */
+  /** Link to a custom app (absolute, same-origin). */
   href?: string;
+  /** Window `href` opens in — set for app destinations only, per
+   *  `appWindowName`: an app is never hosted inside HQ's browsing context. */
+  target?: string;
   /** In-SPA route (e.g. Oxygen Factory). */
   route?: string;
 }
@@ -56,6 +60,15 @@ export function useHqAlerts(): HqSignal[] {
       return [{ ...rest, destLabel: "Oxygen Factory", route: coreRoute }];
     }
     const app = apps.find((a) => a.slug === target.app);
-    return app ? [{ ...rest, destLabel: app.name, href: app.url }] : [];
+    return app
+      ? [
+          {
+            ...rest,
+            destLabel: app.name,
+            href: app.url,
+            target: appWindowName(app.org_slug, app.slug)
+          }
+        ]
+      : [];
   });
 }

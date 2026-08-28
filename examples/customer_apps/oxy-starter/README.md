@@ -10,21 +10,30 @@ step, no dependencies, no framework. `oxy seed` deploys it through the real publ
 cargo run -p oxy-server -- seed
 cargo run -p oxy-server -- compile --workspace-path ./examples
 OXY_ROLE=ide cargo run -p oxy-server -- serve --enterprise
-# → /customer-apps/local/oxy-starter/
+# → /customer-apps/local/oxy-starter/            overview
+#   /customer-apps/local/oxy-starter/stores?limit=10
+#   /customer-apps/local/oxy-starter/stores/20
+#   /customer-apps/local/oxy-starter/identity
 ```
 
-## The four patterns it shows
+## The five patterns it shows
 
 1. **Scalar aggregate** — `POST /api/projects/<projectId>/query` for one row of KPIs.
-2. **List query** — the same endpoint for a top-5 leaderboard.
+2. **List query** — the same endpoint for a leaderboard, sized by `?limit=`.
+   2b. **Path parameter** — `stores/<n>` for one store. The store number reaches SQL, so it
+   is parsed as an integer and refused if it is anything else. A URL is user input on every
+   screen; only here is it user input a database will read.
 3. **Runtime identity** — `window.__OXY_APP__`, spliced in before `</head>` at serve time.
-   A bundle never hardcodes its org or project; it reads them and addresses the data plane
-   with `projectId`. The session cookie that authorized the bundle also authorizes the
-   query, so there's no second auth step.
+   A bundle never hardcodes its org or project; it reads them, addresses the data plane
+   with `projectId`, and routes off the `basePath` Oxy mounts it under. The session cookie
+   that authorized the bundle also authorizes the query, so there's no second auth step.
 4. **Viewer identity** — `GET /api/projects/<projectId>/shell-context` for who is looking:
    name, email, org, workspace. This is **display** identity, and it deliberately carries
    **no role** — shipping one to the browser invites gating on it, and a bundle is
    JavaScript the viewer can edit.
+5. **History** — four screens, each a real URL, navigated with `history.pushState`. Back
+   and Forward walk them, a reload lands on the screen you were on, and a link to one opens
+   where you meant. See *Two halves of a URL* below.
 
    The **verified** half — `appRole`, `orgRole`, `teams`, `kind` — lives on `ctx.user`
    inside an Oxy Function, assembled server-side from the authenticated session where the
@@ -78,6 +87,32 @@ un-hashed `assets/app.js` gets it too, with no warning. Stay on a content-hashin
 (the default) and there is no chore; swap `build.command` for one that doesn't hash and the
 footgun is back. (A `--dir <prebuilt>` publish skips the build entirely; the hashing then
 happened wherever that directory was produced.)
+
+## Two halves of a URL, and why they carry different things
+
+Both halves hold state, and the split is not cosmetic:
+
+- **The path picks the screen** (`/stores`, `/stores/20`). The injected client runtime
+  patches `pushState`/`replaceState` and reports an **SPA pageview per path**, so these
+  show up individually on the app's Activity tab.
+- **The query carries state within a screen** (`?limit=10`). Query strings are
+  deliberately never recorded — `currentPath()` in `custom_apps_client/runtime.js` reads
+  `location.pathname` alone — so this half is linkable but private. That is exactly why an
+  app puts "which month, which vendor" here and not in the path.
+
+A consequence worth knowing before you go looking for it: changing only the query fires no
+pageview, by design. Two screens that differ only by `?limit=` are one row on the Activity
+tab, and that is the privacy property working, not instrumentation missing.
+
+Nothing is stored in a variable the URL does not also say. Every screen rebuilds itself
+from `location` on `popstate`, which is what makes Back correct rather than approximately
+correct — and it is why the app can be driven from the address bar in a test.
+
+`basePath` is the prefix the app is mounted under, and it is the **same string on the
+subpath and subdomain surfaces**, so routing off it needs no per-surface branch. Deep links
+survive a cold load because the serve path falls back to the bundle's `index.html` for any
+navigation request that misses (`allow_spa_fallback`, scoped to `Accept: text/html`), and
+the service worker's navigation handler is network-first with that same shell cached.
 
 ## Why it's hand-written
 

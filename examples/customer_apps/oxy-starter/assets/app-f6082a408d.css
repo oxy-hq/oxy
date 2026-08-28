@@ -33,7 +33,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--muted); pa
 *::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 3px; }
 *::-webkit-scrollbar-track { background: transparent; }
 
-header { margin-bottom: 40px; }
+header { margin-bottom: 24px; }
 h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 8px; }
 .lede { color: var(--muted-foreground); margin: 0; max-width: 62ch; }
 
@@ -87,6 +87,50 @@ td.null { color: var(--muted-foreground); font-style: italic; }
   .contract { grid-template-columns: 1fr; }
   .contract dt { border-bottom: 0; padding-bottom: 0; }
 }
+
+a { color: var(--info); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* The screen switcher. Real anchors with real hrefs — the router intercepts
+   only the plain left click, so every browser gesture still works on them. */
+nav { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+nav a {
+  padding: 8px 12px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  border-bottom: 1px solid transparent;
+  margin-bottom: -1px;
+}
+nav a:hover { color: var(--foreground); text-decoration: none; }
+nav a.on { color: var(--foreground); border-bottom-color: var(--brand); }
+
+/* State *within* a screen — the query-string half of the URL. */
+.chips { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.chips-label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-foreground); }
+.chip {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+.chip:hover { color: var(--foreground); text-decoration: none; }
+.chip.on { background: var(--muted); color: var(--foreground); border-color: var(--brand); }
+
+.crumbs { margin-bottom: 12px; font-size: 12.5px; }
+
+/* What the browser just did, newest first — the half of a back/forward test
+   the address bar does not show you. */
+.movelog {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+.movelog li { padding: 2px 0; }
+.movelog li:first-child { color: var(--foreground); }
 
 .state { padding: 18px 14px; color: var(--muted-foreground); }
 .skeleton { height: 10px; background: var(--muted); animation: pulse 1.4s ease-in-out infinite; }

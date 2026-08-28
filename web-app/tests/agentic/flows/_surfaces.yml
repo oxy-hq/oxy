@@ -13,12 +13,8 @@
     - "src/pages/launcher/"
     - "src/components/Chat/"
     - "src/components/Ask/"
-    # The app dock is a flex sibling of the Ask dock and closes it on open, so
-    # a change to either can move the other's layout. Shared hook included for
-    # the same reason.
-    - "src/components/apps/AppDock/"
+    # The Ask dock's width/resize behaviour lives in a shared hook.
     - "src/hooks/useResizableDock.ts"
-    - "src/stores/useAppDock.ts"
   flows:
     - chat-ask
     - chat-ask-fleet
@@ -77,6 +73,13 @@
   paths:
     - "src/pages/admin/AdminCustomApps/"
     - "src/pages/admin/AdminPublishTokens/"
+    # Repo-relative, not web-app-relative: `customer-apps-oxy-starter-fleet`
+    # drives the SERVED example bundle, so an edit to that bundle can break the
+    # flow while nothing under web-app/ moves. It did — the four-screen rewrite
+    # invalidated every id the flow anchored on and nothing advised anyone.
+    # Matching is a plain substring test against staged paths (`matchSurfacePath`
+    # in runner/cli-modes.ts), so a repo-root prefix works.
+    - "examples/customer_apps/oxy-starter/"
   flows:
     - admin-custom-apps-tabs
     - customer-apps-oxy-starter-fleet

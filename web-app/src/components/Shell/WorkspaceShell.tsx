@@ -2,14 +2,12 @@ import { Handshake, House, MessagesSquare, Shield } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AskDock } from "@/components/Ask/AskDock";
-import { AppDock } from "@/components/apps/AppDock";
 import { OxygenFactoryMark } from "@/components/OxygenFactoryMark";
 import WorkspaceStatus from "@/components/WorkspaceStatus";
 import { useCustomApps } from "@/hooks/api/customApps/useCustomApps";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
-import { cn } from "@/libs/shadcn/utils";
+import { appWindowName } from "@/libs/utils/appWindowName";
 import ROUTES from "@/libs/utils/routes";
-import useAppDock from "@/stores/useAppDock";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import { RailUserMenu } from "./RailUserMenu";
@@ -41,19 +39,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   // server enforces scope; this only decides whether to show the entry.
   const isPartnerAdmin = !!profile?.partner_memberships?.length;
 
-  // A docked custom app in focus mode takes the whole content column: `<main>`
-  // and the top bar go away rather than being compacted to slivers, because a
-  // sliver of HQ beside a dashboard is neither.
-  //
-  // The **rail stays**, deliberately. Focus mode has to leave a way back out,
-  // and the rail is that way — it is the app switcher and the workspace/user
-  // menu. Hiding it too would turn focus into a trap. Everything the top bar
-  // offered is still reachable: the app's name from the dock header, navigation
-  // from the rail.
-  const dockedApp = useAppDock((s) => s.app);
-  const dockFocus = useAppDock((s) => s.focus);
-  const appFocused = !!dockedApp && dockFocus;
-
   const path = location.pathname;
   const inIde = /\/ide(\/|$)/.test(path);
   const hideRail = inIde || /\/onboarding(\/|$)/.test(path);
@@ -83,13 +68,16 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     active: path.startsWith(ws.THREADS),
     onSelect: () => navigate(ws.THREADS)
   };
+  // Apps open in their own tab, never inside the shell — see `appWindowName`
+  // for why HQ must not host an app in its own browsing context.
   const appItems: RailItem[] = customApps.map((app) => ({
     key: app.id,
     label: app.name,
     testId: `rail-app-${app.slug}`,
     letter: app.name.slice(0, 1).toUpperCase(),
     imageUrl: app.icon_url,
-    href: app.url
+    href: app.url,
+    newTab: appWindowName(app.org_slug, app.slug)
   }));
   // System: the intelligence substrate powering the HQ. Pinned at the
   // bottom of the nav, distinct from the operator apps above.
@@ -156,24 +144,18 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           same height as the rail's logo cell (h-12), so the logo anchors the
           top-left corner and the two bottom borders form one continuous line. */}
       <div className='flex h-full min-w-0 flex-1 flex-col'>
-        {!hideRail && !appFocused && <TopBar />}
+        {!hideRail && <TopBar />}
         {/* Follows the operator INTO the tenant — this is where an unnoticed
             impersonation would actually do damage. */}
         <div className='flex min-h-0 w-full flex-1'>
-          <main
-            className={cn(
-              "relative h-full min-w-0 flex-1 flex-col bg-background",
-              appFocused ? "hidden" : "flex"
-            )}
-          >
+          <main className='relative flex h-full min-w-0 flex-1 flex-col bg-background'>
             {!hideStatus && <WorkspaceStatus />}
             <div className='w-full min-w-0 flex-1 overflow-hidden'>{children}</div>
           </main>
-          {/* Both docks are flex siblings — opening one compacts <main>
-              (Cursor-style) rather than floating over it. They are mutually
-              exclusive by construction: `useAppDock.open` closes Ask. */}
+          {/* The Ask dock is a flex sibling — opening it compacts <main>
+              (Cursor-style) rather than floating over it. Custom apps
+              deliberately get no equivalent: they open in their own tab. */}
           {!hideRail && <AskDock />}
-          {!hideRail && <AppDock />}
         </div>
       </div>
     </div>

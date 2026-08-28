@@ -22,9 +22,8 @@ export interface ResizableDockOptions {
  *
  * Private-mode Safari and storage-blocked browsers throw on the *accessor*, not
  * just on write — and this one runs inside a `useState` initialiser, so an
- * unguarded read throws during render and unmounts both docks. `useAppDock`
- * already wraps the identical access; this is the same hazard one render
- * earlier, which is why it is worth the two helpers rather than a comment.
+ * unguarded read throws during render and takes the dock down with it. Hence
+ * the two helpers rather than a comment saying "be careful".
  */
 function readStored(key: string): string | null {
   try {

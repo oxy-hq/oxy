@@ -124,6 +124,20 @@ var is used, then the default.
 | `OXY_DEV_PORT`           | frontend | `5173`                  | Vite dev server port                                |
 | `OXY_DEV_PROXY_TARGET`   | frontend | `http://localhost:3000` | backend the Vite dev server proxies API requests to |
 
+> ### `OXY_DEV_PROXY_TARGET` must stay on this machine
+>
+> Point it at a **remote** backend and custom-app data calls answer 403
+> `origin not allowed`. The origin gate
+> (`is_local_dev_pair`, `crates/app/src/server/router/mod.rs`) allows a
+> loopback origin only when the request also *arrived* at a loopback host, so a
+> dev browser talking to `app-dev.oxygen-hq.com` is — correctly — indistinguishable
+> from any other page on your machine posting there with your cookie.
+>
+> Both ends loopback is the supported shape, and every spelling of it works:
+> `localhost`, `127.0.0.1`, `[::1]`, `<slug>.localhost`, any port. (Before
+> 2026-08 only eight literal `http://localhost:<port>` origins passed, so
+> `127.0.0.1:5173` and any custom `OXY_DEV_PORT` failed with this same 403.)
+
 > ### Kubernetes env-var collision
 >
 > These vars are named `OXY_HTTP_*` — **not** `OXY_PORT` / `OXY_INTERNAL_PORT`,

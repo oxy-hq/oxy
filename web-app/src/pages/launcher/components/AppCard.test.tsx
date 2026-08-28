@@ -3,14 +3,12 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import useAppDock from "@/stores/useAppDock";
 import type { CustomAppSummary } from "@/types/apps";
 import { AppCard } from "./AppCard";
 
 afterEach(cleanup);
 
 beforeEach(() => {
-  useAppDock.setState({ app: null });
   document.head.innerHTML = "";
 });
 
@@ -56,7 +54,7 @@ describe("AppCard access control", () => {
     render(<AppCard app={app()} onManageAccess={vi.fn()} />);
     // The name's link stretches over the card. Adding a second action must not
     // cost the card its one-click navigation.
-    expect(screen.getByRole("link", { name: "Revenue" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^Revenue/ })).toHaveAttribute(
       "href",
       "/customer-apps/acme/revenue/"
     );
@@ -64,35 +62,41 @@ describe("AppCard access control", () => {
 });
 
 describe("AppCard opening behaviour", () => {
-  /// The default gesture keeps the user in HQ: the app opens in the right-hand
-  /// dock rather than replacing the page they launched it from.
-  it("docks the app on a plain click", async () => {
+  /// The app opens in a tab of its own — never inside HQ. That is what keeps the
+  /// app's URL in the address bar, so its query-string navigation state is
+  /// linkable and a reload reloads the app instead of returning to HQ, and what
+  /// keeps its history out of HQ's (the "Back lands two hops away" report).
+  it("targets a per-app window rather than this one", () => {
     render(<AppCard app={app()} />);
-    await userEvent.click(screen.getByRole("link", { name: "Revenue" }));
-    expect(useAppDock.getState().app?.id).toBe("app-1");
+    const link = screen.getByRole("link", { name: /^Revenue/ });
+    // Org-scoped: slugs are unique within an org, but every org shares this
+    // origin's window-name space.
+    expect(link).toHaveAttribute("target", "oxy-app-acme-revenue");
+    // A *named* target, not `_blank`: a second click re-targets the tab that is
+    // already open instead of stacking a duplicate.
+    expect(link.getAttribute("target")).not.toBe("_blank");
+    // `rel` would defeat that reuse — a link with noopener/noreferrer is spec'd
+    // to get a fresh browsing context every time.
+    expect(link).not.toHaveAttribute("rel");
   });
 
-  /// …and the modifier gestures still belong to the browser. Intercepting
-  /// cmd-click is the single most common way an in-app router breaks "open in a
-  /// new tab", so the handler defers rather than re-implementing it.
-  it("leaves a cmd-click to the browser", async () => {
-    // One `setup()` session, because modifier state lives on the session — the
-    // bare `userEvent.click` helper starts a fresh one and would drop the Meta
-    // key held by a preceding `userEvent.keyboard`, quietly turning this into a
-    // second test of the plain-click path.
-    const user = userEvent.setup();
+  /// The card's explicit new-tab button went away with the dock, so this anchor
+  /// is the only opener — and a screen-reader user has nothing else to tell them
+  /// activating it leaves the tab.
+  it("announces that it opens in a new tab", () => {
     render(<AppCard app={app()} />);
-    await user.keyboard("{Meta>}");
-    await user.click(screen.getByRole("link", { name: "Revenue" }));
-    await user.keyboard("{/Meta}");
-    expect(useAppDock.getState().app).toBeNull();
+    expect(screen.getByRole("link", { name: "Revenue (opens in a new tab)" })).toBeInTheDocument();
   });
 
-  it("offers an explicit new-tab escape hatch", () => {
+  /// Nothing intercepts the click. The card is a plain anchor, so cmd-click,
+  /// middle-click, "open in new tab" and "copy link address" are all the
+  /// browser's — re-implementing any of them is how in-app routers break them.
+  it("leaves the click to the browser", () => {
     render(<AppCard app={app()} />);
-    const external = screen.getByTestId("launcher-app-card-external-revenue");
-    expect(external).toHaveAttribute("href", "/customer-apps/acme/revenue/");
-    expect(external).toHaveAttribute("target", "_blank");
+    const link = screen.getByRole("link", { name: /^Revenue/ });
+    const clicked = new MouseEvent("click", { bubbles: true, cancelable: true });
+    link.dispatchEvent(clicked);
+    expect(clicked.defaultPrevented).toBe(false);
   });
 
   /// Hover warms the app's HTML — which also pulls its entry chunks via the
@@ -104,12 +108,12 @@ describe("AppCard opening behaviour", () => {
     const prefetches = () =>
       document.head.querySelectorAll('link[rel="prefetch"][href="/customer-apps/acme/revenue/"]');
 
-    await userEvent.hover(screen.getByRole("link", { name: "Revenue" }));
+    await userEvent.hover(screen.getByRole("link", { name: /^Revenue/ }));
     expect(prefetches()).toHaveLength(1);
 
     // Reaching the card by Tab has to be as fast as reaching it by mouse — and
     // must not queue a second link for the same URL.
-    screen.getByRole("link", { name: "Revenue" }).focus();
+    screen.getByRole("link", { name: /^Revenue/ }).focus();
     expect(prefetches()).toHaveLength(1);
   });
 });

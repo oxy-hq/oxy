@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Oxy Starter</title>
-    <link rel="stylesheet" href="assets/app-2158640a89.css" />
-    <script type="module" src="assets/app-1f3c6042b6.js"></script>
+    <link rel="stylesheet" href="assets/app-f6082a408d.css" />
+    <script type="module" src="assets/app-580a6adb22.js"></script>
   </head>
   <body style="background: #0a0a0a">
     <main>
@@ -14,70 +14,23 @@
         <p class="lede">
           No build step, no dependencies, no framework — a hand-written page plus one hashed
           stylesheet and one hashed module. Oxy serves it behind its auth gate, injects the
-          runtime identity, preloads those two assets, and answers both queries below on the
-          same session cookie. Read the source — it is the whole app.
+          runtime identity, preloads those two assets, and answers every query below on the
+          same session cookie. Four screens, each a real URL, so Back and Forward have
+          something to walk. Read the source — it is the whole app.
         </p>
       </header>
 
-      <section>
-        <div class="head">
-          <h2>Demo warehouse</h2>
-          <span class="pattern">Pattern 1 · scalar aggregate</span>
-        </div>
-        <div id="kpis">
+      <!-- The router owns both of these. Everything inside is rebuilt from the
+           URL on every navigation, so there is no state to keep in sync with
+           the address bar — there is only the address bar. -->
+      <div id="nav"></div>
+      <div id="screen">
+        <section>
           <div class="panel">
             <div class="state"><div class="skeleton"></div><div class="skeleton short"></div></div>
           </div>
-        </div>
-      </section>
-
-      <section>
-        <div class="head">
-          <h2>Top stores by sales</h2>
-          <span class="pattern">Pattern 2 · list query</span>
-        </div>
-        <div id="top-stores">
-          <div class="panel">
-            <div class="state"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton short"></div></div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div class="head">
-          <h2>What Oxy injected</h2>
-          <span class="pattern">Pattern 3 · runtime identity</span>
-        </div>
-        <div class="panel"><dl class="contract" id="contract"></dl></div>
-        <p class="note">
-          Read from <code>window.__OXY_APP__</code>. A bundle never hardcodes its org or
-          project — it addresses the data plane with the <code>projectId</code> Oxy gives it.
-        </p>
-      </section>
-      <section>
-        <div class="head">
-          <h2>Who is looking at this</h2>
-          <span class="pattern">Pattern 4 · viewer identity</span>
-        </div>
-        <div id="viewer">
-          <div class="panel">
-            <div class="state"><div class="skeleton"></div><div class="skeleton short"></div></div>
-          </div>
-        </div>
-        <p class="note">
-          One request to <code>/api/projects/&lt;projectId&gt;/shell-context</code>, on the same
-          session cookie that authorized the page. This is <b>display</b> identity — a name to
-          greet with, an avatar to render. It deliberately carries <b>no role</b>: shipping one
-          to the browser invites gating on it, and a bundle is just JavaScript the viewer can
-          edit. The <b>verified</b> half — <code>appRole</code>, <code>orgRole</code>,
-          <code>teams</code>, <code>kind</code> — lives on <code>ctx.user</code> inside an Oxy
-          Function, where the caller cannot reach it. That needs a build step, so it is the one
-          thing this function-less app cannot show you; see <code>examples/hello-oxy</code> in the
-          customer-apps repo.
-        </p>
-      </section>
-
+        </section>
+      </div>
     </main>
-
   </body>
 </html>

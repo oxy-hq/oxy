@@ -153,10 +153,12 @@
   warm_usd: 0.005
 
 - flow: customer-apps-oxy-starter-fleet
-  # ZERO act steps — every step is a deterministic wait, same shape as
-  # apps-data-app-charts. Cold and warm are both just the single judge call.
-  cold_usd: 0.10
-  warm_usd: 0.005
+  # Four cases over the app's four screens. Three act steps total (two nav
+  # clicks and one deep-link browser_navigate); everything else is a
+  # deterministic wait or a $0 assert. Warm replay is the four judge calls,
+  # which is what moved this off the old zero-act ceiling.
+  cold_usd: 0.35
+  warm_usd: 0.01
 
 - flow: partners-console-fleet
   # Four cases, but only case 1 pays for the full admin ceremony (~6 act
