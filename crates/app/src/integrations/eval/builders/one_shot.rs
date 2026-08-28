@@ -1,19 +1,18 @@
-//! Local OneShot LLM executable for the eval LLM-as-judge paths.
+//! Local one-shot LLM judge for the eval LLM-as-judge path.
 //!
-//! Replaces the deleted `oxy_agent::agent::openai::{OneShotInput,
-//! SimpleMapper, build_openai_executable}` with a minimal inline impl that
-//! drives an LLM call via `oxy::adapters::openai::OpenAIAdapter` directly.
-//! No tool calling, no streaming — just a single chat completion.
+//! A single chat completion against `model_name` via
+//! `oxy::adapters::openai::OpenAIAdapter` — no tool calling, no streaming, and
+//! no `oxy::execute` pipeline (`Executable`/`ParamMapper`). The solver drives it
+//! directly with a plain async call.
 
 use async_openai::types::chat::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
     ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
     ChatCompletionRequestUserMessageContent,
 };
-use async_trait::async_trait;
 
 use oxy::adapters::openai::{OpenAIAdapter, OpenAIClient};
-use oxy::execute::{Executable, ExecutionContext, builders::map::ParamMapper, types::Output};
+use oxy::execute::types::Output;
 use oxy_shared::errors::OxyError;
 
 #[derive(Clone, Debug)]
@@ -28,35 +27,19 @@ pub struct OneShotOutput {
     pub content: Output,
 }
 
-#[derive(Clone, Debug)]
-pub struct SimpleMapper;
-
-#[async_trait]
-impl ParamMapper<OneShotInput, OneShotInput> for SimpleMapper {
-    async fn map(
-        &self,
-        _: &ExecutionContext,
-        input: OneShotInput,
-    ) -> Result<(OneShotInput, Option<ExecutionContext>), OxyError> {
-        Ok((input, None))
-    }
-}
-
+/// A one-shot LLM judge: a single chat completion, no tools, no streaming.
 #[derive(Clone)]
-pub struct OneShotExecutable {
+pub struct OneShotJudge {
     client: OpenAIClient,
     model_name: String,
 }
 
-#[async_trait]
-impl Executable<OneShotInput> for OneShotExecutable {
-    type Response = OneShotOutput;
+impl OneShotJudge {
+    pub fn new(client: OpenAIClient, model_name: String) -> Self {
+        Self { client, model_name }
+    }
 
-    async fn execute(
-        &mut self,
-        _ctx: &ExecutionContext,
-        input: OneShotInput,
-    ) -> Result<Self::Response, OxyError> {
+    pub async fn run(&self, input: OneShotInput) -> Result<OneShotOutput, OxyError> {
         let mut messages: Vec<ChatCompletionRequestMessage> = Vec::new();
         // System instructions first.
         messages.push(ChatCompletionRequestMessage::System(
@@ -82,10 +65,4 @@ impl Executable<OneShotInput> for OneShotExecutable {
             content: Output::Text(text),
         })
     }
-}
-
-/// Build a one-shot executable for the eval LLM-as-judge path. No tool
-/// calling, no streaming — a single chat completion against `model_name`.
-pub fn build_openai_executable(client: OpenAIClient, model_name: String) -> OneShotExecutable {
-    OneShotExecutable { client, model_name }
 }

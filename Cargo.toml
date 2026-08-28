@@ -420,7 +420,6 @@ parquet = "=58.3.0"
 predicates = "3.1.4"
 pulldown-cmark = "0.13"
 rand = "0.10"
-rapidfuzz = "0.5.0"
 rayon = "1"
 # 0.13 renamed `rustls-tls` to `rustls`, and split `form` and `query` into their
 # own features — 0.12 had neither, so `.form()`/`.query()` were always available.

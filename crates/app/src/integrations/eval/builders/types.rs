@@ -1,12 +1,6 @@
-use std::collections::HashMap;
+use serde::Serialize;
 
-use serde::{Deserialize, Serialize};
-
-use oxy::{
-    execute::types::{Output, ReferenceKind, TargetOutput},
-    theme::StyledText,
-};
-use oxy_shared::errors::OxyError;
+use oxy::{execute::types::ReferenceKind, theme::StyledText};
 
 pub struct EvalInput {
     pub index: Option<usize>,
@@ -23,36 +17,6 @@ pub(super) struct AgenticInput {
 impl std::fmt::Display for AgenticInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.config_path)
-    }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub(super) struct EvalRecord {
-    pub query: String,
-    pub response: String,
-    pub relevant_contexts: Vec<String>,
-}
-
-impl From<EvalRecord> for TargetOutput {
-    fn from(val: EvalRecord) -> Self {
-        TargetOutput {
-            output: val.response,
-            task_description: Some(val.query),
-            relevant_contexts: val.relevant_contexts.clone(),
-            references: vec![],
-            duration_ms: 0.0,
-            input_tokens: 0,
-            output_tokens: 0,
-        }
-    }
-}
-
-impl EvalRecord {
-    pub(super) fn as_target(&self, target: &AgenticInput) -> AgenticInput {
-        AgenticInput {
-            config_path: target.config_path.clone(),
-            prompt: self.query.clone(),
-        }
     }
 }
 
@@ -282,48 +246,6 @@ impl std::fmt::Display for Record {
             writeln!(f, "{}", "Inconsistent result detected.".warning())?;
         }
         writeln!(f, "{}", reason)
-    }
-}
-
-impl Record {
-    pub fn fill_score(&mut self, scores: &HashMap<String, f32>) {
-        if let Some(score) = scores.get(&self.choice) {
-            self.score = *score;
-        }
-    }
-}
-
-impl TryFrom<Output> for Record {
-    type Error = OxyError;
-
-    fn try_from(value: Output) -> Result<Self, Self::Error> {
-        let record = Record {
-            cot: String::new(),
-            choice: String::new(),
-            score: 0.0,
-            prompt: None,
-            expected: None,
-            actual_output: None,
-            references: vec![],
-            duration_ms: 0.0,
-            input_tokens: 0,
-            output_tokens: 0,
-        };
-        let response = match value {
-            Output::Text(text) => text,
-            _ => {
-                return Err(OxyError::RuntimeError(
-                    "Unsupported output type".to_string(),
-                ));
-            }
-        };
-        let record = response.trim().lines().fold(record, |mut record, part| {
-            record.cot.push_str(&record.choice);
-            record.cot.push('\n');
-            record.choice = part.trim().to_string();
-            record
-        });
-        Ok(record)
     }
 }
 

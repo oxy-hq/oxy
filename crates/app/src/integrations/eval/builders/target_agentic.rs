@@ -1,29 +1,20 @@
 //! Eval target on the agentic path — the "run the target agent" step of the
 //! eval harness, with no old-executor scaffolding.
 //!
-//! Uses **none** of `oxy::execute`'s pipeline machinery — no [`Executable`],
-//! no [`ExecutionContext`], no `execute_with_handler`, no `OutputContainer` /
-//! `OutputGetter`, no `EventHandler` / `writer` — the first step of the
-//! old-executor retirement (see `internal-docs/old-executor-retirement.md`).
+//! Uses **none** of `oxy::execute`'s pipeline machinery — no `Executable`,
+//! `execute_with_handler`, `OutputContainer` / `OutputGetter`, or
+//! `EventHandler` / `writer`. See `internal-docs/old-executor-retirement.md`.
 //!
-//! Why it collapses so cleanly (verified against the current code):
-//!   1. The agent *already* runs via `agentic_pipeline::run_agentic_streaming`
-//!      inside `target.rs`'s `AgenticTargetWrapper` — execution is already agentic.
-//!   2. For a `.test.yml` agentic target, `eval.rs` always sets `task_ref: None`,
-//!      and `AgenticTargetWrapper` returns `OutputContainer::Single(Text(..))`.
-//!      `TryFrom<OutputGetter> for TargetOutput` maps that `Single` arm to
-//!      **empty** `relevant_contexts` / `references`. So the getter/container
-//!      layer contributes nothing here.
-//!   3. The correctness judge (`CorrectnessSolverMapper`) reads only
-//!      `TargetOutput.output` (+ `task_description` on the *expected* side).
-//!      It never touches `relevant_contexts` / `references`.
+//! Why the target step reduces to answer text + duration + token usage:
+//!   1. The agent runs via `agentic_pipeline::run_agentic_streaming` directly.
+//!   2. For a `.test.yml` agentic target `eval.rs` sets `task_ref: None`, and a
+//!      single text answer carries no `relevant_contexts` / `references`.
+//!   3. The correctness judge (`solver::run_solver` via `build_correctness_input`)
+//!      reads only `TargetOutput.output` (+ `task_description` on the *expected*
+//!      side) — it never touches `relevant_contexts` / `references`.
 //!
-//! => the whole target step reduces to: answer text + duration + token usage.
-//!
-//! Compare `builders/target.rs` (the `Executable` + `ExecutionContext` original).
-//! `TargetOutput` is still imported from `oxy::execute::types` — relocating that
-//! data type out of the old executor is a *separate* (Tier-C) step; the point
-//! here is that the *execution* no longer depends on the pipeline.
+//! `TargetOutput` is still imported from `oxy::execute::types`; relocating that
+//! data type out of the old executor is a later (Tier-C) step.
 
 use std::sync::Arc;
 
@@ -37,11 +28,9 @@ use tokio::sync::mpsc;
 use super::types::AgenticInput;
 
 /// Run one eval target agent and produce its [`TargetOutput`], on the agentic
-/// path with zero old-executor scaffolding.
-///
-/// Drop-in for the `.test.yml` agentic case of `TargetExecutable::execute`
-/// (where `task_ref` is `None`). Returns a single-element `Vec` to mirror the
-/// original's `Vec<TargetOutput>` shape that `GeneratorExecutable` consumes.
+/// path with zero old-executor scaffolding. Returns a single-element `Vec`
+/// (one target run → one output) that `run_generator` pairs with its expected
+/// answer.
 pub(super) async fn run_target(
     workspace: &WorkspaceManager<oxy::config::WorkingCopy>,
     input: AgenticInput,

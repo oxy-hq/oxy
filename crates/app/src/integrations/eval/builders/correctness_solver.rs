@@ -2,52 +2,38 @@ use minijinja::{Value, context};
 
 use oxy::execute::{
     ExecutionContext,
-    builders::map::ParamMapper,
     types::{Output, TargetOutput},
 };
 use oxy_shared::errors::OxyError;
 
 use super::{one_shot::OneShotInput, types::Record};
 
-#[derive(Clone, Debug)]
-pub(super) struct CorrectnessSolverMapper {
-    pub prompt_template: String,
-}
-
-#[async_trait::async_trait]
-impl ParamMapper<(TargetOutput, TargetOutput), OneShotInput> for CorrectnessSolverMapper {
-    async fn map(
-        &self,
-        execution_context: &ExecutionContext,
-        input: (TargetOutput, TargetOutput),
-    ) -> Result<(OneShotInput, Option<ExecutionContext>), OxyError> {
-        let (submission_1, submission_2) = input;
-        // submission_1 = agent's actual answer
-        // submission_2 = expected answer (from test case)
-        let actual = &submission_1.output;
-        let expected = &submission_2.output;
-        let prompt = submission_2.task_description.as_deref().unwrap_or("");
-
-        let ctx = context! {
-            actual => Value::from_safe_string(actual.to_string()),
-            expected => Value::from_safe_string(expected.to_string()),
-            prompt => Value::from_safe_string(prompt.to_string()),
-        };
-        let system_instructions = execution_context
-            .renderer
-            .render_once(&self.prompt_template, ctx)
-            .map_err(|_| {
-                OxyError::RuntimeError("Failed to render correctness evaluation prompt".to_string())
-            })?;
-        Ok((
-            OneShotInput {
-                system_instructions,
-                user_input: None,
-                memory: vec![],
-            },
-            None,
-        ))
-    }
+/// Render the LLM-as-judge prompt for one correctness case: the agent's actual
+/// answer vs the case's expected answer, plus the case prompt (from the expected
+/// side's `task_description`).
+pub(super) fn build_correctness_input(
+    execution_context: &ExecutionContext,
+    prompt_template: &str,
+    actual: &TargetOutput,
+    expected: &TargetOutput,
+) -> Result<OneShotInput, OxyError> {
+    let prompt = expected.task_description.as_deref().unwrap_or("");
+    let ctx = context! {
+        actual => Value::from_safe_string(actual.output.to_string()),
+        expected => Value::from_safe_string(expected.output.to_string()),
+        prompt => Value::from_safe_string(prompt.to_string()),
+    };
+    let system_instructions = execution_context
+        .renderer
+        .render_once(prompt_template, ctx)
+        .map_err(|_| {
+            OxyError::RuntimeError("Failed to render correctness evaluation prompt".to_string())
+        })?;
+    Ok(OneShotInput {
+        system_instructions,
+        user_input: None,
+        memory: vec![],
+    })
 }
 
 /// Parse a correctness judge response into a Record.

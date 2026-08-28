@@ -1,13 +1,12 @@
 use minijinja::Value;
 use tracing::Instrument;
 
-use eval::build_eval_executable;
 use oxy::config::WorkingCopy;
 use oxy::{
     adapters::workspace::manager::WorkspaceManager,
     config::constants::EVAL_SOURCE_ROOT,
     execute::{
-        Executable, ExecutionContext, ExecutionContextBuilder,
+        ExecutionContext, ExecutionContextBuilder,
         types::Source,
         writer::{BufWriter, EventHandler},
     },
@@ -20,7 +19,6 @@ mod eval;
 mod generator;
 mod one_shot;
 mod solver;
-mod target;
 mod target_agentic;
 pub mod types;
 
@@ -70,18 +68,13 @@ impl EvalLauncher {
         let execution_context = self.execution_context.ok_or(OxyError::RuntimeError(
             "ExecutionContext is required".to_string(),
         ))?;
-        let mut eval_executable = build_eval_executable();
 
         // Capture the current span to propagate trace context to the spawned task
         let current_span = tracing::Span::current();
 
         let handle = tokio::spawn(
-            async move {
-                eval_executable
-                    .execute(&execution_context, eval_input)
-                    .await
-            }
-            .instrument(current_span),
+            async move { eval::run_eval(&execution_context, eval_input).await }
+                .instrument(current_span),
         );
         let buf_writer = self.buf_writer;
         let event_handle =

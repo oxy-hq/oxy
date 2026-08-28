@@ -1,274 +1,127 @@
-use itertools::Itertools;
-use minijinja::{Value, context};
-use rapidfuzz::distance::levenshtein::normalized_distance;
+use futures::stream::StreamExt;
 
 use oxy::{
     adapters::openai::{IntoOpenAIConfig, OpenAIClient},
     config::{
         constants::{EVAL_METRICS_POSTFIX, EVAL_SOURCE},
-        model::{DistanceMethod, SolverKind},
+        model::SolverKind,
     },
     execute::{
-        Executable, ExecutionContext,
-        builders::{ExecutableBuilder, map::ParamMapper},
-        types::TargetOutput,
+        ExecutionContext,
+        types::{ProgressType, TargetOutput},
     },
 };
 use oxy_shared::errors::OxyError;
 
 use super::{
-    correctness_solver::{CorrectnessSolverMapper, parse_correctness_record},
-    one_shot::{OneShotInput, SimpleMapper, build_openai_executable},
-    types::{Correctness, MetricKind, RecallRecord, Record},
+    correctness_solver::{build_correctness_input, parse_correctness_record},
+    one_shot::OneShotJudge,
+    types::{Correctness, MetricKind, Record},
 };
 
-#[derive(Clone, Debug)]
-pub struct LLMSolverMapper {
-    prompt_template: String,
-    task_description: Option<String>,
-}
-
-#[async_trait::async_trait]
-impl ParamMapper<(TargetOutput, TargetOutput), OneShotInput> for LLMSolverMapper {
-    async fn map(
-        &self,
-        execution_context: &ExecutionContext,
-        input: (TargetOutput, TargetOutput),
-    ) -> Result<(OneShotInput, Option<ExecutionContext>), OxyError> {
-        let (submission_1, submission_2) = input;
-        let task_description = match &self.task_description {
-            Some(task_description) => task_description,
-            None => &submission_1
-                .task_description
-                .ok_or(OxyError::ConfigurationError(
-                    "Task description is required for non-agent task consistency evaluation"
-                        .to_string(),
-                ))?,
-        };
-        let context = context! {
-            submission_1 => submission_1.output,
-            submission_2 => submission_2.output,
-            task_description => Value::from_safe_string(task_description.to_string()),
-        };
-        let system_instructions = execution_context
-            .renderer
-            .render_once(&self.prompt_template, context)
-            .map_err(|_| {
-                OxyError::RuntimeError("Failed to render consistency evaluation prompt".to_string())
-            })?;
-        Ok((
-            OneShotInput {
-                system_instructions,
-                user_input: None,
-                memory: vec![],
-            },
-            None,
-        ))
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(super) struct SolverExecutable {
+/// Score one metric over the target outputs, on the plain-async path (no
+/// `oxy::execute` pipeline). The `.test.yml` entry point only ever builds
+/// `SolverKind::Correctness`; the `Similarity` / `ContextRecall` solvers went
+/// with the classic-agent eval retirement and are rejected here.
+pub(super) async fn run_solver(
+    execution_context: &ExecutionContext,
+    solver_kind: SolverKind,
+    outputs: Vec<(TargetOutput, TargetOutput)>,
+    errors_with_expected: Vec<(String, TargetOutput)>,
     concurrency: usize,
-}
+) -> Result<MetricKind, OxyError> {
+    let SolverKind::Correctness(correctness_solver) = solver_kind else {
+        return Err(OxyError::ConfigurationError(
+            "Only the correctness solver is supported; the similarity / context-recall solvers \
+             were removed with the classic-agent eval retirement."
+                .to_string(),
+        ));
+    };
 
-impl SolverExecutable {
-    pub fn new(concurrency: usize) -> Self {
-        Self { concurrency }
+    let metric_context = execution_context.with_child_source(
+        format!("{}-{}", execution_context.source.id, EVAL_METRICS_POSTFIX),
+        EVAL_SOURCE.to_string(),
+    );
+    let config_manager = &execution_context.workspace.config_manager;
+    let secret_manager = &execution_context.workspace.secrets_manager;
+
+    let model_ref = match &correctness_solver.model_ref {
+        Some(model_ref) => model_ref,
+        None => config_manager
+            .default_model()
+            .ok_or_else(|| OxyError::ConfigurationError("No default model found".to_string()))?,
+    };
+    let model = config_manager.resolve_model(model_ref)?;
+    let client = OpenAIClient::with_config(model.into_openai_config(secret_manager).await?);
+    let judge = OneShotJudge::new(client, model.model_name().to_string());
+    let prompt_template = correctness_solver.prompt.to_string();
+
+    // Judge each (actual, expected) pair concurrently. `buffered` preserves
+    // input order, though this arm no longer relies on it (each future pairs its
+    // own record). Progress events are re-emitted on `metric_context` — the old
+    // `ExecutableBuilder` concurrency wrapper drove the "Judging responses" bar
+    // (service/eval.rs) and the Test Dashboard SSE series (service/test.rs) via
+    // exactly these. Telemetry writes are best-effort.
+    let total = outputs.len();
+    if let Err(e) = metric_context
+        .write_progress(ProgressType::Started(Some(total)))
+        .await
+    {
+        tracing::warn!("eval: failed to emit judging progress Started: {e}");
     }
-}
-
-#[async_trait::async_trait]
-impl
-    Executable<(
-        SolverKind,
-        Vec<(TargetOutput, TargetOutput)>,
-        Vec<(String, TargetOutput)>,
-    )> for SolverExecutable
-{
-    type Response = MetricKind;
-
-    async fn execute(
-        &mut self,
-        execution_context: &ExecutionContext,
-        (solver_kind, outputs, errors_with_expected): (
-            SolverKind,
-            Vec<(TargetOutput, TargetOutput)>,
-            Vec<(String, TargetOutput)>,
-        ),
-    ) -> Result<Self::Response, OxyError> {
-        let metric_context = execution_context.with_child_source(
-            format!("{}-{}", execution_context.source.id, EVAL_METRICS_POSTFIX),
-            EVAL_SOURCE.to_string(),
-        );
-
-        let config_manager = &execution_context.workspace.config_manager;
-        let secret_manager = &execution_context.workspace.secrets_manager;
-
-        match solver_kind {
-            SolverKind::Similarity(llm_solver) => {
-                let model_ref = match &llm_solver.model_ref {
-                    Some(model_ref) => model_ref,
-                    None => match config_manager.default_model() {
-                        Some(model_ref) => model_ref,
-                        None => {
-                            return Err(OxyError::ConfigurationError(
-                                "No default model found".to_string(),
-                            ));
-                        }
-                    },
-                };
-                let model = config_manager.resolve_model(model_ref)?;
-                let client =
-                    OpenAIClient::with_config(model.into_openai_config(secret_manager).await?);
-                let agent = build_openai_executable(client, model.model_name().to_string());
-                let mut eval_executable = ExecutableBuilder::new()
-                    .concurrency(self.concurrency)
-                    .map(LLMSolverMapper {
-                        prompt_template: llm_solver.prompt.to_string(),
-                        task_description: None,
-                    })
-                    .map(SimpleMapper)
-                    .executable(agent);
-                let results = eval_executable.execute(&metric_context, outputs).await?;
-                let metric = results
-                    .into_iter()
-                    .map(|res| {
-                        let output = res?;
-                        let mut record = Record::try_from(output.content)?;
-                        record.fill_score(&llm_solver.scores);
-                        Ok(record)
-                    })
-                    .try_collect::<Record, MetricKind, OxyError>()?;
-                Ok(metric)
+    let mut stream = futures::stream::iter(outputs)
+        .map(|(actual, expected)| {
+            let judge = judge.clone();
+            let prompt_template = prompt_template.clone();
+            let metric_context = metric_context.clone();
+            async move {
+                let input =
+                    build_correctness_input(&metric_context, &prompt_template, &actual, &expected)?;
+                let output = judge.run(input).await?;
+                let mut record = parse_correctness_record(output.content)?;
+                record.prompt = expected.task_description.clone();
+                record.expected = Some(expected.output.clone());
+                record.actual_output = Some(actual.output.clone());
+                record.references = actual.references.clone();
+                record.duration_ms = actual.duration_ms;
+                record.input_tokens = actual.input_tokens;
+                record.output_tokens = actual.output_tokens;
+                Ok(record)
             }
-            SolverKind::ContextRecall(recall) => {
-                let metric = outputs
-                    .into_iter()
-                    .map(|(submission_1, submission_2)| match recall.distance {
-                        DistanceMethod::Levenshtein => {
-                            let scores = submission_2
-                                .relevant_contexts
-                                .iter()
-                                .filter_map(|reference_context| {
-                                    submission_1
-                                        .relevant_contexts
-                                        .iter()
-                                        .map(|retrieved_context| {
-                                            let distance = normalized_distance(
-                                                retrieved_context.chars(),
-                                                reference_context.chars(),
-                                            );
-
-                                            1.0 - distance
-                                        })
-                                        .max_by(|a, b| a.partial_cmp(b).unwrap())
-                                })
-                                .collect::<Vec<_>>();
-                            let score = if scores.is_empty() {
-                                f32::NAN
-                            } else {
-                                scores.iter().sum::<f64>() as f32 / scores.len() as f32
-                            };
-                            RecallRecord {
-                                score,
-                                pass: score > recall.threshold,
-                                retrieved_contexts: submission_1.relevant_contexts,
-                                reference_contexts: submission_2.relevant_contexts,
-                            }
-                        }
-                    })
-                    .collect::<MetricKind>();
-                Ok(metric)
-            }
-            SolverKind::Correctness(correctness_solver) => {
-                let model_ref = match &correctness_solver.model_ref {
-                    Some(model_ref) => model_ref,
-                    None => match config_manager.default_model() {
-                        Some(model_ref) => model_ref,
-                        None => {
-                            return Err(OxyError::ConfigurationError(
-                                "No default model found".to_string(),
-                            ));
-                        }
-                    },
-                };
-                let model = config_manager.resolve_model(model_ref)?;
-                let client =
-                    OpenAIClient::with_config(model.into_openai_config(secret_manager).await?);
-                let agent = build_openai_executable(client, model.model_name().to_string());
-                // Capture context from both actual and expected TargetOutputs
-                let run_context: Vec<_> = outputs
-                    .iter()
-                    .map(|(actual, expected)| {
-                        (
-                            expected.task_description.clone(),
-                            expected.output.clone(),
-                            actual.output.clone(),
-                            actual.references.clone(),
-                            actual.duration_ms,
-                            actual.input_tokens,
-                            actual.output_tokens,
-                        )
-                    })
-                    .collect();
-
-                let mut eval_executable = ExecutableBuilder::new()
-                    .concurrency(self.concurrency)
-                    .map(CorrectnessSolverMapper {
-                        prompt_template: correctness_solver.prompt.to_string(),
-                    })
-                    .map(SimpleMapper)
-                    .executable(agent);
-                let results = eval_executable.execute(&metric_context, outputs).await?;
-                let mut records = results
-                    .into_iter()
-                    .zip(run_context)
-                    .map(
-                        |(
-                            res,
-                            (
-                                prompt,
-                                expected,
-                                actual_output,
-                                references,
-                                duration_ms,
-                                input_tokens,
-                                output_tokens,
-                            ),
-                        )| {
-                            let output = res?;
-                            let mut record = parse_correctness_record(output.content)?;
-                            record.prompt = prompt;
-                            record.expected = Some(expected);
-                            record.actual_output = Some(actual_output);
-                            record.references = references;
-                            record.duration_ms = duration_ms;
-                            record.input_tokens = input_tokens;
-                            record.output_tokens = output_tokens;
-                            Ok(record)
-                        },
-                    )
-                    .collect::<Result<Vec<Record>, OxyError>>()?;
-
-                // Errored runs count as FAILs so the denominator is correct
-                for (error_msg, expected) in &errors_with_expected {
-                    records.push(Record {
-                        cot: format!("Run failed with error: {error_msg}"),
-                        choice: "FAIL".to_string(),
-                        score: 0.0,
-                        prompt: expected.task_description.clone(),
-                        expected: Some(expected.output.clone()),
-                        actual_output: Some(format!("[ERROR] {error_msg}")),
-                        references: vec![],
-                        duration_ms: 0.0,
-                        input_tokens: 0,
-                        output_tokens: 0,
-                    });
-                }
-
-                Ok(MetricKind::Correctness(Correctness::from_records(records)))
-            }
+        })
+        .buffered(concurrency.max(1));
+    let mut judged: Vec<Result<Record, OxyError>> = Vec::with_capacity(total);
+    while let Some(record) = stream.next().await {
+        if let Err(e) = metric_context
+            .write_progress(ProgressType::Updated(1))
+            .await
+        {
+            tracing::warn!("eval: failed to emit judging progress Updated: {e}");
         }
+        judged.push(record);
     }
+    if let Err(e) = metric_context.write_progress(ProgressType::Finished).await {
+        tracing::warn!("eval: failed to emit judging progress Finished: {e}");
+    }
+    let mut records = judged
+        .into_iter()
+        .collect::<Result<Vec<Record>, OxyError>>()?;
+
+    // Errored runs count as FAILs so the denominator is correct.
+    for (error_msg, expected) in &errors_with_expected {
+        records.push(Record {
+            cot: format!("Run failed with error: {error_msg}"),
+            choice: "FAIL".to_string(),
+            score: 0.0,
+            prompt: expected.task_description.clone(),
+            expected: Some(expected.output.clone()),
+            actual_output: Some(format!("[ERROR] {error_msg}")),
+            references: vec![],
+            duration_ms: 0.0,
+            input_tokens: 0,
+            output_tokens: 0,
+        });
+    }
+
+    Ok(MetricKind::Correctness(Correctness::from_records(records)))
 }

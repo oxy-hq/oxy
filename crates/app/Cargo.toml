@@ -127,7 +127,6 @@ reqwest = { workspace = true, features = ["stream", "form", "query", "json"] }
 
 # Code utilities
 enum_dispatch = { workspace = true }
-rapidfuzz = { workspace = true }
 
 # CLI
 clap = { workspace = true, features = ["derive", "env"] }
