@@ -1,5 +1,4 @@
 import { ChevronDown, ChevronRight, Clock, Code2, KeyRound } from "lucide-react";
-import { useState } from "react";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { useAppFunctions } from "@/hooks/api/customApps/useAppFunctions";
 import type { AppFunctionSummary } from "@/types/apps";
@@ -11,7 +10,16 @@ import { FunctionDetail } from "./FunctionDetail";
  * and a "Run now" trigger that surfaces the resulting job run's logs. Manage +
  * debug the code-first functions shipped via `oxy publish`.
  */
-export const Functions = ({ appId }: { appId: string }) => {
+export const Functions = ({
+  appId,
+  selected,
+  onSelect
+}: {
+  appId: string;
+  /** `?fn=` from the admin URL — the open function, or none. */
+  selected: string | null;
+  onSelect: (name: string | null) => void;
+}) => {
   const { data: functions, isLoading, error } = useAppFunctions(appId);
 
   if (isLoading) {
@@ -32,14 +40,31 @@ export const Functions = ({ appId }: { appId: string }) => {
   return (
     <ul className='flex flex-col gap-1.5' data-testid='admin-app-functions-list'>
       {functions.map((fn) => (
-        <FunctionRow key={fn.name} appId={appId} fn={fn} />
+        <FunctionRow key={fn.name} appId={appId} fn={fn} selected={selected} onSelect={onSelect} />
       ))}
     </ul>
   );
 };
 
-const FunctionRow = ({ appId, fn }: { appId: string; fn: AppFunctionSummary }) => {
-  const [open, setOpen] = useState(false);
+/**
+ * One function. Open/closed is the URL's (`?fn=<name>`), not this row's, so a
+ * link to a function opens it and Back closes it again — the same rule the rest
+ * of this surface follows. Only one is open at a time, which is what a single
+ * `?fn=` can express and what an operator reading one function wants anyway.
+ */
+const FunctionRow = ({
+  appId,
+  fn,
+  selected,
+  onSelect
+}: {
+  appId: string;
+  fn: AppFunctionSummary;
+  selected: string | null;
+  onSelect: (name: string | null) => void;
+}) => {
+  const open = selected === fn.name;
+  const setOpen = () => onSelect(open ? null : fn.name);
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
     <li
@@ -48,7 +73,7 @@ const FunctionRow = ({ appId, fn }: { appId: string; fn: AppFunctionSummary }) =
     >
       <button
         type='button'
-        onClick={() => setOpen((o) => !o)}
+        onClick={setOpen}
         className='flex w-full items-center gap-2 px-3 py-2 text-left'
         aria-expanded={open}
       >

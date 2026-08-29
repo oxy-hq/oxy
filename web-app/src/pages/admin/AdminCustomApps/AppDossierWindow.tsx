@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { DossierBody } from "./components/AppDetail/components/Dossier";
+import { useAppViewState } from "./components/AppDetail/useAppViewState";
 import { useAdminAppRegistry } from "./useAdminAppRegistry";
 
 /**
@@ -20,6 +21,12 @@ import { useAdminAppRegistry } from "./useAdminAppRegistry";
 export default function AppDossierWindow() {
   const { orgSlug, appSlug } = useParams<{ orgSlug: string; appSlug: string }>();
   const { selected, isLoading, error } = useAdminAppRegistry(orgSlug, appSlug);
+  // This window has its own address bar and its own Back button, so it gets the
+  // same URL-backed state the stage has rather than component-local `useState`.
+  // The channel default is irrelevant here — the window renders no preview —
+  // but sharing one binding is what stops the two surfaces disagreeing about
+  // what `?section=` and `?fn=` mean.
+  const { view, patch } = useAppViewState(selected?.published_at ? "published" : "draft");
 
   useEffect(() => {
     if (selected) document.title = `${selected.name} · Details`;
@@ -43,7 +50,12 @@ export default function AppDossierWindow() {
       </header>
 
       {selected ? (
-        <DossierBody app={selected} />
+        <DossierBody
+          app={selected}
+          focusSection={view.section}
+          fn={view.fn}
+          onFnChange={(name) => patch({ fn: name })}
+        />
       ) : isLoading ? (
         <div className='space-y-3 p-4'>
           <Skeleton className='h-20 w-full' />

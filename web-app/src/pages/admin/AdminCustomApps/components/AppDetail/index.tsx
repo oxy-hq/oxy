@@ -14,6 +14,7 @@ import { type ChannelView, DetailToolbar, type Device } from "./components/Detai
 import { DockControls, DossierBody, DossierHeader } from "./components/Dossier";
 import { LivePreview } from "./components/LivePreview";
 import { DOCK_STORAGE_KEY, type DockMode, dossierWindowPath, reviveDockMode } from "./dock";
+import { useAppViewState } from "./useAppViewState";
 import { useDossierWindow } from "./useDossierWindow";
 import { usePersistentState } from "./usePersistentState";
 
@@ -31,21 +32,38 @@ import { usePersistentState } from "./usePersistentState";
  * Below `lg` none of that applies — the dossier folds into an overlay `Sheet`
  * so the toolbar controls never get squeezed off the row.
  *
- * Preview state (device + channel + reload nonce) lives here so the toolbar can
- * drive it and re-selecting a different app keeps the operator's choices.
+ * ## Where the state lives
+ *
+ * Device, channel and the preview's own location are **query params**, because
+ * they name a place an operator sends a colleague: "Bookkeeping, draft channel,
+ * on mobile, showing the vendor screen". Back and Forward then walk those
+ * choices, and a reload lands on the same view.
+ *
+ * Dock mode and whether the dossier is pinned stay in `localStorage`. They are
+ * how one operator likes to sit, not a place — a shared link that rearranged
+ * the recipient's panels would be a bug rather than a feature. `appViewState.ts`
+ * states that split once.
+ *
+ * The reload nonce stays local: it is an instruction, not a location. Encoding
+ * it would mean a shared link forces a refetch, and Back would "un-reload".
  */
 export const AppDetail = ({ app }: { app: CustomApp }) => {
-  const [device, setDevice] = useState<Device>("desktop");
   // Default to Draft when nothing has been published yet — otherwise the
-  // toolbar selects "Published" (disabled) and the iframe requests a
-  // published bundle that doesn't exist, hanging the preview. Keep in sync
-  // when the parent re-uses this instance for a different app.
-  const [channel, setChannel] = useState<ChannelView>(() =>
-    app.published_at ? "published" : "draft"
+  // toolbar selects "Published" (disabled) and the iframe requests a published
+  // bundle that doesn't exist, hanging the preview. The default is passed in
+  // rather than baked into the reader, so "no ?channel" means the right thing
+  // per app instead of the same thing for every app.
+  const channelDefault: ChannelView = app.published_at ? "published" : "draft";
+  const { view, patch: patchView } = useAppViewState(channelDefault);
+  const { device, channel } = view;
+
+  const setDevice = useCallback((next: Device) => patchView({ device: next }), [patchView]);
+  const onPreviewPathChange = useCallback(
+    (path: string | null) => patchView({ preview: path }, "replace"),
+    [patchView]
   );
-  useEffect(() => {
-    setChannel(app.published_at ? "published" : "draft");
-  }, [app.published_at]);
+  const onFnChange = useCallback((name: string | null) => patchView({ fn: name }), [patchView]);
+
   const [channelBusy, setChannelBusy] = useState(false);
   const [nonce, setNonce] = useState(0);
 
@@ -111,7 +129,12 @@ export const AppDetail = ({ app }: { app: CustomApp }) => {
       } else {
         await CustomAppsService.disablePreviewDraft();
       }
-      setChannel(next);
+      // The channel is a server-side cookie, so the URL records the operator's
+      // choice but does not *cause* it — a Back that returns to `?channel=draft`
+      // re-selects Draft in the toolbar without re-issuing the toggle. Worth
+      // knowing: the cookie is per-session, so a link opened by a colleague
+      // shows their channel until they flip it themselves.
+      patchView({ channel: next, preview: null });
       setNonce((n) => n + 1);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to switch channel";
@@ -123,7 +146,14 @@ export const AppDetail = ({ app }: { app: CustomApp }) => {
 
   const preview = (
     <div className='flex h-full min-h-0 flex-col'>
-      <LivePreview app={app} device={device} channel={channel} nonce={nonce} />
+      <LivePreview
+        app={app}
+        device={device}
+        channel={channel}
+        nonce={nonce}
+        path={view.preview}
+        onPathChange={onPreviewPathChange}
+      />
     </div>
   );
 
@@ -134,7 +164,7 @@ export const AppDetail = ({ app }: { app: CustomApp }) => {
         onDockChange={handleDockChange}
         onClose={() => setDossierPinned(false)}
       />
-      <DossierBody app={app} />
+      <DossierBody app={app} focusSection={view.section} fn={view.fn} onFnChange={onFnChange} />
     </div>
   );
 
@@ -201,7 +231,12 @@ export const AppDetail = ({ app }: { app: CustomApp }) => {
             <SheetHeader className='shrink-0 border-b px-4 py-3'>
               <SheetTitle className='text-xs'>Status &amp; details</SheetTitle>
             </SheetHeader>
-            <DossierBody app={app} />
+            <DossierBody
+              app={app}
+              focusSection={view.section}
+              fn={view.fn}
+              onFnChange={onFnChange}
+            />
           </SheetContent>
         </Sheet>
       )}
