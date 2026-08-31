@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.133] - 2026-08-31
+
+### 🚀 Features
+
+- Oxy worker drives runs (Phase 1) — additional driver, direct-drive untouched (#3014)
+- The admin app view is a URL, and the preview stops eating the Back button (#3024)
+
+### 🐛 Bug Fixes
+
+- The collapse step matched a bot login GraphQL never returns (#3026)
+- Deliver live events across pods, not just in-process (#2823)
+
+### 🚜 Refactor
+
+- Peel the eval crate off the old executor pipeline (retirement, Phase 2) (#3006)
+- Relocate execute::types to oxy::exec_types (retirement, Phase 3) (#3025)
+
+### 📚 Documentation
+
+- Uploaded reports are the second non-re-extractable source (#3029)
+- A durable bronze of files is not automatically replayable (#3040)
+
+### ⚡ Performance
+
+- Let bundles read pre-aggregations, and stop scanning system.columns on every query (#3013)
+
+### ⚙️ Miscellaneous Tasks
+
+- Collapse superseded Claude review comments (#3022)
+- Scope the review bot to the PR diff and its side effects (#3027)
+- *(airway)* Bump to 0.1.37 — filesystem OOM fix, postgres TLS, SP-API (#3030)
+
 ## [0.5.132] - 2026-08-28
 
 ### 🐛 Bug Fixes
@@ -19,6 +51,10 @@ All notable changes to this project will be documented in this file.
 ### 🚜 Refactor
 
 - Make the working copy a capability, and absence loud (#2822)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.132 (#3012)
 
 ## [0.5.131] - 2026-08-26
 
