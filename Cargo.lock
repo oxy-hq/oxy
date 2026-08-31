@@ -730,8 +730,8 @@ dependencies = [
 
 [[package]]
 name = "airway"
-version = "0.1.37"
-source = "git+https://github.com/oxy-hq/airway-internal.git?tag=0.1.37#8125ddcafcb5df3ae18a5d58be2cf2a21622edc1"
+version = "0.1.38"
+source = "git+https://github.com/oxy-hq/airway-internal.git?tag=0.1.38#3596a46af5b2d4e948944059a683ad150d89bacb"
 dependencies = [
  "anyhow",
  "arrow 58.3.0",
@@ -743,6 +743,7 @@ dependencies = [
  "comfy-table",
  "csv",
  "duckdb",
+ "flate2",
  "futures",
  "hex",
  "jsonwebtoken 9.3.1",

@@ -33,6 +33,7 @@ use airway::connector::sources::overture::{OvertureConfig, overture_source};
 use airway::connector::sources::postgres_cdc::PostgresCdcSource;
 use airway::connector::sources::quickbooks::{QuickBooksSource, SANDBOX_BASE_URL};
 use airway::connector::sources::rest_api::{RestApiConfig, RestApiSource};
+use airway::connector::sources::sp_api::{LwaCredentials, SpApiSource};
 use airway::connector::sources::sql_database::{
     ClickHouseConn, DatabaseBackend, SqlDatabaseSource, TableConfig,
 };
@@ -248,6 +249,7 @@ fn build_source_connector_inner(
         "google_sheets" => build_google_sheets(&config.config),
         "overpass" => build_overpass(&config.config),
         "netsuite" => build_netsuite(&config.config),
+        "sp_api" => build_sp_api(&config.config),
         "ubereats" => build_ubereats(&config.config),
         other => Err(AirwayError::Other(format!(
             "unsupported source kind `{other}`. Wire it up in \
@@ -1158,6 +1160,149 @@ fn build_weather(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
     Ok(Box::new(source))
 }
 
+// ── sp_api (Amazon Selling Partner API, report-based) ─────────────────────────
+
+/// Marketplaces reachable on the North America endpoint.
+///
+/// `SpApiSource::new` pins `SP_API_HOST_NA` and `with_host` is not reachable
+/// through it, so an EU or FE marketplace id would be sent to the NA host and
+/// come back 403 — an auth-shaped error for what is really a routing mistake,
+/// on a connector whose other 403 (an expired presigned url) is expected and
+/// retried. Refused here by name instead, until the connector takes a host.
+const NA_MARKETPLACES: &[(&str, &str)] = &[
+    ("ATVPDKIKX0DER", "US"),
+    ("A2EUQ1WTGCTBG2", "CA"),
+    ("A1AM78C64UM0Y8", "MX"),
+    ("A2Q3Y263D9QSEX", "BR"),
+];
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SpApiParams {
+    /// LWA application client id. An identifier: it names the APP, not the
+    /// seller, and travels in every token request body.
+    client_id: String,
+    /// LWA application client secret.
+    ///
+    /// `default` for the same reason as netsuite's `private_key_pem`: the
+    /// executor treats a resolved-but-empty secret as unset and skips the
+    /// insert, so the field arrives absent. Without a default, serde refuses
+    /// first with `missing field`, naming the struct rather than the secret an
+    /// operator has to go and set.
+    #[serde(default)]
+    client_secret: String,
+    /// The seller's LWA refresh token — the credential that authorizes access
+    /// to THIS seller's data, and the one to rotate if access must be revoked.
+    #[serde(default)]
+    refresh_token: String,
+    /// Marketplace id, e.g. `ATVPDKIKX0DER` (US) or `A2EUQ1WTGCTBG2` (CA).
+    marketplace_id: String,
+    /// Where a resource with no cursor starts, as `YYYY-MM-DD` or RFC 3339.
+    ///
+    /// Required rather than defaulted, deliberately. This connector pulls
+    /// FORWARD only, so this single value is the entire backfill policy: too
+    /// recent and the history is simply absent with nothing to signal it, too
+    /// far back and the first run spends report jobs against a per-account
+    /// budget that restores about once a minute. Neither failure is visible in
+    /// the output, so it is not a decision to make on the operator's behalf.
+    #[serde(default)]
+    default_start: Option<String>,
+}
+
+/// Hand-written: `{params:?}` must not put the seller's refresh token or the
+/// app secret in a log. Same argument as `NetSuiteParams`.
+impl std::fmt::Debug for SpApiParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpApiParams")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"<redacted>")
+            .field("refresh_token", &"<redacted>")
+            .field("marketplace_id", &self.marketplace_id)
+            .field("default_start", &self.default_start)
+            .finish()
+    }
+}
+
+/// Parse `default_start` as a date or a full timestamp.
+///
+/// A bare `YYYY-MM-DD` is what an operator writes, and it means midnight UTC.
+/// Split out so both accepted shapes are pinned by a test rather than by the
+/// first pipeline that gets it wrong.
+fn parse_default_start(raw: &str) -> Result<chrono::DateTime<chrono::Utc>, AirwayError> {
+    let raw = raw.trim();
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(raw) {
+        return Ok(dt.with_timezone(&chrono::Utc));
+    }
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
+        return Ok(chrono::DateTime::from_naive_utc_and_offset(
+            d.and_hms_opt(0, 0, 0).expect("midnight is a valid time"),
+            chrono::Utc,
+        ));
+    }
+    Err(AirwayError::Other(format!(
+        "sp_api config: `default_start` must be `YYYY-MM-DD` or an RFC 3339 timestamp, \
+         got {raw:?}"
+    )))
+}
+
+fn build_sp_api(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
+    let params: SpApiParams = serde_json::from_value(raw.clone())
+        .map_err(|e| AirwayError::Other(format!("invalid sp_api config: {e}")))?;
+
+    // Covers absent and hand-written-empty alike; see `client_secret`'s doc.
+    for (name, value) in [
+        ("client_secret", &params.client_secret),
+        ("refresh_token", &params.refresh_token),
+    ] {
+        if value.trim().is_empty() {
+            return Err(AirwayError::Other(format!(
+                "sp_api config: `{name}` is empty or unset — set `{name}_var` to the secret \
+                 name so the executor can resolve it before the pipeline runs"
+            )));
+        }
+    }
+
+    if !NA_MARKETPLACES
+        .iter()
+        .any(|(id, _)| *id == params.marketplace_id)
+    {
+        let known: Vec<String> = NA_MARKETPLACES
+            .iter()
+            .map(|(id, cc)| format!("{cc}={id}"))
+            .collect();
+        return Err(AirwayError::Other(format!(
+            "sp_api config: `marketplace_id` {:?} is not a North America marketplace, and this \
+             connector only reaches the NA endpoint — an EU/FE id would be sent to the NA host \
+             and refused with a 403 that looks like an auth failure. Known: {}",
+            params.marketplace_id,
+            known.join(", ")
+        )));
+    }
+
+    let default_start = match params.default_start.as_deref() {
+        Some(raw) => parse_default_start(raw)?,
+        None => {
+            return Err(AirwayError::Other(
+                "sp_api config: `default_start` is required — it is the entire backfill policy \
+                 for a forward-only connector, and both a too-recent and a too-old value fail \
+                 silently (missing history, or a first run that exhausts the report budget)"
+                    .to_string(),
+            ));
+        }
+    };
+
+    let source = SpApiSource::new(
+        LwaCredentials {
+            client_id: params.client_id,
+            client_secret: params.client_secret,
+            refresh_token: params.refresh_token,
+        },
+        params.marketplace_id,
+        default_start,
+    )?;
+    Ok(Box::new(source))
+}
+
 // ── besttime (POST-then-extract foot-traffic forecasts) ────────────────────────
 
 fn build_besttime(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
@@ -1374,6 +1519,153 @@ mod tests {
         };
         assert!(msg.contains("ES512"), "{msg}");
         assert!(msg.contains("PS256"), "{msg}");
+    }
+
+    /// An sp_api config with everything valid except the one field under test,
+    /// so each case fails for exactly one reason.
+    fn sp_api_cfg(extra: serde_json::Map<String, Value>) -> SourceConfig {
+        let mut obj = json!({
+            "client_id": "amzn1.application-oa2-client.x",
+            "client_secret": "secret",
+            "refresh_token": "Atzr|refresh",
+            "marketplace_id": "ATVPDKIKX0DER",
+            "default_start": "2026-01-01",
+        })
+        .as_object()
+        .expect("object")
+        .clone();
+        obj.extend(extra);
+        cfg("sp_api", Value::Object(obj))
+    }
+
+    /// An EU/FE marketplace must be refused by NAME, not by a 403 later.
+    ///
+    /// `SpApiSource::new` pins the NA host and `with_host` is not reachable
+    /// through it, so a non-NA id is sent to the NA endpoint and comes back
+    /// 403 — indistinguishable from bad credentials, on a connector whose
+    /// other 403 (an expired presigned url) is routine and retried. An
+    /// operator would go and re-check the refresh token they had just set.
+    #[test]
+    fn sp_api_rejects_a_marketplace_the_pinned_host_cannot_reach() {
+        // A1F83G8C2ARO7P = UK, on the EU endpoint.
+        let msg = refusal(build(&sp_api_cfg(
+            json!({ "marketplace_id": "A1F83G8C2ARO7P" })
+                .as_object()
+                .expect("object")
+                .clone(),
+        )));
+        assert!(msg.contains("North America"), "{msg}");
+        assert!(
+            msg.contains("ATVPDKIKX0DER") && msg.contains("A2EUQ1WTGCTBG2"),
+            "the refusal must list what IS reachable: {msg}"
+        );
+
+        // The two BMG actually uses are accepted.
+        for id in ["ATVPDKIKX0DER", "A2EUQ1WTGCTBG2"] {
+            assert!(
+                build(&sp_api_cfg(
+                    json!({ "marketplace_id": id })
+                        .as_object()
+                        .expect("object")
+                        .clone()
+                ))
+                .is_ok(),
+                "{id} is a NA marketplace"
+            );
+        }
+    }
+
+    /// `default_start` is the whole backfill policy, so it is not defaulted.
+    ///
+    /// The connector pulls forward only. Too recent and the history is simply
+    /// absent with nothing to signal it; too far back and the first run spends
+    /// report jobs against a budget that restores about once a minute. Neither
+    /// shows up in the output, so guessing on the operator's behalf is worse
+    /// than refusing.
+    #[test]
+    fn sp_api_requires_an_explicit_default_start() {
+        let mut obj = sp_api_cfg(serde_json::Map::new());
+        obj.config
+            .as_object_mut()
+            .expect("object")
+            .remove("default_start");
+        let msg = refusal(build(&obj));
+        assert!(msg.contains("default_start"), "{msg}");
+        assert!(
+            msg.contains("backfill"),
+            "the refusal must say WHY it matters: {msg}"
+        );
+    }
+
+    /// Both shapes an operator actually writes.
+    #[test]
+    fn sp_api_accepts_a_bare_date_and_an_rfc3339_timestamp() {
+        assert_eq!(
+            parse_default_start("2026-01-01").expect("bare date"),
+            parse_default_start("2026-01-01T00:00:00Z").expect("rfc3339"),
+            "a bare date means midnight UTC"
+        );
+        // A timezone offset is honoured rather than silently read as UTC.
+        assert_eq!(
+            parse_default_start("2026-01-01T00:00:00-05:00").expect("offset"),
+            parse_default_start("2026-01-01T05:00:00Z").expect("utc"),
+        );
+        let msg = parse_default_start("01/01/2026")
+            .expect_err("a US-format date is not accepted")
+            .to_string();
+        assert!(msg.contains("default_start"), "{msg}");
+    }
+
+    /// An unset secret names the secret, not the struct.
+    ///
+    /// The executor treats a resolved-but-empty secret as unset and skips the
+    /// insert, so the field arrives ABSENT — which is why it carries
+    /// `#[serde(default)]`. Without that, serde refuses first with
+    /// `missing field`, which sends an operator to the wrong place.
+    #[test]
+    fn sp_api_names_the_credential_an_operator_has_to_set() {
+        for (field, var) in [
+            ("client_secret", "client_secret_var"),
+            ("refresh_token", "refresh_token_var"),
+        ] {
+            let mut c = sp_api_cfg(serde_json::Map::new());
+            c.config.as_object_mut().expect("object").remove(field);
+            let msg = refusal(build(&c));
+            assert!(msg.contains(field) && msg.contains(var), "{msg}");
+        }
+    }
+
+    /// A typo must be refused, not silently ignored — a misspelled
+    /// `marketplace` would otherwise leave the real field at its default and
+    /// pull the wrong seller's marketplace.
+    #[test]
+    fn sp_api_params_refuse_an_unknown_field() {
+        let msg = refusal(build(&sp_api_cfg(
+            json!({ "marketplace": "ATVPDKIKX0DER" })
+                .as_object()
+                .expect("object")
+                .clone(),
+        )));
+        assert!(msg.contains("marketplace"), "{msg}");
+    }
+
+    /// `{params:?}` must not put the seller's refresh token in a log.
+    #[test]
+    fn sp_api_params_debug_redacts_both_credentials() {
+        let params = SpApiParams {
+            client_id: "amzn1.application-oa2-client.x".to_string(),
+            client_secret: "SUPER_SECRET_VALUE".to_string(),
+            refresh_token: "Atzr|SUPER_SECRET_TOKEN".to_string(),
+            marketplace_id: "ATVPDKIKX0DER".to_string(),
+            default_start: Some("2026-01-01".to_string()),
+        };
+        let rendered = format!("{params:?}");
+        assert!(!rendered.contains("SUPER_SECRET_VALUE"), "{rendered}");
+        assert!(!rendered.contains("SUPER_SECRET_TOKEN"), "{rendered}");
+        assert!(rendered.contains("<redacted>"), "{rendered}");
+        // The identifiers stay legible — that is the point of the hand-written
+        // impl rather than redacting the whole struct.
+        assert!(rendered.contains("ATVPDKIKX0DER"), "{rendered}");
     }
 
     /// A netsuite config with everything valid except the one field under test,

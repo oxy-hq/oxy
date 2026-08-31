@@ -413,11 +413,12 @@ fn failure_for(
 ///   deserializes `RestApiConfig` straight out of `source.config`, so the field
 ///   is reachable from the pipeline's own `.airway.yml` — this is the one kind
 ///   an operator fixes without touching connector code.
-/// * **`toast` / `quickbooks` / `weather` / `netsuite` declare in Rust**, by
-///   implementing `SourceConnector::contracts()`. They have no YAML slot at
-///   all, and `EndpointConfig` does not `deny_unknown_fields`, so a `contract:`
-///   key invented in one of *their* pipeline files would be silently ignored
-///   rather than refused.
+/// * **Every other kind declares in Rust**, by implementing
+///   `SourceConnector::contracts()`. Deliberately not a list of names: the
+///   previous wording enumerated four connectors and went stale the next time
+///   one was added. They have no YAML slot at all, and `EndpointConfig` does
+///   not `deny_unknown_fields`, so a `contract:` key invented in one of *their*
+///   pipeline files would be silently ignored rather than refused.
 ///
 /// Both halves are *fixable* — this sets no flag; see
 /// [`ResourceVerdict::not_fixable_here`].

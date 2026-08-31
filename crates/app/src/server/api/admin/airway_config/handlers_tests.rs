@@ -53,7 +53,10 @@ async fn lock() -> AdvisoryLock {
     AdvisoryLock::acquire(&url, LOCK_KEY).await
 }
 
-/// Clear any row for the four real known kinds — see the module doc for why.
+/// Clear any row for every real known kind — see the module doc for why.
+///
+/// Deliberately not a count: it said "four" while there were five, and each
+/// new connector made it more wrong. The constant is the only source of truth.
 async fn reset_known_kinds(db: &DatabaseConnection) {
     airway_source_config::Entity::delete_many()
         .filter(airway_source_config::Column::SourceKind.is_in(KNOWN_SOURCE_KINDS.to_vec()))

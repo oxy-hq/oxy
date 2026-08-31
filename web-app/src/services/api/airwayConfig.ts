@@ -146,9 +146,10 @@ export interface AirwayResourceVerdict {
    *
    * Note `reason` names *where* the declaration goes, and that differs per
    * kind: `rest_api` declares on the endpoint in the pipeline's own
-   * `.airway.yml`, while `toast` / `quickbooks` / `weather` / `netsuite` declare
-   * in airway's Rust source. Render `reason` verbatim rather than substituting a generic
-   * line of copy for it.
+   * `.airway.yml`, while every other kind declares in airway's Rust source.
+   * (Named as a split rather than a list of connectors — the enumeration that
+   * used to sit here went stale each time a kind was added.) Render `reason`
+   * verbatim rather than substituting a generic line of copy for it.
    */
   not_fixable_here: boolean;
 }

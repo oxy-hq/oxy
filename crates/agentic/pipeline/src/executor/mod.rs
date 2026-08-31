@@ -1101,6 +1101,14 @@ impl PipelineTaskExecutor {
                 ("client_secret", "client_secret_var"),
                 ("refresh_token", "refresh_token_var"),
             ],
+            // Amazon SP-API. `client_id` is an identifier (it travels in every
+            // LWA request body and identifies the app, not the seller); the LWA
+            // client secret and the seller's refresh token are both bearer
+            // credentials and both resolve from the secret manager.
+            "sp_api" => &[
+                ("client_secret", "client_secret_var"),
+                ("refresh_token", "refresh_token_var"),
+            ],
             // The PEM private key behind OAuth 2.0 client-credentials (M2M).
             // `account_id` / `client_id` / `certificate_id` are identifiers —
             // the account id is in every API hostname — so the key is the only
