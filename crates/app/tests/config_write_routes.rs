@@ -192,8 +192,8 @@ fn the_set_of_config_writing_methods_has_not_grown() {
 /// The external API mounts the same handlers under `/external/api`. Being a
 /// sibling of the main router, it sat outside `enforce_role` entirely, so every
 /// route there was unclassified — including `/world-model/events`, which the
-/// main surface pins to the ide. `classify` normalises the prefix so one entry
-/// governs both.
+/// main surface classified while this one did not. `classify` normalises the
+/// prefix so one entry governs both, whatever that entry says.
 #[test]
 fn the_external_api_surface_classifies_like_the_main_one() {
     use oxy_app::server::role_manifest::{RouteRole, classify};

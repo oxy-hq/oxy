@@ -216,9 +216,13 @@ fn ide_routes_classify_against_live_uri() {
         classify("GET", "/api/d9830be4-c6a4/events/lookup"),
         RouteRole::IdeOnly
     );
+    // `/world-model/events` used to belong in this list and no longer does.
+    // Its publishers append to `world_model_events` and every pod tails that
+    // table onto its own bus, so the feed is no longer process-local and any
+    // replica can serve a subscriber.
     assert_eq!(
         classify("GET", "/api/d9830be4-c6a4/world-model/events"),
-        RouteRole::IdeOnly
+        RouteRole::FleetOk
     );
 }
 
@@ -384,7 +388,7 @@ fn runtime_routes_are_ide_only() {
     // answered by a replica that has neither the execution env nor the
     // broadcaster — regardless of what its handler's signature suggests.
     let ws = "d9830be4-c6a4";
-    let runtime: [(&str, String); 8] = [
+    let runtime: [(&str, String); 7] = [
         ("GET", format!("/api/{ws}/apps/cGF0aA")),
         ("POST", format!("/api/{ws}/apps/cGF0aA/run")),
         ("POST", format!("/api/{ws}/apps/cGF0aA/result")),
@@ -392,7 +396,6 @@ fn runtime_routes_are_ide_only() {
         ("POST", format!("/api/{ws}/analytics/runs")),
         ("POST", format!("/api/{ws}/agentic-airway/run")),
         ("GET", format!("/api/{ws}/events")),
-        ("GET", format!("/api/{ws}/world-model/events")),
     ];
     for (method, path) in &runtime {
         assert_eq!(
@@ -408,6 +411,9 @@ fn runtime_routes_are_ide_only() {
     for (method, path) in [
         ("GET", format!("/api/{ws}/threads")),
         ("GET", format!("/api/{ws}/apps/cGF0aA/displays")),
+        // Reads `world_model_events` from Postgres — it sits under a prefix
+        // full of ide-pinned streams, which is exactly why it is named here.
+        ("GET", format!("/api/{ws}/world-model/events")),
     ] {
         assert_eq!(
             classify(method, &path),
@@ -446,8 +452,8 @@ fn unknown_routes_default_to_fleet_ok() {
         classify("GET", "/api/d9830be4-c6a4/blocks"),
         RouteRole::FleetOk
     );
-    // The Postgres+S3 `/world-model/*` reads are FleetOk (only
-    // /world-model/events isn't).
+    // Every `/world-model/*` read is FleetOk — the Postgres+S3 ones here, and
+    // `/world-model/events` since its feed moved into Postgres.
     assert_eq!(
         classify("GET", "/api/d9830be4-c6a4/world-model/cameras"),
         RouteRole::FleetOk
@@ -1165,7 +1171,6 @@ fn manifest_covers_state_touching_routes() {
         ("GET", format!("{ws}/events")),
         ("GET", format!("{ws}/events/lookup")),
         ("GET", format!("{ws}/events/sync")),
-        ("GET", format!("{ws}/world-model/events")),
         ("GET", format!("{ws}/exported-charts/abc.png")),
         // modeling/airform — dbt projects on disk; ALL methods + the bare
         // list root are IdeOnly (regression for the POST-only-manifest gap).

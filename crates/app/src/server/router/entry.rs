@@ -246,6 +246,14 @@ pub async fn api_router(
         crate::server::api::world_model::publish_camera_domain_event,
     ));
 
+    // World-model live feed. Publishers append to `world_model_events`; this
+    // tailer is what turns those rows back into SSE frames on THIS pod, so it
+    // must run everywhere — the publishing pod included. Without it a webhook
+    // that lands on a serve replica reaches nobody, which is the bug it exists
+    // to close. The reaper trims the retained window.
+    crate::server::api::world_model::spawn_world_model_tailer();
+    crate::server::api::world_model::spawn_world_model_reaper();
+
     let app_state = AppState {
         enterprise,
         internal: false,

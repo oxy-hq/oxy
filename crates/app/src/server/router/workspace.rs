@@ -271,7 +271,12 @@ pub(super) fn build_workspace_routes(
             "/semantic/anomalies",
             build_metric_anomaly_routes(&app_state, agentic_state.clone()),
         )
-        .route_ide(
+        // FleetOk since the live feed stopped being process-local: publishers
+        // append to `world_model_events` and every pod tails that table onto
+        // its own bus, so any replica can serve a subscriber. Pinning it to the
+        // ide would make watching the panel depend on the singleton for no
+        // remaining reason. The handler reads Postgres and nothing else.
+        .route_fleet(
             "/world-model/events",
             get(world_model::world_model_events_sse),
         )
@@ -368,7 +373,12 @@ pub(super) fn build_external_workspace_routes(
         .route_fleet("/sql/query", post(data::execute_sql_query))
         .route_fleet("/semantic", post(semantic::execute_semantic_query))
         .route_fleet("/semantic/compile", post(semantic::compile_semantic_query))
-        .route_ide(
+        // FleetOk since the live feed stopped being process-local: publishers
+        // append to `world_model_events` and every pod tails that table onto
+        // its own bus, so any replica can serve a subscriber. Pinning it to the
+        // ide would make watching the panel depend on the singleton for no
+        // remaining reason. The handler reads Postgres and nothing else.
+        .route_fleet(
             "/world-model/events",
             get(world_model::world_model_events_sse),
         )

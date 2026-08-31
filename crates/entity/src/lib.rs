@@ -158,3 +158,4 @@ pub mod semantic_views;
 pub mod verified_queries;
 pub mod workspace_compiled_configs;
 pub mod world_model_configs;
+pub mod world_model_events;
