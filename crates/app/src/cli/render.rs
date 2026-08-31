@@ -21,8 +21,8 @@ use std::io::Write;
 
 use async_trait::async_trait;
 use oxy::ClientRenderer;
-use oxy::execute::types::Usage;
-use oxy::execute::types::event::{ArtifactKind, Step};
+use oxy::exec_types::Usage;
+use oxy::exec_types::event::{ArtifactKind, Step};
 use oxy::theme::StyledText;
 use oxy::types::ArtifactValue;
 

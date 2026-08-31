@@ -36,7 +36,7 @@ use std::sync::Arc;
 use agentic_analytics::{AnalyticsEvent, ChartConfig, QuerySource};
 use agentic_core::events::Event;
 use agentic_pipeline::platform::PlatformContext;
-use oxy::execute::types::event::ArtifactKind;
+use oxy::exec_types::event::ArtifactKind;
 use oxy::types::{AnswerContent, AnswerStream, ArtifactValue, ExecuteSQL, SemanticQuery};
 use oxy_shared::errors::OxyError;
 use tokio::sync::mpsc;

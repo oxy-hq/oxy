@@ -1,7 +1,7 @@
 use tokio::sync::mpsc::Sender;
 
 use crate::server::service::types::{AnswerContent, AnswerStream, ArtifactValue};
-use oxy::execute::types::{Usage, event::ArtifactKind};
+use oxy::exec_types::{Usage, event::ArtifactKind};
 use oxy_shared::errors::OxyError;
 
 pub struct StreamDispatcher {

@@ -2,10 +2,8 @@ use futures::stream::StreamExt;
 
 use oxy::{
     config::model::EvalKind,
-    execute::{
-        ExecutionContext,
-        types::{EventKind, ProgressType, TargetOutput, Usage},
-    },
+    exec_types::{EventKind, ProgressType, TargetOutput, Usage},
+    execute::ExecutionContext,
 };
 use oxy_shared::errors::OxyError;
 

@@ -12,7 +12,7 @@ use entity::prelude::Threads;
 use entity::threads;
 use oxy::{
     database::client::establish_connection,
-    execute::types::{ReferenceKind, event::SandboxInfo},
+    exec_types::{ReferenceKind, event::SandboxInfo},
 };
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::ExprTrait;

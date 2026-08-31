@@ -6,10 +6,8 @@ use oxy::{
         constants::{EVAL_METRICS_POSTFIX, EVAL_SOURCE},
         model::SolverKind,
     },
-    execute::{
-        ExecutionContext,
-        types::{ProgressType, TargetOutput},
-    },
+    exec_types::{ProgressType, TargetOutput},
+    execute::ExecutionContext,
 };
 use oxy_shared::errors::OxyError;
 

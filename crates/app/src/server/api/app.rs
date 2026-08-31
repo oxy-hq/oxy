@@ -23,7 +23,7 @@ use oxy::config::WorkingCopy;
 use oxy::config::model::{
     AppTaskMode, ControlConfig, DatabaseType, Display, DuckDBOptions, SQL, TaskType,
 };
-use oxy::execute::types::{Data, DataContainer};
+use oxy::exec_types::{Data, DataContainer};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;

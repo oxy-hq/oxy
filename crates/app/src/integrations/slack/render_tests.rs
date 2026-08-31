@@ -1,6 +1,6 @@
 use super::*;
 use crate::integrations::slack::client::SlackClient;
-use oxy::execute::types::event::ArtifactKind;
+use oxy::exec_types::event::ArtifactKind;
 use oxy::types::{ArtifactValue, ExecuteSQL, SemanticQuery};
 
 /// `finalize()` calls `assistant_threads_set_status` (logged-and-swallowed

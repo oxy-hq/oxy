@@ -10,7 +10,7 @@ use axum::{
 };
 use entity::prelude::Messages;
 use itertools::Itertools;
-use oxy::{database::client::establish_connection, execute::types::Usage};
+use oxy::{database::client::establish_connection, exec_types::Usage};
 use oxy_shared::errors::OxyError;
 use sea_orm::{ColumnTrait, Condition, EntityTrait, Order, QueryFilter, QueryOrder};
 use sea_orm::{FromQueryResult, QuerySelect, prelude::DateTimeWithTimeZone};

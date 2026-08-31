@@ -6,7 +6,7 @@ use crate::server::service::test_runs::{InsertCaseData, TestRunsManager};
 use futures::Stream;
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::constants::EVAL_SOURCE;
-use oxy::execute::types::{Event, EventKind, ProgressType};
+use oxy::exec_types::{Event, EventKind, ProgressType};
 use oxy::execute::writer::EventHandler;
 use oxy_shared::errors::OxyError;
 use serde::Serialize;

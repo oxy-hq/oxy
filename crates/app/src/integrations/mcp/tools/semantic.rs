@@ -194,13 +194,10 @@ fn create_execution_context(
     kind: &str,
 ) -> (
     oxy::execute::ExecutionContext,
-    tokio::sync::mpsc::Receiver<oxy::execute::types::Event>,
+    tokio::sync::mpsc::Receiver<oxy::exec_types::Event>,
 ) {
-    use oxy::execute::{
-        ExecutionContext,
-        renderer::Renderer,
-        types::{Event, Source},
-    };
+    use oxy::exec_types::{Event, Source};
+    use oxy::execute::{ExecutionContext, renderer::Renderer};
 
     let (tx, rx) = tokio::sync::mpsc::channel::<Event>(EVENT_CHANNEL_SIZE);
     let source = Source {

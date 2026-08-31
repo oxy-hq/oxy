@@ -10,15 +10,13 @@ use crate::server::service::formatters::streaming_message_persister::StreamingMe
 use crate::server::service::types::{
     AnswerStream, ArtifactValue, ContainerKind, Content, ExecuteSQL, OmniQuery,
 };
-use oxy::execute::types::event::SandboxInfo;
+use oxy::exec_types::event::SandboxInfo;
 use oxy::{
     config::constants::{
         AGENT_SOURCE, CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE,
     },
-    execute::{
-        formatters::{FormatterResult, SourceHandler},
-        types::{EventKind, Output, Source, Usage, event::ArtifactKind},
-    },
+    exec_types::{EventKind, Output, Source, Usage, event::ArtifactKind},
+    execute::formatters::{FormatterResult, SourceHandler},
     types::agent::LogItem,
 };
 use oxy_shared::errors::OxyError;
@@ -213,7 +211,7 @@ impl BlockHandler {
     async fn handle_content_update(
         &mut self,
         source: &Source,
-        chunk: &oxy::execute::types::Chunk,
+        chunk: &oxy::exec_types::Chunk,
     ) -> Result<(), OxyError> {
         // Reasoning and chart outputs flow through dedicated structured
         // events instead of the generic Text/persistence paths. Dispatch

@@ -6,7 +6,8 @@ use oxy::{
             default_correctness_prompt,
         },
     },
-    execute::{ExecutionContext, types::EventKind},
+    exec_types::EventKind,
+    execute::ExecutionContext,
 };
 use oxy_shared::errors::OxyError;
 

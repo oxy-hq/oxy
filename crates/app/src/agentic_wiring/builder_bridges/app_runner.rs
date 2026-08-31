@@ -17,7 +17,7 @@ use std::path::Path;
 use agentic_builder::BuilderAppRunner;
 use async_trait::async_trait;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
-use oxy::execute::types::{Data, DataContainer};
+use oxy::exec_types::{Data, DataContainer};
 use serde_json::{Value, json};
 
 use crate::server::service::app::AppService;

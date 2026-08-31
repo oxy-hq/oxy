@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::server::service::types::Block;
 use oxy::{
     config::constants::MARKDOWN_MAX_FENCES,
-    execute::types::{Usage, event::SandboxInfo},
+    exec_types::{Usage, event::SandboxInfo},
     utils::try_unwrap_arc_tokio_mutex,
 };
 use oxy_shared::errors::OxyError;

@@ -1,9 +1,7 @@
 use minijinja::{Value, context};
 
-use oxy::execute::{
-    ExecutionContext,
-    types::{Output, TargetOutput},
-};
+use oxy::exec_types::{Output, TargetOutput};
+use oxy::execute::ExecutionContext;
 use oxy_shared::errors::OxyError;
 
 use super::{one_shot::OneShotInput, types::Record};

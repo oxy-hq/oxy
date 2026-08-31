@@ -6,7 +6,7 @@ use utoipa::{
     openapi::{RefOr, Schema},
 };
 
-use crate::execute::types::{Usage, VizParams};
+use crate::exec_types::{Usage, VizParams};
 
 use super::{Chunk, ProgressType, ReferenceKind};
 

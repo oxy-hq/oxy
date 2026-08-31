@@ -1,7 +1,7 @@
 use super::types::{APP_DATA_EXTENSION, APP_FILE_EXTENSION, AppResult, DATA_DIR_NAME};
 use oxy::config::model::Task;
 use oxy::config::{ConfigManager, DiskSlot, WorkingCopy};
-use oxy::execute::types::{DataContainer, OutputContainer};
+use oxy::exec_types::{DataContainer, OutputContainer};
 use oxy_shared::errors::OxyError;
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::server::service::types::{Block, BlockValue, ContainerKind, Content};
-use oxy::execute::types::{Output, Source};
+use oxy::exec_types::{Output, Source};
 use oxy_shared::errors::OxyError;
 
 pub struct BlockManager {

@@ -8,6 +8,7 @@ pub mod connector;
 pub mod constants;
 pub mod database;
 pub mod dispatcher;
+pub mod exec_types;
 pub mod execute;
 pub mod execution_analytics;
 pub mod github;

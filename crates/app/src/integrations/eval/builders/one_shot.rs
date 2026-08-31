@@ -12,7 +12,7 @@ use async_openai::types::chat::{
 };
 
 use oxy::adapters::openai::{OpenAIAdapter, OpenAIClient};
-use oxy::execute::types::Output;
+use oxy::exec_types::Output;
 use oxy_shared::errors::OxyError;
 
 #[derive(Clone, Debug)]

@@ -1,6 +1,6 @@
 use chrono;
 use entity::logs;
-use oxy::execute::types::{EventKind, Source};
+use oxy::exec_types::{EventKind, Source};
 use oxy_shared::errors::OxyError;
 use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection};
 use serde_json::{Value, json};

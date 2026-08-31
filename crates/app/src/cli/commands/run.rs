@@ -11,7 +11,7 @@ use ::oxy::adapters::secrets::SecretsManager;
 use ::oxy::adapters::workspace::builder::WorkspaceBuilder;
 use ::oxy::config::{ConfigBuilder, ConfigManager, resolve_local_workspace_path};
 use ::oxy::connector::Connector;
-use ::oxy::execute::types::utils::record_batches_to_table;
+use ::oxy::exec_types::utils::record_batches_to_table;
 use ::oxy::sentry_config;
 use ::oxy::utils::print_colored_sql;
 use oxy::config::WorkingCopy;

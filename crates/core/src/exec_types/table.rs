@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     connector::load_result,
-    execute::types::utils::record_batches_to_json,
+    exec_types::utils::record_batches_to_json,
     utils::{create_parent_dirs, truncate_datasets},
 };
 use oxy_shared::errors::OxyError;

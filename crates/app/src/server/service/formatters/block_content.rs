@@ -1,5 +1,5 @@
 use crate::server::service::types::{Block, ContainerKind, Content};
-use oxy::{config::constants::MARKDOWN_MAX_FENCES, execute::types::Output};
+use oxy::{config::constants::MARKDOWN_MAX_FENCES, exec_types::Output};
 
 pub struct ContentProcessor {
     max_artifact_fences: usize,

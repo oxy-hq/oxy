@@ -10,7 +10,7 @@ use crate::server::service::types::{
 };
 use oxy::{
     config::constants::MARKDOWN_MAX_FENCES,
-    execute::types::event::{ArtifactKind, SandboxInfo},
+    exec_types::event::{ArtifactKind, SandboxInfo},
 };
 use oxy_shared::errors::OxyError;
 

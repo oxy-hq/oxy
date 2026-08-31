@@ -25,8 +25,8 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use oxy::ClientRenderer;
-use oxy::execute::types::Usage;
-use oxy::execute::types::event::{ArtifactKind, Step};
+use oxy::exec_types::Usage;
+use oxy::exec_types::event::{ArtifactKind, Step};
 use oxy::types::ArtifactValue;
 use uuid::Uuid;
 

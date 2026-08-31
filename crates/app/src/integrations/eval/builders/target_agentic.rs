@@ -13,7 +13,7 @@
 //!      reads only `TargetOutput.output` (+ `task_description` on the *expected*
 //!      side) — it never touches `relevant_contexts` / `references`.
 //!
-//! `TargetOutput` is still imported from `oxy::execute::types`; relocating that
+//! `TargetOutput` is still imported from `oxy::exec_types`; relocating that
 //! data type out of the old executor is a later (Tier-C) step.
 
 use std::sync::Arc;
@@ -21,7 +21,7 @@ use std::sync::Arc;
 use agentic_analytics::AnalyticsEvent;
 use agentic_core::events::{CoreEvent, Event as AgenticEvent};
 use oxy::adapters::workspace::manager::WorkspaceManager;
-use oxy::execute::types::TargetOutput;
+use oxy::exec_types::TargetOutput;
 use oxy_shared::errors::OxyError;
 use tokio::sync::mpsc;
 
