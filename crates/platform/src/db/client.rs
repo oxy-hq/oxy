@@ -77,13 +77,166 @@ const IAM_TOKEN_REFRESH_RETRY: Duration = Duration::from_secs(60);
 pub async fn establish_connection() -> Result<DatabaseConnection, OxyError> {
     DB_POOL
         .get_or_try_init(|| async {
-            match DatabaseAuthMode::from_env()? {
+            let db = match DatabaseAuthMode::from_env()? {
                 DatabaseAuthMode::Password => connect_password().await,
                 DatabaseAuthMode::Iam => connect_iam().await,
-            }
+            }?;
+            // Inside the `OnceCell` init, so exactly one monitor per process,
+            // watching the one pool this process will ever use.
+            spawn_pool_health_monitor(db.get_postgres_connection_pool().clone());
+            Ok(db)
         })
         .await
         .cloned()
+}
+
+// ---- pool health ----------------------------------------------------------
+
+/// How often the pool-health monitor samples the pool.
+const POOL_HEALTH_INTERVAL: Duration = Duration::from_secs(30);
+
+/// How long a healthy pool is allowed to take to hand out a connection before
+/// the monitor calls it starved. A warm pool answers in microseconds, so this
+/// is three orders of magnitude of headroom, not a tight bound.
+const POOL_HEALTH_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Watch the pool and, when it stops handing out connections, say **why** —
+/// naming the server-side error rather than letting every caller discover it as
+/// a mute 30-second hang.
+///
+/// This exists because of a real outage. `sqlx` retries a refused connect
+/// internally and discards the error; with `sqlx_logging(false)` the only thing
+/// that ever reached our logs was `"Connection pool timed out"` after the full
+/// [`ACQUIRE_TIMEOUT`]. Postgres had been rejecting us for hours with
+/// `FATAL: sorry, too many clients already` and *none of it was visible on this
+/// side* — the incident (2026-09-01) presented purely as "the homepage feels
+/// slow", and the actual cause was only found by reading the RDS error log.
+/// The probe below recovers exactly that message, in-process, within 30s.
+/// Below this many affordable processes, the fleet arithmetic is called out at
+/// startup. `internal-docs/adr-postgres-as-worker-queue.md` §3 sizes the server
+/// at `max_connections >= 4 × (HTTP fleet + worker fleet)`; a real deployment is
+/// an ide + a serve fleet + a worker fleet, so a pool ceiling that lets fewer
+/// than this many processes coexist cannot satisfy that rule for any fleet worth
+/// running.
+const MIN_AFFORDABLE_PROCESSES: u32 = 8;
+
+/// State the connection budget out loud, once, at startup.
+///
+/// The 2026-09-01 outage was a division nobody performed: a pool ceiling of 80
+/// per process against a server ceiling of ~190 affords **two** processes, and
+/// the fleet had seven. Nothing in the system had an opinion about that until
+/// Postgres started refusing clients. This makes the arithmetic a startup log
+/// line, so the next time a fleet grows the mismatch is visible on the first
+/// boot rather than after a day of accumulation.
+async fn log_connection_budget(pool: &sqlx::PgPool) {
+    let pool_max = max_connections();
+    let server_max: Option<u32> = sqlx::query_scalar::<_, String>("SHOW max_connections")
+        .fetch_one(pool)
+        .await
+        .ok()
+        .and_then(|v| v.trim().parse().ok());
+    let Some(server_max) = server_max else {
+        // Not fatal, and not worth a warning: some managed proxies hide this.
+        tracing::debug!(pool_max, "could not read the server's max_connections");
+        return;
+    };
+    let affordable = server_max / pool_max.max(1);
+    // Only a FLEET can be oversubscribed. A single process is entitled to the
+    // whole server, and a dev box — embedded Postgres at `max_connections = 100`
+    // against the default pool ceiling of 80 — affords exactly one by
+    // construction. Erroring there would fire on every local boot and teach
+    // people to ignore the line, which costs more than it could ever save.
+    // `OXY_ROLE` is set per-role in a deployed fleet and unset locally, so it is
+    // the fact itself rather than a flag invented for this check.
+    let in_fleet = std::env::var("OXY_ROLE").is_ok_and(|v| !v.trim().is_empty());
+    if in_fleet && affordable < MIN_AFFORDABLE_PROCESSES {
+        tracing::error!(
+            pool_max,
+            server_max,
+            affordable_processes = affordable,
+            "connection budget is oversubscribed: at this pool ceiling the server \
+             can afford only this many processes fleet-wide. Lower \
+             OXY_DATABASE_MAX_CONNECTIONS or raise the server's max_connections \
+             (see internal-docs/adr-postgres-as-worker-queue.md §3)"
+        );
+    } else {
+        tracing::info!(
+            pool_max,
+            server_max,
+            affordable_processes = affordable,
+            "connection budget"
+        );
+    }
+}
+
+fn spawn_pool_health_monitor(pool: sqlx::PgPool) {
+    tokio::spawn(async move {
+        let max = max_connections();
+        log_connection_budget(&pool).await;
+        let mut starved = false;
+        loop {
+            tokio::time::sleep(POOL_HEALTH_INTERVAL).await;
+            let (size, idle) = (pool.size(), pool.num_idle());
+            match tokio::time::timeout(POOL_HEALTH_PROBE_TIMEOUT, pool.acquire()).await {
+                Ok(Ok(_conn)) => {
+                    if starved {
+                        tracing::info!(
+                            pool_size = size,
+                            pool_idle = idle,
+                            pool_max = max,
+                            "database connection pool recovered"
+                        );
+                        starved = false;
+                    }
+                }
+                _ => {
+                    // Resolve the cause BEFORE the macro: awaiting inside a
+                    // `tracing` argument holds the macro's non-`Send` internals
+                    // across the await and makes the whole task unspawnable.
+                    let cause = diagnose_pool_starvation(&pool).await;
+                    tracing::error!(
+                        pool_size = size,
+                        pool_idle = idle,
+                        pool_max = max,
+                        acquire_timeout_secs = ACQUIRE_TIMEOUT.as_secs(),
+                        %cause,
+                        "database connection pool is starved — requests will block up to \
+                         acquire_timeout and then fail"
+                    );
+                    starved = true;
+                }
+            }
+        }
+    });
+}
+
+/// Recover the error the pool swallows, by opening ONE connection outside it.
+///
+/// The distinction this draws is the one that decides the fix: a server that
+/// accepts the probe means the pool's own ceiling (or something holding
+/// connections) is the constraint; a server that refuses it hands back the
+/// verbatim `FATAL`, which is what tells you the ceiling is on the *other* side.
+async fn diagnose_pool_starvation(pool: &sqlx::PgPool) -> String {
+    use sqlx::Connection;
+    let options = (*pool.connect_options()).clone();
+    match tokio::time::timeout(
+        POOL_HEALTH_PROBE_TIMEOUT,
+        sqlx::PgConnection::connect_with(&options),
+    )
+    .await
+    {
+        Ok(Ok(conn)) => {
+            let _ = conn.close().await;
+            "the server still accepts new connections, so the limit is local: the pool is at \
+             its own ceiling, or something is holding connections without releasing them"
+                .to_string()
+        }
+        Ok(Err(e)) => format!("the server refused a new connection: {e}"),
+        Err(_) => format!(
+            "the server did not answer a new connection within {}s",
+            POOL_HEALTH_PROBE_TIMEOUT.as_secs()
+        ),
+    }
 }
 
 async fn connect_password() -> Result<DatabaseConnection, OxyError> {

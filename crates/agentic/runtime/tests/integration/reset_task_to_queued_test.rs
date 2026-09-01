@@ -227,6 +227,57 @@ async fn reset_run_for_retry_clears_terminal_error() {
     assert_eq!(reset.error_message, None, "terminal error must be cleared");
 }
 
+/// A reset-in-place retry must zero the RECOVERY BUDGET.
+///
+/// `recover_single_run` retires any run whose `attempt` passes
+/// `MAX_RECOVERY_ATTEMPTS`, and an explicit user retry is the escape hatch that
+/// design defers to. It is not decorative: the retry path is itself driven by
+/// recovery (`mark_task_global` → `find_pending_global_runs` →
+/// `recover_single_run`), so a retry SPENDS budget. Without the zeroing, the
+/// 5th retry of a run would be dead-lettered before doing any work — and
+/// permanently, because `increment_attempt` is the only writer and it only ever
+/// goes up.
+///
+/// Guarded here because the zeroing is one field in an `ActiveModel` whose
+/// other fields are `..Default::default()`, which is exactly the shape a future
+/// tidy-up drops without noticing.
+#[tokio::test(flavor = "multi_thread")]
+async fn reset_run_for_retry_zeroes_the_recovery_budget() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let run_id = format!("aw-budget-{}", uuid::Uuid::new_v4());
+    crud::insert_run(&db, &run_id, "Q", None, "airway", None, uuid::Uuid::nil())
+        .await
+        .unwrap();
+
+    // Spend the whole budget the way recovery does.
+    for expected in 1..=4 {
+        let attempt = crud::increment_attempt(&db, &run_id).await.unwrap();
+        assert_eq!(
+            attempt, expected,
+            "increment_attempt must return the NEW value"
+        );
+    }
+    assert_eq!(
+        crud::get_run(&db, &run_id).await.unwrap().unwrap().attempt,
+        4,
+        "budget should be exhausted before the retry"
+    );
+
+    crud::update_run_failed(&db, &run_id, "boom").await.unwrap();
+    crud::reset_run_for_retry(&db, &run_id).await.unwrap();
+
+    assert_eq!(
+        crud::get_run(&db, &run_id).await.unwrap().unwrap().attempt,
+        0,
+        "a user retry must hand the run a FULL recovery budget back; leaving \
+         `attempt` at 4 makes the next recovery exceed it and dead-letter a run \
+         the user just asked to re-run"
+    );
+}
+
 /// A revival must clear the wait-streak, or a retry can dead-letter instantly.
 ///
 /// `first_deferred_at` measures how long a task has been waiting for something

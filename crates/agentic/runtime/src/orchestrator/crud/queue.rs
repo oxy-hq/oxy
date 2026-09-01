@@ -566,6 +566,33 @@ pub async fn cancel_queued_task(db: &DatabaseConnection, task_id: &str) -> Resul
     Ok(())
 }
 
+/// Cancel every live (`queued`/`claimed`) row in `run_id`'s task tree — the
+/// root row itself plus its `run_id.N` descendants.
+///
+/// The tree predicate mirrors [`super::recovery::find_pending_global_runs`]'s
+/// own `q.task_id = r.id OR q.task_id LIKE r.id || '.%'`, so what this cancels
+/// is exactly what makes a run selectable there.
+///
+/// Retiring a run is not enough on its own: [`claim_task`] has **no
+/// run-status predicate**, so a row left `queued` under a run that has gone
+/// terminal is still claimable by any global worker. Both halves have to move
+/// together or the queue row outlives the run it belongs to.
+pub async fn cancel_queued_tasks_for_run<C: ConnectionTrait>(
+    db: &C,
+    run_id: &str,
+) -> Result<u64, DbErr> {
+    let res = db
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE agentic_task_queue SET queue_status = 'cancelled', updated_at = now() \
+             WHERE (task_id = $1 OR task_id LIKE $1 || '.%') \
+               AND queue_status IN ('queued', 'claimed')",
+            [run_id.into()],
+        ))
+        .await?;
+    Ok(res.rows_affected())
+}
+
 /// Fail the claim **this process** holds on `task_id`, without the caller
 /// having to name the worker.
 ///

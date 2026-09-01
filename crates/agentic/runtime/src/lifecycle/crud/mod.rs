@@ -111,6 +111,14 @@ pub async fn reset_run_for_retry(db: &DatabaseConnection, run_id: &str) -> Resul
         answer: Set(None),
         driver_id: Set(None),
         driver_heartbeat_at: Set(None),
+        // Zero the recovery budget too. A user asking for a retry is the
+        // explicit "try again" signal the automatic bound defers to, so it must
+        // hand the run a full budget back — otherwise the retry path *spends*
+        // budget (it goes through `mark_task_global` → `find_pending_global_runs`
+        // → `recover_single_run`) and the fifth retry of a run would be
+        // dead-lettered before doing any work, permanently, with nothing in the
+        // tree able to lower `attempt` again.
+        attempt: Set(0),
         updated_at: Set(now()),
         ..Default::default()
     };

@@ -1049,11 +1049,9 @@ async fn tick_cloud(
                 }
             },
             Ok(None) => {
-                tracing::warn!(
-                    target: "recovery",
-                    workspace_id = %ws_id,
-                    "latency worker: pending run references unknown workspace"
-                );
+                // The workspace row is GONE, so this run can never be driven.
+                // Retire it instead of skipping — see `retire_orphaned_runs`.
+                retire_orphaned_runs(db, ws_id, &pending).await;
                 continue;
             }
             Err(e) => {
@@ -1084,6 +1082,53 @@ async fn tick_cloud(
         .await;
     }
     total
+}
+
+/// Dead-letter every pending Global run whose `workspaces` row no longer exists.
+///
+/// A run whose workspace has been deleted is unrunnable **by definition** — the
+/// tick needs the workspace path to build a context and there is none, and no
+/// future poll will find one. Skipping it therefore does not defer the work, it
+/// creates a permanent hot loop: `find_pending_global_runs` re-selects the
+/// identical row on the very next poll, on every node running a latency worker.
+///
+/// That loop took prod down on 2026-09-01. Two orphaned rows kept four
+/// processes (`oxy-0` plus three workers) re-selecting at the 300 ms poll
+/// interval around the clock; the connections that cost, on top of the other
+/// resident loops, pinned `oxy_app` against Postgres' connection ceiling, and
+/// the serve fleet — which shares that ceiling — started losing the race and
+/// returning 500s after the full 30 s `ACQUIRE_TIMEOUT`. The user-visible
+/// symptom was a homepage that intermittently hung for 30 s.
+///
+/// Terminal is the only correct outcome, so take it here.
+async fn retire_orphaned_runs(
+    db: &sea_orm::DatabaseConnection,
+    ws_id: uuid::Uuid,
+    pending: &[agentic_runtime::crud::StuckRun],
+) {
+    for run in pending.iter().filter(|r| r.workspace_id == ws_id) {
+        // One transaction for both writes. Cancelling the queue rows is what
+        // removes the run from `find_pending_global_runs`, so a terminal write
+        // that then failed would strand the run non-terminal AND unselectable —
+        // nothing left to retry it. `retire_run` rolls both back instead.
+        match agentic_runtime::crud::retire_run(db, &run.run_id, "workspace no longer exists").await
+        {
+            Ok(()) => tracing::warn!(
+                target: "recovery",
+                workspace_id = %ws_id,
+                run_id = %run.run_id,
+                "latency worker: retired a pending run whose workspace no longer exists"
+            ),
+            Err(e) => tracing::warn!(
+                target: "recovery",
+                workspace_id = %ws_id,
+                run_id = %run.run_id,
+                error = %e,
+                "latency worker: failed to retire an orphaned run; rolled back, \
+                 retrying next tick"
+            ),
+        }
+    }
 }
 
 /// Build the host-side registry of `TaskSpec::Custom` executors injected into
@@ -1599,9 +1644,28 @@ async fn bootstrap_monitor_schedules(
     let config_path = oxy_metric_monitoring::default_config_path(workspace_root);
     let cfg = match oxy_metric_monitoring::load_from_file(&config_path) {
         Ok(c) => c,
+        // "No monitors here" and "this node holds no working copy" are the two
+        // ORDINARY answers, not failures. Every periodic pass visits every
+        // workspace on every node, so warning on them emitted ~70 lines/min per
+        // worker in prod (2026-09-01) — noise that buried the real signal while
+        // the fleet was actually failing. A malformed or unreadable file is a
+        // genuine problem and stays loud.
+        // `WorkspaceAbsent` only — `load_from_file` returns `Ok(default)` for a
+        // merely missing file, so `NotFound` is unconstructible there and an arm
+        // for it would read as coverage it does not provide.
+        Err(e @ oxy_metric_monitoring::ConfigLoadError::WorkspaceAbsent(_)) => {
+            tracing::debug!(
+                target: "metric_monitoring",
+                %workspace_id,
+                error = %e,
+                "bootstrap: no readable .monitor.yml on this node; skipping"
+            );
+            return;
+        }
         Err(e) => {
             tracing::warn!(
                 target: "metric_monitoring",
+                %workspace_id,
                 error = %e,
                 "bootstrap: failed to read .monitor.yml; skipping"
             );

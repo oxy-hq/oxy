@@ -19,6 +19,57 @@ use sea_orm::DatabaseConnection;
 use crate::executor::PipelineTaskExecutor;
 use crate::platform::{BuilderBridges, PlatformContext};
 
+/// How many times the recovery *loops* may re-drive one run before retiring it.
+///
+/// Four, not "until it works": every re-drive that fails the same way is a
+/// re-drive that will keep failing, and an unbounded retry of a run nobody is
+/// waiting on is indistinguishable — to Postgres — from a denial of service by
+/// your own control plane.
+///
+/// **This is a lifetime total, and only loop-driven recoveries spend it** (see
+/// [`RecoveryOrigin`]). A user retry through `reset_run_for_retry` zeroes the
+/// counter, which is the right place for "try harder": a human decided.
+const MAX_RECOVERY_ATTEMPTS: i32 = 4;
+
+/// Which path is recovering this run — and therefore whether it spends budget.
+///
+/// The distinction exists because a lifetime cap over *all* recoveries would
+/// kill healthy work: a long-lived automation cleanly resumed across four
+/// rolling deploys would be dead-lettered on the fifth, having never failed at
+/// anything. Those recoveries arrive through [`RecoveryOrigin::Startup`], one
+/// per process start, and are free.
+///
+/// The runaway this bounds is the other shape entirely — the periodic and
+/// latency loops re-selecting the same unrunnable run several times a second,
+/// forever. Only they spend budget, and four of their attempts elapse in about
+/// a second, so a genuinely stuck run retires almost immediately while a
+/// restarted one is untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecoveryOrigin {
+    /// Process startup: one recovery per run per boot. Not budgeted.
+    Startup,
+    /// The periodic / latency driver loops, which re-select on every tick.
+    Loop,
+}
+
+/// What a recovery pass actually did — so a dead-letter is not counted, or
+/// logged, as a successful drive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecoveryOutcome {
+    /// The run was handed to a coordinator.
+    Drove,
+    /// The run exhausted [`MAX_RECOVERY_ATTEMPTS`] and was dead-lettered.
+    Retired,
+}
+
+/// Has this run spent its recovery budget?
+///
+/// Split out so the boundary is unit-testable without a database — off-by-one
+/// here is the difference between "retried four times" and "retried forever".
+fn recovery_budget_exhausted(attempt: i32) -> bool {
+    attempt > MAX_RECOVERY_ATTEMPTS
+}
+
 /// Recover all in-flight runs on server startup.
 ///
 /// `workspace_id` — when `Some`, only resume runs owned by that
@@ -76,16 +127,25 @@ pub async fn recover_active_runs(
             builder_app_runner.clone(),
             router.clone(),
             custom_executors.clone(),
+            RecoveryOrigin::Startup,
         )
         .await
         {
-            Ok(()) => {
+            Ok(RecoveryOutcome::Drove) => {
                 recovered += 1;
                 tracing::info!(target: "recovery", run_id = %run_id, "run recovered");
             }
+            // Deliberately not counted: retiring a run is the guard firing, not
+            // work getting done. Counting it would hide the one signal that
+            // tells an operator this bound is active.
+            Ok(RecoveryOutcome::Retired) => {}
             Err(e) => {
                 tracing::error!(target: "recovery", run_id = %run_id, error = %e, "failed to recover run");
-                agentic_runtime::crud::mark_recovery_failed(&db, &run_id, &e)
+                // `retire_run`, not `mark_recovery_failed`: failing the run
+                // alone leaves its queue rows `queued`, and `claim_task` has no
+                // run-status predicate — so a worker can still claim and execute
+                // a task belonging to a run that is already dead.
+                agentic_runtime::crud::retire_run(&db, &run_id, &e)
                     .await
                     .ok();
             }
@@ -169,16 +229,20 @@ pub async fn recover_stranded_runs(
             builder_app_runner.clone(),
             router.clone(),
             custom_executors.clone(),
+            RecoveryOrigin::Loop,
         )
         .await
         {
-            Ok(()) => {
+            Ok(RecoveryOutcome::Drove) => {
                 recovered += 1;
                 tracing::info!(target: "recovery", run_id = %s.run_id, "global loop: drove stranded run");
             }
+            Ok(RecoveryOutcome::Retired) => {}
             Err(e) => {
                 tracing::error!(target: "recovery", run_id = %s.run_id, error = %e, "global loop: failed to drive stranded run");
-                agentic_runtime::crud::mark_recovery_failed(&db, &s.run_id, &e)
+                // See `recover_active_runs` — retire, don't merely fail, or the
+                // run's queue rows stay claimable after the run is dead.
+                agentic_runtime::crud::retire_run(&db, &s.run_id, &e)
                     .await
                     .ok();
             }
@@ -294,16 +358,20 @@ pub async fn recover_pending_global_runs(
             builder_app_runner.clone(),
             router.clone(),
             custom_executors.clone(),
+            RecoveryOrigin::Loop,
         )
         .await
         {
-            Ok(()) => {
+            Ok(RecoveryOutcome::Drove) => {
                 driven += 1;
                 tracing::info!(target: "recovery", run_id = %s.run_id, "latency loop: drove Global run");
             }
+            Ok(RecoveryOutcome::Retired) => {}
             Err(e) => {
                 tracing::error!(target: "recovery", run_id = %s.run_id, error = %e, "latency loop: failed to drive Global run");
-                agentic_runtime::crud::mark_recovery_failed(&db, &s.run_id, &e)
+                // See `recover_active_runs` — retire, don't merely fail, or the
+                // run's queue rows stay claimable after the run is dead.
+                agentic_runtime::crud::retire_run(&db, &s.run_id, &e)
                     .await
                     .ok();
             }
@@ -324,7 +392,8 @@ async fn recover_single_run(
     builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
     router: Arc<dyn agentic_runtime::router::TaskRouter>,
     custom_executors: Option<Arc<agentic_runtime::worker::CustomTaskRegistry>>,
-) -> Result<(), String> {
+    origin: RecoveryOrigin,
+) -> Result<RecoveryOutcome, String> {
     // Acquire the driver lease before touching the run. If a *live* driver
     // already owns it (another replica, or — once Task 6 lands — a
     // concurrent recovery tick), skip: driving it here would double-drive
@@ -356,9 +425,66 @@ async fn recover_single_run(
                 run_id = %root.id,
                 "skipping recovery: a live driver already holds the lease"
             );
-            return Ok(());
+            // Not a drive; the holder is doing the work. Reported as `Drove` so
+            // the counters keep their existing meaning ("this run is in hand"),
+            // which is what they meant before this enum existed.
+            return Ok(RecoveryOutcome::Drove);
         }
         Err(e) => return Err(format!("driver lease acquire failed: {e}")),
+    }
+
+    // Spend one unit of the run's recovery budget, and retire it if that was the
+    // last one. This is the *only* bound on how many times a loop can re-drive a
+    // Global run: `find_pending_global_runs` re-selects a non-terminal run on
+    // every tick, so absent a budget a run that cannot make progress is
+    // re-driven forever — which is how prod (2026-09-01) ended up with one
+    // `SELECT` accounting for 87% of all database load.
+    //
+    // The driver lease acquired above is what keeps the count meaningful: a run
+    // being actively driven holds the lease and is not re-selected, and one
+    // parked on human input spends nothing either. Only a genuine *re*-recovery
+    // costs a unit. That is what `agentic_runs.attempt` was added to count
+    // ("incremented on each recovery"), and the coordinator already reads it
+    // back expecting the recovery caller to have done this — nothing in
+    // production ever did.
+    if origin == RecoveryOrigin::Loop {
+        match agentic_runtime::crud::increment_attempt(&db, &root.id).await {
+            Ok(attempt) if recovery_budget_exhausted(attempt) => {
+                retire_exhausted_run(&db, &root.id, attempt).await;
+                // Same release the failure path below performs. `retire_run`
+                // makes the run terminal, so the acquire CAS would reclaim the
+                // lease anyway — but leaving it to that means the two exits from
+                // a dead airway run behave differently for no reason, and the
+                // difference is invisible until someone is holding a stale lease
+                // wondering which path produced it.
+                if root.source_type.as_deref() == Some("airway") {
+                    tracing::info!(
+                        target: "recovery",
+                        run_id = %root.id,
+                        "airway run retired on budget exhaustion; releasing its \
+                         single-flight lease"
+                    );
+                    crate::airway_run::release_airway_lease(&db, &root.id).await;
+                }
+                return Ok(RecoveryOutcome::Retired);
+            }
+            Ok(attempt) => tracing::debug!(
+                target: "recovery",
+                run_id = %root.id,
+                attempt,
+                max = MAX_RECOVERY_ATTEMPTS,
+                "recovery attempt"
+            ),
+            // Can't count — behave exactly as before rather than killing a live
+            // run over a transient DB error. Loud, because an unbudgeted run is
+            // the failure mode this guard exists to prevent.
+            Err(e) => tracing::warn!(
+                target: "recovery",
+                run_id = %root.id,
+                error = %e,
+                "could not record a recovery attempt; this run is proceeding UNBUDGETED"
+            ),
+        }
     }
 
     // The driver lease is OWNED from here, so this frame is the run's owner and
@@ -413,7 +539,37 @@ async fn recover_single_run(
         crate::airway_run::release_airway_lease(&db, &root.id).await;
     }
 
-    outcome
+    outcome.map(|()| RecoveryOutcome::Drove)
+}
+
+/// Dead-letter a run that has exhausted [`MAX_RECOVERY_ATTEMPTS`].
+///
+/// The two writes — cancelling the queue rows and marking the run terminal —
+/// go in ONE transaction, via `crud::retire_run`. Ordering alone is not enough:
+/// cancelling the rows removes the run from `find_pending_global_runs` (whose
+/// selection requires a `queued`, non-scope-owned row), so a terminal write
+/// that then failed would strand the run non-terminal and unselectable, with
+/// nothing left to retry it. Rolling both back leaves the run exactly as it was
+/// and the next tick retries the whole step.
+async fn retire_exhausted_run(db: &DatabaseConnection, run_id: &str, attempt: i32) {
+    let reason = format!("exceeded {MAX_RECOVERY_ATTEMPTS} recovery attempts");
+    match agentic_runtime::crud::retire_run(db, run_id, &reason).await {
+        Ok(()) => tracing::error!(
+            target: "recovery",
+            run_id = %run_id,
+            attempt,
+            max = MAX_RECOVERY_ATTEMPTS,
+            "retired a run that exhausted its recovery budget"
+        ),
+        Err(e) => tracing::error!(
+            target: "recovery",
+            run_id = %run_id,
+            attempt,
+            error = %e,
+            "recovery budget exhausted but the run could not be retired; \
+             rolled back, retrying next tick"
+        ),
+    }
 }
 
 /// The body of [`recover_single_run`] that runs once the driver lease is held.
@@ -812,10 +968,17 @@ async fn recover_single_run_owned(
     tokio::spawn(async move { worker.run().await });
 
     let pending_count = pending_resumes.len();
+    let retire_transport = transport.clone();
     tokio::spawn(async move {
         let mut coord = coordinator;
         coord.process_pending_resumes(pending_resumes).await;
         coord.run().await;
+        // `coord.run()` returns only once every task in this tree is terminal,
+        // so nothing can legitimately be claimed under this root again. Retire
+        // the workers built on this transport instead of leaving them polling
+        // the queue for the life of the process — see
+        // `DurableTransport::retire_worker_loop`.
+        retire_transport.retire_worker_loop();
     });
 
     tracing::info!(
@@ -1086,5 +1249,37 @@ mod may_drive_tests {
     #[test]
     fn a_missing_source_type_is_drivable() {
         assert!(may_drive(None, &["compile"]));
+    }
+}
+
+#[cfg(test)]
+mod recovery_budget_tests {
+    use super::*;
+
+    #[test]
+    fn a_run_is_driven_exactly_max_recovery_attempts_times() {
+        // `increment_attempt` returns the NEW value and the column starts at 0,
+        // so the Nth recovery observes N. Four drives, then retirement.
+        for attempt in 1..=MAX_RECOVERY_ATTEMPTS {
+            assert!(
+                !recovery_budget_exhausted(attempt),
+                "attempt {attempt} must still be allowed to drive"
+            );
+        }
+        assert!(
+            recovery_budget_exhausted(MAX_RECOVERY_ATTEMPTS + 1),
+            "the drive after the budget must retire the run"
+        );
+    }
+
+    #[test]
+    fn budget_is_four_and_bounded_at_both_ends() {
+        // Pinned deliberately: this number is the whole guard. Raising it is a
+        // decision, not a refactor.
+        assert_eq!(MAX_RECOVERY_ATTEMPTS, 4);
+        // A fresh run (never recovered) is never retired by this check...
+        assert!(!recovery_budget_exhausted(0));
+        // ...and no value above the budget escapes it.
+        assert!(recovery_budget_exhausted(i32::MAX));
     }
 }

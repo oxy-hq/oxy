@@ -6,7 +6,7 @@
 //! receipt). Only the assignment direction needs durability — the single gap
 //! that existed with [`super::LocalTransport`].
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::Duration;
 
@@ -120,7 +120,36 @@ pub struct DurableTransport {
     /// what makes those cross-process wakes fast — without it, workers
     /// would wait the full [`DEFAULT_POLL_INTERVAL`] before noticing.
     router: Arc<dyn TaskRouter>,
+
+    /// Retires this transport's worker loop.
+    ///
+    /// [`WorkerTransport::recv_assignment`] is an infinite loop with no other
+    /// exit: it returns `Some` on a claim and `continue`s on everything else.
+    /// `Worker::run` breaks only on `None`, so without this a worker spawned
+    /// for one run polls the queue **forever after that run is terminal** —
+    /// and the per-run drive path spawns one worker per run. Each survivor
+    /// costs a `claim_task_under_root` round-trip per poll interval and, more
+    /// expensively, a standing place in sqlx's FIFO pool-waiter queue.
+    ///
+    /// That is the shape behind the 2026-09-01 outage: connections climbed with
+    /// the number of runs a process had ever driven — 113 to the server's
+    /// ceiling over a day — until Postgres refused new clients and every API
+    /// request waited the full `ACQUIRE_TIMEOUT` behind retired pollers.
+    ///
+    /// Cancelled by whoever owns the run once its coordinator is finished.
+    worker_loop_cancel: CancellationToken,
+
+    /// Sub-second offset added to this transport's pool-starvation backoff.
+    ///
+    /// Per **instance**, not per worker id: [`Self::worker_id`] is
+    /// process-stable (`process_worker_id`), so deriving the offset from it
+    /// would hand every co-located claimer the identical delay and desynchronise
+    /// nothing — which is precisely the pile-up the backoff exists to break up.
+    backoff_offset_ms: u64,
 }
+
+/// Hands each `DurableTransport` in this process a distinct backoff offset.
+static BACKOFF_OFFSET_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// The process-wide worker identity, generated once on first use.
 ///
@@ -348,7 +377,25 @@ impl DurableTransport {
             poll_interval,
             task_id_root,
             router,
+            worker_loop_cancel: CancellationToken::new(),
+            // Spread across the sub-second window; wraps harmlessly.
+            backoff_offset_ms: (BACKOFF_OFFSET_SEQ.fetch_add(97, Ordering::Relaxed)) % 1_000,
         })
+    }
+
+    /// Retire this transport's worker loop: the next [`recv_assignment`] returns
+    /// `None`, so `Worker::run` breaks and the task ends.
+    ///
+    /// Call once the coordinator that owns this transport's run tree has
+    /// finished — at that point nothing can legitimately be claimed under this
+    /// root again, and a poller that keeps asking is pure cost. See
+    /// [`Self::worker_loop_cancel`] for what that cost was.
+    ///
+    /// Idempotent, and safe to call from any task.
+    ///
+    /// [`recv_assignment`]: WorkerTransport::recv_assignment
+    pub fn retire_worker_loop(&self) {
+        self.worker_loop_cancel.cancel();
     }
 
     /// Wake any polling workers so they check the queue immediately.
@@ -602,10 +649,57 @@ impl CoordinatorTransport for DurableTransport {
     }
 }
 
+/// Is this the connection pool refusing to hand out a connection, rather than
+/// a query or connectivity error?
+///
+/// `sea_orm` surfaces a pool-acquire timeout as [`sea_orm::DbErr::ConnectionAcquire`].
+/// The string fallback catches the same condition arriving wrapped (e.g. as a
+/// `Conn(SqlxError(PoolTimedOut))`), which is what the prod logs actually
+/// showed: `"Failed to acquire connection from pool: Connection pool timed out"`.
+/// The classification only chooses a backoff, so a false negative costs the old
+/// behaviour and nothing worse.
+fn is_pool_acquire_failure(err: &sea_orm::DbErr) -> bool {
+    if matches!(err, sea_orm::DbErr::ConnectionAcquire(_)) {
+        return true;
+    }
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("acquire connection from pool") || msg.contains("pool timed out")
+}
+
+/// Backoff for a claim poll that could not get a connection.
+///
+/// Exponential from 1s to a 30s ceiling, plus this transport's own sub-second
+/// offset so co-located claimers do not re-synchronise onto the same instant
+/// and rebuild the pile-up this exists to break up. The offset is assigned per
+/// instance at construction rather than drawn from an RNG, so the schedule
+/// stays reproducible under test and this needs no new dependency.
+fn pool_starvation_backoff(streak: u32, offset_ms: u64) -> std::time::Duration {
+    const BASE_MS: u64 = 1_000;
+    const CEILING_MS: u64 = 30_000;
+    // `streak` is 1-based; shift by at most 5 so the multiply can never wrap.
+    let shift = streak.saturating_sub(1).min(5);
+    let capped = BASE_MS.saturating_mul(1u64 << shift).min(CEILING_MS);
+    std::time::Duration::from_millis(capped + offset_ms)
+}
+
 #[async_trait]
 impl WorkerTransport for DurableTransport {
     async fn recv_assignment(&self) -> Option<TaskAssignment> {
+        // Consecutive pool-acquire failures, driving the backoff in the `Err`
+        // arm below. Reset the moment a claim round-trip succeeds.
+        let mut pool_starvation_streak: u32 = 0;
         loop {
+            // The ONLY exit. Checked first so a retired transport stops asking
+            // the database anything at all, including on the paths below that
+            // `continue` without ever reaching a claim.
+            if self.worker_loop_cancel.is_cancelled() {
+                tracing::debug!(
+                    worker_id = %self.worker_id,
+                    task_id_root = ?self.task_id_root,
+                    "worker loop retired; no longer polling the queue"
+                );
+                return None;
+            }
             // Refuse to take on new work once this process has begun shutting
             // down. Graceful release flips our claims `claimed -> queued`,
             // which fires the queue's NOTIFY trigger and wakes *this* loop —
@@ -642,6 +736,9 @@ impl WorkerTransport for DurableTransport {
                     }
                 } => r,
             };
+            if claim_result.is_ok() {
+                pool_starvation_streak = 0;
+            }
             match claim_result {
                 Ok(Some(entry)) => {
                     // Close the gate-to-claim race *at its cause*. The gate
@@ -720,6 +817,11 @@ impl WorkerTransport for DurableTransport {
                     tokio::select! {
                         _ = self.new_task_notify.notified() => {}
                         _ = self.router.wait_for_task(&[], self.poll_interval) => {}
+                        // Retirement lands here too, not just at the top of the
+                        // loop: an idle poller is parked in exactly this select,
+                        // so without this arm it would sit out a full poll
+                        // interval before noticing it has been retired.
+                        _ = self.worker_loop_cancel.cancelled() => {}
                     }
                 }
                 Err(e) => {
@@ -729,10 +831,36 @@ impl WorkerTransport for DurableTransport {
                     // queue-connectivity problem is still loud.
                     if is_shutting_down() {
                         tracing::debug!("failed to claim task from queue during shutdown: {e}");
+                        tokio::time::sleep(self.poll_interval).await;
+                    } else if is_pool_acquire_failure(&e) {
+                        // The pool is starved, and this poll already spent the
+                        // full `ACQUIRE_TIMEOUT` (~30s) parked in its waiter
+                        // queue to find that out. Re-entering on the ordinary
+                        // poll interval is the wrong move: sqlx's waiter queue
+                        // is FIFO, so a claimer that immediately re-queues sits
+                        // permanently *ahead of request traffic*, and N
+                        // claimers in one process hold N such places. In prod
+                        // (2026-09-01) seven of them on the ide node kept the
+                        // API waiting the whole timeout behind background work
+                        // that had nothing to do.
+                        //
+                        // Back off instead, so a starved pool drains toward the
+                        // callers a human is waiting on.
+                        pool_starvation_streak = pool_starvation_streak.saturating_add(1);
+                        let backoff =
+                            pool_starvation_backoff(pool_starvation_streak, self.backoff_offset_ms);
+                        tracing::error!(
+                            worker_id = %self.worker_id,
+                            streak = pool_starvation_streak,
+                            backoff_ms = backoff.as_millis() as u64,
+                            "failed to claim task from queue: {e} (pool starved; backing off \
+                             so request traffic is not queued behind this poller)"
+                        );
+                        tokio::time::sleep(backoff).await;
                     } else {
                         tracing::error!("failed to claim task from queue: {e}");
+                        tokio::time::sleep(self.poll_interval).await;
                     }
-                    tokio::time::sleep(self.poll_interval).await;
                 }
             }
         }
@@ -1065,5 +1193,112 @@ mod shutdown_tests {
         begin_shutdown();
         assert!(is_shutting_down());
         assert!(shutdown_signal().is_cancelled());
+    }
+}
+
+#[cfg(test)]
+mod pool_backoff_tests {
+    use super::*;
+
+    #[test]
+    fn pool_acquire_failure_is_recognised() {
+        // The shape prod actually logged, arriving as a wrapped conn error.
+        let wrapped = sea_orm::DbErr::Custom(
+            "Failed to acquire connection from pool: Connection pool timed out".to_string(),
+        );
+        assert!(is_pool_acquire_failure(&wrapped));
+        // A query error must NOT get the long backoff — it is not starvation
+        // and delaying it would slow the queue down for no reason.
+        let query = sea_orm::DbErr::Custom("relation \"agentic_task_queue\" does not exist".into());
+        assert!(!is_pool_acquire_failure(&query));
+    }
+
+    #[test]
+    fn backoff_grows_then_caps_at_30s() {
+        let off: u64 = 42;
+        assert_eq!(pool_starvation_backoff(1, off).as_millis() as u64, 1_042);
+        assert_eq!(pool_starvation_backoff(2, off).as_millis() as u64, 2_042);
+        assert_eq!(pool_starvation_backoff(5, off).as_millis() as u64, 16_042);
+        // Ceiling holds, and holds for an absurd streak without overflowing.
+        assert_eq!(pool_starvation_backoff(6, off).as_millis() as u64, 30_042);
+        assert_eq!(
+            pool_starvation_backoff(u32::MAX, off).as_millis() as u64,
+            30_042
+        );
+    }
+
+    #[test]
+    fn backoff_is_always_longer_than_a_fast_poll_interval() {
+        // The whole point: a starved claimer must not re-enter the pool's FIFO
+        // waiter queue on the ordinary poll cadence.
+        for streak in 1..=8 {
+            assert!(pool_starvation_backoff(streak, 0).as_millis() >= 1_000);
+        }
+    }
+
+    #[tokio::test]
+    async fn retired_transport_returns_none_without_touching_the_db() {
+        use agentic_core::transport::WorkerTransport;
+        // A `Disconnected` handle errors on ANY query, so reaching `None` at all
+        // proves the retirement check runs before the claim round-trip.
+        let t =
+            DurableTransport::with_config(DatabaseConnection::default(), Duration::from_millis(10));
+        t.retire_worker_loop();
+        assert!(
+            t.recv_assignment().await.is_none(),
+            "a retired transport must end its worker loop"
+        );
+    }
+
+    #[tokio::test]
+    async fn retirement_is_the_only_exit() {
+        use agentic_core::transport::WorkerTransport;
+        // The regression this guards: before retirement existed `recv_assignment`
+        // had no `None` path at all, so `Worker::run` never broke and every
+        // finished run left a poller hitting the queue for the life of the
+        // process. A live transport must still never exit on its own...
+        let t =
+            DurableTransport::with_config(DatabaseConnection::default(), Duration::from_millis(10));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), t.recv_assignment())
+                .await
+                .is_err(),
+            "recv_assignment must not return None while the transport is live"
+        );
+        // ...and must exit promptly once retired, even though the call above
+        // left it parked mid-loop.
+        t.retire_worker_loop();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(500), t.recv_assignment())
+                .await
+                .expect("retirement must be observed promptly")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn co_located_transports_desynchronise() {
+        // The regression this guards: an offset derived from `worker_id` would be
+        // IDENTICAL for every transport in this process — `process_worker_id` is
+        // process-stable — and would therefore desynchronise nothing, which is
+        // the entire point of having an offset.
+        let a =
+            DurableTransport::with_config(DatabaseConnection::default(), Duration::from_secs(1));
+        let b =
+            DurableTransport::with_config(DatabaseConnection::default(), Duration::from_secs(1));
+        assert_eq!(
+            a.worker_id, b.worker_id,
+            "worker_id is process-stable; that is exactly why it cannot carry the offset"
+        );
+        assert_ne!(
+            a.backoff_offset_ms, b.backoff_offset_ms,
+            "co-located transports must back off at different instants"
+        );
+        assert_ne!(
+            pool_starvation_backoff(3, a.backoff_offset_ms),
+            pool_starvation_backoff(3, b.backoff_offset_ms)
+        );
+        // …and both stay sub-second, so the backoff itself stays bounded.
+        assert!(a.backoff_offset_ms < 1_000 && b.backoff_offset_ms < 1_000);
     }
 }

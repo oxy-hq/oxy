@@ -34,6 +34,7 @@ impl MigratorTrait for RuntimeMigrator {
             Box::new(AddScheduleQuestion),
             Box::new(AddTaskQueueAvailableAt),
             Box::new(AddTaskQueueFirstDeferredAt),
+            Box::new(AddPendingGlobalRunsIndex),
         ]
     }
 
@@ -1993,6 +1994,44 @@ mod tests {
              upstream sea-query rendering change."
         );
     }
+    /// The partial index and the poll it exists for must agree on the statuses.
+    ///
+    /// Postgres uses a partial index only when it can prove the query implies
+    /// the index predicate. Add a status to the poll without adding a NEW
+    /// migration and that proof fails: the index is silently ignored and the
+    /// poll goes back to a full index scan — 17ms per execution at ~13/second,
+    /// which is exactly the load profile of the 2026-09-01 outage. Nothing
+    /// errors; it just gets slow again.
+    ///
+    /// So the coupling is checked here rather than commented. This asserts the
+    /// FROZEN migration literal against the LIVE constant: if you change the
+    /// poll, this goes red and the fix is a new migration, never an edit to the
+    /// shipped one.
+    #[test]
+    fn pending_global_index_covers_every_polled_status() {
+        use crate::orchestrator::crud::recovery::PENDING_GLOBAL_STATUSES;
+
+        for status in PENDING_GLOBAL_STATUSES {
+            assert!(
+                PENDING_GLOBAL_INDEX_SQL.contains(&format!("'{status}'")),
+                "status `{status}` is polled by find_pending_global_runs but is \
+                 NOT in idx_agentic_runs_pending_global's predicate. The index \
+                 will be silently ignored. Add a NEW migration creating an index \
+                 that covers it — do not edit the shipped one."
+            );
+        }
+        // …and nothing extra: an index predicate wider than the query is not a
+        // correctness problem, but it means this literal and the constant have
+        // drifted, which is the thing this test exists to notice.
+        let quoted = PENDING_GLOBAL_INDEX_SQL.matches('\'').count() / 2;
+        assert_eq!(
+            quoted,
+            PENDING_GLOBAL_STATUSES.len(),
+            "the index predicate lists {quoted} statuses but the poll uses {}",
+            PENDING_GLOBAL_STATUSES.len()
+        );
+    }
+
     /// The shared unique index, pinned like the tables — and it is the sharper
     /// case: both migrators create `idx_agentic_run_events_run_id_seq` under
     /// the *same name*, so `IF NOT EXISTS` no-ops by name. Change the columns
@@ -2006,5 +2045,55 @@ mod tests {
              AND check crates/migration's twin, which creates the same index name); or an \
              upstream sea-query rendering change."
         );
+    }
+}
+
+/// Partial index for `find_pending_global_runs` — the driver loops' poll.
+///
+/// That query has no `workspace_id` predicate (the loops pass `None`), so the
+/// only usable index was `idx_agentic_runs_workspace_status`, whose leading
+/// column it cannot constrain. Postgres therefore scanned the whole index:
+/// measured in production at **16.95 ms to return 0 rows**, over 634,955 live
+/// rows, executed ~13×/second across the fleet. That one query was 95% of all
+/// database load — while finding nothing.
+///
+/// This index stores only the rows the poll can ever match — 15 of 634,955 at
+/// the time of writing — so the same poll becomes a few microseconds and stays
+/// flat as `agentic_runs` grows. The predicate is copied from the query
+/// verbatim; if that `IN` list changes, this must change with it or the index
+/// silently stops being used (a planner regression, not an error).
+/// The **frozen** DDL for this migration.
+///
+/// A shipped migration cannot be edited, so this literal is deliberately a
+/// duplicate of `crud::recovery::PENDING_GLOBAL_STATUSES` rather than derived
+/// from it: deriving would let the index silently change shape for databases
+/// that already ran it. The duplication is held honest by
+/// `pending_global_index_covers_every_polled_status` — change the statuses the
+/// poll uses and that test goes red, telling you to add a NEW migration.
+const PENDING_GLOBAL_INDEX_SQL: &str = "CREATE INDEX IF NOT EXISTS idx_agentic_runs_pending_global \
+     ON agentic_runs (task_status) \
+     WHERE parent_run_id IS NULL \
+       AND task_status IN ('running','delegating','waiting_on_child',\
+           'waiting_on_children','needs_resume','shutdown')";
+
+#[derive(DeriveMigrationName)]
+pub struct AddPendingGlobalRunsIndex;
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddPendingGlobalRunsIndex {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .get_connection()
+            .execute_unprepared(PENDING_GLOBAL_INDEX_SQL)
+            .await?;
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .get_connection()
+            .execute_unprepared("DROP INDEX IF EXISTS idx_agentic_runs_pending_global")
+            .await?;
+        Ok(())
     }
 }

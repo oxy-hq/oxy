@@ -1,13 +1,42 @@
 //! Startup cleanup and resume enumeration for the `agentic_runs` table.
 
 use sea_orm::{
-    ActiveValue::*, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, QueryFilter,
+    ActiveValue::*, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend, DatabaseConnection,
+    DbErr, EntityTrait, QueryFilter, Statement,
 };
 use uuid::Uuid;
 
 use crate::lifecycle::crud::events::get_max_seq;
 use crate::lifecycle::crud::{DRIVER_LEASE_TTL_SECS, now, transition_run};
 use crate::lifecycle::entity::run;
+
+/// The non-terminal statuses the driver loops' poll selects on.
+///
+/// **Coupled to `idx_agentic_runs_pending_global`**, the partial index that
+/// makes that poll cheap (`migration::AddPendingGlobalRunsIndex`). Postgres only
+/// uses a partial index when it can prove the query implies the index
+/// predicate, so a status added or removed here without a matching *new*
+/// migration silently drops the index and returns the poll to a full index scan
+/// — 17ms per execution at ~13/second, which is the shape of the 2026-09-01
+/// outage. A shipped migration cannot be edited, so the coupling is enforced by
+/// `migration`'s `pending_global_index_covers_every_polled_status` test.
+pub const PENDING_GLOBAL_STATUSES: [&str; 6] = [
+    "running",
+    "delegating",
+    "waiting_on_child",
+    "waiting_on_children",
+    "needs_resume",
+    "shutdown",
+];
+
+/// Render [`PENDING_GLOBAL_STATUSES`] as the body of a SQL `IN (...)` list.
+pub fn pending_global_status_sql() -> String {
+    PENDING_GLOBAL_STATUSES
+        .iter()
+        .map(|s| format!("'{s}'"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 /// Find root runs that are still active (not terminal) for restart recovery.
 pub async fn get_active_root_runs(db: &DatabaseConnection) -> Result<Vec<run::Model>, DbErr> {
@@ -434,12 +463,13 @@ pub async fn find_pending_global_runs(
     } else {
         ""
     };
+    let statuses = pending_global_status_sql();
     let sql = format!(
         "\
         SELECT r.id, r.task_status, r.workspace_id, r.source_type \
         FROM agentic_runs r \
         WHERE r.parent_run_id IS NULL \
-          AND r.task_status IN ('running', 'delegating', 'waiting_on_child', 'waiting_on_children', 'needs_resume', 'shutdown') \
+          AND r.task_status IN ({statuses}) \
           AND (r.driver_id IS NULL \
                OR r.driver_heartbeat_at IS NULL \
                OR r.driver_heartbeat_at < now() - make_interval(secs => $1)) \
@@ -536,19 +566,57 @@ pub async fn get_max_child_counter(
 
 /// Increment the attempt counter for a run and return the new value.
 pub async fn increment_attempt(db: &DatabaseConnection, run_id: &str) -> Result<i32, DbErr> {
-    let root = run::Entity::find_by_id(run_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| DbErr::RecordNotFound(run_id.to_string()))?;
-    let new_attempt = root.attempt + 1;
+    use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
 
-    let model = run::ActiveModel {
-        id: Set(run_id.to_string()),
-        attempt: Set(new_attempt),
-        updated_at: Set(now()),
-        ..Default::default()
-    };
-    run::Entity::update(model).exec(db).await?;
+    #[derive(FromQueryResult)]
+    struct Row {
+        attempt: i32,
+    }
 
-    Ok(new_attempt)
+    // Single atomic statement rather than SELECT-then-UPDATE. The caller holds
+    // the driver lease, so a concurrent bump is not reachable today — but a lost
+    // update here would silently *un-bound* the recovery budget this feeds, and
+    // that is not a property worth resting on a second mechanism being correct.
+    // Same round-trip count either way.
+    Row::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE agentic_runs SET attempt = attempt + 1, updated_at = now() \
+         WHERE id = $1 RETURNING attempt",
+        [run_id.into()],
+    ))
+    .one(db)
+    .await?
+    .map(|r| r.attempt)
+    .ok_or_else(|| DbErr::RecordNotFound(run_id.to_string()))
+}
+
+/// Retire a run and its live queue rows **in one transaction**.
+///
+/// Both writes or neither. The order matters (queue rows first: [`claim_task`]
+/// has no run-status predicate, so a terminal run with `queued` rows stays
+/// claimable), but ordering alone is not enough — cancelling the queue rows
+/// removes the run from [`find_pending_global_runs`], whose selection requires a
+/// `queued`, non-scope-owned row. So if the terminal write then failed, nothing
+/// would ever select that run again and it would sit non-terminal forever.
+/// Rolling both back leaves the run exactly as it was, and the next tick
+/// genuinely retries the whole step.
+///
+/// [`claim_task`]: super::queue::claim_task
+pub async fn retire_run(db: &DatabaseConnection, run_id: &str, reason: &str) -> Result<(), DbErr> {
+    use sea_orm::TransactionTrait;
+
+    let txn = db.begin().await?;
+    super::queue::cancel_queued_tasks_for_run(&txn, run_id).await?;
+    // Mirrors `transition_run`'s terminal path, including releasing the driver
+    // lease — a terminal run needs no driver.
+    txn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE agentic_runs \
+            SET task_status = 'failed', error_message = $2, \
+                driver_id = NULL, driver_heartbeat_at = NULL, updated_at = now() \
+          WHERE id = $1",
+        [run_id.into(), format!("recovery failed: {reason}").into()],
+    ))
+    .await?;
+    txn.commit().await
 }
