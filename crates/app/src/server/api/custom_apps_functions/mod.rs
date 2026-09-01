@@ -890,6 +890,8 @@ pub async fn handle_function_request(
         app: &app,
         artifact_js,
         body: body.to_vec(),
+        method: method.as_str().to_string(),
+        headers: sanitize_request_headers(&headers),
         user_id: outcome.user_id,
         user_email: outcome.user_email.clone(),
         user_name: Some(outcome.user_name.clone()),
@@ -1115,6 +1117,9 @@ pub(crate) async fn run_scheduled_function(
         app: &app,
         artifact_js,
         body: input,
+        // No real request behind a schedule; mirrors `FnRequest::from_body`.
+        method: "POST".to_string(),
+        headers: std::collections::BTreeMap::new(),
         user_id: owner.user_id,
         user_email: format!("schedule+{function_name}@system.oxy"),
         // No caller to attribute this run to — and note this path serves the
@@ -1245,6 +1250,11 @@ struct RunArgs<'a> {
     app: &'a entity::apps::Model,
     artifact_js: String,
     body: Vec<u8>,
+    /// HTTP method of the triggering request, and the headers the function is
+    /// allowed to see (see `sanitize_request_headers`). The scheduled/Airway
+    /// paths synthesise `POST` with no headers — there is no real request.
+    method: String,
+    headers: std::collections::BTreeMap<String, String>,
     user_id: Uuid,
     user_email: String,
     /// Display identity for `ctx.user.name` / `ctx.user.picture`. `None` on the
@@ -1431,7 +1441,11 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
     let result = runtime::run(
         args.artifact_js,
         ctx,
-        args.body,
+        runtime::FnRequest {
+            method: args.method,
+            headers: args.headers,
+            body: args.body,
+        },
         host,
         cancel_rx,
         args.timeout,
@@ -1534,6 +1548,169 @@ async fn spawn_cancel_watchdog(
                 }
             }
         }
+    }
+}
+
+/// Headers a route function may see, beyond the `x-*` rule below.
+///
+/// An **allowlist**, deliberately. A denylist would have to enumerate every
+/// credential-bearing header Oxy uses, and the authenticator sits behind a
+/// trait (`BuiltInAuthenticator::authenticate`) that can grow new ones — a
+/// denylist here would silently stop being correct the day it does.
+const PASSTHROUGH_HEADERS: &[&str] = &[
+    "content-type",
+    "content-length",
+    "accept",
+    "accept-language",
+    "user-agent",
+    "traceparent",
+    // Webhook signatures that do NOT start with `x-`. The `x-` rule covers the
+    // rest (`x-hub-signature-256`, `x-slack-signature`, `x-shopify-hmac-sha256`,
+    // `x-twilio-signature`, …), which is what keeps a new provider from needing
+    // a PR here.
+    "stripe-signature",
+];
+
+/// Headers that must NEVER reach app code, even though they match `x-*`.
+///
+/// `cookie` and `authorization` are the load-bearing ones: the session cookie
+/// (`oxy_session`) and the bearer header carry **the same JWT**
+/// (`crates/auth/src/built_in.rs`), so handing either to a function would let
+/// any custom app lift a viewer's session and act as them across the whole
+/// platform — an escalation from "app author" to "any viewer".
+///
+/// An app that wants its own shared-secret auth on a route must use a custom
+/// `x-` header; it cannot reuse `authorization`, because we cannot tell its
+/// secret apart from ours.
+const BLOCKED_HEADERS: &[&str] = &[
+    "cookie",
+    "set-cookie",
+    "authorization",
+    "proxy-authorization",
+    "x-api-key",
+];
+
+/// Project an inbound `HeaderMap` down to what a route function is allowed to
+/// see, lowercasing names so a function can index them predictably.
+///
+/// Anything not on [`PASSTHROUGH_HEADERS`], not `x-*`, or on
+/// [`BLOCKED_HEADERS`] (or under the reserved `x-oxy-` prefix) is dropped.
+///
+/// **A header sent twice collapses to its FIRST value**, matching what
+/// `HeaderMap::get` returns everywhere else in the codebase — including the
+/// authenticator. Last-wins would mean the platform and the app disagree about
+/// which value is real for the same request, which is the shape request
+/// smuggling exploits. Neither joining (`a, b`) nor dropping the header is
+/// obviously better, but silently disagreeing with `get` is obviously worse.
+fn sanitize_request_headers(
+    headers: &axum::http::HeaderMap,
+) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    for (name, value) in headers.iter() {
+        let key = name.as_str().to_ascii_lowercase();
+        if BLOCKED_HEADERS.contains(&key.as_str()) {
+            continue;
+        }
+        if key.starts_with("x-oxy-") {
+            continue;
+        }
+        let allowed = PASSTHROUGH_HEADERS.contains(&key.as_str()) || key.starts_with("x-");
+        if !allowed {
+            continue;
+        }
+        // A header whose bytes are not UTF-8 is dropped rather than lossily
+        // decoded: a signature that silently changes shape is worse than an
+        // absent one, because the function would verify it and fail confusingly.
+        if let Ok(v) = value.to_str() {
+            // `or_insert`, not `insert` — first value wins (see above).
+            out.entry(key).or_insert_with(|| v.to_string());
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod request_header_tests {
+    use super::sanitize_request_headers;
+    use axum::http::HeaderMap;
+
+    fn hm(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        for (k, v) in pairs {
+            h.insert(
+                axum::http::HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                v.parse().unwrap(),
+            );
+        }
+        h
+    }
+
+    // The one that matters. `oxy_session` and the bearer header carry the same
+    // JWT, so either one reaching app code is an escalation from "app author"
+    // to "any viewer of the app".
+    #[test]
+    fn credentials_never_reach_the_function() {
+        let out = sanitize_request_headers(&hm(&[
+            ("cookie", "oxy_session=eyJhbGciOi.REAL_JWT"),
+            ("authorization", "Bearer eyJhbGciOi.REAL_JWT"),
+            ("proxy-authorization", "Basic abc"),
+            ("x-api-key", "sk-live-123"),
+            ("x-oxy-required-role", "admin"),
+            ("content-type", "application/json"),
+        ]));
+        assert_eq!(out.keys().collect::<Vec<_>>(), vec!["content-type"]);
+        // Belt and braces: no value anywhere in the output carries the token.
+        assert!(
+            !out.values().any(|v| v.contains("REAL_JWT")),
+            "a credential leaked into the isolate: {out:?}"
+        );
+    }
+
+    #[test]
+    fn webhook_signatures_pass_without_needing_a_pr_per_provider() {
+        let out = sanitize_request_headers(&hm(&[
+            ("stripe-signature", "t=1,v1=abc"),
+            ("x-hub-signature-256", "sha256=abc"),
+            ("x-slack-request-timestamp", "1700000000"),
+            ("x-shopify-hmac-sha256", "abc="),
+        ]));
+        assert_eq!(out.len(), 4, "{out:?}");
+    }
+
+    #[test]
+    fn a_repeated_header_keeps_its_first_value() {
+        // `HeaderMap::get` — which the authenticator uses — returns the first
+        // value, so app code must see the same one. Platform and app disagreeing
+        // about which value is real for one request is the smuggling shape.
+        let mut h = HeaderMap::new();
+        h.append("x-forwarded-for", "1.1.1.1".parse().unwrap());
+        h.append("x-forwarded-for", "2.2.2.2".parse().unwrap());
+        let out = sanitize_request_headers(&h);
+        assert_eq!(
+            out.get("x-forwarded-for").map(String::as_str),
+            Some("1.1.1.1")
+        );
+        assert_eq!(
+            h.get("x-forwarded-for").unwrap().to_str().unwrap(),
+            out["x-forwarded-for"],
+            "must agree with what HeaderMap::get sees"
+        );
+    }
+
+    #[test]
+    fn unknown_non_x_headers_are_dropped_and_names_are_lowercased() {
+        let out = sanitize_request_headers(&hm(&[
+            ("Content-Type", "text/csv"),
+            ("referer", "https://example.com"),
+            ("forwarded", "for=1.2.3.4"),
+        ]));
+        // Conservative default: only the allowlisted one survives, lowercased.
+        assert_eq!(
+            out.get("content-type").map(String::as_str),
+            Some("text/csv")
+        );
+        assert!(!out.contains_key("referer"), "{out:?}");
+        assert!(!out.contains_key("forwarded"), "{out:?}");
     }
 }
 

@@ -689,6 +689,140 @@ fn reply_json(what: &str, result: Result<serde_json::Value, String>) -> String {
     }
 }
 
+/// HMAC over `data` with `key`, both read as UTF-8.
+///
+/// UTF-8 only, deliberately: every webhook scheme in the wild signs a UTF-8
+/// base string with a UTF-8 secret (GitHub signs the body, Slack `v0:ts:body`,
+/// Stripe `ts.body`). A binary key or payload would need an encoding knob per
+/// argument, which is surface nobody has asked for.
+fn hmac_digest(algorithm: &str, key: &str, data: &str) -> Result<Vec<u8>, JsErrorBox> {
+    use hmac::{Hmac, KeyInit, Mac};
+    // An unset or empty secret must not silently become a usable key: an
+    // attacker can sign with "" as easily as we can. This is enforced here, not
+    // only in the JS wrapper, because the artifact shares a global with the
+    // bootstrap and can reach `Deno.core.ops` directly.
+    if key.is_empty() {
+        return Err(JsErrorBox::generic(
+            "ctx.crypto: `key` must not be empty — check the secret is set",
+        ));
+    }
+    let bad_key = || JsErrorBox::generic("ctx.crypto: key is not valid for this algorithm");
+    match algorithm {
+        "sha256" => {
+            let mut mac =
+                Hmac::<sha2::Sha256>::new_from_slice(key.as_bytes()).map_err(|_| bad_key())?;
+            mac.update(data.as_bytes());
+            Ok(mac.finalize().into_bytes().to_vec())
+        }
+        "sha512" => {
+            let mut mac =
+                Hmac::<sha2::Sha512>::new_from_slice(key.as_bytes()).map_err(|_| bad_key())?;
+            mac.update(data.as_bytes());
+            Ok(mac.finalize().into_bytes().to_vec())
+        }
+        other => Err(JsErrorBox::generic(format!(
+            "ctx.crypto: unknown algorithm '{other}' (expected 'sha256' or 'sha512')"
+        ))),
+    }
+}
+
+fn encode_digest(bytes: &[u8], encoding: &str) -> Result<String, JsErrorBox> {
+    use base64::Engine as _;
+    match encoding {
+        "hex" => Ok(hex::encode(bytes)),
+        "base64" => Ok(base64::engine::general_purpose::STANDARD.encode(bytes)),
+        other => Err(JsErrorBox::generic(format!(
+            "ctx.crypto: unknown encoding '{other}' (expected 'hex' or 'base64')"
+        ))),
+    }
+}
+
+/// `ctx.crypto.hmac` — sign. For talking TO an API that requires a signed
+/// request; the inverse direction from `verifyHmac`.
+#[op2]
+#[string]
+fn op_ctx_hmac(
+    #[string] algorithm: &str,
+    #[string] key: &str,
+    #[string] data: &str,
+    #[string] encoding: &str,
+) -> Result<String, JsErrorBox> {
+    encode_digest(&hmac_digest(algorithm, key, data)?, encoding)
+}
+
+/// `ctx.crypto.verifyHmac` — the reason this op exists. The comparison is
+/// constant-time via [`constant_time_eq`] below; it does NOT use
+/// `Mac::verify_slice`, because the provided signature has to be decoded from
+/// hex/base64 first and a decode failure must reject rather than throw.
+///
+/// **A signature that will not decode returns `false`, it does not throw.**
+/// That string is attacker-controlled: throwing would turn a forged request
+/// into a 500 and an alert, instead of a clean rejection. An unknown
+/// `algorithm` or `encoding` DOES throw, because those come from the app
+/// author, not the caller.
+///
+/// The app strips any provider prefix first (`sha256=`, `v0=`) and passes the
+/// bare digest — prefix formats are per-provider and do not belong in the
+/// platform.
+#[op2(fast)]
+fn op_ctx_verify_hmac(
+    #[string] algorithm: &str,
+    #[string] key: &str,
+    #[string] data: &str,
+    #[string] signature: &str,
+    #[string] encoding: &str,
+) -> Result<bool, JsErrorBox> {
+    use base64::Engine as _;
+    // Validate author-supplied inputs first so a bad algorithm throws even when
+    // the signature is also junk.
+    let expected = hmac_digest(algorithm, key, data)?;
+    let provided = match encoding {
+        "hex" => hex::decode(signature).ok(),
+        "base64" => base64::engine::general_purpose::STANDARD
+            .decode(signature)
+            .ok(),
+        other => {
+            return Err(JsErrorBox::generic(format!(
+                "ctx.crypto: unknown encoding '{other}' (expected 'hex' or 'base64')"
+            )));
+        }
+    };
+    let Some(provided) = provided else {
+        return Ok(false);
+    };
+    Ok(constant_time_eq(&expected, &provided))
+}
+
+/// `ctx.crypto.timingSafeEqual` — for a plain shared secret carried in a
+/// header, where there is no HMAC to verify. Without it an author writes
+/// `a === b`, which leaks the secret one byte at a time.
+#[op2(fast)]
+fn op_ctx_timing_safe_equal(#[string] a: &str, #[string] b: &str) -> bool {
+    // An empty side means "absent" — an unset secret, or a header the caller
+    // omitted. `constant_time_eq(b"", b"")` is true, so without this the
+    // documented pattern
+    // `timingSafeEqual(req.headers[...], ctx.env.SECRET)` AUTHORIZES when the
+    // secret was never configured and the attacker sends nothing. Fail closed.
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    constant_time_eq(a.as_bytes(), b.as_bytes())
+}
+
+/// Length is not secret here (a digest length is fixed by the algorithm, and a
+/// shared secret's length is not the part worth protecting), but the byte
+/// comparison must not short-circuit.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut acc = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        acc |= x ^ y;
+    }
+    acc == 0
+}
+
 deno_core::extension!(
     oxy_functions_ext,
     ops = [
@@ -704,6 +838,9 @@ deno_core::extension!(
         op_ctx_storage,
         op_ctx_tx,
         op_ctx_oltp,
+        op_ctx_hmac,
+        op_ctx_verify_hmac,
+        op_ctx_timing_safe_equal,
     ],
 );
 
@@ -886,6 +1023,38 @@ globalThis.__buildCtx = (ctxData) => ({
   user: { ...ctxData.user, org_id: ctxData.user.orgId },
   env: ctxData.env,
   log: (...args) => Deno.core.ops.op_ctx_log("info", args.map(String).join(" ")),
+  // Synchronous — pure CPU, so these skip the host-call channel entirely.
+  //
+  // verifyHmac is the one that matters: with req.headers carrying a signature,
+  // an author would otherwise hand-roll HMAC in JS and compare with `===`,
+  // which leaks the digest a byte at a time. Strip the provider's prefix
+  // ("sha256=", "v0=") before calling — those formats are per-provider.
+  crypto: {
+    // `key` comes from configuration, never from the request, so an absent one
+    // is an author error and throws. Coercing it would sign with the literal
+    // "undefined" — a key anyone can guess.
+    hmac: ({ algorithm, key, data, encoding }) => {
+      if (key == null) throw new TypeError("ctx.crypto.hmac: `key` is required — is the secret set?");
+      if (data == null) throw new TypeError("ctx.crypto.hmac: `data` is required");
+      return Deno.core.ops.op_ctx_hmac(
+        String(algorithm || "sha256"), String(key), String(data), String(encoding || "hex"));
+    },
+    verifyHmac: ({ algorithm, key, data, signature, encoding }) => {
+      if (key == null) throw new TypeError("ctx.crypto.verifyHmac: `key` is required — is the secret set?");
+      if (data == null) throw new TypeError("ctx.crypto.verifyHmac: `data` is required");
+      // `signature` stays lenient on purpose: it is attacker-controlled, so an
+      // absent or malformed one must reject rather than throw.
+      return Deno.core.ops.op_ctx_verify_hmac(
+        String(algorithm || "sha256"), String(key), String(data),
+        String(signature ?? ""), String(encoding || "hex"));
+    },
+    // Both sides are symmetric here and either may be attacker-controlled (an
+    // omitted header) or author-controlled (an unset secret) — we cannot tell
+    // which. So an absent side is always `false`, never a throw: false fails
+    // closed, and throwing would turn an omitted header into a 500.
+    timingSafeEqual: (a, b) =>
+      Deno.core.ops.op_ctx_timing_safe_equal(a == null ? "" : String(a), b == null ? "" : String(b)),
+  },
   query: __wrapOp("op_ctx_query"),
   // queryStream(sql, opts?) — fetches up to FUNCTION_STREAM_MAX_ROWS rows in
   // one host call, then yields them to the caller in `opts.batchSize`-sized
@@ -1075,10 +1244,36 @@ const TIMEOUT_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 /// wedged in a not-yet-returned host call (which `terminate_execution` cannot
 /// interrupt), we return `Timeout` after the grace period and let that thread
 /// unwind on its own once the (individually bounded) host op completes.
+/// The triggering HTTP request, as the function's `req` argument sees it.
+///
+/// Bundled rather than passed as three positional parameters: `run` is already
+/// at the arity `internal-docs/backend-architecture.md` caps out at.
+///
+/// `headers` has already been filtered by the caller — the runtime does not
+/// re-check it, so anything placed here reaches app code verbatim.
+pub struct FnRequest {
+    pub method: String,
+    pub headers: std::collections::BTreeMap<String, String>,
+    pub body: Vec<u8>,
+}
+
+impl FnRequest {
+    /// A request carrying only a body — no real HTTP request behind it. This is
+    /// what the schedule / Airway / manual-run paths synthesise, and what a test
+    /// exercising handler behaviour rather than request plumbing wants.
+    pub fn from_body(body: Vec<u8>) -> Self {
+        Self {
+            method: "POST".to_string(),
+            headers: std::collections::BTreeMap::new(),
+            body,
+        }
+    }
+}
+
 pub async fn run(
     artifact_js: String,
     ctx: InvocationCtx,
-    req_body: Vec<u8>,
+    req: FnRequest,
     host: std::sync::Arc<dyn FunctionHost>,
     mut cancel: oneshot::Receiver<()>,
     timeout: std::time::Duration,
@@ -1111,16 +1306,9 @@ pub async fn run(
                 };
                 let local = tokio::task::LocalSet::new();
                 local.block_on(&rt, async move {
-                    let result = execute_isolate(
-                        artifact_js,
-                        ctx,
-                        req_body,
-                        call_tx,
-                        handle_tx,
-                        cancelled,
-                        logs,
-                    )
-                    .await;
+                    let result =
+                        execute_isolate(artifact_js, ctx, req, call_tx, handle_tx, cancelled, logs)
+                            .await;
                     let _ = done_tx.send(result);
                 });
             }
@@ -1249,7 +1437,7 @@ pub async fn run(
 async fn execute_isolate(
     artifact_js: String,
     ctx: InvocationCtx,
-    req_body: Vec<u8>,
+    req: FnRequest,
     call_tx: mpsc::UnboundedSender<HostCall>,
     handle_tx: oneshot::Sender<deno_core::v8::IsolateHandle>,
     cancelled: Arc<AtomicBool>,
@@ -1270,8 +1458,13 @@ async fn execute_isolate(
 
     let ctx_json = serde_json::to_string(&ctx)
         .map_err(|e| RuntimeError::Internal(format!("ctx serialize failed: {e}")))?;
-    let req_body_str = String::from_utf8_lossy(&req_body);
-    let req_json = serde_json::json!({ "body": req_body_str }).to_string();
+    let req_body_str = String::from_utf8_lossy(&req.body);
+    let req_json = serde_json::json!({
+        "method": req.method,
+        "headers": req.headers,
+        "body": req_body_str,
+    })
+    .to_string();
 
     let specifier = deno_core::resolve_url("oxy:function")
         .map_err(|e| RuntimeError::Internal(format!("bad module specifier: {e}")))?;
@@ -1602,7 +1795,7 @@ mod tests {
         let result = run(
             artifact.to_string(),
             ctx,
-            b"{}".to_vec(),
+            FnRequest::from_body(b"{}".to_vec()),
             host.clone(),
             cancel_rx,
             std::time::Duration::from_secs(10),
@@ -1610,6 +1803,223 @@ mod tests {
         )
         .await;
         (result, host)
+    }
+
+    /// `req` carries the request, not just its body. Asserts the plumbing end
+    /// to end — `sanitize_request_headers` decides *which* headers get here,
+    /// this proves the ones that do actually arrive at app code.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn req_exposes_method_and_headers_to_the_handler() {
+        let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        let host = Arc::new(MockHost::default());
+        let result = run(
+            r#"export default async function (req) {
+                 return { status: 200, body: JSON.stringify({
+                   method: req.method,
+                   sig: req.headers["x-hub-signature-256"],
+                   ct: req.headers["content-type"],
+                   body: req.body,
+                 }) };
+               }"#
+            .to_string(),
+            test_ctx(),
+            FnRequest {
+                method: "POST".to_string(),
+                headers: std::collections::BTreeMap::from([
+                    ("content-type".to_string(), "application/json".to_string()),
+                    ("x-hub-signature-256".to_string(), "sha256=abc".to_string()),
+                ]),
+                body: br#"{"hello":"world"}"#.to_vec(),
+            },
+            host.clone(),
+            cancel_rx,
+            std::time::Duration::from_secs(10),
+            Arc::new(std::sync::Mutex::new(Vec::new())),
+        )
+        .await
+        .expect("handler must complete");
+
+        let parsed: serde_json::Value = serde_json::from_str(&result.body).unwrap();
+        assert_eq!(parsed["method"], "POST");
+        assert_eq!(parsed["ct"], "application/json");
+        // The whole point: a webhook signature reaches the handler, so it can
+        // be verified rather than trusted.
+        assert_eq!(parsed["sig"], "sha256=abc");
+        // And the body is unchanged by any of this.
+        assert_eq!(parsed["body"], r#"{"hello":"world"}"#);
+    }
+
+    /// The published HMAC-SHA256 vector for key "key" over "The quick brown fox
+    /// jumps over the lazy dog". Using a known-outside vector rather than
+    /// round-tripping our own output means a wrong implementation cannot agree
+    /// with itself and pass.
+    const FOX_HMAC_HEX: &str = "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8";
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn crypto_hmac_matches_the_published_vector_and_verifies() {
+        let (result, _) = run_with_mock(&format!(
+            r#"export default async function (req, ctx) {{
+                 const key = "key";
+                 const data = "The quick brown fox jumps over the lazy dog";
+                 return {{ status: 200, body: JSON.stringify({{
+                   hex: ctx.crypto.hmac({{ key, data }}),
+                   b64: ctx.crypto.hmac({{ key, data, encoding: "base64" }}),
+                   good: ctx.crypto.verifyHmac({{ key, data, signature: "{FOX_HMAC_HEX}" }}),
+                   tampered: ctx.crypto.verifyHmac({{ key, data, signature: "{tampered}" }}),
+                   wrongKey: ctx.crypto.verifyHmac({{ key: "kex", data, signature: "{FOX_HMAC_HEX}" }}),
+                 }}) }};
+               }}"#,
+            FOX_HMAC_HEX = FOX_HMAC_HEX,
+            // Same length, one nibble changed — so a length check cannot be
+            // what rejects it.
+            tampered = format!("e{}", &FOX_HMAC_HEX[1..]),
+        ))
+        .await;
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result.expect("handler must complete").body).unwrap();
+        assert_eq!(parsed["hex"], FOX_HMAC_HEX);
+        // base64 of the SAME published digest, derived from the hex vector
+        // independently — not copied from what this code emitted.
+        assert_eq!(
+            parsed["b64"],
+            "97yD9DBThCSxMpjmqm+xQ+9NWaFJRhdZl0edvC0aPNg="
+        );
+        assert_eq!(parsed["good"], true);
+        assert_eq!(parsed["tampered"], false);
+        assert_eq!(parsed["wrongKey"], false);
+    }
+
+    /// The security-relevant split: a malformed signature is attacker-controlled
+    /// and must reject cleanly, while a bad algorithm is an author bug and must
+    /// throw. Getting this backwards turns a forged request into a 500.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn crypto_rejects_junk_signatures_but_throws_on_author_error() {
+        let (result, _) = run_with_mock(
+            r#"export default async function (req, ctx) {
+                 const base = { key: "k", data: "d" };
+                 let threw = false;
+                 try { ctx.crypto.verifyHmac({ ...base, algorithm: "md5", signature: "aa" }); }
+                 catch { threw = true; }
+                 return { status: 200, body: JSON.stringify({
+                   notHex: ctx.crypto.verifyHmac({ ...base, signature: "zzzz" }),
+                   empty: ctx.crypto.verifyHmac({ ...base, signature: "" }),
+                   badAlgorithmThrew: threw,
+                   eqSame: ctx.crypto.timingSafeEqual("s3cret", "s3cret"),
+                   eqDiff: ctx.crypto.timingSafeEqual("s3cret", "s3cres"),
+                   eqLen: ctx.crypto.timingSafeEqual("s3cret", "s3cre"),
+                 }) };
+               }"#,
+        )
+        .await;
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result.expect("handler must complete").body).unwrap();
+        assert_eq!(
+            parsed["notHex"], false,
+            "undecodable signature must not throw"
+        );
+        assert_eq!(parsed["empty"], false);
+        assert_eq!(parsed["badAlgorithmThrew"], true);
+        assert_eq!(parsed["eqSame"], true);
+        assert_eq!(parsed["eqDiff"], false);
+        assert_eq!(parsed["eqLen"], false);
+    }
+
+    /// Regression: an unset secret must not authorize. The documented pattern is
+    /// `timingSafeEqual(req.headers[...], ctx.env.SECRET)`; if the env var was
+    /// never set and the attacker simply omits the header, both sides coerced to
+    /// "" and an empty-vs-empty compare returned TRUE. Reported in review.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_unset_secret_never_authorizes() {
+        let (result, _) = run_with_mock(
+            r#"export default async function (req, ctx) {
+                 const out = { threw: [] };
+                 const t = (name, fn) => { try { out[name] = fn(); } catch { out.threw.push(name); } };
+
+                 // The documented shared-secret pattern, with NOTHING configured
+                 // and NOTHING sent. Must not come back true.
+                 t("unsetVsMissing", () =>
+                   ctx.crypto.timingSafeEqual(req.headers["x-shared-secret"], ctx.env.NOPE));
+                 t("bothEmpty", () => ctx.crypto.timingSafeEqual("", ""));
+                 t("emptyVsReal", () => ctx.crypto.timingSafeEqual("", "s3cret"));
+
+                 // A missing key must not silently become the literal "undefined",
+                 // which is a publicly known key anyone can sign with.
+                 t("verifyNoKey", () =>
+                   ctx.crypto.verifyHmac({ key: ctx.env.NOPE, data: "d", signature: "aa" }));
+                 t("verifyEmptyKey", () =>
+                   ctx.crypto.verifyHmac({ key: "", data: "d", signature: "aa" }));
+                 t("hmacNoKey", () => ctx.crypto.hmac({ key: ctx.env.NOPE, data: "d" }));
+
+                 return { status: 200, body: JSON.stringify(out) };
+               }"#,
+        )
+        .await;
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result.expect("handler must complete").body).unwrap();
+
+        assert_eq!(
+            parsed["unsetVsMissing"], false,
+            "an unset secret + an absent header must NOT authorize"
+        );
+        assert_eq!(parsed["bothEmpty"], false);
+        assert_eq!(parsed["emptyVsReal"], false);
+
+        // A missing/empty key is an author error, so it throws rather than
+        // signing with a guessable key.
+        let threw: Vec<String> = serde_json::from_value(parsed["threw"].clone()).unwrap();
+        for case in ["verifyNoKey", "verifyEmptyKey", "hmacNoKey"] {
+            assert!(
+                threw.contains(&case.to_string()),
+                "{case} must throw: {parsed}"
+            );
+        }
+    }
+
+    /// The whole point of this and the `req.headers` work together: a GitHub
+    /// webhook can be verified inside a function, which was impossible before.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_github_style_webhook_can_be_verified_end_to_end() {
+        let secret = "It's a Secret to Everybody";
+        let body = "Hello, World!";
+        let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        let host = Arc::new(MockHost::default());
+        let result = run(
+            r#"export default async function (req, ctx) {
+                 const header = req.headers["x-hub-signature-256"] || "";
+                 const sig = header.replace(/^sha256=/, "");
+                 return { status: 200, body: JSON.stringify({
+                   ok: ctx.crypto.verifyHmac({
+                     key: ctx.env.WEBHOOK_SECRET, data: req.body, signature: sig,
+                   }),
+                 }) };
+               }"#
+            .to_string(),
+            {
+                let mut c = test_ctx();
+                c.env
+                    .insert("WEBHOOK_SECRET".to_string(), secret.to_string());
+                c
+            },
+            FnRequest {
+                method: "POST".to_string(),
+                headers: std::collections::BTreeMap::from([(
+                    "x-hub-signature-256".to_string(),
+                    format!(
+                        "sha256={}",
+                        hex::encode(super::hmac_digest("sha256", secret, body).unwrap())
+                    ),
+                )]),
+                body: body.as_bytes().to_vec(),
+            },
+            host.clone(),
+            cancel_rx,
+            std::time::Duration::from_secs(10),
+            Arc::new(std::sync::Mutex::new(Vec::new())),
+        )
+        .await
+        .expect("handler must complete");
+        let parsed: serde_json::Value = serde_json::from_str(&result.body).unwrap();
+        assert_eq!(parsed["ok"], true, "a valid GitHub signature must verify");
     }
 
     /// The happy path of the `ctx.tx` bracket: begin → the author's statements
@@ -1760,7 +2170,7 @@ mod tests {
         let result = run(
             artifact.to_string(),
             test_ctx(),
-            b"{}".to_vec(),
+            FnRequest::from_body(b"{}".to_vec()),
             Arc::new(MockHost::default()),
             cancel_rx,
             std::time::Duration::from_secs(10),
@@ -1793,7 +2203,7 @@ mod tests {
         let resp = run(
             artifact.to_string(),
             test_ctx(),
-            b"{}".to_vec(),
+            FnRequest::from_body(b"{}".to_vec()),
             host.clone(),
             cancel_rx,
             std::time::Duration::from_secs(10),
@@ -1899,7 +2309,7 @@ mod tests {
         let resp = run(
             artifact.to_string(),
             test_ctx(),
-            b"{}".to_vec(),
+            FnRequest::from_body(b"{}".to_vec()),
             host.clone(),
             cancel_rx,
             std::time::Duration::from_secs(10),
@@ -1957,7 +2367,7 @@ mod tests {
         run(
             artifact.to_string(),
             test_ctx(),
-            b"{}".to_vec(),
+            FnRequest::from_body(b"{}".to_vec()),
             host.clone(),
             cancel_rx,
             std::time::Duration::from_secs(10),

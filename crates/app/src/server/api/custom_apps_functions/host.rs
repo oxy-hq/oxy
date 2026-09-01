@@ -376,8 +376,8 @@ impl FunctionHost for ProjectFunctionHost {
                 }
             }
         }
-        if let Some(body) = init.get("body").and_then(|b| b.as_str()) {
-            req = req.body(body.to_string());
+        if let Some(body) = fetch_body_bytes(&init)? {
+            req = req.body(body);
         }
 
         let resp = req.send().await.map_err(|e| format!("fetch failed: {e}"))?;
@@ -1078,6 +1078,36 @@ fn encode_base64(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
+/// Resolve a `ctx.fetch` request body to real bytes.
+///
+/// A request body reaches us as a JS string, so raw binary cannot ride in it:
+/// every byte >= 0x80 is re-encoded as a multi-byte UTF-8 sequence and the far
+/// end receives a corrupt file. `bodyEncoding: "base64"` decodes to real bytes
+/// first, which is what makes uploading a file to an external system possible
+/// at all — the mirror of the `encoding: "base64"` that already exists on the
+/// response side, and the same contract as `ctx.storage.put`.
+///
+/// Deliberately a SEPARATE field from `encoding`: that one names the encoding
+/// of the RESPONSE. One knob cannot mean both, because posting a binary body
+/// and reading back JSON needs them set differently.
+///
+/// Split out of `fetch` so the decision is unit-testable without a live HTTP
+/// round trip.
+fn fetch_body_bytes(init: &serde_json::Value) -> Result<Option<Vec<u8>>, String> {
+    let Some(body) = init.get("body").and_then(|b| b.as_str()) else {
+        return Ok(None);
+    };
+    match encoding_or(init.get("bodyEncoding").and_then(|e| e.as_str()), "utf8") {
+        "utf8" => Ok(Some(body.as_bytes().to_vec())),
+        "base64" => decode_base64(body)
+            .map(Some)
+            .map_err(|e| format!("ctx.fetch: `body` is not valid base64: {e}")),
+        other => Err(format!(
+            "ctx.fetch: unknown bodyEncoding '{other}' (expected 'utf8' or 'base64')"
+        )),
+    }
+}
+
 /// Hard ceiling for a host DB op. The runtime's per-function timeout (≤300s) is
 /// the primary bound, but on the timeout-grace path the isolate thread is
 /// *detached* on the premise that each host op is individually bounded — only
@@ -1449,6 +1479,52 @@ impl reqwest::dns::Resolve for PublicOnlyDnsResolver {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // ── ctx.fetch request bodies ──────────────────────────────────────────
+
+    #[test]
+    fn fetch_body_absent_stays_absent_and_defaults_to_utf8() {
+        assert_eq!(fetch_body_bytes(&json!({})).unwrap(), None);
+        assert_eq!(
+            fetch_body_bytes(&json!({ "body": "hello" })).unwrap(),
+            Some(b"hello".to_vec())
+        );
+        // An explicit empty/whitespace bodyEncoding means "unspecified", the
+        // same as every other encoding field (see `encoding_or`).
+        assert_eq!(
+            fetch_body_bytes(&json!({ "body": "hello", "bodyEncoding": "  " })).unwrap(),
+            Some(b"hello".to_vec())
+        );
+    }
+
+    #[test]
+    fn fetch_body_base64_survives_bytes_that_utf8_would_corrupt() {
+        // 0xFF is not valid UTF-8. Carried as a JS string it becomes U+FFFD and
+        // the far end receives a corrupt file — the exact failure this option
+        // exists to prevent. Note the assertion is that the bytes round-trip
+        // EXACTLY, not merely that decoding succeeds.
+        let raw = vec![0x50u8, 0x4B, 0x03, 0x04, 0xFF, 0x00, 0x80];
+        let b64 = encode_base64(&raw);
+        assert_eq!(
+            fetch_body_bytes(&json!({ "body": b64, "bodyEncoding": "base64" })).unwrap(),
+            Some(raw.clone())
+        );
+        // And the same string WITHOUT the flag is what corruption looks like:
+        // the utf8 path hands on the base64 text itself, not the bytes.
+        assert_ne!(
+            fetch_body_bytes(&json!({ "body": encode_base64(&raw) })).unwrap(),
+            Some(raw)
+        );
+    }
+
+    #[test]
+    fn fetch_body_rejects_bad_base64_and_unknown_encodings() {
+        let err = fetch_body_bytes(&json!({ "body": "not!base64", "bodyEncoding": "base64" }))
+            .unwrap_err();
+        assert!(err.contains("not valid base64"), "{err}");
+        let err = fetch_body_bytes(&json!({ "body": "x", "bodyEncoding": "hex" })).unwrap_err();
+        assert!(err.contains("unknown bodyEncoding"), "{err}");
+    }
 
     // ── build_insert_sql / quote_ident / json_value_to_sql_literal ─────────
 
