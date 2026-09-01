@@ -502,43 +502,6 @@ impl SemanticLayerParser {
 
         Ok(())
     }
-
-    /// Parses a single semantic layer file (for backwards compatibility)
-    pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<SemanticLayer, SemanticLayerError> {
-        let content = fs::read_to_string(path.as_ref()).map_err(|e| {
-            SemanticLayerError::IOError(format!(
-                "Failed to read file {}: {}",
-                path.as_ref().display(),
-                e
-            ))
-        })?;
-
-        let semantic_layer: SemanticLayer = serde_yaml::from_str(&content).map_err(|e| {
-            let location_info = if let Some(location) = e.location() {
-                format!(" at line {}, column {}", location.line(), location.column())
-            } else {
-                String::new()
-            };
-            SemanticLayerError::ParsingError(format!(
-                "Failed to parse YAML{}: {}",
-                location_info, e
-            ))
-        })?;
-
-        Ok(semantic_layer)
-    }
-
-    pub fn export_to_yaml(semantic_layer: &SemanticLayer) -> Result<String, SemanticLayerError> {
-        serde_yaml::to_string(semantic_layer).map_err(|e| {
-            SemanticLayerError::ParsingError(format!("Failed to serialize to YAML: {}", e))
-        })
-    }
-
-    pub fn export_to_json(semantic_layer: &SemanticLayer) -> Result<String, SemanticLayerError> {
-        serde_json::to_string_pretty(semantic_layer).map_err(|e| {
-            SemanticLayerError::ParsingError(format!("Failed to serialize to JSON: {}", e))
-        })
-    }
 }
 
 /// Reject view/topic files that still reference the removed globals/inheritance features.
@@ -891,95 +854,6 @@ dimensions:
             assert!(matches!(
                 result.unwrap_err(),
                 SemanticLayerError::ParsingError(_)
-            ));
-        }
-    }
-
-    mod export_tests {
-        use super::*;
-
-        fn create_test_semantic_layer() -> SemanticLayer {
-            SemanticLayer {
-                views: vec![View {
-                    name: "test_view".to_string(),
-                    description: Some("Test description".to_string()),
-                    label: None,
-                    datasource: None,
-                    table: Some("test_table".to_string()),
-                    sql: None,
-                    entities: vec![],
-                    dimensions: vec![Dimension {
-                        name: "id".to_string(),
-                        description: None,
-                        expr: "id".to_string(),
-                        original_expr: None,
-                        dimension_type: DimensionType::Number,
-                        samples: None,
-                        synonyms: None,
-                    }],
-                    measures: None,
-                }],
-                topics: None,
-                metadata: None,
-            }
-        }
-
-        #[test]
-        fn test_export_to_yaml_succeeds() {
-            let semantic_layer = create_test_semantic_layer();
-            let result = SemanticLayerParser::export_to_yaml(&semantic_layer);
-            assert!(result.is_ok());
-            let yaml = result.unwrap();
-            assert!(yaml.contains("name: test_view"));
-            assert!(yaml.contains("table: test_table"));
-        }
-
-        #[test]
-        fn test_export_to_json_succeeds() {
-            let semantic_layer = create_test_semantic_layer();
-            let result = SemanticLayerParser::export_to_json(&semantic_layer);
-            assert!(result.is_ok());
-            let json = result.unwrap();
-            assert!(json.contains("\"name\": \"test_view\""));
-            assert!(json.contains("\"table\": \"test_table\""));
-        }
-    }
-
-    mod parse_file_tests {
-        use super::*;
-
-        #[test]
-        fn test_parse_file_valid_yaml() {
-            let temp_dir = TempDir::new().unwrap();
-            let file_path = temp_dir.path().join("semantic.yaml");
-
-            let content = r#"
-views:
-  - name: orders
-    description: Orders view
-    table: orders_table
-    entities: []
-    dimensions:
-      - name: order_id
-        expr: order_id
-        type: number
-"#;
-            std::fs::write(&file_path, content).unwrap();
-
-            let result = SemanticLayerParser::parse_file(&file_path);
-            assert!(result.is_ok());
-            let semantic_layer = result.unwrap();
-            assert_eq!(semantic_layer.views.len(), 1);
-            assert_eq!(semantic_layer.views[0].name, "orders");
-        }
-
-        #[test]
-        fn test_parse_file_not_found() {
-            let result = SemanticLayerParser::parse_file("/nonexistent/file.yaml");
-            assert!(result.is_err());
-            assert!(matches!(
-                result.unwrap_err(),
-                SemanticLayerError::IOError(_)
             ));
         }
     }
