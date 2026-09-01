@@ -46,10 +46,6 @@ pub enum RelationshipType {
 /// 5. Creates appropriate join conditions using entity expressions
 #[derive(Debug, Clone)]
 pub struct EntityGraph {
-    /// Map of entity name to views that contain this entity as primary
-    pub(crate) primary_entities: HashMap<String, String>,
-    /// Map of entity name to views that contain this entity as foreign
-    pub(crate) foreign_entities: HashMap<String, Vec<String>>,
     /// Generated join relationships between views
     pub(crate) joins: Vec<JoinRelationship>,
 }
@@ -163,31 +159,14 @@ impl EntityGraph {
             }
         }
 
-        Ok(EntityGraph {
-            primary_entities,
-            foreign_entities,
-            joins,
-        })
-    }
-
-    /// Get all joins for the entity graph
-    pub fn get_joins(&self) -> &[JoinRelationship] {
-        &self.joins
-    }
-
-    pub fn get_primary_entities(&self) -> &HashMap<String, String> {
-        &self.primary_entities
-    }
-
-    pub fn get_foreign_entities(&self) -> &HashMap<String, Vec<String>> {
-        &self.foreign_entities
+        Ok(EntityGraph { joins })
     }
 
     /// Find join path between two views using graph traversal
     ///
     /// Uses breadth-first search to find the shortest path between two views.
     /// Returns a vector of join relationships that form the path from source to target.
-    pub fn find_join_path(&self, from_view: &str, to_view: &str) -> Option<Vec<&JoinRelationship>> {
+    fn find_join_path(&self, from_view: &str, to_view: &str) -> Option<Vec<&JoinRelationship>> {
         use std::collections::{HashMap, HashSet, VecDeque};
 
         if from_view == to_view {
@@ -271,39 +250,6 @@ impl EntityGraph {
         }
 
         unreachable_views
-    }
-
-    pub fn get_joins_for_view(&self, view_name: &str) -> Vec<&JoinRelationship> {
-        self.joins
-            .iter()
-            .filter(|join| join.from_view == view_name || join.to_view == view_name)
-            .collect()
-    }
-
-    /// Get dependency graph for incremental builds
-    ///
-    /// Returns a BTreeMap where:
-    /// - Key: view name
-    /// - Value: vector of view names that this view depends on
-    ///
-    /// A view depends on another view if it has a foreign entity that references
-    /// the other view's primary entity.
-    ///
-    /// Note: Uses BTreeMap for stable iteration order (sorted keys).
-    pub fn get_dependency_graph(&self) -> std::collections::BTreeMap<String, Vec<String>> {
-        let mut graph: std::collections::BTreeMap<String, Vec<String>> =
-            std::collections::BTreeMap::new();
-
-        // For each join, the from_view depends on the to_view
-        // (foreign view depends on primary view)
-        for join in &self.joins {
-            graph
-                .entry(join.from_view.clone())
-                .or_default()
-                .push(join.to_view.clone());
-        }
-
-        graph
     }
 }
 

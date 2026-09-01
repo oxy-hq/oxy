@@ -7,5 +7,4 @@
 //!
 //! See `internal-docs/testing.md` for the cost model.
 
-mod incremental_build_test;
 mod integration_variables;

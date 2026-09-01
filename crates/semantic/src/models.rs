@@ -8,8 +8,6 @@ use std::{
     sync::OnceLock,
 };
 
-use crate::errors::SemanticLayerError;
-
 /// Represents the type of an entity in the semantic layer
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -279,11 +277,6 @@ impl Dimension {
 
         regex.is_match(&self.expr)
     }
-
-    /// Get the original expression if available, otherwise return the current expression
-    pub fn get_original_expr(&self) -> &str {
-        self.original_expr.as_ref().unwrap_or(&self.expr)
-    }
 }
 
 impl Measure {
@@ -308,11 +301,6 @@ impl Measure {
 
         expr_has_vars || filters_have_vars
     }
-
-    /// Get the original expression if available, otherwise return the current expression
-    pub fn get_original_expr(&self) -> Option<&str> {
-        self.original_expr.as_deref().or(self.expr.as_deref())
-    }
 }
 
 impl MeasureFilter {
@@ -324,11 +312,6 @@ impl MeasureFilter {
         });
 
         regex.is_match(&self.expr)
-    }
-
-    /// Get the original expression if available, otherwise return the current expression
-    pub fn get_original_expr(&self) -> &str {
-        self.original_expr.as_ref().unwrap_or(&self.expr)
     }
 }
 
@@ -354,15 +337,6 @@ pub struct View {
     pub dimensions: Vec<Dimension>,
     /// List of measures (aggregations) available in this view
     pub measures: Option<Vec<Measure>>,
-}
-
-/// Represents access control levels for topics
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum AccessLevel {
-    Public,
-    Internal,
-    Restricted,
 }
 
 /// Configuration for topic's retrieval by agents
@@ -556,82 +530,6 @@ impl SemanticLayer {
             metadata: None,
         }
     }
-
-    /// Converts the semantic layer to a tool description format
-    pub fn to_tool_description(&self) -> String {
-        let yaml = serde_yaml::to_string(self)
-            .map_err(|e| SemanticLayerError::ConfigurationError(e.to_string()))
-            .unwrap_or_else(|_| "Failed to serialize semantic layer".to_string());
-
-        format!(
-            "Semantic Layer:\n{}\n\nThis semantic layer defines the structure and relationships of data
-            within the system. It includes views, topics, and metadata that describe how data can be queried and understood.",
-            yaml
-        )
-    }
-}
-
-/// Represents a reference to a semantic table
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct SemanticTableRef {
-    /// Database name
-    pub database: String,
-    /// Dataset/schema name
-    pub dataset: String,
-    /// Table name
-    pub table: String,
-}
-
-impl SemanticTableRef {
-    /// Creates a new semantic table reference
-    pub fn new(database: String, dataset: String, table: String) -> Self {
-        Self {
-            database,
-            dataset,
-            table,
-        }
-    }
-
-    /// Returns the full table reference as a string
-    pub fn table_ref(&self) -> String {
-        format!("{}.{}.{}", self.database, self.dataset, self.table)
-    }
-
-    /// Returns the target reference including the specified dimension
-    pub fn to_target(&self, dimension: &str) -> String {
-        format!(
-            "{}.{}.{}.{}",
-            self.database, self.dataset, self.table, dimension
-        )
-    }
-}
-
-impl std::str::FromStr for SemanticTableRef {
-    type Err = crate::SemanticLayerError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split('.').collect();
-        if parts.len() < 3 {
-            return Err(crate::SemanticLayerError::ParsingError(format!(
-                "Invalid semantic table reference format: '{}'. Expected format: 'database.dataset.table'",
-                s
-            )));
-        }
-        Ok(SemanticTableRef {
-            database: parts[0].to_string(),
-            dataset: parts[1].to_string(),
-            table: parts[2].to_string(),
-        })
-    }
-}
-
-/// Database configuration details used during semantic layer builds
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DatabaseDetails {
-    pub name: String,
-    pub db_type: String,
-    /// For Domo databases, this contains the dataset_id to use as the table name
-    pub dataset_id: Option<String>,
 }
 
 #[cfg(test)]

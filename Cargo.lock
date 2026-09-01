@@ -9761,8 +9761,6 @@ name = "oxy-semantic"
 version = "0.5.133"
 dependencies = [
  "airlayer",
- "hex",
- "indexmap 2.14.0",
  "minijinja",
  "oxy-airlayer-compat",
  "regex",
@@ -9770,7 +9768,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.20",
  "tracing",

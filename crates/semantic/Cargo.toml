@@ -16,12 +16,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 regex = { workspace = true }
-indexmap = { workspace = true }
 serde_yaml = { workspace = true }
 minijinja = { workspace = true }
 tracing = { workspace = true }
-sha2 = { workspace = true }
-hex = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

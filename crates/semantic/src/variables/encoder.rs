@@ -3,9 +3,6 @@ use std::collections::HashMap;
 
 use super::errors::VariableError;
 
-/// Maps original variable expressions to their encoded equivalents
-pub type VariableMapping = HashMap<String, String>;
-
 /// Handles encoding and decoding of variable expressions
 ///
 /// Transforms expressions like `{{variables.user_table}}` into safe identifiers
@@ -194,16 +191,6 @@ impl VariableEncoder {
     /// * True if expression contains {{variables.*}} references
     pub fn has_variables(&self, expr: &str) -> bool {
         self.variable_regex.is_match(expr)
-    }
-
-    /// Get the current variable mapping (for debugging/inspection)
-    pub fn get_mapping(&self) -> &HashMap<String, String> {
-        &self.variable_mapping
-    }
-
-    /// Clear all stored variable mappings
-    pub fn clear_mapping(&mut self) {
-        self.variable_mapping.clear();
     }
 
     /// Encode a variable path to a safe hex identifier

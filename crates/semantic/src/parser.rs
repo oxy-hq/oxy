@@ -45,8 +45,6 @@ pub struct ParseResult {
     pub semantic_layer: SemanticLayer,
     /// Validation result if validation was enabled
     pub validation: Option<ValidationResult>,
-    /// Warnings encountered during parsing
-    pub warnings: Vec<String>,
     pub parsed_files: Vec<PathBuf>,
     /// All variables found across the semantic layer
     pub variables_found: HashSet<String>,
@@ -220,7 +218,6 @@ impl SemanticLayerParser {
         Ok(ParseResult {
             semantic_layer,
             validation,
-            warnings: Vec::new(), // No warnings anymore - errors fail immediately
             parsed_files,
             variables_found,
         })
@@ -541,61 +538,6 @@ impl SemanticLayerParser {
         serde_json::to_string_pretty(semantic_layer).map_err(|e| {
             SemanticLayerError::ParsingError(format!("Failed to serialize to JSON: {}", e))
         })
-    }
-
-    /// Writes a semantic layer to files in the configured directory structure
-    pub fn write_to_files(
-        &self,
-        semantic_layer: &SemanticLayer,
-    ) -> Result<Vec<PathBuf>, SemanticLayerError> {
-        let mut written_files = Vec::new();
-
-        // Ensure base directory exists
-        fs::create_dir_all(&self.config.base_path).map_err(|e| {
-            SemanticLayerError::IOError(format!("Failed to create base directory: {}", e))
-        })?;
-
-        // Write views
-        let views_dir = self.config.base_path.join("views");
-        fs::create_dir_all(&views_dir).map_err(|e| {
-            SemanticLayerError::IOError(format!("Failed to create views directory: {}", e))
-        })?;
-
-        for view in &semantic_layer.views {
-            let file_path = views_dir.join(format!("{}.view.yaml", view.name));
-            let content = serde_yaml::to_string(view).map_err(|e| {
-                SemanticLayerError::ParsingError(format!("Failed to serialize view: {}", e))
-            })?;
-
-            fs::write(&file_path, content).map_err(|e| {
-                SemanticLayerError::IOError(format!("Failed to write view file: {}", e))
-            })?;
-
-            written_files.push(file_path);
-        }
-
-        // Write topics
-        if let Some(topics) = &semantic_layer.topics {
-            let topics_dir = self.config.base_path.join("topics");
-            fs::create_dir_all(&topics_dir).map_err(|e| {
-                SemanticLayerError::IOError(format!("Failed to create topics directory: {}", e))
-            })?;
-
-            for topic in topics {
-                let file_path = topics_dir.join(format!("{}.topic.yaml", topic.name));
-                let content = serde_yaml::to_string(topic).map_err(|e| {
-                    SemanticLayerError::ParsingError(format!("Failed to serialize topic: {}", e))
-                })?;
-
-                fs::write(&file_path, content).map_err(|e| {
-                    SemanticLayerError::IOError(format!("Failed to write topic file: {}", e))
-                })?;
-
-                written_files.push(file_path);
-            }
-        }
-
-        Ok(written_files)
     }
 }
 

@@ -110,7 +110,6 @@ impl OxyError {
                 SemanticLayerError::ValidationError(_) => "semantic_validation",
                 SemanticLayerError::ParsingError(_) => "semantic_parsing",
                 SemanticLayerError::IOError(_) => "semantic_io",
-                SemanticLayerError::UnknownError(_) => "semantic_unknown",
             },
         }
     }
