@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { useRole } from "@/hooks/useRole";
 import {
   fetchQuickBooksAuthorizeUrl,
   QB_CONNECT_MESSAGE,
@@ -44,6 +45,13 @@ function prefersRedirect(): boolean {
  * - If neither can start, shows an explicit error toast and rejects.
  */
 export function useQuickBooksConnect(projectId: string) {
+  // Deny only a role we KNOW is not admin. `workspace` is undefined until
+  // workspace details load, and refusing on undefined would break the connect
+  // button during that window — and anywhere the role never populates — rather
+  // than only for a Member. The backend guard is the actual authority; this
+  // exists so the popup does not flash open before the 403 arrives.
+  const { workspace: wsRole, is } = useRole();
+  const isWorkspaceAdmin = wsRole === undefined || is.workspaceAdmin;
   const [connecting, setConnecting] = useState(false);
 
   const connect = useCallback(
@@ -51,6 +59,16 @@ export function useQuickBooksConnect(projectId: string) {
       setConnecting(true);
       try {
         const useRedirect = prefersRedirect();
+
+        // The authorize route is WorkspaceAdmin-only (it writes workspace
+        // secrets under caller-named keys). Checked here, BEFORE window.open,
+        // because that call has to stay synchronous to keep the click's user
+        // activation — so failing later would leave a blank popup on screen
+        // flashing open and shut before the toast appears.
+        if (!isWorkspaceAdmin) {
+          toast.error("Only a workspace admin can connect QuickBooks");
+          return null;
+        }
 
         // Try popup first on desktop. window.open must run synchronously
         // (before any await) so the click's user-activation isn't lost.
@@ -88,7 +106,7 @@ export function useQuickBooksConnect(projectId: string) {
         setConnecting(false);
       }
     },
-    [projectId]
+    [projectId, isWorkspaceAdmin]
   );
 
   return { connect, connecting };

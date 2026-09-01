@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import useFile from "@/hooks/api/files/useFile";
 import { useQuickBooksConnect } from "@/hooks/api/quickbooks/useQuickBooksConnect";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useRole } from "@/hooks/useRole";
 import { encodeBase64 } from "@/libs/encoding";
 import { parseQuickBooksSource } from "@/pages/ide/pipelines/parsePipelineSource";
 
@@ -24,6 +25,7 @@ const QuickBooksReconnect: React.FC<{ pipelineRef: string }> = ({ pipelineRef })
   const pathb64 = useMemo(() => encodeBase64(pipelineRef), [pipelineRef]);
   const { data: yaml } = useFile(pathb64);
   const { connect, connecting } = useQuickBooksConnect(project.id);
+  const { workspace: wsRole, is } = useRole();
 
   const qb = useMemo(() => (yaml ? parseQuickBooksSource(yaml) : null), [yaml]);
   if (!qb) return null;
@@ -46,6 +48,14 @@ const QuickBooksReconnect: React.FC<{ pipelineRef: string }> = ({ pipelineRef })
       // hook already toasted
     }
   };
+
+  // Hidden only for a role we KNOW is not admin. `useRole().workspace` is
+  // `undefined` until workspace details load, and `CanWorkspaceAdmin` treats
+  // undefined as deny — which would blank this button during the load window
+  // and anywhere the role never populates. The point of the nit was that a
+  // Member should not see a button that 403s; it was not to make the button
+  // race a fetch.
+  if (wsRole !== undefined && !is.workspaceAdmin) return null;
 
   return (
     <Button

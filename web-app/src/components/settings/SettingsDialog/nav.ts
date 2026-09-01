@@ -127,6 +127,16 @@ export const CLOUD_NAV: NavGroup[] = [
       },
       { value: "workspace.api_keys", label: "API Keys", icon: Key, requires: "workspaceAdmin" },
       { value: "workspace.secrets", label: "Secrets", icon: KeyRound, requires: "workspaceAdmin" },
+      {
+        // "Connections", not "Integrations" — the org-level section above is
+        // already called Integration (GitHub + Slack) and two near-identical
+        // labels in one dialog is a coin flip for the user. This one is
+        // third-party API credentials a workspace's apps read via ctx.env.
+        value: "workspace.connections",
+        label: "Connections",
+        icon: Plug,
+        requires: "workspaceAdmin"
+      },
       { value: "workspace.apps", label: "Apps", icon: AppWindow, requires: "workspaceAdmin" },
       {
         // Org-level on purpose: this is the tenant's kill switch for Oxy staff
@@ -156,6 +166,7 @@ export const LOCAL_NAV: NavGroup[] = [
       { value: "workspace.oltp", label: "OLTP Database", icon: Database },
       { value: "workspace.api_keys", label: "API Keys", icon: Key },
       { value: "workspace.secrets", label: "Secrets", icon: KeyRound },
+      { value: "workspace.connections", label: "Connections", icon: Plug },
       { value: "workspace.apps", label: "Apps", icon: AppWindow },
       { value: "workspace.activity_logs", label: "Activity Logs", icon: Activity }
     ]

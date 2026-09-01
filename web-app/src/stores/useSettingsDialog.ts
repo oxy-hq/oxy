@@ -14,6 +14,7 @@ export type SettingsSection =
   | "workspace.oltp"
   | "workspace.api_keys"
   | "workspace.secrets"
+  | "workspace.connections"
   | "workspace.apps"
   | "workspace.activity_logs"
   | "workspace.oxy_access"

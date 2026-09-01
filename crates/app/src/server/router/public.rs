@@ -79,6 +79,15 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
             "/quickbooks/oauth/callback",
             get(crate::integrations::quickbooks::oauth::callback::callback),
         )
+        // Uniform callback for every other provider. Public for the same reason:
+        // the vendor redirects a bare browser here with no Oxy session, and the
+        // single-use nonce — now also matched on provider — is the guard.
+        // QuickBooks keeps its own path above because that URL is registered in
+        // every customer's Intuit app and can never be renamed.
+        .route_fleet(
+            "/oauth/{provider}/callback",
+            get(crate::integrations::quickbooks::oauth::callback::callback_by_slug),
+        )
         .route_fleet(
             "/slack/events",
             post(crate::integrations::slack::webhooks::events::handle_events_route),

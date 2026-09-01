@@ -45,6 +45,7 @@ import { ManageWorkspacesDialog } from "./components/workspaces/components/Manag
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useWorkspace } from "./hooks/api/workspaces/useWorkspaces";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
+import useOauthConnectReturn from "./hooks/useOauthConnectReturn";
 import useVersionCheck from "./hooks/useVersionCheck";
 import { LOCAL_WORKSPACE_ID } from "./libs/utils/constants";
 import { setLastWorkspaceId } from "./libs/utils/lastWorkspace";
@@ -193,6 +194,9 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
     workspaceQuery;
   const { setWorkspace, workspace } = useCurrentWorkspace();
 
+  // Settings → Connections leaves the SPA for the provider's consent screen and
+  // returns with ?oxy_connected=ok; this reopens the dialog and confirms it.
+  useOauthConnectReturn();
   const { setIsOpen: setBuilderDialogOpen } = useBuilderDialog();
   const { setIsOpen: setFileQuickOpenOpen } = useFileQuickOpen();
   useHotkeys("meta+i", () => setBuilderDialogOpen(!useBuilderDialog.getState().isOpen), {

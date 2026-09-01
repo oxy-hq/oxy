@@ -99,6 +99,14 @@ struct FunctionManifestEntry {
     timeout_seconds: Option<u32>,
     #[serde(default, rename = "rateLimitPerMinute")]
     rate_limit_per_minute: Option<u64>,
+    /// Raise this function's `ctx.fetch` response ceiling above the 10 MiB
+    /// default. Opt-in per function rather than a global env var, because the
+    /// cap protects a SHARED process: one serve instance hosts many apps, and a
+    /// response is read fully into memory and then into a JS string (×1.33 when
+    /// base64). One app needing a large document should not raise the ceiling
+    /// for every app beside it.
+    #[serde(default)]
+    fetch: Option<FetchSpec>,
     /// Opt-in result caching. Absent → never cached (the safe default for a
     /// side-effectful function). Present with a positive `ttlSeconds` → a route
     /// invocation's result is cached per (build, function, user, body) for that
@@ -170,6 +178,12 @@ const MAX_JOB_RETRIES: u32 = 10;
 struct CacheSpec {
     #[serde(rename = "ttlSeconds")]
     ttl_seconds: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Default, Clone)]
+struct FetchSpec {
+    #[serde(default, rename = "maxResponseBytes")]
+    max_response_bytes: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -355,6 +369,31 @@ pub(crate) async fn trigger_function_job(
 /// capped at 300 regardless of mode.
 const ROUTE_DEFAULT_TIMEOUT_SECS: u64 = 10;
 const TIMEOUT_CEILING_SECS: u64 = 300;
+
+/// Platform ceiling for a per-function `ctx.fetch` response cap. Ops-tunable
+/// so a tenant with unusually large source documents can be accommodated
+/// without a release — mirroring `OXY_CUSTOMER_APPS_STORAGE_MAX_UPLOAD_BYTES`,
+/// which the storage path has had all along. The two limits are the same class
+/// and it was an accident that only one of them was configurable.
+fn fetch_ceiling_bytes() -> u64 {
+    const DEFAULT_CEILING: u64 = 100 * 1024 * 1024;
+    std::env::var("OXY_CUSTOMER_APPS_FETCH_MAX_BYTES")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(DEFAULT_CEILING)
+}
+
+/// `None` → the host's built-in default (10 MiB). A declared value is clamped to
+/// [`fetch_ceiling_bytes`], so a manifest cannot talk its way past the platform.
+fn resolve_fetch_max_bytes(entry: &FunctionManifestEntry) -> Option<u64> {
+    entry
+        .fetch
+        .as_ref()
+        .and_then(|f| f.max_response_bytes)
+        .filter(|n| *n > 0)
+        .map(|n| n.min(fetch_ceiling_bytes()))
+}
 
 fn resolve_timeout(entry: &FunctionManifestEntry) -> Duration {
     let secs = entry
@@ -911,6 +950,7 @@ pub async fn handle_function_request(
             // A slug that can't back a schema is a distinct fail-closed reason so
             // the host diagnoses it as such, not as "capability missing".
             oltp: host::OltpCapability::resolve(manifest.oltp_enabled(), &app.slug),
+            fetch_max_bytes: resolve_fetch_max_bytes(&manifest),
             storage_retention: super::custom_apps_manifest::retention_policy_from_build_manifest(
                 build.manifest_json.as_ref(),
                 app.id,
@@ -1145,6 +1185,7 @@ pub(crate) async fn run_scheduled_function(
             // A slug that can't back a schema is a distinct fail-closed reason so
             // the host diagnoses it as such, not as "capability missing".
             oltp: host::OltpCapability::resolve(manifest.oltp_enabled(), &app.slug),
+            fetch_max_bytes: resolve_fetch_max_bytes(&manifest),
             storage_retention: super::custom_apps_manifest::retention_policy_from_build_manifest(
                 build.manifest_json.as_ref(),
                 app.id,
@@ -1627,6 +1668,62 @@ fn sanitize_request_headers(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod fetch_cap_tests {
+    use super::{FunctionManifestEntry, resolve_fetch_max_bytes};
+
+    fn entry(json: serde_json::Value) -> FunctionManifestEntry {
+        serde_json::from_value(json).unwrap()
+    }
+
+    #[test]
+    fn absent_means_the_host_default_not_zero() {
+        // The critical case: `None` must reach the host so it falls back to
+        // FETCH_MAX_BYTES. A `0` here would deny every fetch instead.
+        assert_eq!(resolve_fetch_max_bytes(&entry(serde_json::json!({}))), None);
+        assert_eq!(
+            resolve_fetch_max_bytes(&entry(serde_json::json!({ "fetch": {} }))),
+            None
+        );
+        // An explicit 0 is nonsense, not a deny-all — treat it as unspecified.
+        assert_eq!(
+            resolve_fetch_max_bytes(&entry(
+                serde_json::json!({ "fetch": { "maxResponseBytes": 0 } })
+            )),
+            None
+        );
+    }
+
+    #[test]
+    fn a_declared_value_is_honoured_and_clamped_to_the_platform_ceiling() {
+        // 32 MiB — comfortably above the 10 MiB default, below the ceiling.
+        assert_eq!(
+            resolve_fetch_max_bytes(&entry(
+                serde_json::json!({ "fetch": { "maxResponseBytes": 33_554_432u64 } })
+            )),
+            Some(33_554_432)
+        );
+        // A manifest cannot talk its way past the platform: 200 MiB clamps to
+        // the 100 MiB default ceiling.
+        assert_eq!(
+            resolve_fetch_max_bytes(&entry(
+                serde_json::json!({ "fetch": { "maxResponseBytes": 209_715_200u64 } })
+            )),
+            Some(100 * 1024 * 1024)
+        );
+    }
+
+    #[test]
+    fn an_unrelated_manifest_is_unaffected() {
+        // Every function shipped before this field existed must keep the
+        // built-in default rather than acquiring a cap.
+        let e = entry(serde_json::json!({
+            "route": true, "timeoutSeconds": 120, "destinations": ["clickhouse"]
+        }));
+        assert_eq!(resolve_fetch_max_bytes(&e), None);
+    }
 }
 
 #[cfg(test)]

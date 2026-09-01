@@ -13,6 +13,11 @@ pub struct Model {
     pub id: Uuid,
     #[sea_orm(unique)]
     pub nonce: String,
+    /// Which OAuth provider this state was minted for. The callback verifies it
+    /// against the provider its own route names, so a nonce cannot be redeemed
+    /// at a different vendor's callback. The table name is historical — it holds
+    /// rows for every provider now.
+    pub provider: String,
     pub project_id: Uuid,
     pub client_id: String,
     pub client_secret_var: String,

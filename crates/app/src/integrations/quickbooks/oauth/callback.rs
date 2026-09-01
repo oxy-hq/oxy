@@ -17,11 +17,11 @@ use serde_json::Value;
 use tracing::warn;
 use uuid::Uuid;
 
-const TOKEN_URL: &str = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
+use crate::integrations::oauth_provider::{self, Provider};
 
 /// Generic message returned to the (unauthenticated) browser; details are
 /// logged server-side rather than leaked into the response.
-const GENERIC_ERROR: &str = "QuickBooks connection failed. Please try again.";
+const GENERIC_ERROR: &str = "Connection failed. Please try again.";
 
 #[derive(Debug, Deserialize)]
 pub struct CallbackQuery {
@@ -32,11 +32,29 @@ pub struct CallbackQuery {
     pub error: Option<String>,
 }
 
+/// Legacy QuickBooks callback — `/api/quickbooks/oauth/callback`. The path is
+/// registered in every customer's Intuit app, so it is permanent.
 pub async fn callback(Query(q): Query<CallbackQuery>) -> Response {
+    callback_for(oauth_provider::QUICKBOOKS, q).await
+}
+
+/// Uniform callback — `/api/oauth/{provider}/callback`. Unknown slugs 404
+/// rather than defaulting, so a typo cannot land a consent on the wrong vendor.
+pub async fn callback_by_slug(
+    axum::extract::Path(slug): axum::extract::Path<String>,
+    Query(q): Query<CallbackQuery>,
+) -> Response {
+    match oauth_provider::by_slug(&slug) {
+        Some(p) => callback_for(p, q).await,
+        None => (StatusCode::NOT_FOUND, "unknown provider").into_response(),
+    }
+}
+
+async fn callback_for(provider: Provider, q: CallbackQuery) -> Response {
     if let Some(err) = q.error {
         return (
             StatusCode::BAD_REQUEST,
-            format!("QuickBooks authorization cancelled: {err}"),
+            format!("Authorization cancelled: {err}"),
         )
             .into_response();
     }
@@ -50,13 +68,13 @@ pub async fn callback(Query(q): Query<CallbackQuery>) -> Response {
     };
     let realm_id = q.realm_id.unwrap_or_default();
 
-    let state = match QuickbooksOauthStateService::consume(&nonce).await {
+    let state = match QuickbooksOauthStateService::consume(&nonce, provider.slug).await {
         Ok(s) => s,
         Err(e) => {
-            warn!("quickbooks oauth: state consume failed: {e}");
+            warn!("{} oauth: state consume failed: {e}", provider.slug);
             return (
                 StatusCode::BAD_REQUEST,
-                "QuickBooks authorization link is invalid or expired — start Connect again.",
+                "This authorization link is invalid or expired — start Connect again.",
             )
                 .into_response();
         }
@@ -68,7 +86,7 @@ pub async fn callback(Query(q): Query<CallbackQuery>) -> Response {
     )) {
         Ok(s) => s,
         Err(e) => {
-            warn!("quickbooks oauth: secret manager init failed: {e}");
+            warn!("{} oauth: secret manager init failed: {e}", provider.slug);
             return (StatusCode::INTERNAL_SERVER_ERROR, GENERIC_ERROR).into_response();
         }
     };
@@ -78,28 +96,35 @@ pub async fn callback(Query(q): Query<CallbackQuery>) -> Response {
         Ok(None) => {
             return (
                 StatusCode::BAD_REQUEST,
-                "QuickBooks client secret not found — re-enter it and try Connect again.",
+                "Client secret not found — re-enter it and try Connect again.",
             )
                 .into_response();
         }
         Err(e) => {
-            warn!("quickbooks oauth: resolve client secret failed: {e}");
+            warn!("{} oauth: resolve client secret failed: {e}", provider.slug);
             return (StatusCode::INTERNAL_SERVER_ERROR, GENERIC_ERROR).into_response();
         }
     };
 
-    let refresh_token =
-        match exchange_code(&state.client_id, &client_secret, &code, &state.redirect_uri).await {
-            Ok(t) => t,
-            Err(e) => {
-                warn!("quickbooks oauth: token exchange failed: {e}");
-                return (
-                    StatusCode::BAD_GATEWAY,
-                    "QuickBooks token exchange failed — check the client id/secret and try again.",
-                )
-                    .into_response();
-            }
-        };
+    let refresh_token = match exchange_code(
+        provider.token_url,
+        &state.client_id,
+        &client_secret,
+        &code,
+        &state.redirect_uri,
+    )
+    .await
+    {
+        Ok(t) => t,
+        Err(e) => {
+            warn!("{} oauth: token exchange failed: {e}", provider.slug);
+            return (
+                StatusCode::BAD_GATEWAY,
+                "Token exchange failed — check the client id/secret and try again.",
+            )
+                .into_response();
+        }
+    };
 
     if let Err(e) = secrets
         .upsert_secret(
@@ -109,11 +134,12 @@ pub async fn callback(Query(q): Query<CallbackQuery>) -> Response {
         )
         .await
     {
-        warn!("quickbooks oauth: store refresh token failed: {e}");
+        warn!("{} oauth: store refresh token failed: {e}", provider.slug);
         return (StatusCode::INTERNAL_SERVER_ERROR, GENERIC_ERROR).into_response();
     }
 
     Redirect::to(&success_redirect(
+        provider,
         &state.mode,
         &realm_id,
         state.return_path.as_deref(),
@@ -124,13 +150,14 @@ pub async fn callback(Query(q): Query<CallbackQuery>) -> Response {
 
 /// Exchange an authorization code for tokens; returns the refresh token.
 async fn exchange_code(
+    token_url: &str,
     client_id: &str,
     client_secret: &str,
     code: &str,
     redirect_uri: &str,
 ) -> Result<String, String> {
     let resp = reqwest::Client::new()
-        .post(TOKEN_URL)
+        .post(token_url)
         .basic_auth(client_id, Some(client_secret))
         .header(reqwest::header::ACCEPT, "application/json")
         .form(&[
@@ -167,6 +194,7 @@ async fn exchange_code(
 /// Falls back to a relative path when `return_path` isn't an absolute URL
 /// (single-origin deployments where relative resolves correctly anyway).
 fn success_redirect(
+    provider: Provider,
     mode: &str,
     realm_id: &str,
     return_path: Option<&str>,
@@ -180,16 +208,28 @@ fn success_redirect(
     if mode == "redirect" {
         let base = safe.unwrap_or("/");
         let sep = if base.contains('?') { "&" } else { "?" };
-        return format!(
-            "{base}{sep}qb_connected=ok&realm_id={}",
-            urlencoding::encode(realm_id)
-        );
+        return if provider.returns_realm_id {
+            format!(
+                "{base}{sep}{}=ok&realm_id={}",
+                provider.connected_flag,
+                urlencoding::encode(realm_id)
+            )
+        } else {
+            format!("{base}{sep}{}=ok", provider.connected_flag)
+        };
     }
     let origin = safe.and_then(parse_origin).unwrap_or_default();
-    format!(
-        "{origin}/quickbooks/connected?mode=popup&realm_id={}",
-        urlencoding::encode(realm_id)
-    )
+    // `popup_path` is `Some` here by construction: authorize refuses `popup`
+    // for a provider that declares `None`, so a popup-mode state row cannot
+    // exist for one. Fall back to the site root rather than panicking if that
+    // ever stops holding.
+    match provider.popup_path {
+        Some(path) => format!(
+            "{origin}{path}?mode=popup&realm_id={}",
+            urlencoding::encode(realm_id)
+        ),
+        None => format!("{origin}/"),
+    }
 }
 
 /// Whether `return_path` is an absolute http(s) URL whose origin is allowed:
@@ -226,9 +266,46 @@ mod tests {
     // Backend callback origin (what `redirect_uri` on the state row looks like).
     const CB: &str = "http://localhost:3000/api/quickbooks/oauth/callback";
 
+    /// The two branches added when this handler went multi-provider. The
+    /// descriptor-level test pins the DATA (`popup_path: None`,
+    /// `returns_realm_id: false`); these pin the behaviour that reads it, which
+    /// is where a regression would actually surface.
+    #[test]
+    fn a_provider_without_a_realm_gets_no_realm_id_in_its_return_url() {
+        let u = success_redirect(
+            oauth_provider::GOOGLE_DRIVE_FILE,
+            "redirect",
+            // Even handed one — the callback passes `unwrap_or_default()` and a
+            // vendor could send anything — it must not reach a provider that
+            // has no such concept.
+            "not-a-real-realm",
+            Some("http://localhost:5173/ide/x"),
+            CB,
+        );
+        assert_eq!(u, "http://localhost:5173/ide/x?oxy_connected=ok");
+        assert!(!u.contains("realm_id"), "{u}");
+    }
+
+    /// Unreachable by construction — `authorize` refuses `mode: "popup"` for a
+    /// provider declaring `popup_path: None`, so no such state row exists. This
+    /// pins the fallback anyway, because the alternative if that invariant ever
+    /// breaks is a redirect to a 404 with the token already stored.
+    #[test]
+    fn a_provider_without_a_popup_page_falls_back_to_the_site_root() {
+        let u = success_redirect(
+            oauth_provider::GOOGLE_DRIVE_FILE,
+            "popup",
+            "",
+            Some("http://localhost:5173/ide/x"),
+            CB,
+        );
+        assert_eq!(u, "http://localhost:5173/");
+    }
+
     #[test]
     fn success_redirect_popup_targets_frontend_origin() {
         let u = success_redirect(
+            oauth_provider::QUICKBOOKS,
             "popup",
             "9341456860808037",
             Some("http://localhost:5173/ide/x/pipelines?a=1"),
@@ -243,13 +320,14 @@ mod tests {
     #[test]
     fn success_redirect_popup_relative_when_no_origin() {
         // Single-origin deploy / relative return path → relative success URL.
-        let u = success_redirect("popup", "123", None, CB);
+        let u = success_redirect(oauth_provider::QUICKBOOKS, "popup", "123", None, CB);
         assert_eq!(u, "/quickbooks/connected?mode=popup&realm_id=123");
     }
 
     #[test]
     fn success_redirect_redirect_mode_bounces_to_return_url() {
         let u = success_redirect(
+            oauth_provider::QUICKBOOKS,
             "redirect",
             "123",
             Some("http://localhost:5173/ide/x/pipelines"),
@@ -264,6 +342,7 @@ mod tests {
     #[test]
     fn success_redirect_allows_same_origin_as_callback() {
         let u = success_redirect(
+            oauth_provider::QUICKBOOKS,
             "redirect",
             "123",
             Some("https://app.example.com/ide/p?x=1"),
@@ -278,15 +357,33 @@ mod tests {
     #[test]
     fn success_redirect_rejects_foreign_origin() {
         // Open-redirect guard: an external return_path is dropped.
-        let redirect = success_redirect("redirect", "123", Some("https://evil.example/phish"), CB);
+        let redirect = success_redirect(
+            oauth_provider::QUICKBOOKS,
+            "redirect",
+            "123",
+            Some("https://evil.example/phish"),
+            CB,
+        );
         assert_eq!(redirect, "/?qb_connected=ok&realm_id=123");
-        let popup = success_redirect("popup", "123", Some("https://evil.example/phish"), CB);
+        let popup = success_redirect(
+            oauth_provider::QUICKBOOKS,
+            "popup",
+            "123",
+            Some("https://evil.example/phish"),
+            CB,
+        );
         assert_eq!(popup, "/quickbooks/connected?mode=popup&realm_id=123");
     }
 
     #[test]
     fn success_redirect_rejects_non_http_scheme() {
-        let u = success_redirect("popup", "123", Some("javascript:alert(1)"), CB);
+        let u = success_redirect(
+            oauth_provider::QUICKBOOKS,
+            "popup",
+            "123",
+            Some("javascript:alert(1)"),
+            CB,
+        );
         assert_eq!(u, "/quickbooks/connected?mode=popup&realm_id=123");
     }
 }

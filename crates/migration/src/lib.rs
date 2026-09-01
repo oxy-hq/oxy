@@ -147,6 +147,7 @@ mod m20260808_000001_airway_deployment_cursor_lag_floor;
 mod m20260812_000001_metric_anomalies_event_count_index;
 mod m20260817_000001_create_schema_migration_definitions;
 mod m20260821_000001_view_event_roles;
+mod m20260830_000001_oauth_states_provider;
 mod m20260831_000001_world_model_events;
 
 pub struct Migrator;
@@ -296,6 +297,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260812_000001_metric_anomalies_event_count_index::Migration),
             Box::new(m20260817_000001_create_schema_migration_definitions::Migration),
             Box::new(m20260821_000001_view_event_roles::Migration),
+            Box::new(m20260830_000001_oauth_states_provider::Migration),
             Box::new(m20260831_000001_world_model_events::Migration),
         ]
     }

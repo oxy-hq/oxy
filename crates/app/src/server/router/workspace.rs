@@ -665,6 +665,13 @@ fn build_integration_routes(app_state: &AppState) -> RoleRouter {
             "/quickbooks/authorize",
             post(crate::integrations::quickbooks::oauth::authorize::authorize),
         )
+        // Uniform OAuth connect for any provider in `integrations::oauth_provider`.
+        // FleetOk like its QuickBooks predecessor: Postgres state row + secret
+        // manager, no filesystem and no local state dir.
+        .route_fleet(
+            "/oauth/{provider}/authorize",
+            post(crate::integrations::quickbooks::oauth::authorize::authorize_by_slug),
+        )
 }
 
 // MIXED role builder. IdeOnly (must reach the ide singleton): `/source` + `/file`

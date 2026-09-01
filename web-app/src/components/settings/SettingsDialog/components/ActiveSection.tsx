@@ -13,6 +13,7 @@ import ActivityLogs from "../sections/workspace/ActivityLogs";
 import Airhouse from "../sections/workspace/Airhouse";
 import ApiKeys from "../sections/workspace/ApiKeys";
 import Apps from "../sections/workspace/Apps";
+import Connections from "../sections/workspace/Connections";
 import Databases from "../sections/workspace/Databases";
 import WorkspaceMembers from "../sections/workspace/Members";
 import Oltp from "../sections/workspace/Oltp";
@@ -79,6 +80,7 @@ export function ActiveSection({ activeSection, org, role, workspace, close }: Ac
       {workspace && activeSection === "workspace.repositories" && <Repositories />}
       {workspace && activeSection === "workspace.api_keys" && <ApiKeys />}
       {workspace && activeSection === "workspace.secrets" && <Secrets />}
+      {workspace && activeSection === "workspace.connections" && <Connections />}
       {workspace && activeSection === "workspace.apps" && <Apps />}
       {workspace && activeSection === "workspace.oxy_access" && (
         <CanOrgAdmin

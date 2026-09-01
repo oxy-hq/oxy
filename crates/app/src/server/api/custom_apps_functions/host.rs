@@ -107,6 +107,13 @@ pub struct FunctionCapabilities {
     /// App-level `storage.retention` policy. Empty → written objects carry no
     /// TTL tag and never expire.
     pub storage_retention: RetentionPolicy,
+    /// Per-function `ctx.fetch` response ceiling. `None` → [`FETCH_MAX_BYTES`].
+    ///
+    /// `Option`, not a bare `u64`: this struct is `Default`-constructible and
+    /// every other field defaults to DENY, but a `0` here would deny every
+    /// fetch rather than fall back — so absence has to mean "the default", not
+    /// "nothing".
+    pub fetch_max_bytes: Option<u64>,
 }
 
 /// Whether `ctx.oltp` is available, and — when it is not — which of the two
@@ -380,27 +387,45 @@ impl FunctionHost for ProjectFunctionHost {
             req = req.body(body);
         }
 
-        let resp = req.send().await.map_err(|e| format!("fetch failed: {e}"))?;
+        let mut resp = req.send().await.map_err(|e| format!("fetch failed: {e}"))?;
         let status = resp.status().as_u16();
 
+        // A function may raise this via `fetch.maxResponseBytes`, clamped to the
+        // platform ceiling at manifest-resolve time.
+        let max_bytes = self.caps.fetch_max_bytes.unwrap_or(FETCH_MAX_BYTES);
         // §11.9 — reject oversized responses up front via Content-Length…
         if let Some(len) = resp.content_length()
-            && len > FETCH_MAX_BYTES
+            && len > max_bytes
         {
             return Err(format!(
-                "response too large ({len} bytes > {FETCH_MAX_BYTES} cap)"
+                "response too large ({len} bytes > {max_bytes} cap)"
             ));
         }
-        // …and bound the actual read for chunked responses without a length.
-        let bytes = resp
-            .bytes()
+        // …but Content-Length is advisory: a chunked response carries none, and
+        // a hostile server can simply lie. So the cap is enforced against bytes
+        // RECEIVED, aborting mid-stream, rather than against bytes retained
+        // after the fact.
+        //
+        // `resp.bytes()` would read the whole body into memory and only then
+        // compare — which bounds what we KEEP, not what we ALLOCATE. That was
+        // survivable at a fixed 10 MiB. It is not once a manifest can raise the
+        // ceiling to `fetch_ceiling_bytes()` on a process shared by every app on
+        // the instance, and it was never bounded at all for a length-less
+        // response.
+        let mut bytes: Vec<u8> = Vec::new();
+        while let Some(chunk) = resp
+            .chunk()
             .await
-            .map_err(|e| format!("read failed: {e}"))?;
-        if bytes.len() as u64 > FETCH_MAX_BYTES {
-            return Err(format!(
-                "response too large ({} bytes > {FETCH_MAX_BYTES} cap)",
-                bytes.len()
-            ));
+            .map_err(|e| format!("read failed: {e}"))?
+        {
+            // Checked BEFORE extending, so the cap is never exceeded even
+            // transiently by one oversized chunk.
+            if bytes.len() as u64 + chunk.len() as u64 > max_bytes {
+                return Err(format!(
+                    "response too large (exceeded the {max_bytes} byte cap)"
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
         }
         // UTF-8 stays the default for back-compat, but it is lossy: every
         // non-UTF-8 byte becomes U+FFFD, so fetching a PDF/PNG to attach to an

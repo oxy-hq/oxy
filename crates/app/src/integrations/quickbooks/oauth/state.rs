@@ -17,6 +17,10 @@ pub const STATE_TTL_MIN: i64 = 15;
 
 #[derive(Debug, Clone)]
 pub struct CreateState {
+    /// Provider slug this consent is for. Verified at consume time against the
+    /// provider named by the callback route, so a nonce minted for one vendor
+    /// cannot be redeemed at another's callback.
+    pub provider: String,
     pub project_id: Uuid,
     pub client_id: String,
     pub client_secret_var: String,
@@ -38,6 +42,7 @@ impl QuickbooksOauthStateService {
         quickbooks_oauth_states::ActiveModel {
             id: ActiveValue::Set(Uuid::new_v4()),
             nonce: ActiveValue::Set(nonce.clone()),
+            provider: ActiveValue::Set(input.provider),
             project_id: ActiveValue::Set(input.project_id),
             client_id: ActiveValue::Set(input.client_id),
             client_secret_var: ActiveValue::Set(input.client_secret_var),
@@ -56,10 +61,18 @@ impl QuickbooksOauthStateService {
         Ok(nonce)
     }
 
-    /// Atomically consume a nonce. A single `UPDATE … WHERE consumed_at IS
-    /// NULL AND expires_at > now()` means two concurrent callbacks cannot
-    /// both claim the same nonce (CSRF/replay guard).
-    pub async fn consume(nonce: &str) -> Result<quickbooks_oauth_states::Model, OxyError> {
+    /// Atomically consume a nonce for `provider`. A single `UPDATE … WHERE
+    /// consumed_at IS NULL AND expires_at > now()` means two concurrent
+    /// callbacks cannot both claim the same nonce (CSRF/replay guard).
+    ///
+    /// The provider is matched in the same `UPDATE`, not checked afterwards: a
+    /// post-hoc check would have already burned the nonce, turning a
+    /// wrong-callback probe into a denial-of-service against a legitimate
+    /// consent still in flight.
+    pub async fn consume(
+        nonce: &str,
+        provider: &str,
+    ) -> Result<quickbooks_oauth_states::Model, OxyError> {
         let conn = establish_connection().await?;
 
         let update_result = quickbooks_oauth_states::Entity::update_many()
@@ -68,6 +81,7 @@ impl QuickbooksOauthStateService {
                 sea_orm::prelude::Expr::value(Utc::now()),
             )
             .filter(quickbooks_oauth_states::Column::Nonce.eq(nonce))
+            .filter(quickbooks_oauth_states::Column::Provider.eq(provider))
             .filter(quickbooks_oauth_states::Column::ConsumedAt.is_null())
             .filter(
                 quickbooks_oauth_states::Column::ExpiresAt
@@ -95,6 +109,12 @@ impl QuickbooksOauthStateService {
             .map_err(|e| OxyError::DBError(e.to_string()))?;
         match existing {
             None => Err(OxyError::ValidationError("unknown state nonce".into())),
+            // Deliberately the same message as an unknown nonce: telling a
+            // caller "that nonce is real, just for another provider" confirms a
+            // valid nonce to someone who guessed one.
+            Some(r) if r.provider != provider => {
+                Err(OxyError::ValidationError("unknown state nonce".into()))
+            }
             Some(r) if r.consumed_at.is_some() => {
                 Err(OxyError::ValidationError("state already consumed".into()))
             }

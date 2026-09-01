@@ -741,6 +741,10 @@ fn every_integration_sub_route_is_classified() {
     let src = include_str!("router/workspace.rs");
     const INTEGRATION_FLEET_OK: &[&str] = &[
         "/quickbooks/authorize", // OAuth redirect — no workspace files
+        // Same shape, any provider: writes a Postgres state row and upserts the
+        // client secret through the workspace secret manager. No working copy,
+        // no .git, no local state dir — so any replica can serve it.
+        "/oauth/{provider}/authorize",
     ];
     assert_sub_routes_classified(
         src,
