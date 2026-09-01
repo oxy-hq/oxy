@@ -48,6 +48,18 @@ internal-docs/internal-jobs-admin-design.md        @luong-komorebi @haitrr
 crates/app/src/server/api/admin/airhouse.rs        @luong-komorebi @hotay
 web-app/src/pages/admin/AdminAirhouse/             @luong-komorebi @hotay
 
+# Per-org OLTP Postgres — Neon-provisioned tenant DBs behind ctx.oltp/ctx.tx,
+# writer isolation, provisioning console (new 2026-08, #2851). Tay backs up: the
+# connection underneath is his agentic/connector Postgres path.
+# (the two admin/ lines are overrides carved out of admin/ above)
+crates/oltp/                                       @luong-komorebi @hotay
+crates/app/src/cli/commands/oltp.rs                @luong-komorebi @hotay
+crates/app/src/server/api/admin/oltp.rs            @luong-komorebi @hotay
+web-app/src/pages/admin/AdminOltp/                 @luong-komorebi @hotay
+scripts/oltp/                                      @luong-komorebi @hotay
+internal-docs/per-org-oltp-postgres.md             @luong-komorebi @hotay
+internal-docs/adr-neon-as-oltp-provider.md         @luong-komorebi @hotay
+
 # Authorization + authentication
 crates/authz/                                      @luong-komorebi @hotay
 crates/app/src/server/authz/                       @luong-komorebi @hotay
