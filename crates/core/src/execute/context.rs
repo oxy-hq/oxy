@@ -1,15 +1,12 @@
 use std::fmt::Debug;
 
 use minijinja::Value;
-use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
     adapters::{session_filters::SessionFilters, workspace::manager::WorkspaceManager},
-    checkpoint::{CheckpointContext, CheckpointData},
     config::model::ConnectionOverrides,
     execute::{
-        builders::checkpoint::CheckpointId,
         renderer::Renderer,
         types::{
             Usage,
@@ -44,7 +41,6 @@ pub struct ExecutionContext {
     pub writer: Sender<Event>,
     pub renderer: Renderer,
     pub workspace: WorkspaceManager<WorkingCopy>,
-    pub checkpoint: Option<CheckpointContext>,
     /// Filters to apply to all SQL queries in this execution context
     /// Set by API request, transparent to automations/agents
     pub filters: Option<SessionFilters>,
@@ -75,7 +71,6 @@ impl ExecutionContext {
         renderer: Renderer,
         workspace: WorkspaceManager<WorkingCopy>,
         writer: Sender<Event>,
-        checkpoint: Option<CheckpointContext>,
         user_id: Option<uuid::Uuid>,
     ) -> Self {
         ExecutionContext {
@@ -83,7 +78,6 @@ impl ExecutionContext {
             writer,
             renderer,
             workspace,
-            checkpoint,
             filters: None,
             connections: None,
             sandbox_info: None,
@@ -104,7 +98,6 @@ impl ExecutionContext {
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
             workspace: self.workspace.clone(),
-            checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
@@ -112,57 +105,6 @@ impl ExecutionContext {
             effective_role: self.effective_role.clone(),
             metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
-        }
-    }
-
-    pub fn with_checkpoint(&self, checkpoint: CheckpointContext) -> Self {
-        ExecutionContext {
-            source: self.source.clone(),
-            writer: self.writer.clone(),
-            renderer: self.renderer.clone(),
-            workspace: self.workspace.clone(),
-            checkpoint: Some(checkpoint),
-            filters: self.filters.clone(),
-            connections: self.connections.clone(),
-            sandbox_info: self.sandbox_info.clone(),
-            user_id: self.user_id,
-            effective_role: self.effective_role.clone(),
-            metric_context: self.metric_context.clone(),
-            data_app_file_path: self.data_app_file_path.clone(),
-        }
-    }
-
-    pub fn with_checkpoint_ref(&self, child_ref: &str) -> Self {
-        if let Some(checkpoint_context) = &self.checkpoint {
-            ExecutionContext {
-                source: self.source.clone(),
-                writer: self.writer.clone(),
-                renderer: self.renderer.clone(),
-                workspace: self.workspace.clone(),
-                checkpoint: Some(checkpoint_context.with_current_ref(child_ref)),
-                filters: self.filters.clone(),
-                connections: self.connections.clone(),
-                sandbox_info: self.sandbox_info.clone(),
-                user_id: self.user_id,
-                effective_role: self.effective_role.clone(),
-                metric_context: self.metric_context.clone(),
-                data_app_file_path: self.data_app_file_path.clone(),
-            }
-        } else {
-            ExecutionContext {
-                source: self.source.clone(),
-                writer: self.writer.clone(),
-                renderer: self.renderer.clone(),
-                workspace: self.workspace.clone(),
-                checkpoint: None,
-                filters: self.filters.clone(),
-                connections: self.connections.clone(),
-                sandbox_info: self.sandbox_info.clone(),
-                user_id: self.user_id,
-                effective_role: self.effective_role.clone(),
-                metric_context: self.metric_context.clone(),
-                data_app_file_path: self.data_app_file_path.clone(),
-            }
         }
     }
 
@@ -172,7 +114,6 @@ impl ExecutionContext {
             writer,
             renderer: self.renderer.clone(),
             workspace: self.workspace.clone(),
-            checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
@@ -189,7 +130,6 @@ impl ExecutionContext {
             writer: self.writer.clone(),
             renderer,
             workspace: self.workspace.clone(),
-            checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
@@ -208,7 +148,6 @@ impl ExecutionContext {
                 .renderer
                 .switch_context(global_context, Value::UNDEFINED),
             workspace: self.workspace.clone(),
-            checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
@@ -225,7 +164,6 @@ impl ExecutionContext {
             writer: self.writer.clone(),
             renderer: self.renderer.wrap(context),
             workspace: self.workspace.clone(),
-            checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
@@ -242,7 +180,6 @@ impl ExecutionContext {
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
             workspace: self.workspace.clone(),
-            checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
@@ -267,7 +204,6 @@ impl ExecutionContext {
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
             workspace: self.workspace.clone(),
-            checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
@@ -285,7 +221,6 @@ impl ExecutionContext {
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
             workspace: self.workspace.clone(),
-            checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
@@ -316,7 +251,6 @@ impl ExecutionContext {
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
             workspace: self.workspace.clone(),
-            checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
@@ -436,42 +370,6 @@ impl ExecutionContext {
     pub async fn write_progress(&self, progress: ProgressType) -> Result<(), OxyError> {
         self.write_kind(EventKind::Progress { progress }).await
     }
-
-    pub fn full_checkpoint_ref(&self) -> Result<String, OxyError> {
-        if let Some(checkpoint_context) = &self.checkpoint {
-            Ok(checkpoint_context.current_ref_str())
-        } else {
-            Err(OxyError::RuntimeError(
-                "Checkpoint context is not set".to_string(),
-            ))
-        }
-    }
-
-    pub async fn read_checkpoint<T: DeserializeOwned, C: CheckpointId>(
-        &self,
-        input: &C,
-    ) -> Result<CheckpointData<T>, OxyError> {
-        if let Some(checkpoint_context) = &self.checkpoint {
-            checkpoint_context.read_checkpoint::<T, C>(input).await
-        } else {
-            Err(OxyError::RuntimeError(
-                "Checkpoint context is not set".to_string(),
-            ))
-        }
-    }
-
-    pub async fn create_checkpoint<T: Serialize + Send>(
-        &self,
-        checkpoint: CheckpointData<T>,
-    ) -> Result<(), OxyError> {
-        if let Some(checkpoint_context) = &self.checkpoint {
-            checkpoint_context.create_checkpoint(checkpoint).await
-        } else {
-            Err(OxyError::RuntimeError(
-                "Checkpoint context is not set".to_string(),
-            ))
-        }
-    }
 }
 
 #[async_trait::async_trait]
@@ -489,7 +387,6 @@ pub struct ExecutionContextBuilder {
     renderer: Option<Renderer>,
     workspace: Option<WorkspaceManager<WorkingCopy>>,
     writer: Option<Sender<Event>>,
-    checkpoint: Option<CheckpointContext>,
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
     sandbox_info: Option<SandboxInfo>,
@@ -512,7 +409,6 @@ impl ExecutionContextBuilder {
             renderer: None,
             workspace: None,
             writer: None,
-            checkpoint: None,
             filters: None,
             connections: None,
             sandbox_info: None,
@@ -544,11 +440,6 @@ impl ExecutionContextBuilder {
 
     pub fn with_source(mut self, source: Source) -> Self {
         self.source = Some(source);
-        self
-    }
-
-    pub fn with_checkpoint(mut self, checkpoint: CheckpointContext) -> Self {
-        self.checkpoint = Some(checkpoint);
         self
     }
 
@@ -620,7 +511,6 @@ impl ExecutionContextBuilder {
             writer,
             renderer,
             workspace,
-            checkpoint: self.checkpoint,
             filters: self.filters,
             connections: self.connections,
             sandbox_info: self.sandbox_info,

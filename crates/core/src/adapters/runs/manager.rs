@@ -6,7 +6,6 @@ use crate::{
         database::RunsDatabaseStorage,
         storage::{RunsNoopStorage, RunsStorage, RunsStorageImpl},
     },
-    checkpoint::types::RetryStrategy,
     database::client::establish_connection,
     types::{
         block::Group,
@@ -121,84 +120,6 @@ impl RunsManager {
         self.storage
             .new_run(source_id, Some(root_ref), variables, None, user_id)
             .await
-    }
-    pub async fn get_run_info(
-        &self,
-        source_id: &str,
-        retry_strategy: &RetryStrategy,
-        lookup_id: Option<Uuid>,
-        user_id: Option<Uuid>,
-    ) -> Result<RunInfo, OxyError> {
-        match retry_strategy {
-            RetryStrategy::Retry {
-                replay_id: _,
-                run_index,
-            } => {
-                let run_info = self
-                    .find_run(
-                        source_id,
-                        Some((*run_index).try_into().map_err(|_| {
-                            OxyError::RuntimeError("Run index conversion failed".to_string())
-                        })?),
-                    )
-                    .await?;
-                run_info.ok_or(OxyError::RuntimeError(format!(
-                    "Run with index {run_index} not found for automation {source_id}"
-                )))
-            }
-            RetryStrategy::RetryWithVariables {
-                replay_id: _,
-                run_index,
-                variables,
-            } => {
-                let run_info = self
-                    .update_run_variables(
-                        source_id,
-                        (*run_index).try_into().map_err(|_| {
-                            OxyError::RuntimeError("Run index conversion failed".to_string())
-                        })?,
-                        variables.clone(),
-                    )
-                    .await?;
-                Ok(run_info)
-            }
-            RetryStrategy::LastFailure => {
-                let run_info = self.last_run(source_id).await?;
-                run_info.ok_or(OxyError::RuntimeError(format!(
-                    "Last failure run not found for automation {source_id}"
-                )))
-            }
-            RetryStrategy::NoRetry { variables } => {
-                self.new_run(source_id, variables.clone(), lookup_id, user_id)
-                    .await
-            }
-            RetryStrategy::Preview => {
-                todo!("Preview mode is not implemented yet")
-            }
-        }
-    }
-
-    pub async fn get_root_run(
-        &self,
-        source_id: &str,
-        retry_strategy: &RetryStrategy,
-        lookup_id: Option<Uuid>,
-        user_id: Option<Uuid>,
-    ) -> Result<(RunInfo, Option<RunInfo>), OxyError> {
-        let run_info = self
-            .get_run_info(source_id, retry_strategy, lookup_id, user_id)
-            .await?;
-        if let Some(root_ref) = &run_info.root_ref {
-            let root_run_info = self.find_run(source_id, root_ref.run_index).await?;
-            root_run_info
-                .ok_or(OxyError::RuntimeError(format!(
-                    "Root run not found for {}",
-                    source_id
-                )))
-                .map(|r| (run_info, Some(r)))
-        } else {
-            Ok((run_info, None))
-        }
     }
 
     pub async fn delete_run(&self, source_id: &str, run_index: i32) -> Result<(), OxyError> {

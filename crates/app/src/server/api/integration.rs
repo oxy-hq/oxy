@@ -133,7 +133,6 @@ fn build_execution_context(workspace_manager: WorkspaceManager<WorkingCopy>) -> 
         writer: tx,
         renderer,
         workspace: workspace_manager,
-        checkpoint: None,
         filters: None,
         connections: None,
         sandbox_info: None,

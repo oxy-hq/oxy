@@ -82,7 +82,6 @@ pub mod app_team_grants;
 pub mod apps;
 pub mod artifacts;
 pub mod audit_events;
-pub mod checkpoints;
 pub mod custom_app_event;
 pub mod custom_app_view_event;
 pub mod customer_app_automation_runs;

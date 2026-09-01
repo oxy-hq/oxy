@@ -109,7 +109,7 @@ pub struct RetryParam {
 
 #[derive(serde::Deserialize, ToSchema)]
 pub struct CreateRunRequest {
-    // The legacy `RetryStrategy` from `oxy::checkpoint::types` carried the
+    // The legacy `RetryStrategy` type (now removed) carried the
     // retry shape for the workflow execution path that's now retired.
     // The endpoint preserves an empty body so existing OpenAPI clients
     // still parse; all retry logic now flows through

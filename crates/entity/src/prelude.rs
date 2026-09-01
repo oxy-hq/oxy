@@ -16,7 +16,6 @@ pub use super::app_team_grants::Entity as AppTeamGrants;
 pub use super::apps::Entity as Apps;
 pub use super::artifacts::Entity as Artifacts;
 pub use super::audit_events::Entity as AuditEvents;
-pub use super::checkpoints::Entity as Checkpoints;
 pub use super::custom_app_event::Entity as CustomAppEvent;
 pub use super::custom_app_view_event::Entity as CustomAppViewEvent;
 pub use super::git_namespaces::Entity as GitNamespaces;
