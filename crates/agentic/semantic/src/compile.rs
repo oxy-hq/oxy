@@ -189,8 +189,54 @@ pub fn resolve_and_compile(
     preagg: Option<&PreaggContext>,
     pre_loaded_layer: Option<oxy_airlayer_compat::SemanticLayer>,
 ) -> Result<CompiledQuery, SemanticError> {
-    let dialects = oxy_airlayer_compat::DatasourceDialectMap::from_config_databases(databases);
+    let engine = load_and_build(scan_path, databases, pre_loaded_layer)?;
+    compile_against(&engine, task, preagg)
+}
 
+/// [`resolve_and_compile`], but taking the engine from `cache`.
+///
+/// Prefer this wherever the caller can name the workspace and the layer source
+/// it is serving. The uncached form re-reads the semantic directory and
+/// rebuilds the join graph on every call, which on the per-request surfaces —
+/// the custom-app data plane, `/projects/:id/semantic-query`, the IDE
+/// `/semantic` endpoint — was the single largest cost in compiling a query.
+///
+/// `key` must describe the engine, not just the workspace: two callers on the
+/// same workspace reading different layer SOURCES, or deriving dialects
+/// differently, need different entries. See `oxy_airlayer_compat::EngineKey`.
+///
+/// Note `pre_loaded_layer` is consumed only on a miss. That is safe because
+/// the caller compiles against the returned engine, never against its own
+/// copy of the layer — see `compile_against`, which reads
+/// `engine.semantic_layer()`.
+pub fn resolve_and_compile_cached(
+    cache: &oxy_airlayer_compat::SemanticEngineCache,
+    key: oxy_airlayer_compat::EngineKey,
+    scan_path: &Path,
+    databases: &[oxy_airlayer_compat::DatabaseConfig],
+    task: &SemanticQueryConfig,
+    preagg: Option<&PreaggContext>,
+    pre_loaded_layer: Option<oxy_airlayer_compat::SemanticLayer>,
+) -> Result<CompiledQuery, SemanticError> {
+    let engine = cache
+        .get_or_build(key, || {
+            load_and_build(scan_path, databases, pre_loaded_layer)
+                .map_err(|e| oxy_airlayer_compat::SemanticError::Engine(e.to_string()))
+        })
+        .map_err(|e| SemanticError::Runtime(format!("semantic engine error: {e}")))?;
+    compile_against(&engine, task, preagg)
+}
+
+/// Parse the layer (unless the caller pre-loaded it), then build the engine.
+///
+/// The engine build itself is `oxy_airlayer_compat::build_engine`, which owns
+/// deriving the dialect map from the same database list — doing that here
+/// separately is how the call sites drifted apart before #3034.
+fn load_and_build(
+    scan_path: &Path,
+    databases: &[oxy_airlayer_compat::DatabaseConfig],
+    pre_loaded_layer: Option<oxy_airlayer_compat::SemanticLayer>,
+) -> Result<oxy_airlayer_compat::SemanticEngine, SemanticError> {
     // Use the caller-supplied layer when available (avoids re-reading the
     // workspace from disk on hot paths). Fall back to the canonical
     // shim-based discovery + parse when not provided.
@@ -199,9 +245,18 @@ pub fn resolve_and_compile(
         None => oxy_airlayer_compat::load_layer_from_dir(scan_path)
             .map_err(|e| SemanticError::Runtime(format!("semantic engine error: {e}")))?,
     };
-    let engine = oxy_airlayer_compat::SemanticEngine::from_semantic_layer(layer, dialects)
-        .map_err(|e| SemanticError::Runtime(format!("semantic engine error: {e}")))?;
+    oxy_airlayer_compat::build_engine(layer, databases)
+        .map_err(|e| SemanticError::Runtime(format!("semantic engine error: {e}")))
+}
 
+/// Resolve the topic, build the request, compile it, and check the local
+/// pre-aggregation cache — everything both entry points do once they hold an
+/// engine.
+fn compile_against(
+    engine: &oxy_airlayer_compat::SemanticEngine,
+    task: &SemanticQueryConfig,
+    preagg: Option<&PreaggContext>,
+) -> Result<CompiledQuery, SemanticError> {
     let semantic_layer = engine.semantic_layer();
 
     let topic = resolve_topic(semantic_layer, task)?;

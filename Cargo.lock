@@ -9147,9 +9147,11 @@ name = "oxy-airlayer-compat"
 version = "0.5.133"
 dependencies = [
  "airlayer",
+ "lru 0.18.2",
  "serde",
  "serde_yaml",
  "thiserror 2.0.20",
+ "uuid",
 ]
 
 [[package]]

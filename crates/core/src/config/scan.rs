@@ -58,6 +58,16 @@ impl ScanDir {
             ScanDir::Materialised { scan_path, .. } => scan_path,
         }
     }
+
+    /// Whether this scan read the compiled revision rather than the working
+    /// copy.
+    ///
+    /// A node can hold a working copy AND be pinned to a revision, so
+    /// `ConfigManager::revision_id()` cannot answer this — it reports the pin,
+    /// not the source. Anything caching by layer identity has to ask here.
+    pub fn is_materialised(&self) -> bool {
+        matches!(self, ScanDir::Materialised { .. })
+    }
 }
 
 /// The scan directory for whichever source this manager reads.

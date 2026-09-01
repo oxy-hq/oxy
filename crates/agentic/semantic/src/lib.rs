@@ -14,6 +14,6 @@ pub mod refresh_key_cache;
 
 pub use compile::{
     BlobConfig, CompiledQuery, PreaggContext, PreaggSource, compile_with_engine,
-    get_database_from_views, resolve_and_compile,
+    get_database_from_views, resolve_and_compile, resolve_and_compile_cached,
 };
 pub use error::SemanticError;

@@ -2,7 +2,7 @@ use oxy_airlayer_compat::engine::promotions::Promotions;
 use oxy_airlayer_compat::schema::models::{EntityType, MeasureType};
 use std::collections::HashMap;
 
-use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
+use agentic_semantic::compile::{CompiledQuery, resolve_and_compile_cached};
 use agentic_semantic::config::{
     ArrayFilter, ScalarFilter, SemanticFilter, SemanticFilterType, SemanticQueryConfig,
 };
@@ -69,6 +69,53 @@ pub(super) async fn resolve_world_model_config(
 }
 
 // ── World Model — SQL helpers ─────────────────────────────────────────────────
+
+/// A cached engine handle and the exact `databases` its key was fingerprinted
+/// from.
+///
+/// The two travel together because deriving them separately is a silent bug:
+/// `EngineKey`'s fingerprint DESCRIBES a database list, so building an engine
+/// from a different list caches it under a fingerprint that does not match it.
+/// The compiler cannot catch that, and the symptom is a query compiled in the
+/// wrong dialect — so the type makes them one value instead.
+#[derive(Clone)]
+pub(crate) struct CachedEngine {
+    pub(crate) cache: std::sync::Arc<crate::server::router::workspace_cache::SemanticEngineCache>,
+    pub(crate) key: oxy_airlayer_compat::EngineKey,
+    pub(crate) databases: Vec<oxy_airlayer_compat::DatabaseConfig>,
+}
+
+impl CachedEngine {
+    /// For a caller reading this node's working copy.
+    pub(crate) fn working_copy<S: oxy::config::DiskSlot>(
+        engine_cache: &crate::server::api::middlewares::workspace_context::SemanticEngineCacheCtx,
+        workspace_manager: &WorkspaceManager<S>,
+    ) -> Self {
+        let databases = database_configs(workspace_manager);
+        Self {
+            cache: engine_cache.cache.clone(),
+            key: engine_cache.working_copy_key(&databases),
+            databases,
+        }
+    }
+}
+
+/// The whole workspace's databases, as the dialect map wants them.
+///
+/// The per-entry rule — pass `dialect()`, never the raw `type:` string — lives
+/// on `oxy_airlayer_compat::database_config`, which this defers to. What this
+/// adds is the LIST: it was transcribed at six call sites in this module, each
+/// its own chance to forget one.
+pub(crate) fn database_configs<S: oxy::config::DiskSlot>(
+    workspace_manager: &WorkspaceManager<S>,
+) -> Vec<oxy_airlayer_compat::DatabaseConfig> {
+    workspace_manager
+        .config_manager
+        .list_databases()
+        .iter()
+        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
+        .collect()
+}
 
 /// Find the view where `entity_name` is declared as Primary.
 pub(super) fn primary_view_of<'a>(
@@ -1304,9 +1351,12 @@ pub(super) fn build_entity_metas(
 }
 
 /// Everything needed to compile + execute one drill-down query outside the
-/// streaming filter-counts handler. Compilation uses `resolve_and_compile` (no
-/// engine cache) — the sample-browser is an on-demand, low-QPS surface where the
-/// simpler path is fine.
+/// streaming filter-counts handler.
+///
+/// Compilation goes through the shared engine cache like every other semantic
+/// surface. The sample browser is low-QPS, so it is not the reason the cache
+/// exists — but it reads the same workspace as the handlers around it, and a
+/// second door here is how the cache stopped meaning anything the first time.
 pub(super) struct WmExecCtx {
     pub(super) workspace_manager: WorkspaceManager<WorkingCopy>,
     pub(super) user_id: Uuid,
@@ -1314,6 +1364,9 @@ pub(super) struct WmExecCtx {
     pub(super) scan_path: std::path::PathBuf,
     pub(super) databases: Vec<oxy_airlayer_compat::DatabaseConfig>,
     pub(super) layer: oxy_airlayer_compat::SemanticLayer,
+    pub(super) engine_cache:
+        std::sync::Arc<crate::server::router::workspace_cache::SemanticEngineCache>,
+    pub(super) engine_key: oxy_airlayer_compat::EngineKey,
 }
 
 impl WmExecCtx {
@@ -1322,8 +1375,10 @@ impl WmExecCtx {
         let sp = self.scan_path.clone();
         let dbs = self.databases.clone();
         let layer = self.layer.clone();
+        let cache = self.engine_cache.clone();
+        let key = self.engine_key;
         tokio::task::spawn_blocking(move || {
-            resolve_and_compile(&sp, &dbs, &cfg, None, Some(layer)).ok()
+            resolve_and_compile_cached(&cache, key, &sp, &dbs, &cfg, None, Some(layer)).ok()
         })
         .await
         .ok()

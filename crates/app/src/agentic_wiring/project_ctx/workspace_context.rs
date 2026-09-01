@@ -106,6 +106,13 @@ impl WorkspaceContext for OxyProjectContext {
         Some(self.workspace_manager().workspace_id)
     }
 
+    fn semantic_engine_cache(
+        &self,
+    ) -> Option<(Arc<oxy_airlayer_compat::SemanticEngineCache>, uuid::Uuid)> {
+        let cache = self.semantic_engine_cache.clone()?;
+        Some((cache, self.workspace_manager().workspace_id))
+    }
+
     fn preagg_blob(&self) -> Option<agentic_semantic::BlobConfig> {
         crate::server::preagg_context::blob_config()
     }

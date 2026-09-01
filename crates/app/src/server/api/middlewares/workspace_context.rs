@@ -471,6 +471,16 @@ where
 pub struct SemanticLayerCacheCtx {
     pub cache: std::sync::Arc<crate::server::router::workspace_cache::SemanticLayerCache>,
     pub workspace_id: Uuid,
+    /// The engine cache, so a layer reload can drop the engines built from the
+    /// layer it replaced.
+    ///
+    /// The two are not independent: the world-model handlers PLAN from the
+    /// layer and COMPILE against the engine, so an engine that outlives its
+    /// layer compiles a plan referencing members it has never seen — and those
+    /// handlers map compile failures to `None`, which renders an empty panel
+    /// rather than an error. Holding the handle here is what lets one reload
+    /// speak for both.
+    pub engine_cache: std::sync::Arc<crate::server::router::workspace_cache::SemanticEngineCache>,
 }
 
 impl SemanticLayerCacheCtx {
@@ -500,6 +510,14 @@ impl SemanticLayerCacheCtx {
         tracing::info!(workspace_id = %self.workspace_id, elapsed_ms = t0.elapsed().as_millis(), "semantic layer loaded");
         let arc_layer = std::sync::Arc::new(layer);
         self.cache.insert(self.workspace_id, arc_layer.clone());
+        // This layer is new to the process, so every cached engine for the
+        // workspace was built from the one it replaces. Dropping them here is
+        // what keeps "plan from the layer, compile against the engine" honest:
+        // an edit that lands out of band (the Builder Agent writes files
+        // without going through `POST /files`) is otherwise invisible to the
+        // engine until its own TTL lapses, and the world-model handlers report
+        // the resulting compile failure as an empty panel.
+        self.engine_cache.invalidate_workspace(self.workspace_id);
         Ok(arc_layer)
     }
 
@@ -529,6 +547,16 @@ where
 }
 
 /// Cached compiled `SemanticEngine` for a workspace, injected by workspace middleware.
+///
+/// This is the request-scoped handle on the process-wide cache in
+/// `oxy_airlayer_compat::engine_cache`.
+///
+/// It deliberately does NOT carry the request's pinned revision. An engine is
+/// identified by the layer source the caller actually read, and the pin cannot
+/// tell you that: a node holding a working copy is `Origin::Compiled` too, so
+/// `ConfigManager::revision_id()` is `Some` for a working-copy reader as much
+/// as for a revision reader. Callers pick [`Self::working_copy_key`] or
+/// [`Self::scan_key`] according to what they read.
 #[derive(Clone)]
 pub struct SemanticEngineCacheCtx {
     pub cache: std::sync::Arc<crate::server::router::workspace_cache::SemanticEngineCache>,
@@ -536,40 +564,91 @@ pub struct SemanticEngineCacheCtx {
 }
 
 impl SemanticEngineCacheCtx {
-    /// Returns a cached engine, building it from `layer` + `databases` on the first call.
-    /// The engine is `Send` but not `Sync`; it lives behind a `Mutex` so callers must
-    /// compile inside a `spawn_blocking` that locks, compiles, and immediately drops the guard.
-    pub async fn get_or_build(
+    /// Key for an engine built from this node's WORKING COPY.
+    ///
+    /// For handlers reading `config_manager.semantics_scan_path()`.
+    ///
+    /// The pinned revision is deliberately not consulted: it is `Some` on a
+    /// node serving its own working copy, so keying by it would let a
+    /// working-copy read and a revision read share one engine.
+    pub fn working_copy_key(
         &self,
-        layer: std::sync::Arc<oxy_airlayer_compat::SemanticLayer>,
-        databases: Vec<oxy_airlayer_compat::DatabaseConfig>,
-    ) -> Option<std::sync::Arc<std::sync::Mutex<oxy_airlayer_compat::SemanticEngine>>> {
-        let workspace_id = self.workspace_id;
-        self.cache
-            .get_or_build(workspace_id, || async move {
-                tracing::info!(%workspace_id, "semantic engine cache miss — building engine");
-                let t0 = std::time::Instant::now();
-                let result = tokio::task::spawn_blocking(move || {
-                    oxy_airlayer_compat::build_engine((*layer).clone(), &databases)
-                        .ok()
-                        .map(|engine| std::sync::Arc::new(std::sync::Mutex::new(engine)))
-                })
-                .await
-                .ok()
-                .flatten();
-                if result.is_some() {
-                    tracing::info!(%workspace_id, elapsed_ms = t0.elapsed().as_millis(), "semantic engine built and cached");
-                } else {
-                    tracing::warn!(%workspace_id, elapsed_ms = t0.elapsed().as_millis(), "semantic engine build failed");
-                }
-                result
-            })
-            .await
+        databases: &[oxy_airlayer_compat::DatabaseConfig],
+    ) -> oxy_airlayer_compat::EngineKey {
+        oxy_airlayer_compat::EngineKey::working_copy(self.workspace_id, databases)
     }
 
-    /// Evicts the cached engine (call alongside `SemanticLayerCacheCtx::invalidate`).
+    /// Key for a caller that resolved its scan through `oxy::config::scan`.
+    ///
+    /// `source_revision` is what that scan actually read — `Some` only when it
+    /// materialised the compiled revision. Get it from
+    /// [`crate::server::api::semantic::QueryScanSource::source_revision`],
+    /// never from `ConfigManager::revision_id()`.
+    pub fn scan_key(
+        &self,
+        source_revision: Option<Uuid>,
+        databases: &[oxy_airlayer_compat::DatabaseConfig],
+    ) -> oxy_airlayer_compat::EngineKey {
+        oxy_airlayer_compat::EngineKey::for_source(self.workspace_id, source_revision, databases)
+    }
+
+    /// Returns a cached engine, building it from `layer` + `databases` on the
+    /// first call.
+    ///
+    /// The build runs on the blocking pool — it revalidates the layer and
+    /// rebuilds the join graph. The engine is `Send + Sync`, so what comes back
+    /// is a bare `Arc` that callers may compile against concurrently and hold
+    /// across awaits; there is no guard to drop.
+    pub async fn get_or_build(
+        &self,
+        key: oxy_airlayer_compat::EngineKey,
+        layer: std::sync::Arc<oxy_airlayer_compat::SemanticLayer>,
+        databases: Vec<oxy_airlayer_compat::DatabaseConfig>,
+    ) -> Result<
+        std::sync::Arc<oxy_airlayer_compat::SemanticEngine>,
+        oxy_airlayer_compat::SemanticError,
+    > {
+        let workspace_id = self.workspace_id;
+        let source = key.source;
+        // Fast path: a hit costs one lock and no blocking-pool hop.
+        if let Some(engine) = self.cache.lookup(&key) {
+            return Ok(engine);
+        }
+        let cache = self.cache.clone();
+        tracing::info!(%workspace_id, ?source, "semantic engine cache miss — building engine");
+        let t0 = std::time::Instant::now();
+        let result = tokio::task::spawn_blocking(move || {
+            cache.get_or_build(key, || {
+                oxy_airlayer_compat::build_engine((*layer).clone(), &databases)
+            })
+        })
+        .await;
+        // The error is RETURNED, not just logged. It is the airlayer validation
+        // message for the workspace's own `.view.yml` — the one thing that tells
+        // the person looking at an empty IDE panel what to fix — and a
+        // handler-level "engine unavailable" throws it away.
+        match result {
+            Ok(Ok(engine)) => {
+                tracing::info!(%workspace_id, ?source, elapsed_ms = t0.elapsed().as_millis(), "semantic engine built and cached");
+                Ok(engine)
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(%workspace_id, ?source, error = %e, elapsed_ms = t0.elapsed().as_millis(), "semantic engine build failed");
+                Err(e)
+            }
+            Err(e) => {
+                tracing::warn!(%workspace_id, ?source, error = %e, "semantic engine build task failed");
+                Err(oxy_airlayer_compat::SemanticError::Engine(format!(
+                    "engine build task failed: {e}"
+                )))
+            }
+        }
+    }
+
+    /// Evicts every cached engine for this workspace — all revisions, all
+    /// dialect maps (call alongside `SemanticLayerCacheCtx::invalidate`).
     pub fn invalidate(&self) {
-        self.cache.remove(self.workspace_id);
+        self.cache.invalidate_workspace(self.workspace_id);
     }
 }
 
@@ -1350,6 +1429,9 @@ async fn try_attach_workspace_manager(
     if let Some(db) = db {
         ctx = ctx.with_db(db);
     }
+    // Same cache the handlers get, so an automation step and a `/semantic`
+    // request reading the same source share one compiled engine.
+    ctx = ctx.with_semantic_engine_cache(semantic_engine_cache.clone());
     // Also expose the cache + threshold directly to handlers via a typed
     // extension so endpoints like POST /semantic can resolve preagg without
     // routing through OxyProjectContext.
@@ -1360,6 +1442,7 @@ async fn try_attach_workspace_manager(
     request.extensions_mut().insert(SemanticLayerCacheCtx {
         cache: semantic_layer_cache,
         workspace_id,
+        engine_cache: semantic_engine_cache.clone(),
     });
     request.extensions_mut().insert(SemanticEngineCacheCtx {
         cache: semantic_engine_cache,

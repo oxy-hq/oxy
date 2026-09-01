@@ -34,7 +34,7 @@ use crate::agentic_wiring::metric_tree_runner::{
     OxyMetricTreeRunner, build_drill_query_executor, build_query_executor,
 };
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, PreaggCacheCtx, WorkspaceManagerReadOnly,
+    EffectiveWorkspaceRole, PreaggCacheCtx, SemanticEngineCacheCtx, WorkspaceManagerReadOnly,
 };
 use crate::server::api::semantic::{QueryScanSource, resolve_query_scan_source};
 
@@ -261,6 +261,7 @@ pub async fn post_explain(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     preagg_ctx: PreaggCacheCtx,
+    engine_cache: SemanticEngineCacheCtx,
     Json(req): Json<ExplainRequest>,
 ) -> Result<Json<ExplainResult>, MetricTreeError> {
     use agentic_analytics::MetricTreeRunner as _;
@@ -269,8 +270,13 @@ pub async fn post_explain(
     // async `snapshot_for_blocking`, not inside the blocking task).
     let source = resolve_scan(&workspace_manager).await?;
     let config_manager = workspace_manager.config_manager.clone();
+    // Resolved before the manager moves into the runner. What `source` actually
+    // READ, not the request's pinned revision — those differ on a node that
+    // holds a working copy and is pinned to a revision.
+    let source_revision = source.source_revision(&workspace_manager);
     let runner = OxyMetricTreeRunner::new(workspace_manager, user.id, role)
         .with_scan_path(source.scan_path.clone())
+        .with_engine_cache(engine_cache.cache.clone(), source_revision)
         .with_preagg(
             preagg_ctx.cache.clone(),
             preagg_ctx.renewal_threshold_secs_or(&config_manager),
@@ -438,7 +444,10 @@ pub async fn post_opportunity(
         .split_once('.')
         .and_then(|(view, _)| count_measure_id(&layer, view));
     let databases = workspace_databases(&workspace_manager);
-    let engine = build_engine(layer.clone(), &databases)?;
+    // Not cached, and deliberately: `augment_layer_for_opportunity` above
+    // rewrote `layer` for this request's target, so this engine is unique to
+    // the request and shares nothing with the workspace's.
+    let engine = std::sync::Arc::new(build_engine(layer.clone(), &databases)?);
     let handle = tokio::runtime::Handle::current();
     let preagg = crate::agentic_wiring::metric_tree_runner::RunnerPreagg {
         cache: preagg_ctx.cache.clone(),
@@ -705,6 +714,7 @@ pub async fn post_distribution(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     preagg_ctx: PreaggCacheCtx,
+    engine_cache: SemanticEngineCacheCtx,
     Json(req): Json<DistributionRequest>,
 ) -> Result<Json<ExplainResult>, MetricTreeError> {
     use agentic_analytics::MetricTreeRunner as _;
@@ -715,8 +725,13 @@ pub async fn post_distribution(
     // `source` owns the materialised tempdir; keep it alive for the whole run.
     let source = resolve_scan(&workspace_manager).await?;
     let config_manager = workspace_manager.config_manager.clone();
+    // Resolved before the manager moves into the runner. What `source` actually
+    // READ, not the request's pinned revision — those differ on a node that
+    // holds a working copy and is pinned to a revision.
+    let source_revision = source.source_revision(&workspace_manager);
     let runner = OxyMetricTreeRunner::new(workspace_manager, user.id, role)
         .with_scan_path(source.scan_path.clone())
+        .with_engine_cache(engine_cache.cache.clone(), source_revision)
         .with_preagg(
             preagg_ctx.cache.clone(),
             preagg_ctx.renewal_threshold_secs_or(&config_manager),

@@ -96,6 +96,21 @@ pub struct OxyMetricTreeRunner {
     /// boundary into a tempdir and point the runner at it. The caller MUST
     /// keep the tempdir guard alive for the duration of the run.
     scan_path_override: Option<PathBuf>,
+    /// The shared engine cache, when the caller could reach one.
+    ///
+    /// `None` on the paths that build a runner without an `AppState` to take
+    /// it from — the scheduler / cron construction in
+    /// `project_ctx::project_context` — which then build the engine per run as
+    /// before.
+    ///
+    /// The `Option<Uuid>` is the revision the runner's SCAN PATH was
+    /// materialised from, `None` for the working copy — NOT
+    /// `ConfigManager::revision_id()`, which reports the pin and is `Some` even
+    /// when reading the working copy.
+    engine_cache: Option<(
+        Arc<crate::server::router::workspace_cache::SemanticEngineCache>,
+        Option<Uuid>,
+    )>,
 }
 
 impl OxyMetricTreeRunner {
@@ -111,7 +126,27 @@ impl OxyMetricTreeRunner {
             preagg: RunnerPreagg::default(),
             default_timezone: std::sync::OnceLock::new(),
             scan_path_override: None,
+            engine_cache: None,
         }
+    }
+
+    /// Share the process-wide engine cache.
+    ///
+    /// `source_revision` is the revision this runner's scan path was
+    /// materialised from, or `None` when it reads the working copy — see
+    /// `QueryScanSource::source_revision`. Passing the pinned revision instead
+    /// would let a working-copy run and a compiled-revision run share an
+    /// engine.
+    ///
+    /// Without this the runner revalidates the layer and rebuilds the join
+    /// graph on every explain / opportunity run.
+    pub fn with_engine_cache(
+        mut self,
+        cache: Arc<crate::server::router::workspace_cache::SemanticEngineCache>,
+        source_revision: Option<Uuid>,
+    ) -> Self {
+        self.engine_cache = Some((cache, source_revision));
+        self
     }
 
     pub fn with_preagg(
@@ -152,6 +187,36 @@ impl OxyMetricTreeRunner {
                     .and_then(|wc| read_default_timezone(wc.root()))
             })
             .clone()
+    }
+
+    /// The engine for `layer` — from the shared cache when this runner was
+    /// given one, otherwise built for this run.
+    ///
+    /// The layer is the workspace's own, unmodified: `run_explain` prunes
+    /// dimensions AFTER this point, against `RunInputs.layer`, so the cached
+    /// engine is not the pruned one and two runs pruning differently still
+    /// share it.
+    fn engine_for(
+        &self,
+        layer: &SemanticLayer,
+        databases: &[DatabaseConfig],
+    ) -> Result<Arc<oxy_airlayer_compat::SemanticEngine>, MetricTreeRunnerError> {
+        let build = || oxy_airlayer_compat::build_engine(layer.clone(), databases);
+        match &self.engine_cache {
+            Some((cache, source_revision)) => {
+                let key = oxy_airlayer_compat::EngineKey::for_source(
+                    self.workspace_manager.workspace_id,
+                    *source_revision,
+                    databases,
+                );
+                cache
+                    .get_or_build(key, build)
+                    .map_err(|e| MetricTreeRunnerError::ExecutorBuild(e.to_string()))
+            }
+            None => build()
+                .map(Arc::new)
+                .map_err(|e| MetricTreeRunnerError::ExecutorBuild(e.to_string())),
+        }
     }
 
     /// Parse the semantic layer from `scan_path` instead of the workspace FS
@@ -592,7 +657,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
 struct RunInputs {
     layer: SemanticLayer,
     databases: Vec<DatabaseConfig>,
-    engine: oxy_airlayer_compat::SemanticEngine,
+    engine: Arc<oxy_airlayer_compat::SemanticEngine>,
     workspace_manager: WorkspaceManager<ReadOnly>,
     user_id: Uuid,
     role: WorkspaceRole,
@@ -604,8 +669,7 @@ impl OxyMetricTreeRunner {
     async fn snapshot_for_blocking(&self) -> Result<RunInputs, MetricTreeRunnerError> {
         let layer = self.load_layer().await?;
         let databases = self.list_databases().await;
-        let engine = oxy_airlayer_compat::build_engine(layer.clone(), &databases)
-            .map_err(|e| MetricTreeRunnerError::ExecutorBuild(e.to_string()))?;
+        let engine = self.engine_for(&layer, &databases)?;
         Ok(RunInputs {
             layer,
             databases,
@@ -822,7 +886,7 @@ fn read_default_timezone(workspace_root: &std::path::Path) -> Option<String> {
 #[allow(clippy::too_many_arguments)]
 pub fn build_query_executor(
     _target_measure: &str,
-    engine: oxy_airlayer_compat::SemanticEngine,
+    engine: Arc<oxy_airlayer_compat::SemanticEngine>,
     databases: Vec<DatabaseConfig>,
     workspace_manager: WorkspaceManager<ReadOnly>,
     user_id: Uuid,

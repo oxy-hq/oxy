@@ -71,13 +71,17 @@ pub async fn pull_changes(
                     state: PullState::Conflict,
                 }))
             } else {
-                // A pull rewrote the working copy in place. The semantic caches
-                // key solely on `workspace_id`, so without this the world-model
-                // graph + semantic panels serve the pre-pull revision until the
-                // TTL lapses (60s layer / 600s engine). Same invalidation the
-                // branch switch does.
+                // A pull rewrote the working copy in place. Without this the
+                // world-model graph + semantic panels serve the pre-pull
+                // revision until the TTL lapses (60s layer / 600s engine).
+                // Same invalidation the branch switch does. The engine cache
+                // is keyed on the layer SOURCE (working copy vs a compiled
+                // revision) and the dialect map, so it is cleared for the whole
+                // workspace: a pull changes the working copy and can change
+                // which revision is promoted, and the writer cannot know which
+                // of those entries that invalidates.
                 app_state.semantic_layer_cache.remove(ws.id);
-                app_state.semantic_engine_cache.remove(ws.id);
+                app_state.semantic_engine_cache.invalidate_workspace(ws.id);
                 // The pull rewrote the working copy, but reads are served from
                 // the promoted revision — so without this the runtime keeps
                 // serving the pre-pull configuration indefinitely, which is
@@ -876,12 +880,14 @@ pub async fn switch_workspace_branch(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // A branch switch changes the working copy in place, but both semantic
-    // caches key solely on `workspace_id` (TTL 60s layer / 600s engine).
-    // Without this the world-model + semantic detail panels serve the previous
-    // branch's layer until the TTL lapses. Same invalidation `save_file` does.
+    // A branch switch changes the working copy in place (TTL 60s layer /
+    // 600s engine). Without this the world-model + semantic detail panels
+    // serve the previous branch's layer until the TTL lapses. Same
+    // invalidation `save_file` does. Note the layer cache still keys on
+    // `workspace_id` alone, so a branch switch is the only thing separating
+    // two branches' layers there.
     app_state.semantic_layer_cache.remove(ws.id);
-    app_state.semantic_engine_cache.remove(ws.id);
+    app_state.semantic_engine_cache.invalidate_workspace(ws.id);
 
     Ok(ResponseJson(branch))
 }

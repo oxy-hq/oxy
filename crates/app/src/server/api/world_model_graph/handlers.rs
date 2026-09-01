@@ -8,7 +8,7 @@ use oxy_airlayer_compat::engine::promotions::Promotions;
 use oxy_airlayer_compat::schema::models::{EntityType, MeasureType};
 use std::collections::HashMap;
 
-use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
+use agentic_semantic::compile::{CompiledQuery, resolve_and_compile, resolve_and_compile_cached};
 use agentic_semantic::config::{
     ScalarFilter, SemanticFilter, SemanticFilterType, SemanticOrder, SemanticQueryConfig,
 };
@@ -246,6 +246,7 @@ pub async fn get_world_model_instances(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     layer_cache: SemanticLayerCacheCtx,
+    engine_cache: SemanticEngineCacheCtx,
     axum::extract::State(_app_state): axum::extract::State<crate::server::router::AppState>,
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     axum::extract::Query(q): axum::extract::Query<WmInstancesQuery>,
@@ -262,6 +263,10 @@ pub async fn get_world_model_instances(
                 }),
             )
         })?;
+    let engine = Some(CachedEngine::working_copy(
+        &engine_cache,
+        &workspace_manager,
+    ));
     instances_core(
         &workspace_manager,
         user.id,
@@ -269,6 +274,7 @@ pub async fn get_world_model_instances(
         &layer,
         workspace_id,
         semantics_path,
+        engine,
         &q,
     )
     .await
@@ -284,6 +290,11 @@ pub async fn get_world_model_instances(
 /// change). `layer` is borrowed; `scan_path` / `workspace_path` come from the
 /// caller — the FS scan path for the IDE, the compile-boundary tempdir for the
 /// gate.
+/// `engine` is the caller's cached engine handle when it has one. Like
+/// [`measure_breakdown_core`], the two callers differ: the workspace handler
+/// holds a `SemanticEngineCacheCtx`, while the customer-app handler enters
+/// through `enter_semantic_boundary`, which carries no `AppState`. `None`
+/// keeps the per-request build both callers used before.
 pub(crate) async fn instances_core(
     workspace_manager: &WorkspaceManager<WorkingCopy>,
     user_id: uuid::Uuid,
@@ -291,6 +302,7 @@ pub(crate) async fn instances_core(
     layer: &oxy_airlayer_compat::SemanticLayer,
     _workspace_id: uuid::Uuid,
     scan_path: std::path::PathBuf,
+    engine: Option<CachedEngine>,
     q: &WmInstancesQuery,
 ) -> Result<WmInstancesResponse, (StatusCode, extract::Json<ErrorResponse>)> {
     let is_search = q.search.as_deref().is_some_and(|s| !s.is_empty());
@@ -340,12 +352,7 @@ pub(crate) async fn instances_core(
     // Build the semantic query: PK dimension(s) + optional display label dimension.
     // resolve_and_compile handles table aliasing, dialect, and database routing.
     // `scan_path` is caller-supplied (FS or compile-boundary tempdir).
-    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
-        .config_manager
-        .list_databases()
-        .iter()
-        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
-        .collect();
+    let databases = super::query::database_configs(&workspace_manager);
 
     let order_by = disp.dims.first().cloned().unwrap_or_default();
 
@@ -393,14 +400,26 @@ pub(crate) async fn instances_core(
     };
 
     let layer_clone = layer.clone();
-    let (base_sql, database_name) = tokio::task::spawn_blocking(move || {
-        resolve_and_compile(
+    let (base_sql, database_name) = tokio::task::spawn_blocking(move || match engine {
+        // `cached.databases`, not the local `databases`: the fingerprint in
+        // `cached.key` describes THAT list, and caching an engine under a
+        // fingerprint that does not describe it is the dialect bug one level in.
+        Some(cached) => resolve_and_compile_cached(
+            &cached.cache,
+            cached.key,
+            &scan_path,
+            &cached.databases,
+            &semantic_config,
+            None,
+            Some(layer_clone),
+        ),
+        None => resolve_and_compile(
             &scan_path,
             &databases,
             &semantic_config,
             None,
             Some(layer_clone),
-        )
+        ),
     })
     .await
     .map_err(|e| {
@@ -491,6 +510,7 @@ pub async fn get_world_model_filter_instances(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     layer_cache: SemanticLayerCacheCtx,
+    engine_cache: SemanticEngineCacheCtx,
     axum::extract::State(_app_state): axum::extract::State<crate::server::router::AppState>,
     axum::extract::Query(q): axum::extract::Query<WmFilterInstancesQuery>,
 ) -> Result<extract::Json<WmInstancesResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
@@ -518,12 +538,8 @@ pub async fn get_world_model_filter_instances(
         ));
     }
 
-    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
-        .config_manager
-        .list_databases()
-        .iter()
-        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
-        .collect();
+    let databases = super::query::database_configs(&workspace_manager);
+    let engine_key = engine_cache.working_copy_key(&databases);
     let exec = WmExecCtx {
         workspace_manager: workspace_manager.clone(),
         user_id: user.id,
@@ -531,6 +547,8 @@ pub async fn get_world_model_filter_instances(
         scan_path: workspace_manager.config_manager.semantics_scan_path(),
         databases,
         layer: (*layer).clone(),
+        engine_cache: engine_cache.cache.clone(),
+        engine_key,
     };
 
     // Resolve the reachability filter (seed instance → target entity). Unreachable
@@ -651,39 +669,37 @@ pub async fn post_world_model_filter_counts(
     // hoisted to module scope so the expansion-plan helpers can share it).
     let entity_metas: Vec<EntityMeta> = build_entity_metas(&layer, &promotions, wm_cfg.as_ref());
 
-    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
-        .config_manager
-        .list_databases()
-        .iter()
-        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
-        .collect();
+    let databases = super::query::database_configs(&workspace_manager);
 
-    // Get-or-build the cached engine. The engine is `Send` but not `Sync`; it lives
-    // behind a `Mutex` so each compile call locks, compiles, and drops the guard.
+    // Get-or-build the cached engine. `SemanticEngine` is `Send + Sync`, so this
+    // is a bare `Arc` shared by every compile below — no lock, and nothing a
+    // cancelled request could drop mid-compile.
     let cached_engine = engine_cache
-        .get_or_build(layer.clone(), databases.clone())
-        .await;
+        .get_or_build(
+            // These handlers read `semantics_scan_path()` — the working copy —
+            // regardless of which revision the request is pinned to.
+            engine_cache.working_copy_key(&databases),
+            layer.clone(),
+            databases.clone(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = %e, "world-model: semantic engine unavailable");
+            e
+        })
+        .ok();
 
-    // Compile all total-count queries up front in one engine build, before the
-    // spawn so we can move cached_engine/layer/databases into the spawned task.
-    // The closure is wrapped in a block so it drops (releasing its borrows)
-    // before we move those variables into the background spawn below.
+    // Compile all total-count queries up front against that one engine, before
+    // the spawn so we can move cached_engine into the spawned task. The closure
+    // is wrapped in a block so it drops (releasing its borrows) before we move
+    // those variables into the background spawn below.
     let total_sqls: Vec<Option<String>> = {
         let batch_compile_outer = |cfgs: Vec<SemanticQueryConfig>| {
             let engine_arc = cached_engine.clone();
-            let layer_c = (*layer).clone();
-            let dbs_c = databases.clone();
             tokio::task::spawn_blocking(move || {
                 let compile_one = |cfg: &SemanticQueryConfig| -> Option<String> {
-                    if let Some(ref arc) = engine_arc {
-                        arc.lock()
-                            .ok()
-                            .and_then(|e| agentic_semantic::compile_with_engine(&e, cfg).ok())
-                    } else {
-                        oxy_airlayer_compat::build_engine(layer_c.clone(), &dbs_c)
-                            .ok()
-                            .and_then(|e| agentic_semantic::compile_with_engine(&e, cfg).ok())
-                    }
+                    let engine = engine_arc.as_ref()?;
+                    agentic_semantic::compile_with_engine(engine, cfg).ok()
                 };
                 let sqls: Vec<Option<String>> = cfgs.iter().map(compile_one).collect();
                 Ok::<_, agentic_semantic::SemanticError>(sqls)
@@ -738,7 +754,8 @@ pub async fn post_world_model_filter_counts(
     let user_id = user.id;
 
     // Clone data needed by the background task before moving anything.
-    let layer_inner = (*layer).clone();
+    // The layer itself is no longer cloned in: the BFS compiles against the
+    // cached engine, which already owns it.
     let wm_a = workspace_manager.clone();
     let wm_b = workspace_manager;
     let role_a = role.clone();
@@ -846,31 +863,17 @@ pub async fn post_world_model_filter_counts(
             async move {
                 // Reconstruct batch_compile inside this block so it's owned
                 // (no reference to outer function stack after tokio::spawn).
-                // Compile a whole batch under a SINGLE engine acquisition. The
-                // cached engine is `Send + !Sync` behind a `Mutex`; locking once
-                // per batch (instead of once per query) keeps compilation — which
-                // is on the BFS critical path — from paying repeated lock churn,
-                // and builds the fallback engine at most once per batch.
+                // The engine is a bare `Arc<SemanticEngine>` from the cache —
+                // shared, not locked — so a batch is just N compiles against it.
                 let batch_compile = |cfgs: Vec<SemanticQueryConfig>| {
                     let engine_arc = cached_engine.clone();
-                    let layer_c = layer_inner.clone();
-                    let dbs_c = databases.clone();
                     tokio::task::spawn_blocking(move || {
-                        let compile_all = |engine: &_| -> Vec<Option<String>> {
-                            cfgs.iter()
+                        let sqls: Vec<Option<String>> = match engine_arc {
+                            Some(ref engine) => cfgs
+                                .iter()
                                 .map(|cfg| agentic_semantic::compile_with_engine(engine, cfg).ok())
-                                .collect()
-                        };
-                        let sqls: Vec<Option<String>> = if let Some(ref arc) = engine_arc {
-                            match arc.lock() {
-                                Ok(engine) => compile_all(&engine),
-                                Err(_) => vec![None; cfgs.len()],
-                            }
-                        } else {
-                            match oxy_airlayer_compat::build_engine(layer_c, &dbs_c) {
-                                Ok(engine) => compile_all(&engine),
-                                Err(_) => vec![None; cfgs.len()],
-                            }
+                                .collect(),
+                            None => vec![None; cfgs.len()],
                         };
                         Ok::<_, agentic_semantic::SemanticError>(sqls)
                     })
@@ -1616,6 +1619,7 @@ pub async fn get_world_model_instance_detail(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     layer_cache: SemanticLayerCacheCtx,
+    engine_cache: SemanticEngineCacheCtx,
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     axum::extract::Query(q): axum::extract::Query<WmInstanceDetailQuery>,
 ) -> Result<
@@ -1681,12 +1685,7 @@ pub async fn get_world_model_instance_detail(
             )
         })?;
 
-    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
-        .config_manager
-        .list_databases()
-        .iter()
-        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
-        .collect();
+    let databases = super::query::database_configs(&workspace_manager);
 
     // Shared PK filters used across all per-instance queries.
     //
@@ -2027,9 +2026,25 @@ pub async fn get_world_model_instance_detail(
     let own_cfgs: Vec<SemanticQueryConfig> = own_groups.iter().map(|g| g.cfg.clone()).collect();
 
     // --- Phase 1: compile ALL SQL configs (except parent which needs FK from attrs) ---
-    let layer_clone = (*layer).clone();
-    let dbs_clone = databases.clone();
     type SqlOpt = Option<String>;
+    // One engine for the whole handler — this phase and the parent lookup in
+    // the spawned task below share it, so the join graph is built once per
+    // workspace revision instead of twice per request.
+    let cached_engine = engine_cache
+        .get_or_build(
+            // These handlers read `semantics_scan_path()` — the working copy —
+            // regardless of which revision the request is pinned to.
+            engine_cache.working_copy_key(&databases),
+            layer.clone(),
+            databases.clone(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = %e, "world-model: semantic engine unavailable");
+            e
+        })
+        .ok();
+    let engine_for_phase1 = cached_engine.clone();
     let phase1: Option<(
         SqlOpt,
         Vec<SqlOpt>,
@@ -2038,8 +2053,11 @@ pub async fn get_world_model_instance_detail(
         Vec<SqlOpt>,
         Vec<SqlOpt>,
     )> = tokio::task::spawn_blocking(move || {
-        let engine = oxy_airlayer_compat::build_engine(layer_clone, &dbs_clone)
-            .map_err(|e| agentic_semantic::SemanticError::Runtime(e.to_string()))?;
+        let engine = engine_for_phase1.ok_or_else(|| {
+            agentic_semantic::SemanticError::Runtime(
+                "semantic engine unavailable for this workspace".to_string(),
+            )
+        })?;
         let c = |cfg: &SemanticQueryConfig| {
             let result = agentic_semantic::compile_with_engine(&engine, cfg);
             if let Err(ref e) = result {
@@ -2081,6 +2099,9 @@ pub async fn get_world_model_instance_detail(
     let connector_a = connector.clone();
     let connector_b = connector.clone();
     let connector_c = connector;
+
+    // Task A's phase-2 parent compile reuses the handler's engine.
+    let engine_for_spawn = cached_engine.clone();
 
     tokio::spawn(async move {
         tokio::join!(
@@ -2192,12 +2213,15 @@ pub async fn get_world_model_instance_detail(
                         limit: Some(1),
                         offset: None,
                     };
-                    let layer_clone2 = (*layer).clone();
-                    let dbs_clone2 = databases.clone();
+                    // The handler's engine, not a second one: this compiles a
+                    // single query, and building a whole join graph for it was
+                    // the most expensive line in the parent lookup.
+                    let engine_for_parent = engine_for_spawn.clone();
                     let parent_sql = tokio::task::spawn_blocking(move || {
-                        let engine = oxy_airlayer_compat::build_engine(layer_clone2, &dbs_clone2)
-                            .map_err(|e| {
-                            agentic_semantic::SemanticError::Runtime(e.to_string())
+                        let engine = engine_for_parent.ok_or_else(|| {
+                            agentic_semantic::SemanticError::Runtime(
+                                "semantic engine unavailable for this workspace".to_string(),
+                            )
                         })?;
                         agentic_semantic::compile_with_engine(&engine, &parent_cfg)
                     })
@@ -2425,6 +2449,7 @@ pub async fn get_world_model_measure_breakdown(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     layer_cache: SemanticLayerCacheCtx,
+    engine_cache: SemanticEngineCacheCtx,
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     axum::extract::Query(q): axum::extract::Query<WmMeasureBreakdownQuery>,
 ) -> Result<
@@ -2440,7 +2465,28 @@ pub async fn get_world_model_measure_breakdown(
             }),
         )
     })?;
-    let rx = measure_breakdown_core(workspace_manager, user.id, role, &layer, q)
+    let databases = super::query::database_configs(&workspace_manager);
+    // Surfaced, not swallowed: this is the airlayer validation error for the
+    // workspace's own semantic files, and it is what makes an empty driver-tree
+    // panel diagnosable.
+    let engine = Some(
+        engine_cache
+            .get_or_build(
+                engine_cache.working_copy_key(&databases),
+                layer.clone(),
+                databases.clone(),
+            )
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    extract::Json(ErrorResponse {
+                        message: e.to_string(),
+                    }),
+                )
+            })?,
+    );
+    let rx = measure_breakdown_core(workspace_manager, user.id, role, &layer, engine, q)
         .await
         .map_err(|(s, e)| (s, extract::Json(e)))?;
     Ok(Sse::new(create_sse_stream(rx)).keep_alive(KeepAlive::default()))
@@ -2457,11 +2503,19 @@ pub async fn get_world_model_measure_breakdown(
 /// copy). The terminal `Done` is always emitted once every value query
 /// resolves. Errors are the transport-agnostic `(StatusCode, ErrorResponse)`
 /// tuple so each caller wraps the body its own way.
+///
+/// `engine` is the caller's cached engine when it has one. The two callers
+/// differ here and cannot share an entry: the workspace handler reads the
+/// working copy and holds a `SemanticEngineCacheCtx`, while the customer-app
+/// handler enters through `enter_semantic_boundary`, which is headers-driven
+/// and has no `AppState` to carry a cache. `None` falls back to building one
+/// for this request, which is what both callers did before.
 pub(crate) async fn measure_breakdown_core(
     workspace_manager: WorkspaceManager<WorkingCopy>,
     user_id: uuid::Uuid,
     role: WorkspaceRole,
     layer: &oxy_airlayer_compat::SemanticLayer,
+    engine: Option<std::sync::Arc<oxy_airlayer_compat::SemanticEngine>>,
     q: WmMeasureBreakdownQuery,
 ) -> Result<tokio::sync::mpsc::Receiver<WmMeasureBreakdownEvent>, (StatusCode, ErrorResponse)> {
     let view = primary_view_of(layer, &q.entity).ok_or_else(|| {
@@ -2505,20 +2559,21 @@ pub(crate) async fn measure_breakdown_core(
 
     // Compile all view-group SQLs up front (pure, blocking).
     let layer_clone = layer.clone();
-    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
-        .config_manager
-        .list_databases()
-        .iter()
-        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
-        .collect();
+    let databases = super::query::database_configs(&workspace_manager);
     let cfgs: Vec<SemanticQueryConfig> = plan.groups.iter().map(|(_, _, c)| c.clone()).collect();
     let compiled: Vec<Option<String>> = tokio::task::spawn_blocking(move || {
-        let engine = match oxy_airlayer_compat::build_engine(layer_clone, &databases) {
-            Ok(e) => e,
-            Err(e) => {
-                tracing::warn!(error = %e, "measure-breakdown: engine build failed");
-                return vec![None; cfgs.len()];
-            }
+        // The caller's cached engine when it had one; otherwise build for this
+        // request (the customer-app caller has no cache to reach — see the
+        // doc comment on this function).
+        let engine = match engine {
+            Some(e) => e,
+            None => match oxy_airlayer_compat::build_engine(layer_clone, &databases) {
+                Ok(e) => std::sync::Arc::new(e),
+                Err(e) => {
+                    tracing::warn!(error = %e, "measure-breakdown: engine build failed");
+                    return vec![None; cfgs.len()];
+                }
+            },
         };
         cfgs.iter()
             .map(|cfg| {

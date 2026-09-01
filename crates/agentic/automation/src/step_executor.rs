@@ -160,13 +160,33 @@ async fn execute_semantic_query(
         .ok_or_else(|| "semantic_query: this node holds no workspace files".to_string())?;
     let databases = workspace.database_configs();
     let preagg = workspace.preagg_context();
-    let compiled = crate::semantic::resolve_and_compile(
-        scan_path,
-        &databases,
-        &query_config,
-        preagg.as_ref(),
-        None,
-    )
+    // Every automation step compiling a semantic query used to rebuild the
+    // engine — a full re-read of the semantic directory plus a join-graph
+    // build, per step, per run.
+    let compiled = match workspace.semantic_engine_cache() {
+        Some((cache, workspace_id)) => {
+            // `scan_path` above is `workspace_path()` — this node's working
+            // copy — so that is the source, whatever revision the context is
+            // pinned to.
+            let key = oxy_airlayer_compat::EngineKey::working_copy(workspace_id, &databases);
+            crate::semantic::resolve_and_compile_cached(
+                &cache,
+                key,
+                scan_path,
+                &databases,
+                &query_config,
+                preagg.as_ref(),
+                None,
+            )
+        }
+        None => crate::semantic::resolve_and_compile(
+            scan_path,
+            &databases,
+            &query_config,
+            preagg.as_ref(),
+            None,
+        ),
+    }
     .map_err(|e| format!("semantic compilation failed: {e}"))?;
 
     match compiled {

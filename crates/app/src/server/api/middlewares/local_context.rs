@@ -115,6 +115,7 @@ pub async fn local_context_middleware(
     request.extensions_mut().insert(SemanticLayerCacheCtx {
         cache: app_state.semantic_layer_cache,
         workspace_id: LOCAL_WORKSPACE_ID,
+        engine_cache: app_state.semantic_engine_cache.clone(),
     });
     request.extensions_mut().insert(SemanticEngineCacheCtx {
         cache: app_state.semantic_engine_cache,

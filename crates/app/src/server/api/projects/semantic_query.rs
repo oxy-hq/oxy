@@ -26,7 +26,7 @@
 use std::sync::Arc;
 
 use agentic_connector::{ConnectorError, DatabaseConnector};
-use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
+use agentic_semantic::compile::CompiledQuery;
 use agentic_semantic::config::SemanticQueryConfig;
 use axum::Json;
 use axum::extract::{Path, Query as AxumQuery, State};
@@ -243,6 +243,13 @@ pub async fn run_semantic_query(
             .config_manager
             .semantics_scan_path(),
     };
+    // The engine cache keys on the source that was actually read, so derive it
+    // from the same match: `is_materialised()` distinguishes a compiled
+    // revision from the working copy, which `revision_id()` cannot.
+    let source_revision = match materialised.as_ref() {
+        Some(m) if m.is_materialised() => proj_ctx.workspace_manager().config_manager.revision_id(),
+        _ => None,
+    };
     let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = proj_ctx
         .workspace_manager()
         .config_manager
@@ -290,8 +297,30 @@ pub async fn run_semantic_query(
     );
 
     let req_clone = req;
+    // The custom-app data plane is the highest-QPS semantic surface there is,
+    // and it was rebuilding the join graph on every request. Keyed on the
+    // revision this request resolved, so a bundle reading a promoted revision
+    // never shares an entry with an IDE reader on the working copy.
+    let engine_cache = app_state.semantic_engine_cache.clone();
+    // Keyed on the source the scan actually read. `revision_id()` reports the
+    // revision the request is PINNED to and is `Some` even on a node reading
+    // its own working copy, so keying by it would let this plane share an
+    // engine with the IDE's working-copy readers.
+    let engine_key = oxy_airlayer_compat::EngineKey::for_source(
+        proj_ctx.workspace_manager().workspace_id,
+        source_revision,
+        &databases,
+    );
     let compiled = match tokio::task::spawn_blocking(move || {
-        resolve_and_compile(&scan_path, &databases, &req_clone, preagg.as_ref(), None)
+        agentic_semantic::compile::resolve_and_compile_cached(
+            &engine_cache,
+            engine_key,
+            &scan_path,
+            &databases,
+            &req_clone,
+            preagg.as_ref(),
+            None,
+        )
     })
     .await
     {

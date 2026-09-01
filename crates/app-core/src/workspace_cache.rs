@@ -32,16 +32,31 @@ pub fn new_semantic_layer_cache() -> Arc<SemanticLayerCache> {
     TtlCache::with_ttl(Duration::from_secs(60))
 }
 
-/// Caches the compiled `SemanticEngine` (join graph + evaluator) per workspace.
-/// `SemanticEngine` is `Send` but not `Sync`; wrapping in `Mutex` makes it `Sync`.
-/// Engine build cost (schema validation + join graph) is paid once per workspace
-/// per TTL instead of once per compilation request.
-pub type SemanticEngineCache = TtlCache<std::sync::Mutex<oxy_airlayer_compat::SemanticEngine>>;
+/// The compiled-engine cache is **not** a `TtlCache` alias any more: it lives in
+/// `oxy-airlayer-compat` so `agentic-semantic` and `agentic-analytics` can reach
+/// the same instance. Importing it from here would be a cargo cycle — this crate
+/// already depends on `agentic-semantic`.
+///
+/// Re-exported under the old name so the eight `AppState` construction sites and
+/// the `server::router::workspace_cache` shim are unchanged.
+///
+/// Two differences from the type this replaced, both deliberate:
+///   * it is keyed on `(workspace_id, layer source, dialects)`, not
+///     `workspace_id` alone — where the source says whether the layer came from
+///     this node's working copy or from a materialised compiled revision. See
+///     `oxy_airlayer_compat::engine_cache`;
+///   * it holds a bare `Arc<SemanticEngine>`. The old alias wrapped the engine in
+///     a `Mutex` on the stated grounds that it is "`Send` but not `Sync`". It is
+///     both, so the lock only serialised compiles that could have run in
+///     parallel; `preagg_rebuild` had already been sharing a bare
+///     `Arc<SemanticEngine>` across spawned tasks, which is only possible for a
+///     `Sync` type.
+pub use oxy_airlayer_compat::SemanticEngineCache;
 
 pub fn new_semantic_engine_cache() -> Arc<SemanticEngineCache> {
     // Explicit invalidation on every semantic file write is the primary freshness
     // mechanism (same as the layer cache). TTL is a safety net only — 10 min.
-    TtlCache::with_ttl(Duration::from_secs(600))
+    SemanticEngineCache::new()
 }
 
 struct Entry<V> {

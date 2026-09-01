@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
+use agentic_semantic::compile::{CompiledQuery, resolve_and_compile_cached};
 use agentic_semantic::config::SemanticQueryConfig;
 use oxy::adapters::session_filters::SessionFilters;
 use oxy::adapters::workspace::manager::WorkspaceManager;
@@ -37,7 +37,8 @@ use crate::server::api::data::{
     agentic_error_response, run_via_agentic_connector,
 };
 use crate::server::api::middlewares::workspace_context::{
-    EffectiveWorkspaceRole, PreaggCacheCtx, SemanticLayerCacheCtx, WorkspaceManagerReadOnly,
+    EffectiveWorkspaceRole, PreaggCacheCtx, SemanticEngineCacheCtx, SemanticLayerCacheCtx,
+    WorkspaceManagerReadOnly,
 };
 use crate::server::api::semantic_scan::{self, ScanDir, SemanticEntity};
 use oxy::config::{ConfigManager, DiskSlot, ResolveWorkspaceFile};
@@ -382,6 +383,24 @@ pub(crate) struct QueryScanSource {
     _guard: Option<ScanDir>,
 }
 
+impl QueryScanSource {
+    /// The revision this scan actually READ, or `None` for the working copy.
+    ///
+    /// Not `config_manager.revision_id()`: that reports the revision the
+    /// request is pinned to, which is `Some` even on a node serving its own
+    /// working copy. Caching by the pin instead of the source lets a
+    /// working-copy reader and a revision reader share one engine.
+    pub(crate) fn source_revision<S: oxy::config::DiskSlot>(
+        &self,
+        workspace_manager: &WorkspaceManager<S>,
+    ) -> Option<Uuid> {
+        match &self._guard {
+            Some(scan) if scan.is_materialised() => workspace_manager.config_manager.revision_id(),
+            _ => None,
+        }
+    }
+}
+
 /// The workspace has no compiled semantic layer and this node has no working
 /// copy to fall back to.
 pub(crate) struct ScanUnavailable {
@@ -550,6 +569,7 @@ pub struct SemanticQueryCompileResponse {
 /// lockstep.
 pub async fn compile_semantic_query(
     WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
+    engine_cache: SemanticEngineCacheCtx,
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     extract::Json(query): extract::Json<SemanticQueryConfig>,
 ) -> Result<extract::Json<SemanticQueryCompileResponse>, (StatusCode, extract::Json<ErrorResponse>)>
@@ -568,11 +588,15 @@ pub async fn compile_semantic_query(
         .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
         .collect();
 
+    let engine_key = engine_cache.scan_key(source.source_revision(&workspace_manager), &databases);
+    let cache = engine_cache.cache.clone();
     let compiled = tokio::task::spawn_blocking(move || {
         // Compile to warehouse SQL only (no preagg cache) — IDE preview
         // should always show the human-readable warehouse SQL, not the
         // local-Parquet rewrite.
-        resolve_and_compile(&scan_path, &databases, &query, None, None)
+        resolve_and_compile_cached(
+            &cache, engine_key, &scan_path, &databases, &query, None, None,
+        )
     })
     .await
     .map_err(|e| {
@@ -645,6 +669,7 @@ pub async fn execute_semantic_query(
         cache: preagg_cache,
         renewal_threshold_secs,
     }: PreaggCacheCtx,
+    engine_cache: SemanticEngineCacheCtx,
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     extract::Json(payload): extract::Json<SemanticQueryExecuteRequest>,
 ) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<SqlErrorResponse>)> {
@@ -680,8 +705,16 @@ pub async fn execute_semantic_query(
         renewal_threshold_secs,
         crate::server::preagg_context::RollupFreshness::ServeStale,
     );
+    // Keyed on what the scan actually READ, not on the pinned revision: this
+    // node may hold a working copy and still be pinned to a revision, and the
+    // world-model handlers read the working copy on exactly such a node. The
+    // preagg key above is workspace-only by design; this one must not be.
+    let engine_key = engine_cache.scan_key(source.source_revision(&workspace_manager), &databases);
+    let cache = engine_cache.cache.clone();
     let compiled = tokio::task::spawn_blocking(move || {
-        resolve_and_compile(
+        resolve_and_compile_cached(
+            &cache,
+            engine_key,
             &scan_path_for_compile,
             &databases,
             &query,

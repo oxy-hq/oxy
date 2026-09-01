@@ -73,6 +73,13 @@ pub struct OxyProjectContext {
     /// fallback. `preagg_renewal_threshold_secs()` still answers 120 for the
     /// trait, which is where a concrete number is actually required.
     preagg_renewal_threshold_secs: Option<u64>,
+    /// The shared semantic-engine cache. `None` in CLI, tests, and builder
+    /// contexts, which then compile against an engine built per call.
+    ///
+    /// No revision alongside it: an engine's identity is the layer SOURCE, and
+    /// only the caller scanning a path knows that. See
+    /// `WorkspaceContext::semantic_engine_cache`.
+    semantic_engine_cache: Option<Arc<oxy_airlayer_compat::SemanticEngineCache>>,
     /// Database connection. Set from `AgenticState.db` by the HTTP workspace
     /// middleware AND the in-process global driver (`recovery.rs`). Powers
     /// anomaly-store queries and `compile_dispatcher()` — so any path that
@@ -91,6 +98,7 @@ impl OxyProjectContext {
             connectors: tokio::sync::Mutex::new(HashMap::new()),
             preagg_cache: None,
             preagg_renewal_threshold_secs: None,
+            semantic_engine_cache: None,
             db: None,
         }
     }
@@ -152,6 +160,20 @@ impl OxyProjectContext {
         cache: Arc<RwLock<agentic_semantic::refresh_key_cache::RefreshKeyCache>>,
     ) -> Self {
         self.preagg_cache = Some(cache);
+        self
+    }
+
+    /// Attach the shared semantic-engine cache.
+    ///
+    /// The same `Arc` the HTTP middleware hands to handlers, so an automation
+    /// step and a `/semantic` request reading the same source share one
+    /// compiled engine. The key's other half — the layer source — is supplied
+    /// by whoever scans, not stored here.
+    pub fn with_semantic_engine_cache(
+        mut self,
+        cache: Arc<oxy_airlayer_compat::SemanticEngineCache>,
+    ) -> Self {
+        self.semantic_engine_cache = Some(cache);
         self
     }
 

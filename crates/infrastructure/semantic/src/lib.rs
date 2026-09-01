@@ -20,6 +20,11 @@
 //! enforces it — if you are here to add `airlayer` to another manifest, add a
 //! re-export or a helper above instead.
 
+pub mod engine_cache;
+mod one_door_guard;
+
+pub use engine_cache::{EngineKey, SemanticEngineCache, dialect_fingerprint};
+
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;

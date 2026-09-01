@@ -225,6 +225,32 @@ pub trait WorkspaceContext: Send + Sync {
         false
     }
 
+    /// The shared semantic-engine cache and the workspace to key it by.
+    ///
+    /// `None` — the default — compiles every query against an engine built for
+    /// that call, which re-reads the semantic directory and rebuilds the join
+    /// graph each time. The real host adapter overrides it; test fakes and CLI
+    /// contexts need no change.
+    ///
+    /// Deliberately NOT derived from [`Self::preagg_workspace_id`], though both
+    /// name a workspace: a host that returns `None` there to disable the
+    /// pre-aggregation short-circuit must not silently disable engine caching
+    /// too. One override, one meaning.
+    ///
+    /// No revision is offered, on purpose. The rest of an engine's identity is
+    /// the layer SOURCE, which only the caller knows — it depends on the path
+    /// that caller scans, not on which revision the context is pinned to. See
+    /// `oxy_airlayer_compat::engine_cache::LayerSource`; handing a pinned
+    /// revision out here is how it would get used as a key again.
+    fn semantic_engine_cache(
+        &self,
+    ) -> Option<(
+        std::sync::Arc<oxy_airlayer_compat::SemanticEngineCache>,
+        uuid::Uuid,
+    )> {
+        None
+    }
+
     /// The assembled local-rollup short-circuit, or `None` to compile every
     /// query to warehouse SQL. Assembled here, from one set of accessors, so
     /// no caller has to remember which pieces belong together.

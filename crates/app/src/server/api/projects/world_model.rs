@@ -82,6 +82,9 @@ pub async fn get_world_model_instances(
         &layer,
         project_id,
         boundary.scan.path_buf(),
+        // No engine cache on this path: `enter_semantic_boundary` is
+        // headers-driven and carries no `AppState`.
+        None,
         &q,
     )
     .await
@@ -111,7 +114,18 @@ pub async fn get_measure_breakdown(
     // task, so hand it an owned clone; `layer` / `boundary` may drop once the
     // synchronous setup returns the channel.
     let wm = boundary.proj_ctx.workspace_manager().clone();
-    match measure_breakdown_core(wm, boundary.app.user.id, WorkspaceRole::Viewer, &layer, q).await {
+    // No engine cache on this path: `enter_semantic_boundary` is headers-driven
+    // and carries no `AppState`. `None` keeps today's per-request build.
+    match measure_breakdown_core(
+        wm,
+        boundary.app.user.id,
+        WorkspaceRole::Viewer,
+        &layer,
+        None,
+        q,
+    )
+    .await
+    {
         Ok(rx) => Sse::new(create_sse_stream(rx))
             .keep_alive(KeepAlive::default())
             .into_response(),
