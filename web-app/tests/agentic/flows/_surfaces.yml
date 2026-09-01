@@ -200,4 +200,5 @@
     - "src/services/api/airway.ts"
   flows:
     - ide-pipeline-quickbooks
+    - ide-pipeline-sp-api
     - airway-pipeline-run

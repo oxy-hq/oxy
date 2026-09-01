@@ -15,6 +15,12 @@ import { apiClient } from "./axios";
 
 // ── Wire types ─────────────────────────────────────────────────────────────
 
+export interface SpApiMarketplace {
+  id: string;
+  country: string;
+  label: string;
+}
+
 export type StartAirwayRequest = {
   /** Path to a `.airway.yml`, relative to the workspace root. */
   pipeline_ref: string;
@@ -573,6 +579,19 @@ export class AirwayService {
         }
       }
     );
+    return data;
+  }
+
+  /**
+   * Marketplaces the `sp_api` connector can reach, for the wizard's picker.
+   *
+   * Served rather than hardcoded here: `SpApiSource` pins the North America
+   * endpoint today, and when it learns to take a host the Rust list widens. A
+   * copy in this file would then be the only thing refusing a marketplace the
+   * connector accepts, and nothing would fail to point at it.
+   */
+  static async listSpApiMarketplaces(projectId: string): Promise<SpApiMarketplace[]> {
+    const { data } = await apiClient.get(`/${projectId}/airway-pipelines/sp-api/marketplaces`);
     return data;
   }
 

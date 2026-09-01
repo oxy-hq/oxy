@@ -223,6 +223,11 @@ const secretKeys = {
   envList: (projectId: string) => [...secretKeys.all, "env", projectId] as const
 };
 
+const spApiKeys = {
+  all: ["spApi"] as const,
+  marketplaces: (projectId: string) => [...spApiKeys.all, "marketplaces", projectId] as const
+};
+
 const logsKeys = {
   all: ["logs"] as const,
   list: (projectId: string) => [...logsKeys.all, "list", projectId] as const
@@ -980,6 +985,7 @@ const queryKeys = {
   thread: threadKeys,
   apiKey: apiKeyKeys,
   secret: secretKeys,
+  spApi: spApiKeys,
   logs: logsKeys,
   user: userKeys,
   workspaces: workspaceKeys,

@@ -29,6 +29,8 @@ import ClickHouseCredentialsForm from "./credentials/clickhouse/ClickHouseCreden
 import { useClickHouseCredentials } from "./credentials/clickhouse/useClickHouseCredentials";
 import QuickBooksCredentialsForm from "./credentials/quickbooks/QuickBooksCredentialsForm";
 import { useQuickBooksCredentials } from "./credentials/quickbooks/useQuickBooksCredentials";
+import SpApiCredentialsForm from "./credentials/spApi/SpApiCredentialsForm";
+import { useSpApiCredentials } from "./credentials/spApi/useSpApiCredentials";
 import ToastCredentialsForm from "./credentials/toast/ToastCredentialsForm";
 import { useToastCredentials } from "./credentials/toast/useToastCredentials";
 
@@ -82,6 +84,7 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
   const writableDatabases = (databases ?? []).filter((d) => WRITABLE.has(d.db_type));
 
   const toastCredentials = useToastCredentials();
+  const spApiCredentials = useSpApiCredentials();
   const clickhouseCredentials = useClickHouseCredentials();
   const quickbooksCredentials = useQuickBooksCredentials({
     open,
@@ -107,6 +110,7 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
     setDescription("");
     setError(null);
     toastCredentials.reset();
+    spApiCredentials.reset();
     quickbooksCredentials.reset();
     clickhouseCredentials.reset();
   };
@@ -135,11 +139,13 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
     const isToast = sourceId === "toast";
     const isQuickbooks = sourceId === "quickbooks";
     const isClickhouse = sourceId === "clickhouse";
+    const isSpApi = sourceId === "sp_api";
 
     let sourceError: string | null = null;
     if (isToast) sourceError = toastCredentials.validate();
     else if (isClickhouse) sourceError = clickhouseCredentials.validate();
     else if (isQuickbooks) sourceError = quickbooksCredentials.validate();
+    else if (isSpApi) sourceError = spApiCredentials.validate();
     if (sourceError) {
       setError(sourceError);
       return;
@@ -153,6 +159,10 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
       // value means "reuse an existing secret with this name" — skip create.
       if (isToast) await toastCredentials.persistSecret(trimmed);
       if (isClickhouse) await clickhouseCredentials.persistSecret(trimmed);
+      // Both SP-API credentials are pasted rather than captured by an OAuth
+      // flow — a refresh token is issued when the app is authorized in Seller
+      // Central, so there is nothing for oxy to negotiate.
+      if (isSpApi) await spApiCredentials.persistSecret(trimmed);
       // QuickBooks secrets (client secret + rotating refresh token) are
       // stored by the OAuth Connect flow (authorize + callback upserts), so
       // there's nothing to create here.
@@ -169,6 +179,7 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
           toast: isToast ? toastCredentials.buildScaffoldConfig() : undefined,
           quickbooks: isQuickbooks ? quickbooksCredentials.buildScaffoldConfig() : undefined,
           clickhouse: isClickhouse ? clickhouseCredentials.buildScaffoldConfig() : undefined,
+          spApi: isSpApi ? spApiCredentials.buildScaffoldConfig() : undefined,
           destinationDatabase: destinationDb,
           datasetName: trimmed,
           destinationIsAirhouse: writableDatabases
@@ -357,6 +368,9 @@ const NewPipelineDialog: React.FC<NewPipelineDialogProps> = ({
                 />
               </div>
 
+              {sourceId === "sp_api" && (
+                <SpApiCredentialsForm credentials={spApiCredentials} onClearError={clearError} />
+              )}
               {sourceId === "toast" && (
                 <ToastCredentialsForm credentials={toastCredentials} onClearError={clearError} />
               )}

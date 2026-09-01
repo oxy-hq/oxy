@@ -84,6 +84,13 @@
   cold_usd: 0.40
   warm_usd: 0.005
 
+- flow: ide-pipeline-sp-api
+  # Same shape as ide-pipeline-quickbooks: 4 act steps (open wizard, pick
+  # source, pick destination, type name) then asserts on the credential
+  # inputs. All steps use data-testids, no streaming/build phase.
+  cold_usd: 0.40
+  warm_usd: 0.005
+
 - flow: launcher-home
   # 3 cases covering the launcher's key surfaces. No streaming LLM run in
   # fallback-home or rail-chat-and-home (just clicks + visibility checks).

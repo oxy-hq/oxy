@@ -179,6 +179,12 @@ Only the six state-changing tools (`click`, `type`, `press_key`, `keyboard_type`
 - `assert: <claim>` — deterministic, evaluated by `runner/judge.ts`. Supported forms:
   - `selector <sel> is visible` / `is not visible`
   - `selector <sel> has attribute <attr>=<value>`
+  - `selector <sel> has a non-empty value` — reads `inputValue()`. Use this for
+    pre-filled inputs: a controlled React input sets the value *property*, so
+    `has attribute value=` cannot see it.
+  - `selector <sel> does not contain text "<text>"` — reads `textContent()`.
+    Use this for non-inputs, e.g. asserting a shadcn `SelectTrigger` (a button)
+    is no longer showing its placeholder.
   - `text "<text>" is visible`
   - `<description> is enabled` (for follow-up input, etc.)
   - `save button is not visible` (waits up to 5s for the IDE save button to hide)

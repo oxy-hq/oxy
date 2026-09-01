@@ -85,6 +85,48 @@ async function runAssert(
     return { passed: got === want.trim(), evidence: `${attr}(${sel})=${got}` };
   }
 
+  // A controlled React input sets the VALUE PROPERTY, not the `value`
+  // attribute, so `has attribute value=` cannot see it — `inputValue()` can.
+  // Used for fields that are pre-filled rather than blank, where the point is
+  // that *something* is there rather than what it is.
+  const nonEmptyValueMatch = claim.match(/^selector\s+(.+?)\s+has a non-empty value$/i);
+  if (nonEmptyValueMatch) {
+    const sel = nonEmptyValueMatch[1].trim();
+    const value = await page
+      .locator(sel)
+      .first()
+      .inputValue()
+      .catch(() => null);
+    // `null` (no such element / not an input) is reported differently from
+    // `""` (found, genuinely blank) — otherwise a typo'd selector and a real
+    // regression produce identical evidence.
+    return {
+      passed: (value ?? "").trim().length > 0,
+      evidence:
+        value === null ? `value(${sel})=<unreadable>` : `value(${sel})=${JSON.stringify(value)}`
+    };
+  }
+
+  // Text content, not input value: the target is often a button (a shadcn
+  // `SelectTrigger`), where a placeholder is rendered as text rather than held
+  // as a value.
+  const notContainTextMatch = claim.match(
+    /^selector\s+(.+?)\s+does not contain text\s+["'](.+)["']$/i
+  );
+  if (notContainTextMatch) {
+    const [, sel, text] = notContainTextMatch;
+    const content = await page
+      .locator(sel.trim())
+      .first()
+      .textContent()
+      .catch(() => null);
+    const got = content ?? "";
+    return {
+      passed: !got.includes(text),
+      evidence: `text(${sel.trim()})=${JSON.stringify(got)}`
+    };
+  }
+
   const textVisibleMatch = claim.match(/^text\s+["'](.+)["']\s+(?:is\s+)?visible$/i);
   if (textVisibleMatch) {
     const text = textVisibleMatch[1];

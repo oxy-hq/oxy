@@ -23,7 +23,8 @@ type AirwaySourceKind =
   | "clickhouse"
   | "postgres_cdc"
   | "toast"
-  | "quickbooks";
+  | "quickbooks"
+  | "sp_api";
 
 export interface SourceOption {
   /** Selection id — may differ from the airway kind (e.g. "toast"). */
@@ -52,6 +53,12 @@ export const SOURCE_OPTIONS: SourceOption[] = [
     label: "QuickBooks Online",
     description: "Accounting + inventory (invoices, bills, P&L)",
     airwayKind: "quickbooks"
+  },
+  {
+    id: "sp_api",
+    label: "Amazon Selling Partner",
+    description: "Seller reports (ledger, FBA inventory, shipments)",
+    airwayKind: "sp_api"
   },
   {
     id: "filesystem",
@@ -91,6 +98,35 @@ export const WRITABLE_DESTINATION_DB_TYPES = [
   "airhouse_managed"
 ] as const;
 
+/** First day of the PREVIOUS month, `YYYY-MM-DD`.
+ *
+ * The default start, and the reasoning is a balance between two failure modes
+ * that are not symmetric.
+ *
+ * Reaching too far back is the dangerous one. `plan_pull` emits a single
+ * `Window { start, end: now }` — the whole span is ONE report, never chunked —
+ * and the cursor only advances on success. So if the first window is large
+ * enough that Amazon cannot build the report inside the poll budget (20 polls,
+ * roughly 40-75 minutes) or the document cannot be downloaded inside the 300s
+ * deadline, the run fails and *every later run retries the identical window*.
+ * It never gets smaller on its own. That is a permanent stall, not a slow start.
+ *
+ * Reaching too recent loses history quietly: this connector only pulls forward,
+ * so anything before the first run is absent until someone resets the cursor.
+ *
+ * A month boundary makes the span self-limiting — between one and two months
+ * depending on the day of the month, never more — which is comfortably inside
+ * both budgets while still giving the demand model a full prior month.
+ *
+ * UTC to match the connector, which stamps and compares in UTC throughout.
+ */
+export function firstOfLastMonth(now: Date = new Date()): string {
+  // `Date.UTC` normalises month -1 into the previous year in January.
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+    .toISOString()
+    .slice(0, 10);
+}
+
 /** Per-option `config:` block, keyed by `SourceOption.id`. */
 const SOURCE_CONFIG: Record<string, string> = {
   rest_api: `    base_url: https://api.example.com
@@ -112,6 +148,17 @@ const SOURCE_CONFIG: Record<string, string> = {
     refresh_token_var: QB_REFRESH_TOKEN
     realm_id: <company-realm-id>
     # base_url: https://sandbox-quickbooks.api.intuit.com`,
+  // Amazon SP-API. `client_secret_var` / `refresh_token_var` are
+  // secret-manager names resolved at run time. `marketplace_id` must be a
+  // NORTH AMERICA marketplace — the connector pins the NA endpoint, and the
+  // factory refuses anything else by name rather than letting it 403 like a
+  // bad credential. `default_start` is required: the connector pulls forward
+  // only, so it is the entire backfill policy.
+  sp_api: `    client_id: <lwa-client-id>
+    client_secret_var: SP_API_CLIENT_SECRET
+    refresh_token_var: SP_API_REFRESH_TOKEN
+    marketplace_id: ATVPDKIKX0DER # US; CA=A2EUQ1WTGCTBG2
+    default_start: "<YYYY-MM-DD>"`,
   filesystem: `    base_path: /path/to/data # or s3://bucket/prefix, gs://..., az://...
     pattern: "*.jsonl"
     format: jsonl # json | jsonl | csv
@@ -164,6 +211,23 @@ interface QuickBooksScaffold {
   baseUrl?: string;
 }
 
+/** Amazon SP-API wizard fields.
+ *
+ * `clientSecretVar` / `refreshTokenVar` are secret-manager names resolved at
+ * run time — the values themselves never reach the `.airway.yml`. Unlike
+ * QuickBooks there is no OAuth flow here: an SP-API refresh token comes from
+ * authorizing the app in Seller Central, so the operator already holds one.
+ *
+ * `defaultStart` is REQUIRED, not optional, and that is deliberate — see
+ * `buildSpApiConfig`. */
+interface SpApiScaffold {
+  clientId: string;
+  clientSecretVar: string;
+  refreshTokenVar: string;
+  marketplaceId: string;
+  defaultStart: string;
+}
+
 /** ClickHouse wizard fields. `passwordVar` is the secret-manager name
  *  the executor resolves at run time — the password itself is never
  *  written into the `.airway.yml`. `tables` are the names picked from
@@ -202,6 +266,8 @@ export interface ScaffoldInput {
   quickbooks?: QuickBooksScaffold;
   /** Required when `sourceId === "clickhouse"`. */
   clickhouse?: ClickHouseScaffold;
+  /** Required when `sourceId === "sp_api"`. */
+  spApi?: SpApiScaffold;
   /** A `config.yml` database name (the resolved destination). */
   destinationDatabase: string;
   /** Logical dataset/schema written into the destination. */
@@ -238,6 +304,27 @@ function buildQuickBooksConfig(q: QuickBooksScaffold): string {
   ];
   if (q.baseUrl?.trim()) lines.push(`    base_url: ${q.baseUrl.trim()}`);
   return lines.join("\n");
+}
+
+function buildSpApiConfig(s: SpApiScaffold): string {
+  // `default_start` is always emitted, never omitted-to-default. The
+  // connector pulls FORWARD only, so this single value is the entire backfill
+  // policy: too recent and the history is simply absent with nothing to signal
+  // it, too far back and the first run spends report jobs against a
+  // per-account budget that restores about once a minute. `build_sp_api`
+  // refuses a config without it rather than guessing, so the wizard must not
+  // produce one either.
+  //
+  // Quoted so YAML keeps `2026-01-01` a string rather than parsing it as a
+  // date — the connector's field is a String it parses itself, and an unquoted
+  // date arrives as a serde type error naming the struct, not the field.
+  return [
+    `    client_id: ${s.clientId}`,
+    `    client_secret_var: ${s.clientSecretVar}`,
+    `    refresh_token_var: ${s.refreshTokenVar}`,
+    `    marketplace_id: ${s.marketplaceId}`,
+    `    default_start: "${s.defaultStart}"`
+  ].join("\n");
 }
 
 function buildClickHouseConfig(c: ClickHouseScaffold): string {
@@ -278,6 +365,8 @@ export function buildPipelineScaffold(input: ScaffoldInput): string {
     configBlock = buildQuickBooksConfig(input.quickbooks);
   } else if (option.id === "clickhouse" && input.clickhouse) {
     configBlock = buildClickHouseConfig(input.clickhouse);
+  } else if (option.id === "sp_api" && input.spApi) {
+    configBlock = buildSpApiConfig(input.spApi);
   } else {
     configBlock = SOURCE_CONFIG[option.id] ?? SOURCE_CONFIG[option.airwayKind];
   }

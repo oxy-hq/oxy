@@ -77,6 +77,13 @@ pub(super) fn build_workspace_routes(
         // Same boundary-backed pattern for Airway pipelines (`/agentic-airway`
         // is IdeOnly + in a crate that can't reach `compiled_reader`).
         .route_fleet("/airway-pipelines", get(pipeline::list_pipelines))
+        // Static connector metadata for the New Pipeline wizard's marketplace
+        // picker. Served rather than duplicated in the frontend so the list
+        // has one source of truth (`source_factory::NA_MARKETPLACES`).
+        .route_fleet(
+            "/airway-pipelines/sp-api/marketplaces",
+            get(pipeline::list_sp_api_marketplaces),
+        )
         .nest("/threads", build_thread_routes(&app_state))
         .nest("/agents", build_agent_routes(&app_state))
         .nest("/api-keys", build_api_key_routes(&app_state))

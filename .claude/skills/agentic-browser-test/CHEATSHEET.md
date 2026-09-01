@@ -153,6 +153,8 @@ Authoritative: `runner/judge.ts`.
 - assert: "selector <sel> is visible"
 - assert: "selector <sel> is not visible"
 - assert: "selector <sel> has attribute <attr>=<value>"
+- assert: "selector <sel> has a non-empty value"   # inputValue(); controlled inputs
+- assert: "selector <sel> does not contain text \"<text>\""  # textContent(); non-inputs
 - assert: "text \"<exact text>\" is visible"
 - assert: "save button is not visible"        # IDE-specific helper, 5 s waitFor
 ```

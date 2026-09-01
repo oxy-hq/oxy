@@ -138,6 +138,10 @@ steps:
 - `assert: <claim>` — deterministic, $0. Supported forms (read `runner/judge.ts`):
   - `selector <sel> is visible` / `is not visible`
   - `selector <sel> has attribute <attr>=<value>`
+  - `selector <sel> has a non-empty value` (via `inputValue()` — a controlled
+    React input sets the value *property*, so `has attribute value=` misses it)
+  - `selector <sel> does not contain text "<text>"` (via `textContent()`, for
+    non-inputs such as a `SelectTrigger` button showing a placeholder)
   - `text "<text>" is visible`
   - `<description> is enabled`
   - `save button is not visible` (IDE-specific 5s waitFor helper)

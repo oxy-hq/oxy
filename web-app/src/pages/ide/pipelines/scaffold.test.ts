@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPipelineScaffold } from "./scaffold";
+import { buildPipelineScaffold, firstOfLastMonth } from "./scaffold";
 
 describe("buildPipelineScaffold", () => {
   it("emits a database-reference destination, not raw credentials", () => {
@@ -65,6 +65,53 @@ describe("buildPipelineScaffold", () => {
     // Neither secret value is ever scaffolded.
     expect(yaml).not.toContain("client_secret:");
     expect(yaml).not.toContain("refresh_token:");
+  });
+
+  it("emits an sp_api source with secret vars, never raw secrets", () => {
+    const yaml = buildPipelineScaffold({
+      name: "amazon_daily",
+      sourceId: "sp_api",
+      spApi: {
+        clientId: "amzn1.application-oa2-client.abc",
+        clientSecretVar: "SP_API_PROD_SECRET",
+        refreshTokenVar: "SP_API_PROD_REFRESH",
+        marketplaceId: "A2EUQ1WTGCTBG2",
+        defaultStart: "2026-01-01"
+      },
+      destinationDatabase: "wh",
+      datasetName: "amazon_daily"
+    });
+    expect(yaml).toContain("kind: sp_api");
+    expect(yaml).toContain("client_id: amzn1.application-oa2-client.abc");
+    expect(yaml).toContain("client_secret_var: SP_API_PROD_SECRET");
+    expect(yaml).toContain("refresh_token_var: SP_API_PROD_REFRESH");
+    expect(yaml).toContain("marketplace_id: A2EUQ1WTGCTBG2");
+    // Neither secret VALUE is ever scaffolded — only the names.
+    expect(yaml).not.toContain("client_secret:");
+    expect(yaml).not.toContain("refresh_token:");
+  });
+
+  it("always emits default_start, quoted so YAML keeps it a string", () => {
+    const yaml = buildPipelineScaffold({
+      name: "amazon_daily",
+      sourceId: "sp_api",
+      spApi: {
+        clientId: "c",
+        clientSecretVar: "S",
+        refreshTokenVar: "R",
+        marketplaceId: "ATVPDKIKX0DER",
+        defaultStart: "2026-01-01"
+      },
+      destinationDatabase: "wh",
+      datasetName: "amazon_daily"
+    });
+    // Quoted: unquoted, YAML parses it as a date and the connector's String
+    // field rejects it with a serde error naming the struct, not the field.
+    expect(yaml).toContain('default_start: "2026-01-01"');
+    // Never omitted-to-default. The connector pulls forward only, so this is
+    // the entire backfill policy and `build_sp_api` refuses a config without
+    // it — the wizard must not be able to produce one.
+    expect(yaml).toMatch(/default_start:/);
   });
 
   it("omits base_url when not provided", () => {
@@ -200,5 +247,44 @@ describe("buildPipelineScaffold", () => {
       datasetName: "p"
     });
     expect(yaml).toContain("kind: rest_api");
+  });
+});
+
+describe("firstOfLastMonth", () => {
+  it("is the first of the previous month", () => {
+    expect(firstOfLastMonth(new Date("2026-09-15T12:00:00Z"))).toBe("2026-08-01");
+  });
+
+  it("rolls back across the year boundary", () => {
+    // `new Date(y, -1, 1)` would be December of the previous year only because
+    // Date normalises it; asserted rather than assumed.
+    expect(firstOfLastMonth(new Date("2026-01-05T00:00:00Z"))).toBe("2025-12-01");
+  });
+
+  it("bounds the first window between one and two months", () => {
+    // This is the whole point of anchoring to a month boundary. `plan_pull`
+    // asks for the span as ONE report and the cursor only advances on success,
+    // so a window too large to build fails identically on every later run —
+    // the span has to be self-limiting rather than open-ended.
+    const dayMs = 24 * 60 * 60 * 1000;
+    for (const iso of [
+      "2026-03-01T00:00:00Z", // first of the month — the shortest span
+      "2026-03-31T23:59:59Z", // last of the month — the longest span
+      "2026-01-01T00:00:00Z", // year boundary, shortest
+      "2026-12-31T00:00:00Z" // year end, longest
+    ]) {
+      const now = new Date(iso);
+      const spanDays = (now.getTime() - new Date(firstOfLastMonth(now)).getTime()) / dayMs;
+      expect(spanDays).toBeGreaterThanOrEqual(27); // a short February still clears a month
+      expect(spanDays).toBeLessThan(63); // never more than two months
+    }
+  });
+
+  it("never returns a future or same-month date", () => {
+    // A start at or after `now` makes `plan_pull` return `UpToDate`, so the
+    // pipeline would land nothing at all and look healthy doing it.
+    const now = new Date("2026-06-10T00:00:00Z");
+    expect(new Date(firstOfLastMonth(now)).getTime()).toBeLessThan(now.getTime());
+    expect(firstOfLastMonth(now).slice(0, 7)).not.toBe("2026-06");
   });
 });

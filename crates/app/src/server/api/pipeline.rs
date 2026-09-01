@@ -169,3 +169,42 @@ mod tests {
         assert!(serde_yaml::from_str::<serde_json::Value>("name: [unclosed").is_err());
     }
 }
+
+/// One marketplace the `sp_api` connector can reach.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpApiMarketplace {
+    pub id: &'static str,
+    pub country: &'static str,
+    pub label: &'static str,
+}
+
+/// `GET /{workspace_id}/airway-pipelines/sp-api/marketplaces` — FleetOk.
+///
+/// Serves `agentic_airway::source_factory::NA_MARKETPLACES` so the wizard's
+/// marketplace picker has ONE source of truth. The list was briefly duplicated
+/// in TypeScript, which is a slow trap rather than a fast one: `SpApiSource`
+/// pins the NA endpoint today, and when it learns to take a host the Rust list
+/// widens — a stale copy in the frontend would then be the only thing refusing
+/// a marketplace the connector accepts, with nothing failing to point at it.
+///
+/// Takes NO extractor, deliberately. `WorkspaceManagerReadOnly` is not inert:
+/// it rejects with the needs-recompile 503 whenever the middleware left no
+/// manager in the extensions, so adding it "just to sit under the workspace
+/// scope" would make the one handler here that genuinely cannot fail the only
+/// one that can — and it would fail on a fresh or just-deployed workspace,
+/// which is exactly when someone is creating their first pipeline. The route
+/// stays under the workspace path either way; auth and middleware gating are
+/// unchanged.
+pub async fn list_sp_api_marketplaces() -> extract::Json<Vec<SpApiMarketplace>> {
+    extract::Json(
+        agentic_airway::source_factory::NA_MARKETPLACES
+            .iter()
+            .map(|m| SpApiMarketplace {
+                id: m.id,
+                country: m.country,
+                label: m.label,
+            })
+            .collect(),
+    )
+}

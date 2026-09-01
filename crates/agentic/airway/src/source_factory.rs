@@ -1169,11 +1169,40 @@ fn build_weather(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
 /// come back 403 — an auth-shaped error for what is really a routing mistake,
 /// on a connector whose other 403 (an expired presigned url) is expected and
 /// retried. Refused here by name instead, until the connector takes a host.
-const NA_MARKETPLACES: &[(&str, &str)] = &[
-    ("ATVPDKIKX0DER", "US"),
-    ("A2EUQ1WTGCTBG2", "CA"),
-    ("A1AM78C64UM0Y8", "MX"),
-    ("A2Q3Y263D9QSEX", "BR"),
+pub struct NaMarketplace {
+    /// Amazon's marketplace id, written to `.airway.yml` verbatim.
+    pub id: &'static str,
+    /// ISO country code, for the refusal message.
+    pub country: &'static str,
+    /// Human name, for a picker.
+    pub label: &'static str,
+}
+
+/// **The** list. Exported so the wizard's marketplace picker is driven from
+/// here rather than from a second copy in TypeScript — a duplicate would go
+/// stale silently the moment this one widens, and the UI would then be the
+/// thing refusing a marketplace the connector accepts.
+pub const NA_MARKETPLACES: &[NaMarketplace] = &[
+    NaMarketplace {
+        id: "ATVPDKIKX0DER",
+        country: "US",
+        label: "United States",
+    },
+    NaMarketplace {
+        id: "A2EUQ1WTGCTBG2",
+        country: "CA",
+        label: "Canada",
+    },
+    NaMarketplace {
+        id: "A1AM78C64UM0Y8",
+        country: "MX",
+        label: "Mexico",
+    },
+    NaMarketplace {
+        id: "A2Q3Y263D9QSEX",
+        country: "BR",
+        label: "Brazil",
+    },
 ];
 
 #[derive(Deserialize)]
@@ -1200,11 +1229,21 @@ struct SpApiParams {
     /// Where a resource with no cursor starts, as `YYYY-MM-DD` or RFC 3339.
     ///
     /// Required rather than defaulted, deliberately. This connector pulls
-    /// FORWARD only, so this single value is the entire backfill policy: too
-    /// recent and the history is simply absent with nothing to signal it, too
-    /// far back and the first run spends report jobs against a per-account
-    /// budget that restores about once a minute. Neither failure is visible in
-    /// the output, so it is not a decision to make on the operator's behalf.
+    /// FORWARD only, so this single value is the entire backfill policy, and
+    /// the two ways of getting it wrong are not symmetric.
+    ///
+    /// Too recent loses history quietly — it is absent with nothing to signal
+    /// it, and only a cursor reset brings it back.
+    ///
+    /// Too far back is worse. `plan_pull` emits ONE `Window { start, end }` for
+    /// the whole span — there is no chunking — and the cursor advances only on
+    /// success. A window too large for Amazon to build within the poll budget,
+    /// or too large to download inside the document deadline, therefore fails
+    /// identically on every subsequent run. It stalls permanently rather than
+    /// catching up.
+    ///
+    /// Neither failure is visible in the output, so it is not a decision to
+    /// make on the operator's behalf.
     #[serde(default)]
     default_start: Option<String>,
 }
@@ -1264,11 +1303,11 @@ fn build_sp_api(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
 
     if !NA_MARKETPLACES
         .iter()
-        .any(|(id, _)| *id == params.marketplace_id)
+        .any(|m| m.id == params.marketplace_id)
     {
         let known: Vec<String> = NA_MARKETPLACES
             .iter()
-            .map(|(id, cc)| format!("{cc}={id}"))
+            .map(|m| format!("{}={}", m.country, m.id))
             .collect();
         return Err(AirwayError::Other(format!(
             "sp_api config: `marketplace_id` {:?} is not a North America marketplace, and this \
@@ -1284,8 +1323,9 @@ fn build_sp_api(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
         None => {
             return Err(AirwayError::Other(
                 "sp_api config: `default_start` is required — it is the entire backfill policy \
-                 for a forward-only connector, and both a too-recent and a too-old value fail \
-                 silently (missing history, or a first run that exhausts the report budget)"
+                 for a forward-only connector. Too recent loses history silently; too far back \
+                 asks for one oversized report that fails the same way on every run, because the \
+                 span is never chunked and the cursor only advances on success"
                     .to_string(),
             ));
         }
