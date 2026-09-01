@@ -62,7 +62,10 @@ impl SemanticCatalog {
     pub(super) fn find_measure<'a>(
         &'a self,
         metric: &str,
-    ) -> Option<(&'a airlayer::View, &'a airlayer::Measure)> {
+    ) -> Option<(
+        &'a oxy_airlayer_compat::View,
+        &'a oxy_airlayer_compat::Measure,
+    )> {
         self.engine.views().iter().find_map(|v| {
             v.measures_list()
                 .iter()
@@ -75,7 +78,10 @@ impl SemanticCatalog {
     pub(super) fn find_dimension<'a>(
         &'a self,
         dim: &str,
-    ) -> Option<(&'a airlayer::View, &'a airlayer::Dimension)> {
+    ) -> Option<(
+        &'a oxy_airlayer_compat::View,
+        &'a oxy_airlayer_compat::Dimension,
+    )> {
         self.engine.views().iter().find_map(|v| {
             v.dimensions
                 .iter()
@@ -90,13 +96,13 @@ impl SemanticCatalog {
     /// key matches a `foreign` entity key in `B`.
     pub(super) fn reachable_views<'a>(
         &'a self,
-        start: &'a airlayer::View,
-    ) -> Vec<&'a airlayer::View> {
+        start: &'a oxy_airlayer_compat::View,
+    ) -> Vec<&'a oxy_airlayer_compat::View> {
         let mut reachable = vec![start];
         let primary_keys: Vec<String> = start
             .entities
             .iter()
-            .filter(|e| e.entity_type == airlayer::schema::models::EntityType::Primary)
+            .filter(|e| e.entity_type == oxy_airlayer_compat::schema::models::EntityType::Primary)
             .flat_map(|e| e.get_keys())
             .collect();
 
@@ -105,7 +111,7 @@ impl SemanticCatalog {
                 continue;
             }
             let joinable = view.entities.iter().any(|e| {
-                e.entity_type == airlayer::schema::models::EntityType::Foreign
+                e.entity_type == oxy_airlayer_compat::schema::models::EntityType::Foreign
                     && e.get_keys().iter().any(|k| primary_keys.contains(k))
             });
             if joinable && !reachable.iter().any(|r| r.name == view.name) {
@@ -163,7 +169,7 @@ impl SemanticCatalog {
 
                 // Build search order: preferred views first, then the rest.
                 let all_views = self.engine.views();
-                let ordered: Vec<&airlayer::View> = preferred_views
+                let ordered: Vec<&oxy_airlayer_compat::View> = preferred_views
                     .iter()
                     .filter_map(|pv| all_views.iter().find(|v| &v.name == pv))
                     .chain(

@@ -22,8 +22,8 @@
 
 use std::sync::{Arc, RwLock};
 
-use airlayer::Dialect;
-use airlayer::engine::query::QueryRequest;
+use oxy_airlayer_compat::Dialect;
+use oxy_airlayer_compat::engine::query::QueryRequest;
 
 use crate::compile::{BlobConfig, CompiledQuery, PreaggContext, PreaggSource, try_resolve_preagg};
 use crate::refresh_key_cache::RefreshKeyCache;
@@ -83,17 +83,18 @@ INSERT INTO orders VALUES
   ('2026-02-27', 'pending', 35.0, 5);
 ";
 
-fn view() -> airlayer::View {
+fn view() -> oxy_airlayer_compat::View {
     serde_yaml::from_str(ORDERS_VIEW).expect("fixture view should parse")
 }
 
-fn layer() -> airlayer::SemanticLayer {
-    airlayer::SemanticLayer::new(vec![view()], None)
+fn layer() -> oxy_airlayer_compat::SemanticLayer {
+    oxy_airlayer_compat::SemanticLayer::new(vec![view()], None)
 }
 
-fn engine() -> airlayer::SemanticEngine {
-    let dialects = airlayer::DatasourceDialectMap::with_default(Dialect::DuckDB);
-    airlayer::SemanticEngine::from_semantic_layer(layer(), dialects).expect("engine builds")
+fn engine() -> oxy_airlayer_compat::SemanticEngine {
+    let dialects = oxy_airlayer_compat::DatasourceDialectMap::with_default(Dialect::DuckDB);
+    oxy_airlayer_compat::SemanticEngine::from_semantic_layer(layer(), dialects)
+        .expect("engine builds")
 }
 
 /// Run a query and return its rows as `Vec<Vec<String>>`, column order
@@ -209,7 +210,7 @@ fn fixture(workspace: &ScratchWorkspace) -> duckdb::Connection {
     conn.execute_batch(SEED_ROWS).expect("seed rows insert");
 
     let v = view();
-    let plan = airlayer::preagg::collect_build_sql(
+    let plan = oxy_airlayer_compat::preagg::collect_build_sql(
         &[&v],
         "main",
         "20260301",
@@ -241,7 +242,7 @@ fn fixture(workspace: &ScratchWorkspace) -> duckdb::Connection {
                 parquet_path.display()
             ))
             .unwrap_or_else(|e| panic!("parquet export failed for {table}: {e}"));
-            airlayer::preagg::LocalRollupEntry {
+            oxy_airlayer_compat::preagg::LocalRollupEntry {
                 view_name: entry.view_name.clone(),
                 rollup_name: entry.rollup_name.clone(),
                 rollup_hash: entry.rollup_hash.clone(),
@@ -257,7 +258,7 @@ fn fixture(workspace: &ScratchWorkspace) -> duckdb::Connection {
         })
         .collect();
 
-    let manifest = airlayer::preagg::LocalManifest {
+    let manifest = oxy_airlayer_compat::preagg::LocalManifest {
         pulled_at: "2026-03-01T00:00:00Z".to_string(),
         source_database: "local".to_string(),
         rollups,

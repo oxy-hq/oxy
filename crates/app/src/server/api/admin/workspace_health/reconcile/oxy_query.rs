@@ -3,7 +3,7 @@
 //! `f64`. No I/O — all unit-testable.
 
 use agentic_core::result::CellValue;
-use airlayer::engine::query::{QueryRequest, TimeDimensionQuery};
+use oxy_airlayer_compat::engine::query::{QueryRequest, TimeDimensionQuery};
 
 use super::ResolvedWindow;
 

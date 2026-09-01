@@ -122,7 +122,7 @@ pub struct QuerySpec {
     /// and Solve is skipped.  When it fails non-retryably, `precomputed`
     /// stays `None` and the Solving stage handles the fallback.
     #[serde(skip)]
-    pub query_request: Option<airlayer::engine::query::QueryRequest>,
+    pub query_request: Option<oxy_airlayer_compat::engine::query::QueryRequest>,
     /// Error message from a failed airlayer compile attempt in Specifying.
     ///
     /// Set when the LLM produced a valid `QueryRequest` but

@@ -1,7 +1,7 @@
 //! Parse raw filter strings into structured airlayer [`QueryFilter`]s + SQL
 //! formatting for the raw-schema translation path.
 //!
-//! [`QueryFilter`]: airlayer::engine::query::QueryFilter
+//! [`QueryFilter`]: oxy_airlayer_compat::engine::query::QueryFilter
 
 use crate::catalog::CatalogError;
 
@@ -9,7 +9,7 @@ use super::SemanticCatalog;
 
 impl SemanticCatalog {
     /// Parse raw filter strings from the intent into structured airlayer
-    /// [`QueryFilter`](airlayer::engine::query::QueryFilter) objects.
+    /// [`QueryFilter`](oxy_airlayer_compat::engine::query::QueryFilter) objects.
     ///
     /// Supports simple comparison filters like `"date >= '2024-01-01'"` or
     /// `"status = 'active'"`.  The column name is qualified against the
@@ -22,7 +22,7 @@ impl SemanticCatalog {
         &self,
         filters: &[String],
         preferred_views: &[String],
-    ) -> Result<Vec<airlayer::engine::query::QueryFilter>, CatalogError> {
+    ) -> Result<Vec<oxy_airlayer_compat::engine::query::QueryFilter>, CatalogError> {
         filters
             .iter()
             .map(|raw| {
@@ -39,12 +39,12 @@ impl SemanticCatalog {
     /// `=`, `!=`, `<>`, `>=`, `<=`, `>`, `<`, `IN`, `NOT IN`, `IS NULL`,
     /// `IS NOT NULL`, `LIKE`, `NOT LIKE`, `BETWEEN`.
     ///
-    /// [`QueryFilter`]: airlayer::engine::query::QueryFilter
+    /// [`QueryFilter`]: oxy_airlayer_compat::engine::query::QueryFilter
     fn parse_single_filter(
         raw: &str,
         qualify: impl Fn(&str) -> Option<String>,
-    ) -> Result<airlayer::engine::query::QueryFilter, CatalogError> {
-        use airlayer::engine::query::{FilterOperator, QueryFilter};
+    ) -> Result<oxy_airlayer_compat::engine::query::QueryFilter, CatalogError> {
+        use oxy_airlayer_compat::engine::query::{FilterOperator, QueryFilter};
 
         let trimmed = raw.trim();
         let upper = trimmed.to_uppercase();
@@ -213,10 +213,10 @@ impl SemanticCatalog {
 /// Format a structured filter into a raw SQL WHERE clause fragment.
 pub(super) fn format_filter_as_sql(
     col_expr: &str,
-    operator: &airlayer::engine::query::FilterOperator,
+    operator: &oxy_airlayer_compat::engine::query::FilterOperator,
     values: &[String],
 ) -> String {
-    use airlayer::engine::query::FilterOperator;
+    use oxy_airlayer_compat::engine::query::FilterOperator;
     match operator {
         FilterOperator::Equals if values.len() == 1 => {
             format!("{} = '{}'", col_expr, values[0])

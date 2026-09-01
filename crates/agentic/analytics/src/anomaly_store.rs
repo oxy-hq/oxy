@@ -35,8 +35,10 @@ pub struct AnomalyRecord {
 /// `{member, values}`) into airlayer equals-filters, used to scope a
 /// root-cause explain to the anomaly's segment. Malformed / empty input
 /// yields no filters (an unscoped, chain-wide explain).
-pub fn segment_query_filters(filters: &Option<Value>) -> Vec<airlayer::engine::query::QueryFilter> {
-    use airlayer::engine::query::{FilterOperator, QueryFilter};
+pub fn segment_query_filters(
+    filters: &Option<Value>,
+) -> Vec<oxy_airlayer_compat::engine::query::QueryFilter> {
+    use oxy_airlayer_compat::engine::query::{FilterOperator, QueryFilter};
     let Some(Value::Array(arr)) = filters else {
         return vec![];
     };

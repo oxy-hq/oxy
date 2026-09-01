@@ -1,7 +1,7 @@
 //! Translate an airlayer [`QueryRequest`] back to raw-schema context for the
 //! Solve fallback path.
 //!
-//! [`QueryRequest`]: airlayer::engine::query::QueryRequest
+//! [`QueryRequest`]: oxy_airlayer_compat::engine::query::QueryRequest
 
 use crate::catalog::{Catalog, DimensionSummary, JoinPath, MetricDef, QueryContext};
 
@@ -33,7 +33,7 @@ impl SemanticCatalog {
     /// underlying expression and table.
     pub fn translate_to_raw_context(
         &self,
-        request: &airlayer::engine::query::QueryRequest,
+        request: &oxy_airlayer_compat::engine::query::QueryRequest,
         compile_error: &str,
     ) -> RawSchemaTranslation {
         use std::collections::HashSet;

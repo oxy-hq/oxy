@@ -243,7 +243,7 @@ pub async fn run_semantic_query(
             .config_manager
             .semantics_scan_path(),
     };
-    let databases: Vec<airlayer::DatabaseConfig> = proj_ctx
+    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = proj_ctx
         .workspace_manager()
         .config_manager
         .list_databases()
@@ -258,10 +258,7 @@ pub async fn run_semantic_query(
         // workspace running airhouse alongside ClickHouse then gets ClickHouse
         // SQL compiled for its DuckDB views, and step 6 below dutifully routes
         // that SQL to the airhouse connector.
-        .map(|db| airlayer::DatabaseConfig {
-            name: db.name.clone(),
-            db_type: db.dialect(),
-        })
+        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
         .collect();
 
     // 5b. Attach the rollup short-circuit.
@@ -946,8 +943,8 @@ mod tests {
         // to interpret it, and the one where `dialect()` is still correct
         // anyway. What matters is the mapping below, which survives the bump.
         assert_eq!(
-            airlayer::Dialect::from_str(&db.dialect()),
-            Some(airlayer::Dialect::DuckDB),
+            oxy_airlayer_compat::Dialect::from_str(&db.dialect()),
+            Some(oxy_airlayer_compat::Dialect::DuckDB),
             "dialect() must land on the engine airhouse actually speaks"
         );
     }

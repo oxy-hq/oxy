@@ -1,6 +1,6 @@
 //! Cross-crate hook for executing metric-tree queries against a real warehouse.
 //!
-//! The metric-tree ops in `airlayer::engine::metric_tree_ops` (`explain`,
+//! The metric-tree ops in `oxy_airlayer_compat::engine::metric_tree_ops` (`explain`,
 //! `opportunity`) compile airlayer `QueryRequest`s into SQL and need to run
 //! that SQL against an actual database. The analytics domain doesn't know
 //! how to reach Oxy's connector pool — that wiring lives in `oxy-app`
@@ -12,12 +12,14 @@
 //! configured warehouse (auth, dialect resolution); execution returns the
 //! synchronous `QueryExecutor` closure that airlayer's ops expect.
 
-use airlayer::DatabaseConfig;
-use airlayer::SemanticLayer;
-use airlayer::engine::EngineError;
-use airlayer::engine::metric_tree::MetricTree;
-use airlayer::engine::metric_tree_ops::{ExplainConfig, ExplainResult, OpportunityResult};
-use airlayer::engine::query::QueryFilter;
+use oxy_airlayer_compat::DatabaseConfig;
+use oxy_airlayer_compat::SemanticLayer;
+use oxy_airlayer_compat::engine::EngineError;
+use oxy_airlayer_compat::engine::metric_tree::MetricTree;
+use oxy_airlayer_compat::engine::metric_tree_ops::{
+    ExplainConfig, ExplainResult, OpportunityResult,
+};
+use oxy_airlayer_compat::engine::query::QueryFilter;
 use std::sync::Arc;
 
 /// Run airlayer metric-tree ops against a real warehouse.
@@ -44,7 +46,7 @@ pub trait MetricTreeRunner: Send + Sync {
     async fn list_databases(&self) -> Vec<DatabaseConfig>;
 
     /// Period-over-period root cause analysis. The implementor builds the
-    /// `QueryExecutor` and runs `airlayer::explain` inside `spawn_blocking`.
+    /// `QueryExecutor` and runs `oxy_airlayer_compat::engine::metric_tree_ops::explain` inside `spawn_blocking`.
     ///
     /// `filters` are base equals-filters applied to every query the explain
     /// issues — used to scope a per-segment anomaly (e.g. one restaurant) so
@@ -121,7 +123,7 @@ pub trait MetricTreeRunner: Send + Sync {
     /// reconciliation. Defaults to unsupported so existing runners need no change.
     async fn run_query_scalar(
         &self,
-        request: airlayer::engine::query::QueryRequest,
+        request: oxy_airlayer_compat::engine::query::QueryRequest,
     ) -> Result<f64, MetricTreeRunnerError> {
         let _ = request;
         Err(MetricTreeRunnerError::Op(
@@ -131,7 +133,7 @@ pub trait MetricTreeRunner: Send + Sync {
 }
 
 /// Failure modes for runner construction. Op-level errors come back as
-/// `airlayer::engine::EngineError` from the executor itself.
+/// `oxy_airlayer_compat::engine::EngineError` from the executor itself.
 #[derive(Debug)]
 pub enum MetricTreeRunnerError {
     LayerLoad(String),
@@ -163,6 +165,6 @@ pub async fn load_tree(
     runner: &Arc<dyn MetricTreeRunner>,
 ) -> Result<(SemanticLayer, MetricTree), MetricTreeRunnerError> {
     let layer = runner.load_layer().await?;
-    let tree = airlayer::engine::metric_tree::MetricTree::build(&layer);
+    let tree = oxy_airlayer_compat::engine::metric_tree::MetricTree::build(&layer);
     Ok((layer, tree))
 }

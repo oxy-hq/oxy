@@ -118,12 +118,12 @@ impl Catalog for SemanticCatalog {
         let pk_keys: Vec<String> = from_view
             .entities
             .iter()
-            .filter(|e| e.entity_type == airlayer::schema::models::EntityType::Primary)
+            .filter(|e| e.entity_type == oxy_airlayer_compat::schema::models::EntityType::Primary)
             .flat_map(|e| e.get_keys())
             .collect();
 
         let join_key = to_view.entities.iter().find(|e| {
-            e.entity_type == airlayer::schema::models::EntityType::Foreign
+            e.entity_type == oxy_airlayer_compat::schema::models::EntityType::Foreign
                 && e.get_keys().iter().any(|k| pk_keys.contains(k))
         })?;
 
@@ -212,15 +212,15 @@ impl Catalog for SemanticCatalog {
                 let d = v.dimensions.iter().find(|d| {
                     matches!(
                         d.dimension_type,
-                        airlayer::schema::models::DimensionType::Date
-                            | airlayer::schema::models::DimensionType::Datetime
+                        oxy_airlayer_compat::schema::models::DimensionType::Date
+                            | oxy_airlayer_compat::schema::models::DimensionType::Datetime
                     )
                 })?;
                 (d.name.clone(), d.expr.clone(), false)
             };
 
         let refresh_key_sql = match &v.refresh_key {
-            Some(airlayer::schema::models::RefreshKey::Sql(sql)) => Some(sql.clone()),
+            Some(oxy_airlayer_compat::schema::models::RefreshKey::Sql(sql)) => Some(sql.clone()),
             _ => None,
         };
 
@@ -300,7 +300,7 @@ impl Catalog for SemanticCatalog {
         let filters = self.parse_intent_filters(&intent.filters, &metric_views)?;
         tracing::debug!(?filters, "parsed filters");
 
-        let request = airlayer::engine::query::QueryRequest {
+        let request = oxy_airlayer_compat::engine::query::QueryRequest {
             measures,
             dimensions,
             filters,

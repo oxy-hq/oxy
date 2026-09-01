@@ -184,7 +184,9 @@ pub(crate) async fn enter_semantic_boundary(
 
 /// Parse the airlayer semantic layer from a scan directory, off the async
 /// runtime (it's blocking CPU work that walks every `.view.yml`/`.topic.yml`).
-pub(crate) async fn load_layer(scan_path: PathBuf) -> Result<airlayer::SemanticLayer, Response> {
+pub(crate) async fn load_layer(
+    scan_path: PathBuf,
+) -> Result<oxy_airlayer_compat::SemanticLayer, Response> {
     match tokio::task::spawn_blocking(move || oxy_airlayer_compat::load_layer_from_dir(&scan_path))
         .await
     {

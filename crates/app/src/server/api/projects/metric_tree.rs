@@ -21,11 +21,11 @@
 //! `/query` and `/semantic-query`. The boundary guard is held for the whole
 //! request so the tempdir outlives the run.
 
-use airlayer::schema::models::DimensionType;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use entity::workspace_members::WorkspaceRole;
+use oxy_airlayer_compat::schema::models::DimensionType;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -49,7 +49,7 @@ const EXPLAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
 async fn boundary_with_layer(
     headers: &HeaderMap,
     project_id: Uuid,
-) -> Result<(SemanticBoundary, airlayer::SemanticLayer), Response> {
+) -> Result<(SemanticBoundary, oxy_airlayer_compat::SemanticLayer), Response> {
     let boundary = enter_semantic_boundary(headers, project_id).await?;
     let layer = load_layer(boundary.scan.path_buf()).await?;
     Ok((boundary, layer))

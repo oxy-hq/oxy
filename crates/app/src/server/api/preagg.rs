@@ -306,8 +306,8 @@ fn manifest_pulled_at(bytes: &[u8]) -> Option<chrono::DateTime<chrono::Utc>> {
 }
 
 /// Render a rollup's refresh key the way the YAML writes it.
-fn refresh_key_label(key: &airlayer::schema::models::RefreshKey) -> Option<String> {
-    use airlayer::schema::models::RefreshKey;
+fn refresh_key_label(key: &oxy_airlayer_compat::schema::models::RefreshKey) -> Option<String> {
+    use oxy_airlayer_compat::schema::models::RefreshKey;
     Some(match key {
         RefreshKey::Every(interval) => format!("every {interval}"),
         // The SQL itself is a probe, not a cadence, and can be long — say that
@@ -321,7 +321,7 @@ fn refresh_key_label(key: &airlayer::schema::models::RefreshKey) -> Option<Strin
 /// Order is (view, rollup) so the table groups by view without a second pass,
 /// and so two calls with the same config produce the same page.
 pub(crate) fn declared_rollups(
-    layer: &airlayer::SemanticLayer,
+    layer: &oxy_airlayer_compat::SemanticLayer,
     cache: &HashMap<(String, String), CacheFacts>,
     // Zero-row instants by rollup HASH — see `read_empty_since`. Keyed by hash
     // rather than name on purpose: a rollup whose `dimensions:` were edited is
@@ -343,7 +343,7 @@ pub(crate) fn declared_rollups(
             let hashes: HashMap<String, String> = if declared.is_empty() {
                 HashMap::new()
             } else {
-                airlayer::preagg::resolve_rollups(view)
+                oxy_airlayer_compat::preagg::resolve_rollups(view)
                     .into_iter()
                     .map(|r| (r.name, r.hash))
                     .collect()
@@ -477,11 +477,11 @@ pub async fn get_preagg_status(
 mod preagg_tests {
     use super::*;
 
-    fn layer_from_yaml(views: &[&str]) -> airlayer::SemanticLayer {
-        airlayer::SemanticLayer::new(
+    fn layer_from_yaml(views: &[&str]) -> oxy_airlayer_compat::SemanticLayer {
+        oxy_airlayer_compat::SemanticLayer::new(
             views
                 .iter()
-                .map(|y| serde_yaml::from_str::<airlayer::View>(y).unwrap())
+                .map(|y| serde_yaml::from_str::<oxy_airlayer_compat::View>(y).unwrap())
                 .collect(),
             None,
         )
@@ -627,11 +627,11 @@ pre_aggregations:
 
     /// The hash the layer currently declares for `rollup`, which is what the
     /// ledger records and what the status join looks up.
-    fn declared_hash(layer: &airlayer::SemanticLayer, rollup: &str) -> String {
+    fn declared_hash(layer: &oxy_airlayer_compat::SemanticLayer, rollup: &str) -> String {
         layer
             .views
             .iter()
-            .flat_map(airlayer::preagg::resolve_rollups)
+            .flat_map(oxy_airlayer_compat::preagg::resolve_rollups)
             .find(|r| r.name == rollup)
             .expect("declared rollup resolves")
             .hash

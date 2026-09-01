@@ -598,7 +598,7 @@ mod tests {
     use super::super::config::{Operand, SemanticSpec, Window};
 
     fn semantic_operand(measure: &str) -> Operand {
-        let mut query = airlayer::engine::query::QueryRequest::new();
+        let mut query = oxy_airlayer_compat::engine::query::QueryRequest::new();
         query.measures = vec![measure.to_string()];
         Operand {
             label: None,

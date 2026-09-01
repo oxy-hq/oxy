@@ -211,7 +211,7 @@ fn check_local_file(source: &PreaggSource) -> Result<(), SemanticError> {
 
 /// Execute a re-aggregation SQL query against an in-memory DuckDB instance.
 ///
-/// `preagg_sql` is produced by `airlayer::preagg::generate_reagg_sql` and reads
+/// `preagg_sql` is produced by `oxy_airlayer_compat::preagg::generate_reagg_sql` and reads
 /// its Parquet via `read_parquet('...')` — a local path or an `s3://` URI,
 /// depending on `source`. The blob case reads the object in place over
 /// `httpfs`; DuckDB pushes projections and filters down, so this is a scan of
@@ -473,7 +473,7 @@ fn render_naive_datetime(dt: chrono::NaiveDateTime) -> String {
 /// Execute all statements in a `BuildPlan` against a warehouse connector.
 pub async fn execute_build_plan(
     connector: &Arc<dyn DatabaseConnector>,
-    plan: &airlayer::preagg::BuildPlan,
+    plan: &oxy_airlayer_compat::preagg::BuildPlan,
 ) -> Result<(), SemanticError> {
     for stmt in &plan.statements {
         connector.execute_statement(stmt).await.map_err(|e| {
@@ -589,7 +589,7 @@ fn write_result_to_parquet(result: &QueryResult, path: &Path) -> Result<bool, Se
 /// Load the local manifest from `<cache_dir>/manifest.json`.
 ///
 /// Returns `None` if the file doesn't exist or can't be parsed.
-pub fn load_local_manifest(cache_dir: &Path) -> Option<airlayer::preagg::LocalManifest> {
+pub fn load_local_manifest(cache_dir: &Path) -> Option<oxy_airlayer_compat::preagg::LocalManifest> {
     let path = cache_dir.join("manifest.json");
     let content = std::fs::read_to_string(&path).ok()?;
     serde_json::from_str(&content).ok()
@@ -602,7 +602,7 @@ pub fn load_local_manifest(cache_dir: &Path) -> Option<airlayer::preagg::LocalMa
 /// get the new file. This prevents partial writes if the process is killed mid-write.
 pub fn save_local_manifest(
     cache_dir: &Path,
-    manifest: &airlayer::preagg::LocalManifest,
+    manifest: &oxy_airlayer_compat::preagg::LocalManifest,
 ) -> Result<(), SemanticError> {
     std::fs::create_dir_all(cache_dir)
         .map_err(|e| SemanticError::Runtime(format!("create cache dir failed: {e}")))?;
@@ -679,7 +679,7 @@ mod tests {
     #[test]
     fn save_and_load_manifest_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        let manifest = airlayer::preagg::LocalManifest {
+        let manifest = oxy_airlayer_compat::preagg::LocalManifest {
             pulled_at: "2026-01-01T00:00:00Z".into(),
             source_database: "my_db".into(),
             rollups: vec![],
@@ -694,7 +694,7 @@ mod tests {
     #[test]
     fn save_manifest_no_tmp_remains() {
         let dir = tempfile::tempdir().unwrap();
-        let manifest = airlayer::preagg::LocalManifest {
+        let manifest = oxy_airlayer_compat::preagg::LocalManifest {
             pulled_at: "2026-01-01T00:00:00Z".into(),
             source_database: "test".into(),
             rollups: vec![],

@@ -422,7 +422,7 @@ mod resolution_classification_tests {
         fn workspace_path(&self) -> Option<&Path> {
             Some(&self.root)
         }
-        fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
+        fn database_configs(&self) -> Vec<oxy_airlayer_compat::DatabaseConfig> {
             vec![]
         }
         async fn get_connector(

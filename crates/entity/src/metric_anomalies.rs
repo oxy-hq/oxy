@@ -37,7 +37,7 @@ pub struct Model {
     /// API can expose which store/segment this anomaly belongs to.
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub filters: Option<serde_json::Value>,
-    /// Cached `airlayer::engine::metric_tree_ops::ExplainResult` for the
+    /// Cached `oxy_airlayer_compat::engine::metric_tree_ops::ExplainResult` for the
     /// drawer. `None` = never computed (or invalidated). Populated lazily
     /// by `POST /semantic/anomalies/{id}/explain`.
     #[sea_orm(column_type = "JsonBinary", nullable)]

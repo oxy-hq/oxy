@@ -110,19 +110,12 @@ impl WorkspaceContext for OxyProjectContext {
         crate::server::preagg_context::blob_config()
     }
 
-    fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
+    fn database_configs(&self) -> Vec<oxy_airlayer_compat::DatabaseConfig> {
         self.workspace_manager
             .config_manager
             .list_databases()
             .iter()
-            .map(|db| airlayer::DatabaseConfig {
-                name: db.name.clone(),
-                // `dialect()`, not the raw type name: airhouse and motherduck
-                // speak an engine their `type:` string does not name, and
-                // airlayer drops a datasource it cannot classify -- silently
-                // inheriting whichever dialect config.yml lists first.
-                db_type: db.dialect(),
-            })
+            .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
             .collect()
     }
 

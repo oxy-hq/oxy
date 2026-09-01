@@ -760,9 +760,11 @@ async fn list_anomalies_returns_empty_for_null_store() {
     };
     use crate::metric_tree_runner::MetricTreeRunnerError;
     use crate::tools::{AnomalyToolContext, execute_anomaly_tool};
-    use airlayer::DatabaseConfig;
-    use airlayer::SemanticLayer;
-    use airlayer::engine::metric_tree_ops::{ExplainConfig, ExplainResult, OpportunityResult};
+    use oxy_airlayer_compat::DatabaseConfig;
+    use oxy_airlayer_compat::SemanticLayer;
+    use oxy_airlayer_compat::engine::metric_tree_ops::{
+        ExplainConfig, ExplainResult, OpportunityResult,
+    };
 
     struct NullStore;
     #[async_trait::async_trait]
@@ -827,7 +829,7 @@ async fn list_anomalies_returns_empty_for_null_store() {
             _: String,
             _: (String, String),
             _: (String, String),
-            _: Vec<airlayer::engine::query::QueryFilter>,
+            _: Vec<oxy_airlayer_compat::engine::query::QueryFilter>,
             _: ExplainConfig,
         ) -> Result<ExplainResult, MetricTreeRunnerError> {
             Err(MetricTreeRunnerError::Op("test stub".into()))
@@ -854,7 +856,7 @@ async fn list_anomalies_returns_empty_for_null_store() {
             _: String,
             _: String,
             _: (String, String),
-            _: Vec<airlayer::engine::query::QueryFilter>,
+            _: Vec<oxy_airlayer_compat::engine::query::QueryFilter>,
             _: Option<String>,
         ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError> {
             Ok(vec![])
@@ -892,9 +894,11 @@ async fn detect_anomalies_returns_message_when_insufficient_data() {
     };
     use crate::metric_tree_runner::MetricTreeRunnerError;
     use crate::tools::{AnomalyToolContext, execute_anomaly_tool};
-    use airlayer::DatabaseConfig;
-    use airlayer::SemanticLayer;
-    use airlayer::engine::metric_tree_ops::{ExplainConfig, ExplainResult, OpportunityResult};
+    use oxy_airlayer_compat::DatabaseConfig;
+    use oxy_airlayer_compat::SemanticLayer;
+    use oxy_airlayer_compat::engine::metric_tree_ops::{
+        ExplainConfig, ExplainResult, OpportunityResult,
+    };
 
     struct ThinStore;
     #[async_trait::async_trait]
@@ -960,7 +964,7 @@ async fn detect_anomalies_returns_message_when_insufficient_data() {
             _: String,
             _: (String, String),
             _: (String, String),
-            _: Vec<airlayer::engine::query::QueryFilter>,
+            _: Vec<oxy_airlayer_compat::engine::query::QueryFilter>,
             _: ExplainConfig,
         ) -> Result<ExplainResult, MetricTreeRunnerError> {
             Err(MetricTreeRunnerError::Op("stub".into()))
@@ -987,7 +991,7 @@ async fn detect_anomalies_returns_message_when_insufficient_data() {
             _: String,
             _: String,
             _: (String, String),
-            _: Vec<airlayer::engine::query::QueryFilter>,
+            _: Vec<oxy_airlayer_compat::engine::query::QueryFilter>,
             _: Option<String>,
         ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError> {
             // Only 3 data points — not enough for weekly seasonality (needs ≥ 8).
@@ -1054,9 +1058,11 @@ dimensions:
 "#
     );
     let views = vec![crate::airlayer_compat::parse_view_yaml(&yaml).unwrap()];
-    let layer = airlayer::SemanticLayer::new(views, None);
-    let dialects = airlayer::DatasourceDialectMap::with_default(airlayer::Dialect::DuckDB);
-    let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects).unwrap();
+    let layer = oxy_airlayer_compat::SemanticLayer::new(views, None);
+    let dialects = oxy_airlayer_compat::DatasourceDialectMap::with_default(
+        oxy_airlayer_compat::Dialect::DuckDB,
+    );
+    let engine = oxy_airlayer_compat::SemanticEngine::from_semantic_layer(layer, dialects).unwrap();
     crate::SemanticCatalog::from_engine(engine)
 }
 

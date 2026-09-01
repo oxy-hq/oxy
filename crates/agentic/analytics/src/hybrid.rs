@@ -69,13 +69,13 @@ impl HybridCatalog {
     /// Construct by loading the semantic layer from the filesystem.
     ///
     /// ```ignore
-    /// let dialects = airlayer::DatasourceDialectMap::with_default(airlayer::Dialect::DuckDB);
+    /// let dialects = oxy_airlayer_compat::DatasourceDialectMap::with_default(oxy_airlayer_compat::Dialect::DuckDB);
     /// let catalog = HybridCatalog::from_path(Some(Path::new("semantics/")), schema, dialects)?;
     /// ```
     pub fn from_path(
         semantic_path: Option<&Path>,
         schema: SchemaCatalog,
-        dialects: airlayer::DatasourceDialectMap,
+        dialects: oxy_airlayer_compat::DatasourceDialectMap,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let semantic = semantic_path
             .map(|p| SemanticCatalog::load(p, dialects))

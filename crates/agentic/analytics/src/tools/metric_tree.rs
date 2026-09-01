@@ -1,13 +1,13 @@
 //! Async executor for the four metric-tree tools.
 //!
-//! The actual algorithms live in `airlayer::engine::metric_tree_ops`. This
+//! The actual algorithms live in `oxy_airlayer_compat::engine::metric_tree_ops`. This
 //! module is the bridge: parse JSON parameters, load the layer + tree via the
 //! injected [`MetricTreeRunner`], build the synchronous `QueryExecutor`,
 //! and run the op inside `spawn_blocking` (the airlayer op is sync and may
 //! issue 100+ warehouse queries — never block the runtime thread).
 //!
 //! Returns shape:
-//! - `explain_metric` → serialized [`airlayer::engine::metric_tree_ops::ExplainResult`]
+//! - `explain_metric` → serialized [`oxy_airlayer_compat::engine::metric_tree_ops::ExplainResult`]
 //! - `find_opportunities` → [`OpportunityResult`]
 //! - `metric_sensitivity` → [`SensitivityResult`]
 //! - `predict_impact` → [`PredictResult`]
@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use agentic_core::tools::ToolError;
-use airlayer::engine::metric_tree_ops::{self, ExplainConfig};
+use oxy_airlayer_compat::engine::metric_tree_ops::{self, ExplainConfig};
 use serde_json::{Value, json};
 
 use crate::metric_tree_runner::MetricTreeRunner;
@@ -70,7 +70,7 @@ async fn run_sensitivity(
         .load_layer()
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;
-    let tree = airlayer::engine::metric_tree::MetricTree::build(&layer);
+    let tree = oxy_airlayer_compat::engine::metric_tree::MetricTree::build(&layer);
     let result = metric_tree_ops::sensitivity(&tree, target)
         .map_err(|e| ToolError::Execution(e.to_string()))?;
     serde_json::to_value(result).map_err(|e| ToolError::Execution(e.to_string()))
@@ -106,7 +106,7 @@ async fn run_predict(params: Value, runner: Arc<dyn MetricTreeRunner>) -> Result
         .load_layer()
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;
-    let tree = airlayer::engine::metric_tree::MetricTree::build(&layer);
+    let tree = oxy_airlayer_compat::engine::metric_tree::MetricTree::build(&layer);
     let result = metric_tree_ops::predict(&tree, &changes)
         .map_err(|e| ToolError::Execution(e.to_string()))?;
     serde_json::to_value(result).map_err(|e| ToolError::Execution(e.to_string()))

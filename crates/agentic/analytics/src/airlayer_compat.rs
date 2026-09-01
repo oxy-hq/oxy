@@ -3,14 +3,14 @@
 //! This module provides:
 //! - YAML parsing shims for `.view.yml` / `.topic.yml` files that may differ
 //!   slightly from airlayer's expected format (e.g. optional `description`).
-//! - Dialect mapping from [`agentic_connector::SqlDialect`] to [`airlayer::Dialect`].
+//! - Dialect mapping from [`agentic_connector::SqlDialect`] to [`oxy_airlayer_compat::Dialect`].
 //! - Parameter substitution for airlayer's parameterised SQL output.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use agentic_connector::DatabaseConnector;
-use airlayer::DatasourceDialectMap;
+use oxy_airlayer_compat::DatasourceDialectMap;
 
 // ── YAML parsing ─────────────────────────────────────────────────────────────
 //
@@ -23,11 +23,13 @@ pub use oxy_airlayer_compat::{build_layer, parse_topic_yaml, parse_view_yaml};
 
 // ── Dialect mapping ──────────────────────────────────────────────────────────
 
-/// Convert an [`agentic_connector::SqlDialect`] to an [`airlayer::Dialect`].
+/// Convert an [`agentic_connector::SqlDialect`] to an [`oxy_airlayer_compat::Dialect`].
 ///
 /// Returns `None` for unknown / `Other` dialects that airlayer does not support.
-pub fn convert_dialect(dialect: agentic_connector::SqlDialect) -> Option<airlayer::Dialect> {
-    let result = airlayer::Dialect::from_str(dialect.as_str());
+pub fn convert_dialect(
+    dialect: agentic_connector::SqlDialect,
+) -> Option<oxy_airlayer_compat::Dialect> {
+    let result = oxy_airlayer_compat::Dialect::from_str(dialect.as_str());
     if result.is_none() {
         tracing::warn!(
             connector_dialect = %dialect.as_str(),
@@ -37,7 +39,7 @@ pub fn convert_dialect(dialect: agentic_connector::SqlDialect) -> Option<airlaye
     result
 }
 
-/// Build an [`airlayer::DatasourceDialectMap`] from the solver's connector map.
+/// Build an [`oxy_airlayer_compat::DatasourceDialectMap`] from the solver's connector map.
 ///
 /// Each connector's logical name is mapped to its SQL dialect.  The `default`
 /// connector's dialect is set as the map's default for views that don't specify

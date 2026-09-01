@@ -1,5 +1,5 @@
-use airlayer::engine::promotions::Promotions;
-use airlayer::schema::models::{EntityType, MeasureType};
+use oxy_airlayer_compat::engine::promotions::Promotions;
+use oxy_airlayer_compat::schema::models::{EntityType, MeasureType};
 use std::collections::HashMap;
 
 use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
@@ -23,7 +23,10 @@ pub(super) async fn load_layer_and_promotions(
     workspace_manager: &WorkspaceManager<WorkingCopy>,
     layer_cache: &crate::server::api::middlewares::workspace_context::SemanticLayerCacheCtx,
 ) -> Result<
-    (std::sync::Arc<airlayer::SemanticLayer>, Promotions),
+    (
+        std::sync::Arc<oxy_airlayer_compat::SemanticLayer>,
+        Promotions,
+    ),
     (
         axum::http::StatusCode,
         axum::extract::Json<crate::server::api::semantic::ErrorResponse>,
@@ -69,9 +72,9 @@ pub(super) async fn resolve_world_model_config(
 
 /// Find the view where `entity_name` is declared as Primary.
 pub(super) fn primary_view_of<'a>(
-    layer: &'a airlayer::SemanticLayer,
+    layer: &'a oxy_airlayer_compat::SemanticLayer,
     entity_name: &str,
-) -> Option<&'a airlayer::View> {
+) -> Option<&'a oxy_airlayer_compat::View> {
     layer.views.iter().find(|v| {
         v.entities
             .iter()
@@ -83,7 +86,7 @@ pub(super) fn primary_view_of<'a>(
 /// `is_primary`: true = Primary declaration, false = Foreign declaration.
 /// Returns logical dimension names (use `entity_key_exprs_in_view` for SQL).
 pub(super) fn entity_keys_in_view(
-    view: &airlayer::View,
+    view: &oxy_airlayer_compat::View,
     entity_name: &str,
     is_primary: bool,
 ) -> Vec<String> {
@@ -177,8 +180,8 @@ pub(super) enum LinkKind {
 /// The resulting navigable graph is exactly the drawn graph — no edge appears in
 /// the traversal that the user can't already see.
 pub(super) fn build_entity_links(
-    views: &[airlayer::View],
-    view: &airlayer::View,
+    views: &[oxy_airlayer_compat::View],
+    view: &oxy_airlayer_compat::View,
     parent_entity: Option<&str>,
 ) -> Vec<EntityLink> {
     view.entities
@@ -566,7 +569,7 @@ pub(super) struct EntityDisplaySpec {
 
 impl EntityDisplaySpec {
     pub(super) fn for_entity(
-        view: &airlayer::View,
+        view: &oxy_airlayer_compat::View,
         entity_name: &str,
         display_field: Option<&str>,
     ) -> Self {
@@ -696,7 +699,7 @@ fn sql_quote(name: &str) -> String {
 }
 
 /// Return the injected `_row_count` measure reference for a view.
-pub(super) fn count_measure_ref(view: &airlayer::View) -> String {
+pub(super) fn count_measure_ref(view: &oxy_airlayer_compat::View) -> String {
     format!("{}.{}", view.name, "__oxy_row_count")
 }
 
@@ -800,7 +803,7 @@ pub(super) fn apply_world_model_config(
 
 #[cfg(test)]
 mod wm_config_tests {
-    use airlayer::schema::models::AdditivityClass;
+    use oxy_airlayer_compat::schema::models::AdditivityClass;
 
     use super::*;
     use crate::server::api::world_model_config::{WmEntityConfig, WmFieldConfig, WorldModelConfig};
@@ -903,7 +906,7 @@ mod wm_config_tests {
         assert!(filters.is_empty());
     }
 
-    fn wm_view(name: &str, entities: serde_json::Value) -> airlayer::View {
+    fn wm_view(name: &str, entities: serde_json::Value) -> oxy_airlayer_compat::View {
         serde_json::from_value(serde_json::json!({
             "name": name,
             "table": name,
@@ -1254,7 +1257,7 @@ mod wm_config_tests {
 /// Shared by the filter-counts BFS and the scoped sample-browser endpoint so
 /// both traverse the exact same navigable link graph.
 pub(super) fn build_entity_metas(
-    layer: &airlayer::SemanticLayer,
+    layer: &oxy_airlayer_compat::SemanticLayer,
     promotions: &Promotions,
     wm_cfg: Option<&crate::server::api::world_model_config::WorldModelConfig>,
 ) -> Vec<EntityMeta> {
@@ -1309,8 +1312,8 @@ pub(super) struct WmExecCtx {
     pub(super) user_id: Uuid,
     pub(super) role: WorkspaceRole,
     pub(super) scan_path: std::path::PathBuf,
-    pub(super) databases: Vec<airlayer::DatabaseConfig>,
-    pub(super) layer: airlayer::SemanticLayer,
+    pub(super) databases: Vec<oxy_airlayer_compat::DatabaseConfig>,
+    pub(super) layer: oxy_airlayer_compat::SemanticLayer,
 }
 
 impl WmExecCtx {
@@ -1731,10 +1734,10 @@ fn assemble_hop_filters<'a>(
 /// Map an airlayer subtree (component edges only) into UI node/edge DTOs.
 /// Returns None when `root_id` is absent from the tree.
 pub(super) fn breakdown_structure(
-    tree: &airlayer::engine::metric_tree::MetricTree,
+    tree: &oxy_airlayer_compat::engine::metric_tree::MetricTree,
     root_id: &str,
 ) -> Option<(Vec<WmBreakdownNode>, Vec<WmBreakdownEdge>)> {
-    use airlayer::engine::metric_tree::{EdgeKind, EdgeOperator};
+    use oxy_airlayer_compat::engine::metric_tree::{EdgeKind, EdgeOperator};
     let sub = tree.subtree(root_id)?;
     let nodes = sub
         .nodes
@@ -1807,7 +1810,7 @@ fn build_pk_filters(
 ///
 /// Returns None when no FK path resolves (the node will be streamed unvalued).
 fn instance_filter_for_view(
-    target_view: &airlayer::View,
+    target_view: &oxy_airlayer_compat::View,
     entity: &str,
     key_values: &[String],
     pk_cols: &[String],
@@ -1845,10 +1848,10 @@ fn instance_filter_for_view(
 /// a composite key, else a bare scalar. `None` means the entity has no primary
 /// view to pin.
 pub(crate) fn instance_scope_filters(
-    layer: &airlayer::SemanticLayer,
+    layer: &oxy_airlayer_compat::SemanticLayer,
     entity: &str,
     key: &str,
-) -> Option<Vec<airlayer::engine::query::QueryFilter>> {
+) -> Option<Vec<oxy_airlayer_compat::engine::query::QueryFilter>> {
     use agentic_semantic::config::SemanticFilterType;
 
     let primary = primary_view_of(layer, entity)?;
@@ -1869,9 +1872,9 @@ pub(crate) fn instance_scope_filters(
                 serde_json::Value::String(s) => s,
                 other => other.to_string(),
             };
-            Some(airlayer::engine::query::QueryFilter {
+            Some(oxy_airlayer_compat::engine::query::QueryFilter {
                 member: Some(f.field),
-                operator: Some(airlayer::engine::query::FilterOperator::Equals),
+                operator: Some(oxy_airlayer_compat::engine::query::FilterOperator::Equals),
                 values: vec![value],
                 and: None,
                 or: None,
@@ -1890,7 +1893,7 @@ pub(super) struct BreakdownValuePlan {
 }
 
 pub(super) fn breakdown_value_plan(
-    layer: &airlayer::SemanticLayer,
+    layer: &oxy_airlayer_compat::SemanticLayer,
     nodes: &[WmBreakdownNode],
     entity: &str,
     key_values: &[String],
@@ -1957,10 +1960,10 @@ pub(super) fn breakdown_value_plan(
 #[cfg(test)]
 mod breakdown_tests {
     use super::*;
-    use airlayer::engine::metric_tree::{
+    use oxy_airlayer_compat::engine::metric_tree::{
         EdgeKind, EdgeOperator, MetricEdge, MetricNode, MetricTree,
     };
-    use airlayer::schema::models::{
+    use oxy_airlayer_compat::schema::models::{
         AggregateSpace, DriverConfidence, DriverDirection, DriverForm, DriverStrength,
     };
 
@@ -2051,8 +2054,8 @@ mod breakdown_tests {
     /// A fact view (`orders`) joined many-to-one to a dimension view (`stores`),
     /// which in turn rolls up to `cities` — so `city` sits two hops from the
     /// measure, the shape instance scoping must handle.
-    fn star_layer() -> airlayer::SemanticLayer {
-        let orders: airlayer::View = serde_json::from_value(serde_json::json!({
+    fn star_layer() -> oxy_airlayer_compat::SemanticLayer {
+        let orders: oxy_airlayer_compat::View = serde_json::from_value(serde_json::json!({
             "name": "orders",
             "table": "orders",
             "entities": [
@@ -2065,7 +2068,7 @@ mod breakdown_tests {
             ],
         }))
         .expect("valid view");
-        let stores: airlayer::View = serde_json::from_value(serde_json::json!({
+        let stores: oxy_airlayer_compat::View = serde_json::from_value(serde_json::json!({
             "name": "stores",
             "table": "stores",
             "entities": [
@@ -2079,7 +2082,7 @@ mod breakdown_tests {
             ],
         }))
         .expect("valid view");
-        let cities: airlayer::View = serde_json::from_value(serde_json::json!({
+        let cities: oxy_airlayer_compat::View = serde_json::from_value(serde_json::json!({
             "name": "cities",
             "table": "cities",
             "entities": [{"name": "city", "type": "primary", "key": "city"}],
@@ -2087,14 +2090,14 @@ mod breakdown_tests {
         }))
         .expect("valid view");
         // `customers` is unrelated — nothing joins it to `retail_store`.
-        let customers: airlayer::View = serde_json::from_value(serde_json::json!({
+        let customers: oxy_airlayer_compat::View = serde_json::from_value(serde_json::json!({
             "name": "customers",
             "table": "customers",
             "entities": [{"name": "customer", "type": "primary", "key": "customer_id"}],
             "dimensions": [{"name": "customer_id", "type": "number", "expr": "id"}],
         }))
         .expect("valid view");
-        airlayer::SemanticLayer::new(vec![orders, stores, cities, customers], None)
+        oxy_airlayer_compat::SemanticLayer::new(vec![orders, stores, cities, customers], None)
     }
 
     #[test]
@@ -2147,14 +2150,14 @@ mod breakdown_tests {
     // whole group). Each composite gets its own group; plain nodes stay batched.
     #[test]
     fn breakdown_isolates_each_composite_into_its_own_group() {
-        let orders: airlayer::View = serde_json::from_value(serde_json::json!({
+        let orders: oxy_airlayer_compat::View = serde_json::from_value(serde_json::json!({
             "name": "orders",
             "table": "orders",
             "entities": [{"name": "order", "type": "primary", "key": "order_id"}],
             "dimensions": [{"name": "order_id", "type": "number", "expr": "id"}],
         }))
         .expect("valid view");
-        let layer = airlayer::SemanticLayer::new(vec![orders], None);
+        let layer = oxy_airlayer_compat::SemanticLayer::new(vec![orders], None);
         let nodes = vec![
             bnode("net_revenue", true),
             bnode("total_order_value", true),

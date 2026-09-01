@@ -1,4 +1,4 @@
-use airlayer::schema::models::{AdditivityClass, MeasureType};
+use oxy_airlayer_compat::schema::models::{AdditivityClass, MeasureType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;

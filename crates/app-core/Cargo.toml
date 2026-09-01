@@ -17,7 +17,7 @@ entity = { workspace = true }
 oxy-observability = { workspace = true }
 agentic-semantic = { workspace = true }
 agentic-http = { workspace = true }
-airlayer = { workspace = true }
+oxy-airlayer-compat = { workspace = true }
 
 axum = { workspace = true }
 sea-orm = { workspace = true }

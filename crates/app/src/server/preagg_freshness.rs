@@ -27,9 +27,9 @@ use crate::agentic_wiring::OxyProjectContext;
 /// worker skips this rollup — `api::semantic::build_preagg_status` filters on
 /// the same rule so the IDE never lists a rollup that will never be built.
 pub(crate) fn rollup_refresh_key<'a>(
-    rollup: &'a airlayer::preagg::RollupSpec,
-    view: &'a airlayer::View,
-) -> Option<&'a airlayer::RefreshKey> {
+    rollup: &'a oxy_airlayer_compat::preagg::RollupSpec,
+    view: &'a oxy_airlayer_compat::View,
+) -> Option<&'a oxy_airlayer_compat::RefreshKey> {
     if let Some(ref preaggs) = view.pre_aggregations {
         for pa in preaggs {
             if pa.name == rollup.name {
@@ -47,7 +47,7 @@ pub(crate) fn rollup_refresh_key<'a>(
 ///
 /// Returns `(current_value, is_stale, error_msg)`.
 pub(super) async fn evaluate_refresh_key(
-    rk: &airlayer::RefreshKey,
+    rk: &oxy_airlayer_compat::RefreshKey,
     rollup_hash: &str,
     cache_dir: &std::path::Path,
     cache: &Arc<RwLock<RefreshKeyCache>>,
@@ -55,12 +55,12 @@ pub(super) async fn evaluate_refresh_key(
     database_name: &str,
 ) -> (Option<String>, bool, Option<String>) {
     match rk {
-        airlayer::RefreshKey::Every(interval_str) => {
+        oxy_airlayer_compat::RefreshKey::Every(interval_str) => {
             let (value, is_stale) =
                 eval_every_refresh_key(interval_str, rollup_hash, cache_dir, cache);
             (value, is_stale, None)
         }
-        airlayer::RefreshKey::Sql(sql) => {
+        oxy_airlayer_compat::RefreshKey::Sql(sql) => {
             eval_sql_refresh_key(sql, rollup_hash, cache_dir, ctx, database_name).await
         }
     }
@@ -76,7 +76,7 @@ pub(super) fn eval_every_refresh_key(
     cache_dir: &std::path::Path,
     cache: &Arc<RwLock<RefreshKeyCache>>,
 ) -> (Option<String>, bool) {
-    let Ok(interval) = airlayer::preagg::parse_interval(interval_str) else {
+    let Ok(interval) = oxy_airlayer_compat::preagg::parse_interval(interval_str) else {
         // Unparsable interval → treat as always stale so operator notices.
         tracing::warn!(interval = %interval_str, rollup_hash, "preagg: unparsable Every interval");
         return (None, true);

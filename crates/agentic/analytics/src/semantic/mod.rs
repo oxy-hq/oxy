@@ -1,4 +1,4 @@
-//! [`SemanticCatalog`] — Oxy semantic layer backed by [`airlayer::SemanticEngine`].
+//! [`SemanticCatalog`] — Oxy semantic layer backed by [`oxy_airlayer_compat::SemanticEngine`].
 //!
 //! All catalog operations (search, metric definitions, join paths, and query
 //! compilation) delegate to airlayer's data structures.  YAML parsing goes
@@ -67,7 +67,7 @@ mod tests;
 
 // ── SemanticCatalog ───────────────────────────────────────────────────────────
 
-/// Semantic layer catalog backed by [`airlayer::SemanticEngine`].
+/// Semantic layer catalog backed by [`oxy_airlayer_compat::SemanticEngine`].
 ///
 /// # Behavior
 ///
@@ -79,7 +79,7 @@ mod tests;
 ///   joins, CTE fan-out protection, and dialect-aware SQL generation.  Returns
 ///   [`crate::catalog::CatalogError::TooComplex`] for queries that airlayer cannot compile.
 pub struct SemanticCatalog {
-    pub(super) engine: airlayer::SemanticEngine,
+    pub(super) engine: oxy_airlayer_compat::SemanticEngine,
 }
 
 impl std::fmt::Debug for SemanticCatalog {
@@ -96,9 +96,9 @@ impl SemanticCatalog {
     /// Useful for the "no semantic layer" case — the LLM relies on database
     /// lookup tools instead.
     pub fn empty() -> Self {
-        let layer = airlayer::SemanticLayer::new(vec![], None);
-        let dialects = airlayer::DatasourceDialectMap::new();
-        let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects)
+        let layer = oxy_airlayer_compat::SemanticLayer::new(vec![], None);
+        let dialects = oxy_airlayer_compat::DatasourceDialectMap::new();
+        let engine = oxy_airlayer_compat::SemanticEngine::from_semantic_layer(layer, dialects)
             .expect("empty semantic layer should always be valid");
         Self { engine }
     }
@@ -109,7 +109,7 @@ impl SemanticCatalog {
     }
 
     /// Wrap a pre-built engine (useful for testing).
-    pub fn from_engine(engine: airlayer::SemanticEngine) -> Self {
+    pub fn from_engine(engine: oxy_airlayer_compat::SemanticEngine) -> Self {
         Self { engine }
     }
 
@@ -117,7 +117,7 @@ impl SemanticCatalog {
     /// subdirectories.
     pub fn load(
         semantics_dir: &Path,
-        dialects: airlayer::DatasourceDialectMap,
+        dialects: oxy_airlayer_compat::DatasourceDialectMap,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let views_dir = semantics_dir.join("views");
         let topics_dir = semantics_dir.join("topics");
@@ -128,11 +128,10 @@ impl SemanticCatalog {
             None
         };
 
-        let engine = airlayer::SemanticEngine::load(&views_dir, topics_path, dialects).map_err(
-            |e| -> Box<dyn std::error::Error + Send + Sync> {
-                Box::new(std::io::Error::other(e.to_string()))
-            },
-        )?;
+        let engine = oxy_airlayer_compat::SemanticEngine::load(&views_dir, topics_path, dialects)
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+            Box::new(std::io::Error::other(e.to_string()))
+        })?;
 
         Ok(Self { engine })
     }
@@ -145,18 +144,17 @@ impl SemanticCatalog {
     /// [`load`]: SemanticCatalog::load
     pub fn load_files(
         paths: &[PathBuf],
-        dialects: airlayer::DatasourceDialectMap,
+        dialects: oxy_airlayer_compat::DatasourceDialectMap,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         // Parsing goes through the canonical infra shim (re-exported as
         // `airlayer_compat::build_layer`) so analytics agrees with every
         // other semantic-file consumer. Dialect-aware engine construction
         // stays here — it is analytics-specific.
         let layer = airlayer_compat::build_layer(paths)?;
-        let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects).map_err(
-            |e| -> Box<dyn std::error::Error + Send + Sync> {
+        let engine = oxy_airlayer_compat::SemanticEngine::from_semantic_layer(layer, dialects)
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
                 Box::new(std::io::Error::other(e.to_string()))
-            },
-        )?;
+            })?;
 
         Ok(Self { engine })
     }
@@ -293,7 +291,7 @@ impl SemanticCatalog {
     }
 
     /// Expose the underlying airlayer engine for direct compilation.
-    pub fn engine(&self) -> &airlayer::SemanticEngine {
+    pub fn engine(&self) -> &oxy_airlayer_compat::SemanticEngine {
         &self.engine
     }
 

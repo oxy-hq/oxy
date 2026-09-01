@@ -12,13 +12,13 @@
 //! `semantic_query` step uses, so IDE results stay in lockstep with
 //! runtime results without re-introducing `oxy-workflow`.
 
-use airlayer::engine::promotions::Promotions;
 use axum::{
     extract::{self, Path},
     http::StatusCode,
 };
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use oxy_airlayer_compat::engine::promotions::Promotions;
 use oxy_semantic::parse_semantic_layer_from_dir;
 use oxy_semantic::parser::{ParserConfig, SemanticLayerParser};
 use serde::{Deserialize, Serialize};
@@ -489,7 +489,7 @@ fn append_induced_measures(
     measures: &mut Vec<serde_json::Value>,
     view_name: &str,
     promotions: &Promotions,
-    layer: &airlayer::SemanticLayer,
+    layer: &oxy_airlayer_compat::SemanticLayer,
 ) {
     for im in promotions.induced_for_view(view_name) {
         let mut json = layer
@@ -561,18 +561,11 @@ pub async fn compile_semantic_query(
         .await
         .map_err(|e| semantic_err(StatusCode::SERVICE_UNAVAILABLE, e.message()))?;
     let scan_path = source.scan_path.clone();
-    let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
+    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
         .config_manager
         .list_databases()
         .iter()
-        .map(|db| airlayer::DatabaseConfig {
-            name: db.name.clone(),
-            // `dialect()`, not the raw type name: airhouse and motherduck
-            // speak an engine their `type:` string does not name, and
-            // airlayer drops a datasource it cannot classify -- silently
-            // inheriting whichever dialect config.yml lists first.
-            db_type: db.dialect(),
-        })
+        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
         .collect();
 
     let compiled = tokio::task::spawn_blocking(move || {
@@ -661,18 +654,11 @@ pub async fn execute_semantic_query(
         .await
         .map_err(|e| sql_error_503(e.message()))?;
     let scan_path = source.scan_path.clone();
-    let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
+    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
         .config_manager
         .list_databases()
         .iter()
-        .map(|db| airlayer::DatabaseConfig {
-            name: db.name.clone(),
-            // `dialect()`, not the raw type name: airhouse and motherduck
-            // speak an engine their `type:` string does not name, and
-            // airlayer drops a datasource it cannot classify -- silently
-            // inheriting whichever dialect config.yml lists first.
-            db_type: db.dialect(),
-        })
+        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
         .collect();
 
     let query = payload.query;

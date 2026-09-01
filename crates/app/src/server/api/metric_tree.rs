@@ -23,9 +23,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use airlayer::engine::metric_tree::MetricTree;
-use airlayer::engine::metric_tree_ops::{ExplainConfig, ExplainResult, OpportunityResult};
 use oxy::adapters::workspace::manager::WorkspaceManager;
+use oxy_airlayer_compat::engine::metric_tree::MetricTree;
+use oxy_airlayer_compat::engine::metric_tree_ops::{
+    ExplainConfig, ExplainResult, OpportunityResult,
+};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 
 use crate::agentic_wiring::metric_tree_runner::{
@@ -107,7 +109,9 @@ async fn resolve_scan<S: oxy::config::DiskSlot>(
 }
 
 /// Parse the workspace's semantic layer from an already-resolved scan root.
-fn load_layer_at(scan_path: &std::path::Path) -> Result<airlayer::SemanticLayer, MetricTreeError> {
+fn load_layer_at(
+    scan_path: &std::path::Path,
+) -> Result<oxy_airlayer_compat::SemanticLayer, MetricTreeError> {
     OxyMetricTreeRunner::load_layer_at(scan_path)
         .map_err(|e| MetricTreeError::LayerLoad(e.to_string()))
 }
@@ -120,7 +124,7 @@ fn load_tree_at(scan_path: &std::path::Path) -> Result<MetricTree, MetricTreeErr
 
 fn workspace_databases<S: oxy::config::DiskSlot>(
     workspace_manager: &WorkspaceManager<S>,
-) -> Vec<airlayer::DatabaseConfig> {
+) -> Vec<oxy_airlayer_compat::DatabaseConfig> {
     OxyMetricTreeRunner::list_databases_sync(workspace_manager)
 }
 
@@ -151,7 +155,8 @@ pub async fn get_metric_tree(
 pub async fn get_sensitivity(
     WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Path((_workspace_id, measure_id)): Path<(Uuid, String)>,
-) -> Result<Json<airlayer::engine::metric_tree_ops::SensitivityResult>, MetricTreeError> {
+) -> Result<Json<oxy_airlayer_compat::engine::metric_tree_ops::SensitivityResult>, MetricTreeError>
+{
     let source = resolve_scan(&workspace_manager).await?;
     let tree = load_tree_at(&source.scan_path)?;
     oxy_semantic::sensitivity(&tree, &measure_id)
@@ -174,7 +179,7 @@ pub struct PredictChange {
 pub async fn post_predict(
     WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Json(req): Json<PredictRequest>,
-) -> Result<Json<airlayer::engine::metric_tree_ops::PredictResult>, MetricTreeError> {
+) -> Result<Json<oxy_airlayer_compat::engine::metric_tree_ops::PredictResult>, MetricTreeError> {
     let source = resolve_scan(&workspace_manager).await?;
     let tree = load_tree_at(&source.scan_path)?;
     let changes: Vec<(String, f64)> = req
@@ -197,11 +202,10 @@ pub async fn post_predict(
 /// Build the airlayer `SemanticEngine` for the workspace, with dialects
 /// resolved from the configured databases.
 fn build_engine(
-    layer: airlayer::SemanticLayer,
-    databases: &[airlayer::DatabaseConfig],
-) -> Result<airlayer::SemanticEngine, MetricTreeError> {
-    let dialects = airlayer::DatasourceDialectMap::from_config_databases(databases);
-    airlayer::SemanticEngine::from_semantic_layer(layer, dialects)
+    layer: oxy_airlayer_compat::SemanticLayer,
+    databases: &[oxy_airlayer_compat::DatabaseConfig],
+) -> Result<oxy_airlayer_compat::SemanticEngine, MetricTreeError> {
+    oxy_airlayer_compat::build_engine(layer, databases)
         .map_err(|e| MetricTreeError::Op(e.to_string()))
 }
 
@@ -325,9 +329,9 @@ pub struct OpportunityInstance {
 /// instance is how a panel ends up reporting company-wide numbers under an
 /// instance header.
 fn opportunity_scope(
-    layer: &airlayer::SemanticLayer,
+    layer: &oxy_airlayer_compat::SemanticLayer,
     req: &OpportunityRequest,
-) -> Result<Vec<airlayer::engine::query::QueryFilter>, MetricTreeError> {
+) -> Result<Vec<oxy_airlayer_compat::engine::query::QueryFilter>, MetricTreeError> {
     let Some(instance) = req.instance.as_ref() else {
         return Ok(Vec::new());
     };
@@ -370,11 +374,11 @@ pub struct OpportunityResponse {
 /// measure wins" rule, so the id we report is the one the engine actually
 /// divided by. Kept in sync by hand: if the crate ever surfaces the denominator
 /// on `OpportunityResult` itself, delete this and read it from there.
-fn count_measure_id(layer: &airlayer::SemanticLayer, view_name: &str) -> Option<String> {
+fn count_measure_id(layer: &oxy_airlayer_compat::SemanticLayer, view_name: &str) -> Option<String> {
     let view = layer.views.iter().find(|v| v.name == view_name)?;
     view.measures_list()
         .iter()
-        .find(|m| m.measure_type == airlayer::schema::models::MeasureType::Count)
+        .find(|m| m.measure_type == oxy_airlayer_compat::schema::models::MeasureType::Count)
         .map(|m| format!("{}.{}", view_name, m.name))
 }
 
@@ -389,8 +393,8 @@ fn count_measure_id(layer: &airlayer::SemanticLayer, view_name: &str) -> Option<
 /// used to accept only `type: sum` and silently omit `rate_denominator` for an
 /// accepted composite. Mirrors that rule handler-side, since `DrillResult` does
 /// not surface the weight basis the way `OpportunityResult` does.
-fn target_supports_rate_basis(layer: &airlayer::SemanticLayer, target: &str) -> bool {
-    airlayer::engine::metric_tree_ops::supports_rate_basis(layer, target)
+fn target_supports_rate_basis(layer: &oxy_airlayer_compat::SemanticLayer, target: &str) -> bool {
+    oxy_airlayer_compat::engine::metric_tree_ops::supports_rate_basis(layer, target)
 }
 
 /// `POST .../semantic/metric-tree/opportunity` — segment opportunity sizing.
@@ -413,7 +417,10 @@ pub async fn post_opportunity(
     // contrast, must be built from the augmented layer — it resolves measure
     // names against its own copy, and would reject a measure it had never seen.
     let tree = oxy_semantic::build_metric_tree(&layer);
-    airlayer::engine::metric_tree_ops::augment_layer_for_opportunity(&mut layer, &req.target);
+    oxy_airlayer_compat::engine::metric_tree_ops::augment_layer_for_opportunity(
+        &mut layer,
+        &req.target,
+    );
     let scope = opportunity_scope(&layer, &req)?;
     // Resolved here because `layer` and `req` are both moved into the blocking
     // task below. Read from the augmented layer deliberately, but this is not
@@ -453,7 +460,7 @@ pub async fn post_opportunity(
             handle,
             preagg,
         );
-        airlayer::engine::metric_tree_ops::opportunity(
+        oxy_airlayer_compat::engine::metric_tree_ops::opportunity(
             &tree,
             &layer,
             &req.target,
@@ -497,7 +504,7 @@ pub struct DrillRequest {
     /// Root the drill at a specific row of the root scan instead of its
     /// top-ranked one. The merged panel sends this when an analyst expands a
     /// row that is not the engine's own pick.
-    pub root: Option<airlayer::engine::metric_tree_ops::DrillRoot>,
+    pub root: Option<oxy_airlayer_compat::engine::metric_tree_ops::DrillRoot>,
 }
 
 /// The drill tree, plus the denominator that makes its rates legible (same role
@@ -506,7 +513,7 @@ pub struct DrillRequest {
 #[derive(Debug, Serialize)]
 pub struct DrillResponse {
     #[serde(flatten)]
-    pub result: Option<airlayer::engine::metric_tree_ops::DrillResult>,
+    pub result: Option<oxy_airlayer_compat::engine::metric_tree_ops::DrillResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rate_denominator: Option<String>,
 }
@@ -517,9 +524,9 @@ pub struct DrillResponse {
 /// scope (drill the whole population); an instance that cannot be resolved is an
 /// error rather than a silently-ignored scope.
 fn opportunity_scope_from_drill(
-    layer: &airlayer::SemanticLayer,
+    layer: &oxy_airlayer_compat::SemanticLayer,
     req: &DrillRequest,
-) -> Result<Vec<airlayer::engine::query::QueryFilter>, MetricTreeError> {
+) -> Result<Vec<oxy_airlayer_compat::engine::query::QueryFilter>, MetricTreeError> {
     let Some(instance) = req.instance.as_ref() else {
         return Ok(Vec::new());
     };
@@ -559,7 +566,10 @@ pub async fn post_opportunity_drill(
     let tree = oxy_semantic::build_metric_tree(&clean_layer);
     // Augment the ROOT target before sharing — the drill's children augment
     // themselves via dimension_candidates.
-    airlayer::engine::metric_tree_ops::augment_layer_for_opportunity(&mut clean_layer, &req.target);
+    oxy_airlayer_compat::engine::metric_tree_ops::augment_layer_for_opportunity(
+        &mut clean_layer,
+        &req.target,
+    );
     // opportunity_scope + denominator read from the augmented layer, same as
     // post_opportunity.
     let scope = opportunity_scope_from_drill(&clean_layer, &req)?;
@@ -573,8 +583,8 @@ pub async fn post_opportunity_drill(
     let target_supports_rate_basis = target_supports_rate_basis(&clean_layer, &req.target);
 
     let databases = workspace_databases(&workspace_manager);
-    let dialects = airlayer::DatasourceDialectMap::from_config_databases(&databases);
-    let shared: airlayer::engine::metric_tree_ops::SharedLayer =
+    let dialects = oxy_airlayer_compat::DatasourceDialectMap::from_config_databases(&databases);
+    let shared: oxy_airlayer_compat::engine::metric_tree_ops::SharedLayer =
         std::sync::Arc::new(std::sync::RwLock::new(clean_layer));
     let handle = tokio::runtime::Handle::current();
     let preagg = crate::agentic_wiring::metric_tree_runner::RunnerPreagg {
@@ -585,8 +595,8 @@ pub async fn post_opportunity_drill(
         // rollup a cycle behind beats a warehouse scan.
         freshness: crate::server::preagg_context::RollupFreshness::ServeStale,
     };
-    let default_config = airlayer::engine::metric_tree_ops::DrillConfig::default();
-    let config = airlayer::engine::metric_tree_ops::DrillConfig {
+    let default_config = oxy_airlayer_compat::engine::metric_tree_ops::DrillConfig::default();
+    let config = oxy_airlayer_compat::engine::metric_tree_ops::DrillConfig {
         max_depth: req.max_depth.unwrap_or(default_config.max_depth),
         alpha: req.alpha.unwrap_or(default_config.alpha),
         root: req.root.clone(),
@@ -604,7 +614,7 @@ pub async fn post_opportunity_drill(
             handle,
             preagg,
         );
-        airlayer::engine::metric_tree_ops::opportunity_drill(
+        oxy_airlayer_compat::engine::metric_tree_ops::opportunity_drill(
             &tree,
             &shared,
             &req.target,
@@ -652,7 +662,7 @@ pub struct TimeDimensionsResponse {
 pub async fn get_time_dimensions(
     WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
 ) -> Result<Json<TimeDimensionsResponse>, MetricTreeError> {
-    use airlayer::schema::models::DimensionType;
+    use oxy_airlayer_compat::schema::models::DimensionType;
 
     let source = resolve_scan(&workspace_manager).await?;
     let layer = load_layer_at(&source.scan_path)?;
@@ -783,7 +793,7 @@ mod tests {
 
     /// Parsed from YAML rather than built field-by-field, so the fixture is
     /// bound to the real view schema instead of a hand-rolled approximation.
-    fn layer(yaml: &str) -> airlayer::SemanticLayer {
+    fn layer(yaml: &str) -> oxy_airlayer_compat::SemanticLayer {
         serde_yaml::from_str(yaml).expect("fixture layer should parse")
     }
 
@@ -894,7 +904,7 @@ views:
 
     #[test]
     fn drill_response_wire_format_is_stable() {
-        use airlayer::engine::metric_tree_ops::{
+        use oxy_airlayer_compat::engine::metric_tree_ops::{
             CandidateKind, DrillCandidate, DrillLevel, DrillResult, StopReason,
         };
         let resp = DrillResponse {

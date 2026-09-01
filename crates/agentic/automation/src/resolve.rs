@@ -154,7 +154,7 @@ mod tests {
         fn workspace_path(&self) -> Option<&std::path::Path> {
             Some(std::path::Path::new("/fake"))
         }
-        fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
+        fn database_configs(&self) -> Vec<oxy_airlayer_compat::DatabaseConfig> {
             vec![]
         }
         async fn list_automation_files(&self) -> Result<Vec<PathBuf>, String> {

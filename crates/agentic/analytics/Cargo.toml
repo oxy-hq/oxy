@@ -39,7 +39,6 @@ tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
-airlayer = { workspace = true }
 oxy-shared = { workspace = true }
 oxy-airlayer-compat = { workspace = true }
 strsim = { workspace = true }

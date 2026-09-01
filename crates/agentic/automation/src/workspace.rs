@@ -154,7 +154,7 @@ pub trait WorkspaceContext: Send + Sync {
     }
 
     /// Database configurations for dialect mapping.
-    fn database_configs(&self) -> Vec<airlayer::DatabaseConfig>;
+    fn database_configs(&self) -> Vec<oxy_airlayer_compat::DatabaseConfig>;
 
     async fn get_connector(&self, name: &str) -> Result<Arc<dyn DatabaseConnector>, String>;
 

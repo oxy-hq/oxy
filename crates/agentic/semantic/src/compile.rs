@@ -11,11 +11,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use airlayer::engine::query::{
+use chrono::{Local, NaiveDate};
+use oxy_airlayer_compat::engine::query::{
     FilterOperator, OrderBy, QueryFilter, QueryRequest, TimeDimensionQuery,
 };
-use airlayer::schema::models::TopicFilterType;
-use chrono::{Local, NaiveDate};
+use oxy_airlayer_compat::schema::models::TopicFilterType;
 use serde_json::Value as JsonValue;
 
 use oxy_shared::substitute_params;
@@ -184,12 +184,12 @@ impl PreaggContext {
 /// the pre-aggregation cache key; that is `PreaggContext::workspace_id`.
 pub fn resolve_and_compile(
     scan_path: &Path,
-    databases: &[airlayer::DatabaseConfig],
+    databases: &[oxy_airlayer_compat::DatabaseConfig],
     task: &SemanticQueryConfig,
     preagg: Option<&PreaggContext>,
-    pre_loaded_layer: Option<airlayer::SemanticLayer>,
+    pre_loaded_layer: Option<oxy_airlayer_compat::SemanticLayer>,
 ) -> Result<CompiledQuery, SemanticError> {
-    let dialects = airlayer::DatasourceDialectMap::from_config_databases(databases);
+    let dialects = oxy_airlayer_compat::DatasourceDialectMap::from_config_databases(databases);
 
     // Use the caller-supplied layer when available (avoids re-reading the
     // workspace from disk on hot paths). Fall back to the canonical
@@ -199,7 +199,7 @@ pub fn resolve_and_compile(
         None => oxy_airlayer_compat::load_layer_from_dir(scan_path)
             .map_err(|e| SemanticError::Runtime(format!("semantic engine error: {e}")))?,
     };
-    let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects)
+    let engine = oxy_airlayer_compat::SemanticEngine::from_semantic_layer(layer, dialects)
         .map_err(|e| SemanticError::Runtime(format!("semantic engine error: {e}")))?;
 
     let semantic_layer = engine.semantic_layer();
@@ -207,7 +207,7 @@ pub fn resolve_and_compile(
     let topic = resolve_topic(semantic_layer, task)?;
 
     // Get database from views.
-    let views: Vec<&airlayer::View> = semantic_layer
+    let views: Vec<&oxy_airlayer_compat::View> = semantic_layer
         .views
         .iter()
         .filter(|v| topic.views.contains(&v.name))
@@ -250,16 +250,16 @@ pub fn resolve_and_compile(
 /// Compile a semantic query using a pre-built `SemanticEngine`.
 ///
 /// Use this when compiling multiple queries against the same schema — build
-/// the engine once with [`airlayer::SemanticEngine::from_semantic_layer`] and
+/// the engine once with [`oxy_airlayer_compat::SemanticEngine::from_semantic_layer`] and
 /// call this for each query so the expensive engine-build cost is paid once.
 /// Returns only the SQL string; no preagg check is performed.
 pub fn compile_with_engine(
-    engine: &airlayer::SemanticEngine,
+    engine: &oxy_airlayer_compat::SemanticEngine,
     task: &SemanticQueryConfig,
 ) -> Result<String, SemanticError> {
     let semantic_layer = engine.semantic_layer();
     let topic = resolve_topic(semantic_layer, task)?;
-    let views: Vec<&airlayer::View> = semantic_layer
+    let views: Vec<&oxy_airlayer_compat::View> = semantic_layer
         .views
         .iter()
         .filter(|v| topic.views.contains(&v.name))
@@ -300,9 +300,10 @@ pub fn try_resolve_preagg(
     let cache_dir = oxy_shared::state_dir::get_airlayer_cache_dir(preagg.workspace_id);
     let manifest_path = cache_dir.join("manifest.json");
     let content = std::fs::read_to_string(&manifest_path).ok()?;
-    let manifest: airlayer::preagg::LocalManifest = serde_json::from_str(&content).ok()?;
+    let manifest: oxy_airlayer_compat::preagg::LocalManifest =
+        serde_json::from_str(&content).ok()?;
 
-    let entry = airlayer::preagg::check_coverage(request, &manifest.rollups)?;
+    let entry = oxy_airlayer_compat::preagg::check_coverage(request, &manifest.rollups)?;
     let is_fresh = check_and_seed_freshness(
         &preagg.cache,
         &entry.rollup_hash,
@@ -330,7 +331,8 @@ pub fn try_resolve_preagg(
     // `generate_reagg_sql` takes the FROM clause as a string, so the same
     // request produces the same projection, grouping and re-aggregation for
     // either tier — only the source differs.
-    let preagg_sql = airlayer::preagg::generate_reagg_sql(request, entry, &from_clause(&source));
+    let preagg_sql =
+        oxy_airlayer_compat::preagg::generate_reagg_sql(request, entry, &from_clause(&source));
     if source.is_remote() {
         tracing::debug!(
             rollup_hash = %entry.rollup_hash,
@@ -415,16 +417,16 @@ pub fn check_and_seed_freshness(
 }
 
 /// Get the database (datasource) name from the first view that has one.
-pub fn get_database_from_views(views: &[airlayer::View]) -> Option<String> {
+pub fn get_database_from_views(views: &[oxy_airlayer_compat::View]) -> Option<String> {
     views.iter().find_map(|v| v.datasource.clone())
 }
 
 // Internal: topic resolution
 
 fn resolve_topic(
-    semantic_layer: &airlayer::SemanticLayer,
+    semantic_layer: &oxy_airlayer_compat::SemanticLayer,
     task: &SemanticQueryConfig,
-) -> Result<airlayer::Topic, SemanticError> {
+) -> Result<oxy_airlayer_compat::Topic, SemanticError> {
     let empty = Vec::new();
     let topics = semantic_layer.topics.as_ref().unwrap_or(&empty);
 
@@ -462,7 +464,7 @@ fn resolve_topic(
                 "No dimensions or measures specified".to_string(),
             ));
         }
-        Ok(airlayer::Topic {
+        Ok(oxy_airlayer_compat::Topic {
             name: "adhoc_query".to_string(),
             description: Some("Ad-hoc query inferred from views".to_string()),
             views: view_names.into_iter().collect(),
@@ -476,8 +478,8 @@ fn resolve_topic(
 
 // Internal: date field tracking
 
-fn collect_date_fields(views: &[&airlayer::View]) -> HashSet<String> {
-    use airlayer::schema::models::DimensionType;
+fn collect_date_fields(views: &[&oxy_airlayer_compat::View]) -> HashSet<String> {
+    use oxy_airlayer_compat::schema::models::DimensionType;
     let mut date_fields = HashSet::new();
     for view in views {
         for dim in &view.dimensions {
@@ -512,7 +514,7 @@ fn build_query_request(
     task: &SemanticQueryConfig,
     topic_name: &str,
     base_view: Option<&String>,
-    default_filters: Option<&Vec<airlayer::schema::models::TopicFilter>>,
+    default_filters: Option<&Vec<oxy_airlayer_compat::schema::models::TopicFilter>>,
     date_fields: &HashSet<String>,
 ) -> Result<QueryRequest, SemanticError> {
     let mut filters = Vec::new();
@@ -773,7 +775,7 @@ mod tests {
     #[test]
     fn test_get_database_from_views() {
         let views = vec![
-            airlayer::View {
+            oxy_airlayer_compat::View {
                 name: "v1".into(),
                 description: None,
                 label: None,
@@ -789,7 +791,7 @@ mod tests {
                 refresh_key: None,
                 meta: None,
             },
-            airlayer::View {
+            oxy_airlayer_compat::View {
                 name: "v2".into(),
                 description: None,
                 label: None,

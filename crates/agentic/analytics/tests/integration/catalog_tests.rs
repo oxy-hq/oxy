@@ -123,9 +123,11 @@ fn build_semantic(view_yamls: &[&str], topic_yamls: &[&str]) -> SemanticCatalog 
     } else {
         Some(topics)
     };
-    let layer = airlayer::SemanticLayer::new(views, topic_opt);
-    let dialects = airlayer::DatasourceDialectMap::with_default(airlayer::Dialect::DuckDB);
-    let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects).unwrap();
+    let layer = oxy_airlayer_compat::SemanticLayer::new(views, topic_opt);
+    let dialects = oxy_airlayer_compat::DatasourceDialectMap::with_default(
+        oxy_airlayer_compat::Dialect::DuckDB,
+    );
+    let engine = oxy_airlayer_compat::SemanticEngine::from_semantic_layer(layer, dialects).unwrap();
     SemanticCatalog::from_engine(engine)
 }
 
@@ -1390,7 +1392,9 @@ fn demo_project_semantic_layer_loads_and_compiles() {
         sem_dir.display()
     );
 
-    let dialects = airlayer::DatasourceDialectMap::with_default(airlayer::Dialect::DuckDB);
+    let dialects = oxy_airlayer_compat::DatasourceDialectMap::with_default(
+        oxy_airlayer_compat::Dialect::DuckDB,
+    );
     let cat =
         SemanticCatalog::load_files(&paths, dialects).expect("examples semantic layer should load");
 

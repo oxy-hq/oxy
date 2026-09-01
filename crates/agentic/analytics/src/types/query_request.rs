@@ -14,7 +14,7 @@ pub type SpecHint = QueryRequestItem;
 /// Top-level envelope for the airlayer-native Specify response.
 ///
 /// The LLM returns one or more `QueryRequestItem` specs, each of which can
-/// be independently compiled via `airlayer::SemanticEngine::compile_query`.
+/// be independently compiled via `oxy_airlayer_compat::SemanticEngine::compile_query`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryRequestEnvelope {
     pub specs: Vec<QueryRequestItem>,
@@ -22,7 +22,7 @@ pub struct QueryRequestEnvelope {
 
 /// A single query spec in airlayer-native format.
 ///
-/// Mirrors `airlayer::engine::query::QueryRequest` but includes an
+/// Mirrors `oxy_airlayer_compat::engine::query::QueryRequest` but includes an
 /// `assumptions` field for human review and uses owned deserialization types.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct QueryRequestItem {
@@ -81,8 +81,10 @@ pub struct OrderItem {
 
 impl QueryRequestItem {
     /// Convert to an airlayer `QueryRequest` for compilation.
-    pub fn to_query_request(&self) -> airlayer::engine::query::QueryRequest {
-        use airlayer::engine::query::{OrderBy, QueryFilter, QueryRequest, TimeDimensionQuery};
+    pub fn to_query_request(&self) -> oxy_airlayer_compat::engine::query::QueryRequest {
+        use oxy_airlayer_compat::engine::query::{
+            OrderBy, QueryFilter, QueryRequest, TimeDimensionQuery,
+        };
 
         let filters = self
             .filters
@@ -323,8 +325,8 @@ pub const QUERY_REJECTION_HINT: &str = "For a date range use `inDateRange` with 
 /// last week" with full confidence. A confident empty answer is the worst
 /// possible failure for an analytics agent, so the operator is now validated
 /// where the query is proposed and the model is asked to try again.
-fn parse_filter_operator(s: &str) -> Option<airlayer::engine::query::FilterOperator> {
-    use airlayer::engine::query::FilterOperator;
+fn parse_filter_operator(s: &str) -> Option<oxy_airlayer_compat::engine::query::FilterOperator> {
+    use oxy_airlayer_compat::engine::query::FilterOperator;
     Some(match s {
         "equals" => FilterOperator::Equals,
         "notEquals" => FilterOperator::NotEquals,

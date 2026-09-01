@@ -52,8 +52,8 @@ pub fn fmt_result_shape(shape: &crate::types::ResultShape) -> String {
 /// **Non-retryable** errors are structural (join graph limitations, cross-
 /// dialect queries, SQL generation bugs) — the query cannot be expressed in
 /// airlayer's model, so we fall back to LLM SQL generation.
-pub fn is_retryable_compile_error(e: &airlayer::engine::EngineError) -> bool {
-    use airlayer::engine::EngineError;
+pub fn is_retryable_compile_error(e: &oxy_airlayer_compat::engine::EngineError) -> bool {
+    use oxy_airlayer_compat::engine::EngineError;
     match e {
         EngineError::QueryError(_msg) => true,
         // JoinError, SchemaError, SqlGenerationError — structural, not retryable.

@@ -5,10 +5,10 @@
 //! graph ops. The query-executing ops (`explain`, `opportunity`) require a
 //! query executor and are orchestrated by the HTTP layer in `oxy-app`.
 
-use airlayer::SemanticLayer;
-use airlayer::engine::EngineError;
-use airlayer::engine::metric_tree::MetricTree;
-use airlayer::engine::metric_tree_ops::{
+use oxy_airlayer_compat::SemanticLayer;
+use oxy_airlayer_compat::engine::EngineError;
+use oxy_airlayer_compat::engine::metric_tree::MetricTree;
+use oxy_airlayer_compat::engine::metric_tree_ops::{
     PredictResult, SensitivityResult, predict as al_predict, sensitivity as al_sensitivity,
 };
 
@@ -34,7 +34,7 @@ pub fn predict(tree: &MetricTree, changes: &[(String, f64)]) -> Result<PredictRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use airlayer::SemanticLayer;
+    use oxy_airlayer_compat::SemanticLayer;
 
     /// Build a SemanticLayer from inline view YAML via oxy-airlayer-compat.
     fn layer_from_views(yamls: &[&str]) -> SemanticLayer {

@@ -503,7 +503,7 @@ pub(super) fn specify_type_addendum(question_type: &QuestionType) -> &'static st
 ///
 /// The LLM produces structured query specs with semantic `view.member` references
 /// instead of raw SQL expressions. The orchestrator compiles each spec via
-/// `airlayer::SemanticEngine::compile_query`.
+/// `oxy_airlayer_compat::SemanticEngine::compile_query`.
 pub(super) const SPECIFY_QUERY_REQUEST_PROMPT: &str = "\
 <role>
 You are an analytics query planner performing the Specify phase. Given a clarified \

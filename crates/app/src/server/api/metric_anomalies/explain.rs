@@ -91,7 +91,7 @@ pub async fn explain_anomaly(
     let runner = OxyMetricTreeRunner::new(workspace_manager.into_read_only(), user.id, role)
         .with_preagg(preagg_ctx.cache.clone(), renewal_threshold_secs)
         .requiring_fresh_rollups();
-    let mut config = airlayer::engine::metric_tree_ops::ExplainConfig::default();
+    let mut config = oxy_airlayer_compat::engine::metric_tree_ops::ExplainConfig::default();
     config.deep = false;
 
     let result = runner

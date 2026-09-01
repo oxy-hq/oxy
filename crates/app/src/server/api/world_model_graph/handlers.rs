@@ -1,11 +1,11 @@
-use airlayer::engine::promotions::Promotions;
-use airlayer::schema::models::{EntityType, MeasureType};
 use axum::{
     extract::{self, Path},
     http::StatusCode,
     response::sse::{Event, KeepAlive, Sse},
 };
 use futures::stream::{FuturesUnordered, StreamExt as _};
+use oxy_airlayer_compat::engine::promotions::Promotions;
+use oxy_airlayer_compat::schema::models::{EntityType, MeasureType};
 use std::collections::HashMap;
 
 use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
@@ -66,8 +66,10 @@ pub async fn get_world_model(
 /// The set of fully-qualified measure ids (`view.measure`) that decompose
 /// into a metric-tree driver breakdown — a measure has one when it is the
 /// target (`to`) of a component edge. Drives each measure's `has_breakdown`.
-fn breakdownable_measures(layer: &airlayer::SemanticLayer) -> std::collections::HashSet<String> {
-    use airlayer::engine::metric_tree::EdgeKind;
+fn breakdownable_measures(
+    layer: &oxy_airlayer_compat::SemanticLayer,
+) -> std::collections::HashSet<String> {
+    use oxy_airlayer_compat::engine::metric_tree::EdgeKind;
     let tree = oxy_semantic::build_metric_tree(layer);
     tree.edges
         .iter()
@@ -79,8 +81,8 @@ fn breakdownable_measures(layer: &airlayer::SemanticLayer) -> std::collections::
 /// Build one entity node (and push its promotion / FK edges) for `view`'s
 /// primary entity. Returns `None` for a view with no primary entity.
 fn build_entity_node(
-    view: &airlayer::schema::models::View,
-    layer: &airlayer::SemanticLayer,
+    view: &oxy_airlayer_compat::schema::models::View,
+    layer: &oxy_airlayer_compat::SemanticLayer,
     promotions: &Promotions,
     breakdownable: &std::collections::HashSet<String>,
     edges: &mut Vec<WmEdge>,
@@ -208,7 +210,7 @@ fn build_entity_node(
 /// the layer and workspace path are obtained (FS scan-path cache vs. the
 /// compile-boundary materialised tempdir).
 pub(crate) async fn build_world_model_response<S: oxy::config::DiskSlot>(
-    layer: &airlayer::SemanticLayer,
+    layer: &oxy_airlayer_compat::SemanticLayer,
     config_manager: &oxy::config::ConfigManager<S>,
 ) -> Result<WorldModelResponse, String> {
     let promotions = Promotions::build(&layer.views)
@@ -286,7 +288,7 @@ pub(crate) async fn instances_core(
     workspace_manager: &WorkspaceManager<WorkingCopy>,
     user_id: uuid::Uuid,
     role: WorkspaceRole,
-    layer: &airlayer::SemanticLayer,
+    layer: &oxy_airlayer_compat::SemanticLayer,
     _workspace_id: uuid::Uuid,
     scan_path: std::path::PathBuf,
     q: &WmInstancesQuery,
@@ -338,18 +340,11 @@ pub(crate) async fn instances_core(
     // Build the semantic query: PK dimension(s) + optional display label dimension.
     // resolve_and_compile handles table aliasing, dialect, and database routing.
     // `scan_path` is caller-supplied (FS or compile-boundary tempdir).
-    let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
+    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
         .config_manager
         .list_databases()
         .iter()
-        .map(|db| airlayer::DatabaseConfig {
-            name: db.name.clone(),
-            // `dialect()`, not the raw type name: airhouse and motherduck
-            // speak an engine their `type:` string does not name, and
-            // airlayer drops a datasource it cannot classify -- silently
-            // inheriting whichever dialect config.yml lists first.
-            db_type: db.dialect(),
-        })
+        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
         .collect();
 
     let order_by = disp.dims.first().cloned().unwrap_or_default();
@@ -523,18 +518,11 @@ pub async fn get_world_model_filter_instances(
         ));
     }
 
-    let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
+    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
         .config_manager
         .list_databases()
         .iter()
-        .map(|db| airlayer::DatabaseConfig {
-            name: db.name.clone(),
-            // `dialect()`, not the raw type name: airhouse and motherduck
-            // speak an engine their `type:` string does not name, and
-            // airlayer drops a datasource it cannot classify -- silently
-            // inheriting whichever dialect config.yml lists first.
-            db_type: db.dialect(),
-        })
+        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
         .collect();
     let exec = WmExecCtx {
         workspace_manager: workspace_manager.clone(),
@@ -663,18 +651,11 @@ pub async fn post_world_model_filter_counts(
     // hoisted to module scope so the expansion-plan helpers can share it).
     let entity_metas: Vec<EntityMeta> = build_entity_metas(&layer, &promotions, wm_cfg.as_ref());
 
-    let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
+    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
         .config_manager
         .list_databases()
         .iter()
-        .map(|db| airlayer::DatabaseConfig {
-            name: db.name.clone(),
-            // `dialect()`, not the raw type name: airhouse and motherduck
-            // speak an engine their `type:` string does not name, and
-            // airlayer drops a datasource it cannot classify -- silently
-            // inheriting whichever dialect config.yml lists first.
-            db_type: db.dialect(),
-        })
+        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
         .collect();
 
     // Get-or-build the cached engine. The engine is `Send` but not `Sync`; it lives
@@ -699,9 +680,7 @@ pub async fn post_world_model_filter_counts(
                             .ok()
                             .and_then(|e| agentic_semantic::compile_with_engine(&e, cfg).ok())
                     } else {
-                        let dialects =
-                            airlayer::DatasourceDialectMap::from_config_databases(&dbs_c);
-                        airlayer::SemanticEngine::from_semantic_layer(layer_c.clone(), dialects)
+                        oxy_airlayer_compat::build_engine(layer_c.clone(), &dbs_c)
                             .ok()
                             .and_then(|e| agentic_semantic::compile_with_engine(&e, cfg).ok())
                     }
@@ -888,9 +867,7 @@ pub async fn post_world_model_filter_counts(
                                 Err(_) => vec![None; cfgs.len()],
                             }
                         } else {
-                            let dialects =
-                                airlayer::DatasourceDialectMap::from_config_databases(&dbs_c);
-                            match airlayer::SemanticEngine::from_semantic_layer(layer_c, dialects) {
+                            match oxy_airlayer_compat::build_engine(layer_c, &dbs_c) {
                                 Ok(engine) => compile_all(&engine),
                                 Err(_) => vec![None; cfgs.len()],
                             }
@@ -1704,18 +1681,11 @@ pub async fn get_world_model_instance_detail(
             )
         })?;
 
-    let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
+    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
         .config_manager
         .list_databases()
         .iter()
-        .map(|db| airlayer::DatabaseConfig {
-            name: db.name.clone(),
-            // `dialect()`, not the raw type name: airhouse and motherduck
-            // speak an engine their `type:` string does not name, and
-            // airlayer drops a datasource it cannot classify -- silently
-            // inheriting whichever dialect config.yml lists first.
-            db_type: db.dialect(),
-        })
+        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
         .collect();
 
     // Shared PK filters used across all per-instance queries.
@@ -1898,7 +1868,7 @@ pub async fn get_world_model_instance_detail(
                 .collect()
         })
         .unwrap_or_default();
-    let make_meta = |m: &airlayer::Measure| MeasureMeta {
+    let make_meta = |m: &oxy_airlayer_compat::Measure| MeasureMeta {
         name: m.name.clone(),
         measure_type: format!("{:?}", m.measure_type).to_lowercase(),
         label: meas_allow
@@ -1918,7 +1888,7 @@ pub async fn get_world_model_instance_detail(
         measures: Vec<MeasureMeta>,
         cfg: SemanticQueryConfig,
     }
-    let own_cfg = |measures: &[&airlayer::Measure]| SemanticQueryConfig {
+    let own_cfg = |measures: &[&oxy_airlayer_compat::Measure]| SemanticQueryConfig {
         topic: None,
         dimensions: vec![],
         measures: measures
@@ -1932,7 +1902,7 @@ pub async fn get_world_model_instance_detail(
         offset: None,
     };
     let mut own_groups: Vec<OwnGroup> = Vec::new();
-    let simple: Vec<&airlayer::Measure> = own_measures
+    let simple: Vec<&oxy_airlayer_compat::Measure> = own_measures
         .iter()
         .copied()
         .filter(|m| m.measure_type != MeasureType::Custom)
@@ -2068,8 +2038,7 @@ pub async fn get_world_model_instance_detail(
         Vec<SqlOpt>,
         Vec<SqlOpt>,
     )> = tokio::task::spawn_blocking(move || {
-        let dialects = airlayer::DatasourceDialectMap::from_config_databases(&dbs_clone);
-        let engine = airlayer::SemanticEngine::from_semantic_layer(layer_clone, dialects)
+        let engine = oxy_airlayer_compat::build_engine(layer_clone, &dbs_clone)
             .map_err(|e| agentic_semantic::SemanticError::Runtime(e.to_string()))?;
         let c = |cfg: &SemanticQueryConfig| {
             let result = agentic_semantic::compile_with_engine(&engine, cfg);
@@ -2226,13 +2195,10 @@ pub async fn get_world_model_instance_detail(
                     let layer_clone2 = (*layer).clone();
                     let dbs_clone2 = databases.clone();
                     let parent_sql = tokio::task::spawn_blocking(move || {
-                        let dialects =
-                            airlayer::DatasourceDialectMap::from_config_databases(&dbs_clone2);
-                        let engine = airlayer::SemanticEngine::from_semantic_layer(
-                            layer_clone2,
-                            dialects,
-                        )
-                        .map_err(|e| agentic_semantic::SemanticError::Runtime(e.to_string()))?;
+                        let engine = oxy_airlayer_compat::build_engine(layer_clone2, &dbs_clone2)
+                            .map_err(|e| {
+                            agentic_semantic::SemanticError::Runtime(e.to_string())
+                        })?;
                         agentic_semantic::compile_with_engine(&engine, &parent_cfg)
                     })
                     .await
@@ -2495,7 +2461,7 @@ pub(crate) async fn measure_breakdown_core(
     workspace_manager: WorkspaceManager<WorkingCopy>,
     user_id: uuid::Uuid,
     role: WorkspaceRole,
-    layer: &airlayer::SemanticLayer,
+    layer: &oxy_airlayer_compat::SemanticLayer,
     q: WmMeasureBreakdownQuery,
 ) -> Result<tokio::sync::mpsc::Receiver<WmMeasureBreakdownEvent>, (StatusCode, ErrorResponse)> {
     let view = primary_view_of(layer, &q.entity).ok_or_else(|| {
@@ -2539,23 +2505,15 @@ pub(crate) async fn measure_breakdown_core(
 
     // Compile all view-group SQLs up front (pure, blocking).
     let layer_clone = layer.clone();
-    let databases: Vec<airlayer::DatabaseConfig> = workspace_manager
+    let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = workspace_manager
         .config_manager
         .list_databases()
         .iter()
-        .map(|db| airlayer::DatabaseConfig {
-            name: db.name.clone(),
-            // `dialect()`, not the raw type name: airhouse and motherduck
-            // speak an engine their `type:` string does not name, and
-            // airlayer drops a datasource it cannot classify -- silently
-            // inheriting whichever dialect config.yml lists first.
-            db_type: db.dialect(),
-        })
+        .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
         .collect();
     let cfgs: Vec<SemanticQueryConfig> = plan.groups.iter().map(|(_, _, c)| c.clone()).collect();
     let compiled: Vec<Option<String>> = tokio::task::spawn_blocking(move || {
-        let dialects = airlayer::DatasourceDialectMap::from_config_databases(&databases);
-        let engine = match airlayer::SemanticEngine::from_semantic_layer(layer_clone, dialects) {
+        let engine = match oxy_airlayer_compat::build_engine(layer_clone, &databases) {
             Ok(e) => e,
             Err(e) => {
                 tracing::warn!(error = %e, "measure-breakdown: engine build failed");

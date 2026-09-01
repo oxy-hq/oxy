@@ -12,10 +12,23 @@
 //! Pure infrastructure: depends only on `airlayer` + `serde`. No `oxy-*`,
 //! no `agentic-*`. Importable by any agentic domain, the host adapters,
 //! and the CLI alike.
+//!
+//! It is also the **sole** crate in the workspace that may declare `airlayer`
+//! as a dependency. Everything oxy uses is re-exported below, so an airlayer
+//! upgrade lands in one manifest and is reviewed in one place instead of
+//! rippling through nine. `tests::this_is_the_sole_airlayer_dependent`
+//! enforces it — if you are here to add `airlayer` to another manifest, add a
+//! re-export or a helper above instead.
 
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+
+pub use airlayer::{
+    DatabaseConfig, DatasourceDialectMap, Dialect, Dimension, Entity, Measure, RefreshKey,
+    SemanticEngine, SemanticLayer, Topic, View,
+};
+pub use airlayer::{dialect, engine, preagg, schema};
 
 /// Error from parsing or validating oxy semantic files.
 #[derive(Debug, thiserror::Error)]
@@ -279,11 +292,40 @@ pub fn load_layer_from_dir(root: &Path) -> Result<airlayer::SemanticLayer, Seman
 /// used as a pure "is this semantic file set well-formed?" check by the
 /// builder validator and `oxy validate`. Callers that need a dialect-aware
 /// engine (analytics) build it from [`build_layer`] with their own map.
-pub fn validate_files<P: AsRef<Path>>(paths: &[P]) -> Result<(), SemanticError> {
+/// Parse + compile `paths` purely to surface errors. No DB, no connectors.
+///
+/// Private: callers that want a layer should take one from `build_layer`, and
+/// the write gate is the only thing that wants the yes/no.
+fn validate_files<P: AsRef<Path>>(paths: &[P]) -> Result<(), SemanticError> {
     let layer = build_layer(paths)?;
-    airlayer::SemanticEngine::from_semantic_layer(layer, airlayer::DatasourceDialectMap::new())
-        .map_err(|e| SemanticError::Engine(e.to_string()))?;
+    build_engine(layer, &[])?;
     Ok(())
+}
+
+/// A datasource config for the dialect map.
+///
+/// Pass `dialect()`, never the raw `type:` string: airhouse and motherduck
+/// speak an engine their type name does not name, and airlayer drops a
+/// datasource it cannot classify — silently inheriting whichever dialect
+/// `config.yml` happens to list first.
+pub fn database_config(name: impl Into<String>, dialect: impl Into<String>) -> DatabaseConfig {
+    DatabaseConfig {
+        name: name.into(),
+        db_type: dialect.into(),
+    }
+}
+
+/// Build an engine over `layer`, resolving dialects from `databases`.
+///
+/// The dialect map must be derived from the same database list the query will
+/// run against; building it separately is how call sites drifted apart.
+pub fn build_engine(
+    layer: SemanticLayer,
+    databases: &[DatabaseConfig],
+) -> Result<SemanticEngine, SemanticError> {
+    let dialects = DatasourceDialectMap::from_config_databases(databases);
+    SemanticEngine::from_semantic_layer(layer, dialects)
+        .map_err(|e| SemanticError::Engine(e.to_string()))
 }
 
 /// Two paths refer to the same file. Canonicalizes when possible (handles
@@ -637,5 +679,68 @@ mod tests {
         assert!(layer.topics.is_none(), "no topics were defined");
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `oxy-airlayer-compat` is the only crate that may depend on `airlayer`.
+    ///
+    /// Before this was enforced, `airlayer::` appeared in 414 places across
+    /// nine crates — more of it in the HTTP transport layer than in the
+    /// infrastructure layer that owns the adapter. Every consumer went
+    /// straight to the engine, so the oxy-side lenience rules (the
+    /// `data_source` alias, the skip-dir list, the injected row-count
+    /// measure) were opt-in rather than unavoidable, and a pinned-rev bump
+    /// had nine blast radii instead of one.
+    #[test]
+    fn this_is_the_sole_airlayer_dependent() {
+        let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .find(|p| p.join("crates").is_dir() && p.join("Cargo.toml").is_file())
+            .expect("workspace root above crates/infrastructure/semantic")
+            .to_path_buf();
+
+        let this_crate = workspace_root.join("crates/infrastructure/semantic/Cargo.toml");
+        let mut offenders = Vec::new();
+
+        let mut stack = vec![workspace_root.join("crates")];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if path.file_name().is_some_and(|n| n == "target") {
+                        continue;
+                    }
+                    stack.push(path);
+                } else if path.file_name().is_some_and(|n| n == "Cargo.toml") && path != this_crate
+                {
+                    let Ok(manifest) = std::fs::read_to_string(&path) else {
+                        continue;
+                    };
+                    // A dependency entry, not a mention in a comment: the key
+                    // sits at the start of a line and is followed by `=`.
+                    if manifest
+                        .lines()
+                        .any(|l| l.starts_with("airlayer") && l.contains('='))
+                    {
+                        offenders.push(
+                            path.strip_prefix(&workspace_root)
+                                .unwrap_or(&path)
+                                .display()
+                                .to_string(),
+                        );
+                    }
+                }
+            }
+        }
+
+        offenders.sort();
+        assert!(
+            offenders.is_empty(),
+            "these manifests declare `airlayer` directly; depend on \
+             oxy-airlayer-compat and use its re-exports instead:\n  {}",
+            offenders.join("\n  ")
+        );
     }
 }

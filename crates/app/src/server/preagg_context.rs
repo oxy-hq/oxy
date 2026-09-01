@@ -130,7 +130,7 @@ mod tests {
         .expect("manifest writes");
     }
 
-    fn covering_request() -> airlayer::engine::query::QueryRequest {
+    fn covering_request() -> oxy_airlayer_compat::engine::query::QueryRequest {
         serde_json::from_value(serde_json::json!({
             "measures": ["orders.total_orders"],
             "dimensions": []

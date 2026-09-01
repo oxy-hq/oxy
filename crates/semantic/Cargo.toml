@@ -10,7 +10,7 @@ rust-version.workspace = true
 exclude.workspace = true
 
 [dependencies]
-airlayer = { workspace = true }
+oxy-airlayer-compat = { workspace = true }
 schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -22,4 +22,3 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-oxy-airlayer-compat = { workspace = true }

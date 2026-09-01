@@ -1576,7 +1576,7 @@ impl agentic_automation::WorkspaceContext for FakePlatform {
         Some(std::path::Path::new(""))
     }
 
-    fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
+    fn database_configs(&self) -> Vec<oxy_airlayer_compat::DatabaseConfig> {
         vec![]
     }
 

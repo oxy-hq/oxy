@@ -24,7 +24,7 @@ pub struct TtlCache<V: Send + Sync + 'static> {
     inner: Mutex<HashMap<Uuid, Entry<V>>>,
 }
 
-pub type SemanticLayerCache = TtlCache<airlayer::SemanticLayer>;
+pub type SemanticLayerCache = TtlCache<oxy_airlayer_compat::SemanticLayer>;
 
 pub fn new_semantic_layer_cache() -> Arc<SemanticLayerCache> {
     // 60s TTL: cheap safety net; explicit invalidation on every semantic file
@@ -36,7 +36,7 @@ pub fn new_semantic_layer_cache() -> Arc<SemanticLayerCache> {
 /// `SemanticEngine` is `Send` but not `Sync`; wrapping in `Mutex` makes it `Sync`.
 /// Engine build cost (schema validation + join graph) is paid once per workspace
 /// per TTL instead of once per compilation request.
-pub type SemanticEngineCache = TtlCache<std::sync::Mutex<airlayer::SemanticEngine>>;
+pub type SemanticEngineCache = TtlCache<std::sync::Mutex<oxy_airlayer_compat::SemanticEngine>>;
 
 pub fn new_semantic_engine_cache() -> Arc<SemanticEngineCache> {
     // Explicit invalidation on every semantic file write is the primary freshness

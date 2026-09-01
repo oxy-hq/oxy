@@ -474,13 +474,16 @@ pub struct SemanticLayerCacheCtx {
 }
 
 impl SemanticLayerCacheCtx {
-    /// Returns a cached `Arc<airlayer::SemanticLayer>`, loading from disk on the
+    /// Returns a cached `Arc<oxy_airlayer_compat::SemanticLayer>`, loading from disk on the
     /// first call per workspace (or after `invalidate`). The load is offloaded to
     /// a blocking thread so it does not stall the Tokio worker pool.
     pub async fn get_or_load(
         &self,
         scan_path: std::path::PathBuf,
-    ) -> Result<std::sync::Arc<airlayer::SemanticLayer>, oxy_airlayer_compat::SemanticError> {
+    ) -> Result<
+        std::sync::Arc<oxy_airlayer_compat::SemanticLayer>,
+        oxy_airlayer_compat::SemanticError,
+    > {
         if let Some(layer) = self.cache.lookup(self.workspace_id) {
             tracing::debug!(workspace_id = %self.workspace_id, "semantic layer cache hit");
             return Ok(layer);
@@ -538,18 +541,16 @@ impl SemanticEngineCacheCtx {
     /// compile inside a `spawn_blocking` that locks, compiles, and immediately drops the guard.
     pub async fn get_or_build(
         &self,
-        layer: std::sync::Arc<airlayer::SemanticLayer>,
-        databases: Vec<airlayer::DatabaseConfig>,
-    ) -> Option<std::sync::Arc<std::sync::Mutex<airlayer::SemanticEngine>>> {
+        layer: std::sync::Arc<oxy_airlayer_compat::SemanticLayer>,
+        databases: Vec<oxy_airlayer_compat::DatabaseConfig>,
+    ) -> Option<std::sync::Arc<std::sync::Mutex<oxy_airlayer_compat::SemanticEngine>>> {
         let workspace_id = self.workspace_id;
         self.cache
             .get_or_build(workspace_id, || async move {
                 tracing::info!(%workspace_id, "semantic engine cache miss — building engine");
                 let t0 = std::time::Instant::now();
                 let result = tokio::task::spawn_blocking(move || {
-                    let dialects =
-                        airlayer::DatasourceDialectMap::from_config_databases(&databases);
-                    airlayer::SemanticEngine::from_semantic_layer((*layer).clone(), dialects)
+                    oxy_airlayer_compat::build_engine((*layer).clone(), &databases)
                         .ok()
                         .map(|engine| std::sync::Arc::new(std::sync::Mutex::new(engine)))
                 })

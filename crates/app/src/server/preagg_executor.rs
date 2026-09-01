@@ -239,7 +239,8 @@ async fn run_preagg_task(
     // rollup: cross-view `parent:` chains and measures that reach through
     // another view only resolve against the full set. One engine is built from
     // this per dialect, once per cycle — see `RebuildContext::engine`.
-    let layer_views: Vec<airlayer::View> = views.iter().map(|(view, _)| view.clone()).collect();
+    let layer_views: Vec<oxy_airlayer_compat::View> =
+        views.iter().map(|(view, _)| view.clone()).collect();
 
     // Whether the artifacts on disk were built by THIS builder. Not a
     // freshness question — no refresh key can answer it — so it is settled
@@ -257,7 +258,7 @@ async fn run_preagg_task(
     // either. A known gap, not this constant's problem.
     let declared: std::collections::HashSet<String> = views
         .iter()
-        .flat_map(|(view, _)| airlayer::preagg::resolve_rollups(view))
+        .flat_map(|(view, _)| oxy_airlayer_compat::preagg::resolve_rollups(view))
         .map(|r| r.hash)
         .collect();
     let built = built_rollup_hashes(&cache_dir);
@@ -293,8 +294,8 @@ async fn run_preagg_task(
     let today = chrono::Utc::now().format("%Y%m%dT%H%M%S").to_string();
 
     struct StaleWork {
-        view: airlayer::View,
-        rollup: airlayer::preagg::RollupSpec,
+        view: oxy_airlayer_compat::View,
+        rollup: oxy_airlayer_compat::preagg::RollupSpec,
         current_value: Option<String>,
         database_name: String,
     }
@@ -314,7 +315,7 @@ async fn run_preagg_task(
         {
             continue;
         }
-        let rollups: Vec<_> = airlayer::preagg::resolve_rollups(view)
+        let rollups: Vec<_> = oxy_airlayer_compat::preagg::resolve_rollups(view)
             .into_iter()
             .filter(|r| request.covers(&view.name, &r.name))
             .collect();
@@ -469,8 +470,11 @@ async fn run_preagg_task(
     // Keyed by dialect, then indexed by database: two databases on the same
     // dialect share one engine, and a cycle spanning dialects still gets the
     // right one per rollup.
-    let mut by_dialect: Vec<(airlayer::Dialect, Arc<airlayer::SemanticEngine>)> = Vec::new();
-    let mut engines: HashMap<String, Arc<airlayer::SemanticEngine>> = HashMap::new();
+    let mut by_dialect: Vec<(
+        oxy_airlayer_compat::Dialect,
+        Arc<oxy_airlayer_compat::SemanticEngine>,
+    )> = Vec::new();
+    let mut engines: HashMap<String, Arc<oxy_airlayer_compat::SemanticEngine>> = HashMap::new();
     // Per DATABASE, not per cycle. `is_database_configured` above already
     // filtered the not-declared case, so what fails here is "configured but
     // currently unreachable" — transient, and no reason for one warehouse's
@@ -744,7 +748,7 @@ async fn load_views(
         oxy::config::WorkingCopy,
     >,
     database_override: Option<&str>,
-) -> Result<Vec<(airlayer::View, String)>, String> {
+) -> Result<Vec<(oxy_airlayer_compat::View, String)>, String> {
     let scan = crate::server::api::semantic::resolve_query_scan_source(workspace_manager)
         .await
         .map_err(|e| e.message())?;

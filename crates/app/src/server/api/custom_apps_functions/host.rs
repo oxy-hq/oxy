@@ -426,17 +426,10 @@ impl FunctionHost for ProjectFunctionHost {
 
         let cm = &self.proj_ctx.workspace_manager().config_manager;
         let scan_path = cm.semantics_scan_path();
-        let databases: Vec<airlayer::DatabaseConfig> = cm
+        let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = cm
             .list_databases()
             .iter()
-            .map(|db| airlayer::DatabaseConfig {
-                name: db.name.clone(),
-                // `dialect()`, not the raw type name: airhouse and motherduck
-                // speak an engine their `type:` string does not name, and
-                // airlayer drops a datasource it cannot classify -- silently
-                // inheriting whichever dialect config.yml lists first.
-                db_type: db.dialect(),
-            })
+            .map(|db| oxy_airlayer_compat::database_config(db.name.clone(), db.dialect()))
             .collect();
 
         // The rollup short-circuit, resolved exactly as

@@ -10,8 +10,8 @@
 use std::sync::Arc;
 
 use agentic_pipeline::platform::ProjectContext;
-use airlayer::engine::query::QueryRequest;
 use oxy::config::health_check::SemanticProbeTarget;
+use oxy_airlayer_compat::engine::query::QueryRequest;
 
 use super::ProbeFailure;
 use crate::agentic_wiring::project_ctx::OxyProjectContext;

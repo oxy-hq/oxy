@@ -369,8 +369,8 @@ fn bucket_is_complete(date: NaiveDate, window: &ScanWindow, granularity: Granula
 /// airlayer when passed as a flat list.
 fn monitor_filters_to_query_filters(
     filters: &[MonitorFilter],
-) -> Vec<airlayer::engine::query::QueryFilter> {
-    use airlayer::engine::query::{FilterOperator, QueryFilter};
+) -> Vec<oxy_airlayer_compat::engine::query::QueryFilter> {
+    use oxy_airlayer_compat::engine::query::{FilterOperator, QueryFilter};
     filters
         .iter()
         .map(|f| QueryFilter {
@@ -1147,12 +1147,14 @@ mod tests {
 
     #[async_trait::async_trait]
     impl MetricTreeRunner for RecordingRunner {
-        async fn load_layer(&self) -> Result<airlayer::SemanticLayer, MetricTreeRunnerError> {
+        async fn load_layer(
+            &self,
+        ) -> Result<oxy_airlayer_compat::SemanticLayer, MetricTreeRunnerError> {
             Err(MetricTreeRunnerError::LayerLoad(
                 "unused by scan_one".into(),
             ))
         }
-        async fn list_databases(&self) -> Vec<airlayer::DatabaseConfig> {
+        async fn list_databases(&self) -> Vec<oxy_airlayer_compat::DatabaseConfig> {
             vec![]
         }
         async fn run_explain(
@@ -1161,10 +1163,12 @@ mod tests {
             _: String,
             _: (String, String),
             _: (String, String),
-            _: Vec<airlayer::engine::query::QueryFilter>,
-            _: airlayer::engine::metric_tree_ops::ExplainConfig,
-        ) -> Result<airlayer::engine::metric_tree_ops::ExplainResult, MetricTreeRunnerError>
-        {
+            _: Vec<oxy_airlayer_compat::engine::query::QueryFilter>,
+            _: oxy_airlayer_compat::engine::metric_tree_ops::ExplainConfig,
+        ) -> Result<
+            oxy_airlayer_compat::engine::metric_tree_ops::ExplainResult,
+            MetricTreeRunnerError,
+        > {
             Err(MetricTreeRunnerError::Op("unused by scan_one".into()))
         }
         async fn run_opportunity(
@@ -1172,8 +1176,10 @@ mod tests {
             _: String,
             _: String,
             _: (String, String),
-        ) -> Result<airlayer::engine::metric_tree_ops::OpportunityResult, MetricTreeRunnerError>
-        {
+        ) -> Result<
+            oxy_airlayer_compat::engine::metric_tree_ops::OpportunityResult,
+            MetricTreeRunnerError,
+        > {
             Err(MetricTreeRunnerError::Op("unused by scan_one".into()))
         }
         async fn get_dimension_values(
@@ -1190,7 +1196,7 @@ mod tests {
             _time_dimension: String,
             granularity: String,
             period: (String, String),
-            _filters: Vec<airlayer::engine::query::QueryFilter>,
+            _filters: Vec<oxy_airlayer_compat::engine::query::QueryFilter>,
             timezone: Option<String>,
         ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError> {
             *self.seen.lock().unwrap() = Some(TimeSeriesCall {

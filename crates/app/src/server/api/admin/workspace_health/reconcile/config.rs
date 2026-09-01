@@ -1,7 +1,7 @@
 //! Strict-typed `reconcile.yml`. Stored as JSONB in `reconcile_configs`;
 //! the runtime round-trips it back with `serde_json::from_value`.
 
-use airlayer::engine::query::QueryRequest;
+use oxy_airlayer_compat::engine::query::QueryRequest;
 use serde::{Deserialize, Serialize};
 
 use super::Tolerance;

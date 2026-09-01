@@ -19,8 +19,8 @@ agentic-connector = { workspace = true, features = [
     "snowflake",
     "bigquery",
 ] }
-airlayer = { workspace = true }
 omni = { workspace = true }
+oxy-airlayer-compat = { workspace = true }
 oxy-looker = { workspace = true }
 oxy-shared = { workspace = true }
 chrono = { workspace = true }

@@ -408,7 +408,7 @@ impl AnalyticsSolver {
     pub(crate) fn build_semantic_payload(
         &self,
         sql: String,
-        request: &airlayer::engine::query::QueryRequest,
+        request: &oxy_airlayer_compat::engine::query::QueryRequest,
     ) -> crate::types::SolutionPayload {
         use crate::types::SolutionPayload;
         match self.preagg.as_ref() {

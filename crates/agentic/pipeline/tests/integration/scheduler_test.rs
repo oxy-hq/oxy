@@ -113,7 +113,7 @@ impl agentic_automation::WorkspaceContext for FakeWorkspace {
     fn workspace_path(&self) -> Option<&std::path::Path> {
         Some(std::path::Path::new(""))
     }
-    fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
+    fn database_configs(&self) -> Vec<oxy_airlayer_compat::DatabaseConfig> {
         vec![]
     }
     async fn get_connector(
@@ -1489,7 +1489,7 @@ impl agentic_automation::WorkspaceContext for FakePlatform {
     fn workspace_path(&self) -> Option<&std::path::Path> {
         Some(std::path::Path::new(""))
     }
-    fn database_configs(&self) -> Vec<airlayer::DatabaseConfig> {
+    fn database_configs(&self) -> Vec<oxy_airlayer_compat::DatabaseConfig> {
         vec![]
     }
     async fn get_connector(

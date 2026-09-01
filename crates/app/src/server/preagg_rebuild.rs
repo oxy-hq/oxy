@@ -41,7 +41,7 @@ pub(super) struct RebuildContext {
     /// rollup in the workspace — including well-formed ones that built
     /// yesterday — reported N times; and it deep-copied every view for each of
     /// an unbounded fan-out of rebuild tasks.
-    pub engine: Arc<airlayer::SemanticEngine>,
+    pub engine: Arc<oxy_airlayer_compat::SemanticEngine>,
     /// `PREAGG_BUILDER_GENERATION` as of this cycle. Recorded per committed
     /// hash in the node-local ledger so a later sweep can CHECK whether this
     /// node's artifact is the current builder's rather than infer it from a
@@ -59,8 +59,8 @@ pub(super) struct RebuildContext {
 /// left behind. Either way the caller can rely on nothing older still being
 /// served for this hash (see `PREAGG_BUILDER_GENERATION`).
 pub(super) async fn rebuild_rollup(
-    view: airlayer::View,
-    rollup: airlayer::preagg::RollupSpec,
+    view: oxy_airlayer_compat::View,
+    rollup: oxy_airlayer_compat::preagg::RollupSpec,
     current_refresh_key_value: Option<String>,
     date_str: String,
     ctx: Arc<OxyProjectContext>,
@@ -183,7 +183,7 @@ pub(super) async fn rebuild_rollup(
 /// what a reader looks up under, and it is the identity that belongs in a
 /// shared multi-tenant bucket prefix.
 async fn mirror_parquet_to_s3(
-    entry: &airlayer::preagg::ManifestEntry,
+    entry: &oxy_airlayer_compat::preagg::ManifestEntry,
     cache_dir: &std::path::Path,
 ) {
     let Some(cache_key) = cache_dir.file_name().and_then(|n| n.to_str()) else {
@@ -234,13 +234,13 @@ pub(super) async fn mirror_manifest_to_s3(cache_dir: &std::path::Path) {
 ///
 /// Returns the `ManifestEntry` for the rebuilt rollup on success.
 async fn build_warehouse_table(
-    view: &airlayer::View,
-    rollup: &airlayer::preagg::RollupSpec,
+    view: &oxy_airlayer_compat::View,
+    rollup: &oxy_airlayer_compat::preagg::RollupSpec,
     current_refresh_key_value: &Option<String>,
     date_str: &str,
     connector: &Arc<dyn DatabaseConnector>,
     rebuild_ctx: &RebuildContext,
-) -> Result<airlayer::preagg::ManifestEntry, String> {
+) -> Result<oxy_airlayer_compat::preagg::ManifestEntry, String> {
     let dialect = connector_to_airlayer_dialect(connector.dialect());
 
     let plan = plan_rollup_build(
@@ -270,12 +270,12 @@ async fn build_warehouse_table(
 /// malformed view is one reported failure rather than a failure attributed to
 /// every rollup in the workspace. See [`RebuildContext::engine`].
 pub(super) fn build_layer_engine(
-    layer_views: Vec<airlayer::View>,
-    dialect: &airlayer::Dialect,
-) -> Result<Arc<airlayer::SemanticEngine>, String> {
-    let layer = airlayer::SemanticLayer::new(layer_views, None);
-    let dialects = airlayer::DatasourceDialectMap::with_default(dialect.clone());
-    airlayer::SemanticEngine::from_semantic_layer(layer, dialects)
+    layer_views: Vec<oxy_airlayer_compat::View>,
+    dialect: &oxy_airlayer_compat::Dialect,
+) -> Result<Arc<oxy_airlayer_compat::SemanticEngine>, String> {
+    let layer = oxy_airlayer_compat::SemanticLayer::new(layer_views, None);
+    let dialects = oxy_airlayer_compat::DatasourceDialectMap::with_default(dialect.clone());
+    oxy_airlayer_compat::SemanticEngine::from_semantic_layer(layer, dialects)
         .map(Arc::new)
         .map_err(|e| e.to_string())
 }
@@ -289,18 +289,18 @@ pub(super) fn build_layer_engine(
 /// this one, because only this rollup is being rebuilt. Handing the generator
 /// the whole layer would build every view's rollups.
 fn plan_rollup_build(
-    view: &airlayer::View,
-    rollup: &airlayer::preagg::RollupSpec,
+    view: &oxy_airlayer_compat::View,
+    rollup: &oxy_airlayer_compat::preagg::RollupSpec,
     current_refresh_key_value: &Option<String>,
-    engine: &airlayer::SemanticEngine,
+    engine: &oxy_airlayer_compat::SemanticEngine,
     schema: &str,
     date_str: &str,
-    dialect: &airlayer::Dialect,
-) -> Result<airlayer::preagg::BuildPlan, String> {
-    let all_rollups = airlayer::preagg::resolve_rollups(view);
-    let freshness: Vec<airlayer::preagg::RollupFreshness> = all_rollups
+    dialect: &oxy_airlayer_compat::Dialect,
+) -> Result<oxy_airlayer_compat::preagg::BuildPlan, String> {
+    let all_rollups = oxy_airlayer_compat::preagg::resolve_rollups(view);
+    let freshness: Vec<oxy_airlayer_compat::preagg::RollupFreshness> = all_rollups
         .iter()
-        .map(|r| airlayer::preagg::RollupFreshness {
+        .map(|r| oxy_airlayer_compat::preagg::RollupFreshness {
             rollup_hash: r.hash.clone(),
             is_fresh: r.hash != rollup.hash,
             current_refresh_key_value: if r.hash == rollup.hash {
@@ -311,7 +311,7 @@ fn plan_rollup_build(
         })
         .collect();
 
-    airlayer::preagg::collect_build_sql_with_engine(
+    oxy_airlayer_compat::preagg::collect_build_sql_with_engine(
         engine,
         &[view],
         schema,
@@ -338,7 +338,7 @@ fn next_build_seq() -> u64 {
 /// Returns `true` if a Parquet file was written and renamed into place,
 /// `false` if `pull_rollup` produced zero rows (no file on disk).
 async fn materialize_parquet(
-    entry: &airlayer::preagg::ManifestEntry,
+    entry: &oxy_airlayer_compat::preagg::ManifestEntry,
     connector: &Arc<dyn DatabaseConnector>,
     cache_dir: &std::path::Path,
     rebuild_ctx: &RebuildContext,
@@ -385,7 +385,7 @@ async fn materialize_parquet(
 /// per-workspace publish lock — the hot-swap and this write are one atomic
 /// publish, so the lock cannot be taken here (see `rebuild_rollup`).
 async fn commit_manifest_and_cache(
-    entry: &airlayer::preagg::ManifestEntry,
+    entry: &oxy_airlayer_compat::preagg::ManifestEntry,
     rollup_hash: &str,
     current_refresh_key_value: &Option<String>,
     cache_dir: &std::path::Path,
@@ -395,7 +395,7 @@ async fn commit_manifest_and_cache(
     let parquet_filename = format!("{}__{}.parquet", entry.view_name, entry.rollup_hash);
     let measures = serde_json::from_str(&entry.measures_json)
         .map_err(|e| format!("measures_json parse error: {e}"))?;
-    let local_entry = airlayer::preagg::LocalRollupEntry {
+    let local_entry = oxy_airlayer_compat::preagg::LocalRollupEntry {
         view_name: entry.view_name.clone(),
         rollup_name: entry.rollup_name.clone(),
         rollup_hash: entry.rollup_hash.clone(),
@@ -416,7 +416,7 @@ async fn commit_manifest_and_cache(
 
     tokio::task::spawn_blocking(move || {
         let mut manifest = agentic_semantic::preagg::load_local_manifest(&cache_dir_owned)
-            .unwrap_or_else(|| airlayer::preagg::LocalManifest {
+            .unwrap_or_else(|| oxy_airlayer_compat::preagg::LocalManifest {
                 pulled_at: chrono::Utc::now().to_rfc3339(),
                 source_database: database_name_owned,
                 rollups: vec![],
@@ -449,21 +449,21 @@ async fn commit_manifest_and_cache(
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
-pub(super) fn connector_to_airlayer_dialect(dialect: SqlDialect) -> airlayer::Dialect {
+pub(super) fn connector_to_airlayer_dialect(dialect: SqlDialect) -> oxy_airlayer_compat::Dialect {
     match dialect {
-        SqlDialect::Snowflake => airlayer::Dialect::Snowflake,
-        SqlDialect::BigQuery => airlayer::Dialect::BigQuery,
-        SqlDialect::DuckDb => airlayer::Dialect::DuckDB,
-        SqlDialect::Postgres => airlayer::Dialect::Postgres,
+        SqlDialect::Snowflake => oxy_airlayer_compat::Dialect::Snowflake,
+        SqlDialect::BigQuery => oxy_airlayer_compat::Dialect::BigQuery,
+        SqlDialect::DuckDb => oxy_airlayer_compat::Dialect::DuckDB,
+        SqlDialect::Postgres => oxy_airlayer_compat::Dialect::Postgres,
         SqlDialect::Other(s) if s.to_lowercase().contains("clickhouse") => {
-            airlayer::Dialect::ClickHouse
+            oxy_airlayer_compat::Dialect::ClickHouse
         }
         ref unknown => {
             tracing::warn!(
                 dialect = ?unknown,
                 "preagg: unrecognized connector dialect, falling back to Postgres"
             );
-            airlayer::Dialect::Postgres
+            oxy_airlayer_compat::Dialect::Postgres
         }
     }
 }
@@ -475,7 +475,7 @@ mod tests {
     /// `orders.order` rolls up to `customers.customer`: the parent entity is
     /// owned by a DIFFERENT view, which is the case the planner used to be
     /// blind to.
-    fn orders_view() -> airlayer::View {
+    fn orders_view() -> oxy_airlayer_compat::View {
         serde_yaml::from_str(
             r#"
 name: orders
@@ -518,7 +518,7 @@ measures:
         .expect("orders view fixture parses")
     }
 
-    fn customers_view() -> airlayer::View {
+    fn customers_view() -> oxy_airlayer_compat::View {
         serde_yaml::from_str(
             r#"
 name: customers
@@ -540,13 +540,13 @@ measures:
         .expect("customers view fixture parses")
     }
 
-    fn plan_orders_rollup(layer_views: Vec<airlayer::View>) -> Result<usize, String> {
+    fn plan_orders_rollup(layer_views: Vec<oxy_airlayer_compat::View>) -> Result<usize, String> {
         let view = orders_view();
-        let rollup = airlayer::preagg::resolve_rollups(&view)
+        let rollup = oxy_airlayer_compat::preagg::resolve_rollups(&view)
             .into_iter()
             .find(|r| r.name == "orders_by_month")
             .expect("declared rollup resolves");
-        let engine = build_layer_engine(layer_views, &airlayer::Dialect::DuckDB)?;
+        let engine = build_layer_engine(layer_views, &oxy_airlayer_compat::Dialect::DuckDB)?;
         plan_rollup_build(
             &view,
             &rollup,
@@ -554,7 +554,7 @@ measures:
             &engine,
             "preagg",
             "20260825T000000",
-            &airlayer::Dialect::DuckDB,
+            &oxy_airlayer_compat::Dialect::DuckDB,
         )
         .map(|plan| plan.manifest_entries.len())
     }
@@ -588,13 +588,13 @@ measures:
         // Engine scope ≠ generation scope: `customers` is in the layer for
         // resolution, but nothing of its own is built.
         let view = orders_view();
-        let rollup = airlayer::preagg::resolve_rollups(&view)
+        let rollup = oxy_airlayer_compat::preagg::resolve_rollups(&view)
             .into_iter()
             .find(|r| r.name == "orders_by_month")
             .expect("declared rollup resolves");
         let engine = build_layer_engine(
             vec![orders_view(), customers_view()],
-            &airlayer::Dialect::DuckDB,
+            &oxy_airlayer_compat::Dialect::DuckDB,
         )
         .expect("the layer validates");
         let plan = plan_rollup_build(
@@ -604,7 +604,7 @@ measures:
             &engine,
             "preagg",
             "20260825T000000",
-            &airlayer::Dialect::DuckDB,
+            &oxy_airlayer_compat::Dialect::DuckDB,
         )
         .expect("plan succeeds");
         assert!(

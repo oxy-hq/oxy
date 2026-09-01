@@ -101,6 +101,9 @@ crates/infrastructure/llm/                         @luong-komorebi @haitrr
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Semantic layer (airlayer)
+# infrastructure/semantic is the sole crate allowed to depend on airlayer,
+# so every engine upgrade lands here first.
+crates/infrastructure/semantic/                    @haitrr @luong-komorebi
 crates/semantic/                                   @haitrr @luong-komorebi
 crates/agentic/semantic/                           @haitrr @luong-komorebi
 internal-docs/semantic-validation-standardization.md  @haitrr @luong-komorebi

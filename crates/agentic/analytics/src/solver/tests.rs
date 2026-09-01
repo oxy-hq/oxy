@@ -77,9 +77,11 @@ expr: region
         airlayer_compat::parse_view_yaml(orders_yaml).unwrap(),
         airlayer_compat::parse_view_yaml(customers_yaml).unwrap(),
     ];
-    let layer = airlayer::SemanticLayer::new(views, None);
-    let dialects = airlayer::DatasourceDialectMap::with_default(airlayer::Dialect::DuckDB);
-    let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects).unwrap();
+    let layer = oxy_airlayer_compat::SemanticLayer::new(views, None);
+    let dialects = oxy_airlayer_compat::DatasourceDialectMap::with_default(
+        oxy_airlayer_compat::Dialect::DuckDB,
+    );
+    let engine = oxy_airlayer_compat::SemanticEngine::from_semantic_layer(layer, dialects).unwrap();
     SemanticCatalog::from_engine(engine)
 }
 

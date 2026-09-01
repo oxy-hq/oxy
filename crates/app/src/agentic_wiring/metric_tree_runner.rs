@@ -17,18 +17,18 @@ use std::sync::{Arc, RwLock};
 
 use agentic_analytics::{MetricTreeRunner, MetricTreeRunnerError};
 use agentic_semantic::refresh_key_cache::RefreshKeyCache;
-use airlayer::DatabaseConfig;
-use airlayer::SemanticLayer;
-use airlayer::engine::EngineError;
-use airlayer::engine::metric_tree::MetricTree;
-use airlayer::engine::metric_tree_ops::{
-    self, ExplainConfig, ExplainResult, OpportunityResult, QueryExecutor,
-};
-use airlayer::engine::query::{QueryFilter, QueryRequest};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime};
 use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::workspace::manager::WorkspaceManager;
+use oxy_airlayer_compat::DatabaseConfig;
+use oxy_airlayer_compat::SemanticLayer;
+use oxy_airlayer_compat::engine::EngineError;
+use oxy_airlayer_compat::engine::metric_tree::MetricTree;
+use oxy_airlayer_compat::engine::metric_tree_ops::{
+    self, ExplainConfig, ExplainResult, OpportunityResult, QueryExecutor,
+};
+use oxy_airlayer_compat::engine::query::{QueryFilter, QueryRequest};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
@@ -320,7 +320,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
         measure: String,
         since_days: u32,
     ) -> Result<Vec<String>, MetricTreeRunnerError> {
-        use airlayer::engine::query::{QueryRequest, TimeDimensionQuery};
+        use oxy_airlayer_compat::engine::query::{QueryRequest, TimeDimensionQuery};
         let inputs = self.snapshot_for_blocking().await?;
         // Derive the time dimension from the measure's view: take the view
         // prefix from `measure` (e.g. "sales_daily") and append the first
@@ -409,7 +409,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
         time_dimension: String,
         granularity: String,
         period: (String, String),
-        filters: Vec<airlayer::engine::query::QueryFilter>,
+        filters: Vec<oxy_airlayer_compat::engine::query::QueryFilter>,
         timezone: Option<String>,
     ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError> {
         // `None` from the caller means "workspace default", not "UTC" — this is
@@ -495,7 +495,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
 
     async fn run_query_scalar(
         &self,
-        request: airlayer::engine::query::QueryRequest,
+        request: oxy_airlayer_compat::engine::query::QueryRequest,
     ) -> Result<f64, MetricTreeRunnerError> {
         let measure = request.measures.first().cloned().ok_or_else(|| {
             MetricTreeRunnerError::Op("run_query_scalar: request has no measure".to_string())
@@ -592,7 +592,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
 struct RunInputs {
     layer: SemanticLayer,
     databases: Vec<DatabaseConfig>,
-    engine: airlayer::SemanticEngine,
+    engine: oxy_airlayer_compat::SemanticEngine,
     workspace_manager: WorkspaceManager<ReadOnly>,
     user_id: Uuid,
     role: WorkspaceRole,
@@ -604,8 +604,7 @@ impl OxyMetricTreeRunner {
     async fn snapshot_for_blocking(&self) -> Result<RunInputs, MetricTreeRunnerError> {
         let layer = self.load_layer().await?;
         let databases = self.list_databases().await;
-        let dialects = airlayer::DatasourceDialectMap::from_config_databases(&databases);
-        let engine = airlayer::SemanticEngine::from_semantic_layer(layer.clone(), dialects)
+        let engine = oxy_airlayer_compat::build_engine(layer.clone(), &databases)
             .map_err(|e| MetricTreeRunnerError::ExecutorBuild(e.to_string()))?;
         Ok(RunInputs {
             layer,
@@ -763,11 +762,11 @@ fn build_time_series_query_request(
     measure: &str,
     time_dimension: &str,
     granularity: &str,
-    filters: Vec<airlayer::engine::query::QueryFilter>,
+    filters: Vec<oxy_airlayer_compat::engine::query::QueryFilter>,
     period: &(String, String),
     timezone: Option<String>,
 ) -> (QueryRequest, Option<(NaiveDate, NaiveDate)>) {
-    use airlayer::engine::query::{OrderBy, TimeDimensionQuery};
+    use oxy_airlayer_compat::engine::query::{OrderBy, TimeDimensionQuery};
     let (request_period, trim_window) = time_series_request(timezone.as_deref(), period);
     let dim_alias = format!("{time_dimension}.{granularity}");
     let request = QueryRequest {
@@ -823,7 +822,7 @@ fn read_default_timezone(workspace_root: &std::path::Path) -> Option<String> {
 #[allow(clippy::too_many_arguments)]
 pub fn build_query_executor(
     _target_measure: &str,
-    engine: airlayer::SemanticEngine,
+    engine: oxy_airlayer_compat::SemanticEngine,
     databases: Vec<DatabaseConfig>,
     workspace_manager: WorkspaceManager<ReadOnly>,
     user_id: Uuid,
@@ -1008,7 +1007,7 @@ pub fn build_query_executor(
 #[allow(clippy::too_many_arguments)]
 pub fn build_drill_query_executor(
     shared_layer: metric_tree_ops::SharedLayer,
-    dialects: airlayer::DatasourceDialectMap,
+    dialects: oxy_airlayer_compat::DatasourceDialectMap,
     databases: Vec<DatabaseConfig>,
     workspace_manager: WorkspaceManager<ReadOnly>,
     user_id: Uuid,
@@ -1040,8 +1039,11 @@ pub fn build_drill_query_executor(
         // runs SQL, and the drill holds none while it calls the executor).
         let engine = {
             let layer = shared_layer.read().expect("shared layer poisoned");
-            airlayer::SemanticEngine::from_semantic_layer(layer.clone(), dialects.clone())
-                .map_err(|e| EngineError::QueryError(e.to_string()))?
+            oxy_airlayer_compat::SemanticEngine::from_semantic_layer(
+                layer.clone(),
+                dialects.clone(),
+            )
+            .map_err(|e| EngineError::QueryError(e.to_string()))?
         };
         let compiled = engine.compile_query(request)?;
         // airlayer emits parameterized SQL ($1, $2, …) + a separate params
@@ -1180,7 +1182,7 @@ pub fn build_drill_query_executor(
 /// Resolve which configured database a query targets, from the datasource of
 /// the first measure's view, falling back to the first workspace database.
 fn resolve_database(
-    engine: &airlayer::SemanticEngine,
+    engine: &oxy_airlayer_compat::SemanticEngine,
     request: &QueryRequest,
     databases: &[DatabaseConfig],
 ) -> Result<String, EngineError> {
@@ -1282,7 +1284,7 @@ fn prune_dims_for_explain(
     exclude_members: &[String],
     time_dimension: &str,
 ) -> SemanticLayer {
-    use airlayer::schema::models::DimensionType;
+    use oxy_airlayer_compat::schema::models::DimensionType;
     for view in &mut layer.views {
         let view_name = view.name.clone();
         // Read the entity declaration out before `retain` borrows `view`
@@ -1368,7 +1370,7 @@ fn prune_dims_for_explain(
 fn is_row_key_dim(
     row_keys: &[String],
     foreign_keys: &[String],
-    dim: &airlayer::schema::models::Dimension,
+    dim: &oxy_airlayer_compat::schema::models::Dimension,
 ) -> bool {
     if dim.primary_key == Some(true) || row_keys.iter().any(|k| k == &dim.name) {
         return true;
@@ -1380,11 +1382,11 @@ fn is_row_key_dim(
 }
 
 /// Declared foreign-key dimension names — the mirror of
-/// [`airlayer::schema::models::View::primary_key_dimensions`], which airlayer
+/// [`oxy_airlayer_compat::schema::models::View::primary_key_dimensions`], which airlayer
 /// does not expose for foreign entities. A foreign key references another
 /// view's row, so it is a legitimate grouping dimension, not a row key.
-fn foreign_key_dimensions(view: &airlayer::schema::models::View) -> Vec<String> {
-    use airlayer::schema::models::EntityType;
+fn foreign_key_dimensions(view: &oxy_airlayer_compat::schema::models::View) -> Vec<String> {
+    use oxy_airlayer_compat::schema::models::EntityType;
     let mut fks: Vec<String> = Vec::new();
     for entity in &view.entities {
         if entity.entity_type != EntityType::Foreign {
@@ -1520,14 +1522,17 @@ mod tests {
     // `View`, `Dimension` and `Entity` have no `Default`, and hand-listing
     // ~20 optional fields would go stale on every airlayer bump. Deserializing
     // is both shorter and exactly how these arrive in production.
-    fn test_dim(name: &str) -> airlayer::schema::models::Dimension {
+    fn test_dim(name: &str) -> oxy_airlayer_compat::schema::models::Dimension {
         serde_json::from_value(json!({ "name": name, "type": "string", "expr": name }))
             .expect("dimension fixture")
     }
 
     /// A view declaring `primary` as `EntityType::Primary` keys and `foreign`
     /// as `EntityType::Foreign` ones. Both named dimensions always exist.
-    fn view_with_entities(primary: &[&str], foreign: &[&str]) -> airlayer::schema::models::View {
+    fn view_with_entities(
+        primary: &[&str],
+        foreign: &[&str],
+    ) -> oxy_airlayer_compat::schema::models::View {
         let entity = |name: &str, kind: &str| json!({ "name": name, "type": kind, "key": name });
         let entities: Vec<_> = primary
             .iter()
@@ -1547,7 +1552,9 @@ mod tests {
 
     /// The key lists `prune_dims_for_explain` extracts before its `retain`:
     /// `(primary/row keys, foreign keys)`.
-    fn row_key_facts(view: &airlayer::schema::models::View) -> (Vec<String>, Vec<String>) {
+    fn row_key_facts(
+        view: &oxy_airlayer_compat::schema::models::View,
+    ) -> (Vec<String>, Vec<String>) {
         (
             view.primary_key_dimensions()
                 .into_iter()
@@ -1594,7 +1601,7 @@ mod tests {
         // foreign`, no explicit `key:`. `get_keys()` is empty, so without the
         // name fallback restaurant_id would fall to has_key_suffix and be
         // pruned — over-pruning a legitimate split candidate.
-        let view: airlayer::schema::models::View = serde_json::from_value(json!({
+        let view: oxy_airlayer_compat::schema::models::View = serde_json::from_value(json!({
             "name": "sales_daily",
             "dimensions": [
                 { "name": "sales_day_key", "type": "string", "expr": "sales_day_key" },
@@ -1612,7 +1619,7 @@ mod tests {
     #[test]
     fn foreign_keys_are_deduped_across_entities() {
         // The same key named by two foreign entities must appear once.
-        let view: airlayer::schema::models::View = serde_json::from_value(json!({
+        let view: oxy_airlayer_compat::schema::models::View = serde_json::from_value(json!({
             "name": "sales_daily",
             "dimensions": [{ "name": "restaurant_id", "type": "string", "expr": "restaurant_id" }],
             "entities": [
