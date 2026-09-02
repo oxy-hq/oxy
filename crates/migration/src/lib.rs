@@ -151,6 +151,7 @@ mod m20260829_000001_frontline_identity;
 mod m20260830_000001_oauth_states_provider;
 mod m20260831_000001_world_model_events;
 mod m20260901_000002_assignment_graph;
+mod m20260901_000003_notifications;
 
 pub struct Migrator;
 
@@ -303,6 +304,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260830_000001_oauth_states_provider::Migration),
             Box::new(m20260831_000001_world_model_events::Migration),
             Box::new(m20260901_000002_assignment_graph::Migration),
+            Box::new(m20260901_000003_notifications::Migration),
         ]
     }
 }

@@ -33,6 +33,7 @@ mod feature_flag_refresh;
 mod frontline_pin;
 mod local_mode_router;
 mod no_dropped_partner_tables;
+mod notification_devices;
 mod oltp_provisioner;
 mod projects_query;
 mod run;

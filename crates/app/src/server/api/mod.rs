@@ -61,6 +61,7 @@ pub mod metric_tree;
 pub mod metrics;
 pub mod middlewares;
 pub mod modeling;
+pub mod notifications;
 pub mod org_logo;
 pub mod org_subdomain;
 pub mod org_teams;

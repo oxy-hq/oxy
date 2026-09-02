@@ -14,6 +14,7 @@ use crate::api::middlewares::{
     subscription_guard,
 };
 use crate::api::{admin, org_logo, org_teams, organizations, user, workspaces};
+use crate::server::api::notifications;
 use crate::server::api::work;
 
 use oxy_shared::fleet_role::RouteRole;
@@ -42,6 +43,26 @@ pub(super) fn build_global_routes(app_state: &AppState) -> RoleRouter {
         // supervise, or hold the addressed role for. See the module docs.
         .route_fleet("/work", get(work::handlers::list).post(work::handlers::create))
         .route_fleet("/work/{id}", axum::routing::patch(work::handlers::update))
+        // Notifications. Self-scoped — the filter `user_id = me` IS the
+        // authorization, and there is no org gate on purpose: a frontline
+        // worker holds no org membership by design and is exactly who an
+        // overdue-work notification is for.
+        //
+        // `route_fleet`: Postgres only. A badge that stops updating during a
+        // deploy is a badge nobody trusts afterwards.
+        .route_fleet("/notifications", get(notifications::handlers::inbox))
+        .route_fleet(
+            "/notifications/read-all",
+            post(notifications::handlers::mark_all_read),
+        )
+        .route_fleet(
+            "/notifications/devices",
+            post(notifications::handlers::register_device),
+        )
+        .route_fleet(
+            "/notifications/{id}/read",
+            post(notifications::handlers::mark_read),
+        )
         .route_fleet(
             "/invitations/{token}/accept",
             post(organizations::accept_invitation),
