@@ -27,9 +27,9 @@ interface WorldModelMeasureDrillProps {
  * `type: count` measure — which decomposes perfectly well through the
  * value-share path — silently lost the affordance the deleted standalone Drill
  * section gave it. That is the same fail-closed capability loss recorded in
- * `internal-docs/2026-07-20-opportunity-drill-explainer.md` §5c, and `drillable`
- * being `false` for count/min/max by design is exactly why the section's gate is
- * the union `drillable || additive`.
+ * `internal-docs/world-model-opportunities.md` -> *Three predicates that are not
+ * interchangeable*, and `drillable` being `false` for count/min/max by design is
+ * exactly why the section's gate is the union `drillable || additive`.
  *
  * So: no ranked rows, one measure-level chain instead — rooted at the engine's
  * own top pick (no `root` field), which is precisely what the old section did.
