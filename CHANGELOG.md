@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.134] - 2026-09-02
+
+### 🚀 Features
+
+- *(airway)* Wire the SP-API source kind (#3044)
+- *(pipelines)* Add Amazon Selling Partner to the New Pipeline wizard (#3046)
+- Oxy Functions can send binary, see the request, and verify signatures (#3032)
+- Connect any OAuth provider from a custom app, Google Drive first (#3055)
+
+### 🐛 Bug Fixes
+
+- Make the semantic engine cache the only door, keyed on the layer actually read (#3037)
+- Retire orphaned runs and starved pollers that exhausted the Postgres pool (#3059)
+- Key the semantic layer cache on the source it was read from (#3036)
+- Retire path-less-workspace runs too, and make the transport contract say so (#3062)
+
+### 🚜 Refactor
+
+- Oxy-semantic drops 2,341 lines nothing calls (#3033)
+- One crate owns the airlayer boundary, not nine (#3034)
+- Delete the dead ExecutableBuilder pipeline, checkpoint storage & legacy run-dispatcher (retirement, Phase 4a) (#3043)
+- Drop oxy-semantic's last three unreachable parser helpers (#3049)
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#3041)
+- Refresh ownership matrix + CODEOWNERS (weekly) (#3039)
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove weekly health review workflow
+- Add scripts/conn-leak, a read-only detector for Postgres pool exhaustion (#3060)
+
 ## [0.5.133] - 2026-08-31
 
 ### 🚀 Features
@@ -33,6 +66,7 @@ All notable changes to this project will be documented in this file.
 - Collapse superseded Claude review comments (#3022)
 - Scope the review bot to the PR diff and its side effects (#3027)
 - *(airway)* Bump to 0.1.37 — filesystem OOM fix, postgres TLS, SP-API (#3030)
+- Release 0.5.133 (#3023)
 
 ## [0.5.132] - 2026-08-28
 
