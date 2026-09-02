@@ -73,14 +73,14 @@ pub async fn pull_changes(
             } else {
                 // A pull rewrote the working copy in place. Without this the
                 // world-model graph + semantic panels serve the pre-pull
-                // revision until the TTL lapses (60s layer / 600s engine).
+                // revision until the TTL lapses (60s, both caches).
                 // Same invalidation the branch switch does. The engine cache
                 // is keyed on the layer SOURCE (working copy vs a compiled
                 // revision) and the dialect map, so it is cleared for the whole
                 // workspace: a pull changes the working copy and can change
                 // which revision is promoted, and the writer cannot know which
                 // of those entries that invalidates.
-                app_state.semantic_layer_cache.remove(ws.id);
+                app_state.semantic_layer_cache.invalidate_workspace(ws.id);
                 app_state.semantic_engine_cache.invalidate_workspace(ws.id);
                 // The pull rewrote the working copy, but reads are served from
                 // the promoted revision — so without this the runtime keeps
@@ -880,13 +880,13 @@ pub async fn switch_workspace_branch(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // A branch switch changes the working copy in place (TTL 60s layer /
-    // 600s engine). Without this the world-model + semantic detail panels
-    // serve the previous branch's layer until the TTL lapses. Same
-    // invalidation `save_file` does. Note the layer cache still keys on
-    // `workspace_id` alone, so a branch switch is the only thing separating
-    // two branches' layers there.
-    app_state.semantic_layer_cache.remove(ws.id);
+    // A branch switch changes the working copy in place (TTL 60s, both
+    // caches). Without this the world-model + semantic detail panels serve the
+    // previous branch's layer until the TTL lapses. Same invalidation
+    // `save_file` does. Note both branches' working copies key as
+    // `LayerSource::WorkingCopy`, so a branch switch is still the only thing
+    // separating their layers — the source in the key does not do it.
+    app_state.semantic_layer_cache.invalidate_workspace(ws.id);
     app_state.semantic_engine_cache.invalidate_workspace(ws.id);
 
     Ok(ResponseJson(branch))

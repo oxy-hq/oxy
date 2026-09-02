@@ -133,13 +133,14 @@ pub async fn get_view_details(
     // Boundary first (a stateless serve replica has no working copy), FS fallback
     // in local / not-yet-promoted mode. `_guard` keeps the materialised tempdir
     // alive until parsing finishes.
-    let (scan_path, view_file, _guard) = resolve_semantic_source(
+    let (scan_path, view_file, guard) = resolve_semantic_source(
         &workspace_manager,
         SemanticEntity::View,
         &file_path_str,
         "View",
     )
     .await?;
+    let source_revision = scan_source_revision(&guard, &workspace_manager);
 
     let parser = SemanticLayerParser::new(ParserConfig::new(&scan_path));
     let view = parser.parse_view_file(&view_file).map_err(|e| {
@@ -155,7 +156,7 @@ pub async fn get_view_details(
     // `scan_path` is the whole promoted scan (boundary tempdir or FS fallback),
     // so loading it gives the cross-view graph the promotion closure needs.
     let airlayer_layer = layer_cache
-        .get_or_load(scan_path.clone())
+        .get_or_load(source_revision, scan_path.clone())
         .await
         .map_err(|e| {
             semantic_err(
@@ -205,13 +206,14 @@ pub async fn get_topic_details(
     // Boundary first, FS fallback. The WHOLE scan is materialised so the topic's
     // referenced views hydrate from the same dir (`parse_semantic_layer_from_dir`
     // below reads `semantics_path`). `_guard` holds the tempdir until then.
-    let (semantics_path, topic_file, _guard) = resolve_semantic_source(
+    let (semantics_path, topic_file, guard) = resolve_semantic_source(
         &workspace_manager,
         SemanticEntity::Topic,
         &file_path_str,
         "Topic",
     )
     .await?;
+    let source_revision = scan_source_revision(&guard, &workspace_manager);
 
     let parser = SemanticLayerParser::new(ParserConfig::new(&semantics_path));
     let topic = parser.parse_topic_file(&topic_file).map_err(|e| {
@@ -235,7 +237,7 @@ pub async fn get_topic_details(
     })?;
 
     let airlayer_layer = layer_cache
-        .get_or_load(semantics_path.clone())
+        .get_or_load(source_revision, semantics_path.clone())
         .await
         .map_err(|e| {
             (
@@ -385,19 +387,32 @@ pub(crate) struct QueryScanSource {
 
 impl QueryScanSource {
     /// The revision this scan actually READ, or `None` for the working copy.
-    ///
-    /// Not `config_manager.revision_id()`: that reports the revision the
-    /// request is pinned to, which is `Some` even on a node serving its own
-    /// working copy. Caching by the pin instead of the source lets a
-    /// working-copy reader and a revision reader share one engine.
     pub(crate) fn source_revision<S: oxy::config::DiskSlot>(
         &self,
         workspace_manager: &WorkspaceManager<S>,
     ) -> Option<Uuid> {
-        match &self._guard {
-            Some(scan) if scan.is_materialised() => workspace_manager.config_manager.revision_id(),
-            _ => None,
-        }
+        scan_source_revision(&self._guard, workspace_manager)
+    }
+}
+
+/// The revision a resolved scan actually READ, or `None` for the working copy.
+///
+/// Not `config_manager.revision_id()`: that reports the revision the request is
+/// pinned to, which is `Some` even on a node serving its own working copy.
+/// Caching by the pin instead of the source lets a working-copy reader and a
+/// revision reader share one layer, and one engine built from it.
+///
+/// A free function, not a method, because both resolvers in this module have to
+/// answer it and they return different shapes: `resolve_query_scan_source`
+/// wraps its guard in [`QueryScanSource`], `resolve_semantic_source` hands the
+/// `Option<ScanDir>` back bare. One rule, one place.
+pub(crate) fn scan_source_revision<S: oxy::config::DiskSlot>(
+    guard: &Option<ScanDir>,
+    workspace_manager: &WorkspaceManager<S>,
+) -> Option<Uuid> {
+    match guard {
+        Some(scan) if scan.is_materialised() => workspace_manager.config_manager.revision_id(),
+        _ => None,
     }
 }
 

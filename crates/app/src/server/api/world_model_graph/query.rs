@@ -33,14 +33,20 @@ pub(super) async fn load_layer_and_promotions(
     ),
 > {
     let semantics_path = workspace_manager.config_manager.semantics_scan_path();
-    let layer = layer_cache.get_or_load(semantics_path).await.map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            axum::extract::Json(crate::server::api::semantic::ErrorResponse {
-                message: e.to_string(),
-            }),
-        )
-    })?;
+    // `semantics_path` is `semantics_scan_path()` — this family scans the
+    // working copy unconditionally, so it names that source rather than the
+    // revision the request happens to be pinned to.
+    let layer = layer_cache
+        .get_or_load(None, semantics_path)
+        .await
+        .map_err(|e| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                axum::extract::Json(crate::server::api::semantic::ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
     let promotions = Promotions::build(&layer.views).map_err(|e| {
         (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,

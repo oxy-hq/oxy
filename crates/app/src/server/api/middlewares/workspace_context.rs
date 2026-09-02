@@ -484,21 +484,32 @@ pub struct SemanticLayerCacheCtx {
 }
 
 impl SemanticLayerCacheCtx {
-    /// Returns a cached `Arc<oxy_airlayer_compat::SemanticLayer>`, loading from disk on the
-    /// first call per workspace (or after `invalidate`). The load is offloaded to
-    /// a blocking thread so it does not stall the Tokio worker pool.
+    /// Returns a cached `Arc<oxy_airlayer_compat::SemanticLayer>`, loading from
+    /// disk on the first call per (workspace, source) (or after `invalidate`).
+    /// The load is offloaded to a blocking thread so it does not stall the Tokio
+    /// worker pool.
+    ///
+    /// `source_revision` is the revision the scan actually READ — `None` for the
+    /// working copy — the same `Option<Uuid>` the engine cache takes, so one
+    /// value describes the layer and the engine built from it. It is NOT
+    /// `config_manager.revision_id()`, which reports the pin and is `Some` even
+    /// on a node serving its own working copy; get it from
+    /// `QueryScanSource::source_revision()`, or pass `None` at a handler that
+    /// scans `semantics_scan_path()` unconditionally.
     pub async fn get_or_load(
         &self,
+        source_revision: Option<Uuid>,
         scan_path: std::path::PathBuf,
     ) -> Result<
         std::sync::Arc<oxy_airlayer_compat::SemanticLayer>,
         oxy_airlayer_compat::SemanticError,
     > {
-        if let Some(layer) = self.cache.lookup(self.workspace_id) {
-            tracing::debug!(workspace_id = %self.workspace_id, "semantic layer cache hit");
+        let key = oxy_airlayer_compat::LayerKey::for_source(self.workspace_id, source_revision);
+        if let Some(layer) = self.cache.lookup(&key) {
+            tracing::debug!(workspace_id = %self.workspace_id, source = ?key.source, "semantic layer cache hit");
             return Ok(layer);
         }
-        tracing::info!(workspace_id = %self.workspace_id, path = ?scan_path, "semantic layer cache miss — loading from disk");
+        tracing::info!(workspace_id = %self.workspace_id, source = ?key.source, path = ?scan_path, "semantic layer cache miss — loading from disk");
         let t0 = std::time::Instant::now();
         let layer = tokio::task::spawn_blocking(move || {
             oxy_airlayer_compat::load_layer_from_dir(&scan_path)
@@ -507,23 +518,36 @@ impl SemanticLayerCacheCtx {
         .map_err(|e| {
             oxy_airlayer_compat::SemanticError::Engine(format!("blocking task failed: {e}"))
         })??;
-        tracing::info!(workspace_id = %self.workspace_id, elapsed_ms = t0.elapsed().as_millis(), "semantic layer loaded");
+        tracing::info!(workspace_id = %self.workspace_id, source = ?key.source, elapsed_ms = t0.elapsed().as_millis(), "semantic layer loaded");
         let arc_layer = std::sync::Arc::new(layer);
-        self.cache.insert(self.workspace_id, arc_layer.clone());
-        // This layer is new to the process, so every cached engine for the
-        // workspace was built from the one it replaces. Dropping them here is
-        // what keeps "plan from the layer, compile against the engine" honest:
-        // an edit that lands out of band (the Builder Agent writes files
-        // without going through `POST /files`) is otherwise invisible to the
-        // engine until its own TTL lapses, and the world-model handlers report
-        // the resulting compile failure as an empty panel.
-        self.engine_cache.invalidate_workspace(self.workspace_id);
+        self.cache.insert(key, arc_layer.clone());
+        // This layer is new to the process, so every cached engine for THIS
+        // SOURCE was built from the one it replaces. Dropping them here is what
+        // keeps "plan from the layer, compile against the engine" honest: an
+        // edit that lands out of band (the Builder Agent writes files without
+        // going through `POST /files`) is otherwise invisible to the engine
+        // until its own TTL lapses, and the world-model handlers report the
+        // resulting compile failure as an empty panel.
+        //
+        // Scoped to `key.source`, not the workspace. Since the layer cache
+        // gained the source in its own key, a working-copy reload no longer
+        // replaces the layer a `Revision(R)` engine was built from — so a
+        // workspace-wide flush here would evict live engines for no reason,
+        // and would move the promote-window ping-pong `engine_cache` avoids on
+        // insert onto the layer/engine edge instead. The out-of-band edit this
+        // guards against is a working-copy edit, so a working-copy reload
+        // retiring working-copy engines is the whole requirement.
+        self.engine_cache
+            .invalidate_source(self.workspace_id, key.source);
         Ok(arc_layer)
     }
 
-    /// Evicts the cached layer so the next `get_or_load` reloads from disk.
+    /// Evicts every source's layer for this workspace so the next `get_or_load`
+    /// reloads from disk. The callers — a semantic file write, a branch switch,
+    /// a pull — mutate the working copy, but they know only that the workspace
+    /// changed, not which of its keys that invalidates.
     pub fn invalidate(&self) {
-        self.cache.remove(self.workspace_id);
+        self.cache.invalidate_workspace(self.workspace_id);
     }
 }
 
@@ -1731,5 +1755,68 @@ mod tests {
             .get("x-oxy-needs-recompile")
             .expect("NeedsRecompile rejection must set the header");
         assert_eq!(header.to_str().unwrap(), workspace_id.to_string());
+    }
+
+    /// Collapse whitespace, and close the gap after an opening paren, so an
+    /// assertion about a call site reads the same however rustfmt broke it.
+    fn one_line(src: &str) -> String {
+        src.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .replace("( ", "(")
+    }
+
+    /// Each handler family must keep naming the source that matches how it
+    /// resolves its scan root.
+    ///
+    /// `get_or_load`'s first argument is one autocomplete away from wrong at
+    /// every call site, and wrong there re-opens the collision the key closed —
+    /// *silently*, because the layer still loads; it is just the other root's.
+    /// So assert at the call site: a file-wide check could not tell "keyed
+    /// correctly" from "nobody mentioned it".
+    #[test]
+    fn layer_sources_match_the_handler_family() {
+        // The world-model family scans `semantics_scan_path()` unconditionally,
+        // so every one of its cache calls must say `None` — the working copy —
+        // rather than the revision the request happens to be pinned to, which
+        // is `Some` on these nodes too.
+        for (name, src) in [
+            (
+                "world_model_graph/handlers.rs",
+                include_str!("../world_model_graph/handlers.rs"),
+            ),
+            (
+                "world_model_graph/query.rs",
+                include_str!("../world_model_graph/query.rs"),
+            ),
+        ] {
+            let flat = one_line(src);
+            let calls = flat.matches("get_or_load(").count();
+            let working_copy_calls = flat.matches("get_or_load(None,").count();
+            assert!(calls > 0, "{name} should still hold layer cache calls");
+            assert_eq!(
+                working_copy_calls, calls,
+                "{name} reads the working copy directly, so all {calls} of its \
+                 get_or_load calls must pass None — {working_copy_calls} do"
+            );
+        }
+
+        // The boundary readers key on the revision their resolver reports.
+        // A literal at one of their call sites cannot track the fallback arms
+        // (`materialise_semantic_entity` returning None for an unpromoted file,
+        // a `scan_dir` error), each of which yields a working-copy path while
+        // the manager is still pinned to a revision.
+        for (name, src) in [
+            ("semantic.rs", include_str!("../semantic.rs")),
+            ("preagg.rs", include_str!("../preagg.rs")),
+        ] {
+            let flat = one_line(src);
+            assert!(
+                !flat.contains("get_or_load(None,"),
+                "{name} resolves its scan root through the compile boundary, so it must key \
+                 on what its resolver reports (scan_source_revision / \
+                 QueryScanSource::source_revision), not a literal"
+            );
+        }
     }
 }

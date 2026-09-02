@@ -1,9 +1,10 @@
 //! Per-workspace TTL caches shared through `AppState`.
 //!
 //! `TtlCache<V>` is generic and depends on nothing app-specific, so it lives
-//! here in `oxy-app-core` with `AppState`. The two aliases `AppState` actually
-//! holds — [`SemanticLayerCache`] and [`SemanticEngineCache`] — are keyed on
-//! `airlayer` types only.
+//! here in `oxy-app-core` with `AppState`. The two semantic caches `AppState`
+//! holds are no longer aliases of it: both moved to `oxy-airlayer-compat` so
+//! they can share one `LayerSource`, and both are re-exported below under their
+//! old names.
 //!
 //! The `OxyProjectContext`-typed `WorkspaceContextCache` stays in `oxy-app`
 //! (`server/router/workspace_cache.rs`): it needs the pipeline adapter, which is
@@ -24,12 +25,25 @@ pub struct TtlCache<V: Send + Sync + 'static> {
     inner: Mutex<HashMap<Uuid, Entry<V>>>,
 }
 
-pub type SemanticLayerCache = TtlCache<oxy_airlayer_compat::SemanticLayer>;
+/// The parsed-layer cache is **not** a `TtlCache` alias any more either, and for
+/// the reason its sibling moved: it is keyed on `(workspace_id, layer source)`,
+/// and `LayerSource` is defined next to the engine cache in
+/// `oxy-airlayer-compat`. Keeping the layer key here would mean a second name
+/// for that concept in a second crate.
+///
+/// Keyed on `workspace_id` alone — as it was — the two scan roots of one
+/// workspace collided: on an `ide` or `all` node the world-model handlers scan
+/// the working copy while `/semantic`, metric-tree and preagg scan the compile
+/// boundary, and whichever ran first decided what the other saw for a TTL. That
+/// also undercut the engine cache one level up, which keys on the source
+/// honestly but can only be as right as the layer it is handed. See
+/// `oxy_airlayer_compat::layer_cache`.
+pub use oxy_airlayer_compat::SemanticLayerCache;
 
 pub fn new_semantic_layer_cache() -> Arc<SemanticLayerCache> {
     // 60s TTL: cheap safety net; explicit invalidation on every semantic file
     // write keeps the cache fresh within the same editing session.
-    TtlCache::with_ttl(Duration::from_secs(60))
+    SemanticLayerCache::new()
 }
 
 /// The compiled-engine cache is **not** a `TtlCache` alias any more: it lives in
@@ -55,7 +69,9 @@ pub use oxy_airlayer_compat::SemanticEngineCache;
 
 pub fn new_semantic_engine_cache() -> Arc<SemanticEngineCache> {
     // Explicit invalidation on every semantic file write is the primary freshness
-    // mechanism (same as the layer cache). TTL is a safety net only — 10 min.
+    // mechanism (same as the layer cache). TTL is a safety net only, and it is
+    // deliberately the layer cache's 60s rather than longer: an engine must not
+    // outlive the layer it has to agree with. See `engine_cache`.
     SemanticEngineCache::new()
 }
 

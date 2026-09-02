@@ -21,9 +21,11 @@
 //! re-export or a helper above instead.
 
 pub mod engine_cache;
+pub mod layer_cache;
 mod one_door_guard;
 
-pub use engine_cache::{EngineKey, SemanticEngineCache, dialect_fingerprint};
+pub use engine_cache::{EngineKey, LayerSource, SemanticEngineCache, dialect_fingerprint};
+pub use layer_cache::{LayerKey, SemanticLayerCache};
 
 use std::path::{Path, PathBuf};
 

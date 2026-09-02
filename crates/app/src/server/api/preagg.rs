@@ -435,7 +435,10 @@ pub async fn get_preagg_status(
         .await
         .map_err(|e| semantic_err(StatusCode::SERVICE_UNAVAILABLE, e.message()))?;
     let layer = layer_cache
-        .get_or_load(scan.scan_path.clone())
+        .get_or_load(
+            scan.source_revision(&workspace_manager),
+            scan.scan_path.clone(),
+        )
         .await
         .map_err(|e| {
             semantic_err(
@@ -977,7 +980,10 @@ pub async fn rebuild_preagg(
         .await
         .map_err(|e| semantic_err(StatusCode::SERVICE_UNAVAILABLE, e.message()))?;
     let layer = layer_cache
-        .get_or_load(scan.scan_path.clone())
+        .get_or_load(
+            scan.source_revision(&workspace_manager),
+            scan.scan_path.clone(),
+        )
         .await
         .map_err(|e| {
             semantic_err(

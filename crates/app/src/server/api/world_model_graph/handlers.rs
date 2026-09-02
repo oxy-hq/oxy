@@ -43,14 +43,17 @@ pub async fn get_world_model(
 ) -> Result<extract::Json<WorldModelResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     let semantics_path = workspace_manager.config_manager.semantics_scan_path();
 
-    let layer = layer_cache.get_or_load(semantics_path).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            extract::Json(ErrorResponse {
-                message: format!("Failed to load semantic layer: {e}"),
-            }),
-        )
-    })?;
+    let layer = layer_cache
+        .get_or_load(None, semantics_path)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                extract::Json(ErrorResponse {
+                    message: format!("Failed to load semantic layer: {e}"),
+                }),
+            )
+        })?;
 
     build_world_model_response(&layer, &workspace_manager.config_manager)
         .await
@@ -253,7 +256,7 @@ pub async fn get_world_model_instances(
 ) -> Result<extract::Json<WmInstancesResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     let semantics_path = workspace_manager.config_manager.semantics_scan_path();
     let layer = layer_cache
-        .get_or_load(semantics_path.clone())
+        .get_or_load(None, semantics_path.clone())
         .await
         .map_err(|e| {
             (
@@ -2457,14 +2460,17 @@ pub async fn get_world_model_measure_breakdown(
     (StatusCode, extract::Json<ErrorResponse>),
 > {
     let semantics_path = workspace_manager.config_manager.semantics_scan_path();
-    let layer = layer_cache.get_or_load(semantics_path).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            extract::Json(ErrorResponse {
-                message: e.to_string(),
-            }),
-        )
-    })?;
+    let layer = layer_cache
+        .get_or_load(None, semantics_path)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                extract::Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
     let databases = super::query::database_configs(&workspace_manager);
     // Surfaced, not swallowed: this is the airlayer validation error for the
     // workspace's own semantic files, and it is what makes an empty driver-tree

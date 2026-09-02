@@ -282,6 +282,41 @@ impl SemanticEngineCache {
         }
     }
 
+    /// Drop the entries for ONE source of a workspace, across every dialect map.
+    ///
+    /// The narrow counterpart to [`invalidate_workspace`](Self::invalidate_workspace),
+    /// for the caller that DOES know which source it invalidated: a layer
+    /// reload. Once the layer cache is keyed per source, reloading the working
+    /// copy does not replace the layer a `Revision(R)` engine was built from,
+    /// so dropping that engine too is eviction without a reason — and not free:
+    ///
+    /// * on an `ide`/`all` node the two handler families miss the layer cache
+    ///   independently, so a workspace-wide flush from either one throws away
+    ///   the other's engine every TTL cycle, and a build revalidates the whole
+    ///   layer and rebuilds the join graph;
+    /// * across a promote window a straggler revision-N reload and a fresh
+    ///   revision-N+1 reload would flush each other — the ping-pong
+    ///   [`get_or_build`](Self::get_or_build) declines to do on insert, moved
+    ///   one edge over;
+    /// * a layer evicted for LRU *capacity* rather than staleness would flush
+    ///   engines too, which would make this cache's own capacity much less
+    ///   effective than it looks.
+    ///
+    /// Dialects are deliberately not part of the filter: they describe how a
+    /// layer compiles, not which layer it is, so every dialect map's engine for
+    /// this source was built from the layer being replaced.
+    pub fn invalidate_source(&self, workspace_id: Uuid, source: LayerSource) {
+        let mut guard = self.inner.lock().expect("engine cache mutex poisoned");
+        let doomed: Vec<EngineKey> = guard
+            .iter()
+            .map(|(k, _)| *k)
+            .filter(|k| k.workspace_id == workspace_id && k.source == source)
+            .collect();
+        for k in doomed {
+            guard.pop(&k);
+        }
+    }
+
     /// Entry count. Test/diagnostic use.
     pub fn len(&self) -> usize {
         self.inner
@@ -590,5 +625,60 @@ mod tests {
             cache.lookup(&b).is_none(),
             "least recently used was evicted"
         );
+    }
+
+    /// A layer reload retires the engines built from THAT source and no others.
+    ///
+    /// Once the layer cache is keyed per source, a working-copy reload does not
+    /// replace the layer a `Revision(R)` engine was built from — so flushing the
+    /// whole workspace would evict a live engine for no reason, and would put
+    /// the promote-window ping-pong this module avoids on insert back across
+    /// the layer/engine edge.
+    #[test]
+    fn invalidate_source_spares_the_other_source() {
+        let cache = SemanticEngineCache::new();
+        let ws = Uuid::new_v4();
+        let revision = Uuid::new_v4();
+        let other_ws = Uuid::new_v4();
+
+        let working_copy = EngineKey::working_copy(ws, &[]);
+        let compiled = EngineKey::revision(ws, revision, &[]);
+        let neighbour = EngineKey::working_copy(other_ws, &[]);
+
+        for key in [working_copy, compiled, neighbour] {
+            cache.get_or_build(key, build_empty).expect("engine builds");
+        }
+        assert_eq!(cache.len(), 3);
+
+        cache.invalidate_source(ws, LayerSource::WorkingCopy);
+
+        assert!(
+            cache.lookup(&working_copy).is_none(),
+            "the reloaded source goes"
+        );
+        assert!(
+            cache.lookup(&compiled).is_some(),
+            "the other source's engine was built from a layer this reload did not replace"
+        );
+        assert!(
+            cache.lookup(&neighbour).is_some(),
+            "another workspace is untouched"
+        );
+    }
+
+    /// The wide door still exists for the callers that genuinely cannot say
+    /// which source they invalidated — a file write, a branch switch, a pull.
+    #[test]
+    fn invalidate_workspace_still_drops_every_source() {
+        let cache = SemanticEngineCache::new();
+        let ws = Uuid::new_v4();
+        for key in [
+            EngineKey::working_copy(ws, &[]),
+            EngineKey::revision(ws, Uuid::new_v4(), &[]),
+        ] {
+            cache.get_or_build(key, build_empty).expect("engine builds");
+        }
+        cache.invalidate_workspace(ws);
+        assert_eq!(cache.len(), 0);
     }
 }
