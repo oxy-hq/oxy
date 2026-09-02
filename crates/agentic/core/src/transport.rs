@@ -104,7 +104,29 @@ pub trait CoordinatorTransport: Send + Sync + 'static {
 pub trait WorkerTransport: Send + Sync + 'static {
     /// Pull the next task assignment from the coordinator.
     ///
-    /// Returns `None` when the coordinator-side sender has been dropped.
+    /// # Contract
+    ///
+    /// An implementation **must eventually return `None`** once no further
+    /// assignment can arrive. `Worker::run` breaks only on `None`, so a
+    /// transport that can never produce one turns every spawned worker into a
+    /// task that outlives the run it was spawned for — and, for a durable
+    /// transport, into a standing database poller.
+    ///
+    /// This is a contract, not a description of any one mechanism, and the
+    /// distinction has already cost us an outage. The previous wording —
+    /// "returns `None` when the coordinator-side sender has been dropped" —
+    /// described only the channel-backed case. `DurableTransport` polls a
+    /// table and has no sender to drop, so it satisfied that sentence
+    /// *vacuously* while never returning `None` at all. Substituting it under
+    /// a per-run worker spawn (#2034) silently removed the worker's only exit,
+    /// leaked one poller per run driven for 139 days, and exhausted the
+    /// Postgres connection ceiling in production on 2026-09-01 (#3059).
+    ///
+    /// A transport with no natural end-of-stream must therefore carry an
+    /// explicit retirement signal and return `None` when it fires — as
+    /// `DurableTransport::retire_worker_loop` now does. If you are adding a
+    /// transport and cannot name the condition under which this returns
+    /// `None`, it does not satisfy this contract.
     async fn recv_assignment(&self) -> Option<TaskAssignment>;
 
     /// Send a message (event or outcome) back to the coordinator.

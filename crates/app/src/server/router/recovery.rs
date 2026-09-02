@@ -1033,27 +1033,16 @@ async fn tick_cloud(
         // contexts are keyed by workspace_id, but the FIRST build per id
         // needs the path. Cheap one-row lookup; skipped on cache hits.
         let path = match entity::workspaces::Entity::find_by_id(ws_id).one(db).await {
-            Ok(Some(ws)) => match ws.path {
-                Some(p) => p,
-                None => {
-                    // A path-less workspace is an EXPECTED, non-actionable skip
-                    // (local-mode sentinels, demo/listing-only seeded rows), so
-                    // this is debug, not a per-cycle WARN. The genuinely-anomalous
-                    // case — a pending run for an UNKNOWN workspace — stays WARN.
-                    tracing::debug!(
-                        target: "recovery",
-                        workspace_id = %ws_id,
-                        "latency worker: workspace has no path; skipping"
-                    );
+            Ok(found) => match classify_workspace(found.map(|ws| ws.path)) {
+                WorkspaceOutcome::Drive(p) => p,
+                WorkspaceOutcome::Retire(reason) => {
+                    retire_orphaned_runs(db, ws_id, &pending, reason).await;
                     continue;
                 }
             },
-            Ok(None) => {
-                // The workspace row is GONE, so this run can never be driven.
-                // Retire it instead of skipping — see `retire_orphaned_runs`.
-                retire_orphaned_runs(db, ws_id, &pending).await;
-                continue;
-            }
+            // A lookup FAILURE is the one case that must still skip. It says
+            // the database was briefly unreachable, not that the workspace is
+            // gone — retiring on it would destroy live runs during a blip.
             Err(e) => {
                 tracing::warn!(target: "recovery", error = %e, "latency worker: workspace lookup failed");
                 continue;
@@ -1084,13 +1073,50 @@ async fn tick_cloud(
     total
 }
 
-/// Dead-letter every pending Global run whose `workspaces` row no longer exists.
+/// What the latency worker should do with a workspace it has just looked up.
 ///
-/// A run whose workspace has been deleted is unrunnable **by definition** — the
-/// tick needs the workspace path to build a context and there is none, and no
-/// future poll will find one. Skipping it therefore does not defer the work, it
-/// creates a permanent hot loop: `find_pending_global_runs` re-selects the
-/// identical row on the very next poll, on every node running a latency worker.
+/// Extracted from [`tick_cloud`]'s match so the decision can be tested without
+/// a database. The property worth protecting is not any single arm — it is that
+/// **every** non-drivable outcome retires rather than skips, and that is exactly
+/// what regressed: the deleted-row arm retired while the path-less arm next to
+/// it went on skipping, which is the identical permanent hot loop one door over.
+enum WorkspaceOutcome {
+    /// The workspace resolves to a path; drive its pending runs.
+    Drive(String),
+    /// Unrunnable, and no future poll changes that. Retire with this reason.
+    Retire(&'static str),
+}
+
+/// Classify a `workspaces` lookup that SUCCEEDED.
+///
+/// `None` — no such row. `Some(None)` — the row exists with no `path`.
+/// `Some(Some(p))` — drivable. Deliberately takes the path rather than the
+/// model: those two bits are the whole decision, and narrowing the input keeps
+/// this callable from a test without constructing an entity.
+///
+/// A path-less workspace is not the transient state it looks like.
+/// `register_project` writes `path` in the same `INSERT` that sets `status`, so
+/// a path never "arrives later" — a row without one (local-mode sentinels,
+/// demo/listing-only seeded rows) will not grow one, and a pending Global run
+/// against it can never be driven.
+fn classify_workspace(path: Option<Option<String>>) -> WorkspaceOutcome {
+    match path {
+        Some(Some(p)) => WorkspaceOutcome::Drive(p),
+        Some(None) => WorkspaceOutcome::Retire("workspace has no path"),
+        None => WorkspaceOutcome::Retire("workspace no longer exists"),
+    }
+}
+
+/// Dead-letter every pending Global run on a workspace that cannot be resolved
+/// to a path — whether the row is gone or is present without one. See
+/// [`classify_workspace`], which decides between those and is the reason both
+/// arrive here rather than only the first.
+///
+/// Such a run is unrunnable **by definition** — the tick needs the workspace
+/// path to build a context and there is none, and no future poll will find one.
+/// Skipping it therefore does not defer the work, it creates a permanent hot
+/// loop: `find_pending_global_runs` re-selects the identical row on the very
+/// next poll, on every node running a latency worker.
 ///
 /// That loop took prod down on 2026-09-01. Two orphaned rows kept four
 /// processes (`oxy-0` plus three workers) re-selecting at the 300 ms poll
@@ -1105,19 +1131,20 @@ async fn retire_orphaned_runs(
     db: &sea_orm::DatabaseConnection,
     ws_id: uuid::Uuid,
     pending: &[agentic_runtime::crud::StuckRun],
+    reason: &'static str,
 ) {
     for run in pending.iter().filter(|r| r.workspace_id == ws_id) {
         // One transaction for both writes. Cancelling the queue rows is what
         // removes the run from `find_pending_global_runs`, so a terminal write
         // that then failed would strand the run non-terminal AND unselectable —
         // nothing left to retry it. `retire_run` rolls both back instead.
-        match agentic_runtime::crud::retire_run(db, &run.run_id, "workspace no longer exists").await
-        {
+        match agentic_runtime::crud::retire_run(db, &run.run_id, reason).await {
             Ok(()) => tracing::warn!(
                 target: "recovery",
                 workspace_id = %ws_id,
                 run_id = %run.run_id,
-                "latency worker: retired a pending run whose workspace no longer exists"
+                reason,
+                "latency worker: retired a pending run whose workspace cannot be resolved"
             ),
             Err(e) => tracing::warn!(
                 target: "recovery",
@@ -1760,6 +1787,44 @@ async fn bootstrap_monitor_schedules(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The regression this file exists to prevent a second time.
+    ///
+    /// On 2026-09-01 the deleted-workspace arm was taught to retire while the
+    /// path-less arm beside it kept skipping. Both are "the tick cannot get a
+    /// path, and no later poll will produce one", so both are permanent hot
+    /// loops — `find_pending_global_runs` re-selects an untouched row on the
+    /// very next tick, forever. Asserting the arms individually would not have
+    /// caught it; asserting that NO successful lookup can produce a skip does.
+    #[test]
+    fn every_unresolvable_workspace_retires_rather_than_skips() {
+        for (label, input) in [("row deleted", None), ("row present, no path", Some(None))] {
+            assert!(
+                matches!(classify_workspace(input), WorkspaceOutcome::Retire(_)),
+                "{label}: an unresolvable workspace must retire its runs, not skip                  them — skipping leaves the row selectable and re-polls it forever"
+            );
+        }
+    }
+
+    #[test]
+    fn a_workspace_with_a_path_still_drives() {
+        match classify_workspace(Some(Some("/workspace/oxy_data/ws".into()))) {
+            WorkspaceOutcome::Drive(p) => assert_eq!(p, "/workspace/oxy_data/ws"),
+            WorkspaceOutcome::Retire(r) => panic!("a drivable workspace was retired: {r}"),
+        }
+    }
+
+    /// The two causes stay distinguishable in the retirement reason, which is
+    /// what a future reader of `agentic_runs.error_message` has to work from.
+    #[test]
+    fn retirement_reasons_name_the_actual_cause() {
+        let reason = |i| match classify_workspace(i) {
+            WorkspaceOutcome::Retire(r) => r,
+            WorkspaceOutcome::Drive(_) => panic!("expected a retirement"),
+        };
+        assert_eq!(reason(None), "workspace no longer exists");
+        assert_eq!(reason(Some(None)), "workspace has no path");
+    }
 
     #[test]
     fn schedule_timezone_comes_from_the_monitor_config() {
