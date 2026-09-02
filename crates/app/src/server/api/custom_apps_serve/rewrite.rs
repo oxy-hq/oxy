@@ -166,14 +166,20 @@ fn prefix_bare_absolute_paths(html: &str, prefix: &str) -> String {
     }
 }
 
+/// Path prefix every path-mounted custom app is served under.
+///
+/// Shared with the asset manifest, which must strip exactly the prefix this
+/// module would rewrite — if the two disagreed about what a baked base looks
+/// like, the manifest would advertise paths the serve path never produces.
+pub(crate) const CUSTOM_APPS_SENTINEL: &str = "/customer-apps/";
+
 /// Find the first `/customer-apps/<org>/<slug>/` substring in the
 /// HTML. Returns the full matched prefix including the trailing
 /// slash, or `None` if there isn't one or the surrounding characters
 /// don't look like an attribute value.
 pub(crate) fn first_custom_apps_prefix(html: &str) -> Option<String> {
-    const SENTINEL: &str = "/customer-apps/";
-    let idx = html.find(SENTINEL)?;
-    let after = &html[idx + SENTINEL.len()..];
+    let idx = html.find(CUSTOM_APPS_SENTINEL)?;
+    let after = &html[idx + CUSTOM_APPS_SENTINEL.len()..];
 
     // Read up to two more path segments. Both must be non-empty and
     // composed of URL-safe slug chars; the second is followed by a
@@ -194,7 +200,7 @@ pub(crate) fn first_custom_apps_prefix(html: &str) -> Option<String> {
     let (Some(org), Some(slug)) = (segments[0], segments[1]) else {
         return None;
     };
-    Some(format!("/customer-apps/{org}/{slug}/"))
+    Some(format!("{CUSTOM_APPS_SENTINEL}{org}/{slug}/"))
 }
 
 fn is_slug_char(c: char) -> bool {

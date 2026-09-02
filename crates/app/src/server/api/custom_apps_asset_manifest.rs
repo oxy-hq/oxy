@@ -48,6 +48,7 @@
 //! deliberately not precached eagerly — a big bundle would spend the visitor's
 //! bandwidth on routes they may never open.
 
+use super::custom_apps_serve::rewrite::{CUSTOM_APPS_SENTINEL, first_custom_apps_prefix};
 use serde::{Deserialize, Serialize};
 
 /// Bundle-relative path the manifest is published at. Under `__oxy/` — a
@@ -375,6 +376,10 @@ fn parse_entries(html: &[u8]) -> Vec<Entry> {
     };
     let mut out: Vec<Entry> = Vec::new();
     let lower = text.to_ascii_lowercase();
+    // The base path this bundle was BUILT with, if it baked one in. Read once
+    // per document with the same function the serve-time rewriter uses, so the
+    // two can never disagree about what the prefix is.
+    let baked = first_custom_apps_prefix(text);
 
     let mut cursor = 0usize;
     while let Some(rel_start) = lower[cursor..].find('<') {
@@ -402,7 +407,7 @@ fn parse_entries(html: &[u8]) -> Vec<Entry> {
             } else {
                 EntryKind::Script
             };
-            push_entry(&mut out, &src, kind);
+            push_entry(&mut out, &src, kind, baked.as_deref());
         } else if tag_lower.starts_with("<link") {
             let Some(href) = attr_value(tag_lower, tag_raw, "href") else {
                 continue;
@@ -419,7 +424,7 @@ fn parse_entries(html: &[u8]) -> Vec<Entry> {
             } else {
                 continue;
             };
-            push_entry(&mut out, &href, kind);
+            push_entry(&mut out, &href, kind, baked.as_deref());
         }
     }
     out
@@ -433,7 +438,7 @@ fn parse_entries(html: &[u8]) -> Vec<Entry> {
 /// not ours to make — and a root-absolute path is exactly the build-time-base
 /// mismatch that `rewrite_bundle_base_path` exists to repair, so hinting the
 /// un-rewritten form would preload a 404.
-fn push_entry(out: &mut Vec<Entry>, raw: &str, kind: EntryKind) {
+fn push_entry(out: &mut Vec<Entry>, raw: &str, kind: EntryKind, baked: Option<&str>) {
     if out.len() >= MAX_ENTRIES {
         return;
     }
@@ -444,6 +449,43 @@ fn push_entry(out: &mut Vec<Entry>, raw: &str, kind: EntryKind) {
     if value.contains("://") || value.starts_with("//") || value.starts_with("data:") {
         return;
     }
+    // A root-absolute reference in bundler output is written against the base
+    // path the bundle was BUILT with. `rewrite_bundle_base_path` fixes those in
+    // the body at serve time; the manifest is generated at publish time, before
+    // that rewrite exists, so anything root-absolute whose base doesn't already
+    // match the bundle root would produce a hint for a URL that never resolves.
+    // Keeping only the tail is correct precisely because every consumer re-bases
+    // against the app root: the worker's precache prepends `ASSET_BASE`, and the
+    // `Link:` preload header prepends the request's own base.
+    //
+    // Two root-absolute shapes reach here, and only one is a plain trim:
+    //
+    //  - `/assets/x.js` — built with the default base `/`. The tail IS the value
+    //    minus its slash, and serve-time Case 2 prefixes it the same way.
+    //  - `/customer-apps/<org>/<slug>/assets/x.js` — built with a base baked in.
+    //    Trimming only the slash keeps the WHOLE mount prefix, and every consumer
+    //    then re-bases a path that is already based: `ASSET_BASE + path` doubles
+    //    the prefix and 404s. Strip the baked prefix so the tail is really a tail.
+    let value = match baked {
+        // A `/customer-apps/...` reference that does NOT sit under this bundle's
+        // own baked prefix points at a different app. A hint for someone else's
+        // asset is not ours to make — drop it rather than guess at a tail.
+        Some(prefix) if value.starts_with(CUSTOM_APPS_SENTINEL) => {
+            match value.strip_prefix(prefix) {
+                Some(tail) => tail,
+                None => return,
+            }
+        }
+        // No baked prefix to anchor against, and the value is already based.
+        // `first_custom_apps_prefix` reads the document's FIRST `/customer-apps/`
+        // occurrence, so one that isn't a bundle base — a canonical `<link>` with
+        // no trailing slash, say — yields `None` while the script tags below it
+        // are still fully prefixed. Storing one would hand every consumer a path
+        // to double, which is the bug this strip exists to prevent; drop it for
+        // the same reason a cross-app reference is dropped.
+        None if value.starts_with(CUSTOM_APPS_SENTINEL) => return,
+        _ => value,
+    };
     // `./assets/x.js` and `assets/x.js` are the same object.
     let normalized = value
         .trim_start_matches("./")
@@ -452,13 +494,6 @@ fn push_entry(out: &mut Vec<Entry>, raw: &str, kind: EntryKind) {
     if normalized.is_empty() || normalized.contains("..") {
         return;
     }
-    // A root-absolute reference in bundler output is written against the base
-    // path the bundle was BUILT with. `rewrite_bundle_base_path` fixes those in
-    // the body at serve time; the manifest is generated at publish time, before
-    // that rewrite exists, so anything root-absolute whose base doesn't already
-    // match the bundle root would produce a hint for a URL that never resolves.
-    // Keeping only the tail is correct precisely because the serve path
-    // re-bases relative to the app root.
     if out.iter().any(|e| e.path == normalized) {
         return;
     }
@@ -586,6 +621,142 @@ mod tests {
                     kind: EntryKind::Module
                 },
             ]
+        );
+    }
+
+    /// The shape that ships from `oxy publish` for a path-mounted app: Vite
+    /// built with `base: /customer-apps/<org>/<slug>/`, so every reference is
+    /// root-absolute AND already carries the mount prefix.
+    ///
+    /// Regression: the entries were stored with the prefix still attached, and
+    /// every consumer re-bases against the app root — so the worker fetched
+    /// `<base>/customer-apps/<org>/<slug>/assets/x.js`, got a 404 for each one,
+    /// and left an EMPTY precache behind while the `Link:` header preloaded the
+    /// same doubled URLs on every navigation. Both read as working: the page
+    /// itself renders from the correct paths in the HTML.
+    #[test]
+    fn strips_the_base_a_path_mounted_bundle_was_built_with() {
+        let html = r#"<!doctype html><html><head>
+            <link rel="stylesheet" href="/customer-apps/acme/sales/assets/index-9f3a.css">
+            <script type="module" src="/customer-apps/acme/sales/assets/index-1b2c.js"></script>
+        </head><body></body></html>"#;
+        let m = build_from_files("b1", &[f("index.html", html)], ClientPrefs::default());
+        assert_eq!(
+            m.entries,
+            vec![
+                Entry {
+                    path: "assets/index-9f3a.css".into(),
+                    kind: EntryKind::Style
+                },
+                Entry {
+                    path: "assets/index-1b2c.js".into(),
+                    kind: EntryKind::Module
+                },
+            ]
+        );
+
+        // The property that actually matters, stated the way the two consumers
+        // use it — neither may produce a doubled prefix.
+        let base = "/customer-apps/acme/sales/";
+        for e in &m.entries {
+            let resolved = format!("{base}{}", e.path);
+            assert_eq!(
+                resolved.matches("/customer-apps/").count(),
+                1,
+                "re-basing {} doubled the mount prefix",
+                e.path
+            );
+        }
+    }
+
+    /// `first_custom_apps_prefix` reads the document's FIRST `/customer-apps/`
+    /// occurrence. A canonical link without a trailing slash is not a bundle
+    /// base, so it yields `None` — while the script tags below it are still
+    /// fully prefixed. Storing those unanchored would reintroduce the doubling
+    /// this PR fixes, just narrower.
+    #[test]
+    fn drops_a_prefixed_reference_it_cannot_anchor() {
+        let html = r#"<!doctype html><html><head>
+            <link rel="canonical" href="https://app.oxygen-hq.com/customer-apps/acme/sales">
+            <script type="module" src="/customer-apps/acme/sales/assets/index-1b2c.js"></script>
+        </head></html>"#;
+        // Precondition: this document really does defeat the prefix reader —
+        // without it the test would pass for the wrong reason.
+        assert_eq!(
+            crate::server::api::custom_apps_serve::rewrite::first_custom_apps_prefix(html),
+            None,
+            "fixture no longer exercises the unanchored path"
+        );
+        let m = build_from_files("b1", &[f("index.html", html)], ClientPrefs::default());
+        assert_eq!(m.entries, vec![]);
+    }
+
+    /// The invariant both consumers actually depend on, stated once instead of
+    /// enumerated per base x surface: an entry names a file in the bundle.
+    ///
+    /// `assets` is derived from the tarball's own paths, so entries being a
+    /// subset of it is exactly what makes `ASSET_BASE + path` resolve in the
+    /// worker AND what makes the publish-time cache warm in
+    /// `custom_apps_publish` match `path.trim_start_matches('/') == entry.path`.
+    /// The doubled prefix broke all three at once.
+    #[test]
+    fn every_entry_names_a_file_the_bundle_actually_ships() {
+        let html = r#"<!doctype html><html><head>
+            <link rel="stylesheet" href="/customer-apps/acme/sales/assets/index-9f3a.css">
+            <script type="module" src="/customer-apps/acme/sales/assets/index-1b2c.js"></script>
+        </head></html>"#;
+        let m = build_from_files(
+            "b1",
+            &[
+                f("index.html", html),
+                f("assets/index-9f3a.css", "body{}"),
+                f("assets/index-1b2c.js", "export{}"),
+            ],
+            ClientPrefs::default(),
+        );
+        assert!(!m.entries.is_empty(), "fixture produced nothing to check");
+        for e in &m.entries {
+            assert!(
+                m.assets.contains(&e.path),
+                "entry {} is not among the bundle's files {:?}",
+                e.path,
+                m.assets
+            );
+        }
+    }
+
+    /// A bundle built with the default base `/` is the OTHER root-absolute
+    /// shape, and it must keep behaving as it did: the tail is the value minus
+    /// its slash, because serve-time prefixing does exactly that too.
+    #[test]
+    fn default_base_bundle_still_keeps_the_whole_path() {
+        let html = r#"<html><head><script type="module" src="/assets/main-XYZ.js"></script></head></html>"#;
+        let m = build_from_files("b1", &[f("index.html", html)], ClientPrefs::default());
+        assert_eq!(
+            m.entries,
+            vec![Entry {
+                path: "assets/main-XYZ.js".into(),
+                kind: EntryKind::Module
+            }]
+        );
+    }
+
+    /// Stripping is anchored to THIS bundle's baked prefix, not to any
+    /// `/customer-apps/` path. A reference to a different app is someone
+    /// else's asset — hinting it would preload across an app boundary.
+    #[test]
+    fn does_not_hint_an_asset_belonging_to_a_different_app() {
+        let html = r#"<html><head>
+            <script type="module" src="/customer-apps/acme/sales/assets/ours.js"></script>
+            <link rel="stylesheet" href="/customer-apps/other/app/assets/theirs.css">
+        </head></html>"#;
+        let m = build_from_files("b1", &[f("index.html", html)], ClientPrefs::default());
+        assert_eq!(
+            m.entries,
+            vec![Entry {
+                path: "assets/ours.js".into(),
+                kind: EntryKind::Module
+            }]
         );
     }
 

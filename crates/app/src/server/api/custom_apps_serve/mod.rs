@@ -74,7 +74,7 @@ mod headers;
 // The admin SPA's static handler answers the same navigation-vs-subresource
 // question for its own fallback, and must answer it identically.
 pub(crate) use headers::wants_html;
-mod rewrite;
+pub(crate) mod rewrite;
 mod sources;
 
 use headers::*;
