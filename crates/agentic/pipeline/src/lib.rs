@@ -339,7 +339,7 @@ impl PipelineBuilder {
 
     /// Run an analytics agent in SQL-generation mode. The analytics
     /// FSM terminates after SQL is produced — pre-validated paths
-    /// (semantic layer, verified `.sql`, vendor engine) skip
+    /// (semantic model, verified `.sql`, vendor engine) skip
     /// executing entirely; LLM-generated SQL runs a `LIMIT 0` smoke
     /// check before terminating. Used by the automation `type: agent`
     /// step when `AgentTaskConfig.output.mode == Sql`. No-op for the

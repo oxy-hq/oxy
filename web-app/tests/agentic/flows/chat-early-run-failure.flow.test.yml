@@ -15,7 +15,7 @@
 # oxymart.view.yml` (referenced by `demo_project/analytics.agentic.yml`'s
 # `context: [./sales_semantics/**/*, ...]`) via the actual Monaco editor and
 # the actual Save action — then asks a question that needs the semantic
-# layer. This is not a synthetic error injected via a mock; it is the exact
+# model. This is not a synthetic error injected via a mock; it is the exact
 # scenario the backend's own error copy names verbatim (confirmed live
 # against a real backend before this flow was written — see below).
 #

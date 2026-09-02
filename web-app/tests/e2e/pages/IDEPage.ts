@@ -261,7 +261,7 @@ export class IDEPage {
     await expect(this.objectsModeButton).toHaveAttribute("data-state", "active");
 
     // In Objects mode, we should see grouped sections
-    const semanticLayerHeading = this.page.locator("text=Semantic Layer");
+    const semanticLayerHeading = this.page.locator("text=Semantic Model");
     const automationsHeading = this.page.locator("text=Automations");
     const agentsHeading = this.page.locator("text=Agents");
     const appsHeading = this.page.locator("text=Apps");

@@ -115,7 +115,7 @@ cases:
       - act: |
           browser_click [data-testid=ide-nav-world-model] — the Globe icon
           button in the narrow IDE sidebar rail. The URL ends with
-          /ide/world-model and the interactive map of the semantic layer loads.
+          /ide/world-model and the interactive map of the semantic model loads.
 
       # THE GRAPH READ. GET /{project}/semantic/world-model (IdeOnly — proxied
       # to the ide node from a replica). Gating on a NAMED entity id is the

@@ -14,7 +14,7 @@ test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -41,7 +41,7 @@ test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -68,7 +68,7 @@ test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -97,7 +97,7 @@ test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -128,7 +128,7 @@ test.describe("IDE Files - Topic Editor - Field Selection", () => {
 
   // 10.9-10.13 Field selection from multiple views
   test("10.9 - should add dimension from View A to query", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -154,7 +154,7 @@ test.describe("IDE Files - Topic Editor - Field Selection", () => {
   });
 
   test("10.11 - should combine fields from multiple views in query", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -182,7 +182,7 @@ test.describe("IDE Files - Topic Editor - Field Selection", () => {
   });
 
   test("10.13 - should show full field name format", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -224,7 +224,7 @@ test.describe("IDE Files - Topic Editor - Loading", () => {
       });
     });
 
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -243,7 +243,7 @@ test.describe("IDE Files - Topic Editor - Loading", () => {
   });
 
   test("10.15 - should show loading state for views", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -265,7 +265,7 @@ test.describe("IDE Files - Topic Editor - Loading", () => {
 
   // 10.16 No views found
   test("10.16 - should show empty state when no views found", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);

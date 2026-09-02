@@ -13,7 +13,7 @@ impl SemanticCatalog {
     ///
     /// Supports simple comparison filters like `"date >= '2024-01-01'"` or
     /// `"status = 'active'"`.  The column name is qualified against the
-    /// semantic layer using `find_dimension` / `find_measure`, preferring
+    /// semantic model using `find_dimension` / `find_measure`, preferring
     /// `preferred_views` (the views already selected for metrics).
     ///
     /// Returns `Err(TooComplex)` when a filter contains SQL functions or
@@ -135,7 +135,7 @@ impl SemanticCatalog {
             }
         }
 
-        // Could not parse → too complex for the semantic layer
+        // Could not parse → too complex for the semantic model
         Err(CatalogError::TooComplex(format!(
             "unable to parse filter: {}",
             trimmed

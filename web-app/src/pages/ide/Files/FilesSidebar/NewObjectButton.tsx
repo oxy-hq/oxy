@@ -314,7 +314,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className='cursor-pointer px-3 py-2'>
               <Layers2 className='mr-4 h-4 w-4' />
-              Semantic Layer
+              Semantic Model
               <div className='mr-2'></div>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>

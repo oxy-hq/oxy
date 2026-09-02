@@ -1,6 +1,6 @@
 //! Concrete `MetricTreeRunner` for Oxy.
 //!
-//! Loads the workspace's semantic layer from disk, compiles airlayer
+//! Loads the workspace's semantic model from disk, compiles airlayer
 //! `QueryRequest`s through `SemanticEngine`, and executes the resulting SQL
 //! through Oxy's connector pool. Used by both the HTTP `/semantic/metric-tree`
 //! handlers and the agentic analytics tools — same code path, identical
@@ -36,11 +36,11 @@ use crate::agentic_wiring::project_ctx::build_connector_for_db;
 use crate::server::preagg_context::RollupFreshness;
 use oxy::config::{ReadOnly, WorkingCopy};
 
-/// Adapter that exposes Oxy's semantic-layer + connector pool as a
+/// Adapter that exposes Oxy's semantic-model + connector pool as a
 /// [`MetricTreeRunner`].
 ///
 /// Holds the smallest set of fields needed to (a) load the on-disk semantic
-/// layer and (b) execute SQL through `run_via_agentic_connector`. Built once
+/// model and (b) execute SQL through `run_via_agentic_connector`. Built once
 /// per pipeline run from [`crate::agentic_wiring::OxyProjectContext`].
 /// The rollup short-circuit a runner carries: the shared Layer-1 cache, the
 /// renewal threshold its freshness check runs against, and what to do with a
@@ -89,7 +89,7 @@ pub struct OxyMetricTreeRunner {
     preagg: RunnerPreagg,
     /// Memoized file-level `.monitor.yml` timezone, read on first use.
     default_timezone: std::sync::OnceLock<Option<String>>,
-    /// When set, the semantic layer is parsed from this directory instead
+    /// When set, the semantic model is parsed from this directory instead
     /// of `config_manager.semantics_scan_path()`. Customer-app requests run
     /// on the stateless serve fleet, where the workspace FS scan path does
     /// not exist — they materialise the compiled layer from the compile
@@ -219,7 +219,7 @@ impl OxyMetricTreeRunner {
         }
     }
 
-    /// Parse the semantic layer from `scan_path` instead of the workspace FS
+    /// Parse the semantic model from `scan_path` instead of the workspace FS
     /// scan path — the compile-boundary path for the stateless serve fleet.
     /// The `scan_path` must remain valid for the lifetime of every run (hold
     /// the `ScanDir` tempdir guard in the caller).
@@ -228,7 +228,7 @@ impl OxyMetricTreeRunner {
         self
     }
 
-    /// The directory the semantic layer is parsed from: the override when set
+    /// The directory the semantic model is parsed from: the override when set
     /// (compile boundary), else this node's working copy. `None` means neither
     /// exists — a stateless replica that was not handed a materialised root.
     fn effective_scan_path(&self) -> Option<PathBuf> {
@@ -242,7 +242,7 @@ impl OxyMetricTreeRunner {
         }
     }
 
-    /// Parse a semantic layer from an ALREADY-RESOLVED scan root.
+    /// Parse a semantic model from an ALREADY-RESOLVED scan root.
     ///
     /// Deliberately takes the path rather than a `WorkspaceManager`: it used to
     /// derive the root from `config_manager.semantics_scan_path()` itself, which

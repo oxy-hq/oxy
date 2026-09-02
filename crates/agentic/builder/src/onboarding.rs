@@ -137,7 +137,7 @@ impl OnboardingContext {
             // analytics.agentic.yml — covered by the agentic-builder card.
             OnboardingBuildStep::Agent => vec![AgenticBuilder],
             // .app.yml — needs both: app-builder for tasks/displays and
-            // semantic-layer because tasks reference view fields.
+            // semantic-model because tasks reference view fields.
             OnboardingBuildStep::App | OnboardingBuildStep::App2 => {
                 vec![SemanticLayer, AppBuilder]
             }
@@ -368,7 +368,7 @@ Understand column names, types, and cardinality."#
         let smoke_test_step = topic_step + 1;
 
         format!(
-            r#"I need a semantic layer entry for a single table in my {db_name} warehouse.
+            r#"I need a semantic model entry for a single table in my {db_name} warehouse.
 
 Your task: **create two files** — a `.view.yml` and a matching `.topic.yml` — for table `{table}` — and smoke-test the result.
 
@@ -387,7 +387,7 @@ Create `semantics/{view_name}.view.yml`. Use:
 - `table: "{table}"`
 - One primary entity, plus 3–8 dimensions and 2–4 measures that make analytical sense for this table.{foreign_entity_bullet}
 
-The full schema (entity rules, allowed dimension/measure types, `expr` requirements, naming conventions, **and the per-warehouse date-column recipes**) is in the `## Semantic layer reference` section of your system prompt — follow it exactly. Pick a primary-key dimension (id, uuid, or the most specific unique column).
+The full schema (entity rules, allowed dimension/measure types, `expr` requirements, naming conventions, **and the per-warehouse date-column recipes**) is in the `## Semantic model reference` section of your system prompt — follow it exactly. Pick a primary-key dimension (id, uuid, or the most specific unique column).
 
 **Date columns are the most common foot-gun on {db_name}.** Any column whose business meaning is a date or timestamp (`*_date`, `*_at`, `business_date`, `created`, `updated`, `event_time`) MUST be declared `type: date` (or `type: datetime`) and wrapped via the per-warehouse recipe in the reference card — not `type: number` or `type: string` over the raw column. Mismatch produces a silent `TYPE_MISMATCH` the first time the analytics agent filters on the dimension.
 
@@ -423,7 +423,7 @@ After the smoke test passes (or you've stopped after one fix attempt), STOP — 
         )
     }
 
-    // ── Phase 1 (legacy): Semantic Layer ─────────────────────────────────────
+    // ── Phase 1 (legacy): Semantic Model ─────────────────────────────────────
 
     fn build_semantic_layer_prompt(&self) -> String {
         let table_list = self.table_list();
@@ -452,11 +452,11 @@ models:
         };
 
         format!(
-            r#"I just connected a {db_name} warehouse and selected the following tables for my semantic layer:
+            r#"I just connected a {db_name} warehouse and selected the following tables for my semantic model:
 
 {table_list}
 
-Your task for this step: **inspect the tables and create the semantic layer**.
+Your task for this step: **inspect the tables and create the semantic model**.
 
 Use `write_file` for new files (the `.view.yml` / `.topic.yml` you author) and `edit_file` for targeted updates to existing files like `config.yml`.
 
@@ -473,7 +473,7 @@ Read the existing config.yml first. Then propose changes to ensure it has:
 {model_instructions}
 - A `defaults.database` pointing to `{db_name}` if not set
 
-## Step 3: Create semantic layer views
+## Step 3: Create semantic model views
 
 For each table, create a `.view.yml` file under `semantics/<view_name>.view.yml` and a matching `semantics/<view_name>.topic.yml` so the analytics agent can query it.
 
@@ -483,7 +483,7 @@ Use:
 - `table: "<fully_qualified_table_name>"` (matching one of the selected tables above)
 - One primary entity, plus dimensions and measures that make analytical sense for the table's data.
 
-The full schema (entity rules, allowed dimension/measure types, `expr` requirements, naming conventions, the matching topic shape, **and the per-warehouse date-column recipes**) is in the `## Semantic layer reference` section of your system prompt — follow it exactly. Pay particular attention to the date-column recipes: any `*_date`/`*_at` column on {db_name} that isn't already a Date type needs a wrapping cast, otherwise filters will fail at query time with `TYPE_MISMATCH`.
+The full schema (entity rules, allowed dimension/measure types, `expr` requirements, naming conventions, the matching topic shape, **and the per-warehouse date-column recipes**) is in the `## Semantic model reference` section of your system prompt — follow it exactly. Pay particular attention to the date-column recipes: any `*_date`/`*_at` column on {db_name} that isn't already a Date type needs a wrapping cast, otherwise filters will fail at query time with `TYPE_MISMATCH`.
 
 ## Step 4: Smoke-test each view
 
@@ -502,7 +502,7 @@ After all smoke tests pass (or you've stopped after one fix attempt per view), S
         let model_name = self.model_name();
 
         format!(
-            r#"The semantic layer for the {db_name} warehouse has just been created — views (`semantics/*.view.yml`) and matching topics (`semantics/*.topic.yml`).
+            r#"The semantic model for the {db_name} warehouse has just been created — views (`semantics/*.view.yml`) and matching topics (`semantics/*.topic.yml`).
 
 Your task for this step: **create the default agentic analytics agent**.
 
@@ -553,9 +553,9 @@ After the single `write_file` call, STOP — do NOT call `write_file` again for 
         let db_name = &self.warehouse_type;
 
         format!(
-            r#"The semantic layer for {db_name} has been created. Each `.view.yml` has a matching `.topic.yml`.
+            r#"The semantic model for {db_name} has been created. Each `.view.yml` has a matching `.topic.yml`.
 
-Your task: **create `apps/overview.app.yml`** — a starter dashboard powered by the semantic layer.
+Your task: **create `apps/overview.app.yml`** — a starter dashboard powered by the semantic model.
 
 This is the first artifact the user sees after onboarding, so every block must earn its place. The goal is **insight density**, not block count: a short, high-signal dashboard beats a long, generic one.
 
@@ -779,7 +779,7 @@ When you take this path:
 - Display refs for `execute_sql` task outputs are the **plain SQL aliases** — `x: entity`, `y: metric` — no double underscore. Mixing `execute_sql` aliases with `__` refs will silently break charts.
 - The `formats:` map on a table for `execute_sql` outputs uses the alias name directly (e.g. `metric: currency`).
 
-Use this fallback only for entity-labeling. Do not switch to `execute_sql` for trend, time series, or any task that the semantic layer can express. Better to ship a labeled top/bottom and a semantic trend than a fully raw-SQL dashboard.
+Use this fallback only for entity-labeling. Do not switch to `execute_sql` for trend, time series, or any task that the semantic model can express. Better to ship a labeled top/bottom and a semantic trend than a fully raw-SQL dashboard.
 
 ### Number formatting
 
@@ -816,7 +816,7 @@ After all tasks pass (or you've stopped after one fix attempt), output **only** 
         let db_name = &self.warehouse_type;
 
         format!(
-            r#"The semantic layer for {db_name} has been created, and `apps/overview.app.yml` already exists.
+            r#"The semantic model for {db_name} has been created, and `apps/overview.app.yml` already exists.
 
 Your task: **create a second dashboard that complements — and does not duplicate — the overview**. This phase only runs when the workspace has multiple topics, so you can assume at least two `.topic.yml` files exist.
 
@@ -1232,7 +1232,7 @@ mod tests {
         // The user-facing prompt only needs to nudge the agent at it.
         let prompt = ctx_with(OnboardingBuildStep::SemanticView).build_prompt();
         assert!(
-            prompt.contains("Semantic layer reference"),
+            prompt.contains("Semantic model reference"),
             "SemanticView prompt must defer to the cached semantic-layer reference card; got:\n{prompt}"
         );
     }
@@ -1724,7 +1724,7 @@ mod tests {
         // engine cannot auto-join them. The cross-topic path therefore uses
         // raw `execute_sql` with an INNER JOIN against the underlying tables —
         // NOT a combined `.topic.yml` with multiple views (which would fail
-        // semantic-layer validation with "not reachable via joins").
+        // semantic-model validation with "not reachable via joins").
         let prompt = ctx_with(OnboardingBuildStep::App2).build_prompt();
         assert!(
             prompt.contains("execute_sql")
@@ -2144,7 +2144,7 @@ mod tests {
         // does, so both branches produce schema-compliant views.
         let prompt = ctx_with(OnboardingBuildStep::SemanticLayer).build_prompt();
         assert!(
-            prompt.contains("Semantic layer reference"),
+            prompt.contains("Semantic model reference"),
             "legacy SemanticLayer prompt must defer to the cached semantic-layer reference card"
         );
         assert!(

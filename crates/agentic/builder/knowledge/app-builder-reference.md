@@ -60,7 +60,7 @@ are: `name`, `title`, `description`, `controls`, `tasks`, `display`,
 
 ## Task types
 
-### `semantic_query` — preferred when the semantic layer covers the data
+### `semantic_query` — preferred when the semantic model covers the data
 
 ```yaml
 - name: revenue_by_month

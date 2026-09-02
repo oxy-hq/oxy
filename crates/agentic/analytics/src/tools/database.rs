@@ -76,7 +76,7 @@ async fn cached_schema(
 /// Execute a **database lookup** tool (`list_tables` or `describe_table`).
 ///
 /// These tools provide lazy, on-demand access to raw database schema when the
-/// semantic layer doesn't cover the user's question.
+/// semantic model doesn't cover the user's question.
 #[tracing::instrument(
     skip(connectors, cache),
     fields(oxy.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)

@@ -15,13 +15,13 @@ note: |
 Agentic agents live in `*.agentic.yml` files. Each one is a multi-step FSM
 that turns a natural-language question into a grounded query, runs it, and
 explains the result. Reach for this format — not classic `.agent.yml` —
-when you want a chat-style agent backed by the semantic layer.
+when you want a chat-style agent backed by the semantic model.
 
 ## When to use which agent file
 
 | Need                                    | File               |
 | --------------------------------------- | ------------------ |
-| Chat over the semantic layer            | `.agentic.yml`     |
+| Chat over the semantic model            | `.agentic.yml`     |
 | One-shot tool-using agent (no FSM)      | `.agent.yml`       |
 | Deterministic multi-step pipeline       | `.automation.yml`  |
 
@@ -79,13 +79,13 @@ semantic_engine:                  # OPTIONAL — Cube/Looker delegation
 | -------------- | -------------------------------------- | --------------------------------------- |
 | `clarifying`   | Triage the question, resolve metrics   | Cheap/fast model is usually right       |
 | `specifying`   | Ground intent into a query spec        | Resolves joins                          |
-| `solving`      | Generate SQL                           | **Skipped** when semantic layer compiled the spec |
+| `solving`      | Generate SQL                           | **Skipped** when semantic model compiled the spec |
 | `executing`    | Run the query, run validators          | —                                       |
 | `interpreting` | Natural-language answer + chart        | Thinking usually disabled               |
 | `diagnosing`   | Back-edge entered when a validator fails | Internal — not directly configurable    |
 
 **Skipping & retries.** When `clarifying` produces an intent the semantic
-layer can compile directly, `solving` is dynamically skipped — never write
+model can compile directly, `solving` is dynamically skipped — never write
 `solving` `instructions:` assuming the LLM authors SQL, because it may
 never see them. When `diagnosing` re-enters an upstream state, the retry
 generates fresh from the spec; it does not anchor on the previous attempt.
@@ -181,7 +181,7 @@ defaults. Listing rules disables the unlisted ones.
 | `client_id` / `client_secret`   | —          | required   |
 
 `${VAR}` env-var interpolation is supported. A missing env var fails fast
-at startup. Omit the section entirely to use Oxy's bundled semantic layer
+at startup. Omit the section entirely to use Oxy's bundled semantic model
 (the default and most common case).
 
 ## Authoring patterns
@@ -224,7 +224,7 @@ at startup. Omit the section entirely to use Oxy's bundled semantic layer
 ```bash
 oxy validate --file path/to/your.agentic.yml   # structural parse only
 oxy validate                                   # all configs in the project
-oxy build                                      # compile semantic layer
+oxy build                                      # compile semantic model
 ```
 
 After authoring or editing an `.agentic.yml`, run `oxy validate --file …`

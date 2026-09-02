@@ -1,4 +1,4 @@
-//! `POST /api/projects/{project_id}/semantic-query` — semantic-layer
+//! `POST /api/projects/{project_id}/semantic-query` — semantic-model
 //! proxy for custom-app bundles.
 //!
 //! Bundle authors stop hand-rolling raw SQL against view-defined
@@ -226,7 +226,7 @@ pub async fn run_semantic_query(
         let mut response = err_with_code(
             StatusCode::SERVICE_UNAVAILABLE,
             format!(
-                "workspace {project_id} has no compiled semantic layer available on this \
+                "workspace {project_id} has no compiled semantic model available on this \
                  stateless replica; a (re)compile has been enqueued — retry shortly"
             ),
             "semantic_needs_recompile",

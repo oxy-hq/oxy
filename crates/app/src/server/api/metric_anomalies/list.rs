@@ -346,7 +346,7 @@ async fn count_rows(
 /// index-only rather than reading every matching row to aggregate. That index
 /// exists for this query and nothing else; it was added when the inbox started
 /// paging, because `total` runs on every list request past one page, including
-/// the Semantic Layer badge, which mounts whether or not anyone opens the
+/// the Semantic Model badge, which mounts whether or not anyone opens the
 /// inbox. Keep the expression here and the one in the index identical, or the
 /// planner quietly falls back to the heap scan.
 async fn count_events(

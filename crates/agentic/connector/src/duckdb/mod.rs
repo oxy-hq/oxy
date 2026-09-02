@@ -232,7 +232,7 @@ impl DuckDbConnector {
                 .map_err(|e| ConnectorError::query_failed(create_sql.clone(), e.to_string()))?;
 
             // Also expose the file under its full name (e.g. `oxymart.csv`) so
-            // semantic-layer views that declare `table: "oxymart.csv"` resolve
+            // semantic-model views that declare `table: "oxymart.csv"` resolve
             // without falling through to DuckDB's file-replacement scan, which
             // does not honor `file_search_path` for quoted identifiers.
             if let Some(full) = full_name.as_deref()
@@ -245,7 +245,7 @@ impl DuckDbConnector {
             }
 
             // Also register a schema-qualified alias `"<stem>"."<ext>"`. The
-            // semantic-layer compiler renders `table: stores.parquet` as an
+            // semantic-model compiler renders `table: stores.parquet` as an
             // UNQUOTED `FROM stores.parquet`, which DuckDB parses as
             // schema.table; the single-identifier alias above only matches the
             // quoted form, so the unquoted reference otherwise depends on the

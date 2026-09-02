@@ -536,7 +536,7 @@ mod tests {
 
     #[test]
     fn back_to_back_placeholders_share_a_single_newline_boundary() {
-        // Real-world flow from semantic-layer agents: multiple
+        // Real-world flow from semantic-model agents: multiple
         // semantic_query tool calls arrive nearly back-to-back in the
         // same answer, separated only by a `\n` between fences. The
         // placeholder must not pad with `\n\n` on each side, or the

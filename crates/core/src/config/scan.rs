@@ -96,7 +96,7 @@ pub async fn scan_dir<S: DiskSlot>(
         // On a node that has none, that reasoning inverts. Zero semantic rows
         // in the promoted revision IS the whole answer, so an empty scan dir
         // states it rather than overstating it. Erroring here instead made a
-        // legitimate workspace — compiled, promoted, no semantic layer yet — a
+        // legitimate workspace — compiled, promoted, no semantic model yet — a
         // permanently retryable 503 on every replica: neither input changes on
         // a retry, so the caller polls forever.
         return scan_dir_for_empty_revision(config_manager);
@@ -399,7 +399,7 @@ pub struct MaterialisedContext {
 }
 
 /// Max distinct `(workspace, revision)` contexts a process keeps materialised.
-/// Each entry pins a tempdir (the full semantic layer + automations + verified
+/// Each entry pins a tempdir (the full semantic model + automations + verified
 /// SQL) on local disk for as long as it's cached, so an UNBOUNDED map would
 /// grow one tempdir per distinct workspace the process ever served — monotonic
 /// `/tmp` + inode pressure until restart. That bites hardest on a long-lived
@@ -595,7 +595,7 @@ async fn write_context_artifacts(
         .collect();
 
     // Resolve each body (possibly an S3 GET for blob-keyed rows) + write it
-    // concurrently, bounded so a large semantic layer can't open unbounded S3
+    // concurrently, bounded so a large semantic model can't open unbounded S3
     // connections at once. Doing this serially would add every row's blob-fetch
     // latency to the run's startup; in-row JSONB rows resolve without any S3.
     const MAX_CONCURRENT: usize = 16;

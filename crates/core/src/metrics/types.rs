@@ -7,9 +7,9 @@ use utoipa::ToSchema;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricType {
-    /// A measure from the semantic layer (e.g., total_revenue, order_count)
+    /// A measure from the semantic model (e.g., total_revenue, order_count)
     Measure,
-    /// A dimension from the semantic layer (e.g., customer_segment, order_date)
+    /// A dimension from the semantic model (e.g., customer_segment, order_date)
     Dimension,
     /// Extracted via LLM from question/response/SQL
     Extracted,
@@ -107,7 +107,7 @@ pub struct ContextItem {
 /// Semantic context item grouping measures and dimensions by topic
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticContextItem {
-    /// Topic reference from semantic layer
+    /// Topic reference from semantic model
     pub topic: Option<String>,
     /// Measures for this topic
     #[serde(skip_serializing_if = "Vec::is_empty", default)]

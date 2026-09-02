@@ -1,6 +1,6 @@
 //! The one door to a compiled [`airlayer::SemanticEngine`].
 //!
-//! Building an engine revalidates the whole semantic layer and rebuilds the
+//! Building an engine revalidates the whole semantic model and rebuilds the
 //! join graph. That cost is worth paying once per workspace, not once per
 //! request — but before this module every surface transcribed its own
 //! `spawn_blocking` → build → compile → drop dance, and only one of them went

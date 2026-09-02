@@ -554,7 +554,7 @@ impl AnalyticsSolver {
                 };
 
                 // The rollup tier is `semantic_query_preagg`; a fallback is an
-                // ordinary semantic-layer warehouse query, and is badged as one.
+                // ordinary semantic-model warehouse query, and is badged as one.
                 let (execution_type, is_verified) = if served_from_rollup {
                     ("semantic_query_preagg", true)
                 } else {
@@ -737,7 +737,7 @@ impl AnalyticsSolver {
                     reason: format!(
                         "vendor engine `{name}` produces no portable SQL; \
                          remove `output: {{ mode: sql }}` or switch the agent's \
-                         context to a semantic-layer or LLM-driven source"
+                         context to a semantic-model or LLM-driven source"
                     ),
                 };
             }

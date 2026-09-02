@@ -199,7 +199,7 @@ pub trait ProjectContext: Send + Sync {
 
     /// Optional runner powering the analytics agent's metric-tree tools
     /// (`explain`, `opportunity`, `sensitivity`, `predict`). When `None`
-    /// those tools are not exposed to the LLM. Hosts with a semantic layer
+    /// those tools are not exposed to the LLM. Hosts with a semantic model
     /// + connector pool return a runner that loads the layer and executes
     /// airlayer-compiled SQL through their connectors.
     fn metric_tree_runner(&self) -> Option<Arc<dyn MetricTreeRunner>> {

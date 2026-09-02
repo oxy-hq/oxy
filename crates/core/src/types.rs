@@ -200,9 +200,9 @@ pub struct SemanticQueryParams {
     pub limit: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<u64>,
-    /// Variables for semantic layer expressions (e.g. table names, column names, filters)
+    /// Variables for semantic model expressions (e.g. table names, column names, filters)
     #[schemars(
-        description = "Variables to resolve in semantic layer expressions. Use {{variables.variable_name}} syntax in semantic definitions."
+        description = "Variables to resolve in semantic model expressions. Use {{variables.variable_name}} syntax in semantic definitions."
     )]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub variables: Option<HashMap<String, Value>>,

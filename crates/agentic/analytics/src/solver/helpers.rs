@@ -113,7 +113,7 @@ pub fn lookup_connector<'a>(
 /// Resolve the connector a solution should execute against.
 ///
 /// `connector_name` is where the routing decision already landed: for a
-/// semantic-layer solution it is the `datasource:` of the topic's views, and
+/// semantic-model solution it is the `datasource:` of the topic's views, and
 /// running that SQL anywhere else is not a degraded answer, it is a wrong one.
 /// A view built for DuckDB whose connector failed to build will happily compile
 /// and "succeed" against a ClickHouse default, either erroring on an unknown

@@ -1,4 +1,4 @@
-//! Pre-aggregation surface for the IDE's Semantic Layer tab.
+//! Pre-aggregation surface for the IDE's Semantic Model tab.
 //!
 //! - `GET  /semantic/preagg-status`  — every rollup the layer DECLARES, joined
 //!   with what this node's airlayer cache holds for each.
@@ -26,7 +26,7 @@ use crate::server::api::semantic::{ErrorResponse, resolve_query_scan_source, sem
 
 // ── Preagg status ─────────────────────────────────────────────────────────────
 //
-// The list of rollups comes from the SEMANTIC LAYER CONFIG (`pre_aggregations:`
+// The list of rollups comes from the SEMANTIC MODEL CONFIG (`pre_aggregations:`
 // in each `.view.yml`), never from the cache. Reading it off the manifest — the
 // shape this started as — made the tab a view of what happened to be built,
 // which is exactly backwards: a workspace that declares twelve rollups and has
@@ -106,7 +106,7 @@ pub struct PreaggRollupStatus {
 
 #[derive(Serialize)]
 pub struct PreaggStatusResponse {
-    /// Every rollup the semantic layer declares, cached or not. Empty means the
+    /// Every rollup the semantic model declares, cached or not. Empty means the
     /// workspace declares none — it is a statement about config, so a caller may
     /// render it as one.
     pub rollups: Vec<PreaggRollupStatus>,
@@ -415,7 +415,7 @@ pub(crate) fn declared_rollups(
 
 /// `GET /{workspace_id}/semantic/preagg-status`
 ///
-/// Every rollup declared in the semantic layer, joined with what the local
+/// Every rollup declared in the semantic model, joined with what the local
 /// airlayer cache holds for it. Timestamps go out RFC3339 UTC (see
 /// `normalize_manifest_timestamp`).
 ///
@@ -443,7 +443,7 @@ pub async fn get_preagg_status(
         .map_err(|e| {
             semantic_err(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to load semantic layer: {e}"),
+                format!("Failed to load semantic model: {e}"),
             )
         })?;
 
@@ -988,7 +988,7 @@ pub async fn rebuild_preagg(
         .map_err(|e| {
             semantic_err(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to load semantic layer: {e}"),
+                format!("Failed to load semantic model: {e}"),
             )
         })?;
     let declared = declared_rollups(&layer, &HashMap::new(), &HashMap::new());

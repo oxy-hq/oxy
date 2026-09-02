@@ -2,7 +2,7 @@
 
 React SDK for building **custom-app bundles** on the [Oxy](https://oxygen-hq.com)
 platform. A bundle is a normal Vite + React app that reads from its linked oxy
-project — raw SQL, the semantic layer, agents, and procedures — through a
+project — raw SQL, the semantic model, agents, and procedures — through a
 small set of hooks, plus a couple of drop-in components.
 
 > **v2 is a complete rewrite.** The v1 stack (`OxyClient` / `OxySDK`, the
@@ -80,7 +80,7 @@ couldn't already read.
 | --- | --- |
 | `OxyAppProvider` | Resolves identity, provides it via context. `fallback` renders while loading; `errorFallback` gets a structured error report. |
 | `useQuery({ sql })` | Inline SQL → rows. `SELECT`/`WITH` only, 10k-row cap. |
-| `useSemanticQuery({ topic, dimensions, measures, … })` | Semantic-layer query compiled by airlayer. |
+| `useSemanticQuery({ topic, dimensions, measures, … })` | Semantic-model query compiled by airlayer. |
 | `useAgentRun({ agentId })` | `.ask(question)` starts an analytics agent run; streams events over SSE; `.cancel()`. |
 | `useProcedureRun({ procedureId })` | Start a long-running procedure, poll, cancel (beta). |
 | `useFunction(name)` | `.invoke(body?)` runs a server-side **Oxy Function** (`functions/<name>.ts`) on oxy's isolate runtime; returns its JSON `Response`. For work the browser shouldn't do — warehouse writes, ELT, external APIs. |

@@ -12,7 +12,7 @@
 //! 3. **Semantic + Schema** — [`SemanticCatalog`] with both layers; semantic takes
 //!    priority; `try_compile` delegates to semantic.
 //!
-//! 4. **Edge cases** — empty schema with semantic layer still works; metric in
+//! 4. **Edge cases** — empty schema with semantic model still works; metric in
 //!    both layers — semantic wins.
 
 use agentic_analytics::{
@@ -574,7 +574,7 @@ fn hybrid_list_metrics_semantic_takes_priority() {
         !sem_metrics.is_empty(),
         "semantic 'revenue' measure must appear"
     );
-    // The description should come from the semantic layer (mentions "sum" or "revenue")
+    // The description should come from the semantic model (mentions "sum" or "revenue")
     assert!(
         sem_metrics[0].description.to_lowercase().contains("sum")
             || sem_metrics[0]
@@ -649,7 +649,7 @@ fn hybrid_get_context_merges_semantic_and_schema() {
     let cat = hybrid_full();
     let i = intent(&["revenue"], &["region"]);
     let ctx = cat.get_context(&i);
-    // Metric defs come from semantic layer
+    // Metric defs come from semantic model
     assert!(!ctx.metric_definitions.is_empty());
     assert!(
         ctx.metric_definitions
@@ -1371,7 +1371,7 @@ fn fuzzy_search_works_on_schema_catalog() {
     );
 }
 
-// 8. Real-world semantic layer validation (examples)
+// 8. Real-world semantic model validation (examples)
 
 #[test]
 fn demo_project_semantic_layer_loads_and_compiles() {
@@ -1396,7 +1396,7 @@ fn demo_project_semantic_layer_loads_and_compiles() {
         oxy_airlayer_compat::Dialect::DuckDB,
     );
     let cat =
-        SemanticCatalog::load_files(&paths, dialects).expect("examples semantic layer should load");
+        SemanticCatalog::load_files(&paths, dialects).expect("examples semantic model should load");
 
     let metrics = cat.list_metrics("");
     assert!(
@@ -1476,7 +1476,7 @@ fn qualify_names_resolves_llm_raw_column_names() {
     );
 }
 
-// 9. Semantic layer → try_compile end-to-end (reproduces runtime path)
+// 9. Semantic model → try_compile end-to-end (reproduces runtime path)
 
 /// Cardio view matching the real examples/semantics/cardio.view.yml.
 fn cardio_view_yaml() -> &'static str {
@@ -1509,7 +1509,7 @@ measures:
 }
 
 /// Reproduce the exact runtime scenario: Clarify outputs correct semantic names,
-/// then try_compile via HybridCatalog should use the semantic layer path.
+/// then try_compile via HybridCatalog should use the semantic model path.
 #[test]
 fn semantic_layer_cardio_max_heart_rate_compiles() {
     // 1. Build SemanticCatalog from cardio view (same as runtime)
@@ -1540,7 +1540,7 @@ fn hybrid_catalog_cardio_semantic_layer_path() {
     let result = hybrid.try_compile(&i);
     assert!(
         result.is_ok(),
-        "HybridCatalog.try_compile should succeed via semantic layer: {result:?}"
+        "HybridCatalog.try_compile should succeed via semantic model: {result:?}"
     );
     let sql = result.unwrap();
     eprintln!("HybridCatalog SQL:\n{sql}");
@@ -1579,7 +1579,7 @@ fn hybrid_catalog_cardio_with_schema_semantic_wins() {
     let result = hybrid.try_compile(&i);
     assert!(
         result.is_ok(),
-        "HybridCatalog with schema should still use semantic layer: {result:?}"
+        "HybridCatalog with schema should still use semantic model: {result:?}"
     );
     let sql = result.unwrap();
     eprintln!("HybridCatalog+Schema SQL:\n{sql}");

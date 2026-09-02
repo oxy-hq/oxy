@@ -2249,7 +2249,7 @@ async fn sql_gen_mode_disabled_is_passthrough() {
     assert!(matches!(outcome, super::executing::SqlGenOutcome::Disabled));
 }
 
-/// Semantic-layer solutions are pre-validated — SQL-gen mode terminates
+/// Semantic-model solutions are pre-validated — SQL-gen mode terminates
 /// without running execute or the LIMIT-0 smoke check.
 #[tokio::test]
 async fn sql_gen_mode_semantic_layer_terminates_directly() {

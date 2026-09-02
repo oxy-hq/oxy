@@ -1,6 +1,6 @@
 [package]
 name = "oxy-metric-monitoring"
-description = "Time-series anomaly detection over the semantic-layer metric tree"
+description = "Time-series anomaly detection over the semantic-model metric tree"
 version.workspace = true
 documentation.workspace = true
 publish.workspace = true

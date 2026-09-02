@@ -512,7 +512,7 @@ export function useFunction<Data = unknown>(name: string): UseFunctionResult<Dat
 
 // ── useSemanticQuery ────────────────────────────────────────────────────────
 //
-// Bundles reference the project's semantic layer by topic + dimensions
+// Bundles reference the project's semantic model by topic + dimensions
 // + measures + filters. The server compiles to dialect-specific SQL via
 // airlayer and executes through the same connector path as useQuery —
 // when the data team refactors the SQL behind a measure, the bundle
@@ -579,7 +579,7 @@ export interface UseSemanticQueryResult<Row = Record<string, unknown>> {
 }
 
 /**
- * Run a semantic-layer query against the project's `.view.yml` /
+ * Run a semantic-model query against the project's `.view.yml` /
  * `.topic.yml` definitions. The server compiles to SQL and executes
  * through the same connector path as `useQuery`, so result shape
  * matches.

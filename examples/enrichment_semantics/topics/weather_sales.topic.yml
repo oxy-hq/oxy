@@ -6,7 +6,7 @@ description: >
   real Open-Meteo weather (rain, temperature) and location attributes, so you
   can ask how weather affects sales, channel mix, and which locations are most
   weather-sensitive. Group sales measures by weather dimensions (rain_flag,
-  temp_bucket) — the semantic layer joins sales_daily, weather_daily and
+  temp_bucket) — the semantic model joins sales_daily, weather_daily and
   location automatically on location + date.
 views:
   - sales_daily

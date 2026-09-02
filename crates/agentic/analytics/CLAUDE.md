@@ -15,11 +15,11 @@ Clarifying → Specifying → Solving → Executing → Interpreting → Done
 | ------- | ------------- | ---------------- |
 | Clarifying | Triage question type, resolve metrics/dimensions | `search_catalog`, `search_automations`, `ask_user` |
 | Specifying | Ground intent into query spec, resolve joins | `get_valid_dimensions`, `get_column_range` |
-| Solving | Generate SQL (semantic layer or LLM) | `explain_plan`, `dry_run` |
+| Solving | Generate SQL (semantic model or LLM) | `explain_plan`, `dry_run` |
 | Executing | Run SQL against connector, validate results | — |
 | Interpreting | Convert results to natural language + charts | `render_chart` |
 
-**Semantic shortcut:** If the semantic layer can compile the query directly in Clarifying, Specifying and Solving are skipped.
+**Semantic shortcut:** If the semantic model can compile the query directly in Clarifying, Specifying and Solving are skipped.
 
 ## Extension Table
 

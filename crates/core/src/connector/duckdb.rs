@@ -170,7 +170,7 @@ pub fn build_s3_mirror_sql(mirror: &DuckDbS3Mirror) -> Vec<String> {
             "CREATE OR REPLACE VIEW {} AS SELECT * FROM {source}",
             quote_sql_identifier(&table.table),
         ));
-        // 2) Filename-qualified view. The semantic layer references the table by
+        // 2) Filename-qualified view. The semantic model references the table by
         //    its source filename (`table: "oxymart.csv"`); in local mode that
         //    resolves through DuckDB's `file_search_path` replacement scan, which
         //    the stateless fleet has no equivalent for. DuckDB parses
@@ -363,7 +363,7 @@ fn init_local_db(
             .map_err(|err| connector_internal_error(CREATE_TEMP_TABLE, &err))?;
 
         // Also expose the table under the full filename (e.g. "climbing.csv")
-        // so semantic-layer views that declare `table: "climbing.csv"` resolve
+        // so semantic-model views that declare `table: "climbing.csv"` resolve
         // against the in-memory table instead of triggering a per-query file
         // scan — which reads the CSV from disk every time.
         if let Some(full_name) = path.file_name().and_then(|n| n.to_str()) {
@@ -379,7 +379,7 @@ fn init_local_db(
         }
 
         // Also register a schema-qualified alias `"<stem>"."<ext>"`. The
-        // semantic-layer compiler renders `table: stores.parquet` as an
+        // semantic-model compiler renders `table: stores.parquet` as an
         // UNQUOTED `FROM stores.parquet`, which DuckDB parses as schema.table.
         // The single-identifier alias above ("stores.parquet") only matches the
         // quoted form, so the unquoted reference falls back to DuckDB's file-
@@ -690,7 +690,7 @@ mod tests {
 
     #[test]
     fn init_local_db_registers_schema_qualified_alias_for_unquoted_reference() {
-        // The semantic-layer compiler renders `table: stores.parquet` /
+        // The semantic-model compiler renders `table: stores.parquet` /
         // `table: orders.csv` as an UNQUOTED `FROM stores.parquet` — which
         // DuckDB parses as schema.table. Without a matching catalog object this
         // falls back to the file-replacement scan, whose resolution of the
@@ -777,7 +777,7 @@ mod tests {
         assert!(sql.iter().any(|s| s.contains("CREATE OR REPLACE VIEW")
             && s.contains("events")
             && s.contains("read_csv_auto('s3://my-bucket/ws/duckdb/events.csv')")));
-        // Filename-qualified views so the semantic layer's `FROM orders.parquet`
+        // Filename-qualified views so the semantic model's `FROM orders.parquet`
         // / `FROM events.csv` (which DuckDB parses as schema.table) resolve to the
         // mirrored data — local mode gets this from file_search_path; the fleet
         // can't, so register `"<stem>"."<ext>"` explicitly.

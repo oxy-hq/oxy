@@ -2,7 +2,7 @@
 //! measures get anomaly-monitored.
 //!
 //! A single workspace's monitor config is a list of [`MonitorEntry`], each
-//! pointing at a measure + time-dimension + granularity in the semantic layer.
+//! pointing at a measure + time-dimension + granularity in the semantic model.
 //! Decoupled from airlayer's `Measure` schema so we don't have to land an
 //! upstream PR for an experimental field.
 //!
@@ -142,7 +142,7 @@ impl MonitorFilter {
 #[serde(deny_unknown_fields)]
 pub struct MonitorEntry {
     /// Fully qualified measure id, e.g. `"orders.revenue"`. Must exist in
-    /// the workspace's semantic layer at scan time.
+    /// the workspace's semantic model at scan time.
     pub measure: String,
     /// Fully qualified time-dimension id used to bucket the series.
     pub time_dimension: String,

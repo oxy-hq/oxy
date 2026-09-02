@@ -21,7 +21,7 @@ export function useWorldModel() {
     queryFn: () => WorldModelService.getWorldModel(projectId, branchName),
     staleTime: 5 * 60 * 1000,
     retry: false,
-    // Harden against a partial response (e.g. a workspace whose semantic layer
+    // Harden against a partial response (e.g. a workspace whose semantic model
     // has no relationships, where `edges` comes back null/absent): the graph
     // iterates `entities`/`edges`, so default them to arrays rather than
     // crashing with "model.edges is not iterable".

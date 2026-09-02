@@ -174,7 +174,7 @@ pub(super) fn build_workspace_routes(
         // at that seam, since `route_ide` cannot reach across the crate line.
         .route_fleet("/sql/{pathb64}", post(data::execute_sql))
         .route_fleet("/sql/query", post(data::execute_sql_query))
-        // Semantic-layer endpoints the IDE uses. The legacy `/semantic`
+        // Semantic-model endpoints the IDE uses. The legacy `/semantic`
         // execute route was retired alongside `oxy-workflow`; execution
         // now flows through the agentic pipeline. Compile + the
         // read-only file handlers stay here so the IDE's topic / view
@@ -197,7 +197,7 @@ pub(super) fn build_workspace_routes(
         .route_fleet("/semantic/preagg-rebuild", post(preagg::rebuild_preagg))
         .route_fleet("/semantic/compile", post(semantic::compile_semantic_query))
         .route_fleet("/semantic", post(semantic::execute_semantic_query))
-        // Metric tree — structure + pure analysis ops over the semantic layer.
+        // Metric tree — structure + pure analysis ops over the semantic model.
         // FleetOk on every route: the scan root resolves through the compile
         // boundary first (`semantic::resolve_query_scan_source`), working copy
         // second, and warehouse execution needs only config + secrets — so a
@@ -558,7 +558,7 @@ fn build_metric_anomaly_routes(
     RoleRouter::new(app_state.clone())
         .route_fleet("/", get(metric_anomalies::list_anomalies))
         // See the mirror of these two in `build_external_workspace_routes`:
-        // the runner reads the semantic layer off the workspace root, so
+        // the runner reads the semantic model off the workspace root, so
         // FleetOk was a promise a replica could not keep.
         .route_ide("/scan", post(metric_anomalies::run_scan))
         // Static `/status` (bulk) and `/{anomaly_id}/status` (single) differ in

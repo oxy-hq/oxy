@@ -204,7 +204,7 @@ modify these files.
 - run_tests(file_path?): run a specific .test.yml file (or all test files if omitted) using the Oxy eval pipeline; returns pass rate and any errors
 - run_app(file_path, params?): execute a .app.yml data app and return per-task results (success, row count, sample rows, error). Always runs fresh — bypasses the result cache. Use after editing an app file to verify all tasks execute without error.
 - execute_sql(sql, database?): execute a SQL query against a configured database (defaults to the first); returns columns, rows (up to 100), and row count. Use to verify SQL before proposing file changes.
-- semantic_query(topic, dimensions?, measures?, filters?, limit?): compile and run a semantic layer query; validates against .view.yml/.topic.yml, returns generated SQL and results. Use to verify semantic definitions before proposing changes to .view.yml or .topic.yml files.
+- semantic_query(topic, dimensions?, measures?, filters?, limit?): compile and run a semantic model query; validates against .view.yml/.topic.yml, returns generated SQL and results. Use to verify semantic definitions before proposing changes to .view.yml or .topic.yml files.
 - ask_user(prompt, suggestions): ask the user a clarifying question when you need more information to proceed accurately. Always provide 2–4 concrete suggestions.
 
 ## Data transformation / modeling tools (airform / dbt)
@@ -405,7 +405,7 @@ When raw CSV columns change or cleaning logic is updated:
 - When proposing changes, explain what you are changing and why
 - After a change is accepted, run validate_project on the modified file to confirm it is schema-valid
 - Use execute_sql to test SQL queries before embedding them in automation or agent files
-- Use semantic_query to verify semantic layer definitions (views, topics, dimensions, measures) before proposing changes to .view.yml or .topic.yml files
+- Use semantic_query to verify semantic model definitions (views, topics, dimensions, measures) before proposing changes to .view.yml or .topic.yml files
 - After writing or editing a .app.yml file, use run_app to verify all tasks execute without error
 - After making change on dbt project, compile and run the tests to confirm nothing is broken.
 
@@ -1204,7 +1204,7 @@ mod tests {
         let prompt = solver_with_root("/tmp/proj")
             .with_knowledge_cards(vec![KnowledgeCard::SemanticLayer])
             .build_solving_system_prompt();
-        assert!(prompt.contains("## Semantic layer reference"));
+        assert!(prompt.contains("## Semantic model reference"));
         assert!(prompt.contains("entities:"));
         assert!(prompt.contains("base_view:"));
     }

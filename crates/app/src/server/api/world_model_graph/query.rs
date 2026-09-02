@@ -15,7 +15,7 @@ use crate::server::api::data::{build_connector, run_with_connector};
 use super::types::*;
 use oxy::config::WorkingCopy;
 
-/// Load the semantic layer and build its promotion closure — the preamble the
+/// Load the semantic model and build its promotion closure — the preamble the
 /// world-model handlers otherwise repeat verbatim (`semantics_scan_path →
 /// get_or_load → Promotions::build`). Returns the transport error tuple ready to
 /// `?`-propagate from a handler so the load path lives in one place.

@@ -22,7 +22,7 @@ export const ContextGlobForm: React.FC = () => {
       </div>
 
       <p className='text-muted-foreground text-sm'>
-        Glob patterns pointing to semantic layer files, automations, and SQL examples injected as
+        Glob patterns pointing to semantic model files, automations, and SQL examples injected as
         LLM context.
       </p>
 

@@ -3,7 +3,7 @@
 # SQL-generation via an *analytics* `.agentic.yml` agent.
 #
 # Mirrors the `sql-gen-cache-demo.automation.yml` shape but routes
-# through the analytics FSM (semantic-layer aware, verified-query
+# through the analytics FSM (semantic-model aware, verified-query
 # aware) instead of the builder agent.
 #
 # What's different from the builder demo:
@@ -14,7 +14,7 @@
 #   - `output: { mode: sql }` swaps the terminal contract: the FSM
 #     terminates after producing SQL (skipping the natural-language
 #     interpretation stage) so the SQL text becomes the run's answer.
-#   - Pre-validated SQL writers — semantic-layer compile + verified
+#   - Pre-validated SQL writers — semantic-model compile + verified
 #     `.sql` matches — skip the executing stage entirely. LLM-generated
 #     SQL gets a `LIMIT 0` smoke check before terminating.
 #
@@ -29,7 +29,7 @@
 
 name: analytics_sql_gen_demo
 description: |
-  Generate a SQL query with the analytics agent (semantic-layer aware),
+  Generate a SQL query with the analytics agent (semantic-model aware),
   cache it to disk, then execute it. Re-running picks up any manual
   edits to the cached SQL file.
 

@@ -151,7 +151,7 @@ pub fn propose_semantic_query_tool() -> ToolDef {
 
 /// Tools available during the **clarifying** state.
 ///
-/// When `has_semantic` is `true` the semantic layer covers the data model and
+/// When `has_semantic` is `true` the semantic model covers the data model and
 /// raw database introspection tools (`list_tables`, `describe_table`) are
 /// excluded to avoid confusing the LLM with two competing schema views.
 pub fn clarifying_tools(has_semantic: bool, has_metric_tree: bool) -> Vec<ToolDef> {
@@ -265,11 +265,11 @@ pub fn specifying_tools(has_semantic: bool, has_metric_tree: bool) -> Vec<ToolDe
     if has_semantic {
         // Freshness targets resolve through semantic views (watermark
         // dimension + meta contract), so the tool is only offered when a
-        // semantic layer is present.
+        // semantic model is present.
         tools.push(check_data_freshness_tool_def());
     }
     if !has_semantic {
-        // Without a semantic layer, the LLM needs manual join discovery and
+        // Without a semantic model, the LLM needs manual join discovery and
         // raw schema introspection tools.
         tools.push(ToolDef {
             name: "get_join_path",
@@ -302,7 +302,7 @@ pub fn specifying_tools(has_semantic: bool, has_metric_tree: bool) -> Vec<ToolDe
 
 /// Tool definition for `check_data_freshness`.
 ///
-/// Offered in the **specifying** state when a semantic layer is present.
+/// Offered in the **specifying** state when a semantic model is present.
 /// The executor lives in [`super::specifying`]; targets resolve via
 /// [`crate::catalog::Catalog::resolve_freshness_target`].
 pub fn check_data_freshness_tool_def() -> ToolDef {
@@ -475,7 +475,7 @@ pub(super) fn list_tables_tool_def() -> ToolDef {
     ToolDef {
         name: "list_tables",
         description: "List all tables available in the connected database(s). \
-                      Use this when the semantic layer doesn't cover the data \
+                      Use this when the semantic model doesn't cover the data \
                       the user is asking about. Returns {tables: [{name, database}]}.",
         parameters: json!({
             "type": "object",
@@ -494,7 +494,7 @@ pub(super) fn list_tables_tool_def() -> ToolDef {
 
 // ── Metric-tree tools ────────────────────────────────────────────────────────
 //
-// Surfaced when the workspace has a semantic layer AND a
+// Surfaced when the workspace has a semantic model AND a
 // `MetricTreeRunner` is wired in. The four tools cover the airlayer
 // metric-tree op surface:
 //
@@ -546,7 +546,7 @@ const PREDICT_IMPACT_DESC: &str = "Propagate hypothetical changes through the me
 
 /// `ToolDef`s for the four metric-tree analysis tools.
 ///
-/// Returned only when both a semantic layer and a `MetricTreeRunner`
+/// Returned only when both a semantic model and a `MetricTreeRunner`
 /// are present. The caller (`specifying_tools` / `clarifying_tools`)
 /// concatenates these into the per-state tool list.
 pub fn metric_tree_tools() -> Vec<ToolDef> {
@@ -696,7 +696,7 @@ pub(super) fn describe_table_tool_def() -> ToolDef {
     ToolDef {
         name: "describe_table",
         description: "Get column names, data types, and sample values for a database table. \
-                      Use this to understand table structure when the semantic layer doesn't \
+                      Use this to understand table structure when the semantic model doesn't \
                       have the information needed. \
                       Returns {table, columns: [{name, data_type, sample_values}]}.",
         parameters: json!({
@@ -729,7 +729,7 @@ pub fn anomaly_tools() -> Vec<ToolDef> {
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "measure": { "type": "string", "description": "Measure name from the semantic layer" },
+                    "measure": { "type": "string", "description": "Measure name from the semantic model" },
                     "time_dimension": { "type": "string", "description": "Time dimension field" },
                     "granularity": {
                         "type": "string",
@@ -746,13 +746,13 @@ pub fn anomaly_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "detect_anomalies",
-            description: "Fetch time-series data from the semantic layer and run anomaly \
+            description: "Fetch time-series data from the semantic model and run anomaly \
                           detection. Use when the inbox is empty or when the user asks \
                           about a period not yet scanned. Results are persisted to the inbox.",
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "measure": { "type": "string", "description": "Measure name from the semantic layer" },
+                    "measure": { "type": "string", "description": "Measure name from the semantic model" },
                     "time_dimension": { "type": "string", "description": "Time dimension field" },
                     "granularity": {
                         "type": "string",

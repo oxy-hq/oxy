@@ -37,7 +37,7 @@ pub enum SemanticCompilationResult {
     },
 }
 
-/// Compiles semantic layer queries to SQL.
+/// Compiles semantic model queries to SQL.
 ///
 /// The builder domain uses this trait instead of depending on `oxy-workflow`
 /// and `oxy-semantic` directly. The pipeline layer supplies the implementation

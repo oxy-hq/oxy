@@ -156,7 +156,7 @@ impl QueryRequestItem {
     }
 }
 
-/// Every operator the semantic layer understands, for the message a rejection
+/// Every operator the semantic model understands, for the message a rejection
 /// shows the model. Same order as [`parse_filter_operator`].
 pub const FILTER_OPERATORS: &[&str] = &[
     "equals",
@@ -181,7 +181,7 @@ pub const FILTER_OPERATORS: &[&str] = &[
     "afterOrOnDate",
 ];
 
-/// Whether the semantic layer can compile this operator.
+/// Whether the semantic model can compile this operator.
 ///
 /// Used to REJECT a proposed query before it runs — see the note on
 /// [`parse_filter_operator`] for why an unknown operator must not be guessed at.
@@ -216,7 +216,7 @@ pub fn filter_problem(operator: &str, values: &[String]) -> Option<String> {
     }
 }
 
-/// Everything about `item` the semantic layer cannot compile, as messages for
+/// Everything about `item` the semantic model cannot compile, as messages for
 /// the model.
 ///
 /// **One function, because there are two producers of a `QueryRequestItem` and

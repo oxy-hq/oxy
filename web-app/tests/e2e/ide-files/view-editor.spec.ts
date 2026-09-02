@@ -13,7 +13,7 @@ test.describe("IDE Files - View Editor - Explorer Mode Fields Panel", () => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -40,7 +40,7 @@ test.describe("IDE Files - View Editor - Explorer Mode Fields Panel", () => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -66,7 +66,7 @@ test.describe("IDE Files - View Editor - Explorer Mode Fields Panel", () => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -92,7 +92,7 @@ test.describe("IDE Files - View Editor - Explorer Mode Fields Panel", () => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -125,7 +125,7 @@ test.describe("IDE Files - View Editor - Query Panel", () => {
 
   // 9.12-9.21 Query panel functionality
   test("9.12 - should add filter condition", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -150,7 +150,7 @@ test.describe("IDE Files - View Editor - Query Panel", () => {
 
   // 9.16 Add ORDER BY
   test("9.16 - should add sort order", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -184,7 +184,7 @@ test.describe("IDE Files - View Editor - SQL & Execution", () => {
 
   // 9.22-9.30 SQL generation and execution
   test("9.22 - should generate SQL when fields are selected", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -212,7 +212,7 @@ test.describe("IDE Files - View Editor - SQL & Execution", () => {
 
   // 9.25 Execute query
   test("9.25 - should display results when query is executed", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -243,7 +243,7 @@ test.describe("IDE Files - View Editor - SQL & Execution", () => {
 
   // 9.27 Query returns 0 rows
   test("9.27 - should show no results message for empty query", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -268,7 +268,7 @@ test.describe("IDE Files - View Editor - SQL & Execution", () => {
   });
 
   test("9.30 - should toggle SQL panel visibility", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -307,7 +307,7 @@ test.describe("IDE Files - View Editor - Loading Errors", () => {
       });
     });
 
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);
@@ -325,7 +325,7 @@ test.describe("IDE Files - View Editor - Loading Errors", () => {
   });
 
   test("9.33 - should show loading state while fetching view data", async ({ page }) => {
-    const semanticSection = page.getByText("Semantic Layer");
+    const semanticSection = page.getByText("Semantic Model");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
       await page.waitForTimeout(300);

@@ -36,7 +36,7 @@ const STARTER_SQL = `
   UNION ALL SELECT 'shipments', 902
 `;
 
-// A topic from your project's semantic layer (a `.topic.yml` file), plus one
+// A topic from your project's semantic model (a `.topic.yml` file), plus one
 // dimension and one measure it exposes. Member paths are `topic.member`. The
 // panel below explains itself until these point at something real.
 const TOPIC = "your_topic";
@@ -171,7 +171,7 @@ function StarterQueryPanel({ query }: { query: ReturnType<typeof useQuery<Starte
   );
 }
 
-// ── useSemanticQuery · the semantic layer ───────────────────────────────────
+// ── useSemanticQuery · the semantic model ───────────────────────────────────
 //
 // The same shape as useQuery, but the measures come from your `.view.yml` /
 // `.topic.yml` files instead of SQL in this file. When the data team refactors
@@ -192,7 +192,7 @@ function SemanticPanel() {
 
   return (
     <Panel
-      title='Semantic layer · useSemanticQuery'
+      title='Semantic model · useSemanticQuery'
       right={
         <span className='font-mono text-[10px] normal-case'>
           {unconfigured ? <Pill variant='warn'>NOT SET UP</Pill> : `topic: ${TOPIC}`}

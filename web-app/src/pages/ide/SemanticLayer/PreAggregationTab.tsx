@@ -18,7 +18,7 @@ const matches = (rollup: PreaggRollupStatus, q: string) =>
   rollup.measures.some((m) => m.name.toLowerCase().includes(q));
 
 /**
- * Pre-aggregation tab: every rollup the semantic layer DECLARES, and whether
+ * Pre-aggregation tab: every rollup the semantic model DECLARES, and whether
  * it has been built.
  *
  * The list is config, not cache — a workspace that has built nothing still

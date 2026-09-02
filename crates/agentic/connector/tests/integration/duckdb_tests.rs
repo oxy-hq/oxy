@@ -399,7 +399,7 @@ mod duckdb {
         assert_eq!(by_full.result.total_row_count, 3);
 
         // Exactly matches the failing sample_columns query from the user report:
-        // semantic-layer `year` dimension computed as EXTRACT(YEAR FROM CAST(...)).
+        // semantic-model `year` dimension computed as EXTRACT(YEAR FROM CAST(...)).
         let by_expr = c
             .execute_query(
                 r#"SELECT DISTINCT EXTRACT(YEAR FROM CAST(Date AS DATE)) FROM "oxymart.csv" WHERE EXTRACT(YEAR FROM CAST(Date AS DATE)) IS NOT NULL LIMIT 20"#,
@@ -410,7 +410,7 @@ mod duckdb {
         assert_eq!(by_expr.result.total_row_count, 1);
     }
 
-    /// The semantic-layer compiler renders `table: orders.parquet` as an
+    /// The semantic-model compiler renders `table: orders.parquet` as an
     /// UNQUOTED `FROM orders.parquet`, which DuckDB parses as schema.table. The
     /// single-identifier `"orders.parquet"` alias only matches the quoted form,
     /// so the unquoted reference must resolve via a registered `"orders"."parquet"`

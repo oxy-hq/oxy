@@ -104,7 +104,7 @@ cases:
       - wait_for: "selector:[data-testid=ide-nav-semantic];timeout_ms=60000"
 
       - act: |
-          browser_click [data-testid=ide-nav-semantic] — the Semantic Layer icon
+          browser_click [data-testid=ide-nav-semantic] — the Semantic Model icon
           button in the narrow IDE sidebar rail. The URL ends with
           /ide/semantic and the page opens on its default "Explorer" tab.
 
@@ -146,7 +146,7 @@ cases:
       # Rules out the Monitors read's own error path.
       - assert: "selector text=Failed to load monitor config. is not visible"
       - judge: |
-          The Semantic Layer's Anomalies tab is open on its Monitors
+          The Semantic Model's Anomalies tab is open on its Monitors
           sub-tab, showing a table of configured monitors (columns include
           Metric, Granularity, Sensitivity) with multiple real rows — not a
           loading spinner, not an empty-state message, not an error.
@@ -170,7 +170,7 @@ cases:
       - wait_for: "selector:[data-testid=ide-nav-semantic];timeout_ms=60000"
 
       - act: |
-          browser_click [data-testid=ide-nav-semantic] — the Semantic Layer icon
+          browser_click [data-testid=ide-nav-semantic] — the Semantic Model icon
           button in the narrow IDE sidebar rail. The URL ends with
           /ide/semantic and the page opens on its default "Explorer" tab.
 
@@ -201,7 +201,7 @@ cases:
       # loading spinner or a differently-shaped failure.
       - assert: 'selector role=button[name*="Scan now"] is visible'
       - judge: |
-          The Semantic Layer's Anomalies tab is open on its Inbox sub-tab,
+          The Semantic Model's Anomalies tab is open on its Inbox sub-tab,
           showing the friendly "no anomalies in this view" empty state with
           a working "Scan now" affordance — not a loading spinner stuck on
           screen, not an error banner, not a blank/broken page.

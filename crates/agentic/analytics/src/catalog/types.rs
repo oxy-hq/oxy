@@ -68,7 +68,7 @@ pub struct ColumnRange {
 
 /// Resolved physical target for the `sample_column` tool.
 ///
-/// When the semantic layer is active the LLM refers to views and dimensions
+/// When the semantic model is active the LLM refers to views and dimensions
 /// by their logical names (e.g. `orders_view.status`).  `SampleTarget` maps
 /// those to the underlying database table and column expression so the tool
 /// can build a valid SQL query.

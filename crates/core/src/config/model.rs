@@ -1740,7 +1740,7 @@ pub struct SemanticQueryTask {
     #[garde(dive)]
     pub export: Option<TaskExport>,
 
-    // Optional variables for semantic layer expressions
+    // Optional variables for semantic model expressions
     #[garde(skip)]
     #[serde(default)]
     pub variables: Option<HashMap<String, Value>>,

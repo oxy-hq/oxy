@@ -8,7 +8,7 @@ use sea_orm_migration::sea_orm::{ConnectionTrait, Statement};
 /// `idx_metric_anomalies_workspace_status_detected` narrows the rows, but the
 /// distinct is over an expression, so Postgres still had to read every matching
 /// row and aggregate. That count runs on every list request once a workspace
-/// holds more than one page of anomalies — including the Semantic Layer tab
+/// holds more than one page of anomalies — including the Semantic Model tab
 /// badge, which mounts whether or not anyone opens the inbox, and re-runs after
 /// each scan poll and each Ack.
 ///

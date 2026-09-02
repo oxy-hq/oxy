@@ -1,6 +1,6 @@
 # Dimensions
 
-Dimensions are attributes that can be used for grouping, filtering, and segmenting data in your semantic layer. They represent the descriptive characteristics of your entities and provide the context for analyzing measures. Dimensions enable users to slice and dice data across different attributes and create meaningful analytics.
+Dimensions are attributes that can be used for grouping, filtering, and segmenting data in your semantic model. They represent the descriptive characteristics of your entities and provide the context for analyzing measures. Dimensions enable users to slice and dice data across different attributes and create meaningful analytics.
 
 ## Purpose
 

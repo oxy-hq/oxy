@@ -5,7 +5,7 @@
 //! | File | Type | Description |
 //! |---|---|---|
 //! | [`schema`] (this module) | [`SchemaCatalog`] | Raw database schema — no business logic |
-//! | `semantic.rs` | [`SemanticCatalog`] | Oxy .view.yml/.topic.yml semantic layer |
+//! | `semantic.rs` | [`SemanticCatalog`] | Oxy .view.yml/.topic.yml semantic model |
 //! | `hybrid.rs` | `HybridCatalog` | Semantic + schema fallback (primary runtime type) |
 //!
 //! The FSM, tools, and Specifying handler work through the [`Catalog`] trait
@@ -58,13 +58,13 @@ pub fn fuzzy_matches(query: &str, candidate: &str) -> bool {
 /// New code should use [`CatalogError::TooComplex`] instead.
 #[derive(Debug)]
 pub enum SemanticLayerError {
-    /// The query is too complex for the semantic layer to compile directly;
+    /// The query is too complex for the semantic model to compile directly;
     /// the caller should fall back to LLM-based specification.
     TooComplex,
 }
 
 impl From<SemanticLayerError> for CatalogError {
     fn from(_: SemanticLayerError) -> Self {
-        CatalogError::TooComplex("semantic layer error".into())
+        CatalogError::TooComplex("semantic model error".into())
     }
 }

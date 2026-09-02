@@ -1,4 +1,4 @@
-// Essential semantic layer functionality
+// Essential semantic model functionality
 pub mod entity_graph;
 pub mod errors;
 pub mod metric_tree;

@@ -2,7 +2,7 @@
 name = "oxy-semantic"
 version.workspace = true
 authors.workspace = true
-description = "Oxy Semantic Layer"
+description = "Oxy Semantic Model"
 documentation.workspace = true
 publish.workspace = true
 edition.workspace = true

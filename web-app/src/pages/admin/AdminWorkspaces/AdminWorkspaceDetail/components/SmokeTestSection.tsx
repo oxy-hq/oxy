@@ -13,7 +13,7 @@ import { workspaceHealthTone } from "../../../components/workspaceHealthTone";
 
 const KIND_LABELS: Record<WorkspaceHealthSmokeProbeKind, string> = {
   connection: "Connections",
-  semantic: "Semantic layer",
+  semantic: "Semantic model",
   app: "Data apps",
   agent: "Agent"
 };

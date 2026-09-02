@@ -132,7 +132,7 @@ pub async fn write_file_content(
     let abs = safe_path(workspace_root, file_path).map_err(|e| format!("path error: {e}"))?;
     // Single pre-write chokepoint for every code path that persists a file
     // (auto-accept apply, accept-on-resume, revert): a `.view.yml`/
-    // `.topic.yml` write that would break the semantic layer analytics
+    // `.topic.yml` write that would break the semantic model analytics
     // eagerly loads is refused here rather than persisted. No-op for
     // non-semantic files. Regression-gated — see `gate_semantic_write`.
     oxy_airlayer_compat::gate_semantic_write(workspace_root, &abs, content)?;

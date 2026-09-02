@@ -11,7 +11,7 @@
 // customer-app dev harness (Vite + `@oxy-hq/vite-plugin`, which proxies `/api`
 // to a running Oxy backend). To see it live:
 //
-//   1. Have Oxy running locally with a project whose semantic layer declares
+//   1. Have Oxy running locally with a project whose semantic model declares
 //      the views/measures you reference:  `oxy serve` (default :3000).
 //   2. Scaffold a bundle harness:  `pnpm dlx create-oxy-app my-app`  (the
 //      `vite` template is pre-wired with the plugin + an `oxy-app.json`).
@@ -22,10 +22,10 @@
 //
 // NOTE: the measure / entity / view ids below (`orders.net_revenue`,
 // `financials.operating_profit`, `store` / `net_revenue`, …) are placeholders —
-// swap them for ids that exist in your project's semantic layer.
+// swap them for ids that exist in your project's semantic model.
 //
 // This single file wires five surfaces:
-//   1. useWorldModelGraph   — the semantic-layer entity/measure graph
+//   1. useWorldModelGraph   — the semantic-model entity/measure graph
 //   2. useOpportunity       — segment opportunity sizing (addressable upside)
 //   3. useExplain           — period-over-period root-cause decomposition (RCA)
 //   4. useMeasureBreakdown  — per-instance driver-tree (SSE, fills in live)

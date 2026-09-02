@@ -27,7 +27,7 @@ export default function InfoLegend() {
     {
       icon: Layers,
       label: "Semantic Query",
-      description: "Pre-defined semantic layer with curated metrics",
+      description: "Pre-defined semantic model with curated metrics",
       color: "text-info"
     },
     {

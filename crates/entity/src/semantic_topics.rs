@@ -2,7 +2,7 @@
 //! `compiled_sql_blob_key`, when set, points at an S3 object holding
 //! the canonical YAML for the topic; readers prefer that blob over
 //! `definition` to keep Postgres tablespace bounded for workspaces
-//! with large semantic layers.
+//! with large semantic models.
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};

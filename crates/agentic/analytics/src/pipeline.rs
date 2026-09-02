@@ -81,7 +81,7 @@ pub struct PipelineParams {
     pub human_input: Option<agentic_core::human_input::HumanInputHandle>,
     /// SQL-generation mode. When `true`, the analytics FSM terminates
     /// after SQL is produced:
-    ///   - Pre-validated paths (semantic-layer, verified `.sql`,
+    ///   - Pre-validated paths (semantic-model, verified `.sql`,
     ///     vendor engine) skip `executing` and `interpreting`
     ///     entirely; the SQL becomes the run's terminal answer.
     ///   - LLM-generated SQL (path D) runs a `LIMIT 0` smoke check

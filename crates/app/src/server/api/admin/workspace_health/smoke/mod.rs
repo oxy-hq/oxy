@@ -3,7 +3,7 @@
 //!
 //! Where the passive dimensions count rows in Postgres, this one *exercises* the
 //! workspace: pings every warehouse connection, runs a measure query through the
-//! semantic layer, runs each data app, and asks an agent a fixed question. It is
+//! semantic model, runs each data app, and asks an agent a fixed question. It is
 //! the same shape as `reconcile` — a runner trait producing verdicts that the
 //! evaluator folds into a dimension — but it runs on its own slower cadence
 //! (default 6h) because every probe costs a warehouse round-trip and the agent
@@ -35,7 +35,7 @@ pub(crate) use runner::{LiveSmokeRunner, SmokeRunner};
 pub enum SmokeProbeKind {
     /// `SELECT 1` against a configured database.
     Connection,
-    /// One measure query per topic, through the semantic layer.
+    /// One measure query per topic, through the semantic model.
     Semantic,
     /// Every task of one `.app.yml`.
     App,

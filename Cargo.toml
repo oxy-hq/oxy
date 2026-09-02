@@ -309,7 +309,7 @@ aho-corasick = "1.1"
 #     the reason `world_model_graph/query.rs`'s fixtures move in this PR —
 #     `MetricNode.aggregate_space`, `MetricEdge.{coefficients,form_declared,
 #     moments,domain}` and `MetricTree.warnings` are new required fields. Nothing
-#     here DEserializes a stored `MetricTree` (it is built from the semantic layer
+#     here DEserializes a stored `MetricTree` (it is built from the semantic model
 #     per request and serialized outward), so the additions are additive on the
 #     wire; a consumer that ignores unknown fields is unaffected.
 #   * #101 (b16548d, merged) — a nullable grouping key no longer refuses a rollup.

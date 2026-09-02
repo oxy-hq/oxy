@@ -506,10 +506,10 @@ impl SemanticLayerCacheCtx {
     > {
         let key = oxy_airlayer_compat::LayerKey::for_source(self.workspace_id, source_revision);
         if let Some(layer) = self.cache.lookup(&key) {
-            tracing::debug!(workspace_id = %self.workspace_id, source = ?key.source, "semantic layer cache hit");
+            tracing::debug!(workspace_id = %self.workspace_id, source = ?key.source, "semantic model cache hit");
             return Ok(layer);
         }
-        tracing::info!(workspace_id = %self.workspace_id, source = ?key.source, path = ?scan_path, "semantic layer cache miss — loading from disk");
+        tracing::info!(workspace_id = %self.workspace_id, source = ?key.source, path = ?scan_path, "semantic model cache miss — loading from disk");
         let t0 = std::time::Instant::now();
         let layer = tokio::task::spawn_blocking(move || {
             oxy_airlayer_compat::load_layer_from_dir(&scan_path)
@@ -518,7 +518,7 @@ impl SemanticLayerCacheCtx {
         .map_err(|e| {
             oxy_airlayer_compat::SemanticError::Engine(format!("blocking task failed: {e}"))
         })??;
-        tracing::info!(workspace_id = %self.workspace_id, source = ?key.source, elapsed_ms = t0.elapsed().as_millis(), "semantic layer loaded");
+        tracing::info!(workspace_id = %self.workspace_id, source = ?key.source, elapsed_ms = t0.elapsed().as_millis(), "semantic model loaded");
         let arc_layer = std::sync::Arc::new(layer);
         self.cache.insert(key, arc_layer.clone());
         // This layer is new to the process, so every cached engine for THIS

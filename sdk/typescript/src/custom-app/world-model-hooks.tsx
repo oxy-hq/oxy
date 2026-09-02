@@ -1,5 +1,5 @@
 // React hooks for the world-model surface, exposed to custom-app bundles
-// so an app can render the semantic-layer graph, browse an entity's
+// so an app can render the semantic-model graph, browse an entity's
 // instances, and drill into an instance's detail / measure driver-tree.
 //
 // Wraps the `/api/projects/{id}/semantic/world-model*` endpoints behind the
@@ -39,7 +39,7 @@ export interface UseWorldModelGraphResult {
  * project's `.world-model.yml` display config server-side.
  *
  * @remarks
- * This returns the raw semantic-layer entity graph. For the higher-level
+ * This returns the raw semantic-model entity graph. For the higher-level
  * node-paradigm interface (`world.metric(id)` speaking `expand` / `explain` /
  * `size`), use {@link useWorldModel} from `./world-node` instead.
  */

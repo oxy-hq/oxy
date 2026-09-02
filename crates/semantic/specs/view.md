@@ -1,7 +1,7 @@
 ````yaml
 # Views
 
-Views represent logical data models that define how to access and interpret data from your underlying data sources. They are the core buildings of the semantic layer, encapsulating the business logic needed to transform raw data into meaningful business concepts. Views define entities, dimensions, and measures that enable consistent, governed access to data across your organization.
+Views represent logical data models that define how to access and interpret data from your underlying data sources. They are the core buildings of the semantic model, encapsulating the business logic needed to transform raw data into meaningful business concepts. Views define entities, dimensions, and measures that enable consistent, governed access to data across your organization.
 
 ## Purpose
 
@@ -45,7 +45,7 @@ measures:
 
 | Property      | Type   | Required    | Description                                                |
 | ------------- | ------ | ----------- | ---------------------------------------------------------- |
-| `name`        | string | Yes         | Unique identifier for the view within the semantic layer   |
+| `name`        | string | Yes         | Unique identifier for the view within the semantic model   |
 | `description` | string | Yes         | Human-readable description of what this view represents    |
 | `datasource`  | string | Yes         | Name of the datasource to use for this view                |
 | `table`       | string | Conditional | Database table reference (required if `sql` not specified) |
@@ -67,11 +67,11 @@ table: "public.sales"
 
 When `datasource` is specified:
 
-- The semantic layer will route queries for this view to the specified datasource
+- The semantic model will route queries for this view to the specified datasource
 - Table references in SQL will be resolved within the context of that datasource
-- Cross-datasource joins can be orchestrated at the semantic layer level
+- Cross-datasource joins can be orchestrated at the semantic model level
 
-If no `datasource` is specified, the view will use the default datasource configured for the semantic layer.
+If no `datasource` is specified, the view will use the default datasource configured for the semantic model.
 
 ## Data Source Configuration
 
@@ -572,7 +572,7 @@ dimensions:
 
 ## Validation Rules
 
-- View names must be unique within the semantic layer
+- View names must be unique within the semantic model
 - Either `table` or `sql` must be specified, but not both
 - View names should follow naming conventions (lowercase, underscore-separated)
 - Each view must have at least one entity

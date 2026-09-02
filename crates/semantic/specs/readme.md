@@ -4,7 +4,7 @@
 - Have sufficient information to generate the SQL through a semantic query engine.
 - Declarative
 - Flexible and easy to use.
-- Compatible with other semantic layers like Omni, Cube.js, AtScale, etc.. because we may need to ingest these semantic layers to our format or convert our semantic layer to theirs- Universal semantics layers ?
+- Compatible with other semantic layers like Omni, Cube.js, AtScale, etc.. because we may need to ingest these semantic layers to our format or convert our semantic model to theirs- Universal semantics layers ?
 
 ## Concepts
 
@@ -12,7 +12,7 @@
 - **Entity**: Similar to entities in dbt MetricFlow, representing a distinct object or concept within the data. Entities enable automatic relationship discovery and intelligent joins between views.
 - **Dimension**: Represents attributes of an entity, such as user properties or order details. Defined inside view files.
 - **Measure**: Represents aggregations or calculations based on dimensions, such as total sales or average order value. Defined inside view files.
-- **Topic**: Represents a collection of related views, entities, and metrics. Topics help organize the semantic layer and provide a high-level structure for data exploration. Defined in .topic.yaml files.
+- **Topic**: Represents a collection of related views, entities, and metrics. Topics help organize the semantic model and provide a high-level structure for data exploration. Defined in .topic.yaml files.
 
 ## Project structure
 

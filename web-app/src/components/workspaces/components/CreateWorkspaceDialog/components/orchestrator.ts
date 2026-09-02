@@ -737,7 +737,7 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
     id: "welcome",
     role: "assistant",
     content:
-      "Welcome to Oxygen. I'll help you set up your workspace — connect your LLM, link your data warehouse, and build your first semantic layer.\n\nLet's get started.",
+      "Welcome to Oxygen. I'll help you set up your workspace — connect your LLM, link your data warehouse, and build your first semantic model.\n\nLet's get started.",
     status: currentIdx > 0 ? "complete" : undefined
   });
 
@@ -988,7 +988,7 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
     id: "table_selection",
     role: "assistant",
     content:
-      "Select the tables you'd like to include in your semantic layer. These will be used to build views, measures, and dimensions.",
+      "Select the tables you'd like to include in your semantic model. These will be used to build views, measures, and dimensions.",
     inputBlock:
       currentIdx === stepIndex("table_selection") ? { type: "table_selector" } : undefined,
     status: currentIdx > stepIndex("table_selection") ? "complete" : undefined
@@ -1021,9 +1021,9 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
   const isDone = state.step === "complete";
   const db = state.warehouseType ?? "warehouse";
 
-  // Semantic layer message — shown as soon as the building step starts
+  // Semantic model message — shown as soon as the building step starts
   if (currentIdx >= stepIndex("building")) {
-    // Semantic layer is "done" when config + all views are complete
+    // Semantic model is "done" when config + all views are complete
     const totalViews = state.selectedTables.length;
     const doneViews = Object.values(vs).filter((s) => s === "done" || s === "failed").length;
     const configDone = ps.config === "done";
@@ -1053,12 +1053,12 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
     messages.push({
       id: "phase_semantic",
       role: "assistant",
-      content: `Inspecting your ${db} tables and building the semantic layer${viewProgress}…`,
+      content: `Inspecting your ${db} tables and building the semantic model${viewProgress}…`,
       status
     });
   }
 
-  // Agent + app messages — shown once semantic layer phase has started
+  // Agent + app messages — shown once semantic model phase has started
   const semanticStarted = ps.config || ps.semantic_layer;
   if (semanticStarted) {
     const totalViews = state.selectedTables.length;
@@ -1157,7 +1157,7 @@ function buildPhaseMilestones(
     (s) => s === "done" || s === "failed"
   ).length;
 
-  // Semantic layer milestone — no per-file detail here; the BUILDING section handles that
+  // Semantic model milestone — no per-file detail here; the BUILDING section handles that
   const configDone = ps.config === "done";
   const allViewsDone = totalViews > 0 && doneViews === totalViews;
   const semanticStatus: "pending" | "active" | "complete" | "error" = isDone
@@ -1173,7 +1173,7 @@ function buildPhaseMilestones(
   const milestones: import("./types").Milestone[] = [
     {
       id: "build-semantic",
-      label: "Semantic Layer",
+      label: "Semantic Model",
       status: semanticStatus
     },
     {

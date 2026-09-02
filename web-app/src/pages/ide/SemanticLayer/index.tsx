@@ -13,7 +13,7 @@ import SemanticExplorerTab from "./SemanticExplorerTab";
 const TAB_VALUES = ["explorer", "metric-tree", "pre-aggregation", "anomalies"] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
-/** The Semantic Layer IDE tab: Explorer + Metric Tree + Pre-aggregation + Anomalies inbox. */
+/** The Semantic Model IDE tab: Explorer + Metric Tree + Pre-aggregation + Anomalies inbox. */
 export default function SemanticLayerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   // Ask for the inbox's own first page, not a page of the badge's own size:

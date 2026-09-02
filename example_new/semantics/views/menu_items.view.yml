@@ -5,7 +5,7 @@ description: |
 
   This column is the thing the fruit fixture never had: no COGS anywhere on
   the transaction path, so no margin measure could be built no matter how the
-  semantic layer was configured. Ranking add-on categories by profit needs
+  semantic model was configured. Ranking add-on categories by profit needs
   cost at the grain the revenue is measured at, and this is where it lives.
 
 datasource: local

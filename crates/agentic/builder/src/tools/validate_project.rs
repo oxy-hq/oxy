@@ -15,7 +15,7 @@ pub fn validate_project_def() -> ToolDef {
             "properties": {
                 "file_path": {
                     "type": ["string", "null"],
-                    "description": "Path to a specific file to validate, relative to the project root. Null to validate all agents, automations, apps, and semantic layer files."
+                    "description": "Path to a specific file to validate, relative to the project root. Null to validate all agents, automations, apps, and semantic model files."
                 }
             },
             "required": ["file_path"],

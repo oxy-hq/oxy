@@ -3,7 +3,7 @@
 //!
 //! Customer-app-gated variants of the IDE's workspace-scoped
 //! `/semantic/world-model*` handlers. They enter through the customer-app
-//! gate and load the semantic layer from the compile boundary (via
+//! gate and load the semantic model from the compile boundary (via
 //! [`super::semantic_boundary`]) so they run on the stateless serve fleet.
 //! The graph-assembly and instance-listing cores are shared with the
 //! workspace handlers in [`crate::server::api::world_model_graph`] — only

@@ -4,7 +4,7 @@
 //!
 //! These mirror the IDE's workspace-scoped `/semantic/metric-tree*`
 //! handlers ([`crate::server::api::metric_tree`]) but enter through the
-//! customer-app gate and load the semantic layer from the compile boundary
+//! customer-app gate and load the semantic model from the compile boundary
 //! (via [`super::semantic_boundary`]) rather than the workspace FS. Request /
 //! response shapes are the exact same types the IDE endpoints use — the SDK
 //! and the IDE never drift.

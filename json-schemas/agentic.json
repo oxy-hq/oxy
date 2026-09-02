@@ -32,7 +32,7 @@
       "$ref": "#/definitions/LlmConfigYaml"
     },
     "semantic_engine": {
-      "description": "Optional vendor semantic engine configuration.\n\nWhen absent, the solver routes exclusively through the internal semantic layer and LLM paths (identical to today's behaviour).",
+      "description": "Optional vendor semantic engine configuration.\n\nWhen absent, the solver routes exclusively through the internal semantic model and LLM paths (identical to today's behaviour).",
       "anyOf": [
         {
           "$ref": "#/definitions/SemanticEngineConfig"

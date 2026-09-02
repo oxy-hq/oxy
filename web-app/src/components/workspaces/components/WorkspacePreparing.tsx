@@ -79,7 +79,7 @@ export default function WorkspacePreparing({
   //   new:    full provider/model/warehouse/build arc.
   //   github: collects only the secrets the cloned repo's config.yml needs.
   //   demo:   collects only the LLM key (DuckDB needs no credentials, the
-  //           sample workspace already ships agents/apps/semantic layer).
+  //           sample workspace already ships agents/apps/semantic model).
   // workspaceId is safe to pass as the storage_key here per the cloud-only
   // assertion above.
   const goToWorkspace = useCallback(() => {

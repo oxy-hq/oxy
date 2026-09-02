@@ -2,7 +2,7 @@
 #
 # Open the IDE's Metric Tree view, confirm the workspace's measures render
 # as a graph, select a measure node, and confirm the Drivers panel responds.
-# Runs against the demo project's semantic layer (oxymart sales measures).
+# Runs against the demo project's semantic model (oxymart sales measures).
 
 name: IDE metric tree view
 target: ide
@@ -22,7 +22,7 @@ cases:
     tags: [ide, metric-tree]
     steps:
       - act: |
-          Click [data-testid=ide-nav-semantic] — the Semantic Layer icon
+          Click [data-testid=ide-nav-semantic] — the Semantic Model icon
           button in the narrow IDE sidebar rail. The URL changes to end
           with /ide/semantic.
       - act: |

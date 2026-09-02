@@ -1,7 +1,7 @@
 // Shared fetch helpers for the `/api/projects/{id}/semantic/metric-tree*`
 // endpoints. Both the metric-tree analysis hooks (`metric-tree-hooks.tsx`)
 // and the higher-level World Model node interface (`world-node.tsx`) enter
-// the semantic layer through these, so the request envelope (`{ v: 1, … }`)
+// the semantic model through these, so the request envelope (`{ v: 1, … }`)
 // and error decoding stay identical across the two surfaces.
 
 import { apiErrorFromResponse } from "./errors";

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../../../json-schemas/flow-test.json
 #
 # End-to-end integration: the builder writes a new measure into the
-# semantic layer, then we verify DIRECTLY in the IDE's view explorer that
+# semantic model, then we verify DIRECTLY in the IDE's view explorer that
 # the measure is usable — it compiles to SQL and executes against the
 # warehouse — instead of asking the analytics agent.
 #
@@ -20,7 +20,7 @@
 #   builder-created measure is genuinely usable.
 #
 # Why verify in the IDE explorer rather than via the analytics agent: the
-# agentic analytics agent is a HYBRID (semantic layer + raw-schema
+# agentic analytics agent is a HYBRID (semantic model + raw-schema
 # fallback). For a question it can answer from base columns it generates
 # SQL directly and never touches the dedicated measure, so "did the agent
 # use the new measure" runs only ~50–85% even when the question names the
@@ -164,7 +164,7 @@
 # honestly], say so and leave the flow failing rather than weakening it").
 # The broader product finding is worth flagging on its own: a stateless
 # split-fleet deployment gives a non-staff user editing a git-less
-# workspace's semantic layer NO way to ever ship an edit past the
+# workspace's semantic model NO way to ever ship an edit past the
 # workspace's initial seed compile — not via this button, not via any other
 # UI, ever — since the one manual trigger that exists requires git just to
 # render.
@@ -189,7 +189,7 @@ cases:
   - name: builder adds high_fuel_price_revenue; the IDE view explorer runs it successfully
     tags: [builder, semantic, integration, critical]
     steps:
-      # === Phase 1: Builder adds a measure to the semantic layer ===
+      # === Phase 1: Builder adds a measure to the semantic model ===
       - act: |
           You are on /ide where Cmd+I opens the builder dialog. Open it and
           submit a build prompt. Do NOT touch the auto-approve toggle — leave

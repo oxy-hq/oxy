@@ -1667,7 +1667,7 @@ add Now  "databases-schema-local-branch" GET "/api/${WS}/databases/local/schema?
 # helper's comment), so this stays the unnamed `workspace_local` variant —
 # body content isn't asserted, only that serve answers 5xx, never 2xx.
 
-# ── Workspace: semantic layer, monitors, world model (Now) ─────────────────
+# ── Workspace: semantic model, monitors, world model (Now) ─────────────────
 add Now  "semantic-anomalies" GET "/api/${WS}/semantic/anomalies"       body "/api/{workspace_id}/semantic/anomalies"
 add Now  "semantic-metric-tree" GET "/api/${WS}/semantic/metric-tree"  body "/api/{workspace_id}/semantic/metric-tree"
 add Now  "semantic-monitors" GET "/api/${WS}/semantic/monitors"         body "/api/{workspace_id}/semantic/monitors"

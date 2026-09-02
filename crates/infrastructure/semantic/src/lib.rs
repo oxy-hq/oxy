@@ -202,7 +202,7 @@ pub fn build_layer<P: AsRef<Path>>(paths: &[P]) -> Result<airlayer::SemanticLaye
 }
 
 /// Inject a `_row_count: count` measure into every view so fiber-count queries
-/// always have a `SELECT COUNT(*)` handle via the semantic layer.
+/// always have a `SELECT COUNT(*)` handle via the semantic model.
 fn inject_row_count_measures(views: &mut Vec<airlayer::View>) {
     for view in views.iter_mut() {
         view.measures
@@ -345,7 +345,7 @@ fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Build the project's semantic layer with `target`'s content replaced by
+/// Build the project's semantic model with `target`'s content replaced by
 /// `proposed` (or `proposed` added as a new file when `target` is not yet
 /// on disk). The pre-write equivalent of "what analytics would load after
 /// this edit lands".
@@ -459,7 +459,7 @@ pub fn gate_semantic_write(root: &Path, target_abs: &Path, proposed: &str) -> Re
         .map_err(|e| {
             format!(
                 "semantic validation failed for '{name}': applying this change \
-                 would break the semantic layer ({e}). The change was not \
+                 would break the semantic model ({e}). The change was not \
                  applied — adjust it so the layer still compiles."
             )
         }),

@@ -68,7 +68,7 @@ fn execute_clarifying_tool_inner(
                     "These are semantic measures. Use the exact 'name' field \
                      (e.g. 'orders.revenue') in your output — do NOT write raw \
                      SQL expressions like SUM(...). The aggregation is handled \
-                     automatically by the semantic layer."
+                     automatically by the semantic model."
                 );
             }
             Ok(result)

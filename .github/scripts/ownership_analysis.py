@@ -67,7 +67,7 @@ AREAS = [
     ("crates/api-partner-console",                        "Partner platform (backend)"),
     ("web-app/src/pages/partners",                        "Partner platform (UI)"),
     ("crates/infrastructure/llm",                         "LLM vendor infra"),
-    ("crates/semantic",                                   "Semantic layer"),
+    ("crates/semantic",                                   "Semantic model"),
     ("crates/agentic/semantic",                           "Semantic (agentic shim)"),
     ("crates/app/src/server/api/world_model_graph",       "World Model (backend)"),
     ("web-app/src/pages/ide/WorldModel",                  "World Model (UI)"),

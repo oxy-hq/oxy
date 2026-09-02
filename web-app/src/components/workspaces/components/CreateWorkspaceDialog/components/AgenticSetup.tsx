@@ -923,7 +923,7 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
   );
 
   // ── Stop / Retry in-progress build ─────────────────────────────────────────
-  // Any phase can hang (mostly the semantic layer) or fail mid-run. Stop is
+  // Any phase can hang (mostly the semantic model) or fail mid-run. Stop is
   // the user's escape hatch: it aborts the SSE streams, fires best-effort
   // cancel requests on the backend, and flips any still-running phase/view
   // to "failed" so the existing Retry Build message surfaces. Retry reuses
@@ -1181,7 +1181,7 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
 // Runs a much smaller version of the onboarding UI: the user walks through the
 // secrets (LLM API keys, warehouse credentials) the cloned repo's config.yml
 // actually references, then lands on a simplified completion screen that
-// surfaces the repo's own apps + agents as call-to-actions. No semantic-layer
+// surfaces the repo's own apps + agents as call-to-actions. No semantic-model
 // build, no selection-cards for model/warehouse-type (those are dictated by
 // the repo).
 

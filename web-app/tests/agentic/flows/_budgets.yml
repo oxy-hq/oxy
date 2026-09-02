@@ -147,7 +147,7 @@
   warm_usd: 0.005
 
 - flow: semantic-object-detail
-  # Two cases. Case 1: rail -> IDE -> Semantic Layer, open a topic, select a
+  # Two cases. Case 1: rail -> IDE -> Semantic Model, open a topic, select a
   # measure, run the query (5 act steps + judge). Case 2 repeats the 2-step
   # navigation and opens a view (3 act steps + judge). No agent/builder run.
   cold_usd: 0.45
@@ -178,7 +178,7 @@
   warm_usd: 0.02
 
 - flow: semantic-monitors-inbox
-  # Two cases, each rail -> IDE -> Semantic Layer -> Anomalies (4 act steps),
+  # Two cases, each rail -> IDE -> Semantic Model -> Anomalies (4 act steps),
   # one adding a Monitors sub-tab click. No agent/builder run, no query
   # execution — pure navigation + deterministic text/selector reads plus one
   # judge call per case.

@@ -1,4 +1,4 @@
-//! Semantic-layer probe: for each `.topic.yml`, run its measures end to end —
+//! Semantic-model probe: for each `.topic.yml`, run its measures end to end —
 //! compile the topic, resolve joins, hit the warehouse, get a scalar back.
 //!
 //! Measures live on views, not topics, so [`plan`] pairs each topic with a
@@ -182,7 +182,7 @@ fn first_measure_name(view: &serde_json::Value) -> Option<String> {
 /// not a limit.
 const PROBE_ROW_LIMIT: u64 = 1;
 
-/// Run the target's measures through the semantic layer to the warehouse. No
+/// Run the target's measures through the semantic model to the warehouse. No
 /// time window is injected, so on a bytes-scanned warehouse (BigQuery on-demand,
 /// Athena) this reads each measure's full column. Keep that in mind before
 /// enabling the semantic probe against large unpartitioned fact tables.

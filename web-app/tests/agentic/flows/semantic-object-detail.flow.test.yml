@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=../../../../json-schemas/flow-test.json
 #
-# Read a TOPIC's detail and a VIEW's detail from the Semantic Layer page, and
+# Read a TOPIC's detail and a VIEW's detail from the Semantic Model page, and
 # run a query off the topic. These are the per-artifact detail reads, which no
 # existing flow covers: `semantic-builder-ask` drives the VIEW explorer inside
 # the FILE EDITOR route (/ide/files/<b64>) against `oxymart`, and never touches
@@ -88,7 +88,7 @@ cases:
       - wait_for: "selector:[data-testid=ide-nav-semantic];timeout_ms=60000"
 
       - act: |
-          browser_click [data-testid=ide-nav-semantic] — the Semantic Layer icon
+          browser_click [data-testid=ide-nav-semantic] — the Semantic Model icon
           button in the narrow IDE sidebar rail. The URL ends with
           /ide/semantic and the page opens on its default "Explorer" tab.
 
@@ -171,7 +171,7 @@ cases:
       - assert: "selector [data-testid=semantic-query-results] is visible"
 
       - judge: |
-          The Semantic Layer Explorer has the retail_analytics topic open: the
+          The Semantic Model Explorer has the retail_analytics topic open: the
           left Fields panel lists the topic's views with their dimensions and
           measures, and the results panel shows a returned result set for the
           selected total_sales measure.
@@ -204,7 +204,7 @@ cases:
       - wait_for: "selector:[data-testid=ide-nav-semantic];timeout_ms=60000"
 
       - act: |
-          browser_click [data-testid=ide-nav-semantic] — the Semantic Layer icon
+          browser_click [data-testid=ide-nav-semantic] — the Semantic Model icon
           button in the narrow IDE sidebar rail. The URL ends with
           /ide/semantic and the page opens on its default "Explorer" tab.
 
@@ -231,7 +231,7 @@ cases:
       - assert: "selector [data-testid=semantic-field-measure-temp_sales_correlation] is visible"
 
       - judge: |
-          The Semantic Layer Explorer has the economic_factors view open, with a
+          The Semantic Model Explorer has the economic_factors view open, with a
           Fields panel listing its dimensions and measures.
 
           Fail if ANY of the following is true:

@@ -1,7 +1,7 @@
 -- Landing tables for the `toast` Airway pipeline.
 --
 -- `raw_*` schemas hold ETL'd data and are analyst-readable by default, unlike
--- `app_*` — which is why the semantic layer can query this without an opt-in.
+-- `app_*` — which is why the semantic model can query this without an opt-in.
 CREATE SCHEMA IF NOT EXISTS raw_toast;
 
 CREATE TABLE IF NOT EXISTS raw_toast.sales (

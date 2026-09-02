@@ -21,6 +21,14 @@ exists to vendor that knowledge into the builder binary.
 
 Last synced: skills@95c64756ee5b3cf9dc0781fde0e13489c94a1b2d
 
+> **Pending upstream rename.** "Semantic layer" was renamed to "semantic model"
+> across Oxy's copy and docs, including the `authored` cards here. The `verbatim`
+> files (`view-template.yml`, `topic-template.yml`, `agentic-template.yml`) were
+> deliberately left alone — a local edit to them is silently overwritten by
+> `scripts/sync-skills.sh`, and `check-skills-drift.sh` compares upstream commit
+> SHAs, not content, so the regression would be invisible. Land the rename in
+> `oxy-hq/skills` and re-sync to carry it through.
+
 ## Provenance frontmatter on authored cards
 
 Each `*-reference.md` carries machine-readable provenance in YAML

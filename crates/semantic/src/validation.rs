@@ -5,7 +5,7 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-/// Validation result for semantic layer components
+/// Validation result for semantic model components
 #[derive(Debug, Clone)]
 pub struct ValidationResult {
     pub is_valid: bool,
@@ -494,7 +494,7 @@ impl SemanticValidator for SemanticLayer {
 
         // Validate views
         if self.views.is_empty() {
-            result.add_error("Semantic layer must have at least one view".to_string());
+            result.add_error("Semantic model must have at least one view".to_string());
         } else {
             let mut view_names = HashSet::new();
 
@@ -607,7 +607,7 @@ impl SemanticValidator for SemanticLayer {
     }
 }
 
-/// Validates a complete semantic layer configuration
+/// Validates a complete semantic model configuration
 pub fn validate_semantic_layer(
     semantic_layer: &SemanticLayer,
 ) -> Result<ValidationResult, SemanticLayerError> {
@@ -1065,7 +1065,7 @@ mod tests {
         let result = valid_layer.validate();
         assert!(
             result.is_valid,
-            "Semantic layer with reachable views should pass: {:?}",
+            "Semantic model with reachable views should pass: {:?}",
             result.errors
         );
 
@@ -1092,7 +1092,7 @@ mod tests {
         let result = invalid_layer.validate();
         assert!(
             !result.is_valid,
-            "Semantic layer with unreachable views should fail"
+            "Semantic model with unreachable views should fail"
         );
         assert!(
             result

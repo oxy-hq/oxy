@@ -1,4 +1,4 @@
-//! Semantic-layer endpoints for the IDE:
+//! Semantic-model endpoints for the IDE:
 //!
 //! - `GET /semantic/topic/{pathb64}` — parse one `.topic.yml` and hydrate its views.
 //! - `GET /semantic/view/{pathb64}` — parse one `.view.yml`.
@@ -150,7 +150,7 @@ pub async fn get_view_details(
         )
     })?;
 
-    // Load the full airlayer semantic layer to compute the promotion closure.
+    // Load the full airlayer semantic model to compute the promotion closure.
     // Induced measures are defined on fine-grain views but become queryable at
     // every coarser-grain ancestor — they don't exist in the single-file YAML.
     // `scan_path` is the whole promoted scan (boundary tempdir or FS fallback),
@@ -161,7 +161,7 @@ pub async fn get_view_details(
         .map_err(|e| {
             semantic_err(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to load semantic layer: {e}"),
+                format!("Failed to load semantic model: {e}"),
             )
         })?;
     let promotions = Promotions::build(&airlayer_layer.views).map_err(|e| {
@@ -223,7 +223,7 @@ pub async fn get_topic_details(
         )
     })?;
 
-    // Hydrate referenced views from the full semantic layer parse. A
+    // Hydrate referenced views from the full semantic model parse. A
     // missing reference is a real authoring error — return 400 with
     // the offending name rather than silently dropping the view, so the
     // IDE can surface it to the user.
@@ -231,7 +231,7 @@ pub async fn get_topic_details(
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             extract::Json(ErrorResponse {
-                message: format!("Failed to parse semantic layer: {e}"),
+                message: format!("Failed to parse semantic model: {e}"),
             }),
         )
     })?;
@@ -243,7 +243,7 @@ pub async fn get_topic_details(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 extract::Json(ErrorResponse {
-                    message: format!("Failed to load semantic layer: {e}"),
+                    message: format!("Failed to load semantic model: {e}"),
                 }),
             )
         })?;
@@ -267,7 +267,7 @@ pub async fn get_topic_details(
             return Err((
                 StatusCode::BAD_REQUEST,
                 extract::Json(ErrorResponse {
-                    message: format!("Could not find view {view_name} in semantic layer"),
+                    message: format!("Could not find view {view_name} in semantic model"),
                 }),
             ));
         };
@@ -416,7 +416,7 @@ pub(crate) fn scan_source_revision<S: oxy::config::DiskSlot>(
     }
 }
 
-/// The workspace has no compiled semantic layer and this node has no working
+/// The workspace has no compiled semantic model and this node has no working
 /// copy to fall back to.
 pub(crate) struct ScanUnavailable {
     workspace_id: Uuid,
@@ -425,7 +425,7 @@ pub(crate) struct ScanUnavailable {
 impl ScanUnavailable {
     pub(crate) fn message(&self) -> String {
         format!(
-            "workspace {} has no compiled semantic layer available on this stateless \
+            "workspace {} has no compiled semantic model available on this stateless \
              replica; a (re)compile has been enqueued — retry shortly",
             self.workspace_id
         )
@@ -438,7 +438,7 @@ impl ScanUnavailable {
 /// Both of this module's query handlers used to read `semantics_scan_path()`
 /// unconditionally, which is the workspace working copy. A stateless `serve`
 /// replica has no working copy, and scanning a directory that isn't there
-/// produced an EMPTY semantic layer rather than an error — surfacing as
+/// produced an EMPTY semantic model rather than an error — surfacing as
 /// `Topic 'x' not found. Available: []`, i.e. a modelling mistake for what is
 /// really a missing directory. Both routes are (correctly) classified `FleetOk`
 /// in `role_manifest`, so they must serve from Postgres like their siblings:
@@ -938,7 +938,7 @@ fn sql_error_400(message: String) -> (StatusCode, extract::Json<SqlErrorResponse
     )
 }
 
-/// Retryable: the compiled semantic layer isn't available on this replica yet.
+/// Retryable: the compiled semantic model isn't available on this replica yet.
 /// Distinct from 400 (the caller's query is wrong) and 500 (we broke) — the
 /// caller should retry rather than change anything.
 fn sql_error_503(message: String) -> (StatusCode, extract::Json<SqlErrorResponse>) {

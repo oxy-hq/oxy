@@ -1182,7 +1182,7 @@
           ],
           "properties": {
             "description": {
-              "default": "Query the database via the semantic layer.",
+              "default": "Query the database via the semantic model.",
               "type": "string"
             },
             "dry_run_limit": {

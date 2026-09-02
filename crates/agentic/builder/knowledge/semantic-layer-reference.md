@@ -10,9 +10,9 @@ note: |
   scripts/check-skills-drift.sh flags upstream changes.
 ---
 
-# Oxy Semantic Layer Reference
+# Oxy Semantic Model Reference
 
-The semantic layer is a pair of YAML file types:
+The semantic model is a pair of YAML file types:
 
 - `*.view.yml` — maps a database table to entities, typed dimensions, and
   measures.
@@ -250,12 +250,12 @@ Default-filter operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`,
   even when the dimension `type` is `boolean` or `number` — write
   `samples: ["true", "false"]` and `samples: ["129.99", "89.50"]`, never bare
   literals. Bare booleans/numbers fail YAML deserialization and break the
-  whole semantic layer load.
+  whole semantic model load.
 
 ## Date columns: detect format, then cast
 
 A date dimension MUST be `type: date` (or `type: datetime`) so the semantic
-layer compiles filters as date literals. The expression must produce a real
+model compiles filters as date literals. The expression must produce a real
 `Date` / `DateTime`, not the raw underlying column. Mismatch produces a
 `TYPE_MISMATCH` at filter time — silent at view-creation, trips the first
 analytics query that filters on the dimension.
@@ -297,7 +297,7 @@ needed — `expr: <col>` is enough.
 | "View not found"         | File outside `semantics/` tree or `views:` typo  | Must live anywhere under `semantics/` (flat or `views/` subdir, both work); fix typos in any topic's `views:` list |
 | "Cannot join views"      | Entity names differ between the two views        | Use identical entity names on both sides         |
 | "Invalid SQL in `expr`"  | Column doesn't exist or dialect mismatch         | Verify against `semantics.yml` / `.databases/`    |
-| `TYPE_MISMATCH` at filter | Date dimension declared `type: number` / `string` over a non-Date column; semantic layer compiles a date literal that the column type rejects | Sample one row, switch to `type: date` (or `datetime`), wrap `expr` with the appropriate cast function from the table above |
+| `TYPE_MISMATCH` at filter | Date dimension declared `type: number` / `string` over a non-Date column; semantic model compiles a date literal that the column type rejects | Sample one row, switch to `type: date` (or `datetime`), wrap `expr` with the appropriate cast function from the table above |
 | Unknown field on parse   | Schema-comment or typo                           | Remove `# yaml-language-server:` and fix casing  |
 
 ## Pre-aggregations
@@ -434,7 +434,7 @@ explicit rollups to control the grain and avoid an oversized default.
 ### Build and cache
 
 ```bash
-oxy build          # compiles semantic layer and builds all pre-aggregation Parquet files
+oxy build          # compiles semantic model and builds all pre-aggregation Parquet files
 ```
 
 Parquet files land in `.airlayer/cache/` (next to `config.yml`). A
@@ -491,7 +491,7 @@ correctly.
 
 ## Validation workflow
 
-1. `oxy build` — **mandatory final step.** Compiles the semantic layer;
+1. `oxy build` — **mandatory final step.** Compiles the semantic model;
    catches entity-key references, cross-view join wiring, and SQL
    expression errors that pure YAML parsing cannot. Do **not** consider
    a view or topic edit done until `oxy build` passes.
@@ -502,7 +502,7 @@ correctly.
 **Do NOT use `oxy validate` on view or topic files.** It is for
 `*.automation.yml`, `*.agent.yml`, and `*.app.yml` files only. Running it on
 view/topic files will report misleading results — passing it does not
-mean the semantic layer compiles. Use `oxy build` instead.
+mean the semantic model compiles. Use `oxy build` instead.
 
 When refreshing or rebuilding a view, **always build fresh from the
 schema source** (`semantics.yml` / `.databases/`). Do not consult git

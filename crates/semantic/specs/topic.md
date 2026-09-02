@@ -1,7 +1,7 @@
 ````yaml
 # Topics
 
-Topics represent collections of related views, entities, and metrics that form logical business domains within your semantic layer. They provide a high-level organizational structure that helps users discover and explore related data concepts together.
+Topics represent collections of related views, entities, and metrics that form logical business domains within your semantic model. They provide a high-level organizational structure that helps users discover and explore related data concepts together.
 
 ## Purpose
 

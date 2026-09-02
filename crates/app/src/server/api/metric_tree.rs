@@ -1,6 +1,6 @@
-//! Metric Tree API — tree structure and analysis ops over the semantic layer.
+//! Metric Tree API — tree structure and analysis ops over the semantic model.
 //!
-//! The tree is built per request from the workspace's semantic layer, resolved
+//! The tree is built per request from the workspace's semantic model, resolved
 //! through the same scan source `execute_semantic_query` uses —
 //! [`resolve_query_scan_source`]: the compile boundary first, the working copy
 //! second. Every route here is `FleetOk`, so reading the working copy directly
@@ -41,7 +41,7 @@ use crate::server::api::semantic::{QueryScanSource, resolve_query_scan_source};
 #[derive(Debug)]
 pub enum MetricTreeError {
     LayerLoad(String),
-    /// No semantic layer is reachable on this node: the workspace has no
+    /// No semantic model is reachable on this node: the workspace has no
     /// compiled revision and this replica has no working copy to fall back to.
     /// Retryable — a compile is enqueued on the way out — so it must not be
     /// flattened into the generic 500 above.
@@ -58,7 +58,7 @@ impl IntoResponse for MetricTreeError {
                 tracing::error!("metric-tree layer load failed: {e}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to load semantic layer".to_string(),
+                    "Failed to load semantic model".to_string(),
                 )
             }
             MetricTreeError::ScanUnavailable(m) => {
@@ -108,7 +108,7 @@ async fn resolve_scan<S: oxy::config::DiskSlot>(
         .map_err(|e| MetricTreeError::ScanUnavailable(e.message()))
 }
 
-/// Parse the workspace's semantic layer from an already-resolved scan root.
+/// Parse the workspace's semantic model from an already-resolved scan root.
 fn load_layer_at(
     scan_path: &std::path::Path,
 ) -> Result<oxy_airlayer_compat::SemanticLayer, MetricTreeError> {
@@ -348,7 +348,7 @@ fn opportunity_scope(
     )
     .ok_or_else(|| {
         MetricTreeError::NotFound(format!(
-            "cannot scope '{}' to '{}': no entity named '{}' in the semantic layer",
+            "cannot scope '{}' to '{}': no entity named '{}' in the semantic model",
             req.target, instance.key, instance.entity
         ))
     })
@@ -546,7 +546,7 @@ fn opportunity_scope_from_drill(
     )
     .ok_or_else(|| {
         MetricTreeError::NotFound(format!(
-            "cannot scope '{}' to '{}': no entity named '{}' in the semantic layer",
+            "cannot scope '{}' to '{}': no entity named '{}' in the semantic model",
             req.target, instance.key, instance.entity
         ))
     })

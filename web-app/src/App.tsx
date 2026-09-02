@@ -414,7 +414,7 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
             {/* Data Modeling routes */}
             <Route path='modeling' element={<ModelingPage />} />
 
-            {/* Semantic layer — explorer + metric tree */}
+            {/* Semantic model — explorer + metric tree */}
             <Route path='semantic' element={<SemanticLayerPage />} />
 
             {/* World Model — business-model graph; first icon in the IDE sidebar */}

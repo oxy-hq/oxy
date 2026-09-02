@@ -1,4 +1,4 @@
-//! Time-series anomaly detection over the semantic-layer metric tree.
+//! Time-series anomaly detection over the semantic-model metric tree.
 //!
 //! Three pieces:
 //! - [`config`] — `.monitor.yml` parser; per-workspace list of monitored

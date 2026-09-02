@@ -170,7 +170,7 @@
       "type": "string"
     }
   },
-  "description": "Represents a measure in the semantic layer",
+  "description": "Represents a measure in the semantic model",
   "properties": {
     "description": {
       "description": "Human-readable description of what this measure represents",

@@ -130,7 +130,7 @@ dimensions:
   # again; see `gen_restaurant_data.py --check`.)
   #
   # This is a workaround, not a modelling truth: party size is a perfectly
-  # reasonable thing to analyse by. Nothing in the semantic layer can currently
+  # reasonable thing to analyse by. Nothing in the semantic model can currently
   # say "valid to group by, invalid to benchmark across", so the only lever is
   # to withhold the dimension. Restore it if that distinction ever exists.
 

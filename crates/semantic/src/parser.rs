@@ -8,10 +8,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
-/// Configuration for the semantic layer parser
+/// Configuration for the semantic model parser
 #[derive(Debug, Clone)]
 pub struct ParserConfig {
-    /// Base directory containing the semantic layer files
+    /// Base directory containing the semantic model files
     pub base_path: PathBuf,
     /// Whether to validate files during parsing
     pub validate: bool,
@@ -39,14 +39,14 @@ impl ParserConfig {
     }
 }
 
-/// Result of parsing semantic layer files
+/// Result of parsing semantic model files
 #[derive(Debug, Clone)]
 pub struct ParseResult {
     pub semantic_layer: SemanticLayer,
     /// Validation result if validation was enabled
     pub validation: Option<ValidationResult>,
     pub parsed_files: Vec<PathBuf>,
-    /// All variables found across the semantic layer
+    /// All variables found across the semantic model
     pub variables_found: HashSet<String>,
 }
 
@@ -60,7 +60,7 @@ impl SemanticLayerParser {
         Self { config }
     }
 
-    /// Parses the semantic layer from the configured directory structure.
+    /// Parses the semantic model from the configured directory structure.
     /// Recursively scans the base path for `.view.yml`/`.view.yaml` and
     /// `.topic.yml`/`.topic.yaml` files, so they can live anywhere under
     /// the base path (flat, nested, etc.).
@@ -166,7 +166,7 @@ impl SemanticLayerParser {
             None
         };
 
-        // Collect all variables used across the semantic layer
+        // Collect all variables used across the semantic model
         let mut variables_found = HashSet::new();
         let encoder = VariableEncoder::new();
 
@@ -517,7 +517,7 @@ fn reject_legacy_globals(content: &str, path: &Path) -> Result<(), SemanticLayer
 
     if has_inherits_from || has_globals_template {
         return Err(SemanticLayerError::ParsingError(format!(
-            "{} uses removed semantic-layer features (`inherits_from:` and/or \
+            "{} uses removed semantic-model features (`inherits_from:` and/or \
              `{{{{ globals.* }}}}`). The semantics.yml registry has been removed; \
              inline the referenced values directly into the file.",
             path.display()
@@ -539,7 +539,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// Creates a test fixture with a minimal semantic layer structure.
+    /// Creates a test fixture with a minimal semantic model structure.
     fn create_test_fixture() -> TempDir {
         TempDir::new().unwrap()
     }

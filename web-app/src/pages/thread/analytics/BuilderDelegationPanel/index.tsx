@@ -94,7 +94,7 @@ export default function BuilderDelegationPanel({
     [revertMutation, childRunId]
   );
 
-  const subtitle = isStreaming ? "Working on semantic layer changes…" : "Completed";
+  const subtitle = isStreaming ? "Working on semantic model changes…" : "Completed";
 
   return (
     <div className='flex h-full flex-col border-l bg-background'>

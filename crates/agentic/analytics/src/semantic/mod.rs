@@ -1,4 +1,4 @@
-//! [`SemanticCatalog`] — Oxy semantic layer backed by [`oxy_airlayer_compat::SemanticEngine`].
+//! [`SemanticCatalog`] — Oxy semantic model backed by [`oxy_airlayer_compat::SemanticEngine`].
 //!
 //! All catalog operations (search, metric definitions, join paths, and query
 //! compilation) delegate to airlayer's data structures.  YAML parsing goes
@@ -67,7 +67,7 @@ mod tests;
 
 // ── SemanticCatalog ───────────────────────────────────────────────────────────
 
-/// Semantic layer catalog backed by [`oxy_airlayer_compat::SemanticEngine`].
+/// Semantic model catalog backed by [`oxy_airlayer_compat::SemanticEngine`].
 ///
 /// # Behavior
 ///
@@ -93,13 +93,13 @@ impl std::fmt::Debug for SemanticCatalog {
 impl SemanticCatalog {
     /// Create an empty catalog with no views.
     ///
-    /// Useful for the "no semantic layer" case — the LLM relies on database
+    /// Useful for the "no semantic model" case — the LLM relies on database
     /// lookup tools instead.
     pub fn empty() -> Self {
         let layer = oxy_airlayer_compat::SemanticLayer::new(vec![], None);
         let dialects = oxy_airlayer_compat::DatasourceDialectMap::new();
         let engine = oxy_airlayer_compat::SemanticEngine::from_semantic_layer(layer, dialects)
-            .expect("empty semantic layer should always be valid");
+            .expect("empty semantic model should always be valid");
         Self { engine }
     }
 
@@ -255,10 +255,10 @@ impl SemanticCatalog {
         self.get_join_path(left, right).is_some()
     }
 
-    /// Prompt-ready description of the semantic layer views.
+    /// Prompt-ready description of the semantic model views.
     pub fn to_prompt_string(&self) -> String {
         if self.engine.views().is_empty() {
-            return "No semantic layer configured. Use list_tables and describe_table tools \
+            return "No semantic model configured. Use list_tables and describe_table tools \
                     to discover database schema."
                 .to_string();
         }
@@ -295,7 +295,7 @@ impl SemanticCatalog {
         &self.engine
     }
 
-    /// Return a concise summary of all topics in the semantic layer.
+    /// Return a concise summary of all topics in the semantic model.
     ///
     /// Each topic is rendered as `"- <name>: <description> (views: v1, v2, …)"`.
     /// Returns an empty string when no topics are defined.

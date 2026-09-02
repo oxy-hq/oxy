@@ -8,7 +8,7 @@ use std::{
     sync::OnceLock,
 };
 
-/// Represents the type of an entity in the semantic layer
+/// Represents the type of an entity in the semantic model
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum EntityType {
@@ -18,7 +18,7 @@ pub enum EntityType {
     Foreign,
 }
 
-/// Represents an entity in the semantic layer
+/// Represents an entity in the semantic model
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Entity {
     /// Unique identifier for the entity within the view
@@ -85,7 +85,7 @@ impl Display for DimensionType {
     }
 }
 
-/// Represents a dimension in the semantic layer
+/// Represents a dimension in the semantic model
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Dimension {
     /// Unique identifier for the dimension within the view
@@ -241,7 +241,7 @@ pub struct Driver {
     pub refs: Option<Vec<String>>,
 }
 
-/// Represents a measure in the semantic layer
+/// Represents a measure in the semantic model
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Measure {
     /// Unique identifier for the measure within the view
@@ -315,10 +315,10 @@ impl MeasureFilter {
     }
 }
 
-/// Represents a view in the semantic layer
+/// Represents a view in the semantic model
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct View {
-    /// Unique identifier for the view within the semantic layer
+    /// Unique identifier for the view within the semantic model
     pub name: String,
     /// Human-readable description of what this view represents
     #[serde(default)]
@@ -351,7 +351,7 @@ pub struct TopicRetrievalConfig {
     pub exclude: Vec<String>,
 }
 
-/// Represents a topic in the semantic layer
+/// Represents a topic in the semantic model
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Topic {
     /// Unique identifier for the topic
@@ -510,19 +510,19 @@ impl Hash for TopicFilter {
     }
 }
 
-/// Represents the complete semantic layer configuration
+/// Represents the complete semantic model configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SemanticLayer {
-    /// List of views in the semantic layer
+    /// List of views in the semantic model
     pub views: Vec<View>,
-    /// List of topics in the semantic layer
+    /// List of topics in the semantic model
     pub topics: Option<Vec<Topic>>,
     /// Global metadata and configuration
     pub metadata: Option<HashMap<String, serde_json::Value>>,
 }
 
 impl SemanticLayer {
-    /// Creates a new semantic layer with the specified views and topics
+    /// Creates a new semantic model with the specified views and topics
     pub fn new(views: Vec<View>, topics: Option<Vec<Topic>>) -> Self {
         Self {
             views,

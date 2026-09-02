@@ -85,7 +85,7 @@ pub struct QuerySpec {
     pub solution_source: SolutionSource,
     /// Pre-computed execution payload produced during Specifying.
     ///
-    /// - `Some(SolutionPayload::Sql(sql))` — semantic layer compiled SQL; Solving is skipped.
+    /// - `Some(SolutionPayload::Sql(sql))` — semantic model compiled SQL; Solving is skipped.
     /// - `Some(SolutionPayload::Vendor(vq))` — vendor engine translated query; Solving is skipped.
     /// - `None` — Solving stage runs to generate SQL.
     ///
@@ -137,7 +137,7 @@ pub struct QuerySpec {
 /// Which path produced the [`QuerySpec`] — used for path-aware diagnosis.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum SolutionSource {
-    /// The spec was produced by the semantic layer (fast, structured path).
+    /// The spec was produced by the semantic model (fast, structured path).
     SemanticLayer,
     /// The spec was produced by an LLM call (fallback / complex-query path).
     #[default]
@@ -154,7 +154,7 @@ pub enum SolutionSource {
     /// `file_path` points to the `.sql` file on disk.  The SQL is read at
     /// Specifying time and precomputed into the payload — Solving is skipped.
     /// The Executing stage runs the SQL directly against the connector and
-    /// marks the result as verified (same badge as semantic layer queries).
+    /// marks the result as verified (same badge as semantic model queries).
     SqlFile { file_path: PathBuf },
     /// A vendor semantic engine translated and executed the query natively.
     ///

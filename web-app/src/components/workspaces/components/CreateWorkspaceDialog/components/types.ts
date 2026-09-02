@@ -26,7 +26,7 @@ export type OnboardingStep =
  *
  * - `"new"`: blank workspace — full provider / model / table selection /
  *   agentic build.
- * - `"github"`: cloned Oxy repo with existing agents + apps + semantic layer —
+ * - `"github"`: cloned Oxy repo with existing agents + apps + semantic model —
  *   collects only the secrets the repo's `config.yml` references and validates
  *   warehouse connectivity.
  * - `"demo"`: pre-seeded sample workspace — same shape as `"github"` (everything

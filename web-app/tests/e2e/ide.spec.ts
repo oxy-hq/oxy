@@ -116,7 +116,7 @@ test.describe("IDE Functionality", () => {
     // Check for at least one object group (the specific groups depend on what files exist)
     const agentsGroup = page.locator("text=Agents");
     const automationsGroup = page.locator("text=Automations");
-    const semanticGroup = page.locator("text=Semantic Layer");
+    const semanticGroup = page.locator("text=Semantic Model");
     const appsGroup = page.locator("text=Apps");
 
     // At least one group should be visible

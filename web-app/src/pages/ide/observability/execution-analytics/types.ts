@@ -1,7 +1,7 @@
 // Execution Analytics Types - Verified vs Generated
 
 // Verified (deterministic):
-// - semantic_query: from a pre-defined semantic layer
+// - semantic_query: from a pre-defined semantic model
 // - omni_query: from a pre-defined integration (OmniQuery)
 // - automation: automation defined inline in agent config
 //
@@ -40,7 +40,7 @@ export const EXECUTION_TYPES: Record<ExecutionType, ExecutionTypeInfo> = {
     chartColor: "--warning",
     bgColor: "bg-warning/10",
     borderColor: "border-warning/20",
-    description: "Pre-defined semantic layer query"
+    description: "Pre-defined semantic model query"
   },
   omni_query: {
     type: "omni_query",

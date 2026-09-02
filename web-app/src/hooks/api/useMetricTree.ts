@@ -81,7 +81,7 @@ export function useExplainQuery(request: ExplainRequest | null, enabled = true) 
   });
 }
 
-/** Per-view time dimensions discovered from the semantic layer. Cached for
+/** Per-view time dimensions discovered from the semantic model. Cached for
  *  the session — schema rarely changes within a single visit. */
 export function useTimeDimensions(options: DiscoveryOptions = {}) {
   const { project, branchName } = useCurrentProjectBranch();

@@ -330,7 +330,7 @@ async fn sample_single_column(
             .as_ref()
     };
 
-    // If the semantic layer has static samples, return them directly.
+    // If the semantic model has static samples, return them directly.
     // When a search_term is provided, filter the static samples.
     if let Some(ref target) = resolved
         && !target.static_samples.is_empty()
@@ -351,17 +351,17 @@ async fn sample_single_column(
             "data_type": target.data_type.as_deref().unwrap_or("string"),
             "sample_values": values,
             "source": "semantic_layer",
-            "hint": "These are pre-defined sample values from the semantic layer definition."
+            "hint": "These are pre-defined sample values from the semantic model definition."
         }));
     }
 
-    // When the semantic layer resolves the target, `column_expr` is
+    // When the semantic model resolves the target, `column_expr` is
     // already a SQL expression (e.g. `"Datetime (Local)"` with its own
     // quoting).  Use it verbatim instead of wrapping in extra quotes.
     let (table_sql, col_sql) = match &resolved {
         Some(target) => {
             let t = format!("\"{}\"", target.table.replace('"', "\"\""));
-            // column_expr from the semantic layer is a raw SQL
+            // column_expr from the semantic model is a raw SQL
             // expression — use it as-is.
             (t, target.column_expr.clone())
         }

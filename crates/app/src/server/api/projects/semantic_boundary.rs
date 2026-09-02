@@ -2,8 +2,8 @@
 //! (`metric-tree` + `world-model`).
 //!
 //! Both surfaces run the same dance before they can touch the semantic
-//! layer: pass the customer-app gate chain, build the project context, and
-//! resolve a semantic-layer scan directory. On the stateless serve fleet —
+//! model: pass the customer-app gate chain, build the project context, and
+//! resolve a semantic-model scan directory. On the stateless serve fleet —
 //! where customer apps actually run — the workspace FS scan path does not
 //! exist, so the layer must be materialised from the compile boundary
 //! (Postgres `semantic_views` / `semantic_topics` rows) into a tempdir.
@@ -61,7 +61,7 @@ pub(crate) fn err_with_code(
         .into_response()
 }
 
-/// The resolved semantic-layer scan directory. `Materialised` holds the
+/// The resolved semantic-model scan directory. `Materialised` holds the
 /// compile-boundary tempdir guard — it MUST stay alive until every layer
 /// parse / query finishes, so callers keep the whole [`SemanticBoundary`]
 /// in scope for the duration of the request.
@@ -74,7 +74,7 @@ pub(crate) enum ScanHandle {
 }
 
 impl ScanHandle {
-    /// Directory to parse the semantic layer from.
+    /// Directory to parse the semantic model from.
     pub(crate) fn path(&self) -> &Path {
         match self {
             ScanHandle::Materialised(m) => m.path(),
@@ -107,7 +107,7 @@ impl SemanticBoundary {
 }
 
 /// Run the customer-app gate chain, build the project context, and resolve
-/// the semantic-layer scan directory (compile boundary first, FS fallback).
+/// the semantic-model scan directory (compile boundary first, FS fallback).
 ///
 /// On a stateless serve replica with no materialised layer, returns the same
 /// `503 + X-Oxy-Needs-Recompile` contract as `semantic_query.rs` (and
@@ -155,7 +155,7 @@ pub(crate) async fn enter_semantic_boundary(
                 let mut response = err_with_code(
                     StatusCode::SERVICE_UNAVAILABLE,
                     format!(
-                        "workspace {project_id} has no compiled semantic layer available on \
+                        "workspace {project_id} has no compiled semantic model available on \
                          this stateless replica; a (re)compile has been enqueued — retry shortly"
                     ),
                     "semantic_needs_recompile",
@@ -182,7 +182,7 @@ pub(crate) async fn enter_semantic_boundary(
     })
 }
 
-/// Parse the airlayer semantic layer from a scan directory, off the async
+/// Parse the airlayer semantic model from a scan directory, off the async
 /// runtime (it's blocking CPU work that walks every `.view.yml`/`.topic.yml`).
 pub(crate) async fn load_layer(
     scan_path: PathBuf,
@@ -193,12 +193,12 @@ pub(crate) async fn load_layer(
         Ok(Ok(layer)) => Ok(layer),
         Ok(Err(e)) => Err(err_with_code(
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("failed to load semantic layer: {e}"),
+            format!("failed to load semantic model: {e}"),
             "semantic_layer_load_failed",
         )),
         Err(e) => Err(err(
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("semantic layer load task panicked: {e}"),
+            format!("semantic model load task panicked: {e}"),
         )),
     }
 }

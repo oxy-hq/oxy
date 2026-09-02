@@ -73,7 +73,7 @@ export default function CompletionCard({
   // source of app paths (nothing is built).
   const { data: workspaceApps } = useApps(true, false, false);
   // Both `github` and `demo` start from a config.yml that ships agents +
-  // dashboards already on disk — no semantic-layer build, no warehouse
+  // dashboards already on disk — no semantic-model build, no warehouse
   // summary. They only differ in the ready-state copy.
   const isGithub = mode === "github" || mode === "demo";
   const isDemo = mode === "demo";
@@ -245,7 +245,7 @@ function ExploreSection({
             )}
           >
             <Eye className='h-3.5 w-3.5 text-primary' />
-            <span>Semantic Layer</span>
+            <span>Semantic Model</span>
             <ArrowRight className='ml-auto h-3 w-3 text-muted-foreground' />
           </button>
           <button

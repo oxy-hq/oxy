@@ -11,7 +11,7 @@
 // needs a customer-app dev harness (Vite + `@oxy-hq/vite-plugin`, which
 // proxies `/api` to a running Oxy backend):
 //
-//   1. Run Oxy locally with a project whose semantic layer declares the
+//   1. Run Oxy locally with a project whose semantic model declares the
 //      measures you point `root` at:  `oxy serve` (default :3000).
 //   2. Scaffold a bundle:  `pnpm dlx create-oxy-app my-app`  (the `vite`
 //      template is pre-wired with the plugin + an `oxy-app.json`).

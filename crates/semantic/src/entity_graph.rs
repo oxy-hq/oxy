@@ -34,12 +34,12 @@ pub enum RelationshipType {
 
 /// Represents the entity graph for automatic join resolution
 ///
-/// The EntityGraph analyzes the semantic layer to identify relationships between views
+/// The EntityGraph analyzes the semantic model to identify relationships between views
 /// based on shared entities. It automatically generates join relationships that can be
 /// used by query engines to perform intelligent cross-view queries.
 ///
 /// # How it works:
-/// 1. Scans all views in the semantic layer for entities
+/// 1. Scans all views in the semantic model for entities
 /// 2. Maps primary entities to their owning views
 /// 3. Maps foreign entities to views that reference them
 /// 4. Generates join relationships between views that share entities
@@ -51,7 +51,7 @@ pub struct EntityGraph {
 }
 
 impl EntityGraph {
-    /// Create a new entity graph from a semantic layer
+    /// Create a new entity graph from a semantic model
     pub fn from_semantic_layer(semantic_layer: &SemanticLayer) -> Result<Self, SemanticLayerError> {
         let mut primary_entities = HashMap::new();
         let mut foreign_entities: HashMap<String, Vec<String>> = HashMap::new();

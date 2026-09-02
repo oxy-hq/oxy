@@ -171,7 +171,7 @@ export function MetricTreeGraph({ tree, selectedId, onSelect }: MetricTreeGraphP
   if (tree.nodes.length === 0) {
     return (
       <div className='flex h-full items-center justify-center text-muted-foreground text-sm'>
-        No measures found in this workspace's semantic layer.
+        No measures found in this workspace's semantic model.
       </div>
     );
   }

@@ -6,7 +6,7 @@
 # any bucket whose residual is both outside the 95% prediction interval
 # AND past the sensitivity z-cutoff.
 #
-# Test it: open the IDE → Semantic Layer → Insights tab → "Scan now".
+# Test it: open the IDE → Semantic Model → Insights tab → "Scan now".
 # Use the date picker in the inbox header to scan against a known-good
 # reference date — these examples target the `orders.csv` dataset, whose span
 # is set by `scripts/gen_orders_data.py` and currently runs 2024-07-17 through
@@ -66,7 +66,7 @@ monitors:
   # ── Composite measure (net revenue) ────────────────────────────────────
   # Demonstrates that composite measures (built from {{view.measure}} refs)
   # are first-class to the detector. The metric tree shows component edges
-  # for this measure under Semantic Layer → Metric Tree.
+  # for this measure under Semantic Model → Metric Tree.
   - measure: orders.net_revenue
     label: Net revenue
     time_dimension: orders.order_date

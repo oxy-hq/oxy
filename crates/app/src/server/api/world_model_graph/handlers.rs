@@ -34,7 +34,7 @@ use oxy::config::WorkingCopy;
 /// `GET /{workspace_id}/semantic/world-model`
 ///
 /// Returns the entity-centric world model: every primary entity in the
-/// semantic layer, its own and induced measures (with operator and
+/// semantic model, its own and induced measures (with operator and
 /// additivity metadata), and the promotion edges between entities.
 pub async fn get_world_model(
     WorkspaceManagerWorkingCopy(workspace_manager): WorkspaceManagerWorkingCopy,
@@ -50,7 +50,7 @@ pub async fn get_world_model(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 extract::Json(ErrorResponse {
-                    message: format!("Failed to load semantic layer: {e}"),
+                    message: format!("Failed to load semantic model: {e}"),
                 }),
             )
         })?;
@@ -204,7 +204,7 @@ fn build_entity_node(
 }
 
 /// Assemble the world-model graph (entity nodes + promotion/FK edges) from a
-/// parsed semantic layer, apply the `.world-model.yml` display config, and
+/// parsed semantic model, apply the `.world-model.yml` display config, and
 /// sort by depth.
 ///
 /// Shared by the workspace-scoped [`get_world_model`] handler and the

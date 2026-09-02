@@ -223,7 +223,7 @@ const Sidebar: React.FC = () => {
           size='icon'
           onClick={() => handleNavigate(SidebarViewMode.SEMANTIC)}
           data-testid='ide-nav-semantic'
-          tooltip={{ content: "Semantic Layer", side: "right" }}
+          tooltip={{ content: "Semantic Model", side: "right" }}
           className={cn(
             "h-8 w-8",
             currentViewMode === SidebarViewMode.SEMANTIC

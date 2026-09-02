@@ -235,7 +235,7 @@ impl<D: Domain, S: DomainSolver<D> + 'static, Ev: DomainEvents> Orchestrator<D, 
     /// Get a mutable reference to the solver.
     ///
     /// Useful for replacing the catalog before resuming from a delegation
-    /// (e.g., after the builder has modified semantic layer files).
+    /// (e.g., after the builder has modified semantic model files).
     pub fn solver_mut(&mut self) -> &mut S {
         &mut self.solver
     }

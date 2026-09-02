@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
     "Dimension": {
-      "description": "Represents a dimension in the semantic layer",
+      "description": "Represents a dimension in the semantic model",
       "properties": {
         "description": {
           "description": "Human-readable description of what this dimension represents",
@@ -199,7 +199,7 @@
       "type": "string"
     },
     "Entity": {
-      "description": "Represents an entity in the semantic layer",
+      "description": "Represents an entity in the semantic model",
       "properties": {
         "description": {
           "default": null,
@@ -246,7 +246,7 @@
       "type": "object"
     },
     "EntityType": {
-      "description": "Represents the type of an entity in the semantic layer",
+      "description": "Represents the type of an entity in the semantic model",
       "oneOf": [
         {
           "description": "Primary entity representing the main subject of a view",
@@ -265,7 +265,7 @@
       ]
     },
     "Measure": {
-      "description": "Represents a measure in the semantic layer",
+      "description": "Represents a measure in the semantic model",
       "properties": {
         "description": {
           "description": "Human-readable description of what this measure represents",
@@ -391,7 +391,7 @@
       "type": "string"
     }
   },
-  "description": "Represents a view in the semantic layer",
+  "description": "Represents a view in the semantic model",
   "properties": {
     "datasource": {
       "description": "Name of the datasource to use for this view",
@@ -440,7 +440,7 @@
       ]
     },
     "name": {
-      "description": "Unique identifier for the view within the semantic layer",
+      "description": "Unique identifier for the view within the semantic model",
       "type": "string"
     },
     "sql": {

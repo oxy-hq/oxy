@@ -73,7 +73,7 @@ fn evaluate_proposal(
             }));
         }
     };
-    // Reject an operator the semantic layer cannot compile, rather than letting
+    // Reject an operator the semantic model cannot compile, rather than letting
     // it through to be guessed at. A model that invents `last_week` and passes
     // the two ends of the range used to get `IN (start, end)` — every row inside
     // the week dropped, answered as "no sales last week". The model retries with
@@ -450,7 +450,7 @@ impl AnalyticsSolver {
         // ── Builder delegation: ask the builder agent to create missing members ──
         //
         // HARD-DISABLED: the analytics → builder hand-off (the "Builder Agent"
-        // auto-invocation that fires from Clarifying when the semantic layer is
+        // auto-invocation that fires from Clarifying when the semantic model is
         // missing members) is currently too buggy to ship, so it is gated off
         // here.  With delegation disabled the pipeline simply falls through to
         // Specifying and answers the question as best it can with the existing
@@ -884,7 +884,7 @@ mod proposal_tests {
         })
     }
 
-    /// The gate's whole purpose: an operator the semantic layer cannot compile
+    /// The gate's whole purpose: an operator the semantic model cannot compile
     /// is refused, not guessed at.
     #[test]
     fn an_uncompilable_operator_is_refused_with_the_operators_that_work() {

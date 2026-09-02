@@ -33,7 +33,7 @@ impl std::fmt::Display for SchemaMergeError {
 /// (string/date), since no business logic is defined.
 ///
 /// `try_compile` **always** returns [`CatalogError::TooComplex`] — without a
-/// semantic layer every query must go through the LLM solver.
+/// semantic model every query must go through the LLM solver.
 ///
 /// # Example
 ///

@@ -236,7 +236,7 @@ export type PreaggRollupStatus = {
 };
 
 export type PreaggStatusResponse = {
-  /** Every rollup the semantic layer DECLARES, cached or not — the list comes
+  /** Every rollup the semantic model DECLARES, cached or not — the list comes
    *  from `pre_aggregations:` in the views, not from what happens to be built.
    *  So an empty array really does mean "this workspace declares none". */
   rollups: PreaggRollupStatus[];

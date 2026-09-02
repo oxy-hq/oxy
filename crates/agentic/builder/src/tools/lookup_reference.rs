@@ -91,7 +91,7 @@ mod tests {
         let out = execute_lookup_reference(&json!({"card_name": "semantic-layer"})).unwrap();
         assert_eq!(out["card_name"], "semantic-layer");
         let content = out["content"].as_str().unwrap();
-        assert!(content.contains("Semantic layer reference"));
+        assert!(content.contains("Semantic model reference"));
         assert!(content.contains("entities:"));
         assert!(content.contains("base_view:"));
 

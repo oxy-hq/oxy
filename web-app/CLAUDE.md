@@ -241,7 +241,7 @@ Cross-cutting UI flows are tested by `web-app/tests/agentic/`. Treat this as a r
 - IDE (`pages/ide/**`) → `flows/ide-*.flow.test.yml`
 - Builder dialog (`components/BuilderDialog/**`) → `flows/builder-*.flow.test.yml`
 - Onboarding (`pages/onboarding/**`, `components/workspaces/**`) → `flows/onboarding-*.flow.test.yml`
-- Semantic layer + agentic analytics integration (`pages/thread/analytics/**`, `pages/ide/Objects/SemanticLayer/**`) → `flows/semantic-*.flow.test.yml`
+- Semantic model + agentic analytics integration (`pages/thread/analytics/**`, `pages/ide/Objects/SemanticLayer/**`) → `flows/semantic-*.flow.test.yml`
 
 **Skill-driven workflow (preferred for authoring + triage):**
 

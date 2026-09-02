@@ -355,7 +355,7 @@ fn workspace_metric_tree_routes_are_fleet_ok() {
     // This list is a regression guard with a real outage behind it: the
     // handlers USED to call `config_manager.semantics_scan_path()` directly, so
     // on a stateless serve replica — which has no working copy — every call
-    // 500'd with a flat "Failed to load semantic layer" for every workspace
+    // 500'd with a flat "Failed to load semantic model" for every workspace
     // (oxy-hq/oxygen#878). The fix was to move them onto the compile boundary,
     // NOT to pin them to the ide: viewing a metric tree is a read, and a read
     // that needs the singleton is an HA bug. If one of these ever fails here,
@@ -461,7 +461,7 @@ fn unknown_routes_default_to_fleet_ok() {
     // But `/semantic/world-model*` scan the workspace working copy directly
     // (config_manager.semantics_scan_path), so they're IdeOnly — a serve
     // replica has no working copy and 500s ("Failed to load semantic
-    // layer"). Regression guard for oxygen-internal 2026-07-27.
+    // model"). Regression guard for oxygen-internal 2026-07-27.
     for (method, path) in [
         ("GET", "/api/d9830be4-c6a4/semantic/world-model"),
         ("GET", "/api/d9830be4-c6a4/semantic/world-model/instances"),
@@ -1303,7 +1303,7 @@ fn skip_ws_and_comments(mut s: &str) -> &str {
 /// signature, which `route_fleet` refuses. The count went 24 -> 17 -> 8 -> 6
 /// -> 5 -> 4 -> 0 as those handlers moved to `ConfigManager` reads that own
 /// both arms, and the last four turned out not to belong on the fleet at all:
-/// the metric-tree runner parses the semantic layer off the workspace root, so
+/// the metric-tree runner parses the semantic model off the workspace root, so
 /// `/scan` and `/{id}/explain` failed on a replica rather than degrading.
 ///
 /// A new one would mean a route claiming FleetOk while its handler requires a

@@ -38,7 +38,7 @@ use std::sync::Arc;
 /// Concrete impl: `OxyMetricTreeRunner` in `crates/app/src/agentic_wiring/`.
 #[async_trait::async_trait]
 pub trait MetricTreeRunner: Send + Sync {
-    /// Load the workspace's semantic layer (the same scan path used by the
+    /// Load the workspace's semantic model (the same scan path used by the
     /// analytics solver's catalog).
     async fn load_layer(&self) -> Result<SemanticLayer, MetricTreeRunnerError>;
 
@@ -144,7 +144,7 @@ pub enum MetricTreeRunnerError {
 impl std::fmt::Display for MetricTreeRunnerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::LayerLoad(e) => write!(f, "failed to load semantic layer: {e}"),
+            Self::LayerLoad(e) => write!(f, "failed to load semantic model: {e}"),
             Self::ExecutorBuild(e) => write!(f, "failed to construct query executor: {e}"),
             Self::Op(e) => write!(f, "metric-tree op failed: {e}"),
         }
@@ -159,7 +159,7 @@ impl From<MetricTreeRunnerError> for EngineError {
     }
 }
 
-/// Convenience: build a `MetricTree` for the runner's current semantic layer.
+/// Convenience: build a `MetricTree` for the runner's current semantic model.
 /// Wrapped here so callers don't have to depend on `oxy_semantic` directly.
 pub async fn load_tree(
     runner: &Arc<dyn MetricTreeRunner>,

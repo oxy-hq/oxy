@@ -109,7 +109,7 @@ pub struct SmokeTestConfig {
     #[serde(default = "default_enabled")]
     pub connections: bool,
     /// One trivial measure query per `.topic.yml`, end to end through the
-    /// semantic layer to the warehouse. Defaults **false**: it reads the full
+    /// semantic model to the warehouse. Defaults **false**: it reads the full
     /// measure column on every run, so enabling it against a large unpartitioned
     /// fact table is a real recurring warehouse bill.
     ///

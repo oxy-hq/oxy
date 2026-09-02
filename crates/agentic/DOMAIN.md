@@ -264,7 +264,7 @@ Two layers:
 
 1. **Static** via `const SKIP_STATES: &[&str]`. Builder skips `clarifying`, `specifying`, `executing` entirely. Compile-time; cannot be overridden at runtime.
 
-2. **Dynamic** via `solver.should_skip(state, data, run_ctx) -> Option<ProblemState<D>>`. Analytics uses this to skip `Solving` when the semantic layer compiled SQL directly — returns `Some(Executing(solution))` to jump ahead.
+2. **Dynamic** via `solver.should_skip(state, data, run_ctx) -> Option<ProblemState<D>>`. Analytics uses this to skip `Solving` when the semantic model compiled SQL directly — returns `Some(Executing(solution))` to jump ahead.
 
 ## Domain Implementations
 
@@ -398,7 +398,7 @@ PipelineOutcome::Done → coordinator
 
 4. **States carry inputs, not outputs.** `Solving(Spec)` holds the spec to solve, not the solution being built. Makes serialization trivial and prevents half-finished state from leaking into the next stage.
 
-5. **Dynamic skipping via `should_skip`.** Lets domains optimize paths at runtime (analytics skips `Solving` when semantic layer compiled SQL) without the FSM framework knowing about domain-specific paths.
+5. **Dynamic skipping via `should_skip`.** Lets domains optimize paths at runtime (analytics skips `Solving` when semantic model compiled SQL) without the FSM framework knowing about domain-specific paths.
 
 6. **Pluggable state handlers.** A `HashMap<state_name, StateHandler>` instead of a giant match. Domains register only the states they implement; builder registers 2, analytics registers 5.
 

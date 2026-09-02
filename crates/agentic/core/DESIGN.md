@@ -25,7 +25,7 @@ States are named as activities (Clarifying, Solving) for readability, but each r
 | State          | Carries              | Epistemic Claim                               | Invariant                                                     |
 | -------------- | -------------------- | --------------------------------------------- | ------------------------------------------------------------- |
 | `Clarifying`   | `Intent`             | Working toward a grounded question            | Intent is partial, ambiguous, or underspecified               |
-| `Specifying`   | `Intent`             | Have a clear intent, grounding it into a spec | Intent is fully formed; resolving against semantic layer      |
+| `Specifying`   | `Intent`             | Have a clear intent, grounding it into a spec | Intent is fully formed; resolving against semantic model      |
 | `Solving`      | `Spec`               | Have a grounded spec, producing a solution    | Spec is valid; every reference resolves; writing SQL          |
 | `Executing`    | `Solution`           | Have a candidate solution, running it         | Solution is syntactically valid and structurally matches spec |
 | `Interpreting` | `Result`             | Have validated results, producing an answer   | Results match expected shape and plausible ranges             |
@@ -91,17 +91,17 @@ Each state handler receives:
 
 ---
 
-## Semantic Layer Integration (Hybrid Approach)
+## Semantic Model Integration (Hybrid Approach)
 
-The semantic layer (`.view.yml` / `.topic.yml` files) replaces raw DB schema as the primary catalog. It provides pre-defined metrics with business logic baked in, known valid metric/dimension combinations, automatic join path resolution, and direct compilation from intent to SQL for standard queries.
+The semantic model (`.view.yml` / `.topic.yml` files) replaces raw DB schema as the primary catalog. It provides pre-defined metrics with business logic baked in, known valid metric/dimension combinations, automatic join path resolution, and direct compilation from intent to SQL for standard queries.
 
 ### Why Hybrid
 
-Pure semantic layer breaks on anything beyond its query interface (custom window functions, multi-step calculations, novel analyses). Pure LLM gets basic business logic wrong. The hybrid approach uses the semantic layer for the common case (guaranteed correctness) and falls back to LLM-generated SQL for the long tail (with semantic context to keep it grounded).
+Pure semantic model breaks on anything beyond its query interface (custom window functions, multi-step calculations, novel analyses). Pure LLM gets basic business logic wrong. The hybrid approach uses the semantic model for the common case (guaranteed correctness) and falls back to LLM-generated SQL for the long tail (with semantic context to keep it grounded).
 
 ### Two Paths Through the FSM
 
-**Simple path** (semantic layer compiles directly):
+**Simple path** (semantic model compiles directly):
 
 ```
 Clarifying → Specifying (emits SQL) → skip Solving → Executing → Interpreting → Done
@@ -119,7 +119,7 @@ Clarifying → Specifying (emits context) → Solving (LLM writes SQL) → Execu
 Clarifying → Specifying (resolves procedure) → skip Solving → Executing (runs procedure) → Interpreting → Done
 ```
 
-The routing decision happens in `Specifying`, not `Clarifying`. `Clarifying`'s job is understanding intent. Whether the semantic layer can handle it is a technical routing decision.
+The routing decision happens in `Specifying`, not `Clarifying`. `Clarifying`'s job is understanding intent. Whether the semantic model can handle it is a technical routing decision.
 
 ### Catalog Architecture
 
@@ -177,14 +177,14 @@ pub struct RetryContext {
 | Solving      | SyntaxError      | Solving (retry)                                        | Code is wrong, spec is fine                                |
 | Solving      | ShapeMismatch    | Specifying                                             | Spec produced unachievable plan                            |
 | Specifying   | AmbiguousColumn  | Clarifying                                             | Intent unresolvable — needs user clarification             |
-| Specifying   | UnresolvedMetric | Specifying (retry with LLM path)                       | Semantic layer failed — fall back to LLM with context      |
-| Executing    | EmptyResults     | Specifying                                             | Filters too narrow, wrong table, or semantic layer SQL bad |
-| Executing    | ShapeMismatch    | Solving (LLM path) or Specifying (semantic layer path) | Can't retry Solving if it was skipped                      |
-| Executing    | ValueAnomaly     | Solving (LLM path) or Specifying (semantic layer path) | Same routing logic based on solution_source                |
+| Specifying   | UnresolvedMetric | Specifying (retry with LLM path)                       | Semantic model failed — fall back to LLM with context      |
+| Executing    | EmptyResults     | Specifying                                             | Filters too narrow, wrong table, or semantic model SQL bad |
+| Executing    | ShapeMismatch    | Solving (LLM path) or Specifying (semantic model path) | Can't retry Solving if it was skipped                      |
+| Executing    | ValueAnomaly     | Solving (LLM path) or Specifying (semantic model path) | Same routing logic based on solution_source                |
 | Interpreting | ValueAnomaly     | Interpreting (retry)                                   | Interpretation was misleading, re-narrate                  |
 | Any          | NeedsUserInput   | Suspend (HITL)                                         | Requires explicit user clarification to proceed            |
 
-When Executing fails on the semantic layer path, it routes to Specifying (not Solving, which was skipped). Specifying retries via the LLM path with the failure diagnosis as additional context.
+When Executing fails on the semantic model path, it routes to Specifying (not Solving, which was skipped). Specifying retries via the LLM path with the failure diagnosis as additional context.
 
 ### Context Contamination Rules
 
@@ -581,7 +581,7 @@ Artifacts are truncated at 64 KB with `…[truncated]` suffix.
 - **Temporal reasoning.** The state object is a snapshot, not a history.
 - **Problems that don't decompose linearly.** Research-style problems where attempting a solution redefines the problem.
 - **The serialization bottleneck.** Structure in the FSM graph doesn't become structure in the LLM's reasoning.
-- **Semantic layer coverage gaps.** The LLM fallback path is less reliable than the semantic layer path. Expanding semantic layer coverage reduces dependence on the fallback.
+- **Semantic model coverage gaps.** The LLM fallback path is less reliable than the semantic model path. Expanding semantic model coverage reduces dependence on the fallback.
 
 The FSM is a compression and indexing strategy for context, not a representation of understanding. Use it for structured domain state. Keep session memory for tone and conversational continuity, explicit reasoning traces for provenance, and unstructured memory for things that don't fit the schema yet.
 

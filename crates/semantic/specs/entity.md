@@ -6,7 +6,7 @@ Entities represent distinct objects or concepts within your data model. They are
 
 Entities serve several key purposes:
 
-- **Automatic Joins**: Enable the semantic layer to automatically join views based on shared entities
+- **Automatic Joins**: Enable the semantic model to automatically join views based on shared entities
 - **Relationship Discovery**: Help the system understand how different data sources relate to each other
 - **Query Intelligence**: Allow AI agents to understand the structure of your data model
 - **Data Lineage**: Provide clear lineage and relationships between different data objects
@@ -59,7 +59,7 @@ entities:
 
 | Property      | Type          | Required | Description                                                                    |
 | ------------- | ------------- | -------- | ------------------------------------------------------------------------------ |
-| `name`        | string        | Yes      | Unique identifier for the entity within the semantic layer                     |
+| `name`        | string        | Yes      | Unique identifier for the entity within the semantic model                     |
 | `type`        | string        | Yes      | Entity type: `primary` or `foreign`                                            |
 | `description` | string        | Yes      | Human-readable description of what this entity represents                      |
 | `key`         | string        | No\*     | The dimension that should be used as the key for the entity (single key)       |
@@ -183,7 +183,7 @@ entities:
 
 ## Automatic Joins
 
-When entities are properly defined, the semantic layer can automatically join views that share common entities. For example:
+When entities are properly defined, the semantic model can automatically join views that share common entities. For example:
 
 - A query requesting `orders.total_revenue` and `customers.acquisition_channel` would automatically join the orders and customers views on the shared `customer` entity
 - The system understands that `orders.customer_id` relates to `customers.customer_id` through the `customer` entity

@@ -38,7 +38,7 @@ post() { # post <endpoint> <body> <outfile>
   if [ "$code" != "200" ]; then
     echo "FAIL: POST $1 returned HTTP $code: $(head -c 400 "$3")" >&2
     if [ "$code" = "500" ]; then
-      echo "HINT: a 500 here is often DuckDB's 'icu' extension missing, not a semantic-layer bug \
+      echo "HINT: a 500 here is often DuckDB's 'icu' extension missing, not a semantic-model bug \
 — see this script's header comment (prerequisite 2) for the sideload remedy." >&2
     fi
     exit 3

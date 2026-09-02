@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use crate::variables::{VariableEncoder, VariableError};
 
-/// Trait for resolving variables in semantic layer expressions
+/// Trait for resolving variables in semantic model expressions
 pub trait VariableResolver {
     fn resolve_variable(&self, variable_path: &str) -> Result<JsonValue, VariableError>;
 

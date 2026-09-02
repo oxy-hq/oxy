@@ -400,7 +400,7 @@ export default function MetricTreeView() {
 
         {tree && roots.length === 0 && treeStatus === "success" && (
           <div className="empty-state">
-            <p>Tree loaded but the semantic layer has no measures.</p>
+            <p>Tree loaded but the semantic model has no measures.</p>
           </div>
         )}
 

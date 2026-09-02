@@ -515,7 +515,7 @@ async fn run_preagg_task(
                 Err(e) => {
                     let _ = outcome_tx
                         .send(TaskOutcome::Failed(format!(
-                            "preagg: the semantic layer does not validate, so no rollup can be \
+                            "preagg: the semantic model does not validate, so no rollup can be \
                              planned ({dialect:?}): {e}"
                         )))
                         .await;
@@ -739,7 +739,7 @@ fn skip_suffix(skipped_no_key: usize, skipped_no_datasource: usize) -> String {
 /// draining this Custom task), the workspace's FS second (works only when this
 /// node happens to have it checked out). Mirrors
 /// `semantic::resolve_query_scan_source` + the same loader
-/// (`oxy_airlayer_compat::load_layer_from_dir`) every other semantic-layer
+/// (`oxy_airlayer_compat::load_layer_from_dir`) every other semantic-model
 /// surface in this crate already resolves through — replaces this module's old
 /// direct `**/*.view.yml` FS glob, which only ever worked on the ide node and
 /// is exactly the limitation this rewrite exists to lift.
@@ -757,7 +757,7 @@ async fn load_views(
         tokio::task::spawn_blocking(move || oxy_airlayer_compat::load_layer_from_dir(&scan_path))
             .await
             .map_err(|e| format!("load_views task panicked: {e}"))?
-            .map_err(|e| format!("failed to load semantic layer: {e}"))?;
+            .map_err(|e| format!("failed to load semantic model: {e}"))?;
 
     Ok(layer
         .views

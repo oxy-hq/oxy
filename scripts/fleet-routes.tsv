@@ -157,7 +157,7 @@ POST	/api/{workspace_id}/databases	ide-only	Destr	additive (a new entry doesn't 
 *	/api/{workspace_id}/semantic/anomalies	fleet-ok	Now	Postgres read, empty is valid
 *	/api/{workspace_id}/semantic/anomalies/{anomaly_id}/explain	ide-only	Fixture	needs a real anomaly id
 *	/api/{workspace_id}/semantic/anomalies/{anomaly_id}/status	fleet-ok	Fixture	same
-*	/api/{workspace_id}/semantic/anomalies/scan	ide-only	Fixture	triggers a real scan against the semantic layer + warehouse; up to ~55s per `local-split-fleet-testing.md`
+*	/api/{workspace_id}/semantic/anomalies/scan	ide-only	Fixture	triggers a real scan against the semantic model + warehouse; up to ~55s per `local-split-fleet-testing.md`
 *	/api/{workspace_id}/semantic/anomalies/status	fleet-ok	Fixture	bulk status update — needs real anomaly ids from a scan first
 *	/api/{workspace_id}/semantic/compile	fleet-ok	Now	compiles a query plan against real fixture views/topics, read-only in effect
 *	/api/{workspace_id}/semantic/metric-tree	fleet-ok	Now	verified pattern via 13 real monitored measures

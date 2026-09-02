@@ -194,7 +194,7 @@
       "type": "object"
     }
   },
-  "description": "Represents a topic in the semantic layer",
+  "description": "Represents a topic in the semantic model",
   "properties": {
     "base_view": {
       "type": [

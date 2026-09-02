@@ -1,8 +1,8 @@
-//! `semantic_query` tool — compile and execute a semantic layer query.
+//! `semantic_query` tool — compile and execute a semantic model query.
 //!
 //! Validates the query against the project's `.view.yml` / `.topic.yml` files,
 //! compiles it to SQL via the semantic compiler, and runs it against the
-//! configured database. Useful for verifying semantic layer definitions before
+//! configured database. Useful for verifying semantic model definitions before
 //! proposing file changes.
 
 use std::time::Duration;
@@ -26,7 +26,7 @@ pub fn semantic_query_def() -> ToolDef {
     // The schemars-generated schema uses oneOf for Rust enums which strict mode rejects.
     ToolDef {
         name: "semantic_query",
-        description: "Run a semantic layer query against the project's configured database. \
+        description: "Run a semantic model query against the project's configured database. \
                       Validates the query against the semantic model (view/topic files), \
                       compiles it to SQL, executes it, and returns the results. \
                       Useful for verifying that semantic definitions (.view.yml, .topic.yml) \

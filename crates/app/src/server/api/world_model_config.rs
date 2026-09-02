@@ -11,7 +11,7 @@ pub struct WorldModelConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct WmEntityConfig {
-    /// Matches the entity `id` (primary entity name) in the semantic layer.
+    /// Matches the entity `id` (primary entity name) in the semantic model.
     pub id: String,
     /// Display name shown in the graph node and detail panel header.
     /// Falls back to `id` when absent.
@@ -35,7 +35,7 @@ pub struct WmFieldConfig {
     pub name: String,
     /// Display label override. Falls back to `name` when absent.
     pub label: Option<String>,
-    /// Description override. Falls back to the semantic layer description when absent.
+    /// Description override. Falls back to the semantic model description when absent.
     pub description: Option<String>,
 }
 

@@ -47,7 +47,7 @@ pre_aggregations:
 entities:
 # Named `retail_store` (not `store`) to avoid colliding with the `store`
 # primary entity in sales_semantics/store_performance.view.yml. Primary entity
-# names are the global join/lookup anchors in the semantic layer, so two views
+# names are the global join/lookup anchors in the semantic model, so two views
 # both declaring `store` makes entity→view resolution ambiguous — the world
 # model instance picker would resolve to the wrong view.
 - name: retail_store

@@ -27,7 +27,7 @@ The solver runs a single LLM tool loop in the Solving phase. Tools let the LLM r
 | `run_tests` | Execute `.test.yml` evaluation files |
 | `run_app` | Execute every task in a `.app.yml` end-to-end (smoke test, optional control params) |
 | `execute_sql` | Run SQL against configured databases |
-| `semantic_query` | Compile and run semantic layer queries |
+| `semantic_query` | Compile and run semantic model queries |
 | `ask_user` | Generic clarification prompt |
 
 ## Suspension / HITL

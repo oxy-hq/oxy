@@ -206,7 +206,7 @@ pub struct AgentTaskConfig {
     /// `AgentOutputMode::Answer` — the analytics agent runs the
     /// full pipeline and produces a natural-language answer.
     /// `AgentOutputMode::Sql` terminates after the agent generates
-    /// SQL: pre-validated paths (semantic-layer, verified `.sql`
+    /// SQL: pre-validated paths (semantic-model, verified `.sql`
     /// files, vendor engines) skip execution entirely; LLM-generated
     /// SQL runs a `LIMIT 0` smoke check before terminating. The
     /// terminal answer is the SQL text, ready to be written to disk
@@ -231,7 +231,7 @@ pub struct AgentOutputConfig {
 /// and emits a natural-language answer.
 ///
 /// `Sql` shortcuts the FSM after the SQL is produced: pre-validated
-/// paths (semantic-layer compile, verified `.sql` file match, vendor
+/// paths (semantic-model compile, verified `.sql` file match, vendor
 /// engine) skip the executing state entirely; LLM-generated SQL runs
 /// a `LIMIT 0` smoke check. Automation delegation is incoherent with
 /// SQL-gen mode (the SQL is only known after the automation runs) and

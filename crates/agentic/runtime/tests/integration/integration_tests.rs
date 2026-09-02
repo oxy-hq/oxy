@@ -5271,7 +5271,7 @@ async fn test_requeue_task_upserts_existing_entry() {
     // instead of failing with a PK violation.
     let new_spec = TaskSpec::Agent {
         agent_id: "__builder__".into(),
-        question: "rebuild semantic layer".into(),
+        question: "rebuild semantic model".into(),
         extra: None,
     };
     crud::requeue_task(&db, &task_id, &new_spec)

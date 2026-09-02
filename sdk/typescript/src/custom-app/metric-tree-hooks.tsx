@@ -1,6 +1,6 @@
 // React hooks for the metric-tree analysis ops, exposed to custom-app
 // bundles so an app can run drivers / what-if / RCA / opportunity sizing
-// without hand-rolling fetch against the semantic layer.
+// without hand-rolling fetch against the semantic model.
 //
 // These wrap the `/api/projects/{id}/semantic/metric-tree*` endpoints —
 // the same airlayer analyses the IDE's World Model and Metric Tree

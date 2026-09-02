@@ -18,7 +18,7 @@ pub fn build_triage_user_prompt(
         String::new()
     } else {
         format!(
-            "\n\nThe following topics are defined in the semantic layer. Use them to guide \
+            "\n\nThe following topics are defined in the semantic model. Use them to guide \
 your search_catalog queries — search for terms related to the matching topic's views:\n{topics_section}\n"
         )
     };
@@ -49,7 +49,7 @@ pub fn build_delegation_request(
 
     let mut request = String::from(
         "The analytics pipeline could not fully answer the user's question because \
-         the semantic layer is missing the following members. Please create them.\n\n",
+         the semantic model is missing the following members. Please create them.\n\n",
     );
 
     for m in missing {

@@ -186,7 +186,7 @@ pub struct AgentConfig {
     /// Optional vendor semantic engine configuration.
     ///
     /// When absent, the solver routes exclusively through the internal
-    /// semantic layer and LLM paths (identical to today's behaviour).
+    /// semantic model and LLM paths (identical to today's behaviour).
     #[serde(default)]
     pub semantic_engine: Option<SemanticEngineConfig>,
 }

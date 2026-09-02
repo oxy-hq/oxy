@@ -285,7 +285,7 @@ export default function OnboardingThread({
     const jobs: BuildJob[] = [
       {
         id: "semantic",
-        label: "Semantic layer",
+        label: "Semantic model",
         status: semanticStatus,
         events: semanticCombinedEvents,
         run: undefined,

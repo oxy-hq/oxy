@@ -269,7 +269,7 @@ fn engine_construction_goes_through_the_cache() {
         "these files build a `SemanticEngine` directly instead of going through \
          `SemanticEngineCache` (`resolve_and_compile_cached`, or \
          `SemanticEngineCacheCtx::get_or_build`):\n  {}\n\n\
-         Rebuilding the engine per request revalidates the whole semantic layer \
+         Rebuilding the engine per request revalidates the whole semantic model \
          and rebuilds the join graph. If this site genuinely cannot share a \
          workspace-keyed engine — a mutated, per-run, or hypothetical layer — \
          add it to ALLOWED with the reason.",

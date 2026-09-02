@@ -81,7 +81,7 @@ pub struct AnalyticsSolver {
     pub(crate) subrun_runner: Option<Arc<dyn SubrunRunner>>,
     /// Optional metric-tree runner for `explain` / `opportunity` /
     /// `sensitivity` / `predict` agent tools. `None` disables those tools
-    /// (CLI, tests, and contexts without a semantic layer).
+    /// (CLI, tests, and contexts without a semantic model).
     pub(crate) metric_tree_runner: Option<Arc<dyn MetricTreeRunner>>,
     /// Optional anomaly store for `list_anomalies` / `detect_anomalies` /
     /// `explain_anomaly` tools inside the `RootCause` inquiry loop.
@@ -119,7 +119,7 @@ pub struct AnalyticsSolver {
     /// SQL-generation mode flag. When `true`, the executing stage
     /// terminates the pipeline with the candidate SQL as the answer
     /// instead of materialising rows or running interpreting.
-    /// Pre-validated solution paths (semantic-layer, verified `.sql`,
+    /// Pre-validated solution paths (semantic-model, verified `.sql`,
     /// vendor engine) skip execution entirely; LLM-generated SQL
     /// runs a `LIMIT 0` smoke check first. Automation delegation is
     /// rejected with an explicit error in this mode.
@@ -403,7 +403,7 @@ impl AnalyticsSolver {
     /// Wrap compiled warehouse SQL into the appropriate `SolutionPayload`:
     /// `LocalParquet` when a fresh local rollup covers the request, otherwise
     /// raw `Sql`. Single source of truth — every pipeline stage that builds a
-    /// semantic-layer solution payload must go through this method so the
+    /// semantic-model solution payload must go through this method so the
     /// preagg short-circuit is applied consistently.
     pub(crate) fn build_semantic_payload(
         &self,

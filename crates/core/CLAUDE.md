@@ -32,7 +32,7 @@ other domain crates     ┘
 | `execute` (~1.3k) | Shrinking remnant of the pre-agentic execution engine, **mid-retirement** (see `internal-docs/old-executor-retirement.md`): `ExecutionContext`, `renderer`, `writer`, `formatters`. The type vocabulary moved to `oxy::exec_types` (Phase 3); the dead `ExecutableBuilder` pipeline was removed (Phase 4a). |
 | `service` (~4.8k) | Cross-cutting services: `secret_manager.rs`, DB pool, project services. |
 | `adapters` (~3.2k) | External-system adapters. |
-| `semantic` (~2.5k) | Semantic-layer file discovery + `loader.rs` (skips hidden/build dirs — stray copies cause "duplicate view" errors). Compilation itself is `oxy-semantic`/airlayer. |
+| `semantic` (~2.5k) | Semantic-model file discovery + `loader.rs` (skips hidden/build dirs — stray copies cause "duplicate view" errors). Compilation itself is `oxy-semantic`/airlayer. |
 | `intent` (~1.4k) | Intent classification/routing. |
 | `metrics` (~1.3k) | Metrics plumbing. |
 | `github` (~0.9k) | GitHub API helpers. |

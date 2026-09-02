@@ -25,8 +25,8 @@ interface SemanticObjectsListProps {
 
 /**
  * Flat list of `.topic.yml` + `.view.yml` files. Same item styling as the
- * IDE's Files → Objects → "Semantic Layer" group, but without the redundant
- * outer collapsible header (the parent tab is already titled "Semantic Layer").
+ * IDE's Files → Objects → "Semantic Model" group, but without the redundant
+ * outer collapsible header (the parent tab is already titled "Semantic Model").
  */
 export default function SemanticObjectsList({ selectedPath, onSelect }: SemanticObjectsListProps) {
   const { topicFiles } = useTopicFiles();

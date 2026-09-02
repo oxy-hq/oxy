@@ -342,7 +342,7 @@ export function breakdownNodeToComputedMeasure(node: WmBreakdownNode): WmCompute
   };
 }
 
-/** A measure's `view` (the semantic layer view name) is not the same as the
+/** A measure's `view` (the semantic model view name) is not the same as the
  *  graph node's `id` — an entity can represent that view at a particular
  *  grain. Map each view to the node id(s) that actually render it, usually
  *  a single id, so breakdown data (keyed by view) can be attached to the

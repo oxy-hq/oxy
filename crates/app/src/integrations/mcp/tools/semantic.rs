@@ -24,7 +24,7 @@ pub async fn resolve_semantic_tool(
 ) -> Result<(String, OxyTool), OxyError> {
     use oxy_semantic::models::Topic;
 
-    // Load the semantic layer to get view metadata
+    // Load the semantic model to get view metadata
     let semantic_layer =
         parse_semantic_layer_from_dir(config_manager.semantics_scan_path())?.semantic_layer;
 
@@ -51,7 +51,7 @@ pub async fn resolve_semantic_tool(
 
     let tool_name = get_semantic_tool_name(&topic_name);
 
-    // Build detailed description with semantic layer metadata
+    // Build detailed description with semantic model metadata
     let description = build_semantic_topic_description(&topic, &semantic_layer);
 
     let tool = Tool::new(

@@ -840,7 +840,7 @@ pub async fn cli(
                     }
                 }
 
-                // Validate semantic layer files (.view.yml, .topic.yml)
+                // Validate semantic model files (.view.yml, .topic.yml)
                 for semantic_file in list_semantic_files(&cfg.workspace_path) {
                     match validate_single_file(&semantic_file, cfg) {
                         Ok(_) => valid_count += 1,

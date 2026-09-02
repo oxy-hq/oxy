@@ -225,7 +225,7 @@ export function createWorldModel(projectId: string | null, fetcher: AppFetcher):
  * ```
  *
  * @remarks
- * This is the node-paradigm hook. For the raw semantic-layer entity/measure
+ * This is the node-paradigm hook. For the raw semantic-model entity/measure
  * graph, use {@link useWorldModelGraph} instead.
  */
 export function useWorldModel(): WorldModelApi {

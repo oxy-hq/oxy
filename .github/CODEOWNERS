@@ -11,7 +11,7 @@
 #   Handle            Person   Primary area
 #   ----------------  -------  --------------------------------------------------
 #   @luong-komorebi   Luong    Platform · custom apps · admin · authz · fleet · CI
-#   @haitrr           Hai      Semantic layer · world model · metrics & monitoring
+#   @haitrr           Hai      Semantic model · world model · metrics & monitoring
 #   @hotay            Tay      Cameras/video · airhouse · airway · agentic runtime
 #   @nresh            Nick     Web shell · onboarding · browser tests · sources
 #   @NTtanh           Mars     Billing · multi-tenancy · secrets · IDE/git · client shell
@@ -100,7 +100,7 @@ crates/infrastructure/llm/                         @luong-komorebi @haitrr
 # Hai (@haitrr) primary
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Semantic layer (airlayer)
+# Semantic model (airlayer)
 # infrastructure/semantic is the sole crate allowed to depend on airlayer,
 # so every engine upgrade lands here first.
 crates/infrastructure/semantic/                    @haitrr @luong-komorebi

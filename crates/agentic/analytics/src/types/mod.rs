@@ -41,7 +41,7 @@ impl Domain for AnalyticsDomain {
     type Solution = AnalyticsSolution;
     type Result = AnalyticsResult;
     type Answer = AnalyticsAnswer;
-    /// The primary catalog type — combines semantic layer with raw schema.
+    /// The primary catalog type — combines semantic model with raw schema.
     type Catalog = SemanticCatalog;
     type Error = AnalyticsError;
 }

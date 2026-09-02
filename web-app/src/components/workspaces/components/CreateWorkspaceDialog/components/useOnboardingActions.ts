@@ -527,7 +527,7 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
         ? `Create ${humanizeTopicSlug(secondAppTopic)} dashboard`
         : "Create deep-dive dashboard";
       const phaseLabel: Record<BuildPhase, string> = {
-        semantic_layer: "Build semantic layer",
+        semantic_layer: "Build semantic model",
         config: "Update config.yml",
         agent: "Create analytics agent",
         app: "Create starter dashboard",
@@ -787,7 +787,7 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
 
       // Sync the warehouse. This both exercises the connection (verifies the
       // credentials just saved actually work) and populates the semantic
-      // layer metadata, so the user can ask questions immediately without
+      // model metadata, so the user can ask questions immediately without
       // running `oxy build`. A sync failure means either bad creds or a
       // reachability problem — surface it inline so the user can correct and
       // retry instead of advancing past a broken warehouse.

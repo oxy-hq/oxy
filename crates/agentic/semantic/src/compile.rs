@@ -172,13 +172,13 @@ impl PreaggContext {
 
 // Public API
 
-/// Resolve a semantic query against the semantic layer and compile to SQL.
+/// Resolve a semantic query against the semantic model and compile to SQL.
 ///
 /// `preagg` is the optional local-rollup short-circuit. When `None` (CLI,
 /// tests, the builder validator) the query always compiles to warehouse SQL:
 /// without a rebuild worker there is no guarantee a local Parquet is current.
 ///
-/// `scan_path` is where the semantic layer is PARSED FROM
+/// `scan_path` is where the semantic model is PARSED FROM
 /// (compile-boundary-safe — a materialised tempdir works fine here, and is
 /// required on a stateless node with no working copy). It is deliberately NOT
 /// the pre-aggregation cache key; that is `PreaggContext::workspace_id`.

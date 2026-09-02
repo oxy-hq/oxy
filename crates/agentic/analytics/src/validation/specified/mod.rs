@@ -123,7 +123,7 @@ impl SpecifiedRule for MetricResolvesRule {
 
 fn validate_metrics(spec: &QuerySpec, catalog: &SemanticCatalog) -> Result<(), AnalyticsError> {
     for metric in &spec.resolved_metrics {
-        // If the semantic layer recognizes this metric, it's valid — skip
+        // If the semantic model recognizes this metric, it's valid — skip
         // the schema catalog check entirely.
         if catalog.metric_resolves_in_semantic(metric) {
             continue;
@@ -238,7 +238,7 @@ fn col_ref_exists(catalog: &SemanticCatalog, left: &str, right: &str, col_ref: &
 }
 
 fn validate_joins(spec: &QuerySpec, catalog: &SemanticCatalog) -> Result<(), AnalyticsError> {
-    // When the semantic layer (airlayer) compiled the query successfully,
+    // When the semantic model (airlayer) compiled the query successfully,
     // joins have already been resolved internally.  Skip validation here
     // because `extract_join_paths` can misparse join keys when underlying
     // table names contain dots (e.g. `body_composition.csv`).
@@ -338,7 +338,7 @@ impl SpecifiedRule for FilterUnambiguousRule {
 }
 
 fn validate_filters(spec: &QuerySpec, catalog: &SemanticCatalog) -> Result<(), AnalyticsError> {
-    // When the semantic layer compiled the query, filters were handled by
+    // When the semantic model compiled the query, filters were handled by
     // airlayer's structured filter API.  The raw `intent.filters` strings
     // are no longer appended as SQL, so schema-level validation is
     // unnecessary (and can false-positive on dotted table names).

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
     "EntityType": {
-      "description": "Represents the type of an entity in the semantic layer",
+      "description": "Represents the type of an entity in the semantic model",
       "oneOf": [
         {
           "description": "Primary entity representing the main subject of a view",
@@ -21,7 +21,7 @@
       ]
     }
   },
-  "description": "Represents an entity in the semantic layer",
+  "description": "Represents an entity in the semantic model",
   "properties": {
     "description": {
       "default": null,

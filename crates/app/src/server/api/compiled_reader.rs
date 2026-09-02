@@ -179,7 +179,7 @@ pub struct CompiledArtifact {
     /// When set, an S3 object holds the canonical body for this
     /// artifact (semantic views + topics only). Materialisers should
     /// prefer the blob over `definition` to keep tablespace cost
-    /// bounded for large semantic layers. Falls back to `definition`
+    /// bounded for large semantic models. Falls back to `definition`
     /// when the blob is missing / transport errors.
     pub compiled_sql_blob_key: Option<String>,
 }

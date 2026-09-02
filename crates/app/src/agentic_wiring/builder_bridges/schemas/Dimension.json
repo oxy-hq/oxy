@@ -13,7 +13,7 @@
       "type": "string"
     }
   },
-  "description": "Represents a dimension in the semantic layer",
+  "description": "Represents a dimension in the semantic model",
   "properties": {
     "description": {
       "description": "Human-readable description of what this dimension represents",

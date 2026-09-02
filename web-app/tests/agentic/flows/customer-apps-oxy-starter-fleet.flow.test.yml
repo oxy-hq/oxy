@@ -49,7 +49,7 @@
 # `local` database in examples/config.yml:24-26 — `type: duckdb, dataset:
 # .db/` — a PLAIN directory on disk, not S3-mirrored, not DuckLake. The compile
 # boundary only materialises compiled YAML definitions (config, semantic
-# layer), never arbitrary data-directory bytes like `.db/*.csv`
+# model), never arbitrary data-directory bytes like `.db/*.csv`
 # (crates/app/src/server/api/custom_apps_gates.rs:401-408, which claims these
 # routes are "pinned IdeOnly" — a claim the DECLARED table above does not back
 # up for `/query`/`/semantic-query` specifically; see the finding logged in the

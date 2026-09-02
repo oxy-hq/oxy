@@ -50,7 +50,7 @@ async fn build_onboarding_llm_client(
 ///
 /// The body is `{ "error": <human message> }` so the frontend can surface
 /// the real cause (e.g. a broken semantics file) instead of a bare status
-/// code. Configuration / semantic-layer failures are reworded into a
+/// code. Configuration / semantic-model failures are reworded into a
 /// user-facing sentence; everything else passes through verbatim.
 fn classify_pipeline_error_message(raw: &str) -> String {
     if raw.contains("semantic") || raw.contains("ConfigError") || raw.contains("config error") {

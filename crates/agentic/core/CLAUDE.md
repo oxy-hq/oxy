@@ -21,8 +21,8 @@ Each variant carries the **input** to the current activity, not the output. The 
 | State                        | Carries           | Meaning                                                  |
 | ---------------------------- | ----------------- | -------------------------------------------------------- |
 | `Clarifying(Intent)`         | Partial intent    | Forming a grounded question from user utterance          |
-| `Specifying(Intent)`         | Formed intent     | Grounding intent against semantic layer into a spec      |
-| `Solving(Spec)`              | Grounded spec     | Producing SQL (skipped when semantic layer compiled SQL) |
+| `Specifying(Intent)`         | Formed intent     | Grounding intent against semantic model into a spec      |
+| `Solving(Spec)`              | Grounded spec     | Producing SQL (skipped when semantic model compiled SQL) |
 | `Executing(Solution)`        | Candidate SQL     | Running and validating results                           |
 | `Interpreting(Result)`       | Validated results | Producing natural language answer                        |
 | `Diagnosing { error, back }` | Error + target    | Routing failure to correct recovery state                |
@@ -76,7 +76,7 @@ solving:       explain_plan, dry_run
 interpreting:  render_chart
 ```
 
-### Semantic layer hybrid routing
+### Semantic model hybrid routing
 
 Decision happens in `Specifying`, not `Clarifying`:
 
@@ -97,9 +97,9 @@ For analytics, `Solving` is dynamically skipped when `spec.solution_source == Se
 
 ### Back-edges are path-aware
 
-- `Executing` fails on semantic layer path → route to `Specifying` (not `Solving`, it was skipped)
+- `Executing` fails on semantic model path → route to `Specifying` (not `Solving`, it was skipped)
 - `Executing` fails on LLM path → route to `Solving`
-- `Specifying` can retry itself by switching from semantic layer to LLM path
+- `Specifying` can retry itself by switching from semantic model to LLM path
 
 ### Retries: don't anchor on previous failures
 

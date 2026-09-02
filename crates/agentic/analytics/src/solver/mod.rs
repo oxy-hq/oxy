@@ -2,7 +2,7 @@
 //!
 //! Each pipeline state has its own module:
 //! - [`clarifying`]  — Clarify (triage + ground)
-//! - [`specifying`]  — Specify (hybrid semantic-layer + LLM, fan-out)
+//! - [`specifying`]  — Specify (hybrid semantic-model + LLM, fan-out)
 //! - [`solving`]     — Solve (SQL generation)
 //! - [`executing`]   — Execute (connector dispatch, path-aware diagnosis)
 //! - [`interpreting`]— Interpret (LLM narrative, multi-result merge)
@@ -47,7 +47,7 @@ mod domain_solver;
 ///
 /// Each handler overrides the generic default with analytics-aware logic:
 /// - **clarifying** — delegates to `clarify_impl`; short-circuits `GeneralInquiry`.
-/// - **specifying** — hybrid: semantic layer → LLM fallback; fan-out on multiple specs.
+/// - **specifying** — hybrid: semantic model → LLM fallback; fan-out on multiple specs.
 /// - **solving** — delegates to `solve_impl`; propagates `solution_source`.
 /// - **executing** — path-aware diagnosis: `SemanticLayer` → Specify, `LlmWithSemanticContext` → Solve.
 /// - **interpreting** — delegates to `interpret_impl`.

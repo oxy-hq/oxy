@@ -1,4 +1,4 @@
-//! [`HybridCatalog`] — semantic layer + raw schema fallback.
+//! [`HybridCatalog`] — semantic model + raw schema fallback.
 //!
 //! # Effective mode detection
 //!
@@ -44,7 +44,7 @@ use crate::catalog::{
 use crate::semantic::SemanticCatalog;
 use crate::types::AnalyticsIntent;
 
-/// Unified analytics catalog combining an optional semantic layer with a
+/// Unified analytics catalog combining an optional semantic model with a
 /// raw schema fallback.
 ///
 /// This is the primary runtime type wired into [`AnalyticsDomain`].
@@ -52,11 +52,11 @@ use crate::types::AnalyticsIntent;
 /// [`AnalyticsDomain`]: super::types::AnalyticsDomain
 #[derive(Debug, Default)]
 pub struct HybridCatalog {
-    /// Optional semantic layer (Oxy views/topics).  When `None` the catalog
+    /// Optional semantic model (Oxy views/topics).  When `None` the catalog
     /// behaves identically to a pure [`SchemaCatalog`].
     pub semantic: Option<SemanticCatalog>,
     /// Raw database schema.  Always required — may be empty when the semantic
-    /// layer covers all tables.
+    /// model covers all tables.
     pub schema: SchemaCatalog,
 }
 
@@ -66,7 +66,7 @@ impl HybridCatalog {
         Self { semantic, schema }
     }
 
-    /// Construct by loading the semantic layer from the filesystem.
+    /// Construct by loading the semantic model from the filesystem.
     ///
     /// ```ignore
     /// let dialects = oxy_airlayer_compat::DatasourceDialectMap::with_default(oxy_airlayer_compat::Dialect::DuckDB);
@@ -145,7 +145,7 @@ impl HybridCatalog {
         }
     }
 
-    /// Whether `metric` is defined as a measure in the semantic layer.
+    /// Whether `metric` is defined as a measure in the semantic model.
     fn metric_in_semantic(&self, metric: &str) -> bool {
         self.semantic
             .as_ref()
@@ -229,7 +229,7 @@ impl HybridCatalog {
         self.schema.join_key(a, b).map(str::to_string)
     }
 
-    /// Return `true` if `metric` is recognized by the semantic layer —
+    /// Return `true` if `metric` is recognized by the semantic model —
     /// either as a bare measure name or a SQL expression containing
     /// semantic table.column references.
     pub fn metric_resolves_in_semantic(&self, metric: &str) -> bool {
@@ -323,7 +323,7 @@ impl Catalog for HybridCatalog {
         let sem_names: HashSet<String> = results.iter().map(|m| m.name.clone()).collect();
 
         // Append schema metrics whose base column name doesn't already appear
-        // in the semantic layer.
+        // in the semantic model.
         for m in self.schema.list_metrics(query) {
             let base = m.name.split('.').last().unwrap_or(&m.name);
             let already_covered = sem_names
@@ -360,7 +360,7 @@ impl Catalog for HybridCatalog {
     }
 
     fn get_column_range(&self, dimension: &str) -> Option<ColumnRange> {
-        // Semantic layer has sample values; schema has type info only.
+        // Semantic model has sample values; schema has type info only.
         self.semantic
             .as_ref()
             .and_then(|s| s.get_column_range(dimension))
@@ -398,7 +398,7 @@ impl Catalog for HybridCatalog {
                     if self.schema.get_metric_definition(&m).is_some() {
                         // Schema covers it; LLM can generate SQL from schema context.
                         Err(CatalogError::TooComplex(
-                            "metric unresolvable in semantic layer but covered by schema".into(),
+                            "metric unresolvable in semantic model but covered by schema".into(),
                         ))
                     } else {
                         // Neither catalog knows this metric.
@@ -409,7 +409,7 @@ impl Catalog for HybridCatalog {
                 Err(CatalogError::UnresolvableDimension(d)) => {
                     if !self.schema.list_dimensions(&d).is_empty() {
                         Err(CatalogError::TooComplex(
-                            "dimension unresolvable in semantic layer but covered by schema".into(),
+                            "dimension unresolvable in semantic model but covered by schema".into(),
                         ))
                     } else {
                         Err(CatalogError::UnresolvableDimension(d))
@@ -426,7 +426,7 @@ impl Catalog for HybridCatalog {
                 let mut ctx = sem.get_context(intent);
 
                 // Supplement with raw schema context for tables not covered by
-                // the semantic layer.
+                // the semantic model.
                 if !self.schema.table_names().is_empty() {
                     let schema_ctx = self.schema.get_context(intent);
 

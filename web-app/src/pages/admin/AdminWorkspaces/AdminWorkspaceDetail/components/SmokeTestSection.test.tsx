@@ -98,7 +98,7 @@ describe("SmokeTestSection", () => {
     expect(screen.getByText("Connections")).toBeInTheDocument();
     expect(screen.getByText("1/1 passed")).toBeInTheDocument();
     // The cap note must not inflate the denominator.
-    expect(screen.getByText("Semantic layer")).toBeInTheDocument();
+    expect(screen.getByText("Semantic model")).toBeInTheDocument();
     expect(screen.getByText("1/2 passed")).toBeInTheDocument();
   });
 
@@ -113,7 +113,7 @@ describe("SmokeTestSection", () => {
       />
     );
     expect(screen.getByText("Connections")).toBeInTheDocument();
-    expect(screen.getByText("Semantic layer")).toBeInTheDocument();
+    expect(screen.getByText("Semantic model")).toBeInTheDocument();
     expect(screen.getByText("Data apps")).toBeInTheDocument();
     expect(screen.getByText("Agent")).toBeInTheDocument();
     // The three off probes each carry a muted "Not enabled" pill.
@@ -217,7 +217,7 @@ describe("SmokeTestSection", () => {
       />
     );
     expect(screen.getByText("Connections")).toBeInTheDocument();
-    expect(screen.queryByText("Semantic layer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Semantic model")).not.toBeInTheDocument();
     expect(screen.queryByText("Not enabled")).not.toBeInTheDocument();
   });
 });

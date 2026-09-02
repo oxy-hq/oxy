@@ -1,10 +1,10 @@
 use oxy_semantic::{self, SemanticLayer, Topic, View};
 
-/// Build semantic layer description for a specific topic.
+/// Build semantic model description for a specific topic.
 /// Used by MCP tools and other contexts where we have a Topic directly.
 ///
 /// Output order:
-///   {topic.description}\n\n**Semantic layer:**\n{topic name/views/measures/dimensions}
+///   {topic.description}\n\n**Semantic model:**\n{topic name/views/measures/dimensions}
 ///
 /// The description leads so it reads naturally as the MCP tool's primary description.
 /// `build_topic_metadata` (used for multi-topic listings) keeps the description inside
@@ -15,7 +15,7 @@ pub fn build_semantic_topic_description(topic: &Topic, semantic_layer: &Semantic
         out.push_str(desc);
         out.push_str("\n\n");
     }
-    out.push_str("**Semantic layer:**\n");
+    out.push_str("**Semantic model:**\n");
     // Push topic header + views without re-including description (already at the top).
     out.push_str(&format!("\n# Topic: {}\n", topic.name));
     if let Some(base_view) = &topic.base_view {

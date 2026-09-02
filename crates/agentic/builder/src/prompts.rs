@@ -84,7 +84,7 @@ impl KnowledgeCard {
     /// prompt or returned by `lookup_reference`.
     fn section_header(self) -> &'static str {
         match self {
-            KnowledgeCard::SemanticLayer => "## Semantic layer reference",
+            KnowledgeCard::SemanticLayer => "## Semantic model reference",
             KnowledgeCard::AppBuilder => "## Data app reference",
             KnowledgeCard::AgenticBuilder => "## Agentic agent reference",
         }
@@ -381,7 +381,7 @@ mod tests {
             "card frontmatter leaked into full_reference_context: {out}"
         );
         // Every domain area is represented.
-        assert!(out.contains("Semantic layer reference"));
+        assert!(out.contains("Semantic model reference"));
         assert!(out.contains("View template"));
         assert!(out.contains("Topic template"));
         assert!(out.contains("Data app reference"));
@@ -462,7 +462,7 @@ mod tests {
     #[test]
     fn reference_context_with_semantic_layer_includes_card_content() {
         let out = reference_context(&[KnowledgeCard::SemanticLayer]);
-        assert!(out.contains("## Semantic layer reference"));
+        assert!(out.contains("## Semantic model reference"));
         // View + topic templates are inlined alongside the card.
         assert!(out.contains("entities:"));
         assert!(out.contains("base_view:"));

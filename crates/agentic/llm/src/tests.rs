@@ -2451,7 +2451,7 @@ fn find_suspended_tool_id_batched_file_change_returns_first() {
     // All three file_change calls are in one assistant turn; none have
     // results yet (the first one suspended before any results were flushed).
     let messages = vec![
-        json!({"role": "user", "content": "build the semantic layer"}),
+        json!({"role": "user", "content": "build the semantic model"}),
         json!({
             "role": "assistant",
             "content": [
@@ -2479,7 +2479,7 @@ fn build_resume_messages_batched_file_change_all_ids_resolved() {
         LlmClient::with_provider(AnthropicMockProvider::new(vec![], Arc::clone(&captured)));
 
     let prior = vec![
-        json!({"role": "user", "content": "build the semantic layer"}),
+        json!({"role": "user", "content": "build the semantic model"}),
         json!({
             "role": "assistant",
             "content": [

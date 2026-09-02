@@ -6,7 +6,7 @@ description: >
   market data next). One row per signal source, capturing license, attribution,
   and fetch cadence so downstream consumers know what to credit and how often
   the underlying feed refreshes. Rounds the "provenance is first-class" claim
-  from the data-enrichment pattern into the semantic layer.
+  from the data-enrichment pattern into the semantic model.
 datasource: "local"
 table: "signal_source.csv"
 

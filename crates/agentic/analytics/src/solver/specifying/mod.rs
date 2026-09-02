@@ -588,7 +588,7 @@ impl AnalyticsSolver {
     ///
     /// Attempts translation via the configured vendor engine.  Returns
     /// `Some(result)` when the engine produces a spec, or `None` to fall
-    /// through to the semantic-layer / LLM paths.
+    /// through to the semantic-model / LLM paths.
     async fn specifying_try_vendor_engine(
         &mut self,
         intent: &AnalyticsIntent,
@@ -667,7 +667,7 @@ impl AnalyticsSolver {
         )))
     }
 
-    /// Primary semantic-layer path: LLM → QueryRequest → airlayer compile.
+    /// Primary semantic-model path: LLM → QueryRequest → airlayer compile.
     ///
     /// 1. LLM produces a structured `QueryRequest` (view.member references)
     /// 2. Try `engine.compile_query` on each request item
@@ -1014,7 +1014,7 @@ impl AnalyticsSolver {
         }
     }
 
-    /// Legacy LLM fallback (no semantic layer).
+    /// Legacy LLM fallback (no semantic model).
     ///
     /// Uses the old SQL-fragment specify_impl path.
     async fn specifying_try_llm_fallback_legacy(
@@ -1401,8 +1401,8 @@ fn parse_query_request_response(
 /// Tries paths in order:
 /// 1. Automation short-circuit
 /// 2. VendorEngine (first-pass only)
-/// 3. Primary path (LLM → QueryRequest → airlayer compile) when semantic layer exists
-/// 4. Legacy path (LLM → SQL fragments) when no semantic layer
+/// 3. Primary path (LLM → QueryRequest → airlayer compile) when semantic model exists
+/// 4. Legacy path (LLM → SQL fragments) when no semantic model
 pub(super) fn build_specifying_handler()
 -> StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent> {
     StateHandler {
@@ -1602,10 +1602,10 @@ pub(super) fn build_specifying_handler()
 
                     // ── 2. Primary or legacy path ──────────────────────────────
                     if !solver.catalog.is_empty() {
-                        // Has semantic layer: LLM → QueryRequest → compile
+                        // Has semantic model: LLM → QueryRequest → compile
                         solver.specifying_primary(intent, retry_ctx.as_ref()).await
                     } else {
-                        // No semantic layer: legacy SQL fragment resolution
+                        // No semantic model: legacy SQL fragment resolution
                         solver
                             .specifying_try_llm_fallback_legacy(intent, retry_ctx.as_ref())
                             .await
