@@ -24,17 +24,6 @@ use super::{
 };
 use crate::config::WorkingCopy;
 
-#[async_trait::async_trait]
-pub trait Executable<I> {
-    type Response;
-
-    async fn execute(
-        &mut self,
-        execution_context: &ExecutionContext,
-        input: I,
-    ) -> Result<Self::Response, OxyError>;
-}
-
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
     pub source: Source,

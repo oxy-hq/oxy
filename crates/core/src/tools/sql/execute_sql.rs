@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use crate::{
     connector::Connector,
     execute::{
-        Executable, ExecutionContext,
+        ExecutionContext,
         types::{Chunk, EventKind, SQL, Table, TableReference},
     },
     observability::events,
@@ -24,11 +24,6 @@ impl SQLExecutable {
     pub fn new() -> Self {
         Self
     }
-}
-
-#[async_trait::async_trait]
-impl Executable<SQLInput> for SQLExecutable {
-    type Response = Table;
 
     #[tracing::instrument(skip_all, err, fields(
         oxy.name = events::tool::SQL_EXECUTE,
@@ -39,11 +34,11 @@ impl Executable<SQLInput> for SQLExecutable {
         oxy.sql = tracing::field::Empty,
         oxy.sql_ref = tracing::field::Empty,
     ))]
-    async fn execute(
-        &mut self,
+    pub async fn run(
+        &self,
         execution_context: &ExecutionContext,
         input: SQLInput,
-    ) -> Result<Self::Response, OxyError> {
+    ) -> Result<Table, OxyError> {
         // Record execution analytics fields
         let span = tracing::Span::current();
         let execution_type = events::tool::EXECUTION_TYPE_SQL_GENERATED;

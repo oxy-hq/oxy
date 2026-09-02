@@ -1,11 +1,9 @@
 use crate::{
     config::model::{LookerIntegration, LookerQueryParams, LookerSortField},
     execute::{
-        Executable, ExecutionContext,
+        ExecutionContext,
         types::{Chunk, EventKind, Output, Table, TableReference},
     },
-    observability::events::automation as automation_events,
-    tools::looker::types::LookerQueryInput,
     types::LookerQuery,
 };
 use oxy_looker::{InlineQueryRequest, LookerApiClient, LookerAuthConfig, MetadataStorage};
@@ -15,49 +13,6 @@ use std::collections::HashMap;
 /// Shared executor for Looker queries that can be used by both tools and automation tasks
 #[derive(Debug, Clone)]
 pub struct LookerQueryExecutable {}
-
-#[async_trait::async_trait]
-impl Executable<LookerQueryInput> for LookerQueryExecutable {
-    type Response = Output;
-
-    #[tracing::instrument(skip_all, err, fields(
-        oxy.name = "looker_query.execute",
-        oxy.span_type = "looker_query",
-        oxy.looker_query.integration = %input.integration,
-        oxy.looker_query.model = %input.model,
-        oxy.looker_query.explore = %input.explore,
-        oxy.looker_query.fields_count = input.params.fields.len(),
-    ))]
-    async fn execute(
-        &mut self,
-        execution_context: &ExecutionContext,
-        input: LookerQueryInput,
-    ) -> Result<Output, OxyError> {
-        tracing::info!(
-            integration = %input.integration,
-            model = %input.model,
-            explore = %input.explore,
-            "Executing Looker query"
-        );
-
-        let result = self
-            .execute_query(
-                execution_context,
-                &input.params,
-                &input.integration,
-                &input.model,
-                &input.explore,
-            )
-            .await;
-
-        if let Ok(ref output) = result {
-            tracing::info!("Looker query executed successfully");
-            automation_events::task::looker_query::execute_output(output);
-        }
-
-        result
-    }
-}
 
 impl Default for LookerQueryExecutable {
     fn default() -> Self {

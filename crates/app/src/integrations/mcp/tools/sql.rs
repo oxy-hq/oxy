@@ -97,7 +97,6 @@ pub async fn run_sql_file_tool(
     filters: Option<SessionFilters>,
     connections: Option<oxy::config::model::ConnectionOverrides>,
 ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
-    use oxy::execute::Executable;
     use oxy::tools::SQLExecutable;
     use rmcp::model::{CallToolResult, Content};
 
@@ -139,9 +138,9 @@ pub async fn run_sql_file_tool(
     tokio::spawn(async move { while rx.recv().await.is_some() {} });
 
     // Execute using the same executable as other tools
-    let mut executable = SQLExecutable;
+    let executable = SQLExecutable;
     let output = executable
-        .execute(
+        .run(
             &execution_context,
             oxy::tools::types::SQLInput {
                 sql: sql_content,

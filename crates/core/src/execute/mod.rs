@@ -12,4 +12,4 @@ pub mod renderer;
 pub(crate) use crate::exec_types as types;
 pub mod writer;
 
-pub use context::{Executable, ExecutionContext, ExecutionContextBuilder};
+pub use context::{ExecutionContext, ExecutionContextBuilder};
