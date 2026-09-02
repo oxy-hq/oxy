@@ -28,3 +28,4 @@
 
 pub mod deliver;
 pub mod handlers;
+pub mod web_push;

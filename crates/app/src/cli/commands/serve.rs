@@ -64,6 +64,18 @@ pub async fn start_server_and_web_app(
         ));
     }
 
+    // Push transport, if one is configured. Registered here rather than lazily
+    // so an operator learns at boot whether push is live — the whole point of
+    // `Push::name` is that "not configured" and "configured and silent" are
+    // distinguishable, and that is worth one log line at startup rather than
+    // being inferred from the absence of notifications.
+    if !crate::server::api::notifications::web_push::register_if_configured() {
+        tracing::info!(
+            "no push transport configured — notifications are inbox-only \
+             (set OXY_VAPID_PRIVATE_KEY, OXY_VAPID_PUBLIC_KEY and OXY_VAPID_SUBJECT)"
+        );
+    }
+
     // In local mode, autodetect a running local Airhouse stack
     // (docker-compose.airhouse.yml) and inject the well-known AIRHOUSE_*
     // defaults so per-workspace provisioning works without manual env
