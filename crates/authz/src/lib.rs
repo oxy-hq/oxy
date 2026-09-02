@@ -60,6 +60,17 @@ pub enum Action {
     MemberInvite,
     MemberSetRole,
     MemberRemove,
+    /// Create / rename / retire a LOCATION, and define the org's own roles —
+    /// org owner/admin, a managing partner, or a global operator. Same ring as
+    /// member management because it is the same authority: deciding the shape
+    /// of the org rather than doing work inside it.
+    ///
+    /// Note what this is NOT. A tenant-defined role is a label and a routing
+    /// target, never an authorization principal — `org_roles` grants nothing on
+    /// its own. Giving it a ring of its own would invite exactly the
+    /// conflation this comment exists to prevent.
+    ManageLocations,
+    ManageOrgRoles,
     /// Billing (Stripe portal / invoices / checkout) — a **real** org owner or
     /// admin. Mirrors the `OrgAdminStrict` guard: unlike member management, the
     /// cross-tenant global-operator override does NOT reach it (Oxy staff are
@@ -245,8 +256,10 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 37] = [
+    pub const ALL: [Action; 39] = [
         Action::OrgRead,
+        Action::ManageLocations,
+        Action::ManageOrgRoles,
         Action::MemberInvite,
         Action::MemberSetRole,
         Action::MemberRemove,
@@ -291,6 +304,8 @@ impl Action {
     fn as_str(self) -> &'static str {
         match self {
             Action::OrgRead => "org_read",
+            Action::ManageLocations => "manage_locations",
+            Action::ManageOrgRoles => "manage_org_roles",
             Action::MemberInvite => "member_invite",
             Action::MemberSetRole => "member_set_role",
             Action::MemberRemove => "member_remove",
@@ -337,6 +352,7 @@ impl Action {
         match self {
             Action::OrgRead => Ring::Read,
             Action::MemberInvite | Action::MemberSetRole | Action::MemberRemove => Ring::OrgAdmin,
+            Action::ManageLocations | Action::ManageOrgRoles => Ring::OrgAdmin,
             Action::OrgBilling => Ring::OrgAdminStrict,
             Action::OrgOwnerManage => Ring::OwnerOnly,
             Action::OrgReadStrict => Ring::MemberStrict,
@@ -2031,6 +2047,54 @@ mod policy_tests {
             ..facts()
         };
         assert!(!allows(&wrong_org, Action::AppAccess, &restricted));
+    }
+
+    #[test]
+    fn shaping_the_org_is_the_same_authority_as_staffing_it() {
+        // Locations and tenant-defined roles land on `Ring::OrgAdmin` — the
+        // same ring as member management — rather than getting one of their
+        // own. Both decide the SHAPE of the org rather than doing work inside
+        // it, and a synonym ring is a second place for the answer to drift.
+        let org_admin = PrincipalFacts {
+            admin_orgs: vec![org()],
+            ..facts()
+        };
+        for a in [Action::ManageLocations, Action::ManageOrgRoles] {
+            assert!(allows(&org_admin, a, &Resource::org(org())));
+        }
+
+        // A plain member may not. This is the load-bearing half: a store
+        // manager holding a tenant-defined role is not thereby able to invent
+        // new ones, or to create the locations work is routed to.
+        let member = PrincipalFacts {
+            member_orgs: vec![org()],
+            ..facts()
+        };
+        for a in [Action::ManageLocations, Action::ManageOrgRoles] {
+            assert!(!allows(&member, a, &Resource::org(org())));
+        }
+    }
+
+    #[test]
+    fn an_empty_principal_is_denied_every_action() {
+        // Fail-closed, restated across the two new actions as well as the
+        // existing ones — a new `Action` that forgot its ring would show up
+        // here as a principal with no facts being allowed something.
+        //
+        // What this does NOT test, and cannot: that no ring reads a
+        // tenant-defined role. That is a compile-time property — there is
+        // deliberately no `PrincipalFacts` field carrying one, so holding
+        // "Store Manager" is unreadable by `allows` rather than merely
+        // ignored. If a future change adds such a field, the argument for it
+        // belongs in that change; pretending to assert it here would be a test
+        // that passes for the wrong reason.
+        let nobody = facts();
+        for a in Action::ALL {
+            assert!(
+                !allows(&nobody, a, &Resource::org(org())),
+                "{a:?} was allowed for a principal with no facts"
+            );
+        }
     }
 
     #[test]

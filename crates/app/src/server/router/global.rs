@@ -14,6 +14,7 @@ use crate::api::middlewares::{
     subscription_guard,
 };
 use crate::api::{admin, org_logo, org_teams, organizations, user, workspaces};
+use crate::server::api::work;
 
 use oxy_shared::fleet_role::RouteRole;
 
@@ -32,6 +33,15 @@ pub(super) fn build_global_routes(app_state: &AppState) -> RoleRouter {
             get(crate::server::api::admin::apps::handlers::list_my_apps),
         )
         .route_fleet("/invitations/mine", get(organizations::list_my_invitations))
+        // The assignment graph. NOT nested under `/orgs/{org_id}`, and that is
+        // load-bearing: `org_middleware` resolves an org membership, and a
+        // frontline worker holds none by design. Nesting these would lock out
+        // exactly the people the graph exists to route work to.
+        //
+        // Authorization is the query filter — you see what you are assigned,
+        // supervise, or hold the addressed role for. See the module docs.
+        .route_fleet("/work", get(work::handlers::list).post(work::handlers::create))
+        .route_fleet("/work/{id}", axum::routing::patch(work::handlers::update))
         .route_fleet(
             "/invitations/{token}/accept",
             post(organizations::accept_invitation),
@@ -366,6 +376,20 @@ fn build_org_routes(app_state: &AppState) -> RoleRouter {
         .route_fleet(
             "/teams",
             get(org_teams::handlers::list_teams).post(org_teams::handlers::create_team),
+        )
+        // Locations and tenant-defined roles. Under `/orgs/{org_id}` so the
+        // `OrgAdmin` extractor can see the org it is guarding — a body-carried
+        // org is invisible to a path-resolved guard, which is the hole
+        // `create_app` has to patch by hand.
+        //
+        // `route_fleet`: Postgres only, no working copy.
+        .route_fleet(
+            "/locations",
+            get(work::handlers::list_locations).post(work::handlers::create_location),
+        )
+        .route_fleet(
+            "/roles",
+            get(work::handlers::list_roles).post(work::handlers::create_role),
         )
         .route_fleet(
             "/teams/{team_id}",

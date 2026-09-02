@@ -86,6 +86,7 @@ pub mod typed_stream;
 pub mod user;
 pub mod video;
 pub mod webhooks;
+pub mod work;
 pub mod workspace_custom_apps;
 pub mod workspace_logo;
 pub mod workspace_members;

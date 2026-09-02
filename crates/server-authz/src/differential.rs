@@ -181,6 +181,33 @@ fn org_admin_ring_matches_the_shipped_guard() {
     });
 }
 
+/// The assignment graph's two shape-changing actions.
+///
+/// `crates/authz/CLAUDE.md` requires a differential case per new `Action`, and
+/// these arrived without one — so the ring they were given had never been
+/// checked against the guard that actually ships in front of them. Both handlers
+/// take `OrgAdmin`, so both must agree with that guard's oracle exactly.
+///
+/// Stated per action rather than looped with `MemberSetRole`, because the point
+/// is that THESE actions are on the ring their routes claim: a future edit that
+/// moved one to `OrgAdminStrict` or `OrgMemberStrict` would still pass a shared
+/// loop over whatever ring it landed on.
+#[test]
+fn manage_locations_ring_matches_the_shipped_guard() {
+    // work::handlers::create_location — OrgAdmin
+    assert_matches_oracle(Action::ManageLocations, |s| {
+        matches!(s.ctx_role, OrgRole::Owner | OrgRole::Admin)
+    });
+}
+
+#[test]
+fn manage_org_roles_ring_matches_the_shipped_guard() {
+    // work::handlers::create_role — OrgAdmin
+    assert_matches_oracle(Action::ManageOrgRoles, |s| {
+        matches!(s.ctx_role, OrgRole::Owner | OrgRole::Admin)
+    });
+}
+
 #[test]
 fn org_admin_strict_ring_matches_the_shipped_guard() {
     // role_guards::OrgAdminStrict — rejects the override.
