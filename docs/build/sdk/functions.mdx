@@ -19,7 +19,8 @@ frontend by `oxy publish`.
 <Note>
 An Oxygen Function is a bundled TypeScript handler — **not** a YAML
 [Automation](/guide/build/automations) task or a Data App `task`. It runs with
-the app's project-level access, not the invoking visitor's.
+the app's project-level access, not the invoking visitor's — with one exception,
+[warehouse writes](#who-a-write-runs-as).
 </Note>
 
 ## Authoring a function
@@ -59,6 +60,29 @@ export default async function (req, ctx) {
   - `ctx.fetch` — outbound HTTP, SSRF-allowlisted, HTTPS-only, size/time-capped
   - `ctx.env` — per-app secrets
   - `ctx.user`, `ctx.log`
+
+## Who a write runs as
+
+Reads always run with the app's project-level access. Writes to an
+**Oxygen-managed warehouse** are the one place the *invoker* matters: the
+connection is opened with a short-lived credential whose role follows the
+workspace role of the person who called the function.
+
+| Invoker | May write a managed warehouse? |
+| --- | --- |
+| Workspace **Owner** or **Admin** | yes |
+| Workspace **Member** or **Viewer** | no — the same answer they'd get querying it directly |
+| A **scheduled** or **Airway-step** run (no human caller) | no |
+
+A denied write surfaces as a permission error on the statement (`Reader role
+cannot execute Update statements`) while queries in the same function keep
+working — that combination means the *caller's* role, not a broken
+`destinations` allowlist.
+
+Databases you configure with your own credentials (BigQuery, Snowflake,
+ClickHouse, …) are unaffected — they always connect as the credentials in the
+project config — so a function that must write on a schedule should target one
+of those.
 
 ## Invocation modes
 
