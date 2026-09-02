@@ -24,7 +24,9 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use oxy_app::server::api::chat::handlers::{member_channel, visible_channels};
+use oxy_app::server::api::chat::handlers::{
+    join_channel_for, member_channel, new_channel, unread_for, visible_channels,
+};
 
 use crate::common::{Schema, fresh_db};
 
@@ -98,6 +100,33 @@ async fn seed(db: &DatabaseConnection) -> Fixture {
     .expect("seed channel membership");
 
     Fixture { user, org, channel }
+}
+
+/// A second user with real standing in an existing org.
+async fn seed_member(db: &DatabaseConnection, org: Uuid, name: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    users::ActiveModel {
+        id: ActiveValue::Set(id),
+        email: ActiveValue::Set(Some(format!("m-{id}@example.com"))),
+        name: ActiveValue::Set(name.into()),
+        picture: ActiveValue::Set(None),
+        email_verified: ActiveValue::Set(true),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .expect("seed member user");
+    org_members::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        org_id: ActiveValue::Set(org),
+        user_id: ActiveValue::Set(id),
+        role: ActiveValue::Set(org_members::OrgRole::Member),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .expect("seed member org row");
+    id
 }
 
 async fn remove_from_org(db: &DatabaseConnection, user: Uuid, org: Uuid) {
@@ -318,5 +347,231 @@ async fn a_suspended_frontline_worker_loses_the_channel() {
             .await
             .expect("list")
             .is_empty()
+    );
+}
+
+// ── create / join ───────────────────────────────────────────────────────────
+
+/// A created channel must be reachable by its creator. Membership is the read
+/// gate, so a channel created without the creator in it is invisible to the
+/// person who just made it — and, having no members, to everyone.
+#[tokio::test]
+async fn a_created_channel_is_reachable_by_its_creator() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let f = seed(&db).await;
+
+    let id = new_channel(&db, f.user, f.org, "ops-standup", None, &[])
+        .await
+        .expect("create")
+        .id;
+
+    assert!(member_channel(&db, id, f.user).await.is_some());
+    let visible = visible_channels(&db, f.user).await.expect("list");
+    assert!(visible.iter().any(|(_, c)| c.id == id));
+}
+
+/// Seeded members join at creation, and the creator is not duplicated when
+/// they name themselves — `chat_channel_members` is keyed on the pair.
+#[tokio::test]
+async fn seeded_members_join_and_the_creator_is_not_duplicated() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let f = seed(&db).await;
+    let other = seed_member(&db, f.org, "Colleague").await;
+
+    let id = new_channel(&db, f.user, f.org, "kitchen", None, &[other, f.user])
+        .await
+        .expect("create")
+        .id;
+
+    assert!(member_channel(&db, id, other).await.is_some());
+    assert_eq!(
+        chat_channel_members::Entity::find()
+            .filter(chat_channel_members::Column::ChannelId.eq(id))
+            .all(&db)
+            .await
+            .expect("count")
+            .len(),
+        2,
+        "the creator was seeded twice or a member was dropped"
+    );
+}
+
+/// The lesson the assignment graph learned: ids arrive in the body, and an
+/// unchecked one seeds somebody from another tenant into a readable channel.
+#[tokio::test]
+async fn a_member_from_another_org_is_refused() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let f = seed(&db).await;
+    let outsider = seed(&db).await; // its own org
+
+    let err = new_channel(&db, f.user, f.org, "leaky", None, &[outsider.user]).await;
+    assert!(err.is_err(), "a cross-tenant member was accepted");
+    // And nothing was written — the whole create is one transaction.
+    assert!(
+        chat_channels::Entity::find()
+            .filter(chat_channels::Column::OrgId.eq(f.org))
+            .all(&db)
+            .await
+            .expect("query")
+            .iter()
+            .all(|c| c.id == f.channel),
+        "a channel was left behind by a refused create"
+    );
+}
+
+/// Creating in an org you have no standing in is refused.
+#[tokio::test]
+async fn creating_in_a_foreign_org_is_refused() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let mine = seed(&db).await;
+    let theirs = seed(&db).await;
+
+    assert!(
+        new_channel(&db, mine.user, theirs.org, "trespass", None, &[])
+            .await
+            .is_err()
+    );
+}
+
+/// Joining is what makes a named channel a channel rather than a DM, and a
+/// double tap must not be an error.
+#[tokio::test]
+async fn joining_is_open_to_the_org_and_idempotent() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let f = seed(&db).await;
+    let joiner = seed_member(&db, f.org, "Joiner").await;
+
+    assert!(
+        member_channel(&db, f.channel, joiner).await.is_none(),
+        "fixture already had them in the channel"
+    );
+    join_channel_for(&db, joiner, f.channel)
+        .await
+        .expect("join");
+    assert!(member_channel(&db, f.channel, joiner).await.is_some());
+
+    join_channel_for(&db, joiner, f.channel)
+        .await
+        .expect("a second join is a double tap, not an error");
+    assert_eq!(
+        chat_channel_members::Entity::find()
+            .filter(chat_channel_members::Column::ChannelId.eq(f.channel))
+            .filter(chat_channel_members::Column::UserId.eq(joiner))
+            .all(&db)
+            .await
+            .expect("count")
+            .len(),
+        1
+    );
+}
+
+/// Someone with no standing in the org cannot join their way in.
+#[tokio::test]
+async fn joining_from_another_org_is_refused() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let f = seed(&db).await;
+    let outsider = seed(&db).await;
+
+    assert!(
+        join_channel_for(&db, outsider.user, f.channel)
+            .await
+            .is_err()
+    );
+    assert!(
+        member_channel(&db, f.channel, outsider.user)
+            .await
+            .is_none()
+    );
+}
+
+/// Joining a busy channel must not mark its whole history unread.
+///
+/// `last_read_at` starts NULL, and counting every message when it is NULL means
+/// joining a #general with 5,000 messages shows 5,000 unread — and, since the
+/// list sorts busiest-first, pins that channel to the top of the joiner's list
+/// until they open it. `joined_at` is the honest cutoff: unread means "since I
+/// could have read it", not "since the channel began".
+#[tokio::test]
+async fn joining_does_not_mark_the_whole_history_unread() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let f = seed(&db).await;
+
+    // Three messages that predate the join.
+    for i in 0..3 {
+        entity::chat_messages::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            channel_id: ActiveValue::Set(f.channel),
+            author_id: ActiveValue::Set(Some(f.user)),
+            body: ActiveValue::Set(format!("old {i}")),
+            created_at: ActiveValue::NotSet,
+            edited_at: ActiveValue::Set(None),
+            deleted_at: ActiveValue::Set(None),
+        }
+        .insert(&db)
+        .await
+        .expect("seed message");
+    }
+
+    let joiner = seed_member(&db, f.org, "Late Joiner").await;
+    join_channel_for(&db, joiner, f.channel)
+        .await
+        .expect("join");
+
+    assert_eq!(
+        unread_for(&db, joiner, f.channel).await.expect("unread"),
+        0,
+        "the joiner inherited the channel's whole history as unread"
+    );
+
+    // A message posted AFTER the join is unread, or the cutoff is too late.
+    entity::chat_messages::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        channel_id: ActiveValue::Set(f.channel),
+        author_id: ActiveValue::Set(Some(f.user)),
+        body: ActiveValue::Set("after you joined".into()),
+        created_at: ActiveValue::NotSet,
+        edited_at: ActiveValue::Set(None),
+        deleted_at: ActiveValue::Set(None),
+    }
+    .insert(&db)
+    .await
+    .expect("seed message");
+
+    assert_eq!(
+        unread_for(&db, joiner, f.channel).await.expect("unread"),
+        1,
+        "a message posted after the join did not count as unread"
+    );
+}
+
+/// What the create answers must be what a later read answers.
+///
+/// The handler used to trim independently of `new_channel`, so `topic: "  "`
+/// produced `{"topic": ""}` on create and `topic: null` on the next list — a
+/// client caching a value the server never stored.
+#[tokio::test]
+async fn the_create_response_matches_what_was_stored() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let f = seed(&db).await;
+
+    let made = new_channel(&db, f.user, f.org, "  spaced  ", Some("   "), &[])
+        .await
+        .expect("create");
+
+    assert_eq!(made.name, "spaced", "the name was not normalised once");
+    assert_eq!(
+        made.topic, None,
+        "a whitespace topic answered as empty, not null"
+    );
+
+    let stored = entity::chat_channels::Entity::find_by_id(made.id)
+        .one(&db)
+        .await
+        .expect("query")
+        .expect("row");
+    assert_eq!(stored.name.as_deref(), Some(made.name.as_str()));
+    assert_eq!(
+        stored.topic, made.topic,
+        "create answered something else than it stored"
     );
 }

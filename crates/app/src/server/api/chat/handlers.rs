@@ -11,6 +11,7 @@ use entity::{chat_channel_members, chat_channels, chat_messages, users};
 use futures::stream::Stream;
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
+use sea_orm::TransactionTrait;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromQueryResult,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
@@ -122,6 +123,31 @@ fn iso(t: DateTime<FixedOffset>) -> String {
     t.to_rfc3339()
 }
 
+/// Unread messages for one member of one channel.
+///
+/// Split out so the cutoff is assertable: unread is "since I could have read
+/// it", and the difference between `last_read_at` and `joined_at` is invisible
+/// until somebody joins a channel that already has history.
+pub async fn unread_for(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    channel_id: Uuid,
+) -> Result<u64, sea_orm::DbErr> {
+    let Some(m) = chat_channel_members::Entity::find_by_id((channel_id, user_id))
+        .one(db)
+        .await?
+    else {
+        return Ok(0);
+    };
+    let cutoff = m.last_read_at.unwrap_or(m.joined_at);
+    chat_messages::Entity::find()
+        .filter(chat_messages::Column::ChannelId.eq(channel_id))
+        .filter(chat_messages::Column::DeletedAt.is_null())
+        .filter(chat_messages::Column::CreatedAt.gt(cutoff))
+        .count(db)
+        .await
+}
+
 /// Member counts for a set of channels, in one `GROUP BY`.
 async fn count_by_channel(
     db: &DatabaseConnection,
@@ -173,6 +199,330 @@ async fn last_message_by_channel(
         .into_iter()
         .filter_map(|r| r.last_at.map(|t| (r.channel_id, t)))
         .collect())
+}
+
+/// Why a create or join was refused.
+///
+/// A named error rather than a bare `StatusCode` so the core below is testable
+/// without an HTTP layer — the same reason `visible_channels` exists, and the
+/// same lesson: an authorization decision reachable only through an extractor
+/// is one no test will cover.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ChannelError {
+    /// Bad input, or a named member the caller may legitimately see is wrong.
+    Invalid,
+    /// The org or channel is not visible to this caller. Collapsed with "does
+    /// not exist" on purpose, so a refusal never confirms one.
+    NotVisible,
+    /// The channel is archived.
+    Archived,
+    Db,
+}
+
+impl From<ChannelError> for StatusCode {
+    fn from(e: ChannelError) -> Self {
+        match e {
+            ChannelError::Invalid => StatusCode::BAD_REQUEST,
+            ChannelError::NotVisible => StatusCode::NOT_FOUND,
+            ChannelError::Archived => StatusCode::CONFLICT,
+            ChannelError::Db => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+/// Longest channel name. A display string on a `TEXT` column written by any
+/// member — bounded for the same reason every other user-supplied string is.
+const MAX_CHANNEL_NAME: usize = 80;
+const MAX_TOPIC: usize = 300;
+
+/// Most members that may be seeded at creation, beyond the creator. A cap, not
+/// a policy: `join` adds people one at a time behind its own gate, and this
+/// only stops one request writing an unbounded number of rows.
+const MAX_SEED_MEMBERS: usize = 200;
+
+/// Create a named channel and its membership, in one transaction.
+///
+/// # Who may create one
+///
+/// Anyone with standing in the org — the same gate every other chat route
+/// applies. Deliberately NOT `Ring::OrgAdmin`: a channel is content, not org
+/// shape, and a frontline worker who cannot start a conversation about their
+/// store is missing the point of the feature.
+///
+/// Every named member is checked for standing in the same org. Ids arrive in a
+/// request body, and an unchecked one seeds somebody from another tenant into a
+/// channel they can then read — the hole the assignment graph shipped once.
+///
+/// # Why the creator is always a member
+///
+/// Membership is the read gate, so a channel created without its creator is
+/// invisible to the person who just made it and, having no members, to everyone
+/// else. It would be a row nobody could reach.
+pub async fn new_channel(
+    db: &DatabaseConnection,
+    creator: Uuid,
+    org_id: Uuid,
+    name: &str,
+    topic: Option<&str>,
+    members: &[Uuid],
+) -> Result<NewChannel, ChannelError> {
+    let (name, topic) = normalise(name, topic)?;
+    if members.len() > MAX_SEED_MEMBERS {
+        return Err(ChannelError::Invalid);
+    }
+    if !in_org(db, creator, org_id).await {
+        return Err(ChannelError::NotVisible);
+    }
+    let all = resolve_members(db, creator, org_id, members).await?;
+
+    let channel_id = Uuid::new_v4();
+    let txn = db.begin().await.map_err(|_| ChannelError::Db)?;
+
+    // One transaction: a channel with no members is unreachable by anyone, so
+    // committing the row without its membership would leave an orphan behind on
+    // any failure between the two. Every standing check ran BEFORE `begin`, so
+    // the transaction is two statements wide rather than held open across a
+    // few hundred round trips.
+    chat_channels::ActiveModel {
+        id: Set(channel_id),
+        org_id: Set(org_id),
+        kind: Set("channel".to_string()),
+        name: Set(Some(name.clone())),
+        topic: Set(topic.clone()),
+        created_by: Set(Some(creator)),
+        // `NotSet` so the column default applies — the database's clock, for
+        // the same reason `post_message` uses it.
+        created_at: sea_orm::ActiveValue::NotSet,
+        archived_at: Set(None),
+    }
+    .insert(&txn)
+    .await
+    .map_err(|e| {
+        warn!(error = %e, "chat channel insert failed");
+        ChannelError::Db
+    })?;
+
+    // `insert_many`, not one statement per member: 200 seeded members was 200
+    // round trips inside an open transaction.
+    chat_channel_members::Entity::insert_many(all.iter().map(|m| {
+        chat_channel_members::ActiveModel {
+            channel_id: Set(channel_id),
+            user_id: Set(*m),
+            joined_at: sea_orm::ActiveValue::NotSet,
+            last_read_at: Set(None),
+            muted: Set(false),
+        }
+    }))
+    .exec_without_returning(&txn)
+    .await
+    .map_err(|e| {
+        warn!(error = %e, "chat channel membership insert failed");
+        ChannelError::Db
+    })?;
+
+    txn.commit().await.map_err(|e| {
+        warn!(error = %e, "chat channel create commit failed");
+        ChannelError::Db
+    })?;
+
+    info!(%channel_id, %org_id, members = all.len(), "chat channel created");
+    // The NORMALISED values, returned rather than re-derived by the caller.
+    // The handler used to trim independently and answer `""` for a whitespace
+    // topic this function had already stored as NULL — so the create response
+    // disagreed with every later read. One normalisation, one answer.
+    Ok(NewChannel {
+        id: channel_id,
+        name,
+        topic,
+        members: all.len() as u64,
+    })
+}
+
+/// A created channel, as the caller needs to describe it.
+pub struct NewChannel {
+    pub id: Uuid,
+    pub name: String,
+    pub topic: Option<String>,
+    pub members: u64,
+}
+
+/// Trim and bound the caller's strings, once.
+fn normalise(name: &str, topic: Option<&str>) -> Result<(String, Option<String>), ChannelError> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > MAX_CHANNEL_NAME {
+        return Err(ChannelError::Invalid);
+    }
+    let topic = topic.map(str::trim).filter(|t| !t.is_empty());
+    if topic.is_some_and(|t| t.chars().count() > MAX_TOPIC) {
+        return Err(ChannelError::Invalid);
+    }
+    Ok((name.to_string(), topic.map(str::to_string)))
+}
+
+/// The creator plus every named member, once each, all confirmed to have
+/// standing in this org.
+///
+/// Two queries regardless of member count. The per-member `in_org` loop it
+/// replaces issued up to two each, so 200 seeded members meant ~400 sequential
+/// round trips before the transaction even opened.
+///
+/// "Standing" is defined here the same way `orgs_with_standing` defines it —
+/// membership OR active frontline enrolment — because a second definition is
+/// how `list_channels` ended up without the gate `member_channel` already had.
+async fn resolve_members(
+    db: &DatabaseConnection,
+    creator: Uuid,
+    org_id: Uuid,
+    members: &[Uuid],
+) -> Result<Vec<Uuid>, ChannelError> {
+    // Creator first, then anyone named, deduped: the membership table is keyed
+    // on `(channel_id, user_id)`, so a caller naming themselves would collide
+    // with the row we always insert.
+    let mut all: Vec<Uuid> = vec![creator];
+    for m in members {
+        if !all.contains(m) {
+            all.push(*m);
+        }
+    }
+    let named: Vec<Uuid> = all.iter().copied().skip(1).collect();
+    if named.is_empty() {
+        return Ok(all);
+    }
+
+    let mut standing: std::collections::HashSet<Uuid> = entity::org_members::Entity::find()
+        .filter(entity::org_members::Column::OrgId.eq(org_id))
+        .filter(entity::org_members::Column::UserId.is_in(named.clone()))
+        .all(db)
+        .await
+        .map_err(|_| ChannelError::Db)?
+        .into_iter()
+        .map(|m| m.user_id)
+        .collect();
+    standing.extend(
+        entity::org_frontline_members::Entity::find()
+            .filter(entity::org_frontline_members::Column::OrgId.eq(org_id))
+            .filter(entity::org_frontline_members::Column::UserId.is_in(named.clone()))
+            .filter(entity::org_frontline_members::Column::Status.eq("active"))
+            .all(db)
+            .await
+            .map_err(|_| ChannelError::Db)?
+            .into_iter()
+            .map(|m| m.user_id),
+    );
+
+    // `Invalid`, not `NotVisible`: the caller can see this org, so a wrong
+    // member id is a fact about their request rather than a boundary.
+    if named.iter().any(|m| !standing.contains(m)) {
+        return Err(ChannelError::Invalid);
+    }
+    Ok(all)
+}
+
+/// Add a user to a named channel in an org they have standing in.
+///
+/// The gate is org standing, NOT existing membership — `member_channel` would
+/// refuse the very thing this exists to grant. Idempotent, because joining
+/// twice is what a double tap produces rather than a mistake worth surfacing.
+pub async fn join_channel_for(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    channel_id: Uuid,
+) -> Result<(), ChannelError> {
+    let channel = chat_channels::Entity::find_by_id(channel_id)
+        .one(db)
+        .await
+        .map_err(|_| ChannelError::Db)?
+        .ok_or(ChannelError::NotVisible)?;
+
+    // Same collapsed refusal as `member_channel`: a channel in an org the
+    // caller cannot see must not be confirmed to exist. A DM is refused the
+    // same way — its membership is fixed at creation, which is exactly what
+    // "private thread between a fixed set of members" means.
+    if !in_org(db, user_id, channel.org_id).await || channel.kind != "channel" {
+        return Err(ChannelError::NotVisible);
+    }
+    if channel.archived_at.is_some() {
+        return Err(ChannelError::Archived);
+    }
+
+    chat_channel_members::Entity::insert(chat_channel_members::ActiveModel {
+        channel_id: Set(channel_id),
+        user_id: Set(user_id),
+        joined_at: sea_orm::ActiveValue::NotSet,
+        last_read_at: Set(None),
+        muted: Set(false),
+    })
+    .on_conflict(
+        sea_orm::sea_query::OnConflict::columns([
+            chat_channel_members::Column::ChannelId,
+            chat_channel_members::Column::UserId,
+        ])
+        .do_nothing()
+        .to_owned(),
+    )
+    .exec_without_returning(db)
+    .await
+    .map_err(|e| {
+        warn!(error = %e, "chat channel join failed");
+        ChannelError::Db
+    })?;
+
+    info!(%channel_id, user = %user_id, "joined chat channel");
+    Ok(())
+}
+
+/// `POST /api/chat/channels` — create a named channel.
+#[instrument(skip_all, fields(org_id = %body.org_id))]
+pub async fn create_channel(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Json(body): Json<CreateChannelRequest>,
+) -> Result<(StatusCode, Json<ChannelSummary>), StatusCode> {
+    let db = establish_connection()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+
+    // Everything in the response comes from what was STORED, not from what was
+    // sent: normalising in two places is how a create could answer `topic: ""`
+    // for a value it had already written as NULL.
+    let made = new_channel(
+        &db,
+        user.id,
+        body.org_id,
+        &body.name,
+        body.topic.as_deref(),
+        &body.members,
+    )
+    .await
+    .map_err(StatusCode::from)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(ChannelSummary {
+            id: made.id,
+            kind: "channel".to_string(),
+            name: Some(made.name),
+            topic: made.topic,
+            archived: false,
+            members: made.members,
+            unread: 0,
+            last_message_at: None,
+        }),
+    ))
+}
+
+/// `POST /api/chat/channels/{id}/join` — add yourself to an open channel.
+#[instrument(skip_all, fields(channel_id = %channel_id))]
+pub async fn join_channel(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Path(channel_id): Path<Uuid>,
+) -> Result<StatusCode, StatusCode> {
+    let db = establish_connection()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    join_channel_for(&db, user.id, channel_id)
+        .await
+        .map_err(StatusCode::from)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// The channels this user may see: their membership rows, narrowed to orgs they
@@ -258,12 +608,17 @@ pub async fn list_channels(
         // most-noticed bug a chat product can ship. Per-channel because the
         // cutoff differs per membership row, which is the one thing here that
         // does not fold into a GROUP BY.
-        let mut unread_q = chat_messages::Entity::find()
+        // Unread is "since I could have read it", not "since the channel
+        // began". Falling back to `joined_at` when nothing has been read yet is
+        // what stops joining a busy channel showing its entire history as
+        // unread — and, because the list sorts busiest-first, pinning the
+        // channel you just joined to the top of everyone's list until they open
+        // it. `joined_at` is DB-defaulted, so this needs no replica clock.
+        let cutoff = m.last_read_at.unwrap_or(m.joined_at);
+        let unread_q = chat_messages::Entity::find()
             .filter(chat_messages::Column::ChannelId.eq(ch.id))
-            .filter(chat_messages::Column::DeletedAt.is_null());
-        if let Some(at) = m.last_read_at {
-            unread_q = unread_q.filter(chat_messages::Column::CreatedAt.gt(at));
-        }
+            .filter(chat_messages::Column::DeletedAt.is_null())
+            .filter(chat_messages::Column::CreatedAt.gt(cutoff));
         let unread = unread_q
             .count(&db)
             .await

@@ -78,3 +78,21 @@ mod tests {
         assert_eq!(clamp_limit(Some(0)), 1);
     }
 }
+
+#[derive(Debug, Deserialize)]
+pub struct CreateChannelRequest {
+    /// Which org the channel belongs to. In the body rather than the path
+    /// because `/chat` is mounted outside `/orgs/{org_id}` — nesting it would
+    /// put `org_middleware` in front, which rejects the frontline workers these
+    /// channels exist for. The handler makes the standing check the middleware
+    /// would have made.
+    pub org_id: Uuid,
+    /// Required, and trimmed. The schema's `chat_channels_name_matches_kind`
+    /// enforces that a `channel` has one; this endpoint only creates named
+    /// channels, so a DM's nameless shape is not reachable here.
+    pub name: String,
+    pub topic: Option<String>,
+    /// Extra members to add alongside the creator, who is always added.
+    #[serde(default)]
+    pub members: Vec<Uuid>,
+}

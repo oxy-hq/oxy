@@ -49,7 +49,14 @@ pub(super) fn build_global_routes(app_state: &AppState) -> RoleRouter {
         // happened to be routed to the ide. This is the "reads must stay HA"
         // half of that skill, and a conversation is the most read-shaped thing
         // in the product.
-        .route_fleet("/chat/channels", get(chat::handlers::list_channels))
+        .route_fleet(
+            "/chat/channels",
+            get(chat::handlers::list_channels).post(chat::handlers::create_channel),
+        )
+        .route_fleet(
+            "/chat/channels/{id}/join",
+            post(chat::handlers::join_channel),
+        )
         .route_fleet(
             "/chat/channels/{id}/messages",
             get(chat::handlers::list_messages).post(chat::handlers::post_message),
