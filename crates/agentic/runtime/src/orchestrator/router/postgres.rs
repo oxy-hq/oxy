@@ -364,6 +364,43 @@ impl TaskRouter for PostgresTaskRouter {
     }
 }
 
+/// Open a dedicated LISTEN connection and hand the caller BOTH halves.
+///
+/// `LISTEN` notifications are only reachable by polling the connection future,
+/// so a caller that wants them has to drive it — which is why this returns the
+/// connection instead of spawning it the way a query client would.
+///
+/// It lives here because this module already owns the two decisions a listener
+/// gets wrong on its own: the [`ListenerConfigFactory`] (which is what makes
+/// RDS IAM auth work at all — the token is only checked at connect time, so
+/// every reconnect needs a fresh one) and [`TlsVerification`] (our RDS and
+/// CloudNativePG CAs are not in the Mozilla bundle, so `require` must mean
+/// encrypt-without-validating rather than fail).
+///
+/// A second listener choosing either for itself would work on a laptop and fail
+/// in production, which is the expensive shape of wrong. Today's second caller
+/// is chat's cross-replica delivery listener.
+pub async fn connect_listener(
+    factory: &ListenerConfigFactory,
+    verification: TlsVerification,
+) -> Result<
+    (
+        tokio_postgres::Client,
+        tokio_postgres::Connection<
+            tokio_postgres::Socket,
+            <MakeRustlsConnect as tokio_postgres::tls::MakeTlsConnect<tokio_postgres::Socket>>::Stream,
+        >,
+    ),
+    String,
+>{
+    let config = factory().await?;
+    let tls = build_rustls_connector(verification);
+    config
+        .connect(tls)
+        .await
+        .map_err(|e| format!("listener connect failed: {e}"))
+}
+
 /// Build the shared rustls connector, honouring the requested
 /// [`TlsVerification`] posture so the listener matches the connection
 /// pool's `OXY_DATABASE_SSL_MODE` handling exactly.

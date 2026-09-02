@@ -90,6 +90,9 @@ pub mod oidc_used_jti;
 /// Procedures/Workflows were renamed to Automations; existing call sites
 /// referencing `entity::customer_app_procedure_runs` keep resolving here.
 pub use customer_app_automation_runs as customer_app_procedure_runs;
+pub mod chat_channel_members;
+pub mod chat_channels;
+pub mod chat_messages;
 pub mod device_tokens;
 pub mod feature_flag;
 pub mod git_namespaces;

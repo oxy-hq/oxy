@@ -26,6 +26,7 @@ mod common;
 mod airway_compile_boundary;
 mod anomaly_bulk_status;
 mod build;
+mod chat_org_standing;
 mod compile;
 mod compile_oltp_promote;
 mod compiled_reader_semantic;

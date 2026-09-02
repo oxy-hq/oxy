@@ -14,6 +14,7 @@ use crate::api::middlewares::{
     subscription_guard,
 };
 use crate::api::{admin, org_logo, org_teams, organizations, user, workspaces};
+use crate::server::api::chat;
 use crate::server::api::notifications;
 use crate::server::api::work;
 
@@ -34,6 +35,27 @@ pub(super) fn build_global_routes(app_state: &AppState) -> RoleRouter {
             get(crate::server::api::admin::apps::handlers::list_my_apps),
         )
         .route_fleet("/invitations/mine", get(organizations::list_my_invitations))
+        // ── Chat ────────────────────────────────────────────────────────────
+        //
+        // Every route here is `route_fleet`, INCLUDING the SSE stream, and that
+        // is the interesting call. The route-classification skill pins live
+        // streams to the ide — but that rule is about runs executing in-process
+        // against a working copy. This stream is a fan-out over persisted data,
+        // woken by Postgres LISTEN/NOTIFY, and touches no working copy, no
+        // `.git` and no state dir.
+        //
+        // Pinning it to the singleton would be actively wrong twice over: chat
+        // would die on every deploy, and it would only work at all for whoever
+        // happened to be routed to the ide. This is the "reads must stay HA"
+        // half of that skill, and a conversation is the most read-shaped thing
+        // in the product.
+        .route_fleet("/chat/channels", get(chat::handlers::list_channels))
+        .route_fleet(
+            "/chat/channels/{id}/messages",
+            get(chat::handlers::list_messages).post(chat::handlers::post_message),
+        )
+        .route_fleet("/chat/channels/{id}/read", post(chat::handlers::mark_read))
+        .route_fleet("/chat/channels/{id}/stream", get(chat::handlers::stream))
         // The assignment graph. NOT nested under `/orgs/{org_id}`, and that is
         // load-bearing: `org_middleware` resolves an org membership, and a
         // frontline worker holds none by design. Nesting these would lock out

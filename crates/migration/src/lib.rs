@@ -150,6 +150,7 @@ mod m20260821_000001_view_event_roles;
 mod m20260829_000001_frontline_identity;
 mod m20260830_000001_oauth_states_provider;
 mod m20260831_000001_world_model_events;
+mod m20260901_000001_chat;
 mod m20260901_000002_assignment_graph;
 mod m20260901_000003_notifications;
 
@@ -303,6 +304,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260829_000001_frontline_identity::Migration),
             Box::new(m20260830_000001_oauth_states_provider::Migration),
             Box::new(m20260831_000001_world_model_events::Migration),
+            Box::new(m20260901_000001_chat::Migration),
             Box::new(m20260901_000002_assignment_graph::Migration),
             Box::new(m20260901_000003_notifications::Migration),
         ]

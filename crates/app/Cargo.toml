@@ -157,6 +157,10 @@ once_cell = { workspace = true }
 scopeguard = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
+# Only for the AsyncMessage variant the chat listener matches on; the
+# connection itself is minted by agentic-runtime, which owns the TLS and IAM
+# decisions a listener must not make for itself.
+tokio-postgres = { workspace = true }
 tokio-stream = { workspace = true }
 include_dir = { workspace = true }
 tower-serve-static = { workspace = true }
@@ -253,7 +257,6 @@ testcontainers-modules = { workspace = true, features = ["postgres"] }
 # The OLTP provisioner tests connect *as the minted writer role* to prove the
 # DSN it hands back actually works and lands writes in the right schema — the
 # one thing asserting on the generated SQL cannot show.
-tokio-postgres = { workspace = true }
 # Captures the SES request without a network call or an emulator, so the
 # attachment wire format is asserted against the real SDK serializer.
 aws-smithy-http-client = { workspace = true, features = ["test-util"] }
