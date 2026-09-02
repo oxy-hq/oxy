@@ -1250,6 +1250,33 @@ mod may_drive_tests {
     fn a_missing_source_type_is_drivable() {
         assert!(may_drive(None, &["compile"]));
     }
+
+    /// The Phase 2 mirror image: the `ide` node declines `airway` so a worker
+    /// takes the pipeline instead of the pod that accepted the submit.
+    ///
+    /// Pinned separately from the compile case because the two exclusions have
+    /// opposite justifications — `compile` is a capability the decliner lacks,
+    /// `airway` is a placement preference by a node that is perfectly capable.
+    /// A future reader collapsing them into "things a node can't do" would
+    /// break the airway rule without failing the compile test.
+    #[test]
+    fn the_ide_declines_airway_but_still_drives_compiles() {
+        assert!(!may_drive(Some("airway"), &["airway"]));
+        assert!(may_drive(Some("compile"), &["airway"]));
+        assert!(may_drive(Some("workflow"), &["airway"]));
+        assert!(may_drive(Some("analytics"), &["airway"]));
+    }
+
+    /// The two gates are disjoint sets held by different roles, never both by
+    /// one process — but `may_drive` itself must not care, so that a future
+    /// role needing both is a one-line change at the call site rather than a
+    /// rewrite here.
+    #[test]
+    fn excluding_both_kinds_declines_both() {
+        assert!(!may_drive(Some("airway"), &["compile", "airway"]));
+        assert!(!may_drive(Some("compile"), &["compile", "airway"]));
+        assert!(may_drive(Some("workflow"), &["compile", "airway"]));
+    }
 }
 
 #[cfg(test)]

@@ -317,6 +317,151 @@ fn terminal_event_for_status(
     }
 }
 
+/// How long [`stream_events`] will park on the in-process notifier before
+/// re-reading `agentic_run_events` anyway.
+///
+/// **The notifier is not a sufficient wake source, because the driver is often
+/// in a different process.** `RuntimeState.notifiers` is a per-process
+/// `DashMap<run_id, Notify>` and `state.notify(..)` rings only this process's
+/// copy. Since airway submits enqueue `TaskScope::Global`
+/// (`routes/airway.rs::start_and_drive`), the pod that accepted the submit —
+/// and therefore serves this SSE stream, the route being `IdeOnly` — is
+/// usually *not* the pod driving the run. The driver writes rows to
+/// `agentic_run_events` in Postgres and rings a notifier we cannot see.
+///
+/// Parking on the notifier alone therefore hangs the stream: the client gets
+/// whatever was already written at the first poll and then nothing, while
+/// `still_active` stays true forever (only an in-process `deregister` clears
+/// the entry, and the driver's process is the one that calls it). That breaks
+/// the invariant that every run stream ends in `done`/`error`/`cancelled`.
+///
+/// A timer costs one indexed `get_events_after` per stream per interval and
+/// needs no new infrastructure. Per-run LISTEN/NOTIFY was the alternative and
+/// is rejected for the reasons `adr-postgres-as-worker-queue.md` gives (§1,
+/// §3): a second permanent LISTEN connection per pod is a horizontal-scale cap
+/// and a PgBouncer footgun. #2823 rejected it on the same grounds for the
+/// world-model bus and tailed a table instead.
+///
+/// The notifier stays as the fast path: a locally-driven run (`OXY_ROLE=all`,
+/// or any run this process drives) still wakes instantly, so this interval is
+/// the added latency only when the driver is remote.
+const REMOTE_DRIVER_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The backed-off interval used once a stream has been quiet for
+/// [`IDLE_TICKS_BEFORE_BACKOFF`].
+///
+/// A run that is `awaiting_input` is not terminal and deliberately never times
+/// out (`SuspendedHuman`), so its stream can legitimately stay open for hours.
+/// At the fast interval that is two indexed queries a second, per open
+/// browser, for the whole wait — a real cost on a handler shared by every
+/// domain, not a hypothetical one.
+///
+/// Backing off is safe here precisely because it only engages after a long
+/// quiet stretch: an active pipeline emits events continuously and resets to
+/// the fast interval, and a run waiting to be claimed is picked up in
+/// well under the idle threshold, so neither case ever reaches this value.
+const IDLE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Consecutive event-free polls before [`IDLE_POLL_INTERVAL`] takes over.
+///
+/// Sized to be far longer than any realistic wait for a driver to claim a
+/// freshly-enqueued run, so the back-off can never be what makes a pipeline
+/// look slow to start. A worker claims in ~300 ms; the ungated periodic
+/// stranded tick is the slow path at ~30 s. 90 s clears both.
+const IDLE_TICKS_BEFORE_BACKOFF: u32 = 90;
+
+/// Ask the run row on one in every N **timed** wakes, not on all of them.
+///
+/// ## Why this is paced rather than free
+///
+/// `idle_timeout` cannot reap a connection any poller keeps touching — sqlx
+/// holds idle connections in a FIFO `ArrayQueue` and `release()` restamps
+/// `idle_since`, so a sequential caller round-robins the whole idle set and
+/// resets the very clock the reaper measures. The threshold is
+/// `N_idle / idle_timeout` acquires per second: **0.27/s** at the default
+/// ceiling of 80, and **0.13/s** at the ceiling of 40 the incident review
+/// recommends. That is the standing condition behind the 189-connection
+/// plateau on oxy-prod (2026-09-01) — six hours of 30 s stalls and ~2,000
+/// refused connections an hour — and it is still live, so anything that adds a
+/// steady poll has to be sized against it rather than assumed cheap.
+///
+/// Before this change an idle SSE stream parked on the notifier and issued
+/// **zero** acquires. It cannot stay that way and still serve a run driven in
+/// another process, so the budget is spent deliberately — and only where it
+/// buys something. **Both** queries count: `get_events_after` runs on every
+/// wake, `get_run` on one timed wake in `N`.
+///
+/// | stream | interval | acquires/sec |
+/// | --- | --- | --- |
+/// | notifier present, notified wake | — | 0 |
+/// | notifier present, non-airway, quiet | 30 s | 0.033 + 0.007 = **0.04** |
+/// | airway, or no notifier — active | 1 s | 1 + 0.2 = **1.2** |
+/// | either, quiet ≥ `IDLE_TICKS_BEFORE_BACKOFF` | 30 s | **0.04** |
+///
+/// The fast tier is keyed on *whether the timer is the wake source*, not on
+/// `source_type` alone: a stream holding no notifier has nothing that can ring
+/// it, whatever kind it is. `notifier` is snapshotted once before the loop and
+/// never re-read, so that state is permanent for the stream's life — see the
+/// gate at the park.
+///
+/// An earlier version of this table read `driver local … ~0` and was wrong: it
+/// counted only `get_run`, and `timed_wakes` not advancing on a notified wake
+/// gates that query alone. `get_events_after` fires on every wake regardless,
+/// so before `driver_may_be_remote` existed an analytics stream paid ~1.2/s
+/// through every LLM call and warehouse query — gaps long enough to time out
+/// but short enough to keep resetting `idle_polls`, so it never reached the
+/// back-off. That is the largest number in the table, on the pod this change
+/// exists to relieve, for the source types that do not need a timer at all.
+///
+/// Hence the gate: only a kind whose driver can be in another process pays the
+/// fast interval. Everything else sits at 30 s, where the notifier is doing
+/// the real work and the timer is a safety net.
+///
+/// The remaining 1.2/s applies to airway streams only, is bounded by the run's
+/// duration, and decays to 0.04/s after `IDLE_TICKS_BEFORE_BACKOFF`.
+const ROW_CHECK_EVERY_N_TIMED_WAKES: u32 = 5;
+
+/// Why [`stream_events`] stopped parking.
+enum Wake {
+    /// The in-process driver flushed events — re-read immediately.
+    Notified,
+    /// Nothing rang us within [`REMOTE_DRIVER_POLL_INTERVAL`]. Either the run
+    /// is idle, or its driver is in another process. Re-read either way.
+    Timeout,
+    Shutdown,
+}
+
+/// Is the run row itself terminal?
+///
+/// The backstop for a remotely-driven run: `still_active` keys on this
+/// process's notifier map, which a remote driver never clears, so the run row
+/// is the only authority this process has for "nothing more is coming".
+/// Errs toward `false` — a failed lookup means "keep streaming", never a
+/// premature close.
+async fn run_row_is_terminal(db: &sea_orm::DatabaseConnection, run_id: &str) -> bool {
+    matches!(
+        db::get_run(db, run_id).await,
+        Ok(Some(run)) if status_is_terminal(run.task_status.as_deref())
+    )
+}
+
+/// Is this `task_status` one that means nothing more is coming?
+///
+/// Pulled out of [`run_row_is_terminal`] so it can be asserted without a
+/// database, because it is now load-bearing in a way it was not before: this
+/// predicate is the **only** thing keeping a stream open for a run driven in
+/// another process. A missing notifier no longer closes a stream, so widening
+/// this set — adding `awaiting_input`, say, which looks idle and is not —
+/// would close HITL and in-flight streams early, emitting a synthesized
+/// terminal event for a run that is still going. Narrowing it strands the
+/// stream open instead.
+fn status_is_terminal(status: Option<&str>) -> bool {
+    matches!(
+        status,
+        Some("done") | Some("failed") | Some("cancelled") | Some("timed_out")
+    )
+}
+
 async fn synth_terminal_event(
     db: &sea_orm::DatabaseConnection,
     run_id: &str,
@@ -360,6 +505,25 @@ pub async fn stream_events(
         .and_then(|r| r.source_type)
         .unwrap_or_else(|| "analytics".to_string());
 
+    // Can this run's driver be in another process? Only then does the timer
+    // below need to be fast.
+    //
+    // Airway is the only kind enqueued `TaskScope::Global` from an interactive
+    // submit, so it is the only kind whose events can be written by a pod that
+    // cannot ring this one's notifier. Everything else — analytics, builder,
+    // automation — direct-drives, so its notifier IS authoritative and a fast
+    // timer buys nothing while costing a `get_events_after` per second through
+    // every LLM call and warehouse query. That is most open streams, and on
+    // `main` they parked on the notifier at zero acquires; keeping them there
+    // is the whole point of this flag.
+    //
+    // ⚠️ MAINTENANCE HAZARD: a kind that moves to `TaskScope::Global` must be
+    // added here, or its stream silently inherits the 30 s interval and looks
+    // like a slow UI with no error anywhere. There is no compile-time link
+    // between the enqueue scope and this list — if you are moving a submit to
+    // `Global`, this is the second place to change.
+    let driver_may_be_remote = source_type == agentic_runtime::coordinator::AIRWAY_SOURCE_TYPE;
+
     let registry = Arc::clone(&state.event_registry);
 
     let stream = async_stream::stream! {
@@ -369,6 +533,22 @@ pub async fn stream_events(
         // streamed. If the run ends without one, we synthesize it from the
         // run row so the client never hangs (see `synth_terminal_event`).
         let mut terminal_emitted = false;
+        // Consecutive event-free polls, for the idle back-off. Reset by any
+        // row, so an active run always polls at the fast interval.
+        let mut idle_polls: u32 = 0;
+        // Timed (not notified) wakes so far, which is what paces the run-row
+        // check. See `ROW_CHECK_EVERY_N_TIMED_WAKES`.
+        let mut timed_wakes: u32 = 0;
+        // May this iteration spend a query on the run row?
+        //
+        // Set at the wake site rather than derived from `timed_wakes` here: a
+        // notified wake leaves the counter alone, so `timed_wakes % N == 0`
+        // would be permanently TRUE for a locally-driven stream and ask the
+        // row on every single event batch — the exact opposite of the intent,
+        // and a new query per batch on the handler every domain shares.
+        // Starts true so a stream opened against an already-finished run closes
+        // on its first pass.
+        let mut check_run_row = true;
 
         loop {
             let rows = match db::get_events_after(&db, &run_id, last_sent_seq).await {
@@ -378,6 +558,12 @@ pub async fn stream_events(
                     break;
                 }
             };
+
+            if rows.is_empty() {
+                idle_polls = idle_polls.saturating_add(1);
+            } else {
+                idle_polls = 0;
+            }
 
             let mut terminal = false;
             for row in rows {
@@ -410,10 +596,63 @@ pub async fn stream_events(
                     }
                 }
             }
-            if terminal { return; }
+            if terminal {
+                // Drop this process's notifier entry for a finished run. For a
+                // locally-driven run the driver's `deregister` already did it;
+                // for a remotely-driven one nothing else ever will, and the
+                // entry would otherwise accumulate one per interactive run for
+                // the life of the pod.
+                //
+                // Confirmed against the RUN ROW first, and that is not
+                // belt-and-braces. `is_terminal` is a per-source-type
+                // classification of a UI event, not proof the run is over —
+                // for airway it fires on `load_completed`, and this very
+                // predicate has already had a bug of exactly that shape
+                // (`subrun_completed` ending an analytics stream mid-run, see
+                // `sse::is_terminal`). Removing the notifier on a false
+                // positive would take EVERY OTHER subscriber down with it:
+                // their `still_active` goes false, they drain, and
+                // `synth_terminal_event` yields nothing for a non-terminal
+                // status — so they close with no terminal event and their
+                // clients hang. This stream returning early is pre-existing
+                // behaviour; making it everyone's problem would not be.
+                //
+                // One primary-key lookup, once, as a stream ends.
+                //
+                // `deregister` clears `notifiers` AND `answer_txs` AND
+                // `cancel_txs` — the three `state.register` created. The drive
+                // this handler used to spawn was what called it; removing the
+                // drive removed the cleanup, and the remote driver's own
+                // `deregister` runs against the WORKER's `RuntimeState`.
+                if run_row_is_terminal(&db, &run_id).await {
+                    state.deregister(&run_id);
+                }
+                return;
+            }
 
-            let still_active = state.notifiers.contains_key(&run_id);
-            if !still_active {
+            // Should this stream close?
+            //
+            // A notifier entry in THIS process used to be the answer, and it
+            // no longer is. Since airway submits enqueue `TaskScope::Global`,
+            // a run legitimately outlives the pod that registered its
+            // notifier: an ide restart mid-pipeline leaves a reconnecting
+            // browser on a fresh pod with an empty map and a run that is very
+            // much alive on a worker. Closing there emits NO terminal event —
+            // `synth_terminal_event` yields nothing for a `running` row — and
+            // `fetchEventSource` answers a clean close by reconnecting, so the
+            // bounded poll below degrades into an unbounded reconnect loop
+            // through auth middleware on an `IdeOnly` route. That is both the
+            // hang this handler exists to prevent and, per the 189-connection
+            // incident, the more expensive of the two failure shapes.
+            //
+            // So the RUN ROW is the authority and the notifier is only a hint
+            // about whether anything local will wake us. The row is consulted
+            // on a schedule rather than every tick — see
+            // `ROW_CHECK_EVERY_N_TIMED_WAKES`.
+            if check_run_row && run_row_is_terminal(&db, &run_id).await {
+                // One final drain. The run row can reach a terminal status a
+                // moment before its last events land, so read once more rather
+                // than truncate the stream.
                 if let Ok(final_rows) = db::get_events_after(&db, &run_id, last_sent_seq).await {
                     for row in final_rows {
                         last_sent_seq = row.seq;
@@ -440,36 +679,113 @@ pub async fn stream_events(
                         }
                     }
                 }
-                // The run is no longer active. If nothing terminal was ever
-                // streamed (a failure outside the orchestrator loop, e.g. a
-                // broken semantics file), derive the terminal event from the
-                // authoritative run-row status so the client doesn't hang.
+                // Nothing terminal was ever streamed (a failure outside the
+                // orchestrator loop, e.g. a broken semantics file, or a driver
+                // that died). Derive it from the authoritative run-row status
+                // so the client doesn't hang.
+                //
+                // "Doesn't hang" now carries a tail, and it is worth stating.
+                // This path used to fire on the next wake after the notifier
+                // went away; it now waits for a wake on which
+                // `ROW_CHECK_EVERY_N_TIMED_WAKES` allows the row query. That is
+                // `5 × poll_after`, so it depends on which tier the stream is
+                // in:
+                //
+                // - timer is the wake source (airway, or no notifier here) and
+                //   still inside the back-off → 1 s tier → **~5 s**
+                // - anything at the 30 s tier — a quiet non-airway stream from
+                //   its first park, or any stream past
+                //   `IDLE_TICKS_BEFORE_BACKOFF` → **~150 s**
+                //
+                // The 150 s case is real and not only a backed-off one: a
+                // local run whose driver died without writing a terminal event
+                // leaves its notifier registered, so the stream sits at 30 s
+                // and waits it out. Only the synthesized path pays this at all
+                // — a terminal *event* closes the stream on the very next poll
+                // — and it is the deliberate trade for the query budget above.
                 if !terminal_emitted
                     && let Some(ev) =
                         synth_terminal_event(&db, &run_id, last_sent_seq + 1).await
                 {
                     yield Ok(ev);
                 }
+                // `deregister`, not `notifiers.remove`: the drive this handler
+                // used to spawn was what called it, and removing the drive
+                // removed the cleanup with it. The remote driver's own
+                // `deregister` runs against the WORKER's `RuntimeState`, not
+                // this one, so without this `answer_txs` and `cancel_txs` grow
+                // by one entry per interactive submit for the life of the pod —
+                // on exactly the pod this change exists to relieve. Safe here
+                // because the run row is confirmed terminal, so nothing is
+                // waiting on any of the three maps.
+                //
+                // NOT a complete reaper, and shouldn't be remembered as one:
+                // this only runs when a client streams through to termination.
+                // A tab closed mid-run, or a submit whose stream is never
+                // opened, still leaves the three entries behind for the life of
+                // the pod. That is the same order of growth as `statuses`,
+                // which `deregister` deliberately never clears so late
+                // subscribers can still read a finished run's outcome — so it
+                // is a pre-existing class rather than a new one, and closing it
+                // properly means a sweeper, not a bigger `deregister`.
+                state.deregister(&run_id);
                 return;
             }
 
-            match &notifier {
-                Some(n) => {
-                    tokio::select! {
-                        _ = n.notified() => {},
-                        _ = state.shutdown_token.cancelled() => break,
-                    }
-                }
-                // No notifier was ever registered for this run (it failed
-                // before the driver task spawned). Same fallback as above.
-                None => {
-                    if !terminal_emitted
-                        && let Some(ev) =
-                            synth_terminal_event(&db, &run_id, last_sent_seq + 1).await
-                    {
-                        yield Ok(ev);
-                    }
-                    return;
+            // Park. The notifier is the fast path when the driver is local; the
+            // timer is what makes a remotely-driven run work at all, and the
+            // only wake source when this process holds no notifier for the run.
+            // Fast when the timer is actually the wake source, and only until
+            // the stream goes quiet.
+            //
+            // Two ways it can be the wake source, and `source_type` alone
+            // covers just one. A run whose driver may be in another process is
+            // the obvious case. The other is a stream holding **no notifier**:
+            // `notifier` is snapshotted once, before this loop, and never
+            // re-read, so a stream that opens while this process has no entry
+            // keeps `None` for its whole life — even if recovery resumes the
+            // run here a moment later and registers one. Gating on
+            // `driver_may_be_remote` alone put that stream at 30 s forever: an
+            // ide restart mid-analytics-run would leave a reconnecting browser
+            // receiving events in 30 s batches, and waiting the full
+            // `ROW_CHECK_EVERY_N_TIMED_WAKES` × 30 s for a synthesized terminal
+            // event, with no back-off needed to get there.
+            //
+            // A *present* notifier still means zero acquires on the common
+            // path, which is the whole point of the gate, and `idle_polls`
+            // bounds the no-notifier case exactly as it bounds airway.
+            let timer_is_the_wake_source = driver_may_be_remote || notifier.is_none();
+            let poll_after = if timer_is_the_wake_source && idle_polls < IDLE_TICKS_BEFORE_BACKOFF {
+                REMOTE_DRIVER_POLL_INTERVAL
+            } else {
+                IDLE_POLL_INTERVAL
+            };
+            let wake = match &notifier {
+                Some(n) => tokio::select! {
+                    _ = n.notified() => Wake::Notified,
+                    _ = tokio::time::sleep(poll_after) => Wake::Timeout,
+                    _ = state.shutdown_token.cancelled() => Wake::Shutdown,
+                },
+                // No notifier in this process — either the run was never
+                // registered here (a reconnect after the registering pod
+                // restarted) or it failed before the driver spawned. Nothing
+                // can ring us, so the timer is the whole wake source.
+                None => tokio::select! {
+                    _ = tokio::time::sleep(poll_after) => Wake::Timeout,
+                    _ = state.shutdown_token.cancelled() => Wake::Shutdown,
+                },
+            };
+            match wake {
+                Wake::Shutdown => break,
+                // A notifier ring proves a driver in THIS process is alive and
+                // will `deregister` when it finishes, so the run row has
+                // nothing to add. Costs zero acquires, which is what keeps
+                // analytics and builder — still direct-driven, and most open
+                // streams — exactly as cheap as they were before this change.
+                Wake::Notified => check_run_row = false,
+                Wake::Timeout => {
+                    timed_wakes = timed_wakes.saturating_add(1);
+                    check_run_row = timed_wakes.is_multiple_of(ROW_CHECK_EVERY_N_TIMED_WAKES);
                 }
             }
         }
@@ -929,5 +1245,47 @@ mod tests {
     fn non_config_errors_pass_through_verbatim() {
         let msg = classify_pipeline_error_message("db error: connection refused");
         assert_eq!(msg, "db error: connection refused");
+    }
+
+    /// The four statuses that close a stream. `stream_events` no longer treats
+    /// a missing notifier as "the run is over" — a `Global` run outlives the
+    /// pod that registered it — so this predicate is the only thing that
+    /// closes a remotely-driven stream.
+    #[test]
+    fn only_the_four_terminal_statuses_close_a_stream() {
+        for s in ["done", "failed", "cancelled", "timed_out"] {
+            assert!(super::status_is_terminal(Some(s)), "{s} must be terminal");
+        }
+    }
+
+    /// The half that actually bites. Every one of these means the run is still
+    /// going, and closing on any of them emits a synthesized terminal event
+    /// over live work — `awaiting_input` most dangerously, since a
+    /// `SuspendedHuman` run looks idle for hours by design.
+    #[test]
+    fn an_in_flight_run_never_closes_the_stream() {
+        for s in [
+            "running",
+            "awaiting_input",
+            "delegating",
+            "waiting_on_child",
+            "waiting_on_children",
+            "needs_resume",
+            "shutdown",
+            "pending",
+        ] {
+            assert!(
+                !super::status_is_terminal(Some(s)),
+                "{s} is not terminal; closing here would strand a live run"
+            );
+        }
+    }
+
+    /// A run row with no status, or none the query could read, must keep the
+    /// stream open rather than close it — erring toward a slightly long-lived
+    /// stream instead of a truncated one.
+    #[test]
+    fn an_absent_status_is_not_terminal() {
+        assert!(!super::status_is_terminal(None));
     }
 }

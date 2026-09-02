@@ -387,6 +387,19 @@ pub(super) enum RetryAction {
 /// instead of four.
 pub const COMPILE_SOURCE_TYPE: &str = "compile";
 
+/// The `source_type` an airway pipeline run is stamped with.
+///
+/// Named for the same reason as [`COMPILE_SOURCE_TYPE`], and used by the
+/// mirror-image gate: `compile` is declined by nodes that *cannot* run it,
+/// `airway` is declined by the `ide` node that *can* — so that a memory-heavy
+/// pipeline lands on a worker instead of the IDE singleton. See
+/// `oxy_app::server::router::recovery::excluded_source_types`.
+///
+/// Same caveat: this does not make a rename safe on its own, since a
+/// hand-spelled literal still compiles and silently disarms the gate. It buys
+/// one definition on the production path.
+pub const AIRWAY_SOURCE_TYPE: &str = "airway";
+
 /// Derive the `source_type` for a child run from its `TaskSpec`.
 ///
 /// Crate-visible so the worker can stamp `spec_kind` on lifecycle events
@@ -407,7 +420,7 @@ pub(crate) fn source_type_for_spec(spec: &TaskSpec) -> String {
         TaskSpec::Resume { .. } => "analytics".to_string(),
         // Match agentic_airway::SOURCE_TYPE — inlined here to keep the
         // runtime free of a dep on the airway domain crate.
-        TaskSpec::Airway { .. } => "airway".to_string(),
+        TaskSpec::Airway { .. } => AIRWAY_SOURCE_TYPE.to_string(),
         TaskSpec::Compile { .. } => COMPILE_SOURCE_TYPE.to_string(),
         TaskSpec::Custom { kind, .. } => kind.clone(),
     }

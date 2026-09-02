@@ -787,9 +787,12 @@ async fn clear_run_error_nulls_error_but_preserves_answer_and_driver_lease() {
 //
 // `oxy worker` now runs the same driving loops `oxy serve` does
 // (`crates/app/src/server/router/recovery.rs`), which makes it a second driver
-// alongside the request-time direct-drive that still executes interactive
-// submits on the node that accepted them. That is only safe because the two
-// loops the worker runs carry a QUEUE predicate on top of the driver lease:
+// alongside the request-time direct-drive. Phase 2 removed that direct-drive
+// from the *airway submit* path (it enqueues `Global` now), but NOT from
+// analytics, builder, or the `oxy airway run` CLI — so a live run with no
+// driver lease is still a shape that occurs, and the asymmetry below still
+// holds. That is only safe because the two loops the worker runs carry a QUEUE
+// predicate on top of the driver lease:
 //
 //   - the periodic tick  → `find_stuck_runs`          (excludes `claimed`, and
 //                                                      `queued scope_owned`)
@@ -1013,4 +1016,196 @@ async fn the_per_workspace_reselect_returns_compiles_next_to_other_work() {
     // tests beside it. Re-implementing it here would have looked like coverage
     // while passing just as happily if the production call site stopped
     // applying it.
+}
+
+// ── Phase 2: an interactive airway submit is Global, and one driver wins ────
+//
+// `routes/airway.rs::start_and_drive` enqueues `TaskScope::Global` and no
+// longer spawns a co-located `spawn_airway_run_drive`, so the run is claimed
+// by a driver process — normally a worker. Two properties have to hold for
+// that to be safe, and they are what these tests pin.
+
+/// A Phase-2 airway submit must be VISIBLE to the latency worker.
+///
+/// The mirror of `a_just_submitted_scoped_run_is_excluded_...` above: that one
+/// pins that a `Scoped` submit is invisible (its coordinator is about to claim
+/// it), this pins that the `Global` submit Phase 2 writes instead is the one
+/// shape `find_pending_global_runs` returns. If this ever stops selecting,
+/// interactive pipelines silently stop running rather than fail — nothing
+/// direct-drives them any more.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_globally_submitted_airway_run_is_selected_by_the_latency_worker() {
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_id = seed_run(&db, "airway").await;
+
+    crud::enqueue_task(
+        &db,
+        &run_id,
+        &run_id,
+        None,
+        &TaskSpec::Airway {
+            pipeline_ref: "dummy.airway.yml".into(),
+            variables: None,
+            resources: Vec::new(),
+            backfill_from: None,
+            backfill_to: None,
+            contract_policy: None,
+            environment: None,
+        },
+        None,
+        // The Phase 2 shape. Deliberately NOT aged: a fresh submit is exactly
+        // the case, and it must be picked up without waiting out any grace
+        // window.
+        crud::TaskScope::Global,
+    )
+    .await
+    .unwrap();
+
+    let pending = crud::find_pending_global_runs(&db, Some(uuid::Uuid::nil()))
+        .await
+        .unwrap();
+    let row = pending
+        .iter()
+        .find(|r| r.run_id == run_id)
+        .expect("a Global airway submit must be selectable by the latency worker");
+    assert_eq!(
+        row.source_type.as_deref(),
+        Some(agentic_runtime::coordinator::AIRWAY_SOURCE_TYPE),
+        "StuckRun must carry source_type as `airway`, or the ide's \
+         OXY_IDE_DEFER_AIRWAY gate has nothing to match on and silently \
+         declines nothing — the pipeline then keeps running on the ide, which \
+         is the exact outcome Phase 2 exists to prevent"
+    );
+
+    // Within the grace window the periodic stranded tick leaves it alone, so
+    // the latency worker gets first refusal and placement is decided there.
+    let stuck = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(
+        !stuck.iter().any(|r| r.run_id == run_id),
+        "a freshly-submitted Global run is inside STRANDED_GRACE_SECS, so the \
+         periodic tick must not select it — otherwise it would race the \
+         latency worker for every submit"
+    );
+}
+
+/// After the grace window, an unclaimed Global airway run IS selectable by the
+/// periodic stranded tick — and that is the safety net, not a leak.
+///
+/// The `NOT EXISTS` in `find_stuck_runs` excludes a run only for a `claimed`
+/// queue row or a `queued` one with `scope_owned = true`. A `queued` **Global**
+/// row is neither, so once the run ages past the grace with no claim and no
+/// live driver lease, any eligible node may drive it.
+///
+/// That combination means precisely "no worker picked this up in 30 seconds",
+/// which is exactly when you want someone else to. It is what stops
+/// `OXY_IDE_DEFER_AIRWAY=1` on a fleet-less deployment from stranding
+/// pipelines forever: the ide declines at the latency worker, then drives it
+/// from the periodic tick a grace window later. The flag degrades to slower
+/// placement rather than a stall.
+///
+/// Pinned because it is load-bearing in the opposite direction to how it
+/// reads. A future change that "tidied" the `NOT EXISTS` to exclude every
+/// queued row would look like a small consistency fix and would silently
+/// remove the fallback.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unclaimed_global_airway_run_falls_back_to_the_periodic_tick() {
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_id = seed_run(&db, "airway").await;
+    crud::enqueue_task(
+        &db,
+        &run_id,
+        &run_id,
+        None,
+        &TaskSpec::Airway {
+            pipeline_ref: "dummy.airway.yml".into(),
+            variables: None,
+            resources: Vec::new(),
+            backfill_from: None,
+            backfill_to: None,
+            contract_policy: None,
+            environment: None,
+        },
+        None,
+        crud::TaskScope::Global,
+    )
+    .await
+    .unwrap();
+    // Nobody claimed it, and it is now older than the grace window.
+    age_run(&db, &run_id, 120).await;
+
+    let stuck = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(
+        stuck.iter().any(|r| r.run_id == run_id),
+        "an aged, unclaimed Global airway run must remain drivable by the \
+         periodic tick — without it, deferring airway on the ide with no \
+         worker fleet up would strand the pipeline permanently"
+    );
+
+    // A claim closes it again: once a worker owns the row, the periodic tick
+    // must stay out of the way.
+    crud::claim_task_under_root(&db, "a-worker", &run_id)
+        .await
+        .unwrap()
+        .expect("claim must succeed");
+    let stuck = crud::find_stuck_runs(&db, 30, None).await.unwrap();
+    assert!(
+        !stuck.iter().any(|r| r.run_id == run_id),
+        "a claimed row must exclude the run again — this is the predicate that \
+         keeps the fallback from poaching work a worker is already doing"
+    );
+}
+
+/// Exactly one driver executes the run — proved by racing, not asserted.
+///
+/// With the direct-drive gone, placement is decided by whoever claims the
+/// queue row first, and BOTH the ide's latency worker and the fleet's poll the
+/// same queue. `try_acquire_driver` is the CAS that makes that a race with one
+/// winner rather than duplicate execution. This is the regression the whole
+/// Phase 1/Phase 2 ordering was built around — a step executed up to 3x when
+/// this guarantee last broke — so it is worth a real concurrent race rather
+/// than two sequential calls, which would pass under a broken CAS too.
+#[tokio::test(flavor = "multi_thread")]
+async fn exactly_one_of_many_racing_drivers_acquires_the_lease() {
+    let Some(db) = test_db().await else {
+        return;
+    };
+    let run_id = seed_run(&db, "airway").await;
+
+    // Eight contenders, all issuing the CAS at once.
+    let mut set = tokio::task::JoinSet::new();
+    for i in 0..8 {
+        let db = db.clone();
+        let run_id = run_id.clone();
+        set.spawn(async move {
+            crud::try_acquire_driver(&db, &run_id, &format!("driver-{i}"))
+                .await
+                .unwrap()
+        });
+    }
+    let mut winners = 0;
+    while let Some(res) = set.join_next().await {
+        if res.unwrap() {
+            winners += 1;
+        }
+    }
+    assert_eq!(
+        winners, 1,
+        "exactly one driver may hold the lease; more than one means concurrent \
+         drivers would execute the same run's steps side by side"
+    );
+
+    // And the run row agrees with whoever won — a lease nobody is recorded as
+    // holding would let the next tick re-acquire and drive it again.
+    let run = crud::get_run(&db, &run_id).await.unwrap().unwrap();
+    let driver = run
+        .driver_id
+        .expect("the winning CAS must record its driver on the run row");
+    assert!(
+        driver.starts_with("driver-"),
+        "unexpected driver_id: {driver}"
+    );
 }

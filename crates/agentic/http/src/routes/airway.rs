@@ -2,11 +2,15 @@
 //!
 //! Airway is queue-driven like automation: `POST /runs` seeds an
 //! `agentic_runs` row + `airway_run_extensions` row and enqueues a
-//! `TaskSpec::Airway`; the per-request coordinator + worker claim it
-//! and drive it to completion. SSE just streams whatever lands in
-//! `agentic_run_events` — the registry routes by `source_type =
-//! "airway"`, so the shared `stream_events` handler needs no airway
-//! awareness.
+//! **`Global`** `TaskSpec::Airway`, which a driver process — normally a
+//! worker-fleet pod, not this one — claims and drives to completion. The
+//! handler itself does no driving; see `start_and_drive`.
+//!
+//! SSE just streams whatever lands in `agentic_run_events` — the registry
+//! routes by `source_type = "airway"`, so the shared `stream_events` handler
+//! needs no airway awareness. It does need a timer rather than the in-process
+//! notifier, though, now that the writer is usually another pod: see
+//! `REMOTE_DRIVER_POLL_INTERVAL` in `routes/run.rs`.
 //!
 //! ## Routes
 //!
@@ -15,6 +19,20 @@
 //! | POST   | `/agentic-airway/runs`            | Start a run |
 //! | GET    | `/agentic-airway/runs/:id/events` | SSE stream (shared handler) |
 //! | POST   | `/agentic-airway/runs/:id/cancel` | Cancel a running pipeline |
+//!
+//! ## Two driving models live in this file — check which one you are in
+//!
+//! Everything routed through [`start_and_drive`] (`/runs` and the
+//! single-window `/backfill`) enqueues `TaskScope::Global` and drives
+//! nothing locally. The **chunked** backfill (`/chunked-backfill`, and
+//! `/backfill-ranges/:id/resume`) still direct-drives its chunks in-process
+//! via `drive_backfill_range` / `resume_backfill_range`, so those requests
+//! still execute on the node that accepted them and still charge its memory.
+//!
+//! That asymmetry is deliberate, not an oversight: moving the chunk driver is
+//! the other half of the reverted option (b) (`7dc7148ed`) and is a
+//! materially larger change than the scope flip here. Do not "make it
+//! consistent" by adding a direct-drive back to `start_and_drive`.
 
 use std::sync::Arc;
 
@@ -32,7 +50,7 @@ use tokio::sync::{mpsc, watch};
 
 use agentic_pipeline::WorkflowWorkspaceContext;
 use agentic_pipeline::airway_run::{
-    AirwayRunError, StartAirwayRequest, list_airway_runs, spawn_airway_run_drive, start_airway_run,
+    AirwayRunError, StartAirwayRequest, list_airway_runs, start_airway_run,
 };
 use agentic_pipeline::backfill::{
     ChunkGranularity, create_backfill_range, drive_backfill_range, enumerate_chunks,
@@ -120,10 +138,30 @@ pub async fn create_airway_run(
 }
 
 /// Shared tail for the airway start handlers: seed the run, map
-/// `start_airway_run` errors to status codes, then register cancel/answer
-/// channels and spawn the co-located coordinator that drives the queued
-/// `TaskSpec::Airway`. Both `create_airway_run` and `backfill_airway` build
-/// their `StartAirwayRequest` and delegate here.
+/// `start_airway_run` errors to status codes, then register the cancel/answer
+/// channels and return. The queued `TaskSpec::Airway` is claimed and driven by
+/// a *driver process* — not by this handler. Both `create_airway_run` and
+/// `backfill_airway` build their `StartAirwayRequest` and delegate here.
+///
+/// **The run is enqueued `Global`, and that is the whole point of this
+/// function's shape.** It used to be `Scoped` plus an out-of-band
+/// `spawn_airway_run_drive` on this very node, which meant a memory-heavy
+/// pipeline executed inside whichever pod served the submit — and airway
+/// submit routes are `IdeOnly`, so that was always the IDE singleton, the pod
+/// least able to afford it. `Global` hands the run to the durable queue, where
+/// the worker fleet claims it (`internal-docs/worker-fleet.md`). It also makes
+/// the run crash-recoverable for free: a dead claim is requeued by the reaper
+/// and resumed by another worker, where the old direct-drive stranded it at
+/// `running` forever.
+///
+/// This ordering is load-bearing and was gotten wrong once. Going `Global`
+/// before `oxy worker` could drive runs is what had to be reverted in
+/// `54355b198` — nothing claimed the task and every run hung. It is safe now
+/// only because the worker actually drives (Phase 1, #3014).
+///
+/// The `oxy airway run` CLI deliberately keeps its direct-drive: it is a
+/// one-shot with no fleet behind it, so its own spawn *is* its worker and
+/// going `Global` there would hang exactly as the revert describes.
 async fn start_and_drive(
     state: Arc<AgenticState>,
     platform: Arc<dyn PlatformContext>,
@@ -131,14 +169,19 @@ async fn start_and_drive(
 ) -> Response {
     // `PlatformContext: WorkflowWorkspaceContext`, so this coercion is free —
     // `start_airway_run` only needs the workspace surface. `workspace_id`
-    // routes the row back to its workspace for out-of-process drivers.
-    let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
+    // routes the row back to its workspace, which is what lets an
+    // out-of-process driver rebuild the right `PlatformContext` for the run;
+    // with the direct-drive gone it is the only thing that does.
+    //
+    // Read before the move rather than cloning the Arc: the clone was only
+    // there because `spawn_airway_run_drive` consumed `platform`.
     let workspace_id = platform.workspace_id();
+    let workspace: Arc<dyn WorkflowWorkspaceContext> = platform;
     let run_id = match start_airway_run(
         &state.db,
         workspace.as_ref(),
         request,
-        agentic_pipeline::TaskScope::Scoped,
+        agentic_pipeline::TaskScope::Global,
         workspace_id,
     )
     .await
@@ -190,20 +233,24 @@ async fn start_and_drive(
     };
 
     // Register cancel + answer channels so the Stop button works. Airway never
-    // consumes answers (no HITL), but `register` wants the pair; the
-    // answer_rx is simply dropped. Then drive the queued task — without this
-    // the `TaskSpec::Airway` row sits in `agentic_task_queue` forever.
+    // consumes answers (no HITL), but `register` wants the pair; the answer_rx
+    // is simply dropped.
+    //
+    // The `cancel_rx` is dropped too, and that is not a leak of intent: the
+    // driver is in another process, so an in-memory watch channel cannot reach
+    // it. `cancel_airway_run` writes the durable cancel flag
+    // (`crud::request_cancel`) which the out-of-process driver polls; the
+    // in-memory `cancel_tx` stays registered only so `state.cancel(..)` can
+    // still answer "was this run live here?" on the node that accepted it.
+    //
+    // Registering the notifier also keeps this node's SSE stream on its fast
+    // path when the driver happens to be local (`OXY_ROLE=all`). When it is
+    // NOT local, nothing in this process ever rings that notifier — see
+    // `stream_events`, which is why it polls on a timer rather than parking on
+    // the notifier alone.
     let (answer_tx, _answer_rx) = mpsc::channel::<String>(1);
-    let (cancel_tx, cancel_rx) = watch::channel(false);
+    let (cancel_tx, _cancel_rx) = watch::channel(false);
     state.register(&run_id, answer_tx, cancel_tx);
-    spawn_airway_run_drive(
-        state.db.clone(),
-        state.runtime.clone(),
-        run_id.clone(),
-        platform,
-        cancel_rx,
-        state.router.clone(),
-    );
 
     Json(CreateAirwayRunResponse { run_id }).into_response()
 }
@@ -485,10 +532,66 @@ pub async fn cancel_airway_run(
         .await
         .ok();
     if !state.cancel(&run_id) {
-        // No live cancel channel. Same race as the automation cancel
-        // handler: distinguish "stuck queue row" (defensive fail) from
-        // "just finished cleanly" (must not rewrite a `done` run to
-        // `failed`). Gate the defensive write on non-terminal status.
+        // No live cancel channel — which now means one of THREE things, and
+        // only the first two want the defensive write below.
+        //
+        // (a) The run finished and its channels were deregistered. Handled by
+        //     the `already_terminal` guard: must not rewrite a `done` run.
+        // (b) No queue row at all — nothing will ever drive this. The only
+        //     case the defensive write still reaches.
+        //
+        //     It used to say "a stuck queue row whose driver died", and that
+        //     is now wrong: a dead driver's row reads `claimed` until the
+        //     reaper requeues it, and `claimed` is in the live set below, so
+        //     `driver_may_hold_it` is true and the write is skipped. That is
+        //     the right outcome — the reaper owns dead claims and will requeue
+        //     the row for someone to finish or fail properly — but the comment
+        //     described the opposite, which in this file is worse than saying
+        //     nothing.
+        // (c) **The run is being driven in another process.** Since Phase 2 an
+        //     interactive submit is enqueued `Global` and `start_and_drive`
+        //     drops the `cancel_rx` — there is no local driver to receive on
+        //     it — so `watch::Sender::send` fails for want of receivers and
+        //     `state.cancel` reads `false` even though a worker is executing
+        //     the pipeline right now. A scheduler-seeded run reaches the same
+        //     place by never having been registered on this pod at all, which
+        //     means (c) predates Phase 2 and is not only a new-code concern.
+        //
+        // Writing `failed` in (c) races a live driver: the user is shown
+        // "cancelled by user" as a FAILURE while the pipeline keeps running,
+        // and the driver's own terminal write lands afterwards on top of it.
+        // Nothing is cancelled by that write — the durable `request_cancel`
+        // above is what actually stops the run, and the driver turns it into a
+        // proper `cancelled`.
+        //
+        // A live queue entry is what separates (c) from (b): `queued` or
+        // `claimed` means a driver holds the row or is about to take it.
+        // Errs toward NOT writing — a failed lookup is treated as "something
+        // may be driving this", because the durable cancel flag has already
+        // been written and is sufficient on its own, while a wrong defensive
+        // write is not recoverable.
+        let driver_may_hold_it =
+            match agentic_runtime::crud::get_queue_entry(&state.db, &run_id).await {
+                Ok(Some(entry)) => {
+                    matches!(entry.queue_status.as_str(), "queued" | "claimed")
+                }
+                // No queue row at all, so nothing is going to drive it: the
+                // defensive write is exactly right here.
+                Ok(None) => false,
+                // Unknown. Decline to write: the durable cancel flag is
+                // already in, and it is what actually stops a live run, so
+                // the cost is at most a slower cancel. A wrong `failed` on a
+                // running pipeline is not recoverable.
+                Err(e) => {
+                    tracing::warn!(
+                        %run_id, error = %e,
+                        "airway cancel: queue lookup failed; skipping the \
+                         defensive fail-write rather than risk racing a live \
+                         driver"
+                    );
+                    true
+                }
+            };
         let already_terminal = match agentic_runtime::crud::get_run(&state.db, &run_id).await {
             Ok(Some(run)) => matches!(
                 run.task_status.as_deref(),
@@ -501,6 +604,7 @@ pub async fn cancel_airway_run(
             }
         };
         if !already_terminal
+            && !driver_may_hold_it
             && let Err(e) =
                 agentic_runtime::crud::update_run_failed(&state.db, &run_id, "cancelled by user")
                     .await
@@ -513,8 +617,25 @@ pub async fn cancel_airway_run(
         // mid-fold — releasing there would admit a second run alongside one
         // still writing. That case is left to the worker's own release.
         agentic_pipeline::airway_run::release_airway_lease_if_unclaimed(&state.db, &run_id).await;
+        // Wake any local SSE subscriber to re-read immediately rather than
+        // wait out its poll interval.
         state.notify(&run_id);
-        state.notifiers.remove(&run_id);
+        // Clear the channel maps only when this handler has actually settled
+        // the run. `deregister` drops all three `state.register` created
+        // (`notifiers`, `answer_txs`, `cancel_txs`) — the drive that used to
+        // do this is gone, and the remote driver's own `deregister` runs in
+        // its process, not ours.
+        //
+        // Gated because a worker may still be driving: `stream_events` no
+        // longer treats a missing notifier as "the run is over" (it asks the
+        // run row), so dropping it early is not the hang it once was — but it
+        // would still discard the `cancel_tx` for a live run and cost this pod
+        // the ability to answer "was this run live here?". Left registered,
+        // the stream delivers the driver's real `cancelled` when it lands and
+        // reaps the maps itself.
+        if !driver_may_hold_it {
+            state.deregister(&run_id);
+        }
     }
     StatusCode::NO_CONTENT.into_response()
 }
