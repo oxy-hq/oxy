@@ -227,7 +227,7 @@ pub async fn list(
 /// for the decision, but collapsing a transient fault into `false` answers a
 /// create with `404 no such org` during a blip — the least legible failure
 /// available, and one that reads to the caller as data loss.
-async fn has_standing_in_org(
+pub async fn has_standing_in_org(
     db: &DatabaseConnection,
     user_id: Uuid,
     org_id: Uuid,
@@ -263,6 +263,76 @@ fn db_err(e: DbErr) -> StatusCode {
     StatusCode::INTERNAL_SERVER_ERROR
 }
 
+/// Every caller-supplied id on a create, checked against the target org.
+///
+/// Separated from the handler because it IS the authorization: an authz
+/// decision reachable only through an extractor is one no test covers, and this
+/// endpoint has already shipped a cross-tenant write once — the first fix
+/// covered four of the five ids.
+///
+/// The refusals differ on purpose. A bad `org_id` is `404`, because an org the
+/// caller has no standing in must not be confirmed to exist by the shape of the
+/// refusal. Everything else is `400`: the caller can already see the org, so a
+/// wrong id there is a fact about their request, not a boundary.
+pub async fn gate_create(
+    db: &DatabaseConnection,
+    caller: Uuid,
+    body: &CreateWorkItem,
+) -> Result<(), StatusCode> {
+    if !has_standing_in_org(db, caller, body.org_id)
+        .await
+        .map_err(db_err)?
+    {
+        warn!(user = %caller, org = %body.org_id, "work create refused — no standing in org");
+        return Err(StatusCode::NOT_FOUND);
+    }
+    // The assignee must be in the same org. Gating only the caller would still
+    // let a member of one tenant address work at somebody in another.
+    if let Some(assignee) = body.assignee_user_id
+        && !has_standing_in_org(db, assignee, body.org_id)
+            .await
+            .map_err(db_err)?
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    // The supervisor is an assignment edge too, and the one the original gate
+    // missed: `Scope::SupervisedByMe` filters on `supervisor_id` with no org
+    // predicate, so an unchecked uuid here lands attacker-authored work in a
+    // stranger's "supervised by me" — in any tenant. The `users(id)` FK proves
+    // the person exists, never that they are in this org.
+    if let Some(sup) = body.supervisor_id
+        && !has_standing_in_org(db, sup, body.org_id)
+            .await
+            .map_err(db_err)?
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    // A role has to belong to this org too — a role id is a uuid a caller
+    // supplies, and one from another tenant would route work across the
+    // boundary just as effectively as a user id.
+    if let Some(role) = body.assignee_role_id
+        && !org_roles::Entity::find_by_id(role)
+            .one(db)
+            .await
+            .map_err(db_err)?
+            .is_some_and(|r| r.org_id == body.org_id)
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    // Same for the location: it names where the work happens, and one from
+    // another org would leak this item into that org's location view.
+    if let Some(loc) = body.location_id
+        && !locations::Entity::find_by_id(loc)
+            .one(db)
+            .await
+            .map_err(db_err)?
+            .is_some_and(|l| l.org_id == body.org_id)
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    Ok(())
+}
+
 /// `POST /api/work` — create an item.
 ///
 /// # The gate, and why it is here rather than in middleware
@@ -286,61 +356,7 @@ pub async fn create(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 
-    // 404 rather than 403: an org the caller has no standing in must not be
-    // confirmed to exist by the shape of the refusal.
-    if !has_standing_in_org(&db, user.id, body.org_id)
-        .await
-        .map_err(db_err)?
-    {
-        warn!(user = %user.id, org = %body.org_id, "work create refused — no standing in org");
-        return Err(StatusCode::NOT_FOUND);
-    }
-    // The assignee must be in the same org. Gating only the caller would still
-    // let a member of one tenant address work at somebody in another.
-    if let Some(assignee) = body.assignee_user_id
-        && !has_standing_in_org(&db, assignee, body.org_id)
-            .await
-            .map_err(db_err)?
-    {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    // The supervisor is an assignment edge too, and the one the original gate
-    // missed: `Scope::SupervisedByMe` filters on `supervisor_id` with no org
-    // predicate, so an unchecked uuid here lands attacker-authored work in a
-    // stranger's "supervised by me" — in any tenant. The `users(id)` FK proves
-    // the person exists, never that they are in this org.
-    if let Some(sup) = body.supervisor_id
-        && !has_standing_in_org(&db, sup, body.org_id)
-            .await
-            .map_err(db_err)?
-    {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    // A role has to belong to this org too — a role id is a uuid a caller
-    // supplies, and one from another tenant would route work across the
-    // boundary just as effectively as a user id.
-    if let Some(role) = body.assignee_role_id {
-        let ok = org_roles::Entity::find_by_id(role)
-            .one(&db)
-            .await
-            .map_err(db_err)?
-            .is_some_and(|r| r.org_id == body.org_id);
-        if !ok {
-            return Err(StatusCode::BAD_REQUEST);
-        }
-    }
-    // Same for the location: it names where the work happens, and one from
-    // another org would leak this item into that org's location view.
-    if let Some(loc) = body.location_id {
-        let ok = locations::Entity::find_by_id(loc)
-            .one(&db)
-            .await
-            .map_err(db_err)?
-            .is_some_and(|l| l.org_id == body.org_id);
-        if !ok {
-            return Err(StatusCode::BAD_REQUEST);
-        }
-    }
+    gate_create(&db, user.id, &body).await?;
 
     let title = body.title.trim();
     if title.is_empty() {

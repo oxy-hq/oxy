@@ -39,5 +39,6 @@ mod oltp_provisioner;
 mod projects_query;
 mod run;
 mod toast_webhook_compile_boundary;
+mod work_item_gates;
 mod workspace_details_fields;
 mod world_model_cross_pod;
