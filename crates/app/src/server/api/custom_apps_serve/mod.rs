@@ -60,6 +60,7 @@ use oxy_auth::built_in::BuiltInAuthenticator;
 use oxy_auth::user::UserService;
 use oxy_shared::fleet_role::{RouteRole, RouteRoleDecl};
 use sea_orm::ColumnTrait;
+use sea_orm::DatabaseConnection;
 use sea_orm::EntityTrait;
 use sea_orm::QueryFilter;
 use uuid::Uuid;
@@ -371,6 +372,10 @@ pub(crate) async fn serve_pretty(
     if let Some(name) = reserved_platform_path(&rest) {
         match classify_reserved(name, &method) {
             Reserved::ServiceWorker => return service_worker_for(&runtime, &headers),
+            Reserved::WebManifest => {
+                return web_manifest_for(&db, &runtime, &app, &headers).await;
+            }
+            Reserved::MonogramIcon => return monogram_icon_for(&app),
             Reserved::Beacon => {
                 return ingest_beacon(body, &headers, &db, app.id, user.id, &user.email).await;
             }
@@ -598,6 +603,11 @@ enum Reserved {
     ServiceWorker,
     /// `POST __oxy/beacon` — the client runtime's telemetry batch.
     Beacon,
+    /// `GET __oxy/manifest.webmanifest` — the synthesised web app manifest.
+    WebManifest,
+    /// `GET __oxy/icon.svg` — the platform monogram, the icon every app has
+    /// whether or not its author declared one.
+    MonogramIcon,
     /// A platform object that lives *inside the build* rather than being
     /// synthesised here — today only the asset manifest. Falls through to the
     /// ordinary source dispatch.
@@ -622,10 +632,14 @@ fn classify_reserved(name: &str, method: &axum::http::Method) -> Reserved {
     let beacon = super::custom_apps_client::BEACON_PATH.trim_start_matches(prefix);
     let manifest =
         super::custom_apps_asset_manifest::ASSET_MANIFEST_PATH.trim_start_matches(prefix);
+    let webmanifest = super::custom_apps_client::WEB_MANIFEST_PATH.trim_start_matches(prefix);
+    let monogram = super::custom_apps_client::MONOGRAM_ICON_PATH.trim_start_matches(prefix);
 
     match (name, method) {
         (n, &axum::http::Method::GET) if n == sw => Reserved::ServiceWorker,
         (n, &axum::http::Method::POST) if n == beacon => Reserved::Beacon,
+        (n, &axum::http::Method::GET) if n == webmanifest => Reserved::WebManifest,
+        (n, &axum::http::Method::GET) if n == monogram => Reserved::MonogramIcon,
         (n, &axum::http::Method::GET) if n == manifest => Reserved::BuildObject,
         _ => Reserved::Unknown,
     }
@@ -650,6 +664,202 @@ fn service_worker_for(runtime: &AppRuntimeConfig, headers: &HeaderMap) -> Respon
         &runtime.base_path
     };
     super::custom_apps_client::service_worker_response(allowed)
+}
+
+/// The `icons[]` for one app: its own mark when it has a usable one, and the
+/// platform monogram always.
+///
+/// Extracted so `web_manifest_for` stays inside the ~60-line guidance, and
+/// because "which icons does this app advertise" is a question worth being able
+/// to answer in one place.
+async fn manifest_icons_for(
+    db: &DatabaseConnection,
+    app: &entity::apps::Model,
+    base_path: &str,
+) -> Vec<super::custom_apps_client::ManifestIcon> {
+    let mut icons: Vec<super::custom_apps_client::ManifestIcon> = Vec::new();
+
+    // `resolve_channel` rather than a hardcoded `Published`: an app that has
+    // never published resolves `NotFound` on the published channel and loses its
+    // mark entirely, which is the case that actually bites.
+    //
+    // The staff-draft-preview half is deliberately NOT honoured here. It would
+    // cost a `platform_reaches` round trip on this route, and the response is
+    // `max-age=300` — so a staff member previewing a draft icon change would see
+    // a stale manifest for up to five minutes regardless. The authz call buys
+    // nothing the cache does not immediately undo.
+    let channel = resolve_channel(false, app.published_at.is_some());
+
+    // A manifest that fails to resolve costs the app its branding on the home
+    // screen, never its installability — but it is logged, because "why is my
+    // app's icon not on the home screen" is otherwise unanswerable from logs.
+    match super::custom_apps_manifest::resolve_manifest(db, app, channel).await {
+        Ok(m) => {
+            if let Some(icon) = m.icon.as_deref()
+                && super::workspace_custom_apps::safe_relative_art_path(icon)
+                && let Some(mime) = super::custom_apps_client::icon_mime(icon)
+            {
+                icons.push(super::custom_apps_client::ManifestIcon {
+                    src: format!("{base_path}{icon}"),
+                    mime,
+                    // Only claim a size for a scalable format. We never decode an
+                    // author's raster, so any pixel count here would be invented
+                    // — and a browser that trusts an invented size and finds
+                    // something smaller drops the icon entirely.
+                    //
+                    // The consequence, worth naming: Blink scores candidates by
+                    // declared `sizes`, so an entry with none rarely wins against
+                    // the monogram below. Author artwork is effectively
+                    // decorative until publish records real dimensions.
+                    sizes: (mime == "image/svg+xml").then_some("any"),
+                    // Not `maskable`: Android crops ~20% off each edge, and this
+                    // is artwork whose safe zone we have never seen.
+                    purpose: "any",
+                });
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                app_id = %app.id,
+                error = %e,
+                "could not resolve app manifest for web-manifest icons — falling back to the monogram"
+            );
+        }
+    }
+
+    icons.push(super::custom_apps_client::ManifestIcon {
+        src: format!(
+            "{base_path}{}",
+            super::custom_apps_client::MONOGRAM_ICON_PATH
+        ),
+        mime: "image/svg+xml",
+        // A MEASURED claim, unlike the author's raster above: `monogram_svg`
+        // emits `viewBox="0 0 512 512" width="512" height="512"`, so this is our
+        // own artwork's real size. It matters because a bare `any` on an SVG is
+        // exactly what Chrome's installability check has historically been
+        // unreliable about — and an unusable fallback icon makes the whole
+        // fallback a silent no-op for the apps it exists for.
+        sizes: Some("512x512 any"),
+        // The platform drew this one, inside the maskable safe zone.
+        purpose: "any maskable",
+    });
+
+    icons
+}
+
+/// Serve the synthesised web app manifest — what makes an app installable.
+///
+/// **The scope must match the service worker's**, and computing it the same way
+/// from the same input is how that is guaranteed rather than remembered. On a
+/// custom-app subdomain the page sits at `/` while the bundle's assets keep the
+/// `/customer-apps/<org>/<app>/` prefix; on the admin host both are under the
+/// base path. A manifest whose `scope` does not cover the page is not an error
+/// any browser reports — it just silently declines to install, which is the
+/// worst failure available to a feature whose entire purpose is installation.
+///
+/// Icons resolve against the BASE path in both cases, because that is where the
+/// bundle's files actually live on either surface.
+///
+/// The app's own icon is optional and author-declared, so it cannot be the only
+/// entry: a browser will not offer installation without an icon it can fetch,
+/// and most apps ship none (which is why the launcher has a monogram fallback
+/// at all). The platform monogram is therefore always present as the last
+/// entry, and the author's mark — resolved through the same manifest and the
+/// same sanitiser every other surface uses, per `oxy-app-visual-identity` —
+/// goes first when there is one.
+///
+/// Reading the manifest costs a query only when the app has no
+/// `manifest_override`, and this route is hit on install and update checks
+/// rather than on navigation, so it is not on the path `oxy-customer-apps-perf`
+/// is about.
+async fn web_manifest_for(
+    db: &DatabaseConnection,
+    runtime: &AppRuntimeConfig,
+    app: &entity::apps::Model,
+    headers: &HeaderMap,
+) -> Response {
+    let page_scope = if on_custom_app_subdomain(headers) {
+        "/"
+    } else {
+        &runtime.base_path
+    };
+
+    let icons = manifest_icons_for(db, app, &runtime.base_path).await;
+
+    let body = super::custom_apps_client::web_manifest_json(
+        &app.name,
+        &short_name_for(&app.name),
+        app.id,
+        page_scope,
+        &icons,
+    );
+
+    (
+        StatusCode::OK,
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/manifest+json",
+            ),
+            // Short, not immutable: the manifest is derived from the app's name
+            // and the surface it was requested on, and a rename that took a
+            // year to reach installed devices would be worse than a re-fetch.
+            //
+            // `private`, not `public`, for the reason `cache_control_for`
+            // already gives every other object in this namespace: it sits
+            // behind the app's auth gate and names the app, so a shared cache
+            // holding it could hand it to a caller who never passed that gate.
+            (axum::http::header::CACHE_CONTROL, "private, max-age=300"),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+/// A home-screen label, which has room for far less than a name.
+///
+/// Truncated on a word boundary rather than swapped for the slug: the slug is
+/// not reliably shorter (`"Store Operations"` and `"store-operations"` are the
+/// same length), so falling back to it traded the capitals for nothing.
+fn short_name_for(name: &str) -> String {
+    const MAX: usize = 12;
+    if name.chars().count() <= MAX {
+        return name.to_string();
+    }
+    let mut out = String::new();
+    for word in name.split_whitespace() {
+        let sep = usize::from(!out.is_empty());
+        if out.chars().count() + sep + word.chars().count() > MAX {
+            break;
+        }
+        if sep == 1 {
+            out.push(' ');
+        }
+        out.push_str(word);
+    }
+    if out.is_empty() {
+        // One long word, so there is no boundary to cut on.
+        out = name.chars().take(MAX).collect();
+    }
+    out
+}
+
+/// Serve the platform monogram — the icon every app is guaranteed to have.
+///
+/// Under the reserved namespace and behind the app's own gate, like everything
+/// else here, so it needs no separate authorization story.
+fn monogram_icon_for(app: &entity::apps::Model) -> Response {
+    (
+        StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, "image/svg+xml"),
+            // Same reasoning as the manifest it is named from: derived from the
+            // app's name, behind the app's gate, so short and private.
+            (axum::http::header::CACHE_CONTROL, "private, max-age=300"),
+        ],
+        super::custom_apps_client::monogram_svg(&app.name),
+    )
+        .into_response()
 }
 
 /// Read a telemetry batch and hand it to the beacon.
@@ -702,6 +912,42 @@ fn on_custom_app_subdomain(headers: &HeaderMap) -> bool {
 #[cfg(test)]
 mod reserved_tests {
     use super::*;
+
+    /// The monogram must be classified, not fall through to the bundle — the
+    /// whole point of the reserved namespace.
+    #[test]
+    fn monogram_is_a_classified_reserved_path() {
+        assert!(matches!(
+            classify_reserved("icon.svg", &axum::http::Method::GET),
+            Reserved::MonogramIcon
+        ));
+        assert!(matches!(
+            classify_reserved("icon.svg", &axum::http::Method::POST),
+            Reserved::Unknown
+        ));
+    }
+
+    /// The fallback exists to fit a home-screen label. Falling back to the slug
+    /// did not: `"Store Operations"` and `"store-operations"` are both 16.
+    #[test]
+    fn short_name_actually_shortens() {
+        assert_eq!(short_name_for("Store Ops"), "Store Ops");
+        assert_eq!(short_name_for("Store Operations"), "Store");
+        assert_eq!(short_name_for("Poke House Store Ops"), "Poke House");
+        // One long word has no boundary to cut on, so cut anyway rather than
+        // returning something that overflows.
+        assert_eq!(short_name_for("Supercalifragilistic").chars().count(), 12);
+        for name in [
+            "Store Operations",
+            "Poke House Store Ops",
+            "Supercalifragilistic",
+        ] {
+            assert!(
+                short_name_for(name).chars().count() <= 12,
+                "{name} produced a label that is still too long"
+            );
+        }
+    }
 
     #[test]
     fn recognises_the_reserved_namespace_and_nothing_adjacent() {

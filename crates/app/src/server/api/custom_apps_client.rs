@@ -37,6 +37,138 @@ pub const SERVICE_WORKER_PATH: &str = "__oxy/sw.js";
 /// Bundle-relative path the client runtime posts analytics batches to.
 pub const BEACON_PATH: &str = "__oxy/beacon";
 
+/// The synthesised web app manifest — what makes a custom app installable.
+///
+/// Synthesised by the platform rather than shipped in the bundle because only
+/// the platform knows the two things a manifest has to get right: the served
+/// base path (which the bundle does not know at build time) and, more subtly,
+/// whether this request arrived on a custom-app subdomain — where the page sits
+/// at `/` while the bundle's assets keep the `/customer-apps/<org>/<app>/`
+/// prefix. A manifest whose `scope` does not cover the page is not an error a
+/// browser reports; it just silently refuses to install, which is the worst
+/// possible failure for a feature whose whole purpose is installation.
+pub const WEB_MANIFEST_PATH: &str = "__oxy/manifest.webmanifest";
+
+/// The platform's fallback app icon, drawn from the app's initial.
+///
+/// A web app manifest is only installable if at least one icon actually
+/// fetches, and an app's `icon` is optional — most ship none, which is why the
+/// launcher has a monogram fallback at all. Pointing `icons` at a file the app
+/// may not have would make installation a no-op for exactly those apps, and
+/// silently: a browser that rejects a manifest for a missing icon reports
+/// nothing. So the platform serves a monogram of its own under the reserved
+/// namespace, matching what `AppMark` renders everywhere else.
+pub const MONOGRAM_ICON_PATH: &str = "__oxy/icon.svg";
+
+/// One `icons[]` entry.
+pub struct ManifestIcon {
+    /// Absolute, same-origin URL.
+    pub src: String,
+    /// MIME type, so a browser can skip a format it cannot decode without
+    /// fetching it first.
+    pub mime: &'static str,
+    /// `None` when the real pixel size is unknown — which is the honest answer
+    /// for an author-supplied raster we never decode. Claiming a size we did
+    /// not measure is worse than omitting it: a browser that trusts the claim
+    /// and finds something smaller drops the icon.
+    pub sizes: Option<&'static str>,
+    /// `any maskable` only for artwork whose safe zone the platform controls.
+    /// Android crops ~20% off each edge of a maskable icon, so promising it for
+    /// an author's mark would crop art we have never seen.
+    pub purpose: &'static str,
+}
+
+/// The MIME type for an author-declared icon path, by extension.
+///
+/// Returns `None` for anything a browser would not treat as an icon, which
+/// drops the entry rather than advertising a format that will fail to decode.
+pub fn icon_mime(path: &str) -> Option<&'static str> {
+    let ext = path.rsplit('.').next()?.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "ico" => "image/x-icon",
+        _ => return None,
+    })
+}
+
+/// The platform monogram, as an SVG document.
+///
+/// Drawn inside the central 80% so it survives the maskable crop, which is what
+/// lets this entry claim `any maskable` where an author's mark cannot.
+pub fn monogram_svg(app_name: &str) -> String {
+    let initial = app_name
+        .chars()
+        .find(|c| c.is_alphanumeric())
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_else(|| "?".to_string());
+    // The name reaches this as text content, so escape it rather than trusting
+    // that "one alphanumeric char" stays true if the filter above ever changes.
+    let initial = initial
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="{initial}">
+  <rect width="512" height="512" fill="#0a0a0a"/>
+  <text x="256" y="256" fill="#fafafa" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif" font-size="240" font-weight="600" text-anchor="middle" dominant-baseline="central">{initial}</text>
+</svg>
+"##
+    )
+}
+
+/// Build the manifest for one app on one surface.
+///
+/// `page_scope` is where the app's PAGES live — `/` on a custom-app subdomain,
+/// the base path otherwise — and is deliberately a parameter rather than
+/// derived here, so the caller that already computed it for the service worker
+/// cannot disagree with this one. The two must always match: a worker scoped
+/// wider than the manifest controls pages the installed app does not own, and
+/// narrower means the installed app runs uncontrolled.
+///
+/// `id` is the app's UUID rather than its scope. A manifest `id` is the
+/// browser's identity for an installed app, so deriving it from anything that
+/// can change — the scope embeds the slug — makes a rename read as a different
+/// app and install a second copy. Changing `id` later re-installs for everyone,
+/// so it is much cheaper to pin now than to correct.
+pub fn web_manifest_json(
+    name: &str,
+    short_name: &str,
+    app_id: uuid::Uuid,
+    page_scope: &str,
+    icons: &[ManifestIcon],
+) -> String {
+    // `display: standalone` is what removes the browser chrome; without it the
+    // installed app is a bookmark.
+    serde_json::json!({
+        "id": format!("/__oxy/app/{app_id}"),
+        "name": name,
+        "short_name": short_name,
+        "start_url": page_scope,
+        "scope": page_scope,
+        "display": "standalone",
+        "background_color": "#0a0a0a",
+        "theme_color": "#0a0a0a",
+        "icons": icons
+            .iter()
+            .map(|i| {
+                let mut o = serde_json::Map::new();
+                o.insert("src".into(), i.src.clone().into());
+                o.insert("type".into(), i.mime.into());
+                o.insert("purpose".into(), i.purpose.into());
+                if let Some(sizes) = i.sizes {
+                    o.insert("sizes".into(), sizes.into());
+                }
+                serde_json::Value::Object(o)
+            })
+            .collect::<Vec<_>>()
+    })
+    .to_string()
+}
+
 /// Raw sources. Authored as real `.js` files so they are lintable and
 /// readable; `include_str!` binds them at compile time so there is no
 /// deployment step that can leave the binary and the scripts out of sync.
@@ -159,8 +291,198 @@ fn strip_comments(src: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+mod client_artifact_tests {
     use super::*;
+
+    /// The monogram entry as `web_manifest_for` builds it.
+    fn platform_monogram(base_path: &str) -> ManifestIcon {
+        ManifestIcon {
+            src: format!("{base_path}{MONOGRAM_ICON_PATH}"),
+            mime: "image/svg+xml",
+            sizes: Some("512x512 any"),
+            purpose: "any maskable",
+        }
+    }
+
+    #[test]
+    fn the_manifest_installs_rather_than_bookmarks() {
+        let json = web_manifest_json(
+            "Store Ops",
+            "Store Ops",
+            uuid::Uuid::nil(),
+            "/customer-apps/acme/ops/",
+            &[platform_monogram("/customer-apps/acme/ops/")],
+        );
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // `standalone` is the whole feature: without it an installed app is a
+        // bookmark that opens in a browser tab with chrome.
+        assert_eq!(v["display"], "standalone");
+        // start_url and scope must both be the PAGE scope. A scope that does
+        // not cover start_url is refused silently by the browser.
+        assert_eq!(v["start_url"], "/customer-apps/acme/ops/");
+        assert_eq!(v["scope"], "/customer-apps/acme/ops/");
+        // `maskable` on the PLATFORM monogram, whose safe zone we drew. An
+        // author's mark never claims it — see `a_raster_icon_claims_no_size`.
+        assert!(
+            v["icons"][0]["purpose"]
+                .as_str()
+                .unwrap()
+                .contains("maskable")
+        );
+    }
+
+    #[test]
+    fn a_subdomain_scopes_to_the_origin_root() {
+        // The asymmetry that makes this a platform concern: on a custom-app
+        // subdomain the PAGE is at `/` while the bundle's assets keep the
+        // subpath. A manifest scoped to the subpath would not cover the page
+        // it was linked from, and the install prompt would never appear.
+        let json = web_manifest_json(
+            "Store Ops",
+            "Store Ops",
+            uuid::Uuid::nil(),
+            "/",
+            &[platform_monogram("/customer-apps/acme/ops/")],
+        );
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["scope"], "/");
+        assert_eq!(v["start_url"], "/");
+        // …but the icon still resolves where the files actually are, which on
+        // this surface is NOT under the page scope.
+        assert_eq!(
+            v["icons"][0]["src"],
+            "/customer-apps/acme/ops/__oxy/icon.svg"
+        );
+    }
+
+    #[test]
+    fn the_manifest_sits_in_the_reserved_namespace() {
+        use crate::server::api::custom_apps_asset_manifest::RESERVED_PLATFORM_PREFIX;
+        assert!(
+            WEB_MANIFEST_PATH.starts_with(RESERVED_PLATFORM_PREFIX),
+            "a platform-synthesised object outside the reserved prefix could be \
+             shadowed by a file the app ships at the same path"
+        );
+    }
+
+    /// Every app must carry at least one fetchable icon, or the browser
+    /// silently declines to install — the failure this whole PR exists to avoid.
+    #[test]
+    fn the_monogram_is_always_offered_even_with_no_author_icon() {
+        let json = web_manifest_json(
+            "Store Ops",
+            "Store Ops",
+            uuid::Uuid::nil(),
+            "/customer-apps/acme/ops/",
+            &[ManifestIcon {
+                src: "/customer-apps/acme/ops/__oxy/icon.svg".into(),
+                mime: "image/svg+xml",
+                sizes: Some("512x512 any"),
+                purpose: "any maskable",
+            }],
+        );
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["icons"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            v["icons"][0]["src"],
+            "/customer-apps/acme/ops/__oxy/icon.svg"
+        );
+    }
+
+    /// `id` must not move when the slug does, or a rename installs a second
+    /// copy alongside the first.
+    #[test]
+    fn identity_survives_a_rename() {
+        let id = uuid::Uuid::from_u128(7);
+        let before = web_manifest_json("Ops", "Ops", id, "/customer-apps/acme/ops/", &[]);
+        let after = web_manifest_json("Ops", "Ops", id, "/customer-apps/acme/store-ops/", &[]);
+        let b: serde_json::Value = serde_json::from_str(&before).unwrap();
+        let a: serde_json::Value = serde_json::from_str(&after).unwrap();
+        assert_eq!(b["id"], a["id"], "a slug change moved the app's identity");
+        assert_ne!(b["scope"], a["scope"], "fixture did not actually rename");
+    }
+
+    /// A size we never measured is worse than no size: a browser that trusts it
+    /// and finds something smaller drops the icon.
+    #[test]
+    fn a_raster_icon_claims_no_size() {
+        let json = web_manifest_json(
+            "X",
+            "X",
+            uuid::Uuid::nil(),
+            "/a/",
+            &[ManifestIcon {
+                src: "/a/logo.png".into(),
+                mime: "image/png",
+                sizes: None,
+                purpose: "any",
+            }],
+        );
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(v["icons"][0].get("sizes").is_none());
+        assert_eq!(v["icons"][0]["type"], "image/png");
+        assert_eq!(
+            v["icons"][0]["purpose"], "any",
+            "author artwork must not claim a maskable safe zone we have not seen"
+        );
+    }
+
+    /// The monogram's declared size has to match the artwork, or it is the same
+    /// invented claim we refuse to make for an author's raster — and a browser
+    /// that finds something smaller than promised drops the icon.
+    #[test]
+    fn the_monogram_declares_the_size_it_actually_draws() {
+        let svg = monogram_svg("Ops");
+        assert!(svg.contains(r#"width="512""#) && svg.contains(r#"height="512""#));
+        let json = web_manifest_json(
+            "Ops",
+            "Ops",
+            uuid::Uuid::nil(),
+            "/a/",
+            &[platform_monogram("/a/")],
+        );
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let sizes = v["icons"][0]["sizes"].as_str().unwrap();
+        assert!(
+            sizes.contains("512x512"),
+            "a bare `any` is what Chrome's installability check is unreliable \
+             about, which would make the fallback a silent no-op: {sizes}"
+        );
+    }
+
+    #[test]
+    fn icon_mime_covers_what_a_browser_will_take_and_nothing_else() {
+        assert_eq!(icon_mime("icon.svg"), Some("image/svg+xml"));
+        assert_eq!(icon_mime("brand/logo.PNG"), Some("image/png"));
+        assert_eq!(icon_mime("a.jpeg"), Some("image/jpeg"));
+        assert_eq!(icon_mime("readme.md"), None);
+        assert_eq!(icon_mime("noextension"), None);
+    }
+
+    /// The monogram is the one icon claiming `maskable`, so its glyph has to
+    /// survive the ~20% edge crop Android applies.
+    #[test]
+    fn monogram_is_valid_svg_and_draws_inside_the_safe_zone() {
+        let svg = monogram_svg("poke house");
+        assert!(svg.starts_with("<svg"), "not an SVG document");
+        assert!(svg.contains(r#"viewBox="0 0 512 512""#));
+        assert!(svg.contains(">P<"), "expected the uppercased initial");
+        // Centred, and the type is well inside the 80% safe circle.
+        assert!(svg.contains(r#"x="256""#) && svg.contains(r#"y="256""#));
+        assert!(svg.contains(r#"font-size="240""#));
+    }
+
+    /// A name that starts with punctuation or is empty still has to produce a
+    /// document, because this icon is the installability guarantee.
+    #[test]
+    fn monogram_handles_names_with_no_usable_initial() {
+        assert!(monogram_svg("").contains(">?<"));
+        assert!(monogram_svg("   ").contains(">?<"));
+        assert!(monogram_svg("<script>").contains(">S<"));
+        // And nothing an app can name itself escapes into markup.
+        assert!(!monogram_svg("<script>x</script>").contains("<script>"));
+    }
 
     /// The two scripts are compiled in, so a syntax error is a runtime failure
     /// in a browser rather than a build failure here. These assertions pin the

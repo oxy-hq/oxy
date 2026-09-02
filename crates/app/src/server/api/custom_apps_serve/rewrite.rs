@@ -251,8 +251,36 @@ pub(crate) fn inject_app_config(
     // runtime bails out if `window.__OXY_APP__` is absent, so the order is
     // load-bearing rather than cosmetic — and both are inline so a navigation
     // costs no extra round trip to bootstrap either one.
+    // The manifest link, ahead of the scripts. Without it the synthesised
+    // manifest is unreachable — a browser only looks for one it was pointed at,
+    // so serving it and never linking it is the same as not having it.
+    //
+    // ABSOLUTE, built from `base_path`. A document-relative href resolves
+    // against the document's own URL, and this runs on every served document —
+    // the SPA fallback hands the shell to deep links too, and there is no
+    // trailing-slash redirect. So `/customer-apps/acme/ops/orders/42` would ask
+    // for `…/orders/__oxy/manifest.webmanifest`, and `/customer-apps/acme/ops`
+    // with no slash would ask for `/customer-apps/acme/__oxy/…` — where the
+    // router reads `__oxy` as the app slug. Both 404, and a manifest that 404s
+    // does not report anything: the browser just never offers to install.
+    //
+    // One absolute string is enough because `base_path` is the same value on
+    // both surfaces (`sources.rs`) — the same reason `runtime.js` builds the
+    // worker URL as `base + "__oxy/sw.js"`.
+    //
+    // `crossorigin="use-credentials"` because this manifest is behind the app's
+    // auth gate. `rel=manifest` is the one link type whose CORS default is
+    // `anonymous`, so without it the fetch carries no session cookie, follows
+    // the login redirect, and parses as HTML — silently, with no install
+    // prompt. Same-origin credentialed requests need nothing extra in return,
+    // so it is a no-op where the gate does not bite.
+    let manifest_link = format!(
+        r#"<link rel="manifest" href="{}{}" crossorigin="use-credentials">"#,
+        runtime.base_path,
+        crate::server::api::custom_apps_client::WEB_MANIFEST_PATH
+    );
     let snippet = format!(
-        "<script>window.__OXY_APP__=JSON.parse('{escaped_for_js_string}');</script>{}",
+        "{manifest_link}<script>window.__OXY_APP__=JSON.parse('{escaped_for_js_string}');</script>{}",
         crate::server::api::custom_apps_client::runtime_script_tag()
     );
 
@@ -293,6 +321,47 @@ mod tests {
             service_worker: true,
             analytics: true,
         }
+    }
+
+    /// The manifest link must resolve to the SAME URL from any served
+    /// document, not just the app root.
+    ///
+    /// `inject_app_config` runs on every HTML response, and the SPA fallback
+    /// hands the shell to deep links, so a document-relative href would resolve
+    /// against `/customer-apps/acme/acme-analytics/orders/42` and ask for
+    /// `…/orders/__oxy/manifest.webmanifest`. A manifest that 404s reports
+    /// nothing — the browser just never offers to install.
+    #[test]
+    fn manifest_link_is_absolute_so_deep_links_resolve_it() {
+        let rt = fake_runtime();
+        let html = b"<html><head></head><body/></html>";
+        let expected = format!(r#"href="{}__oxy/manifest.webmanifest""#, rt.base_path);
+        for served_at in [
+            "index.html",
+            "orders/42/index.html",
+            "deeply/nested/route/index.html",
+        ] {
+            let out = inject_app_config(html, &rt, std::path::Path::new(served_at));
+            let s = std::str::from_utf8(&out).unwrap();
+            assert!(
+                s.contains(&expected),
+                "document served at {served_at} got a link that does not resolve: {s}"
+            );
+        }
+    }
+
+    /// The manifest sits behind the app's auth gate, and `rel=manifest` is the
+    /// one link type whose CORS default is `anonymous` — without this the fetch
+    /// carries no cookie, follows the login redirect, and parses as HTML.
+    #[test]
+    fn manifest_link_requests_credentials() {
+        let out = inject_app_config(
+            b"<html><head></head></html>",
+            &fake_runtime(),
+            std::path::Path::new("index.html"),
+        );
+        let s = std::str::from_utf8(&out).unwrap();
+        assert!(s.contains(r#"crossorigin="use-credentials""#));
     }
 
     #[test]
