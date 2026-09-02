@@ -897,7 +897,12 @@ async fn authorize_workspace(
     Ok(Some(workspace_row))
 }
 
-async fn resolve_effective_role(
+/// Resolve a user's effective workspace role.
+///
+/// `pub(crate)` because the custom-app function path needs it too: that route
+/// does not run behind this middleware, so it cannot read the role out of
+/// request extensions and must ask directly.
+pub(crate) async fn resolve_effective_role(
     db: &sea_orm::DatabaseConnection,
     workspace_id: Uuid,
     org_id: Uuid,

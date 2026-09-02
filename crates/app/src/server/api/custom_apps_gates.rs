@@ -374,6 +374,27 @@ pub(crate) async fn build_project_context(
     user_id: Uuid,
     project_id: Uuid,
 ) -> Result<OxyProjectContext, Response> {
+    build_project_context_with_role(workspace, user_id, project_id, None).await
+}
+
+/// As [`build_project_context`], plus the caller's resolved workspace role.
+///
+/// Only `airhouse_managed` consults it, and only to pick the role of the
+/// credential the broker mints (Owner→Admin, Admin→Writer, Member/Viewer→
+/// Reader). Every other backend ignores it.
+///
+/// Why this exists as a separate entry point rather than a parameter on the
+/// one above: passing `None` is the conservative default and every existing
+/// caller wants it. A connector built without a role can only ever READ
+/// airhouse, which is the right answer for a path that has not thought about
+/// write authority — and the wrong one to acquire silently by a signature
+/// change.
+pub(crate) async fn build_project_context_with_role(
+    workspace: &entity::workspaces::Model,
+    user_id: Uuid,
+    project_id: Uuid,
+    role: Option<entity::workspace_members::WorkspaceRole>,
+) -> Result<OxyProjectContext, Response> {
     let branch_opt: Option<&str> = None;
     // The nil-UUID local workspace is a synthetic row with no `path` —
     // its directory is resolved from the server's cwd at request time
@@ -462,7 +483,14 @@ pub(crate) async fn build_project_context(
             ));
         }
     };
-    Ok(OxyProjectContext::new(workspace_manager).with_subject(user_id))
+    let ctx = OxyProjectContext::new(workspace_manager).with_subject(user_id);
+    // `with_role` is what decides whether a minted airhouse credential can
+    // write. Absent it the broker defaults to Reader, which denies all DDL/DML
+    // at the database — so a caller that means to write must say who it is.
+    Ok(match role {
+        Some(r) => ctx.with_role(r),
+        None => ctx,
+    })
 }
 
 #[cfg(test)]

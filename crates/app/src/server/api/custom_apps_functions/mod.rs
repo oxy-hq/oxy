@@ -1282,6 +1282,71 @@ pub struct LogLine {
     pub message: String,
 }
 
+/// Whether to look up the invoking user's workspace role before building the
+/// project context.
+///
+/// Only `airhouse_managed` consults that role, and only to decide whether the
+/// credential the broker mints may write. So this answers one question: could
+/// this invocation possibly need write authority?
+///
+/// Three ways the answer is no, and each saves two sequential DB round-trips on
+/// the pre-isolate path a caller is waiting on:
+///
+/// * **A system run.** Schedule, Airway step and manual job runs carry the ORG
+///   OWNER's user id because the invocation row needs a non-null FK, not
+///   because an owner asked for anything. Resolving a role from it would hand
+///   every cron tick an Admin credential.
+/// * **A workspace with no org.** There is no membership to resolve.
+/// * **A function that declared no write destinations.** §11.3 already denies
+///   `ctx.warehouse.{exec,insert,upsert}` and `ctx.tx` for it, checked before
+///   any connector is built — so a role would buy nothing. It also keeps the
+///   least-privilege Reader credential as a second, independent layer over the
+///   read surfaces for read-only apps: `ctx.warehouse.query` is deliberately
+///   NOT behind the write allowlist, so for those apps this is the layer.
+#[cfg(feature = "custom-app-functions")]
+fn should_resolve_role(
+    identity_kind: runtime::CtxIdentityKind,
+    has_org: bool,
+    no_write_destinations: bool,
+) -> bool {
+    identity_kind == runtime::CtxIdentityKind::User && has_org && !no_write_destinations
+}
+
+#[cfg(all(test, feature = "custom-app-functions"))]
+mod role_resolution_tests {
+    // Fully qualified, not `use super::…`: the custom-apps boundary test
+    // resolves a `use` against the FILE's module path and does not model nested
+    // `mod` blocks, so `super::` from here reads as `crate::server::api::…` —
+    // one level above this surface — and reports a violation that is not one.
+    use crate::server::api::custom_apps_functions::runtime::CtxIdentityKind;
+    use crate::server::api::custom_apps_functions::should_resolve_role;
+
+    #[test]
+    fn a_user_invoking_a_write_capable_function_resolves_a_role() {
+        assert!(should_resolve_role(CtxIdentityKind::User, true, false));
+    }
+
+    #[test]
+    fn a_system_run_never_does() {
+        // The policy this pins: a schedule / Airway step / manual job carries
+        // the org owner's id for FK reasons only, so resolving from it would
+        // give every timer an Admin airhouse credential. This is the part of
+        // the change a future refactor is most likely to "simplify" away.
+        assert!(!should_resolve_role(CtxIdentityKind::System, true, false));
+    }
+
+    #[test]
+    fn a_read_only_function_does_not_pay_for_a_role_it_cannot_use() {
+        // No write destinations means §11.3 denies every write surface anyway.
+        assert!(!should_resolve_role(CtxIdentityKind::User, true, true));
+    }
+
+    #[test]
+    fn a_workspace_with_no_org_has_no_membership_to_resolve() {
+        assert!(!should_resolve_role(CtxIdentityKind::User, false, false));
+    }
+}
+
 #[cfg(feature = "custom-app-functions")]
 struct RunArgs<'a> {
     db: &'a sea_orm::DatabaseConnection,
@@ -1336,7 +1401,7 @@ struct RunArgs<'a> {
 /// function-size budget.
 #[cfg(feature = "custom-app-functions")]
 async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
-    use crate::server::api::custom_apps_gates::build_project_context;
+    use crate::server::api::custom_apps_gates::build_project_context_with_role;
     use entity::prelude::Workspaces;
 
     // Resolve the project context (connectors) from the app's workspace.
@@ -1354,7 +1419,60 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
             );
         }
     };
-    let proj_ctx = match build_project_context(&workspace, args.user_id, args.app.project_id).await
+    // Resolve the invoking user's workspace role, so an app function can WRITE
+    // to an airhouse-managed database when the person invoking it may.
+    //
+    // Without a role every function got a Reader credential and the first real
+    // write failed with "Permission denied: Reader role cannot execute Update
+    // statements". Reads were unaffected, which is why it went unnoticed for so
+    // long: `ctx.warehouse.query` is a Reader operation, so the entire read path
+    // worked and only writes were denied.
+    //
+    // ONLY on the user path. A system run (schedule / Airway step / manual job)
+    // carries the ORG OWNER's user id because the invocation row needs a
+    // non-null FK — not because an owner asked for anything — and resolving a
+    // role from it would mint an Admin credential for everything that fires on
+    // a timer. That is a larger grant than this is for, so those runs keep the
+    // Reader default and cannot write airhouse.
+    let workspace_role = if should_resolve_role(
+        args.identity_kind,
+        workspace.org_id.is_some(),
+        args.write_destinations.is_empty(),
+    ) {
+        let org_id = workspace.org_id.expect("checked by should_resolve_role");
+        crate::server::api::middlewares::workspace_context::resolve_effective_role(
+            args.db,
+            workspace.id,
+            org_id,
+            args.user_id,
+            &args.user_email,
+        )
+        .await
+        .ok()
+        // Drop a SYNTHESIZED Owner. The middleware keeps this third value
+        // precisely so guards that must never accept an Oxy operator acting as
+        // the tenant can tell one from a real member — and minting a credential
+        // that WRITES the customer's warehouse is such a guard.
+        //
+        // An assume-role session is explicit, time-boxed and reason-logged, so
+        // honouring it here would be defensible. It is refused because it was
+        // never considered when this was written, and the rest of this change
+        // fails closed: staff reading a tenant's airhouse still works, and staff
+        // needing to write it should hold real membership rather than acquire
+        // write authority as a side effect of invoking an app function.
+        .filter(|(_, _, is_global_override)| !is_global_override)
+        .map(|(_, role, _)| role)
+    } else {
+        None
+    };
+
+    let proj_ctx = match build_project_context_with_role(
+        &workspace,
+        args.user_id,
+        args.app.project_id,
+        workspace_role,
+    )
+    .await
     {
         Ok(c) => c,
         Err(_) => {
