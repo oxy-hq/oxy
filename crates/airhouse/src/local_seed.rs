@@ -31,6 +31,8 @@ use crate::config::LOCAL_ORG_ID;
 pub async fn ensure_local_org_seeded(local_workspace_id: Uuid) -> Result<(), OxyError> {
     // 1. Get-or-create the local guest user.
     let user = UserService::get_or_create_user(&Identity {
+        // A seed path: this must be able to mint the row, so no id.
+        user_id: None,
         email: LOCAL_GUEST_EMAIL.to_string(),
         name: Some("Local User".to_string()),
         picture: None,

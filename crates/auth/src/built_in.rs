@@ -58,6 +58,10 @@ impl Authenticator for BuiltInAuthenticator {
         // If NO: use guest user (backward compatibility for zero-config local installs).
         if !auth_configured() {
             return Ok(Identity {
+                // No id: this sentinel exists so `get_or_create_user` MINTS the
+                // guest row on a zero-config install. Naming an id would turn
+                // the first request on a fresh database into a hard failure.
+                user_id: None,
                 picture: None,
                 name: Some("Local User".to_string()),
                 email: crate::user::LOCAL_GUEST_EMAIL.to_string(),
@@ -120,7 +124,13 @@ impl BuiltInAuthenticator {
             OxyError::AuthenticationError(format!("Invalid JWT token: {err}"))
         })?;
 
+        // `sub` has carried the user id since tokens were introduced, and it
+        // is what makes a session resolvable for a user with no address. Parsed
+        // leniently: a token whose `sub` is not a uuid falls back to the email
+        // claim rather than being rejected, so nothing minted before this
+        // change stops working mid-deploy.
         Ok(Identity {
+            user_id: uuid::Uuid::parse_str(&token_data.claims.sub).ok(),
             picture: None,
             name: None,
             email: token_data.claims.email,
@@ -235,5 +245,52 @@ mod tests {
             extract_session_cookie(&h).as_deref(),
             Some(r#""quoted-value""#)
         );
+    }
+}
+
+#[cfg(test)]
+mod session_identity_tests {
+    use super::*;
+    use crate::authenticator::Authenticator;
+    use jsonwebtoken::{EncodingKey, Header, encode};
+
+    fn token(sub: &str, email: &str) -> String {
+        let now = chrono::Utc::now().timestamp() as usize;
+        encode(
+            &Header::default(),
+            &Claims {
+                sub: sub.to_string(),
+                email: email.to_string(),
+                exp: now + 3600,
+                iat: now,
+            },
+            &EncodingKey::from_secret(AUTHENTICATION_SECRET_KEY.as_bytes()),
+        )
+        .expect("sign")
+    }
+
+    #[test]
+    fn a_session_names_its_user_by_id() {
+        // The property frontline sign-in depends on. A worker enrolled by PIN
+        // has a NULL `users.email`, so resolving a session by the email claim
+        // finds nobody — `sub` is the only identifier that works, and it has
+        // carried the user id since tokens were introduced.
+        let id = uuid::Uuid::new_v4();
+        let identity = BuiltInAuthenticator
+            .validate(&token(&id.to_string(), ""))
+            .expect("validate");
+        assert_eq!(identity.user_id, Some(id));
+    }
+
+    #[test]
+    fn a_token_minted_before_this_change_still_resolves() {
+        // Deploy safety: a `sub` that is not a uuid must fall back to the email
+        // claim rather than being rejected, or every session in flight breaks
+        // the moment this ships.
+        let identity = BuiltInAuthenticator
+            .validate(&token("legacy-subject", "ada@acme.com"))
+            .expect("validate");
+        assert_eq!(identity.user_id, None);
+        assert_eq!(identity.email, "ada@acme.com");
     }
 }

@@ -178,7 +178,21 @@ pub async fn get_config(
     Ok(Json(config))
 }
 
+/// Mint a session token with the default one-week window.
 pub async fn create_auth_token(user: users::Model) -> Result<String, StatusCode> {
+    create_auth_token_with_ttl(user, Duration::weeks(1)).await
+}
+
+/// Mint a session token with an explicit lifetime.
+///
+/// Split out for frontline sign-in, which gets twelve hours rather than a week:
+/// that credential was proved by four digits typed on a shared tablet, and it
+/// should not outlive the shift. Sharing the minting path rather than writing a
+/// second one keeps there being exactly one place a session is created.
+pub async fn create_auth_token_with_ttl(
+    user: users::Model,
+    ttl: Duration,
+) -> Result<String, StatusCode> {
     let connection = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -193,11 +207,17 @@ pub async fn create_auth_token(user: users::Model) -> Result<String, StatusCode>
     })?;
 
     let now = Utc::now();
-    let exp = now + Duration::weeks(1);
+    let exp = now + ttl;
 
     let claims = Claims {
         sub: user_clone.id.to_string(),
-        email: user_clone.label().to_string(),
+        // The ADDRESS, not a display label. `sub` is what resolves the session
+        // now (see `BuiltInAuthenticator::validate`), so this claim is only
+        // read by older code paths and by a human reading a decoded token —
+        // and a label there would put a non-unique `name` in a field every
+        // reader takes for an email. Empty for a frontline worker, which is
+        // true rather than convenient.
+        email: user_clone.email.clone().unwrap_or_default(),
         exp: exp.timestamp() as usize,
         iat: now.timestamp() as usize,
     };

@@ -23,6 +23,19 @@ impl UserService {
         identity: &Identity,
     ) -> Result<Option<AuthenticatedUser>, OxyError> {
         let connection = establish_connection().await?;
+        // By id when the credential carries one. A session JWT always does, and
+        // for a frontline worker it is the only thing that resolves — their
+        // `users.email` is NULL, so the address lookup below matches nothing.
+        //
+        // This is also the stronger lookup for everyone else: an id cannot
+        // collide the way a display string can.
+        if let Some(user_id) = identity.user_id {
+            let user = Users::find_by_id(user_id)
+                .one(&connection)
+                .await
+                .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?;
+            return Ok(user.map(|u| u.into()));
+        }
         let user = Users::find()
             .filter_by_email(&identity.email)
             .one(&connection)
@@ -33,6 +46,24 @@ impl UserService {
 
     pub async fn get_or_create_user(identity: &Identity) -> Result<AuthenticatedUser, OxyError> {
         let connection = establish_connection().await?;
+
+        // A credential naming a user id resolves to that user, full stop. It
+        // must NEVER fall through to the create path below: minting a second
+        // row for an id that already exists is how one human becomes two, and
+        // for a frontline worker the create path would insert a user with a
+        // NULL email and no credential — unreachable, and impossible to notice.
+        if let Some(user_id) = identity.user_id {
+            return Users::find_by_id(user_id)
+                .one(&connection)
+                .await
+                .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
+                .map(|u| u.into())
+                .ok_or_else(|| {
+                    OxyError::AuthenticationError(format!(
+                        "token names user {user_id}, which does not exist"
+                    ))
+                });
+        }
 
         // First, try to find existing user
         if let Some(existing_user) = Users::find()

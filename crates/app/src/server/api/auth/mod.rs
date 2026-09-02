@@ -13,6 +13,12 @@ mod dto;
 mod handlers;
 mod ops;
 
+// Frontline sign-in mints the same session cookie as the magic-link path, so
+// the installed PWA carries it on navigation without the page holding a token.
+// Re-exported rather than making `ops` public: one function crosses the
+// boundary, not the module.
+pub use ops::{build_session_cookie, build_session_cookie_with_max_age, is_request_secure};
+
 // The two handlers stay `pub` (mounted from `router/public.rs`, whose `pub`
 // signatures name `PeerAddr`); every query about the allow-list is crate-only.
 pub use dev_login::{PeerAddr, dev_login, dev_login_get};

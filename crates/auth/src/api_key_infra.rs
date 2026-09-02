@@ -84,6 +84,9 @@ pub async fn authenticate_header_with_config(
         ));
     };
     let identity = Identity {
+        // An API key already resolved to a row, so name it. Re-resolving by
+        // address would be a second lookup that can only agree or be wrong.
+        user_id: Some(user.id),
         picture: user.picture,
         email,
         name: Some(user.name),

@@ -172,7 +172,11 @@ fn pin_matches(pin: &str, stored: &str) -> Result<bool, OxyError> {
 /// turns the login endpoint into a roster oracle no matter how careful
 /// [`PinVerdict::public_message`] is. Hashing a throwaway value is the cheapest
 /// way to make the two paths cost the same.
-fn burn_verify_time(pin: &str) {
+/// `pub` so the *caller* can pay the same cost when it refuses before reaching
+/// `verify_pin` at all. An unknown org slug is refused one indexed SELECT in,
+/// while a known one always pays an Argon2 verify — so closing the timing
+/// channel inside this module is not enough if the layer above can return early.
+pub fn burn_verify_time(pin: &str) {
     // Derived from `Argon2::default()` at first use, NOT a hardcoded PHC
     // string. A literal would encode today's parameters (`m=19456,t=2,p=1`),
     // and an argon2 minor bump that changes those defaults would leave the

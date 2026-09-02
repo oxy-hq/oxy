@@ -10,6 +10,7 @@ use crate::user::UserService;
 
 use crate::{authenticator::Authenticator, built_in::BuiltInAuthenticator};
 use entity::users::UserStatus;
+use oxy_shared::errors::OxyError;
 
 pub struct AuthState<T> {
     authenticator: Arc<T>,
@@ -62,6 +63,8 @@ pub async fn auth_middleware<T: Authenticator>(
     // mechanism rather than inventing a new sentinel.
     if auth_state.guest_only {
         let identity = crate::types::Identity {
+            // Same reasoning as the built-in guest: this must be able to create.
+            user_id: None,
             email: crate::user::LOCAL_GUEST_EMAIL.to_string(),
             name: Some("Local User".to_string()),
             picture: None,
@@ -110,9 +113,18 @@ pub async fn auth_middleware<T: Authenticator>(
 
     let user = UserService::get_or_create_user(&claims)
         .await
-        .map_err(|e| {
-            tracing::error!("Failed to find or create user: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+        .map_err(|e| match e {
+            // A token that names a user who no longer exists is an
+            // AUTHENTICATION failure, not a server fault. This became reachable
+            // when `Claims.sub` started resolving by user id: delete a user and
+            // their still-valid token arrives here forever, and mapping it to
+            // 500 both lies to the caller — who should re-authenticate, not
+            // retry — and fills the error log with a line nobody can act on.
+            OxyError::AuthenticationError(_) => StatusCode::UNAUTHORIZED,
+            other => {
+                tracing::error!("Failed to find or create user: {}", other);
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         })?;
 
     if user.status != UserStatus::Active {
@@ -241,6 +253,7 @@ pub async fn internal_auth_middleware(
     }
 
     let internal_identity = crate::types::Identity {
+        user_id: None,
         email: "internal@localhost".to_string(),
         name: Some("Internal".to_string()),
         picture: None,

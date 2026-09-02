@@ -97,6 +97,8 @@ fn header_of(sent: &Sent, name: &str) -> Option<String> {
 /// grant.
 async fn add_guest_to_org(db: &DatabaseConnection, org_id: Uuid) -> Uuid {
     let guest = UserService::get_or_create_user(&Identity {
+        // A test fixture that must MINT its guest, so no id.
+        user_id: None,
         email: oxy_auth::user::LOCAL_GUEST_EMAIL.to_string(),
         name: Some("Local User".to_string()),
         picture: None,

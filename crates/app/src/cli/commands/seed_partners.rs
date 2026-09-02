@@ -560,6 +560,8 @@ async fn find_org_id(conn: &Conn, slug: &str) -> Result<Option<Uuid>, OxyError> 
 /// login), so a seeded email can sign in with a magic link.
 async fn ensure_user(email: &str, name: &str) -> Result<Uuid, OxyError> {
     let user = UserService::get_or_create_user(&Identity {
+        // A seed path: this must be able to mint the row, so no id.
+        user_id: None,
         email: email.to_string(),
         name: Some(name.to_string()),
         picture: None,

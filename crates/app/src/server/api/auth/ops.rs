@@ -66,10 +66,22 @@ const SESSION_COOKIE_MAX_AGE_SECS: i64 = 7 * 24 * 60 * 60;
 /// (set to `.oxygen-hq.com` in prod). When unset, the cookie is host-only —
 /// fine for local dev where there are no subdomains to gate.
 pub fn build_session_cookie(jwt: &str, secure: bool) -> String {
+    build_session_cookie_with_max_age(jwt, secure, SESSION_COOKIE_MAX_AGE_SECS)
+}
+
+/// As [`build_session_cookie`], with the browser's copy expiring alongside the
+/// token rather than on the default schedule.
+///
+/// The two lifetimes have to agree. A cookie that outlives its JWT leaves the
+/// client presenting a credential the server will refuse — which does not read
+/// as "signed out", it reads as every request failing while the UI still thinks
+/// there is a session. That is the whole difference between a kiosk showing the
+/// name picker the next morning and one showing 401s.
+pub fn build_session_cookie_with_max_age(jwt: &str, secure: bool, max_age_secs: i64) -> String {
     let mut parts = vec![
         format!("{SESSION_COOKIE_NAME}={jwt}"),
         "Path=/".to_string(),
-        format!("Max-Age={SESSION_COOKIE_MAX_AGE_SECS}"),
+        format!("Max-Age={max_age_secs}"),
         "HttpOnly".to_string(),
         "SameSite=Lax".to_string(),
     ];
@@ -105,7 +117,7 @@ pub(crate) fn clear_session_cookie() -> String {
     parts.join("; ")
 }
 
-/// Returns true if the cookie should carry the `Secure` attribute.
+/// Should the session cookie carry the `Secure` attribute?
 ///
 /// Three signals are consulted, in priority order:
 ///
@@ -118,7 +130,13 @@ pub(crate) fn clear_session_cookie() -> String {
 ///
 /// In local dev none of these are set so we default to `false`, allowing the
 /// cookie to work on `http://localhost`.
-fn is_request_secure(headers: &HeaderMap) -> bool {
+///
+/// `pub` so every path that mints a session answers this the same way. It is not
+/// derivable from the serve mode: a dev box is cloud mode with non-prod secrets
+/// and is served over plain `http://localhost`, so `!process_is_local()` sets
+/// `Secure` there and the browser silently discards the cookie — a sign-in that
+/// returns 200 and does not stick.
+pub fn is_request_secure(headers: &HeaderMap) -> bool {
     if std::env::var("OXY_SESSION_COOKIE_FORCE_SECURE")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
