@@ -328,13 +328,14 @@ pub(crate) async fn serve_pretty(
     // admin). Cached per (user_id, app_id) for 60s — see
     // `custom_apps_auth::user_can_access_app`. Critical for the Next.js
     // asset storm (30-100 requests per page load).
-    let allowed = match user_can_access_app(&db, user.id, &user.email, &app).await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("Access check failed for custom app {id}: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    let allowed =
+        match user_can_access_app(&db, user.id, user.email.as_deref().unwrap_or(""), &app).await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("Access check failed for custom app {id}: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
     if !allowed {
         return (
             StatusCode::FORBIDDEN,
@@ -377,7 +378,15 @@ pub(crate) async fn serve_pretty(
             }
             Reserved::MonogramIcon => return monogram_icon_for(&app),
             Reserved::Beacon => {
-                return ingest_beacon(body, &headers, &db, app.id, user.id, &user.email).await;
+                return ingest_beacon(
+                    body,
+                    &headers,
+                    &db,
+                    app.id,
+                    user.id,
+                    user.email.as_deref().unwrap_or(""),
+                )
+                .await;
             }
             // A real object inside the build, written at publish — fall through
             // to the ordinary dispatch so it rides the same LRU,
@@ -416,7 +425,7 @@ pub(crate) async fn serve_pretty(
                     app: &app,
                     org: &org,
                     user_id: user.id,
-                    user_email: &user.email,
+                    user_email: user.email.as_deref().unwrap_or(""),
                 },
             )
             .await
@@ -441,7 +450,7 @@ pub(crate) async fn serve_pretty(
             // draft channel here. `is_staff()` would, and is now true for every role.
             let is_staff = oxy_server_authz::globals::platform_reaches(
                 &db,
-                &user.email,
+                user.email.as_deref().unwrap_or(""),
                 oxy_authz::Cap::DevelopApps,
                 app.org_id,
             )

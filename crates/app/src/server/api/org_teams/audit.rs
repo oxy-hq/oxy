@@ -92,7 +92,7 @@ pub(super) async fn record(
     let (kind, id, label) = target;
     audit::record_best_effort(
         db,
-        AuditEntry::new(actor.email.clone(), name)
+        AuditEntry::new(actor.label().to_string(), name)
             // `User` on both branches, matching the admin sibling — the actor tier
             // is carried by the action prefix, not by re-typing the actor.
             .actor(actor.id, ActorType::User)

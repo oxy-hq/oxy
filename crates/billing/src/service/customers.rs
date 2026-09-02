@@ -118,7 +118,14 @@ impl BillingService {
         else {
             return Ok(None);
         };
-        Ok(Some((org.name, org.slug, user.email)))
+        // An org owner with no email cannot be a billing contact. Unreachable
+        // today — frontline users are deliberately kept out of `org_members`
+        // entirely — but `None` here is a diagnosable OrgOwnerNotFound rather
+        // than a Stripe customer created against an empty address.
+        let Some(email) = user.email else {
+            return Ok(None);
+        };
+        Ok(Some((org.name, org.slug, email)))
     }
 
     /// Owner email only — used by the admin queue listing where the org+slug

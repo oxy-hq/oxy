@@ -110,7 +110,7 @@ async fn seed_user_workspace_with_role(
 
     let user = users::ActiveModel {
         id: ActiveValue::Set(user_id),
-        email: ActiveValue::Set(email.clone()),
+        email: ActiveValue::Set(Some(email.clone())),
         name: ActiveValue::Set("Test User".into()),
         picture: ActiveValue::Set(None),
         email_verified: ActiveValue::Set(true),

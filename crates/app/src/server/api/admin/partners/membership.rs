@@ -94,7 +94,7 @@ pub async fn attach_org(
 
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "partner.org.attached")
+        AuditEntry::new(actor.label().to_string(), "partner.org.attached")
             .actor(actor.id, ActorType::User)
             .partner(partner_org_id)
             .org(body.managed_org_id)
@@ -129,7 +129,7 @@ pub async fn detach_org(
 
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "partner.org.detached")
+        AuditEntry::new(actor.label().to_string(), "partner.org.detached")
             .actor(actor.id, ActorType::User)
             .partner(partner_org_id)
             .org(managed_org_id)

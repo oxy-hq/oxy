@@ -136,7 +136,7 @@ pub async fn invite_member(
 
     audit::record_best_effort(
         &db,
-        AuditEntry::new(actor.email.clone(), "partner.member.invited")
+        AuditEntry::new(actor.label().to_string(), "partner.member.invited")
             .actor(actor.id, ActorType::PartnerAdmin)
             .partner(scope.partner_id)
             .org(org_id)
@@ -164,7 +164,7 @@ pub async fn invite_member(
             &token_clone,
             &base_url,
             &inviter_name,
-            &inviter_email,
+            inviter_email.as_deref().unwrap_or(""),
             &org_name,
         )
         .await
@@ -225,7 +225,7 @@ pub async fn update_member_role(
     model.update(&txn).await.map_err(internal("update role"))?;
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "partner.member.role_updated")
+        AuditEntry::new(actor.label().to_string(), "partner.member.role_updated")
             .actor(actor.id, ActorType::PartnerAdmin)
             .partner(scope.partner_id)
             .org(org_id)
@@ -274,7 +274,7 @@ pub async fn remove_member(
         .map_err(internal("remove member"))?;
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "partner.member.removed")
+        AuditEntry::new(actor.label().to_string(), "partner.member.removed")
             .actor(actor.id, ActorType::PartnerAdmin)
             .partner(scope.partner_id)
             .org(org_id)

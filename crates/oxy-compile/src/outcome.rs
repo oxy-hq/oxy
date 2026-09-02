@@ -21,6 +21,67 @@ pub struct CompileOutcome {
     pub file_count_failed: u32,
     /// Per-file failure details. Empty when status is Ready.
     pub failures: Vec<FileFailure>,
+    /// What happened to `workspaces.current_revision_id`. See [`Promotion`].
+    pub promotion: Promotion,
+}
+
+/// What this compile did to `workspaces.current_revision_id`.
+///
+/// Before this existed a caller could not tell "promoted" from "asked to
+/// promote and silently lost the causality race" — both returned `Ok(())`
+/// and the difference lived only in a log line. Anything that has to know
+/// whether *this* revision is the live one needs the distinction, and
+/// `Deferred` needs it most: it is the caller's cue to do work.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Promotion {
+    /// Not asked for (`promote: false`), or withheld because the revision
+    /// is a draft or the compile failed. `current_revision_id` untouched
+    /// by design — an `oxy compile` against a working tree lands here.
+    NotRequested,
+    /// `current_revision_id` now points at this revision.
+    Promoted,
+    /// Requested, but `current_revision_id` was not moved to this
+    /// revision. Two ways to get here, and neither is an error worth
+    /// failing a compile over: the `started_at` causality clause in
+    /// `promote_revision` made the UPDATE a no-op because a newer revision
+    /// is already current, or the promote of a superseded-path winner
+    /// failed and was logged. Both mean the same thing to a reader — this
+    /// revision is not the one being served — and its rows stay queryable
+    /// by `revision_id` either way.
+    Skipped,
+    /// Requested and **deliberately withheld**: this revision carries
+    /// `schemas/*.sql` DDL that must reach the org's OLTP database before
+    /// the runtime starts reading a revision whose tables may not exist.
+    ///
+    /// The caller owns the apply-then-promote step. It cannot live in this
+    /// crate for two reasons: applying is a network round-trip to a tenant
+    /// database, which must never happen inside the finalise transaction;
+    /// and `oxy-compile` does not depend on `oxy-oltp` (they are siblings
+    /// over `entity`), which is the boundary that keeps the compiler
+    /// ignorant of where a tenant's Postgres lives.
+    ///
+    /// Callers: `oxy_app::server::compile_worker` and `oxy compile`.
+    Deferred { schema_migration_count: u32 },
+}
+
+impl Promotion {
+    /// True when `current_revision_id` points at this revision *now*.
+    ///
+    /// `Deferred` is false: the whole point is that it is not live yet.
+    pub fn is_live(&self) -> bool {
+        matches!(self, Promotion::Promoted)
+    }
+
+    /// The migration count when promotion is waiting on DDL, else `None`.
+    pub fn deferred_count(&self) -> Option<u32> {
+        match self {
+            Promotion::Deferred {
+                schema_migration_count,
+            } => Some(*schema_migration_count),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -23,7 +23,7 @@ async fn seed_user(email: &str) -> Uuid {
     let user_id = Uuid::new_v4();
     users::ActiveModel {
         id: ActiveValue::Set(user_id),
-        email: ActiveValue::Set(email.to_string()),
+        email: ActiveValue::Set(Some(email.to_string())),
         name: ActiveValue::Set("Test User".into()),
         picture: ActiveValue::Set(None),
         email_verified: ActiveValue::Set(true),

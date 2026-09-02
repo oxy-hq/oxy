@@ -81,7 +81,13 @@ pub async fn list_teams(
     AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<TeamDto>>, StatusCode> {
     let db = establish_connection().await.map_err(db_err)?;
-    enforce_team_manage(&db, actor.id, &actor.email, ctx.org.id).await?;
+    enforce_team_manage(
+        &db,
+        actor.id,
+        actor.email.as_deref().unwrap_or(""),
+        ctx.org.id,
+    )
+    .await?;
 
     Ok(Json(service::list_org_teams(&db, ctx.org.id).await?))
 }
@@ -93,7 +99,13 @@ pub async fn create_team(
     Json(req): Json<CreateTeamRequest>,
 ) -> Result<Json<TeamDto>, StatusCode> {
     let db = establish_connection().await.map_err(db_err)?;
-    enforce_team_manage(&db, actor.id, &actor.email, ctx.org.id).await?;
+    enforce_team_manage(
+        &db,
+        actor.id,
+        actor.email.as_deref().unwrap_or(""),
+        ctx.org.id,
+    )
+    .await?;
 
     let name = normalize_name(&req.name).ok_or(StatusCode::BAD_REQUEST)?;
 
@@ -166,7 +178,13 @@ pub async fn get_team(
     Path((_org_id, team_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<TeamDetailDto>, StatusCode> {
     let db = establish_connection().await.map_err(db_err)?;
-    enforce_team_manage(&db, actor.id, &actor.email, ctx.org.id).await?;
+    enforce_team_manage(
+        &db,
+        actor.id,
+        actor.email.as_deref().unwrap_or(""),
+        ctx.org.id,
+    )
+    .await?;
     let team = load_team(&db, ctx.org.id, team_id).await?;
 
     let rows = OrgTeamMembers::find()
@@ -192,7 +210,7 @@ pub async fn get_team(
                     .unwrap_or_else(|| "unknown".to_string()),
                 user_id: m.user_id,
                 name: service::display_name(&user),
-                email: user.email,
+                email: user.label().to_string(),
                 added_at: m.created_at.to_rfc3339(),
             })
         })
@@ -248,7 +266,13 @@ pub async fn update_team(
     Json(req): Json<UpdateTeamRequest>,
 ) -> Result<Json<TeamDto>, StatusCode> {
     let db = establish_connection().await.map_err(db_err)?;
-    enforce_team_manage(&db, actor.id, &actor.email, ctx.org.id).await?;
+    enforce_team_manage(
+        &db,
+        actor.id,
+        actor.email.as_deref().unwrap_or(""),
+        ctx.org.id,
+    )
+    .await?;
     load_team(&db, ctx.org.id, team_id).await?;
 
     let name = normalize_name(&req.name).ok_or(StatusCode::BAD_REQUEST)?;
@@ -290,7 +314,13 @@ pub async fn delete_team(
     Path((_org_id, team_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, StatusCode> {
     let db = establish_connection().await.map_err(db_err)?;
-    enforce_team_manage(&db, actor.id, &actor.email, ctx.org.id).await?;
+    enforce_team_manage(
+        &db,
+        actor.id,
+        actor.email.as_deref().unwrap_or(""),
+        ctx.org.id,
+    )
+    .await?;
     // Read the name BEFORE the delete: the audit row is the only place it survives,
     // and a log entry saying a uuid lost its grants is not a log entry anyone reads.
     let team = load_team(&db, ctx.org.id, team_id).await?;
@@ -325,7 +355,13 @@ pub async fn add_team_member(
     Json(req): Json<AddTeamMemberRequest>,
 ) -> Result<StatusCode, StatusCode> {
     let db = establish_connection().await.map_err(db_err)?;
-    enforce_team_manage(&db, actor.id, &actor.email, ctx.org.id).await?;
+    enforce_team_manage(
+        &db,
+        actor.id,
+        actor.email.as_deref().unwrap_or(""),
+        ctx.org.id,
+    )
+    .await?;
     let team = load_team(&db, ctx.org.id, team_id).await?;
 
     let is_member = OrgMembers::find()
@@ -372,7 +408,13 @@ pub async fn remove_team_member(
     Path((_org_id, team_id, user_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> Result<StatusCode, StatusCode> {
     let db = establish_connection().await.map_err(db_err)?;
-    enforce_team_manage(&db, actor.id, &actor.email, ctx.org.id).await?;
+    enforce_team_manage(
+        &db,
+        actor.id,
+        actor.email.as_deref().unwrap_or(""),
+        ctx.org.id,
+    )
+    .await?;
     let team = load_team(&db, ctx.org.id, team_id).await?;
 
     OrgTeamMembers::delete_many()

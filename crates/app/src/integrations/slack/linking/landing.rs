@@ -68,7 +68,7 @@ pub async fn landing(Query(q): Query<LandingQuery>, user: OptionalAuthenticatedU
 
     let safe_slack_user = html_escape(&state.slack_user_id.clone().unwrap_or_default());
     let safe_team_name = html_escape(&inst.slack_team_name);
-    let safe_email = html_escape(&user.email);
+    let safe_email = html_escape(user.email.as_deref().unwrap_or(""));
     let safe_token = html_escape(&q.token);
     let html = format!(
         r#"<!doctype html><html><body style="font-family:sans-serif;max-width:480px;margin:48px auto">

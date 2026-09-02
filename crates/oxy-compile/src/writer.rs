@@ -21,7 +21,7 @@
 
 use crate::compile::CompiledRow;
 use crate::errors::CompileError;
-use crate::outcome::{FileFailure, RevisionStatus};
+use crate::outcome::{FileFailure, Promotion, RevisionStatus};
 use chrono::{DateTime, Utc};
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
@@ -97,6 +97,16 @@ pub struct FinaliseInput<'a> {
     /// `revisions.kind` from the original insert; needed here to gate
     /// promotion (drafts are never promoted).
     pub kind: String,
+    /// How many `schemas/*.sql` files this revision compiled.
+    ///
+    /// Non-zero withholds the in-transaction promote: the DDL has to
+    /// reach the org's OLTP database before the runtime is pointed at a
+    /// revision whose tables may not exist yet. The apply cannot happen
+    /// here — it is a network call to a tenant database and this is a
+    /// control-plane transaction holding a unique-index lock on
+    /// `revisions` — so the caller gets [`Promotion::Deferred`] and owns
+    /// the apply-then-promote step.
+    pub schema_migration_count: u32,
 }
 
 /// Outcome of a finalise call. The common-case is `Committed { .. }`
@@ -106,8 +116,16 @@ pub struct FinaliseInput<'a> {
 /// as the authoritative one.
 #[derive(Debug)]
 pub enum FinaliseOutcome {
-    Committed { finished_at: DateTime<Utc> },
-    SupersededBy { revision_id: Uuid },
+    Committed {
+        finished_at: DateTime<Utc>,
+        promotion: Promotion,
+    },
+    SupersededBy {
+        revision_id: Uuid,
+        /// What happened to `current_revision_id` on the way out. The
+        /// winner's revision is the subject, not ours.
+        promotion: Promotion,
+    },
 }
 
 /// Finalise the revision: write all compiled-entity rows, update the
@@ -186,7 +204,23 @@ pub async fn finalise_revision(
             return match lookup_ready_winner(db, ctx.workspace_id, &ctx.git_sha).await? {
                 Some(winner) => {
                     mark_superseded(db, ctx.revision_id, winner).await;
-                    if input.promote {
+                    // Same source tree as the winner, so our count is their
+                    // count: if this revision carries DDL, theirs does too
+                    // and their worker deferred for the same reason.
+                    let mut promotion = match (input.promote, input.schema_migration_count) {
+                        (false, _) => Promotion::NotRequested,
+                        (true, 0) => Promotion::Skipped,
+                        (true, n) => Promotion::Deferred {
+                            schema_migration_count: n,
+                        },
+                    };
+                    // `schema_migration_count > 0` opts out entirely: the
+                    // winner's own worker deferred its promote so it could
+                    // apply DDL first, and promoting it from here would
+                    // undo exactly that ordering — pointing the runtime at
+                    // a revision whose tables the winner has not created
+                    // yet. Same source tree, so our count equals theirs.
+                    if input.promote && input.schema_migration_count == 0 {
                         // Promote the winner — normally redundant (the winning
                         // worker promotes inside its own finalise txn), but it
                         // covers the case where the winner did NOT promote. The
@@ -195,18 +229,23 @@ pub async fn finalise_revision(
                         // swallow the error: a failure here means the workspace
                         // may still point at the OLD revision while we report
                         // success, so it must be observable/alertable.
-                        if let Err(e) = promote_existing(db, ctx.workspace_id, winner).await {
-                            tracing::error!(
-                                ?e,
-                                workspace_id = %ctx.workspace_id,
-                                winner = %winner,
-                                "compile: superseded-path promote failed; workspace may still \
-                                 point at a stale revision — verify current_revision_id"
-                            );
+                        match promote_existing(db, ctx.workspace_id, winner).await {
+                            Ok(p) => promotion = p,
+                            Err(e) => {
+                                tracing::error!(
+                                    ?e,
+                                    workspace_id = %ctx.workspace_id,
+                                    winner = %winner,
+                                    "compile: superseded-path promote failed; workspace may still \
+                                     point at a stale revision — verify current_revision_id"
+                                );
+                                promotion = Promotion::Skipped;
+                            }
                         }
                     }
                     Ok(FinaliseOutcome::SupersededBy {
                         revision_id: winner,
+                        promotion,
                     })
                 }
                 None => Err(CompileError::Database(e)),
@@ -223,12 +262,49 @@ pub async fn finalise_revision(
     // request flow that flips a workspace to a draft does so via a
     // *separate* user-scoped read path; current_revision_id stays the
     // authoritative main pointer.
-    if input.promote && matches!(input.status, RevisionStatus::Ready) && input.kind == "main" {
-        promote_revision(&txn, ctx.workspace_id, ctx.revision_id).await?;
+    //
+    // A fourth gate defers rather than denies: a revision carrying
+    // `schemas/*.sql` is not promoted here at all, because its tables do
+    // not exist in the tenant database yet. See `decide_promotion`.
+    let promotion = decide_promotion(&input);
+    if matches!(promotion, Promotion::Promoted) {
+        // `promote_revision` reports whether the causality clause let the
+        // UPDATE land. Downgrade to `Skipped` when it didn't, so the
+        // caller isn't told this revision is live when a newer one is.
+        if !promote_revision(&txn, ctx.workspace_id, ctx.revision_id).await? {
+            txn.commit().await?;
+            return Ok(FinaliseOutcome::Committed {
+                finished_at,
+                promotion: Promotion::Skipped,
+            });
+        }
     }
 
     txn.commit().await?;
-    Ok(FinaliseOutcome::Committed { finished_at })
+    Ok(FinaliseOutcome::Committed {
+        finished_at,
+        promotion,
+    })
+}
+
+/// The promote/defer/decline decision, split out because it is the one
+/// piece of this file that is pure — and therefore the one piece worth
+/// testing without a database.
+///
+/// `Promoted` here means "the three gates passed, go attempt it"; the
+/// caller downgrades to `Skipped` if the causality clause rejects the
+/// UPDATE. That is the only reachable disagreement between this
+/// function's answer and the final one.
+fn decide_promotion(input: &FinaliseInput<'_>) -> Promotion {
+    if !input.promote || !matches!(input.status, RevisionStatus::Ready) || input.kind != "main" {
+        return Promotion::NotRequested;
+    }
+    if input.schema_migration_count > 0 {
+        return Promotion::Deferred {
+            schema_migration_count: input.schema_migration_count,
+        };
+    }
+    Promotion::Promoted
 }
 
 /// Detect the specific Postgres unique-violation on
@@ -324,12 +400,16 @@ async fn mark_superseded(db: &DatabaseConnection, revision_id: Uuid, winner: Uui
 /// short-circuit: the per-entity rows already exist tagged with this
 /// revision_id, so we just update `current_revision_id`. Not inside
 /// a tx because there's no atomicity gain — only one column changes.
-pub(crate) async fn promote_existing(
+pub async fn promote_existing(
     db: &DatabaseConnection,
     workspace_id: Uuid,
     revision_id: Uuid,
-) -> Result<(), CompileError> {
-    promote_revision(db, workspace_id, revision_id).await
+) -> Result<Promotion, CompileError> {
+    Ok(if promote_revision(db, workspace_id, revision_id).await? {
+        Promotion::Promoted
+    } else {
+        Promotion::Skipped
+    })
 }
 
 /// Update `workspaces.current_revision_id` atomically inside the
@@ -351,11 +431,16 @@ pub(crate) async fn promote_existing(
 /// at worst promotes an out-of-order revision that the next compile
 /// will correct, and the conditional clause still rejects the
 /// strictly-older case).
+///
+/// Returns whether the UPDATE landed: `false` means the causality clause
+/// rejected it because a newer revision is already current. Callers turn
+/// that into [`Promotion::Skipped`] — it used to be a log line only, which
+/// made "promoted" and "lost the race" indistinguishable to a caller.
 async fn promote_revision(
     txn: &impl ConnectionTrait,
     workspace_id: Uuid,
     revision_id: Uuid,
-) -> Result<(), CompileError> {
+) -> Result<bool, CompileError> {
     use sea_orm::{DatabaseBackend, Statement};
 
     // Hand-rolled SQL because the causality predicate references a
@@ -381,7 +466,8 @@ async fn promote_revision(
         [workspace_id.into(), revision_id.into()],
     );
     let result = txn.execute_raw(stmt).await?;
-    if result.rows_affected() == 0 {
+    let landed = result.rows_affected() != 0;
+    if !landed {
         // A newer revision is already current — we lost the race.
         // Not an error: the per-entity rows we just wrote are still
         // queryable by their revision_id, and a future compile will
@@ -399,7 +485,7 @@ async fn promote_revision(
             "promoted revision to workspaces.current_revision_id"
         );
     }
-    Ok(())
+    Ok(landed)
 }
 
 /// Marks a revision row as `failed` when something went wrong outside
@@ -735,5 +821,77 @@ async fn upload_one(
             );
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod promotion_tests {
+    use super::*;
+
+    fn input(promote: bool, status: RevisionStatus, kind: &str, schemas: u32) -> FinaliseInput<'_> {
+        FinaliseInput {
+            status,
+            file_count_seen: 0,
+            file_count_compiled: 0,
+            file_count_failed: 0,
+            failures: &[],
+            rows: &[],
+            promote,
+            kind: kind.to_string(),
+            schema_migration_count: schemas,
+        }
+    }
+
+    #[test]
+    fn plain_promote_is_immediate() {
+        // The overwhelmingly common case: no `schemas/` directory, so
+        // nothing to apply and no reason to defer.
+        assert_eq!(
+            decide_promotion(&input(true, RevisionStatus::Ready, "main", 0)),
+            Promotion::Promoted
+        );
+    }
+
+    #[test]
+    fn ddl_defers_and_carries_the_count() {
+        assert_eq!(
+            decide_promotion(&input(true, RevisionStatus::Ready, "main", 3)),
+            Promotion::Deferred {
+                schema_migration_count: 3
+            }
+        );
+    }
+
+    #[test]
+    fn a_draft_never_defers() {
+        // The sharp one. A draft is scoped to one user and is never
+        // promoted — but the org's OLTP database is shared by everyone.
+        // Reporting `Deferred` here would invite the caller to apply one
+        // person's in-progress DDL to the whole org.
+        assert_eq!(
+            decide_promotion(&input(true, RevisionStatus::Ready, "draft", 2)),
+            Promotion::NotRequested
+        );
+    }
+
+    #[test]
+    fn a_failed_compile_never_defers() {
+        // Same hazard as the draft: the revision will never go live, so
+        // applying its DDL would mutate the tenant database on behalf of a
+        // revision nobody will ever serve.
+        assert_eq!(
+            decide_promotion(&input(true, RevisionStatus::Failed, "main", 2)),
+            Promotion::NotRequested
+        );
+    }
+
+    #[test]
+    fn observation_mode_never_defers() {
+        // `oxy compile` without --promote is observation-only. It must not
+        // touch the tenant database either.
+        assert_eq!(
+            decide_promotion(&input(false, RevisionStatus::Ready, "main", 2)),
+            Promotion::NotRequested
+        );
     }
 }

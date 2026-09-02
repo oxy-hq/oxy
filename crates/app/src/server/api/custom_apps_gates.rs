@@ -214,13 +214,13 @@ pub async fn check_custom_app_gates(
     let allowed = match is_org_member(&db, user.id, org_id).await {
         Ok(true) => true,
         Ok(false) => {
-            authz::globals::platform_standing(&db, &user.email)
+            authz::globals::platform_standing(&db, user.email.as_deref().unwrap_or(""))
                 .await
                 .is_staff()
                 || authz::partner_authz::partner_grants_app_access(
                     &db,
                     user.id,
-                    &user.email,
+                    user.email.as_deref().unwrap_or(""),
                     org_id,
                 )
                 .await
@@ -243,17 +243,23 @@ pub async fn check_custom_app_gates(
     // Unknown facts (a lookup errored) defer to the gate's own verdict rather than
     // denying — the conjunction only subtracts, so deferring can't open a hole, and a
     // blip must not 403 every legitimate app user.
-    let allowed =
-        match authz::loader::load_principal_facts_scoped(&db, user.id, &user.email, false).await {
-            Some(facts) => authz::enforce(
-                "gate.custom_app",
-                &facts,
-                authz::Action::AppAccess,
-                &authz::Resource::app(project_id, org_id),
-                allowed,
-            ),
-            None => allowed,
-        };
+    let allowed = match authz::loader::load_principal_facts_scoped(
+        &db,
+        user.id,
+        user.email.as_deref().unwrap_or(""),
+        false,
+    )
+    .await
+    {
+        Some(facts) => authz::enforce(
+            "gate.custom_app",
+            &facts,
+            authz::Action::AppAccess,
+            &authz::Resource::app(project_id, org_id),
+            allowed,
+        ),
+        None => allowed,
+    };
 
     if !allowed {
         return Err(err(

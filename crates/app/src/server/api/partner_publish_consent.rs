@@ -102,7 +102,7 @@ pub async fn set_consent(
     };
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), action)
+        AuditEntry::new(actor.label().to_string(), action)
             .actor(actor.id, ActorType::User)
             .org(ctx.org.id)
             .target("organization", ctx.org.id.to_string(), ctx.org.name.clone())

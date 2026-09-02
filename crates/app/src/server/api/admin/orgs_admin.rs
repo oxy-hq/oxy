@@ -125,19 +125,22 @@ pub async fn create_org(
         // in this change. Answering "you don't have permission" to a database blip is
         // both wrong and unactionable, and two call sites disagreeing about it is the
         // drift the helper split was meant to end.
-        let facts =
-            match crate::server::authz::loader::load_platform_facts(&db, actor.id, &actor.email)
-                .await
-            {
-                Some(facts) => facts,
-                None => {
-                    tracing::error!(
-                        target: "authz",
-                        "platform facts unreadable on create_org — refusing"
-                    );
-                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
-                }
-            };
+        let facts = match crate::server::authz::loader::load_platform_facts(
+            &db,
+            actor.id,
+            actor.email.as_deref().unwrap_or(""),
+        )
+        .await
+        {
+            Some(facts) => facts,
+            None => {
+                tracing::error!(
+                    target: "authz",
+                    "platform facts unreadable on create_org — refusing"
+                );
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        };
         if !crate::server::authz::allows(
             &facts,
             crate::server::authz::Action::PlatformOrgCreate,
@@ -270,7 +273,11 @@ pub async fn create_org(
     if let Some((to_email, token)) = pending_invite {
         let base_url = crate::server::api::auth::extract_base_url_from_headers(&headers);
         let inviter_name = actor.name.clone();
-        let inviter_email = actor.email.clone();
+        // The inviter's ADDRESS, not their display label — this is the
+        // reply-to an invitation carries. Empty when the actor has none, which
+        // is what `invitation_handlers` passes too; the two paths now agree
+        // rather than one of them claiming they do.
+        let inviter_email = actor.email.clone().unwrap_or_default();
         let org_name = name.clone();
         tokio::spawn(async move {
             if let Err(e) = send_invitation_email(
@@ -289,7 +296,7 @@ pub async fn create_org(
     }
 
     tracing::info!(
-        admin_email = %actor.email,
+        admin_email = %actor.label(),
         target_id = %org.id,
         action = "create_org",
         owner_status,
@@ -590,7 +597,7 @@ pub async fn rename_org(
     let owner_email = lookup_owner_email(&db, updated.id).await;
 
     tracing::info!(
-        admin_email = %actor.email,
+        admin_email = %actor.label(),
         target_id = %updated.id,
         action = "rename_org",
         "admin tenant action"
@@ -634,7 +641,7 @@ pub async fn delete_org(
     // call in the tenant-facing `organizations::delete_org`.
     crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
     tracing::info!(
-        admin_email = %actor.email,
+        admin_email = %actor.label(),
         target_id = %org_id,
         action = "delete_org",
         "admin tenant action"
@@ -709,7 +716,7 @@ pub async fn transfer_ownership(
 
     tx.commit().await.map_err(internal)?;
     tracing::info!(
-        admin_email = %actor.email,
+        admin_email = %actor.label(),
         target_id = %org_id,
         new_owner_user_id = %body.new_owner_user_id,
         action = "transfer_ownership",
@@ -732,7 +739,10 @@ async fn lookup_owner_email(db: &sea_orm::DatabaseConnection, org_id: Uuid) -> O
         .await
         .ok()
         .flatten()
-        .map(|u| u.email)
+        // `and_then`, not `map`: the owner's address is itself optional now, so
+        // "no owner row" and "owner has no mailbox" both collapse to None —
+        // which is what every caller of this already handles.
+        .and_then(|u| u.email)
 }
 
 #[derive(FromQueryResult)]
@@ -910,7 +920,7 @@ async fn load_owners(
         if let Some(u) = users_by_id.get(&m.user_id) {
             out.push(OrgUserSummary {
                 user_id: u.id,
-                email: u.email.clone(),
+                email: u.label().to_string(),
                 name: u.name.clone(),
                 role: m.role.as_str().to_string(),
             });

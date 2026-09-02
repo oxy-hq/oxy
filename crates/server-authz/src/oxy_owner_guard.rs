@@ -19,12 +19,14 @@ pub async fn oxy_owner_guard_middleware(
     request: axum::http::Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let email = request
+    let user = request
         .extensions()
         .get::<AuthenticatedUser>()
-        .map(|u| u.email.clone())
         .ok_or(StatusCode::UNAUTHORIZED)?;
-    require_oxy_owner(&email)?;
+    // Platform standing is keyed by email, so an account without one can never
+    // hold it. `unwrap_or("")` is safe because `is_oxy_owner` refuses a blank
+    // needle outright — see the note there.
+    require_oxy_owner(user.email.as_deref().unwrap_or(""))?;
     Ok(next.run(request).await)
 }
 
@@ -40,6 +42,18 @@ pub fn is_oxy_owner(email: &str) -> bool {
         return false;
     }
     let needle = email.trim().to_ascii_lowercase();
+    // A blank needle is never an owner.
+    //
+    // Not defensive padding — without it, `OXY_OWNER="a@b.com,"` (a stray
+    // trailing comma, or any blank entry) yields an empty allow-list element
+    // that an empty email matches exactly, and the caller is root. That was
+    // unreachable while `users.email` was NOT NULL; it stopped being
+    // unreachable when frontline identity made the address optional and
+    // callers began passing `unwrap_or("")`. `platform_grant_checked` already
+    // short-circuits a blank key for the same reason.
+    if needle.is_empty() {
+        return false;
+    }
     allow
         .split(',')
         .any(|e| e.trim().to_ascii_lowercase() == needle)
@@ -56,6 +70,21 @@ fn require_oxy_owner(email: &str) -> Result<(), StatusCode> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_blank_email_never_matches_a_blank_allow_list_entry() {
+        // The trailing comma is the whole point: it produces an empty element,
+        // which an empty needle matches exactly. A frontline user has no
+        // address, so callers pass "" — and without the blank guard this makes
+        // them Oxy's root.
+        let _g = EnvGuard::set("OXY_OWNER", "real@oxy.tech,");
+        assert!(!is_oxy_owner(""));
+        assert!(!is_oxy_owner("   "));
+        assert!(
+            is_oxy_owner("real@oxy.tech"),
+            "the real owner still matches"
+        );
+    }
 
     struct EnvGuard {
         key: &'static str,

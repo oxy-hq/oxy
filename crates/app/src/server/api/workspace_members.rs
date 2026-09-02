@@ -137,7 +137,7 @@ pub async fn list_workspace_members(
             };
             Some(WorkspaceMemberResponse {
                 user_id: om.user_id,
-                email: user.email.clone(),
+                email: user.label().to_string(),
                 name: user.name.clone(),
                 org_role: om.role.as_str().to_string(),
                 workspace_role: workspace_role.as_str().to_string(),
@@ -173,7 +173,7 @@ pub async fn set_workspace_role_override(
     let allowed = authz::enforce_for(
         &db,
         actor.id,
-        &actor.email,
+        actor.email.as_deref().unwrap_or(""),
         "workspace_members.set_role",
         authz::Action::MemberSetRole,
         authz::Resource::org(org_membership.org_id),
@@ -271,7 +271,7 @@ pub async fn remove_workspace_role_override(
     let allowed = authz::enforce_for(
         &db,
         actor.id,
-        &actor.email,
+        actor.email.as_deref().unwrap_or(""),
         "workspace_members.remove_role",
         authz::Action::MemberRemove,
         authz::Resource::org(org_membership.org_id),

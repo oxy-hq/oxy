@@ -120,7 +120,7 @@ async fn user_grants(db: &DatabaseConnection, app_id: Uuid) -> Result<Vec<GrantD
                 member_count: None,
                 id: user.id,
                 name: display_name(&user),
-                email: Some(user.email),
+                email: Some(user.label().to_string()),
                 role: grant.role,
             })
         })
@@ -131,7 +131,7 @@ async fn user_grants(db: &DatabaseConnection, app_id: Uuid) -> Result<Vec<GrantD
 
 pub fn display_name(user: &users::Model) -> String {
     if user.name.trim().is_empty() {
-        user.email.clone()
+        user.label().to_string()
     } else {
         user.name.clone()
     }
@@ -245,7 +245,7 @@ pub async fn list_org_member_options(
             Some(OrgMemberOptionDto {
                 user_id: m.user_id,
                 name: display_name(&user),
-                email: user.email,
+                email: user.label().to_string(),
                 role: m.role.as_str().to_string(),
             })
         })

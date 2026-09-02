@@ -215,18 +215,20 @@ pub async fn send_invitation_email(
 
     let invite_url = format!("{base_url}/invite/{token}");
     let subject = format!("You've been invited to {org_name} on Oxygen");
+    // An inviter with no email address renders as `Alice ()` — both invite
+    // paths can pass `""` now that `users.email` is nullable, and a parenthetical
+    // around nothing reads as a broken template rather than as a missing detail.
+    let inviter = if inviter_email.is_empty() {
+        inviter_name.to_string()
+    } else {
+        format!("{inviter_name} ({inviter_email})")
+    };
     let text_body = format!(
-        "{inviter_name} ({inviter_email}) has invited you to join {org_name} on Oxygen.\n\nAccept the invitation:\n{invite_url}\n\nThis invitation expires in 7 days. If you weren't expecting this, you can safely ignore this email."
+        "{inviter} has invited you to join {org_name} on Oxygen.\n\nAccept the invitation:\n{invite_url}\n\nThis invitation expires in 7 days. If you weren't expecting this, you can safely ignore this email."
     );
     let message = EmailMessage {
         subject,
-        html_body: build_invitation_email_html(
-            &invite_url,
-            to_email,
-            inviter_name,
-            inviter_email,
-            org_name,
-        )?,
+        html_body: build_invitation_email_html(&invite_url, to_email, &inviter, org_name)?,
         text_body,
     };
 
@@ -242,18 +244,22 @@ pub async fn send_invitation_email(
     }
 }
 
+/// `inviter` is the ALREADY-COMPOSED display string, not a name and an address.
+///
+/// Composing it once and handing the same string to both bodies is what stops
+/// them drifting: the first version of this fix dropped the empty parenthetical
+/// from the text body only, and the HTML — the part most clients actually
+/// render — went on saying `Alice () has invited you`.
 fn build_invitation_email_html(
     invite_url: &str,
     to_email: &str,
-    inviter_name: &str,
-    inviter_email: &str,
+    inviter: &str,
     org_name: &str,
 ) -> Result<String, OxyError> {
     let data = serde_json::json!({
         "invite_url": invite_url,
         "to_email": to_email,
-        "invited_by_name": inviter_name,
-        "invited_by_email": inviter_email,
+        "invited_by": inviter,
         "org_name": org_name,
         "year": Utc::now().format("%Y").to_string(),
     });
@@ -261,4 +267,40 @@ fn build_invitation_email_html(
     INVITATION_TEMPLATE
         .render("invitation", &data)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to render invitation template: {e}")))
+}
+
+#[cfg(test)]
+mod invitation_email_tests {
+    use super::*;
+
+    /// Both bodies are rendered from one composed string, so a mailbox-less
+    /// inviter cannot produce `Alice ()` in either.
+    ///
+    /// The HTML half is the one that matters: it is what most clients render,
+    /// and it is the half the first version of this fix missed while the text
+    /// body looked correct.
+    #[test]
+    fn a_mailbox_less_inviter_leaves_no_empty_parenthetical() {
+        let html =
+            build_invitation_email_html("https://x/invite/t", "b@example.com", "Alice", "Acme")
+                .expect("render");
+        assert!(html.contains("Alice"), "the inviter's name is missing");
+        assert!(
+            !html.contains("()") && !html.contains("( )"),
+            "an empty parenthetical reached the HTML body"
+        );
+    }
+
+    /// And the ordinary case still shows the address.
+    #[test]
+    fn an_inviter_with_an_address_still_shows_it() {
+        let html = build_invitation_email_html(
+            "https://x/invite/t",
+            "b@example.com",
+            "Alice (alice@acme.com)",
+            "Acme",
+        )
+        .expect("render");
+        assert!(html.contains("alice@acme.com"));
+    }
 }

@@ -74,7 +74,7 @@ pub async fn org_middleware(
             use crate::server::api::admin::assume;
             let live = assume::is_session_live(&db, user.id, org_id).await;
             let authority = if live {
-                assume::may_act_as(&db, user.id, &user.email, org_id).await
+                assume::may_act_as(&db, user.id, user.email.as_deref().unwrap_or(""), org_id).await
             } else {
                 None
             };
@@ -92,7 +92,7 @@ pub async fn org_middleware(
                     updated_at: now,
                 };
                 tracing::info!(
-                    actor_email = %user.email,
+                    actor_email = %user.label(),
                     org_id = %org_id,
                     ?authority,
                     role = %role_label,
@@ -102,7 +102,7 @@ pub async fn org_middleware(
             } else {
                 if live {
                     tracing::warn!(
-                        actor_email = %user.email,
+                        actor_email = %user.label(),
                         org_id = %org_id,
                         "org_context: live session but no authority — denying (capability revoked?)"
                     );

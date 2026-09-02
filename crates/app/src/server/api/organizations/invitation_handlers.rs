@@ -134,7 +134,7 @@ pub async fn create_invitation(
     // produces IS recorded durably, in `accept_invitation`'s membership write.)
     audit::record_best_effort(
         &db,
-        audit::AuditEntry::new(actor.email.clone(), "org.invitation.created")
+        audit::AuditEntry::new(actor.label().to_string(), "org.invitation.created")
             .actor(actor.id, audit::ActorType::User)
             .org(ctx.org.id)
             .target(
@@ -169,10 +169,11 @@ pub async fn create_invitation(
         .as_ref()
         .map(|u| u.name.clone())
         .unwrap_or_else(|| "A teammate".to_string());
-    let inviter_email = inviter
-        .as_ref()
-        .map(|u| u.email.clone())
-        .unwrap_or_default();
+    // The reply-to shown in the invitation email. `and_then`, not `map`: the
+    // inviter's address is itself optional now, and an inviter without one
+    // simply has no reply-to — which the template already handles. The
+    // admin-invite path in `orgs_admin` resolves the same field the same way.
+    let inviter_email = inviter.as_ref().and_then(|u| u.email.clone());
     let to_email = invitation.email.clone();
     let token_clone = invitation.token.clone();
     let org_name = ctx.org.name.clone();
@@ -182,7 +183,7 @@ pub async fn create_invitation(
             &token_clone,
             &base_url,
             &inviter_name,
-            &inviter_email,
+            inviter_email.as_deref().unwrap_or(""),
             &org_name,
         )
         .await
@@ -326,10 +327,11 @@ pub async fn create_bulk_invitations(
         .as_ref()
         .map(|u| u.name.clone())
         .unwrap_or_else(|| "A teammate".to_string());
-    let inviter_email = inviter
-        .as_ref()
-        .map(|u| u.email.clone())
-        .unwrap_or_default();
+    // The reply-to shown in the invitation email. `and_then`, not `map`: the
+    // inviter's address is itself optional now, and an inviter without one
+    // simply has no reply-to — which the template already handles. Matches
+    // `orgs_admin`'s admin-invite path.
+    let inviter_email = inviter.as_ref().and_then(|u| u.email.clone());
     let org_name = ctx.org.name.clone();
     for invitation in &inserted {
         let to_email = invitation.email.clone();
@@ -344,7 +346,7 @@ pub async fn create_bulk_invitations(
                 &token,
                 &base_url,
                 &inviter_name,
-                &inviter_email,
+                inviter_email.as_deref().unwrap_or(""),
                 &org_name,
             )
             .await
@@ -455,7 +457,13 @@ pub async fn list_my_invitations(
     // (see create_invitation), so a plain equality match on the lowercased
     // user email covers RFC 5321 §2.4 case-insensitivity without needing
     // a LOWER(...) wrap in SQL.
-    let email_lower = user.email.to_lowercase();
+    // `user.email`, never a display label. A label falls back to the
+    // (non-unique) `name`, so a user named after somebody's address would be
+    // handed that person's live invitation tokens. A user with no address has
+    // no invitations by construction — an invitation is sent to a mailbox.
+    let Some(email_lower) = user.email.as_deref().map(str::to_lowercase) else {
+        return Ok(Json(Vec::new()));
+    };
     let invitations = OrgInvitations::find()
         .filter(org_invitations::Column::Email.eq(email_lower))
         .filter(org_invitations::live_pending(Utc::now().fixed_offset()))
@@ -499,7 +507,11 @@ pub async fn list_my_invitations(
     let inviter_name_map: HashMap<Uuid, String> = inviters
         .into_iter()
         .map(|u| {
-            let display = if u.name.is_empty() { u.email } else { u.name };
+            let display = if u.name.is_empty() {
+                u.email.unwrap_or_default()
+            } else {
+                u.name
+            };
             (u.id, display)
         })
         .collect();
@@ -546,7 +558,15 @@ pub async fn accept_invitation(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Verify the invitation was sent to this user's email (case-insensitive per RFC 5321).
-    if invitation.email.to_lowercase() != user.email.to_lowercase() {
+    // An invitation is addressed to an email, so a user without one can never
+    // be its recipient. Note this MUST compare `user.email`, never a display
+    // label: a label falls back to `name`, which is not unique, and a user
+    // could then accept an invitation addressed to someone else by being named
+    // after their address.
+    let Some(user_email) = user.email.as_deref() else {
+        return Err(StatusCode::FORBIDDEN);
+    };
+    if invitation.email.to_lowercase() != user_email.to_lowercase() {
         return Err(StatusCode::FORBIDDEN);
     }
 

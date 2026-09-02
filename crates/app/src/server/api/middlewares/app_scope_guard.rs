@@ -111,7 +111,14 @@ pub async fn enforce_app_scope(request: Request<Body>, next: Next) -> Result<Res
         }
     };
 
-    if !globals::platform_reaches(&db, &user.email, oxy_authz::Cap::ManageApps, app.org_id).await {
+    if !globals::platform_reaches(
+        &db,
+        user.email.as_deref().unwrap_or(""),
+        oxy_authz::Cap::ManageApps,
+        app.org_id,
+    )
+    .await
+    {
         // 404, not 403: an operator with no reach into an org must not be able to
         // confirm that one of its apps exists by probing ids.
         return Err(StatusCode::NOT_FOUND);

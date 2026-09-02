@@ -274,7 +274,10 @@ pub async fn create_app_admin(
     // admissible (app_operator is below them) on top of something that is not (a peer's
     // global_admin row). One check, and demoting every peer is a single request.
     let facts = delegation::actor_facts(&db, &actor).await?;
-    delegation::refuse(may_delegate(&facts, role, &scope), &actor.email)?;
+    delegation::refuse(
+        may_delegate(&facts, role, &scope),
+        actor.email.as_deref().unwrap_or(""),
+    )?;
 
     // **Upsert, not create-or-ignore.** This used to return the existing row untouched,
     // which made a grant permanently unchangeable: with no PATCH on the router, there
@@ -355,7 +358,7 @@ pub async fn create_app_admin(
         }
         delegation::refuse(
             delegatable(&facts, &prev.role, prev.scope_all, &prev_scope_orgs),
-            &actor.email,
+            actor.email.as_deref().unwrap_or(""),
         )?;
     }
 
@@ -451,7 +454,7 @@ pub async fn create_app_admin(
     audit::record_in_txn(
         &txn,
         audit::AuditEntry::new(
-            actor.email.clone(),
+            actor.label().to_string(),
             if existing.is_some() {
                 "platform.grant.updated"
             } else {
@@ -575,7 +578,7 @@ pub async fn delete_app_admin(
 
     delegation::refuse(
         delegatable(&facts, &target.role, target.scope_all, &scope_org_ids),
-        &actor.email,
+        actor.email.as_deref().unwrap_or(""),
     )?;
 
     let res = AppAdmins::delete_by_id(id).exec(&txn).await.map_err(|e| {
@@ -591,7 +594,7 @@ pub async fn delete_app_admin(
 
     audit::record_in_txn(
         &txn,
-        audit::AuditEntry::new(actor.email.clone(), "platform.grant.revoked")
+        audit::AuditEntry::new(actor.label().to_string(), "platform.grant.revoked")
             .actor(actor.id, audit::ActorType::User)
             .target("platform_grant", id.to_string(), target.email.clone())
             .change(

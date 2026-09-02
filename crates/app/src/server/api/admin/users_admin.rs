@@ -247,7 +247,13 @@ pub async fn list_users(
     // org_count, one IN (...) query for the is_app_admin set. Avoids the
     // O(N) round-trips the previous loop hit on every page render.
     let user_ids: Vec<Uuid> = rows.iter().map(|u| u.id).collect();
-    let emails_lower: Vec<String> = rows.iter().map(|u| u.email.to_ascii_lowercase()).collect();
+    // Platform standing is keyed by ADDRESS. A label falls back to `name`,
+    // which is not unique, so a user named after a staff address would be
+    // listed as staff. Matches the fix already applied in `get_user_detail`.
+    let emails_lower: Vec<String> = rows
+        .iter()
+        .filter_map(|u| u.email.as_deref().map(str::to_ascii_lowercase))
+        .collect();
     let org_counts = count_user_org_memberships_in(&db, &user_ids)
         .await
         .map_err(internal)?;
@@ -264,21 +270,27 @@ pub async fn list_users(
 
     let mut out = Vec::with_capacity(rows.len());
     for u in rows {
-        let lc_email = u.email.to_ascii_lowercase();
+        // `Option`, not a blank string. A user with no address holds no
+        // platform standing, and saying that with `None` beats a `""` needle
+        // that happens not to match anything in the map — the same reasoning
+        // that made `is_oxy_owner` refuse a blank. Also collapses three
+        // lookups of the same key into one.
+        let grant = u
+            .email
+            .as_deref()
+            .map(str::to_ascii_lowercase)
+            .and_then(|e| grant_map.get(&e));
         out.push(AdminUserRow {
             id: u.id,
-            email: u.email,
+            email: u.label().to_string(),
             name: u.name,
             status: u.status.as_str().to_string(),
             created_at: u.created_at.to_rfc3339(),
             last_login_at: u.last_login_at.to_rfc3339(),
-            is_app_admin: grant_map.contains_key(&lc_email),
-            platform_role: grant_map.get(&lc_email).map(|g| g.role.clone()),
-            platform_scope_all: grant_map.get(&lc_email).is_none_or(|g| g.scope_all),
-            platform_scope_org_count: grant_map
-                .get(&lc_email)
-                .map(|g| g.scope_org_count)
-                .unwrap_or(0),
+            is_app_admin: grant.is_some(),
+            platform_role: grant.map(|g| g.role.clone()),
+            platform_scope_all: grant.is_none_or(|g| g.scope_all),
+            platform_scope_org_count: grant.map(|g| g.scope_org_count).unwrap_or(0),
             org_count: org_counts.get(&u.id).copied().unwrap_or(0),
             partners: partner_map.get(&u.id).cloned().unwrap_or_default(),
             top_org_role: role_map.get(&u.id).cloned(),
@@ -420,7 +432,16 @@ pub async fn get_user_detail(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let is_app_admin = app_admins::Entity::find()
-        .filter(app_admins::Column::Email.eq(user.email.to_ascii_lowercase()))
+        // `user.email`, never a display label: platform standing is keyed by
+        // address, and a label falls back to the (non-unique) `name`, which
+        // would let a user be reported as staff by being named after one.
+        .filter(
+            app_admins::Column::Email.eq(user
+                .email
+                .as_deref()
+                .unwrap_or_default()
+                .to_ascii_lowercase()),
+        )
         .count(&db)
         .await
         .map_err(internal)?
@@ -432,7 +453,7 @@ pub async fn get_user_detail(
     let workspace_memberships = load_user_workspace_memberships(&db, user.id)
         .await
         .map_err(internal)?;
-    let invitations = load_user_invitations(&db, &user.email)
+    let invitations = load_user_invitations(&db, user.email.as_deref().unwrap_or(""))
         .await
         .map_err(internal)?;
     let partners = lookup_partner_admins_in(&db, &[user.id])
@@ -443,7 +464,7 @@ pub async fn get_user_detail(
 
     Ok(Json(AdminUserDetail {
         id: user.id,
-        email: user.email,
+        email: user.label().to_string(),
         name: user.name,
         status: user.status.as_str().to_string(),
         created_at: user.created_at.to_rfc3339(),
@@ -486,7 +507,7 @@ pub async fn set_user_status(
     active.status = Set(new_status);
     active.update(&db).await.map_err(internal)?;
     tracing::info!(
-        admin_email = %actor.email,
+        admin_email = %actor.label(),
         target_id = %user_id,
         new_status = %body.status,
         action = "set_user_status",
@@ -563,10 +584,10 @@ pub async fn add_to_org(
 
     audit::record_in_txn(
         &tx,
-        audit::AuditEntry::new(actor.email.clone(), "member.added")
+        audit::AuditEntry::new(actor.label().to_string(), "member.added")
             .actor(actor.id, audit::ActorType::User)
             .org(body.org_id)
-            .target("user", user_id.to_string(), target.email.clone())
+            .target("user", user_id.to_string(), target.label().to_string())
             // `before: null` reads as "held nothing here" — the fact that makes this row
             // meaningful, since it distinguishes a grant from a role change.
             .change(serde_json::Value::Null, json!({ "role": role_str }))
@@ -648,10 +669,14 @@ pub async fn update_role(
     // not an audit trail (it is unqueryable, unretained and not tamper-evident).
     audit::record_in_txn(
         &tx,
-        audit::AuditEntry::new(actor.email.clone(), "member.role.updated")
+        audit::AuditEntry::new(actor.label().to_string(), "member.role.updated")
             .actor(actor.id, audit::ActorType::User)
             .org(org_id)
-            .target("user", user_id.to_string(), target_email.clone())
+            .target(
+                "user",
+                user_id.to_string(),
+                target_email.clone().unwrap_or_default(),
+            )
             .change(
                 json!({ "role": old_role_str }),
                 json!({ "role": new_role_str }),
@@ -663,7 +688,7 @@ pub async fn update_role(
 
     tx.commit().await.map_err(internal_resp)?;
     tracing::info!(
-        admin_email = %actor.email,
+        admin_email = %actor.label(),
         target_id = %user_id,
         org_id = %org_id,
         new_role = %new_role_str,
@@ -737,10 +762,14 @@ pub async fn remove_from_org(
     }
     audit::record_in_txn(
         &tx,
-        audit::AuditEntry::new(actor.email.clone(), "member.removed")
+        audit::AuditEntry::new(actor.label().to_string(), "member.removed")
             .actor(actor.id, audit::ActorType::User)
             .org(org_id)
-            .target("user", user_id.to_string(), target_email.clone())
+            .target(
+                "user",
+                user_id.to_string(),
+                target_email.clone().unwrap_or_default(),
+            )
             // `after: null` — they hold nothing here now. Recording the role they LOST
             // is the part that matters: "removed" without it can't answer whether an
             // owner or a viewer was taken out.
@@ -752,7 +781,7 @@ pub async fn remove_from_org(
 
     tx.commit().await.map_err(internal_resp)?;
     tracing::info!(
-        admin_email = %actor.email,
+        admin_email = %actor.label(),
         target_id = %user_id,
         org_id = %org_id,
         action = "remove_from_org",
@@ -833,7 +862,13 @@ pub async fn revoke_user_invitation(
 
     // The path names a user, so refuse to act on an invitation belonging to a
     // different address — a mistyped id must 404, not revoke someone else's.
-    if !invitation.email.eq_ignore_ascii_case(user.email.trim()) {
+    // `user.email`, never a label: this is an ownership check, and a label
+    // falls back to the non-unique `name`. A user with no address owns no
+    // invitations, so they cannot revoke one.
+    let Some(user_email) = user.email.as_deref() else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    if !invitation.email.eq_ignore_ascii_case(user_email.trim()) {
         return Err(StatusCode::NOT_FOUND);
     }
 
@@ -843,7 +878,7 @@ pub async fn revoke_user_invitation(
     active.delete(&db).await.map_err(internal)?;
 
     tracing::info!(
-        admin_email = %actor.email,
+        admin_email = %actor.label(),
         target_id = %user_id,
         target_email = %target_email,
         org_id = %org_id,

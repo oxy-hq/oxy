@@ -92,7 +92,7 @@ pub async fn list_grants(
         .await
         .map_err(db_err)?
         .into_iter()
-        .map(|u| (u.id, u.email))
+        .map(|u| (u.id, u.label().to_string()))
         .collect::<HashMap<_, _>>();
 
     let mut out: Vec<OxyAccessRow> = all_ws

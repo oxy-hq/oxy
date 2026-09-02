@@ -26,13 +26,19 @@ pub async fn oxy_owner_or_app_admin_guard_middleware(
     // Owner is a synchronous env-var check; app-admin hits the DB. Order the check so
     // owners (the more common admin caller) get the fast path and we only hit the DB
     // for non-owners.
-    let legacy = is_oxy_owner(&user.email) || is_oxy_app_admin(&user.email).await;
+    let legacy = is_oxy_owner(user.email.as_deref().unwrap_or(""))
+        || is_oxy_app_admin(user.email.as_deref().unwrap_or("")).await;
 
     // Platform tier through the shared model — see `Ring::GlobalAdminOrOwner` in
     // `oxy_authz`. `existing && unified`; the ring reads only the global flags.
     let facts = match oxy::database::client::establish_connection().await {
         Ok(db) => {
-            crate::server::authz::loader::load_platform_facts(&db, user.id, &user.email).await
+            crate::server::authz::loader::load_platform_facts(
+                &db,
+                user.id,
+                user.email.as_deref().unwrap_or(""),
+            )
+            .await
         }
         Err(_) => None,
     };

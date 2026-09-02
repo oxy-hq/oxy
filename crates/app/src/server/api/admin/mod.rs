@@ -290,7 +290,7 @@ mod tests {
     fn stub_user(email: &str) -> AuthenticatedUser {
         AuthenticatedUser {
             id: Uuid::new_v4(),
-            email: email.to_string(),
+            email: Some(email.to_string()),
             name: "stub".to_string(),
             picture: None,
             status: UserStatus::Active,

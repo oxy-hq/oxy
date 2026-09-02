@@ -196,7 +196,7 @@ pub async fn create_org(
 
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "partner.org.created")
+        AuditEntry::new(actor.label().to_string(), "partner.org.created")
             .actor(actor.id, ActorType::User)
             .partner(scope.partner_id)
             .org(org_id)
@@ -225,7 +225,7 @@ pub async fn create_org(
                 &token,
                 &base_url,
                 &inviter_name,
-                &inviter_email,
+                inviter_email.as_deref().unwrap_or(""),
                 &org_name,
             )
             .await
@@ -302,7 +302,7 @@ pub async fn update_org(
 
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "partner.org.updated")
+        AuditEntry::new(actor.label().to_string(), "partner.org.updated")
             .actor(actor.id, ActorType::User)
             .partner(scope.partner_id)
             .org(org_id)

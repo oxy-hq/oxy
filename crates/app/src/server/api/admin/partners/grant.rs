@@ -70,7 +70,11 @@ pub async fn grant_partnership(
         .capabilities
         .clone()
         .unwrap_or_else(CapabilitiesInput::sane_default);
-    require_owner_for_sensitive_caps(&actor.email, caps.manage_billing, caps.manage_secrets)?;
+    require_owner_for_sensitive_caps(
+        actor.email.as_deref().unwrap_or(""),
+        caps.manage_billing,
+        caps.manage_secrets,
+    )?;
 
     // A client already managed by a DIFFERENT partner is a conflict
     // (`partner_orgs.managed_org_id` is UNIQUE). Check before opening the txn.
@@ -141,7 +145,7 @@ pub async fn grant_partnership(
 
         audit::record_in_txn(
             &txn,
-            AuditEntry::new(actor.email.clone(), "partner.granted")
+            AuditEntry::new(actor.label().to_string(), "partner.granted")
                 .actor(actor.id, ActorType::User)
                 .partner(body.partner_org_id)
                 .org(body.partner_org_id)
@@ -171,7 +175,7 @@ pub async fn grant_partnership(
 
         audit::record_in_txn(
             &txn,
-            AuditEntry::new(actor.email.clone(), "partner.org.attached")
+            AuditEntry::new(actor.label().to_string(), "partner.org.attached")
                 .actor(actor.id, ActorType::User)
                 .partner(body.partner_org_id)
                 .org(client_id)
@@ -203,11 +207,15 @@ pub async fn grant_partnership(
 
             audit::record_in_txn(
                 &txn,
-                AuditEntry::new(actor.email.clone(), "partner.access.granted")
+                AuditEntry::new(actor.label().to_string(), "partner.access.granted")
                     .actor(actor.id, ActorType::User)
                     .partner(body.partner_org_id)
                     .org(body.partner_org_id)
-                    .target("partner_member", member_id.to_string(), email)
+                    .target(
+                        "partner_member",
+                        member_id.to_string(),
+                        email.unwrap_or_default(),
+                    )
                     .metadata(serde_json::json!({ "via_global_override": true })),
             )
             .await

@@ -154,7 +154,7 @@ async fn seed_actor(db: &DatabaseConnection, scope: Option<&[Uuid]>) -> Authenti
 
     AuthenticatedUser {
         id: Uuid::new_v4(),
-        email,
+        email: Some(email),
         name: "airway scope test".to_string(),
         picture: None,
         status: UserStatus::Active,

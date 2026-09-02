@@ -45,7 +45,7 @@ pub async fn handle(
                 .await
                 .unwrap_or_default();
             linked_view(LinkedHomeInput {
-                email: &user.email,
+                email: user.email.as_deref().unwrap_or(""),
                 org_name: org.as_ref().map(|o| o.name.as_str()).unwrap_or(""),
                 workspaces: &workspaces,
                 default_workspace_id: prefs.as_ref().and_then(|p| p.default_workspace_id),

@@ -97,7 +97,7 @@ pub async fn provision(
     let out = inner::provision(AuthenticatedUserExtractor(user.clone()), Path(workspace_id)).await;
     // Best-effort: an audit write must never turn a successful provision into a
     // 500, and a failure is already logged at `error` by `record_best_effort`.
-    let entry = audit::AuditEntry::new(user.email.clone(), "airhouse.provisioned")
+    let entry = audit::AuditEntry::new(user.label().to_string(), "airhouse.provisioned")
         .actor(user.id, audit::ActorType::User)
         .workspace(workspace_id)
         .target(

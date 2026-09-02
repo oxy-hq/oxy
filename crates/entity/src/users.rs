@@ -35,8 +35,16 @@ impl UserStatus {
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
+    /// NULL for a frontline worker with no mailbox. The UNIQUE stays: Postgres
+    /// permits many NULLs in a unique index, so "at most one user per address"
+    /// holds without a partial index or a sentinel.
+    ///
+    /// Resolving a human BY email is still correct everywhere it happens today
+    /// — OAuth collapse, Slack matching, invitations, platform grants — because
+    /// a NULL simply never matches, and a frontline worker should not be
+    /// reachable through any of those. See `internal-docs/frontline-identity.md`.
     #[sea_orm(unique)]
-    pub email: String,
+    pub email: Option<String>,
     pub name: String,
     pub picture: Option<String>,
     pub email_verified: bool,
@@ -64,3 +72,17 @@ pub struct Model {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+impl Model {
+    /// A human-readable label for logs, audit entries and display.
+    ///
+    /// The address when there is one, otherwise `name` — which is NOT NULL and
+    /// is what `get_or_create_user` populates (falling back to the email when a
+    /// provider gives no name). This is why frontline identity needed no new
+    /// `handle` column: the non-null human-readable identifier already existed.
+    ///
+    /// Never resolve a user by this. It is not unique.
+    pub fn label(&self) -> &str {
+        self.email.as_deref().unwrap_or(&self.name)
+    }
+}

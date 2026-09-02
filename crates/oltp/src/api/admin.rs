@@ -269,7 +269,7 @@ pub async fn provision(
         .await
         .map_err(provisioner_status)?;
 
-    info!(user = %user.email, org_id = %org_id, writers = writers.len(), "provisioning OLTP");
+    info!(user = %user.label(), org_id = %org_id, writers = writers.len(), "provisioning OLTP");
     // `provisioner_status`, not a hardcoded 500.
     //
     // This closure is why the CONFLICT arm existed and never fired: every
@@ -349,7 +349,7 @@ pub async fn set_visibility(
         .await
         .map_err(provisioner_status)?;
 
-    info!(user = %user.email, writer = %writer, visible = body.visible, "analytics visibility");
+    info!(user = %user.label(), writer = %writer, visible = body.visible, "analytics visibility");
     provisioner
         .set_analytics_visibility(org_id, &writer, body.visible)
         .await
@@ -382,7 +382,7 @@ pub async fn deprovision(
         .await
         .map_err(provisioner_status)?;
 
-    warn!(user = %user.email, org_id = %org_id, "DEPROVISIONING an OLTP database");
+    warn!(user = %user.label(), org_id = %org_id, "DEPROVISIONING an OLTP database");
     provisioner
         .deprovision(org_id)
         .await
@@ -453,7 +453,7 @@ pub async fn credentials(
             .await
             .map_err(super::resolve_status)?;
         warn!(
-            user = %user.email, org_id = %org_id,
+            user = %user.label(), org_id = %org_id,
             "disclosed the read-only OLTP analyst credential"
         );
         return Ok(Json(CredentialsResponse {
@@ -477,7 +477,7 @@ pub async fn credentials(
         .await
         .map_err(super::resolve_status)?;
     warn!(
-        user = %user.email, org_id = %org_id, writer = %writer,
+        user = %user.label(), org_id = %org_id, writer = %writer,
         "disclosed a WRITE credential to an OLTP schema"
     );
     Ok(Json(CredentialsResponse {

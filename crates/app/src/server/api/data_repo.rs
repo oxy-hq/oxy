@@ -388,7 +388,14 @@ pub async fn commit_repo(
     // Append co-author trailer so the committer appears in the git log.
     // Strip newlines from OAuth-sourced fields to prevent trailer injection.
     let safe_name = user.name.replace(['\n', '\r'], "");
-    let safe_email = user.email.replace(['\n', '\r'], "");
+    // Git's trailer grammar requires an address. A user enrolled without a
+    // mailbox gets the standard noreply stand-in rather than an empty pair of
+    // angle brackets, which some tools reject outright.
+    let safe_email = user
+        .email
+        .as_deref()
+        .unwrap_or("noreply@oxy.internal")
+        .replace(['\n', '\r'], "");
     let commit_message = format!(
         "{}\n\nCo-authored-by: {} <{}>",
         body.message.trim(),

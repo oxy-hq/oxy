@@ -115,7 +115,14 @@ pub struct CtxUser {
     pub id: String,
     /// `users.email`, or the synthetic `schedule+<fn>@system.oxy` when
     /// `kind == "system"`.
-    pub email: String,
+    ///
+    /// `None` — serialized as `ctx.user.email === null` — for a frontline
+    /// worker enrolled without a mailbox. Deliberately NOT flattened to `""`:
+    /// a function branching on "can I email this person" must be able to tell
+    /// "no address" from "an address that happens to be empty", and an app that
+    /// passes `""` to `ctx.email.send` gets an SES rejection instead of an
+    /// obvious `null` check. See `internal-docs/frontline-identity.md`.
+    pub email: Option<String>,
     /// The org that owns this app — the tenant boundary for any query the
     /// function runs.
     ///
@@ -1649,7 +1656,7 @@ mod tests {
         InvocationCtx {
             user: CtxUser {
                 id: "u".into(),
-                email: "e@example.com".into(),
+                email: Some("e@example.com".into()),
                 org_id: "o".into(),
                 name: None,
                 picture: None,
@@ -1687,7 +1694,7 @@ mod tests {
     fn full_identity() -> CtxUser {
         CtxUser {
             id: "11111111-1111-1111-1111-111111111111".into(),
-            email: "ada@acme.com".into(),
+            email: Some("ada@acme.com".into()),
             org_id: "22222222-2222-2222-2222-222222222222".into(),
             name: Some("Ada Lovelace".into()),
             picture: Some("https://cdn.example/ada.png".into()),
@@ -1720,13 +1727,39 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_frontline_user_serializes_email_as_null_not_absent_and_not_empty() {
+        // The contract app code branches on. `null` is load-bearing three ways:
+        // `""` would look like an address to `ctx.email.send` and to any string
+        // concat; an ABSENT key reads as `undefined`, which a `=== null` check
+        // misses; and only an explicit null lets a function say "this person
+        // cannot be emailed" without guessing.
+        let json: serde_json::Value = serde_json::to_value(CtxUser {
+            id: "11111111-1111-1111-1111-111111111111".into(),
+            email: None,
+            org_id: "22222222-2222-2222-2222-222222222222".into(),
+            name: Some("Maria S.".into()),
+            picture: None,
+            app_role: None,
+            org_role: None,
+            teams: Vec::new(),
+            kind: CtxIdentityKind::User,
+        })
+        .unwrap();
+        assert_eq!(
+            json.get("email"),
+            Some(&serde_json::Value::Null),
+            "email must be present and null, never omitted or empty: {json}"
+        );
+    }
+
     /// A schedule tick runs under the org owner's `user_id` but has no human
     /// behind it. Absent human fields are what lets a function tell the two
     /// apart without sniffing the synthetic email.
     #[test]
     fn system_identity_omits_every_human_field() {
         let json: serde_json::Value = serde_json::to_value(CtxUser {
-            email: "schedule+rollup@system.oxy".into(),
+            email: Some("schedule+rollup@system.oxy".into()),
             name: None,
             picture: None,
             org_role: None,

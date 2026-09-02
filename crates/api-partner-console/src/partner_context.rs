@@ -55,16 +55,21 @@ pub async fn partner_middleware(
         .find(|s| s.org_id != partner_org_id);
     if let Some(session) = elsewhere {
         tracing::info!(
-            actor = %user.email,
+            actor = %user.label(),
             acting_as = %session.org_id,
             "partner_console: refused — actor is currently acting as a client"
         );
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let scope = resolve_scope(&db, partner_org_id, user.id, &user.email)
-        .await
-        .ok_or(StatusCode::FORBIDDEN)?;
+    let scope = resolve_scope(
+        &db,
+        partner_org_id,
+        user.id,
+        user.email.as_deref().unwrap_or(""),
+    )
+    .await
+    .ok_or(StatusCode::FORBIDDEN)?;
 
     request.extensions_mut().insert(scope);
     Ok(next.run(request).await)

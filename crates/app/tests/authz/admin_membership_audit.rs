@@ -39,7 +39,7 @@ async fn seed_user(conn: &DatabaseConnection, tag: &str) -> users::Model {
     let id = Uuid::new_v4();
     users::ActiveModel {
         id: ActiveValue::Set(id),
-        email: ActiveValue::Set(format!("{tag}-{id}@audit.test")),
+        email: ActiveValue::Set(Some(format!("{tag}-{id}@audit.test"))),
         name: ActiveValue::Set(format!("Audit {tag}")),
         picture: ActiveValue::Set(None),
         email_verified: ActiveValue::Set(true),
@@ -161,7 +161,7 @@ async fn staff_membership_changes_are_audited_end_to_end() {
     // The rows must be readable by a human under pressure, which means the actor and
     // the target are named — not just their uuids.
     for e in &events {
-        assert_eq!(e.actor_email, staff.email, "actor recorded");
+        assert_eq!(Some(e.actor_email.clone()), staff.email, "actor recorded");
         assert_eq!(e.actor_type, "user");
         assert_eq!(e.outcome, "success");
     }
@@ -172,9 +172,7 @@ async fn staff_membership_changes_are_audited_end_to_end() {
         .collect();
     assert_eq!(target_events.len(), 3, "three rows about the target");
     assert!(
-        target_events
-            .iter()
-            .all(|e| e.target_label.as_deref() == Some(target.email.as_str())),
+        target_events.iter().all(|e| e.target_label == target.email),
         "the target is labelled by email — a log keyed only by uuid is unreadable \
          exactly when someone needs to read it"
     );

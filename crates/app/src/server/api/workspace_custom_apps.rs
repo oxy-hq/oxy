@@ -205,7 +205,7 @@ pub async fn list_custom_apps(
     // below is a better answer to that than a 401 that hides the misconfiguration.
     let viewer = viewer.as_ref().map(|u| Viewer {
         id: u.id,
-        email: &u.email,
+        email: u.email.as_deref().unwrap_or(""),
     });
     let out = published_app_summaries(&db, workspace_id, viewer)
         .await

@@ -43,7 +43,7 @@ async fn seed_user(conn: &DatabaseConnection) -> (Uuid, String) {
     let email = format!("acl-{id}@example.com");
     users::ActiveModel {
         id: ActiveValue::Set(id),
-        email: ActiveValue::Set(email.clone()),
+        email: ActiveValue::Set(Some(email.clone())),
         name: ActiveValue::Set("Access Control Test".into()),
         picture: ActiveValue::Set(None),
         email_verified: ActiveValue::Set(true),

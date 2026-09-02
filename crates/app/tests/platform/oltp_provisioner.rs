@@ -49,11 +49,11 @@ use oxy_oltp::entity::tenants::{self as oltp_tenants};
 /// cluster-global roles in the control-plane service with nothing to collect
 /// them. [`Fx::cleanup`] handles the ordinary path; the container being
 /// per-job is what covers the rest.
-struct Fx {
-    db: DatabaseConnection,
-    provisioner: OltpProvisioner,
+pub(crate) struct Fx {
+    pub(crate) db: DatabaseConnection,
+    pub(crate) provisioner: OltpProvisioner,
     provider: Arc<LocalProvider>,
-    org_id: Uuid,
+    pub(crate) org_id: Uuid,
     /// Workspace that claims a writer's schema namespace. A fixed id per
     /// fixture so repeat `ensure_writer` calls are the same claimant — a
     /// different one is a *collision*, which is a separate behaviour.
@@ -231,7 +231,7 @@ impl Fx {
 /// It also reclaims the writer role, which the database sweep never covered at
 /// all — and those names are unique per fixture now, so a panicking test would
 /// otherwise strand one forever.
-async fn with_fx<F, Fut>(body: F)
+pub(crate) async fn with_fx<F, Fut>(body: F)
 where
     F: FnOnce(std::sync::Arc<Fx>) -> Fut,
     Fut: std::future::Future<Output = ()>,
@@ -246,7 +246,7 @@ where
     }
 }
 
-async fn seed_org(db: &DatabaseConnection) -> Uuid {
+pub(crate) async fn seed_org(db: &DatabaseConnection) -> Uuid {
     let id = Uuid::new_v4();
     organizations::ActiveModel {
         id: ActiveValue::Set(id),
@@ -742,7 +742,7 @@ async fn try_sql(dsn: &str, sql: &str) -> Result<(), String> {
 /// points at the admin database; this repoints the same superuser at the tenant
 /// one. `pg_roles` is cluster-global and readable from here too. The connection
 /// driver is detached — it lives until the returned client drops at test end.
-async fn tenant_superuser_conn(org_id: Uuid) -> tokio_postgres::Client {
+pub(crate) async fn tenant_superuser_conn(org_id: Uuid) -> tokio_postgres::Client {
     let admin = crate::common::admin_url().await;
     let db =
         oxy_oltp::provider::database_name_for(&oxy_oltp::provisioner::project_name_for(org_id));

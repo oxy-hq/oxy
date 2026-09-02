@@ -169,7 +169,15 @@ pub async fn lock_oxy_access(
         tracing::error!("lock_oxy_access DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    if !enforce_oxy_access(&db, actor.id, &actor.email, workspace_id, legacy).await {
+    if !enforce_oxy_access(
+        &db,
+        actor.id,
+        actor.email.as_deref().unwrap_or(""),
+        workspace_id,
+        legacy,
+    )
+    .await
+    {
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -201,7 +209,7 @@ pub async fn lock_oxy_access(
     // Staff lose access on the next request, not at TTL.
     invalidate_access_cache();
     tracing::info!(
-        %workspace_id, actor = %actor.email,
+        %workspace_id, actor = %actor.label(),
         "oxy-access: workspace LOCKED Oxy staff out"
     );
     Ok(Json(OxyLockdownStatus::from_row(model, true)))
@@ -219,7 +227,15 @@ pub async fn unlock_oxy_access(
         tracing::error!("unlock_oxy_access DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    if !enforce_oxy_access(&db, actor.id, &actor.email, workspace_id, legacy).await {
+    if !enforce_oxy_access(
+        &db,
+        actor.id,
+        actor.email.as_deref().unwrap_or(""),
+        workspace_id,
+        legacy,
+    )
+    .await
+    {
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -234,7 +250,7 @@ pub async fn unlock_oxy_access(
 
     invalidate_access_cache();
     tracing::info!(
-        %workspace_id, actor = %actor.email,
+        %workspace_id, actor = %actor.label(),
         "oxy-access: workspace lockdown lifted"
     );
     Ok(StatusCode::NO_CONTENT)

@@ -41,7 +41,7 @@ async fn seed_user(conn: &DatabaseConnection) -> (Uuid, String) {
     let email = format!("authz-diff-{id}@example.com");
     users::ActiveModel {
         id: ActiveValue::Set(id),
-        email: ActiveValue::Set(email.clone()),
+        email: ActiveValue::Set(Some(email.clone())),
         name: ActiveValue::Set("Authz Differential".into()),
         picture: ActiveValue::Set(None),
         email_verified: ActiveValue::Set(true),

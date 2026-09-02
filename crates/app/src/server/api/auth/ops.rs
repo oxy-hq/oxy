@@ -423,10 +423,14 @@ pub(super) async fn finalize_login(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     // Reported on the payload, not decided here — the flag door, not a ring.
-    let standing = crate::server::authz::globals::platform_standing(connection, &user.email).await;
+    let standing = crate::server::authz::globals::platform_standing(
+        connection,
+        user.email.as_deref().unwrap_or(""),
+    )
+    .await;
     let user_info = UserInfo {
         id: user.id.to_string(),
-        email: user.email.clone(),
+        email: user.label().to_string(),
         name: user.name.clone(),
         picture: user.picture.clone(),
         is_owner: standing.is_global_owner,
@@ -814,7 +818,7 @@ pub(super) async fn request_magic_link_inner(
             let name = req.email.split('@').next().unwrap_or("User").to_string();
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
-                email: Set(req.email.clone()),
+                email: Set(Some(req.email.clone())),
                 name: Set(name),
                 picture: Set(None),
                 email_verified: Set(false),

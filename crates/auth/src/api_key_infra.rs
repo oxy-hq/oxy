@@ -66,10 +66,26 @@ pub async fn authenticate_header_with_config(
             OxyError::AuthenticationError("User not found".to_string())
         })?;
 
-    // Create Identity with real user information
+    // Create Identity with real user information.
+    //
+    // `Identity` is the *provider-shaped* identity — the thing a user is looked
+    // up by — so its email is not optional. A user with no mailbox therefore
+    // cannot carry an API key, and that is the right answer rather than a gap:
+    // API keys are a developer credential, and a frontline worker enrolled by
+    // PIN has no path to one. Refusing here beats minting an identity with an
+    // empty address that later reaches SES.
+    let Some(email) = user.email else {
+        tracing::warn!(
+            user_id = %validated_key.user_id,
+            "API key belongs to a user with no email address; refusing"
+        );
+        return Err(OxyError::AuthenticationError(
+            "API keys require an account with an email address".to_string(),
+        ));
+    };
     let identity = Identity {
         picture: user.picture,
-        email: user.email,
+        email,
         name: Some(user.name),
     };
 

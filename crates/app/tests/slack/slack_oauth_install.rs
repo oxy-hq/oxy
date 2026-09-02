@@ -37,7 +37,7 @@ async fn seed_org_with_admin() -> (Uuid, Uuid) {
     let user_id = Uuid::new_v4();
     users::ActiveModel {
         id: ActiveValue::Set(user_id),
-        email: ActiveValue::Set(format!("test-{}@example.com", user_id)),
+        email: ActiveValue::Set(Some(format!("test-{}@example.com", user_id))),
         name: ActiveValue::Set("Test User".into()),
         picture: ActiveValue::Set(None),
         email_verified: ActiveValue::Set(true),

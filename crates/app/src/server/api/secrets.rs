@@ -63,7 +63,10 @@ async fn resolve_user_emails(
         .all(db)
         .await
     {
-        Ok(users) => users.into_iter().map(|u| (u.id, u.email)).collect(),
+        Ok(users) => users
+            .into_iter()
+            .map(|u| (u.id, u.label().to_string()))
+            .collect(),
         Err(e) => {
             tracing::warn!("Failed to resolve user emails: {}", e);
             HashMap::new()

@@ -117,6 +117,10 @@ pub async fn load_principal_facts_scoped(
     // (custom-app hot path) caller enforces. Skipping it there would deny an app
     // member their own app.
     let (app_memberships, app_admin_memberships) = load_app_memberships(db, user_id).await?;
+    // Same both-paths reasoning as the app memberships above. `?` rather than a
+    // default: an unreadable standing is UNKNOWN, and collapsing unknown to
+    // "not frontline" would deny a worker mid-shift over a database blip.
+    let frontline_orgs = load_frontline_orgs(db, user_id).await?;
 
     Some(PrincipalFacts {
         user_id,
@@ -127,6 +131,7 @@ pub async fn load_principal_facts_scoped(
         ws_admin_override,
         app_memberships,
         app_admin_memberships,
+        frontline_orgs,
         platform: standing.grant,
         is_global_owner: standing.flags.is_global_owner,
     })
@@ -289,6 +294,34 @@ async fn load_app_memberships(
     }
 
     Some((all, admins))
+}
+
+/// Orgs where this user is an **active** frontline worker.
+///
+/// Loaded on both paths, like `load_app_memberships` and for the same reason:
+/// the only ring that reads it is `AppAccess`, which is exactly what the scoped
+/// (custom-app hot path) caller enforces. Skipping it there would deny a
+/// frontline worker the app they were enrolled to use.
+///
+/// `status = 'active'` is in the QUERY, not a later filter. A suspended worker
+/// must produce no fact at all — a row that reaches [`allows`] and is discarded
+/// downstream is one refactor away from being read as standing.
+async fn load_frontline_orgs(db: &DatabaseConnection, user_id: Uuid) -> Option<Vec<Uuid>> {
+    let rows = entity::prelude::OrgFrontlineMembers::find()
+        .filter(entity::org_frontline_members::Column::UserId.eq(user_id))
+        .filter(entity::org_frontline_members::Column::Status.eq("active"))
+        .all(db)
+        .await
+        .map_err(|e| {
+            tracing::warn!(
+                target: "authz",
+                error = %e,
+                user = %user_id,
+                "frontline standing lookup failed — facts are unknown, not empty"
+            );
+        })
+        .ok()?;
+    Some(rows.into_iter().map(|r| r.org_id).collect())
 }
 
 /// Every `app_team_grants` row reachable from the user's team memberships.

@@ -26,7 +26,7 @@ async fn seed_user(conn: &DatabaseConnection) -> (Uuid, String) {
     let email = format!("vis-{id}@example.com");
     users::ActiveModel {
         id: ActiveValue::Set(id),
-        email: ActiveValue::Set(email.clone()),
+        email: ActiveValue::Set(Some(email.clone())),
         name: ActiveValue::Set("Visibility Test".into()),
         picture: ActiveValue::Set(None),
         email_verified: ActiveValue::Set(true),

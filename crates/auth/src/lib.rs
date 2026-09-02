@@ -13,6 +13,7 @@ pub mod authenticator;
 pub mod built_in;
 pub mod constants;
 pub mod extractor;
+pub mod frontline;
 pub mod middleware;
 pub mod types;
 pub mod user;

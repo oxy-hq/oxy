@@ -270,7 +270,7 @@ pub async fn post_event(
         &db,
         app.id,
         ctx.user.id,
-        ctx.user.email.clone(),
+        ctx.user.label().to_string(),
         session_id,
         req.event_name,
         req.payload,

@@ -1071,6 +1071,19 @@ pub struct PrincipalFacts {
     /// by [`Ring::AppAccess`], and only when the app is restricted — so an app
     /// whose visibility is `org` behaves exactly as it did before this existed.
     pub app_memberships: Vec<Uuid>,
+    /// Orgs where the principal is an **active frontline worker** — a row in
+    /// `org_frontline_members`, which is deliberately NOT an `org_members` row.
+    ///
+    /// This is the narrowest standing in the model and it must stay that way.
+    /// A frontline worker is enrolled by PIN on a shared device; giving them
+    /// org membership would hand them Airhouse settings and, through
+    /// `EffectiveWorkspaceRole`, Databases and Secrets. So this set appears in
+    /// exactly ONE ring ([`Ring::AppAccess`]), always ANDed with an explicit
+    /// `app_members` grant, and never as a substitute for `member_orgs`.
+    ///
+    /// Empty for every principal who signed in with an email address.
+    /// See `internal-docs/frontline-identity.md`.
+    pub frontline_orgs: Vec<Uuid>,
     /// Apps where the principal's `app_members` row is `role = 'admin'`. A subset
     /// of [`Self::app_memberships`]; gates [`Ring::AppAdmin`].
     pub app_admin_memberships: Vec<Uuid>,
@@ -1206,6 +1219,20 @@ pub fn allows(facts: &PrincipalFacts, action: Action, resource: &Resource) -> bo
             let unconditional = facts.platform_grants(Cap::DevelopApps, resource.org_id)
                 || facts.any_partner_grants(Cap::DevelopApps, resource.org_id)
                 || in_org(&facts.admin_orgs);
+            // A frontline worker reaches an app ONLY through an explicit grant,
+            // and only in an org they are actively enrolled in.
+            //
+            // Note this ignores `app_restricted` entirely: an org-visible app is
+            // visible to org MEMBERS, and a frontline worker is deliberately not
+            // one. Letting the unrestricted branch fall through to them would
+            // hand every worker on a store's roster every app in the tenant the
+            // day somebody flips one app to org-wide — which is the opposite of
+            // what "frontline" is supposed to mean here.
+            let frontline_grant = facts.frontline_orgs.contains(&resource.org_id)
+                && facts.app_memberships.contains(&resource.id);
+            if frontline_grant {
+                return true;
+            }
             if resource.app_restricted {
                 // Restricted: plain org membership is NOT enough — that is the
                 // whole point. A grant (a direct `app_members` row or one reached
@@ -2004,6 +2031,79 @@ mod policy_tests {
             ..facts()
         };
         assert!(!allows(&wrong_org, Action::AppAccess, &restricted));
+    }
+
+    #[test]
+    fn a_frontline_worker_reaches_exactly_the_apps_they_were_granted() {
+        // The narrowest standing in the model. A frontline worker is enrolled by
+        // PIN on a shared tablet and holds NO org membership by design — giving
+        // them one would hand them Airhouse settings and, via
+        // EffectiveWorkspaceRole, Databases and Secrets.
+        let granted = Uuid::from_u128(1101);
+        let other = Uuid::from_u128(1102);
+
+        let worker = PrincipalFacts {
+            frontline_orgs: vec![org()],
+            app_memberships: vec![granted],
+            ..facts() // note: NO member_orgs, NO admin_orgs
+        };
+
+        // The granted app, restricted or not.
+        assert!(allows(
+            &worker,
+            Action::AppAccess,
+            &Resource::app_with_visibility(granted, org(), true)
+        ));
+        assert!(allows(
+            &worker,
+            Action::AppAccess,
+            &Resource::app_with_visibility(granted, org(), false)
+        ));
+
+        // An app in the same org they were NOT granted — including an org-wide
+        // one. This is the case worth pinning: an org-visible app is visible to
+        // org MEMBERS, and a worker is not one. If this ever flips, every worker
+        // on a store's roster gets every app in the tenant the day somebody
+        // makes one app org-wide.
+        assert!(!allows(
+            &worker,
+            Action::AppAccess,
+            &Resource::app_with_visibility(other, org(), false)
+        ));
+    }
+
+    #[test]
+    fn frontline_standing_does_not_leak_past_its_org_or_into_other_rings() {
+        let app_id = Uuid::from_u128(1103);
+        let elsewhere = Uuid::from_u128(1104);
+
+        // Standing in a DIFFERENT org does not reach this org's app, even with
+        // the grant row — the two terms are ANDed for exactly this reason.
+        let wrong_org = PrincipalFacts {
+            frontline_orgs: vec![elsewhere],
+            app_memberships: vec![app_id],
+            ..facts()
+        };
+        assert!(!allows(
+            &wrong_org,
+            Action::AppAccess,
+            &Resource::app_with_visibility(app_id, org(), true)
+        ));
+
+        // And in the right org, the standing buys NOTHING outside AppAccess.
+        // `frontline_orgs` appears in one ring; if a later change reads it in a
+        // second one, this is what catches it.
+        let worker = PrincipalFacts {
+            frontline_orgs: vec![org()],
+            app_memberships: vec![app_id],
+            ..facts()
+        };
+        assert!(!allows(&worker, Action::OrgRead, &Resource::org(org())));
+        assert!(!allows(
+            &worker,
+            Action::AppAdmin,
+            &Resource::app(app_id, org())
+        ));
     }
 
     #[test]

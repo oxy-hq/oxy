@@ -191,8 +191,13 @@ pub async fn list_orgs(
     // exactly the mismatch this block is supposed to avoid.
     let mut assumed_role: std::collections::HashMap<Uuid, &'static str> = Default::default();
     for org_id in &assumed {
-        if let Some(authority) =
-            crate::server::api::admin::assume::may_act_as(&db, user.id, &user.email, *org_id).await
+        if let Some(authority) = crate::server::api::admin::assume::may_act_as(
+            &db,
+            user.id,
+            user.email.as_deref().unwrap_or(""),
+            *org_id,
+        )
+        .await
         {
             assumed_role.insert(*org_id, authority.org_role().as_str());
         }

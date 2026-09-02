@@ -267,9 +267,14 @@ pub async fn start(
 
     // The gate. Staff may act as any org; a partner only as an assigned client,
     // and only with `develop_apps`.
-    let authority = may_act_as(&db, actor.id, &actor.email, body.org_id)
-        .await
-        .ok_or(StatusCode::FORBIDDEN)?;
+    let authority = may_act_as(
+        &db,
+        actor.id,
+        actor.email.as_deref().unwrap_or(""),
+        body.org_id,
+    )
+    .await
+    .ok_or(StatusCode::FORBIDDEN)?;
 
     // Re-entering an org you're already assuming is idempotent — return the live
     // session rather than stacking rows (and rather than silently extending it).
@@ -298,7 +303,7 @@ pub async fn start(
     let model = admin_assume_sessions::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         actor_user_id: ActiveValue::Set(actor.id),
-        actor_email: ActiveValue::Set(actor.email.clone()),
+        actor_email: ActiveValue::Set(actor.label().to_string()),
         org_id: ActiveValue::Set(body.org_id),
         reason: ActiveValue::Set(reason.clone()),
         started_at: ActiveValue::NotSet,
@@ -311,7 +316,7 @@ pub async fn start(
 
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "admin.assume.started")
+        AuditEntry::new(actor.label().to_string(), "admin.assume.started")
             .actor(actor.id, ActorType::User)
             .org(body.org_id)
             .target("organization", body.org_id.to_string(), org.name.clone())
@@ -324,7 +329,7 @@ pub async fn start(
     txn.commit().await.map_err(db_err("commit assume"))?;
 
     tracing::warn!(
-        actor = %actor.email, org_id = %body.org_id, ?authority,
+        actor = %actor.label(), org_id = %body.org_id, ?authority,
         "assume: STARTED — actor is now acting as this org"
     );
     let is_partner = org_is_partner(&db, body.org_id).await;
@@ -364,7 +369,7 @@ pub async fn end(
         m.update(&txn).await.map_err(db_err("end session"))?;
         audit::record_in_txn(
             &txn,
-            AuditEntry::new(actor.email.clone(), "admin.assume.ended")
+            AuditEntry::new(actor.label().to_string(), "admin.assume.ended")
                 .actor(actor.id, ActorType::User)
                 .org(org_id)
                 .target("organization", org_id.to_string(), String::new()),
@@ -372,7 +377,7 @@ pub async fn end(
         .await
         .map_err(db_err("audit assume.ended"))?;
         txn.commit().await.map_err(db_err("commit end-session"))?;
-        tracing::info!(actor = %actor.email, %org_id, "admin/assume: ENDED");
+        tracing::info!(actor = %actor.label(), %org_id, "admin/assume: ENDED");
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -414,9 +419,13 @@ pub async fn history(
     // The impersonation log spans every tenant, so it is an audit read — `ViewAudit`,
     // not merely "is staff". An App Operator has no business reading who impersonated
     // whom across the platform.
-    let facts = crate::server::authz::loader::load_platform_facts(&db, actor.id, &actor.email)
-        .await
-        .ok_or(StatusCode::FORBIDDEN)?;
+    let facts = crate::server::authz::loader::load_platform_facts(
+        &db,
+        actor.id,
+        actor.email.as_deref().unwrap_or(""),
+    )
+    .await
+    .ok_or(StatusCode::FORBIDDEN)?;
     if !crate::server::authz::allows(
         &facts,
         crate::server::authz::Action::PlatformAudit,
@@ -510,7 +519,7 @@ pub async fn block_admin_while_acting(
     };
     if !live_sessions_for(&db, actor.id).await.is_empty() {
         tracing::info!(
-            actor = %actor.email,
+            actor = %actor.label(),
             "admin/assume: admin surface refused — actor is currently acting as a tenant"
         );
         return Err(StatusCode::FORBIDDEN);

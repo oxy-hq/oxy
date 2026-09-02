@@ -60,7 +60,7 @@ async fn require_people_admin(
     let allowed = oxy_server_authz::enforce_for(
         db,
         user.id,
-        &user.email,
+        user.email.as_deref().unwrap_or(""),
         "partner_console.people_admin",
         oxy_server_authz::Action::MemberSetRole,
         oxy_server_authz::Resource::org(partner_org_id),
@@ -129,7 +129,7 @@ pub async fn list_people(actor: PartnerActor) -> Result<Json<Vec<PersonDto>>, St
             PersonDto {
                 org_member_id: m.id,
                 user_id: m.user_id,
-                email: u.map(|u| u.email.clone()).unwrap_or_default(),
+                email: u.map(|u| u.label().to_string()).unwrap_or_default(),
                 name: u.map(|u| u.name.clone()),
                 org_role: m.role.as_str().to_string(),
                 has_access: with_access.contains(&m.id),
@@ -185,14 +185,14 @@ pub async fn grant_access(
 
         audit::record_in_txn(
             &txn,
-            AuditEntry::new(user.email.clone(), "partner.access.granted")
+            AuditEntry::new(user.label().to_string(), "partner.access.granted")
                 .actor(user.id, ActorType::User)
                 .partner(partner_org_id)
                 .org(partner_org_id)
                 .target(
                     "partner_member",
                     org_member_id.to_string(),
-                    target_email.clone(),
+                    target_email.clone().unwrap_or_default(),
                 ),
         )
         .await
@@ -203,7 +203,7 @@ pub async fn grant_access(
     Ok(Json(PersonDto {
         org_member_id,
         user_id: member.user_id,
-        email: target_email,
+        email: target_email.unwrap_or_default(),
         name: None,
         org_role: member.role.as_str().to_string(),
         has_access: true,
@@ -248,7 +248,7 @@ pub async fn revoke_access(
 
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(user.email.clone(), "partner.access.revoked")
+        AuditEntry::new(user.label().to_string(), "partner.access.revoked")
             .actor(user.id, ActorType::User)
             .partner(partner_org_id)
             .org(partner_org_id)

@@ -241,7 +241,7 @@ async fn audit_oltp(
     metadata: serde_json::Value,
     ok: bool,
 ) {
-    let entry = audit::AuditEntry::new(user.email.clone(), action)
+    let entry = audit::AuditEntry::new(user.label().to_string(), action)
         .actor(user.id, audit::ActorType::User)
         .org(org_id)
         .target("oltp_tenant", org_id.to_string(), String::new())

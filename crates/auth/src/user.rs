@@ -48,7 +48,7 @@ impl UserService {
 
         let new_user = users::ActiveModel {
             id: Set(Uuid::new_v4()),
-            email: Set(identity.email.clone()),
+            email: Set(Some(identity.email.clone())),
             name: Set(identity
                 .name
                 .clone()
@@ -64,7 +64,7 @@ impl UserService {
 
         match new_user.insert(&connection).await {
             Ok(user) => {
-                tracing::info!("Created new user: {} ({})", user.email, user.id);
+                tracing::info!("Created new user: {:?} ({})", user.email, user.id);
                 Ok(user.into())
             }
             Err(e) if is_unique_violation(&e) => {

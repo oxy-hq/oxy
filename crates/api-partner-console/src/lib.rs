@@ -245,7 +245,7 @@ pub async fn list_my_partners(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<MyPartner>>, StatusCode> {
     let db = db().await?;
-    let scopes = scopes_for_user(&db, user.id, &user.email).await;
+    let scopes = scopes_for_user(&db, user.id, user.email.as_deref().unwrap_or("")).await;
     if scopes.is_empty() {
         return Ok(Json(Vec::new()));
     }
@@ -377,7 +377,7 @@ pub async fn list_org_members(
             let u = users.get(&m.user_id);
             OrgMemberDto {
                 user_id: m.user_id,
-                email: u.map(|u| u.email.clone()).unwrap_or_default(),
+                email: u.map(|u| u.label().to_string()).unwrap_or_default(),
                 name: u.map(|u| u.name.clone()),
                 role: m.role.as_str().to_string(),
             }

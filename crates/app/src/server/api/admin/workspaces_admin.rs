@@ -298,7 +298,7 @@ pub async fn update_workspace(
     active.updated_at = Set(Utc::now().fixed_offset());
     active.update(&db).await.map_err(internal)?;
     tracing::info!(
-        admin_email = %actor.email,
+        admin_email = %actor.label(),
         target_id = %workspace_id,
         action = "rename_workspace",
         "admin tenant action"
@@ -330,7 +330,7 @@ pub async fn delete_workspace(
     // else its health_eval row keeps firing tasks into the dead-letter queue.
     crate::server::api::workspaces::cleanup_workspace_schedules(&db, workspace_id).await;
     tracing::info!(
-        admin_email = %actor.email,
+        admin_email = %actor.label(),
         target_id = %workspace_id,
         action = "delete_workspace",
         "admin tenant action"
@@ -386,7 +386,7 @@ pub async fn transfer_org(
     active.updated_at = Set(Utc::now().fixed_offset());
     active.update(&db).await.map_err(internal)?;
     tracing::info!(
-        admin_email = %actor.email,
+        admin_email = %actor.label(),
         target_id = %workspace_id,
         new_org_id = %body.new_org_id,
         action = "transfer_workspace_org",
@@ -420,7 +420,7 @@ async fn load_members(
         if let Some(u) = users_by_id.get(&m.user_id) {
             out.push(WorkspaceMember {
                 user_id: u.id,
-                email: u.email.clone(),
+                email: u.label().to_string(),
                 name: u.name.clone(),
                 role: m.role.as_str().to_string(),
                 joined_at: m.created_at.to_rfc3339(),

@@ -68,8 +68,14 @@ pub use compile::{
 // existing `oxy_compile::` call sites keep compiling.
 pub use entity::workspace_compiled_configs::{CompiledConfig, merge_compiled_config};
 pub use errors::CompileError;
-pub use outcome::{CompileOutcome, FailureKind, FileFailure, RevisionStatus};
+pub use outcome::{CompileOutcome, FailureKind, FileFailure, Promotion, RevisionStatus};
+// Apply-then-promote lives in `oxy-app`: this crate withholds promotion for a
+// revision carrying `schemas/*.sql` (see [`Promotion::Deferred`]) but cannot
+// apply the DDL itself — that is a network call to a tenant database, and
+// `oxy-compile` deliberately does not depend on `oxy-oltp`. This is the door
+// the applier comes back through.
 pub use workspace_path::resolve_workspace_path;
+pub use writer::promote_existing;
 
 /// Identifier the compile worker stamps on every `revisions` row so
 /// operator dashboards can spot version-skew across a rolling deploy.

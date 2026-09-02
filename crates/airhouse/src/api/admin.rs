@@ -363,7 +363,7 @@ pub async fn provision(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "workspace not found".to_string()))?;
 
-    info!(user = %user.email, workspace_id = %workspace_id, "provisioning airhouse tenant");
+    info!(user = %user.label(), workspace_id = %workspace_id, "provisioning airhouse tenant");
     provisioner
         .provision(workspace_id, tenant_name_for(&workspace))
         .await

@@ -176,7 +176,7 @@ async fn the_meta_route_reads_no_filesystem_on_a_replica() {
         axum::extract::State(oxy_app::server::router::bare_app_state()),
         oxy_auth::extractor::AuthenticatedUserExtractor(oxy_auth::types::AuthenticatedUser {
             id: uuid::Uuid::new_v4(),
-            email: "canary@example.com".to_string(),
+            email: Some("canary@example.com".to_string()),
             name: "canary".to_string(),
             picture: None,
             status: entity::users::UserStatus::Active,

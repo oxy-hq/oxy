@@ -290,7 +290,7 @@ pub async fn get_thread(
             let is_operator = match crate::server::authz::loader::load_platform_facts(
                 &connection,
                 user.id,
-                &user.email,
+                user.email.as_deref().unwrap_or(""),
             )
             .await
             {

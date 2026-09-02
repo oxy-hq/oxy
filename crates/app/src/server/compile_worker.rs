@@ -183,17 +183,48 @@ async fn drive(
 
     match outcome {
         Ok(o) => {
+            // Apply-then-promote. A revision carrying `schemas/*.sql` was
+            // deliberately left unpromoted by the compiler; this is where
+            // its DDL reaches the org database and the pointer moves.
+            //
+            // Must run BEFORE the reconciles below: both of them read "the
+            // workspace's current compiled config", which is still the
+            // PREVIOUS revision until this returns.
+            let settled =
+                crate::server::compile_oltp::settle_deferred_promotion(&db, spec.workspace_id, &o)
+                    .await;
+
             let _ = event_tx
-                .send(("compile_finished".to_string(), summarise_outcome(&o)))
+                .send((
+                    "compile_finished".to_string(),
+                    summarise_outcome(&o, &settled),
+                ))
                 .await;
-            let answer = format!(
+            let mut answer = format!(
                 "revision {} {} ({} files compiled, {} failed)",
                 o.revision_id,
                 o.status.as_str(),
                 o.file_count_compiled,
                 o.file_count_failed
             );
-            let task_outcome = if matches!(o.status, RevisionStatus::Ready) {
+            let settled_note = settled.summary();
+            if !settled_note.is_empty() {
+                answer.push_str(" — ");
+                answer.push_str(&settled_note);
+            }
+
+            let task_outcome = if !matches!(o.status, RevisionStatus::Ready) {
+                TaskOutcome::Failed(format!(
+                    "compile recorded {} failed file(s); revision_id={}",
+                    o.file_count_failed, o.revision_id
+                ))
+            } else if !settled.compile_succeeded() {
+                // The files all compiled; the DDL did not apply. Fail the
+                // task so it is visible, and say which of the two it was —
+                // the instinct on a failed compile is to go re-read the
+                // YAML, and here the YAML is fine.
+                TaskOutcome::Failed(format!("{settled_note}; revision_id={}", o.revision_id))
+            } else {
                 // config.yml is the source of truth for the per-workspace health
                 // cadence. A promoted compile is the sync point: refresh the
                 // workspace's `health_eval` schedule row from the freshly
@@ -204,13 +235,8 @@ async fn drive(
                 }
                 TaskOutcome::Done {
                     answer,
-                    metadata: Some(summarise_outcome(&o)),
+                    metadata: Some(summarise_outcome(&o, &settled)),
                 }
-            } else {
-                TaskOutcome::Failed(format!(
-                    "compile recorded {} failed file(s); revision_id={}",
-                    o.file_count_failed, o.revision_id
-                ))
             };
             let _ = outcome_tx.send(task_outcome).await;
         }
@@ -543,9 +569,22 @@ pub(crate) async fn reconcile_preagg_from_compiled(
     }
 }
 
-fn summarise_outcome(o: &CompileOutcome) -> Value {
+fn summarise_outcome(o: &CompileOutcome, settled: &crate::server::compile_oltp::Settled) -> Value {
     json!({
         "revision_id": o.revision_id,
+        // What happened to current_revision_id, and — when the revision
+        // carries DDL — whether that DDL landed. Without these two an
+        // operator looking at "why is this workspace serving the old
+        // revision" has only the task's free-text answer to go on.
+        //
+        // `effective_promotion`, not `o.promotion`. The compiler's answer is
+        // `Deferred` for any revision carrying `schemas/*.sql` — it defers
+        // precisely so the migration can run first — and the settle step is what
+        // decides whether the promotion then happened. Reporting the compiler's
+        // half alone says "deferred" for a revision that is already live, which
+        // is the one question this field exists to answer.
+        "promotion": settled.effective_promotion(&o.promotion),
+        "schema_migrations": settled.summary(),
         "status": o.status.as_str(),
         "git_sha": o.git_sha,
         "branch": o.branch,
@@ -594,6 +633,86 @@ pub fn spec_from_taskspec(
         kind,
         owner_user_id,
     })
+}
+
+#[cfg(test)]
+mod outcome_summary_tests {
+    use super::*;
+    use crate::server::compile_oltp::Settled;
+    use oxy_compile::outcome::{CompileOutcome, Promotion, RevisionStatus};
+
+    fn outcome(promotion: Promotion) -> CompileOutcome {
+        let now = chrono::Utc::now();
+        CompileOutcome {
+            revision_id: uuid::Uuid::nil(),
+            status: RevisionStatus::Ready,
+            git_sha: "abc123".into(),
+            branch: Some("main".into()),
+            started_at: now,
+            finished_at: now,
+            file_count_seen: 1,
+            file_count_compiled: 1,
+            file_count_failed: 0,
+            failures: Vec::new(),
+            promotion,
+        }
+    }
+
+    /// The worker is the production path, and it was reporting the COMPILER's
+    /// half of a two-step answer.
+    ///
+    /// A revision carrying `schemas/*.sql` always compiles to `Deferred` — that
+    /// is the point, the promotion waits for the migration — and the settle step
+    /// is what decides whether it then happened. Emitting `o.promotion` alone
+    /// said "deferred" for a revision that was already live, in both the
+    /// `compile_finished` event and the task metadata.
+    #[test]
+    fn a_deferred_compile_that_settled_reports_promoted_not_deferred() {
+        let o = outcome(Promotion::Deferred {
+            schema_migration_count: 2,
+        });
+        let settled = Settled::Applied {
+            applied: 2,
+            already_applied: 0,
+            promotion: Promotion::Promoted,
+        };
+        let v = summarise_outcome(&o, &settled);
+        assert_eq!(
+            v["promotion"],
+            serde_json::to_value(Promotion::Promoted).unwrap(),
+            "the worker reported the compiler's half of the answer"
+        );
+    }
+
+    /// The distinction `Promotion::Skipped` exists for must survive the fold: a
+    /// settle that ran but lost the causality race is not a promotion.
+    #[test]
+    fn a_settle_that_lost_the_race_still_reports_skipped() {
+        let o = outcome(Promotion::Deferred {
+            schema_migration_count: 1,
+        });
+        let settled = Settled::Applied {
+            applied: 1,
+            already_applied: 0,
+            promotion: Promotion::Skipped,
+        };
+        let v = summarise_outcome(&o, &settled);
+        assert_eq!(
+            v["promotion"],
+            serde_json::to_value(Promotion::Skipped).unwrap()
+        );
+    }
+
+    /// When the migration never applied, the compiler's answer still stands —
+    /// folding must not invent a promotion that did not happen.
+    #[test]
+    fn an_unsettled_deferral_still_reports_deferred() {
+        let deferred = Promotion::Deferred {
+            schema_migration_count: 3,
+        };
+        let v = summarise_outcome(&outcome(deferred.clone()), &Settled::Busy);
+        assert_eq!(v["promotion"], serde_json::to_value(&deferred).unwrap());
+    }
 }
 
 #[cfg(test)]

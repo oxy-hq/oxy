@@ -118,7 +118,7 @@ pub async fn auth_middleware<T: Authenticator>(
     if user.status != UserStatus::Active {
         tracing::warn!(
             "Inactive user {} (status: {}) attempted to access protected route",
-            user.email,
+            user.label(),
             user.status.as_str()
         );
         return Err(StatusCode::FORBIDDEN);
@@ -174,7 +174,7 @@ async fn authenticate_app_publish_token(
     if resolved.user.status != UserStatus::Active {
         tracing::warn!(
             "app-publish-token auth: owner {} is not active — refusing",
-            resolved.user.email
+            resolved.user.label()
         );
         return Err(StatusCode::FORBIDDEN);
     }

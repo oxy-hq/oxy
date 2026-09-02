@@ -156,7 +156,7 @@ async fn require_own_org_authority(
     let allowed = oxy_server_authz::enforce_for(
         db,
         actor.id,
-        &actor.email,
+        actor.email.as_deref().unwrap_or(""),
         "partner_console.own_app",
         oxy_authz::Action::AppAccessManage,
         oxy_authz::Resource::org(org_id),
@@ -248,7 +248,7 @@ pub async fn set_app_access(
     // especially, since it changes who can see the client's data.
     audit::record_best_effort(
         &db,
-        AuditEntry::new(actor.email.clone(), "partner.app.access_changed")
+        AuditEntry::new(actor.label().to_string(), "partner.app.access_changed")
             .actor(actor.id, ActorType::PartnerAdmin)
             .partner(scope.partner_id)
             .org(org_id)
@@ -317,7 +317,7 @@ pub async fn publish_app(
 
     audit::record_best_effort(
         &db,
-        AuditEntry::new(actor.email.clone(), "partner.app.published")
+        AuditEntry::new(actor.label().to_string(), "partner.app.published")
             .actor(actor.id, ActorType::PartnerAdmin)
             .partner(scope.partner_id)
             .org(org_id)
@@ -347,7 +347,7 @@ pub async fn unpublish_app(
 
     audit::record_best_effort(
         &db,
-        AuditEntry::new(actor.email.clone(), "partner.app.unpublished")
+        AuditEntry::new(actor.label().to_string(), "partner.app.unpublished")
             .actor(actor.id, ActorType::PartnerAdmin)
             .partner(scope.partner_id)
             .org(org_id)

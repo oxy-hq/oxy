@@ -35,7 +35,7 @@ async fn seed_user(conn: &DatabaseConnection) -> (Uuid, String) {
     let email = format!("activity-{id}@example.com");
     users::ActiveModel {
         id: ActiveValue::Set(id),
-        email: ActiveValue::Set(email.clone()),
+        email: ActiveValue::Set(Some(email.clone())),
         name: ActiveValue::Set("Activity Test".into()),
         picture: ActiveValue::Set(None),
         email_verified: ActiveValue::Set(true),
@@ -160,7 +160,7 @@ async fn recording_a_view_snapshots_app_and_org_role_separately() {
     record_view(
         app.clone(),
         user,
-        email.clone(),
+        Some(email.clone()),
         Uuid::new_v4(),
         None,
         "browser".into(),
@@ -205,7 +205,7 @@ async fn a_view_with_no_standing_records_no_role_rather_than_a_default() {
     record_view(
         app.clone(),
         stranger,
-        email,
+        Some(email),
         Uuid::new_v4(),
         None,
         "browser".into(),

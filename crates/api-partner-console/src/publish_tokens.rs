@@ -157,7 +157,7 @@ pub async fn create_token(
 
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "partner.publish_token.minted")
+        AuditEntry::new(actor.label().to_string(), "partner.publish_token.minted")
             .actor(actor.id, ActorType::User)
             .partner(scope.partner_id)
             .org(app.org_id)
@@ -209,7 +209,7 @@ pub async fn revoke_token(
 
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "partner.publish_token.revoked")
+        AuditEntry::new(actor.label().to_string(), "partner.publish_token.revoked")
             .actor(actor.id, ActorType::User)
             .partner(scope.partner_id)
             .org(app.org_id)

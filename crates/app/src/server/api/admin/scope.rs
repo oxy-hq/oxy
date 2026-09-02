@@ -46,10 +46,10 @@ pub async fn deny_out_of_scope(
 ) -> Result<(), StatusCode> {
     // The Global Owner is root and holds no grant row — their standing is the env
     // allow-list, so reading the grant table for them would find nothing and refuse.
-    if globals::is_global_owner(&actor.email) {
+    if globals::is_global_owner(actor.email.as_deref().unwrap_or("")) {
         return Ok(());
     }
-    match globals::platform_grant_checked(db, &actor.email).await {
+    match globals::platform_grant_checked(db, actor.email.as_deref().unwrap_or("")).await {
         Ok(Some(grant)) => match &grant.scope {
             Scope::All => Ok(()),
             Scope::Orgs(orgs) if orgs.contains(&org_id) => Ok(()),
@@ -91,10 +91,10 @@ pub async fn deny_out_of_scope_opt(
     match org_id {
         Some(org_id) => deny_out_of_scope(db, actor, org_id).await,
         None => {
-            if globals::is_global_owner(&actor.email) {
+            if globals::is_global_owner(actor.email.as_deref().unwrap_or("")) {
                 return Ok(());
             }
-            match globals::platform_grant_checked(db, &actor.email).await {
+            match globals::platform_grant_checked(db, actor.email.as_deref().unwrap_or("")).await {
                 Ok(Some(grant)) if matches!(grant.scope, Scope::Orgs(_)) => {
                     Err(StatusCode::NOT_FOUND)
                 }

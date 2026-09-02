@@ -53,7 +53,12 @@ pub async fn request_facts(parts: &mut Parts) -> Option<PrincipalFacts> {
     }
     let user = parts.extensions.get::<AuthenticatedUser>()?.clone();
     let db = establish_connection().await.ok()?;
-    let facts = loader::load_principal_facts(&db, user.id, &user.email).await?;
+    // A user with no email holds no platform standing, and that is the only
+    // thing the loader reads an address for. `is_oxy_owner` refuses a blank
+    // needle and `platform_grant_checked` short-circuits a blank key, so ""
+    // is the established "no standing" value rather than a hole.
+    let facts =
+        loader::load_principal_facts(&db, user.id, user.email.as_deref().unwrap_or("")).await?;
     parts.extensions.insert(facts.clone());
     Some(facts)
 }

@@ -64,11 +64,13 @@ async fn enforce_cap(
     // the admin half is a table lookup that does not — and after this PR the admin half
     // is true for App Operators too, so it is no longer a stand-in for "may use this
     // section". Fusing them is what let the unknown-standing arm below look reasonable.
-    let is_owner = is_oxy_owner(&user.email);
-    let legacy = is_owner || is_oxy_app_admin(&user.email).await;
+    let is_owner = is_oxy_owner(user.email.as_deref().unwrap_or(""));
+    let legacy = is_owner || is_oxy_app_admin(user.email.as_deref().unwrap_or("")).await;
 
     let facts = match oxy::database::client::establish_connection().await {
-        Ok(db) => loader::load_platform_facts(&db, user.id, &user.email).await,
+        Ok(db) => {
+            loader::load_platform_facts(&db, user.id, user.email.as_deref().unwrap_or("")).await
+        }
         Err(e) => {
             tracing::error!(
                 target: "authz",

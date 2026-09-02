@@ -41,7 +41,7 @@ pub async fn actor_facts(
     db: &DatabaseConnection,
     actor: &AuthenticatedUser,
 ) -> Result<PrincipalFacts, StatusCode> {
-    let platform = globals::platform_grant_checked(db, &actor.email)
+    let platform = globals::platform_grant_checked(db, actor.email.as_deref().unwrap_or(""))
         .await
         .map_err(|e| {
             tracing::error!(
@@ -54,7 +54,7 @@ pub async fn actor_facts(
     Ok(PrincipalFacts {
         user_id: actor.id,
         platform,
-        is_global_owner: globals::is_global_owner(&actor.email),
+        is_global_owner: globals::is_global_owner(actor.email.as_deref().unwrap_or("")),
         ..Default::default()
     })
 }

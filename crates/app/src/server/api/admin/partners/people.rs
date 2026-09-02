@@ -74,11 +74,15 @@ pub async fn grant_access(
 
         audit::record_in_txn(
             &txn,
-            AuditEntry::new(actor.email.clone(), "partner.access.granted")
+            AuditEntry::new(actor.label().to_string(), "partner.access.granted")
                 .actor(actor.id, ActorType::User)
                 .partner(org_id)
                 .org(org_id)
-                .target("partner_member", org_member_id.to_string(), target_email)
+                .target(
+                    "partner_member",
+                    org_member_id.to_string(),
+                    target_email.unwrap_or_default(),
+                )
                 .metadata(serde_json::json!({ "via_global_override": true })),
         )
         .await
@@ -122,7 +126,7 @@ pub async fn revoke_access(
 
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "partner.access.revoked")
+        AuditEntry::new(actor.label().to_string(), "partner.access.revoked")
             .actor(actor.id, ActorType::User)
             .partner(org_id)
             .org(org_id)

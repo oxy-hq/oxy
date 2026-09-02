@@ -54,10 +54,15 @@ pub(crate) async fn scope_org_filter_checked(
     // rather than reading one, so an owner who ALSO carries a bounded row (possible when
     // OXY_OWNER and OXY_GLOBAL_ADMINS overlap) isn't narrowed here while every other
     // path says they reach everything. Mirrors `platform_reaches` / `platform_holds`.
-    if crate::server::authz::globals::is_global_owner(&user.email) {
+    if crate::server::authz::globals::is_global_owner(user.email.as_deref().unwrap_or("")) {
         return Ok(None);
     }
-    match crate::server::authz::globals::platform_grant_checked(db, &user.email).await? {
+    match crate::server::authz::globals::platform_grant_checked(
+        db,
+        user.email.as_deref().unwrap_or(""),
+    )
+    .await?
+    {
         Some(grant) => Ok(match &grant.scope {
             Scope::All => None,
             Scope::Orgs(orgs) => Some(orgs.clone()),
@@ -851,7 +856,7 @@ pub async fn publish_app(
     // is exactly the question an incident asks first.
     oxy_app_core::audit::record_best_effort(
         &db,
-        oxy_app_core::audit::AuditEntry::new(user.email.clone(), "app.published")
+        oxy_app_core::audit::AuditEntry::new(user.label().to_string(), "app.published")
             .actor(user.id, oxy_app_core::audit::ActorType::User)
             .org(updated.org_id)
             .target("app", updated.id.to_string(), updated.name.clone()),
@@ -878,7 +883,7 @@ pub async fn unpublish_app(
     // Taking a customer's app DOWN is at least as auditable as putting it up.
     oxy_app_core::audit::record_best_effort(
         &db,
-        oxy_app_core::audit::AuditEntry::new(user.email.clone(), "app.unpublished")
+        oxy_app_core::audit::AuditEntry::new(user.label().to_string(), "app.unpublished")
             .actor(user.id, oxy_app_core::audit::ActorType::User)
             .org(updated.org_id)
             .target("app", updated.id.to_string(), updated.name.clone()),
@@ -965,7 +970,7 @@ pub async fn list_builds(Path(id): Path<Uuid>) -> Result<Json<BuildHistoryRespon
                 StatusCode::INTERNAL_SERVER_ERROR
             })?
             .into_iter()
-            .map(|u| (u.id, u.email))
+            .map(|u| (u.id, u.label().to_string()))
             .collect()
     };
     let builds_out: Vec<BuildSummary> = builds

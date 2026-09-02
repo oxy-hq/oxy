@@ -11,13 +11,29 @@ pub struct Identity {
 #[derive(Debug, Clone)]
 pub struct AuthenticatedUser {
     pub id: uuid::Uuid,
-    pub email: String,
+    /// `None` for a frontline worker enrolled without a mailbox. Deliberately
+    /// not defaulted to `""`: an empty string is indistinguishable from an
+    /// address to SES, to Slack matching and to an invitation lookup, which is
+    /// the failure mode `internal-docs/frontline-identity.md` exists to avoid.
+    pub email: Option<String>,
     pub name: String,
     pub picture: Option<String>,
     pub status: UserStatus,
 }
 
 impl AuthenticatedUser {
+    /// A human-readable label for logs and display.
+    ///
+    /// The address when there is one, otherwise `name` — which is NOT NULL and
+    /// is already what `get_or_create_user` populates. This is the whole reason
+    /// frontline identity did NOT need a new `handle` column: the non-null
+    /// human-readable identifier already existed.
+    ///
+    /// Never use this to *resolve* a user. It is not unique.
+    pub fn label(&self) -> &str {
+        self.email.as_deref().unwrap_or(&self.name)
+    }
+
     /// A synthetic principal for an OIDC-minted, app-scoped machine publish token.
     /// It exists only to satisfy the extractor chain — the token-scope middleware
     /// confines it to the publish path, and the publish path authorizes by the
@@ -26,7 +42,7 @@ impl AuthenticatedUser {
     pub fn machine_publisher() -> Self {
         Self {
             id: uuid::Uuid::nil(),
-            email: "oxy-publish-bot@oxy.internal".to_string(),
+            email: Some("oxy-publish-bot@oxy.internal".to_string()),
             name: "Oxy Publish (machine)".to_string(),
             picture: None,
             status: UserStatus::Active,

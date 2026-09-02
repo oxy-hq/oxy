@@ -295,6 +295,17 @@ fn for_display(known: Option<PlatformFlags>, email: &str) -> PlatformFlags {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_blank_email_holds_no_platform_standing() {
+        // Every caller that lost a guaranteed address to frontline identity now
+        // passes `user.email.as_deref().unwrap_or("")` into here. This is the
+        // choke point that makes that safe: blank is nobody. `is_oxy_owner`
+        // has the matching test for the allow-list side.
+        let flags = super::platform_standing_offline("");
+        assert!(!flags.is_global_owner);
+        assert!(!flags.is_global_admin);
+    }
+
     use super::*;
 
     /// The `app_admins` cache moved here with `is_app_admin_email` so that authz no

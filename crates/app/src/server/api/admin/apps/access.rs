@@ -64,7 +64,7 @@ pub async fn set_app_access(
     // exception would leave the most sensitive of the three invisible to the org.
     audit::record_best_effort(
         &db,
-        AuditEntry::new(actor.email.clone(), "admin.app.access_changed")
+        AuditEntry::new(actor.label().to_string(), "admin.app.access_changed")
             // `User`, matching the sibling `app.published` entry — the actor tier is
             // conveyed by the `admin.` action prefix, not by re-typing the actor.
             .actor(actor.id, ActorType::User)

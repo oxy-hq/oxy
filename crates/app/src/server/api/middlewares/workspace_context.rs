@@ -761,7 +761,7 @@ pub async fn workspace_middleware(
     .await;
 
     crate::server::api::compiled_reader::with_pinned_revision(pinned_revision, async move {
-        match authorize_workspace(workspace_id, user.id, &user.email, &mut request).await? {
+        match authorize_workspace(workspace_id, user.id, user.email.as_deref().unwrap_or(""), &mut request).await? {
             Some(workspace_row) => {
                 try_attach_workspace_manager(
                     &workspace_row,

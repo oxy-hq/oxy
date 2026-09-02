@@ -144,7 +144,7 @@ pub async fn get_shell_context(Path(project_id): Path<Uuid>, headers: HeaderMap)
 
     let viewer = crate::server::api::workspace_custom_apps::Viewer {
         id: ctx.user.id,
-        email: &ctx.user.email,
+        email: ctx.user.email.as_deref().unwrap_or(""),
     };
     let summaries = match published_app_summaries(&ctx.db, project_id, Some(viewer)).await {
         Ok(s) => s,
@@ -169,6 +169,10 @@ pub async fn get_shell_context(Path(project_id): Path<Uuid>, headers: HeaderMap)
         .collect();
 
     let ws_root = format!("{base}/{}/workspaces/{}", org.slug, project_id);
+    // The rail user menu's display string: the address when there is one,
+    // otherwise the name. Bound here because `label()` borrows all of
+    // `ctx.user`, which cannot happen once `name` has been moved out below.
+    let user_label = ctx.user.label().to_string();
     let body = ShellContextResponse {
         workspace: ShellWorkspace {
             id: ctx.workspace.id,
@@ -195,8 +199,10 @@ pub async fn get_shell_context(Path(project_id): Path<Uuid>, headers: HeaderMap)
             settings: format!("{ws_root}/home?settings=organization.general"),
         },
         user: Some(ShellUser {
+            // Bound before `name` moves out of `ctx.user` — `label()` borrows
+            // the whole struct, so it cannot be evaluated after a partial move.
+            email: user_label,
             name: ctx.user.name,
-            email: ctx.user.email,
             picture: ctx.user.picture,
         }),
     };

@@ -246,7 +246,7 @@ pub async fn delete_git_namespace(
     let allowed = oxy_server_authz::enforce_for(
         &db,
         user.id,
-        &user.email,
+        user.email.as_deref().unwrap_or(""),
         "namespace.delete",
         oxy_server_authz::Action::NamespaceDelete,
         oxy_server_authz::Resource::namespace_with_creator(

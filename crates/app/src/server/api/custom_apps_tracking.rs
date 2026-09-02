@@ -136,7 +136,7 @@ pub fn session_id_for_serve(headers: &HeaderMap, secure: bool) -> (Uuid, String)
 pub async fn record_view(
     app: entity::apps::Model,
     user_id: Uuid,
-    user_email: String,
+    user_email: Option<String>,
     session_id: Uuid,
     referrer: Option<String>,
     user_agent_class: String,
@@ -149,13 +149,14 @@ pub async fn record_view(
             return;
         }
     };
-    let (app_role, org_role) = resolve_view_roles(&db, &app, user_id, &user_email).await;
+    let (app_role, org_role) =
+        resolve_view_roles(&db, &app, user_id, user_email.as_deref().unwrap_or("")).await;
     let now = Utc::now().fixed_offset();
     let model = custom_app_view_event::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         app_id: ActiveValue::Set(app.id),
         user_id: ActiveValue::Set(user_id),
-        user_email: ActiveValue::Set(user_email),
+        user_email: ActiveValue::Set(user_email.unwrap_or_default()),
         session_id: ActiveValue::Set(session_id),
         viewed_at: ActiveValue::Set(now),
         referrer: ActiveValue::Set(referrer),

@@ -169,7 +169,7 @@ pub async fn list_tokens(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let mut query = AppPublishTokens::find().order_by_desc(app_publish_tokens::Column::CreatedAt);
-    if !sees_all_tokens(&db, &actor.email).await {
+    if !sees_all_tokens(&db, actor.email.as_deref().unwrap_or("")).await {
         query = query.filter(app_publish_tokens::Column::CreatedBy.eq(actor.id));
     }
     let rows = query.all(&db).await.map_err(|e| {
@@ -265,7 +265,9 @@ pub async fn revoke_token(
     // Revoking someone else's token is a fleet-operator action, not an app-publishing
     // one — see the module docs. 404 rather than 403, so a bounded caller can't confirm
     // another operator's token exists by probing ids.
-    if token.created_by != Some(actor.id) && !sees_all_tokens(&db, &actor.email).await {
+    if token.created_by != Some(actor.id)
+        && !sees_all_tokens(&db, actor.email.as_deref().unwrap_or("")).await
+    {
         return Err(StatusCode::NOT_FOUND);
     }
 

@@ -178,7 +178,11 @@ pub async fn set_capabilities(
     {
         return Err(StatusCode::NOT_FOUND);
     }
-    require_owner_for_sensitive_caps(&actor.email, input.manage_billing, input.manage_secrets)?;
+    require_owner_for_sensitive_caps(
+        actor.email.as_deref().unwrap_or(""),
+        input.manage_billing,
+        input.manage_secrets,
+    )?;
 
     let existing = PartnerCapabilities::find_by_id(org_id)
         .one(&db)
@@ -221,7 +225,7 @@ pub async fn set_capabilities(
 
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "partner.capabilities.updated")
+        AuditEntry::new(actor.label().to_string(), "partner.capabilities.updated")
             .actor(actor.id, ActorType::User)
             .partner(org_id)
             .org(org_id)
@@ -251,7 +255,7 @@ pub async fn revoke_partner(
 
     audit::record_in_txn(
         &txn,
-        AuditEntry::new(actor.email.clone(), "partner.revoked")
+        AuditEntry::new(actor.label().to_string(), "partner.revoked")
             .actor(actor.id, ActorType::User)
             .partner(org_id)
             .org(org_id)

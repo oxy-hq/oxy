@@ -224,7 +224,7 @@ pub(crate) async fn load_detail(
             .await
             .map_err(internal("load users"))?
             .into_iter()
-            .map(|u| (u.id, u.email))
+            .map(|u| (u.id, u.label().to_string()))
             .collect()
     };
 

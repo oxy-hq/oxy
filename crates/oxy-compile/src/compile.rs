@@ -18,14 +18,14 @@
 //! produces sane rows in production.
 
 use crate::errors::CompileError;
-use crate::outcome::{CompileOutcome, FailureKind, FileFailure, RevisionStatus};
+use crate::outcome::{CompileOutcome, FailureKind, FileFailure, Promotion, RevisionStatus};
 use crate::walker::{AutomationKind, DiscoveredFile, FileKind, discover};
 use crate::writer::{
     FinaliseInput, FinaliseOutcome, RevisionContext, finalise_revision, insert_compiling_revision,
     mark_failed,
 };
 use entity::workspace_compiled_configs::CompiledConfig;
-use sea_orm::DatabaseConnection;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -284,22 +284,44 @@ pub async fn compile_workspace(
             "compile idempotent — reusing existing successful revision"
         );
         if request.promote {
-            if let Err(e) = crate::writer::promote_existing(
-                request.db,
-                request.workspace_id,
-                existing.revision_id,
-            )
-            .await
-            {
-                warn!(
-                    ?e,
-                    "idempotent promote failed; falling through to full compile"
-                );
-            } else {
-                return Ok(existing.into_outcome(git_sha, request.branch));
+            // A revision carrying DDL is never promoted from here. Its
+            // tables may not exist in the tenant database, and on this
+            // path nobody has applied them — the compile that first
+            // produced this revision either deferred for the same reason
+            // or ran with `promote: false`. Hand the caller `Deferred`
+            // and let apply-then-promote run. `apply_to_org` is
+            // idempotent, so an already-applied set costs one ledger
+            // read rather than a re-run of the DDL.
+            match stored_schema_migration_count(request.db, existing.revision_id).await? {
+                0 => match crate::writer::promote_existing(
+                    request.db,
+                    request.workspace_id,
+                    existing.revision_id,
+                )
+                .await
+                {
+                    Ok(promotion) => {
+                        return Ok(existing.into_outcome(git_sha, request.branch, promotion));
+                    }
+                    Err(e) => {
+                        warn!(
+                            ?e,
+                            "idempotent promote failed; falling through to full compile"
+                        );
+                    }
+                },
+                n => {
+                    return Ok(existing.into_outcome(
+                        git_sha,
+                        request.branch,
+                        Promotion::Deferred {
+                            schema_migration_count: n,
+                        },
+                    ));
+                }
             }
         } else {
-            return Ok(existing.into_outcome(git_sha, request.branch));
+            return Ok(existing.into_outcome(git_sha, request.branch, Promotion::NotRequested));
         }
     }
 
@@ -449,15 +471,22 @@ async fn drive_compile(
             rows: &rows,
             promote,
             kind: kind.to_string(),
+            schema_migration_count: count_schema_migrations(&rows),
         },
     )
     .await?;
 
     // Multi-worker idempotency: when the partial unique index
     // rejected our finalise, return the winner's outcome instead.
-    let finished_at = match outcome {
-        FinaliseOutcome::Committed { finished_at } => finished_at,
-        FinaliseOutcome::SupersededBy { revision_id } => {
+    let (finished_at, promotion) = match outcome {
+        FinaliseOutcome::Committed {
+            finished_at,
+            promotion,
+        } => (finished_at, promotion),
+        FinaliseOutcome::SupersededBy {
+            revision_id,
+            promotion: winner_promotion,
+        } => {
             info!(
                 losing = %ctx.revision_id,
                 winning = %revision_id,
@@ -469,9 +498,14 @@ async fn drive_compile(
             // unique index that produced this `SupersededBy` outcome
             // is window-independent. The winner's revision_id is
             // already known; load it directly.
+            // `winner_promotion` is what the writer actually did to
+            // `current_revision_id` on the way out, and it names the winner's
+            // revision, not ours. `Deferred` there means both workers saw DDL
+            // and neither promoted — this caller drives apply-then-promote,
+            // and the apply is idempotent, so both racing it is safe.
             return lookup_revision_by_id(db, revision_id)
                 .await?
-                .map(|r| r.into_outcome(git_sha.to_string(), branch.clone()))
+                .map(|r| r.into_outcome(git_sha.to_string(), branch.clone(), winner_promotion))
                 .ok_or_else(|| {
                     CompileError::Internal(format!(
                         "superseded by revision {revision_id} but the row could not be loaded"
@@ -500,7 +534,35 @@ async fn drive_compile(
         file_count_compiled: compiled,
         file_count_failed: failures.len() as u32,
         failures,
+        promotion,
     })
+}
+
+/// Count the `schemas/*.sql` rows this compile produced.
+///
+/// Deliberately counts `CompiledRow`s rather than `DiscoveredFile`s: a DDL
+/// file that failed to compile produces no row, and a revision whose DDL
+/// did not compile is `Failed` and never promoted anyway. Counting the
+/// files instead would defer a promotion that has nothing to apply.
+fn count_schema_migrations(rows: &[CompiledRow]) -> u32 {
+    rows.iter()
+        .filter(|r| matches!(r, CompiledRow::SchemaMigration(_)))
+        .count() as u32
+}
+
+/// How many `schemas/*.sql` rows an *existing* revision carries.
+///
+/// The idempotency short-circuit never walks the workspace, so it has no
+/// `CompiledRow`s to count — the answer has to come back out of Postgres.
+async fn stored_schema_migration_count(
+    db: &DatabaseConnection,
+    revision_id: Uuid,
+) -> Result<u32, CompileError> {
+    let n = entity::schema_migration_definitions::Entity::find()
+        .filter(entity::schema_migration_definitions::Column::RevisionId.eq(revision_id))
+        .count(db)
+        .await?;
+    Ok(n as u32)
 }
 
 /// Per-file compile. Returns one or more rows on success, a structured
@@ -1275,7 +1337,12 @@ pub(crate) struct IdempotentRevision {
 }
 
 impl IdempotentRevision {
-    pub(crate) fn into_outcome(self, git_sha: String, branch: Option<String>) -> CompileOutcome {
+    pub(crate) fn into_outcome(
+        self,
+        git_sha: String,
+        branch: Option<String>,
+        promotion: Promotion,
+    ) -> CompileOutcome {
         CompileOutcome {
             revision_id: self.revision_id,
             status: crate::outcome::RevisionStatus::Ready,
@@ -1287,6 +1354,7 @@ impl IdempotentRevision {
             file_count_compiled: self.file_count_compiled,
             file_count_failed: self.file_count_failed,
             failures: Vec::new(),
+            promotion,
         }
     }
 }

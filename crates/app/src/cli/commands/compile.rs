@@ -125,12 +125,31 @@ pub async fn run_compile(args: CompileArgs) -> Result<(), OxyError> {
     .await
     .map_err(compile_error_to_oxy)?;
 
+    // Apply-then-promote. A revision carrying `schemas/*.sql` comes back
+    // unpromoted; this applies the DDL to the org's database and then moves
+    // `current_revision_id`. A no-op for a workspace with no `schemas/`
+    // directory, which is every workspace that has not opted into OLTP.
+    let settled =
+        crate::server::compile_oltp::settle_deferred_promotion(&db, workspace_id, &outcome).await;
+    // Fold the settle result back in before anything reports the outcome.
+    // `outcome.promotion` is what the COMPILER decided, so for a deferred
+    // revision it still says `Deferred` — and `--json` would report that for a
+    // revision whose DDL has since landed and which is already live.
+    let outcome = CompileOutcome {
+        promotion: settled.effective_promotion(&outcome.promotion),
+        ..outcome
+    };
+
     if args.json {
         let body = serde_json::to_string_pretty(&outcome)
             .map_err(|e| OxyError::RuntimeError(format!("serialize outcome failed: {e}")))?;
         println!("{}", body);
     } else {
         print_human_summary(&outcome);
+        let note = settled.summary();
+        if !note.is_empty() {
+            println!("{}", note.secondary());
+        }
     }
 
     // Non-zero exit when the compile recorded any failures.
@@ -138,6 +157,17 @@ pub async fn run_compile(args: CompileArgs) -> Result<(), OxyError> {
         return Err(OxyError::RuntimeError(format!(
             "compile recorded {} failed file(s); revision_id={}",
             outcome.file_count_failed, outcome.revision_id
+        )));
+    }
+
+    // …or when every file compiled but its DDL would not apply. Exiting 0
+    // here would tell CI the deploy is live when the workspace is still
+    // serving the previous revision.
+    if !settled.compile_succeeded() {
+        return Err(OxyError::RuntimeError(format!(
+            "{}; revision_id={}",
+            settled.summary(),
+            outcome.revision_id
         )));
     }
 

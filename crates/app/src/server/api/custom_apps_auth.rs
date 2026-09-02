@@ -438,7 +438,11 @@ pub async fn load_app_by_slugs(
 pub(crate) struct AuthOutcome {
     pub app: apps::Model,
     pub user_id: Uuid,
-    pub user_email: String,
+    /// `None` for a frontline worker enrolled without a mailbox. Reaches an
+    /// app as `ctx.user.email`, so an app that assumes a string gets `null`
+    /// rather than `""` — the difference between "has no address" and "has an
+    /// address that is empty" is exactly what a notification feature needs.
+    pub user_email: Option<String>,
     /// `users.name`. Display identity, carried so a function reading
     /// `ctx.user.name` doesn't have to take the client's word for it — the whole
     /// value of server-side identity is that it can't be spoofed by the caller.
@@ -504,7 +508,7 @@ pub(crate) async fn authenticate_and_authorize(
         })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let allowed = user_can_access_app(&db, user.id, &user.email, &app)
+    let allowed = user_can_access_app(&db, user.id, user.email.as_deref().unwrap_or(""), &app)
         .await
         .map_err(|e| {
             error!("access check failed: {e}");
@@ -520,7 +524,7 @@ pub(crate) async fn authenticate_and_authorize(
     // precisely the bug this comment was written for.
     let is_staff = oxy_server_authz::globals::platform_reaches(
         &db,
-        &user.email,
+        user.email.as_deref().unwrap_or(""),
         oxy_authz::Cap::DevelopApps,
         app.org_id,
     )

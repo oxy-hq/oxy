@@ -50,7 +50,7 @@ pub async fn list_members(
             Some(MemberResponse {
                 id: member.id,
                 user_id: member.user_id,
-                email: user.email,
+                email: user.label().to_string(),
                 name: user.name,
                 role: member.role.as_str().to_string(),
                 created_at: member.created_at.to_rfc3339(),
@@ -150,10 +150,10 @@ pub async fn update_member_role(
     // one.
     audit::record_in_txn(
         &txn,
-        audit::AuditEntry::new(actor.email.clone(), "org.member.role_updated")
+        audit::AuditEntry::new(actor.label().to_string(), "org.member.role_updated")
             .actor(actor.id, audit::ActorType::User)
             .org(ctx.org.id)
-            .target("user", target_user_id.to_string(), user.email.clone())
+            .target("user", target_user_id.to_string(), user.label().to_string())
             .change(
                 serde_json::json!({ "role": previous_role.as_str() }),
                 serde_json::json!({ "role": new_role.as_str() }),
@@ -207,7 +207,7 @@ pub async fn update_member_role(
     Ok(Json(MemberResponse {
         id: updated.id,
         user_id: updated.user_id,
-        email: user.email,
+        email: user.label().to_string(),
         name: user.name,
         role: updated.role.as_str().to_string(),
         created_at: updated.created_at.to_rfc3339(),
@@ -322,10 +322,14 @@ pub async fn remove_member(
     // Admin is precisely the event a compromised-account investigation starts from.
     audit::record_in_txn(
         &txn,
-        audit::AuditEntry::new(actor.email.clone(), "org.member.removed")
+        audit::AuditEntry::new(actor.label().to_string(), "org.member.removed")
             .actor(actor.id, audit::ActorType::User)
             .org(ctx.org.id)
-            .target("user", target_user_id.to_string(), target_email)
+            .target(
+                "user",
+                target_user_id.to_string(),
+                target_email.unwrap_or_default(),
+            )
             .change(
                 serde_json::json!({ "role": removed_role.as_str() }),
                 serde_json::json!(null),

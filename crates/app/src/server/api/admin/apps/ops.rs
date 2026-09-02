@@ -258,7 +258,7 @@ pub(super) async fn emails_by_user_id(
         .all(db)
         .await?
         .into_iter()
-        .map(|u| (u.id, u.email))
+        .map(|u| (u.id, u.label().to_string()))
         .collect())
 }
 

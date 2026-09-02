@@ -982,7 +982,11 @@ pub async fn list_workspaces(
             .unwrap_or_default()
             .into_iter()
             .map(|u| {
-                let display = if u.name.is_empty() { u.email } else { u.name };
+                let display = if u.name.is_empty() {
+                    u.email.unwrap_or_default()
+                } else {
+                    u.name
+                };
                 (u.id, display)
             })
             .collect()
@@ -1132,7 +1136,7 @@ pub async fn rename_workspace(
     let allowed = authz::enforce_for(
         &db,
         actor.id,
-        &actor.email,
+        actor.email.as_deref().unwrap_or(""),
         "workspace.rename",
         authz::Action::WorkspaceRename,
         authz::Resource::workspace_with_creator(workspace.id, org_id, workspace.created_by),

@@ -79,16 +79,25 @@ pub async fn user_info_from(user: AuthenticatedUser) -> UserInfo {
     // connection we still know the owner half (an env read), and reporting `is_owner:
     // false` at a Global Owner would hide their own UI over a DB blip.
     let standing = match oxy::database::client::establish_connection().await {
-        Ok(db) => crate::server::authz::globals::platform_standing(&db, &user.email).await,
-        Err(_) => crate::server::authz::globals::platform_standing_offline(&user.email),
+        Ok(db) => {
+            crate::server::authz::globals::platform_standing(
+                &db,
+                user.email.as_deref().unwrap_or(""),
+            )
+            .await
+        }
+        Err(_) => crate::server::authz::globals::platform_standing_offline(
+            user.email.as_deref().unwrap_or(""),
+        ),
     };
     let is_owner = standing.is_global_owner;
     let is_app_admin = standing.is_global_admin;
-    let platform_capabilities = platform_capabilities_for(&user.email, is_owner).await;
+    let platform_capabilities =
+        platform_capabilities_for(user.email.as_deref().unwrap_or(""), is_owner).await;
     let partner_memberships = partner_memberships_for(&user).await;
     UserInfo {
         id: user.id.to_string(),
-        email: user.email,
+        email: user.label().to_string(),
         name: user.name,
         picture: user.picture,
         status: user.status.as_str().to_string(),
@@ -128,7 +137,7 @@ async fn partner_memberships_for(user: &AuthenticatedUser) -> Vec<PartnerMembers
     let Ok(db) = oxy::database::client::establish_connection().await else {
         return Vec::new();
     };
-    scopes_for_user(&db, user.id, &user.email)
+    scopes_for_user(&db, user.id, user.email.as_deref().unwrap_or(""))
         .await
         .into_iter()
         .map(|s| PartnerMembershipInfo {

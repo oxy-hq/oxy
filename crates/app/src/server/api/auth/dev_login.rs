@@ -437,7 +437,7 @@ async fn issue_dev_session(
             let name = email.split('@').next().unwrap_or(&email).to_string();
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
-                email: Set(email.clone()),
+                email: Set(Some(email.clone())),
                 name: Set(name),
                 picture: Set(None),
                 email_verified: Set(true),

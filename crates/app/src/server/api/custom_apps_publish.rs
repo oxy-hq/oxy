@@ -1447,7 +1447,14 @@ pub async fn publish_handler(
         source_repo,
         commit_sha,
         published_by: Some(user.id),
-        published_by_email: Some(user.email.clone()),
+        // `user.email`, never a display label. This value is not decoration:
+        // `publish_authz::resolve_actor` feeds it to `platform_reaches`, so a
+        // label that fell back to the non-unique `name` would let a user named
+        // after a staff address publish with STAFF authority into any org that
+        // grant reaches. `publish` already denies a `None` here, which is the
+        // right answer — publishing is a developer action and a worker
+        // enrolled without a mailbox has no path to it.
+        published_by_email: user.email.clone(),
         machine_app_id,
     };
 

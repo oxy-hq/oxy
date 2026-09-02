@@ -197,7 +197,7 @@ pub async fn create_auth_token(user: users::Model) -> Result<String, StatusCode>
 
     let claims = Claims {
         sub: user_clone.id.to_string(),
-        email: user_clone.email.clone(),
+        email: user_clone.label().to_string(),
         exp: exp.timestamp() as usize,
         iat: now.timestamp() as usize,
     };
@@ -275,7 +275,7 @@ pub async fn google_auth(
         None => {
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
-                email: Set(user_info.email.clone()),
+                email: Set(Some(user_info.email.clone())),
                 name: Set(user_info.name.clone()),
                 picture: Set(user_info.picture.clone()),
                 email_verified: Set(true),
@@ -342,7 +342,7 @@ pub async fn okta_auth(
         None => {
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
-                email: Set(user_info.email.clone()),
+                email: Set(Some(user_info.email.clone())),
                 name: Set(user_info.name.clone()),
                 picture: Set(user_info.picture.clone()),
                 email_verified: Set(true),
@@ -408,7 +408,7 @@ pub async fn github_auth(
         None => {
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
-                email: Set(user_info.email.clone()),
+                email: Set(Some(user_info.email.clone())),
                 name: Set(user_info.name.clone()),
                 picture: Set(user_info.picture.clone()),
                 email_verified: Set(true),
