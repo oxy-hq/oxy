@@ -143,19 +143,26 @@ pub fn spawn_bridge(
         );
         let mut interval = tokio::time::interval(FLUSH_INTERVAL);
         interval.tick().await; // consume first immediate tick
+        // Drops accumulated since the last report — see the push arm below.
+        let mut dropped_since_report: u64 = 0;
 
         loop {
             tokio::select! {
                 msg = receiver.recv() => {
                     match msg {
                         Some(record) => {
-                            let dropped = queue.push(record);
-                            if dropped > 0 {
-                                tracing::warn!(
-                                    "Span buffer full during store outage; dropped {} oldest record(s)",
-                                    dropped
-                                );
-                            }
+                            // Accumulate rather than log per record. `push`
+                            // runs once per incoming span, so warning inline
+                            // means one line per DROPPED SPAN — the logging
+                            // gets loudest exactly when the store is already
+                            // failing, and it competes for the same resources.
+                            // Measured in oxy-dev on 2026-09-03: 11,209 lines
+                            // in 30 minutes from this one statement, 49% of
+                            // all oxy log volume. Reported on the flush tick
+                            // below instead: one line per FLUSH_INTERVAL with
+                            // the window total.
+                            dropped_since_report =
+                                dropped_since_report.saturating_add(queue.push(record) as u64);
                             if queue.len() >= FLUSH_BATCH_SIZE {
                                 flush(&mut queue, &store, FLUSH_BATCH_SIZE).await;
                             }
@@ -164,6 +171,13 @@ pub fn spawn_bridge(
                             // Channel closed — final best-effort send, bypassing
                             // the retry backoff (there is no later attempt for
                             // the gate to defer to).
+                            if dropped_since_report > 0 {
+                                tracing::warn!(
+                                    dropped = dropped_since_report,
+                                    buffer_capacity = MAX_BUFFERED_SPANS,
+                                    "Span buffer full during store outage; dropped oldest records (final)"
+                                );
+                            }
                             let batch = queue.take_all();
                             if !batch.is_empty() {
                                 let _ = store.insert_spans(batch).await;
@@ -173,6 +187,19 @@ pub fn spawn_bridge(
                     }
                 }
                 _ = interval.tick() => {
+                    if dropped_since_report > 0 {
+                        // Structured fields, not interpolation: `dropped` and
+                        // `window_secs` land under `fields.*` in the JSON log
+                        // and stay queryable downstream, where a formatted
+                        // string would have to be re-parsed.
+                        tracing::warn!(
+                            dropped = dropped_since_report,
+                            window_secs = FLUSH_INTERVAL.as_secs(),
+                            buffer_capacity = MAX_BUFFERED_SPANS,
+                            "Span buffer full during store outage; dropped oldest records"
+                        );
+                        dropped_since_report = 0;
+                    }
                     flush(&mut queue, &store, 1).await;
                 }
             }
