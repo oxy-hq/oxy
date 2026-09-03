@@ -107,6 +107,7 @@ use crate::server::router::AppState;
 ///   - POST   /admin/orgs/{org_id}/oltp/provision
 ///   - POST   /admin/orgs/{org_id}/oltp/credentials
 ///   - POST   /admin/orgs/{org_id}/oltp/visibility
+///   - POST   /admin/orgs/{org_id}/oltp/deprovision-writer
 ///   - DELETE /admin/orgs/{org_id}/oltp
 ///
 /// Admin routes. The outer nest layer in `router::global` is the **door**
@@ -420,16 +421,20 @@ mod tests {
         let org = "d9830be4-c6a4-4c1c-9c1e-000000000002";
 
         for (method, path) in [
-            // All six, not the original three. The two newest — visibility and
-            // the DELETE — are also the two that matter most to get wrong: one
-            // grants analytics read access to a tenant's live tables, the other
-            // destroys the database. `GET /oltp` additionally changed crates
-            // when the scope-fenced shim took over the mount.
+            // All seven, not the original three. The three that matter most to
+            // get wrong sit together: visibility grants analytics read access to
+            // a tenant's live tables, `deprovision-writer` drops one app's
+            // schema, and the DELETE destroys the whole database. The last two
+            // are one path segment apart and differ by the entire tenant, which
+            // is why both are pinned here rather than trusted to review.
+            // `GET /oltp` additionally changed crates when the scope-fenced shim
+            // took over the mount.
             ("GET", "/oltp".to_string()),
             ("GET", format!("/orgs/{org}/oltp")),
             ("POST", format!("/orgs/{org}/oltp/provision")),
             ("POST", format!("/orgs/{org}/oltp/credentials")),
             ("POST", format!("/orgs/{org}/oltp/visibility")),
+            ("POST", format!("/orgs/{org}/oltp/deprovision-writer")),
             ("DELETE", format!("/orgs/{org}/oltp")),
             // Airhouse rides the same mount and would 404 the same way.
             ("GET", "/airhouse".to_string()),

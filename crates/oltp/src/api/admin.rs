@@ -397,6 +397,77 @@ pub async fn deprovision(
         .map_err(|s| (s, "could not read back status".to_string()))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DeprovisionWriterRequest {
+    /// `app:<slug>` or `pipeline:<source>`.
+    pub writer: String,
+}
+
+/// Drop ONE writer's schema and role, leaving the rest of the tenant intact.
+///
+/// # Why this route exists
+///
+/// [`OltpProvisioner::deprovision_writer`] has always been the escape hatch the
+/// app-delete and app-rename guards point at — its own doc says it is "what
+/// makes the app-delete and rename guards actionable". But its only caller was
+/// `oxy oltp deprovision --writer`, and that subcommand has no `--env`: it
+/// reads `OXY_DATABASE_URL` and talks to the LOCAL control plane. So on every
+/// cloud environment the guard refused an app delete, named a remedy, and the
+/// remedy could not reach the environment that refused. The only route that
+/// could was `DELETE /oltp`, which destroys the whole tenant database and every
+/// other app's data with it.
+///
+/// That is the shape of a guard that reads as correct and functions as a dead
+/// end. This is the door.
+///
+/// A POST rather than a DELETE, matching `provision` / `visibility` /
+/// `credentials` on this surface — and deliberately NOT sharing a path with the
+/// whole-tenant `DELETE .../oltp`. These two operations differ by one word and
+/// by the entire tenant; making them differ by an HTTP verb on one URL is how
+/// somebody destroys a database meaning to release one app.
+///
+/// Idempotent, because the provisioner is: a writer that was never provisioned
+/// is a no-op, so an operator retrying a wedged app delete does not have to
+/// know how far the last attempt got.
+#[instrument(skip(user, body), fields(user_id = %user.id, org_id = %org_id))]
+pub async fn deprovision_writer(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Path(org_id): Path<Uuid>,
+    Json(body): Json<DeprovisionWriterRequest>,
+) -> Result<Json<ConnectionInfoResponse>, (StatusCode, String)> {
+    let db = establish_connection()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Parsed before the provisioner is built, so a malformed spec is a 400 and
+    // not a 500 from somewhere deeper. `app:my-app` is rejected here on purpose:
+    // a slug's hyphens are illegal in a writer name, and the guard's message
+    // hands over the DERIVED writer for exactly that reason.
+    let writer = parse_writer(&body.writer).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+    let provisioner = crate::provisioner::from_env(db.clone())
+        .await
+        .map_err(provisioner_status)?;
+
+    warn!(
+        user = %user.label(),
+        org_id = %org_id,
+        writer = %writer,
+        "DEPROVISIONING one OLTP writer — its schema and data go with it"
+    );
+    provisioner
+        .deprovision_writer(org_id, &writer)
+        .await
+        .map_err(provisioner_status)?;
+
+    let db2 = establish_connection()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    status_for_org(&db2, org_id)
+        .await
+        .map(Json)
+        .map_err(|s| (s, "could not read back status".to_string()))
+}
+
 fn parse_writer(spec: &str) -> Result<crate::schema::WriterRef, String> {
     let (kind, name) = spec.split_once(':').ok_or_else(|| {
         format!("writer {spec:?} must look like `app:<slug>` or `pipeline:<src>`")

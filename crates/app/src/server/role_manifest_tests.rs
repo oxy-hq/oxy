@@ -1643,6 +1643,14 @@ fn tenant_data_plane_routes_are_fleet_ok() {
         // default is right; this list is what pins it.
         ("POST", format!("/api/admin/orgs/{org}/oltp/visibility")),
         ("DELETE", format!("/api/admin/orgs/{org}/oltp")),
+        // Releasing one app's store. Same shape as its two neighbours —
+        // Postgres plus the provider API — and pinned for the same reason:
+        // the default is what protects it, so the list is what keeps a
+        // future broad `IdeOnly` pattern from quietly capturing it.
+        (
+            "POST",
+            format!("/api/admin/orgs/{org}/oltp/deprovision-writer"),
+        ),
         // Airhouse's admin surface, same shape: Postgres plus an HTTP
         // client, no node-local state. Pinning, not a fix — the default is
         // already right, and this is what keeps a future broad `IdeOnly`

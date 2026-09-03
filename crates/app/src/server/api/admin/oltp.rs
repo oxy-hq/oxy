@@ -47,6 +47,14 @@ where
         .route("/orgs/{org_id}/oltp/provision", post(provision))
         .route("/orgs/{org_id}/oltp/credentials", post(credentials))
         .route("/orgs/{org_id}/oltp/visibility", post(set_visibility))
+        // Releasing ONE app's store. A distinct PATH from the whole-tenant
+        // delete below, not a different verb on the same one: these two differ
+        // by the entire tenant, and a URL where a typo'd method destroys a
+        // customer's database is a URL nobody should have to be careful around.
+        .route(
+            "/orgs/{org_id}/oltp/deprovision-writer",
+            post(deprovision_writer),
+        )
         .route("/orgs/{org_id}/oltp", delete(deprovision))
 }
 
@@ -192,6 +200,43 @@ pub async fn deprovision(
         org_id,
         "oltp.deprovisioned",
         serde_json::json!({ "database": label }),
+        out.is_ok(),
+    )
+    .await;
+    out
+}
+
+/// Releasing ONE app's store. Audited for the same reason the whole-tenant
+/// deprovision is: it drops a schema and its data, and `/admin/audit` is where
+/// an operator goes to find out who did it.
+///
+/// The writer is recorded in the audit entry rather than only the org, because
+/// the whole point of this route is that it is narrower than its neighbour —
+/// an entry that said only "oltp deprovisioned" would be indistinguishable
+/// from the one that destroyed the tenant.
+pub async fn deprovision_writer(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Path(org_id): Path<Uuid>,
+    Json(body): Json<inner::DeprovisionWriterRequest>,
+) -> Result<Json<oxy_oltp::api::handlers::ConnectionInfoResponse>, (StatusCode, String)> {
+    let db = conn().await.map_err(msg)?;
+    scope::deny_out_of_scope(&db, &user, org_id)
+        .await
+        .map_err(msg)?;
+    let writer = body.writer.clone();
+
+    let out = inner::deprovision_writer(
+        AuthenticatedUserExtractor(user.clone()),
+        Path(org_id),
+        Json(body),
+    )
+    .await;
+    audit_oltp(
+        &db,
+        &user,
+        org_id,
+        "oltp.writer.deprovisioned",
+        serde_json::json!({ "writer": writer }),
         out.is_ok(),
     )
     .await;

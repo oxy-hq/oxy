@@ -546,6 +546,12 @@ fn scoped_admin_writes_fence_before_touching_the_database() {
                 "provision",
                 "set_visibility",
                 "deprovision",
+                // The per-writer sibling of `deprovision`. Listed because this
+                // is where a reviewer looks for the destructive verbs, and the
+                // two are one path segment apart while differing by the entire
+                // tenant — the narrow one being absent here is exactly how it
+                // would come to be read as the safe one.
+                "deprovision_writer",
                 "credentials",
             ],
         ),

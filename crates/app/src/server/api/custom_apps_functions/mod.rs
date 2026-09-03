@@ -1445,7 +1445,12 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
             workspace.id,
             org_id,
             args.user_id,
-            &args.user_email,
+            // `""` when the invocation carries no email, and that fails CLOSED.
+            // The only thing the callee does with it is `assume::may_act_as`,
+            // which checks it against the staff allow-list and the partner
+            // grants — an empty string matches neither, so an emailless caller
+            // gets real membership or nothing, never synthesized authority.
+            args.user_email.as_deref().unwrap_or_default(),
         )
         .await
         .ok()

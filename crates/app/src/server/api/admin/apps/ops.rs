@@ -413,11 +413,28 @@ impl AppOpError {
 /// types that carry it — `ApiErr` in the update handler, [`AppOpError`] here —
 /// cannot drift apart. `action` is the past participle ("renamed" / "deleted").
 ///
-/// Names the concrete escape hatch: the per-writer `oxy oltp deprovision`, NOT
-/// the whole-tenant one. The command is a literal copy-paste — the `--writer`
-/// is the DERIVED writer (`writer.to_string()` → `app:oltp_bookings`), never the
-/// raw slug, because the slug's hyphens are illegal in a writer name and
-/// `parse_writer` would reject them.
+/// Names the concrete escape hatch: the per-writer deprovision, NOT the
+/// whole-tenant one. The writer named is the DERIVED writer
+/// (`writer.to_string()` → `app:oltp_bookings`), never the raw slug, because
+/// the slug's hyphens are illegal in a writer name and `parse_writer` would
+/// reject them.
+///
+/// It also names the STANDING the route needs, because the two doors differ:
+/// this console is gated on `Action::PlatformApps` and that route on
+/// `Action::PlatformOltp`, and an App Operator holds the first and explicitly
+/// not the second (`oltp_provisioning_is_operator_work_not_app_work`). So the
+/// population most likely to be deleting a custom app would otherwise be handed
+/// a route that answers 403 — a narrower recurrence of the same defect this
+/// message exists to fix.
+///
+/// It names the HTTP route FIRST and the CLI second, and that order is the
+/// point. `oxy oltp deprovision --writer` has no `--env`: it reads
+/// `OXY_DATABASE_URL` and talks to the local control plane. So for every
+/// operator who hits this guard on a cloud environment — which is every
+/// operator who hits it in production — the CLI command cannot reach the
+/// environment that refused them, and the only route that could was the
+/// whole-tenant `DELETE /oltp`. Naming a remedy that cannot be performed is
+/// worse than naming none: it costs the reader the time to find out.
 pub(super) fn oltp_store_blocks_message(
     action: &str,
     org_id: Uuid,
@@ -427,8 +444,15 @@ pub(super) fn oltp_store_blocks_message(
         "This app has a provisioned OLTP store, so it cannot be {action}. The store's schema is \
          bound to the app's slug; changing or removing the app while it exists would orphan the \
          data — or expose it to a different app that later reused the slug. Deprovision just this \
-         app's store first (it drops that one schema, not the org's database): \
-         `oxy oltp deprovision --org {org_id} --writer {writer} --yes`."
+         app's store first — it drops that one schema, not the org's database:\n\
+         \n\
+         POST /api/admin/orgs/{org_id}/oltp/deprovision-writer {{\"writer\": \"{writer}\"}}\n\
+         \n\
+         That route needs platform-OLTP standing, which this console does not imply: an App \
+         Operator can delete apps and cannot deprovision a store, so ask someone holding it. \
+         Against a remote environment that route is still the ONLY way — \
+         `oxy oltp deprovision --org {org_id} --writer {writer} --yes` has no `--env` and acts \
+         on the local control plane."
     )
 }
 
@@ -837,4 +861,66 @@ fn like_escape(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod oltp_guard_message_tests {
+    use super::oltp_store_blocks_message;
+    use oxy_oltp::schema::WriterRef;
+    use uuid::Uuid;
+
+    /// The guard must name a remedy the reader can actually perform.
+    ///
+    /// This started as a CLI-only message, and `oxy oltp deprovision --writer`
+    /// has no `--env`: it reads `OXY_DATABASE_URL` and acts on the local control
+    /// plane. So every operator who hit this guard against a cloud environment
+    /// was handed a command that could not reach the environment that refused
+    /// them, and the only route that could was the whole-tenant `DELETE /oltp`.
+    ///
+    /// Asserted rather than reviewed because the failure is invisible: the
+    /// message still reads as helpful, and you only discover it is not by
+    /// running it and watching it talk to the wrong database.
+    #[test]
+    fn names_the_http_route_before_the_cli() {
+        let org = Uuid::nil();
+        let writer = WriterRef::app("store_ops").expect("valid writer");
+        let msg = oltp_store_blocks_message("deleted", org, &writer);
+
+        let route = msg
+            .find("/oltp/deprovision-writer")
+            .expect("must name the per-writer route — it is the only remote-capable remedy");
+        assert!(
+            msg.contains("app:store_ops"),
+            "must name the DERIVED writer, not the raw slug: {msg}"
+        );
+
+        // Order matters, not just presence. The CLI is mentioned to say it is
+        // local-only; leading with it is what sent people down the dead end.
+        let cli = msg
+            .find("oxy oltp deprovision")
+            .expect("should still mention the CLI");
+        assert!(
+            route < cli,
+            "the route must come before the CLI mention: {msg}"
+        );
+        assert!(
+            msg.contains("no `--env`"),
+            "must say WHY the CLI is not the answer remotely: {msg}"
+        );
+        // The two doors differ: this console is `Action::PlatformApps`, the
+        // route is `Action::PlatformOltp`, and an App Operator holds the first
+        // and not the second. Without this clause the reader most likely to hit
+        // the guard is sent to a route that 403s them.
+        assert!(
+            msg.contains("platform-OLTP standing"),
+            "must name the standing the route requires: {msg}"
+        );
+
+        // It must never name the whole-tenant escape hatch: that destroys every
+        // other app's schema in the org, which is the opposite of this guard.
+        assert!(
+            !msg.contains("DELETE /api/admin/orgs"),
+            "must not point at the whole-tenant deprovision: {msg}"
+        );
+    }
 }
