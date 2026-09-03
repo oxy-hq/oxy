@@ -113,6 +113,26 @@ Signing in is one navigation, not OAuth: with `OXY_DEV_LOGIN_EMAILS` set,
 `browser_navigate("http://localhost:5173/dev-login")` leaves the browser holding a real
 session. Setup, query params, and the `curl` form: **Dev sign-in** in `DEVELOPMENT.md`.
 
+## `oxyc` — talking to a running deployment
+
+`npm i -g @oxy-hq/cli` (published; `npx @oxy-hq/cli` also works). It is the
+`gh api`-shaped client for the Oxy HTTP API — **use it instead of hand-rolling
+curl** when you need real data out of dev/staging/prod, and instead of guessing
+a route.
+
+```bash
+oxyc login --env dev              # browser; shares its credential file with Rust `oxy`
+oxyc routes threads --env dev     # discovery, SERVED by GET /api/_catalog — not a baked table
+oxyc schema /api/orgs --env dev   # request/response shape for one endpoint
+oxyc api /api/orgs --env dev -q '.[].name'   # -f/-F/--input/-q/--paginate, like gh api
+```
+
+Two things that mislead if you don't know them: an expired token makes
+`GET /api/user` answer **200 with a null body**, which `oxyc whoami` reports as
+"no longer resolves to a user" — not a 401; and exit codes are a contract
+(`oxyc exit-codes`), so an agent branches on 4=auth / 5=not-found / 6=request
+rather than parsing stderr. Full guide: `internal-docs/oxy-api-cli.md`.
+
 ## Committing
 
 Conventional Commits, types `feat|fix|refactor|docs|test|build|chore|perf|style|ci`.

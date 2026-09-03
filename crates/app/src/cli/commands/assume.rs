@@ -263,7 +263,7 @@ fn assume_error(status: reqwest::StatusCode, org_id: Uuid) -> OxyError {
 }
 
 pub async fn handle_assume_command(args: AssumeArgs) -> Result<(), OxyError> {
-    // Mirror `oxy api` / `oxy publish`: pick up a laptop's shell exports.
+    // Mirror `oxy publish`: pick up a laptop's shell exports.
     dotenv::from_filename(".env.local").ok();
     dotenv::dotenv().ok();
 

@@ -11,12 +11,14 @@ import { usageError } from "../util/errors.js";
  * Needed because the normaliser's job is "prefix `/api/` unless it is already
  * a real path", and without this list every one of these gets a second prefix.
  *
- * THIS FIXES A LIVE BUG in the Rust `oxy api`, which is worth stating because
- * the fix looks like gratuitous divergence otherwise. `normalize_path` there
- * tests only for an `api` first segment, so the API-key surface — documented
- * in its own `--help` as `oxy api /external/api/<workspace_id>/sql/query` —
- * normalises to `/api/external/api/<workspace_id>/sql/query` and 404s. The
- * documented example could never have worked.
+ * THIS FIXED A BUG the Rust `oxy api` shipped with, which is worth stating
+ * because the list looks like gratuitous divergence otherwise. Its
+ * `normalize_path` tested only for an `api` first segment, so the API-key
+ * surface — documented in that command's own `--help` as
+ * `oxy api /external/api/<workspace_id>/sql/query` — normalised to
+ * `/api/external/api/<workspace_id>/sql/query` and 404d. The documented example
+ * could never have worked. That command is gone; the list is still required,
+ * because the surface it mishandled is not.
  */
 const TOP_LEVEL_MOUNTS = new Set([
   "api",
