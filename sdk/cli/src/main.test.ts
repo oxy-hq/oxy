@@ -13,7 +13,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -296,5 +296,28 @@ describe("guide", () => {
    */
   it("stays short enough to sit in a context file", () => {
     expect(oxyc("guide").stdout.split("\n").length).toBeLessThan(70);
+  });
+});
+
+/**
+ * `oxyc --version` and `package.json` must be the same number.
+ *
+ * They were not, and nothing noticed: `main.ts` carried `.version("0.1.0")` as
+ * a literal, so a release bump in the manifest would have published a package
+ * that reports the previous version forever. This is asserted through the built
+ * PROGRAM rather than against the generated constant, because the constant
+ * agreeing with itself proves nothing — what a user reads is the output of the
+ * binary they installed, and for the standalone build `--version` is the ONLY
+ * way to tell what they have.
+ */
+describe("--version", () => {
+  it("reports exactly what package.json says", () => {
+    const manifest = JSON.parse(
+      readFileSync(resolve(dirname(BIN), "..", "package.json"), "utf8")
+    ) as { version: string };
+
+    const r = oxyc("--version");
+    expect(r.status).toBe(ExitCode.OK);
+    expect(r.stdout.trim()).toBe(manifest.version);
   });
 });

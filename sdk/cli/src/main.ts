@@ -33,6 +33,7 @@ import { runSkillsInstall, runSkillsList } from "./commands/skills.js";
 import { runValidate } from "./commands/validate.js";
 import { runAdopt, runDoctor, runUpdate } from "./commands/workspace.js";
 import { createContext, type GlobalFlags } from "./context/resolve.js";
+import { VERSION } from "./generated/version.js";
 import * as log from "./ui/log.js";
 import { err } from "./ui/tty.js";
 import { CliError, ExitCode, usageError } from "./util/errors.js";
@@ -90,7 +91,11 @@ function globals(opts: Record<string, unknown>): GlobalFlags {
 function buildProgram(): Command {
   const program = new Command("oxyc")
     .description("The Oxy CLI — talk to the API, and work on a customer account.")
-    .version("0.1.0")
+    // From `package.json`, via `scripts/emit-version.mjs`. It was a literal, so
+    // `oxyc --version` was a second copy of the version that a release bump did
+    // not touch — worst for the standalone binary, where `--version` is the
+    // only way to tell what you have.
+    .version(VERSION)
     .showHelpAfterError("(run `oxyc --help`)")
     .configureOutput({
       // ONLY `writeErr` is redirected, and the distinction matters. commander

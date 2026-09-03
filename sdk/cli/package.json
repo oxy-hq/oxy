@@ -1,6 +1,6 @@
 {
   "name": "@oxy-hq/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "oxyc — the Oxy CLI: a gh-api-style client for the Oxy HTTP API, plus the customer-account tooling that scopes a session to one customer.",
   "type": "module",
   "bin": {
@@ -23,7 +23,7 @@
     "directory": "sdk/cli"
   },
   "scripts": {
-    "codegen": "node scripts/sync-schemas.mjs && node scripts/embed-assets.mjs",
+    "codegen": "node scripts/emit-version.mjs && node scripts/sync-schemas.mjs && node scripts/embed-assets.mjs",
     "prebuild": "pnpm run codegen",
     "build": "tsdown",
     "build:watch": "tsdown --watch",
