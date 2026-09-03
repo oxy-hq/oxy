@@ -104,12 +104,12 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.4.1",
     "@types/react": "^19.2.18",
-    "@typescript-eslint/eslint-plugin": "^8.67.0",
-    "@typescript-eslint/parser": "^8.67.0",
+    "@typescript-eslint/eslint-plugin": "^8.69.0",
+    "@typescript-eslint/parser": "^8.69.0",
     "echarts": "^6.1.0",
-    "eslint": "^10.9.0",
+    "eslint": "^10.9.1",
     "preact": "^10.29.8",
     "preact-render-to-string": "^6.7.0",
     "react": "^19.2.8",
