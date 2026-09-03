@@ -320,3 +320,57 @@ pub async fn prune_devices(db: &sea_orm::DatabaseConnection, user_id: Uuid) {
     }
     info!(user = %user_id, dropped = ids.len(), "pruned stale device tokens");
 }
+
+/// `GET /api/notifications/vapid-public-key` — the key a browser subscribes with.
+///
+/// # Why this route has to exist
+///
+/// `PushManager.subscribe` takes an `applicationServerKey`, and it is the VAPID
+/// public key this deployment signs with. There was no way to obtain it: the
+/// value is read from `OXY_VAPID_PUBLIC_KEY` inside the sender and never left
+/// it. So a deployment could have a fully working Web Push sender and no
+/// possible subscriber — the sender shipped, and nothing could register to be
+/// sent to.
+///
+/// Answers `configured: false` rather than 404 when the environment is not set
+/// up. A client asking this is deciding whether to offer a "turn on
+/// notifications" control at all, and "this deployment does not do push" is an
+/// answer it can act on, where a 404 is indistinguishable from an old build.
+///
+/// Authenticated but not otherwise gated: the key is published to the push
+/// service on every send and is useless without the private half, so serving it
+/// discloses nothing. It is behind auth only because everything on this router
+/// is, and an unauthenticated probe for "is push configured" is a fingerprint
+/// worth not handing out for free.
+///
+/// # What is and is not tested
+///
+/// The key's FORMAT is already pinned by
+/// `web_push::tests::a_valid_subject_and_public_key_get_as_far_as_the_private_key`,
+/// which proves a base64url uncompressed P-256 point is accepted by reaching
+/// the private-key arm with a bogus PEM. This route adds no transform, and it
+/// cannot be unit-tested past that: `WebPush` cannot be constructed without a
+/// real private key, so there is no instance to call `public_key()` on. A first
+/// draft of a test here asserted `is_err()`, which held whether the key was
+/// accepted or rejected — it would have passed for the bug it was written to
+/// catch — and tightening it only reproduced the existing test. Deleted rather
+/// than shipped as a weaker duplicate.
+#[derive(Serialize)]
+pub struct VapidKeyResponse {
+    pub configured: bool,
+    /// Base64url, unpadded — the form `applicationServerKey` expects.
+    pub public_key: Option<String>,
+}
+
+pub async fn vapid_public_key(
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+) -> Json<VapidKeyResponse> {
+    // Built per request rather than held in state, matching how the sender
+    // itself is constructed. Reading three env vars is cheaper than the
+    // round trip that carries the answer.
+    let configured = super::web_push::WebPush::from_env();
+    Json(VapidKeyResponse {
+        configured: configured.is_some(),
+        public_key: configured.map(|w| w.public_key().to_string()),
+    })
+}

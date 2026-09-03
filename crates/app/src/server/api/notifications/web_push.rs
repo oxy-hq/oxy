@@ -153,6 +153,21 @@ pub struct WebPush {
 }
 
 impl WebPush {
+    /// The application server key a browser needs to subscribe.
+    ///
+    /// `PushManager.subscribe` takes `applicationServerKey`, and it is the
+    /// VAPID PUBLIC key — the same one every assertion this sender signs is
+    /// verified against. Without it a browser cannot create a subscription at
+    /// all, so a deployment can have a fully working sender and no possible
+    /// subscriber, which is what this exists to fix.
+    ///
+    /// Public by nature: it is published to the push service on every send and
+    /// is meaningless without the private half. Serving it is disclosure of
+    /// nothing.
+    pub fn public_key(&self) -> &str {
+        &self.public_key
+    }
+
     /// Build from the environment, or `None` if it is not fully configured.
     ///
     /// All-or-nothing on purpose: two of three vars set is a deployment mistake,

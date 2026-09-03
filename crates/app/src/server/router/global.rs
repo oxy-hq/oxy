@@ -88,6 +88,13 @@ pub(super) fn build_global_routes(app_state: &AppState) -> RoleRouter {
             "/notifications/devices",
             post(notifications::handlers::register_device),
         )
+        // The key a browser needs before it can register one. Reads three env
+        // vars and no node-local disk, so it belongs on the fleet with its
+        // siblings.
+        .route_fleet(
+            "/notifications/vapid-public-key",
+            get(notifications::handlers::vapid_public_key),
+        )
         .route_fleet(
             "/notifications/{id}/read",
             post(notifications::handlers::mark_read),
