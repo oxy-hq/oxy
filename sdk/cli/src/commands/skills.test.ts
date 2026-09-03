@@ -150,7 +150,7 @@ describe("an installation that ships nothing", () => {
     const r = oxyc(home(), ["list"], emptySkills());
     expect(r.status).toBe(0);
     expect(r.stderr).toMatch(/ships no skills/);
-    expect(r.stderr).toMatch(/\n\n {2}fix: not on npm yet/);
+    expect(r.stderr).toMatch(/\n\n {2}fix: reinstall: `curl /);
   });
 
   /**
@@ -163,7 +163,7 @@ describe("an installation that ships nothing", () => {
     const r = oxyc(home(), ["install"], emptySkills());
     expect(r.status).toBe(ExitCode.FAILURE);
     expect(r.stderr).toMatch(/ships no skills/);
-    expect(r.stderr).toMatch(/\n\n {2}fix: not on npm yet/);
+    expect(r.stderr).toMatch(/\n\n {2}fix: reinstall: `curl /);
   });
 
   /**

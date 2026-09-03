@@ -30,6 +30,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { REINSTALL_REMEDY } from "../template/embedded.js";
 import { skillsDir } from "../template/locate.js";
 import * as log from "../ui/log.js";
 import { table } from "../ui/render.js";
@@ -104,7 +105,7 @@ export function runSkillsInstall(): void {
   if (names.length === 0) {
     throw new CliError("this installation ships no skills", {
       code: ExitCode.FAILURE,
-      remedy: "not on npm yet — clone the monorepo, then `pnpm --filter @oxy-hq/cli build`"
+      remedy: REINSTALL_REMEDY
     });
   }
 
@@ -146,7 +147,7 @@ export function runSkillsList(): void {
     // sees this and the thrown version has no reason to be told what to do in
     // only one of them.
     log.warn("this installation ships no skills");
-    log.remedy("not on npm yet — clone the monorepo, then `pnpm --filter @oxy-hq/cli build`");
+    log.remedy(REINSTALL_REMEDY);
     return;
   }
 

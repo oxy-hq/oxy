@@ -33,6 +33,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Compiles the standalone `oxyc` binaries (job build-oxyc).
+  BUN_VERSION: 1.4.0
   MACOSX_DEPLOYMENT_TARGET: "12.0"
 
 defaults:
@@ -327,13 +329,76 @@ jobs:
           repo_owner: ${{ github.repository_owner }}
 
   # ============================================================================
+  # Job 4b: Build oxyc (the TypeScript CLI)
+  # ============================================================================
+  build-oxyc:
+    name: Build ${{ needs.determine-build-type.outputs.channel }} oxyc
+    needs: [determine-build-type]
+    if: |
+      always() &&
+      needs.determine-build-type.result == 'success'
+    runs-on: ubuntu-latest
+    # One job, not a matrix: `bun build --compile` cross-compiles every target
+    # from a single host in seconds, so there is nothing to parallelise.
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
+            needs.determine-build-type.outputs.version || github.sha }}
+
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: "pnpm"
+
+      # Pinned via npm rather than a third-party action: bun is only needed to
+      # compile the release binaries, so it stays out of the lockfile and off
+      # every other job's critical path.
+      - name: Install Bun
+        run: npm install --global bun@${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline --filter "./sdk/cli..."
+
+      # Compiles `template/`, `skills/` and `json-schemas/` INTO each binary
+      # (scripts/embed-assets.mjs), which is what makes the curl install a
+      # single self-contained file.
+      - name: Build standalone binaries
+        run: pnpm --filter @oxy-hq/cli run build:binary
+
+      - name: Checksums
+        working-directory: sdk/cli/binaries
+        run: |
+          for f in oxyc-*; do
+            sha256sum "$f" | tee "SHA256SUM-$f.txt"
+          done
+
+      - name: Upload oxyc binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cli-oxyc
+          path: |
+            sdk/cli/binaries/oxyc-*
+            sdk/cli/binaries/SHA256SUM-oxyc-*.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  # ============================================================================
   # Job 5: Release CLI
   # ============================================================================
   release-cli:
     name: Release ${{ needs.determine-build-type.outputs.channel }} CLI
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [determine-build-type, build-cli-linux, build-cli-macos]
+    needs: [determine-build-type, build-cli-linux, build-cli-macos, build-oxyc]
     # Concurrency: Lock releases per channel and version/ref; queue (don't cancel)
     # so commits release in push order.
     concurrency:
@@ -345,7 +410,8 @@ jobs:
       always() &&
       needs.determine-build-type.result == 'success' &&
       needs.build-cli-linux.result == 'success' &&
-      needs.build-cli-macos.result == 'success'
+      needs.build-cli-macos.result == 'success' &&
+      needs.build-oxyc.result == 'success'
     steps:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         name: Create GitHub App Token
@@ -376,8 +442,9 @@ jobs:
 
       - name: Combine checksums and ensure executables
         run: |
-          cat artifacts/SHA256SUM-oxy-*.txt | tee artifacts/SHA256SUMS.txt
-          chmod +x artifacts/oxy-*
+          cat artifacts/SHA256SUM-oxy-*.txt artifacts/SHA256SUM-oxyc-*.txt \
+            | tee artifacts/SHA256SUMS.txt
+          chmod +x artifacts/oxy-* artifacts/oxyc-*
 
       - name: Get commit message
         id: commit-msg
@@ -409,6 +476,7 @@ jobs:
           body_path: /tmp/release-notes.md
           files: |
             artifacts/oxy-*
+            artifacts/oxyc-*
             artifacts/SHA256SUM-*.txt
             artifacts/SHA256SUMS.txt
             artifacts/*.json
@@ -429,6 +497,7 @@ jobs:
             needs.determine-build-type.outputs.version }})
           files: |
             artifacts/oxy-*
+            artifacts/oxyc-*
             artifacts/*.json
           fail_on_unmatched_files: false
           body: |

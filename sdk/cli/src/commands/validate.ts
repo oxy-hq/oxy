@@ -22,6 +22,7 @@ import { extname, join, parse, relative, resolve } from "node:path";
 import { Ajv, type ErrorObject } from "ajv";
 import addFormats from "ajv-formats";
 import { parse as parseYaml } from "yaml";
+import { REINSTALL_REMEDY } from "../template/embedded.js";
 import { schemasDir } from "../template/locate.js";
 import * as log from "../ui/log.js";
 import { heading, table } from "../ui/render.js";
@@ -444,7 +445,7 @@ function compileAll(): Map<string, ReturnType<Ajv["compile"]>> {
       code: ExitCode.FAILURE,
       remedy: inCheckout
         ? "run `pnpm build` in sdk/cli — the schemas are copied from the repo root by prebuild"
-        : "not on npm yet — clone the monorepo, then `pnpm --filter @oxy-hq/cli build`"
+        : REINSTALL_REMEDY
     });
   }
   return compiled;

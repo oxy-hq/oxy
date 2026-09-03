@@ -27,7 +27,7 @@
  * turn has to earn each line; the detail lives behind `routes` and `schema`.
  */
 
-import { dirname, resolve, sep } from "node:path";
+import { basename, dirname, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stdoutIsTty } from "../ui/tty.js";
 
@@ -46,6 +46,12 @@ import { stdoutIsTty } from "../ui/tty.js";
  * it just will not be the path the prose above it describes.
  */
 function selfInvocation(): string {
+  // A compiled single-file binary IS the executable: there is no `node` and no
+  // `dist/main.mjs`. Printing one would hand an agent a path that does not
+  // exist, which is the one thing this page cannot afford to do.
+  const runner = basename(process.execPath, extname(process.execPath));
+  if (runner !== "node" && runner !== "bun") return "oxyc";
+
   const self = fileURLToPath(import.meta.url);
   // From `dist/main.mjs` at runtime; from `src/commands/guide.ts` under vitest.
   const dist = self.includes(`${sep}dist${sep}`)
@@ -61,7 +67,7 @@ tooling that scopes work to one customer. Use it to get real data out of a
 deployment: query a customer's warehouse or semantic layer, read threads, runs
 and apps, or reproduce a reported bug against live data.
 
-    ${selfInvocation()} <command>   # not on npm yet
+    ${selfInvocation()} <command>
 
 If your runtime speaks MCP, \`oxyc mcp\` serves the same surface as four tools
 (\`oxy_routes\`, \`oxy_schema\`, \`oxy_request\`, \`oxy_whoami\`).

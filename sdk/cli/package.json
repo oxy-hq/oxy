@@ -23,14 +23,17 @@
     "directory": "sdk/cli"
   },
   "scripts": {
+    "codegen": "node scripts/sync-schemas.mjs && node scripts/embed-assets.mjs",
+    "prebuild": "pnpm run codegen",
     "build": "tsdown",
     "build:watch": "tsdown --watch",
+    "build:binary": "pnpm run build && node scripts/build-binaries.mjs",
     "lint": "biome check src",
-    "prebuild": "node scripts/sync-schemas.mjs",
     "prepublishOnly": "pnpm run build",
     "pretest": "pnpm run build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "pretypecheck": "pnpm run codegen",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [

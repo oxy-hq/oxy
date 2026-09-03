@@ -1,15 +1,24 @@
 /**
  * Finding the assets that ship inside this package — the customer workspace
- * template and the Claude skills.
+ * template, the Claude skills, and the JSON Schemas.
  *
- * The package is bundled to a single `dist/main.mjs`, so the assets sit one
- * level up from the running file. That is resolved from `import.meta.url`
- * rather than `process.cwd()`, because the whole point of `npx @oxy-hq/cli` is
- * being run from a directory that has nothing to do with the package.
+ * There are two shapes this tool is installed in, and they resolve differently:
  *
- * `OXYC_TEMPLATE_DIR` overrides, which is what lets a developer point at a
- * working copy of the template while iterating on it — and what the tests use
- * instead of building a package.
+ *   - **A package on disk** (npm install, or a source checkout). The assets sit
+ *     next to `package.json`, one level up from the running file. Resolved from
+ *     `import.meta.url` rather than `process.cwd()`, because the whole point of
+ *     `npx @oxy-hq/cli` is being run from a directory that has nothing to do
+ *     with the package.
+ *   - **A compiled single-file binary** (`bun build --compile`, what the curl
+ *     installer ships). There is no package and no `dist/` — just an executable.
+ *     The assets travel inside it, base64'd by `scripts/embed-assets.mjs`, and
+ *     are unpacked to a cache directory the first time one is asked for.
+ *
+ * Disk wins whenever it is available, so an npm install and a checkout behave
+ * exactly as they did before embedding existed; extraction is the fallback, not
+ * the default. `OXYC_TEMPLATE_DIR` / `OXYC_SCHEMAS_DIR` / `OXYC_SKILLS_DIR`
+ * override either, which is what lets a developer point at a working copy while
+ * iterating — and what the tests use instead of building a package.
  */
 
 import { existsSync } from "node:fs";
@@ -17,15 +26,43 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CliError, ExitCode } from "../util/errors.js";
+import { ASSET_DIRS, extractEmbeddedAssets, REINSTALL_REMEDY } from "./embedded.js";
 
-/** The package root: the directory holding `dist/`, `template/` and `skills/`. */
-function packageRoot(): string {
+/**
+ * The package root, when this is a real package on disk.
+ *
+ * Requires the asset directories to actually be present, not merely a
+ * `package.json` — a compiled binary resolves `import.meta.url` to a synthetic
+ * path whose parent may well contain some unrelated `package.json`, and
+ * answering with that would send every lookup somewhere arbitrary.
+ */
+function diskPackageRoot(): string | undefined {
   const here = dirname(fileURLToPath(import.meta.url));
   // Built: <pkg>/dist/main.mjs → <pkg>. Source (vitest): <pkg>/src/template → <pkg>.
   for (const candidate of [resolve(here, ".."), resolve(here, "..", "..")]) {
-    if (existsSync(join(candidate, "package.json"))) return candidate;
+    if (!existsSync(join(candidate, "package.json"))) continue;
+    if (ASSET_DIRS.some((dir) => !existsSync(join(candidate, dir)))) continue;
+    return candidate;
   }
-  return resolve(here, "..");
+  return undefined;
+}
+
+/**
+ * The directory holding `template/`, `skills/` and `json-schemas/` — either the
+ * installed package, or the cache the embedded copy was unpacked into.
+ *
+ * Memoised because extraction checks the filesystem, and a single `oxyc update`
+ * asks for the template several times.
+ */
+let cachedRoot: string | undefined;
+function packageRoot(): string {
+  if (cachedRoot === undefined) cachedRoot = diskPackageRoot() ?? extractEmbeddedAssets();
+  return cachedRoot;
+}
+
+/** Test seam: forget the resolved root, so an env-var change is picked up. */
+export function resetPackageRootForTests(): void {
+  cachedRoot = undefined;
 }
 
 /**
@@ -46,7 +83,7 @@ export function templateDir(): string {
   if (!existsSync(shipped)) {
     throw new CliError("the workspace template is missing from this installation", {
       code: ExitCode.FAILURE,
-      remedy: "not on npm yet — clone the monorepo, then `pnpm --filter @oxy-hq/cli build`"
+      remedy: REINSTALL_REMEDY
     });
   }
   return shipped;
@@ -77,9 +114,9 @@ export function skillsDir(): string {
 /**
  * Where the tooling repo is, when the template came from a working copy.
  *
- * Only used for the provenance stamp — with an npm install there is no git
- * tree to describe, which the stamp records honestly as `unknown` rather than
- * inventing a commit.
+ * Only used for the provenance stamp — with an npm install or a compiled binary
+ * there is no git tree to describe, which the stamp records honestly as
+ * `unknown` rather than inventing a commit.
  */
 export function templateRepoRoot(): string {
   return process.env.OXYC_TEMPLATE_DIR

@@ -6,13 +6,19 @@
 #   - @oxy-hq/vite-plugin     (sdk/vite-plugin)
 #   - @oxy-hq/create-oxy-app  (sdk/create-oxy-app)
 #
-# DELIBERATELY ABSENT: @oxy-hq/cli (sdk/cli), the `oxyc` CLI. It is built,
-# tested and tarball-checked by the `sdk` job in ci.yaml, but it is not
-# published yet. Adding it here is three edits — the `options` list, the
-# PACKAGES map, and the `all` array — and ONE prerequisite that is not in this
-# repo: Trusted Publishing has to be configured for the package on npmjs.com
-# first (see the block below). Adding it to `all` before that would fail the
-# next "publish all" run, so the order matters: configure npm, then wire it in.
+#   - @oxy-hq/cli             (sdk/cli) — the `oxyc` CLI
+#
+# @oxy-hq/cli SHIPS FOUR DIRECTORIES, not just `dist`: `json-schemas`, `skills`
+# and `template` are resolved at runtime relative to its own package.json, so
+# `oxyc validate`, `oxyc skills` and `oxyc new` are broken by a tarball missing
+# any of them. `package.json` `files` lists all four and
+# `scripts/ci/verify-cli-package.mjs` checks the packed tarball on every PR —
+# npm also strips a file literally named `.gitignore`, which is why the
+# workspace template ships its ignore file as `_gitignore`.
+#
+# ITS PREREQUISITE, if the first publish 403s: Trusted Publishing must be
+# configured for `@oxy-hq/cli` on npmjs.com, the same as the other three. It is
+# a web-UI step in the package settings and cannot be done from this repo.
 #
 # ------------------------------------------------------------------------------
 # RELEASE MODEL — publish-only (main is PR-protected)
@@ -58,6 +64,7 @@ on:
           - "@oxy-hq/sdk"
           - "@oxy-hq/vite-plugin"
           - "@oxy-hq/create-oxy-app"
+          - "@oxy-hq/cli"
 
 permissions:
   # id-token: write — mint the OIDC token npm exchanges for short-lived publish
@@ -127,10 +134,11 @@ jobs:
             ["@oxy-hq/sdk"]="sdk/typescript"
             ["@oxy-hq/vite-plugin"]="sdk/vite-plugin"
             ["@oxy-hq/create-oxy-app"]="sdk/create-oxy-app"
+            ["@oxy-hq/cli"]="sdk/cli"
           )
 
           if [[ "${INPUT_PACKAGE}" == "all" ]]; then
-            SELECTED=("@oxy-hq/sdk" "@oxy-hq/vite-plugin" "@oxy-hq/create-oxy-app")
+            SELECTED=("@oxy-hq/sdk" "@oxy-hq/vite-plugin" "@oxy-hq/create-oxy-app" "@oxy-hq/cli")
           else
             SELECTED=("${INPUT_PACKAGE}")
           fi
