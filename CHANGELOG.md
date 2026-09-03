@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.136] - 2026-09-03
+
+### 🐛 Bug Fixes
+
+- Refuse `skills install` from a throwaway package cache, and smoke-test the compiled binary (#3082)
+
 ## [0.5.135] - 2026-09-03
 
 ### 🚀 Features
@@ -49,6 +55,10 @@ All notable changes to this project will be documented in this file.
 ### 🧪 Testing
 
 - Assert the assignment graph's cross-tenant gates (#3067)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.135 (#3065)
 
 ## [0.5.134] - 2026-09-02
 
