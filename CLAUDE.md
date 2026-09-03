@@ -54,6 +54,10 @@ crates/
   infrastructure/semantic/  # (oxy-airlayer-compat) airlayer compatibility shim
   integration/{looker,unifi,omni}
 web-app/                    # Frontend (see web-app/CLAUDE.md)
+sdk/cli/                    # (@oxy-hq/cli) the `oxyc` CLI — the gh-api-style client for
+                            #   the HTTP API, plus the customer-account tooling. TypeScript,
+                            #   NOT Rust: it replaced `oxy api`, which was deleted from
+                            #   crates/app. See internal-docs/oxy-api-cli.md
 ```
 
 Many crates carry their own `CLAUDE.md` — all `agentic/*`, `authz`, `cameras`,

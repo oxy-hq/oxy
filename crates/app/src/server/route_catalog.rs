@@ -3,12 +3,12 @@
 //! Axum keeps no route table at runtime — the router is a tower service, not a
 //! list — so the catalog is extracted from the router source at build time by
 //! `crates/app/build_route_catalog.rs` and included here. That is what lets
-//! `oxy api --help` / `oxy api --routes` enumerate the API without a server
-//! running and without a hand-maintained list that rots.
+//! `GET /api/_catalog` — and so `oxyc routes` — enumerate the API without a
+//! hand-maintained list that rots.
 //!
 //! # Scope
 //!
-//! **The `/api` and `/external/api` surfaces**, which is what `oxy api` can
+//! **The `/api` and `/external/api` surfaces**, which is what `oxyc api` can
 //! call. `paths_are_well_formed` enforces the boundary, so these are excluded
 //! by construction, not by accident:
 //!
@@ -26,7 +26,7 @@
 //! The tests below are the completeness gate: they fail if the walk stops
 //! reaching a surface or a landmark route, so a router refactor the lexical
 //! walker can no longer follow shows up in CI rather than as a quietly
-//! shrinking `oxy api --help`.
+//! shrinking `oxyc routes`.
 
 use serde::Serialize;
 
@@ -54,7 +54,7 @@ pub struct GeneratedRoute {
     ///
     /// Both `description` and `note` are harvested at build time from the
     /// engineers' own comments, so they are a hint, never a contract. The
-    /// schemas live in the OpenAPI document (`oxy api --openapi`).
+    /// schemas live in the OpenAPI document (`oxyc openapi`).
     pub note: &'static str,
 }
 
@@ -66,17 +66,12 @@ pub fn routes() -> &'static [GeneratedRoute] {
     GENERATED_ROUTES
 }
 
-/// The pre-rendered listing `oxy api --help` appends to its help text.
-pub fn listing() -> &'static str {
-    GENERATED_ROUTE_LISTING
-}
-
 /// Surfaces in display order: `(id, label, the credential it expects)`.
 pub fn surfaces() -> &'static [(&'static str, &'static str, &'static str)] {
     GENERATED_SURFACES
 }
 
-/// A route rendered for machine consumption (`oxy api --routes --json`).
+/// A route rendered for machine consumption (`oxyc routes --json`).
 #[derive(Serialize)]
 pub struct RouteDescription {
     pub method: &'static str,
@@ -107,19 +102,30 @@ fn path_parameters(path: &'static str) -> Vec<&'static str> {
         .collect()
 }
 
-/// Routes whose method or path contains `needle` (case-insensitive), or every
-/// route when `needle` is `None`.
+/// The fields [`search`] matches a needle against.
+///
+/// Named once so the doc on `/api/_catalog`'s `?filter=`, the client's own
+/// local filter, and the test that checks them all read the same list. They
+/// had drifted: this matched three fields, the endpoint's doc claimed four,
+/// and the TypeScript client matched four — so `?filter=pre-aggregation`
+/// returned nothing while `oxyc routes pre-aggregation`, which fetches
+/// everything and narrows locally, returned the matching routes. Two answers
+/// to one question, from one tool.
+pub fn searchable_fields(route: &GeneratedRoute) -> [&'static str; 4] {
+    [route.method, route.path, route.surface, route.description]
+}
+
+/// Routes whose method, path, surface or description contains `needle`
+/// (case-insensitive), or every route when `needle` is `None`.
 pub fn search(needle: Option<&str>) -> Vec<&'static GeneratedRoute> {
     let needle = needle.map(str::to_lowercase);
     routes()
         .iter()
         .filter(|r| match &needle {
             None => true,
-            Some(n) => {
-                r.path.to_lowercase().contains(n)
-                    || r.method.to_lowercase().contains(n)
-                    || r.surface.to_lowercase().contains(n.as_str())
-            }
+            Some(n) => searchable_fields(r)
+                .iter()
+                .any(|field| field.to_lowercase().contains(n.as_str())),
         })
         .collect()
 }
@@ -225,7 +231,7 @@ mod tests {
         // which collides with `airhouse`'s and `cameras`'s. The walker has no
         // way to say "the one in crates/oltp", so the tree indexes and
         // contributes nothing, which trips `every_scanned_tree_contributes_routes`
-        // instead. Listed here rather than half-wired: `oxy api --routes` does
+        // instead. Listed here rather than half-wired: `oxyc routes` does
         // not show `/api/oltp/*`, and saying so is better than a seed that
         // silently points at the wrong crate.
         "crates/oltp/src/api/mod.rs",
@@ -237,7 +243,7 @@ mod tests {
     ];
 
     /// The floor exists so a router refactor the lexical walker can no longer
-    /// follow fails here instead of quietly emptying `oxy api --help`.
+    /// follow fails here instead of quietly emptying `oxyc routes`.
     #[test]
     fn catalog_covers_the_whole_surface() {
         assert!(
@@ -289,7 +295,7 @@ mod tests {
         assert!(
             unscanned.is_empty(),
             "these files mount routes but sit outside every scanned tree, so \
-             `oxy api --routes` will not list them: {unscanned:#?}\n\
+             `oxyc routes` will not list them: {unscanned:#?}\n\
              Add the tree to SOURCE_DIRS in crates/app/build_route_catalog.rs, \
              or add the file to UNSCANNED_ROUTE_FILES with the reason."
         );
@@ -484,10 +490,25 @@ mod tests {
     }
 
     #[test]
-    fn search_filters_by_path_fragment() {
+    fn search_filters_by_any_searchable_field() {
         let hits = search(Some("threads"));
         assert!(!hits.is_empty());
-        assert!(hits.iter().all(|r| r.path.contains("threads")));
+        // ASSERTED THROUGH `searchable_fields`, not against `path`. This test
+        // used to require every hit's PATH to contain the needle, which was
+        // true only while the filter read three fields. Now that it reads
+        // `description` too, a hit whose doc comment says "threads" is correct
+        // behaviour — and the old assertion would have called it a defect the
+        // first time a handler doc moved.
+        for hit in &hits {
+            assert!(
+                searchable_fields(hit)
+                    .iter()
+                    .any(|f| f.to_lowercase().contains("threads")),
+                "{} {} was returned but contains the needle in no searchable field",
+                hit.method,
+                hit.path
+            );
+        }
         assert_eq!(search(None).len(), routes().len());
     }
 
@@ -515,15 +536,24 @@ mod tests {
         assert_eq!(describe(threads).role, "fleet-ok");
     }
 
+    /// Every surface the catalog advertises has at least one route on it.
+    ///
+    /// A surface with no routes is worse than a missing one: `oxyc routes`
+    /// renders its heading and credential line, so the reader is told the
+    /// surface exists and shown nothing under it.
     #[test]
-    fn listing_renders_every_surface() {
-        for (_, label, _) in surfaces() {
+    fn every_advertised_surface_has_routes() {
+        for (surface, label, _) in surfaces() {
             assert!(
-                listing().contains(*label),
-                "the --help listing is missing the {label:?} section"
+                routes().iter().any(|r| r.surface == *surface),
+                "the {label:?} surface is advertised but has no routes"
             );
         }
-        assert!(listing().contains("/api/health"));
-        assert!(listing().contains("/external/api/"));
+        assert!(routes().iter().any(|r| r.path == "/api/health"));
+        assert!(
+            routes()
+                .iter()
+                .any(|r| r.path.starts_with("/external/api/"))
+        );
     }
 }

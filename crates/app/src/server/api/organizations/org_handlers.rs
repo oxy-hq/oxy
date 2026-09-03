@@ -127,6 +127,21 @@ pub async fn create_org(
 }
 
 /// GET /orgs
+/// Every organization the caller can reach.
+///
+/// The first call in most sessions: it turns "the customer" into the org UUID
+/// every other endpoint wants. Includes orgs reached through a live
+/// assume-role session, not only direct memberships.
+#[utoipa::path(
+    method(get),
+    path = "/orgs",
+    responses(
+        (status = OK, description = "Organizations the caller is a member of, or is acting as", body = Vec<OrgResponse>, content_type = "application/json")
+    ),
+    security(
+        ("BearerAuth" = [])
+    )
+)]
 pub async fn list_orgs(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<OrgResponse>>, StatusCode> {

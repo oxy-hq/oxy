@@ -17,7 +17,14 @@ pub enum ResultFormat {
     Json,
 }
 
+/// NAMED EXPLICITLY, because `projects::semantic_query` defines a DIFFERENT
+/// type with the same Rust ident. utoipa derives a component name from the
+/// ident alone, so without `as = ...` the two collapse into one
+/// `SemanticQueryResponse` schema and whichever registers last wins — handing
+/// a caller of `oxyc schema` the wrong body shape for the other endpoint, with
+/// nothing anywhere saying so.
 #[derive(Serialize, ToSchema)]
+#[schema(as = SqlQueryResponse)]
 #[serde(untagged)]
 pub enum SemanticQueryResponse {
     Json(Vec<Vec<String>>),
@@ -410,6 +417,35 @@ pub async fn execute_sql(
         .map_err(|e| agentic_error_response(&payload, e))
 }
 
+/// Run SQL against one of the workspace's configured databases.
+///
+/// The workhorse of the API for anything data-shaped. `database` names a
+/// connection from the workspace's `config.yml`; `GET /{workspace_id}/databases`
+/// lists them. Mounted on BOTH the user-token surface
+/// (`/api/{workspace_id}/sql/query`) and the API-key surface
+/// (`/external/api/{workspace_id}/sql/query`) — same handler, same body.
+///
+/// **The response shape depends on `result_format`, and the default is not an
+/// object.** With `json` (the default) the body is an array of arrays of
+/// strings, **header row first**: `[["id","name"],["1","ada"]]`. With `parquet`
+/// it is an object naming a file, and only that variant carries `truncated`.
+/// The two are an untagged enum, so a client must not assume a field is there.
+#[utoipa::path(
+    method(post),
+    path = "/{workspace_id}/sql/query",
+    params(
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
+    ),
+    request_body = SQLParams,
+    responses(
+        (status = OK, description = "`json` (default): rows as arrays of strings, header row first. `parquet`: an object naming the written file.", body = SemanticQueryResponse, content_type = "application/json"),
+        (status = BAD_REQUEST, description = "The query failed; `message` always set, vendor fields when the driver exposes them", body = SqlErrorResponse, content_type = "application/json")
+    ),
+    security(
+        ("ApiKey" = []),
+        ("BearerAuth" = [])
+    )
+)]
 pub async fn execute_sql_query(
     workspace: WorkspaceManagerReadOnly,
     user: AuthenticatedUserExtractor,

@@ -6,6 +6,14 @@
 #   - @oxy-hq/vite-plugin     (sdk/vite-plugin)
 #   - @oxy-hq/create-oxy-app  (sdk/create-oxy-app)
 #
+# DELIBERATELY ABSENT: @oxy-hq/cli (sdk/cli), the `oxyc` CLI. It is built,
+# tested and tarball-checked by the `sdk` job in ci.yaml, but it is not
+# published yet. Adding it here is three edits — the `options` list, the
+# PACKAGES map, and the `all` array — and ONE prerequisite that is not in this
+# repo: Trusted Publishing has to be configured for the package on npmjs.com
+# first (see the block below). Adding it to `all` before that would fail the
+# next "publish all" run, so the order matters: configure npm, then wire it in.
+#
 # ------------------------------------------------------------------------------
 # RELEASE MODEL — publish-only (main is PR-protected)
 # ------------------------------------------------------------------------------

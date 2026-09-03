@@ -7,6 +7,8 @@ on:
         value: ${{ jobs.changesets.outputs.oxy }}
       web-app:
         value: ${{ jobs.changesets.outputs.web-app }}
+      sdk:
+        value: ${{ jobs.changesets.outputs.sdk }}
       docker:
         value: ${{ jobs.changesets.outputs.docker }}
       changes:
@@ -31,6 +33,7 @@ jobs:
       changes: ${{ steps.changes.outputs.changes }}
       oxy: ${{ steps.changes.outputs.oxy }}
       web-app: ${{ steps.changes.outputs.web-app }}
+      sdk: ${{ steps.changes.outputs.sdk }}
       docker: ${{ steps.changes.outputs.docker }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -42,16 +45,59 @@ jobs:
               - "crates/**"
               - "**/Cargo.toml"
               - "**/Cargo.lock"
-            # Named for web-app, but it gates every JS job, so it has to mean
-            # the whole pnpm workspace. It did not: `sdk/**` was outside it, so
-            # a change to the published SDK, the Vite plugin, or the
-            # create-oxy-app templates ran no build, no typecheck, no lint and
-            # no unit tests. That is how the templates drifted three majors
-            # behind what web-app ships without anything going red.
+            # web-app and the roots it shares with everything else in the pnpm
+            # workspace.
+            #
+            # `sdk/**` USED to be listed here, because for a while this filter
+            # gated every JS job and an sdk change ran no CI at all — that is
+            # how the create-oxy-app templates drifted three majors behind what
+            # web-app ships without anything going red. The `sdk` filter below
+            # covers that properly now, so keeping `sdk/**` here would only
+            # mean an sdk-only PR still waiting on Format web, Build web,
+            # Web unit tests and Scaffold templates for nothing.
+            #
+            # ONE JOB STILL NEEDS BOTH: `templates` (ci.yaml) really does build
+            # @oxy-hq/sdk, vite-plugin and create-oxy-app, so it is gated on
+            # `web-app == true || sdk == true`. Removing `sdk/**` from here
+            # without that second edit would have stopped gating it on an sdk
+            # change — the exact regression this note exists to prevent.
             web-app:
               - "web-app/**"
-              - "sdk/**"
               - "scripts/ci/verify-templates.mjs"
+              - "pnpm-lock.yaml"
+              - "pnpm-workspace.yaml"
+              - "package.json"
+              - "turbo.json"
+              - "biome.json"
+            # The pnpm packages under sdk/, gated on their own so an
+            # sdk-only change does not drag the whole web-app pipeline in and,
+            # more importantly, so the reverse cannot happen either: the sdk
+            # job below is BLOCKING, and hanging it off `web-app` would have
+            # meant a web-app-only PR waiting on it for nothing.
+            #
+            # The shared roots are listed because they really do change these
+            # packages: a lockfile bump moves their dependency tree, biome.json
+            # decides whether their source lints, and turbo.json/package.json
+            # decide how they build.
+            sdk:
+              - "sdk/**"
+              # The job's own gate and the file it derives from. Without these,
+              # a change to `verify-sdk-scripts.mjs` — or to the `ci.yaml` steps
+              # it reads its requirements out of — does not run the job it is
+              # about.
+              #
+              # BY NAME, not `scripts/ci/**`: that glob also matches
+              # `verify-templates.mjs`, which is the `web-app` filter's entry
+              # above and has nothing to do with this job — a templates-only
+              # change would run a blocking job for nothing. Naming them is
+              # what `web-app` already does one filter up.
+              - "scripts/ci/verify-sdk-scripts.mjs"
+              - "scripts/ci/verify-cli-package.mjs"
+              # `ci.yaml` is listed HERE and not on `web-app`, though both jobs
+              # live in it, because this one DERIVES from it: the gate reads
+              # which scripts the steps run. "its steps are in the file" would
+              # apply to every job and gate nothing.
+              - ".github/workflows/ci.yaml"
               - "pnpm-lock.yaml"
               - "pnpm-workspace.yaml"
               - "package.json"

@@ -1,0 +1,32 @@
+# Custom app bundles live under `apps/`. Both globs are carried from the
+# customer-apps monorepo's working workspace file, and both earn their place:
+#
+#   apps/*      one app per directory — what a single-customer repo uses
+#   apps/*/*    an org-nested layout — kept so a bundle lifted out of the
+#               shared monorepo, where apps sit at apps/<org>/<app>/, works
+#               here unchanged
+#
+# The URL an app is served at comes from its own oxy-app.json slug, not from
+# its folder depth, so either layout is valid.
+packages:
+  - "apps/*"
+  - "apps/*/*"
+
+# pnpm 10 does not run a dependency's install/postinstall script unless the
+# package is named here. These three are what the real app bundles need
+# (esbuild and unrs-resolver fetch a platform binary, sharp builds one), so
+# without this block the first app added here fails to build. Add to the list
+# rather than replacing it.
+#
+# The key is `onlyBuiltDependencies`, NOT the `allowBuilds` that customer-apps
+# carries. Verified against pnpm 10.8.0: a wrong-typed `onlyBuiltDependencies`
+# crashes inside `createAllowBuildFunction`, proving pnpm reads it, while a
+# wrong-typed `allowBuilds` installs cleanly — pnpm never looks at that key at
+# all, with no warning. customer-apps' block is therefore inert; ours is not.
+#
+# pnpm 9 ignores this file's settings entirely (same probe, pnpm 9.15.9:
+# no crash), which is why package.json floors pnpm at >=10 rather than >=9.
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - unrs-resolver

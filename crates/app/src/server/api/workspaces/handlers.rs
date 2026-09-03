@@ -939,6 +939,24 @@ pub async fn get_workspace_status(
 
 /// GET /orgs/{org_id}/workspaces — list workspaces in the given org.
 /// Membership is enforced by org_middleware; this handler just scopes the query.
+/// The workspaces in one organization.
+///
+/// The second step of turning a customer into ids: `{workspace_id}` is the
+/// path parameter almost every other endpoint takes. Membership is enforced by
+/// `org_middleware`, so this only ever returns workspaces the caller can reach.
+#[utoipa::path(
+    method(get),
+    path = "/orgs/{org_id}/workspaces",
+    params(
+        ("org_id" = Uuid, Path, description = "Organization UUID")
+    ),
+    responses(
+        (status = OK, description = "Workspaces in the organization", body = Vec<WorkspaceSummary>, content_type = "application/json")
+    ),
+    security(
+        ("BearerAuth" = [])
+    )
+)]
 pub async fn list_workspaces(
     crate::server::api::middlewares::org_context::OrgContextExtractor(ctx): crate::server::api::middlewares::org_context::OrgContextExtractor,
     State(_app_state): State<AppState>,

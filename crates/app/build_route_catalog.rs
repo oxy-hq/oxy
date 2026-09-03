@@ -2,7 +2,7 @@
 //!
 //! Axum exposes no route table at runtime (see the note on
 //! `every_workspace_mount_is_classified` in `server/role_manifest.rs`), so the
-//! only way to hand `oxy api --help` a *complete* and *never-stale* list of
+//! only way to hand `oxyc routes` a *complete* and *never-stale* list of
 //! endpoints is to read it out of the router source at compile time.
 //!
 //! This walks the router builders the same way axum composes them — following
@@ -133,6 +133,18 @@ const SEEDS: &[Seed] = &[
         module: "public",
         function: "build_public_routes",
     },
+    // Route discovery itself. Its own seed because `build_protected_routes`
+    // (where it is merged) is deliberately NOT one — that function composes the
+    // global and workspace trees, which are seeded separately, so seeding it
+    // too would double-count every route beneath it. Without this entry the
+    // one endpoint missing from the endpoint list would be the endpoint that
+    // serves the list.
+    Seed {
+        surface: "org",
+        prefix: "/api",
+        module: "protected",
+        function: "build_catalog_routes",
+    },
     Seed {
         surface: "org",
         prefix: "/api",
@@ -202,7 +214,7 @@ const SEEDS: &[Seed] = &[
 /// and this watch reverses it for anyone working inside them — each of the
 /// three now carries a comment above its `description` saying so and pointing
 /// back here. It is the price of listing their routes at all: not watching them
-/// means `oxy api --routes` omits or stale-lists those surfaces, the exact
+/// means `oxyc routes` omits or stale-lists those surfaces, the exact
 /// failure this catalog exists to prevent. A real cost, though, not a free one.
 /// The durable fix is to generate the catalog from `oxy-server`, which already
 /// depends on every surface crate and is thin; see internal-docs/oxy-api-cli.md.
@@ -213,6 +225,7 @@ const DOC_DIRS: &[&str] = &[
     "crates/agentic/http/src",
     "crates/cameras/src",
     "crates/airhouse/src",
+    "crates/oltp/src",
     "crates/api-github/src",
     "crates/api-partner-console/src",
     "crates/api-onboarding/src",
@@ -243,8 +256,10 @@ pub const SOURCE_DIRS: &[&str] = &[
     "crates/api-onboarding/src",
     // Mounts `/oltp/me/connection` and `/oltp/me/erd`, merged into the served
     // app as `oxy_oltp::api::router` — `role_manifest.rs` asserts that merge.
-    // Missing here since #2851, so both routes were live and absent from
-    // `oxy api --routes`, which is exactly what this list exists to prevent.
+    // Missing here since #2851, so both routes were live and absent from the
+    // catalog, which is exactly what this list exists to prevent. Free to
+    // watch: `oxy-app` already depends on `oxy-oltp`, so it costs no rebuild
+    // the way the sibling API crates do.
     "crates/oltp/src/api",
 ];
 
@@ -300,7 +315,7 @@ pub fn collect(repo_root: &Path) -> Vec<Route> {
     // where this script looked — in practice, a workspace root that resolved
     // wrong (a vendored build, a path dependency from another workspace). Say
     // so once and emit an empty catalog rather than letting every seed warn:
-    // seven lines do not diagnose it better than one, and `oxy api --help`
+    // seven lines do not diagnose it better than one, and `oxyc routes`
     // printing `ROUTES — 0 endpoints` behind a clean build log is exactly the
     // silently-wrong listing this whole design exists to prevent.
     //
@@ -316,7 +331,7 @@ pub fn collect(repo_root: &Path) -> Vec<Route> {
     if index.is_empty() {
         println!(
             "cargo:warning=route catalog: no router builders found under {} — \
-             emitting an empty catalog, so `oxy api --routes` will list nothing. \
+             emitting an empty catalog, so `oxyc routes` will list nothing. \
              Check that the workspace root resolved correctly.",
             repo_root.display()
         );
@@ -336,7 +351,7 @@ pub fn collect(repo_root: &Path) -> Vec<Route> {
             // build of the whole crate over a help listing is worse than
             // shipping a catalog the completeness test will reject.
             println!(
-                "cargo:warning=route catalog: seed {}::{} not found — `oxy api --routes` will be incomplete",
+                "cargo:warning=route catalog: seed {}::{} not found — `oxyc routes` will be incomplete",
                 seed.module, seed.function
             );
             continue;
@@ -1751,27 +1766,9 @@ fn quoted_end(bytes: &[u8], i: usize) -> usize {
     bytes.len()
 }
 
-/// One line per endpoint, grouped by surface — rendered here so `oxy api
-/// --help` can hand clap a `&'static str` instead of formatting 600+ routes on
-/// every CLI invocation.
-pub fn render_listing(routes: &[Route]) -> String {
-    let mut out = String::new();
-    for (surface, label, credential) in SURFACES {
-        let group: Vec<&Route> = routes.iter().filter(|r| r.surface == *surface).collect();
-        if group.is_empty() {
-            continue;
-        }
-        out.push_str(&format!("\n{label} — {credential}\n"));
-        for r in group {
-            out.push_str(&format!("  {:<7} {}\n", r.method, r.path));
-        }
-    }
-    out
-}
-
 /// Display order for the surfaces a route can sit on, with the credential each
 /// one expects. Every `surface` used in [`SEEDS`] must appear here; the
-/// generated table is what `oxy api` renders, so this is the single source.
+/// generated table is what `oxyc api` renders, so this is the single source.
 pub const SURFACES: &[(&str, &str, &str)] = &[
     (
         "public",

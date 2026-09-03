@@ -3,6 +3,7 @@ packages:
   - sdk/typescript
   - sdk/vite-plugin
   - sdk/create-oxy-app
+  - sdk/cli
 overrides:
   # tsdown@0.22.4 pins rolldown-plugin-dts ^0.27.1, but 0.27.1 crashes on
   # TypeScript 7's native compiler API (reads useCaseSensitiveFileNames off

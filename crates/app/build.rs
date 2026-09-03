@@ -52,7 +52,7 @@ fn main() {
     println!("cargo:rustc-env=GITHUB_REPOSITORY={}", github_repository);
     println!("cargo:rustc-env=GITHUB_RUN_ID={}", github_run_id);
 
-    // `oxy api --routes` / `--help` list the whole HTTP surface. Axum has no
+    // `oxyc routes` / `--help` list the whole HTTP surface. Axum has no
     // runtime route table, so the catalog is read out of the router source
     // here; `server::route_catalog` includes the result.
     emit_route_catalog();
@@ -86,10 +86,6 @@ fn emit_route_catalog() {
         ));
     }
     out.push_str("];\n\n");
-    out.push_str(&format!(
-        "/// Pre-rendered route listing shown by `oxy api --help`.\npub static GENERATED_ROUTE_LISTING: &str = {:?};\n\n",
-        route_catalog::render_listing(&routes)
-    ));
     out.push_str("/// (surface id, display label, the credential it expects).\npub static GENERATED_SURFACES: &[(&str, &str, &str)] = &[\n");
     for (surface, label, credential) in route_catalog::SURFACES {
         out.push_str(&format!("    ({surface:?}, {label:?}, {credential:?}),\n"));

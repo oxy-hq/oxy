@@ -16,14 +16,7 @@
 // this job fail for a release-ordering reason rather than a template defect.
 // The range-vs-repo check below covers that axis statically instead.
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-  rmSync
-} from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -197,9 +190,7 @@ for (const template of templates()) {
     }
     const ok = caretSatisfies(range, localVersions[name]);
     if (ok === null) {
-      failures.push(
-        `${template}: ${name}${range} is not a caret range — extend caretSatisfies().`
-      );
+      failures.push(`${template}: ${name}${range} is not a caret range — extend caretSatisfies().`);
       continue;
     }
     log(`   ${ok ? "ok  " : "FAIL"} ${template}: ${name}${range} vs ${localVersions[name]}`);

@@ -1,0 +1,653 @@
+# Build and publish __NAME__'s custom apps with `oxy publish`.
+#
+# On day one this repo has no apps, and this workflow is a deliberate no-op:
+# discovery finds nothing, every later step is skipped, the publish JOB is
+# skipped with it, and the run is GREEN. That matters more than it sounds. The
+# scaffold ships no `pnpm-lock.yaml` either — there is nothing yet to lock —
+# so an ungated `pnpm install --frozen-lockfile` would fail on the very first
+# push, and a template whose CI is red on day one teaches the team to stop
+# reading CI. The no-op therefore has to skip the INSTALL as well as the
+# publish, not just the publish.
+#
+# PUBLISHING FROM CI IS OPT-IN, AND OFF IS THE DEFAULT. With no repository
+# variable `OXY_CI_PUBLISH`, the `build` job still runs — it installs and
+# compiles every bundle, needs no credential to do it, and so still catches a
+# bundle that stopped building before anyone ships it by hand — and the publish
+# JOB is skipped, green, with a notice naming the self-serve command
+# (`oxy login --env <env>`, then `oxy publish --env <env>`). That is how the
+# rest of this org already ships: `customer-apps`, Oxy's own monorepo of custom
+# apps, deleted its publish CI and its engineers publish from their laptops. A
+# scaffolded repo should behave like that on day one rather than arriving with a
+# long-lived credential requirement nobody asked for.
+#
+# The switch is EXPLICIT rather than inferred from the token, and that is the
+# design rather than a preference. Skipping whenever no OXY_TOKEN reached the
+# job would be one line, and it would make "this repo does not publish from CI"
+# indistinguishable from "somebody forgot production's token" — the second of
+# which would then ship nothing, quietly, for as long as nobody looked. With the
+# switch ON a missing token is the loud failure it has always been, which is the
+# property the separate states exist to keep. The reasoning, and why it is a
+# variable and not a secret, is in `.github/scripts/ci-publish.sh`.
+#
+# Deliberately NOT modelled on pokehouse-oxy's `franchise-report-app.yml`
+# (Docker -> ECR -> ArgoCD). That is the only real, green CI on disk in this
+# org, which is exactly what makes it tempting; it is a legacy path for the
+# one app still on Next.js and has nothing to do with `oxy publish`.
+#
+# Auth is a static `OXY_TOKEN` secret, not GitHub OIDC trusted publishing.
+# Both appear in this org's examples and a workflow that MIXES them 403s.
+# OIDC also needs a one-time publisher-registration POST that nothing
+# automates — a manual onboarding step this scaffold exists to remove.
+#
+# TWO JOBS, and the split is the security boundary, not a style choice.
+# `build` runs the bundles' own postinstall and build scripts — arbitrary
+# third-party code out of node_modules — and holds no publish credential.
+# `publish` holds `OXY_TOKEN`, downloads what `build` produced, and runs no
+# package script at all: `oxy publish --dir` is documented as "skip the build
+# and publish this pre-built directory as-is", so the credential and the
+# untrusted code are never in the same job, on the same runner, at the same
+# time.
+#
+# TWO ENVIRONMENTS, and `--env` is passed EXPLICITLY on every publish. This is
+# not tidiness either: `oxy publish` defaults `--env` to **production**, so the
+# earlier version of this workflow — which passed no `--env` at all — published
+# every push to main straight at the customer's live environment. Only ever as
+# a draft, so nothing went live, but into the wrong environment, and dev/prod
+# separation was impossible while that was true. The fix is not a better
+# default; it is that no invocation here relies on a default. A push resolves
+# to `dev`, a manual dispatch to `production`, and a trigger with no mapping
+# fails rather than falling through to the more dangerous of the two.
+#
+# The same resolved name does two jobs: it is the `--env` passed to the CLI AND
+# the GitHub `environment:` the publish job runs in, which is where that env's
+# own `OXY_TOKEN` lives. So the credential and the destination cannot disagree
+# — a production publish can only ever be made with production's token. It is
+# resolved ONCE, by `.github/scripts/publish-env.sh` in the `build` job, and
+# read twice; a job's `environment:` can read `needs`, so that is the only
+# place a single value can reach both consumers.
+#
+# Required reviewers are then a repo SETTING rather than something this
+# workflow implements: Settings -> Environments -> `production` -> Required
+# reviewers puts a human in front of every live publish, and none in front of
+# the dev drafts a merge produces.
+#
+# What this does and does not do, in prose: "Publishing custom apps" in
+# README.md.
+
+name: publish
+
+on:
+  push:
+    branches: [main]
+    # Without this filter every README edit would download a ~657 MB CLI to
+    # publish nothing. `workflow_dispatch` has no path filter, so the no-op
+    # path is still reachable by hand on a repo with no apps.
+    paths:
+      - "apps/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".github/workflows/publish.yaml"
+      - ".github/scripts/discover-apps.sh"
+      - ".github/scripts/publish-env.sh"
+      - ".github/scripts/ci-publish.sh"
+  workflow_dispatch:
+    # There is deliberately NO `env` input here. It was the obvious third knob
+    # and it is the wrong one, for three reasons that compound:
+    #
+    #   1. An input needs a default, and a defaulted environment is precisely
+    #      the failure this change exists to remove. Deriving it from the
+    #      trigger leaves nothing to default.
+    #   2. The `--env` and the GitHub `environment:` must agree, and the
+    #      environment is resolved before the job starts. Making both follow an
+    #      input turns "the token matches the destination" from a property of
+    #      the file into a property of whatever an operator typed — and no test
+    #      on disk can check the latter.
+    #   3. This form already has two controls that mislead: `promote` REBUILDS
+    #      rather than promoting, and `ref` is decoupled from GitHub's own "Use
+    #      workflow from" dropdown. A third, whose wrong value ships to the
+    #      wrong customer environment, is not worth what it buys.
+    #
+    # To publish a dev draft by hand, re-run the push-triggered run from the
+    # Actions tab: a re-run keeps the original event, so it still resolves to
+    # `dev`.
+    inputs:
+      ref:
+        # Explicit, and required, because of what Promote below actually
+        # does. There is no promote-an-existing-build command in this CLI —
+        # `oxy apps` offers show/create/list/delete and nothing else — so
+        # "promote" can only mean "build this ref again and publish it live".
+        # Leaving the ref implicit would let an operator who reviewed a draft
+        # yesterday ship whatever landed on main since, believing they were
+        # promoting the thing they read.
+        description: "Branch, tag or commit SHA to build and publish"
+        required: true
+        default: main
+      promote:
+        description: "Publish to the LIVE channel. REBUILDS the ref above — this does not promote an existing draft."
+        type: boolean
+        default: false
+
+# Nothing in this workflow writes to the repository, so nothing here needs a
+# writable GITHUB_TOKEN. Stated explicitly because the DEFAULT is whatever the
+# repo or org is set to, which for many repos is read/write on every scope —
+# and that token would otherwise be live inside the job that runs a bundle's
+# postinstall scripts. Workflow-level, so it applies to both jobs.
+permissions:
+  contents: read
+
+env:
+  # The same pin as validate.yaml, and it must stay the same: two pins in one
+  # repo drift, and the one nobody looks at is the one that breaks. Bump both
+  # together, after re-running the sequence. customer-tooling's own suite has
+  # a test that fails when they diverge, so this is enforced, not hoped for.
+  #
+  # This pin is also load-bearing for `--build-id`. Run-unique build ids
+  # arrived in 0.5.121; an older CLI defaults to a bare `$GITHUB_SHA`, which
+  # collides on a re-run or a promote and is rejected with HTTP 409. The
+  # publish step passes `--build-id` explicitly, so an older CLI would still
+  # work — the pin is the belt to that pair of braces.
+  OXY_VERSION: "0.5.126"
+
+jobs:
+  build:
+    name: build the bundles
+    runs-on: ubuntu-latest
+
+    outputs:
+      # Discovery's own answer, not a second count computed here: the publish
+      # job's `if:` and this job's step conditions are then one value that
+      # cannot disagree with itself.
+      count: ${{ steps.discover.outputs.count }}
+      # The commit this run actually built, resolved once and handed to the
+      # publish job so it checks out the SAME commit rather than re-resolving
+      # a branch name that may have moved between the two jobs.
+      sha: ${{ steps.rev.outputs.sha }}
+      # Whether this repo publishes from CI at all — `on` or `off`. Resolved
+      # HERE rather than read as `vars.OXY_CI_PUBLISH` in the publish job's
+      # `if:`, for two reasons: a skipped job cannot print anything, so the
+      # notice that says publishing is self-serve has to come from the job that
+      # always runs; and the recognised spellings of "on" are then one answer
+      # from one script rather than an expression nobody can execute.
+      ci-publish: ${{ steps.ci_publish.outputs.state }}
+      # Which oxy environment this run publishes to — `dev` or `production`.
+      # It is resolved HERE, in the job that holds no credential, because a
+      # job's `environment:` may read the `needs` context and nothing else
+      # that could carry a value between jobs. That is what lets the publish
+      # job's `--env` argument and its `environment:` be the same string
+      # rather than two expressions that agree until one is edited.
+      publish-env: ${{ steps.publish_env.outputs.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Empty on a `push` event — the `inputs` context only exists for
+          # workflow_dispatch — and checkout reads an empty `ref` as "the ref
+          # that triggered this run", which is the behaviour we want there.
+          ref: ${{ inputs.ref }}
+          # checkout otherwise leaves the GITHUB_TOKEN in `.git/config`, where
+          # every script this job goes on to run can read it. This is the job
+          # that executes third-party postinstall and build scripts, so it
+          # must not be holding a repository credential while it does: nothing
+          # here talks to a remote after the clone.
+          persist-credentials: false
+
+      - name: Resolve the oxy environment this run publishes to
+        id: publish_env
+        run: |
+          set -euo pipefail
+          # First thing after the checkout, before any dependency is installed
+          # or any bundle built: a trigger with no mapping is a run that must
+          # not reach a customer's oxy at all, and the cheapest place to find
+          # that out is before the expensive half.
+          #
+          # Assigned before it is printed, on purpose. `printf 'x=%s' "$(cmd)"`
+          # keeps printf's own exit status, so a failing script inside the
+          # substitution would be swallowed and this step would write an EMPTY
+          # environment name — which downstream would read as "no environment"
+          # and, without the guard in the publish job, as `oxy publish`'s own
+          # production default. An assignment carries the substitution's
+          # status, so errexit catches it here.
+          name="$(bash .github/scripts/publish-env.sh)"
+          printf 'name=%s\n' "$name" >> "$GITHUB_OUTPUT"
+          echo "publishing to the '$name' environment (trigger: $GITHUB_EVENT_NAME)"
+
+      - name: Resolve whether this repo publishes from CI
+        id: ci_publish
+        env:
+          # A repository VARIABLE, and read in THIS job on purpose: a `vars`
+          # reference is not a credential reference, so the boundary below is
+          # untouched — the job that goes on to run every dependency's
+          # postinstall script still reaches for nothing sensitive at all, which
+          # is what the suite's "no job both holds a credential and runs a
+          # package script" test pins. (That test greps this block as raw text,
+          # so the forbidden spelling is not written here even in a comment.)
+          # Absent — the state of every repo nobody has configured — is OFF.
+          OXY_CI_PUBLISH: ${{ vars.OXY_CI_PUBLISH }}
+        run: |
+          set -euo pipefail
+          # Assigned before it is printed, for the same reason the step above
+          # does it: `printf 'x=%s' "$(cmd)"` keeps printf's own exit status, so
+          # a script that refused inside the substitution would be swallowed and
+          # this step would write an EMPTY answer. An assignment carries the
+          # substitution's status, so errexit catches the refusal here — in the
+          # job that holds no credential, before anything is installed.
+          state="$(bash .github/scripts/ci-publish.sh)"
+          printf 'state=%s\n' "$state" >> "$GITHUB_OUTPUT"
+          echo "CI publishing is $state for this repo"
+
+      - name: Resolve the commit this run is building
+        id: rev
+        run: |
+          set -euo pipefail
+          # Ask the checkout which commit it is, rather than trusting
+          # GITHUB_SHA — on a workflow_dispatch those are two different
+          # things. GITHUB_SHA is whatever "Use workflow from" pointed at,
+          # and that dropdown is fully decoupled from the `ref` input above.
+          # So an operator who pins `ref` to the SHA they reviewed and leaves
+          # the dropdown alone builds the right code while GITHUB_SHA names
+          # main's HEAD: the build id and the notice below would both be
+          # confidently wrong, which is worse than vague. `git rev-parse HEAD`
+          # is also exactly what `oxy publish` records as the build's source
+          # commit, so the two agree by construction.
+          sha="$(git rev-parse HEAD)"
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+          echo "building from commit $sha"
+
+      - name: Discover the custom apps in this repo
+        id: discover
+        run: |
+          set -euo pipefail
+          # The script writes `count` into $GITHUB_OUTPUT itself, so the skip
+          # condition below and the list this step produces are one value
+          # rather than two that can disagree. It is a separate file because
+          # a `run:` block cannot be executed anywhere but a runner, and this
+          # is the part of the workflow that has actually been run.
+          bash .github/scripts/discover-apps.sh . > "$RUNNER_TEMP/apps.tsv"
+          cat "$RUNNER_TEMP/apps.tsv"
+
+      # pnpm BEFORE setup-node: setup-node's `cache: pnpm` shells out to
+      # `pnpm store path`, so it fails if pnpm is not already installed.
+      - name: Install pnpm
+        if: steps.discover.outputs.count != '0'
+        uses: pnpm/action-setup@v4
+        with:
+          # package.json floors pnpm at >=10 and there is no `packageManager`
+          # field for the action to read, so the major goes here. 10 is not
+          # cosmetic: pnpm 9 reads no settings at all from
+          # pnpm-workspace.yaml, which silently makes its
+          # `onlyBuiltDependencies` block inert and blocks an app's
+          # esbuild/sharp postinstall with no diagnostic.
+          version: 10
+
+      - name: Install Node
+        if: steps.discover.outputs.count != '0'
+        uses: actions/setup-node@v4
+        with:
+          # .nvmrc is the single source of truth (20). This org's CI examples
+          # disagree — one says 26 — and 20 is what the real working monorepo
+          # pins, so read the file rather than restating a number here.
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        if: steps.discover.outputs.count != '0'
+        # `pnpm install --frozen-lockfile`, never `npm ci`: this is a pnpm
+        # workspace and there is no package-lock.json. Every CI example in
+        # this org uses `npm ci`, and every one of them would fail here.
+        # Discovery has already checked the lockfile exists and said so in
+        # plain language if it does not.
+        run: pnpm install --frozen-lockfile
+
+      - name: Build every app bundle
+        if: steps.discover.outputs.count != '0'
+        # `pnpm -r build` rather than the root `build` script, so a customer
+        # editing package.json cannot quietly turn this into a no-op. pnpm
+        # SKIPS a package with no `build` script without failing, which is
+        # why the packaging step below asserts each app's output directory
+        # exists and is non-empty before anything is uploaded.
+        run: pnpm -r build
+
+      - name: Stage the built bundles for the publish job
+        if: steps.discover.outputs.count != '0'
+        run: |
+          set -euo pipefail
+          # Only the build OUTPUT crosses the job boundary — not node_modules,
+          # not the sources. The publish job re-checks out the same commit for
+          # everything else it needs (oxy-app.json, git provenance), so the
+          # artifact stays small and carries nothing executable.
+          staging="$RUNNER_TEMP/bundles"
+          mkdir -p "$staging"
+          cp "$RUNNER_TEMP/apps.tsv" "$staging/apps.tsv"
+
+          status=0
+          while IFS="$(printf '\t')" read -r app_dir out; do
+            [ -n "$app_dir" ] || continue
+
+            # This check lives here, in the job that did the building, so a
+            # broken build fails BEFORE a job holding the publish credential
+            # is ever started. A package with no 'build' script is skipped by
+            # 'pnpm -r' without failing, which is the usual cause.
+            if [ ! -d "$app_dir/$out" ] || [ -z "$(ls -A "$app_dir/$out")" ]; then
+              echo "::error file=$app_dir/oxy-app.json::$app_dir declares outDir '$out' but the build left nothing there. A package with no 'build' script is skipped by 'pnpm -r' without failing, which is the usual cause." >&2
+              status=1
+              continue
+            fi
+
+            # `$src/.` — copy the CONTENTS, so a nested outDir (`dist/spa`)
+            # lands at the same relative path rather than one level deeper.
+            mkdir -p "$staging/$app_dir/$out"
+            cp -R "$app_dir/$out/." "$staging/$app_dir/$out/"
+          done < "$RUNNER_TEMP/apps.tsv"
+
+          # One bad app fails the job, but only after every other app has had
+          # its turn — a shared repo should not have one app's broken build
+          # block another app's fix.
+          exit "$status"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.discover.outputs.count != '0'
+        with:
+          name: oxy-app-bundles
+          path: ${{ runner.temp }}/bundles
+          # A built bundle legitimately contains dotfiles — Vite writes
+          # `.vite/manifest.json` under the out dir — and this action drops
+          # hidden files by default. Publishing a bundle that silently lost
+          # them is the kind of failure that only shows up in a browser.
+          include-hidden-files: true
+          # An artifact carries files, never empty directories, so an out dir
+          # that emptied out between the check above and here would vanish
+          # rather than upload as an empty one. Fail instead.
+          if-no-files-found: error
+          # Long enough to re-download while debugging a failed run, short
+          # enough that build output is not left lying around.
+          retention-days: 1
+
+  publish:
+    name: oxy publish
+    runs-on: ubuntu-latest
+    needs: build
+    # Two gates, and they answer different questions. The first: does this repo
+    # publish from CI at all? Absent `vars.OXY_CI_PUBLISH` it does not, and this
+    # job is skipped with the notice the build job printed — the bundles were
+    # still built, and shipping them is `oxy publish`, run by a person. The
+    # second: day one, or any repo with no apps, where discovery found nothing.
+    # Either way a SKIP, which is green, not red, and does not prompt for
+    # whatever approval the environment below may require.
+    #
+    # Written `== 'on'` rather than `!= 'off'` deliberately. If the resolving
+    # step is ever renamed or deleted the output is empty, and the affirmative
+    # form then fails CLOSED — this job does not start — instead of publishing
+    # to a customer on the strength of a value nobody produced. Note what this
+    # gate does NOT touch: with it satisfied, everything below runs exactly as
+    # it did before the switch existed, missing-token failure included. That
+    # separation is the point — the switch decides whether the job runs, never
+    # how loudly it fails once it has.
+    if: needs.build.outputs.ci-publish == 'on' && needs.build.outputs.count != '0'
+
+    # The gate, and the credential boundary. `dev` on a push, `production` on
+    # a manual dispatch — the SAME string this job passes to `oxy publish
+    # --env` below, resolved once in `build`, so the destination this job
+    # publishes to and the environment it draws its secrets from are the same
+    # thing by construction. Each environment holds its own `OXY_TOKEN`, and a
+    # missing one is caught explicitly below rather than sent as an empty
+    # bearer.
+    #
+    # The one hole, and it is a human's to close rather than this file's: a
+    # repository-level `OXY_TOKEN`, if one exists, is still reachable here —
+    # environment secrets take PRECEDENCE over repository secrets, they do not
+    # exclude them. See the note on `OXY_TOKEN` in the publish step.
+    #
+    # Referencing an environment that does not exist CREATES it on the first
+    # run ("Running a workflow that references an environment that does not
+    # exist will create an environment with the referenced name" — GitHub's
+    # own docs), with no protection rules and no secrets. So a freshly
+    # scaffolded repo does not have to be configured before its first green
+    # run; it does have to be configured before its first successful publish,
+    # which is the right way round. Adding required reviewers to `production`
+    # in Settings -> Environments is what turns this into a human gate, and no
+    # workflow edit is needed to do it. Note environments in a PRIVATE repo
+    # need GitHub Team or Pro; oxy-hq is on Team.
+    environment: ${{ needs.build.outputs.publish-env }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The exact commit `build` built, not the branch name it was given:
+          # a branch can move between two jobs of one run, and publishing a
+          # bundle built from one commit while claiming another is precisely
+          # the confusion the build id exists to prevent.
+          ref: ${{ needs.build.outputs.sha }}
+          # This job holds OXY_TOKEN. It has no reason to also be holding a
+          # repository credential in .git/config.
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: oxy-app-bundles
+          path: ${{ runner.temp }}/bundles
+
+      - name: Restore the built output into the checkout
+        run: |
+          set -euo pipefail
+          # Put each bundle back exactly where the build left it, so
+          # `oxy publish` sees the tree it would have seen in a single job:
+          # oxy-app.json beside its own build output, git provenance intact.
+          # Nothing is executed to do this — it is a copy.
+          staging="$RUNNER_TEMP/bundles"
+          while IFS="$(printf '\t')" read -r app_dir out; do
+            [ -n "$app_dir" ] || continue
+            if [ ! -d "$staging/$app_dir/$out" ]; then
+              echo "::error::$app_dir/$out is missing from the build artifact. The build job staged it, so it was lost in transit — re-run the workflow." >&2
+              exit 1
+            fi
+            mkdir -p "$app_dir/$out"
+            cp -R "$staging/$app_dir/$out/." "$app_dir/$out/"
+          done < "$staging/apps.tsv"
+
+      - name: Install the pinned oxy CLI
+        run: |
+          set -euo pipefail
+          # NOT `bash <(curl ...)`, the form the docs use: process
+          # substitution hands bash an empty file when the download fails,
+          # and bash then exits 0 — a step that reports "installed" having
+          # installed nothing. Download to a file first so curl's own -f
+          # failure is the step's.
+          curl -sSfL https://get.oxy.tech -o "$RUNNER_TEMP/get-oxy.sh"
+          OXY_VERSION="$OXY_VERSION" bash "$RUNNER_TEMP/get-oxy.sh"
+
+          # And check the installer left something behind: it downloads the
+          # binary with `curl -L` (no -f) and exits 0 regardless.
+          if [ ! -x "$HOME/.local/bin/oxy" ]; then
+            echo "::error::the installer exited 0 but left no executable at $HOME/.local/bin/oxy." >&2
+            exit 1
+          fi
+
+          # The installer drops the binary in ~/.local/bin for a non-root
+          # user and edits shell rc files, which a GitHub step never reads.
+          # Put it on PATH explicitly instead of hoping.
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify the oxy CLI
+        run: |
+          set -euo pipefail
+          # The same guard validate.yaml runs, on purpose: one guard with one
+          # set of failure modes, not two that drift. Two silent failures
+          # make it load-bearing:
+          #   1. the installer runs `curl -L` WITHOUT -f, so a tag that does
+          #      not exist writes GitHub's 404 HTML page to the binary path,
+          #      chmod +x's it, and still exits 0;
+          #   2. this CLI falls through to `--help` with exit 0 on a
+          #      subcommand it does not have, so an old binary "succeeds" at
+          #      doing nothing.
+          if ! raw="$(oxy --version 2>&1)"; then
+            echo "::error::'oxy --version' failed — the installed binary is not runnable." >&2
+            printf '%s\n' "$raw" >&2
+            exit 1
+          fi
+
+          have="$(printf '%s\n' "$raw" | sed -n 's/^oxy-app version: \([0-9][0-9.]*\).*/\1/p' | head -1)"
+          if [ -z "$have" ]; then
+            echo "::error::could not read a version out of 'oxy --version' — the install probably wrote a 404 page." >&2
+            printf '%s\n' "$raw" >&2
+            exit 1
+          fi
+
+          oldest="$(printf '%s\n%s\n' "$OXY_VERSION" "$have" | sort -t. -k1,1n -k2,2n -k3,3n | head -1)"
+          if [ "$oldest" != "$OXY_VERSION" ]; then
+            echo "::error::oxy $have is older than the pinned $OXY_VERSION." >&2
+            exit 1
+          fi
+
+          echo "oxy $have (pin $OXY_VERSION)"
+
+      - name: Publish each bundle
+        env:
+          # Step-scoped as well as job-isolated. The job split is what keeps
+          # this token away from the bundles' own build scripts — those ran
+          # in `build`, on a different runner, and nothing in THIS job runs a
+          # package script (`oxy publish --dir` publishes a pre-built
+          # directory as-is rather than running the manifest's build). The
+          # step scope is the cheap second layer: it keeps the token out of
+          # the environment of the install and verify steps above, which
+          # execute a downloaded shell script.
+          # Resolved against the ENVIRONMENT named above, where `dev` and
+          # `production` each hold their own.
+          #
+          # Note what that does and does not guarantee, because the obvious
+          # reading is wrong and the wrong reading is a safety claim. GitHub's
+          # precedence is environment > repository > organisation, and it is
+          # precedence, not exclusion: an environment secret OVERRIDES a
+          # repository one of the same name, it does not suppress it. So a
+          # repo still carrying an old repository-level `OXY_TOKEN` serves
+          # BOTH environments from it wherever the environment has none — the
+          # guard below never fires, and each publish looks perfectly healthy
+          # while authenticating with a token nobody scoped to it.
+          #
+          # Nothing here can catch that: GitHub does not tell a job which
+          # level a secret came from, so from inside this step the two cases
+          # are identical. It has to be a human, once: DELETE any
+          # repository-level `OXY_TOKEN` after adding the environment ones.
+          OXY_TOKEN: ${{ secrets.OXY_TOKEN }}
+          # `dev` or `production`, resolved once in the build job. Passed to
+          # `oxy publish --env` below; the identical string selected the
+          # environment this job is running in.
+          PUBLISH_ENV: ${{ needs.build.outputs.publish-env }}
+          # Optional, and it OVERRIDES `--env` rather than refining it (the
+          # CLI's own words: "Explicit oxy base URL; overrides --env"). So set
+          # it as an ENVIRONMENT variable on `dev` / `production`, never as a
+          # repository one: a repository-level value points both environments
+          # at the same oxy and quietly undoes the split this workflow exists
+          # to make. Unset is the normal case — `--env` resolves the target
+          # from each app's `oxy-app.json` `environments` block, or the CLI's
+          # built-in default for that name.
+          OXY_TARGET: ${{ vars.OXY_TARGET }}
+          # Empty on a `push` event — `inputs` only exists for
+          # workflow_dispatch — hence the default below.
+          PROMOTE: ${{ inputs.promote }}
+          # Resolved by the build job from its own checkout; see the comment
+          # on that step for why GITHUB_SHA is not it.
+          SHA: ${{ needs.build.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          # Fail closed on the environment before anything else. An empty
+          # PUBLISH_ENV would mean `oxy publish` fell back to its own default
+          # — production — while every log line here said nothing at all, and
+          # that silent fallback is the whole bug this workflow was fixed for.
+          # It can only be empty if the build job's resolution step was
+          # removed or renamed, so the message names that rather than asking
+          # the operator to configure something.
+          if [ -z "${PUBLISH_ENV:-}" ]; then
+            echo "::error::no oxy environment was resolved for this run, so there is nothing safe to publish to. The build job's 'Resolve the oxy environment' step feeds this; if it was renamed or removed, restore it. Publishing without --env would fall back to production." >&2
+            exit 1
+          fi
+
+          if [ -z "${OXY_TOKEN:-}" ]; then
+            echo "::error::no OXY_TOKEN reached this job, so there is nothing to authenticate with. Neither the '$PUBLISH_ENV' environment nor the repository holds one — an environment secret takes precedence over a repository secret of the same name, so this fires only when both are absent. Mint a publish-scoped API key in oxy and add it under Settings -> Environments -> $PUBLISH_ENV -> Environment secrets, NOT at repository level: a repository-level token would serve both environments and this check could never tell you." >&2
+            exit 1
+          fi
+
+          if [ -n "${OXY_TARGET:-}" ]; then
+            echo "::warning::OXY_TARGET is set, and it overrides --env: every app in this run publishes to $OXY_TARGET regardless of the '$PUBLISH_ENV' environment. That is only correct if it is an ENVIRONMENT variable on '$PUBLISH_ENV' rather than a repository one — a repository-level value points dev and production at the same oxy."
+          fi
+
+          sha="$SHA"
+          echo "publishing to the '$PUBLISH_ENV' environment"
+          echo "publishing from commit $sha"
+
+          # Explicit, and qualified by the run. A bare commit sha is NOT
+          # unique per publish: "Re-run all jobs", a workflow_dispatch on an
+          # already-published commit, and a later promote all republish the
+          # same commit. A build id is immutable and cached by id, so the
+          # server rejects a reused one with HTTP 409. GITHUB_RUN_ID is
+          # unique per run and GITHUB_RUN_ATTEMPT distinguishes its re-runs,
+          # which is exactly the axis the sha is missing. This is the same
+          # string a current CLI derives for itself; passing it means an
+          # older CLI behaves the same instead of colliding.
+          build_id="${sha}-${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+
+          if [ "${PROMOTE:-false}" = "true" ]; then
+            echo "::notice::publishing LIVE to '${PUBLISH_ENV}' from ${sha}, rebuilt by this run — a NEW build, not the promotion of an existing draft. If that is not the commit whose draft you reviewed, cancel and re-run with the ref input pinned to it."
+          fi
+
+          status=0
+          # Reading the file discovery wrote, not re-globbing: one answer,
+          # produced by the one piece of this workflow that has been tested.
+          while IFS="$(printf '\t')" read -r app_dir out; do
+            [ -n "$app_dir" ] || continue
+
+            # Checked in the build job too, on the freshly built tree. Both
+            # are load-bearing and neither is the other's copy: that one
+            # catches a package with no `build` script before this job (and
+            # its credential) starts, this one catches a bundle that did not
+            # survive the artifact round-trip.
+            if [ ! -d "$app_dir/$out" ] || [ -z "$(ls -A "$app_dir/$out")" ]; then
+              echo "::error file=$app_dir/oxy-app.json::$app_dir declares outDir '$out' but nothing arrived there from the build job." >&2
+              status=1
+              continue
+            fi
+
+            # `--env` is not optional here and must never become optional.
+            # The CLI defaults it to `production`, so an invocation that
+            # leaves it off does not publish "nowhere in particular" — it
+            # publishes at the customer's live environment. It is the FIRST
+            # argument for the same reason: anything appended below is a
+            # refinement of a destination that has already been named.
+            args=(--env "$PUBLISH_ENV" --dir "$out" --build-id "$build_id")
+            # --org/--app/--project are deliberately absent: oxy publish
+            # reads the app's identity from the oxy-app.json in this
+            # directory (discovery has already checked it is there and
+            # complete) and resolves the project from the target's
+            # build-config endpoint. Nothing here needs a per-customer
+            # repository variable to be filled in by hand.
+            if [ -n "${OXY_TARGET:-}" ]; then
+              args+=(--target "$OXY_TARGET")
+            fi
+            # Default is the DRAFT channel, which is also the CLI's own
+            # default — this workflow is not overriding platform behaviour.
+            #
+            # `--promote` publishes THIS build straight to live. It does not
+            # promote a build that already exists: nothing in this CLI can
+            # (`oxy apps` is show/create/list/delete). So the run rebuilt the
+            # ref the operator named and is shipping that, under a new build
+            # id — said out loud above, because "promote" invites the other
+            # reading and the difference is a wrong version in front of
+            # customers.
+            if [ "${PROMOTE:-false}" = "true" ]; then
+              args+=(--promote)
+            fi
+
+            echo "::group::oxy publish $app_dir"
+            # A subshell so the cd cannot leak into the next iteration.
+            # oxy publish reads oxy-app.json, resolves --dir, and captures
+            # git provenance relative to its working directory.
+            ( cd "$app_dir" && oxy publish "${args[@]}" ) || status=1
+            echo "::endgroup::"
+          done < "$RUNNER_TEMP/bundles/apps.tsv"
+
+          # One bad app fails the job, but only after every other app has had
+          # its turn — a shared repo should not have one app's broken build
+          # block another app's fix.
+          exit "$status"

@@ -38,8 +38,9 @@ oxy login --env local            # authenticate against a local oxy serve
 oxy login --target https://my.oxy.example.com
 ```
 
-After login, every `oxy api` call for that target is automatically
-authenticated — no manual token management needed.
+After login, every `oxyc api` call for that target is automatically
+authenticated — no manual token management needed. `oxy login` and
+`oxyc login` share one credentials file, so either authenticates both.
 
 ```bash
 oxy logout                       # clear the cached token for the default env
@@ -48,58 +49,56 @@ oxy logout --env local
 
 ---
 
-### `oxy api` — call the HTTP API from the terminal
+### `oxyc` — call the HTTP API from the terminal
+
+The terminal client is **`oxyc`**, a separate package (`sdk/cli`, to be
+published as `@oxy-hq/cli`). It replaced the old `oxy api` subcommand, which
+was removed from this binary.
+
+It is **not on npm yet** — build it from a checkout of the monorepo
+(`cd sdk/cli && pnpm install && pnpm build`), then run `dist/main.mjs`:
 
 ```
-oxy api <path> [-X METHOD] [-d BODY | -f key=val ...] [-H Header: value] [--env <env>]
-oxy api --routes [FILTER] [--json]
-oxy api --openapi
+# `oxyc` below is `node <repo>/sdk/cli/dist/main.mjs` until it is published.
+oxyc api <path> [-X METHOD] [-f k=v] [-F k=v] [-H 'Name: value']
+oxyc routes [FILTER] [--json]      # every endpoint THIS deployment mounts
+oxyc schema <path> [-X METHOD]     # request/response shape for one endpoint
+oxyc openapi                       # this very document
 ```
 
-An authenticated `curl`/`gh api`-style client.  The path is taken relative
-to the target's `/api/` surface; a leading `/` or `api/` prefix is
-normalised automatically.
+An authenticated `gh api`-style client. The path is taken relative to the
+target's `/api/` surface; a leading `/` or `api/` prefix is normalised, and a
+`/external/api/...` path selects the API-key surface automatically.
 
-The command is self-describing, which matters when you (or an agent) have a
-terminal but not this page:
-
-- **`oxy api --help`** — the full usage guide plus every route the binary
-  mounts, grouped by the credential each surface expects.
-- **`oxy api --routes <filter>`** — matching routes with what the server says
-  each one does; `--json` adds the fleet role and path parameters.
-- **`oxy api --openapi`** — this very document, offline: the same spec served
-  at `/apidoc/openapi.json`, so the schemas are reachable without a server.
-
-The route table is generated from the router at build time, so it covers the
-whole surface rather than the curated subset the schemas below describe.
+Discovery is served by this deployment rather than baked into a binary, via
+`GET /api/_catalog` — so the list describes the routes actually mounted here,
+not the routes some build could have mounted. `oxyc` caches it per host.
 
 ```bash
 # GET examples
-oxy api user                                    # GET /api/user
-oxy api projects/<id>/agents                   # GET /api/projects/<id>/agents
-oxy api threads --env local                    # hit a local oxy serve
+oxyc api user                                   # GET /api/user
+oxyc api projects/<id>/agents                   # GET /api/projects/<id>/agents
+oxyc api threads --env local                    # hit a local oxy serve
 
-# POST with JSON fields
-oxy api projects/<id>/runs -f workflow_path=my-workflow.yml
+# POST with JSON fields. `-f` is a string, `-F` keeps the JSON type.
+oxyc api projects/<id>/runs -f workflow_path=my-workflow.yml
+oxyc api admin/compiles/run -F promote=true -F 'ids[]=a' -F 'ids[]=b'
 
-# POST with a raw JSON body
-oxy api projects/<id>/query -d '{"sql":"select 1"}'
-
-# POST from a file
-oxy api projects/<id>/query -d @payload.json
-
-# POST from stdin
-echo '{"sql":"select 1"}' | oxy api projects/<id>/query -d -
+# POST with a raw body: inline, from a file, or from stdin
+oxyc api projects/<id>/query --input '{"sql":"select 1"}'
+oxyc api projects/<id>/query --input @payload.json
+echo '{"sql":"select 1"}' | oxyc api projects/<id>/query --input -
 
 # Custom method / headers
-oxy api projects/<id>/runs/<run_id> -X DELETE
-oxy api something -H 'X-My-Header: value'
+oxyc api projects/<id>/runs/<run_id> -X DELETE
+oxyc api something -H 'X-My-Header: value'
 
-# Pipe to jq
-oxy api threads | jq '.[].id'
+# Shape the output: jq server-side, or a markdown table
+oxyc api threads --jq '.threads[].id'
+oxyc api <workspace_id>/sql/query -f 'sql=select 1' -f database=<name> --md
 
 # Print the bearer token (useful for raw curl calls)
-oxy api --print-token --env local
+oxyc token --env local
 ```
 
 The `--env` flag resolves the base URL from an `oxy-app.json`
@@ -111,5 +110,5 @@ Pass `--target <url>` to override it explicitly.
 
 ## Base URL
 
-All paths in this document are relative to `/api`.  When using `oxy api` the
+All paths in this document are relative to `/api`.  When using `oxyc api` the
 prefix is added automatically.

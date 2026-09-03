@@ -8,6 +8,7 @@ use oxy_auth::user::UserService;
 use serde::Serialize;
 
 use crate::server::api::auth::clear_session_cookie;
+use utoipa::ToSchema;
 
 /// Global profile fields returned by `GET /user`. Role and admin status are
 /// per-org, so they are intentionally omitted here — read them from
@@ -17,7 +18,7 @@ use crate::server::api::auth::clear_session_cookie;
 /// frontend route Oxy staff to the admin shell. `is_app_admin` reflects
 /// membership in the `app_admins` table and gates the customer-apps
 /// surface.
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct UserInfo {
     pub id: String,
     pub email: String,
@@ -44,7 +45,7 @@ pub struct UserInfo {
     pub partner_memberships: Vec<PartnerMembershipInfo>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct PartnerMembershipInfo {
     pub partner_id: String,
     pub slug: String,
@@ -53,7 +54,7 @@ pub struct PartnerMembershipInfo {
     pub capabilities: PartnerCapabilitiesInfo,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct PartnerCapabilitiesInfo {
     pub manage_members: bool,
     pub manage_apps: bool,
@@ -180,6 +181,22 @@ pub async fn get_current_user(
 
 /// Public endpoint that returns current user if authenticated, null if not
 /// This prevents redirect loops when auth is enabled
+/// Who the caller is.
+///
+/// **A `200` with a `null` body means the token did not resolve to a user** —
+/// an expired session answers exactly that rather than a `401`, so a client
+/// must not read the null as "no such user". `oxyc whoami` exists to tell the
+/// two apart.
+#[utoipa::path(
+    method(get),
+    path = "/user",
+    responses(
+        (status = OK, description = "The authenticated user, or `null` when the credential did not resolve to one", body = Option<UserInfo>, content_type = "application/json")
+    ),
+    security(
+        ("BearerAuth" = [])
+    )
+)]
 pub async fn get_current_user_public(
     axum::extract::State(_app_state): axum::extract::State<crate::server::router::AppState>,
     headers: axum::http::HeaderMap,

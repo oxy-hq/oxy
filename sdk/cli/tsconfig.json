@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022"],
+    "declaration": false,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  // `./template` is the SCAFFOLD at the package root, not `src/template`. The
+  // two spellings behave identically and the prefix is kept because they do not
+  // READ identically — the entry is inert while `include` stays `src/**/*`.
+  // Full reasoning: internal-docs/oxy-api-cli.md, "What CI checks about the SDK
+  // packages".
+  "exclude": ["node_modules", "dist", "./template"]
+}

@@ -7,6 +7,7 @@ pub mod artifacts;
 pub mod auth;
 pub mod automation;
 pub mod billing;
+pub mod catalog;
 pub mod chart;
 pub mod competitors;
 pub mod compile;

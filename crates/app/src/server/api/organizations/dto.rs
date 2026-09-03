@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -13,7 +14,7 @@ pub struct UpdateOrgRequest {
     pub slug: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct OrgResponse {
     pub id: Uuid,
     pub name: String,

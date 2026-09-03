@@ -208,13 +208,164 @@ jobs:
         continue-on-error: true
         run: pnpm --filter oxy-web run test:unit
 
+  sdk:
+    name: SDK packages (typecheck, lint, test, build)
+    needs: [changesets]
+    concurrency:
+      group: sdk-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    if: inputs.agentic_only != true && needs.changesets.outputs.sdk == 'true'
+    # Warp arm64 like the other jobs that run tests. `sdk/cli`'s suite spawns
+    # the built binary, so it needs a real runner rather than ubuntu-slim.
+    runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}
+    # ~2m warm; 15m covers a cold pnpm store.
+    timeout-minutes: 15
+    env:
+      # ONE FILTER, read by every step that selects and by the gate that checks
+      # them. It was a literal in three `run:` lines and a fourth in
+      # `verify-sdk-scripts.mjs`, which could not see the other three — narrow
+      # it in one place and the gate would audit a different set than the steps
+      # it is about, which is the two-lists failure this job's comments argue
+      # against, one level up.
+      SDK_FILTER: "./sdk/**"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: "pnpm"
+      - name: Run pnpm install
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      # FIRST, because it is about the three steps below it. Run last, a PR
+      # adding a package without `typecheck` showed a GREEN blocking Typecheck
+      # and reddened three steps later under a name about something else — the
+      # failure landing away from the step it explains. It needs only `pnpm
+      # install`, four steps up.
+      #
+      # It also DERIVES what it requires from those steps, by reading which
+      # scripts they run across `$SDK_FILTER` — so this list and that one
+      # cannot drift.
+      - name: Verify every sdk package declares the scripts this job runs
+        run: node scripts/ci/verify-sdk-scripts.mjs
+
+      # BLOCKING, unlike the web-app Vitest job above. That one carries
+      # pre-existing failures and runs for visibility; these steps are green
+      # today, and a suite that is allowed to fail is a suite nobody fixes.
+      #
+      # `sdk/typescript` is the one exception, carved out by name below rather
+      # than by making the whole job advisory — an exception you can see is
+      # worth more than a green tick that means nothing. That exclusion is
+      # deliberately NOT shared into `SDK_FILTER`: promoting the package (the
+      # standing instruction on the advisory step) deletes this line and that
+      # step together, and a shared variable would leave a third edit behind.
+      #
+      # ONE LIST, NOT TWO. `pnpm-workspace.yaml` already names every member, so
+      # enumerating three of them here was a second list to keep in step — the
+      # filter states the rule and names the single exclusion instead. Adding a
+      # package is still one edit, to the workspace file, and it then joins all
+      # three steps at once. `--fail-if-no-match` because a filter matching
+      # nothing is otherwise silent; and a third gap needs a script rather than
+      # a flag — `pnpm run` skips a selected project that lacks the script,
+      # which is what the step ABOVE checks. Why each of the three, and the
+      # measurements: internal-docs/oxy-api-cli.md, "What CI checks about the
+      # SDK packages".
+      - name: Typecheck
+        run: |
+          pnpm --filter "$SDK_FILTER" \
+               --filter "!./sdk/typescript" \
+               --fail-if-no-match \
+               --parallel typecheck
+
+      # NOT BLOCKING, and this is the whole reason: `sdk/typescript` imports
+      # `@duckdb/duckdb-wasm` without declaring it, and uses `react-dom/server`
+      # with no `@types/react-dom`. Both are real pre-existing gaps in a
+      # PUBLISHED package, and both are fixed by adding dependencies — a
+      # decision with bundle-size and peer-dep consequences that belongs to
+      # whoever owns that package, not to whichever PR trips over it first.
+      #
+      # MOVE IT INTO THE STEP ABOVE THE MOMENT THOSE LAND — and the `run` line
+      # annotates EVERY green run until someone does, because nothing else
+      # watches that transition. `continue-on-error` means a green run looks
+      # identical to a red one in the checks list, and "known red" in this
+      # step's name silently becomes false. A nag rather than a one-shot is the
+      # point: an annotation on the single run where it first passed is one
+      # nobody was looking at that week. The `&&` gates nothing — a failing
+      # `tsc` short-circuits it, which is today's behaviour exactly.
+      #
+      # ITS TWELVE SUITES ARE IN THE CONFIG NOW, though, because a suite the
+      # compiler never reads is a suite where a type-level guard reaches
+      # nothing — the same argument that put the other three packages' tests in
+      # the blocking step. They are in HERE rather than there because this step
+      # already cannot fail the build, so including them costs nothing and
+      # measures the gap instead of hiding it. Measured AS OF THIS COMMIT: 8
+      # diagnostics before, 13 after — a snapshot, which moves the day either
+      # dependency lands or a suite is added. Read the codes off the
+      # `Typecheck sdk/typescript` step's log — named, because log retention is
+      # finite and "this step" only helps a reader already standing here —
+      # rather than trusting these two numbers: an earlier version of this
+      # paragraph split the five new ones into "4 + 2" (which is six) and named
+      # a cause — `@types/node` missing from a `types` array this tsconfig does
+      # not have — that the log does not support. Without the suites in scope,
+      # promoting this step the day the two dependencies above land would
+      # silently not cover them.
+      - name: Typecheck sdk/typescript (advisory — known red, see comment)
+        continue-on-error: true
+        run: |
+          pnpm --filter "./sdk/typescript" typecheck \
+            && echo "::warning::sdk/typescript now typechecks — promote it into the blocking Typecheck step and drop this one"
+
+      # NAMED FOR WHAT IT COVERS, because `biome.json`'s `files.includes` lists
+      # only `sdk/typescript/**` and `sdk/cli/**` — `biome check sdk` never
+      # reads create-oxy-app or vite-plugin, so calling this step "Lint" under a
+      # job called "SDK packages" would claim more than it does.
+      #
+      # Adding the other two is a two-line edit to biome.json, but they carry
+      # pre-existing format and lint findings, and reformatting two packages
+      # this PR has no other reason to touch is exactly what it declined to do
+      # for sdk/typescript's typecheck above. Same call, same reason.
+      #
+      # `scripts/ci` IS A SECOND PATH, not a second `files.includes` entry. A
+      # path argument BOUNDS the traversal — `files.includes` filters within
+      # what is walked — so adding `scripts/ci/**` to biome.json while this
+      # step said `biome check sdk` linted nothing at all. Measured: a
+      # deliberately mis-formatted `verify-cli-package.mjs` is invisible to
+      # `biome check sdk` and caught by `biome check sdk scripts/ci`.
+      - name: Lint (cli + typescript + the CI scripts — see biome.json)
+        # Scoped by biome.json itself, so running it at the root is what keeps
+        # the CI gate and the editor in step. Warnings do not fail it; errors do.
+        run: pnpm exec biome check sdk scripts/ci
+
+      - name: Test
+        # `sdk/cli` has a `pretest` that builds, because part of its suite
+        # spawns `dist/main.mjs` to pin the exit-code contract — the thing an
+        # agent branches on, and the one contract no unit test can check.
+        run: pnpm --filter "$SDK_FILTER" --fail-if-no-match test
+
+      - name: Build
+        run: pnpm --filter "$SDK_FILTER" --fail-if-no-match build
+
+      - name: Verify the CLI tarball carries its template and skills
+        run: node scripts/ci/verify-cli-package.mjs
+
   templates:
     name: Scaffold templates
     needs: [changesets]
     concurrency:
       group: templates-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
-    if: inputs.agentic_only != true && needs.changesets.outputs.web-app == 'true'
+    # BOTH filters, because this job scaffolds against @oxy-hq/sdk,
+    # @oxy-hq/vite-plugin and @oxy-hq/create-oxy-app. `sdk/**` was dropped from
+    # the `web-app` filter so an sdk-only PR stops running the web pipeline;
+    # without this second condition that same edit would have silently stopped
+    # gating the one web job that genuinely depends on sdk/.
+    if: |
+      inputs.agentic_only != true &&
+      (needs.changesets.outputs.web-app == 'true' || needs.changesets.outputs.sdk == 'true')
     # Warp arm64 like the other test jobs: this one does four real pnpm
     # installs, which is the slow part.
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}

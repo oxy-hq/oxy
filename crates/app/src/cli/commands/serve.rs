@@ -627,7 +627,7 @@ async fn create_web_application(
     )
     .await
     .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
-    // Assembled by `router::openapi` so `oxy api --openapi` serves the exact
+    // Assembled by `router::openapi` so `oxyc openapi` serves the exact
     // same document offline — one spec, two consumers.
     let openapi_doc = crate::server::router::build_openapi_doc().await;
     println!("create_web_application: openapi_router done, assembling final router");

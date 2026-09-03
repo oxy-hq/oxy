@@ -44,7 +44,9 @@ pub(super) fn build_protected_routes(
     extra_workspace_routes: Router<AppState>,
     extra_workspace_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
 ) -> (Router<AppState>, Vec<Decl>) {
-    let root = RoleRouter::new(app_state.clone()).merge(build_global_routes(&app_state));
+    let root = RoleRouter::new(app_state.clone())
+        .merge(build_catalog_routes(&app_state))
+        .merge(build_global_routes(&app_state));
     let workspace = build_workspace_routes(app_state.clone(), agentic_state, true, false)
         .merge_declared(extra_workspace_routes, &extra_workspace_decls)
         .map_router(|r| {
@@ -66,6 +68,32 @@ pub(super) fn build_protected_routes(
             .map(|d| (d.method, d.path.to_string(), d.role)),
     );
     (router, decls)
+}
+
+/// Route discovery for the `oxyc` CLI: `GET /api/_catalog`.
+///
+/// ITS OWN BUILDER, and that is not stylistic. `crates/app/build_route_catalog.rs`
+/// walks a fixed list of SEED functions to generate the route table, and
+/// `build_protected_routes` is not one of them (it composes the global and
+/// workspace trees, which are seeded individually — seeding it too would
+/// double-count every route). A route written inline there is therefore
+/// invisible to the very catalog it serves, so `/api/_catalog` would be the one
+/// endpoint missing from the endpoint list. A named builder can be seeded on
+/// its own, and `catalog::tests::the_catalog_lists_itself` fails if it ever
+/// stops being.
+///
+/// Merged into BOTH the cloud and local protected routers, because local mode
+/// omits the global tree.
+///
+/// `route_fleet` and not `route_ide`: the handler reads a table compiled into
+/// the binary — no workspace working copy, no `.git`, no state dir — so any
+/// replica may answer it, and pinning it to the singleton would make the CLI's
+/// discovery depend on the one instance that can be down.
+pub(super) fn build_catalog_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone()).route_fleet(
+        "/_catalog",
+        axum::routing::get(crate::api::catalog::get_catalog),
+    )
 }
 
 /// Takes the declarations as well as the routes, and installs them, because a
@@ -115,7 +143,10 @@ pub(super) fn build_local_protected_routes(
     extra_workspace_routes: Router<AppState>,
     extra_workspace_decls: Vec<oxy_shared::fleet_role::RouteRoleDecl>,
 ) -> (Router<AppState>, Vec<Decl>) {
-    let root = RoleRouter::new(app_state.clone());
+    // Same discovery surface as cloud. Local mode omits the global tree, so it
+    // is merged separately rather than inherited — a CLI that can enumerate
+    // production but not a developer's own box is the wrong way round.
+    let root = RoleRouter::new(app_state.clone()).merge(build_catalog_routes(&app_state));
     let workspace = build_workspace_routes(app_state.clone(), agentic_state, false, true)
         .merge_declared(extra_workspace_routes, &extra_workspace_decls)
         .map_router(|r| {

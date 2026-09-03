@@ -33,6 +33,7 @@ use uuid::Uuid;
 
 use crate::server::api::custom_apps_gates::{check_custom_app_gates, parse_versioned_body};
 use crate::server::api::typed_stream::typed_stream_to_json_objects;
+use utoipa::ToSchema;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -63,7 +64,7 @@ fn err(status: StatusCode, msg: impl Into<String>) -> Response {
 /// Request body for `POST /api/projects/{project_id}/query`.
 ///
 /// `sql` is required (non-empty). `database` is optional.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QueryRequest {
     /// Raw SQL to execute. Required and non-empty.
@@ -85,7 +86,7 @@ pub struct QueryRequest {
 /// Column order matches first-seen key order across all rows (using an
 /// `IndexMap` for stable iteration). Missing cells in a row become
 /// `JsonValue::Null`. `truncated` is `true` when the result hit `MAX_ROWS`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct QueryResponse {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<JsonValue>>,
@@ -98,6 +99,28 @@ pub struct QueryResponse {
 ///
 /// Auth → origin check → body validation → workspace lookup → org-membership →
 /// connector resolution → SELECT gate → SQL execution → columnar reshape.
+/// Run SQL through a project, against its default (or a named) database.
+///
+/// The project-scoped twin of `/{workspace_id}/sql/query`, and the one a
+/// custom app uses: the project id carries the workspace, so no workspace id is
+/// needed. `deny_unknown_fields` is on, so a misspelled key is a 400 rather
+/// than a silently ignored option.
+#[utoipa::path(
+    method(post),
+    path = "/projects/{project_id}/query",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID")
+    ),
+    request_body = QueryRequest,
+    responses(
+        (status = OK, description = "Columnar result set; `truncated` is true when the row cap was hit", body = QueryResponse, content_type = "application/json"),
+        (status = BAD_REQUEST, description = "Empty SQL, an unknown field, or a statement the SELECT gate refused"),
+        (status = FORBIDDEN, description = "Origin check or org membership failed")
+    ),
+    security(
+        ("BearerAuth" = [])
+    )
+)]
 #[instrument(skip_all, fields(project_id = %project_id))]
 pub async fn run_query(
     Path(project_id): Path<Uuid>,

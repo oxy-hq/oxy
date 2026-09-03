@@ -36,6 +36,7 @@ use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tracing::{error, instrument, warn};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::server::api::custom_apps_gates::{check_custom_app_gates, parse_versioned_body};
@@ -93,7 +94,10 @@ pub struct DebugQuery {
 /// Customer-app `/semantic-query` response. Extends `QueryResponse`
 /// with an optional `sql` field that's only populated when
 /// `?debug=1` is passed.
-#[derive(Debug, Serialize)]
+/// Named explicitly for the same reason `data.rs`'s enum is: two types share
+/// this Rust ident, and a component name is derived from the ident.
+#[derive(Debug, Serialize, ToSchema)]
+#[schema(as = SemanticQueryResult)]
 pub struct SemanticQueryResponse {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<JsonValue>>,
@@ -102,6 +106,54 @@ pub struct SemanticQueryResponse {
     pub sql: Option<String>,
 }
 
+/// Query the semantic layer: measures and dimensions rather than SQL.
+///
+/// The body is `SemanticQueryConfig` from `agentic-semantic`, whose filter
+/// operators are a tagged enum and are the part nobody guesses right. They are
+/// spelled out in the example below and are, in full: `eq`, `neq`, `gt`, `gte`,
+/// `lt`, `lte`, `in`, `not_in`, `in_date_range`, `not_in_date_range`,
+/// `contains`, `not_contains`, `starts_with`, `ends_with`, `set`, `not_set`.
+///
+/// **Documented by EXAMPLE, not by schema, and deliberately.** The body type
+/// lives in `crates/agentic/semantic` — a domain crate — and deriving
+/// `ToSchema` across it would put utoipa, a transport concern, into the
+/// domain layer and then into everything that depends on it, for eight nested
+/// types. An example is also the more useful artefact for the caller this
+/// endpoint is documented for: it is copy-and-edit rather than assemble-from-
+/// grammar. The cost is that the example can drift from the type, which a
+/// schema could not — if you change `SemanticQueryConfig`, change this too.
+///
+/// `?debug=1` adds the compiled `sql` to the response. Off by default so a
+/// production response does not leak warehouse SQL shape.
+#[utoipa::path(
+    method(post),
+    path = "/projects/{project_id}/semantic-query",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("debug" = Option<u8>, Query, description = "`1` adds the compiled SQL to the response")
+    ),
+    request_body(
+        content = Object,
+        description = "SemanticQueryConfig — `topic` plus any of `measures`, `dimensions`, `time_dimensions`, `filters`, `orders`, `limit`, `offset`",
+        example = json!({
+            "topic": "orders",
+            "measures": ["orders.count", "orders.revenue"],
+            "dimensions": ["orders.status"],
+            "time_dimensions": [{"dimension": "orders.created_at", "granularity": "day"}],
+            "filters": [{"field": "orders.status", "op": "in", "values": ["paid", "shipped"]}],
+            "orders": [{"field": "orders.revenue", "direction": "desc"}],
+            "limit": 100
+        })
+    ),
+    responses(
+        (status = OK, description = "Columnar result set; `sql` present only with `?debug=1`", body = SemanticQueryResponse, content_type = "application/json"),
+        (status = BAD_REQUEST, description = "Body failed validation, or the topic/measure does not exist in the semantic layer"),
+        (status = FORBIDDEN, description = "Origin check or org membership failed")
+    ),
+    security(
+        ("BearerAuth" = [])
+    )
+)]
 #[instrument(skip_all, fields(project_id = %project_id))]
 pub async fn run_semantic_query(
     Path(project_id): Path<Uuid>,

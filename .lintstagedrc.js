@@ -1,6 +1,11 @@
 export default {
   // JS/TS/TSX: Biome handles lint, format, and Tailwind class sorting
-  "**/*.{js,ts,tsx}": [
+  // `.mjs` explicitly: `{js,ts,tsx}` does not match it, so no `scripts/ci`
+  // script had ever been through the pre-commit hook. The GLOB is half of it —
+  // biome still only touches what `biome.json`'s `files.includes` lists, and
+  // `--no-errors-on-unmatched` makes the six `.mjs` files outside that list a
+  // no-op. It is the pair that covers `scripts/ci`, not either alone.
+  "**/*.{js,mjs,ts,tsx}": [
     "biome check --write --unsafe --no-errors-on-unmatched",
     "biome format --write --no-errors-on-unmatched"
   ],

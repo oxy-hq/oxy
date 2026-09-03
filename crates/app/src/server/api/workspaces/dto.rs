@@ -281,7 +281,7 @@ pub struct ProjectStatus {
 }
 
 /// Summary of a registered workspace returned by `GET /orgs/{org_id}/workspaces`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct WorkspaceSummary {
     pub id: Uuid,
     pub org_id: Option<Uuid>,
@@ -310,6 +310,10 @@ pub struct WorkspaceSummary {
     pub git_commit: Option<String>,
     /// Human-readable relative date of the last commit (e.g. "3 hours ago").
     pub git_updated_at: Option<String>,
+    /// Serialised as a string. Typed opaquely here rather than deriving
+    /// `ToSchema` on the entity enum: that would pull utoipa into `entity`,
+    /// which every consumer of the crate then carries for one doc string.
+    #[schema(value_type = String)]
     pub status: entity::workspaces::WorkspaceStatus,
     pub error: Option<String>,
 }

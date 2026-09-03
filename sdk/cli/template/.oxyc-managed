@@ -1,0 +1,297 @@
+# Who owns each file in a repo scaffolded from this template, and which of a
+# repo's two trees each one describes.
+#
+# `oxyc update <customer>` brings an existing customer repo back in line with
+# `template/`, and the only question that matters when it does is which files it
+# may rewrite. The live customer repos are not scaffolds any more: one of them
+# carries 7 views, 4 topics, a pipeline, an app and five memory facts, and its
+# `package.json` differs from this template's because the customer added
+# dependencies for that app. A sync that overwrote what it did not own would
+# have eaten all of it.
+#
+# So the answer is written down HERE, next to the files, where whoever adds the
+# next template file has to walk past it. It was written a phase BEFORE the
+# command that reads it, on the same bet as `.oxyc-template.json`: the
+# classification is cheap to record now and impossible to recover later, once
+# repos exist that nobody can classify from memory.
+#
+# lib/sync.sh is the reader, and it decides nothing on its own — every role
+# below is taken from this file and `unmatched` is the default it falls back to.
+#
+# --- format -----------------------------------------------------------------
+#
+#   <directive> <glob>     one per line, whitespace-separated
+#   # ...                  comment, and blank lines are ignored
+#
+# The glob is matched against a path relative to the repo root, with a shell
+# `case`, so `*` spans `/` — `.github/workflows/*` covers any depth beneath it
+# and `*.gitkeep` covers every placeholder wherever it sits.
+#
+# There are TWO families of directive and they answer different questions:
+#
+#   managed / scaffold / mixed          who owns the bytes
+#   scope-repo / scope-workspace        which tree the file describes
+#
+# Each family has its own reader with its own allowlist, so a line from one is
+# invisible to the other and a typo in either (`manged`, `scope-wrokspace`) is
+# invisible to both — it falls to that family's default and fails the
+# completeness test in tests/template_ownership.bats rather than quietly
+# classifying a file under a word nothing recognises.
+#
+# --- the three roles, and what a wrong one costs ----------------------------
+#
+# managed   The TOOL owns the bytes. A sync may overwrite the file outright,
+#           and a customer edit to it is a mistake that a sync is entitled to
+#           undo. Classifying wrongly here is DATA LOSS.
+#
+# scaffold  Written once by `oxyc new` and never touched again. The customer
+#           owns it from the moment it lands. A sync may report that it has
+#           drifted; it may not rewrite it. Classifying wrongly here costs
+#           someone a manual copy — which is why anything genuinely uncertain
+#           belongs in this row rather than in `managed`.
+#
+# mixed     Both, in different PARTS of one file. A sync must merge, never
+#           replace, and until it can do that surgically it must report and
+#           leave the file alone.
+#
+#           That is the rule for a file that is THERE, and it is the only rule
+#           `oxyc update` has: a repo the tool scaffolded was given both halves
+#           on day one, so a mixed file missing from it was deleted on purpose
+#           and restoring it would undo somebody's decision. Update also runs
+#           over and over, and a command you run weekly must not quietly
+#           recreate what you removed.
+#
+#           `oxyc adopt` meets the other case, and answers it differently. An
+#           imported repo never had the file, so there is no customer half to
+#           protect — and withholding it strands the managed files it pairs
+#           with. The first real adopt did exactly that: pokehouse-oxy got
+#           `scripts/dev.sh` and no package.json, so the `"dev"` entry that
+#           runs the script was never created and `pnpm dev` could not work.
+#           It installed the tool and withheld the handle.
+#
+#           So adopt — a one-time act somebody types on purpose — installs a
+#           mixed file that is ABSENT and still never touches one that is
+#           PRESENT. Per FILE, not per role: pokehouse has a .gitignore, and
+#           that one is left exactly alone.
+#
+# --- and the role that is never written down: everything else ---------------
+#
+# unmatched  The CUSTOMER'S. A sync must not rewrite it, must not delete it,
+#            and must not ask — never touch it.
+#
+# That is a DEFAULT, not an omission, and it is the single most important rule
+# here. A scaffolded repo becomes mostly files this template never had: views,
+# topics, pipelines, an app bundle, pnpm-lock.yaml, memory facts. Every one of
+# them is unmatched BY CONSTRUCTION, and the file a sync does not recognise is
+# exactly the file it did not create.
+#
+# So the safe direction is built into the shape rather than remembered: a rule
+# has to be WRITTEN before anything may be rewritten, and forgetting to write
+# one can only ever make a sync do less.
+#
+# `mixed` exists because of one concrete case, and it is worth stating: the
+# root `package.json` holds a `"dev"` script entry that runs `scripts/dev.sh`.
+# That entry is tool-owned — it is the entry point to a tool-owned script, and
+# a customer deleting it has broken the local dev flow — while the
+# `dependencies` beside it are the customer's app's, and are exactly what a
+# blind overwrite would destroy. Two owners, one file. A two-way split would
+# have forced a choice between losing the entry and losing the dependencies.
+#
+# --- the second axis: which of a repo's TWO trees does a file describe? -----
+#
+# A role says who owns a file's bytes. It does not say what the file is ABOUT,
+# and in a repo `oxyc new` scaffolded there was never a difference to say: the
+# repo IS the workspace, so every path above is simply "at the root".
+#
+# An IMPORTED repo splits that in two, and the template's files land on both
+# sides of the split:
+#
+#   config.yml and README.md describe the OXY WORKSPACE. pokehouse-oxy keeps
+#   its workspace in `oxy/`, where a config.yml and a readme already sit,
+#   written by somebody before oxyc saw the repo. The template's copies
+#   describe nothing at that repo's root — and writing them there would build a
+#   second, half-populated workspace beside the real one.
+#
+#   package.json, pnpm-workspace.yaml and .gitignore describe the REPO ROOT,
+#   and are not Oxy workspace files at all. The first two are the PNPM
+#   workspace — a different workspace, which is where `scripts/dev.sh` is
+#   installed and where its `"dev"` entry has to live — and the third is the
+#   git working tree's ignore rules. All three belong at the root in both
+#   layouts, exactly as the managed machinery does.
+#
+# That distinction had nowhere to be written down, so lib/sync.sh inferred it
+# from the ROLE — `scaffold` and `mixed` were skipped together as "the
+# workspace's" — and the inference was wrong for all three of the second group.
+# pokehouse-oxy is what that cost. Adopted before the mixed-and-absent rule
+# landed, it has `scripts/dev.sh` and no package.json; adopt then refused it as
+# already-stamped, and update called package.json a workspace file and would
+# not so much as name the gap. The file could not arrive by any path.
+#
+# So it is written down, on its own lines, in its own vocabulary:
+#
+#   scope-repo       describes the REPO ROOT. Always in scope.
+#   scope-workspace  describes the OXY WORKSPACE. Out of scope in a repo that
+#                    keeps its workspace in a subdirectory; identical to
+#                    scope-repo in a repo that IS its workspace.
+#
+# A SECOND AXIS, and not a fourth role or a modifier on the three. The two
+# questions are independent — package.json is `mixed` AND repo-scoped,
+# config.yml is `scaffold` AND workspace-scoped — so a file that could answer
+# only one of them would lose the other. A fourth role would take config.yml's
+# `scaffold` away, which is the statement that a sync may report its drift and
+# never rewrite it, and buy nothing back. A modifier (`scaffold@workspace`)
+# keeps one line per file and breaks every reader instead: the
+# `case "$role" in managed)` arms in lib/sync.sh, lib/adopt.sh and lib/doctor.sh
+# stop matching a compound token, and in adopt_plan the fall-through is
+# `continue` — a file silently not installed, which is precisely the failure
+# this axis exists to end.
+#
+# THE DEFAULT IS `scope-repo`, and it deliberately points the OTHER WAY from
+# `unmatched` above. A wrong role costs DATA LOSS, so the role default has to
+# be the quiet one and forgetting a role can only make a sync do less. Scope
+# cannot cost data: it never widens what a role permits, and `scaffold` and
+# `mixed` are not written in any layout. What scope trades is NOISE against
+# SILENCE — and silence is the whole defect. Forget a `scope-workspace` line
+# and a file this repo will never have is reported on every run until somebody
+# writes it. Forget a `scope-repo` line under the opposite default and the file
+# can never arrive and nothing anywhere says so. The unwritten answer is
+# therefore the LOUD one.
+#
+# tests/template_ownership.bats requires both answers for every file the
+# template ships, so that default is unreachable from this manifest — it
+# governs only a manifest already failing its own test.
+
+# --- managed: the tool's own machinery --------------------------------------
+
+# CI. The workflows and the shell they call are versioned with the tooling,
+# pinned together (both files carry the same OXY_VERSION and a test enforces
+# it), and a customer editing them by hand is how a fleet of repos ends up on
+# eight different CI definitions.
+# The globs below match file EXTENSIONS rather than whole directories, and
+# that is deliberate. `scripts/*` would silently absorb a `scripts/NOTES.txt`
+# somebody adds next year into `managed` — a file nobody classified, in the
+# data-loss direction. Narrowed, that file is simply unmatched, which is both
+# the safe answer and a failing completeness test until a human decides.
+managed   .github/workflows/*.yaml
+managed   .github/workflows/*.yml
+managed   .github/scripts/*.sh
+
+# Local dev. Same argument: `scripts/dev.sh` is the tooling's answer to "run an
+# app locally", and it is meant to improve for everyone at once.
+managed   scripts/*.sh
+
+# The merge rule for the generated memory index. It is a statement about how
+# oxyc's own generated file behaves, so oxyc owns it.
+managed   .gitattributes
+
+# This file.
+managed   .oxyc-managed
+
+# Not a template file at all — `oxyc new` writes it at render time, and
+# `oxyc update --apply` re-points it at the commit it synced from. Listed here
+# so that the sync's right to rewrite it is recorded in the same place as
+# everything else's, rather than being a special case buried in code.
+managed   .oxyc-template.json
+
+# DELIBERATELY ABSENT: `.oxyc.json`, the repo's own statement about where its
+# Oxy workspace is (see lib/workspace.sh). No rule is written for it, which
+# means it falls to `unmatched` — the customer's, never touch — and that is
+# exactly right twice over. It is hand-written, so a sync rewriting it would
+# undo a decision somebody made; and it is the file that tells the sync what
+# shape the repo is, so a sync that overwrote it would be sawing off the branch
+# it stands on. Named here only so that the absence reads as a decision.
+#
+# This template does not ship one, either: a scaffolded repo is a workspace at
+# its root, detection settles that unaided, and shipping an override would make
+# the exception look like the norm.
+
+# --- scaffold: the customer's from the moment it lands ----------------------
+
+# Both are edited immediately and permanently: config.yml gains the models and
+# databases of a real workspace, README.md gains whatever the team needs to say
+# about this customer.
+scaffold  config.yml
+scaffold  README.md
+
+# Node version. A single line, and the customer may legitimately move it — an
+# app that needs a newer runtime is their call, not the tooling's. There is no
+# tool-owned structure inside it to merge, so `mixed` would mean nothing here;
+# a sync that forced it back would be an unrequested downgrade, so `managed` is
+# wrong too. Report the drift and let a human decide.
+scaffold  .nvmrc
+
+# Placeholders that exist only so git carries an empty directory. Once a real
+# view or pipeline lands beside one, the customer usually deletes it — and a
+# sync that recreated it would be resurrecting a file somebody removed on
+# purpose. Written once, then never ours again.
+scaffold  *.gitkeep
+
+# --- mixed: two owners, one file --------------------------------------------
+
+# The case the third role exists for; see the note at the top.
+mixed     package.json
+
+# The `.gitignore` rules this template ships are load-bearing — dropping
+# `node_modules/` or `out/` commits a build tree on the customer's next
+# `git add -A`, and a test in customer-tooling pins the exact rule lines — so
+# those lines are the tool's. Anything the customer adds below them is theirs
+# and is expected: a scratch directory, an app-specific artifact. Both at once,
+# which is `mixed`, not a judgement call between the two.
+mixed     .gitignore
+
+# Same shape, and the file says so itself: the `onlyBuiltDependencies` block
+# carries the three entries the shipped app bundles need, with an instruction
+# to ADD to the list rather than replace it. The `packages:` globs are the
+# tool's; a fourth dependency that needs its install script run is the
+# customer's.
+mixed     pnpm-workspace.yaml
+
+# --- scope: which tree each file describes ----------------------------------
+#
+# Grouped by answer rather than written beside the role above, so that the two
+# axes are never read as one column of five roles. Every file the template
+# ships appears here exactly once, the same rule the roles are held to.
+
+# THE REPO ROOT. All of the managed machinery first: CI runs from the repo root
+# in both layouts, `.github/scripts/` is what it calls, and the stamp and this
+# manifest describe the repo oxyc adopted rather than the workspace inside it.
+scope-repo       .github/workflows/*.yaml
+scope-repo       .github/workflows/*.yml
+scope-repo       .github/scripts/*.sh
+scope-repo       scripts/*.sh
+scope-repo       .gitattributes
+scope-repo       .oxyc-managed
+scope-repo       .oxyc-template.json
+
+# The PNPM workspace and the git working tree, which are root things in a repo
+# whose Oxy workspace is somewhere else. `pnpm dev` is run from the repo root;
+# `packages: apps/*` names directories at the repo root, which is also where
+# `.github/scripts/discover-apps.sh` globs for bundles; `.gitignore` governs
+# what `git add -A` stages across the whole repo, `node_modules/` and `out/`
+# included. `.nvmrc` is the node version all of that builds under.
+scope-repo       package.json
+scope-repo       pnpm-workspace.yaml
+scope-repo       .gitignore
+scope-repo       .nvmrc
+
+# Two placeholders whose directories are also the repo's, not the workspace's.
+# `memory/` is about the CUSTOMER and sits at the repo root in both shapes —
+# lib/workspace.sh says so beside memory_dir, and it is the one directory oxyc
+# creates in a repo it did not scaffold. `apps/` is where publish.yaml looks
+# for bundles, from the repo root, and it is what pnpm-workspace.yaml declares.
+scope-repo       memory/.gitkeep
+scope-repo       apps/.gitkeep
+
+# THE OXY WORKSPACE. config.yml IS the workspace — it is the file
+# workspace_resolve looks for, and finding it one level down is what makes a
+# repo a subdirectory repo in the first place — and README.md is that
+# workspace's own readme, describing the layout below it. An imported repo has
+# both already, inside `oxy/`, and its root README is the project's.
+scope-workspace  config.yml
+scope-workspace  README.md
+
+# The placeholders holding open the workspace's own directories. They live
+# beside config.yml in a scaffolded repo and inside `oxy/` in an imported one.
+scope-workspace  pipelines/.gitkeep
+scope-workspace  workflows/.gitkeep
+scope-workspace  semantics/*/.gitkeep

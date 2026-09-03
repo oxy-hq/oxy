@@ -1,0 +1,62 @@
+{
+  "name": "@oxy-hq/cli",
+  "version": "0.1.0",
+  "description": "oxyc \u2014 the Oxy CLI: a gh-api-style client for the Oxy HTTP API, plus the customer-account tooling that scopes a session to one customer.",
+  "type": "module",
+  "bin": {
+    "oxyc": "./dist/main.mjs"
+  },
+  "files": [
+    "README.md",
+    "dist",
+    "json-schemas",
+    "skills",
+    "template"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxy-hq/oxy-internal.git",
+    "directory": "sdk/cli"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "build:watch": "tsdown --watch",
+    "lint": "biome check src",
+    "prebuild": "node scripts/sync-schemas.mjs",
+    "prepublishOnly": "pnpm run build",
+    "pretest": "pnpm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "oxy",
+    "cli",
+    "api",
+    "agent"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "commander": "^14.0.2",
+    "picocolors": "^1.1.1",
+    "yaml": "^2.8.1",
+    "zod": "^3.25.28 || ^4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsdown": "^0.22.14",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

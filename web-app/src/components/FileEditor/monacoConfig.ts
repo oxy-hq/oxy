@@ -113,7 +113,13 @@ export const configureMonaco = (monaco: MonacoNamespace) => {
           "**/*.procedure.yml",
           "**/*.procedure.yaml"
         ],
-        uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/automation.json"
+        // `workflow.json`, NOT `automation.json`. Both were committed, both
+        // titled `Automation`, and only this one is generated from the Rust
+        // `Automation` type by `oxy gen-config-schema` — the other was a stale
+        // copy nothing regenerated, 6 KB behind, and it is what this editor
+        // validated against. The file kind is `.automation.yml`; the schema
+        // file keeps the older name because that is what the generator writes.
+        uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/workflow.json"
       },
       {
         fileMatch: ["**/config.yml", "**/config.yaml"],

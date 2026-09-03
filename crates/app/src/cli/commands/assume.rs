@@ -26,9 +26,9 @@ use oxy_shared::errors::OxyError;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use super::api;
 use super::app_manifest::{OxyAppManifest, ResolvedEnv, resolve_env};
 use super::assume_org::{get_rows, resolve_org};
+use super::http;
 
 /// Mirrors `server::api::admin::assume::MAX_SESSION`. Duplicated as a display
 /// string only — the server is the authority; this is what we tell the operator
@@ -124,11 +124,11 @@ fn connect(session: &SessionArgs) -> Result<Connection, OxyError> {
                 ))
             },
         )?;
-    let token = api::resolve_bearer(&target, &session.token_env, &session.env)?;
+    let token = http::resolve_bearer(&target, &session.token_env, &session.env)?;
     Ok(Connection {
         target: target.trim_end_matches('/').to_string(),
         token,
-        client: api::http_client()?,
+        client: http::http_client()?,
         org_hint: org_slug,
     })
 }
@@ -141,7 +141,7 @@ impl Connection {
         Ok(Self {
             target: target.trim_end_matches('/').to_string(),
             token: token.to_string(),
-            client: api::http_client()?,
+            client: http::http_client()?,
             org_hint: None,
         })
     }
