@@ -1,4 +1,43 @@
 //! ClickHouse DDL for observability tables.
+//!
+//! # Partitioning
+//!
+//! Event tables partition by **day**, not month. This is not a tuning
+//! preference — monthly partitioning wedged the oxy-dev observability
+//! ClickHouse on 2026-09-03.
+//!
+//! A month of spans accumulates into parts of millions of rows. Merging those
+//! re-reads hundreds of MiB, which fills the page cache inside the container's
+//! cgroup, which squeezes ClickHouse's memory tracker, which fails the merge,
+//! which is then retried — re-reading the same parts again. Self-sustaining:
+//! the failing merges cause the memory pressure that fails them. That instance
+//! reached a 121-part backlog and ~54% merge failure while the log-store
+//! ClickHouse beside it, identical but partitioned by day, sat at 0 failures.
+//!
+//! Daily partitioning also makes retention honest. `apply_retention_ttl` sets
+//! a 90-day TTL, and with `ttl_only_drop_parts = 1` a part is dropped only
+//! once every row in it has expired. Under monthly partitioning that rounds
+//! retention up to as much as ~120 days; under daily it drops the day that
+//! actually expired.
+//!
+//! **`observability_intent_classifications` is deliberately left
+//! unpartitioned.** It is a `ReplacingMergeTree` keyed
+//! `ORDER BY (trace_id, question)` with `classified_at` as the version column,
+//! and deduplication happens WITHIN a partition. Partitioning it by date would
+//! put a re-classification of the same question in a different partition from
+//! the original, and the two would never collapse. `observability_executions`
+//! is safe to partition because its partition key derives from `timestamp`,
+//! which is part of its own `ORDER BY` — a replayed row lands in the same
+//! partition at any granularity.
+//!
+//! ## This does not migrate existing tables
+//!
+//! These are `CREATE TABLE IF NOT EXISTS`, and ClickHouse has no
+//! `ALTER TABLE ... MODIFY PARTITION BY` — a partition key is fixed when the
+//! table is created. So an existing deployment keeps monthly partitions until
+//! someone migrates it deliberately, by creating a day-partitioned table,
+//! copying, and swapping via `EXCHANGE TABLES`. New deployments get the right
+//! shape from the start; that is the whole of what this file can do on its own.
 
 pub const CREATE_SPANS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS observability_spans (
@@ -14,8 +53,9 @@ CREATE TABLE IF NOT EXISTS observability_spans (
     event_data String DEFAULT '[]',
     timestamp DateTime64(9) DEFAULT now64(9)
 ) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(timestamp)
+PARTITION BY toDate(timestamp)
 ORDER BY (trace_id, span_id, timestamp)
+SETTINGS ttl_only_drop_parts = 1
 "#;
 
 pub const CREATE_INTENT_CLUSTERS_TABLE: &str = r#"
@@ -58,8 +98,9 @@ CREATE TABLE IF NOT EXISTS observability_metric_usage (
     trace_id String DEFAULT '',
     created_at DateTime64(3) DEFAULT now64(3)
 ) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(created_at)
+PARTITION BY toDate(created_at)
 ORDER BY (metric_name, source_type, created_at)
+SETTINGS ttl_only_drop_parts = 1
 "#;
 
 /// Flattened, one-row-per-`tool_call`-span execution rollup. Each completed
@@ -94,8 +135,9 @@ CREATE TABLE IF NOT EXISTS observability_executions (
     tool_input String DEFAULT '',
     tool_output String DEFAULT ''
 ) ENGINE = ReplacingMergeTree
-PARTITION BY toYYYYMM(timestamp)
+PARTITION BY toDate(timestamp)
 ORDER BY (execution_type, agent_ref, timestamp, span_id)
+SETTINGS ttl_only_drop_parts = 1
 "#;
 
 /// The SELECT that flattens a `tool_call` span into an execution row. Shared by
@@ -214,5 +256,73 @@ mod tests {
     fn executions_mv_prefix_targets_the_rollup_table() {
         assert!(CREATE_EXECUTIONS_MV_PREFIX.contains("MATERIALIZED VIEW"));
         assert!(CREATE_EXECUTIONS_MV_PREFIX.contains("TO observability_executions"));
+    }
+}
+
+#[cfg(test)]
+mod partitioning_tests {
+    use super::*;
+
+    /// Regression guard for the 2026-09-03 oxy-dev wedge. Monthly partitioning
+    /// let `observability_spans` accumulate parts of millions of rows; merging
+    /// them re-read enough to fill the container cgroup's page cache, which
+    /// squeezed the memory tracker, which failed the merge, which retried —
+    /// a loop the failing merges sustained themselves. 121-part backlog, ~54%
+    /// merge failure, against 0 failures on the day-partitioned log store
+    /// beside it.
+    #[test]
+    fn event_tables_partition_by_day_not_month() {
+        for (name, ddl) in [
+            ("spans", CREATE_SPANS_TABLE),
+            ("metric_usage", CREATE_METRIC_USAGE_TABLE),
+            ("executions", CREATE_EXECUTIONS_TABLE),
+        ] {
+            assert!(
+                ddl.contains("PARTITION BY toDate("),
+                "{name} must partition by day"
+            );
+            assert!(
+                !ddl.contains("toYYYYMM("),
+                "{name} is back on monthly partitioning; see the module docs"
+            );
+        }
+    }
+
+    /// `ttl_only_drop_parts` is what makes the 90-day TTL cheap: expiry drops
+    /// whole days instead of rewriting every part to strip expired rows. It is
+    /// only sound alongside a partition key, which is why it rides with the
+    /// three tables above and not with the unpartitioned one.
+    #[test]
+    fn partitioned_tables_drop_parts_rather_than_rewriting() {
+        for (name, ddl) in [
+            ("spans", CREATE_SPANS_TABLE),
+            ("metric_usage", CREATE_METRIC_USAGE_TABLE),
+            ("executions", CREATE_EXECUTIONS_TABLE),
+        ] {
+            assert!(
+                ddl.contains("ttl_only_drop_parts = 1"),
+                "{name} should expire by dropping parts"
+            );
+        }
+    }
+
+    /// Intent classifications MUST stay unpartitioned. It is a
+    /// `ReplacingMergeTree` keyed `ORDER BY (trace_id, question)` whose version
+    /// column is `classified_at`, and dedup happens WITHIN a partition — so
+    /// partitioning by date would file a re-classification of the same question
+    /// in a different partition from the original and the two would never
+    /// collapse. Executions is safe only because its partition key derives from
+    /// `timestamp`, which is already part of its own `ORDER BY`.
+    #[test]
+    fn intent_classifications_stays_unpartitioned_for_dedup() {
+        assert!(
+            !CREATE_INTENT_CLASSIFICATIONS_TABLE.contains("PARTITION BY"),
+            "partitioning this table breaks ReplacingMergeTree dedup across days"
+        );
+        assert!(
+            CREATE_EXECUTIONS_TABLE
+                .contains("ORDER BY (execution_type, agent_ref, timestamp, span_id)"),
+            "executions may only be partitioned while timestamp remains in its ORDER BY"
+        );
     }
 }
