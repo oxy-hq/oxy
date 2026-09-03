@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.135] - 2026-09-03
+
+### 🚀 Features
+
+- Custom apps are installable — a synthesised web app manifest (#3051)
+- Promote-after-migrate, and a user who has no email address (#3031)
+- Frontline sign-in — a session that can name a user with no email (#3042)
+- The assignment graph — locations, tenant roles, and work items (#3050)
+- Notifications — the inbox, and the seam push plugs into (#3053)
+- Chat — channels, messages, and cross-replica delivery (#3048)
+- Chat channels can be created and joined (#3066)
+- A real Web Push sender behind the Push seam (#3068)
+- Interactive airway pipelines execute on the worker fleet, not the pod that accepted them (#3056)
+- Oxyc — a TypeScript CLI replacing `oxy api`, with served route discovery (#3016)
+- Ship oxyc as a self-contained binary with a one-line installer
+- Serve the VAPID public key, so a browser can actually subscribe (#3079)
+
+### 🐛 Bug Fixes
+
+- Custom-app asset manifest doubled the mount prefix in every entry (#3054)
+- A custom-app function could never write an airhouse-managed database (#3052)
+- Main did not compile, and the OLTP app-delete guard named an unreachable remedy (#3071)
+- *(observability)* Stop the span-drop warning amplifying under store outage (#3076)
+- Point sdk package repository URLs at the real repo
+- *(observability)* Retention TTL has never applied — DateTime64 is rejected (#3077)
+- A custom-app function's HTTP status now reaches its caller (#3080)
+- Oxyc routes --json help, and Link: rel="next" for the lists that paged silently (#3081)
+
+### 💼 Other
+
+- *(deps)* Bump docker/setup-buildx-action from 4.2.0 to 4.3.0 (#3072)
+- *(deps)* Bump github/codeql-action/upload-sarif from 4.37.7 to 4.37.9 (#3073)
+
+### 🚜 Refactor
+
+- Delete the Executable trait, its last two impls off it (retirement, Phase 4b) (#3064)
+
+### 📚 Documentation
+
+- Rename "semantic layer" to "semantic model" in copy and docs (#3063)
+- Custom apps — who a function's database connection runs as (#3069)
+- Biweekly internal-docs distillation (#3058)
+- Document oxyc usage now that @oxy-hq/cli is published (#3078)
+
+### 🧪 Testing
+
+- Assert the assignment graph's cross-tenant gates (#3067)
+
 ## [0.5.134] - 2026-09-02
 
 ### 🚀 Features
@@ -34,6 +82,7 @@ All notable changes to this project will be documented in this file.
 
 - Remove weekly health review workflow
 - Add scripts/conn-leak, a read-only detector for Postgres pool exhaustion (#3060)
+- Release 0.5.134 (#3045)
 
 ## [0.5.133] - 2026-08-31
 
