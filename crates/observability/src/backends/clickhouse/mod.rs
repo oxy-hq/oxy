@@ -102,6 +102,124 @@ mod iso_utc_tests {
     }
 }
 
+/// (table, ttl column, has a partition key)
+///
+/// PARTITIONED_FOR_TTL_DROP: the third field gates
+/// `ttl_only_drop_parts`, which is only correct on a partitioned table.
+/// `observability_intent_classifications` is `ReplacingMergeTree`
+/// ORDER BY (trace_id, question) with NO `PARTITION BY` (schema.rs), so
+/// its whole contents live in the single `all` partition and merges
+/// freely combine old parts with new. Under `ttl_only_drop_parts` a part
+/// is removed only once EVERY row in it has expired — and a part that
+/// keeps absorbing fresh rows never gets there. Setting it on that table
+/// would silently convert "TTL rewrites parts" into "TTL deletes
+/// nothing": the ALTER succeeds, no error, no log. It is also the table
+/// least at risk from the rewrite path, being small and unpartitioned.
+const RETENTION_TABLES: &[(&str, &str, bool)] = &[
+    ("observability_spans", "timestamp", true),
+    ("observability_executions", "timestamp", true),
+    (
+        "observability_intent_classifications",
+        "classified_at",
+        false,
+    ),
+    ("observability_metric_usage", "created_at", true),
+];
+
+/// Build the retention DDL for one observability table. Pure so the
+/// `toDateTime` wrapper can be regression-tested without a live ClickHouse.
+///
+/// `retention_days == 0` removes any existing TTL.
+fn retention_ttl_sql(table: &str, column: &str, retention_days: u32) -> String {
+    if retention_days == 0 {
+        format!("ALTER TABLE {table} REMOVE TTL")
+    } else {
+        // `toDateTime(...)` is NOT optional. Every timestamp column on these
+        // tables is `DateTime64` (spans and executions are `DateTime64(9)`,
+        // intent classifications and metric usage `DateTime64(3)`), and
+        // ClickHouse rejects a TTL expression that resolves to `DateTime64`:
+        //
+        //   Code: 450. TTL expression result column should have DateTime or
+        //   Date type, but has DateTime64(9). (BAD_TTL_EXPRESSION)
+        //
+        // Without the cast this ALTER failed on the FIRST table in the list and
+        // returned early, so none of the four ever received a TTL and
+        // observability data grew without bound.
+        format!(
+            "ALTER TABLE {table} MODIFY TTL toDateTime({column}) + INTERVAL {retention_days} DAY DELETE"
+        )
+    }
+}
+
+#[cfg(test)]
+mod retention_ttl_tests {
+    use super::retention_ttl_sql;
+
+    /// Regression guard for the retention feature never having worked. Every
+    /// timestamp column on these tables is `DateTime64`, which ClickHouse
+    /// refuses as a TTL expression (`Code: 450 BAD_TTL_EXPRESSION`). The ALTER
+    /// therefore failed on the first table and returned early, so no
+    /// observability table ever received a TTL.
+    ///
+    /// Observed in oxy-dev on 2026-09-03: `observability_spans` held 54 days
+    /// and 12.9M rows with no TTL clause at all, and its 510 MiB parts could no
+    /// longer be merged inside the server's 3.2 GiB memory cap.
+    #[test]
+    fn casts_datetime64_columns_to_datetime() {
+        let sql = retention_ttl_sql("observability_spans", "timestamp", 90);
+        assert!(
+            sql.contains("toDateTime(timestamp)"),
+            "TTL column must be cast out of DateTime64, got: {sql}"
+        );
+        assert!(
+            !sql.contains("TTL timestamp +"),
+            "bare DateTime64 column is rejected by ClickHouse: {sql}"
+        );
+    }
+
+    /// The interval and DELETE action must survive the cast.
+    #[test]
+    fn keeps_interval_and_delete_action() {
+        assert_eq!(
+            retention_ttl_sql("observability_metric_usage", "created_at", 30),
+            "ALTER TABLE observability_metric_usage MODIFY TTL toDateTime(created_at) + INTERVAL 30 DAY DELETE"
+        );
+    }
+
+    /// `ttl_only_drop_parts` is only sound on a partitioned table: it removes a
+    /// part only once EVERY row in it has expired, and on an unpartitioned
+    /// table merges keep folding fresh rows into the same part, so that never
+    /// happens and the TTL silently deletes nothing.
+    ///
+    /// This pins the third field of `RETENTION_TABLES` to the actual DDL rather
+    /// than to a comment, so adding `PARTITION BY` to a table — or adding a new
+    /// unpartitioned one to the list — fails here instead of silently
+    /// disabling its retention in production.
+    #[test]
+    fn partition_flag_matches_the_schema_ddl() {
+        for (table, _, partitioned) in super::RETENTION_TABLES {
+            let ddl = crate::backends::clickhouse::schema::ALL_DDL
+                .iter()
+                .find(|d| d.contains(&format!("CREATE TABLE IF NOT EXISTS {table} (")))
+                .unwrap_or_else(|| panic!("no DDL in ALL_DDL for {table}"));
+            assert_eq!(
+                ddl.contains("PARTITION BY"),
+                *partitioned,
+                "{table}: RETENTION_TABLES says partitioned={partitioned}, DDL disagrees"
+            );
+        }
+    }
+
+    /// Zero means "no retention": remove the TTL rather than setting a
+    /// zero-day one, which would delete everything on the next merge.
+    #[test]
+    fn zero_days_removes_ttl_rather_than_expiring_everything() {
+        let sql = retention_ttl_sql("observability_spans", "timestamp", 0);
+        assert_eq!(sql, "ALTER TABLE observability_spans REMOVE TTL");
+        assert!(!sql.contains("INTERVAL 0 DAY"), "must not set a 0-day TTL");
+    }
+}
+
 use crate::intent_types::IntentCluster;
 use crate::store::ObservabilityStore;
 use crate::types::{
@@ -261,27 +379,83 @@ impl ClickHouseObservabilityStorage {
     /// Apply or remove TTL on event tables so ClickHouse's background merge
     /// expires old rows automatically. `retention_days = 0` removes any
     /// existing TTL ("REMOVE TTL"); non-zero sets
-    /// `TTL <column> + INTERVAL N DAY DELETE`. Intent clusters never get a TTL
-    /// because they're aggregated labels, not event data.
+    /// `TTL toDateTime(<column>) + INTERVAL N DAY DELETE`. Intent clusters
+    /// never get a TTL because they're aggregated labels, not event data.
+    ///
+    /// Called on every pod boot, so it is written to be cheap and idempotent.
+    /// `materialize_ttl_after_modify = 0` keeps the ALTER metadata-only rather
+    /// than queuing a full-table rewrite each time.
+    ///
+    /// `ttl_only_drop_parts = 1` makes the eventual expiry drop whole parts
+    /// instead of rewriting them — but ONLY on the three tables that have a
+    /// partition key. `observability_intent_classifications` is deliberately
+    /// excluded, for the reason recorded at `RETENTION_TABLES` above. The
+    /// inline comments below cover why each setting matters.
     pub async fn apply_retention_ttl(&self, retention_days: u32) -> Result<(), OxyError> {
-        let tables: &[(&str, &str)] = &[
-            ("observability_spans", "timestamp"),
-            ("observability_executions", "timestamp"),
-            ("observability_intent_classifications", "classified_at"),
-            ("observability_metric_usage", "created_at"),
-        ];
+        for (table, column, partitioned) in RETENTION_TABLES {
+            // Expire by dropping whole parts rather than rewriting each one to
+            // strip expired rows. The three partitioned tables partition
+            // monthly (`toYYYYMM(...)`) against a 90-day TTL, so a part becomes
+            // wholly expired well within a partition's lifetime and can simply
+            // be dropped.
+            //
+            // The default (0) rewrites every part containing at least one
+            // expired row, which is precisely the operation already OOMing on
+            // oxy-dev: 510 MiB parts against a 3.2 GiB server cap. Since this
+            // change is what makes expiry start happening at all, shipping the
+            // cheap expiry path with it rather than after the first incident.
+            //
+            // Trade-off, deliberate: a part holding a mix of expired and live
+            // rows is left alone until all of it expires, so retention is
+            // coarser than exactly 90 days. That is the same choice
+            // ClickHouse's own ClickStack observability schema makes.
+            //
+            // Skipped when retention is being REMOVED — the setting only
+            // describes how a TTL behaves, and there is about to be no TTL.
+            if *partitioned && retention_days > 0 {
+                // Deliberately NOT fatal. `MODIFY SETTING` needs the
+                // ALTER SETTINGS privilege, which is distinct from the
+                // ALTER TTL privilege the statement below needs, and managed
+                // ClickHouse deployments restrict table settings more often
+                // than they restrict TTL. This is an optimisation; the TTL is
+                // the fix. Propagating here would reproduce the exact bug this
+                // change exists to remove — one statement failing on the first
+                // table leaves `observability_spans` with no TTL and the three
+                // tables after it never attempted.
+                let drop_parts =
+                    format!("ALTER TABLE {table} MODIFY SETTING ttl_only_drop_parts = 1");
+                if let Err(e) = self.client.query(&drop_parts).execute().await {
+                    tracing::warn!(
+                        table,
+                        error = %e,
+                        "ttl_only_drop_parts not applied; TTL will rewrite parts instead of dropping them"
+                    );
+                }
+            }
 
-        for (table, column) in tables {
-            let sql = if retention_days == 0 {
-                format!("ALTER TABLE {table} REMOVE TTL")
-            } else {
-                format!(
-                    "ALTER TABLE {table} MODIFY TTL {column} + INTERVAL {retention_days} DAY DELETE"
-                )
-            };
-            self.client.query(&sql).execute().await.map_err(|e| {
-                OxyError::RuntimeError(format!("ClickHouse TTL update on {table} failed: {e}"))
-            })?;
+            // `materialize_ttl_after_modify = 0` is load-bearing. ClickHouse
+            // defaults it to 1 and does NOT diff MODIFY TTL against the
+            // existing TTL, so every successful ALTER queues a MATERIALIZE TTL
+            // mutation that rewrites all existing parts.
+            //
+            // This runs on EVERY boot of every ide and serve pod
+            // (`open_clickhouse_store`). While the statement was failing at
+            // parse that was harmless; now that it succeeds, each deploy,
+            // scale event or crashloop would queue a fresh full-table rewrite
+            // of a 12.9M-row table on a server already at its memory cap — and
+            // buy nothing, since nothing is old enough to expire yet.
+            //
+            // Metadata-only is all this needs to be: the TTL still takes
+            // effect on parts as they merge from here on.
+            self.client
+                .clone()
+                .with_setting("materialize_ttl_after_modify", "0")
+                .query(&retention_ttl_sql(table, column, retention_days))
+                .execute()
+                .await
+                .map_err(|e| {
+                    OxyError::RuntimeError(format!("ClickHouse TTL update on {table} failed: {e}"))
+                })?;
         }
         Ok(())
     }

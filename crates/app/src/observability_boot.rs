@@ -90,7 +90,14 @@ pub(crate) async fn open_clickhouse_store() -> (Option<Arc<dyn ObservabilityStor
                     Ok(()) => tracing::info!(
                         "Observability retention: {retention_days} days (ClickHouse TTL)"
                     ),
-                    Err(e) => eprintln!("{}", format!("ClickHouse TTL apply failed: {e}").error()),
+                    // Structured, not just stderr: this exact failure went
+                    // unnoticed for months because `eprintln!` alone never
+                    // reaches log-based alerting. Retention silently not
+                    // applying is how observability tables grow without bound.
+                    Err(e) => {
+                        tracing::error!(error = %e, "ClickHouse TTL apply failed");
+                        eprintln!("{}", format!("ClickHouse TTL apply failed: {e}").error());
+                    }
                 }
                 (
                     Some(Arc::new(storage) as Arc<dyn ObservabilityStore>),
