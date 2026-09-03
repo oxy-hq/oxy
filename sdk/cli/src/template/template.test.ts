@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { planAdopt } from "./adopt.js";
+import { embeddedAssetsDir } from "./embedded.js";
+import { ephemeralSourceReason } from "./locate.js";
 import { globMatch, inScope, parseManifest, roleFor, scopeFor, unclassified } from "./manifest.js";
 import { buildStamp, repoPathFor, substitute, templateSourceFor } from "./render.js";
 import { computeDrift } from "./sync.js";
@@ -330,5 +332,74 @@ describe("planAdopt", () => {
     expect(plan.collisions).toEqual([]);
     expect(plan.alreadyHere).toEqual([".github/workflows/publish.yaml"]);
     expect(plan.install).toContain("scripts/dev.sh");
+  });
+});
+
+/**
+ * Whether a skills source will still be there tomorrow.
+ *
+ * `oxyc skills install` writes SYMLINKS, which is the only reason this
+ * distinction exists: every other command reads its assets and is done, while a
+ * link is read months later by Claude Code, long after this process exited. Run
+ * under `npx` the package sits in npm's throwaway cache, so the install reports
+ * six skills linked and every one of them dangles the moment npm reclaims it —
+ * silently, with `~/.claude/skills/` still looking populated.
+ */
+describe("ephemeralSourceReason", () => {
+  it("names the throwaway caches a package manager runs `oxyc` out of", () => {
+    expect(ephemeralSourceReason("/home/x/.npm/_npx/a1b2/node_modules/@oxy-hq/cli/skills")).toMatch(
+      /npx/
+    );
+    expect(ephemeralSourceReason("/home/x/.local/share/pnpm/store/dlx/9f/skills")).toMatch(/dlx/);
+    expect(ephemeralSourceReason(join(tmpdir(), "xfs-9911", "skills"))).toMatch(/temporary/);
+  });
+
+  /**
+   * THE NEGATIVE THAT MATTERS MOST. A compiled binary has nowhere to put its
+   * assets but a cache directory — `<cache>/oxyc/assets/<digest>/`, per
+   * `embedded.ts` — and linking out of it is the supported curl-install path,
+   * stable for as long as that build is installed. A check that reasoned "cache
+   * directory, therefore ephemeral" would break `skills install` for every
+   * binary user while fixing it for npx. Hence exact path SEGMENTS, never a
+   * substring or a "looks like a cache" guess.
+   */
+  it("leaves a durable install alone, the compiled binary's cache included", () => {
+    expect(ephemeralSourceReason("/usr/local/lib/node_modules/@oxy-hq/cli/skills")).toBeUndefined();
+    expect(ephemeralSourceReason("/home/x/.cache/oxyc/assets/a4b68ef9/skills")).toBeUndefined();
+    expect(
+      ephemeralSourceReason("/Users/x/Library/Caches/oxyc/assets/a4b68ef9/skills")
+    ).toBeUndefined();
+    expect(ephemeralSourceReason("/Users/x/oxy-internal/sdk/cli/skills")).toBeUndefined();
+  });
+
+  /**
+   * THE MISFIRE THIS PREVENTS, caught by running the real compiled binary.
+   *
+   * `cacheDir()` is `$XDG_CACHE_HOME` or `$HOME/.cache`, and a sandbox or an
+   * ephemeral container can perfectly well place either under the temp dir.
+   * The temp-dir rule would then refuse the ONE install shape with nowhere else
+   * to keep its assets — and quote `npm install -g` at someone who installed by
+   * curl. So the binary's own cache is exempted by name, before any other rule.
+   *
+   * Both paths below sit under the same temp root; only one is ephemeral.
+   */
+  it("never calls the compiled binary's own asset cache ephemeral", () => {
+    const previous = process.env.OXYC_CACHE_DIR;
+    process.env.OXYC_CACHE_DIR = join(tmpdir(), "oxyc-cache-probe");
+    try {
+      expect(ephemeralSourceReason(join(embeddedAssetsDir(), "skills"))).toBeUndefined();
+      expect(ephemeralSourceReason(join(tmpdir(), "somewhere-else", "skills"))).toMatch(
+        /temporary/
+      );
+    } finally {
+      if (previous === undefined) delete process.env.OXYC_CACHE_DIR;
+      else process.env.OXYC_CACHE_DIR = previous;
+    }
+  });
+
+  /** A segment, not a substring: `_npxthing` and `dlxtra` are ordinary names. */
+  it("does not fire on a directory that merely starts with one of the names", () => {
+    expect(ephemeralSourceReason("/opt/_npxtools/@oxy-hq/cli/skills")).toBeUndefined();
+    expect(ephemeralSourceReason("/opt/dlxtra/@oxy-hq/cli/skills")).toBeUndefined();
   });
 });

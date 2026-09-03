@@ -76,6 +76,50 @@ function oxyc(homeDir: string, args: string[], skillsDir?: string) {
   return { status: r.status ?? -1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
+/**
+ * `npx @oxy-hq/cli skills install`, which used to succeed and then rot.
+ *
+ * The package lives in npm's `_npx` cache. Linking out of it printed six green
+ * `linked` rows and left six DANGLING entries as soon as npm reclaimed that
+ * cache: Claude Code stops loading the skills, nothing errors, and
+ * `~/.claude/skills/` still looks full. This is the failure class the module
+ * header says was designed out — links into a tree that had to persist forever
+ * and did not — reintroduced through a different door.
+ */
+describe("an install out of a throwaway package cache", () => {
+  /** A skills source under the system temp dir, holding one real skill. */
+  function ephemeralSkills(): string {
+    const dir = mkdtempSync(join(tmpdir(), "oxyc-npxlike-"));
+    SCRATCH.push(dir);
+    mkdirSync(join(dir, "oxy-cli"), { recursive: true });
+    writeFileSync(join(dir, "oxy-cli", "SKILL.md"), "# oxy-cli\n");
+    return dir;
+  }
+
+  it("refuses, and names the durable install as the fix", () => {
+    const h = home();
+    const r = oxyc(h, ["install"], ephemeralSkills());
+
+    expect(r.status).toBe(ExitCode.REFUSED);
+    expect(r.stderr).toMatch(/refusing to link skills out of/);
+    expect(r.stderr).toMatch(/npm install -g @oxy-hq\/cli/);
+    // NOT the blocked-install refusal, which is a different diagnosis with a
+    // different fix. Both exit 8, so the code alone cannot tell them apart.
+    expect(r.stderr).not.toMatch(/could not be linked/);
+  });
+
+  /**
+   * THE POINT. A refusal that had already written the links would be strictly
+   * worse than no check: a non-zero exit nobody reads, plus the dangling links
+   * anyway. Nothing may be created.
+   */
+  it("creates no links at all", () => {
+    const h = home();
+    oxyc(h, ["install"], ephemeralSkills());
+    expect(existsSync(join(h, ".claude", "skills", "oxy-cli"))).toBe(false);
+  });
+});
+
 describe("a blocked install", () => {
   /**
    * A real directory where a link belongs cannot be replaced without deleting

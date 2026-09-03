@@ -374,6 +374,40 @@ jobs:
       - name: Build standalone binaries
         run: pnpm --filter @oxy-hq/cli run build:binary
 
+      # RUN ONE, because nothing else ever does. Every test in the package
+      # executes on Node, and `locate.ts` prefers a package on disk whenever one
+      # exists — so `extractEmbeddedAssets()`, the thing that makes the curl
+      # install work at all, runs in exactly this configuration and nowhere
+      # else. Compiling, checksumming and releasing an artifact no one has
+      # started is how a resolution difference under `bun build --compile`
+      # reaches a customer's `curl | bash` instead of this log.
+      #
+      # Only the host target can be executed here; the other three are
+      # cross-compiled and share the bundle, so this covers the bundling and
+      # the Bun runtime, not each platform.
+      - name: Smoke-test the compiled binary
+        working-directory: sdk/cli/binaries
+        env:
+          BIN: ./oxyc-x86_64-unknown-linux-gnu
+        run: |
+          set -euo pipefail
+          chmod +x "$BIN"
+          "$BIN" --version
+          "$BIN" exit-codes > /dev/null
+          "$BIN" routes --help > /dev/null
+
+          # A HOME of its own: `skills list` resolves `~/.claude/skills`, and a
+          # smoke test must not read or write the runner's real one.
+          export HOME="$(mktemp -d)"
+          # THE ASSERTION IS ON THE OUTPUT, not the exit code. `skills list`
+          # with nothing to list warns and still exits 0 — deliberately, a
+          # listing that finds nothing is not a failure — so an exit-code check
+          # alone passes on a build whose assets never unpacked. Naming a skill
+          # is what proves extraction ran. One command covers all three asset
+          # directories: `extractEmbeddedAssets` refuses to publish a tree
+          # missing any of them (`looksComplete`).
+          "$BIN" skills list | tee /dev/stderr | grep -q 'oxy-cli'
+
       - name: Checksums
         working-directory: sdk/cli/binaries
         run: |

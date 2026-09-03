@@ -31,7 +31,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { REINSTALL_REMEDY } from "../template/embedded.js";
-import { skillsDir } from "../template/locate.js";
+import { ephemeralSourceReason, skillsDir } from "../template/locate.js";
 import * as log from "../ui/log.js";
 import { table } from "../ui/render.js";
 import { out } from "../ui/tty.js";
@@ -106,6 +106,29 @@ export function runSkillsInstall(): void {
     throw new CliError("this installation ships no skills", {
       code: ExitCode.FAILURE,
       remedy: REINSTALL_REMEDY
+    });
+  }
+
+  // REFUSED BEFORE ANY LINK IS MADE, because the alternative is worse than a
+  // failure: `npx @oxy-hq/cli skills install` links out of npm's throwaway
+  // cache, prints six green `linked` rows, and leaves six dangling entries the
+  // moment npm reclaims it. Claude Code just stops loading them — no error, and
+  // `~/.claude/skills/` still looks full.
+  //
+  // Refusing rather than COPYING, which is the friendlier-looking option and a
+  // trap: real directories at those names are exactly what `linkOne` below
+  // rightly declines to clobber, so a copy here would wedge every later
+  // `skills install` from a proper global install. One upfront no beats a
+  // permanent block.
+  const ephemeral = ephemeralSourceReason(source);
+  if (ephemeral) {
+    throw refusal(`refusing to link skills out of ${ephemeral}`, {
+      hint:
+        "the links would work now and break silently later — `oxyc skills install` " +
+        "writes symlinks that something else reads months from now, so the source " +
+        "has to outlive this process.",
+      detail: `  source: ${source}`,
+      remedy: "npm install -g @oxy-hq/cli && oxyc skills install"
     });
   }
 

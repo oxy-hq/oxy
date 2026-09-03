@@ -22,11 +22,17 @@
  */
 
 import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CliError, ExitCode } from "../util/errors.js";
-import { ASSET_DIRS, extractEmbeddedAssets, REINSTALL_REMEDY } from "./embedded.js";
+import {
+  ASSET_DIRS,
+  embeddedAssetsDir,
+  extractEmbeddedAssets,
+  REINSTALL_REMEDY
+} from "./embedded.js";
 
 /**
  * The package root, when this is a real package on disk.
@@ -109,6 +115,55 @@ export function schemasDir(): string {
 /** The Claude skills bundled in this package, linked by `oxyc skills install`. */
 export function skillsDir(): string {
   return process.env.OXYC_SKILLS_DIR ?? join(packageRoot(), "skills");
+}
+
+/**
+ * Why a path will not still be there tomorrow, phrased for an error message —
+ * or `undefined` when it looks durable.
+ *
+ * ONLY `skills install` needs this, and only because it SYMLINKS. Every other
+ * command reads its assets and is done; a link outlives the process and is read
+ * months later by something that is not this tool. Run under `npx`, the package
+ * lives in npm's `_npx` cache, so `oxyc skills install` reports six skills
+ * linked, in green, and every one of them dangles the moment npm reclaims that
+ * cache — Claude Code then silently stops loading them, and `~/.claude/skills/`
+ * still looks populated. That is the exact failure `commands/skills.ts` opens by
+ * describing: links out of a tree that had to persist forever, and did not.
+ *
+ * WHAT IS DELIBERATELY NOT MATCHED is as important as what is. A compiled
+ * binary unpacks its assets into `<cache>/oxyc/assets/<digest>/`
+ * (`template/embedded.ts`) — a cache directory, and a perfectly supported place
+ * to link out of, because the curl install has nowhere else to put them and the
+ * path is stable for as long as that build is installed. It is EXEMPTED BY
+ * NAME, first and unconditionally, rather than left to the rules below to miss:
+ * `cacheDir()` is `$XDG_CACHE_HOME` or `$HOME/.cache`, both of which a sandbox
+ * or an ephemeral container can perfectly well place under the temp dir — and
+ * then the last rule here would refuse the one install shape that has nowhere
+ * else to keep its assets, quoting a remedy (`npm install -g`) that is not even
+ * how that user installed. Everything else matches package-manager EXEC caches
+ * specifically, never "somewhere under a cache dir", which is why `dlx` and
+ * `_npx` are exact path segments.
+ *
+ * The escape hatch already exists and needs no flag: `OXYC_SKILLS_DIR` pointing
+ * at a durable copy is checked here like any other source, so a setup this
+ * heuristic misjudges has a one-line way past it.
+ */
+export function ephemeralSourceReason(path: string): string | undefined {
+  const full = resolve(path);
+
+  // The compiled binary's own unpacked assets — supported, and checked before
+  // anything else so no later rule can take it away.
+  const assets = resolve(embeddedAssetsDir());
+  if (full === assets || full.startsWith(assets + sep)) return undefined;
+
+  const segments = full.split(sep);
+  // npm's `npx` cache: ~/.npm/_npx/<hash>/node_modules/...
+  if (segments.includes("_npx")) return "an `npx` cache directory";
+  // `pnpm dlx` / `yarn dlx` unpack into a `dlx` directory under the store.
+  if (segments.includes("dlx")) return "a `dlx` cache directory";
+  // `yarn dlx` and some `bunx` paths land straight in the system temp dir.
+  if (full.startsWith(resolve(tmpdir()) + sep)) return "a temporary directory";
+  return undefined;
 }
 
 /**
