@@ -2,11 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.137] - 2026-09-03
+
+### 🐛 Bug Fixes
+
+- *(observability)* Partition event tables by day, not month (#3085)
+
 ## [0.5.136] - 2026-09-03
 
 ### 🐛 Bug Fixes
 
 - Refuse `skills install` from a throwaway package cache, and smoke-test the compiled binary (#3082)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release @oxy-hq/cli 0.2.0, and read `--version` from the manifest (#3084)
+- Release 0.5.136 (#3083)
 
 ## [0.5.135] - 2026-09-03
 
