@@ -56,6 +56,11 @@ export type {
   StorageUploadUrl,
   StorageUploadUrlInput
 } from "./function-context";
+// The SSE reader's types. `FunctionError` carries `status` and `body` for a
+// function that answered a non-2xx, and without this line a TypeScript consumer
+// gets `unknown` from a `catch` and has to hand-roll the shape — which makes
+// the whole point of surfacing the status unreachable from the public API.
+export type { FunctionError, FunctionLog, FunctionResult } from "./function-sse";
 export type { OxyInjectedAppConfig } from "./inject";
 export { readInjectedAppConfig } from "./inject";
 export type { OxyAppLogger, OxyAppLogLevel } from "./logger";

@@ -20,8 +20,22 @@ export interface FunctionResult<Data> {
   logs: FunctionLog[];
 }
 
-/** An error carries the logs captured before the throw, so the app can show them. */
-export type FunctionError = Error & { logs?: FunctionLog[] };
+/**
+ * An error carries the logs captured before the throw, so the app can show them.
+ *
+ * `status` is the HTTP status the FUNCTION returned, present when the function
+ * ran and answered a non-2xx. It is absent when the run itself failed (an
+ * `event: error` frame — a crash, a timeout, a cancellation), because there was
+ * no response to have a status.
+ *
+ * `body` is the parsed payload the function returned with that status, so a
+ * caller can read `{ error: "…" }` without re-parsing the message.
+ */
+export type FunctionError = Error & {
+  logs?: FunctionLog[];
+  status?: number;
+  body?: unknown;
+};
 
 /**
  * Read a `text/event-stream` function response to completion. Resolves with the
@@ -56,6 +70,27 @@ export async function readFunctionSseStream<Data>(resp: Response): Promise<Funct
       dataPayload = data;
     } else if (event === "done") {
       const parsed = dataPayload ? (JSON.parse(dataPayload) as unknown) : null;
+      // The status the function returned. The route used to hardcode 200 here,
+      // so a handler answering 403 or 409 resolved as an ordinary success and
+      // every caller had to infer rejection from the body's shape — which meant
+      // a `catch` written for it was dead code that never ran.
+      //
+      // Absent or non-numeric is treated as success: an older server does not
+      // send one, and an app talking to it must keep working rather than start
+      // throwing on every call.
+      const meta = data ? (JSON.parse(data) as { status?: unknown }) : {};
+      const status = typeof meta.status === "number" ? meta.status : 200;
+      if (status < 200 || status >= 300) {
+        const payload = parsed as { error?: unknown; message?: unknown } | null;
+        const err = new Error(
+          String(payload?.message ?? payload?.error ?? `function returned ${status}`)
+        ) as FunctionError;
+        err.name = "FunctionStatusError";
+        err.status = status;
+        err.body = parsed;
+        err.logs = logs;
+        throw err;
+      }
       return { done: true, value: parsed as Data };
     } else if (event === "error") {
       const payload = data ? JSON.parse(data) : {};

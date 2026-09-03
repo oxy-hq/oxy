@@ -28,6 +28,26 @@ the app's project-level access, not the invoking visitor's — with one exceptio
 A function is a file at `functions/<name>.ts` that exports a default
 `async (req, ctx) => Response`, declared in the app's `oxy-app.json`:
 
+<Note>
+  The **status** you return is the status the caller sees. `useFunction`'s
+  `invoke` resolves on a 2xx and **rejects** on anything else, with a
+  `FunctionError` carrying `status`, the parsed `body`, and any logs the run
+  captured — so `return Response.json({ error: "…" }, { status: 409 })` is a
+  rejection the caller can branch on, not a value it has to inspect.
+
+  ```ts
+  try {
+    await invoke({ pathId });
+  } catch (e) {
+    const err = e as FunctionError;
+    if (err.status === 409) { /* already assigned */ }
+  }
+  ```
+
+  Requires `@oxy-hq/sdk` 2.10 or later. Before that the status was discarded and
+  every response resolved.
+</Note>
+
 ```ts functions/daily-rollup.ts
 export default async function (req, ctx) {
   const { rows } = await ctx.query(

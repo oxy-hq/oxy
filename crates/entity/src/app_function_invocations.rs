@@ -31,6 +31,11 @@ pub struct Model {
     /// Hash of the request body for a keyed invocation, so a key reused with a
     /// different body is rejected instead of silently replaying the first result.
     pub request_hash: Option<i64>,
+    /// The HTTP status the function returned, stored beside the body it belongs
+    /// to so an idempotent replay reports the same status as the first call.
+    /// `None` on rows written before the column existed — read as 200, which is
+    /// what they were already being reported as.
+    pub result_status: Option<i16>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

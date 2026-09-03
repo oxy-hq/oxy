@@ -153,6 +153,7 @@ mod m20260831_000001_world_model_events;
 mod m20260901_000001_chat;
 mod m20260901_000002_assignment_graph;
 mod m20260901_000003_notifications;
+mod m20260903_000001_function_result_status;
 
 pub struct Migrator;
 
@@ -307,6 +308,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260901_000001_chat::Migration),
             Box::new(m20260901_000002_assignment_graph::Migration),
             Box::new(m20260901_000003_notifications::Migration),
+            Box::new(m20260903_000001_function_result_status::Migration),
         ]
     }
 }

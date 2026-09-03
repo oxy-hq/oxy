@@ -425,13 +425,15 @@ fn sse_response(body: String) -> Response {
 /// SDK's single `JSON.parse(data)` yields the object (not a double-encoded
 /// string); a non-JSON body falls back to a JSON string. Shared by the fresh-run
 /// and cache-hit paths so they frame identically.
-fn success_sse_body(body_text: &str) -> String {
+fn success_sse_body(body_text: &str, http_status: u16) -> String {
     let body_value = serde_json::from_str::<serde_json::Value>(body_text)
         .unwrap_or_else(|_| serde_json::Value::String(body_text.to_string()));
     format!(
         "{}{}",
         sse_event("data", &body_value),
-        sse_event("done", &serde_json::json!({ "status": 200 }))
+        // The status the function actually returned. This was hardcoded 200,
+        // so a handler answering 403 reported success and the SDK resolved it.
+        sse_event("done", &serde_json::json!({ "status": http_status }))
     )
 }
 
@@ -560,6 +562,7 @@ async fn insert_running_invocation(
         created_at: Set(chrono::Utc::now().into()),
         idempotency_key: Set(key.map(str::to_string)),
         result_body: Set(None),
+        result_status: Set(None),
         request_hash: Set(request_hash),
     }
     .insert(db)
@@ -589,6 +592,15 @@ async fn reclaim_or_conflict(
         .col_expr(
             app_function_invocations::Column::ResultBody,
             Expr::value(Option::<String>::None),
+        )
+        // Cleared WITH the body. Unreachable today — the replay arm requires
+        // `Some(body)` and both columns are always written together — but a row
+        // carrying a status for a body that was deliberately cleared is
+        // precisely the desync this column exists to prevent, and the pair
+        // should be atomic wherever either moves.
+        .col_expr(
+            app_function_invocations::Column::ResultStatus,
+            Expr::value(Option::<i16>::None),
         )
         .col_expr(
             app_function_invocations::Column::CreatedAt,
@@ -637,8 +649,19 @@ async fn resolve_keyed_row(
         (chrono::Utc::now() - chrono::Duration::seconds(REAP_AFTER_SECS)).into();
     let stale = row.created_at < cutoff;
     match (row.status.as_str(), row.result_body) {
-        // A completed success replays its stored result.
-        ("success", Some(body)) => Acquire::Return(Box::new(sse_response(success_sse_body(&body)))),
+        // A completed success replays its stored result AND the status it
+        // returned with. This is why the status is a column: replaying the body
+        // of a 409 under a hardcoded 200 would make a retry disagree with the
+        // call it is replaying — the first press rejected, the second
+        // apparently accepted, same invocation.
+        //
+        // `None` is a row written before the column existed. Read as 200, which
+        // is what those rows were already being reported as; stamping them in a
+        // backfill would assert something nobody recorded.
+        ("success", Some(body)) => Acquire::Return(Box::new(sse_response(success_sse_body(
+            &body,
+            row.result_status.unwrap_or(200) as u16,
+        )))),
         // Genuinely in flight → duplicate in progress.
         ("running", _) if !stale => Acquire::Return(Box::new(json_error(
             StatusCode::CONFLICT,
@@ -824,7 +847,11 @@ pub async fn handle_function_request(
         && !refresh
         && let Some(cached) = result_cache::get(build_id, function_name, outcome.user_id, &body)
     {
-        return sse_response(success_sse_body(&cached));
+        // 200, and that is now a fact rather than a default: only a 2xx result
+        // is ever cached (see the `put` below), and the status is not stored
+        // alongside it because a 201 or 204 body replayed as 200 is a smaller
+        // wrong than a second column that can drift from the body it describes.
+        return sse_response(success_sse_body(&cached, 200));
     }
 
     // §11.6 — rate limit per (user, app, function).
@@ -923,7 +950,7 @@ pub async fn handle_function_request(
     let logs: std::sync::Arc<Mutex<Vec<LogLine>>> = std::sync::Arc::new(Mutex::new(Vec::new()));
 
     #[cfg(feature = "custom-app-functions")]
-    let (status_str, error_msg, body_text) = run_with_runtime(RunArgs {
+    let (status_str, error_msg, body_text, http_status) = run_with_runtime(RunArgs {
         db: &db,
         query_exec,
         app: &app,
@@ -965,12 +992,16 @@ pub async fn handle_function_request(
     .await;
 
     #[cfg(not(feature = "custom-app-functions"))]
-    let (status_str, error_msg, body_text) = {
+    let (status_str, error_msg, body_text, http_status) = {
         let _ = (&artifact_js, &body, timeout, &query_exec);
         (
             "error",
             Some("custom-app-functions feature not enabled".to_string()),
             String::new(),
+            // No response, so no status — matching the error arms in
+            // `run_with_runtime`. The error framing carries this outcome, so
+            // the value is never read.
+            0u16,
         )
     };
 
@@ -986,13 +1017,22 @@ pub async fn handle_function_request(
     // so the audit table isn't bloated with every function's output.
     if idempotency_key.is_some() && status_str == "success" {
         update.result_body = Set(Some(body_text.clone()));
+        update.result_status = Set(Some(http_status as i16));
     }
     if let Err(e) = update.update(&db).await {
         error!("failed to update app_function_invocations row: {e}");
     }
 
     // Cache the successful result for functions that opted into `cache`.
+    //
+    // `status_str == "success"` only means the isolate RETURNED — a handler
+    // answering 403 reaches here too. Caching that would replay a rejection to
+    // everyone for the TTL, and the cache has no status to replay it with, so
+    // the hit would report 200 for a body that says "forbidden". A non-2xx is
+    // not a result worth remembering anyway: it is a statement about this
+    // caller and this request.
     if status_str == "success"
+        && (200..300).contains(&http_status)
         && let Some(ttl) = cache_ttl
     {
         result_cache::put(
@@ -1025,13 +1065,27 @@ pub async fn handle_function_request(
             "error",
             &serde_json::json!({ "error": status_str, "message": msg }),
         ),
-        None => success_sse_body(&body_text),
+        None => success_sse_body(&body_text, http_status),
     });
     sse_response(sse_body)
 }
 
-/// Outcome triple shared by both feature arms: `(status, error_msg, body)`.
-type RunOutcome = (&'static str, Option<String>, String);
+/// Outcome shared by both feature arms: `(status_str, error, body, http_status)`.
+///
+/// FOUR elements, and the count is load-bearing across a `cfg`. The
+/// feature-off arm builds this tuple by hand, so widening it here without
+/// widening there compiles under the default features and fails only under
+/// `--no-default-features` — which is a supported configuration
+/// (`oxy-api-github` takes `oxy-app` that way so a V8-less build really drops
+/// V8), and which a `--workspace` build unifies back on. That is exactly how
+/// the fourth element shipped broken the first time.
+///
+/// The fourth element is the status the FUNCTION returned, which used to be
+/// dropped here — `run_with_runtime` matched on `Ok(resp)` and kept only
+/// `resp.body`, and the SSE framing hardcoded 200. So every rejection a
+/// function expressed arrived as a success and clients had to infer it from the
+/// body's shape.
+type RunOutcome = (&'static str, Option<String>, String, u16);
 
 /// Max `function_log` events emitted per run. Bounds the run's event log (the
 /// n8n/Windmill/Hatchet DB-bloat lesson — treat the event store as a buffer, not
@@ -1139,6 +1193,7 @@ pub(crate) async fn run_scheduled_function(
         created_at: Set(chrono::Utc::now().into()),
         idempotency_key: Set(None),
         result_body: Set(None),
+        result_status: Set(None),
         request_hash: Set(None),
     })
     .insert(db)
@@ -1151,7 +1206,7 @@ pub(crate) async fn run_scheduled_function(
     let started = Instant::now();
     let logs: std::sync::Arc<Mutex<Vec<LogLine>>> = std::sync::Arc::new(Mutex::new(Vec::new()));
 
-    let (status_str, error_msg, body_text) = run_with_runtime(RunArgs {
+    let (status_str, error_msg, body_text, http_status) = run_with_runtime(RunArgs {
         db,
         query_exec,
         app: &app,
@@ -1207,6 +1262,7 @@ pub(crate) async fn run_scheduled_function(
     update.error = Set(error_msg.clone());
     if status_str == "success" {
         update.result_body = Set(Some(body_text.clone()));
+        update.result_status = Set(Some(http_status as i16));
     }
     if let Err(e) = update.update(db).await {
         error!("failed to update scheduled invocation row: {e}");
@@ -1410,12 +1466,20 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         .await
     {
         Ok(Some(ws)) => ws,
-        Ok(None) => return ("error", Some("workspace not found".into()), String::new()),
+        Ok(None) => {
+            return (
+                "error",
+                Some("workspace not found".into()),
+                String::new(),
+                0,
+            );
+        }
         Err(e) => {
             return (
                 "error",
                 Some(format!("workspace lookup failed: {e}")),
                 String::new(),
+                0,
             );
         }
     };
@@ -1485,6 +1549,7 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
                 "error",
                 Some("could not build workspace context".into()),
                 String::new(),
+                0,
             );
         }
     };
@@ -1619,18 +1684,24 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
     watchdog.abort();
 
     match result {
-        Ok(resp) => ("success", None, resp.body),
+        Ok(resp) => ("success", None, resp.body, resp.status),
         Err(runtime::RuntimeError::Cancelled) => (
             "cancelled",
             Some("function was cancelled".into()),
             String::new(),
+            // Not a function status: the isolate never returned one. The error
+            // framing carries these, so the value is never read.
+            0,
         ),
         Err(runtime::RuntimeError::Timeout) => (
             "timeout",
             Some("function execution timed out".into()),
             String::new(),
+            // Not a function status: the isolate never returned one. The error
+            // framing carries these, so the value is never read.
+            0,
         ),
-        Err(e) => ("error", Some(e.to_string()), String::new()),
+        Err(e) => ("error", Some(e.to_string()), String::new(), 0),
     }
 }
 
@@ -1993,5 +2064,53 @@ mod job_policy_tests {
         let policy =
             function_task_policy(&json!({ "retries": { "maxAttempts": 9999 } })).expect("policy");
         assert_eq!(policy.retry.unwrap().max_retries, super::MAX_JOB_RETRIES);
+    }
+}
+
+#[cfg(test)]
+mod function_status_tests {
+    use super::success_sse_body;
+
+    /// The terminal frame carries the status the FUNCTION returned.
+    ///
+    /// This was hardcoded `200`, so a handler answering 403 framed as a success
+    /// and the SDK resolved it. Asserted on the pure helper because the failure
+    /// is invisible from here — it surfaces as a client that never sees a
+    /// rejection, three layers away.
+    #[test]
+    fn the_done_frame_carries_the_status_it_was_given() {
+        let body = success_sse_body(r#"{"error":"forbidden"}"#, 403);
+        assert!(
+            body.contains(r#""status":403"#),
+            "the done frame must report the function's status: {body}"
+        );
+        // And the payload still arrives as a parsed value, not a re-encoded
+        // string — the property the SDK's single `JSON.parse` depends on.
+        assert!(
+            body.contains(r#"data: {"error":"forbidden"}"#),
+            "the body must be emitted as a JSON value: {body}"
+        );
+    }
+
+    /// A 2xx that is not 200 is passed through unaltered.
+    ///
+    /// A naive `status == 200` check anywhere in this path would turn every
+    /// 201 or 204 into a rejection on the SDK side.
+    #[test]
+    fn a_created_status_is_not_normalised_to_200() {
+        assert!(success_sse_body("{}", 201).contains(r#""status":201"#));
+    }
+
+    /// A replay of a row written before `result_status` existed reports 200.
+    ///
+    /// Those rows genuinely do not know what they returned, and 200 is what
+    /// they were already being reported as — so the fallback is the status quo
+    /// rather than an assertion. Pinned because a backfill to some other
+    /// default would silently change what every historical replay claims.
+    #[test]
+    fn a_missing_stored_status_replays_as_200() {
+        let stored: Option<i16> = None;
+        let body = success_sse_body("{}", stored.unwrap_or(200) as u16);
+        assert!(body.contains(r#""status":200"#), "{body}");
     }
 }

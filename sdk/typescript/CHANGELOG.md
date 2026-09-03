@@ -5,6 +5,44 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-09-03
+
+### Changed
+
+- **A function's HTTP status now reaches the caller.** `readFunctionSseStream`
+  throws a `FunctionStatusError` when a function returns a non-2xx, carrying
+  `status`, the parsed `body`, and the logs captured before it. Previously the
+  server hardcoded `{"status": 200}` in the terminal frame and dropped the
+  isolate's status, so a handler answering 400, 403 or 409 resolved as an
+  ordinary success and every caller had to infer rejection from the body's
+  shape.
+
+  **This is a behaviour change.** An app that reads `{ error: … }` out of a
+  resolved value will now see a rejection instead:
+
+  ```ts
+  try {
+    await invoke({ pathId });
+  } catch (e) {
+    const err = e as FunctionError;
+    if (err.status === 409) { /* everyone already holds it */ }
+  }
+  ```
+
+  Two things keep it from breaking apps that do not return a non-2xx: a missing
+  or non-numeric status is treated as success, so an app talking to a server
+  that predates this is unaffected; and the check is a 2xx range rather than
+  `!== 200`, so 201 and 204 stay successes.
+
+  Requires an oxy server carrying the matching change; against an older one the
+  behaviour is unchanged.
+
+### Added
+
+- `FunctionError`, `FunctionLog` and `FunctionResult` are exported. They were
+  the SSE reader's types and had never been re-exported, so a consumer could not
+  name the value a `catch` gives them.
+
 ## [2.9.1] - 2026-08-21
 
 Review corrections to 2.9.0, which had not shipped yet — folded in rather than

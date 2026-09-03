@@ -82,4 +82,50 @@ describe("readFunctionSseStream", () => {
       "function response has no body stream"
     );
   });
+
+  it("throws on a non-2xx function status, carrying the status and body", async () => {
+    // The bug this exists for: the route used to hardcode `{"status":200}`, so
+    // a handler answering 409 resolved as a success and a `catch` written for
+    // it never ran.
+    const resp = sseResponse([
+      'event: data\ndata: {"error":"everyone in scope already holds this path","assigned":17}\n\n',
+      'event: done\ndata: {"status":409}\n\n'
+    ]);
+    await expect(readFunctionSseStream(resp)).rejects.toMatchObject({
+      name: "FunctionStatusError",
+      status: 409,
+      message: "everyone in scope already holds this path",
+      body: { error: "everyone in scope already holds this path", assigned: 17 }
+    });
+  });
+
+  it("treats a missing status as success, so an older server keeps working", async () => {
+    // A server that predates the status carries no `status` in its done frame.
+    // Throwing on that would break every call against it, which is a worse
+    // failure than the one being fixed.
+    const resp = sseResponse(['event: data\ndata: {"ok":true}\n\n', "event: done\ndata: {}\n\n"]);
+    await expect(readFunctionSseStream(resp)).resolves.toMatchObject({ value: { ok: true } });
+  });
+
+  it("keeps a 2xx that is not 200 as a success", async () => {
+    // 201 and 204 are successes. A naive `status !== 200` check would reject
+    // every function that answers one.
+    const resp = sseResponse([
+      'event: data\ndata: {"id":7}\n\n',
+      'event: done\ndata: {"status":201}\n\n'
+    ]);
+    await expect(readFunctionSseStream(resp)).resolves.toMatchObject({ value: { id: 7 } });
+  });
+
+  it("attaches the logs captured before a non-2xx", async () => {
+    const resp = sseResponse([
+      'event: log\ndata: {"level":"warn","message":"roster full"}\n\n',
+      'event: data\ndata: {"error":"nope"}\n\n',
+      'event: done\ndata: {"status":403}\n\n'
+    ]);
+    await expect(readFunctionSseStream(resp)).rejects.toMatchObject({
+      status: 403,
+      logs: [{ level: "warn", message: "roster full" }]
+    });
+  });
 });
