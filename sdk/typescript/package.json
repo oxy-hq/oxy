@@ -72,7 +72,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/oxy-hq/oxy-internal.git",
+    "url": "git+https://github.com/oxy-hq/oxygen-internal.git",
     "directory": "sdk/typescript"
   },
   "bugs": {
