@@ -131,7 +131,8 @@ Two things that mislead if you don't know them: an expired token makes
 `GET /api/user` answer **200 with a null body**, which `oxyc whoami` reports as
 "no longer resolves to a user" — not a 401; and exit codes are a contract
 (`oxyc exit-codes`), so an agent branches on 4=auth / 5=not-found / 6=request
-rather than parsing stderr. Full guide: `internal-docs/oxy-api-cli.md`.
+rather than parsing stderr. Full reference: `sdk/cli/README.md` (maintainer's
+notes: `internal-docs/oxy-api-cli.md`).
 
 ## Committing
 
