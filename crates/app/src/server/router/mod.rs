@@ -226,6 +226,13 @@ pub(crate) fn build_cors_layer() -> CorsLayer {
             header::CACHE_CONTROL,
             HeaderName::from_static("last-event-id"),
         ])
+        // `Link` carries `rel="next"` on the paginated list endpoints
+        // (`oxy_app_core::pagination`). A response header is invisible to a
+        // cross-origin browser caller unless it is exposed, so without this a
+        // custom-app subdomain reading `/api` would page one page and stop —
+        // the exact silence that header exists to break. Server-side callers
+        // (`oxyc`, curl) are unaffected either way.
+        .expose_headers([header::LINK])
 }
 
 /// Wide-open CORS for the EXTERNAL API surface (`/external/api/*`).
@@ -262,6 +269,9 @@ pub(crate) fn build_external_cors_layer() -> CorsLayer {
             HeaderName::from_static("x-api-key"),
             HeaderName::from_static("last-event-id"),
         ])
+        // Same reason as the main layer: a `Link: rel="next"` a browser cannot
+        // read is a paginated endpoint that reads as unpaginated.
+        .expose_headers([header::LINK])
 }
 
 /// Shared predicate body for both `build_cors_layer` (browser CORS preflight)

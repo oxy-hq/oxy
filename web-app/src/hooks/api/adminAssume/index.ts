@@ -20,10 +20,12 @@ export const useCurrentAssume = (enabled = true) =>
     retry: false
   });
 
-export const useAssumeHistory = () =>
+export const useAssumeHistory = (params?: { limit?: number; offset?: number }) =>
   useQuery({
-    queryKey: queryKeys.adminAssume.history(),
-    queryFn: () => AdminAssumeService.history()
+    // The params are in the key: two pages of an audit log are two answers, and
+    // caching the second under the first's key serves page 2 as page 1.
+    queryKey: [...queryKeys.adminAssume.history(), params?.limit, params?.offset],
+    queryFn: () => AdminAssumeService.history(params)
   });
 
 export const useStartAssume = () => {

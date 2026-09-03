@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use axum::extract::{Path, Query};
+use axum::extract::{OriginalUri, Path, Query};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
@@ -28,6 +28,7 @@ use entity::{
     workspace_members,
 };
 use oxy::database::client::establish_connection;
+use oxy_app_core::pagination::{self, Paged, trim_overfetch};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseBackend, EntityTrait, FromQueryResult,
@@ -186,13 +187,20 @@ pub struct UpdateRoleBody {
 }
 
 pub async fn list_users(
+    OriginalUri(uri): OriginalUri,
     Query(q): Query<ListUsersQuery>,
-) -> Result<Json<Vec<AdminUserRow>>, StatusCode> {
+) -> Result<Paged<AdminUserRow>, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
     let page = q.page.unwrap_or(0);
-    // `Ord::min` is spelled out: `ExprTrait` (in scope for the query builders
-    // below) blanket-implements a `min` of its own on every `Into<Expr>` type.
-    let page_size = Ord::min(q.page_size.unwrap_or(50), 200);
+    // CLAMPED AT BOTH ENDS. `?page_size=0` past a top-only clamp is an infinite
+    // pagination loop, not an empty page: the offset stays 0 on every page while
+    // `page + 1` keeps advancing, so every request answers `[]` with a link to
+    // the next one. See `oxy_app_core::pagination`.
+    //
+    // `Ord::clamp` is spelled out for the same reason the `min` was: `ExprTrait`
+    // (in scope for the query builders below) blanket-implements its own on
+    // every `Into<Expr>` type.
+    let page_size = Ord::clamp(q.page_size.unwrap_or(50), 1, 200);
 
     let mut query = users::Entity::find().order_by_desc(users::Column::LastLoginAt);
 
@@ -223,7 +231,17 @@ pub async fn list_users(
             .await
             .map_err(internal)?;
         if emails.is_empty() {
-            return Ok(Json(Vec::new()));
+            // Empty and final — but still routed through `page` rather than a
+            // bare `Json(vec![])`, so the response carries `rel="first"`. A
+            // paginated endpoint that answers with NO `Link` is
+            // indistinguishable from one that never paged, and a client would
+            // rightly warn that it cannot tell whether it saw everything.
+            return Ok(pagination::page(
+                Vec::new(),
+                false,
+                &uri,
+                &[("page", page.saturating_add(1).to_string())],
+            ));
         }
         // LOWER() on both sides: grant emails are normalised at write time, `users.email`
         // is not, so a mixed-case staff address matched nothing and vanished from the
@@ -236,12 +254,16 @@ pub async fn list_users(
         );
     }
 
-    let rows = query
-        .offset(page * page_size)
-        .limit(page_size)
+    // `page_size + 1`: the extra row is how the `Link: rel="next"` below knows
+    // there is a next page, without a second COUNT(*) that could disagree with
+    // this one. `trim_overfetch` drops it again before anything sees it.
+    let mut rows = query
+        .offset(page.saturating_mul(page_size))
+        .limit(page_size + 1)
         .all(&db)
         .await
         .map_err(internal)?;
+    let has_more = trim_overfetch(&mut rows, page_size);
 
     // Pre-aggregate the per-row lookups: one IN (...) GROUP BY query for
     // org_count, one IN (...) query for the is_app_admin set. Avoids the
@@ -297,7 +319,17 @@ pub async fn list_users(
         });
     }
 
-    Ok(Json(out))
+    // `page` here is 0-indexed, which is exactly why the caller is handed a URL
+    // rather than a number to increment: `admin/explorer.rs` counts from 1
+    // under the same parameter name.
+    Ok(pagination::page(
+        out,
+        has_more,
+        &uri,
+        // Saturating so `?page=<u64::MAX>` cannot panic a debug build; the
+        // offset below saturates for the same reason.
+        &[("page", page.saturating_add(1).to_string())],
+    ))
 }
 
 #[derive(FromQueryResult)]

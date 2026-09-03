@@ -58,11 +58,18 @@ export const useAdminOrgsList = (
   });
 
 /**
- * Every org on the deployment, across all pages. The list endpoint is
- * offset-paginated and returns a bare array (no total), so `getNextPageParam`
- * infers "there's more" from a full page. Callers drain it by auto-calling
- * `fetchNextPage` while `hasNextPage` — the pattern the admin Apps list uses —
- * so counts and the "no access" set are exhaustive, not capped at one page.
+ * Every org on the deployment, across all pages. Callers drain it by
+ * auto-calling `fetchNextPage` while `hasNextPage` — the pattern the admin Apps
+ * list uses — so counts and the "no access" set are exhaustive, not capped at
+ * one page.
+ *
+ * "Is there more" is inferred from a FULL PAGE, because the response body is a
+ * bare array with no total in it. That is correct but costs one extra empty
+ * request when the row count is an exact multiple of the page size. The
+ * endpoint now also answers `Link: <…>; rel="next"` (`oxy_app_core::pagination`,
+ * exposed through CORS), which is exact — reading it here means threading
+ * response headers through `AdminOrgsService.list`, so it is left as the
+ * obvious next cleanup rather than done half-way.
  */
 export const useAllAdminOrgs = (enabled = true) =>
   useInfiniteQuery({

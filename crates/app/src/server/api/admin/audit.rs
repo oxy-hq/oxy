@@ -7,10 +7,11 @@
 
 use axum::Json;
 use axum::Router;
-use axum::extract::Query;
+use axum::extract::{OriginalUri, Query};
 use axum::http::StatusCode;
 use axum::routing::get;
 use oxy::database::client::establish_connection;
+use oxy_app_core::pagination::{self, Paged, trim_overfetch};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -106,8 +107,9 @@ impl From<entity::audit_events::Model> for AuditEventDto {
 }
 
 pub async fn list_audit(
+    OriginalUri(uri): OriginalUri,
     Query(q): Query<AuditQuery>,
-) -> Result<Json<Vec<AuditEventDto>>, StatusCode> {
+) -> Result<Paged<AuditEventDto>, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("admin/audit: DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -119,13 +121,29 @@ pub async fn list_audit(
         outcome: q.outcome,
         q: q.q,
     };
-    let limit = q.limit.unwrap_or(100).min(500);
+    // CLAMPED AT BOTH ENDS. `?limit=0` past a top-only clamp is an infinite
+    // pagination loop, not an empty page: the over-fetch reads one row,
+    // `trim_overfetch` discards it and still reports "more", and the cursor
+    // advances by zero — so `rel="next"` points back at this same request.
+    let limit = q.limit.unwrap_or(100).clamp(1, 500);
     let offset = q.offset.unwrap_or(0);
-    let events = audit::search_events(&db, &filter, limit, offset)
+    // `limit + 1`: the extra event is how the `Link: rel="next"` below knows
+    // there is another page. An audit log is append-only and only grows, so
+    // "did I read all of it" is a question every caller of this endpoint has.
+    let mut events = audit::search_events(&db, &filter, limit + 1, offset)
         .await
         .map_err(|e| {
             tracing::error!("admin/audit: search failed: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    Ok(Json(events.into_iter().map(Into::into).collect()))
+    let has_more = trim_overfetch(&mut events, limit);
+    Ok(pagination::page(
+        events.into_iter().map(Into::into).collect(),
+        has_more,
+        &uri,
+        // Saturating: `?offset=<u64::MAX>` panics a debug build here and wraps
+        // to a nonsense cursor in release. Saturating pins it at the top, where
+        // the query returns nothing and the walk ends.
+        &[("offset", offset.saturating_add(limit).to_string())],
+    ))
 }

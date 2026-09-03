@@ -62,7 +62,7 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::{Router, extract::Query};
+use axum::{Router, extract::OriginalUri, extract::Query};
 use chrono::{Duration, Utc};
 use entity::admin_assume_sessions;
 use entity::prelude::{AdminAssumeSessions, Organizations};
@@ -70,13 +70,14 @@ use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, TransactionTrait,
+    QueryOrder, QuerySelect, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::server::router::AppState;
 use oxy_app_core::audit::{self, ActorType, AuditEntry};
+use oxy_app_core::pagination::{self, Paged, trim_overfetch};
 
 // The pure liveness-query cluster now lives in `oxy-server-authz` so the authz fact
 // loader and the partner tier can read session liveness without depending on `oxy-app`.
@@ -410,11 +411,49 @@ pub async fn current(
     ))
 }
 
+/// Default and ceiling for one page of `/assume/history`, matching `admin/audit.rs`.
+const HISTORY_PAGE: u64 = 100;
+const HISTORY_MAX_PAGE: u64 = 500;
+
+/// How `/assume/history` is paged.
+///
+/// `limit`/`offset` with the same defaults and ceiling as `admin/audit.rs`,
+/// deliberately: both read an append-only log for the same auditor, and a
+/// second spelling of "page an audit log" in the same admin surface is a thing
+/// to memorise for no benefit.
+#[derive(Deserialize, Default)]
+pub struct HistoryQuery {
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+}
+
+/// How many rows one `/assume/history` request may read.
+///
+/// A named function rather than an inline `unwrap_or(..).min(..)` so the
+/// ceiling is testable: the whole point of this handler's change is that no
+/// caller-supplied `limit` can restore the unbounded read, and that is a claim
+/// worth pinning rather than re-reading off a chained expression.
+fn history_page_size(limit: Option<u64>) -> u64 {
+    // Clamped at BOTH ends. A zero page size is not an empty page — it is an
+    // over-fetch of one row that `trim_overfetch` discards while still
+    // reporting "more", against a cursor that advances by zero, i.e. a
+    // `rel="next"` pointing at the request that produced it.
+    limit.unwrap_or(HISTORY_PAGE).clamp(1, HISTORY_MAX_PAGE)
+}
+
 /// `GET /assume/history` — every session (live or not). The impersonation log an
 /// operator or auditor reads. **Staff only** — it spans tenants.
+///
+/// PAGED, and it has to be: `admin_assume_sessions` is append-only and spans
+/// every tenant, so an unbounded read grows with the platform's whole
+/// impersonation history — and each row then costs a lookup in `org_index`.
+/// It was reading the entire table. Newest first, so the default page is the
+/// part an auditor actually wants.
 pub async fn history(
     AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
-) -> Result<Json<Vec<SessionDto>>, StatusCode> {
+    OriginalUri(uri): OriginalUri,
+    Query(q): Query<HistoryQuery>,
+) -> Result<Paged<SessionDto>, StatusCode> {
     let db = db().await?;
     // The impersonation log spans every tenant, so it is an audit read — `ViewAudit`,
     // not merely "is staff". An App Operator has no business reading who impersonated
@@ -433,15 +472,26 @@ pub async fn history(
     ) {
         return Err(StatusCode::FORBIDDEN);
     }
-    let rows = AdminAssumeSessions::find()
+    let limit = history_page_size(q.limit);
+    let offset = q.offset.unwrap_or(0);
+    let mut rows = AdminAssumeSessions::find()
         .order_by_desc(admin_assume_sessions::Column::StartedAt)
+        // `started_at` alone is not a total order — two sessions can share an
+        // instant, and then a row can repeat on one page and vanish from the
+        // next. The id tiebreak is what makes the offset walk cover the log.
+        .order_by_desc(admin_assume_sessions::Column::Id)
+        .offset(offset)
+        // One extra row, so the `Link: rel="next"` below is known without a
+        // second COUNT(*) over a table that only grows.
+        .limit(limit + 1)
         .all(&db)
         .await
         .map_err(db_err("load history"))?;
+    let has_more = trim_overfetch(&mut rows, limit);
 
     let orgs = org_index(&db, rows.iter().map(|r| r.org_id).collect()).await?;
     let partners = partner_org_ids(&db).await;
-    Ok(Json(
+    Ok(pagination::page(
         rows.into_iter()
             .map(|r| {
                 let is_partner = partners.contains(&r.org_id);
@@ -449,6 +499,11 @@ pub async fn history(
                 to_dto(r, org.as_ref(), is_partner)
             })
             .collect(),
+        has_more,
+        &uri,
+        // Saturating: `?offset=<u64::MAX>` would otherwise panic a debug build
+        // and wrap to a nonsense cursor in release.
+        &[("offset", offset.saturating_add(limit).to_string())],
     ))
 }
 
@@ -548,6 +603,29 @@ mod tests {
         for raw in ["", "   ", "\t\n"] {
             assert!(raw.trim().is_empty(), "{raw:?} must be treated as blank");
         }
+    }
+
+    /// No `?limit=` restores the unbounded read — and none produces a page of
+    /// zero either.
+    ///
+    /// `/assume/history` spans every tenant and `admin_assume_sessions` only
+    /// grows, so the ceiling is half the fix: a handler that honoured
+    /// `?limit=100000` would be the old behaviour with an extra step. The FLOOR
+    /// is the other half. At zero the over-fetch reads one row, `trim_overfetch`
+    /// discards it and still reports "more", and the cursor advances by zero —
+    /// so `rel="next"` points back at the same request and a link-following
+    /// client walks empty pages forever.
+    #[test]
+    fn history_page_is_capped_whatever_the_caller_asks_for() {
+        assert_eq!(history_page_size(None), HISTORY_PAGE);
+        assert_eq!(history_page_size(Some(25)), 25);
+        assert_eq!(history_page_size(Some(HISTORY_MAX_PAGE)), HISTORY_MAX_PAGE);
+        assert_eq!(history_page_size(Some(u64::MAX)), HISTORY_MAX_PAGE);
+        assert_eq!(
+            history_page_size(Some(0)),
+            1,
+            "a page of zero never advances"
+        );
     }
 
     /// Liveness = not ended AND not expired. An expired-but-unended row grants

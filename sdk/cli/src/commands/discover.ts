@@ -57,7 +57,16 @@ export async function runRoutes(
   }
 
   if (flags.json) {
-    process.stdout.write(`${JSON.stringify(matches, null, 2)}\n`);
+    // A JSON ARRAY — one document, not one object per line. Both readings are
+    // defensible and `--help` used to claim the other one; an array is what
+    // `oxyc list --json` and `oxyc openapi` already emit, and what a `| jq`
+    // written against this expects.
+    //
+    // Indented for a human, compact for a pipe, exactly as `runOpenApi` below
+    // decides it. Unfiltered this is ~670 objects of eight fields, where the
+    // indentation alone is tens of KB of context an agent pays for and no
+    // human is reading.
+    process.stdout.write(`${JSON.stringify(matches, null, stdoutIsTty() ? 2 : 0)}\n`);
     return;
   }
 

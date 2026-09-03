@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { parseDuration } from "./cache.js";
 import { paramsToQuery, parseFields, parseTypedValue } from "./fields.js";
 import { toMarkdown } from "./output.js";
-import { linkNext, readPage, withPage } from "./paginate.js";
+import { hasLinkHeader, linkNext, readPage, withPage } from "./paginate.js";
 import {
   isExternalSurface,
   normalizePath,
@@ -224,6 +224,29 @@ describe("pagination", () => {
     expect(readPage({ threads: [{ id: 1 }] }, 1).hasMore).toBe(false);
   });
 
+  /**
+   * `hasMore: false` is TWO different answers and `--paginate` has to tell them
+   * apart. "The server said this is the last page" is complete; "the server
+   * said nothing" is one page of an endpoint that may well have more — which is
+   * the whole admin surface, where `page`/`page_size` and `limit`/`offset`
+   * endpoints answer with a bare array. Only the second is worth warning about,
+   * so a false `has_next` must NOT be reported as a missing signal.
+   */
+  it("separates 'the server said no more' from 'the server said nothing'", () => {
+    expect(readPage({ threads: [], pagination: { has_next: false } }, 1).signal).toBe(
+      "pagination.has_next"
+    );
+    expect(readPage({ commits: [], has_more: false }, 1).signal).toBe("has_more");
+    expect(readPage({ rows: [], pagination: { total_pages: 3 } }, 3).signal).toBe(
+      "pagination.total_pages"
+    );
+
+    // The shapes that carry nothing to read: a bare array, and an object whose
+    // only content is the rows.
+    expect(readPage([{ id: 1 }], 1).signal).toBeUndefined();
+    expect(readPage({ threads: [{ id: 1 }] }, 1).signal).toBeUndefined();
+  });
+
   it("honours an explicit --paginate-key over the first-array guess", () => {
     const payload = { meta: [1], threads: [{ id: 1 }] };
     expect(readPage(payload, 1).rowsKey).toBe("meta");
@@ -236,6 +259,51 @@ describe("pagination", () => {
     );
     expect(linkNext({ link: '<https://x/a>; rel="prev"' })).toBeUndefined();
     expect(linkNext({})).toBeUndefined();
+  });
+
+  /**
+   * THE FALSE POSITIVE THIS PREVENTS.
+   *
+   * The last page of a paginated endpoint carries no `rel="next"` — that is
+   * what makes it the last page. Deciding "did this endpoint say anything about
+   * pagination" from `linkNext` therefore answers NO for a single-page result
+   * from `admin/audit`, `admin/users` or `/assume/history`, and `--paginate`
+   * warns "this is ONE page, not necessarily every row" about exactly the
+   * endpoints that answered completely and correctly. The handlers emit
+   * `rel="first"` on every page so this question has an answer.
+   */
+  it("counts any Link as a pagination signal, not only rel=next", () => {
+    expect(hasLinkHeader({ link: '</api/admin/audit>; rel="first"' })).toBe(true);
+    expect(linkNext({ link: '</api/admin/audit>; rel="first"' })).toBeUndefined();
+
+    expect(
+      hasLinkHeader({
+        link: '</api/admin/audit?offset=100>; rel="next", </api/admin/audit>; rel="first"'
+      })
+    ).toBe(true);
+    expect(hasLinkHeader({})).toBe(false);
+  });
+
+  /** A two-link header must still yield the next one. */
+  it("picks rel=next out of a header carrying several links", () => {
+    expect(
+      linkNext({
+        link: '</api/admin/audit?offset=100>; rel="next", </api/admin/audit>; rel="first"'
+      })
+    ).toBe("/api/admin/audit?offset=100");
+  });
+
+  /**
+   * Oxy's own `Link` is a RELATIVE reference — `oxy_app_core::pagination` emits
+   * one deliberately, because reconstructing an absolute URL from `Host` behind
+   * the proxy and the subdomain dispatch is how you emit a link to the wrong
+   * host. `paginate()` feeds it straight to `buildUrl`, which concatenates onto
+   * the target, so the relative form has to survive `linkNext` intact.
+   */
+  it("accepts the relative Link the Oxy handlers emit", () => {
+    expect(linkNext({ link: '</api/admin/users?search=acme&page=1>; rel="next"' })).toBe(
+      "/api/admin/users?search=acme&page=1"
+    );
   });
 
   it("replaces rather than appends ?page, so it cannot accumulate", () => {

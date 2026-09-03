@@ -156,7 +156,7 @@ function buildProgram(): Command {
       .command("routes")
       .argument("[filter]", "narrow by method, path, surface or description")
       .description("list the endpoints this deployment mounts")
-      .option("--json", "emit one object per endpoint")
+      .option("--json", "emit the matching endpoints as a JSON array")
       .option("--all", "include ide-only and worker-only mounts")
       .option("--refresh", "ask the deployment again instead of using the cache")
   ).action(async (filter: string | undefined, opts: Record<string, unknown>) => {
@@ -329,7 +329,7 @@ function buildProgram(): Command {
       .command("list")
       .description("the customers, from the GitHub topic that registers them")
       .option("--refresh", "ask GitHub again rather than serving the hour-long cache")
-      .option("--json", "emit one object per customer")
+      .option("--json", "emit the customers as a JSON array")
   ).action((opts: Record<string, unknown>) => {
     runList(createContext(globals(opts)), {
       refresh: opts.refresh as boolean | undefined,

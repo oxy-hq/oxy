@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use axum::extract::{Path, Query};
+use axum::extract::{OriginalUri, Path, Query};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
@@ -25,6 +25,7 @@ use entity::workspaces::WorkspaceStatus;
 use entity::{org_billing, org_invitations, org_members, organizations, users, workspaces};
 use oxy::database::client::establish_connection;
 use oxy::database::filters::UserQueryFilterExt;
+use oxy_app_core::pagination::{self, Paged, trim_overfetch};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseBackend, EntityTrait, FromQueryResult,
@@ -431,11 +432,16 @@ pub struct TransferOwnershipBody {
 }
 
 pub async fn list_orgs_meta(
+    OriginalUri(uri): OriginalUri,
     Query(q): Query<ListMetaQuery>,
-) -> Result<Json<Vec<AdminOrgMeta>>, StatusCode> {
+) -> Result<Paged<AdminOrgMeta>, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
     let page = q.page.unwrap_or(0);
-    let page_size = q.page_size.unwrap_or(50).min(200);
+    // CLAMPED AT BOTH ENDS. `?page_size=0` past a top-only clamp is an infinite
+    // pagination loop, not an empty page: the offset stays 0 on every page while
+    // `page + 1` keeps advancing, so every request answers `[]` with a link to
+    // the next one. See `oxy_app_core::pagination`.
+    let page_size = q.page_size.unwrap_or(50).clamp(1, 200);
 
     let mut query = organizations::Entity::find().order_by_asc(organizations::Column::Name);
 
@@ -448,12 +454,15 @@ pub async fn list_orgs_meta(
         );
     }
 
-    let orgs = query
-        .offset(page * page_size)
-        .limit(page_size)
+    // `page_size + 1`: the extra row is how the `Link: rel="next"` below knows a
+    // next page exists, with no COUNT(*) that could disagree with this query.
+    let mut orgs = query
+        .offset(page.saturating_mul(page_size))
+        .limit(page_size + 1)
         .all(&db)
         .await
         .map_err(internal)?;
+    let has_more = trim_overfetch(&mut orgs, page_size);
 
     // Pre-aggregate the three per-row lookups into three IN (...) GROUP BY
     // queries indexed into HashMaps. Three extra queries per list is O(1)
@@ -489,7 +498,16 @@ pub async fn list_orgs_meta(
         });
     }
 
-    Ok(Json(out))
+    // 0-indexed `page`, which is the reason the next page is handed over as a
+    // URL: `admin/explorer.rs` counts from 1 under the same parameter name.
+    Ok(pagination::page(
+        out,
+        has_more,
+        &uri,
+        // Saturating so `?page=<u64::MAX>` cannot panic a debug build; the
+        // offset below saturates for the same reason.
+        &[("page", page.saturating_add(1).to_string())],
+    ))
 }
 
 pub async fn get_org_detail(

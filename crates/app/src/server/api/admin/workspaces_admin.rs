@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use axum::extract::{Path, Query};
+use axum::extract::{OriginalUri, Path, Query};
 use axum::http::StatusCode;
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
@@ -11,6 +11,7 @@ use chrono::Utc;
 use entity::workspaces::WorkspaceStatus;
 use entity::{organizations, users, workspace_members, workspaces};
 use oxy::database::client::establish_connection;
+use oxy_app_core::pagination::{self, Paged, trim_overfetch};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseBackend, EntityTrait, FromQueryResult, PaginatorTrait,
@@ -101,11 +102,16 @@ pub struct TransferOrgBody {
 }
 
 pub async fn list_workspaces(
+    OriginalUri(uri): OriginalUri,
     Query(q): Query<ListWorkspacesQuery>,
-) -> Result<Json<Vec<AdminWorkspaceRow>>, StatusCode> {
+) -> Result<Paged<AdminWorkspaceRow>, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
     let page = q.page.unwrap_or(0);
-    let page_size = q.page_size.unwrap_or(50).min(200);
+    // CLAMPED AT BOTH ENDS. `?page_size=0` past a top-only clamp is an infinite
+    // pagination loop, not an empty page: the offset stays 0 on every page while
+    // `page + 1` keeps advancing, so every request answers `[]` with a link to
+    // the next one. See `oxy_app_core::pagination`.
+    let page_size = q.page_size.unwrap_or(50).clamp(1, 200);
 
     let mut query = workspaces::Entity::find().order_by_desc(workspaces::Column::CreatedAt);
 
@@ -121,12 +127,15 @@ pub async fn list_workspaces(
         query = query.filter(workspaces::Column::OrgId.eq(org_id));
     }
 
-    let rows = query
-        .offset(page * page_size)
-        .limit(page_size)
+    // `page_size + 1`: the extra row is how the `Link: rel="next"` below knows a
+    // next page exists, with no COUNT(*) that could disagree with this query.
+    let mut rows = query
+        .offset(page.saturating_mul(page_size))
+        .limit(page_size + 1)
         .all(&db)
         .await
         .map_err(internal)?;
+    let has_more = trim_overfetch(&mut rows, page_size);
 
     // Pre-aggregate the per-row lookups: one IN (...) GROUP BY for
     // member_count, one IN (...) for org slugs. Replaces O(2N) round-trips
@@ -153,7 +162,16 @@ pub async fn list_workspaces(
         });
     }
 
-    Ok(Json(out))
+    // 0-indexed `page` — which is why the caller gets a URL instead of a number
+    // to increment: `admin/explorer.rs` counts from 1 under the same name.
+    Ok(pagination::page(
+        out,
+        has_more,
+        &uri,
+        // Saturating so `?page=<u64::MAX>` cannot panic a debug build; the
+        // offset below saturates for the same reason.
+        &[("page", page.saturating_add(1).to_string())],
+    ))
 }
 
 #[derive(FromQueryResult)]

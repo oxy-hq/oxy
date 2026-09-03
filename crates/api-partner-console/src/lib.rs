@@ -25,7 +25,7 @@ mod publish_tokens;
 mod workspaces;
 mod write;
 
-use axum::extract::{Path, Query};
+use axum::extract::{OriginalUri, Path, Query};
 use axum::http::StatusCode;
 use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
@@ -41,6 +41,7 @@ use uuid::Uuid;
 use crate::partner_context::{PartnerActor, partner_middleware};
 use oxy_app_core::AppState;
 use oxy_app_core::audit::events_for_partner;
+use oxy_app_core::pagination::{self, Paged, trim_overfetch};
 use oxy_server_authz::partner_authz::{PartnerCapability, PartnerScope, scopes_for_user};
 
 /// The whole `/api/partners` surface: the top-level list route plus the
@@ -389,23 +390,34 @@ pub async fn list_org_members(
 #[derive(Deserialize)]
 pub struct AuditQuery {
     pub limit: Option<u64>,
+    /// Same spelling as `admin/audit.rs`. One way to page an audit log across
+    /// the platform, not two.
+    pub offset: Option<u64>,
 }
 
 /// `GET /partners/{id}/audit` — the audit view, scoped to this person's clients.
 pub async fn partner_audit(
     PartnerActor(scope): PartnerActor,
+    OriginalUri(uri): OriginalUri,
     Query(q): Query<AuditQuery>,
-) -> Result<Json<Vec<AuditEventDto>>, StatusCode> {
+) -> Result<Paged<AuditEventDto>, StatusCode> {
     if !oxy_server_authz::partner_allows(&scope, None, PartnerCapability::ViewAudit) {
         return Err(StatusCode::FORBIDDEN);
     }
     let db = db().await?;
     let org_ids = scope.org_ids.clone();
-    let limit = q.limit.unwrap_or(200).min(1000);
+    // Clamped at both ends — a zero page size makes `rel="next"` point at the
+    // request that produced it. See `oxy_app_core::pagination`.
+    let limit = q.limit.unwrap_or(200).clamp(1, 1000);
+    let offset = q.offset.unwrap_or(0);
 
-    let events = events_for_partner(&db, scope.partner_id, &org_ids, limit)
+    // `limit + 1`: the extra event is how the `Link: rel="next"` below knows
+    // there is another page. A partner's audit log only grows, and "have I read
+    // all of it" is the question this endpoint exists to answer.
+    let mut events = events_for_partner(&db, scope.partner_id, &org_ids, limit + 1, offset)
         .await
         .map_err(internal("load audit"))?;
+    let has_more = trim_overfetch(&mut events, limit);
 
     let out = events
         .into_iter()
@@ -419,5 +431,10 @@ pub async fn partner_audit(
             outcome: e.outcome,
         })
         .collect();
-    Ok(Json(out))
+    Ok(pagination::page(
+        out,
+        has_more,
+        &uri,
+        &[("offset", offset.saturating_add(limit).to_string())],
+    ))
 }

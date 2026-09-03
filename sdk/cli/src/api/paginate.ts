@@ -49,6 +49,19 @@ export interface PageShape {
   rowsKey?: string;
   rows: unknown[];
   hasMore: boolean;
+  /**
+   * Which rule decided `hasMore`, or `undefined` when nothing in the response
+   * spoke to it.
+   *
+   * `hasMore: false` conflates two different answers — "the server said this is
+   * the last page" and "the server said nothing, so we stopped" — and only the
+   * second one is worth telling the caller about. Several Oxy list endpoints
+   * take `page`/`page_size` (or `limit`/`offset`) and answer with a BARE ARRAY:
+   * they really are paginated, the response just carries no way to know it, so
+   * `--paginate` returns page one and looks complete. Naming the rule is what
+   * lets `paginate()` say so instead.
+   */
+  signal?: "pagination.has_next" | "has_more" | "pagination.total_pages";
 }
 
 /** A JSON object, narrowed enough to index. */
@@ -86,15 +99,19 @@ export function readPage(payload: unknown, page: number, explicitKey?: string): 
 
   const pagination = isObject(payload.pagination) ? payload.pagination : undefined;
   let hasMore = false;
+  let signal: PageShape["signal"];
   if (pagination && typeof pagination.has_next === "boolean") {
     hasMore = pagination.has_next;
+    signal = "pagination.has_next";
   } else if (typeof payload.has_more === "boolean") {
     hasMore = payload.has_more;
+    signal = "has_more";
   } else if (pagination && typeof pagination.total_pages === "number") {
     hasMore = page < pagination.total_pages;
+    signal = "pagination.total_pages";
   }
 
-  return { rowsKey, rows, hasMore };
+  return { rowsKey, rows, hasMore, signal };
 }
 
 /** Follow `Link: rel="next"` when the server bothers to send one. */
@@ -106,6 +123,21 @@ export function linkNext(headers: Record<string, string>): string | undefined {
     if (match) return match[1];
   }
   return undefined;
+}
+
+/**
+ * Whether the response spoke about pagination AT ALL.
+ *
+ * Deliberately not `linkNext(...) !== undefined`. The last page of a paginated
+ * endpoint has no `rel="next"` — that is what makes it the last page — so
+ * testing for one conflates "I am at the end of a collection that pages" with
+ * "this endpoint has never heard of pagination", and the warning at the bottom
+ * of `paginate()` would fire on every single-page result from an endpoint that
+ * is doing everything right. Oxy's handlers emit `rel="first"` on every page
+ * precisely so this question has an answer (`oxy_app_core::pagination`).
+ */
+export function hasLinkHeader(headers: Record<string, string>): boolean {
+  return Boolean(headers.link ?? headers.Link);
 }
 
 /** Replace or add `?page=` on a path. */
@@ -143,6 +175,8 @@ export async function paginate(opts: PaginateOptions): Promise<string> {
   let lastPayload: unknown;
   let path = opts.path;
   let page = 1;
+  /** Whether ANY page carried a signal this module knows how to read. */
+  let sawSignal = false;
 
   for (; page <= limit; page++) {
     const response: ApiResponse = await request({ ...opts, path });
@@ -161,6 +195,11 @@ export async function paginate(opts: PaginateOptions): Promise<string> {
     rowsKey ??= shape.rowsKey;
     merged.push(...shape.rows);
 
+    // ANY `Link` counts, not only one naming a next page — a last page is still
+    // a page of something that paginates, and saying otherwise is what made this
+    // warning fire on the endpoints that answer correctly.
+    sawSignal ||= hasLinkHeader(response.headers) || shape.signal !== undefined;
+
     const next = linkNext(response.headers);
     if (next) {
       path = next.startsWith("http") ? new URL(next).pathname + new URL(next).search : next;
@@ -173,6 +212,25 @@ export async function paginate(opts: PaginateOptions): Promise<string> {
   if (page > limit) {
     log.warn(
       `stopped after ${limit} pages — the result is TRUNCATED. Narrow the query, or raise --max-pages.`
+    );
+  }
+
+  // NOTHING RECOGNISED, SO ONE PAGE — said out loud rather than implied by a
+  // short result. The heuristic stopping is the safe behaviour and stays; what
+  // was missing is that the caller could not tell it apart from an endpoint
+  // that genuinely had one page. Much of the admin surface takes `page` /
+  // `page_size` and answers with a bare array, so `--paginate` there returns
+  // the first 50 rows and reads as the whole table.
+  //
+  // Only on the opt-in flag, and only on stderr: someone who typed --paginate
+  // asked to walk the pages, so "I could not" is an answer to their question,
+  // not noise. It never fires for an endpoint that reported `has_next: false`.
+  if (!sawSignal) {
+    log.warn(
+      `${opts.path} returned no pagination signal — this is ONE page, not necessarily every row.`
+    );
+    log.hint(
+      "if the endpoint takes page/page_size or limit/offset, walk it yourself: `oxyc api '<path>?page=1'`"
     );
   }
 

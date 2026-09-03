@@ -538,6 +538,7 @@ pub async fn events_for_partner(
     partner_id: Uuid,
     org_ids: &[Uuid],
     limit: u64,
+    offset: u64,
 ) -> Result<Vec<audit_events::Model>, DbErr> {
     // The org clause must be correlated with the partner, or a REASSIGNED client
     // leaks its former partner's activity.
@@ -566,7 +567,11 @@ pub async fn events_for_partner(
                 .add(audit_events::Column::PartnerId.eq(partner_id))
                 .add(org_scope),
         )
+        // `seq` is monotonic and unique, so this IS a total order — an offset
+        // walk over it cannot repeat or drop a row the way one ordered by a
+        // shared timestamp can.
         .order_by_desc(audit_events::Column::Seq)
+        .offset(offset)
         .limit(limit)
         .all(db)
         .await

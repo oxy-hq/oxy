@@ -28,9 +28,16 @@ export const AdminAssumeService = {
     return data;
   },
 
-  /** Every session ever — the impersonation log. */
-  async history(): Promise<AssumeSession[]> {
-    const { data } = await apiClient.get("/assume/history");
+  /**
+   * The impersonation log, newest first.
+   *
+   * ONE PAGE, not every session ever: `admin_assume_sessions` is append-only
+   * and spans every tenant, so the endpoint answers with the most recent 100
+   * (500 max) and takes `limit`/`offset` for the rest. A caller that renders
+   * this as "the whole log" is wrong about it.
+   */
+  async history(params?: { limit?: number; offset?: number }): Promise<AssumeSession[]> {
+    const { data } = await apiClient.get("/assume/history", { params });
     return data;
   }
 };
