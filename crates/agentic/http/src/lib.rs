@@ -250,8 +250,9 @@ where
             "/runs",
             post(routes::create_airway_run).get(routes::list_runs_for_pipeline),
         )
-        // Bounded date-window backfill (toast, quickbooks): seeds a run with
-        // the window pinned on the source.
+        // Bounded date-window backfill (toast, quickbooks, sp_api — see
+        // `executor::WINDOWED_BACKFILL_KINDS`): seeds a run with the window
+        // pinned on the source.
         .route("/backfill", post(routes::backfill_airway))
         // Resumable chunked backfill: splits a long window into checkpointed
         // chunks and drives them detached; `/coverage` reports progress.

@@ -69,8 +69,9 @@ pub struct StartAirwayRequest {
     pub retry_of: Option<String>,
     /// Bounded-backfill window `[from, to)` (RFC3339), set by the backfill
     /// endpoint. Threaded onto the queue spec and applied to the
-    /// date-windowed sources (toast, quickbooks). Internal-only — the public
-    /// `/runs` body cannot set it (only `/backfill` does).
+    /// date-windowed sources (toast, quickbooks, sp_api) — the list lives in
+    /// `executor::WINDOWED_BACKFILL_KINDS`. Internal-only — the public `/runs`
+    /// body cannot set it (only `/backfill` does).
     #[serde(skip_deserializing, default)]
     pub backfill_from: Option<String>,
     #[serde(skip_deserializing, default)]

@@ -266,9 +266,9 @@ pub enum TaskSpec {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         resources: Vec<String>,
         /// Bounded-backfill window `[from, to)` as RFC3339 strings, applied
-        /// to the date-windowed sources (toast, quickbooks). Set only by the
-        /// backfill path; absent for normal runs. Carried as strings so the
-        /// runtime queue stays chrono-free; the source factory parses them.
+        /// to the date-windowed sources (toast, quickbooks, sp_api). Set only
+        /// by the backfill path; absent for normal runs. Carried as strings so
+        /// the runtime queue stays chrono-free; the source factory parses them.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         backfill_from: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

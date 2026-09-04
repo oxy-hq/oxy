@@ -2,10 +2,12 @@
  * Manual date-window backfill dialog for an airway pipeline.
  *
  * Pins a fixed `[start, end]` range onto the date-windowed sources (Toast,
- * QuickBooks) and seeds a normal run via `POST /agentic-airway/backfill`. The
- * pipeline's live incremental cursor is frozen during a backfill, so a replay
- * never disturbs ongoing scheduled loads. Non-date-windowed source kinds are
- * rejected by the backend.
+ * QuickBooks, Amazon SP-API) and seeds a normal run via
+ * `POST /agentic-airway/backfill`. The pipeline's live incremental cursor is
+ * never disturbed by a replay — QuickBooks freezes its cursor outright, while
+ * Toast and SP-API advance one in a run-scoped store instead, so an interrupted
+ * backfill can resume without the live position ever moving. Non-date-windowed
+ * source kinds are rejected by the backend.
  *
  * The UI treats the end date as **inclusive**; the backend window is half-open
  * `[from, to)`, so the exclusive upper bound is pushed to the next UTC midnight.
@@ -152,8 +154,8 @@ const BackfillAirwayModal: React.FC<{
         <DialogHeader>
           <DialogTitle>Backfill a date range</DialogTitle>
           <DialogDescription>
-            Re-pull a historical window for the date-windowed sources (Toast, QuickBooks). The
-            pipeline&apos;s live incremental cursor is left untouched.
+            Re-pull a historical window for the date-windowed sources (Toast, QuickBooks, Amazon
+            SP-API). The pipeline&apos;s live incremental cursor is left untouched.
           </DialogDescription>
         </DialogHeader>
 

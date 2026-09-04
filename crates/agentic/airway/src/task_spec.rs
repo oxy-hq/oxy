@@ -18,7 +18,9 @@ pub struct AirwayTaskSpec {
     /// [`TaskSpec::Airway::resources`].
     pub resources: Vec<String>,
     /// Bounded-backfill window `[from, to)` as RFC3339 strings, applied to the
-    /// date-windowed sources (toast, quickbooks). `None` = normal run.
+    /// date-windowed sources (toast, quickbooks, sp_api —
+    /// `agentic_pipeline::executor::WINDOWED_BACKFILL_KINDS` is the list that
+    /// decides, and this one is a copy of it). `None` = normal run.
     pub backfill_from: Option<String>,
     pub backfill_to: Option<String>,
     /// Contract policy for this run; `None` = airway's default. See

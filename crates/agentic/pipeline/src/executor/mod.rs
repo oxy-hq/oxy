@@ -792,44 +792,12 @@ impl PipelineTaskExecutor {
             spec.resources = resources.to_vec();
         }
 
-        // `backfill_start`/`backfill_end` are injection-only — the executor is
-        // their sole writer. Strip any a user hand-wrote into the YAML source
-        // config first: otherwise a normal/scheduled run would silently replay
-        // that window forever (a backfill freezes the source cursor, so it
-        // never advances). Only after stripping do we inject the window — and
-        // only when *this* run is a backfill (set by the `/backfill` path).
-        if let Some(obj) = spec.source.config.as_object_mut() {
-            obj.remove("backfill_start");
-            obj.remove("backfill_end");
-        }
-        let mut resumable_backfill = false;
-        if let (Some(from), Some(to)) = (backfill_from, backfill_to) {
-            match spec.source.kind.as_str() {
-                // toast/quickbooks read `backfill_start`/`backfill_end`; any
-                // other kind can't honor a window, so fail loud rather than
-                // silently running a normal unbounded load.
-                "toast" | "quickbooks" => {
-                    let obj = spec.source.config.as_object_mut().ok_or_else(|| {
-                        format!("airway backfill: source config for `{pipeline_ref}` is not a map")
-                    })?;
-                    obj.insert(
-                        "backfill_start".into(),
-                        serde_json::Value::String(from.into()),
-                    );
-                    obj.insert("backfill_end".into(), serde_json::Value::String(to.into()));
-                    // Toast backfills are resumable (run-scoped cursor → the
-                    // worker uses the run-scoped store). QuickBooks stays
-                    // non-resumable (frozen cursor, pipeline-global store).
-                    resumable_backfill = spec.source.kind == "toast";
-                }
-                other => {
-                    return Err(format!(
-                        "airway backfill: source kind `{other}` does not support a \
-                         date-window backfill (supported: toast, quickbooks)"
-                    ));
-                }
-            }
-        }
+        let resumable_backfill = apply_backfill_window(
+            &spec.source.kind,
+            &mut spec.source.config,
+            backfill_from.zip(backfill_to),
+            pipeline_ref,
+        )?;
 
         // An uploadable source's landing zone is SERVER-owned, so a pipeline
         // that omits `base_path` gets the derived one here rather than making
@@ -1628,6 +1596,202 @@ fn apply_declared_base_path(obj: &mut serde_json::Map<String, serde_json::Value>
             obj.insert("base_path".into(), serde_json::Value::String(normalized));
             DeclaredZone::Keep
         }
+    }
+}
+
+/// Kinds whose airway source reads `backfill_start` / `backfill_end`.
+///
+/// `pub` so the several doc comments that describe this list — in `airway_run`,
+/// in `agentic-airway`'s `task_spec`, on the `/backfill` route — can name it
+/// rather than restate it. Restating is what put four of them out of date at
+/// once when `sp_api` was added.
+///
+/// Adding a kind here is only half the job — the source builder in
+/// `agentic-airway`'s `source_factory` has to parse the pair and hand it to the
+/// connector, or the window is accepted here and silently ignored there.
+pub const WINDOWED_BACKFILL_KINDS: [&str; 3] = ["toast", "quickbooks", "sp_api"];
+
+/// Kinds whose backfill cursor must land in the RUN-SCOPED store.
+///
+/// A resumable backfill advances its cursor; against the pipeline-global store
+/// that advance would move a historical replay's position onto the live
+/// incremental one. QuickBooks is absent on purpose — it freezes its cursor
+/// instead, so it has nothing to isolate.
+///
+/// sp_api is here for a reason neither of the others shares: one window becomes
+/// N Amazon report jobs, each costing tens of minutes of build time on Amazon's
+/// side, and the connector persists the reportId so an interrupted run picks
+/// the same job back up. A frozen cursor throws that away on every retry and
+/// pays the build cost again from the start of the window.
+pub const RESUMABLE_BACKFILL_KINDS: [&str; 2] = ["toast", "sp_api"];
+
+/// Put this run's backfill window into the source config, and refuse a kind
+/// that cannot honour one. Returns whether the cursor needs the run-scoped
+/// store.
+///
+/// Two rules, and the first is easy to mistake for housekeeping:
+///
+/// 1. **A hand-written window is always stripped**, whether or not this run is
+///    a backfill. These keys are injection-only and the executor is their sole
+///    writer. A pair left in the YAML would otherwise make every normal and
+///    scheduled run replay that window forever — a backfill freezes or
+///    run-scopes the cursor, so the live one never advances past it.
+/// 2. **Only a kind that actually reads the pair may be given one**, so a
+///    window asked for on any other source fails loudly instead of quietly
+///    running an unbounded load that looks like it honoured the request.
+///
+/// Pure over the config so both rules are testable. That is not gratuitous:
+/// rule 1 is what stands between a hand-edited pipeline file and the symptom in
+/// oxygen-internal#3092 — a run pinned to a date range nobody asked for on that
+/// run — and it became load-bearing for `sp_api` the moment its params struct
+/// started accepting these keys. `SpApiParams` is `deny_unknown_fields`, so
+/// before that a stray pair was a hard parse error; now it is a window, and the
+/// only thing keeping it off an incremental run is this strip.
+fn apply_backfill_window(
+    source_kind: &str,
+    config: &mut serde_json::Value,
+    window: Option<(&str, &str)>,
+    pipeline_ref: &str,
+) -> Result<bool, String> {
+    if let Some(obj) = config.as_object_mut() {
+        obj.remove("backfill_start");
+        obj.remove("backfill_end");
+    }
+    let Some((from, to)) = window else {
+        return Ok(false);
+    };
+    if !WINDOWED_BACKFILL_KINDS.contains(&source_kind) {
+        return Err(format!(
+            "airway backfill: source kind `{source_kind}` does not support a date-window \
+             backfill (supported: {})",
+            WINDOWED_BACKFILL_KINDS.join(", ")
+        ));
+    }
+    let obj = config.as_object_mut().ok_or_else(|| {
+        format!("airway backfill: source config for `{pipeline_ref}` is not a map")
+    })?;
+    obj.insert(
+        "backfill_start".into(),
+        serde_json::Value::String(from.to_string()),
+    );
+    obj.insert(
+        "backfill_end".into(),
+        serde_json::Value::String(to.to_string()),
+    );
+    Ok(RESUMABLE_BACKFILL_KINDS.contains(&source_kind))
+}
+
+#[cfg(test)]
+mod backfill_window_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// **A window a user hand-wrote into the YAML never survives**, backfill or
+    /// not.
+    ///
+    /// This is the rule that keeps oxygen-internal#3092's symptom — a run
+    /// pinned to a range nobody asked for on that run — off the incremental
+    /// path. It matters more for `sp_api` than for the others: `SpApiParams` is
+    /// `deny_unknown_fields`, so a stray pair used to be a loud parse failure,
+    /// and now that the params struct accepts these keys this strip is the only
+    /// thing between a hand-edited file and a permanently pinned pipeline.
+    #[test]
+    fn a_hand_written_window_is_stripped_from_an_ordinary_run() {
+        for kind in ["sp_api", "toast", "quickbooks", "stripe"] {
+            let mut config = json!({
+                "marketplace_id": "A2EUQ1WTGCTBG2",
+                "backfill_start": "2026-08-01T00:00:00Z",
+                "backfill_end": "2026-09-01T00:00:00Z",
+            });
+            let resumable = apply_backfill_window(kind, &mut config, None, "p.airway.yml")
+                .expect("an ordinary run is never refused");
+            assert!(!resumable, "{kind}");
+            assert_eq!(
+                config,
+                json!({ "marketplace_id": "A2EUQ1WTGCTBG2" }),
+                "{kind} kept a window nobody asked for on this run"
+            );
+        }
+    }
+
+    /// A backfill injects the window it was actually given — over any hand-
+    /// written pair, which the strip removes first.
+    #[test]
+    fn a_backfill_injects_its_own_window_over_a_hand_written_one() {
+        let mut config = json!({
+            "backfill_start": "2020-01-01T00:00:00Z",
+            "backfill_end": "2020-02-01T00:00:00Z",
+        });
+        let resumable = apply_backfill_window(
+            "sp_api",
+            &mut config,
+            Some(("2026-03-01T00:00:00Z", "2026-09-01T00:00:00Z")),
+            "p.airway.yml",
+        )
+        .expect("sp_api accepts a window");
+        assert!(resumable, "sp_api backfills are resumable");
+        assert_eq!(config["backfill_start"], "2026-03-01T00:00:00Z");
+        assert_eq!(config["backfill_end"], "2026-09-01T00:00:00Z");
+    }
+
+    /// Which kinds may be given a window, and which of those advance a cursor
+    /// that needs the run-scoped store. QuickBooks takes a window and freezes
+    /// its cursor, so it is the one that separates the two lists.
+    #[test]
+    fn only_the_kinds_that_read_a_window_accept_one() {
+        let window = Some(("2026-03-01T00:00:00Z", "2026-09-01T00:00:00Z"));
+        for (kind, accepted, resumable) in [
+            ("sp_api", true, true),
+            ("toast", true, true),
+            ("quickbooks", true, false),
+            ("stripe", false, false),
+            ("filesystem", false, false),
+        ] {
+            let mut config = json!({});
+            match apply_backfill_window(kind, &mut config, window, "p.airway.yml") {
+                Ok(got) => {
+                    assert!(accepted, "{kind} should have been refused");
+                    assert_eq!(got, resumable, "{kind} resumability");
+                }
+                Err(e) => {
+                    assert!(!accepted, "{kind} should have been accepted: {e}");
+                    // The message names the kind AND the alternatives, because
+                    // an operator reading it is deciding what to do next.
+                    assert!(e.contains(kind), "{e}");
+                    assert!(e.contains("sp_api"), "{e}");
+                }
+            }
+        }
+    }
+
+    /// Every kind that is resumable must also be one that takes a window at
+    /// all. The two lists are edited separately and a kind in only the second
+    /// would silently select the run-scoped store for a source that never
+    /// receives a window.
+    #[test]
+    fn resumable_kinds_are_a_subset_of_windowed_kinds() {
+        for kind in RESUMABLE_BACKFILL_KINDS {
+            assert!(
+                WINDOWED_BACKFILL_KINDS.contains(&kind),
+                "{kind} is resumable but cannot be given a window"
+            );
+        }
+    }
+
+    /// A config that is not a map is refused rather than silently dropped —
+    /// and the message names the pipeline, since that is what the operator has
+    /// to go and edit.
+    #[test]
+    fn a_non_map_config_is_refused_by_name() {
+        let mut config = json!("not-a-map");
+        let err = apply_backfill_window(
+            "sp_api",
+            &mut config,
+            Some(("2026-03-01T00:00:00Z", "2026-09-01T00:00:00Z")),
+            "pipelines/amazon_sp.airway.yml",
+        )
+        .expect_err("a scalar config cannot carry a window");
+        assert!(err.contains("pipelines/amazon_sp.airway.yml"), "{err}");
     }
 }
 

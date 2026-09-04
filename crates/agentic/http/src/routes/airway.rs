@@ -272,9 +272,10 @@ pub struct BackfillAirwayRequest {
 }
 
 /// Start a bounded date-window backfill. Pins `[from, to)` onto the
-/// date-windowed source (toast, quickbooks) and drives a normal run; the
-/// source freezes its incremental cursor so a live pipeline's state is
-/// unaffected. Other source kinds are rejected by the executor.
+/// date-windowed source (toast, quickbooks, sp_api) and drives a normal run; a
+/// live pipeline's incremental state is unaffected either way — quickbooks
+/// freezes its cursor, toast and sp_api advance one in a run-scoped store so
+/// the backfill can resume. Other source kinds are rejected by the executor.
 pub async fn backfill_airway(
     Extension(state): Extension<Arc<AgenticState>>,
     Extension(platform): Extension<Arc<dyn PlatformContext>>,

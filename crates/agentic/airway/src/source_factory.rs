@@ -1246,6 +1246,13 @@ struct SpApiParams {
     /// make on the operator's behalf.
     #[serde(default)]
     default_start: Option<String>,
+    /// Bounded-backfill window `[start, end)` (RFC3339), injected by the
+    /// executor for a backfill run. Both-or-neither; absent for normal
+    /// incremental runs. See [`parse_backfill_window`].
+    #[serde(default)]
+    backfill_start: Option<String>,
+    #[serde(default)]
+    backfill_end: Option<String>,
 }
 
 /// Hand-written: `{params:?}` must not put the seller's refresh token or the
@@ -1322,16 +1329,16 @@ fn build_sp_api(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
         Some(raw) => parse_default_start(raw)?,
         None => {
             return Err(AirwayError::Other(
-                "sp_api config: `default_start` is required — it is the entire backfill policy \
-                 for a forward-only connector. Too recent loses history silently; too far back \
-                 asks for one oversized report that fails the same way on every run, because the \
-                 span is never chunked and the cursor only advances on success"
+                "sp_api config: `default_start` is required — it is where a first run begins \
+                 for a forward-only connector, and too recent loses history silently. A long span \
+                 is now split into reports Amazon will finish, so it no longer stalls the way it \
+                 once did; it does still cost one report per chunk on that first run"
                     .to_string(),
             ));
         }
     };
 
-    let source = SpApiSource::new(
+    let mut source = SpApiSource::new(
         LwaCredentials {
             client_id: params.client_id,
             client_secret: params.client_secret,
@@ -1340,6 +1347,24 @@ fn build_sp_api(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
         params.marketplace_id,
         default_start,
     )?;
+    if let Some((start, end)) = parse_backfill_window(&params.backfill_start, &params.backfill_end)?
+    {
+        // RESUMABLE, and the builder is named for it — `with_resumable_backfill_window`,
+        // not `with_backfill_window`. Toast's similarly-named builder ~400 lines above
+        // is the FROZEN one, and two identically-named builders with opposite cursor
+        // semantics in one file is a trap airway declined to set.
+        //
+        // Resumable is the right half of that choice here rather than a default:
+        // a report costs Amazon minutes to build and the connector persists the
+        // reportId across runs, so a backfill interrupted mid-window resumes at the
+        // sub-window it reached. A frozen cursor discards that state on every retry,
+        // which for this source means paying the build cost again from the start.
+        //
+        // It MUST be paired with the run-scoped state store — the executor selects it
+        // when `resumable_backfill` is set — or the advanced cursor corrupts the live
+        // pipeline cursor.
+        source = source.with_resumable_backfill_window(start, end);
+    }
     Ok(Box::new(source))
 }
 
@@ -1631,9 +1656,18 @@ mod tests {
             .remove("default_start");
         let msg = refusal(build(&obj));
         assert!(msg.contains("default_start"), "{msg}");
+        // Asserted on the two CONSEQUENCES, not on the word "backfill" as it
+        // was. That word left the message when chunking landed — this value
+        // stopped being "the entire backfill policy" and became where history
+        // starts — and a test pinned to the vocabulary would have failed for a
+        // message that got MORE accurate.
         assert!(
-            msg.contains("backfill"),
-            "the refusal must say WHY it matters: {msg}"
+            msg.contains("loses history"),
+            "the refusal must name the silent cost of choosing too recent: {msg}"
+        );
+        assert!(
+            msg.contains("report per chunk"),
+            "and the visible cost of choosing too far back: {msg}"
         );
     }
 
@@ -1698,6 +1732,12 @@ mod tests {
             refresh_token: "Atzr|SUPER_SECRET_TOKEN".to_string(),
             marketplace_id: "ATVPDKIKX0DER".to_string(),
             default_start: Some("2026-01-01".to_string()),
+            // Present so a future field cannot be added without this test
+            // being read: `Debug` is hand-written, and a field added to the
+            // struct but not to the impl is a credential one deploy away from
+            // a log line.
+            backfill_start: None,
+            backfill_end: None,
         };
         let rendered = format!("{params:?}");
         assert!(!rendered.contains("SUPER_SECRET_VALUE"), "{rendered}");
@@ -2387,6 +2427,32 @@ mod tests {
         ))
         .expect("build quickbooks with backfill window");
         assert_eq!(source.name(), "quickbooks");
+    }
+
+    /// The key names the executor injects must be the ones `SpApiParams`
+    /// deserializes.
+    ///
+    /// Sharper here than for its two siblings: `SpApiParams` is
+    /// `deny_unknown_fields`, so a name that drifts from the executor's is not a
+    /// window quietly ignored — it is a hard parse failure on every backfill
+    /// run. Without this test the first thing to notice would be a failed run
+    /// against a live seller account.
+    #[test]
+    fn sp_api_builds_with_backfill_window() {
+        let source = build(&cfg(
+            "sp_api",
+            json!({
+                "client_id": "amzn1.application-oa2-client.x",
+                "client_secret": "shh",
+                "refresh_token": "Atzr|x",
+                "marketplace_id": "A2EUQ1WTGCTBG2",
+                "default_start": "2026-01-01",
+                "backfill_start": "2026-03-01T00:00:00Z",
+                "backfill_end": "2026-09-01T00:00:00Z",
+            }),
+        ))
+        .expect("build sp_api with backfill window");
+        assert_eq!(source.name(), "sp_api");
     }
 
     #[test]
