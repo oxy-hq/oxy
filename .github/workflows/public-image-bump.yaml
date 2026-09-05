@@ -1,0 +1,390 @@
+name: Bump Prod Image in Infra
+
+# Release-time half of the prod-deploy loop. This opens the PR that moves prod
+# onto a new release; `oxy-prod-announce.yaml` in oxy-hq/infrastructure is the
+# other half and announces once that PR is merged. It replaced
+# `public-announce.yml`, which announced when a release was *built* — a moment
+# nobody deploys on. What is running in prod is the thing worth telling people.
+#
+# Like every `public-*` workflow here, this file is authored in
+# oxy-hq/oxygen-internal and RUNS ONLY in the oxy-hq/oxygen mirror that
+# opensource.yaml pushes it to. That is where `Public Release` builds and pushes
+# the image, so this can hang off that run finishing instead of polling a
+# registry for half an hour waiting for a build it cannot see.
+#
+# Renovate also manages this imageTag (renovate.json5 -> the products/oxy
+# customManager), but prod carries `minimumReleaseAge: "1 month"`, so its PR
+# arrives a month after the release. That soak is right for third-party charts
+# and wrong for our own app, which is why prod imageTag has been bumped by hand
+# on nearly every release. This is that hand, automated. Renovate stays as the
+# backstop; a duplicate PR is noise, not a hazard.
+
+on:
+  workflow_run:
+    workflows: ["Public Release"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to propose for prod (e.g. 0.5.137)"
+        required: true
+        type: string
+
+# One rolling branch means one writer. Two releases landing minutes apart would
+# otherwise race on it and the loser would fail on a non-fast-forward push.
+concurrency:
+  group: public-image-bump
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+  # Reads the triggering run's job list — see the published check below.
+  actions: read
+
+env:
+  # The single prod values file the ide StatefulSet and the serve fleet render
+  # from. `oxy-prod-announce.yaml` in the infra repo watches this same path.
+  VALUES_FILE: oxy-workload/664267706513/us-west-2/oxy-prod/products/oxy/gitops/values/oxy.yaml
+  BUMP_BRANCH: chore/bump-oxy-prod-image
+  BUMP_LABEL: pending-image-bump
+  IMAGE_REPO: oxy-hq/oxygen
+  INFRA_REPO: oxy-hq/infrastructure
+
+jobs:
+  bump:
+    name: Open prod image-bump PR
+    # Mirror-only, and stable releases only.
+    #
+    # `Public Release` serves two channels: stable on a tag push, edge on a push
+    # to main or a schedule. A job `if:` has no regex, but its trigger list is
+    # exactly `tags: [0-9]+.[0-9]+.[0-9]+` plus `branches: main` — so within a
+    # `push`, "head_branch is not main" is precisely "this was a tag". The step
+    # below still validates the semver shape rather than trusting that.
+    if: >-
+      github.repository == 'oxy-hq/oxygen' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event == 'push' &&
+         github.event.workflow_run.head_branch != 'main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Resolve version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            VERSION="$INPUT_VERSION"
+          else
+            # On a tag push `head_branch` carries the tag name.
+            VERSION="$RUN_BRANCH"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$VERSION' is not an X.Y.Z release version"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Confirm the release image was published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          # Never propose an image that does not exist. The prod `oxy` ArgoCD
+          # app runs syncPolicy.automated, so a merge reaches the cluster within
+          # minutes — an unpublished tag there is an ImagePullBackOff on the
+          # single-replica ide StatefulSet, not a harmless no-op.
+          #
+          # Two checks, because a green `Public Release` does not mean an image.
+          # It reports `success` even when every build job was SKIPPED, and only
+          # `Create Deployment Summary` runs when the multi-arch manifest was
+          # actually pushed (it needs `create-manifests`). Same marker the
+          # retired public-announce.yml used for the same reason.
+          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
+            PUBLISHED=$(gh api --paginate \
+              "/repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs" \
+              --jq '[.jobs[] | select(.name == "Create Deployment Summary") | .conclusion]
+                    | any(. == "success")')
+            if [[ "$PUBLISHED" != "true" ]]; then
+              echo "::error::run ${RUN_ID} published no image (every build job was" \
+                   "skipped, or the manifest step failed). Nothing to propose."
+              exit 1
+            fi
+          fi
+
+          # Then the registry itself, because the manifest push and this event
+          # can race by a few seconds. Short leash: the image is already built
+          # by the time we get here, so this is confirmation, not a wait.
+          # oxy-hq/oxygen is a public package, so an anonymous pull token works.
+          for attempt in $(seq 1 10); do
+            # `|| true` on both probes: under `set -e` a transient network
+            # failure would otherwise kill the check instead of retrying it.
+            token=$(curl -fsSL \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:${IMAGE_REPO}:pull" \
+              | jq -r .token || true)
+            if [[ -n "$token" ]] && curl -fsSL -o /dev/null \
+                 -H "Authorization: Bearer ${token}" \
+                 -H 'Accept: application/vnd.oci.image.index.v1+json' \
+                 -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+                 -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+                 "https://ghcr.io/v2/${IMAGE_REPO}/manifests/${VERSION}"; then
+              echo "ghcr.io/${IMAGE_REPO}:${VERSION} is published."
+              exit 0
+            fi
+            echo "attempt ${attempt}/10: not visible yet; retrying in 30s"
+            sleep 30
+          done
+          echo "::error::ghcr.io/${IMAGE_REPO}:${VERSION} is not in the registry" \
+               "five minutes after the build reported publishing it."
+          exit 1
+
+      # Two tokens, deliberately. The write token touches only the infra repo;
+      # the summariser below gets a read-only one, so prompt-injected commit or
+      # PR text it reads cannot turn into a write anywhere.
+      - name: Mint infra write token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        id: infra-token
+        with:
+          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: infrastructure
+
+      - name: Mint read-only token for the summariser
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        id: read-token
+        with:
+          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: oxygen-internal
+          permission-contents: read
+          permission-pull-requests: read
+          permission-issues: read
+
+      - name: Checkout the mirror
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Full history and tags. This tree is oxygen-internal's mirror, so the
+          # release range resolves here — copybara carries the commits and
+          # release.yaml tags this repo with the same version. On a shallow
+          # clone neither end of the range exists.
+          fetch-depth: 0
+
+      - name: Checkout infrastructure
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: oxy-hq/infrastructure
+          token: ${{ steps.infra-token.outputs.token }}
+          path: infrastructure
+          fetch-depth: 0
+
+      - uses: ./.github/actions/git-identity
+        with:
+          app-slug: ${{ steps.infra-token.outputs.app-slug }}
+          token: ${{ steps.infra-token.outputs.token }}
+          path: infrastructure
+
+      - name: Stage the imageTag bump
+        id: bump
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd infrastructure
+          git fetch origin main --quiet
+
+          # Always branch fresh from main and force-push. One rolling branch
+          # rather than one per release: prod bumps land every few days and
+          # per-release PRs pile up faster than anyone closes them. Rebuilding
+          # it from main each time keeps the branch a single mechanical commit
+          # with no conflict surface, and re-points any open PR at the newer
+          # version — the body below is rewritten to cover the whole range, so
+          # nothing the reviewer needs is lost.
+          git checkout -B "$BUMP_BRANCH" origin/main
+
+          # `|| true` so a SIGPIPE from `head` closing early cannot fail the
+          # step under pipefail; the emptiness check below is the real gate.
+          CURRENT=$(sed -nE 's/^[[:space:]]*imageTag:[[:space:]]*"?([^"[:space:]]+)"?.*/\1/p' \
+            "$VALUES_FILE" | head -1) || true
+          if [[ -z "$CURRENT" ]]; then
+            echo "::error::no imageTag found in $VALUES_FILE — has the file moved?"
+            exit 1
+          fi
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+
+          if [[ "$CURRENT" == "$VERSION" ]]; then
+            echo "::notice::prod is already pinned to $VERSION — nothing to propose."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$(printf '%s\n%s\n' "$CURRENT" "$VERSION" | sort -V | tail -1)" != "$VERSION" ]]; then
+            echo "::notice::$VERSION is not higher than the pinned $CURRENT — refusing to" \
+                 "propose a downgrade. Roll prod back by hand if that is what you meant."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Mechanical, single-line edit. Claude writes the PR prose in the
+          # next step but never touches the tree: a values file this dense,
+          # carrying probe timings and rollout-safety invariants, is not a
+          # thing to hand an LLM a text editor for.
+          sed -i -E \
+            "s|^([[:space:]]*imageTag:[[:space:]]*)\"?[^\"[:space:]]+\"?|\1\"${VERSION}\"|" \
+            "$VALUES_FILE"
+
+          # The diff must be exactly one line in exactly one file. Anything
+          # else means the sed matched somewhere unintended, and an unreviewed
+          # extra hunk in a prod values file is how an outage starts.
+          if [[ "$(git diff --numstat)" != $'1\t1\t'"$VALUES_FILE" ]]; then
+            echo "::error::unexpected diff:"
+            git diff --numstat
+            exit 1
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Summarise the release
+        if: steps.bump.outputs.skip != 'true'
+        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Read-only token (see the minting step). claude-code-action sets
+          # $GH_TOKEN inside its runtime from this input; a step-level
+          # `env: GH_TOKEN:` does NOT survive, it generates its own claude[bot]
+          # token via OIDC and overwrites it.
+          github_token: ${{ steps.read-token.outputs.token }}
+          # OFF, and load-bearing: this repo is PUBLIC, so its Actions logs are
+          # world-readable, and this step reads oxygen-internal PR bodies. The
+          # summary's destination is a private repo's PR and an internal Slack
+          # channel; the transcript must not be a third, public one.
+          show_full_output: "false"
+          # Reads only. This job feeds the model PR and commit text written by
+          # whoever opened them, so the tool surface is the injection surface —
+          # no curl, no python, no write-capable binary. `gh` is scoped by the
+          # read-only token above rather than by the allowlist, since
+          # `Bash(gh:*)` cannot distinguish `gh pr view` from `gh pr comment`.
+          claude_args: >-
+            --allowedTools "Bash(gh:*),Bash(git log:*),Bash(git show:*),Bash(git tag:*),Read,Write,Glob,Grep"
+          prompt: |
+            Write the PR description for a change that moves Oxy production
+            from `${{ steps.bump.outputs.current }}` to
+            `${{ steps.version.outputs.version }}`.
+
+            The reader is the engineer deciding whether to merge it. They want
+            to know what is about to reach customers, and whether anything in
+            it deserves a closer look before prod picks it up.
+
+            ## Gather
+
+            The repo root of this checkout is oxy-hq/oxygen, the public mirror
+            of oxy-hq/oxygen-internal — same commits, same release tags, at full
+            depth. The range is
+            `${{ steps.bump.outputs.current }}..${{ steps.version.outputs.version }}`; call it RANGE.
+
+            1. `git log --no-merges --pretty=format:'%s' RANGE`
+            2. Pull the PR number (`#NNNN`) out of each subject. Those are
+               oxygen-internal PRs; for every one that looks user-visible or
+               operationally interesting, read it there:
+               `gh pr view NNNN --repo oxy-hq/oxygen-internal --json title,body,labels`
+               Cap this at the 15 most substantial. Skip dependency bumps, CI,
+               formatting, and test-only changes.
+            3. Read `product-context.md` in this checkout so the terminology
+               matches how we talk about the product. Note the renames there —
+               "Semantic Model", "Automation", "custom app" — and use the
+               user-facing name, not the code name.
+
+            ## Write
+
+            Write to `${{ github.workspace }}/bump-summary.md`, and nowhere
+            else. Never print an internal PR body to stdout — this job's log is
+            public. Structure, exactly:
+
+            - **First: one or two sentences**, no heading, no bullets, naming
+              what actually changed. This same summary is what people read; a
+              sentence saying "various improvements and bug fixes" is worse
+              than no PR body at all.
+            - Then a `### What's in this bump` list, at most 8 bullets, one
+              line each, `#NNNN` at the end of the bullet. Group trivially
+              related PRs into one bullet rather than listing both.
+            - Then, only if there is something real to say, a
+              `### Worth a look before merge` section: migrations, config or
+              env-var requirements, anything touching auth, billing, or the
+              serve/ide split, and anything a rollback would not undo cleanly.
+              Omit the heading entirely when there is nothing — an empty
+              "no concerns" section trains people to skip the section.
+
+            Markdown, no front matter, no trailing "generated by" note. Do not
+            edit any file under `infrastructure/` — the version bump is already
+            staged there and must stay a one-line diff.
+
+      - name: Commit, push, and open the PR
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ steps.infra-token.outputs.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CURRENT: ${{ steps.bump.outputs.current }}
+        run: |
+          set -euo pipefail
+          SUMMARY="${GITHUB_WORKSPACE}/bump-summary.md"
+          BODY="${RUNNER_TEMP}/pr-body.md"
+          COMPARE="https://github.com/oxy-hq/oxygen-internal/compare/${CURRENT}...${VERSION}"
+
+          # Ship the bump even if the prose failed. The version change is the
+          # deliverable and the summary is the convenience — but say so, rather
+          # than opening a blank PR that looks like it had nothing to report.
+          if [[ ! -s "$SUMMARY" ]]; then
+            echo "::warning::no summary was generated; opening the PR without one"
+            cat > "$SUMMARY" <<SUMMARY_MD
+          Moves prod from \`${CURRENT}\` to \`${VERSION}\`. _(Summary generation
+          failed — read the compare link below.)_
+          SUMMARY_MD
+          fi
+
+          # Unquoted heredoc, escaped backticks: the versions interpolate and
+          # the backticks stay markdown.
+          {
+            cat "$SUMMARY"
+            cat <<BODY_MD
+
+          ---
+
+          \`imageTag\` \`${CURRENT}\` → \`${VERSION}\` in the prod oxy values.
+
+          - Image: \`ghcr.io/oxy-hq/oxygen:${VERSION}\` — verified published before this PR opened.
+          - Full diff: ${COMPARE}
+          - Opened by \`.github/workflows/public-image-bump.yaml\`, running in the oxy-hq/oxygen mirror.
+
+          > Merging deploys. The prod \`oxy\` ArgoCD app runs \`syncPolicy.automated\`,
+          > so this reaches the cluster within minutes of the merge.
+          >
+          > This branch is rebuilt from \`main\` and force-pushed on every release, so a
+          > newer release re-points this same PR. Do not commit anything else onto it.
+          BODY_MD
+          } > "$BODY"
+
+          cd infrastructure
+          git commit --quiet -am "chore(oxy-prod): bump imageTag ${CURRENT} -> ${VERSION}"
+          git push --force --quiet origin "$BUMP_BRANCH"
+
+          TITLE="chore(oxy-prod): bump oxy image ${CURRENT} → ${VERSION}"
+          PR=$(gh pr list --repo "$INFRA_REPO" --head "$BUMP_BRANCH" --state open \
+            --json number --jq '.[0].number // empty')
+
+          if [[ -n "$PR" ]]; then
+            gh pr edit "$PR" --repo "$INFRA_REPO" --title "$TITLE" --body-file "$BODY"
+            echo "::notice::updated https://github.com/${INFRA_REPO}/pull/${PR} to ${VERSION}"
+          else
+            gh label create "$BUMP_LABEL" --repo "$INFRA_REPO" --color 0e8a16 \
+              --description "Pending prod image bump" 2>/dev/null || true
+            gh pr create --repo "$INFRA_REPO" --head "$BUMP_BRANCH" --base main \
+              --title "$TITLE" --body-file "$BODY" --label "$BUMP_LABEL"
+          fi
