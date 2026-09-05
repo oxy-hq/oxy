@@ -1030,6 +1030,20 @@ pub async fn handle_function_request(
     if let Err(e) = update.update(&db).await {
         error!("failed to update app_function_invocations row: {e}");
     }
+    let request_id = request_id_from_headers(&headers);
+    super::custom_apps_telemetry::record_function(super::custom_apps_telemetry::FunctionEvent {
+        org_id: app.org_id,
+        app_id: app.id,
+        build_id,
+        request_id,
+        user_id: outcome.user_id,
+        function_name,
+        mode: "route",
+        status_label: status_str,
+        http_status,
+        duration_ms: duration_ms.clamp(0, u32::MAX as i64) as u32,
+        error: error_msg.as_deref(),
+    });
 
     // Cache the successful result for functions that opted into `cache`.
     //
@@ -1061,6 +1075,24 @@ pub async fn handle_function_request(
         .lock()
         .map(|mut v| std::mem::take(&mut *v))
         .unwrap_or_default();
+    // Persist them too. Until this existed, a route call's logs lived ONLY in
+    // the SSE frames below — so a browser that had already navigated away took
+    // them with it, while a scheduled run's logs survived as
+    // `agentic_run_events`. The two modes disagreed about whether a log line
+    // outlives its run; now neither does.
+    super::custom_apps_telemetry::record_function_logs(
+        app.org_id,
+        app.id,
+        build_id,
+        invocation_id,
+        request_id,
+        function_name,
+        "route",
+        &captured
+            .iter()
+            .map(|l| (l.level.clone(), l.message.clone()))
+            .collect::<Vec<_>>(),
+    );
     let mut sse_body = String::new();
     for line in &captured {
         sse_body.push_str(&sse_event(
@@ -1281,6 +1313,20 @@ pub(crate) async fn run_scheduled_function(
     if let Err(e) = update.update(db).await {
         error!("failed to update scheduled invocation row: {e}");
     }
+    super::custom_apps_telemetry::record_function(super::custom_apps_telemetry::FunctionEvent {
+        org_id: app.org_id,
+        app_id: app.id,
+        build_id,
+        // No HTTP request behind a cron tick or an Airway step.
+        request_id: None,
+        user_id: owner.user_id,
+        function_name,
+        mode,
+        status_label: status_str,
+        http_status,
+        duration_ms: duration_ms.clamp(0, u32::MAX as i64) as u32,
+        error: error_msg.as_deref(),
+    });
 
     // Persist the isolate's log output. The buffer was filled during the run but
     // is otherwise dropped on the system path (route mode drains it to SSE; the
@@ -1288,13 +1334,33 @@ pub(crate) async fn run_scheduled_function(
     // isolate returns (not live-tailed mid-run) — into `function_log` events the
     // coordinator persists to `agentic_run_events`. The run's whole output then
     // lands together and surfaces on the next dashboard poll / SSE catch-up.
+    //
+    // Drained UNCONDITIONALLY since 2026-09. It used to happen only inside the
+    // `if let Some(tx)` below, so a run with no event sink — an Airway step, a
+    // fleet worker without the coordinator channel — dropped its entire log
+    // output on the floor with nothing recording that it had. The ClickHouse
+    // sink wants those lines whether or not anyone is watching the run live.
+    //
+    // Take the lines out under the lock, then release it before awaiting the
+    // sends (never hold a std Mutex across `.await`).
+    let drained: Vec<LogLine> = {
+        let mut guard = logs.lock().unwrap_or_else(|poison| poison.into_inner());
+        std::mem::take(&mut *guard)
+    };
+    super::custom_apps_telemetry::record_function_logs(
+        app.org_id,
+        app.id,
+        build_id,
+        invocation_id,
+        None,
+        function_name,
+        mode,
+        &drained
+            .iter()
+            .map(|l| (l.level.clone(), l.message.clone()))
+            .collect::<Vec<_>>(),
+    );
     if let Some(tx) = events.as_ref() {
-        // Take the lines out under the lock, then release it before awaiting the
-        // sends (never hold a std Mutex across `.await`).
-        let drained: Vec<LogLine> = {
-            let mut guard = logs.lock().unwrap_or_else(|poison| poison.into_inner());
-            std::mem::take(&mut *guard)
-        };
         let total = drained.len();
         for (idx, line) in drained.into_iter().take(MAX_LOG_EVENTS).enumerate() {
             let _ = tx

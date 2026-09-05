@@ -147,6 +147,13 @@ pub async fn finalize() {
     }
 
     oxy_observability::spawn_bridge(receiver, Arc::clone(&store));
+    // Custom-app wide events and function logs ride their own bridges rather
+    // than the span channel: they are not spans, they are far higher volume,
+    // and a burst of app traffic must not be able to evict trace spans from a
+    // shared buffer. Installed here, alongside the store, so `record_event` is
+    // a no-op everywhere `OXY_OBSERVABILITY_BACKEND` is unset — which is every
+    // developer's default `oxy serve`.
+    oxy_observability::spawn_custom_app_bridges(Arc::clone(&store));
     oxy_observability::global::set_global(store);
 }
 

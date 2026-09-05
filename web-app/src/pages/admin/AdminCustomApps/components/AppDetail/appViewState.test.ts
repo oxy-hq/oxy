@@ -14,7 +14,10 @@ describe("readAppViewState", () => {
   it("falls back on anything the UI cannot render", () => {
     // A URL is user input. `?device=phone` should show the desktop preview,
     // not take the page down.
-    const v = readAppViewState(params("device=phone&channel=nightly&section=logs"), published);
+    // `section=telemetry` is deliberately a name no section has ever had —
+    // this assertion used `logs` until the Logs section shipped and quietly
+    // started passing for the wrong reason.
+    const v = readAppViewState(params("device=phone&channel=nightly&section=telemetry"), published);
     expect(v.device).toBe("desktop");
     expect(v.channel).toBe("published");
     expect(v.section).toBeNull();

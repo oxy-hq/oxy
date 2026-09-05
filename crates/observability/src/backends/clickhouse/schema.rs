@@ -195,12 +195,134 @@ WHERE JSONExtractString(span_attributes, 'oxy.span_type') = 'tool_call'
 /// so the flatten logic lives in exactly one place.
 pub const CREATE_EXECUTIONS_MV_PREFIX: &str = "CREATE MATERIALIZED VIEW IF NOT EXISTS observability_executions_mv TO observability_executions AS";
 
+/// One wide event per custom-app request — the serve of an HTML shell or asset,
+/// an Oxy Function invocation, a data-plane query, or a client-side beacon.
+///
+/// **This is what makes per-app availability a query rather than a probe.** A
+/// custom-app subdomain answers 200 with the SPA shell for every path and every
+/// hostname, so an outside-in prober cannot distinguish a healthy app from a
+/// typo'd one; but Oxy terminates every request for every app, so the success
+/// ratio of real traffic is already in hand and only needed somewhere to land.
+/// See `internal-docs/2026-09-04-custom-app-observability-design.md` §3 Layer 1.
+///
+/// `ORDER BY (org_id, app_id, timestamp)` is **app-first on purpose**: every
+/// read is "this app, this window", matching the cache-key rule the
+/// `oxy-customer-apps-perf` skill states for the same reason. A timestamp-first
+/// key would make the common query scan every tenant.
+///
+/// `outcome` is stored rather than derived from `status` because the three SRE
+/// error classes do not all show up in a status code: an explicit failure is a
+/// 5xx, but an *implicit* one is a 200 carrying the wrong thing (an HTML shell
+/// that never mounted), and a *policy* one is a 200 that took too long. A
+/// derived `status >= 500` would silently report the white-screen case as
+/// success, which is the exact failure this table exists to catch.
+pub const CREATE_CUSTOM_APP_EVENTS_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS custom_app_events (
+    timestamp DateTime64(3) DEFAULT now64(3),
+    org_id String,
+    app_id String,
+    build_id String DEFAULT '',
+    request_id String DEFAULT '',
+    session_id String DEFAULT '',
+    user_id String DEFAULT '',
+    kind LowCardinality(String),
+    route String DEFAULT '',
+    status UInt16 DEFAULT 0,
+    duration_ms UInt32 DEFAULT 0,
+    bytes UInt64 DEFAULT 0,
+    app_role LowCardinality(String) DEFAULT '',
+    outcome LowCardinality(String) DEFAULT 'ok',
+    error_kind LowCardinality(String) DEFAULT '',
+    error_detail String DEFAULT ''
+) ENGINE = MergeTree()
+PARTITION BY toDate(timestamp)
+ORDER BY (org_id, app_id, timestamp)
+SETTINGS ttl_only_drop_parts = 1
+"#;
+
+/// Durable `ctx.log()` / `console.*` output from Oxy Functions.
+///
+/// Route-mode logs previously existed only inside the HTTP response that
+/// carried them: if the caller was a browser that had already navigated away,
+/// they were gone. Background runs persisted theirs as `agentic_run_events`
+/// rows, so the two modes disagreed about whether a log line survived its run.
+/// This table is the shared home; the span events emitted in phase 1 remain the
+/// *correlated* view, this is the *complete* one.
+///
+/// Retention is deliberately shorter than the 90 days the analytics tables get
+/// (see `RETENTION_TABLES`): a log line can carry application data a usage
+/// count cannot, so it ages out faster.
+pub const CREATE_CUSTOM_APP_LOGS_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS custom_app_logs (
+    timestamp DateTime64(3) DEFAULT now64(3),
+    org_id String,
+    app_id String,
+    build_id String DEFAULT '',
+    invocation_id String DEFAULT '',
+    request_id String DEFAULT '',
+    function_name LowCardinality(String) DEFAULT '',
+    mode LowCardinality(String) DEFAULT '',
+    log_level LowCardinality(String) DEFAULT 'info',
+    seq UInt32 DEFAULT 0,
+    message String
+) ENGINE = MergeTree()
+PARTITION BY toDate(timestamp)
+ORDER BY (org_id, app_id, timestamp)
+SETTINGS ttl_only_drop_parts = 1
+"#;
+
+/// Uncaught browser errors from a custom app, **with message and stack**.
+///
+/// A separate table from `custom_app_events` on purpose, and the separation is
+/// the privacy posture rather than a schema convenience. The analytics tables
+/// hold counts and paths and keep 90 days; this holds free text a page threw,
+/// which can contain application data — a function that interpolates a row
+/// value into an error puts that value here — so it keeps **30 days** (see
+/// `RETENTION_TABLES`) behind the same app-admin gate.
+///
+/// Before this existed the platform stored error *names and counts only*, which
+/// made a white-screened app report `{TypeError: 3}` and nothing an engineer
+/// could act on. Relaxing that was a deliberate decision, recorded in
+/// `internal-docs/2026-09-04-custom-app-observability-design.md` §5.1.
+///
+/// `stack_hash` is the dedup and grouping key: it is computed client-side over
+/// the normalised stack so the same fault recurring 400 times in a render loop
+/// arrives as a handful of rows, and so the read path can group occurrences
+/// without parsing text.
+///
+/// `build_id` is what makes a stack resolvable — a minified frame means nothing
+/// without the exact build's source map — and what makes "this started with
+/// build abc123" answerable.
+pub const CREATE_CUSTOM_APP_CLIENT_ERRORS_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS custom_app_client_errors (
+    timestamp DateTime64(3) DEFAULT now64(3),
+    org_id String,
+    app_id String,
+    build_id String DEFAULT '',
+    session_id String DEFAULT '',
+    user_id String DEFAULT '',
+    error_name LowCardinality(String) DEFAULT 'Error',
+    message String DEFAULT '',
+    stack String DEFAULT '',
+    stack_hash String DEFAULT '',
+    path String DEFAULT '',
+    kind LowCardinality(String) DEFAULT 'error',
+    user_agent String DEFAULT ''
+) ENGINE = MergeTree()
+PARTITION BY toDate(timestamp)
+ORDER BY (org_id, app_id, timestamp)
+SETTINGS ttl_only_drop_parts = 1
+"#;
+
 pub const ALL_DDL: &[&str] = &[
     CREATE_SPANS_TABLE,
     CREATE_INTENT_CLUSTERS_TABLE,
     CREATE_INTENT_CLASSIFICATIONS_TABLE,
     CREATE_METRIC_USAGE_TABLE,
     CREATE_EXECUTIONS_TABLE,
+    CREATE_CUSTOM_APP_EVENTS_TABLE,
+    CREATE_CUSTOM_APP_LOGS_TABLE,
+    CREATE_CUSTOM_APP_CLIENT_ERRORS_TABLE,
 ];
 
 #[cfg(test)]
@@ -276,6 +398,12 @@ mod partitioning_tests {
             ("spans", CREATE_SPANS_TABLE),
             ("metric_usage", CREATE_METRIC_USAGE_TABLE),
             ("executions", CREATE_EXECUTIONS_TABLE),
+            ("custom_app_events", CREATE_CUSTOM_APP_EVENTS_TABLE),
+            ("custom_app_logs", CREATE_CUSTOM_APP_LOGS_TABLE),
+            (
+                "custom_app_client_errors",
+                CREATE_CUSTOM_APP_CLIENT_ERRORS_TABLE,
+            ),
         ] {
             assert!(
                 ddl.contains("PARTITION BY toDate("),
@@ -298,10 +426,37 @@ mod partitioning_tests {
             ("spans", CREATE_SPANS_TABLE),
             ("metric_usage", CREATE_METRIC_USAGE_TABLE),
             ("executions", CREATE_EXECUTIONS_TABLE),
+            ("custom_app_events", CREATE_CUSTOM_APP_EVENTS_TABLE),
+            ("custom_app_logs", CREATE_CUSTOM_APP_LOGS_TABLE),
+            (
+                "custom_app_client_errors",
+                CREATE_CUSTOM_APP_CLIENT_ERRORS_TABLE,
+            ),
         ] {
             assert!(
                 ddl.contains("ttl_only_drop_parts = 1"),
                 "{name} should expire by dropping parts"
+            );
+        }
+    }
+
+    /// The custom-app tables are read "this app, this window" on every path, so
+    /// an org/app-first sort key is the difference between touching one tenant's
+    /// parts and scanning every tenant's. Same rule the customer-apps caches
+    /// follow, for the same reason.
+    #[test]
+    fn custom_app_tables_sort_app_first() {
+        for (name, ddl) in [
+            ("custom_app_events", CREATE_CUSTOM_APP_EVENTS_TABLE),
+            ("custom_app_logs", CREATE_CUSTOM_APP_LOGS_TABLE),
+            (
+                "custom_app_client_errors",
+                CREATE_CUSTOM_APP_CLIENT_ERRORS_TABLE,
+            ),
+        ] {
+            assert!(
+                ddl.contains("ORDER BY (org_id, app_id, timestamp)"),
+                "{name} must sort org/app first, not timestamp first"
             );
         }
     }

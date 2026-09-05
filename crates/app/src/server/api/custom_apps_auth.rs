@@ -27,6 +27,7 @@
 //! any handler — not just the debug one — can reuse the full auth
 //! pipeline without duplicating the logic.
 
+use axum::http::StatusCode;
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 use std::time::Instant;
@@ -433,6 +434,45 @@ pub async fn load_app_by_slugs(
 }
 
 // ── Auth helper ──────────────────────────────────────────────────────────────
+
+/// Narrow an [`AuthOutcome`] from "may open this app" to "may operate it".
+///
+/// [`authenticate_and_authorize`] ends at [`user_can_access_app`], which for a
+/// default-visibility published app is true for **every member of the owning
+/// org** — the app's ordinary viewers. That is the right gate for the bundle's
+/// own bytes. It is the wrong gate for anything that exposes the app's
+/// *operator-facing* internals: server-side `ctx.log()` output (which routinely
+/// carries query results and upstream API responses the author printed while
+/// debugging), and client stacks resolved against source maps (original file
+/// paths and function names). An app's data is what it chose to show a viewer;
+/// its log output is not, and "the same gate the app's own data already has" is
+/// not a defence for the second one.
+///
+/// The verdict comes from `oxy-authz`'s `Ring::AppAdmin` via
+/// [`resolve_app_role`] — never a hand-rolled staff/owner check here — so it
+/// already covers Oxy staff, the org owner and an app-admin row.
+pub(crate) async fn require_app_admin(outcome: &AuthOutcome) -> Result<(), StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        error!("db connect failed for app-admin check: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let role = resolve_app_role(
+        &db,
+        outcome.user_id,
+        outcome.user_email.as_deref().unwrap_or(""),
+        &outcome.app,
+    )
+    .await
+    .map_err(|e| {
+        error!("app role lookup failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    if role == Some(app_members::ROLE_ADMIN) {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
 
 /// What the auth flow returns on success.
 pub(crate) struct AuthOutcome {

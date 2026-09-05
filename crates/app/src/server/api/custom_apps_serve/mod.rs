@@ -220,6 +220,11 @@ pub(crate) async fn serve_pretty(
     uri: Uri,
     body: axum::body::Body,
 ) -> Response {
+    // Wall clock for the wide event emitted at the bottom. Started before the
+    // auth round-trip on purpose: a login check that has gone slow IS the app
+    // being slow from the viewer's seat, and a timer that excluded it would
+    // report health the viewer does not have.
+    let started = std::time::Instant::now();
     // 1. Authenticate FIRST so an unauthenticated probe can't distinguish a
     //    real registered (org, app) pair (302 redirect) from a fake one
     //    (404). No DB work happens before we know the caller has a valid
@@ -333,10 +338,31 @@ pub(crate) async fn serve_pretty(
             Ok(v) => v,
             Err(e) => {
                 tracing::error!("Access check failed for custom app {id}: {e}");
+                record_early_exit(
+                    &app,
+                    user.id,
+                    &headers,
+                    &rest,
+                    is_html_navigation(&rest),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    started,
+                );
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
         };
     if !allowed {
+        // A 403 is not an app fault and does not dent the SLI (see
+        // `is_app_fault`), but it is still traffic this app served and an
+        // operator asking "who is being turned away" has nowhere else to look.
+        record_early_exit(
+            &app,
+            user.id,
+            &headers,
+            &rest,
+            is_html_navigation(&rest),
+            StatusCode::FORBIDDEN,
+            started,
+        );
         return (
             StatusCode::FORBIDDEN,
             "You don't have access to this custom app.",
@@ -351,6 +377,18 @@ pub(crate) async fn serve_pretty(
         Ok(s) => s,
         Err(e) => {
             tracing::error!("Bad source config for custom app {id}: {e}");
+            // A 500 the PLATFORM produced. Returning here skipped the recorder
+            // at the bottom, so the SLI built to catch platform failure was
+            // blind to exactly that.
+            record_early_exit(
+                &app,
+                user.id,
+                &headers,
+                &rest,
+                is_html_navigation(&rest),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                started,
+            );
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
@@ -383,6 +421,7 @@ pub(crate) async fn serve_pretty(
                     &headers,
                     &db,
                     app.id,
+                    app.org_id,
                     user.id,
                     user.email.as_deref().unwrap_or(""),
                 )
@@ -468,6 +507,18 @@ pub(crate) async fn serve_pretty(
             };
             match build_pk {
                 Some(build_pk) => {
+                    // The runtime config was built ~100 lines above, before the
+                    // channel was known, so its `buildId` defaulted to the
+                    // PUBLISHED build. A staff draft preview of a published app
+                    // would then serve draft bytes and inject the published id:
+                    // an error thrown by draft code gets attributed to the wrong
+                    // build, `resolve_stack` fetches that build's maps, and the
+                    // lookups return plausible-but-wrong files and lines —
+                    // reported as `stack_resolved: true`, which is the one case
+                    // that flag exists to prevent. Draft preview is exactly when
+                    // someone is reading a stack.
+                    let mut runtime = runtime;
+                    runtime.build_id = build_pk.to_string();
                     serve_from_s3_build(&db, id, build_pk, &rest, &runtime, &headers).await
                 }
                 None => {
@@ -530,6 +581,33 @@ pub(crate) async fn serve_pretty(
         let s = response.status();
         s.is_success() || s == StatusCode::NOT_MODIFIED
     };
+
+    // One wide event per served request — every request, not just the HTML
+    // ones the view recorder below counts. This is the denominator the
+    // availability SLI is computed from, and an SLI that only saw successful
+    // page loads would be a tautology. Assets are recorded and then excluded
+    // from the ratio at query time (see `availability_sql`), so an asset
+    // failure is diagnosable without being able to drown out a shell failure.
+    //
+    // Speculative prefetches are excluded for the same reason they are not
+    // views: the HQ launcher warms an app on card hover, and counting those
+    // would make hover traffic indistinguishable from real load.
+    if !is_speculative_request(&headers) {
+        super::custom_apps_telemetry::record_serve(super::custom_apps_telemetry::ServeEvent {
+            org_id: app.org_id,
+            app_id: app.id,
+            build_id: None,
+            request_id: crate::server::api::middlewares::request_id::request_id_from_headers(
+                &headers,
+            ),
+            session_id: None,
+            user_id: user.id,
+            is_html: is_html_request,
+            route: &rest,
+            status: response.status().as_u16(),
+            duration_ms: started.elapsed().as_millis().min(u32::MAX as u128) as u32,
+        });
+    }
     // A browser-initiated speculation is not a view. The HQ launcher warms an
     // app on card hover so the click is instant (`prefetchApp`), and without
     // this every hover would record an open — and mint a session id at hover
@@ -587,6 +665,36 @@ pub(crate) async fn serve_pretty(
     }
 
     response
+}
+
+/// Emit a serve event for a request that fails BEFORE reaching the normal
+/// recording point at the bottom of `serve_pretty`.
+///
+/// The two 500s the platform itself produces — an access-check DB failure and a
+/// bad source config — returned early, so the SLI that exists to catch platform
+/// failure never saw the platform's own failures. Split out rather than inlined
+/// three times so the `kind`/`outcome` classification stays in one place.
+fn record_early_exit(
+    app: &entity::apps::Model,
+    user_id: Uuid,
+    headers: &HeaderMap,
+    rest: &str,
+    is_html: bool,
+    status: StatusCode,
+    started: std::time::Instant,
+) {
+    super::custom_apps_telemetry::record_serve(super::custom_apps_telemetry::ServeEvent {
+        org_id: app.org_id,
+        app_id: app.id,
+        build_id: None,
+        request_id: oxy_shared::utils::request_id::from_headers(headers),
+        session_id: None,
+        user_id,
+        is_html,
+        route: rest,
+        status: status.as_u16(),
+        duration_ms: started.elapsed().as_millis().min(u32::MAX as u128) as u32,
+    });
 }
 
 /// The tail of a request path inside the platform-reserved namespace, or `None`
@@ -882,6 +990,7 @@ async fn ingest_beacon(
     headers: &HeaderMap,
     db: &sea_orm::DatabaseConnection,
     app_id: Uuid,
+    org_id: Uuid,
     user_id: Uuid,
     user_email: &str,
 ) -> Response {
@@ -894,6 +1003,7 @@ async fn ingest_beacon(
     super::custom_apps_beacon::handle(
         db.clone(),
         app_id,
+        org_id,
         user_id,
         user_email.to_string(),
         headers,

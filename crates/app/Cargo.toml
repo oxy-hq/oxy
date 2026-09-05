@@ -116,6 +116,9 @@ axum = { workspace = true, features = ["multipart"] }
 axum-server = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["cors", "trace", "timeout", "compression-br", "compression-gzip"] }
+# Server-side resolution of custom-app client-error stacks. Maps stay in the
+# build store and are never served to a browser — see custom_apps_sourcemap.
+sourcemap = "9"
 utoipa = { workspace = true, features = ["uuid", "chrono", "axum_extras"] }
 utoipa-axum = { workspace = true }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }

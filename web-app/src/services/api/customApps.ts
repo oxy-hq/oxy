@@ -1,12 +1,15 @@
 import type {
+  AppAvailability,
   AppBuildHistory,
   AppFunctionSummary,
   BatchAppResult,
+  ClientError,
   CreateAppRequest,
   CustomApp,
   CustomAppDebug,
   CustomAppSummary,
   FunctionInvocation,
+  FunctionLogLine,
   FunctionRunDetail,
   ListdirResponse,
   OxyAccessRow,
@@ -244,6 +247,39 @@ export const CustomAppsService = {
       );
     }
     return data as Template[];
+  },
+
+  // ── Availability (derived SLI) ─────────────────────────────────────────
+
+  /**
+   * Slug-addressed, not id-addressed like the Activity calls below — the
+   * endpoint is a sibling of `/health` and `/debug`, which authenticate inline
+   * and resolve the app from `<org>/<app>` so one monitor can watch every app
+   * from the admin host.
+   *
+   * A 501 here is not a failure: it means `OXY_OBSERVABILITY_BACKEND` is unset,
+   * which is the default on a dev box. It is surfaced as a distinct state
+   * rather than an error toast.
+   */
+  async availability(orgSlug: string, appSlug: string): Promise<AppAvailability> {
+    const r = await apiClient.get(`/customer-apps/${orgSlug}/${appSlug}/availability`);
+    return r.data as AppAvailability;
+  },
+
+  /** Persisted Oxy Function output. Slug-addressed, like its `/availability` sibling. */
+  async logs(orgSlug: string, appSlug: string, hours = 24): Promise<FunctionLogLine[]> {
+    const r = await apiClient.get(
+      `/customer-apps/${orgSlug}/${appSlug}/logs?hours=${hours}&limit=200`
+    );
+    return (r.data?.logs ?? []) as FunctionLogLine[];
+  },
+
+  /** Browser errors, grouped by stack, with source maps applied server-side. */
+  async clientErrors(orgSlug: string, appSlug: string, hours = 24): Promise<ClientError[]> {
+    const r = await apiClient.get(
+      `/customer-apps/${orgSlug}/${appSlug}/errors?hours=${hours}&limit=100`
+    );
+    return (r.data?.errors ?? []) as ClientError[];
   },
 
   // ── Activity (usage tracking) ──────────────────────────────────────────

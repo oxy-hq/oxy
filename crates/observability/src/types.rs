@@ -334,3 +334,166 @@ pub struct ModelUsageData {
     pub output_tokens: u64,
     pub p95_ms: f64,
 }
+
+// ── Custom-app telemetry ─────────────────────────────────────────────────────
+
+/// `kind` values for [`CustomAppEventRecord`]. One per surface Oxy terminates.
+pub mod custom_app_kind {
+    /// An HTML shell serve — the request a human's page load is.
+    pub const SERVE: &str = "serve";
+    /// A bundle asset (JS, CSS, image) served from the build store.
+    pub const ASSET: &str = "asset";
+    /// An Oxy Function invocation, any mode.
+    pub const FUNCTION: &str = "fn";
+    /// A data-plane call (`/query`, `/semantic-query`, an agent ask).
+    pub const DATA: &str = "data";
+    /// A browser-reported event from the injected client runtime.
+    pub const CLIENT: &str = "client";
+}
+
+/// `outcome` values for [`CustomAppEventRecord`], following the SRE error
+/// taxonomy — availability is the ratio of real requests that succeeded, and
+/// the three failure classes do not all show up in a status code.
+pub mod custom_app_outcome {
+    /// Served what was asked for.
+    pub const OK: &str = "ok";
+    /// **Explicit** failure — a 5xx, a refused connection, a thrown function.
+    pub const ERROR: &str = "error";
+    /// **Implicit** failure — a 200 carrying the wrong thing. The white-screen
+    /// case: the shell was served, the app never mounted. Invisible to a status
+    /// code, and the single most common way a custom app is "down".
+    pub const BROKEN: &str = "broken";
+    /// **Policy** failure — succeeded, but outside the objective.
+    pub const SLOW: &str = "slow";
+}
+
+/// One wide event per custom-app request. See `CREATE_CUSTOM_APP_EVENTS_TABLE`.
+///
+/// Ids are `String` rather than `Uuid` because the table stores them as
+/// `String` and an absent id must be distinguishable from a nil one — a
+/// fabricated `00000000-…` would join rows that have nothing to do with each
+/// other.
+#[derive(Debug, Clone)]
+pub struct CustomAppEventRecord {
+    /// Unix milliseconds, stamped where the event happened. Not left to the
+    /// flush to fill in: a batch can sit for seconds, and an availability
+    /// window computed from flush time attributes an outage to the wrong minute.
+    pub timestamp_ms: i64,
+    pub org_id: String,
+    pub app_id: String,
+    pub build_id: String,
+    pub request_id: String,
+    pub session_id: String,
+    pub user_id: String,
+    /// One of [`custom_app_kind`].
+    pub kind: String,
+    pub route: String,
+    pub status: u16,
+    pub duration_ms: u32,
+    pub bytes: u64,
+    pub app_role: String,
+    /// One of [`custom_app_outcome`].
+    pub outcome: String,
+    pub error_kind: String,
+    pub error_detail: String,
+}
+
+/// One durable `ctx.log()` / `console.*` line from an Oxy Function.
+#[derive(Debug, Clone)]
+pub struct CustomAppLogRecord {
+    pub timestamp_ms: i64,
+    pub org_id: String,
+    pub app_id: String,
+    pub build_id: String,
+    pub invocation_id: String,
+    pub request_id: String,
+    pub function_name: String,
+    pub mode: String,
+    pub log_level: String,
+    /// Position within the invocation, so lines that share a millisecond still
+    /// read back in the order the function wrote them.
+    pub seq: u32,
+    pub message: String,
+}
+
+/// Success/failure counts for one app over one window — the raw material for
+/// an availability SLI and its error budget.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppAvailabilityWindow {
+    /// Length of the window this covers.
+    pub window_minutes: u32,
+    pub total: u64,
+    /// Requests that did not succeed, by the `outcome` taxonomy — explicit,
+    /// implicit and policy failures all count against availability.
+    pub failed: u64,
+}
+
+impl AppAvailabilityWindow {
+    /// Fraction of requests that failed. An empty window has **no opinion**
+    /// (`None`) rather than 0.0 — "no traffic" and "no failures" are different
+    /// facts, and collapsing them makes a dead app look perfectly healthy.
+    pub fn failure_ratio(&self) -> Option<f64> {
+        if self.total == 0 {
+            return None;
+        }
+        Some(self.failed as f64 / self.total as f64)
+    }
+}
+
+/// One uncaught browser error, with the text an engineer needs.
+///
+/// Distinct from a `CustomAppEventRecord` of kind `client`: that one records
+/// *that* an error happened, for the availability signal. This one records
+/// *what* it was, and lives under a shorter retention and a tighter gate.
+#[derive(Debug, Clone)]
+pub struct CustomAppClientErrorRecord {
+    pub timestamp_ms: i64,
+    pub org_id: String,
+    pub app_id: String,
+    pub build_id: String,
+    pub session_id: String,
+    pub user_id: String,
+    pub error_name: String,
+    pub message: String,
+    pub stack: String,
+    /// Grouping key over the normalised stack, computed client-side so the same
+    /// fault recurring in a render loop arrives deduped rather than 400×.
+    pub stack_hash: String,
+    pub path: String,
+    /// `error` (uncaught) or `unhandledrejection`.
+    pub kind: String,
+    pub user_agent: String,
+}
+
+/// One distinct client error, with its occurrence count over the window.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClientErrorGroup {
+    pub stack_hash: String,
+    pub error_name: String,
+    pub message: String,
+    /// Raw (still minified) stack from the most recent occurrence. Resolution
+    /// against the build's source map happens at read time, in the app layer —
+    /// this crate has no idea what a source map is.
+    pub stack: String,
+    pub build_id: String,
+    pub path: String,
+    pub kind: String,
+    pub occurrences: u64,
+    pub sessions: u64,
+    pub first_seen: String,
+    pub last_seen: String,
+}
+
+/// One persisted Oxy Function log line, as read back.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionLogRow {
+    pub timestamp: String,
+    pub build_id: String,
+    pub invocation_id: String,
+    pub request_id: String,
+    pub function_name: String,
+    pub mode: String,
+    pub log_level: String,
+    pub seq: u32,
+    pub message: String,
+}

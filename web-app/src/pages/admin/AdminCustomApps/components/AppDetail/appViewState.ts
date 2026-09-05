@@ -23,7 +23,15 @@
 
 export type Device = "desktop" | "tablet" | "mobile";
 export type ChannelView = "published" | "draft";
-export type SectionId = "status" | "builds" | "access" | "functions" | "activity" | "settings";
+export type SectionId =
+  | "status"
+  | "builds"
+  | "access"
+  | "functions"
+  | "availability"
+  | "logs"
+  | "activity"
+  | "settings";
 
 export interface AppViewState {
   device: Device;
@@ -48,6 +56,8 @@ const SECTIONS: readonly SectionId[] = [
   "builds",
   "access",
   "functions",
+  "availability",
+  "logs",
   "activity",
   "settings"
 ];

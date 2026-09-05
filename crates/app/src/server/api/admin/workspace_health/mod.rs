@@ -5,6 +5,7 @@
 //! transitions, plus a recurring reminder for as long as a workspace stays
 //! unhealthy — and pushes it.
 pub(crate) mod alert;
+pub(crate) mod app_availability;
 pub(crate) mod eval_pass;
 pub(crate) mod evaluator;
 pub(crate) mod queries;

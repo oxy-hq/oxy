@@ -320,6 +320,7 @@ mod tests {
             base_path: String::from("/customer-apps/acme/acme-analytics/"),
             service_worker: true,
             analytics: true,
+            build_id: String::new(),
         }
     }
 

@@ -63,7 +63,22 @@ pub(crate) struct AppRuntimeConfig {
     pub service_worker: bool,
     /// Whether the client runtime should auto-instrument. `false` leaves only
     /// the server-side view rows, which no app can opt out of.
+    ///
+    /// Since 2026-09 this covers the AUTHOR'S PRODUCT ANALYTICS only —
+    /// pageviews, web vitals, engagement. The two platform health signals
+    /// (`oxy-app-ready`, `oxy-error`) ignore it. See `runtime.js`.
     pub analytics: bool,
+    /// The build that served this document, so a client error can name the code
+    /// it was thrown by. Resolved at inject time rather than when the beacon
+    /// lands: by then the app may have been re-published, and attributing a
+    /// stack to the wrong build makes it unresolvable against a source map.
+    ///
+    /// `from_app` seeds this with the PUBLISHED build because the channel is
+    /// not known that early; `serve_pretty` overwrites it with the build it
+    /// actually serves once the channel is picked. Empty for a proxied source,
+    /// which has no build in the store to name.
+    #[serde(rename = "buildId")]
+    pub build_id: String,
 }
 
 impl AppRuntimeConfig {
@@ -83,6 +98,10 @@ impl AppRuntimeConfig {
             // its manifest) is not known when this config is built.
             service_worker: true,
             analytics: true,
+            build_id: app
+                .published_build_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
         }
     }
 }
@@ -132,6 +151,16 @@ pub(super) fn is_server_only_path(rest: &str) -> bool {
     reserved && segments.next().is_some()
 }
 
+/// Does this bundle-relative path name a source map?
+///
+/// Suffix match, case-insensitive: a case-insensitive filesystem would
+/// otherwise serve `INDEX.JS.MAP` on macOS and 404 it on Linux, and a gate whose
+/// answer depends on the host's filesystem is not a gate.
+pub(super) fn is_source_map(rest: &str) -> bool {
+    let path = rest.split(['?', '#']).next().unwrap_or(rest);
+    path.to_ascii_lowercase().ends_with(".map")
+}
+
 /// What the serve plane should do with a request, once the server-only check
 /// has had its say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,6 +181,21 @@ pub(super) enum ServeGuard {
 /// would not catch a regression in the other, so the part worth getting right
 /// lives in one tested function instead of twice in prose.
 pub(super) fn serve_guard(rest: &str, accepts_html: bool) -> ServeGuard {
+    // A source map is not a public asset. `guess_content_type` maps `.map` to
+    // `application/json`, so before this check every `.map` in a published
+    // bundle was downloadable by anyone who could open the app — handing the
+    // app's original source, comments and unused branches included, to every
+    // viewer. Maps stay in the build store and are applied server-side when an
+    // app-admin reads a client-error stack (`custom_apps_sourcemap`).
+    //
+    // Always `NotFound`, never the SPA shell: the caller is devtools or a fetch
+    // expecting JSON, and answering with HTML would turn a clean 404 into a
+    // parse error somebody has to debug. The trade is real — an author loses
+    // in-browser stack resolution — and it is made deliberately, because the
+    // maps were reaching an audience wider than the author assumed.
+    if is_source_map(rest) {
+        return ServeGuard::NotFound;
+    }
     if !is_server_only_path(rest) {
         return ServeGuard::Allow;
     }
@@ -721,7 +765,12 @@ async fn serve_file(
         ],
         ServeGuard::SpaShell | ServeGuard::NotFound => Vec::new(),
     };
-    if allow_spa_fallback {
+    // The SPA fallback is unconditional otherwise, so it would hand the shell to
+    // a `.map` request with `Accept: text/html` even though `serve_guard` said
+    // NotFound — the local-folder path re-opening the hole the S3 path closes.
+    // `serve_guard` alone cannot prevent this: it decides candidates, and this
+    // push happens after.
+    if allow_spa_fallback && !is_source_map(rest) {
         candidates.push(bundle_dir.join("index.html"));
     }
     let resolved = first_existing(&candidates).await;
@@ -819,6 +868,45 @@ async fn first_existing(paths: &[PathBuf]) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Source maps are never served. They were, silently, because
+    /// `guess_content_type` answers `application/json` for `.map` — so an
+    /// app's original source was downloadable by every viewer.
+    #[test]
+    fn source_maps_are_never_served() {
+        assert!(is_source_map("assets/index-a3f2.js.map"));
+        assert!(is_source_map("assets/index.css.map"));
+        assert!(
+            is_source_map("ASSETS/INDEX.JS.MAP"),
+            "a case-insensitive filesystem must not decide this"
+        );
+        assert!(
+            is_source_map("assets/i.js.map?v=2"),
+            "a query must not defeat it"
+        );
+
+        // Ordinary assets whose names merely contain the letters.
+        assert!(!is_source_map("assets/roadmap.js"));
+        assert!(!is_source_map("assets/index.js"));
+
+        // 404, never the SPA shell: the caller wants JSON, and HTML would turn
+        // a clean miss into a parse error someone has to debug.
+        assert_eq!(
+            serve_guard("assets/index.js.map", true),
+            ServeGuard::NotFound
+        );
+        assert_eq!(
+            serve_guard("assets/index.js.map", false),
+            ServeGuard::NotFound
+        );
+        // And an ordinary asset is unaffected.
+        assert_eq!(serve_guard("assets/index.js", false), ServeGuard::Allow);
+        // `serve_file`'s SPA fallback is gated on the same predicate — the
+        // guard decides candidates, the fallback pushes one after it, so
+        // without that second check a local-folder app would answer a `.map`
+        // navigation with the shell.
+        assert!(is_source_map("assets/index.js.map"));
+    }
 
     #[test]
     fn server_only_path_matches_the_functions_subtree() {
@@ -943,6 +1031,7 @@ mod tests {
             base_path: String::from("/customer-apps/acme/hello-oxy/"),
             service_worker: true,
             analytics: true,
+            build_id: String::new(),
         }
     }
 

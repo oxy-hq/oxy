@@ -123,6 +123,54 @@ export const useUpdateApp = () => {
  * for the AppDetail Activity tab. 30s staleTime so navigating away
  * and back doesn't refetch; the data isn't real-time-critical.
  */
+/**
+ * Derived availability + burn verdict for one app.
+ *
+ * Polled on a 60s interval rather than fetched once: this is the panel an
+ * operator leaves open during an incident, and a stale verdict there is worse
+ * than no panel. `retry: false` because the two interesting failures — 501 when
+ * observability is unconfigured, 502 when the query itself fails — are both
+ * states to render, not transient errors to retry behind a spinner.
+ */
+export const useAppAvailability = (orgSlug: string | undefined, appSlug: string | undefined) =>
+  useQuery({
+    queryKey: queryKeys.customApps.availability(orgSlug ?? "", appSlug ?? ""),
+    queryFn: () => CustomAppsService.availability(orgSlug as string, appSlug as string),
+    enabled: !!orgSlug && !!appSlug,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: false
+  });
+
+/**
+ * Persisted Oxy Function output and browser errors.
+ *
+ * `retry: false` for the same reason as `useAppAvailability`: a 501 (no
+ * observability backend) is a state to render, not a transient failure to
+ * retry behind a spinner.
+ */
+export const useAppLogs = (orgSlug: string | undefined, appSlug: string | undefined, hours = 24) =>
+  useQuery({
+    queryKey: queryKeys.customApps.logs(orgSlug ?? "", appSlug ?? "", hours),
+    queryFn: () => CustomAppsService.logs(orgSlug as string, appSlug as string, hours),
+    enabled: !!orgSlug && !!appSlug,
+    staleTime: 15_000,
+    retry: false
+  });
+
+export const useAppClientErrors = (
+  orgSlug: string | undefined,
+  appSlug: string | undefined,
+  hours = 24
+) =>
+  useQuery({
+    queryKey: queryKeys.customApps.clientErrors(orgSlug ?? "", appSlug ?? "", hours),
+    queryFn: () => CustomAppsService.clientErrors(orgSlug as string, appSlug as string, hours),
+    enabled: !!orgSlug && !!appSlug,
+    staleTime: 15_000,
+    retry: false
+  });
+
 export const useAppActivitySummary = (appId: string | undefined) =>
   useQuery({
     queryKey: queryKeys.customApps.activitySummary(appId ?? ""),

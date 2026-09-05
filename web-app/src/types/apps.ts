@@ -495,3 +495,77 @@ export interface StorageHistoryResponse {
   days: number;
   points: StorageHistoryPoint[];
 }
+
+// ── Availability (derived SLI) ───────────────────────────────────────────────
+
+/** One measurement window from the availability endpoint. */
+export interface AvailabilityWindow {
+  window_minutes: number;
+  total: number;
+  failed: number;
+  /**
+   * `null` when the window carried no traffic — **not** `0`. "Nothing failed"
+   * and "nothing happened" are different answers, and a chart that conflates
+   * them draws a healthy flat line over a dead app.
+   */
+  failure_ratio: number | null;
+}
+
+/**
+ * `no_opinion` is a first-class answer, not an error: an app with no traffic
+ * has not been shown to work. Render it as "no data", never as a green tick.
+ */
+export type AvailabilityVerdict = "no_opinion" | "healthy" | "burning";
+
+export interface AppAvailability {
+  app_id: string;
+  org_slug: string;
+  app_slug: string;
+  verdict: AvailabilityVerdict;
+  /** Present only when `verdict` is `burning`. */
+  severity?: "page" | "ticket";
+  burn_rate?: number;
+  long_window_minutes?: number;
+  short_window_minutes?: number;
+  /** The availability objective the burn rate is measured against, e.g. 0.99. */
+  objective: number;
+  windows: AvailabilityWindow[];
+}
+
+// ── Logs & client errors (per-app debuggability) ─────────────────────────────
+
+export interface FunctionLogLine {
+  timestamp: string;
+  build_id: string;
+  invocation_id: string;
+  request_id: string;
+  function_name: string;
+  /** `route` | `schedule` | `airway`. */
+  mode: string;
+  /** `info` | `warn` | `error`. */
+  level: string;
+  seq: number;
+  message: string;
+}
+
+export interface ClientError {
+  stack_hash: string;
+  error_name: string;
+  message: string;
+  /** Source-mapped where the build's maps allowed it, raw where they did not. */
+  stack: string;
+  /**
+   * Whether anything in `stack` actually changed. Without it a reader cannot
+   * tell real file names from a still-minified stack whose map was missing —
+   * exactly the moment they would be misled.
+   */
+  stack_resolved: boolean;
+  build_id: string;
+  path: string;
+  /** `error` | `unhandledrejection`. */
+  kind: string;
+  occurrences: number;
+  sessions: number;
+  first_seen: string;
+  last_seen: string;
+}

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::server::api::admin::workspace_health::app_availability::AppAvailabilityVerdict;
 use crate::server::api::admin::workspace_health::reconcile::DriftVerdict;
 use crate::server::api::admin::workspace_health::smoke::SmokeVerdict;
 
@@ -35,6 +36,7 @@ pub enum HealthDimension {
     Queue,
     Reconciliation,
     SmokeTest,
+    CustomAppAvailability,
 }
 
 /// Raw per-workspace signal counts gathered from Postgres. Pure input —
@@ -56,6 +58,10 @@ pub struct WorkspaceSignals {
     /// between reuse the previous run's verdicts (see `eval_pass`). Empty when no
     /// smoke test is configured.
     pub smoke: Vec<SmokeVerdict>,
+    /// Per-app availability verdicts, derived from the wide-event stream rather
+    /// than from a probe. Like `smoke`, empty means "no signal" and reads clear —
+    /// which is what an unconfigured observability backend produces.
+    pub custom_apps: Vec<AppAvailabilityVerdict>,
 }
 
 impl WorkspaceSignals {
@@ -75,6 +81,7 @@ impl WorkspaceSignals {
             dead_letter_count: 0,
             reconciliation: Vec::new(),
             smoke: Vec::new(),
+            custom_apps: Vec::new(),
         }
     }
 }
@@ -198,6 +205,7 @@ pub fn evaluate(s: &WorkspaceSignals, t: &HealthThresholds) -> WorkspaceHealth {
         eval_queue(s),
         eval_reconciliation(s),
         eval_smoke_test(s),
+        eval_custom_app_availability(s),
     ];
     let status = dimensions
         .iter()
@@ -335,6 +343,39 @@ fn eval_smoke_test(s: &WorkspaceSignals) -> DimensionResult {
     }
 }
 
+/// Worst app drives the dimension, exactly like the smoke and reconciliation
+/// verdict lists. Empty (observability off, or no published apps) reads clear.
+///
+/// The severity mapping — which burn grade becomes Unhealthy and which becomes
+/// Degraded — lives in `app_availability::status_for`, because it is the alerting
+/// policy rather than a roll-up detail.
+fn eval_custom_app_availability(s: &WorkspaceSignals) -> DimensionResult {
+    let Some(worst) = s.custom_apps.iter().max_by_key(|v| v.status) else {
+        return clear(HealthDimension::CustomAppAvailability);
+    };
+    if worst.status == HealthStatus::Healthy {
+        return clear(HealthDimension::CustomAppAvailability);
+    }
+    let failing = s
+        .custom_apps
+        .iter()
+        .filter(|v| v.status != HealthStatus::Healthy)
+        .count();
+    let base = worst
+        .reason
+        .clone()
+        .unwrap_or_else(|| format!("{} is unavailable", worst.app_slug));
+    let reason = match failing {
+        1 => base,
+        n => format!("{base} (+{} more app(s) affected)", n - 1),
+    };
+    DimensionResult {
+        dimension: HealthDimension::CustomAppAvailability,
+        status: worst.status,
+        reason: Some(reason),
+    }
+}
+
 fn clear(dimension: HealthDimension) -> DimensionResult {
     DimensionResult {
         dimension,
@@ -377,6 +418,7 @@ mod tests {
             dead_letter_count: 0,
             reconciliation: Vec::new(),
             smoke: Vec::new(),
+            custom_apps: Vec::new(),
         }
     }
 

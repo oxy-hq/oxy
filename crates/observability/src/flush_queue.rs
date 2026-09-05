@@ -10,13 +10,22 @@
 //!
 //! Pure state machine — no I/O, no clock reads — so callers inject `Instant`s
 //! and tests drive time explicitly.
+//!
+//! Generic over the record type since 2026-09: custom-app wide events and
+//! function log lines are pushed through the same bridge shape as spans, and
+//! they want the same bounded-loss-under-outage behaviour rather than a second,
+//! subtly different implementation of it. [`SpanFlushQueue`] is the original
+//! specialisation and is what the tests below exercise.
 
 use std::time::{Duration, Instant};
 
 use crate::types::SpanRecord;
 
-pub(crate) struct SpanFlushQueue {
-    buffer: Vec<SpanRecord>,
+/// The span specialisation — the shape this was written for.
+pub(crate) type SpanFlushQueue = FlushQueue<SpanRecord>;
+
+pub(crate) struct FlushQueue<T> {
+    buffer: Vec<T>,
     max_buffered: usize,
     base_backoff: Duration,
     max_backoff: Duration,
@@ -24,7 +33,7 @@ pub(crate) struct SpanFlushQueue {
     next_attempt_at: Option<Instant>,
 }
 
-impl SpanFlushQueue {
+impl<T> FlushQueue<T> {
     pub(crate) fn new(max_buffered: usize, base_backoff: Duration, max_backoff: Duration) -> Self {
         Self {
             buffer: Vec::new(),
@@ -42,14 +51,14 @@ impl SpanFlushQueue {
 
     /// Enqueue a record. Returns how many records were evicted (oldest first)
     /// to respect `max_buffered`.
-    pub(crate) fn push(&mut self, record: SpanRecord) -> usize {
+    pub(crate) fn push(&mut self, record: T) -> usize {
         self.buffer.push(record);
         self.evict_overflow()
     }
 
     /// Take the whole buffer for sending if it holds at least `min_len`
     /// records and the failure backoff (if any) has elapsed.
-    pub(crate) fn take_ready(&mut self, now: Instant, min_len: usize) -> Option<Vec<SpanRecord>> {
+    pub(crate) fn take_ready(&mut self, now: Instant, min_len: usize) -> Option<Vec<T>> {
         if self.buffer.len() < min_len.max(1) {
             return None;
         }
@@ -63,7 +72,7 @@ impl SpanFlushQueue {
 
     /// Drain everything regardless of the backoff gate. For shutdown's final
     /// best-effort send — there is no later attempt the gate could defer to.
-    pub(crate) fn take_all(&mut self) -> Vec<SpanRecord> {
+    pub(crate) fn take_all(&mut self) -> Vec<T> {
         std::mem::take(&mut self.buffer)
     }
 
@@ -76,7 +85,7 @@ impl SpanFlushQueue {
     /// A send failed — requeue `batch` ahead of anything pushed since, arm
     /// the (exponential, capped) backoff. Returns how many records were
     /// evicted (oldest first) to respect `max_buffered`.
-    pub(crate) fn on_failure(&mut self, mut batch: Vec<SpanRecord>, now: Instant) -> usize {
+    pub(crate) fn on_failure(&mut self, mut batch: Vec<T>, now: Instant) -> usize {
         batch.append(&mut self.buffer);
         self.buffer = batch;
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);

@@ -23,7 +23,8 @@ const DIMENSION_LABELS: Record<WorkspaceHealthDimensionKey, string> = {
   correctness: "Correctness",
   queue: "Queue",
   reconciliation: "Reconciliation",
-  smoke_test: "Smoke test"
+  smoke_test: "Smoke test",
+  custom_app_availability: "Custom apps"
 };
 
 /** Numeric signal counts, in display order. Airway flags are rendered separately. */

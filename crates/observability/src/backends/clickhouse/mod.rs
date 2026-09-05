@@ -3,6 +3,7 @@
 //! Uses the `clickhouse` crate's HTTP API to execute SQL against the
 //! `observability_*` tables.
 
+mod custom_apps;
 mod execution_analytics;
 mod intents;
 mod latency_cost;
@@ -115,15 +116,29 @@ mod iso_utc_tests {
 /// would silently convert "TTL rewrites parts" into "TTL deletes
 /// nothing": the ALTER succeeds, no error, no log. It is also the table
 /// least at risk from the rewrite path, being small and unpartitioned.
-const RETENTION_TABLES: &[(&str, &str, bool)] = &[
-    ("observability_spans", "timestamp", true),
-    ("observability_executions", "timestamp", true),
+///
+/// The fourth field is a per-table retention **override** in days. `None` takes
+/// the process-wide `RETENTION_DAYS`. It exists for one reason: `custom_app_logs`
+/// holds `ctx.log()` output, which can carry application data that a usage count
+/// cannot — a function that interpolates a row value into a log line puts that
+/// value here. Shorter retention is the posture that pays for capturing it at
+/// all, so it is a property of the table rather than an operator setting that
+/// could drift back to 90 days without anyone deciding to.
+const RETENTION_TABLES: &[(&str, &str, bool, Option<u32>)] = &[
+    ("observability_spans", "timestamp", true, None),
+    ("observability_executions", "timestamp", true, None),
     (
         "observability_intent_classifications",
         "classified_at",
         false,
+        None,
     ),
-    ("observability_metric_usage", "created_at", true),
+    ("observability_metric_usage", "created_at", true, None),
+    ("custom_app_events", "timestamp", true, None),
+    ("custom_app_logs", "timestamp", true, Some(30)),
+    // Same 30 days as the logs, for the same reason: free text a page threw can
+    // carry application data that a usage count cannot.
+    ("custom_app_client_errors", "timestamp", true, Some(30)),
 ];
 
 /// Build the retention DDL for one observability table. Pure so the
@@ -197,7 +212,7 @@ mod retention_ttl_tests {
     /// disabling its retention in production.
     #[test]
     fn partition_flag_matches_the_schema_ddl() {
-        for (table, _, partitioned) in super::RETENTION_TABLES {
+        for (table, _, partitioned, _) in super::RETENTION_TABLES {
             let ddl = crate::backends::clickhouse::schema::ALL_DDL
                 .iter()
                 .find(|d| d.contains(&format!("CREATE TABLE IF NOT EXISTS {table} (")))
@@ -223,10 +238,12 @@ mod retention_ttl_tests {
 use crate::intent_types::IntentCluster;
 use crate::store::ObservabilityStore;
 use crate::types::{
-    AgentExecutionStatsData, ClusterInfoRow, ClusterMapDataRow, ExecutionListData,
-    ExecutionSummaryData, ExecutionTimeBucketData, IntentAnalyticsRow, LatencyHistogramData,
-    LatencyPercentilesData, MetricAnalyticsData, MetricDetailData, MetricUsageRecord,
-    MetricsListData, ModelUsageData, SpanRecord, TraceDetailRow, TraceEnrichmentRow, TraceRow,
+    AgentExecutionStatsData, AppAvailabilityWindow, ClientErrorGroup, ClusterInfoRow,
+    ClusterMapDataRow, CustomAppClientErrorRecord, CustomAppEventRecord, CustomAppLogRecord,
+    ExecutionListData, ExecutionSummaryData, ExecutionTimeBucketData, FunctionLogRow,
+    IntentAnalyticsRow, LatencyHistogramData, LatencyPercentilesData, MetricAnalyticsData,
+    MetricDetailData, MetricUsageRecord, MetricsListData, ModelUsageData, SpanRecord,
+    TraceDetailRow, TraceEnrichmentRow, TraceRow,
 };
 
 pub struct ClickHouseObservabilityStorage {
@@ -392,7 +409,17 @@ impl ClickHouseObservabilityStorage {
     /// excluded, for the reason recorded at `RETENTION_TABLES` above. The
     /// inline comments below cover why each setting matters.
     pub async fn apply_retention_ttl(&self, retention_days: u32) -> Result<(), OxyError> {
-        for (table, column, partitioned) in RETENTION_TABLES {
+        for (table, column, partitioned, override_days) in RETENTION_TABLES {
+            // A per-table override never *extends* retention past the
+            // process-wide setting: if an operator dials the global down to 7
+            // days, the log table must not keep 30. Min, not "override wins".
+            // `retention_days == 0` means "remove the TTL" and is not a
+            // ceiling — it stays 0 so the removal still happens.
+            let retention_days = match (retention_days, override_days) {
+                (0, _) => 0,
+                (global, Some(days)) => global.min(*days),
+                (global, None) => global,
+            };
             // Expire by dropping whole parts rather than rewriting each one to
             // strip expired rows. The three partitioned tables partition
             // monthly (`toYYYYMM(...)`) against a 90-day TTL, so a part becomes
@@ -761,6 +788,71 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
 
     async fn insert_spans(&self, spans: Vec<SpanRecord>) -> Result<(), OxyError> {
         traces::insert_spans(self, spans).await
+    }
+
+    async fn insert_custom_app_events(
+        &self,
+        events: Vec<CustomAppEventRecord>,
+    ) -> Result<(), OxyError> {
+        custom_apps::insert_custom_app_events(self, events).await
+    }
+
+    async fn insert_custom_app_logs(&self, logs: Vec<CustomAppLogRecord>) -> Result<(), OxyError> {
+        custom_apps::insert_custom_app_logs(self, logs).await
+    }
+
+    async fn insert_custom_app_client_errors(
+        &self,
+        errors: Vec<CustomAppClientErrorRecord>,
+    ) -> Result<(), OxyError> {
+        custom_apps::insert_custom_app_client_errors(self, errors).await
+    }
+
+    async fn get_client_errors(
+        &self,
+        org_id: &str,
+        app_id: &str,
+        hours: u32,
+        limit: u32,
+        build_id: &str,
+    ) -> Result<Vec<ClientErrorGroup>, OxyError> {
+        with_query_timeout(
+            "get_client_errors",
+            custom_apps::get_client_errors(self, org_id, app_id, hours, limit, build_id),
+        )
+        .await
+    }
+
+    async fn get_function_logs(
+        &self,
+        org_id: &str,
+        app_id: &str,
+        hours: u32,
+        limit: u32,
+        invocation_id: &str,
+    ) -> Result<Vec<FunctionLogRow>, OxyError> {
+        with_query_timeout(
+            "get_function_logs",
+            custom_apps::get_function_logs(self, org_id, app_id, hours, limit, invocation_id),
+        )
+        .await
+    }
+
+    async fn get_app_availability(
+        &self,
+        org_id: &str,
+        app_id: &str,
+        windows_minutes: &[u32],
+    ) -> Result<Vec<AppAvailabilityWindow>, OxyError> {
+        // Bounded like every other serving read: the default clickhouse client
+        // sets no timeout, and this one now runs on the workspace-health eval
+        // pass, where an unbounded await would pin that task rather than a
+        // request task.
+        with_query_timeout(
+            "get_app_availability",
+            custom_apps::get_app_availability(self, org_id, app_id, windows_minutes),
+        )
+        .await
     }
 
     async fn shutdown(&self) {

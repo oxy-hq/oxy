@@ -16,7 +16,13 @@ import { usePersistentState } from "../../usePersistentState";
 import { Activity } from "../Activity";
 import { AppAccessPane } from "../AppAccessPane";
 import { AppInfo } from "../AppInfo";
+// `AppLogs`, not `Logs`: web-app/.gitignore has a bare `logs` pattern, which
+// git matches case-insensitively on macOS — a directory named `Logs/` is
+// silently untracked, `git add -A` reports nothing, and the branch builds
+// locally while CI fails on the missing import.
+import { AppLogs } from "../AppLogs";
 import { AppSettings } from "../AppSettings";
+import { Availability } from "../Availability";
 import { BuildHistory } from "../BuildHistory";
 import { Functions } from "../Functions";
 import { DockControls } from "./DockControls";
@@ -41,6 +47,13 @@ const DEFAULT_OPEN: Record<SectionId, boolean> = {
   // inside answers the question without the section needing to be expanded.
   access: false,
   functions: false,
+  // Open by default, unlike its neighbours: it is the section an operator opens
+  // the dossier FOR during an incident, and a collapsed "is it up" answer is a
+  // click away from being no answer at all.
+  availability: true,
+  // Collapsed: the verdict above answers "is it broken"; this answers "why",
+  // which is the second question, and it is a long panel.
+  logs: false,
   activity: false,
   settings: false
 };
@@ -176,6 +189,12 @@ export const DossierBody = ({
           <div className='p-4 pt-0'>
             <Functions appId={app.id} selected={fn ?? null} onSelect={onFnChange ?? noop} />
           </div>
+        </DossierSection>
+        <DossierSection {...section("availability")} title='Availability'>
+          <Availability orgSlug={app.org_slug} appSlug={app.slug} />
+        </DossierSection>
+        <DossierSection {...section("logs")} title='Logs'>
+          <AppLogs orgSlug={app.org_slug} appSlug={app.slug} />
         </DossierSection>
         <DossierSection {...section("activity")} title='Activity'>
           <Activity appId={app.id} />

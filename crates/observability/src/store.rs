@@ -14,10 +14,12 @@ use oxy_shared::errors::OxyError;
 
 use crate::intent_types::IntentCluster;
 use crate::types::{
-    AgentExecutionStatsData, ClusterInfoRow, ClusterMapDataRow, ExecutionListData,
-    ExecutionSummaryData, ExecutionTimeBucketData, IntentAnalyticsRow, LatencyHistogramData,
-    LatencyPercentilesData, MetricAnalyticsData, MetricDetailData, MetricUsageRecord,
-    MetricsListData, ModelUsageData, SpanRecord, TraceDetailRow, TraceEnrichmentRow, TraceRow,
+    AgentExecutionStatsData, AppAvailabilityWindow, ClientErrorGroup, ClusterInfoRow,
+    ClusterMapDataRow, CustomAppClientErrorRecord, CustomAppEventRecord, CustomAppLogRecord,
+    ExecutionListData, ExecutionSummaryData, ExecutionTimeBucketData, FunctionLogRow,
+    IntentAnalyticsRow, LatencyHistogramData, LatencyPercentilesData, MetricAnalyticsData,
+    MetricDetailData, MetricUsageRecord, MetricsListData, ModelUsageData, SpanRecord,
+    TraceDetailRow, TraceEnrichmentRow, TraceRow,
 };
 
 /// Abstraction over an observability storage backend.
@@ -217,6 +219,70 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
 
     /// Insert span records directly (used by the tracing layer bridge).
     async fn insert_spans(&self, spans: Vec<SpanRecord>) -> Result<(), OxyError>;
+
+    /// Insert a batch of custom-app wide events.
+    ///
+    /// Default is a no-op so a store that has no custom-app tables silently
+    /// ignores them rather than failing the caller's request — this rides the
+    /// serve hot path, and telemetry must never be able to break serving.
+    async fn insert_custom_app_events(
+        &self,
+        _events: Vec<CustomAppEventRecord>,
+    ) -> Result<(), OxyError> {
+        Ok(())
+    }
+
+    /// Insert a batch of durable Oxy Function log lines.
+    async fn insert_custom_app_logs(&self, _logs: Vec<CustomAppLogRecord>) -> Result<(), OxyError> {
+        Ok(())
+    }
+
+    /// Insert a batch of client errors (message + stack). Separate from
+    /// `insert_custom_app_events` because the two carry different retention and
+    /// different exposure — see `CREATE_CUSTOM_APP_CLIENT_ERRORS_TABLE`.
+    async fn insert_custom_app_client_errors(
+        &self,
+        _errors: Vec<CustomAppClientErrorRecord>,
+    ) -> Result<(), OxyError> {
+        Ok(())
+    }
+
+    /// Distinct client errors over a window, grouped by stack, newest first.
+    /// `build_id` empty means "any build".
+    async fn get_client_errors(
+        &self,
+        _org_id: &str,
+        _app_id: &str,
+        _hours: u32,
+        _limit: u32,
+        _build_id: &str,
+    ) -> Result<Vec<ClientErrorGroup>, OxyError> {
+        Ok(Vec::new())
+    }
+
+    /// Persisted Oxy Function log lines over a window, newest first.
+    /// `invocation_id` empty means "any invocation".
+    async fn get_function_logs(
+        &self,
+        _org_id: &str,
+        _app_id: &str,
+        _hours: u32,
+        _limit: u32,
+        _invocation_id: &str,
+    ) -> Result<Vec<FunctionLogRow>, OxyError> {
+        Ok(Vec::new())
+    }
+
+    /// Success/failure counts for one app across several windows, for the
+    /// availability SLI. Returns one entry per requested window, in order.
+    async fn get_app_availability(
+        &self,
+        _org_id: &str,
+        _app_id: &str,
+        _windows_minutes: &[u32],
+    ) -> Result<Vec<AppAvailabilityWindow>, OxyError> {
+        Ok(Vec::new())
+    }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
 

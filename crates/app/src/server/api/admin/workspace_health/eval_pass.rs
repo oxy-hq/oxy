@@ -118,6 +118,12 @@ async fn eval_and_persist(ctx: &EvalCtx<'_>, signals: &mut WorkspaceSignals) -> 
     let prev = load_prev_state(ctx.db, workspace_id).await;
     let smoke = resolve_smoke(ctx, workspace_id, &prev).await;
     signals.smoke = smoke.verdicts.clone();
+    // Availability is read from the wide-event stream, not probed — see
+    // `custom_apps`. Gathered every pass rather than on the smoke cadence
+    // because it is a ClickHouse aggregate per app, not third-party warehouse
+    // code running in-process: it cannot take the server down, so it does not
+    // need the attempt-stamping the smoke probes have.
+    signals.custom_apps = super::app_availability::gather(ctx.db, workspace_id).await;
 
     let health = evaluate(signals, ctx.thresholds);
     let failures = health.failures();
@@ -1047,6 +1053,7 @@ mod tests {
             dead_letter_count: 0,
             reconciliation: Vec::new(),
             smoke: Vec::new(),
+            custom_apps: Vec::new(),
         }
     }
 

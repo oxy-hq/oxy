@@ -74,9 +74,40 @@ pub const PLATFORM_EVENTS: &[&str] = &[
     "oxy-web-vitals",
     // Time a screen was actually visible, plus scroll depth.
     "oxy-engagement",
-    // Counts of uncaught errors by constructor name. Never messages or stacks.
+    // Uncaught errors. The `counts` map (by constructor name) feeds the
+    // Activity tab's 90-day rollup; the `details` array — message, stack,
+    // stack hash, build — fans out to `custom_app_client_errors`, a separate
+    // table with 30-day retention behind the same app-admin gate.
+    //
+    // **This module doc used to say "never messages or stacks", and that rule
+    // was traded deliberately in 2026-09** (design doc §5.1). It made a
+    // white-screened app report `{TypeError: 3}` and nothing anyone could act
+    // on. The posture that pays for the text: a separate table, shorter
+    // retention, no widening of who may read it — and the residual is stated
+    // rather than papered over, because an error message can contain
+    // application data and no amount of pattern-matching would reliably
+    // remove it.
     "oxy-error",
+    // The app's bundle actually mounted. A HEALTH SIGNAL, not analytics: it is
+    // exempt from the `analytics: false` opt-out (see `runtime.js`), and it
+    // carries no path — only that something rendered, and by which route
+    // (`auto` heuristic vs the app calling `window.__oxyAppReady()`).
+    //
+    // Read it by its ABSENCE. A custom-app host answers 200 with the SPA shell
+    // for every path, so a served view with no `app-ready` behind it is the
+    // white screen no status code can report. The client deliberately never
+    // sends a negative: a boot failure hard enough to blank the page is not
+    // reliably alive enough to report itself.
+    "oxy-app-ready",
 ];
+
+/// The subset of [`PLATFORM_EVENTS`] that is platform health rather than the
+/// author's product analytics, and therefore rides past `analytics: false`.
+///
+/// Kept here as well as in `runtime.js` on purpose: the client decides what to
+/// send, this decides what is mirrored into the operational event stream, and a
+/// name drifting out of one list should not silently change the other's meaning.
+pub const HEALTH_EVENTS: &[&str] = &["oxy-app-ready", "oxy-error"];
 
 /// Events accepted per request. Matches the client's own batch cap, so the
 /// normal path never trips it — a request over the cap is a client that has
@@ -210,6 +241,7 @@ fn admit(body: &[u8]) -> Result<Vec<(String, serde_json::Value)>, Response> {
 pub async fn handle(
     db: sea_orm::DatabaseConnection,
     app_id: Uuid,
+    org_id: Uuid,
     user_id: Uuid,
     user_email: String,
     headers: &HeaderMap,
@@ -232,6 +264,48 @@ pub async fn handle(
     // (which do have the cookie) are what that count comes from.
     let session_id =
         custom_apps_tracking::session_id_from_headers(headers).unwrap_or_else(Uuid::new_v4);
+
+    // Error DETAIL — message and stack — goes to its own table, not to either
+    // of the two above. See `CREATE_CUSTOM_APP_CLIENT_ERRORS_TABLE`: shorter
+    // retention and the same app-admin gate, because free text a page threw can
+    // carry application data that a count cannot.
+    for (name, payload) in &events {
+        if name != "oxy-error" {
+            continue;
+        }
+        super::custom_apps_telemetry::record_client_errors(
+            org_id, app_id, user_id, session_id, payload, headers,
+        );
+    }
+
+    // Health signals are mirrored into the operational event stream as well as
+    // the Activity tab's Postgres rows. Two sinks, on purpose: the Activity tab
+    // answers "who used this app" over 90 days, and availability answers "is it
+    // working right now" over minutes. One store cannot be tuned for both, and
+    // the `oxy-app-ready` row is the half that makes a white screen visible.
+    for (name, payload) in &events {
+        if !HEALTH_EVENTS.contains(&name.as_str()) {
+            continue;
+        }
+        let outcome = if name == "oxy-error" {
+            oxy_observability::types::custom_app_outcome::ERROR
+        } else {
+            oxy_observability::types::custom_app_outcome::OK
+        };
+        let path = payload
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        super::custom_apps_telemetry::record_client_event(
+            org_id,
+            app_id,
+            user_id,
+            &session_id.to_string(),
+            name,
+            path,
+            outcome,
+        );
+    }
 
     tokio::spawn(async move {
         for (name, payload) in events {

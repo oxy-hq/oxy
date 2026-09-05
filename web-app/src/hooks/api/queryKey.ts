@@ -569,6 +569,12 @@ const customAppKeys = {
     ["customApps", "functions", id, name, "invocations"] as const,
   functionRun: (id: string, runId: string) => ["customApps", "functionRun", id, runId] as const,
   activitySummary: (id: string) => ["customApps", "activity", id, "summary"] as const,
+  availability: (orgSlug: string, appSlug: string) =>
+    ["customApps", "availability", orgSlug, appSlug] as const,
+  logs: (orgSlug: string, appSlug: string, hours: number) =>
+    ["customApps", "logs", orgSlug, appSlug, hours] as const,
+  clientErrors: (orgSlug: string, appSlug: string, hours: number) =>
+    ["customApps", "clientErrors", orgSlug, appSlug, hours] as const,
   activityVisitors: (id: string, days: number) =>
     ["customApps", "activity", id, "visitors", days] as const,
   activityEvents: (id: string, days: number, eventName: string | null) =>

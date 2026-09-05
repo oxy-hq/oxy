@@ -146,6 +146,31 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
             "/customer-apps/health",
             get(crate::server::api::custom_apps_health::get_health_for_host),
         )
+        // The SERVING answer, as opposed to `/health`'s deployment-integrity
+        // ladder: the success ratio of real traffic over several windows, plus
+        // a multi-window error-budget burn verdict. A ClickHouse read behind
+        // the same inline auth gate as its neighbours, so FleetOk — an
+        // availability endpoint pinned to the singleton would go dark exactly
+        // when that singleton is the thing in trouble.
+        .route_fleet(
+            "/customer-apps/{org_slug}/{app_slug}/availability",
+            get(crate::server::api::custom_apps_availability::get_availability),
+        )
+        // Per-app debuggability: persisted Oxy Function output, and browser
+        // errors with source maps applied server-side. Same inline
+        // AUTHENTICATION as their neighbours, but a narrower AUTHORIZATION:
+        // both call `require_app_admin`, because function log output is what
+        // the author printed while debugging, not the app's own data that
+        // every org member may already see. FleetOk — ClickHouse reads plus
+        // build-store maps, which every replica has.
+        .route_fleet(
+            "/customer-apps/{org_slug}/{app_slug}/logs",
+            get(crate::server::api::custom_apps_logs::get_logs),
+        )
+        .route_fleet(
+            "/customer-apps/{org_slug}/{app_slug}/errors",
+            get(crate::server::api::custom_apps_logs::get_errors),
+        )
         // Project-scoped proxies for custom-app bundles. Auth is
         // performed inline (session cookie or API key) so these sit
         // in the public router rather than under workspace middleware.

@@ -8,7 +8,8 @@ export type WorkspaceHealthDimensionKey =
   | "correctness"
   | "queue"
   | "reconciliation"
-  | "smoke_test";
+  | "smoke_test"
+  | "custom_app_availability";
 
 export interface WorkspaceHealthDimension {
   dimension: WorkspaceHealthDimensionKey;
