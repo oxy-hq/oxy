@@ -232,7 +232,16 @@ pub(crate) fn build_cors_layer() -> CorsLayer {
         // custom-app subdomain reading `/api` would page one page and stop —
         // the exact silence that header exists to break. Server-side callers
         // (`oxyc`, curl) are unaffected either way.
-        .expose_headers([header::LINK])
+        // `x-oxy-request-id` for the same reason, and it matters more: the whole
+        // point of the id is that a caller can name the request that went
+        // wrong. Devtools and curl show it either way, but a custom app on
+        // `<org>--<slug>.customer-apps…` calling `/api` is cross-origin, so
+        // `response.headers.get('x-oxy-request-id')` reads null there without
+        // this — which is exactly the client that would report it.
+        .expose_headers([
+            header::LINK,
+            HeaderName::from_static(crate::server::api::middlewares::request_id::REQUEST_ID_HEADER),
+        ])
 }
 
 /// Wide-open CORS for the EXTERNAL API surface (`/external/api/*`).
@@ -270,8 +279,12 @@ pub(crate) fn build_external_cors_layer() -> CorsLayer {
             HeaderName::from_static("last-event-id"),
         ])
         // Same reason as the main layer: a `Link: rel="next"` a browser cannot
-        // read is a paginated endpoint that reads as unpaginated.
-        .expose_headers([header::LINK])
+        // read is a paginated endpoint that reads as unpaginated, and a
+        // request id a browser cannot read cannot be quoted in a bug report.
+        .expose_headers([
+            header::LINK,
+            HeaderName::from_static(crate::server::api::middlewares::request_id::REQUEST_ID_HEADER),
+        ])
 }
 
 /// Shared predicate body for both `build_cors_layer` (browser CORS preflight)

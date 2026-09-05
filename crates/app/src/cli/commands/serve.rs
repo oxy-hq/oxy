@@ -762,7 +762,17 @@ async fn create_web_application(
                 crate::server::role_middleware::enforce_role,
             )),
         )
-        .fallback_service(main);
+        .fallback_service(main)
+        // OUTERMOST of everything, so `x-oxy-request-id` is minted exactly once
+        // and covers BOTH surfaces. Mounting it on `main` instead would miss
+        // `/external/api`, which is a sibling rather than a child — the same
+        // trap that left every external route unclassified for `enforce_role`
+        // (see the note above). Being outside CORS/trace/admission also means a
+        // preflight, a shed 503 and a static-fallback 404 all carry the header,
+        // none of which reach a handler that could stamp it.
+        .layer(axum::middleware::from_fn(
+            crate::server::api::middlewares::request_id::request_id_middleware,
+        ));
     Ok(router)
 }
 

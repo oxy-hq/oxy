@@ -368,6 +368,31 @@ enum HostCall {
 
 use super::LogLine;
 
+/// What `op_ctx_log` should do with a line, given how many are already buffered.
+///
+/// Pure so the cap can be tested without a V8 isolate — and it needed testing:
+/// the first version returned at the marker without pushing, so the buffer
+/// parked at exactly `MAX_CAPTURED_LOGS`, `Silent` was unreachable, and the
+/// marker re-fired once per suppressed line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LogAction {
+    /// Under the cap — record it.
+    Emit,
+    /// Exactly at the cap — emit one truncation marker and record THAT, so the
+    /// next call is over the cap rather than at it.
+    Marker,
+    /// Over the cap — drop silently.
+    Silent,
+}
+
+pub(super) fn log_action(buffered: usize) -> LogAction {
+    match buffered.cmp(&MAX_CAPTURED_LOGS) {
+        std::cmp::Ordering::Less => LogAction::Emit,
+        std::cmp::Ordering::Equal => LogAction::Marker,
+        std::cmp::Ordering::Greater => LogAction::Silent,
+    }
+}
+
 /// Per-invocation log buffer, shared between the isolate thread (appends via
 /// `op_ctx_log`) and the caller (drains it after the run). Newtype so it's
 /// uniquely addressable in `OpState`; capped so a runaway loop can't OOM.
@@ -379,14 +404,83 @@ const MAX_CAPTURED_LOGS: usize = 500;
 // special arg to reach the shared log buffer.
 #[op2(fast)]
 fn op_ctx_log(state: &mut OpState, #[string] level: &str, #[string] message: &str) {
+    // `name` is the field the observability layer's `EventVisitor` promotes to
+    // the event name, so these land in ClickHouse as an identifiable
+    // `function_log` rather than under the message's own text. `log_level`
+    // survives the trip too — the stored event record keeps fields and an
+    // error flag, not the tracing `Level`, so warn and info would otherwise be
+    // indistinguishable once written.
+    //
+    // Nothing here names the app, function or invocation: that context comes
+    // from the enclosing span opened by `run_with_runtime`, which `run` carries
+    // onto the isolate thread. Without that span these events are dropped
+    // entirely — `SpanCollectorLayer::on_event` returns early when there is no
+    // current span.
+    // The emit is capped by the SAME budget as the returned buffer, and that
+    // ordering matters. With a span now enclosing these, every event is
+    // retained in span extensions and serialised into one `event_data` blob at
+    // close — so an uncapped emit turns `for (i=0;i<100000;i++) console.log()`
+    // into unbounded per-invocation memory and a single enormous row.
+    // Observability needs hard size caps (product-context is explicit), and
+    // reusing the existing limit means the buffer and the span agree about
+    // what was kept.
+    let count = state
+        .try_borrow::<FunctionLogs>()
+        .and_then(|FunctionLogs(buf)| buf.lock().ok().map(|v| v.len()));
+    // Absent buffer or poisoned mutex: drop the line rather than emit it
+    // uncapped. Unreachable in production (`run` always inserts `FunctionLogs`),
+    // and a poisoned lock means another thread panicked mid-push — at which
+    // point an uncapped emit is the wrong direction to fail in.
+    let Some(count) = count else {
+        return;
+    };
+    let action = log_action(count);
+    if action == LogAction::Silent {
+        return;
+    }
+    if action == LogAction::Marker {
+        // One marker, not silence: a truncated log that says so is debuggable,
+        // one that just stops is misleading.
+        //
+        // The marker is PUSHED as well as emitted, and that is what makes the
+        // cap a cap. Returning without pushing left the buffer parked at
+        // exactly MAX forever, so `count == MAX` on every subsequent call and
+        // the marker re-fired per suppressed line — 99,500 identical warn
+        // events for a 100k-line loop, each retained in the span until close.
+        // Pushing takes the length to MAX + 1, so every later call takes the
+        // silent `>` branch above, and the buffer the app receives ends by
+        // saying it was truncated instead of just stopping.
+        let marker = format!("… further output suppressed after {MAX_CAPTURED_LOGS} lines");
+        tracing::warn!(
+            target: "custom_app_function",
+            name = "function_log",
+            log_level = "warn",
+            "{marker}"
+        );
+        if let Some(FunctionLogs(buf)) = state.try_borrow::<FunctionLogs>()
+            && let Ok(mut v) = buf.lock()
+        {
+            v.push(LogLine {
+                level: "warn".to_string(),
+                message: marker,
+            });
+        }
+        return;
+    }
+
     match level {
-        "warn" => tracing::warn!(target: "custom_app_function", "{message}"),
-        "error" => tracing::error!(target: "custom_app_function", "{message}"),
-        _ => tracing::info!(target: "custom_app_function", "{message}"),
+        "warn" => {
+            tracing::warn!(target: "custom_app_function", name = "function_log", log_level = "warn", "{message}")
+        }
+        "error" => {
+            tracing::error!(target: "custom_app_function", name = "function_log", log_level = "error", "{message}")
+        }
+        _ => {
+            tracing::info!(target: "custom_app_function", name = "function_log", log_level = "info", "{message}")
+        }
     }
     if let Some(FunctionLogs(buf)) = state.try_borrow::<FunctionLogs>()
         && let Ok(mut v) = buf.lock()
-        && v.len() < MAX_CAPTURED_LOGS
     {
         v.push(LogLine {
             level: level.to_string(),
@@ -1287,6 +1381,10 @@ pub async fn run(
     // Shared with the caller: the isolate appends `console.*`/`ctx.log` here and
     // the caller drains it after (surfaced back to the app, not just tracing).
     logs: Arc<std::sync::Mutex<Vec<LogLine>>>,
+    // The span the isolate thread runs inside. Must be PARENTLESS — see the
+    // comment at the spawn below for why a clone of the caller's span is the
+    // wrong thing here.
+    isolate_span: tracing::Span,
 ) -> Result<FnResponse, RuntimeError> {
     let (call_tx, mut call_rx) = mpsc::unbounded_channel::<HostCall>();
     let (done_tx, done_rx) = oneshot::channel::<Result<FnResponse, RuntimeError>>();
@@ -1294,11 +1392,35 @@ pub async fn run(
     let cancelled = Arc::new(AtomicBool::new(false));
 
     // Isolate runs on its own thread with a current-thread runtime.
+    //
+    // `tracing`'s notion of "the current span" is THREAD-LOCAL, so a span
+    // opened by the caller does not follow execution across this `spawn`.
+    // Every `ctx.log()` / `console.*` line is emitted from the isolate thread,
+    // so without a span entered *on that thread* they all fire with no current
+    // span — and the observability layer drops an event that has no span.
+    //
+    // **`isolate_span` is deliberately PARENTLESS, not a clone of the caller's.**
+    // A clone bumps the registry refcount and `on_close` fires only at zero, and
+    // this thread outlives `run` on two paths: `Cancelled`, and the grace-expiry
+    // branch that lets a detached thread unwind on its own. A clone would
+    // therefore pin the caller's invocation span open — exporting it late, or
+    // never if the thread parks in a host op forever, and inflating its
+    // `duration_ns` (measured at close) to the leaked thread's whole lifetime.
+    // The invocations that time out are exactly the ones worth having.
+    //
+    // The cost is that logs land on a sibling span rather than a child: they
+    // are correlated by the `invocation_id` field both spans carry, not by the
+    // trace tree. That is the right trade — a late-but-correct sibling beats a
+    // parent whose duration is a lie.
     let thread = std::thread::Builder::new()
         .name("oxy-function".into())
         .spawn({
             let cancelled = cancelled.clone();
             move || {
+                // Sync closure, so holding the guard for the whole thread body
+                // is correct (the "never hold across an await" rule is about
+                // async fns; everything below runs inside `block_on`).
+                let _span_guard = isolate_span.enter();
                 let rt = match tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
@@ -1533,6 +1655,47 @@ async fn execute_isolate(
 
 #[cfg(test)]
 mod tests {
+
+    /// The cap has to actually cap. The first version returned at the marker
+    /// without pushing it, so the buffer parked at exactly MAX forever: every
+    /// later call saw `Equal`, re-emitted the marker, and `Silent` was
+    /// unreachable — 99,500 identical warn events for a 100k-line loop, each
+    /// retained in the span until close. Pushing the marker is what advances
+    /// the count past MAX and makes the third state reachable.
+    #[test]
+    fn the_log_cap_emits_exactly_one_marker_then_goes_silent() {
+        use super::{LogAction, MAX_CAPTURED_LOGS, log_action};
+
+        assert_eq!(log_action(0), LogAction::Emit);
+        assert_eq!(log_action(MAX_CAPTURED_LOGS - 1), LogAction::Emit);
+        assert_eq!(log_action(MAX_CAPTURED_LOGS), LogAction::Marker);
+        // The marker pushes a line, so the very next call is already over.
+        assert_eq!(log_action(MAX_CAPTURED_LOGS + 1), LogAction::Silent);
+
+        // Simulate the loop the cap exists for: 10k lines, one marker.
+        let mut buffered = 0usize;
+        let mut markers = 0;
+        let mut emitted = 0;
+        for _ in 0..10_000 {
+            match log_action(buffered) {
+                LogAction::Emit => {
+                    emitted += 1;
+                    buffered += 1;
+                }
+                LogAction::Marker => {
+                    markers += 1;
+                    buffered += 1;
+                }
+                LogAction::Silent => {}
+            }
+        }
+        assert_eq!(
+            markers, 1,
+            "the marker must fire once, not per dropped line"
+        );
+        assert_eq!(emitted, MAX_CAPTURED_LOGS);
+        assert_eq!(buffered, MAX_CAPTURED_LOGS + 1);
+    }
     use super::*;
 
     /// Test host: `ctx.query` returns one row and `ctx.email.send` records what
@@ -1833,6 +1996,7 @@ mod tests {
             cancel_rx,
             std::time::Duration::from_secs(10),
             Arc::new(std::sync::Mutex::new(Vec::new())),
+            tracing::Span::none(),
         )
         .await;
         (result, host)
@@ -1868,6 +2032,7 @@ mod tests {
             cancel_rx,
             std::time::Duration::from_secs(10),
             Arc::new(std::sync::Mutex::new(Vec::new())),
+            tracing::Span::none(),
         )
         .await
         .expect("handler must complete");
@@ -2048,6 +2213,7 @@ mod tests {
             cancel_rx,
             std::time::Duration::from_secs(10),
             Arc::new(std::sync::Mutex::new(Vec::new())),
+            tracing::Span::none(),
         )
         .await
         .expect("handler must complete");
@@ -2208,6 +2374,7 @@ mod tests {
             cancel_rx,
             std::time::Duration::from_secs(10),
             Arc::new(std::sync::Mutex::new(Vec::new())),
+            tracing::Span::none(),
         )
         .await;
         let resp = result.expect("handler must resume after the async host op, not time out");
@@ -2241,6 +2408,7 @@ mod tests {
             cancel_rx,
             std::time::Duration::from_secs(10),
             Arc::new(std::sync::Mutex::new(Vec::new())),
+            tracing::Span::none(),
         )
         .await
         .expect("handler should succeed");
@@ -2347,6 +2515,7 @@ mod tests {
             cancel_rx,
             std::time::Duration::from_secs(10),
             Arc::new(std::sync::Mutex::new(Vec::new())),
+            tracing::Span::none(),
         )
         .await
         .expect("btoa/atob must exist in the isolate");
@@ -2405,6 +2574,7 @@ mod tests {
             cancel_rx,
             std::time::Duration::from_secs(10),
             Arc::new(std::sync::Mutex::new(Vec::new())),
+            tracing::Span::none(),
         )
         .await
         .expect("handler must complete");

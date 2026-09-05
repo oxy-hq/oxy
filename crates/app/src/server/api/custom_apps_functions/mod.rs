@@ -39,6 +39,7 @@ use entity::prelude::AppFunctionInvocations;
 use entity::prelude::{AppBuilds, AppFunctions};
 use entity::{app_function_invocations, app_functions};
 use oxy::database::client::establish_connection;
+use oxy_shared::utils::request_id::from_headers as request_id_from_headers;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use serde::Deserialize;
 use tracing::error;
@@ -965,6 +966,13 @@ pub async fn handle_function_request(
         identity_kind: runtime::CtxIdentityKind::User,
         org_id: app.org_id,
         invocation_id,
+        function_name,
+        mode: "route",
+        build_id,
+        // The one path with a real request behind it. Read from the header the
+        // outer middleware stamped rather than minted here, so the id on this
+        // span is the same one the caller got back in the response.
+        request_id: request_id_from_headers(&headers),
         timeout,
         write_destinations: manifest.write_destinations(),
         caps: host::FunctionCapabilities {
@@ -1228,6 +1236,12 @@ pub(crate) async fn run_scheduled_function(
         identity_kind: runtime::CtxIdentityKind::System,
         org_id: app.org_id,
         invocation_id,
+        function_name,
+        mode,
+        build_id,
+        // No HTTP request behind a cron tick, an Airway step or a manual job
+        // run. See the field docs on `RunArgs` for why this stays `None`.
+        request_id: None,
         timeout,
         write_destinations: manifest.write_destinations(),
         caps: host::FunctionCapabilities {
@@ -1432,6 +1446,17 @@ struct RunArgs<'a> {
     identity_kind: runtime::CtxIdentityKind,
     org_id: Uuid,
     invocation_id: Uuid,
+    /// Identity of the run, for the invocation span only — the isolate learns
+    /// its own name from the manifest, not from here. `mode` matches
+    /// `app_function_invocations.mode`: `"route"` | `"schedule"` | `"airway"`.
+    function_name: &'a str,
+    mode: &'a str,
+    build_id: Uuid,
+    /// The `x-oxy-request-id` of the HTTP request behind this run, when there
+    /// was one. `None` on the schedule / Airway paths, where no request exists.
+    /// Deliberately absent rather than synthesized: a fabricated id would make a
+    /// join silently group unrelated background runs into one "request".
+    request_id: Option<Uuid>,
     timeout: Duration,
     /// §11.3 allowlist — databases `ctx.warehouse.*` may write to (empty = none).
     write_destinations: Vec<String>,
@@ -1452,11 +1477,60 @@ struct RunArgs<'a> {
     preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
 }
 
+/// The instrumented entry point for every function run, in all three modes.
+///
+/// **This span is what makes function logs observable at all.** Until it
+/// existed, `ctx.log()` / `console.*` emitted `tracing` events with no
+/// enclosing span, and `SpanCollectorLayer::on_event` drops those on the floor —
+/// so route-mode logs reached the server's stdout and nowhere else, while the
+/// scheduled path persisted its own as `agentic_run_events`. The two modes
+/// disagreed. Note the span alone is not sufficient: `runtime::run` also has to
+/// carry it onto the isolate thread, because `tracing`'s current span is
+/// thread-local.
+///
+/// A thin wrapper rather than an attribute on the body, so `status` and
+/// `duration_ms` land on **every** return path — the body has several early
+/// returns for workspace/context resolution failures, and a span that reports
+/// only the happy path is worse than one that reports nothing.
+#[cfg(feature = "custom-app-functions")]
+#[tracing::instrument(
+    name = "custom_app_function",
+    skip_all,
+    fields(
+        app_id = %args.app.id,
+        org_id = %args.org_id,
+        project_id = %args.app.project_id,
+        build_id = %args.build_id,
+        invocation_id = %args.invocation_id,
+        function = %args.function_name,
+        mode = %args.mode,
+        request_id = tracing::field::Empty,
+        status = tracing::field::Empty,
+        duration_ms = tracing::field::Empty,
+    )
+)]
+async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
+    let request_id = args.request_id;
+    let started = Instant::now();
+
+    let outcome = run_with_runtime_inner(args).await;
+
+    let span = tracing::Span::current();
+    // Recorded, not declared, so an absent id stays absent instead of being
+    // reported as an empty string that looks like a value.
+    if let Some(id) = request_id {
+        span.record("request_id", tracing::field::display(id));
+    }
+    span.record("status", outcome.0);
+    span.record("duration_ms", started.elapsed().as_millis() as i64);
+    outcome
+}
+
 /// Build the project context + host, spawn the cancel watchdog, and drive
 /// the isolate. Kept off the main handler body to hold it under the
 /// function-size budget.
 #[cfg(feature = "custom-app-functions")]
-async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
+async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
     use crate::server::api::custom_apps_gates::build_project_context_with_role;
     use entity::prelude::Workspaces;
 
@@ -1667,6 +1741,14 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         args.cancel,
     ));
 
+    // Copied out before the `args` fields below are moved into the call.
+    let app_id = args.app.id;
+    let org_id = args.org_id;
+    let build_id = args.build_id;
+    let invocation_id = args.invocation_id;
+    let function_name = args.function_name.to_string();
+    let mode = args.mode.to_string();
+
     let result = runtime::run(
         args.artifact_js,
         ctx,
@@ -1679,6 +1761,21 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         cancel_rx,
         args.timeout,
         args.logs,
+        // Parentless, carrying the same identifying fields as the invocation
+        // span above. See `runtime::run`: a clone of the caller's span would be
+        // pinned open by an isolate thread that outlives a cancel or a timeout,
+        // exporting the invocation late and with a `duration_ns` that includes
+        // the leaked thread. Correlate the two by `invocation_id`.
+        tracing::info_span!(
+            parent: None,
+            "custom_app_function.isolate",
+            app_id = %app_id,
+            org_id = %org_id,
+            build_id = %build_id,
+            invocation_id = %invocation_id,
+            function = %function_name,
+            mode = %mode,
+        ),
     )
     .await;
     watchdog.abort();

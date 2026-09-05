@@ -800,6 +800,92 @@ mod tests {
         assert_eq!(events[0]["attributes"]["status"], "success");
     }
 
+    /// The invariant `custom_apps_functions::runtime::run` depends on.
+    ///
+    /// Oxy Functions execute the V8 isolate on its own OS thread and emit every
+    /// `ctx.log()` / `console.*` line from there. `tracing`'s current span is
+    /// THREAD-LOCAL, so those events attach to nothing unless a span is entered
+    /// *on that thread* — and [`SpanCollectorLayer::on_event`] drops an event
+    /// that has no span. Before that, the entire route-mode function log stream
+    /// was discarded this way.
+    ///
+    /// The production span is parentless rather than a clone of the caller's
+    /// (see `custom_apps_functions::runtime::run`), because an isolate thread
+    /// that outlives a cancel or a timeout would otherwise hold the caller's
+    /// span open and inflate its duration. What this test pins is the mechanism
+    /// underneath both: entering on the thread is what makes the event land.
+    ///
+    /// The subscriber is re-set inside each spawned thread because a test may
+    /// only use `set_default`, which is thread-local. Production installs it
+    /// with `.init()` (a global default every thread already sees), so carrying
+    /// the span is the only half that has to be done by hand there.
+    #[tokio::test]
+    async fn test_event_from_isolate_thread_needs_the_span_carried_over() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let layer = SpanCollectorLayer::new(tx, "test-service".to_string());
+        let subscriber = std::sync::Arc::new(tracing_subscriber::registry().with(layer));
+        let _guard = tracing::subscriber::set_default(subscriber.clone());
+
+        // (a) The bug: the worker thread does not enter the invocation span.
+        {
+            let span = tracing::info_span!("custom_app_function", app_id = "app-1");
+            let _enter = span.enter();
+            let sub = subscriber.clone();
+            std::thread::spawn(move || {
+                let _dispatch = tracing::subscriber::set_default(sub);
+                tracing::info!(target: "custom_app_function", name = "function_log", "dropped");
+            })
+            .join()
+            .unwrap();
+        }
+        let lost = rx.try_recv().expect("span record for app-1");
+        let lost_events: Vec<serde_json::Value> = serde_json::from_str(&lost.event_data).unwrap();
+        assert!(
+            lost_events.is_empty(),
+            "an event emitted from another thread WITHOUT the span carried over \
+             must be dropped. If this starts capturing, entering a span on the \
+             isolate thread in custom_apps_functions::runtime::run is redundant \
+             and this test is guarding nothing: {lost_events:?}"
+        );
+
+        // (b) The fix: same event, span carried onto the thread.
+        {
+            let span = tracing::info_span!("custom_app_function", app_id = "app-2");
+            let _enter = span.enter();
+            let sub = subscriber.clone();
+            let carried = span.clone();
+            std::thread::spawn(move || {
+                let _dispatch = tracing::subscriber::set_default(sub);
+                let _entered = carried.enter();
+                tracing::info!(
+                    target: "custom_app_function",
+                    name = "function_log",
+                    log_level = "info",
+                    "kept"
+                );
+            })
+            .join()
+            .unwrap();
+        }
+        let kept = rx.try_recv().expect("span record for app-2");
+        let kept_events: Vec<serde_json::Value> = serde_json::from_str(&kept.event_data).unwrap();
+        assert_eq!(
+            kept_events.len(),
+            1,
+            "a span entered on the worker thread must capture its log line"
+        );
+        assert_eq!(kept_events[0]["name"], "function_log");
+        assert_eq!(kept_events[0]["attributes"]["message"], "kept");
+        assert_eq!(kept_events[0]["attributes"]["log_level"], "info");
+
+        let attrs: HashMap<String, String> = serde_json::from_str(&kept.span_attributes).unwrap();
+        assert_eq!(
+            attrs.get("app_id").map(String::as_str),
+            Some("app-2"),
+            "the log line must arrive attributed to its app"
+        );
+    }
+
     #[tokio::test]
     async fn test_error_event_sets_status() {
         let (tx, mut rx) = mpsc::unbounded_channel();
