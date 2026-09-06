@@ -71,6 +71,23 @@ export interface OxyAppFunctionManifest {
    */
   email?: { send?: boolean };
   /**
+   * Capability for `ctx.org.people()` — the org's people directory, READ-ONLY
+   * (fail-closed: omit → the call is rejected before any query).
+   *
+   * Declare it for a function that has to name a person: an assignee, a roster
+   * entry, who submitted something. It answers with a display name and a role.
+   *
+   * Three things it deliberately is not, so nobody plans around them:
+   * it returns **no email and no phone** — naming a colleague is a different
+   * need from contacting them off-platform; it returns **no location**, which
+   * the platform does not hold for a member; and it does **not include
+   * frontline workers**, who hold no org-membership row by design.
+   *
+   * One flag, not `read`/`write`: there is no write. Editing the directory
+   * would put tenant membership behind an app's manifest.
+   */
+  org?: { read?: boolean };
+  /**
    * Capability for `ctx.oltp` — read/write the app's OWN per-org OLTP schema on
    * the managed Postgres tenant (fail-closed: omit → every `ctx.oltp` call
    * rejected). A pure GATE: the target schema is derived from the app's own slug
@@ -140,6 +157,23 @@ export interface OxyAppManifest {
    * static bundle (today's default). See the functions design doc.
    */
   functions?: Record<string, OxyAppFunctionManifest>;
+  /**
+   * Schema migrations that ship WITH this bundle and run on promote.
+   *
+   * `dir` is a directory inside the built bundle holding numbered `.sql` files.
+   * The platform runs them in lexical order, **once each, ever**, inside a
+   * transaction, as the app's own writer role, and records each one.
+   *
+   * What changes for the author: you no longer write defensive
+   * `IF NOT EXISTS` / idempotent upserts, because re-running is a no-op by
+   * construction rather than by your care. And you **may not edit, rename or
+   * copy a migration that has already run** — all three fail the promote by
+   * name, and the fix is always a new file.
+   *
+   * The `.sql` files are ordinary bundle files, fetchable over the app's own
+   * host: put no secrets in them.
+   */
+  migrations?: { dir: string };
   /**
    * Optional Ask Oxygen binding (agent ref + composer chips). The
    * platform's registered copy is authoritative (surfaced by

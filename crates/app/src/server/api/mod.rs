@@ -29,6 +29,7 @@ pub mod custom_apps_health;
 pub mod custom_apps_html_cache;
 pub mod custom_apps_logs;
 pub mod custom_apps_manifest;
+pub mod custom_apps_migrations;
 pub mod custom_apps_precompress;
 pub mod custom_apps_preview;
 pub mod custom_apps_proxy;

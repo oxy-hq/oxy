@@ -97,6 +97,8 @@ pub struct FunctionCapabilities {
     pub secrets_write: bool,
     /// Gate for `ctx.email.send`.
     pub email_send: bool,
+    /// Gate for `ctx.org.people()` — the org's people directory, read-only.
+    pub org_read: bool,
     /// Gate for `ctx.storage` reads (getDownloadUrl / list / get).
     pub storage_read: bool,
     /// Gate for `ctx.storage` writes (getUploadUrl / put).
@@ -850,6 +852,79 @@ impl FunctionHost for ProjectFunctionHost {
             .await
             .map_err(|e| format!("ctx.secrets.set failed: {e}"))?;
         Ok(serde_json::json!({ "ok": true }))
+    }
+
+    /// `ctx.org.people()` — who is in this org, by name.
+    ///
+    /// # Why this exists
+    ///
+    /// An app that models work assigned to humans had no way to name one. A
+    /// function cannot call `GET /api/orgs/{org}/members`, so apps invent their
+    /// own user ids and hold no human name at all — one of them drops a
+    /// "who conducted this" column rather than guess, and another breaks its
+    /// performance dashboard down by ROLE because a person is not available.
+    /// Every such app grows its own fiction, and the fictions do not agree.
+    ///
+    /// # What it deliberately does not return
+    ///
+    /// No email, no phone. It answers with a display name, a role and a
+    /// role — enough to put somebody on a roster, name an assignee, or label a
+    /// submission. NOT a location: the platform holds no location for an org
+    /// member, and the only place one exists is an app's own `staff` table, so
+    /// promising one here would be a field this query cannot fill.
+    ///
+    /// # Who is NOT in it, and it matters
+    ///
+    /// A FRONTLINE worker. This reads `org_members`, and a worker deliberately
+    /// holds no such row — that is the whole point of the frontline design. So
+    /// an app that enrols workers and then asks for its people gets the org's
+    /// staff and none of its crew. Closing that means unioning
+    /// `org_frontline_members`, which is a deliberate widening of what a bundle
+    /// can see and wants deciding rather than assuming.
+    ///
+    /// Being able to NAME a colleague is a different need
+    /// from being able to contact them off-platform, and only the first was
+    /// blocking anything. A bundle runs code the tenant did not write; handing
+    /// it the org's address book by default is not a thing to do quietly.
+    ///
+    /// Scoped to `self.org_id`, which the host resolved — never taken from the
+    /// function, so a manifest cannot point this at another tenant.
+    async fn org_people(&self) -> Result<serde_json::Value, String> {
+        // Fail-closed, like every other capability here.
+        if !self.caps.org_read {
+            return Err(
+                "OrgCapabilityMissing: this function has not declared the `org.read` \
+                 capability (add \"org\": { \"read\": true } to its oxy-app.json entry)"
+                    .to_string(),
+            );
+        }
+        use entity::{org_members, users};
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+
+        let rows = org_members::Entity::find()
+            .filter(org_members::Column::OrgId.eq(self.org_id))
+            .find_also_related(users::Entity)
+            .order_by_asc(org_members::Column::UserId)
+            .all(&self.db)
+            .await
+            .map_err(|e| format!("ctx.org.people: {e}"))?;
+
+        let people: Vec<serde_json::Value> = rows
+            .into_iter()
+            .filter_map(|(m, u)| {
+                // A membership whose user row is missing is data drift, not a
+                // person. Dropped rather than emitted with a null name, because
+                // a directory entry nobody can be is worse than a shorter list.
+                let u = u?;
+                Some(serde_json::json!({
+                    "id": u.id.to_string(),
+                    "name": u.name,
+                    "role": m.role.as_str(),
+                }))
+            })
+            .collect();
+
+        Ok(serde_json::json!({ "people": people, "total": people.len() }))
     }
 
     async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {

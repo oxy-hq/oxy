@@ -400,6 +400,42 @@ pub async fn verify_pin(
     })
 }
 
+/// Tell a taken identifier apart from a real database failure.
+///
+/// A duplicate identifier is the ADMIN's mistake, not ours. Re-enrolling
+/// somebody who already exists, or reusing a badge number, is the single most
+/// likely way enrolment fails and is entirely correctable by the person making
+/// it. Left as a bare `DBError` the HTTP layer cannot tell it apart from a pool
+/// exhaustion, so it answered 500 "could not enrol the worker" — un-actionable
+/// for a normal mistake, and a platform-fault shape in alerting.
+///
+/// Detected by CONSTRAINT NAME, not by SQLSTATE alone: 23505 only says "some
+/// unique index rejected this", while `user_credentials_scoped` is the one that
+/// means this identifier is taken in this org. Naming it keeps the message true
+/// if another unique index is ever added to the table.
+///
+/// A free function rather than an inline closure so it can be tested without a
+/// database. That matters more than it looks: this is a `contains` over an
+/// error `Display` chain spanning sea-orm and sqlx, and if either changes its
+/// formatting the mapping silently reverts to the 500 it exists to remove —
+/// with nothing failing to say so.
+fn classify_credential_error(e: &sea_orm::DbErr) -> OxyError {
+    if e.to_string().contains("user_credentials_scoped") {
+        OxyError::ValidationError(IDENTIFIER_TAKEN.to_string())
+    } else {
+        OxyError::DBError(format!("enrol credential: {e}"))
+    }
+}
+
+/// The message a duplicate identifier produces, as a `ValidationError`.
+///
+/// A constant rather than a literal because the HTTP layer matches on it to
+/// answer **409** rather than 400 — a taken badge number is a conflict, not a
+/// malformed request. `OxyError` has no `Conflict` variant and adding one to a
+/// shared enum for this single case is a wider change than it earns, so the two
+/// sides agree on this name instead of on a string typed twice.
+pub const IDENTIFIER_TAKEN: &str = "a worker with that identifier is already enrolled in this org";
+
 /// Enrol a worker who has no email address.
 ///
 /// Three rows in one transaction — the `users` row with a NULL email, the
@@ -482,7 +518,7 @@ pub async fn enroll_worker(
     }
     .insert(&txn)
     .await
-    .map_err(|e| OxyError::DBError(format!("enrol credential: {e}")))?;
+    .map_err(|e| classify_credential_error(&e))?;
 
     txn.commit()
         .await
@@ -519,6 +555,49 @@ pub async fn is_active_frontline(
 
 #[cfg(test)]
 mod tests {
+
+    /// The 409 path depends on a `contains` over an error Display chain that
+    /// spans sea-orm and sqlx. If either reformats, the mapping reverts to the
+    /// 500 it was written to remove — and nothing else in the suite notices.
+    ///
+    /// The real message shape, copied from what Postgres emits through that
+    /// chain, rather than a string invented to satisfy the assertion.
+    #[test]
+    fn a_taken_identifier_is_told_apart_from_a_real_database_failure() {
+        let dup = sea_orm::DbErr::Query(sea_orm::RuntimeErr::Internal(
+            "error returned from database: duplicate key value violates unique \
+             constraint \"user_credentials_scoped\""
+                .to_string(),
+        ));
+        match classify_credential_error(&dup) {
+            OxyError::ValidationError(m) => assert_eq!(m, IDENTIFIER_TAKEN),
+            other => panic!("a duplicate identifier must be admin-correctable, got {other:?}"),
+        }
+
+        // The OTHER unique index on this table. It cannot fire for a PIN
+        // credential (org_id is always Some, and that index is WHERE org_id IS
+        // NULL), so it must NOT be reported as a taken badge — that would tell
+        // an admin to change an identifier over an email collision.
+        let global = sea_orm::DbErr::Query(sea_orm::RuntimeErr::Internal(
+            "duplicate key value violates unique constraint \"user_credentials_global\""
+                .to_string(),
+        ));
+        assert!(
+            matches!(classify_credential_error(&global), OxyError::DBError(_)),
+            "only the scoped index means the badge is taken"
+        );
+
+        // Infrastructure stays infrastructure. This is the case the whole
+        // distinction exists for: it must never read as the admin's mistake.
+        let pool = sea_orm::DbErr::Conn(sea_orm::RuntimeErr::Internal(
+            "pool timed out while waiting for an open connection".to_string(),
+        ));
+        assert!(
+            matches!(classify_credential_error(&pool), OxyError::DBError(_)),
+            "a pool exhaustion is ours, not the admin's"
+        );
+    }
+
     use super::*;
 
     #[test]

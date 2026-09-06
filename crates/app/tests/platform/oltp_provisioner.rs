@@ -1577,3 +1577,87 @@ async fn a_visibility_choice_is_persisted_not_re_derived() {
     })
     .await;
 }
+
+/// The two assumptions `custom_apps_migrations` rests on, against real Postgres.
+///
+/// That module runs an app's migration SQL as the app's OWN writer role, with
+/// the search path pinned by the resolver, and says so in a comment:
+///
+/// > `search_path` is already pinned to the writer's schema by the resolver, so
+/// > an unqualified `CREATE TABLE orders` lands in `app_<writer>`.
+///
+/// Both halves were reasoned from `oxy_oltp::schema`'s invariants and neither
+/// had ever been executed — and both fail on the FIRST promote if wrong, which
+/// is the worst time to find out:
+///
+///   * no `CREATE` in its own schema → every migration dies `permission denied`;
+///   * an unpinned search path → the DDL aims at `public`, where the writer has
+///     no rights, so it fails loudly but for a reason nobody would guess from
+///     the error.
+///
+/// Asserted on the writer connection the runner actually resolves, not on a
+/// superuser one, because a superuser would pass both regardless — which is
+/// exactly how this would have looked verified while being untested.
+#[tokio::test]
+async fn an_app_writer_can_create_in_its_own_schema_and_unqualified_ddl_lands_there() {
+    with_fx(|fx| async move {
+        fx.provisioner
+            .provision(fx.org_id)
+            .await
+            .expect("provision");
+        let writer = fx.writer("migprobe");
+        fx.ensure_writer(&writer, GrantLevel::ReadWrite)
+            .await
+            .expect("ensure writer");
+
+        // The runner's own resolution path, verbatim.
+        let conn =
+            oxy_oltp::resolver::resolve_writer_connection_for_org(&fx.db, fx.org_id, &writer)
+                .await
+                .expect("resolve writer connection");
+        // The MECHANISM, not just its outcome. Without this the test still
+        // passes if the resolver stops pinning the path and the writer's schema
+        // happens to be first by some other route — and it would then go on
+        // passing right up until that route changed too. Asserting the option
+        // is present makes the test fail when the reason disappears, rather
+        // than when the consequence finally does.
+        assert!(
+            conn.dsn.contains("search_path"),
+            "the resolver must pin search_path; the migration runner relies on it \
+             for unqualified DDL and says so in a comment"
+        );
+
+        let client = oxy_oltp::connect::connect(&conn.dsn, "migration assumption probe")
+            .await
+            .expect("connect as the writer");
+
+        // UNQUALIFIED, exactly as an author's migration would write it.
+        client
+            .batch_execute("CREATE TABLE mig_probe (id integer primary key)")
+            .await
+            .expect("an app writer must hold CREATE inside its own schema");
+
+        let schema = writer.schema_name();
+        let landed: String = client
+            .query_one(
+                "SELECT table_schema::text FROM information_schema.tables \
+                 WHERE table_name = 'mig_probe'",
+                &[],
+            )
+            .await
+            .expect("the table must exist somewhere")
+            .get(0);
+
+        assert_eq!(
+            landed, schema,
+            "unqualified DDL must land in the writer's own schema, not {landed}"
+        );
+        assert_ne!(
+            landed, "public",
+            "an unpinned search_path would aim every app migration at public"
+        );
+
+        fx.cleanup().await;
+    })
+    .await;
+}

@@ -240,6 +240,19 @@ pub trait FunctionHost: Send + Sync {
     /// `ctx.semantic.query(spec)` — airlayer-compiled semantic query.
     /// `spec` is the JSON-encoded `agentic_semantic::config::SemanticQueryConfig`.
     async fn semantic_query(&self, spec: serde_json::Value) -> Result<serde_json::Value, String>;
+
+    /// `ctx.org.people()` — the org's people directory, read-only.
+    ///
+    /// Takes no arguments on purpose: the org is the host's, so a function
+    /// cannot name one and a manifest cannot point this at another tenant.
+    ///
+    /// Defaulted rather than required, because every other implementor of this
+    /// trait is a test double that has no directory to answer with — and the
+    /// default is the same fail-closed refusal the capability gate gives, so a
+    /// double that forgets to override it denies rather than inventing people.
+    async fn org_people(&self) -> Result<serde_json::Value, String> {
+        Err("ctx.org.people is not available in this host".to_string())
+    }
     /// `ctx.airway.run(pipelineRef, variables)` — seed an Airway ELT run.
     /// Returns `{ runId }`; the run is driven asynchronously by the worker
     /// fleet (it does not block on completion — ELT runs routinely exceed
@@ -350,6 +363,11 @@ enum HostCall {
     Storage {
         op: String,
         payload: serde_json::Value,
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    /// `ctx.org.people()` — no arguments; the org is the host's, never the
+    /// function's.
+    OrgPeople {
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
     },
     Tx {
@@ -706,6 +724,25 @@ async fn op_ctx_storage(
 
 #[op2]
 #[string]
+async fn op_ctx_org_people(state: Rc<RefCell<OpState>>) -> Result<String, JsErrorBox> {
+    check_cancelled(&state)?;
+    let tx = state
+        .borrow()
+        .borrow::<mpsc::UnboundedSender<HostCall>>()
+        .clone();
+    let (reply, rx) = oneshot::channel();
+    // No payload: the org comes from the host. A function that could name its
+    // own org here would be a manifest pointing at another tenant's roster.
+    tx.send(HostCall::OrgPeople { reply })
+        .map_err(|_| JsErrorBox::generic("function host unavailable"))?;
+    let result = rx
+        .await
+        .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
+    Ok(reply_json("ctx.org.people", result))
+}
+
+#[op2]
+#[string]
 async fn op_ctx_semantic_query(
     state: Rc<RefCell<OpState>>,
     #[string] spec_json: String,
@@ -937,6 +974,7 @@ deno_core::extension!(
         op_ctx_airway_run,
         op_ctx_email_send,
         op_ctx_storage,
+        op_ctx_org_people,
         op_ctx_tx,
         op_ctx_oltp,
         op_ctx_hmac,
@@ -1282,6 +1320,15 @@ globalThis.__buildCtx = (ctxData) => ({
     // with `render` from @oxy-hq/sdk/email before calling this.
     send: (input) => __wrapOp("op_ctx_email_send")(input),
   },
+  org: {
+    // people() — who is in this org, by name. Read-only, and NOT a contact
+    // list: a display name and a role, never an email or a phone. No location —
+    // the platform holds none for a member. Frontline workers are NOT included;
+    // see the host handler.
+    // Naming a colleague is a different need from being able to message them,
+    // and only the first one was blocking anything.
+    people: () => __wrapOp("op_ctx_org_people")(),
+  },
   storage: {
     // The app's asset store — uploaded files AND generated ones, one silo.
     // getUploadUrl/getDownloadUrl mint presigned URLs the BROWSER talks to
@@ -1542,6 +1589,9 @@ pub async fn run(
                                 }
                                 HostCall::Storage { op, payload, reply } => {
                                     let _ = reply.send(host.storage(op, payload).await);
+                                }
+                                HostCall::OrgPeople { reply } => {
+                                    let _ = reply.send(host.org_people().await);
                                 }
                             }
                         });

@@ -211,12 +211,69 @@ pub async fn check_custom_app_gates(
     // `partner_authz::partner_grants_app_access` (called below), and the property is
     // pinned by `oxy_authz`'s `app_access_is_member_global_admin_or_develop_apps_partner`
     // — a manage_apps-only ceiling is denied AppAccess there.
+    // Declared here because the verdict is needed TWICE — once as a way in, and
+    // once to decide whether the ring below is allowed an opinion — but computed
+    // LAZILY, inside the non-member arm only.
+    //
+    // Two reasons, and the second is not a performance one. This gate fronts the
+    // whole custom-app data plane, so an eager call puts an extra indexed read
+    // on every request from the ordinary org members who are 99% of callers.
+    // And computing it eagerly would let a principal who holds BOTH an
+    // `org_members` row and active frontline standing skip `enforce` through the
+    // guard below, where today they would go through the ring. That is
+    // unreachable — `enroll_worker` always mints a fresh `email = NULL` user and
+    // every path that adds an `org_members` row is email-keyed — but the lazy
+    // form makes it unreachable by CONSTRUCTION rather than by that argument.
+    let mut frontline_ok = false;
+
     let allowed = match is_org_member(&db, user.id, org_id).await {
         Ok(true) => true,
         Ok(false) => {
-            authz::globals::platform_standing(&db, user.email.as_deref().unwrap_or(""))
-                .await
-                .is_staff()
+            // A FRONTLINE worker is not an org member and never will be — that
+            // is the design. `enroll_worker` writes `users.email = NULL`
+            // precisely to keep them out of every email-keyed path.
+            //
+            // Without this term the model's own frontline grant is unreachable
+            // in production. `Ring::AppAccess` grants a worker access to an app
+            // they hold an `app_members` row for, but `enforce` returns
+            // `existing_allow && unified_allow` — so a worker failed HERE and
+            // the conjunction was `false && true`. The ring said yes, the
+            // deployment said 403, and an app shell would load while every
+            // query behind it refused.
+            //
+            // Standing AND a grant, decided HERE — not delegated to the ring.
+            //
+            // The first version of this term delegated: it admitted any active
+            // frontline worker and argued the ring would narrow it, because
+            // `Ring::AppAccess` ANDs frontline standing with an explicit
+            // `app_members` row. Two things were wrong with that.
+            //
+            // 1. The ring is asked about the WORKSPACE id. This gate is keyed on
+            //    `project_id`, a workspace, and `Resource::app(project_id, …)`
+            //    below passes it as the app id — while `facts.app_memberships`
+            //    holds `app_members.app_id`. The comparison can never be true,
+            //    so `frontline_grant` never fires and the narrowing that was
+            //    supposed to make the widening safe does not happen. (That id
+            //    mismatch predates this change and is flagged separately; it
+            //    also makes the ring's `app_restricted` branch ineffective for
+            //    everybody, not just for workers.)
+            //
+            // 2. Even with the ring working, `enforce` is only reached when the
+            //    facts LOAD. On a loader error the caller falls through to
+            //    `None => allowed`, which returns this verdict unnarrowed — so a
+            //    transient DB fault would have admitted every active frontline
+            //    worker to every app in the org.
+            //
+            // So the grant is required here, in the same expression as the
+            // standing. This term now denies on its own rather than trusting a
+            // later conjunction to deny for it — which is what "fail closed"
+            // has to mean when the later step is reachable only on the happy
+            // path.
+            frontline_ok = frontline_worker_with_app_grant(&db, org_id, user.id, project_id).await;
+            frontline_ok
+                || authz::globals::platform_standing(&db, user.email.as_deref().unwrap_or(""))
+                    .await
+                    .is_staff()
                 || authz::partner_authz::partner_grants_app_access(
                     &db,
                     user.id,
@@ -251,6 +308,31 @@ pub async fn check_custom_app_gates(
     )
     .await
     {
+        // A frontline verdict SKIPS the ring, and that is the one exemption in
+        // this gate.
+        //
+        // `enforce` returns `existing_allow && unified_allow`, and the ring
+        // cannot see this grant: it is handed `Resource::app(project_id, …)`
+        // where `project_id` is a WORKSPACE id, while `facts.app_memberships`
+        // holds app ids. So `frontline_grant` is false, `app_restricted` is
+        // false too (that is `Resource::app`'s default), and the remaining
+        // branch is plain org membership — which a worker deliberately does not
+        // have. The conjunction was therefore `true && false` on every HEALTHY
+        // request, and the term survived only on the `None` arm, i.e. only while
+        // the fact loader was erroring. Live when broken, inert when well.
+        //
+        // The exemption is paid for on THIS side: `frontline_worker_with_app_grant`
+        // already ANDs active standing with an explicit `app_members` row scoped
+        // to this workspace, which is strictly narrower than anything the ring
+        // would apply if it could see the grant. Subjecting it to a ring that
+        // provably cannot see it can only ever produce a wrong deny.
+        //
+        // Every other verdict still goes through `enforce`, so the model keeps
+        // its can-only-subtract property exactly where it has an oracle. When
+        // the id mismatch is fixed at the root — resolve the `apps` row and pass
+        // `app_with_visibility`, as `custom_apps_auth.rs` does — this exemption
+        // should be deleted and the ring left to narrow the frontline case too.
+        _ if frontline_ok => true,
         Some(facts) => authz::enforce(
             "gate.custom_app",
             &facts,
@@ -574,4 +656,61 @@ mod tests {
             Cow::Borrowed(_) => panic!("expected owned (v should have been stripped)"),
         }
     }
+}
+
+/// An active frontline worker holding an explicit grant on an app in this
+/// workspace.
+///
+/// Both halves, in one place, because the gate's frontline term must be able to
+/// deny by itself. It cannot rely on `Ring::AppAccess` narrowing it afterwards:
+/// `enforce` runs only when the principal facts load, and on a loader error the
+/// caller keeps this verdict as-is.
+///
+/// Scoped to the WORKSPACE the gate was called for, not to the org. A grant on
+/// some other workspace's app is not access to this one — that is the whole
+/// point of a per-app grant, and joining through `apps.project_id` is what keeps
+/// it true. Without the join this would read "has a grant anywhere in the org",
+/// which is the org-wide reach a frontline worker must not have.
+///
+/// Errors are `false`. A worker who cannot be checked is not admitted.
+///
+/// `pub` so `tests/platform/frontline_app_grant.rs` can drive it against a real
+/// database. It is the whole decision — the gate above it is one guard line —
+/// and two rounds of review found defects in exactly this logic that no unit
+/// test could have reached.
+pub async fn frontline_worker_with_app_grant(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+    user_id: Uuid,
+    project_id: Uuid,
+) -> bool {
+    // Standing first: it is one indexed lookup and most callers are not
+    // frontline, so this short-circuits the join for every ordinary request.
+    match oxy_auth::frontline::is_active_frontline(db, org_id, user_id).await {
+        Ok(true) => {}
+        _ => return false,
+    }
+    // Reads `app_members` directly rather than going through
+    // `custom_apps_auth::has_app_grant`, which is documented as the one place
+    // the two grant kinds are unioned. Deliberate, and it costs nothing today:
+    // `has_app_grant` takes an APP id and this gate has only a workspace, and
+    // the other grant kind — a team grant — cannot reach a frontline worker,
+    // because `add_team_member` rejects anyone who is not an org member and a
+    // worker never is one. So the union is empty for this principal by
+    // construction. If team membership is ever opened to workers, this is the
+    // second place that has to learn about it.
+    use entity::{app_members, apps};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationTrait};
+
+    app_members::Entity::find()
+        .filter(app_members::Column::UserId.eq(user_id))
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            app_members::Relation::Apps.def(),
+        )
+        .filter(apps::Column::ProjectId.eq(project_id))
+        .one(db)
+        .await
+        .map(|row| row.is_some())
+        .unwrap_or(false)
 }

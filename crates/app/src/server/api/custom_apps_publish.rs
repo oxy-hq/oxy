@@ -37,7 +37,7 @@ use uuid::Uuid;
 use super::{
     custom_apps_asset_manifest as asset_manifest, custom_apps_auth,
     custom_apps_build_store as store, custom_apps_bundle_cache as cache,
-    custom_apps_precompress as precompress,
+    custom_apps_migrations as migrations, custom_apps_precompress as precompress,
 };
 
 /// How many builds to retain per app. Older builds (not currently pointed
@@ -178,10 +178,22 @@ pub enum PublishError {
     /// actionable check/message/remediation; surfaced as 422.
     #[error("{0}")]
     Invalid(crate::server::api::custom_apps_validate::BundleValidation),
+    /// A declared schema migration could not be shipped. Status is delegated to
+    /// the error itself (`is_author_fault` / `is_retryable`): an edited
+    /// migration is a 422 the publisher must fix, a contended apply is a 409
+    /// worth retrying, and our own database trouble is a 500.
+    #[error("{0}")]
+    Migration(migrations::MigrationError),
     #[error("database error: {0}")]
     Db(String),
     #[error("storage error: {0}")]
     S3(String),
+}
+
+impl From<migrations::MigrationError> for PublishError {
+    fn from(e: migrations::MigrationError) -> Self {
+        PublishError::Migration(e)
+    }
 }
 
 impl From<store::BuildStoreError> for PublishError {
@@ -203,6 +215,15 @@ impl PublishError {
             PublishError::DuplicateBuild { .. } => StatusCode::CONFLICT,
             PublishError::InvalidBuildId(_) | PublishError::InvalidSlug(_) => {
                 StatusCode::UNPROCESSABLE_ENTITY
+            }
+            PublishError::Migration(e) => {
+                if e.is_retryable() {
+                    StatusCode::CONFLICT
+                } else if e.is_author_fault() {
+                    StatusCode::UNPROCESSABLE_ENTITY
+                } else {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
             }
             PublishError::Db(_) | PublishError::S3(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -1123,6 +1144,22 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
     // same way in the handler.)
     let manifest_json = parse_embedded_manifest(&files)?.or_else(|| input.manifest.clone());
 
+    // Lift the bundle's declared `*.sql` migrations out NOW, while `files` is
+    // still in hand and before a single byte has been stored. Three things this
+    // ordering buys, none of which survive doing it later:
+    //
+    //  - `files` is moved into `put_build` below, so the SQL has to be copied
+    //    out before then. It is kilobytes.
+    //  - A malformed `migrations` block, or one naming a directory the bundle
+    //    doesn't carry, fails the publish with no orphan build and no row to
+    //    roll back.
+    //  - A **draft** publish validates the block too. The author learns the
+    //    directory name is wrong on the publish that carries it, rather than on
+    //    a promote weeks later.
+    //
+    // Empty for the overwhelmingly common app, which declares no migrations.
+    let declared_migrations = migrations::declare(manifest_json.as_ref(), &files)?;
+
     // Reserve the bundle's `__oxy/` namespace and write the platform's asset
     // manifest into it — the document that gives the serve path its preload
     // hints and the service worker its precache list. Before pre-compression so
@@ -1241,6 +1278,47 @@ pub async fn publish(mut input: PublishInput) -> Result<PublishResult, PublishEr
     if let Err(e) = record_functions(&db, app_id, build_pk, &build_prefix, &fn_specs).await {
         rollback_stored_build(&db, app_id, &input.build_id, build_pk, rollback).await;
         return Err(e);
+    }
+    // Schema ships with the code that needs it — but only on a PROMOTING
+    // publish, and only BEFORE the published pointer moves.
+    //
+    // Before, because a half-migrated app whose code already went live is worse
+    // than a promote that did not happen: the app 500s on a table that isn't
+    // there while the previous build, which worked, has already been replaced.
+    // On failure we roll the orphan build back out and return, so the live
+    // channel is untouched and the author sees the failure on the publish that
+    // caused it.
+    //
+    // Only on promote, because the draft channel and the published channel share
+    // ONE `app_<writer>` schema. Applying a draft's DDL would put unreviewed
+    // schema in front of the live build.
+    //
+    // A partial apply is not rolled back and must not be: files that succeeded
+    // are in the ledger, so the re-publish after the author fixes the broken one
+    // resumes rather than restarts. That is the whole reason the ledger exists.
+    if input.promote {
+        match migrations::apply_on_promote(
+            &db,
+            app_id,
+            &input.app_slug,
+            org.id,
+            build_pk,
+            &declared_migrations,
+        )
+        .await
+        {
+            Ok(applied) => {
+                let summary = applied.summary();
+                if !summary.is_empty() {
+                    tracing::info!("publish: {summary} for app {app_id}");
+                }
+            }
+            Err(e) => {
+                tracing::warn!("publish: schema migrations failed for app {app_id}: {e}");
+                rollback_stored_build(&db, app_id, &input.build_id, build_pk, rollback).await;
+                return Err(PublishError::Migration(e));
+            }
+        }
     }
     if let Err(e) = set_pointers(&db, app_id, build_pk, input.promote).await {
         rollback_stored_build(&db, app_id, &input.build_id, build_pk, rollback).await;

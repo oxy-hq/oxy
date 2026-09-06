@@ -149,6 +149,24 @@ struct FunctionManifestEntry {
     /// `raw_*` schemas. The writer must be provisioned first.
     #[serde(default)]
     oltp: Option<OltpSpec>,
+    /// Opt-in capability for `ctx.org.people()` — the org's people directory
+    /// (fail-closed: absent → the call is rejected).
+    ///
+    /// Exists because an app that models work assigned to humans currently has
+    /// no way to name one. A function cannot reach `GET /api/orgs/{org}/members`,
+    /// so apps invent their own user ids and hold no human name at all — which
+    /// is why one of them drops a "who did this" column rather than guess.
+    ///
+    /// **Read-only, and deliberately not a contact list.** It answers with
+    /// display names and roles — not locations, which the platform does not hold
+    /// for a member, and not frontline workers, who hold no `org_members` row.
+    /// It does not return email addresses or
+    /// phone numbers. Naming somebody on a roster is a different need from being
+    /// able to message them off-platform, and only the first one is what the
+    /// missing capability was blocking. Widening it is a product decision, not a
+    /// follow-up.
+    #[serde(default)]
+    org: Option<OrgSpec>,
     /// Retry policy for **background** runs (scheduled or manual job triggers) —
     /// absent → a job run is attempted once. Route invocations are request-scoped
     /// and never retried. Maps to the durable queue's `RetryPolicy` so a transient
@@ -199,6 +217,17 @@ struct EmailSpec {
     send: Option<bool>,
 }
 
+/// `"org": { "read": true }` — opt in to the people directory.
+///
+/// One flag, not a read/write pair like `StorageSpec`: there is no write. An app
+/// naming a person is a reader of the org's roster, and letting a bundle EDIT
+/// the directory would put tenant membership behind an app's manifest.
+#[derive(Debug, Deserialize, Default, Clone)]
+struct OrgSpec {
+    #[serde(default)]
+    read: Option<bool>,
+}
+
 #[derive(Debug, Deserialize, Default, Clone)]
 struct StorageSpec {
     #[serde(default)]
@@ -238,6 +267,11 @@ impl FunctionManifestEntry {
     /// Whether `ctx.secrets.set` is permitted (fail-closed default: false).
     fn secrets_write(&self) -> bool {
         self.secrets.as_ref().and_then(|s| s.write).unwrap_or(false)
+    }
+
+    /// Whether `ctx.org.people()` is permitted (fail-closed default: false).
+    fn org_read(&self) -> bool {
+        self.org.as_ref().and_then(|o| o.read).unwrap_or(false)
     }
 
     /// Whether `ctx.email.send` is permitted (fail-closed default: false).
@@ -978,6 +1012,7 @@ pub async fn handle_function_request(
         caps: host::FunctionCapabilities {
             secrets_write: manifest.secrets_write(),
             email_send: manifest.email_send(),
+            org_read: manifest.org_read(),
             storage_read: manifest.storage_read(),
             storage_write: manifest.storage_write(),
             // DERIVED from the invoking app's slug, gated by the manifest — never
@@ -1279,6 +1314,7 @@ pub(crate) async fn run_scheduled_function(
         caps: host::FunctionCapabilities {
             secrets_write: manifest.secrets_write(),
             email_send: manifest.email_send(),
+            org_read: manifest.org_read(),
             storage_read: manifest.storage_read(),
             storage_write: manifest.storage_write(),
             // DERIVED from the invoking app's slug, gated by the manifest — never
@@ -2275,5 +2311,61 @@ mod function_status_tests {
         let stored: Option<i16> = None;
         let body = success_sse_body("{}", stored.unwrap_or(200) as u16);
         assert!(body.contains(r#""status":200"#), "{body}");
+    }
+}
+
+#[cfg(test)]
+mod org_capability_tests {
+    use super::FunctionManifestEntry;
+
+    /// `ctx.org.people()` is DENIED unless the manifest asks for it.
+    ///
+    /// Every arm here is a way an author could fail to declare the capability,
+    /// and all of them must land on `false`. A capability that fails OPEN is
+    /// not a bug in a feature, it is a directory handed to a bundle the tenant
+    /// did not write — so the absence cases are asserted individually rather
+    /// than as one "default is false".
+    #[test]
+    fn org_read_fails_closed_on_every_way_of_not_asking() {
+        let deny = [
+            ("no manifest block at all", r#"{}"#),
+            ("an empty org block", r#"{"org":{}}"#),
+            ("read explicitly false", r#"{"org":{"read":false}}"#),
+            ("org present but null", r#"{"org":null}"#),
+            // A neighbouring capability must not carry this one in with it.
+            (
+                "some OTHER capability granted",
+                r#"{"storage":{"read":true},"email":{"send":true}}"#,
+            ),
+        ];
+        for (why, json) in deny {
+            let m: FunctionManifestEntry = serde_json::from_str(json)
+                .unwrap_or_else(|e| panic!("{why}: manifest did not parse: {e}"));
+            assert!(!m.org_read(), "org.read must be denied when there is {why}");
+        }
+
+        // And the one shape that grants it actually does, so the test above is
+        // not passing because `org_read()` returns false unconditionally.
+        let granted: FunctionManifestEntry =
+            serde_json::from_str(r#"{"org":{"read":true}}"#).unwrap();
+        assert!(
+            granted.org_read(),
+            "org.read must be granted when asked for"
+        );
+    }
+
+    /// Declaring the directory does not quietly grant anything else.
+    ///
+    /// The capabilities are independent by construction, and this pins that:
+    /// an app that wants to name a colleague has not thereby asked to email
+    /// one, write a secret, or reach the app's storage silo.
+    #[test]
+    fn asking_for_the_directory_grants_only_the_directory() {
+        let m: FunctionManifestEntry = serde_json::from_str(r#"{"org":{"read":true}}"#).unwrap();
+        assert!(m.org_read());
+        assert!(!m.email_send(), "org.read must not imply email.send");
+        assert!(!m.secrets_write(), "org.read must not imply secrets.write");
+        assert!(!m.storage_read(), "org.read must not imply storage.read");
+        assert!(!m.storage_write(), "org.read must not imply storage.write");
     }
 }

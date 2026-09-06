@@ -15,6 +15,7 @@ use crate::api::middlewares::{
 };
 use crate::api::{admin, org_logo, org_teams, organizations, user, workspaces};
 use crate::server::api::chat;
+use crate::server::api::frontline;
 use crate::server::api::notifications;
 use crate::server::api::work;
 
@@ -422,6 +423,16 @@ fn build_org_routes(app_state: &AppState) -> RoleRouter {
             "/logo",
             put(org_logo::upload_org_logo).delete(org_logo::delete_org_logo),
         )
+        // Enrol a frontline worker. `route_fleet` for the same reason the login
+        // and roster routes are: it reads and writes only Postgres, and a
+        // deploy of the singleton must not stop a manager adding staff.
+        //
+        // Nested here rather than beside `/frontline/login` in the PUBLIC
+        // router, because those two are public by necessity — a worker has
+        // nothing to authenticate with until they have signed in — and this one
+        // is the opposite: it is an org admin adding a person to their org, and
+        // it belongs with the rest of member management.
+        .route_fleet("/frontline/workers", post(frontline::enrol))
         .route_fleet(
             "/partner-publish-consent",
             get(crate::server::api::partner_publish_consent::get_consent)

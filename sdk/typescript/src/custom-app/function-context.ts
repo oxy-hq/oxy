@@ -567,6 +567,30 @@ export interface OxyStorageApi {
 export interface OxyFunctionContext {
   /** Invoking user (route) or system identity (schedule/airway). */
   user: OxyFunctionUser;
+  /**
+   * The org's people directory. Requires `"org": { "read": true }` in this
+   * function's manifest entry — without it the call is rejected before any
+   * query reaches the database.
+   *
+   * For naming a person: an assignee, a roster entry, who submitted something.
+   * Returns a display name and a role, and deliberately **no email, no phone,
+   * no location**, and **no frontline workers** (they hold no org-membership
+   * row by design — see the manifest doc).
+   *
+   * REQUIRED, like every sibling here — `oltp`, `secrets`, `email`, `storage`,
+   * `airway` are all gated and all declared required. The binding is
+   * unconditional: `__buildCtx` is a static string that attaches `org` whatever
+   * the manifest says, and the refusal lives in the op, not in the binding. An
+   * optional member would therefore be a lie in the other direction, and under
+   * `strict` it makes `ctx.org.people()` — the spelling in every doc here and
+   * the only one the host binds — fail with "possibly undefined".
+   */
+  org: {
+    people(): Promise<{
+      people: Array<{ id: string; name: string; role: string }>;
+      total: number;
+    }>;
+  };
   /** Read-only view of the app's configured secrets (project-scoped). */
   env: Record<string, string>;
   /** Structured per-invocation logging (captured + surfaced with the response). */

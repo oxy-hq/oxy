@@ -33,6 +33,62 @@ pub(super) struct OxyAppAskConfig {
     pub suggested_questions: Vec<String>,
 }
 
+/// Where the bundle keeps its schema migrations, from `oxy-app.json`.
+///
+/// **Absent by default, and that must stay the common case** — an app with no
+/// tables of its own is the norm, so declaring nothing means nothing runs and
+/// nothing is resolved (no OLTP writer lookup, no tenant connection).
+///
+/// A struct rather than a bare string so a later `strategy`/`role` field is an
+/// additive change, matching [`OxyAppStorageConfig`].
+///
+/// Notably absent: any way to name the *schema*. The schema is derived
+/// host-side from the app's slug (`oxy_oltp::schema::app_writer_name`), exactly
+/// as `ctx.oltp` derives it. A manifest that could name its own schema is a
+/// manifest that can migrate another app's.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OxyAppMigrationsConfig {
+    /// Directory inside the bundle holding `*.sql` files, relative to the
+    /// bundle root (e.g. `"migrations"`). Required when the block is present:
+    /// a `migrations: {}` that silently meant "nowhere" would ship code without
+    /// its schema, which is the failure this feature exists to prevent.
+    pub dir: String,
+}
+
+/// Read the `migrations` block out of a raw `oxy-app.json`.
+///
+/// **Strict, unlike [`retention_policy_from_build_manifest`], and deliberately
+/// so.** A retention policy that fails to parse degrades to "nothing expires" —
+/// the safe direction, because the failure costs storage. A migrations block
+/// that failed to parse would degrade to "no migrations", which ships an app's
+/// code without its tables and lands on a user as `relation does not exist`.
+/// The two blocks want opposite lenience, so they do not share a reader.
+///
+/// `Ok(None)` means the manifest genuinely declares no migrations. `Err` means
+/// it declares something we could not understand, which fails the promote.
+pub(crate) fn migrations_config(
+    manifest_json: Option<&serde_json::Value>,
+) -> Result<Option<OxyAppMigrationsConfig>, String> {
+    let Some(raw) = manifest_json.and_then(|m| m.get("migrations")) else {
+        return Ok(None);
+    };
+    // An explicit `null` is a declaration of nothing, not a malformed block —
+    // `JSON.stringify` emits it for an optional field a generator left unset.
+    if raw.is_null() {
+        return Ok(None);
+    }
+    serde_json::from_value::<OxyAppMigrationsConfig>(raw.clone())
+        .map(Some)
+        .map_err(|e| {
+            format!(
+                "the `migrations` block in oxy-app.json is not usable ({e}); it must be an \
+                 object with a `dir` naming a directory inside the bundle, e.g. \
+                 \"migrations\": {{ \"dir\": \"migrations\" }}"
+            )
+        })
+}
+
 /// App-level storage config from `oxy-app.json`.
 ///
 /// Deliberately **not** the same block as the per-function `storage: { read,
@@ -94,6 +150,11 @@ pub(crate) struct OxyAppManifest {
     /// App-level storage policy — currently just asset retention.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage: Option<OxyAppStorageConfig>,
+    /// Where the bundle keeps its `*.sql` schema migrations. Absent for an app
+    /// with no tables of its own, which is the common case and must stay
+    /// zero-config. See [`OxyAppMigrationsConfig`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub migrations: Option<OxyAppMigrationsConfig>,
 }
 
 /// Resolve an app's asset-retention policy from the `oxy-app.json` captured in

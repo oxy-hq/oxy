@@ -83,6 +83,7 @@ pub mod apps;
 pub mod artifacts;
 pub mod audit_events;
 pub mod custom_app_event;
+pub mod custom_app_migrations;
 pub mod custom_app_view_event;
 pub mod customer_app_automation_runs;
 pub mod oidc_used_jti;

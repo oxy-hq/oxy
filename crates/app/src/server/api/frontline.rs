@@ -25,19 +25,21 @@
 //! **signing in has to survive the ide restarting**. Pinning login to the
 //! singleton would mean a deploy locks every store out of its own checklists.
 
-use axum::extract::Query;
+use crate::server::api::middlewares::role_guards::OrgAdmin;
+use axum::extract::{Path, Query};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::{Json, http::header};
 use entity::{org_frontline_members, organizations, user_credentials, users};
 use oxy::database::client::establish_connection;
 use oxy_auth::frontline::{self, KIND_PIN, PinPolicy, PinVerdict};
+use oxy_shared::errors::OxyError;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
-use tracing::{info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 /// How long a shift session lasts.
@@ -472,5 +474,123 @@ mod tests {
         .await
         .unwrap();
         assert_ne!(a, b, "two genuinely different bodies compared equal");
+    }
+}
+
+// ── Enrolment ───────────────────────────────────────────────────────────────
+
+/// No `Debug`. This struct holds a raw PIN, and a derived `Debug` is one
+/// `tracing` field or one `unwrap` panic away from putting it in a log line.
+#[derive(Deserialize)]
+pub struct EnrolRequest {
+    /// Shown on the kiosk's name picker. Not unique — two Marias are two rows.
+    pub name: String,
+    /// What the worker picks themselves out by. Unique per org.
+    pub identifier: String,
+    /// 4–8 digits. Never stored, never logged, never returned.
+    pub pin: String,
+}
+
+/// Enrol a frontline worker — the door `enroll_worker` never had.
+///
+/// # Why this is the missing piece
+///
+/// Everything else in this file already shipped: the PIN credential, the
+/// standing row, the login exchange, the roster read. `oxy_auth::frontline::
+/// enroll_worker` has existed the whole time with **zero non-test callers**, so
+/// `GET /api/frontline/roster` has been answering `200 {"staff": []}` on every
+/// deployment — a read path with no write path, which looks exactly like a
+/// tenant that has not enrolled anybody.
+///
+/// # Who may call it
+///
+/// `OrgAdmin`, which is the guard the rest of the org's member management uses.
+/// Deliberately NOT a new authorization concept: enrolling a worker is adding a
+/// person to an org, and inventing a second rule for it is how two answers to
+/// one question start disagreeing. A store manager who is not an org admin
+/// cannot enrol yet — that is a real gap, and it is one for the roles model to
+/// close rather than for this route to route around.
+///
+/// # What it deliberately does not do
+///
+/// No email, no invitation, no `org_members` row. That is the whole design:
+/// `enroll_worker` writes `users.email = NULL`, which keeps this person out of
+/// every email-keyed path — OAuth collapse, Slack matching, invitations,
+/// platform grants — by construction rather than by a check somebody has to
+/// remember. The worker exists, can sign in, and holds nothing else.
+#[instrument(skip_all, fields(org = %org_id))]
+pub async fn enrol(
+    OrgAdmin(_ctx): OrgAdmin,
+    Path(org_id): Path<Uuid>,
+    Json(req): Json<EnrolRequest>,
+) -> impl IntoResponse {
+    let Ok(db) = establish_connection().await else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database unavailable" })),
+        )
+            .into_response();
+    };
+
+    match frontline::enroll_worker(
+        &db,
+        org_id,
+        &req.name,
+        &req.identifier,
+        &req.pin,
+        PinPolicy::default(),
+    )
+    .await
+    {
+        Ok(user_id) => {
+            // The PIN is not echoed. An admin who did not keep it re-enrols or
+            // resets; a response that repeats it would put it in every proxy
+            // log between here and the browser.
+            info!(%org_id, %user_id, "frontline worker enrolled");
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({
+                    "user_id": user_id,
+                    "identifier": req.identifier.trim(),
+                    "name": req.name.trim(),
+                })),
+            )
+                .into_response()
+        }
+        // Match the VARIANT, not every error.
+        //
+        // `enroll_worker` validates the PIN policy and the required fields, and
+        // those messages are exactly what an admin needs — so a validation
+        // failure is a 400 carrying its own sentence.
+        //
+        // Everything else is ours. Mapping them all to 400 told an admin that a
+        // pool exhaustion was their bad request, and put raw database text
+        // ("enrol begin: …") in the response body on the way. A 500 with a
+        // generic body is the honest answer; the real error goes to the log,
+        // where it belongs.
+        Err(OxyError::ValidationError(msg)) => {
+            warn!(%org_id, "frontline enrolment refused: {msg}");
+            // 409 for a taken identifier, 400 for a malformed request.
+            //
+            // Re-enrolling somebody who already exists, or reusing a badge
+            // number, is the most likely way this call fails and is entirely
+            // the admin's to fix — it is a conflict with existing state, not a
+            // bad request. Matched on `frontline::IDENTIFIER_TAKEN` rather than
+            // on a literal, so the two sides cannot drift apart silently.
+            let status = if msg == frontline::IDENTIFIER_TAKEN {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (status, Json(serde_json::json!({ "error": msg }))).into_response()
+        }
+        Err(e) => {
+            error!(%org_id, error = %e, "frontline enrolment failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "could not enrol the worker" })),
+            )
+                .into_response()
+        }
     }
 }
