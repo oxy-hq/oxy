@@ -355,3 +355,73 @@ async fn inserted_views_are_ordered_by_their_stamped_time() {
         .expect("row");
     assert_eq!(newest.app_role.as_deref(), Some("admin"));
 }
+
+/// An event names only an app its sender can open.
+///
+/// The route is keyed by workspace; the body may name the app. A name is
+/// honoured when the app is published from this workspace AND the sender passes
+/// the same per-app gate the shell and every function invoke run — so a
+/// restricted app cannot be written to, or probed for, by naming it from a
+/// workspace it shares. Without a name, the fallback is deterministic.
+#[tokio::test]
+async fn an_event_names_only_an_app_its_sender_can_open() {
+    use oxy_app::server::api::custom_apps_activity::{EventAppRefusal, resolve_event_app};
+
+    let conn = test_db().await;
+    let org = seed_org(&conn).await;
+    let (member, member_email) = seed_user(&conn).await;
+    seed_member(&conn, org, member, OrgRole::Member).await;
+
+    // `open` and `restricted` share a workspace; `elsewhere` has its own.
+    let open = seed_app(&conn, org).await;
+    let restricted_id = Uuid::new_v4();
+    let restricted = apps::ActiveModel {
+        id: ActiveValue::Set(restricted_id),
+        slug: ActiveValue::Set(format!("restricted-{restricted_id}")),
+        name: ActiveValue::Set("Restricted App".into()),
+        org_id: ActiveValue::Set(org),
+        project_id: ActiveValue::Set(open.project_id),
+        branch: ActiveValue::Set("main".into()),
+        source_repo: ActiveValue::Set("activity/test".into()),
+        status: ActiveValue::Set("active".into()),
+        source_type: ActiveValue::Set("local".into()),
+        source_config: ActiveValue::Set(serde_json::json!({})),
+        visibility: ActiveValue::Set("members".into()),
+        published_at: ActiveValue::Set(Some(Utc::now().into())),
+        ..Default::default()
+    }
+    .insert(&conn)
+    .await
+    .expect("seed restricted app");
+    let elsewhere = seed_app(&conn, org).await;
+
+    let resolve = |app_id: Option<Uuid>| {
+        resolve_event_app(&conn, open.project_id, member, &member_email, app_id)
+    };
+
+    // Named, published here, org-visible: the member can open it, so it is named.
+    assert_eq!(resolve(Some(open.id)).await.map(|a| a.id), Ok(open.id));
+    // Named, published here, restricted, no grant: not theirs — and not a
+    // different answer from "not here", so the app is not probeable by name.
+    assert_eq!(
+        resolve(Some(restricted.id)).await.map(|a| a.id),
+        Err(EventAppRefusal::NotYours)
+    );
+    // Named, another workspace's app: not theirs either.
+    assert_eq!(
+        resolve(Some(elsewhere.id)).await.map(|a| a.id),
+        Err(EventAppRefusal::NotYours)
+    );
+    // Unnamed: an app in the workspace, first by id — deterministic, not "one of them".
+    assert_eq!(
+        resolve(None).await.map(|a| a.id),
+        Ok(std::cmp::min(open.id, restricted.id))
+    );
+    // Unnamed, in a workspace that published nothing.
+    assert_eq!(
+        resolve_event_app(&conn, Uuid::new_v4(), member, &member_email, None)
+            .await
+            .map(|a| a.id),
+        Err(EventAppRefusal::NoneInWorkspace)
+    );
+}

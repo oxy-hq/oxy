@@ -264,6 +264,12 @@ export function useResolvedManifest(): ResolvedCustomAppManifest {
  */
 export function useOxyApp(): {
   projectId: string | undefined;
+  /**
+   * The `apps.id` this bundle was served as — from `window.__OXY_APP__`, so
+   * it is the platform's word and not the manifest's. Undefined under `pnpm
+   * dev` against a manifest with no injected identity.
+   */
+  appId: string | undefined;
   appSlug: string | undefined;
   orgSlug: string | undefined;
   fetcher: AppFetcher;
@@ -274,6 +280,7 @@ export function useOxyApp(): {
   }
   return {
     projectId: ctx.resolved?.projectId,
+    appId: ctx.resolved?.appId,
     appSlug: ctx.resolved?.appSlug,
     orgSlug: ctx.resolved?.orgSlug,
     fetcher: ctx.fetcher
@@ -1567,7 +1574,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
  * within-limit events are unaffected.
  */
 export function useTrackEvent(): (name: string, payload?: Record<string, unknown>) => void {
-  const { projectId, fetcher } = useOxyApp();
+  const { projectId, appId, fetcher } = useOxyApp();
   // Per-mount queue. Held in a ref so callers can fire from event
   // handlers without re-rendering. Flush schedules itself once a
   // queued event exists; the cleanup on unmount drains synchronously
@@ -1602,7 +1609,13 @@ export function useTrackEvent(): (name: string, payload?: Record<string, unknown
       // tab closes immediately in local dev gets dropped at the
       // gate as 401. Same-origin prod (cookie auth) is unaffected
       // because the cookie travels with sendBeacon.
-      const body = JSON.stringify(evt);
+      // The event names its app. The endpoint is keyed by WORKSPACE (like
+      // the rest of the bundle surface), and a workspace can publish several
+      // apps; without this the server picked one of them to attribute the
+      // event to, and a click in the Locations app could land in Store Ops'
+      // activity. Omitted only when the bundle has no injected identity
+      // (`pnpm dev`), where the server falls back to the old lookup.
+      const body = JSON.stringify(appId ? { ...evt, app_id: appId } : evt);
       try {
         if (
           typeof navigator !== "undefined" &&
@@ -1628,7 +1641,7 @@ export function useTrackEvent(): (name: string, payload?: Record<string, unknown
         console.warn("[oxy] useTrackEvent enqueue failed:", e);
       }
     }
-  }, [projectId, fetcher]);
+  }, [projectId, fetcher, appId]);
 
   // Drain on page hide / unload so a "click then immediately navigate
   // away" doesn't lose the click. Cleanup also clears any pending

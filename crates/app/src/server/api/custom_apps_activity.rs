@@ -168,6 +168,85 @@ pub struct EventRequest {
     pub payload: serde_json::Value,
     #[serde(default)]
     pub session_id: Option<Uuid>,
+    /// The `apps.id` the bundle was served as (`window.__OXY_APP__.appId`),
+    /// sent by an SDK whose `useOxyApp()` returns `appId` (see the SDK
+    /// changelog). The route is keyed by workspace and a workspace can publish
+    /// several apps, so without this the server had to GUESS which one the
+    /// event belonged to. Optional for bundles built against an older SDK.
+    #[serde(default)]
+    pub app_id: Option<Uuid>,
+}
+
+/// Why [`resolve_event_app`] would not name an app for an event.
+#[derive(Debug, PartialEq, Eq)]
+pub enum EventAppRefusal {
+    /// The body named an app that is not published from this workspace, or one
+    /// the sender cannot open. One answer for both on purpose — the gate above
+    /// decided the caller reaches this WORKSPACE's data, not any app's, and a
+    /// restricted app must not be probeable by name from a workspace it shares.
+    NotYours,
+    /// No body-named app and the workspace has published nothing.
+    NoneInWorkspace,
+    Db(String),
+}
+
+/// Which app an event belongs to.
+///
+/// The route is keyed by `project_id` — a WORKSPACE, like the rest of the bundle
+/// SDK surface (/query, /semantic-query, …) — and a workspace can publish
+/// several apps, so the event has to say which one it is for. A bundle whose
+/// SDK sends `app_id` names it, and the name is honoured only if that app is
+/// published from THIS workspace **and the sender can open it**: the
+/// workspace-keyed gate proves reach into the workspace's data, not into every
+/// app there, and a restricted app's audience is decided by
+/// [`super::custom_apps_auth::user_can_access_app`] — the same cached check the
+/// shell and every function invoke run. The client naming a resource is exactly
+/// when the resource-level check has to run.
+///
+/// Without `app_id` (an older bundle, or `pnpm dev` with no injected identity)
+/// the lookup falls back to "an app in this workspace" — exact for the one-app
+/// case and a guess otherwise. It was always a guess; now it is deterministic
+/// (first by id) and logged rather than silent.
+pub async fn resolve_event_app(
+    db: &sea_orm::DatabaseConnection,
+    project_id: Uuid,
+    user_id: Uuid,
+    user_email: &str,
+    app_id: Option<Uuid>,
+) -> Result<apps::Model, EventAppRefusal> {
+    let db_err = |e: sea_orm::DbErr| EventAppRefusal::Db(e.to_string());
+    match app_id {
+        Some(app_id) => {
+            let app = apps::Entity::find_by_id(app_id)
+                .filter(apps::Column::ProjectId.eq(project_id))
+                .one(db)
+                .await
+                .map_err(db_err)?
+                .ok_or(EventAppRefusal::NotYours)?;
+            let can_open =
+                super::custom_apps_auth::user_can_access_app(db, user_id, user_email, &app)
+                    .await
+                    .map_err(db_err)?;
+            if can_open {
+                Ok(app)
+            } else {
+                Err(EventAppRefusal::NotYours)
+            }
+        }
+        None => {
+            tracing::debug!(
+                %project_id,
+                "event ingest without app_id — attributing to an app in the workspace"
+            );
+            apps::Entity::find()
+                .filter(apps::Column::ProjectId.eq(project_id))
+                .order_by_asc(apps::Column::Id)
+                .one(db)
+                .await
+                .map_err(db_err)?
+                .ok_or(EventAppRefusal::NoneInWorkspace)
+        }
+    }
 }
 
 fn default_payload() -> serde_json::Value {
@@ -226,13 +305,9 @@ pub async fn post_event(
         );
     }
 
-    // Find the app by project_id (the gates context has the workspace
-    // membership locked in; we look up the app row to get its id +
-    // confirm it exists). Note: the existing gate model uses
-    // project_id as the URL key for compatibility with the rest of the
-    // bundle SDK surface (/query, /semantic-query, …). For event
-    // tracking we need the actual `apps.id` — derive it via the
-    // workspace.
+    // Which app — see `resolve_event_app`. Two 404s with different sentences:
+    // an author debugging a stale `app_id` must not be told their workspace
+    // has no apps at all.
     let db = match establish_connection().await {
         Ok(d) => d,
         Err(e) => {
@@ -240,14 +315,26 @@ pub async fn post_event(
             return err(StatusCode::INTERNAL_SERVER_ERROR, "DB unavailable");
         }
     };
-    let app = match apps::Entity::find()
-        .filter(apps::Column::ProjectId.eq(ctx.project_id))
-        .one(&db)
-        .await
+    let app = match resolve_event_app(
+        &db,
+        ctx.project_id,
+        ctx.user.id,
+        ctx.user.email.as_deref().unwrap_or(""),
+        req.app_id,
+    )
+    .await
     {
-        Ok(Some(a)) => a,
-        Ok(None) => return err(StatusCode::NOT_FOUND, "no app registered for this project"),
-        Err(e) => {
+        Ok(a) => a,
+        Err(EventAppRefusal::NotYours) => {
+            return err(
+                StatusCode::NOT_FOUND,
+                "app_id names an app that is not published from this workspace, or one you cannot open",
+            );
+        }
+        Err(EventAppRefusal::NoneInWorkspace) => {
+            return err(StatusCode::NOT_FOUND, "no app registered for this project");
+        }
+        Err(EventAppRefusal::Db(e)) => {
             tracing::error!("event ingest app lookup: {e}");
             return err(StatusCode::INTERNAL_SERVER_ERROR, "lookup failed");
         }

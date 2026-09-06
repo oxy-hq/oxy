@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to). That null is the one field that tells the crew from the office inside a
   function.
 
+### Added
+
+- **`useTrack` events name their app.** `useOxyApp()` now returns `appId`
+  (from `window.__OXY_APP__`), and each tracked event carries it as `app_id`.
+  The events endpoint is keyed by workspace, and a workspace can publish
+  several apps — without this the server attributed an event to *an* app in
+  the workspace. Bundles built against an older SDK keep working; the server
+  falls back to the old lookup when `app_id` is absent.
+
 ## [2.10.0] - 2026-09-03
 
 ### Changed
