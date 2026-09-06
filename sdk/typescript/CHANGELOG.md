@@ -5,6 +5,18 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`ctx.user.email` is `string | null`.** It was typed `string`; the runtime
+  has sent `null` for a frontline worker — a crew member enrolled by PIN, with
+  no mailbox — since workers existed. Source-breaking for an app that hands
+  `ctx.user.email` to something that wants a `string` (the `functions`
+  scaffold's `notify.ts` did, and now answers 400 when there is nobody to send
+  to). That null is the one field that tells the crew from the office inside a
+  function.
+
 ## [2.10.0] - 2026-09-03
 
 ### Changed

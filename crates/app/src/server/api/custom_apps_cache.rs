@@ -67,19 +67,24 @@ pub(super) fn remove_entry<K: Eq + Hash, V>(cache: &RwLock<HashMap<K, (V, Instan
     }
 }
 
-// ── User cache (email-keyed) ────────────────────────────────────────────────
+// ── User cache ──────────────────────────────────────────────────────────────
+//
+// Keyed by `custom_apps_auth::user_cache_key`: the user id a session names,
+// and the lowercased address only for a provider identity that names nobody
+// yet. It was keyed by the email string, which is "" for every frontline
+// worker — one slot for the whole crew. See that function for the story.
 
 fn user_cache() -> &'static RwLock<HashMap<String, (AuthenticatedUser, Instant)>> {
     static CACHE: OnceLock<RwLock<HashMap<String, (AuthenticatedUser, Instant)>>> = OnceLock::new();
     CACHE.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-pub(super) fn cached_user(email: &str) -> Option<AuthenticatedUser> {
-    get_fresh(user_cache(), &email.to_string())
+pub(super) fn cached_user(key: &str) -> Option<AuthenticatedUser> {
+    get_fresh(user_cache(), &key.to_string())
 }
 
-pub(super) fn set_cached_user(email: String, user: AuthenticatedUser) {
-    insert_with_sweep(user_cache(), email, user);
+pub(super) fn set_cached_user(key: String, user: AuthenticatedUser) {
+    insert_with_sweep(user_cache(), key, user);
 }
 
 // Org-membership caching now lives in `custom_apps_auth` alongside the

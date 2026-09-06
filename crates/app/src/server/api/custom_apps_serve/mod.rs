@@ -36,7 +36,7 @@
 //!
 //! | Step | Cache |
 //! | ---- | ----- |
-//! | user by email | `custom_apps_cache::cached_user` |
+//! | user, keyed by `custom_apps_auth::user_cache_key` (id; address only for a provider identity) | `custom_apps_cache::cached_user` |
 //! | access check `(user_id, app_id)` | `custom_apps_auth`, dropped by `invalidate_access_cache` |
 //! | platform standing | `oxy_server_authz::globals` |
 //! | org-by-slug + app-by-`(org_id, slug)` | `custom_apps_cache::cached_app_resolution` |
@@ -255,9 +255,11 @@ pub(crate) async fn serve_pretty(
         }
     };
 
-    // User lookup is cached by email — without this, every Next.js asset
-    // request triggers a fresh `users` table query.
-    let cache_key = identity.email.to_ascii_lowercase();
+    // User lookup is cached — without this, every asset request triggers a
+    // fresh `users` table query. Keyed by who the credential NAMES, not by its
+    // email claim: a frontline worker's claim is empty, and an email key put
+    // every worker in one slot. See `custom_apps_auth::user_cache_key`.
+    let cache_key = super::custom_apps_auth::user_cache_key(&identity);
     let user = if let Some(u) = cached_user(&cache_key) {
         u
     } else {

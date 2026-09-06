@@ -139,7 +139,7 @@ pub async fn user_can_access_app(
         // lock its own staff out of its app. Mirrors `Ring::AppAccess` in
         // `oxy-authz`, which states the same rule; this is the shipped gate that
         // ring is differenced against.
-        if app.is_restricted() {
+        let member = if app.is_restricted() {
             // A grant NARROWS the org — it is not a way into one. Without the
             // org-membership conjunction, a grant row let a non-member load the
             // app's shell while `check_custom_app_gates` (which requires org
@@ -150,7 +150,24 @@ pub async fn user_can_access_app(
                 || is_org_officer(db, user_id, app.org_id).await?
         } else {
             is_org_member(db, user_id, app.org_id).await?
-        }
+        };
+        // The crew. A frontline worker is not an org member and never will be —
+        // `enroll_worker` writes `users.email = NULL` to keep them out of every
+        // email-keyed path — so without this term every branch above is false for
+        // them and the app they were enrolled to use answered 403 to its shell
+        // and to every function behind it. The data-plane gate admitted them and
+        // the model (`Ring::AppAccess`'s frontline term) admitted them; this, the
+        // gate every app-keyed surface calls, was the one that did not.
+        //
+        // Standing AND a grant, restricted or not: an org-visible app is visible
+        // to org MEMBERS, and a worker is deliberately not one. Standing first —
+        // a primary-key read on `org_frontline_members`, false for everyone who
+        // is not a worker, so the grant lookup runs only for the crew.
+        member
+            || (oxy_auth::frontline::is_active_frontline(db, app.org_id, user_id)
+                .await
+                .map_err(|e| DbErr::Custom(e.to_string()))?
+                && has_app_grant(db, user_id, app.id).await?)
     } else {
         false
     };
@@ -492,6 +509,27 @@ pub(crate) struct AuthOutcome {
     pub is_staff: bool,
 }
 
+/// The key the per-request user cache is kept under: **who the credential
+/// names**, falling back to the address it carries only when it names nobody.
+///
+/// It was the lowercased email string. A session JWT resolves by `sub`, not by
+/// its email claim, and a frontline worker's claim is `""` — `users.email` is
+/// NULL for the crew — so every worker in every org shared ONE cache slot. The
+/// first worker to invoke a function was handed back for every kiosk request
+/// in the next 60 seconds: Sam's PIN, Maria's `ctx.user.id`, name and
+/// `appRole`, in every log line and audit row. Invisible while
+/// [`user_can_access_app`] refused workers outright; the day it admitted them
+/// this became the first thing they hit.
+///
+/// A provider identity (Google, Okta, magic link) has no id yet and one real
+/// address, so the address is the right key there and stays so.
+pub(crate) fn user_cache_key(identity: &oxy_auth::types::Identity) -> String {
+    match identity.user_id {
+        Some(id) => id.to_string(),
+        None => identity.email.to_ascii_lowercase(),
+    }
+}
+
 /// Authenticate the request and confirm the caller has access to
 /// (org, app). Returns the app row + user info on success; an HTTP
 /// status on any failure.
@@ -507,8 +545,8 @@ pub(crate) async fn authenticate_and_authorize(
         .await
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
-    let email_key = identity.email.to_ascii_lowercase();
-    let user = if let Some(u) = cached_user(&email_key) {
+    let cache_key = user_cache_key(&identity);
+    let user = if let Some(u) = cached_user(&cache_key) {
         u
     } else {
         let u = UserService::find_user_by_identity(&identity)
@@ -518,7 +556,7 @@ pub(crate) async fn authenticate_and_authorize(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?
             .ok_or(StatusCode::UNAUTHORIZED)?;
-        set_cached_user(email_key, u.clone());
+        set_cached_user(cache_key, u.clone());
         u
     };
 
@@ -759,5 +797,51 @@ mod tests {
             legacy_only_emails(Some("staff@oxy.tech,ops@oxy.tech"), None),
             vec!["ops@oxy.tech".to_string(), "staff@oxy.tech".to_string()]
         );
+    }
+}
+
+#[cfg(test)]
+mod user_cache_key_tests {
+    use super::user_cache_key;
+    use oxy_auth::types::Identity;
+    use uuid::Uuid;
+
+    fn session(user_id: Uuid, email: &str) -> Identity {
+        Identity {
+            user_id: Some(user_id),
+            email: email.into(),
+            name: None,
+            picture: None,
+        }
+    }
+
+    #[test]
+    fn two_workers_with_no_address_do_not_share_a_slot() {
+        // The bug: both of these keyed to "" and the second kiosk got the first
+        // worker's identity for a minute.
+        let maria = session(Uuid::from_u128(1), "");
+        let sam = session(Uuid::from_u128(2), "");
+        assert_ne!(user_cache_key(&maria), user_cache_key(&sam));
+        assert_eq!(user_cache_key(&maria), Uuid::from_u128(1).to_string());
+    }
+
+    #[test]
+    fn a_session_is_keyed_by_who_it_names_even_with_an_address() {
+        // The id is the stronger key for everyone: an address can be re-cased,
+        // an id cannot collide.
+        let a = session(Uuid::from_u128(3), "Nia@Example.com");
+        let b = session(Uuid::from_u128(3), "nia@example.com");
+        assert_eq!(user_cache_key(&a), user_cache_key(&b));
+    }
+
+    #[test]
+    fn a_provider_identity_keys_by_its_lowercased_address() {
+        let google = Identity {
+            user_id: None,
+            email: "Nia@Example.com".into(),
+            name: None,
+            picture: None,
+        };
+        assert_eq!(user_cache_key(&google), "nia@example.com");
     }
 }

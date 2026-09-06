@@ -63,11 +63,12 @@ pub async fn load_principal_facts(
 /// As [`load_principal_facts`], but `include_workspace_facts = false` skips the
 /// `workspace_members` query that only the WorkspaceAdmin ring reads.
 ///
-/// This exists for the custom-app data plane, which enforces AppAccess on the query
-/// hot path (`oxy-customer-apps-perf`): AppAccess reads member_orgs, is_global_admin
-/// and develop_apps_orgs only, so paying for the workspace-override lookup on every
-/// query would be pure waste. One function with a flag, rather than a second loader
-/// that could drift from this one.
+/// This exists for the custom-app data plane, which enforces `WorkspaceDataAccess`
+/// on the query hot path (`oxy-customer-apps-perf`): that ring reads the org sets,
+/// the platform and partner standings, and the two frontline facts — never the
+/// workspace override — so paying for that lookup on every query would be pure
+/// waste. One function with a flag, rather than a second loader that could drift
+/// from this one.
 pub async fn load_principal_facts_scoped(
     db: &DatabaseConnection,
     user_id: Uuid,
@@ -121,6 +122,14 @@ pub async fn load_principal_facts_scoped(
     // default: an unreadable standing is UNKNOWN, and collapsing unknown to
     // "not frontline" would deny a worker mid-shift over a database blip.
     let frontline_orgs = load_frontline_orgs(db, user_id).await?;
+    // Only a worker can use this fact, so only a worker pays for the join. For
+    // everyone else it is an empty Vec, and `Ring::WorkspaceData` never reads it
+    // without frontline standing beside it anyway.
+    let frontline_workspace_grants = if frontline_orgs.is_empty() {
+        Vec::new()
+    } else {
+        load_frontline_workspace_grants(db, user_id).await?
+    };
 
     Some(PrincipalFacts {
         user_id,
@@ -132,6 +141,7 @@ pub async fn load_principal_facts_scoped(
         app_memberships,
         app_admin_memberships,
         frontline_orgs,
+        frontline_workspace_grants,
         platform: standing.grant,
         is_global_owner: standing.flags.is_global_owner,
     })
@@ -299,9 +309,10 @@ async fn load_app_memberships(
 /// Orgs where this user is an **active** frontline worker.
 ///
 /// Loaded on both paths, like `load_app_memberships` and for the same reason:
-/// the only ring that reads it is `AppAccess`, which is exactly what the scoped
-/// (custom-app hot path) caller enforces. Skipping it there would deny a
-/// frontline worker the app they were enrolled to use.
+/// the rings that read it — `AppAccess` for the app, `WorkspaceData` for the
+/// data plane behind it — are exactly what the scoped (custom-app hot path)
+/// callers enforce. Skipping it there would deny a frontline worker the app they
+/// were enrolled to use.
 ///
 /// `status = 'active'` is in the QUERY, not a later filter. A suspended worker
 /// must produce no fact at all — a row that reaches [`allows`] and is discarded
@@ -322,6 +333,55 @@ async fn load_frontline_orgs(db: &DatabaseConnection, user_id: Uuid) -> Option<V
         })
         .ok()?;
     Some(rows.into_iter().map(|r| r.org_id).collect())
+}
+
+/// Workspaces from which an app this user holds an `app_members` row on was
+/// published — the fact `Ring::WorkspaceData` reads for a frontline worker.
+///
+/// The custom-app data plane is keyed by workspace and a worker's grant by app,
+/// and this is the join between them, derived ONCE here rather than re-decided
+/// in the gate. `check_custom_app_gates` used to hand the ring a workspace id as
+/// if it were an app id, so the ring could never see a worker's grant and the
+/// gate grew an exemption that skipped the model for them; this fact is what
+/// lets the conjunction hold instead.
+///
+/// Direct rows only. A team grant cannot reach a worker — `add_team_member`
+/// rejects anyone without an `org_members` row, which a worker never holds — so
+/// the union [`load_app_memberships`] performs is empty here by construction.
+/// If team membership is ever opened to workers, this is the second place that
+/// must learn about it (the first is `frontline_worker_with_app_grant`).
+///
+/// `None` = the query errored: unknown, not empty, for the same reason as every
+/// other set here.
+async fn load_frontline_workspace_grants(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+) -> Option<Vec<Uuid>> {
+    use sea_orm::{JoinType, QuerySelect, RelationTrait};
+    AppMembers::find()
+        .select_only()
+        .column(entity::apps::Column::ProjectId)
+        .distinct()
+        .join(
+            JoinType::InnerJoin,
+            entity::app_members::Relation::Apps.def(),
+        )
+        .filter(entity::app_members::Column::UserId.eq(user_id))
+        // Published apps only, as `user_can_access_app` requires of every
+        // customer — a grant on a draft is not reach into the workspace.
+        .filter(entity::apps::Column::PublishedAt.is_not_null())
+        .into_tuple::<Uuid>()
+        .all(db)
+        .await
+        .map_err(|e| {
+            tracing::warn!(
+                target: "authz",
+                error = %e,
+                user = %user_id,
+                "frontline workspace grant lookup failed — facts are unknown, not empty"
+            );
+        })
+        .ok()
 }
 
 /// Every `app_team_grants` row reachable from the user's team memberships.

@@ -51,7 +51,7 @@ the fact is missing from `PrincipalFacts`, not that the crate needs a connection
 
 Rings, briefly: `Read` · `MemberStrict` · `OrgAdmin` · `OrgAdminStrict` · `OwnerOnly` ·
 `OrgAdminOrCreator` · `WorkspaceAdmin` · `WorkspaceAdminStrict` · `WorkspaceEdit` ·
-`AppAccess` · `AppAdmin` · `AppGrant` · `PartnerCap` · `PlatformAny` · `PlatformCap` ·
+`AppAccess` · `WorkspaceData` · `AppAdmin` · `AppGrant` · `PartnerCap` · `PlatformAny` · `PlatformCap` ·
 `GlobalOwnerOnly`.
 
 ## Staff standing is a grant, not a flag

@@ -49,10 +49,21 @@ export default async function notify(
 ): Promise<Response> {
   const { name } = JSON.parse(req.body || "{}") as NotifyBody;
 
+  // `ctx.user.email` is `string | null`: a frontline worker — enrolled by PIN
+  // on a shared device — has no mailbox, and the platform stores none rather
+  // than inventing one. Say so, rather than handing the sender a null.
+  const to = ctx.user.email;
+  if (to === null) {
+    return Response.json(
+      { error: "the caller has no email address, so there is nobody to send to" },
+      { status: 400 }
+    );
+  }
+
   const { messageId } = await ctx.email.send({
-    to: ctx.user.email,
+    to,
     subject: "Welcome!",
-    html: render(Welcome, { name: name || ctx.user.email }),
+    html: render(Welcome, { name: name || to }),
     // ATTACHMENTS — `encoding` says how to read `content`, and the right value
     // depends on where the bytes came from:
     //

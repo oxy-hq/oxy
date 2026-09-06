@@ -95,17 +95,35 @@ pub enum Action {
     /// least workspace Member (overrides only elevate), so this is effectively any
     /// member of the workspace's org, plus a managing partner or global operator.
     WorkspaceEdit,
-    /// Access a custom app's DATA plane (`check_custom_app_gates`): a real member
-    /// of the app's org, an Oxy global admin, or a partner operator whose ceiling
-    /// grants `develop_apps`. Deliberately NOT the general "manage" partner path —
-    /// develop_apps is the read-the-app's-data capability, distinct from manage_apps.
+    /// Open a custom app, **by app id** (`user_can_access_app` — every surface that
+    /// has the `apps` row in hand): a real member of the app's org, an Oxy global
+    /// admin, or a partner operator whose ceiling grants `develop_apps`.
+    /// Deliberately NOT the general "manage" partner path — develop_apps is the
+    /// read-the-app's-data capability, distinct from manage_apps.
     ///
     /// When the app is **restricted** (`apps.visibility = 'members'`), plain org
     /// membership no longer suffices — the principal must hold an `app_members`
     /// row, or be an org officer (owner/admin) / staff / a develop_apps partner.
     /// That is the one place in this model where a fact SUBTRACTS reach rather
     /// than adding it.
+    ///
+    /// The workspace-keyed data plane behind an app is [`Self::WorkspaceDataAccess`],
+    /// a different resource: do not hand this ring a workspace id.
     AppAccess,
+    /// Reach a workspace's custom-app **data plane** (`check_custom_app_gates`):
+    /// every route under `/customer-apps/{workspace}/…` — SQL and semantic queries,
+    /// agent asks, automation runs, threads, activity. Keyed on a WORKSPACE, not an
+    /// app, because what it serves is workspace data shared by every app published
+    /// from that workspace; there is no app id on the wire to restrict by.
+    ///
+    /// Same reach as [`Self::AppAccess`] on an unrestricted app — an org member,
+    /// Oxy staff with `develop_apps`, a `develop_apps` partner — plus a **frontline
+    /// worker** holding a grant on ANY app published from this workspace. That last
+    /// term is why this is its own action rather than `AppAccess` with a workspace
+    /// id: the frontline grant is per app, and a ring asked about a workspace could
+    /// never find it. (It was asked exactly that for a while, and the gate grew an
+    /// exemption that skipped the model for workers. This is the model's answer.)
+    WorkspaceDataAccess,
     /// Administer a custom app from *inside* the app — its privileged surface
     /// (e.g. the warehouse app's `?view=admin` and the data behind it). Any org
     /// **officer** (owner or admin), an `app_members` row with `role = 'admin'`,
@@ -256,7 +274,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 39] = [
+    pub const ALL: [Action; 40] = [
         Action::OrgRead,
         Action::ManageLocations,
         Action::ManageOrgRoles,
@@ -269,6 +287,7 @@ impl Action {
         Action::WorkspaceManage,
         Action::WorkspaceEdit,
         Action::AppAccess,
+        Action::WorkspaceDataAccess,
         Action::AppAdmin,
         Action::AppAccessManage,
         Action::WorkspaceRename,
@@ -315,6 +334,7 @@ impl Action {
             Action::WorkspaceManage => "workspace_manage",
             Action::WorkspaceEdit => "workspace_edit",
             Action::AppAccess => "app_access",
+            Action::WorkspaceDataAccess => "workspace_data_access",
             Action::AppAdmin => "app_admin",
             Action::AppAccessManage => "app_access_manage",
             Action::WorkspaceRename => "workspace_rename",
@@ -359,6 +379,7 @@ impl Action {
             Action::WorkspaceManage => Ring::WorkspaceAdmin,
             Action::WorkspaceEdit => Ring::WorkspaceEdit,
             Action::AppAccess => Ring::AppAccess,
+            Action::WorkspaceDataAccess => Ring::WorkspaceData,
             Action::AppAdmin => Ring::AppAdmin,
             Action::AppAccessManage => Ring::AppGrant,
             Action::WorkspaceRename | Action::NamespaceDelete => Ring::OrgAdminOrCreator,
@@ -844,15 +865,22 @@ enum Ring {
     /// org member resolves to ≥ Member; overrides only elevate), a managing partner,
     /// or a global operator (the `WorkspaceEditor` guard).
     WorkspaceEdit,
-    /// Customer-app data plane: a real member of the app's org, a global admin, or a
-    /// partner with `develop_apps` over the org (`check_custom_app_gates`). NOT the
-    /// coarse managed-partner path, and NOT global owner (the check uses app-admin).
+    /// A custom app, by id (`user_can_access_app`): a real member of the app's org, a
+    /// global admin, or a partner with `develop_apps` over the org. NOT the coarse
+    /// managed-partner path, and NOT global owner (the check uses app-admin).
     ///
     /// Conditional on `resource.app_restricted`: a restricted app drops the plain
     /// org-membership term and demands a grant (org officers + staff +
     /// develop_apps partner remain). The grant is ANDed with org membership, so a
-    /// grant is a filter on the org, never a way into it.
+    /// grant is a filter on the org, never a way into it. A frontline worker enters
+    /// only through a grant, restricted or not.
     AppAccess,
+    /// A workspace's custom-app data plane (`check_custom_app_gates`): the
+    /// unrestricted [`Self::AppAccess`] reach — member, develop_apps staff or
+    /// partner — plus a frontline worker holding a grant on an app published from
+    /// this workspace. Nothing here can be restricted: the resource is a workspace,
+    /// and visibility is a property of an app.
+    WorkspaceData,
     /// A custom app's own privileged surface: any org officer (owner/admin), an
     /// `app_members` admin row, or Oxy staff. No partner term — see
     /// [`Action::AppAdmin`].
@@ -1094,12 +1122,23 @@ pub struct PrincipalFacts {
     /// A frontline worker is enrolled by PIN on a shared device; giving them
     /// org membership would hand them Airhouse settings and, through
     /// `EffectiveWorkspaceRole`, Databases and Secrets. So this set appears in
-    /// exactly ONE ring ([`Ring::AppAccess`]), always ANDed with an explicit
-    /// `app_members` grant, and never as a substitute for `member_orgs`.
+    /// exactly TWO rings — [`Ring::AppAccess`], ANDed with an `app_members` grant
+    /// on the app, and [`Ring::WorkspaceData`], ANDed with
+    /// [`Self::frontline_workspace_grants`] — and never as a substitute for
+    /// `member_orgs`.
     ///
     /// Empty for every principal who signed in with an email address.
     /// See `internal-docs/frontline-identity.md`.
     pub frontline_orgs: Vec<Uuid>,
+    /// Workspaces from which an app the principal holds an `app_members` row on was
+    /// published. Read by exactly one ring, [`Ring::WorkspaceData`], and only for a
+    /// principal in [`Self::frontline_orgs`]: the data plane is keyed by workspace
+    /// and a worker's grant by app, and this is the join between them, derived once
+    /// by the loader rather than re-decided at the gate.
+    ///
+    /// Empty for everyone who is not a frontline worker — a member reaches the data
+    /// plane through `member_orgs` and never needs it.
+    pub frontline_workspace_grants: Vec<Uuid>,
     /// Apps where the principal's `app_members` row is `role = 'admin'`. A subset
     /// of [`Self::app_memberships`]; gates [`Ring::AppAdmin`].
     pub app_admin_memberships: Vec<Uuid>,
@@ -1267,6 +1306,23 @@ pub fn allows(facts: &PrincipalFacts, action: Action, resource: &Resource) -> bo
                 // Unrestricted (the default): unchanged — any member of the org.
                 unconditional || in_org(&facts.member_orgs)
             }
+        }
+        // The workspace-keyed data plane. Same reach as an UNRESTRICTED app —
+        // there is no app id on the wire, so nothing here can be restricted —
+        // plus the one principal `AppAccess` can only see per app: a frontline
+        // worker, admitted to a workspace's data because they hold a grant on an
+        // app published from it.
+        //
+        // The frontline term is ANDed with standing, as everywhere: a grant row
+        // outliving a suspension is not access. And the grant fact is keyed by
+        // the WORKSPACE the app was published from, not by the org — a worker
+        // granted one store's app must not reach every workspace in the tenant.
+        Ring::WorkspaceData => {
+            facts.platform_grants(Cap::DevelopApps, resource.org_id)
+                || facts.any_partner_grants(Cap::DevelopApps, resource.org_id)
+                || in_org(&facts.member_orgs)
+                || (in_org(&facts.frontline_orgs)
+                    && facts.frontline_workspace_grants.contains(&resource.id))
         }
         // An org officer (owner or admin) administers every app in the org. The
         // `app_members` admin role extends that DOWNWARD to a non-officer — the
@@ -2154,9 +2210,9 @@ mod policy_tests {
             &Resource::app_with_visibility(app_id, org(), true)
         ));
 
-        // And in the right org, the standing buys NOTHING outside AppAccess.
-        // `frontline_orgs` appears in one ring; if a later change reads it in a
-        // second one, this is what catches it.
+        // And in the right org, the standing buys NOTHING outside the two app
+        // rings (`AppAccess`, and `WorkspaceData` below). If a later change reads
+        // `frontline_orgs` in a third, this is what catches it.
         let worker = PrincipalFacts {
             frontline_orgs: vec![org()],
             app_memberships: vec![app_id],
@@ -2168,6 +2224,63 @@ mod policy_tests {
             Action::AppAdmin,
             &Resource::app(app_id, org())
         ));
+    }
+
+    #[test]
+    fn workspace_data_plane_admits_members_and_granted_workers_only() {
+        let ws = Uuid::from_u128(1201);
+        let next_door = Uuid::from_u128(1202);
+        let app_here = Uuid::from_u128(1203);
+        let here = Resource::workspace(ws, org());
+
+        // A member reaches their org's data plane, and nobody reaches a foreign one.
+        let member = PrincipalFacts {
+            member_orgs: vec![org()],
+            ..facts()
+        };
+        assert!(allows(&member, Action::WorkspaceDataAccess, &here));
+        assert!(!allows(
+            &member,
+            Action::WorkspaceDataAccess,
+            &Resource::workspace(ws, Uuid::from_u128(7))
+        ));
+
+        // A worker granted an app published from THIS workspace: in. The same
+        // worker at the workspace next door: out. The grant is per workspace,
+        // never per org — this is the case the gate used to hand-decide because
+        // the ring, asked about a workspace, could not see an app grant at all.
+        let worker = PrincipalFacts {
+            frontline_orgs: vec![org()],
+            app_memberships: vec![app_here],
+            frontline_workspace_grants: vec![ws],
+            ..facts() // NO member_orgs
+        };
+        assert!(allows(&worker, Action::WorkspaceDataAccess, &here));
+        assert!(!allows(
+            &worker,
+            Action::WorkspaceDataAccess,
+            &Resource::workspace(next_door, org())
+        ));
+
+        // Standing without a grant, and a grant without standing — the rows a
+        // suspended worker leaves behind. Both out; the two facts are ANDed.
+        let standing_only = PrincipalFacts {
+            frontline_orgs: vec![org()],
+            ..facts()
+        };
+        assert!(!allows(&standing_only, Action::WorkspaceDataAccess, &here));
+        let rows_only = PrincipalFacts {
+            app_memberships: vec![app_here],
+            frontline_workspace_grants: vec![ws],
+            ..facts()
+        };
+        assert!(!allows(&rows_only, Action::WorkspaceDataAccess, &here));
+
+        // The workspace fact buys a worker nothing outside this ring: not the
+        // workspace itself, not the org.
+        assert!(!allows(&worker, Action::WorkspaceEdit, &here));
+        assert!(!allows(&worker, Action::WorkspaceManage, &here));
+        assert!(!allows(&worker, Action::OrgRead, &Resource::org(org())));
     }
 
     #[test]

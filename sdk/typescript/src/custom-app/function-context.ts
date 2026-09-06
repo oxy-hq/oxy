@@ -78,8 +78,16 @@ export interface OxyFunctionUser {
    * caller — check {@link kind} before attributing anything to it.
    */
   id: string;
-  /** Their email, or `schedule+<fn>@system.oxy` when {@link kind} is `"system"`. */
-  email: string;
+  /**
+   * Their email; `schedule+<fn>@system.oxy` when {@link kind} is `"system"`; and
+   * **`null` for a frontline worker** — a crew member enrolled by PIN on a shared
+   * device has no mailbox, and the platform stores none rather than inventing
+   * one. That null is the one field that tells the crew from the office inside
+   * a function, because a worker can never hold org membership (see
+   * `orgRole`, which is absent for them too). Treat it as `string | null` in
+   * app logic; it was typed `string` before the crew existed.
+   */
+  email: string | null;
   /**
    * The org that owns this app — the tenant boundary for anything the function
    * reads or writes.

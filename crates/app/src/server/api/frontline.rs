@@ -653,6 +653,11 @@ pub async fn set_standing(
             // access was removed but whose removal went unlogged is bad; leaving
             // their access in place because the logging failed is worse.
             if changed {
+                // `user_can_access_app` caches its verdict per (user, app) for
+                // the app shell and every function invoke; a suspension that
+                // left that entry warm would keep the kiosk working until it
+                // expired. Same call every grant-changing route makes.
+                crate::server::api::custom_apps_auth::invalidate_access_cache();
                 let action = if req.active {
                     "frontline.worker.reinstated"
                 } else {

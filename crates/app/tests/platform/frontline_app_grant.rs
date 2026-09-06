@@ -100,6 +100,9 @@ async fn seed(db: &DatabaseConnection) -> Fx {
             source_type: ActiveValue::Set("git".into()),
             source_config: ActiveValue::Set(serde_json::json!({})),
             visibility: ActiveValue::Set("org".into()),
+            // Published: `user_can_access_app` refuses every customer a draft,
+            // and the third test below drives that gate too.
+            published_at: ActiveValue::Set(Some(chrono::Utc::now().fixed_offset())),
             ..Default::default()
         }
         .insert(db)
@@ -298,5 +301,155 @@ async fn the_directory_names_whoever_can_reach_this_app() {
             .await
             .contains(&"Maria S.".to_string()),
         "a suspended worker must leave the directory too"
+    );
+}
+
+/// The model, fact-loaded from the same rows, agrees with the gate's oracle —
+/// and with the app-keyed gate every function invoke goes through.
+///
+/// This is the differential the data-plane exemption never had. `enforce` is
+/// `existing_allow && allows(..)`, so a ring that cannot see a worker's grant
+/// does not merely fail to narrow — it DENIES, on every healthy request, and the
+/// only way the gate could admit the crew was to skip the model for them.
+/// `Ring::WorkspaceData` reads the fact the loader now derives, and this holds
+/// the two sides to each other for every shape the first test enumerates.
+///
+/// The last assertion in each case is `user_can_access_app`, the gate behind the
+/// app shell and every function invoke. It had NO frontline term: the data plane
+/// admitted a worker and the model admitted a worker, and the one gate the
+/// kiosk actually hits answered 403 to every function in the app they were
+/// enrolled to use.
+#[tokio::test]
+async fn the_model_and_both_gates_agree_about_a_worker() {
+    use oxy_app::server::api::custom_apps_auth::user_can_access_app;
+    use oxy_app::server::authz::{Action, Resource, allows, enforce, loader};
+
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let fx = seed(&db).await;
+
+    let granted = user(&db, "Maria S.", None).await;
+    enrol(&db, fx.org, granted, "active").await;
+    grant(&db, fx.app_a, granted).await;
+    let ungranted = user(&db, "Sam T.", None).await;
+    enrol(&db, fx.org, ungranted, "active").await;
+    let suspended = user(&db, "Gone A.", None).await;
+    enrol(&db, fx.org, suspended, "suspended").await;
+    grant(&db, fx.app_a, suspended).await;
+
+    let cases = [
+        (
+            "granted, own workspace",
+            granted,
+            fx.workspace_a,
+            fx.app_a,
+            true,
+        ),
+        (
+            "granted, workspace next door",
+            granted,
+            fx.workspace_b,
+            fx.app_b,
+            false,
+        ),
+        (
+            "standing, no grant",
+            ungranted,
+            fx.workspace_a,
+            fx.app_a,
+            false,
+        ),
+        (
+            "grant, suspended",
+            suspended,
+            fx.workspace_a,
+            fx.app_a,
+            false,
+        ),
+    ];
+    for (label, who, ws, app, want) in cases {
+        let oracle = frontline_worker_with_app_grant(&db, fx.org, who, ws).await;
+        assert_eq!(oracle, want, "{label}: the gate's own term");
+
+        // "" is what the gate passes for a worker: they have no address.
+        let facts = loader::load_principal_facts_scoped(&db, who, "", false)
+            .await
+            .expect("facts must load for a worker — unknown facts would skip the ring");
+        let resource = Resource::workspace(ws, fx.org);
+        assert_eq!(
+            allows(&facts, Action::WorkspaceDataAccess, &resource),
+            want,
+            "{label}: the model, from the loader's facts"
+        );
+        // The conjunction the gate actually ships. Before this ring it was
+        // `true && false` for the granted case, and the gate skipped it.
+        assert_eq!(
+            enforce(
+                "gate.custom_app",
+                &facts,
+                Action::WorkspaceDataAccess,
+                &resource,
+                oracle
+            ),
+            want,
+            "{label}: enforce"
+        );
+
+        let app_row = apps::Entity::find_by_id(app)
+            .one(&db)
+            .await
+            .expect("query")
+            .expect("seeded app");
+        assert_eq!(
+            user_can_access_app(&db, who, "", &app_row)
+                .await
+                .expect("access check"),
+            want,
+            "{label}: user_can_access_app — the shell and every function invoke"
+        );
+    }
+
+    // A grant on a DRAFT. `user_can_access_app` refuses every customer an
+    // unpublished app; the two frontline joins must draw the same line, or a
+    // worker's grant opens the workspace's data plane while the app's own
+    // shell still refuses to load — access to the data behind a door that is
+    // shut. Unpublish the app the granted worker holds and every answer flips.
+    apps::ActiveModel {
+        id: ActiveValue::Set(fx.app_a),
+        published_at: ActiveValue::Set(None),
+        ..Default::default()
+    }
+    .update(&db)
+    .await
+    .expect("unpublish");
+    assert!(
+        !frontline_worker_with_app_grant(&db, fx.org, granted, fx.workspace_a).await,
+        "a grant on a draft app is not reach into its workspace (gate)"
+    );
+    let facts = loader::load_principal_facts_scoped(&db, granted, "", false)
+        .await
+        .expect("facts");
+    assert!(
+        !allows(
+            &facts,
+            Action::WorkspaceDataAccess,
+            &Resource::workspace(fx.workspace_a, fx.org)
+        ),
+        "a grant on a draft app is not reach into its workspace (model)"
+    );
+    // The app-keyed gate hits the same branch its public counterpart does:
+    // `user_can_access_app` refuses a draft to every customer, workers included.
+    // (`custom_apps_auth` caches a verdict per (user, app) for 60s, so the
+    // cache is cleared first — this is a fresh database but one process.)
+    oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
+    let draft = apps::Entity::find_by_id(fx.app_a)
+        .one(&db)
+        .await
+        .expect("query")
+        .expect("app");
+    assert!(
+        !user_can_access_app(&db, granted, "", &draft)
+            .await
+            .expect("access check"),
+        "a grant on a draft app does not open the app itself"
     );
 }

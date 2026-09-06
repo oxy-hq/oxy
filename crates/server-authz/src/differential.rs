@@ -238,6 +238,12 @@ fn app_id() -> Uuid {
     Uuid::from_u128(950)
 }
 
+/// The workspace `app_id()` was published from — what the data-plane gate is
+/// keyed on, and the only id it has.
+fn ws_id() -> Uuid {
+    Uuid::from_u128(951)
+}
+
 /// One caller shape for the app rings, stated as the raw facts the shipped
 /// checks read, so the oracle below can be written in those terms directly.
 struct AppScenario {
@@ -250,6 +256,10 @@ struct AppScenario {
     is_app_admin: bool,
     has_develop_apps: bool,
     has_manage_apps: bool,
+    /// An active `org_frontline_members` row — and, by construction, NO
+    /// `org_members` row: `enroll_worker` mints a mailbox-less user that no
+    /// email-keyed path can ever make a member.
+    is_frontline: bool,
 }
 
 impl AppScenario {
@@ -264,6 +274,16 @@ impl AppScenario {
             member_orgs: org_set(self.is_org_member || self.is_org_admin || self.is_org_owner),
             app_memberships: app_set(self.is_app_member || self.is_app_admin),
             app_admin_memberships: app_set(self.is_app_admin),
+            frontline_orgs: org_set(self.is_frontline),
+            // As the loader derives it: the workspaces of the apps the worker
+            // holds a grant on, loaded only for a principal with standing.
+            frontline_workspace_grants: if self.is_frontline
+                && (self.is_app_member || self.is_app_admin)
+            {
+                vec![ws_id()]
+            } else {
+                vec![]
+            },
             partners: {
                 let mut caps = Vec::new();
                 if self.has_develop_apps {
@@ -299,6 +319,7 @@ fn app_scenarios() -> Vec<AppScenario> {
         is_app_admin: false,
         has_develop_apps: false,
         has_manage_apps: false,
+        is_frontline: false,
     };
     vec![
         AppScenario {
@@ -357,11 +378,39 @@ fn app_scenarios() -> Vec<AppScenario> {
             is_app_admin: true,
             ..base
         },
+        // The crew. A worker enters ONLY through a grant — the two "no grant"
+        // shapes are what keep an org-visible app from reaching every worker
+        // on a store's roster the day somebody flips it org-wide.
+        AppScenario {
+            name: "frontline worker granted this app",
+            is_frontline: true,
+            is_app_member: true,
+            ..base
+        },
+        AppScenario {
+            name: "frontline worker granted this app as its ADMIN",
+            is_frontline: true,
+            is_app_admin: true,
+            ..base
+        },
+        AppScenario {
+            name: "frontline worker, no grant on this app",
+            is_frontline: true,
+            ..base
+        },
         AppScenario {
             name: "outsider",
             ..base
         },
     ]
+}
+
+/// The oracle every frontline scenario reduces to, in both shipped gates: active
+/// standing AND an explicit grant on the app (`user_can_access_app`), or on an
+/// app published from the workspace (`frontline_worker_with_app_grant`) — which
+/// for a fixture with one app in one workspace is the same row.
+fn frontline_with_grant(s: &AppScenario) -> bool {
+    s.is_frontline && (s.is_app_member || s.is_app_admin)
 }
 
 fn assert_app_ring(action: Action, restricted: bool, oracle: impl Fn(&AppScenario) -> bool) {
@@ -385,7 +434,12 @@ fn app_access_ring_matches_the_shipped_gate_for_an_open_app() {
     // partner term that `check_custom_app_gates` contributes. Unrestricted is
     // today's behavior and must be unchanged by the visibility work.
     assert_app_ring(Action::AppAccess, false, |s| {
-        s.is_staff || s.has_develop_apps || s.is_org_member || s.is_org_admin || s.is_org_owner
+        s.is_staff
+            || s.has_develop_apps
+            || s.is_org_member
+            || s.is_org_admin
+            || s.is_org_owner
+            || frontline_with_grant(s)
     });
 }
 
@@ -404,7 +458,52 @@ fn app_access_ring_matches_the_shipped_gate_for_a_restricted_app() {
             || s.is_org_owner
             || s.is_org_admin
             || (s.is_org_member && (s.is_app_member || s.is_app_admin))
+            || frontline_with_grant(s)
     });
+}
+
+#[test]
+fn workspace_data_ring_matches_the_shipped_data_plane_gate() {
+    // Oracle = `check_custom_app_gates` composed: `is_org_member`, the
+    // develop_apps staff and partner terms, and `frontline_worker_with_app_grant`
+    // — active standing AND a grant on an app published from THIS workspace.
+    //
+    // The resource is the workspace, stated as one. This gate used to hand the
+    // ring `Resource::app(project_id, …)` with a workspace id in the app slot, so
+    // the ring could not see a worker's grant and the gate skipped `enforce` for
+    // them. The three frontline scenarios are the ones that exemption covered;
+    // they now go through the model like everyone else, and this is what holds
+    // the model to the gate.
+    let resource = Resource::workspace(ws_id(), org());
+    for s in app_scenarios() {
+        let expected = s.is_staff
+            || s.has_develop_apps
+            || s.is_org_member
+            || s.is_org_admin
+            || s.is_org_owner
+            || frontline_with_grant(&s);
+        let actual = allows(&s.facts(), Action::WorkspaceDataAccess, &resource);
+        assert_eq!(
+            actual, expected,
+            "ring drift for WorkspaceDataAccess — scenario {:?}: the shipped gate says \
+             {expected}, the model says {actual}",
+            s.name
+        );
+    }
+
+    // And the workspace next door, where none of these apps was published:
+    // every worker is out, every member is still in. The grant is per workspace.
+    let next_door = Resource::workspace(Uuid::from_u128(952), org());
+    for s in app_scenarios() {
+        let expected =
+            s.is_staff || s.has_develop_apps || s.is_org_member || s.is_org_admin || s.is_org_owner;
+        assert_eq!(
+            allows(&s.facts(), Action::WorkspaceDataAccess, &next_door),
+            expected,
+            "scenario {:?} at a workspace holding none of their grants",
+            s.name
+        );
+    }
 }
 
 #[test]
