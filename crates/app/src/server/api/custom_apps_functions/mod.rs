@@ -159,7 +159,8 @@ struct FunctionManifestEntry {
     ///
     /// **Read-only, and deliberately not a contact list.** It answers with
     /// display names and roles — not locations, which the platform does not hold
-    /// for a member, and not frontline workers, who hold no `org_members` row.
+    /// for a member. It DOES include frontline workers holding a grant on this
+    /// app, tagged `kind`, because the directory names whoever can reach the app.
     /// It does not return email addresses or
     /// phone numbers. Naming somebody on a roster is a different need from being
     /// able to message them off-platform, and only the first one is what the

@@ -574,8 +574,13 @@ export interface OxyFunctionContext {
    *
    * For naming a person: an assignee, a roster entry, who submitted something.
    * Returns a display name and a role, and deliberately **no email, no phone,
-   * no location**, and **no frontline workers** (they hold no org-membership
-   * row by design — see the manifest doc).
+   * no location**.
+   *
+   * Who is in it: **people who can reach this app**. Org members, plus frontline
+   * workers holding a grant on this app — `kind` tells them apart, so a caller
+   * that must not name a worker can refuse on the field rather than by
+   * convention. A worker's `role` is `null`: that vocabulary is org membership's
+   * and a worker has none.
    *
    * REQUIRED, like every sibling here — `oltp`, `secrets`, `email`, `storage`,
    * `airway` are all gated and all declared required. The binding is
@@ -587,7 +592,13 @@ export interface OxyFunctionContext {
    */
   org: {
     people(): Promise<{
-      people: Array<{ id: string; name: string; role: string }>;
+      people: Array<{
+        id: string;
+        name: string;
+        /** The org role, or `null` for a frontline worker. */
+        role: string | null;
+        kind: "member" | "frontline";
+      }>;
       total: number;
     }>;
   };

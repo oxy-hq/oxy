@@ -25,6 +25,7 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::common::{Schema, fresh_db};
+use oxy_app::server::api::custom_apps_functions::host::org_directory;
 use oxy_app::server::api::custom_apps_gates::frontline_worker_with_app_grant;
 
 /// One org, two workspaces, one app in each.
@@ -218,4 +219,84 @@ async fn a_worker_reaches_only_the_workspace_they_hold_a_grant_in() {
             "a seeded worker has an org_members row, so this test proves nothing"
         );
     }
+}
+
+/// The directory names people who can reach THIS app, and nobody else.
+///
+/// One rule covering two kinds of principal, so the cases that matter are where
+/// the halves disagree: a worker granted here is in, the SAME worker is out of
+/// the app next door, and suspending them takes them out of both. A plain union
+/// of the two tables passes the first and fails the other two, which is the
+/// version this replaces.
+#[tokio::test]
+async fn the_directory_names_whoever_can_reach_this_app() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let fx = seed(&db).await;
+
+    let office = user(&db, "Nia O.", Some("nia@example.com".into())).await;
+    org_members::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        org_id: ActiveValue::Set(fx.org),
+        user_id: ActiveValue::Set(office),
+        role: ActiveValue::Set(entity::org_members::OrgRole::Member),
+        ..Default::default()
+    }
+    .insert(&db)
+    .await
+    .expect("seed member");
+
+    let crew = user(&db, "Maria S.", None).await;
+    enrol(&db, fx.org, crew, "active").await;
+    grant(&db, fx.app_a, crew).await;
+
+    let ungranted = user(&db, "Sam T.", None).await;
+    enrol(&db, fx.org, ungranted, "active").await;
+
+    async fn names(db: &DatabaseConnection, org: Uuid, app: Uuid) -> Vec<String> {
+        org_directory(db, org, app).await.expect("directory")["people"]
+            .as_array()
+            .expect("people array")
+            .iter()
+            .map(|p| p["name"].as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    let here = names(&db, fx.org, fx.app_a).await;
+    assert!(
+        here.contains(&"Nia O.".to_string()),
+        "an org member must be in it"
+    );
+    assert!(
+        here.contains(&"Maria S.".to_string()),
+        "a worker granted on THIS app must be nameable — an app that cannot name most \
+         of its users grows its own people model, which is what this exists to stop"
+    );
+    assert!(
+        !here.contains(&"Sam T.".to_string()),
+        "a worker with no grant cannot reach this app, so it must not name them"
+    );
+
+    // The app next door: same org, same worker, no grant. This is the case a
+    // plain union gets wrong.
+    let next_door = names(&db, fx.org, fx.app_b).await;
+    assert!(
+        next_door.contains(&"Nia O.".to_string()),
+        "org membership is not per-app"
+    );
+    assert!(
+        !next_door.contains(&"Maria S.".to_string()),
+        "a grant is per-app, so the directory's frontline half must be too"
+    );
+
+    // Suspension removes them here as well as from the login and the kiosk —
+    // one column, and every surface that reads it agrees.
+    oxy_auth::frontline::set_worker_standing(&db, fx.org, crew, false)
+        .await
+        .expect("suspend");
+    assert!(
+        !names(&db, fx.org, fx.app_a)
+            .await
+            .contains(&"Maria S.".to_string()),
+        "a suspended worker must leave the directory too"
+    );
 }

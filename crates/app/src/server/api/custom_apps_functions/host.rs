@@ -873,14 +873,23 @@ impl FunctionHost for ProjectFunctionHost {
     /// member, and the only place one exists is an app's own `staff` table, so
     /// promising one here would be a field this query cannot fill.
     ///
-    /// # Who is NOT in it, and it matters
+    /// # Who is in it
     ///
-    /// A FRONTLINE worker. This reads `org_members`, and a worker deliberately
-    /// holds no such row — that is the whole point of the frontline design. So
-    /// an app that enrols workers and then asks for its people gets the org's
-    /// staff and none of its crew. Closing that means unioning
-    /// `org_frontline_members`, which is a deliberate widening of what a bundle
-    /// can see and wants deciding rather than assuming.
+    /// **People who can reach this app** — one rule, both halves. Org members,
+    /// who reach an org-visible app by membership; and frontline workers holding
+    /// an explicit `app_members` grant on this app, which is already the only
+    /// way a worker reaches anything.
+    ///
+    /// Each carries `kind: "member" | "frontline"`, and that field is the point:
+    /// a caller that must not name a worker — a document's approver, say — can
+    /// refuse structurally instead of by convention, and one that should name
+    /// them (a submission's author, a roster row) does not have to make a second
+    /// call and union it themselves. Two callers unioning by hand is how two
+    /// people models start, which is the thing this capability exists to end.
+    ///
+    /// It is not a widening: every name here belongs to somebody who can already
+    /// USE the app. A suspended worker is out, by the same column the login and
+    /// the kiosk roster read.
     ///
     /// Being able to NAME a colleague is a different need
     /// from being able to contact them off-platform, and only the first was
@@ -898,33 +907,7 @@ impl FunctionHost for ProjectFunctionHost {
                     .to_string(),
             );
         }
-        use entity::{org_members, users};
-        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
-
-        let rows = org_members::Entity::find()
-            .filter(org_members::Column::OrgId.eq(self.org_id))
-            .find_also_related(users::Entity)
-            .order_by_asc(org_members::Column::UserId)
-            .all(&self.db)
-            .await
-            .map_err(|e| format!("ctx.org.people: {e}"))?;
-
-        let people: Vec<serde_json::Value> = rows
-            .into_iter()
-            .filter_map(|(m, u)| {
-                // A membership whose user row is missing is data drift, not a
-                // person. Dropped rather than emitted with a null name, because
-                // a directory entry nobody can be is worse than a shorter list.
-                let u = u?;
-                Some(serde_json::json!({
-                    "id": u.id.to_string(),
-                    "name": u.name,
-                    "role": m.role.as_str(),
-                }))
-            })
-            .collect();
-
-        Ok(serde_json::json!({ "people": people, "total": people.len() }))
+        org_directory(&self.db, self.org_id, self.app_id).await
     }
 
     async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
@@ -1961,4 +1944,104 @@ mod tests {
         .expect_err("a missing Parquet must be an error");
         assert!(!err.is_empty());
     }
+}
+
+/// The people directory, as a free function so it can be tested.
+///
+/// `ProjectFunctionHost` needs a project context, connectors and a workspace to
+/// construct; this needs a database, an org and an app. Splitting them is what
+/// lets the scoping rule — the part with a decision in it — be driven against a
+/// real database without standing up an isolate.
+pub async fn org_directory(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+    app_id: Uuid,
+) -> Result<serde_json::Value, String> {
+    use entity::{app_members, org_frontline_members, org_members, users};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+
+    let members = org_members::Entity::find()
+        .filter(org_members::Column::OrgId.eq(org_id))
+        .find_also_related(users::Entity)
+        .order_by_asc(org_members::Column::UserId)
+        .all(db)
+        .await
+        .map_err(|e| format!("ctx.org.people: {e}"))?;
+
+    let mut people: Vec<serde_json::Value> = members
+        .into_iter()
+        .filter_map(|(m, u)| {
+            // A membership whose user row is missing is data drift, not a
+            // person. Dropped rather than emitted with a null name, because
+            // a directory entry nobody can be is worse than a shorter list.
+            let u = u?;
+            Some(serde_json::json!({
+                "id": u.id.to_string(),
+                "name": u.name,
+                "role": m.role.as_str(),
+                "kind": "member",
+            }))
+        })
+        .collect();
+
+    // Frontline workers who hold a grant on THIS app.
+    //
+    // The first version returned org members only, and for a store-ops app
+    // that named the office and not the shop floor — the crew are frontline
+    // workers, who hold no `org_members` row by design. An app that could
+    // not name most of the people using it was going to grow its own people
+    // model, which is the fiction this capability exists to end.
+    //
+    // Scoped by REACHABILITY, and that is what makes it not a widening. The
+    // rule is one sentence for both halves: **the directory names people who
+    // can reach this app.** For office staff that is org membership; for a
+    // worker it is the explicit `app_members` grant, which is already the
+    // only way they reach anything — `Ring::AppAccess` ANDs their standing
+    // with it. So every name returned belongs to somebody who can already
+    // use the app, and an app that serves you can name you.
+    //
+    // Consequence worth knowing: two apps in one org see different frontline
+    // slices, because they have different grants. That is correct — a grant
+    // is per-app — and it will surprise anybody expecting "the org's people".
+    let workers = org_frontline_members::Entity::find()
+        .filter(org_frontline_members::Column::OrgId.eq(org_id))
+        // Suspension is what takes a worker out of the directory, the same
+        // column the login and the kiosk roster read. One switch, four
+        // behaviours.
+        .filter(org_frontline_members::Column::Status.eq("active"))
+        .find_also_related(users::Entity)
+        .order_by_asc(org_frontline_members::Column::UserId)
+        .all(db)
+        .await
+        .map_err(|e| format!("ctx.org.people: {e}"))?;
+
+    if !workers.is_empty() {
+        let granted: std::collections::HashSet<uuid::Uuid> = app_members::Entity::find()
+            .filter(app_members::Column::AppId.eq(app_id))
+            .all(db)
+            .await
+            .map_err(|e| format!("ctx.org.people: {e}"))?
+            .into_iter()
+            .map(|g| g.user_id)
+            .collect();
+
+        people.extend(workers.into_iter().filter_map(|(w, u)| {
+            let u = u?;
+            if !granted.contains(&w.user_id) {
+                return None;
+            }
+            Some(serde_json::json!({
+                "id": u.id.to_string(),
+                "name": u.name,
+                // `role` is the org-membership vocabulary and a worker has
+                // none, so it is null rather than an invented "worker" that
+                // would sort beside owner/admin/member as if it were one.
+                // `kind` is where the distinction lives.
+                "role": serde_json::Value::Null,
+                "kind": "frontline",
+            }))
+        }));
+    }
+
+    Ok(serde_json::json!({ "people": people, "total": people.len() }))
 }

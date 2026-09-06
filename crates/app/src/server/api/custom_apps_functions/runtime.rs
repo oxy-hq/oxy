@@ -1323,8 +1323,9 @@ globalThis.__buildCtx = (ctxData) => ({
   org: {
     // people() — who is in this org, by name. Read-only, and NOT a contact
     // list: a display name and a role, never an email or a phone. No location —
-    // the platform holds none for a member. Frontline workers are NOT included;
-    // see the host handler.
+    // the platform holds none for a member. Includes frontline workers granted
+    // to THIS app, tagged `kind: "frontline"`; see the host handler for why the
+    // scope is per-app.
     // Naming a colleague is a different need from being able to message them,
     // and only the first one was blocking anything.
     people: () => __wrapOp("op_ctx_org_people")(),
