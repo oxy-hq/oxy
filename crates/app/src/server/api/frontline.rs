@@ -32,6 +32,8 @@ use axum::response::IntoResponse;
 use axum::{Json, http::header};
 use entity::{org_frontline_members, organizations, user_credentials, users};
 use oxy::database::client::establish_connection;
+use oxy_app_core::audit;
+use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_auth::frontline::{self, KIND_PIN, PinPolicy, PinVerdict};
 use oxy_shared::errors::OxyError;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
@@ -589,6 +591,122 @@ pub async fn enrol(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({ "error": "could not enrol the worker" })),
+            )
+                .into_response()
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct StandingRequest {
+    /// `false` suspends, `true` reinstates.
+    pub active: bool,
+}
+
+/// Suspend a frontline worker, or reinstate one.
+///
+/// The other half of enrolment, and it was missing: a worker could be enrolled
+/// and never un-enrolled. The `status` column has modelled `suspended` since the
+/// schema landed and nothing wrote it, so the door opened one way — which I
+/// found by enrolling a test worker into a demo org and having no way to remove
+/// them.
+///
+/// `PATCH`, not `DELETE`, because nothing is deleted. A worker who leaves keeps
+/// their row so the work they did stays attributed; suspension is what takes
+/// away the ability to sign in. `verify_pin` and the roster read the same
+/// column, so one write closes the door on both the login and the name picker.
+///
+/// Idempotent. Suspending an already-suspended worker answers 200 with
+/// `changed: false` rather than 409 — the caller asked for a state and that is
+/// the state, and making a retry look like a conflict is how a client learns to
+/// ignore the status code.
+#[instrument(skip_all, fields(org = %org_id, worker = %user_id))]
+pub async fn set_standing(
+    OrgAdmin(ctx): OrgAdmin,
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+    Path((org_id, user_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<StandingRequest>,
+) -> impl IntoResponse {
+    let Ok(db) = establish_connection().await else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database unavailable" })),
+        )
+            .into_response();
+    };
+
+    match frontline::set_worker_standing(&db, org_id, user_id, req.active).await {
+        Ok(changed) => {
+            // "Who cut this worker off, and when."
+            //
+            // The neighbouring route in this same router writes
+            // `org.member.removed` under a comment reading "Losing access is as
+            // auditable as gaining it" — and suspension IS losing access. This
+            // route shipped with a `tracing::info!` carrying no actor at all, so
+            // once logs rolled the answer was unrecoverable.
+            //
+            // Only on a real change: an idempotent no-op is not an event, and an
+            // audit log that records every retry is one nobody reads.
+            //
+            // Best-effort, like its neighbour: failing to write the trail must
+            // not fail a revocation that has already happened. A worker whose
+            // access was removed but whose removal went unlogged is bad; leaving
+            // their access in place because the logging failed is worse.
+            if changed {
+                let action = if req.active {
+                    "frontline.worker.reinstated"
+                } else {
+                    "frontline.worker.suspended"
+                };
+                audit::record_best_effort(
+                    &db,
+                    audit::AuditEntry::new(actor.label().to_string(), action)
+                        .actor(actor.id, audit::ActorType::User)
+                        .org(ctx.org.id)
+                        .target("frontline_worker", user_id.to_string(), String::new())
+                        .change(
+                            serde_json::json!({ "active": !req.active }),
+                            serde_json::json!({ "active": req.active }),
+                        ),
+                )
+                .await;
+            }
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "user_id": user_id,
+                    "active": req.active,
+                    // What the statement DID, not what was asked for. The two differ
+                    // exactly when the worker was already in that state, and a
+                    // caller reconciling a roster needs to tell those apart.
+                    "changed": changed,
+                })),
+            )
+                .into_response()
+        }
+        // Same split as enrolment: the admin's mistake carries its sentence,
+        // everything else is ours and says nothing about the database.
+        Err(OxyError::ValidationError(msg)) => {
+            warn!(%org_id, "frontline standing refused: {msg}");
+            // 404 for THIS refusal, matched by name — 400 for any other.
+            //
+            // Blanket-mapping the variant was right while the writer had exactly
+            // one validation, and would have quietly reported the next one — a
+            // bad status, a self-suspend guard — as "worker not found". Same
+            // reasoning as `enrol` matching `IDENTIFIER_TAKEN` rather than a
+            // literal: the two sides agree on a name so they cannot drift.
+            let status = if msg == frontline::WORKER_NOT_FOUND {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (status, Json(serde_json::json!({ "error": msg }))).into_response()
+        }
+        Err(e) => {
+            error!(%org_id, error = %e, "frontline standing failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "could not change the worker's standing" })),
             )
                 .into_response()
         }

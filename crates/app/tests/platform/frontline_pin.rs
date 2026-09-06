@@ -311,3 +311,133 @@ async fn a_pin_is_scoped_to_one_org() {
         PinVerdict::Ok { user_id: b }
     );
 }
+
+/// Suspension takes away the sign-in and leaves the history.
+///
+/// The writer this pins is the one the model never had: `status` has modelled
+/// `suspended` since the schema landed and nothing wrote it, so a worker could
+/// be enrolled and never un-enrolled. I found that by enrolling a test worker
+/// into a demo org and having no way to remove them.
+///
+/// What makes it worth a real database rather than a unit test is that ONE
+/// column change is supposed to produce three behaviours — the login refuses,
+/// it refuses in a particular way, and the user row survives — and none of those
+/// is visible from the writer itself.
+#[tokio::test]
+async fn a_suspended_worker_cannot_sign_in_and_is_not_deleted() {
+    let db = setup_db().await;
+    let org = seed_org(&db).await;
+    let user_id = frontline::enroll_worker(&db, org, "Gone A.", "gone.a", "4821", policy())
+        .await
+        .expect("enrol");
+
+    // Signs in before, or the rest of this proves nothing.
+    assert_eq!(
+        frontline::verify_pin(&db, org, "gone.a", "4821", policy())
+            .await
+            .expect("verify"),
+        PinVerdict::Ok { user_id }
+    );
+
+    assert!(
+        frontline::set_worker_standing(&db, org, user_id, false)
+            .await
+            .expect("suspend"),
+        "suspending an active worker must report that the row moved"
+    );
+
+    // The RIGHT PIN, and it must not work — and must not admit it is right.
+    // A suspended worker is a former employee; confirming their PIN is still
+    // correct is exactly the wrong thing to tell whoever holds the tablet.
+    assert_eq!(
+        frontline::verify_pin(&db, org, "gone.a", "4821", policy())
+            .await
+            .expect("verify"),
+        PinVerdict::NoSuchWorker,
+        "a suspended worker must be indistinguishable from one who never existed"
+    );
+
+    // The person is still there. Their submissions and findings point at this
+    // id, and losing the row would take the record of who did the work along
+    // with the ability to do it.
+    assert!(
+        entity::users::Entity::find_by_id(user_id)
+            .one(&db)
+            .await
+            .expect("query")
+            .is_some(),
+        "suspension must not delete the person"
+    );
+    // And so is the credential — reinstating is a second call here, not a
+    // re-enrolment that would make the worker learn a new PIN.
+    assert!(
+        entity::user_credentials::Entity::find()
+            .filter(entity::user_credentials::Column::UserId.eq(user_id))
+            .one(&db)
+            .await
+            .expect("query")
+            .is_some(),
+        "suspension must not drop the credential"
+    );
+
+    // Idempotent: asking for the state it is already in is not a conflict.
+    assert!(
+        !frontline::set_worker_standing(&db, org, user_id, false)
+            .await
+            .expect("suspend twice"),
+        "a no-op must report that nothing moved, not fail"
+    );
+
+    // Burn the whole budget while they are gone.
+    //
+    // `verify_pin` charges a failed attempt against a suspended worker before
+    // answering `NoSuchWorker` — on purpose, so the credential still locks
+    // rather than offering unlimited guesses at exactly the accounts nobody is
+    // watching. The consequence is a lockout accruing on a credential nobody is
+    // supposed to be using, and the lockout check runs BEFORE the standing
+    // check.
+    //
+    // The first version of this test made ONE suspended attempt against a budget
+    // of three, so it never reached the state it was written to be safe in: a
+    // worker coming back to `LockedOut` on the correct PIN.
+    for _ in 0..policy().max_attempts {
+        let _ = frontline::verify_pin(&db, org, "gone.a", "4821", policy()).await;
+    }
+    let locked = credential(&db, org).await;
+    assert!(
+        locked.locked_until.is_some(),
+        "the budget must actually be spendable while suspended, or this proves nothing"
+    );
+
+    // Reinstating restores the ORIGINAL pin, which is the point of not deleting
+    // the credential — and it must clear the lockout suspension caused, or the
+    // "restores the original pin" promise means "in fifteen minutes".
+    assert!(
+        frontline::set_worker_standing(&db, org, user_id, true)
+            .await
+            .expect("reinstate")
+    );
+    let cleared = credential(&db, org).await;
+    assert!(
+        cleared.locked_until.is_none() && cleared.failed_attempts == 0,
+        "reinstating must clear the lockout its own suspension caused"
+    );
+    assert_eq!(
+        frontline::verify_pin(&db, org, "gone.a", "4821", policy())
+            .await
+            .expect("verify"),
+        PinVerdict::Ok { user_id },
+        "reinstating must not require the worker to learn a new PIN"
+    );
+
+    // Somebody else's worker is not found rather than refused, so an admin
+    // cannot use this route to discover that a user id is on another tenant's
+    // roster.
+    let other_org = seed_org(&db).await;
+    assert!(
+        frontline::set_worker_standing(&db, other_org, user_id, false)
+            .await
+            .is_err(),
+        "a worker must not be reachable through another org"
+    );
+}

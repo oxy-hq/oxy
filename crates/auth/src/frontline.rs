@@ -427,6 +427,15 @@ fn classify_credential_error(e: &sea_orm::DbErr) -> OxyError {
     }
 }
 
+/// The message an unknown worker produces, as a `ValidationError`.
+///
+/// Named for the same reason as [`IDENTIFIER_TAKEN`]: the HTTP layer answers
+/// **404** for this one specifically. Blanket-mapping the whole variant worked
+/// while this function had exactly one validation, and would have quietly
+/// reported the NEXT one — a bad status, a self-suspend guard — as "worker not
+/// found".
+pub const WORKER_NOT_FOUND: &str = "no frontline worker with that id in this org";
+
 /// The message a duplicate identifier produces, as a `ValidationError`.
 ///
 /// A constant rather than a literal because the HTTP layer matches on it to
@@ -684,4 +693,122 @@ mod tests {
         // And it must not match anything a caller could send.
         assert!(!pin_matches("4821", &decoy).expect("verify"));
     }
+}
+
+/// Suspend a frontline worker, or reinstate one.
+///
+/// # Suspend, never delete
+///
+/// A worker who leaves keeps their row. Their submissions, findings and
+/// completed training all point at `users.id`, and deleting the person would
+/// either orphan that history or cascade it away — so the record of who did the
+/// work would disappear along with the ability to sign in, which is the wrong
+/// half to lose. `org_frontline_members.status` is the switch, and it was
+/// modelled from the start; this is the writer it never had.
+///
+/// # What suspension already does, without any further change
+///
+/// `verify_pin` reads the same status and answers `NoSuchWorker` on a suspended
+/// worker — after charging the failed attempt, so the account still locks
+/// rather than offering unlimited guesses. It deliberately does NOT say "your
+/// account is suspended": confirming that a former employee's PIN is still
+/// correct is exactly the wrong thing to tell whoever is holding the tablet.
+/// The roster route filters on the same column, so a suspended worker leaves
+/// the name picker too.
+///
+/// So this function changes one column and three behaviours follow. The
+/// credential is left in place on purpose — reinstating is then a second call
+/// here rather than a re-enrolment that would mint a new PIN and make the
+/// worker learn a new one.
+///
+/// Returns whether the row MOVED. A no-op is reported as `false` rather than as
+/// an error: setting a suspended worker suspended is the caller getting what
+/// they asked for, and a 409 there would make an idempotent retry look like a
+/// conflict.
+pub async fn set_worker_standing(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+    user_id: Uuid,
+    active: bool,
+) -> Result<bool, OxyError> {
+    let want = if active { "active" } else { "suspended" };
+
+    let Some(row) = org_frontline_members::Entity::find_by_id((org_id, user_id))
+        .one(db)
+        .await
+        .map_err(|e| OxyError::DBError(format!("frontline standing: {e}")))?
+    else {
+        // Scoped to the org in the primary key, so this is also what a caller
+        // gets for somebody else's worker — an admin cannot discover that a
+        // user id belongs to another tenant's roster.
+        return Err(OxyError::ValidationError(WORKER_NOT_FOUND.to_string()));
+    };
+
+    // The WRITE decides whether anything moved, not the read above it.
+    //
+    // The read stays, because it is what tells an unknown worker from a no-op —
+    // one is a 404 and the other is a 200. But deriving `changed` from it made
+    // the field a read-then-write: two concurrent suspends both saw `active` and
+    // both answered `changed: true`, while only one of them moved a row. The
+    // final state was right either way; the field was not, and its whole purpose
+    // is to be believed by a caller reconciling a roster.
+    let moved = org_frontline_members::Entity::update_many()
+        .col_expr(
+            org_frontline_members::Column::Status,
+            sea_orm::sea_query::Expr::value(want),
+        )
+        .filter(org_frontline_members::Column::OrgId.eq(org_id))
+        .filter(org_frontline_members::Column::UserId.eq(user_id))
+        // The guard that makes this the arbiter: a row already in the target
+        // state matches nothing, so `rows_affected` is the answer rather than a
+        // restatement of what we read a moment ago.
+        .filter(org_frontline_members::Column::Status.ne(want))
+        .exec(db)
+        .await
+        .map_err(|e| OxyError::DBError(format!("set frontline standing: {e}")))?
+        .rows_affected
+        == 1;
+
+    // Reinstating clears the lockout that SUSPENSION caused.
+    //
+    // `verify_pin` charges a failed attempt against a suspended worker before
+    // answering `NoSuchWorker` — deliberately, so the credential still locks
+    // rather than offering unlimited guesses at exactly the accounts nobody is
+    // watching. The consequence is that attempts accrue on a credential nobody
+    // is supposed to be using, and the lockout check runs BEFORE the standing
+    // check: so a worker whose PIN was tried while they were gone comes back to
+    // `LockedOut` on the correct PIN.
+    //
+    // It self-heals after `lockout_minutes`, which is why this is a correctness
+    // nicety rather than a hole. But reinstatement is the moment somebody has
+    // decided this person may work again, and this PR's own promise is that it
+    // restores the original PIN — a fifteen-minute wait nobody can explain is
+    // not that.
+    //
+    // Scoped to the PIN credential in this org: an email credential has no
+    // lockout of this kind and is not this function's business.
+    if active && moved {
+        user_credentials::Entity::update_many()
+            .col_expr(
+                user_credentials::Column::FailedAttempts,
+                sea_orm::sea_query::Expr::value(0),
+            )
+            .col_expr(
+                user_credentials::Column::LockedUntil,
+                sea_orm::sea_query::Expr::value(
+                    Option::<sea_orm::prelude::DateTimeWithTimeZone>::None,
+                ),
+            )
+            .filter(user_credentials::Column::UserId.eq(user_id))
+            .filter(user_credentials::Column::Kind.eq(KIND_PIN))
+            .filter(user_credentials::Column::OrgId.eq(Some(org_id)))
+            .exec(db)
+            .await
+            .map_err(|e| OxyError::DBError(format!("clear frontline lockout: {e}")))?;
+    }
+
+    if moved {
+        tracing::info!(%org_id, %user_id, standing = want, "frontline standing changed");
+    }
+    Ok(moved)
 }

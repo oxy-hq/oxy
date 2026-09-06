@@ -433,6 +433,12 @@ fn build_org_routes(app_state: &AppState) -> RoleRouter {
         // is the opposite: it is an org admin adding a person to their org, and
         // it belongs with the rest of member management.
         .route_fleet("/frontline/workers", post(frontline::enrol))
+        // The other half of enrolment. PATCH because nothing is deleted — a
+        // worker who leaves keeps their row so their work stays attributed.
+        .route_fleet(
+            "/frontline/workers/{user_id}",
+            axum::routing::patch(frontline::set_standing),
+        )
         .route_fleet(
             "/partner-publish-consent",
             get(crate::server::api::partner_publish_consent::get_consent)
