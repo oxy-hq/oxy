@@ -148,11 +148,23 @@ jobs:
             version="$(node -p "require('./${dir}/package.json').version")"
             echo "::group::Publish ${pkg}@${version} (${dir})"
 
+            # A version already on the registry is skipped, not republished.
+            # npm refuses to publish over an existing version — which is the
+            # right guard against a stale publish, but under `set -e` it also
+            # aborted the whole loop the first time `all` met a package whose
+            # version had not moved (2026-09-07: @oxy-hq/sdk 2.11.0 went out,
+            # then @oxy-hq/vite-plugin 0.2.0 failed the run and nothing after
+            # it was attempted). Bumping one package and running with the
+            # default `all` is the common case; it must work.
+            if npm view "${pkg}@${version}" version >/dev/null 2>&1; then
+              echo "::notice::${pkg}@${version} is already published — skipping"
+              echo "::endgroup::"
+              continue
+            fi
+
             # Build (tsdown) so the dist/ files referenced by main/module/
             # types/bin exist, then publish via `npm` (NOT pnpm — only npm
             # performs the OIDC token exchange). Provenance is automatic.
-            # npm refuses to publish over an existing version, which is the
-            # guard against re-running a stale publish.
             (cd "${dir}" && pnpm build)
             (cd "${dir}" && npm publish --access public)
 
