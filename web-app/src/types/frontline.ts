@@ -55,3 +55,96 @@ export interface FrontlineLoginResponse {
   name: string;
   expires_in: number;
 }
+
+// ── Org admin: the workers and kiosks an org runs. Every route below is
+// `/orgs/{orgId}/frontline/*` and needs an org-admin session.
+
+export type FrontlineWorkerStatus = "active" | "suspended";
+
+/** One row of `GET /orgs/{orgId}/frontline/workers`, sorted by name. */
+export interface FrontlineWorker {
+  user_id: string;
+  name: string;
+  /** What the worker is known by on the kiosk — an employee number, a short handle. */
+  identifier: string;
+  status: FrontlineWorkerStatus;
+  created_at: string;
+  /** Ids of this org's custom apps the worker holds a grant on. */
+  apps: string[];
+  /** Set while too many wrong PINs have locked sign-in; a PIN reset clears it. */
+  locked_until: string | null;
+}
+
+export interface ListWorkersResponse {
+  workers: FrontlineWorker[];
+}
+
+/**
+ * `POST /orgs/{orgId}/frontline/workers`. The PIN travels once, here, and is
+ * never echoed back — the response deliberately has no `pin` field.
+ */
+export interface EnrolWorkerRequest {
+  name: string;
+  identifier: string;
+  /** 4–8 digits. */
+  pin: string;
+  apps: string[];
+}
+
+export interface EnrolledWorker {
+  user_id: string;
+  identifier: string;
+  name: string;
+  apps: string[];
+}
+
+/** `PATCH /orgs/{orgId}/frontline/workers/{userId}` with `{ active }`. */
+export interface WorkerStandingResponse {
+  user_id: string;
+  active: boolean;
+  /** False when the worker was already in that standing. */
+  changed: boolean;
+}
+
+/** `PUT /orgs/{orgId}/frontline/workers/{userId}/apps` — a full replace. */
+export interface WorkerAppsResponse {
+  apps: string[];
+}
+
+/**
+ * One row of `GET /orgs/{orgId}/frontline/devices`, newest first. The state is
+ * derived, not stored: `revoked_at` set → revoked; `bound_at` set → a tablet
+ * holds the cookie; otherwise the enrol link is live until `enrol_expires_at`.
+ */
+export interface KioskDeviceRow {
+  id: string;
+  name: string;
+  /** Where the tablet lands after sign-in — an allowed absolute URL, or null for home. */
+  return_to: string | null;
+  created_at: string;
+  bound_at: string | null;
+  last_seen_at: string | null;
+  revoked_at: string | null;
+  enrol_expires_at: string | null;
+}
+
+export interface ListDevicesResponse {
+  devices: KioskDeviceRow[];
+}
+
+export interface CreateKioskDeviceRequest {
+  name: string;
+  return_to?: string;
+}
+
+/**
+ * `POST /orgs/{orgId}/frontline/devices`. `enrol_url` is shown once: the server
+ * keeps only a hash of the token, so no later read can reproduce it.
+ */
+export interface CreatedKioskDevice {
+  id: string;
+  name: string;
+  enrol_url: string;
+  bind_path: string;
+  expires_at: string;
+}

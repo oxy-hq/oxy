@@ -441,3 +441,60 @@ async fn a_suspended_worker_cannot_sign_in_and_is_not_deleted() {
         "a worker must not be reachable through another org"
     );
 }
+
+/// A forgotten PIN is re-issued at the counter, and the lockout forgetting it
+/// produced does not outlive the reset.
+#[tokio::test]
+async fn a_reset_pin_replaces_the_old_one_and_clears_a_lockout() {
+    let db = setup_db().await;
+    let org = seed_org(&db).await;
+    let user_id = frontline::enroll_worker(&db, org, "Maria S.", "maria.s", "4821", policy())
+        .await
+        .expect("enrol");
+
+    // Forget it: burn every attempt the policy allows, then even the right
+    // PIN is refused — the lockout is real.
+    for _ in 0..policy().max_attempts {
+        let _ = frontline::verify_pin(&db, org, "maria.s", "0000", policy()).await;
+    }
+    assert!(
+        !matches!(
+            frontline::verify_pin(&db, org, "maria.s", "4821", policy())
+                .await
+                .expect("verify"),
+            PinVerdict::Ok { .. }
+        ),
+        "the fixture must actually be locked out for the reset to prove anything"
+    );
+
+    frontline::reset_pin(&db, org, user_id, "9753", policy())
+        .await
+        .expect("reset");
+
+    // The new PIN works at once — the lockout went with the old one.
+    assert_eq!(
+        frontline::verify_pin(&db, org, "maria.s", "9753", policy())
+            .await
+            .expect("verify"),
+        PinVerdict::Ok { user_id }
+    );
+    // And the old one is gone, not merely joined by the new.
+    assert!(!matches!(
+        frontline::verify_pin(&db, org, "maria.s", "4821", policy())
+            .await
+            .expect("verify"),
+        PinVerdict::Ok { .. }
+    ));
+
+    // The policy holds on a reset as on enrolment; an unknown worker is named.
+    assert!(matches!(
+        frontline::reset_pin(&db, org, user_id, "1", policy()).await,
+        Err(oxy_shared::errors::OxyError::ValidationError(_))
+    ));
+    match frontline::reset_pin(&db, org, Uuid::new_v4(), "9753", policy()).await {
+        Err(oxy_shared::errors::OxyError::ValidationError(msg)) => {
+            assert_eq!(msg, frontline::WORKER_NOT_FOUND)
+        }
+        other => panic!("expected WORKER_NOT_FOUND, got {other:?}"),
+    }
+}

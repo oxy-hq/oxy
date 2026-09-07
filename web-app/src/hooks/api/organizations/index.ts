@@ -1,4 +1,14 @@
 export {
+  useCreateDevice,
+  useEnrolWorker,
+  useFrontlineDevices,
+  useFrontlineWorkers,
+  useResetWorkerPin,
+  useRevokeDevice,
+  useSetWorkerApps,
+  useSetWorkerStanding
+} from "./useFrontline";
+export {
   useCreateOrg,
   useDeleteOrg,
   useDeleteOrgLogo,

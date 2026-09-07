@@ -360,7 +360,12 @@ const orgKeys = {
   invitations: (orgId: string) => [...orgKeys.all, "invitations", orgId] as const,
   myInvitations: () => [...orgKeys.all, "my-invitations"] as const,
   teams: (orgId: string) => [...orgKeys.all, "teams", orgId] as const,
-  team: (orgId: string, teamId: string) => [...orgKeys.all, "teams", orgId, teamId] as const
+  team: (orgId: string, teamId: string) => [...orgKeys.all, "teams", orgId, teamId] as const,
+  // Crew (frontline) admin. Under `org`, not `frontline`: those keys are the
+  // kiosk's own unauthenticated reads, and a worker list must never share a
+  // cache lineage with what a shared tablet fetches.
+  frontlineWorkers: (orgId: string) => [...orgKeys.all, "frontline-workers", orgId] as const,
+  frontlineDevices: (orgId: string) => [...orgKeys.all, "frontline-devices", orgId] as const
 };
 
 /**

@@ -618,3 +618,91 @@ async fn enrolment_grants_only_this_orgs_apps_and_is_idempotent() {
     assert!(frontline_worker_with_app_grant(&db, fx.org, crew, fx.workspace_a).await);
     assert!(frontline_worker_with_app_grant(&db, fx.org, crew, fx.workspace_b).await);
 }
+
+/// The manager's surface: the crew as a list, and a worker's apps made exactly
+/// a given set — additions granted, the rest revoked, foreign apps refused,
+/// unknown workers refused.
+#[tokio::test]
+async fn an_admin_lists_the_crew_and_replaces_a_workers_apps() {
+    use oxy_app::server::api::frontline_admin::{ReplaceError, replace_worker_apps, workers_of};
+    use oxy_app::server::api::frontline_grants::GrantError;
+    use oxy_auth::frontline::{PinPolicy, enroll_worker};
+
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let fx = seed(&db).await;
+    let other = seed(&db).await;
+    assert!(
+        workers_of(&db, fx.org)
+            .await
+            .expect("empty crew")
+            .is_empty()
+    );
+
+    // A real enrolment, so the row carries an identifier.
+    let maria = enroll_worker(
+        &db,
+        fx.org,
+        "Maria S.",
+        "maria.s",
+        "4821",
+        PinPolicy::default(),
+    )
+    .await
+    .expect("enrol");
+    grant(&db, fx.app_a, maria).await;
+
+    let crew = workers_of(&db, fx.org).await.expect("crew");
+    assert_eq!(crew.len(), 1);
+    assert_eq!(crew[0].identifier, "maria.s");
+    assert_eq!(crew[0].status, "active");
+    assert_eq!(crew[0].apps, vec![fx.app_a]);
+    assert!(crew[0].locked_until.is_none());
+    assert!(
+        workers_of(&db, other.org)
+            .await
+            .expect("other org")
+            .is_empty(),
+        "the crew is the org's, not the tenant's neighbours'"
+    );
+
+    // Replace: app_a out, app_b in — one grant added, one revoked, the gate agrees.
+    let changed = replace_worker_apps(&db, fx.org, maria, &[fx.app_b], None)
+        .await
+        .expect("replace");
+    assert_eq!(
+        changed.added.iter().map(|a| a.id).collect::<Vec<_>>(),
+        vec![fx.app_b]
+    );
+    assert_eq!(
+        changed.removed.iter().map(|a| a.id).collect::<Vec<_>>(),
+        vec![fx.app_a]
+    );
+    assert_eq!(changed.apps, vec![fx.app_b]);
+    assert!(!frontline_worker_with_app_grant(&db, fx.org, maria, fx.workspace_a).await);
+    assert!(frontline_worker_with_app_grant(&db, fx.org, maria, fx.workspace_b).await);
+    assert_eq!(
+        workers_of(&db, fx.org).await.expect("crew")[0].apps,
+        vec![fx.app_b]
+    );
+
+    // The same list again moves nothing; an empty list revokes everything.
+    let again = replace_worker_apps(&db, fx.org, maria, &[fx.app_b], None)
+        .await
+        .expect("replace again");
+    assert!(again.added.is_empty() && again.removed.is_empty());
+    let none = replace_worker_apps(&db, fx.org, maria, &[], None)
+        .await
+        .expect("revoke all");
+    assert_eq!(none.removed.len(), 1);
+    assert!(none.apps.is_empty());
+
+    // Another org's app: refused by id, nothing written. Unknown worker: 404.
+    assert!(matches!(
+        replace_worker_apps(&db, fx.org, maria, &[other.app_a], None).await,
+        Err(ReplaceError::Grant(GrantError::NotThisOrg(_)))
+    ));
+    assert!(matches!(
+        replace_worker_apps(&db, fx.org, Uuid::new_v4(), &[fx.app_a], None).await,
+        Err(ReplaceError::NotFound)
+    ));
+}

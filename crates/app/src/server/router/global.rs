@@ -16,6 +16,7 @@ use crate::api::middlewares::{
 use crate::api::{admin, org_logo, org_teams, organizations, user, workspaces};
 use crate::server::api::chat;
 use crate::server::api::frontline;
+use crate::server::api::frontline_admin;
 use crate::server::api::frontline_devices;
 use crate::server::api::notifications;
 use crate::server::api::work;
@@ -433,7 +434,20 @@ fn build_org_routes(app_state: &AppState) -> RoleRouter {
         // nothing to authenticate with until they have signed in — and this one
         // is the opposite: it is an org admin adding a person to their org, and
         // it belongs with the rest of member management.
-        .route_fleet("/frontline/workers", post(frontline::enrol))
+        .route_fleet(
+            "/frontline/workers",
+            get(frontline_admin::list_workers).post(frontline::enrol),
+        )
+        // What a manager does after enrolment: which apps a worker opens, and
+        // a forgotten PIN re-issued at the counter. Same door as `workers`.
+        .route_fleet(
+            "/frontline/workers/{user_id}/apps",
+            put(frontline_admin::set_worker_apps),
+        )
+        .route_fleet(
+            "/frontline/workers/{user_id}/pin",
+            post(frontline_admin::reset_worker_pin),
+        )
         // The kiosks a PIN may be entered on. An org admin creates one and
         // hands the tablet its enrol link; revoking is how a lost tablet is
         // switched off. Same door and same reasons as `workers` above.

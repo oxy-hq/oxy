@@ -44,6 +44,7 @@ describe("visibleNavGroups", () => {
       const sections = sectionsFor({});
       for (const denied of [
         "organization.general",
+        "organization.crew",
         "organization.billing",
         "organization.integration",
         "workspace.databases",
@@ -105,6 +106,7 @@ describe("visibleNavGroups", () => {
         "organization.members",
         "organization.teams",
         "organization.app_access",
+        "organization.crew",
         "organization.billing",
         "organization.integration",
         "workspace.members",
@@ -113,6 +115,7 @@ describe("visibleNavGroups", () => {
         "workspace.oltp",
         "workspace.api_keys",
         "workspace.secrets",
+        "workspace.connections",
         "workspace.apps",
         "workspace.oxy_access",
         "workspace.activity_logs",
@@ -124,6 +127,7 @@ describe("visibleNavGroups", () => {
       const sections = sectionsFor({ isOrgAdmin: true });
       expect(sections).toContain("organization.general");
       expect(sections).toContain("organization.teams");
+      expect(sections).toContain("organization.crew");
       expect(sections).toContain("organization.integration");
       expect(sections).toContain("workspace.oxy_access");
     });

@@ -4,6 +4,7 @@ import type { Organization, OrgRole } from "@/types/organization";
 import type { Workspace } from "@/types/workspace";
 import OrgAppAccess from "../sections/organization/AppAccess";
 import Billing from "../sections/organization/Billing";
+import OrgCrew from "../sections/organization/Crew";
 import General from "../sections/organization/General";
 import Integration from "../sections/organization/Integration";
 import OrgMembers from "../sections/organization/Members";
@@ -61,6 +62,9 @@ export function ActiveSection({ activeSection, org, role, workspace, close }: Ac
       )}
       {org && role && activeSection === "organization.app_access" && (
         <OrgAppAccess org={org} viewerRole={role} />
+      )}
+      {org && role && activeSection === "organization.crew" && (
+        <OrgCrew org={org} viewerRole={role} />
       )}
       {org && role && activeSection === "organization.billing" && (
         <CanOrgAdmin

@@ -59,6 +59,7 @@ mod foot_traffic_seed;
 // `oxy-server`. oxy-app no longer depends on it.
 pub mod chat;
 pub mod frontline;
+pub mod frontline_admin;
 pub mod frontline_devices;
 pub mod frontline_grants;
 pub mod healthcheck;

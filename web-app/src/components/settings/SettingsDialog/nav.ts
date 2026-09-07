@@ -4,6 +4,7 @@ import {
   CreditCard,
   Database,
   GitBranch,
+  HardHat,
   Key,
   KeyRound,
   type LucideIcon,
@@ -79,6 +80,12 @@ export const CLOUD_NAV: NavGroup[] = [
         icon: ShieldCheck,
         requires: "orgAdmin"
       },
+      // Crew are the org's frontline workers (kiosk + PIN, no email, no
+      // membership) and the tablets they sign in on. Unlike the Members roster,
+      // which any member may read, every crew route is org-admin only — so this
+      // carries the gate the nav comment above promises: no panel the API will
+      // refuse to fill.
+      { value: "organization.crew", label: "Crew", icon: HardHat, requires: "orgAdmin" },
       {
         value: "organization.billing",
         label: "Billing",

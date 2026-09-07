@@ -727,6 +727,62 @@ mod tests {
 /// an error: setting a suspended worker suspended is the caller getting what
 /// they asked for, and a 409 there would make an idempotent retry look like a
 /// conflict.
+/// Replace a worker's PIN and clear any lockout the old one accumulated.
+///
+/// The one PIN operation a manager needs after enrolment: a forgotten PIN is
+/// re-issued at the counter, and the lockout that forgetting it produced must
+/// not outlive the reset — a worker who has just been handed a new PIN and is
+/// still locked out for ten minutes is a worker who thinks the new PIN is
+/// wrong too. Same policy as enrolment; the new PIN is never stored, logged or
+/// returned.
+pub async fn reset_pin(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+    user_id: Uuid,
+    pin: &str,
+    policy: PinPolicy,
+) -> Result<(), OxyError> {
+    if !policy.accepts(pin) {
+        return Err(OxyError::ValidationError(format!(
+            "a PIN must be {}–{} digits",
+            policy.min_digits, policy.max_digits
+        )));
+    }
+    if org_frontline_members::Entity::find_by_id((org_id, user_id))
+        .one(db)
+        .await
+        .map_err(|e| OxyError::DBError(format!("frontline standing: {e}")))?
+        .is_none()
+    {
+        return Err(OxyError::ValidationError(WORKER_NOT_FOUND.to_string()));
+    }
+    let hash = hash_pin(pin)?;
+    let res = user_credentials::Entity::update_many()
+        .col_expr(
+            user_credentials::Column::SecretHash,
+            sea_orm::sea_query::Expr::value(Some(hash)),
+        )
+        .col_expr(
+            user_credentials::Column::FailedAttempts,
+            sea_orm::sea_query::Expr::value(0i32),
+        )
+        .col_expr(
+            user_credentials::Column::LockedUntil,
+            sea_orm::sea_query::Expr::value(Option::<chrono::DateTime<chrono::FixedOffset>>::None),
+        )
+        .filter(user_credentials::Column::UserId.eq(user_id))
+        .filter(user_credentials::Column::OrgId.eq(Some(org_id)))
+        .filter(user_credentials::Column::Kind.eq(KIND_PIN))
+        .exec(db)
+        .await
+        .map_err(|e| OxyError::DBError(format!("reset pin: {e}")))?;
+    if res.rows_affected == 0 {
+        return Err(OxyError::ValidationError(WORKER_NOT_FOUND.to_string()));
+    }
+    tracing::info!(%org_id, %user_id, "frontline PIN reset");
+    Ok(())
+}
+
 pub async fn set_worker_standing(
     db: &DatabaseConnection,
     org_id: Uuid,
