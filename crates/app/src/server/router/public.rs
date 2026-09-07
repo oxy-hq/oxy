@@ -21,7 +21,7 @@ use axum::routing::{get, post};
 
 use crate::api::{auth, billing, healthcheck, user, webhooks};
 use crate::server::api::admin::apps::handlers::{get_build_config, get_org_for_project};
-use crate::server::api::{custom_apps_debug, frontline, projects};
+use crate::server::api::{custom_apps_debug, frontline, frontline_devices, projects};
 
 use super::AppState;
 use super::role_router::RoleRouter;
@@ -54,6 +54,17 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
         // would mean a deploy locks every store out of its own checklists.
         .route_fleet("/frontline/roster", get(frontline::roster))
         .route_fleet("/frontline/login", post(frontline::login))
+        // The kiosk binding both of those require. `device` tells the login
+        // page whether it is on an enrolled kiosk; `devices/bind` is the
+        // one-time enrol link an admin opens on the tablet — GET shows a
+        // confirm page, POST binds, because the link travels through things
+        // that unfurl URLs. Public for the same reason as login: the tablet
+        // has nothing else to present.
+        .route_fleet("/frontline/device", get(frontline_devices::device_status))
+        .route_fleet(
+            "/frontline/devices/bind",
+            get(frontline_devices::bind_page).post(frontline_devices::bind_submit),
+        )
         .route_fleet("/auth/magic-link/verify", post(auth::verify_magic_link))
         .route_fleet("/auth/return-to/validate", get(auth::validate_return_to))
         // Dev-only sign-in bypass. Public by necessity (it IS the login), but

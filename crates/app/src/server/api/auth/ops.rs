@@ -194,7 +194,7 @@ fn host_in_session_zone(host: &str) -> bool {
 /// must NOT silently activate just because `OXY_SESSION_COOKIE_DOMAIN`
 /// happens to be unset on a misconfigured production deploy, since that
 /// would turn `?return_to=http://localhost/...` into an open redirect.
-pub(super) fn validate_return_to_url(url: &str) -> bool {
+pub(crate) fn validate_return_to_url(url: &str) -> bool {
     let Some((scheme, host)) = parse_return_to_host(url) else {
         return false;
     };

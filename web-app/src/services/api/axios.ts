@@ -25,6 +25,13 @@ const publicAPIPaths = [
   // toast, which is the wrong register for a sign-in attempt: nothing has
   // been denied to a *session*, the identity was simply never on the list.
   "/auth/dev-login",
+  // Crew (frontline) sign-in. A wrong PIN answers 401 — the page renders it
+  // inline and clears the PIN; a hard navigate to /login would wipe the
+  // kiosk's roster picker mid-attempt. The other two always answer 200 but
+  // belong to the same unauthenticated surface.
+  "/frontline/device",
+  "/frontline/roster",
+  "/frontline/login",
   // Logging out with an already-expired token 401s; let AuthContext.logout's
   // own teardown + home redirect own the outcome instead of this interceptor
   // racing a redirect to /login. (Only gates the 401 handler — the request

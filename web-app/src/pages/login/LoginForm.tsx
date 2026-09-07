@@ -9,9 +9,15 @@ import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  returnToPointsAtCustomApp,
+  useFrontlineRoster,
+  useKioskDevice
+} from "@/hooks/auth/useFrontline";
 import { useRequestMagicLink } from "@/hooks/auth/useMagicLink";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import CrewSignIn, { CrewSignInHint } from "./CrewSignIn";
 import LoginWithGitHubButton from "./LoginWithGitHubButton";
 import LoginWithGoogleButton from "./LoginWithGoogleButton";
 import LoginWithOktaButton from "./LoginWithOktaButton";
@@ -154,20 +160,52 @@ const DevSignInSection = () => (
   </Link>
 );
 
+const ACCOUNT_COPY = {
+  title: "Welcome back",
+  subtitle: "Sign in to your account to continue"
+};
+
+/** A kiosk speaks to whoever is standing at it, not to an account holder. */
+const kioskCopy = (tapToPick: boolean) => ({
+  title: "Who's on shift?",
+  subtitle: tapToPick ? "Tap your name and enter your PIN" : "Enter your ID and PIN"
+});
+
 const LoginForm = () => {
   const { authConfig } = useAuth();
+  const [searchParams] = useSearchParams();
+  // Crew sign-in's first-choice destination (validated server-side before any
+  // redirect). The magic-link section reads the same param on its own.
+  const returnTo = searchParams.get("return_to") ?? undefined;
+  const { data: device } = useKioskDevice();
+  const kiosk = device?.bound ? device : undefined;
+  const { data: staff = [], isLoading: isRosterLoading } = useFrontlineRoster(kiosk?.org);
 
-  const hasOAuth = authConfig.google || authConfig.okta || authConfig.github;
-  const hasMagicLink = authConfig.magic_link;
+  const hasOAuth = Boolean(authConfig.google || authConfig.okta || authConfig.github);
+  const hasMagicLink = Boolean(authConfig.magic_link);
+  const hasAccountSignIn = hasMagicLink || hasOAuth;
+  // While the roster is still loading, assume the common case (there is one)
+  // so the subtitle doesn't flip mid-read.
+  const copy = kiosk ? kioskCopy(isRosterLoading || staff.length > 0) : ACCOUNT_COPY;
 
   return (
     <div className={cn("flex flex-col gap-6")}>
       <div className='flex flex-col items-center gap-2 text-center'>
-        <h1 className='font-bold text-2xl'>Welcome back</h1>
-        <p className='text-muted-foreground text-sm'>Sign in to your account to continue</p>
+        <h1 className='font-bold text-2xl'>{copy.title}</h1>
+        <p className='text-muted-foreground text-sm'>{copy.subtitle}</p>
       </div>
 
       <div className='flex flex-col gap-4'>
+        {kiosk && (
+          <CrewSignIn
+            device={kiosk}
+            staff={staff}
+            isRosterLoading={isRosterLoading}
+            returnTo={returnTo}
+          />
+        )}
+        {kiosk && hasAccountSignIn && <Divider label='or' />}
+
         {hasMagicLink && <MagicLinkSection />}
 
         {hasOAuth && hasMagicLink && <Divider label='or' />}
@@ -192,6 +230,10 @@ const LoginForm = () => {
             <DevSignInSection />
           </>
         )}
+
+        {/* Only once the probe has answered "not a kiosk" — never during the
+            probe, or a real kiosk would flash the hint before its board. */}
+        {device && !device.bound && returnToPointsAtCustomApp(returnTo) && <CrewSignInHint />}
       </div>
     </div>
   );

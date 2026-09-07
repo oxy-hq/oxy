@@ -16,6 +16,7 @@ use crate::api::middlewares::{
 use crate::api::{admin, org_logo, org_teams, organizations, user, workspaces};
 use crate::server::api::chat;
 use crate::server::api::frontline;
+use crate::server::api::frontline_devices;
 use crate::server::api::notifications;
 use crate::server::api::work;
 
@@ -433,6 +434,17 @@ fn build_org_routes(app_state: &AppState) -> RoleRouter {
         // is the opposite: it is an org admin adding a person to their org, and
         // it belongs with the rest of member management.
         .route_fleet("/frontline/workers", post(frontline::enrol))
+        // The kiosks a PIN may be entered on. An org admin creates one and
+        // hands the tablet its enrol link; revoking is how a lost tablet is
+        // switched off. Same door and same reasons as `workers` above.
+        .route_fleet(
+            "/frontline/devices",
+            get(frontline_devices::list_devices).post(frontline_devices::create_device),
+        )
+        .route_fleet(
+            "/frontline/devices/{id}",
+            axum::routing::delete(frontline_devices::revoke_device),
+        )
         // The other half of enrolment. PATCH because nothing is deleted — a
         // worker who leaves keeps their row so their work stays attributed.
         .route_fleet(

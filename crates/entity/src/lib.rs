@@ -107,6 +107,7 @@ pub mod notifications;
 pub mod org_billing;
 pub mod org_frontline_members;
 pub mod org_invitations;
+pub mod org_kiosk_devices;
 pub mod org_members;
 pub mod org_role_members;
 pub mod org_roles;

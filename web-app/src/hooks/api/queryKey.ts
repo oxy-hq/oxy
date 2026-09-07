@@ -754,6 +754,12 @@ const authConfigKeys = {
   current: () => [...authConfigKeys.all] as const
 };
 
+const frontlineKeys = {
+  all: ["frontline"] as const,
+  device: () => [...frontlineKeys.all, "device"] as const,
+  roster: (org: string) => [...frontlineKeys.all, "roster", org] as const
+};
+
 const appIntegrationKeys = {
   all: ["app-integrations"] as const,
   list: (projectId: string, branchName: string) =>
@@ -978,6 +984,7 @@ const queryKeys = {
   adminUsers: adminUsersKeys,
   adminWorkspaces: adminWorkspacesKeys,
   authConfig: authConfigKeys,
+  frontline: frontlineKeys,
   semantic: semanticKeys,
   metricTree: metricTreeKeys,
   worldModel: worldModelKeys,

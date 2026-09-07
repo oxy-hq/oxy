@@ -32,6 +32,7 @@ mod compile_oltp_promote;
 mod compiled_reader_semantic;
 mod feature_flag_refresh;
 mod frontline_app_grant;
+mod frontline_devices;
 mod frontline_pin;
 mod local_mode_router;
 mod no_dropped_partner_tables;

@@ -31,6 +31,7 @@ pub use super::notifications::Entity as Notifications;
 pub use super::oidc_used_jti::Entity as OidcUsedJti;
 pub use super::org_frontline_members::Entity as OrgFrontlineMembers;
 pub use super::org_invitations::Entity as OrgInvitations;
+pub use super::org_kiosk_devices::Entity as OrgKioskDevices;
 pub use super::org_members::Entity as OrgMembers;
 pub use super::org_role_members::Entity as OrgRoleMembers;
 pub use super::org_roles::Entity as OrgRoles;

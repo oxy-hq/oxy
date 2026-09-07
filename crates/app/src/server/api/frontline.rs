@@ -125,7 +125,14 @@ pub struct RosterEntry {
 /// tablet is on the wall, the names are on the schedule beside it, and a name
 /// picker nobody can load is a kiosk nobody can use.
 #[instrument(skip_all, fields(org = %q.org))]
-pub async fn roster(Query(q): Query<RosterQuery>) -> impl IntoResponse {
+pub async fn roster(headers: HeaderMap, Query(q): Query<RosterQuery>) -> axum::response::Response {
+    // The body depends on the kiosk cookie; see `frontline_devices::no_store`.
+    let mut resp = roster_body(&headers, q).await;
+    super::frontline_devices::no_store(&mut resp);
+    resp
+}
+
+async fn roster_body(headers: &HeaderMap, q: RosterQuery) -> axum::response::Response {
     let Ok(db) = establish_connection().await else {
         // `{"staff": []}`, not `{}` — a kiosk reads `body.staff` and would get
         // `undefined` from the bare object, which is a render crash rather than
@@ -137,6 +144,14 @@ pub async fn roster(Query(q): Query<RosterQuery>) -> impl IntoResponse {
             .into_response();
     };
 
+    // Only an enrolled kiosk of this org sees its roster. The doc on `login`
+    // records that this read disclosed org existence by content; behind the
+    // device it discloses nothing to anyone who is not already standing at
+    // the counter, and the same empty answer covers "no kiosk", "wrong org"
+    // and "no such org".
+    let bound_to = super::frontline_devices::bound_device(&db, headers)
+        .await
+        .map(|d| d.org_id);
     let Ok(Some(org)) = organizations::Entity::find()
         .filter(organizations::Column::Slug.eq(&q.org))
         .one(&db)
@@ -146,6 +161,10 @@ pub async fn roster(Query(q): Query<RosterQuery>) -> impl IntoResponse {
         // an org-slug oracle, and slugs are guessable.
         return Json(serde_json::json!({ "staff": [] })).into_response();
     };
+
+    if bound_to != Some(org.id) {
+        return Json(serde_json::json!({ "staff": [] })).into_response();
+    }
 
     let rows = user_credentials::Entity::find()
         .filter(user_credentials::Column::Kind.eq(KIND_PIN))
@@ -296,12 +315,12 @@ pub async fn login(req_headers: HeaderMap, body: Json<LoginRequest>) -> impl Int
         // pays the verify, so returning after one indexed SELECT left the two
         // branches an order of magnitude apart in latency.
         //
-        // Kept even though `roster` already discloses org existence by content
-        // (`{"staff": []}` for an unknown slug, a list for a known one), so what
-        // this closes today is only "org exists but has no frontline staff" vs
-        // "no such org". It stays because that disclosure is a property of
-        // `roster`, not a decision made here: gate `roster` behind a device
-        // token later and this branch would silently become an oracle again.
+        // Load-bearing, not belt-and-braces. `roster` used to disclose org
+        // existence by content (`{"staff": []}` for an unknown slug, a list for
+        // a known one), which made this branch redundant; now that `roster`
+        // answers `{"staff": []}` to anyone without this org's kiosk cookie,
+        // this is the only place an unauthenticated caller could have told a
+        // real slug from an invented one — and it does not.
         oxy_auth::frontline::burn_verify_time(&body.pin);
         return refuse(StatusCode::UNAUTHORIZED);
     };
@@ -313,6 +332,23 @@ pub async fn login(req_headers: HeaderMap, body: Json<LoginRequest>) -> impl Int
         // leaked ("somebody is guessing at this org") is not the roster.
         return refuse(StatusCode::TOO_MANY_REQUESTS);
     }
+
+    // The device before the PIN. A PIN is only ever verified for a request
+    // that proved it comes from one of THIS org's enrolled kiosks
+    // (`frontline_devices`); typed anywhere else it is refused exactly as a
+    // wrong PIN is — same status, same body, same cost, and it counts against
+    // the org's attempt budget — so a client without a kiosk cookie learns
+    // nothing about whether the identifier exists. This is the binding the
+    // design record required before any of this faced a user.
+    let device = match super::frontline_devices::bound_device(&db, &req_headers).await {
+        Some(d) if d.org_id == org.id => d,
+        _ => {
+            record_org_attempt(org.id);
+            oxy_auth::frontline::burn_verify_time(&body.pin);
+            info!(org_id = %org.id, "frontline login refused: no kiosk bound to this org");
+            return refuse(StatusCode::UNAUTHORIZED);
+        }
+    };
 
     let verdict = match frontline::verify_pin(
         &db,
@@ -352,7 +388,8 @@ pub async fn login(req_headers: HeaderMap, body: Json<LoginRequest>) -> impl Int
             Err(status) => return refuse(status),
         };
 
-    info!(%user_id, org_id = %org.id, "frontline session opened");
+    info!(%user_id, org_id = %org.id, device = %device.id, "frontline session opened");
+    super::frontline_devices::touch(&db, device.id).await;
 
     let out_headers = shift_session_headers(&token, &req_headers);
 

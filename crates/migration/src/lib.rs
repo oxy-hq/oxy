@@ -155,6 +155,7 @@ mod m20260901_000002_assignment_graph;
 mod m20260901_000003_notifications;
 mod m20260903_000001_function_result_status;
 mod m20260905_000001_create_custom_app_migrations;
+mod m20260906_000001_org_kiosk_devices;
 
 pub struct Migrator;
 
@@ -311,6 +312,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260901_000003_notifications::Migration),
             Box::new(m20260903_000001_function_result_status::Migration),
             Box::new(m20260905_000001_create_custom_app_migrations::Migration),
+            Box::new(m20260906_000001_org_kiosk_devices::Migration),
         ]
     }
 }
