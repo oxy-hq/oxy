@@ -2,11 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.138] - 2026-09-07
+
+### 🚀 Features
+
+- Custom-app function logs reach observability, and one request id (#3095)
+- Derive custom-app availability from real traffic, and make logs durable (#3096)
+- Open the prod image-bump PR at release time, and announce the deploy (#3098)
+- The three platform gaps custom apps kept hitting — people, frontline, migrations (#3099)
+- A frontline worker can be suspended and reinstated (#3100)
+- The directory names whoever can reach the app, crew included (#3101)
+- Authz — the custom-app data plane is a workspace, and the crew can invoke functions (#3102)
+- A tracked event names the app it belongs to (#3104)
+- Crew sign-in — a PIN works only on an enrolled kiosk, and the login page offers it (#3106)
+- Crew section — a manager enrols workers, grants apps, resets PINs and enrols kiosks from Settings (#3111)
+- Metric-tree scenario simulation (#2862)
+
+### 🐛 Bug Fixes
+
+- A frontline worker can be granted an app — from enrolment, or from the app's access settings (#3108)
+- The enrol link is minted on the host the request arrived on (#3109)
+
+### 💼 Other
+
+- *(deps)* Update 25 npm dependencies to their latest minor/patch (#3088)
+- Let sp_api accept a date-window backfill, and pin the release that can serve one (#3093)
+
+### 🚜 Refactor
+
+- Custom_apps_migrations is a directory — types, plan, apply (#3103)
+
+### 📚 Documentation
+
+- Comprehensive rewrite of `@oxy-hq/cli` README and maintainer guide (#3090)
+- Comprehensive rewrite of `@oxy-hq/cli` README and maintainer guide (#3090)
+- Refresh ownership matrix + CODEOWNERS (weekly) (#3112)
+
+### 🧪 Testing
+
+- Oxy-app tests — eleven top-level targets become one group and four folds (#3110)
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove 2 draft docs
+- @oxy-hq/sdk 2.11.0 (#3105)
+- The SDK publish skips a version that is already on the registry (#3107)
+
 ## [0.5.137] - 2026-09-03
 
 ### 🐛 Bug Fixes
 
 - *(observability)* Partition event tables by day, not month (#3085)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.137 (#3086)
 
 ## [0.5.136] - 2026-09-03
 
