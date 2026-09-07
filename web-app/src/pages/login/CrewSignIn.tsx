@@ -39,7 +39,7 @@ const KioskLine = ({ device }: { device: BoundKioskDevice }) => (
   <p className='flex items-center justify-center gap-1.5 text-muted-foreground text-xs'>
     <Tablet className='size-3.5' aria-hidden='true' />
     <span>
-      {device.device} · {device.orgName}
+      {[device.device, device.location?.name, device.orgName].filter(Boolean).join(" · ")}
     </span>
   </p>
 );

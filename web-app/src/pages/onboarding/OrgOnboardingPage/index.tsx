@@ -1,10 +1,17 @@
+import { HardHat } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { CanOrgAdmin } from "@/components/auth/Can";
+import SettingsDialog from "@/components/settings/SettingsDialog";
+import { useSettingsDeepLink } from "@/components/settings/SettingsDialog/useSettingsDeepLink";
+import { Button } from "@/components/ui/shadcn/button";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useOrgs } from "@/hooks/api/organizations";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
 import { releaseBodyPointerLock } from "@/libs/utils/pointerEvents";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
+import useSettingsDialog from "@/stores/useSettingsDialog";
 import OnboardingHeader from "../components/OnboardingHeader";
 import InviteStep from "./components/InviteStep";
 import WorkspaceStep from "./components/WorkspaceStep";
@@ -46,10 +53,21 @@ export default function OrgOnboardingPage() {
   const initialStep: Step = searchParams.get("step") === "invite" ? "invite" : "workspace";
   const [step, setStep] = useState<Step>(initialStep);
 
+  // The org settings dialog is mounted on this page too — see the JSX — so
+  // `/<org>/onboarding?settings=organization.crew` opens straight into it.
+  useSettingsDeepLink();
+
   // We arrive here right after the create-org dialog closes; clear any leaked
   // body pointer-events lock so the wizard (and its org switcher) is clickable.
+  //
+  // And retire whatever workspace the last visit left in the store: this org
+  // has none by definition, but `useCurrentWorkspace` is only ever WRITTEN by
+  // the workspace layout, never cleared — so arriving here from another org's
+  // workspace through the switcher would otherwise hand the settings dialog
+  // below that org's Workspace group, name and role.
   useEffect(() => {
     releaseBodyPointerLock();
+    useCurrentWorkspace.getState().setWorkspace(null);
   }, []);
 
   const { data: workspaces, isPending } = useAllWorkspaces(orgId);
@@ -88,10 +106,58 @@ export default function OrgOnboardingPage() {
         {step === "invite" ? (
           <InviteStep orgId={orgId} orgName={org.name} onContinue={() => setStep("workspace")} />
         ) : (
-          <WorkspaceStep org={org} onBack={showInviteStep ? () => setStep("invite") : undefined} />
+          <>
+            <WorkspaceStep
+              org={org}
+              onBack={showInviteStep ? () => setStep("invite") : undefined}
+            />
+            <SetUpTheCrewFirst />
+          </>
         )}
       </div>
+
+      {/*
+        The organization's settings, reachable before a workspace exists. The
+        dialog reads the org from the guard above and hides its Workspace
+        group when there is none, so a store operator can enrol the crew,
+        name locations and enrol kiosks first — a workspace can come later.
+      */}
+      <SettingsDialog />
     </div>
+  );
+}
+
+/**
+ * The other order of setup. A workspace is where a semantic model and agents
+ * live; a restaurant chain's first job is its crew and its stores, and every
+ * one of those is an organization setting that needs no workspace at all.
+ */
+function SetUpTheCrewFirst() {
+  const open = useSettingsDialog((s) => s.open);
+  return (
+    <CanOrgAdmin>
+      <div
+        className='flex items-start gap-3 rounded-lg border border-dashed p-4 text-sm'
+        data-testid='onboarding-crew-first'
+      >
+        <HardHat className='mt-0.5 size-4 shrink-0 text-muted-foreground' aria-hidden='true' />
+        <div className='flex-1'>
+          <p className='font-medium'>Running stores? Set up the crew first.</p>
+          <p className='mt-1 text-muted-foreground'>
+            Enrol workers, name your locations and enrol the kiosks now. A workspace can come later.
+          </p>
+          <Button
+            variant='outline'
+            size='sm'
+            className='mt-3'
+            onClick={() => open("organization.crew")}
+            data-testid='onboarding-open-crew'
+          >
+            Open organization settings
+          </Button>
+        </div>
+      </div>
+    </CanOrgAdmin>
   );
 }
 

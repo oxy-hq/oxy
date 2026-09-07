@@ -20,6 +20,11 @@ export interface BoundKioskDevice {
   /** The enrolled device's display name, e.g. "Front counter". */
   device: string;
   /**
+   * Where the tablet sits, when the admin said — one of the org's locations.
+   * Absent on servers older than the operating graph.
+   */
+  location?: { id: string; name: string } | null;
+  /**
    * The app this kiosk was enrolled for, or null. Still goes through the
    * return-to allowlist before the browser is sent there.
    */

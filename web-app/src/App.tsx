@@ -39,6 +39,7 @@ import OwnerRedirect from "./components/OwnerRedirect";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { WorkspaceShell } from "./components/Shell/WorkspaceShell";
 import SettingsDialog from "./components/settings/SettingsDialog";
+import { useSettingsDeepLink } from "./components/settings/SettingsDialog/useSettingsDeepLink";
 import AgenticSetupPage from "./components/workspaces/components/CreateWorkspaceDialog/components/AgenticSetup";
 import { LocalWorkspaceSetupDialog } from "./components/workspaces/components/LocalWorkspaceSetupDialog";
 import { ManageWorkspacesDialog } from "./components/workspaces/components/ManageWorkspacesDialog";
@@ -223,6 +224,9 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
   // a refresh doesn't re-fire the toast. (Lived in the cloud-only sidebar
   // footer until the sidebar was removed; WorkspaceLayout matches its mount
   // surface, and the local-mode guard matches its cloud-only scope.)
+  // `?settings=<section>` — the link the custom-app shell emits, and any
+  // other deep link into the dialog. Read once, then stripped.
+  useSettingsDeepLink();
   const [searchParams, setSearchParams] = useSearchParams();
   const openSettingsDialog = useSettingsDialog((s) => s.open);
   useEffect(() => {
@@ -230,9 +234,14 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
     if (searchParams.get("slack_installed") !== "ok") return;
     toast.success("Slack connected");
     openSettingsDialog("organization.integration");
-    const next = new URLSearchParams(searchParams);
-    next.delete("slack_installed");
-    setSearchParams(next, { replace: true });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("slack_installed");
+        return next;
+      },
+      { replace: true }
+    );
   }, [isLocalMode, searchParams, setSearchParams, openSettingsDialog]);
 
   React.useEffect(() => {
