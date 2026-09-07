@@ -560,8 +560,43 @@ pub struct CreatedDevice {
     pub id: Uuid,
     pub name: String,
     /// Open this on the tablet. Shown once; the server keeps only a hash.
+    ///
+    /// Composed on the origin the request arrived on. A browser sends
+    /// `Origin`; a CLI (`oxyc`) sends neither that nor `Referer`, and the
+    /// shared base-URL helper then answers `http://localhost:3000` — which is
+    /// what the dev probe of 2026-09-07 got back. So this route also honours
+    /// `Host` (with `X-Forwarded-Proto`), and `bind_path` is beside it for a
+    /// client that would rather compose against an origin it knows.
     pub enrol_url: String,
+    /// The path half of `enrol_url`, for composing against any origin.
+    pub bind_path: String,
     pub expires_at: String,
+}
+
+/// The origin to mint the enrol link on: the shared helper's answer when the
+/// request carried `Origin` or `Referer`, else `Host` + forwarded scheme, else
+/// the helper's localhost fallback.
+fn enrol_link_base(headers: &HeaderMap) -> String {
+    let from_headers = extract_base_url_from_headers(headers);
+    let browser_told_us =
+        headers.contains_key(header::ORIGIN) || headers.contains_key(header::REFERER);
+    if browser_told_us {
+        return from_headers;
+    }
+    let Some(host) = headers.get(header::HOST).and_then(|h| h.to_str().ok()) else {
+        return from_headers;
+    };
+    let scheme = match headers
+        .get("x-forwarded-proto")
+        .and_then(|h| h.to_str().ok())
+    {
+        Some(p) if p.eq_ignore_ascii_case("http") => "http",
+        Some(_) => "https",
+        None if is_request_secure(headers) => "https",
+        None if host.starts_with("localhost") || host.starts_with("127.0.0.1") => "http",
+        None => "https",
+    };
+    format!("{scheme}://{host}")
 }
 
 /// `POST /api/orgs/{org_id}/frontline/devices` — org admin. Creates a device
@@ -587,7 +622,7 @@ pub async fn create_device(
     .await
     {
         Ok((row, token)) => {
-            let base = extract_base_url_from_headers(&headers);
+            let base = enrol_link_base(&headers);
             audit::record_best_effort(
                 &db,
                 audit::AuditEntry::new(actor.label().to_string(), "frontline.device.created")
@@ -602,6 +637,7 @@ pub async fn create_device(
                     id: row.id,
                     name: row.name,
                     enrol_url: format!("{base}/api/frontline/devices/bind?token={token}"),
+                    bind_path: format!("/api/frontline/devices/bind?token={token}"),
                     expires_at: row
                         .enrol_expires_at
                         .map(|t| t.to_rfc3339())
@@ -747,6 +783,22 @@ mod tests {
             escape("Front <counter> & \"bar\""),
             "Front &lt;counter&gt; &amp; &quot;bar&quot;"
         );
+    }
+
+    #[test]
+    fn the_enrol_link_is_minted_on_the_host_a_cli_arrived_on() {
+        let mut h = HeaderMap::new();
+        h.insert(header::HOST, HeaderValue::from_static("aip.dev.oxy.tech"));
+        h.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        assert_eq!(enrol_link_base(&h), "https://aip.dev.oxy.tech");
+        // A browser's Origin still wins, as everywhere else.
+        h.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://app.oxygen-hq.com"),
+        );
+        assert_eq!(enrol_link_base(&h), "https://app.oxygen-hq.com");
+        // Nothing at all: the helper's fallback, unchanged.
+        assert_eq!(enrol_link_base(&HeaderMap::new()), "http://localhost:3000");
     }
 
     #[test]
