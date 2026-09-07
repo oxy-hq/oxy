@@ -31,9 +31,7 @@ use tokio::signal;
 use tokio_util::sync::CancellationToken;
 use tower::{ServiceBuilder, service_fn};
 use tower_http::compression::CompressionLayer;
-use tower_http::trace::{self, TraceLayer};
 use tower_serve_static::ServeDir;
-use tracing::Level;
 use utoipa_swagger_ui::SwaggerUi;
 
 #[cfg(target_os = "windows")]
@@ -574,18 +572,17 @@ async fn find_available_port(host: String, port: u16) -> Result<u16, OxyError> {
                     }
                     Err(e) => {
                         if chosen_port <= 1024 && e.kind() == std::io::ErrorKind::PermissionDenied {
-                            eprintln!(
+                            // Returned, not `exit(1)`-ed, so `main` still flushes the
+                            // platform-telemetry exporters — see the `Serve` arm in `mod.rs`.
+                            return Err(OxyError::RuntimeError(format!(
                                 "Permission denied binding to port {chosen_port}. Try running with sudo or use a port above 1024."
-                            );
-                            std::process::exit(1);
+                            )));
                         }
                         port_attempts += 1;
                         if port_attempts > MAX_PORT_ATTEMPTS {
-                            eprintln!(
-                                "Failed to bind to any port after trying {} ports starting from {}. Error: {}",
-                                port_attempts, original_web_port, e
-                            );
-                            std::process::exit(1);
+                            return Err(OxyError::RuntimeError(format!(
+                                "Failed to bind to any port after trying {port_attempts} ports starting from {original_web_port}. Error: {e}"
+                            )));
                         }
                         println!("Port {chosen_port} is occupied. Trying next port...");
                         chosen_port += 1;
@@ -758,9 +755,13 @@ async fn create_web_application(
         // manifest entry governs both surfaces.
         .nest(
             "/external/api",
-            external_api_router.layer(axum::middleware::from_fn(
-                crate::server::role_middleware::enforce_role,
-            )),
+            external_api_router
+                .layer(axum::middleware::from_fn(
+                    crate::server::role_middleware::enforce_role,
+                ))
+                // Being a sibling of `main`, this surface would otherwise be
+                // the one API tree with no request span in HyperDX.
+                .layer(create_trace_layer()),
         )
         .fallback_service(main)
         // OUTERMOST of everything, so `x-oxy-request-id` is minted exactly once
@@ -805,18 +806,16 @@ async fn create_internal_application(
         .layer(create_trace_layer()))
 }
 
-fn create_trace_layer()
--> TraceLayer<tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>>
-{
-    TraceLayer::new_for_http()
-        .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
-        .on_request(trace::DefaultOnRequest::new().level(Level::DEBUG))
-        .on_response(
-            trace::DefaultOnResponse::new()
-                .level(Level::INFO)
-                .latency_unit(tower_http::LatencyUnit::Millis),
-        )
-        .on_failure(trace::DefaultOnFailure::new().level(Level::ERROR))
+/// One `SERVER` span per request, named by route, with the OTel HTTP semantic
+/// conventions and the inbound `traceparent` as parent — see
+/// `oxy_telemetry::http_trace`. The request-id header name is passed in so
+/// that crate needs no `oxy-shared` edge; the middleware minting it runs
+/// OUTSIDE this layer (it is the outermost layer of the top router), so the
+/// id is already on the request when the span is made.
+fn create_trace_layer() -> oxy_telemetry::http_trace::OxyTraceLayer {
+    oxy_telemetry::http_trace::trace_layer(
+        crate::server::api::middlewares::request_id::REQUEST_ID_HEADER,
+    )
 }
 
 async fn handle_static_files(
@@ -1139,8 +1138,11 @@ async fn serve_application(
             {
                 Ok(cfg) => cfg,
                 Err(e) => {
-                    eprintln!("Failed to load TLS cert/key: {}", e);
-                    std::process::exit(1);
+                    // Returned, not `exit(1)`-ed, so `main` still flushes the
+                    // platform-telemetry exporters — see the `Serve` arm in `mod.rs`.
+                    return Err(OxyError::RuntimeError(format!(
+                        "Failed to load TLS cert/key: {e}"
+                    )));
                 }
             }
         } else {
@@ -1155,8 +1157,9 @@ async fn serve_application(
             {
                 Ok(cfg) => cfg,
                 Err(e) => {
-                    eprintln!("Failed to load bundled TLS cert/key: {}", e);
-                    std::process::exit(1);
+                    return Err(OxyError::RuntimeError(format!(
+                        "Failed to load bundled TLS cert/key: {e}"
+                    )));
                 }
             }
         };

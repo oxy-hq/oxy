@@ -43,6 +43,8 @@ crates/
   billing/                  # (oxy-billing) Stripe billing
   metric-monitoring/        # (oxy-metric-monitoring) Anomaly monitors / metric tree
   observability/            # (oxy-observability) Customer-facing observability backend
+  telemetry/                # (oxy-telemetry) Platform telemetry: OTLP traces+logs → cluster OTel
+                            #   collector (ClickStack/HyperDX), stderr JSON format, HTTP request spans
   airform/                  # (oxy-airform) dbt-style modeling
   airhouse/                 # (airhouse) Warehouse + connector
   cameras/                  # (oxy-cameras) Camera fleet domain

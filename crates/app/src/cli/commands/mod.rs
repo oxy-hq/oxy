@@ -902,8 +902,11 @@ pub async fn cli(
             )
             .await
             {
-                eprintln!("{}", format!("Failed to start: {e}").error());
-                exit(1);
+                // Returned rather than `exit(1)`-ed: `main` prints the same
+                // message, records it to Sentry, and — the reason this changed —
+                // flushes the platform-telemetry exporters, so the failure that
+                // crash-loops a pod is the last thing HyperDX shows for it.
+                return Err(OxyError::RuntimeError(format!("Failed to start: {e}")).into());
             }
         }
         Some(SubCommand::Serve(serve_args)) => {
@@ -916,14 +919,20 @@ pub async fn cli(
             )
             .await
             {
-                eprintln!("{}", format!("Server failed: {e}").error());
-                exit(1);
+                // Returned rather than `exit(1)`-ed: `main` prints the same
+                // message, records it to Sentry, and — the reason this changed —
+                // flushes the platform-telemetry exporters, so the failure that
+                // crash-loops a pod is the last thing HyperDX shows for it.
+                return Err(OxyError::RuntimeError(format!("Server failed: {e}")).into());
             }
         }
         Some(SubCommand::Worker(worker_args)) => {
             if let Err(e) = worker::run_worker(worker_args).await {
-                eprintln!("{}", format!("Worker failed: {e}").error());
-                exit(1);
+                // Returned rather than `exit(1)`-ed: `main` prints the same
+                // message, records it to Sentry, and — the reason this changed —
+                // flushes the platform-telemetry exporters, so the failure that
+                // crash-loops a pod is the last thing HyperDX shows for it.
+                return Err(OxyError::RuntimeError(format!("Worker failed: {e}")).into());
             }
         }
         Some(SubCommand::Status) => {

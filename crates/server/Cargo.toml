@@ -37,6 +37,7 @@ oxy-api-onboarding = { path = "../api-onboarding" }
 oxy-app-dylib = { path = "../app-dylib", optional = true }
 oxy = { workspace = true }
 oxy-observability = { workspace = true }
+oxy-telemetry = { workspace = true }
 
 axum = { workspace = true }
 dotenv = { workspace = true }

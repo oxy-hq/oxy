@@ -468,6 +468,43 @@ airhouse-verify-blobs:
 
 # ── ClickHouse local observability stack ────────────────────────────────────────
 
+# ClickStack = HyperDX UI + ClickHouse + OTel collector, the store for the
+# PLATFORM telemetry oxy exports (traces + logs of the oxy process itself). It is
+# the operator store — unrelated to the oxy-clickhouse container below, which is
+# the product observability store the in-app Traces console reads.
+# Ports: 8080 UI, 4318 OTLP/HTTP (what oxy speaks), 4317 OTLP/gRPC.
+
+# Boot a local ClickStack (HyperDX on :8080, OTLP on :4318) for platform telemetry.
+clickstack-up:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if docker ps -a --format '{{{{.Names}}}}' | grep -qx oxy-clickstack; then
+      docker start oxy-clickstack >/dev/null
+    else
+      docker run -d --name oxy-clickstack \
+        -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+        -v oxy-clickstack-db:/data/db \
+        -v oxy-clickstack-ch:/var/lib/clickhouse \
+        docker.hyperdx.io/hyperdx/hyperdx-all-in-one >/dev/null
+    fi
+    echo
+    echo "ClickStack booting: HyperDX on http://localhost:8080 (create the first user there)."
+    echo
+    echo "Point oxy at its collector, then run a server-shaped command (serve / start / worker):"
+    echo "  export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318"
+    echo "  export OTEL_LOGS_EXPORTER=otlp        # nothing tails stdout locally, so ship logs too"
+    echo "  export OTEL_RESOURCE_ATTRIBUTES=deployment.environment=local"
+    echo "  cargo run -p oxy-server -- serve"
+    echo
+    echo "The boot log line 'OTLP export enabled' confirms the exporters are up; every"
+    echo "HTTP request is then a 'GET /api/…' span in HyperDX, with its logs attached."
+    echo "Operator guide: internal-docs/platform-telemetry.md"
+
+# Tear the local ClickStack down (drops its volumes; pass --keep-data to retain).
+clickstack-down *FLAGS:
+    docker rm -f oxy-clickstack >/dev/null 2>&1 || true
+    {{ if FLAGS =~ "--keep-data" { "@true" } else { "docker volume rm oxy-clickstack-db oxy-clickstack-ch >/dev/null 2>&1 || true" } }}
+
 # Boot the local ClickHouse observability server.
 clickhouse-up:
     docker compose -f docker-compose.clickhouse.yml up -d

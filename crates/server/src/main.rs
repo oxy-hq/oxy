@@ -11,201 +11,35 @@
 #[cfg(feature = "dev-dynamic")]
 extern crate oxy_app_dylib as _;
 
-use std::io::IsTerminal;
+mod logging;
+
 use std::process::exit;
 
 use dotenv::dotenv;
 use human_panic::Metadata;
 use human_panic::setup_panic;
-use once_cell::sync::OnceCell;
 use oxy::sentry_config;
-use oxy::state_dir::get_state_dir;
 use oxy::theme::StyledText;
 use oxy_app::cli::commands::cli;
 use oxy_app::observability_boot;
+use oxy_telemetry::otel::OtelConfig;
 use std::env;
-use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-static LOG_GUARD: OnceCell<tracing_appender::non_blocking::WorkerGuard> = OnceCell::new();
-
-/// How many daily `oxy.log` files to keep on local installs before the oldest
-/// is pruned. Bounds the on-disk log footprint for a long-lived local session.
-const LOCAL_LOG_MAX_FILES: usize = 7;
-
-#[derive(Debug, Clone)]
-enum LogFormat {
-    Local, // Human-readable format with colors for local development
-    Cloud, // Structured JSON for Kubernetes/cloud log aggregators
-}
-
-impl LogFormat {
-    fn detect() -> Self {
-        // Check if running in Kubernetes
-        if env::var("KUBERNETES_SERVICE_HOST").is_ok() || env::var("KUBERNETES_PORT").is_ok() {
-            LogFormat::Cloud
-        } else {
-            LogFormat::Local
-        }
-    }
-}
-
-fn init_tracing_logging(observability_enabled: bool) {
-    let log_format = LogFormat::detect();
-
-    // OXY_DEBUG=true: shortcut for debug-level logging. When set, it overrides
-    // OXY_LOG_LEVEL so developers get verbose oxy output without having to
-    // remember the env var name. Framework crates are still suppressed.
-    let debug_mode = env::var("OXY_DEBUG")
-        .as_deref()
-        .unwrap_or("false")
-        .eq_ignore_ascii_case("true");
-
-    let log_level = if debug_mode {
-        "debug".to_string()
-    } else {
-        env::var("OXY_LOG_LEVEL")
-            .unwrap_or_else(|_| "warn".to_string())
-            .to_lowercase()
-    };
-
-    // Suppress known-noisy framework crates regardless of the requested log
-    // level. This keeps output actionable even at info/debug by hiding HTTP
-    // wire-level traces, raw SQL, and TLS protocol chatter. RUST_LOG bypasses
-    // all of this when set, giving experts a full escape hatch.
-    //
-    // Resolve directives once into a string so the stdout/file layers don't
-    // each re-read RUST_LOG and re-parse the directives. EnvFilter doesn't
-    // implement Clone, so we rebuild it from the same string for each layer.
-    let filter_directives = env::var("RUST_LOG").unwrap_or_else(|_| {
-        format!(
-            "{log_level},tower_http=warn,h2=warn,hyper=warn,reqwest=warn,\
-             sqlx=warn,sea_orm=warn,tonic=warn,rustls=warn,\
-             tokio_postgres=warn,tungstenite=warn,tokio_tungstenite=warn,\
-             deser_incomplete=off"
-        )
-    });
-    let make_filter = || EnvFilter::new(&filter_directives);
-
-    // oxy.log is a local-dev convenience — a developer running oxy on their
-    // laptop can tail it. In cloud (Kubernetes) every process already ships its
-    // logs to the cluster aggregator via stdout/stderr, so an extra on-disk file
-    // is pure waste: on the serve/worker fleet the state dir is an emptyDir, and
-    // an unrotated oxy.log grows until the kubelet evicts the pod under node
-    // DiskPressure. So write the file on Local only — and bound it even there
-    // with daily rotation so a long-lived session can't grow it without limit.
-    // Rotation dates the filename: `oxy.<YYYY-MM-DD>.log`.
-    let file_writer = match log_format {
-        LogFormat::Local => match tracing_appender::rolling::Builder::new()
-            .rotation(tracing_appender::rolling::Rotation::DAILY)
-            .filename_prefix("oxy")
-            .filename_suffix("log")
-            .max_log_files(LOCAL_LOG_MAX_FILES)
-            .build(get_state_dir())
-        {
-            Ok(appender) => {
-                let (writer, guard) = tracing_appender::non_blocking(appender);
-                LOG_GUARD.set(guard).ok();
-                Some(writer)
-            }
-            Err(e) => {
-                eprintln!("oxy: could not initialize oxy.log file appender: {e}");
-                None
-            }
-        },
-        LogFormat::Cloud => None,
-    };
-
-    // Build the `SpanCollectorLayer` up front so it can be composed with the
-    // same subscriber as Sentry + file appender + fmt. The store isn't ready
-    // yet (for `oxy start`, Postgres hasn't been booted), so we stash the
-    // receiver and let `serve.rs` wire the bridge once the DB URL is set.
-    // Spans emitted during startup buffer in the unbounded channel and flush
-    // as soon as the bridge spawns.
-    let obs_collector = if observability_enabled {
-        let (layer, receiver) = oxy_observability::build_layer_and_receiver();
-        observability_boot::stash_receiver(receiver);
-        Some(layer)
-    } else {
-        None
-    };
-
-    // Filters are applied per-layer so that the observability layer captures
-    // agent/automation spans independently of OXY_LOG_LEVEL. A global
-    // `.with(env_filter)` would drop info-level spans before they reached
-    // any layer — the legacy OTel pipeline masked this, but the custom
-    // SpanCollectorLayer must be kept isolated from console verbosity.
-    //
-    // `obs_layer`/`sentry_layer` are constructed inside each branch because
-    // `with_filter` pins the target Subscriber type, and the Local vs Cloud
-    // branches build different subscriber chains (Full vs Compact format).
-
-    match log_format {
-        LogFormat::Local => {
-            // Console: colorized human-readable on stderr — stderr is the
-            // conventional channel for diagnostics so a CLI's stdout stays
-            // available for piped/captured program output.
-            //
-            // ANSI is enabled only when stderr is an interactive TTY. When
-            // stderr is captured (Docker/Podman logs, file redirect, journald,
-            // CI) the colors would otherwise leak in as `\x1b[2m...\x1b[0m`
-            // sequences and make the captured logs unreadable.
-            //
-            // `.compact()` drops the per-event repetition of the full span-
-            // chain breadcrumb (which embedded `oxy.sql=...` on every nested
-            // log line during SQL execution). Span field values are still
-            // recorded on the span itself so the observability backend can
-            // read them — only the visual repetition is suppressed.
-            let console_layer = fmt::layer()
-                .compact()
-                .with_target(true)
-                .with_level(true)
-                .with_writer(std::io::stderr)
-                .with_ansi(std::io::stderr().is_terminal())
-                .with_filter(make_filter());
-            let file_layer = file_writer.map(|writer| {
-                fmt::layer()
-                    .with_target(true)
-                    .with_level(true)
-                    .with_writer(writer)
-                    .with_ansi(false)
-                    .with_filter(make_filter())
-            });
-            let obs_layer =
-                obs_collector.map(|l| l.with_filter(oxy_observability::observability_filter()));
-            let sentry_layer = sentry::integrations::tracing::layer()
-                .with_filter(tracing_subscriber::filter::LevelFilter::WARN);
-            tracing_subscriber::registry()
-                .with(sentry_layer)
-                .with(file_layer)
-                .with(console_layer)
-                .with(obs_layer)
-                .init();
-        }
-        LogFormat::Cloud => {
-            // Console: structured JSON on stderr. Kubernetes/container
-            // runtimes capture both stdout and stderr, so cloud aggregators
-            // still pick this up while keeping stdout clean for any program
-            // output the binary may emit.
-            let console_layer = fmt::layer()
-                .json()
-                .with_current_span(true)
-                .with_span_list(false)
-                .with_writer(std::io::stderr)
-                .with_filter(make_filter());
-            // No file layer in cloud: logs already go to stdout/stderr → the
-            // cluster aggregator, and the state dir is an emptyDir we must not
-            // fill (see the `file_writer` comment above).
-            let obs_layer =
-                obs_collector.map(|l| l.with_filter(oxy_observability::observability_filter()));
-            let sentry_layer = sentry::integrations::tracing::layer()
-                .with_filter(tracing_subscriber::filter::LevelFilter::WARN);
-            tracing_subscriber::registry()
-                .with(sentry_layer)
-                .with(console_layer)
-                .with(obs_layer)
-                .init();
-        }
-    }
+/// The long-lived server command this invocation runs, if any. Read before
+/// clap runs because the subscriber must exist before anything logs, and
+/// matched anywhere in argv rather than as "the first non-flag": a global
+/// value-taking flag (`oxy --output text serve`) would otherwise make the
+/// value look like the command.
+///
+/// Only these three get the OpenTelemetry layer. A one-shot command
+/// (`oxy publish`, `oxy run`) has no reader for its trace ids, and in a shell
+/// that happens to carry `OTEL_EXPORTER_OTLP_ENDPOINT` — `.env` is
+/// auto-loaded — it would pay the exporter's flush at every exit.
+fn server_command(args: &[String]) -> Option<&str> {
+    args.iter()
+        .skip(1)
+        .map(String::as_str)
+        .find(|a| matches!(*a, "serve" | "start" | "worker"))
 }
 
 /// Raise the process's open-file-descriptor soft limit at startup.
@@ -304,14 +138,36 @@ fn main() {
         .build()
         .unwrap()
         .block_on(async {
-            // Install tracing with Sentry + file appender + (if enterprise)
-            // the SpanCollectorLayer. The observability *store* isn't wired
+            // Install the subscriber: Sentry + stderr/file + (if enterprise)
+            // the SpanCollectorLayer + (if an OTLP endpoint is configured) the
+            // OpenTelemetry exporters. The observability *store* isn't wired
             // yet — the `oxy start` path boots its ClickHouse container and
-            // only then are `OXY_CLICKHOUSE_*` set.
-            // `observability_boot::finalize()` is called from `serve.rs` once
-            // that endpoint is available, to resolve the backend and spawn
-            // the bridge task.
-            init_tracing_logging(observability_enabled);
+            // only then are `OXY_CLICKHOUSE_*` set; `observability_boot::
+            // finalize()` is called from `serve.rs` once that endpoint is
+            // available. The OTel resource needs the fleet role now, before
+            // clap has parsed anything, so it is read from OXY_ROLE + argv.
+            let command = server_command(&args);
+            let role =
+                oxy_telemetry::resource::role_hint(command, env::var("OXY_ROLE").ok().as_deref());
+            let mut otel = OtelConfig::from_env(role);
+            if command.is_none() {
+                otel.sdk_disabled = true;
+            }
+            let telemetry_problems = logging::init(observability_enabled, &otel);
+            for problem in telemetry_problems {
+                tracing::warn!(%problem, "platform telemetry degraded");
+            }
+            if otel.export_enabled() {
+                tracing::info!(
+                    traces_endpoint = otel.traces_endpoint.as_deref().unwrap_or_default(),
+                    logs_endpoint = otel.logs_endpoint.as_deref().unwrap_or_default(),
+                    traces = otel.traces_exported(),
+                    logs = otel.logs_exported(),
+                    filter = %otel.filter,
+                    role = role.unwrap_or("none"),
+                    "OTLP export enabled"
+                );
+            }
 
             // Give the server enough file-descriptor headroom before it binds
             // listeners / boots the embedded Postgres — macOS defaults to a
@@ -348,6 +204,17 @@ fn main() {
             };
 
             observability_boot::shutdown().await;
+
+            // Last: flush the OTLP exporters. Blocking, bounded, and off the
+            // async thread so a slow collector cannot wedge the runtime.
+            match tokio::task::spawn_blocking(oxy_telemetry::otel::shutdown).await {
+                Ok(problems) => {
+                    for problem in problems {
+                        eprintln!("oxy: {problem}");
+                    }
+                }
+                Err(e) => eprintln!("oxy: OTLP exporter shutdown did not complete: {e}"),
+            }
 
             if exit_code != 0 {
                 exit(exit_code);

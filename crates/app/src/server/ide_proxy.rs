@@ -164,6 +164,12 @@ pub async fn forward_to_ide_opt(upstream_base: &str, req: Request) -> Result<Res
     out_headers.insert(HEADER_FORWARDED_BY, HeaderValue::from_static("serve"));
     // Carry the PUBLIC host across the hop — see `preserve_public_host`.
     preserve_public_host(&parts.headers, &mut out_headers);
+    // Carry the trace across the hop: the ide pod's request span becomes a
+    // child of this replica's, so HyperDX shows one trace for the round trip
+    // rather than two that share only `x-oxy-request-id`. Replaces whatever
+    // `traceparent` the client sent — that one already parented THIS span.
+    // No-op when OTLP export is off (no span context to write).
+    oxy_telemetry::propagation::inject_current(&mut out_headers);
 
     let upstream = client()
         .request(method, &url)

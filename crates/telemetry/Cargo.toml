@@ -1,0 +1,29 @@
+[package]
+name = "oxy-telemetry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Platform telemetry: OTLP export of traces + logs to the cluster OTel collector (ClickStack / HyperDX), the structured log format, HTTP request spans and W3C trace propagation"
+
+[dependencies]
+axum = { workspace = true }
+chrono = { workspace = true }
+http = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry-appender-tracing = { workspace = true }
+opentelemetry-http = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+serde_json = { workspace = true }
+tower-http = { workspace = true, features = ["trace"] }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json", "registry"] }
+
+[dev-dependencies]
+# `testing` turns on the in-memory span exporter the http_trace tests assert
+# against — a real OTLP round-trip would need a collector on the test host.
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
+tower = { workspace = true, features = ["util"] }
