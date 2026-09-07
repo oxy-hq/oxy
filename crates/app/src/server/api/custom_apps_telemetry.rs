@@ -92,6 +92,7 @@ pub fn record_serve(event: ServeEvent<'_>) {
         return;
     }
     let outcome = outcome_for(event.status, event.duration_ms);
+    let (trace_id, span_id) = trace_ids();
     custom_app_sink::record_event(CustomAppEventRecord {
         timestamp_ms: now_ms(),
         org_id: event.org_id.to_string(),
@@ -118,6 +119,8 @@ pub fn record_serve(event: ServeEvent<'_>) {
             String::new()
         },
         error_detail: String::new(),
+        trace_id,
+        span_id,
     });
 }
 
@@ -157,6 +160,7 @@ pub fn record_function(event: FunctionEvent<'_>) {
         "cancelled" => custom_app_outcome::OK,
         _ => custom_app_outcome::ERROR,
     };
+    let (trace_id, span_id) = trace_ids();
     custom_app_sink::record_event(CustomAppEventRecord {
         timestamp_ms: now_ms(),
         org_id: event.org_id.to_string(),
@@ -178,6 +182,8 @@ pub fn record_function(event: FunctionEvent<'_>) {
             String::new()
         },
         error_detail: event.error.unwrap_or_default().to_string(),
+        trace_id,
+        span_id,
     });
 }
 
@@ -200,6 +206,7 @@ pub fn record_function_logs(
     if !custom_app_sink::is_enabled() || lines.is_empty() {
         return;
     }
+    let (trace_id, span_id) = trace_ids();
     let timestamp_ms = now_ms();
     let records = lines
         .iter()
@@ -216,6 +223,8 @@ pub fn record_function_logs(
             log_level: level.clone(),
             seq: seq as u32,
             message: message.clone(),
+            trace_id: trace_id.clone(),
+            span_id: span_id.clone(),
         })
         .collect();
     custom_app_sink::record_logs(records);
@@ -238,6 +247,7 @@ pub fn record_client_event(
     if !custom_app_sink::is_enabled() {
         return;
     }
+    let (trace_id, span_id) = trace_ids();
     custom_app_sink::record_event(CustomAppEventRecord {
         timestamp_ms: now_ms(),
         org_id: org_id.to_string(),
@@ -255,6 +265,8 @@ pub fn record_client_event(
         outcome: outcome.to_string(),
         error_kind: event_name.to_string(),
         error_detail: String::new(),
+        trace_id,
+        span_id,
     });
 }
 
@@ -331,6 +343,10 @@ pub fn record_client_errors(
             path: str_field(d, "p", ""),
             kind: str_field(d, "k", "error"),
             user_agent: user_agent.clone(),
+            // `t` is the trace of the invoke the page was awaiting when it
+            // threw, when the SDK could name one; the browser has no span.
+            trace_id: trace_id_field(d),
+            span_id: String::new(),
         })
         .collect();
     custom_app_sink::record_client_errors(records);
@@ -342,6 +358,30 @@ fn str_field(value: &serde_json::Value, key: &str, fallback: &str) -> String {
         .and_then(|v| v.as_str())
         .unwrap_or(fallback)
         .to_string()
+}
+
+/// The current platform-trace ids, or two empty strings outside a traced
+/// span (a one-shot CLI process, or `OTEL_SDK_DISABLED`). Every row this module
+/// writes carries them, so the product tables join the operator's trace.
+fn trace_ids() -> (String, String) {
+    oxy_telemetry::propagation::current_ids().unwrap_or_default()
+}
+
+/// The `t` of an error detail — the trace of the invoke the page was awaiting
+/// when it threw — accepted only as 32 lowercase hex, the shape the SDK mints.
+/// Same posture as `build` above: an app's own JavaScript can post anything to
+/// this endpoint, and this column is documented as a HyperDX join key.
+fn trace_id_field(detail: &serde_json::Value) -> String {
+    detail
+        .get("t")
+        .and_then(|v| v.as_str())
+        .filter(|t| {
+            t.len() == 32
+                && t.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
+        .map(str::to_string)
+        .unwrap_or_default()
 }
 
 /// An absent id stays absent. A nil UUID would look like a value and join rows
@@ -411,5 +451,26 @@ mod tests {
     fn an_absent_id_serialises_empty_not_nil() {
         assert_eq!(opt_id(None), "");
         assert_ne!(opt_id(Some(Uuid::nil())), "");
+    }
+}
+
+#[cfg(test)]
+mod trace_id_field_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_lowercase_32_hex_trace_id_is_kept() {
+        let ok = serde_json::json!({ "t": "0af7651916cd43dd8448eb211c80319c" });
+        assert_eq!(trace_id_field(&ok), "0af7651916cd43dd8448eb211c80319c");
+        for bad in [
+            serde_json::json!({ "t": "0AF7651916CD43DD8448EB211C80319C" }),
+            serde_json::json!({ "t": "x".repeat(32) }),
+            serde_json::json!({ "t": "0af7651916cd43dd8448eb211c80319" }),
+            serde_json::json!({ "t": "a".repeat(1_000_000) }),
+            serde_json::json!({ "t": 42 }),
+            serde_json::json!({}),
+        ] {
+            assert_eq!(trace_id_field(&bad), "", "{}", bad.to_string().len());
+        }
     }
 }

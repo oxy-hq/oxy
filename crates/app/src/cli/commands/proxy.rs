@@ -145,6 +145,15 @@ fn build_request_headers(incoming: &HeaderMap, token: Option<&str>, path: &str) 
             h.insert(name, v.clone());
         }
     }
+    // W3C trace context from the SDK. The request's trace must be the one the
+    // page stamped on its error (`error.traceId`), or that id names a trace
+    // that exists nowhere. Not in the list above only because `http` has no
+    // constant for it.
+    for name in ["traceparent", "tracestate"] {
+        if let Some(v) = incoming.get(name) {
+            h.insert(HeaderName::from_static(name), v.clone());
+        }
+    }
     let has_auth = h.contains_key(header::COOKIE) || h.contains_key(header::AUTHORIZATION);
     if !has_auth
         && !is_auth_path(path)
@@ -177,6 +186,63 @@ fn rewrite_set_cookie(value: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("; ")
+}
+
+/// The function name when `path` is an Oxy Function invocation —
+/// `/customer-apps/<org>/<slug>/fn/<name>[/…]`, the one call this proxy
+/// annotates with its ids. A bundle asset that merely contains `/fn/` is not.
+fn function_route(path: &str) -> Option<&str> {
+    let mut seg = path.split('/').filter(|s| !s.is_empty());
+    match (seg.next(), seg.next(), seg.next(), seg.next(), seg.next()) {
+        (Some("customer-apps"), Some(_org), Some(_slug), Some("fn"), Some(name)) => Some(name),
+        _ => None,
+    }
+}
+
+/// `fn <name>` for the per-call line.
+fn function_display_name(path: &str) -> String {
+    format!("fn {}", function_route(path).unwrap_or("?"))
+}
+
+/// The trace id of a well-formed W3C `traceparent`: version, 32-hex non-zero
+/// trace id, 16-hex non-zero span id, 2-hex flags. Anything else is rejected
+/// whole — the server's extractor would, and a printed id must be real.
+fn valid_traceparent_trace_id(value: &str) -> Option<&str> {
+    let parts: Vec<&str> = value.split('-').collect();
+    let [version, trace, span, flags] = parts.as_slice() else {
+        return None;
+    };
+    let hex = |s: &str, len: usize| s.len() == len && s.chars().all(|c| c.is_ascii_hexdigit());
+    let nonzero = |s: &str| s.chars().any(|c| c != '0');
+    (hex(version, 2)
+        && hex(trace, 32)
+        && nonzero(trace)
+        && hex(span, 16)
+        && nonzero(span)
+        && hex(flags, 2))
+    .then_some(*trace)
+}
+
+/// Keep a well-formed inbound `traceparent` (the SDK minted one) or mint a
+/// sampled W3C header — replacing a malformed one — and return the trace id
+/// either way.
+fn ensure_traceparent(headers: &mut HeaderMap) -> String {
+    if let Some(existing) = headers
+        .get("traceparent")
+        .and_then(|v| v.to_str().ok())
+        .and_then(valid_traceparent_trace_id)
+    {
+        return existing.to_string();
+    }
+    // A rejected `traceparent` takes its `tracestate` with it (W3C): vendor
+    // state from a trace that no longer applies must not ride on the new one.
+    headers.remove("tracestate");
+    let trace_id = uuid::Uuid::new_v4().simple().to_string();
+    let span_id = uuid::Uuid::new_v4().simple().to_string()[..16].to_string();
+    if let Ok(value) = HeaderValue::from_str(&format!("00-{trace_id}-{span_id}-01")) {
+        headers.insert("traceparent", value);
+    }
+    trace_id
 }
 
 /// Catch-all: apply guardrails, then forward to the cloud target with the bearer,
@@ -218,14 +284,18 @@ async fn forward(State(state): State<Arc<ProxyState>>, req: Request) -> Response
     let url = format!("{}{}", state.target, path_and_query);
     tracing::debug!(%method, %path, "oxy proxy → cloud");
 
+    let mut out_headers = build_request_headers(&parts.headers, state.token.as_deref(), &path);
+    // A function call gets a trace of its own, minted here when the SDK did
+    // not already send one, so the line printed below can name the trace an
+    // operator would open in HyperDX — the developer who just watched the
+    // call fail should not have to find the id by hand.
+    let trace_id = function_route(&path)
+        .is_some()
+        .then(|| ensure_traceparent(&mut out_headers));
     let upstream = state
         .client
         .request(method, &url)
-        .headers(build_request_headers(
-            &parts.headers,
-            state.token.as_deref(),
-            &path,
-        ))
+        .headers(out_headers)
         .body(body_bytes.to_vec())
         .send()
         .await;
@@ -242,6 +312,18 @@ async fn forward(State(state): State<Arc<ProxyState>>, req: Request) -> Response
 
     let status =
         StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    if let Some(trace_id) = trace_id {
+        let request_id = upstream
+            .headers()
+            .get("x-oxy-request-id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("-");
+        println!(
+            "  ↳ {} {}  request_id={request_id}  trace_id={trace_id}",
+            status.as_u16(),
+            function_display_name(&path),
+        );
+    }
     let mut resp_headers = HeaderMap::new();
     for (name, value) in upstream.headers().iter() {
         if is_hop_by_hop(name.as_str()) {
@@ -414,5 +496,86 @@ mod tests {
         assert_eq!(first_env(&[]), "production");
         assert_eq!(first_env(&["  ".into(), "dev".into()]), "dev");
         assert_eq!(first_env(&["staging".into()]), "staging");
+    }
+}
+
+#[cfg(test)]
+mod trace_id_tests {
+    use super::*;
+
+    #[test]
+    fn only_function_calls_are_annotated() {
+        assert_eq!(
+            function_route("/customer-apps/acme/sales/fn/refresh"),
+            Some("refresh")
+        );
+        assert_eq!(
+            function_route("/customer-apps/o/s/fn/sync/extra"),
+            Some("sync")
+        );
+        assert_eq!(
+            function_route("/customer-apps/acme/sales/assets/app.js"),
+            None
+        );
+        assert_eq!(
+            function_route("/customer-apps/acme/sales/assets/fn/x.js"),
+            None
+        );
+        assert_eq!(function_route("/api/fn/not-an-app"), None);
+        assert_eq!(
+            function_display_name("/customer-apps/acme/sales/fn/refresh"),
+            "fn refresh"
+        );
+    }
+
+    /// The SDK's header must survive the outbound allowlist, or the id the
+    /// page stamped on its error names a trace that exists nowhere.
+    #[test]
+    fn the_sdks_traceparent_survives_the_outbound_allowlist() {
+        let mut incoming = HeaderMap::new();
+        incoming.insert(
+            "traceparent",
+            HeaderValue::from_static("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
+        );
+        incoming.insert("tracestate", HeaderValue::from_static("oxy=1"));
+        let mut out = build_request_headers(&incoming, None, "/customer-apps/o/s/fn/refresh");
+        assert_eq!(
+            ensure_traceparent(&mut out),
+            "0af7651916cd43dd8448eb211c80319c"
+        );
+        assert_eq!(out["traceparent"], incoming["traceparent"]);
+        assert_eq!(out["tracestate"], "oxy=1");
+    }
+
+    #[test]
+    fn a_missing_traceparent_is_minted() {
+        let mut headers = HeaderMap::new();
+        let minted = ensure_traceparent(&mut headers);
+        assert_eq!(minted.len(), 32);
+        let sent = headers["traceparent"].to_str().unwrap().to_string();
+        assert_eq!(valid_traceparent_trace_id(&sent), Some(minted.as_str()));
+        assert!(sent.ends_with("-01"));
+    }
+
+    #[test]
+    fn a_malformed_traceparent_is_replaced_not_forwarded() {
+        for bad in [
+            "garbage",
+            "00-00000000000000000000000000000000-b7ad6b7169203331-01",
+            "00-0af7651916cd43dd8448eb211c80319c-0000000000000000-01",
+            "zz-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+            "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331",
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert("traceparent", HeaderValue::from_str(bad).unwrap());
+            headers.insert("tracestate", HeaderValue::from_static("vendor=stale"));
+            let minted = ensure_traceparent(&mut headers);
+            assert!(!bad.contains(&minted), "{bad} should have been replaced");
+            assert!(valid_traceparent_trace_id(headers["traceparent"].to_str().unwrap()).is_some());
+            assert!(
+                headers.get("tracestate").is_none(),
+                "stale tracestate must go with it"
+            );
+        }
     }
 }

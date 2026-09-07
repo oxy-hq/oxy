@@ -1374,6 +1374,7 @@ async fn app_function_job_seeds_manual_run_with_policy() {
         Some(policy),
         "manual",
         Some(serde_json::json!({ "store": 7 })),
+        Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01".to_string()),
     )
     .await
     .expect("enqueue succeeds");

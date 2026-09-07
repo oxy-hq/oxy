@@ -42,6 +42,7 @@ import {
 } from "./manifest";
 import { isSafeLinkHref, isTableStart, splitTableRow } from "./markdown";
 import { getCached, sharedQuery } from "./query-cache";
+import { newTraceparent, withInvocationIds } from "./traceparent";
 
 // ── Context ─────────────────────────────────────────────────────────────────
 
@@ -421,7 +422,10 @@ export interface UseFunctionResult<Data = unknown> {
   data: Data | null;
   /** True while an invocation is in flight. */
   isLoading: boolean;
-  /** Last invocation error, or null. On error this carries `.logs` too. */
+  /**
+   * Last invocation error, or null. On error this carries `.logs`, and
+   * `.traceId` / `.requestId` — the ids that name the run to an operator.
+   */
   error: Error | null;
   /**
    * `console.*` / `ctx.log` output from the last invoke (success or error), so
@@ -475,9 +479,13 @@ export function useFunction<Data = unknown>(name: string): UseFunctionResult<Dat
         // In-flight dedup: concurrent identical invokes (a double-click, or two
         // components) share ONE request — never a memoized result, since a
         // function may be side-effectful.
+        // One trace per invoke, minted here so the page knows its id even
+        // when the call never returns; the server adopts it as the parent.
+        const trace = newTraceparent();
         const headers: Record<string, string> = {
           "content-type": "application/json",
-          accept: "text/event-stream"
+          accept: "text/event-stream",
+          traceparent: trace.header
         };
         if (opts?.idempotencyKey) headers["idempotency-key"] = opts.idempotencyKey;
         const result = await sharedFunctionInvoke<FunctionResult<Data>>(
@@ -488,10 +496,15 @@ export function useFunction<Data = unknown>(name: string): UseFunctionResult<Dat
               headers,
               body: JSON.stringify(body ?? {})
             });
+            const requestId = resp.headers?.get?.("x-oxy-request-id") ?? null;
             if (!resp.ok && resp.status !== 200) {
-              throw await apiErrorFromResponse(resp);
+              throw withInvocationIds(await apiErrorFromResponse(resp), trace.traceId, requestId);
             }
-            return readFunctionSseStream<Data>(resp);
+            try {
+              return await readFunctionSseStream<Data>(resp);
+            } catch (err) {
+              throw withInvocationIds(err, trace.traceId, requestId);
+            }
           }
         );
         setState({ data: result.value, isLoading: false, error: null, logs: result.logs });

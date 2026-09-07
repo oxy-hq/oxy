@@ -41,18 +41,23 @@ fn build_observability_filter() -> EnvFilter {
     let level = std::env::var("OXY_OBSERVABILITY_LOG_LEVEL")
         .unwrap_or_else(|_| DEFAULT_OBSERVABILITY_LOG_LEVEL.to_string());
 
-    match EnvFilter::try_new(&level) {
-        Ok(filter) => filter.add_directive("deser_incomplete=off".parse().unwrap()),
+    let filter = match EnvFilter::try_new(&level) {
+        Ok(filter) => filter,
         Err(_) => {
             eprintln!(
                 "Warning: Invalid observability log level '{}', falling back to '{}'",
                 level, DEFAULT_OBSERVABILITY_LOG_LEVEL
             );
-            EnvFilter::try_new(DEFAULT_OBSERVABILITY_LOG_LEVEL)
-                .unwrap()
-                .add_directive("deser_incomplete=off".parse().unwrap())
+            EnvFilter::try_new(DEFAULT_OBSERVABILITY_LOG_LEVEL).unwrap()
         }
-    }
+    };
+    filter
+        .add_directive("deser_incomplete=off".parse().unwrap())
+        // Custom-app host-op spans (one per `ctx.query` / `ctx.fetch` / …) are
+        // platform telemetry: they go to the OTLP trace, not to this store,
+        // which keeps one row per invocation rather than one per query. See
+        // `custom_apps_functions::host_call_attrs::HOST_CALL_TARGET`.
+        .add_directive("oxy::host_call=off".parse().unwrap())
 }
 
 /// Build just the `SpanCollectorLayer` and its receiver. No store, no bridge.

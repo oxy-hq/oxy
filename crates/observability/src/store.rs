@@ -261,7 +261,7 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
     }
 
     /// Persisted Oxy Function log lines over a window, newest first.
-    /// `invocation_id` empty means "any invocation".
+    /// `invocation_id` / `request_id` empty mean "any"; both set means both.
     async fn get_function_logs(
         &self,
         _org_id: &str,
@@ -269,6 +269,7 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
         _hours: u32,
         _limit: u32,
         _invocation_id: &str,
+        _request_id: &str,
     ) -> Result<Vec<FunctionLogRow>, OxyError> {
         Ok(Vec::new())
     }

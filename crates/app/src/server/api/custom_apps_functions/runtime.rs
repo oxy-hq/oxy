@@ -45,6 +45,7 @@ use deno_core::{JsRuntime, OpState, RuntimeOptions, op2};
 use deno_error::JsErrorBox;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
+use tracing::Instrument;
 
 /// Per-invocation context handed to the isolate. Built fresh for every
 /// invocation from the resolved identity (design doc §11.7) — never cached
@@ -1615,61 +1616,24 @@ pub async fn run(
                 return Err(RuntimeError::Timeout);
             }
             // Service a host call from the isolate. Spawn so concurrent
-            // ctx.* awaits inside one function don't serialize.
+            // ctx.* awaits inside one function don't serialize. Each call runs
+            // under its own span, a child of the invocation span `run` is
+            // being polled in — `tokio::spawn` carries no span by itself, so
+            // without `.instrument` every warehouse query and outbound fetch
+            // was a root trace of its own.
             maybe_call = call_rx.recv() => {
                 match maybe_call {
                     Some(call) => {
                         let host = host.clone();
-                        tokio::spawn(async move {
-                            match call {
-                                HostCall::Query { sql, reply } => {
-                                    let _ = reply.send(host.query(sql).await);
-                                }
-                                HostCall::QueryStream { sql, reply } => {
-                                    let _ = reply.send(host.query_stream(sql).await);
-                                }
-                                HostCall::Fetch { url, init, reply } => {
-                                    let _ = reply.send(host.fetch(url, init).await);
-                                }
-                                HostCall::SemanticQuery { spec, reply } => {
-                                    let _ = reply.send(host.semantic_query(spec).await);
-                                }
-                                HostCall::AirwayRun { pipeline_ref, variables, reply } => {
-                                    let _ = reply.send(host.airway_run(pipeline_ref, variables).await);
-                                }
-                                HostCall::WarehouseWrite { op, payload, reply } => {
-                                    let _ = reply.send(if op == "query" {
-                                        host.warehouse_query(payload).await
-                                    } else {
-                                        host.warehouse_write(op, payload).await
-                                    });
-                                }
-                                HostCall::Tx { op, payload, reply } => {
-                                    let _ = reply.send(host.tx(op, payload).await);
-                                }
-                                HostCall::Oltp { op, payload, reply } => {
-                                    let _ = reply.send(host.oltp(op, payload).await);
-                                }
-                                HostCall::SecretsSet { key, value, reply } => {
-                                    let _ = reply.send(host.secrets_set(key, value).await);
-                                }
-                                HostCall::SendEmail { input, reply } => {
-                                    let _ = reply.send(host.send_email(input).await);
-                                }
-                                HostCall::Storage { op, payload, reply } => {
-                                    let _ = reply.send(host.storage(op, payload).await);
-                                }
-                                HostCall::OrgPeople { reply } => {
-                                    let _ = reply.send(host.org_people().await);
-                                }
-                                HostCall::OrgPlaces { reply } => {
-                                    let _ = reply.send(host.org_places().await);
-                                }
-                                HostCall::OrgAssignments { reply } => {
-                                    let _ = reply.send(host.org_assignments().await);
-                                }
+                        let (span, kind) = host_call_span(&call);
+                        tokio::spawn(
+                            async move {
+                                let (reply, result) = dispatch_host_call(call, host).await;
+                                record_host_call_outcome(kind, &result);
+                                let _ = reply.send(result);
                             }
-                        });
+                            .instrument(span),
+                        );
                     }
                     None => { /* sender dropped; isolate is finishing */ }
                 }
@@ -1683,6 +1647,241 @@ pub async fn run(
                 });
             }
         }
+    }
+}
+
+/// Which reply shape [`record_host_call_outcome`] should read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostCallKind {
+    Query,
+    Fetch,
+    Other,
+}
+
+/// The span one host op runs under. Named and attributed on the OpenTelemetry
+/// semantic conventions where one exists (`db.query`,
+/// `http.client.request`), `oxy.*` otherwise — see `host_call_attrs` for
+/// what is deliberately *not* recorded.
+fn host_call_span(call: &HostCall) -> (tracing::Span, HostCallKind) {
+    use super::host_call_attrs::{HOST_CALL_TARGET, db_query_summary, fetch_target};
+    use tracing::field::Empty;
+    match call {
+        HostCall::Query { sql, .. } | HostCall::QueryStream { sql, .. } => {
+            let s = db_query_summary(sql);
+            let streaming = matches!(call, HostCall::QueryStream { .. });
+            let span = tracing::info_span!(target: HOST_CALL_TARGET,
+                "db.query",
+                db.operation.name = %s.verb,
+                db.collection.name = %s.table,
+                oxy.op = if streaming { "query_stream" } else { "query" },
+                db.response.returned_rows = Empty,
+                oxy.truncated = Empty,
+                otel.status_code = Empty,
+                error.type = Empty,
+            );
+            (span, HostCallKind::Query)
+        }
+        HostCall::Fetch { url, init, .. } => {
+            let t = fetch_target(url);
+            let method = init
+                .get("method")
+                .and_then(|m| m.as_str())
+                .map(str::to_ascii_uppercase)
+                .unwrap_or_else(|| "GET".to_string());
+            let span = tracing::info_span!(target: HOST_CALL_TARGET,
+                "http.client.request",
+                otel.kind = "client",
+                http.request.method = %method,
+                url.scheme = %t.scheme,
+                server.address = %t.host,
+                server.port = t.port,
+                http.response.status_code = Empty,
+                otel.status_code = Empty,
+                error.type = Empty,
+            );
+            (span, HostCallKind::Fetch)
+        }
+        HostCall::SemanticQuery { spec, .. } => {
+            let measures = spec
+                .get("measures")
+                .and_then(|m| m.as_array())
+                .map(|m| m.len());
+            let span = tracing::info_span!(target: HOST_CALL_TARGET,
+                "oxy.semantic.query",
+                oxy.semantic.measures = measures,
+                otel.status_code = Empty,
+                error.type = Empty,
+            );
+            (span, HostCallKind::Other)
+        }
+        HostCall::AirwayRun { pipeline_ref, .. } => (
+            tracing::info_span!(target: HOST_CALL_TARGET,
+                "oxy.airway.run",
+                oxy.airway.pipeline = %pipeline_ref,
+                otel.status_code = Empty,
+                error.type = Empty,
+            ),
+            HostCallKind::Other,
+        ),
+        HostCall::WarehouseWrite { op, .. } => (
+            tracing::info_span!(target: HOST_CALL_TARGET,
+                "db.query",
+                db.system = "airhouse",
+                db.operation.name = %op,
+                otel.status_code = Empty,
+                error.type = Empty,
+            ),
+            HostCallKind::Other,
+        ),
+        HostCall::Tx { op, .. } => (
+            tracing::info_span!(target: HOST_CALL_TARGET,
+                "db.transaction",
+                db.operation.name = %op,
+                otel.status_code = Empty,
+                error.type = Empty,
+            ),
+            HostCallKind::Other,
+        ),
+        HostCall::Oltp { op, .. } => (
+            tracing::info_span!(target: HOST_CALL_TARGET,
+                "db.query",
+                db.system = "postgres",
+                db.operation.name = %op,
+                otel.status_code = Empty,
+                error.type = Empty,
+            ),
+            HostCallKind::Other,
+        ),
+        HostCall::SecretsSet { key, .. } => (
+            tracing::info_span!(target: HOST_CALL_TARGET,
+                "oxy.secrets.set",
+                oxy.secret.name = %key,
+                otel.status_code = Empty,
+                error.type = Empty,
+            ),
+            HostCallKind::Other,
+        ),
+        HostCall::SendEmail { input, .. } => {
+            let recipients = match input.get("to") {
+                Some(serde_json::Value::Array(a)) => a.len(),
+                Some(serde_json::Value::String(_)) => 1,
+                _ => 0,
+            };
+            (
+                tracing::info_span!(target: HOST_CALL_TARGET,
+                    "oxy.email.send",
+                    oxy.email.recipients = recipients,
+                    otel.status_code = Empty,
+                    error.type = Empty,
+                ),
+                HostCallKind::Other,
+            )
+        }
+        HostCall::Storage { op, .. } => (
+            tracing::info_span!(target: HOST_CALL_TARGET,
+                "oxy.storage",
+                oxy.storage.op = %op,
+                otel.status_code = Empty,
+                error.type = Empty,
+            ),
+            HostCallKind::Other,
+        ),
+        HostCall::OrgPeople { .. } => (
+            tracing::info_span!(target: HOST_CALL_TARGET,
+                "oxy.org.people",
+                otel.status_code = Empty,
+                error.type = Empty,
+            ),
+            HostCallKind::Other,
+        ),
+        HostCall::OrgPlaces { .. } => (
+            tracing::info_span!(target: HOST_CALL_TARGET,
+                "oxy.org.places",
+                otel.status_code = Empty,
+                error.type = Empty,
+            ),
+            HostCallKind::Other,
+        ),
+        HostCall::OrgAssignments { .. } => (
+            tracing::info_span!(target: HOST_CALL_TARGET,
+                "oxy.org.assignments",
+                otel.status_code = Empty,
+                error.type = Empty,
+            ),
+            HostCallKind::Other,
+        ),
+    }
+}
+
+/// Run one host op and hand back the reply channel with its result, so the
+/// caller can record the outcome on the current span before answering.
+async fn dispatch_host_call(
+    call: HostCall,
+    host: std::sync::Arc<dyn FunctionHost>,
+) -> (
+    oneshot::Sender<Result<serde_json::Value, String>>,
+    Result<serde_json::Value, String>,
+) {
+    match call {
+        HostCall::Query { sql, reply } => (reply, host.query(sql).await),
+        HostCall::QueryStream { sql, reply } => (reply, host.query_stream(sql).await),
+        HostCall::Fetch { url, init, reply } => (reply, host.fetch(url, init).await),
+        HostCall::SemanticQuery { spec, reply } => (reply, host.semantic_query(spec).await),
+        HostCall::AirwayRun {
+            pipeline_ref,
+            variables,
+            reply,
+        } => (reply, host.airway_run(pipeline_ref, variables).await),
+        HostCall::WarehouseWrite { op, payload, reply } => {
+            let result = if op == "query" {
+                host.warehouse_query(payload).await
+            } else {
+                host.warehouse_write(op, payload).await
+            };
+            (reply, result)
+        }
+        HostCall::Tx { op, payload, reply } => (reply, host.tx(op, payload).await),
+        HostCall::Oltp { op, payload, reply } => (reply, host.oltp(op, payload).await),
+        HostCall::SecretsSet { key, value, reply } => (reply, host.secrets_set(key, value).await),
+        HostCall::SendEmail { input, reply } => (reply, host.send_email(input).await),
+        HostCall::Storage { op, payload, reply } => (reply, host.storage(op, payload).await),
+        HostCall::OrgPeople { reply } => (reply, host.org_people().await),
+        HostCall::OrgPlaces { reply } => (reply, host.org_places().await),
+        HostCall::OrgAssignments { reply } => (reply, host.org_assignments().await),
+    }
+}
+
+/// Record how a host op ended on the current span: an `error.type` facet on
+/// failure, rows / truncation for a query, the upstream status for a fetch.
+fn record_host_call_outcome(kind: HostCallKind, result: &Result<serde_json::Value, String>) {
+    use super::host_call_attrs::{classify_host_error, fetch_status, rows_and_truncated};
+    let span = tracing::Span::current();
+    match result {
+        Err(message) => {
+            span.record("otel.status_code", "ERROR");
+            span.record("error.type", classify_host_error(message));
+        }
+        Ok(value) => match kind {
+            HostCallKind::Query => {
+                let (rows, truncated) = rows_and_truncated(value);
+                if let Some(rows) = rows {
+                    span.record("db.response.returned_rows", rows);
+                }
+                if let Some(truncated) = truncated {
+                    span.record("oxy.truncated", truncated);
+                }
+            }
+            HostCallKind::Fetch => {
+                if let Some(status) = fetch_status(value) {
+                    span.record("http.response.status_code", status);
+                    if status >= 500 {
+                        span.record("otel.status_code", "ERROR");
+                        span.record("error.type", "upstream_5xx");
+                    }
+                }
+            }
+            HostCallKind::Other => {}
+        },
     }
 }
 
@@ -1780,6 +1979,109 @@ async fn execute_isolate(
 
 #[cfg(test)]
 mod tests {
+
+    /// Every host-op span must carry [`HOST_CALL_TARGET`]: the product
+    /// collector keeps them out of the tenant Traces console with an
+    /// `oxy::host_call=off` directive, and a span that falls back to the
+    /// module target slips past it. A new `HostCall` variant fails the
+    /// exhaustive `match` below until it is added to the list.
+    #[test]
+    fn every_host_call_span_carries_the_platform_only_target() {
+        use super::super::host_call_attrs::HOST_CALL_TARGET;
+        use tokio::sync::oneshot;
+        fn reply() -> oneshot::Sender<Result<serde_json::Value, String>> {
+            oneshot::channel().0
+        }
+        let json = serde_json::Value::Null;
+        let calls = vec![
+            HostCall::Query {
+                sql: "select 1".into(),
+                reply: reply(),
+            },
+            HostCall::QueryStream {
+                sql: "select 1".into(),
+                reply: reply(),
+            },
+            HostCall::Fetch {
+                url: "https://example.test/".into(),
+                init: json.clone(),
+                reply: reply(),
+            },
+            HostCall::SemanticQuery {
+                spec: json.clone(),
+                reply: reply(),
+            },
+            HostCall::AirwayRun {
+                pipeline_ref: "p".into(),
+                variables: json.clone(),
+                reply: reply(),
+            },
+            HostCall::WarehouseWrite {
+                op: "query".into(),
+                payload: json.clone(),
+                reply: reply(),
+            },
+            HostCall::SecretsSet {
+                key: "k".into(),
+                value: "v".into(),
+                reply: reply(),
+            },
+            HostCall::SendEmail {
+                input: json.clone(),
+                reply: reply(),
+            },
+            HostCall::Storage {
+                op: "put".into(),
+                payload: json.clone(),
+                reply: reply(),
+            },
+            HostCall::OrgPeople { reply: reply() },
+            HostCall::OrgPlaces { reply: reply() },
+            HostCall::OrgAssignments { reply: reply() },
+            HostCall::Tx {
+                op: "begin".into(),
+                payload: json.clone(),
+                reply: reply(),
+            },
+            HostCall::Oltp {
+                op: "query".into(),
+                payload: json,
+                reply: reply(),
+            },
+        ];
+        for call in &calls {
+            // Exhaustive on purpose: a new variant must be listed above.
+            match call {
+                HostCall::Query { .. }
+                | HostCall::QueryStream { .. }
+                | HostCall::Fetch { .. }
+                | HostCall::SemanticQuery { .. }
+                | HostCall::AirwayRun { .. }
+                | HostCall::WarehouseWrite { .. }
+                | HostCall::SecretsSet { .. }
+                | HostCall::SendEmail { .. }
+                | HostCall::Storage { .. }
+                | HostCall::OrgPeople { .. }
+                | HostCall::OrgPlaces { .. }
+                | HostCall::OrgAssignments { .. }
+                | HostCall::Tx { .. }
+                | HostCall::Oltp { .. } => {}
+            }
+        }
+        // A bare registry enables every span, so `metadata()` is `Some`.
+        tracing::subscriber::with_default(tracing_subscriber::registry(), || {
+            for call in &calls {
+                let (span, _) = host_call_span(call);
+                let meta = span.metadata().expect("span is enabled under a registry");
+                assert_eq!(
+                    meta.target(),
+                    HOST_CALL_TARGET,
+                    "span `{}` would leak into the product store",
+                    meta.name()
+                );
+            }
+        });
+    }
 
     /// The cap has to actually cap. The first version returned at the marker
     /// without pushing it, so the buffer parked at exactly MAX forever: every

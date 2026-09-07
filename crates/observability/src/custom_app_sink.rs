@@ -266,6 +266,8 @@ mod tests {
             outcome: "ok".into(),
             error_kind: String::new(),
             error_detail: String::new(),
+            trace_id: String::new(),
+            span_id: String::new(),
         });
         record_logs(vec![CustomAppLogRecord {
             timestamp_ms: 0,
@@ -279,6 +281,8 @@ mod tests {
             log_level: "info".into(),
             seq: 0,
             message: "hi".into(),
+            trace_id: String::new(),
+            span_id: String::new(),
         }]);
     }
 }

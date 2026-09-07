@@ -44,6 +44,8 @@ struct CustomAppEventInsertRow {
     outcome: String,
     error_kind: String,
     error_detail: String,
+    trace_id: String,
+    span_id: String,
 }
 
 #[derive(Debug, Serialize, Row)]
@@ -59,6 +61,8 @@ struct CustomAppLogInsertRow {
     log_level: String,
     seq: u32,
     message: String,
+    trace_id: String,
+    span_id: String,
 }
 
 #[derive(Debug, Serialize, Row)]
@@ -76,6 +80,8 @@ struct ClientErrorInsertRow {
     path: String,
     kind: String,
     user_agent: String,
+    trace_id: String,
+    span_id: String,
 }
 
 #[derive(Debug, Deserialize, Row)]
@@ -104,6 +110,7 @@ struct FunctionLogQueryRow {
     log_level: String,
     seq: u32,
     message: String,
+    trace_id: String,
 }
 
 #[derive(Debug, Deserialize, Row)]
@@ -168,6 +175,8 @@ pub(super) async fn insert_custom_app_events(
             outcome: e.outcome,
             error_kind: e.error_kind,
             error_detail: e.error_detail,
+            trace_id: e.trace_id,
+            span_id: e.span_id,
         };
         insert.write(&row).await.map_err(|err| {
             OxyError::RuntimeError(format!("ClickHouse custom_app_events write failed: {err}"))
@@ -206,6 +215,8 @@ pub(super) async fn insert_custom_app_logs(
             log_level: l.log_level,
             seq: l.seq,
             message: clamp_message(l.message),
+            trace_id: l.trace_id,
+            span_id: l.span_id,
         };
         insert.write(&row).await.map_err(|err| {
             OxyError::RuntimeError(format!("ClickHouse custom_app_logs write failed: {err}"))
@@ -250,6 +261,8 @@ pub(super) async fn insert_custom_app_client_errors(
             path: e.path,
             kind: e.kind,
             user_agent: e.user_agent,
+            trace_id: e.trace_id,
+            span_id: e.span_id,
         };
         insert.write(&row).await.map_err(|err| {
             OxyError::RuntimeError(format!(
@@ -355,6 +368,7 @@ fn function_logs_sql(
     hours: u32,
     limit: u32,
     invocation_id: &str,
+    request_id: &str,
 ) -> String {
     let invocation_clause = if invocation_id.is_empty() {
         String::new()
@@ -364,12 +378,18 @@ fn function_logs_sql(
             escape_sql_literal(invocation_id)
         )
     };
+    let request_clause = if request_id.is_empty() {
+        String::new()
+    } else {
+        format!(" AND request_id = '{}'", escape_sql_literal(request_id))
+    };
     format!(
         "SELECT {ts} AS timestamp, \
-         build_id, invocation_id, request_id, function_name, mode, log_level, seq, message \
+         build_id, invocation_id, request_id, function_name, mode, log_level, seq, message, \
+         trace_id \
          FROM custom_app_logs \
          WHERE org_id = '{org}' AND app_id = '{app}' \
-         AND timestamp >= now() - INTERVAL {hours} HOUR{invocation_clause} \
+         AND timestamp >= now() - INTERVAL {hours} HOUR{invocation_clause}{request_clause} \
          ORDER BY timestamp DESC, seq DESC \
          LIMIT {limit}",
         org = escape_sql_literal(org_id),
@@ -386,8 +406,9 @@ pub(super) async fn get_function_logs(
     hours: u32,
     limit: u32,
     invocation_id: &str,
+    request_id: &str,
 ) -> Result<Vec<FunctionLogRow>, OxyError> {
-    let sql = function_logs_sql(org_id, app_id, hours, limit, invocation_id);
+    let sql = function_logs_sql(org_id, app_id, hours, limit, invocation_id, request_id);
     let rows = storage
         .read_client()
         .query(&sql)
@@ -408,6 +429,7 @@ pub(super) async fn get_function_logs(
             log_level: r.log_level,
             seq: r.seq,
             message: r.message,
+            trace_id: r.trace_id,
         })
         .collect())
 }

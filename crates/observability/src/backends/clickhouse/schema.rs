@@ -233,7 +233,9 @@ CREATE TABLE IF NOT EXISTS custom_app_events (
     app_role LowCardinality(String) DEFAULT '',
     outcome LowCardinality(String) DEFAULT 'ok',
     error_kind LowCardinality(String) DEFAULT '',
-    error_detail String DEFAULT ''
+    error_detail String DEFAULT '',
+    trace_id String DEFAULT '',
+    span_id String DEFAULT ''
 ) ENGINE = MergeTree()
 PARTITION BY toDate(timestamp)
 ORDER BY (org_id, app_id, timestamp)
@@ -264,7 +266,9 @@ CREATE TABLE IF NOT EXISTS custom_app_logs (
     mode LowCardinality(String) DEFAULT '',
     log_level LowCardinality(String) DEFAULT 'info',
     seq UInt32 DEFAULT 0,
-    message String
+    message String,
+    trace_id String DEFAULT '',
+    span_id String DEFAULT ''
 ) ENGINE = MergeTree()
 PARTITION BY toDate(timestamp)
 ORDER BY (org_id, app_id, timestamp)
@@ -307,12 +311,26 @@ CREATE TABLE IF NOT EXISTS custom_app_client_errors (
     stack_hash String DEFAULT '',
     path String DEFAULT '',
     kind LowCardinality(String) DEFAULT 'error',
-    user_agent String DEFAULT ''
+    user_agent String DEFAULT '',
+    trace_id String DEFAULT '',
+    span_id String DEFAULT ''
 ) ENGINE = MergeTree()
 PARTITION BY toDate(timestamp)
 ORDER BY (org_id, app_id, timestamp)
 SETTINGS ttl_only_drop_parts = 1
 "#;
+
+/// Columns added after a table first shipped. `CREATE TABLE IF NOT EXISTS` is
+/// a no-op on an existing table, so a deployment that created these tables
+/// before the platform trace existed needs the columns added in place; each
+/// statement is idempotent and runs on every boot after `ALL_DDL`. The
+/// `DEFAULT ''` keeps old rows readable and the insert row structs (which
+/// name every column) valid on both shapes.
+pub const CUSTOM_APP_TRACE_ID_ALTERS: &[&str] = &[
+    "ALTER TABLE custom_app_events ADD COLUMN IF NOT EXISTS trace_id String DEFAULT '', ADD COLUMN IF NOT EXISTS span_id String DEFAULT ''",
+    "ALTER TABLE custom_app_logs ADD COLUMN IF NOT EXISTS trace_id String DEFAULT '', ADD COLUMN IF NOT EXISTS span_id String DEFAULT ''",
+    "ALTER TABLE custom_app_client_errors ADD COLUMN IF NOT EXISTS trace_id String DEFAULT '', ADD COLUMN IF NOT EXISTS span_id String DEFAULT ''",
+];
 
 pub const ALL_DDL: &[&str] = &[
     CREATE_SPANS_TABLE,

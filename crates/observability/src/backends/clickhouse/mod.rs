@@ -333,6 +333,16 @@ impl ClickHouseObservabilityStorage {
                 OxyError::RuntimeError(format!("ClickHouse schema DDL failed: {e}"))
             })?;
         }
+        // Additive columns for tables that predate them — see the constant.
+        // Not fatal: a ClickHouse user with CREATE but not ALTER would otherwise
+        // lose the whole store over two optional columns. The custom-app inserts
+        // name every column and fail loudly on their own until the columns
+        // exist; product traces are unaffected either way.
+        for alter in schema::CUSTOM_APP_TRACE_ID_ALTERS {
+            if let Err(e) = self.client.query(alter).execute().await {
+                tracing::warn!(error = %e, alter, "ClickHouse schema ALTER skipped");
+            }
+        }
 
         // The execution rollup MV shares its flatten logic with the backfill via
         // `EXECUTIONS_SELECT`, so it's assembled here rather than sitting in
@@ -830,10 +840,19 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
         hours: u32,
         limit: u32,
         invocation_id: &str,
+        request_id: &str,
     ) -> Result<Vec<FunctionLogRow>, OxyError> {
         with_query_timeout(
             "get_function_logs",
-            custom_apps::get_function_logs(self, org_id, app_id, hours, limit, invocation_id),
+            custom_apps::get_function_logs(
+                self,
+                org_id,
+                app_id,
+                hours,
+                limit,
+                invocation_id,
+                request_id,
+            ),
         )
         .await
     }

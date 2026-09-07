@@ -56,6 +56,9 @@ pub struct LogQuery {
     limit: Option<u32>,
     /// Narrow to one invocation. Empty means every invocation in the window.
     invocation_id: Option<String>,
+    /// Narrow to one request (`x-oxy-request-id`), the id a support ticket
+    /// quotes. Combines with `invocation_id`.
+    request_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -78,6 +81,9 @@ pub struct LogLineResponse {
     pub level: String,
     pub seq: u32,
     pub message: String,
+    /// The platform-trace id the line was written under, when the process
+    /// had one — paste into HyperDX to see the invocation's spans.
+    pub trace_id: String,
 }
 
 #[derive(Serialize)]
@@ -149,6 +155,7 @@ pub async fn get_logs(
             hours,
             limit,
             q.invocation_id.as_deref().unwrap_or_default(),
+            q.request_id.as_deref().unwrap_or_default(),
         )
         .await
     {
@@ -171,6 +178,7 @@ pub async fn get_logs(
             level: r.log_level,
             seq: r.seq,
             message: r.message,
+            trace_id: r.trace_id,
         })
         .collect();
     (StatusCode::OK, Json(serde_json::json!({ "logs": logs }))).into_response()

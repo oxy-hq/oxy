@@ -51,9 +51,17 @@ pub mod with_dispatch;
 /// the stderr layers and the OTLP layers append this to whatever level the
 /// operator asked for, so raising `OXY_LOG_LEVEL=debug` stays readable.
 /// `RUST_LOG` / `OXY_OTEL_FILTER` bypass it entirely — the expert escape hatch.
+///
+/// `custom_app_function` is not framework chatter but a privacy boundary: it
+/// is the target of a tenant's `ctx.log()` lines from an Oxy Function, whose
+/// content routinely carries application data. The platform store (stderr,
+/// OTLP) gets an app's `warn`/`error` lines with their trace id and nothing
+/// below; the product store keeps every line behind the app-admin gate
+/// through its own filter, which this list does not touch.
 pub const NOISY_CRATE_DIRECTIVES: &str = "tower_http=warn,h2=warn,hyper=warn,hyper_util=warn,\
      reqwest=warn,sqlx=warn,sea_orm=warn,tonic=warn,rustls=warn,tokio_postgres=warn,\
-     tungstenite=warn,tokio_tungstenite=warn,deser_incomplete=off";
+     tungstenite=warn,tokio_tungstenite=warn,deser_incomplete=off,\
+     custom_app_function=warn";
 
 /// `"{level},{NOISY_CRATE_DIRECTIVES}"` — the directive string both the stderr
 /// and the export filters are built from when the operator gives only a level.

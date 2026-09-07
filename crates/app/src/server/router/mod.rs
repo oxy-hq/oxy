@@ -217,6 +217,10 @@ pub(crate) fn build_cors_layer() -> CorsLayer {
             header::ORIGIN,
             HeaderName::from_static("x-requested-with"),
             HeaderName::from_static("x-request-id"),
+            // W3C trace context the custom-app SDK sends on every function
+            // invoke; same-origin today, but a cross-origin base would
+            // otherwise fail its preflight exactly as documented below.
+            HeaderName::from_static("traceparent"),
             // Cross-origin SSE for the custom-app shell's Ask Oxygen stream.
             // Its fetch sends `Cache-Control: no-cache` (don't cache the stream)
             // and, on reconnect, `Last-Event-ID` (replay from a known point).
@@ -275,6 +279,10 @@ pub(crate) fn build_external_cors_layer() -> CorsLayer {
             header::ORIGIN,
             HeaderName::from_static("x-requested-with"),
             HeaderName::from_static("x-request-id"),
+            // W3C trace context the custom-app SDK sends on every function
+            // invoke; same-origin today, but a cross-origin base would
+            // otherwise fail its preflight exactly as documented below.
+            HeaderName::from_static("traceparent"),
             HeaderName::from_static("x-api-key"),
             HeaderName::from_static("last-event-id"),
         ])

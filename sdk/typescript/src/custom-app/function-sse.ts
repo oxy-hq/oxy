@@ -35,6 +35,14 @@ export type FunctionError = Error & {
   logs?: FunctionLog[];
   status?: number;
   body?: unknown;
+  /**
+   * The platform trace this invoke ran in (32 hex chars) and the server-minted
+   * `x-oxy-request-id`, when the request got as far as the server. Quote
+   * either in a bug report: an operator can open the trace in HyperDX, and
+   * an app admin can filter the app's Logs by the request.
+   */
+  traceId?: string;
+  requestId?: string;
 };
 
 /**

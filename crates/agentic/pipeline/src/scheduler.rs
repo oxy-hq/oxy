@@ -392,6 +392,11 @@ pub async fn enqueue_app_function_job(
     // Optional input params (JSON) handed to the isolate as its request body.
     // `None` → empty body. Carried on the task so the worker replays it.
     input: Option<serde_json::Value>,
+    // W3C `traceparent` of the caller's span, when the enqueue happens inside
+    // a traced request (a run-now click). The executor links the worker's run
+    // to it — a *link*, not a parent, because the run is caused by the
+    // request but is not part of its latency. `None` from a cron tick.
+    traceparent: Option<String>,
 ) -> Result<String, ScheduleError> {
     let run_id = uuid::Uuid::new_v4().to_string();
     let mut metadata = serde_json::json!({});
@@ -418,6 +423,7 @@ pub async fn enqueue_app_function_job(
             "function_name": function_name,
             "trigger": trigger,
             "input": input,
+            "traceparent": traceparent,
         }),
     };
     agentic_runtime::crud::enqueue_task(

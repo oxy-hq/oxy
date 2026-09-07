@@ -18,6 +18,10 @@
 
 #[cfg(feature = "custom-app-functions")]
 pub mod host;
+/// What a host op may say about itself on the platform trace (shape, never
+/// payload) — the helpers behind `runtime`'s per-op spans.
+#[cfg(feature = "custom-app-functions")]
+mod host_call_attrs;
 mod result_cache;
 #[cfg(feature = "custom-app-functions")]
 pub mod runtime;
@@ -395,6 +399,7 @@ pub(crate) async fn trigger_function_job(
         policy,
         "manual",
         input,
+        oxy_telemetry::propagation::current_traceparent(),
     )
     .await
     .map_err(|e| format!("failed to enqueue function job: {e:?}"))
@@ -1580,6 +1585,33 @@ struct RunArgs<'a> {
     preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
 }
 
+/// The span the isolate thread runs under — see the call site in
+/// `run_with_runtime_inner` for why it has no `tracing` parent, and
+/// `oxy_telemetry::propagation::adopt_current_parent` for how it still lands in
+/// the invocation's trace.
+#[cfg(feature = "custom-app-functions")]
+fn isolate_span(
+    app_id: Uuid,
+    org_id: Uuid,
+    build_id: Uuid,
+    invocation_id: Uuid,
+    function_name: &str,
+    mode: &str,
+) -> tracing::Span {
+    let span = tracing::info_span!(
+        parent: None,
+        "custom_app_function.isolate",
+        app_id = %app_id,
+        org_id = %org_id,
+        build_id = %build_id,
+        invocation_id = %invocation_id,
+        function = %function_name,
+        mode = %mode,
+    );
+    oxy_telemetry::propagation::adopt_current_parent(&span);
+    span
+}
+
 /// The instrumented entry point for every function run, in all three modes.
 ///
 /// **This span is what makes function logs observable at all.** Until it
@@ -1610,6 +1642,15 @@ struct RunArgs<'a> {
         request_id = tracing::field::Empty,
         status = tracing::field::Empty,
         duration_ms = tracing::field::Empty,
+        // FaaS semantic conventions, so HyperDX's own views group invocations
+        // by function; `otel.name` makes the exported span read
+        // `fn <app>/<function>` while the tracing span keeps its name for the
+        // product layer.
+        otel.name = %format!("fn {}/{}", args.app.slug, args.function_name),
+        faas.name = %format!("{}/{}", args.app.slug, args.function_name),
+        faas.invocation_id = %args.invocation_id,
+        faas.version = %args.build_id,
+        faas.trigger = host_call_attrs::faas_trigger(args.mode),
     )
 )]
 async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
@@ -1900,20 +1941,21 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
         cancel_rx,
         args.timeout,
         args.logs,
-        // Parentless, carrying the same identifying fields as the invocation
-        // span above. See `runtime::run`: a clone of the caller's span would be
-        // pinned open by an isolate thread that outlives a cancel or a timeout,
-        // exporting the invocation late and with a `duration_ns` that includes
-        // the leaked thread. Correlate the two by `invocation_id`.
-        tracing::info_span!(
-            parent: None,
-            "custom_app_function.isolate",
-            app_id = %app_id,
-            org_id = %org_id,
-            build_id = %build_id,
-            invocation_id = %invocation_id,
-            function = %function_name,
-            mode = %mode,
+        // No `tracing` parent, carrying the same identifying fields as the
+        // invocation span above. See `runtime::run`: a clone of the caller's
+        // span would be pinned open by an isolate thread that outlives a cancel
+        // or a timeout, exporting the invocation late and with a `duration_ns`
+        // that includes the leaked thread. The product layer correlates the two
+        // by `invocation_id`. The platform trace joins them properly:
+        // `adopt_current_parent` parents by OpenTelemetry *context* — a pair
+        // of ids — which pins nothing open.
+        isolate_span(
+            app_id,
+            org_id,
+            build_id,
+            invocation_id,
+            &function_name,
+            &mode,
         ),
     )
     .await;

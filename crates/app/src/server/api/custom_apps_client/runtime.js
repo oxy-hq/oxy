@@ -416,7 +416,7 @@
     return (h >>> 0).toString(36);
   }
 
-  function noteError(name, message, stack, kind) {
+  function noteError(name, message, stack, kind, traceId) {
     var key = String(name || "Error").slice(0, 40);
     errors[key] = (errors[key] || 0) + 1;
 
@@ -433,14 +433,18 @@
     // count above still moves, so nothing is lost that the rollup measures.
     if (seenStacks[hash] || errorDetails.length >= MAX_ERROR_DETAILS) return;
     seenStacks[hash] = 1;
-    errorDetails.push({
+    var detail = {
       n: key,
       m: String(message == null ? "" : message).slice(0, MAX_MESSAGE_CHARS),
       s: String(stack || "").slice(0, MAX_STACK_CHARS),
       h: hash,
       k: kind,
       p: lastPath
-    });
+    };
+    // The SDK stamps `traceId` on an invoke that failed, so an uncaught
+    // rejection from `useFunction` names the server-side trace it came from.
+    if (typeof traceId === "string" && /^[0-9a-f]{32}$/.test(traceId)) detail.t = traceId;
+    errorDetails.push(detail);
   }
 
   window.addEventListener("error", function (e) {
@@ -449,7 +453,8 @@
       err && err.name,
       (err && err.message) || (e && e.message),
       err && err.stack,
-      "error"
+      "error",
+      err && err.traceId
     );
   });
   window.addEventListener("unhandledrejection", function (e) {
@@ -461,7 +466,8 @@
       r && r.name ? r.name : typeof r,
       r && r.message ? r.message : safeString(r),
       r && r.stack,
-      "unhandledrejection"
+      "unhandledrejection",
+      r && r.traceId
     );
   });
 

@@ -14,7 +14,7 @@
 //! or a one-shot CLI command), where there is no span context to read and an
 //! inbound header is simply left untouched for whoever is downstream.
 
-use http::HeaderMap;
+use http::{HeaderMap, HeaderValue};
 use opentelemetry::Context;
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry_http::{HeaderExtractor, HeaderInjector};
@@ -41,6 +41,63 @@ pub fn inject_current(headers: &mut HeaderMap) {
     opentelemetry::global::get_text_map_propagator(|propagator| {
         propagator.inject_context(&cx, &mut HeaderInjector(headers))
     });
+}
+
+/// Parent `span` on whatever span is entered on this thread — by OpenTelemetry
+/// context (a pair of ids), not by `tracing` span handle. Nothing is pinned
+/// open: the parent closes on its own schedule, which is why this is safe for
+/// a span that outlives its caller (an isolate thread after a cancel). Call it
+/// before `span` is entered; a span already started keeps its parent.
+pub fn adopt_current_parent(span: &tracing::Span) {
+    let cx = tracing::Span::current().context();
+    if cx.span().span_context().is_valid() {
+        let _ = span.set_parent(cx);
+    }
+}
+
+/// The current span's context as a W3C `traceparent` value, for a payload
+/// that crosses a queue rather than an HTTP hop. `None` outside a traced span.
+pub fn current_traceparent() -> Option<String> {
+    let mut headers = HeaderMap::new();
+    inject_current(&mut headers);
+    headers
+        .get("traceparent")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+}
+
+/// Link `span` to the context a `traceparent` value carries — a *link*, not a
+/// parent: the right relation for work caused by, but not part of, a request
+/// (a scheduled run and the tick that queued it). `false` when the value is
+/// malformed or no export layer is installed.
+pub fn link_from_traceparent(span: &tracing::Span, traceparent: &str) -> bool {
+    let Ok(value) = HeaderValue::from_str(traceparent) else {
+        return false;
+    };
+    let mut headers = HeaderMap::new();
+    headers.insert("traceparent", value);
+    match extract(&headers) {
+        Some(cx) => {
+            span.add_link(cx.span().span_context().clone());
+            true
+        }
+        None => false,
+    }
+}
+
+/// The current span's ids as the lowercase hex a `traceparent` carries —
+/// `(trace_id, span_id)` — for a row that should join the platform trace.
+/// `None` outside a traced span.
+pub fn current_ids() -> Option<(String, String)> {
+    let cx = tracing::Span::current().context();
+    let span = cx.span();
+    let sc = span.span_context();
+    sc.is_valid().then(|| {
+        (
+            format!("{:032x}", sc.trace_id()),
+            format!("{:016x}", sc.span_id()),
+        )
+    })
 }
 
 #[cfg(test)]
@@ -93,6 +150,46 @@ mod tests {
         let sc = parent.span().span_context().clone();
         assert!(sc.is_remote());
         assert_eq!(format!("{:032x}", sc.trace_id()), expected.0);
+    }
+
+    #[test]
+    fn adopting_the_current_parent_joins_the_trace_without_a_span_handle() {
+        install_propagator();
+        let provider = SdkTracerProvider::builder().build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+        tracing::subscriber::with_default(subscriber, || {
+            let request = tracing::info_span!("request");
+            let _g = request.enter();
+            // `parent: None` is the isolate's shape: no tracing parent, so
+            // nothing keeps `request` open — yet it lands in the same trace.
+            let isolate = tracing::info_span!(parent: None, "isolate");
+            adopt_current_parent(&isolate);
+            let trace = |s: &tracing::Span| {
+                format!("{:032x}", s.context().span().span_context().trace_id())
+            };
+            assert_eq!(trace(&isolate), trace(&request));
+            assert!(current_ids().is_some());
+            assert!(current_traceparent().unwrap().starts_with("00-"));
+        });
+        assert!(current_ids().is_none(), "no span, no ids");
+        assert!(current_traceparent().is_none());
+    }
+
+    #[test]
+    fn a_link_is_added_from_a_traceparent_value() {
+        install_propagator();
+        let provider = SdkTracerProvider::builder().build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+        tracing::subscriber::with_default(subscriber, || {
+            let span = tracing::info_span!("job");
+            assert!(link_from_traceparent(
+                &span,
+                "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+            ));
+            assert!(!link_from_traceparent(&span, "garbage"));
+        });
     }
 
     #[test]

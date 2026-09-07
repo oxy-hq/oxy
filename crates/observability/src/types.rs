@@ -396,6 +396,11 @@ pub struct CustomAppEventRecord {
     pub outcome: String,
     pub error_kind: String,
     pub error_detail: String,
+    /// W3C ids of the platform-trace span this row belongs to — `''` when the
+    /// process has no OpenTelemetry layer. What lets HyperDX click from this
+    /// row to the request's trace.
+    pub trace_id: String,
+    pub span_id: String,
 }
 
 /// One durable `ctx.log()` / `console.*` line from an Oxy Function.
@@ -414,6 +419,8 @@ pub struct CustomAppLogRecord {
     /// read back in the order the function wrote them.
     pub seq: u32,
     pub message: String,
+    pub trace_id: String,
+    pub span_id: String,
 }
 
 /// Success/failure counts for one app over one window — the raw material for
@@ -463,6 +470,11 @@ pub struct CustomAppClientErrorRecord {
     /// `error` (uncaught) or `unhandledrejection`.
     pub kind: String,
     pub user_agent: String,
+    /// The trace the browser was in when it threw, when the failing call
+    /// carried one (the SDK stamps `traceId` on a failed invoke). The browser
+    /// has no span of its own, so `span_id` stays empty.
+    pub trace_id: String,
+    pub span_id: String,
 }
 
 /// One distinct client error, with its occurrence count over the window.
@@ -496,4 +508,5 @@ pub struct FunctionLogRow {
     pub log_level: String,
     pub seq: u32,
     pub message: String,
+    pub trace_id: String,
 }
