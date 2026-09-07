@@ -1,10 +1,18 @@
 //! Platform tests that don't belong to a single product domain — the compile
-//! boundary, compiled readers, the CLI `build`/`run` commands, router shape in
-//! local mode, project queries, workspace detail fields, and the partner-table
-//! regression guard.
+//! boundary and the workspace-source rules it rests on, compiled readers, the
+//! CLI `build`/`run` commands, router shape in local mode, project queries,
+//! workspace detail fields, and the partner-table regression guard.
 //!
 //! One binary for the whole group; see `tests/authz/main.rs` for why. Add a case
 //! as a `mod` here rather than a new `tests/*.rs`.
+//!
+//! Four of these ask "where may a workspace file be read from?" rather than
+//! "which pod serves this route" — `compiled_reader_is_not_a_back_door`,
+//! `workspace_path_backdoor`, `workspace_path_escape_hatch` and
+//! `walker_storage_divergence`. That is the line between this group and
+//! `tests/routing/`: nothing here reasons about the router. They are source
+//! scans and walker-semantics tests, so they open no database and mutate no
+//! process-global state.
 //!
 //! Mixed three ways, and the split is in `.config/nextest.toml`:
 //!
@@ -16,9 +24,22 @@
 //!   reaches the *shared* `OXY_DATABASE_URL` and runs `cleanup_stale_runs` — an
 //!   unscoped UPDATE over `agentic_runs`. They are excluded from `db-per-test`
 //!   and pinned into `serial-db` with the other shared-schema tests.
-//! * everything else is in-process and ungrouped.
+//! * everything else is in-process, but NOT ungrouped: that override matches
+//!   `binary(=platform)`, so every module here except those two exclusions runs
+//!   under `db-per-test` (`max-threads = 4`, `retries = 2`) whether or not it
+//!   opens a connection. The four source scans folded in above inherit that.
+//!   Deliberate, and argued in the config: a per-binary rule stays true the day
+//!   someone adds a harness-backed test to one of those files, where a module
+//!   allowlist would silently go stale. `tests/routing/` is the group that got
+//!   the other answer — nothing in it can reach a database, so it is in no
+//!   group at all.
 //!
 //! `authz::shared_db_registry` fails the build if that classification drifts.
+//!
+//! `workspace_details_fields` mutates the process cwd and carries
+//! `#[serial_test::serial]` for it. Anything folded in here that touches cwd,
+//! environment variables or another process-global needs the same attribute — a
+//! guard private to one file excludes nothing once the files share a binary.
 
 #[path = "../common/mod.rs"]
 mod common;
@@ -29,6 +50,7 @@ mod build;
 mod chat_org_standing;
 mod compile;
 mod compile_oltp_promote;
+mod compiled_reader_is_not_a_back_door;
 mod compiled_reader_semantic;
 mod feature_flag_refresh;
 mod frontline_app_grant;
@@ -41,6 +63,9 @@ mod oltp_provisioner;
 mod projects_query;
 mod run;
 mod toast_webhook_compile_boundary;
+mod walker_storage_divergence;
 mod work_item_gates;
 mod workspace_details_fields;
+mod workspace_path_backdoor;
+mod workspace_path_escape_hatch;
 mod world_model_cross_pod;

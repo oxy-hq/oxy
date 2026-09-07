@@ -13,10 +13,10 @@
 # two false alarms moved to bucket=Ext, see their notes).
 #
 # To regenerate the method/path/role columns: add a temporary #[test] to
-#   crates/app/tests/route_role_derivation.rs that calls
+#   crates/app/tests/routing/route_role_derivation.rs that calls
 #   oxy_app::server::router::route_declarations(), formats each (method, path, role)
 #   tuple sorted+deduped, and writes it to a scratch file. Run it with:
-#   cargo nextest run -p oxy-app --test route_role_derivation -E 'test(zzz_dump...)'
+#   cargo nextest run -p oxy-app --test routing -E 'test(zzz_dump...)'
 #   then delete the temporary test (git diff against the test file must come back
 #   empty). This is the exact recipe internal-docs/2026-08-25-fleet-http-route-coverage.md
 #   itself documents using, and the one this file's current 224 rows came from.

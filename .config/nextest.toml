@@ -97,6 +97,12 @@ retries = 2
 # connection. That is a few tests' worth of parallelism, and it buys a rule that
 # stays true when someone adds a harness-backed test to one of those files.
 #
+# `routing` is the sixth oxy-app binary and appears in NO group here, which is
+# deliberate rather than an omission: route classification, router shape and the
+# workspace-fs probe are all in-process, so the binary opens no database at all.
+# `tests/authz/shared_db_registry.rs` scans it along with the rest and fails the
+# build the day that stops being true.
+#
 # The two exclusions are NOT in that category: `projects_query` and
 # `local_mode_router` call `api_router(..)`, which builds `new_agentic_state`,
 # which calls `establish_connection()` on the ambient `OXY_DATABASE_URL` and then

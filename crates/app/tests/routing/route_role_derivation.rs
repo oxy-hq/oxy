@@ -88,7 +88,10 @@ fn api_sources() -> BTreeMap<String, String> {
 /// `(route pattern, handler fn name)` for every `.route("…", verb(path::to::fn))`
 /// in the workspace router, with the nest prefix already applied.
 fn mounted_routes() -> Vec<(String, String)> {
-    let src = include_str!("../src/server/router/workspace.rs");
+    // Source-file-relative, unlike every other path in this file — those join
+    // `CARGO_MANIFEST_DIR`. It gained a `../` when this moved from a top-level
+    // `tests/*.rs` into `tests/routing/`.
+    let src = include_str!("../../src/server/router/workspace.rs");
     let mut nest_of: BTreeMap<String, String> = BTreeMap::new();
     for seg in src
         .split(".nest(")

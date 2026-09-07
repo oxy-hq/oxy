@@ -31,6 +31,16 @@ use oxy::workspace_fs_probe::{
     leaks, process_owns_workspace_files, reset_leaks, set_process_owns_workspace_files,
 };
 
+/// The probe's owns-files flag and leak counter are process-global, so the four
+/// cases that read or write them are serialized against each other.
+///
+/// `AsDisklessReplica` below restores the flag on drop, which is enough while a
+/// test runs alone and worth nothing while another runs beside it. This file was
+/// its own binary when that guard was written; in `tests/routing/` it shares a
+/// process with six other modules, and a `Drop` impl private to one file
+/// excludes exactly nobody.
+use serial_test::serial;
+
 /// Restores the global on drop so one test's configuration can't leak into
 /// another's, whatever the outcome.
 struct AsDisklessReplica;
@@ -51,6 +61,7 @@ impl Drop for AsDisklessReplica {
 }
 
 #[test]
+#[serial]
 fn the_probe_defaults_to_owning_files() {
     // An un-configured process is a single-process instance — `oxy run`, a test,
     // `oxy serve --local` — and those genuinely own their files. Defaulting the
@@ -63,6 +74,7 @@ fn the_probe_defaults_to_owning_files() {
 }
 
 #[tokio::test]
+#[serial]
 async fn resolving_a_workspace_path_on_a_replica_is_recorded() {
     let _guard = AsDisklessReplica::enter();
 
@@ -93,6 +105,7 @@ async fn resolving_a_workspace_path_on_a_replica_is_recorded() {
 }
 
 #[tokio::test]
+#[serial]
 async fn the_same_resolution_is_silent_on_a_node_that_owns_files() {
     // Counter-guard. A probe that fires on the ide too would be noise, and noise
     // is how a real signal gets muted.
@@ -119,9 +132,29 @@ fn every_route_that_owns_a_disk_is_classified_ide_only() {
     // manifest claims needs the ide, `classify` must actually say so. Catches a
     // `FleetOk` carve-out silently shadowing an `IdeOnly` entry — the two lists
     // are scanned in order, and the carve-outs win.
-    use oxy_app::server::role_manifest::{RouteRole, classify, dump_manifest};
+    use oxy_app::server::role_manifest::{
+        RouteRole, classify, dump_manifest, install_route_declarations_for_tests,
+    };
 
-    let shadowed: Vec<String> = dump_manifest()
+    // `DECLARED` is a `OnceLock` and `dump_manifest()` is `unwrap_or_default()`,
+    // so without this the filter below runs over an EMPTY vec and the assertion
+    // passes having inspected nothing. That is how it behaved while this file
+    // was its own binary — every case here reads the manifest, none installed
+    // it. Six of the six other modules now sharing this binary do install it, so
+    // under `cargo test` the outcome would otherwise depend on which ran first:
+    // vacuous when this one leads, live when a sibling does. `#[serial]` cannot
+    // repair that — a `OnceLock` has no restore point the way the probe flag
+    // does — so the fix is to install it here and refuse to run vacuously.
+    install_route_declarations_for_tests();
+
+    let manifest = dump_manifest();
+    assert!(
+        !manifest.is_empty(),
+        "the manifest is empty, so the check below would inspect nothing and \
+         pass — install_route_declarations_for_tests() did not take"
+    );
+
+    let shadowed: Vec<String> = manifest
         .into_iter()
         .filter(|(_, _, role)| *role == "ide-only")
         .filter(|(method, pattern, _)| {
@@ -161,6 +194,7 @@ fn every_route_that_owns_a_disk_is_classified_ide_only() {
 /// Asserting through the probe rather than on the status code: a 200 could
 /// still have walked the filesystem to produce it.
 #[tokio::test]
+#[serial]
 async fn the_meta_route_reads_no_filesystem_on_a_replica() {
     let _guard = AsDisklessReplica::enter();
 
@@ -232,6 +266,16 @@ fn fake_workspace() -> entity::workspaces::Model {
 ///
 /// Zero on a healthy fleet. Non-zero means a route takes `?branch=` and is not
 /// classified `IdeOnly`.
+///
+/// **This asserts an absolute on a monotonic process-global**, which is a claim
+/// about the whole binary rather than about this test: nothing anywhere in
+/// `tests/routing/` may drive traffic through `compiled_reader`. That held
+/// trivially while this file was its own binary and is now an unwritten
+/// invariant across seven modules. `#[serial]` would not protect it — a counter
+/// that only goes up has no restore point — so the constraint is stated here
+/// instead: a case added to this group that reaches `compiled_reader` has to
+/// convert this into a delta (read before, read after) rather than leave it
+/// asserting zero.
 #[test]
 fn the_dropped_branch_hint_counter_starts_at_zero() {
     assert_eq!(

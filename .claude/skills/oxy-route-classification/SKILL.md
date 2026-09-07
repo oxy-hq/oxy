@@ -68,7 +68,7 @@ A handler's manager carries the same fact per *pod* that the manifest carries pe
 
 ## Two counters that catch what this skill misses
 
-A static list can only cover the routes someone remembered. Both of these are zero on a healthy fleet and asserted in `crates/app/tests/fleet_canary.rs`:
+A static list can only cover the routes someone remembered. Both of these are zero on a healthy fleet and asserted in `crates/app/tests/routing/fleet_canary.rs`:
 
 - `oxy::workspace_fs_probe::leaks()` — a workspace path was resolved on a pod that owns no working copy.
 - `compiled_reader::branch_hints_dropped()` — a request arrived with `?branch=` that a replica cannot honour. **A branch-aware route must be `IdeOnly`**: a replica skips the branch gate by design and answers with the promoted `main` revision, so the caller gets the wrong branch with no error. Non-zero names the misclassified route in the WARN.

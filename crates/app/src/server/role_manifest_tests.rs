@@ -1566,7 +1566,7 @@ fn source_upload_is_fleet_ok() {
 // sibling pin `degrades_when_ide_unreachable` / `FLEET_OK_ACKNOWLEDGED`, both
 // removed by 5f5c3bd15 — the degrade hook answered `false` for every route, so
 // the arm it guarded was unreachable, and the mount census moved to
-// `tests/route_role_derivation.rs`, which derives its route set from the router
+// `tests/routing/route_role_derivation.rs`, which derives its route set from the router
 // instead of a hand-kept list. Re-adding them would pin behaviour that no
 // longer exists.
 //

@@ -1256,7 +1256,7 @@ mod tests {
     ///
     /// Ported from `server/api/compiled_read.rs` when that layer was deleted.
     /// Its companion — that dropping the capability leaves the origin alone —
-    /// lives in `crates/app/tests/walker_storage_divergence.rs`, which can
+    /// lives in `crates/app/tests/platform/walker_storage_divergence.rs`, which can
     /// build the compiled combination.
     #[tokio::test]
     async fn a_working_copy_manager_reports_no_revision() {

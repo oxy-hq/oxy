@@ -1,7 +1,7 @@
 //! Fails the build when a test starts using the shared database without being
 //! serialized for it.
 //!
-//! `oxy-app`'s five integration binaries are mixed. Most of what's in them is
+//! `oxy-app`'s six integration binaries are mixed. Most of what's in them is
 //! in-process — source scanning, router shape, pure authz decisions — and runs at
 //! full parallelism. Eleven modules are not. They reach the raw shared
 //! `OXY_DATABASE_URL` with no per-test database, so they touch the same `public`
@@ -35,7 +35,13 @@ fn repo_root() -> PathBuf {
         .expect("resolve repo root")
 }
 
-/// **Every** `oxy-app` integration binary. Not a curated subset.
+/// **Every** `oxy-app` *grouped* integration binary. Not a curated subset.
+///
+/// The scan is `read_dir` over these directories, so a top-level `tests/*.rs` is
+/// outside it by construction — invisible here, and one more link on every full
+/// run. `tests/artifact_naming_agrees.rs` is the last one; folding it into
+/// `platform` closes both gaps at once and is the reason this reads "grouped"
+/// rather than dropping the word "every", which is the part that matters.
 ///
 /// This list was twice too short, both times for the same reason: a binary was
 /// left out because its tests were "already grouped", and grouping was mistaken
@@ -48,7 +54,14 @@ fn repo_root() -> PathBuf {
 /// The cost of scanning a binary that turns out to be clean is zero. The cost of
 /// omitting one is a race nobody sees until CI flakes in another crate. So: all
 /// of them, and any new one goes here on the day it's created.
-const MIXED_BINARIES: &[&str] = &["authz", "slack", "platform", "custom_apps", "airhouse"];
+const MIXED_BINARIES: &[&str] = &[
+    "authz",
+    "slack",
+    "platform",
+    "custom_apps",
+    "airhouse",
+    "routing",
+];
 
 /// Ways a test reaches a database.
 ///
