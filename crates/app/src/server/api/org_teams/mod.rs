@@ -24,7 +24,7 @@
 //! `admin::apps::access` and `partner_console::app_access`.
 
 pub mod app_access;
-mod audit;
+pub(crate) mod audit;
 pub mod dto;
 pub mod handlers;
 pub mod service;

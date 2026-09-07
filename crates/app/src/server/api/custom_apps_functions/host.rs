@@ -2008,7 +2008,7 @@ pub async fn org_directory(
         // Suspension is what takes a worker out of the directory, the same
         // column the login and the kiosk roster read. One switch, four
         // behaviours.
-        .filter(org_frontline_members::Column::Status.eq("active"))
+        .filter(org_frontline_members::Column::Status.eq(org_frontline_members::STATUS_ACTIVE))
         .find_also_related(users::Entity)
         .order_by_asc(org_frontline_members::Column::UserId)
         .all(db)

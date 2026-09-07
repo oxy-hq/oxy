@@ -60,6 +60,7 @@ mod foot_traffic_seed;
 pub mod chat;
 pub mod frontline;
 pub mod frontline_devices;
+pub mod frontline_grants;
 pub mod healthcheck;
 pub mod integration;
 pub mod local_setup;

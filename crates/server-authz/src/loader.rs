@@ -320,7 +320,10 @@ async fn load_app_memberships(
 async fn load_frontline_orgs(db: &DatabaseConnection, user_id: Uuid) -> Option<Vec<Uuid>> {
     let rows = entity::prelude::OrgFrontlineMembers::find()
         .filter(entity::org_frontline_members::Column::UserId.eq(user_id))
-        .filter(entity::org_frontline_members::Column::Status.eq("active"))
+        .filter(
+            entity::org_frontline_members::Column::Status
+                .eq(entity::org_frontline_members::STATUS_ACTIVE),
+        )
         .all(db)
         .await
         .map_err(|e| {

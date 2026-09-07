@@ -299,11 +299,15 @@ pub async fn write_access(
     let grants = dedupe_grantees(&req.grants);
 
     let (user_ids, team_ids) = split_grantees(&grants);
-    // Both boundary checks happen BEFORE any write: a grantee must be a member of
-    // this org, and a team must belong to it. `Ring::AppAccess` enforces the
-    // membership half independently, but rejecting here is what makes the rule
-    // visible to the admin instead of silently writing a grant that grants nothing.
-    validate_users_are_org_members(db, app.org_id, &user_ids).await?;
+    // Both boundary checks happen BEFORE any write: a grantee must BELONG to this
+    // org — as a member, or as an active frontline worker — and a team must belong
+    // to it. `Ring::AppAccess` enforces the standing half independently (a member
+    // enters through membership, a worker only through this grant), but rejecting
+    // here is what makes the rule visible to the admin instead of silently writing
+    // a grant that grants nothing. Until 2026-09-07 this accepted members only,
+    // which left the crew's grant — the one row the whole frontline model keys
+    // on — with no route that could write it.
+    validate_grantees_belong_to_org(db, app, &user_ids).await?;
     validate_teams_belong_to_org(db, app.org_id, &team_ids).await?;
 
     replace_grants(db, app, actor_id, visibility, &grants).await?;
@@ -530,22 +534,69 @@ pub fn split_grantees(grants: &[GranteeRef]) -> (Vec<Uuid>, Vec<Uuid>) {
     (users, teams)
 }
 
-async fn validate_users_are_org_members(
+/// Every NEW grantee is either a member of the org or an ACTIVE frontline worker
+/// of it. A grant narrows within an org and never widens into one; a worker's
+/// standing is `org_frontline_members`, not `org_members`, and a suspended
+/// worker has left — they are not a grantee an admin may add.
+///
+/// A grantee who already holds a row on this app passes through unexamined.
+/// The endpoint is a full replace whose payload the dialog seeds from
+/// `read_access`, and suspension deletes nothing — so without this, suspending
+/// one worker made the whole app's access un-savable until an admin found and
+/// removed an unlabelled row. Nothing is opened by it: the rings AND every
+/// grant with standing (`load_frontline_orgs` reads only active rows), so a
+/// suspended worker's surviving grant is inert, and comes back to life only
+/// when the worker is reinstated — which is what reinstatement means.
+async fn validate_grantees_belong_to_org(
     db: &DatabaseConnection,
-    org_id: Uuid,
+    app: &apps::Model,
     user_ids: &[Uuid],
 ) -> Result<(), StatusCode> {
     if user_ids.is_empty() {
         return Ok(());
     }
-    let found = OrgMembers::find()
-        .filter(org_members::Column::OrgId.eq(org_id))
-        .filter(org_members::Column::UserId.is_in(user_ids.to_vec()))
+    let already: Vec<Uuid> = AppMembers::find()
+        .filter(app_members::Column::AppId.eq(app.id))
+        .filter(app_members::Column::UserId.is_in(user_ids.to_vec()))
+        .all(db)
+        .await
+        .map_err(db_err)?
+        .into_iter()
+        .map(|m| m.user_id)
+        .collect();
+    let new: Vec<Uuid> = user_ids
+        .iter()
+        .copied()
+        .filter(|id| !already.contains(id))
+        .collect();
+    if new.is_empty() {
+        return Ok(());
+    }
+    let members: Vec<Uuid> = OrgMembers::find()
+        .filter(org_members::Column::OrgId.eq(app.org_id))
+        .filter(org_members::Column::UserId.is_in(new.clone()))
+        .all(db)
+        .await
+        .map_err(db_err)?
+        .into_iter()
+        .map(|m| m.user_id)
+        .collect();
+    let rest: Vec<Uuid> = new.into_iter().filter(|id| !members.contains(id)).collect();
+    if rest.is_empty() {
+        return Ok(());
+    }
+    let crew = entity::org_frontline_members::Entity::find()
+        .filter(entity::org_frontline_members::Column::OrgId.eq(app.org_id))
+        .filter(entity::org_frontline_members::Column::UserId.is_in(rest.clone()))
+        .filter(
+            entity::org_frontline_members::Column::Status
+                .eq(entity::org_frontline_members::STATUS_ACTIVE),
+        )
         .all(db)
         .await
         .map_err(db_err)?
         .len();
-    if found == user_ids.len() {
+    if crew == rest.len() {
         Ok(())
     } else {
         Err(StatusCode::BAD_REQUEST)

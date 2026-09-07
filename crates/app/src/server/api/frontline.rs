@@ -189,7 +189,7 @@ async fn roster_body(headers: &HeaderMap, q: RosterQuery) -> axum::response::Res
     let active: std::collections::HashSet<Uuid> = org_frontline_members::Entity::find()
         .filter(org_frontline_members::Column::OrgId.eq(org.id))
         .filter(org_frontline_members::Column::UserId.is_in(ids.clone()))
-        .filter(org_frontline_members::Column::Status.eq("active"))
+        .filter(org_frontline_members::Column::Status.eq(org_frontline_members::STATUS_ACTIVE))
         .all(&db)
         .await
         .unwrap_or_default()
@@ -528,6 +528,12 @@ pub struct EnrolRequest {
     pub identifier: String,
     /// 4–8 digits. Never stored, never logged, never returned.
     pub pin: String,
+    /// The apps this worker will use, by id — granted `member` in the same
+    /// call. Optional: a manager can also grant later from an app's access
+    /// settings, which accept an active worker. Every id must be this org's,
+    /// or the whole request is refused before the worker exists.
+    #[serde(default)]
+    pub apps: Vec<Uuid>,
 }
 
 /// Enrol a frontline worker — the door `enroll_worker` never had.
@@ -559,7 +565,8 @@ pub struct EnrolRequest {
 /// remember. The worker exists, can sign in, and holds nothing else.
 #[instrument(skip_all, fields(org = %org_id))]
 pub async fn enrol(
-    OrgAdmin(_ctx): OrgAdmin,
+    OrgAdmin(ctx): OrgAdmin,
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path(org_id): Path<Uuid>,
     Json(req): Json<EnrolRequest>,
 ) -> impl IntoResponse {
@@ -570,6 +577,47 @@ pub async fn enrol(
         )
             .into_response();
     };
+
+    // The apps first, before a worker exists to be left half set up. Deciding
+    // an app's audience is `AppAccessManage` — the ring the access settings
+    // enforce — and `OrgAdmin` is not that ring, so a request that grants is
+    // held to it here; then an id that is not this org's refuses the whole
+    // request.
+    let apps = super::frontline_grants::normalize_app_ids(req.apps);
+    if !apps.is_empty()
+        && !super::frontline_grants::may_grant_apps(
+            &db,
+            actor.id,
+            actor.email.as_deref().unwrap_or(""),
+            org_id,
+        )
+        .await
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "error": "granting apps at enrolment needs the standing to manage app access"
+            })),
+        )
+            .into_response();
+    }
+    if let Err(e) = super::frontline_grants::validate_apps_in_org(&db, org_id, &apps).await {
+        return match e {
+            super::frontline_grants::GrantError::NotThisOrg(_) => (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response(),
+            super::frontline_grants::GrantError::Db(err) => {
+                error!(%org_id, "frontline enrolment: app lookup failed: {err}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": "enrolment failed" })),
+                )
+                    .into_response()
+            }
+        };
+    }
 
     match frontline::enroll_worker(
         &db,
@@ -582,16 +630,66 @@ pub async fn enrol(
     .await
     {
         Ok(user_id) => {
+            info!(%org_id, %user_id, apps = apps.len(), "frontline worker enrolled");
+            // The grants, now that there is somebody to grant to. Validated
+            // above, so the only way this fails is the database — and then the
+            // worker exists without their apps, which the response must say
+            // rather than report a clean 201.
+            let granted = match super::frontline_grants::grant_apps_to_worker(
+                &db,
+                org_id,
+                user_id,
+                &apps,
+                Some(actor.id),
+            )
+            .await
+            {
+                Ok(granted) => granted,
+                Err(e) => {
+                    error!(%org_id, %user_id, "worker enrolled, but the app grants failed: {e}");
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({
+                            "error": "the worker was enrolled but could not be granted their apps \
+                                      — grant them from each app's access settings",
+                            "user_id": user_id,
+                        })),
+                    )
+                        .into_response();
+                }
+            };
+            // Gaining access is as auditable as losing it: the same entry the
+            // access settings file, one per app, so this door is not the one
+            // way to reach an app that leaves no trail.
+            for app in &granted {
+                super::org_teams::audit::record(
+                    &db,
+                    &ctx,
+                    &actor,
+                    super::org_teams::audit::APP_ACCESS_CHANGED,
+                    (
+                        "app",
+                        app.id,
+                        format!(
+                            "{} ({}) ← enrolled {}",
+                            app.name,
+                            app.slug,
+                            req.identifier.trim()
+                        ),
+                    ),
+                )
+                .await;
+            }
             // The PIN is not echoed. An admin who did not keep it re-enrols or
             // resets; a response that repeats it would put it in every proxy
             // log between here and the browser.
-            info!(%org_id, %user_id, "frontline worker enrolled");
             (
                 StatusCode::CREATED,
                 Json(serde_json::json!({
                     "user_id": user_id,
                     "identifier": req.identifier.trim(),
                     "name": req.name.trim(),
+                    "apps": apps,
                 })),
             )
                 .into_response()

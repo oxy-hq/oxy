@@ -453,3 +453,168 @@ async fn the_model_and_both_gates_agree_about_a_worker() {
         "a grant on a draft app does not open the app itself"
     );
 }
+
+/// The one row the whole frontline model keys on has a writer a worker can pass.
+///
+/// `write_access` — the app's access settings — validated every grantee as an org
+/// member, which a worker never is. So the grant `Ring::AppAccess` and
+/// `user_can_access_app` both require could be created only by hand. Now an
+/// ACTIVE worker of the org is a valid grantee; an outsider and a suspended
+/// worker are still refused, because a grant narrows within an org and a worker
+/// who has left has left.
+#[tokio::test]
+async fn the_access_settings_accept_an_active_worker_and_nobody_else() {
+    use axum::http::StatusCode;
+    use oxy_app::server::api::org_teams::dto::{GranteeRef, SetAppAccessRequest};
+    use oxy_app::server::api::org_teams::service::write_access;
+
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let fx = seed(&db).await;
+    let app = apps::Entity::find_by_id(fx.app_a)
+        .one(&db)
+        .await
+        .expect("query")
+        .expect("app");
+    let actor = user(&db, "Admin", Some("admin@example.com".into())).await;
+
+    let crew = user(&db, "Maria S.", None).await;
+    enrol(&db, fx.org, crew, "active").await;
+    let gone = user(&db, "Gone A.", None).await;
+    enrol(&db, fx.org, gone, "suspended").await;
+    let outsider = user(&db, "Nia O.", Some("nia@example.com".into())).await;
+
+    let req = |id: Uuid| SetAppAccessRequest {
+        visibility: "members".into(),
+        grants: vec![GranteeRef::User {
+            id,
+            role: "member".into(),
+        }],
+    };
+
+    let written = write_access(&db, &app, actor, &req(crew))
+        .await
+        .expect("an active worker is a valid grantee");
+    assert!(
+        written.grants.iter().any(|g| g.id == crew),
+        "the grant reads back: {written:?}"
+    );
+    // And it is the grant the gate reads.
+    assert!(frontline_worker_with_app_grant(&db, fx.org, crew, fx.workspace_a).await);
+
+    assert_eq!(
+        write_access(&db, &app, actor, &req(gone)).await.err(),
+        Some(StatusCode::BAD_REQUEST),
+        "a suspended worker has left; they are not a grantee an admin may ADD"
+    );
+    assert_eq!(
+        write_access(&db, &app, actor, &req(outsider)).await.err(),
+        Some(StatusCode::BAD_REQUEST),
+        "no standing of either kind is still refused"
+    );
+
+    // Suspending a worker who already holds the grant must not make the app's
+    // access un-savable: the dialog seeds its full-replace payload from what is
+    // there, and suspension deletes nothing. The existing row passes through;
+    // it is inert while they are suspended (the loader reads active rows only)
+    // and live again when they are reinstated.
+    oxy_auth::frontline::set_worker_standing(&db, fx.org, crew, false)
+        .await
+        .expect("suspend");
+    write_access(&db, &app, actor, &req(crew))
+        .await
+        .expect("re-saving a list that still names a suspended worker is fine");
+    assert!(
+        !frontline_worker_with_app_grant(&db, fx.org, crew, fx.workspace_a).await,
+        "and the surviving grant opens nothing while they are suspended"
+    );
+}
+
+/// Granting at enrolment is deciding an app's audience, and is held to the
+/// ring the access settings enforce — not to the org-admin guard the route
+/// already had. An org officer may; a plain member may not.
+#[tokio::test]
+async fn granting_at_enrolment_needs_the_standing_to_manage_app_access() {
+    use oxy_app::server::api::frontline_grants::may_grant_apps;
+
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let fx = seed(&db).await;
+    let mut standing = Vec::new();
+    for (name, role) in [
+        ("Owner", entity::org_members::OrgRole::Admin),
+        ("Member", entity::org_members::OrgRole::Member),
+    ] {
+        let id = user(
+            &db,
+            name,
+            Some(format!("{}@example.com", name.to_lowercase())),
+        )
+        .await;
+        org_members::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            org_id: ActiveValue::Set(fx.org),
+            user_id: ActiveValue::Set(id),
+            role: ActiveValue::Set(role),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("seed membership");
+        standing.push((name, id));
+    }
+    let (_, admin) = standing[0];
+    let (_, member) = standing[1];
+    assert!(may_grant_apps(&db, admin, "owner@example.com", fx.org).await);
+    assert!(
+        !may_grant_apps(&db, member, "member@example.com", fx.org).await,
+        "a plain member cannot decide an app's audience through enrolment either"
+    );
+}
+
+/// Enrolment can grant the apps the worker will use — one call for the manager
+/// — and a request naming another org's app is refused before the worker exists.
+#[tokio::test]
+async fn enrolment_grants_only_this_orgs_apps_and_is_idempotent() {
+    use oxy_app::server::api::frontline_grants::{
+        GrantError, grant_apps_to_worker, validate_apps_in_org,
+    };
+
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let fx = seed(&db).await;
+    let other = seed(&db).await; // another org, its own workspaces and apps
+    let crew = user(&db, "Maria S.", None).await;
+    enrol(&db, fx.org, crew, "active").await;
+
+    // Another org's app, or one that does not exist: refused, naming the ids.
+    let stranger = Uuid::new_v4();
+    match validate_apps_in_org(&db, fx.org, &[fx.app_a, other.app_a, stranger]).await {
+        Err(GrantError::NotThisOrg(ids)) => {
+            assert!(ids.contains(&other.app_a) && ids.contains(&stranger));
+            assert!(!ids.contains(&fx.app_a));
+        }
+        other => panic!("expected NotThisOrg, got {other:?}"),
+    }
+    // Nothing was written by asking.
+    assert!(!frontline_worker_with_app_grant(&db, fx.org, crew, fx.workspace_a).await);
+
+    // Both of this org's apps, then the same call again: two rows, not four,
+    // and the gate opens both workspaces.
+    let granted = grant_apps_to_worker(&db, fx.org, crew, &[fx.app_a, fx.app_b], None)
+        .await
+        .expect("grant");
+    assert_eq!(granted.len(), 2);
+    assert!(
+        granted.iter().all(|a| a.org_id == fx.org),
+        "the rows come back named"
+    );
+    grant_apps_to_worker(&db, fx.org, crew, &[fx.app_a, fx.app_b], None)
+        .await
+        .expect("granting again is a no-op");
+    let rows = app_members::Entity::find()
+        .filter(app_members::Column::UserId.eq(crew))
+        .all(&db)
+        .await
+        .expect("query");
+    assert_eq!(rows.len(), 2, "idempotent: {rows:?}");
+    assert!(frontline_worker_with_app_grant(&db, fx.org, crew, fx.workspace_a).await);
+    assert!(frontline_worker_with_app_grant(&db, fx.org, crew, fx.workspace_b).await);
+}

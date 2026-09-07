@@ -23,6 +23,12 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+/// The two values `status` takes. One spelling, read by the loader, the
+/// gates, the directory, the roster and the suspension route — a literal that
+/// drifted in any of them would silently open or close a door.
+pub const STATUS_ACTIVE: &str = "active";
+pub const STATUS_SUSPENDED: &str = "suspended";
+
 #[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "org_frontline_members")]

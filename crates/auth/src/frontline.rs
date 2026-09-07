@@ -353,7 +353,9 @@ pub async fn verify_pin(
         .one(db)
         .await
         .map_err(|e| OxyError::DBError(format!("frontline standing: {e}")))?;
-    let active = standing.as_ref().is_some_and(|s| s.status == "active");
+    let active = standing
+        .as_ref()
+        .is_some_and(|s| s.status == org_frontline_members::STATUS_ACTIVE);
 
     let Some(stored) = cred.secret_hash.as_deref() else {
         // A `pin` row with no secret is rejected at the schema level, so this
@@ -506,7 +508,7 @@ pub async fn enroll_worker(
     org_frontline_members::ActiveModel {
         org_id: Set(org_id),
         user_id: Set(user_id),
-        status: Set("active".to_string()),
+        status: Set(org_frontline_members::STATUS_ACTIVE.to_string()),
         created_at: ActiveValue::NotSet,
     }
     .insert(&txn)
@@ -559,7 +561,7 @@ pub async fn is_active_frontline(
         .one(db)
         .await
         .map_err(|e| OxyError::DBError(format!("frontline standing: {e}")))?
-        .is_some_and(|s| s.status == "active"))
+        .is_some_and(|s| s.status == org_frontline_members::STATUS_ACTIVE))
 }
 
 #[cfg(test)]
@@ -731,7 +733,11 @@ pub async fn set_worker_standing(
     user_id: Uuid,
     active: bool,
 ) -> Result<bool, OxyError> {
-    let want = if active { "active" } else { "suspended" };
+    let want = if active {
+        org_frontline_members::STATUS_ACTIVE
+    } else {
+        org_frontline_members::STATUS_SUSPENDED
+    };
 
     let Some(row) = org_frontline_members::Entity::find_by_id((org_id, user_id))
         .one(db)
