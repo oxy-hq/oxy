@@ -39,6 +39,8 @@ EMAIL2PERSON = {e: p for p, v in PEOPLE.items() for e in v["emails"]}
 # ── Areas (keep aligned with .github/CODEOWNERS) ─────────────────────────────
 # (path-prefix, friendly area name).  A file counts toward an area if its path
 # equals the prefix or starts with prefix + "/".
+# Several prefixes MAY share one friendly name (an area whose files don't sit
+# under a single directory): touches aggregate and the report prints one row.
 AREAS = [
     ("crates/app/src/server/api/custom_apps_serve",       "Custom Apps — serve"),
     ("crates/app/src/server/api/custom_apps_functions",   "Custom Apps — functions"),
@@ -100,6 +102,16 @@ AREAS = [
     ("web-app/src/pages/billing",                         "Billing (UI)"),
     ("crates/app/src/server/api/organizations",           "Multi-tenancy / orgs"),
     ("crates/app/src/server/api/secrets.rs",              "Secrets"),
+    # Frontline & crew ops (new 2026-09) — one area, five prefixes.
+    ("crates/app/src/server/api/frontline.rs",            "Frontline & crew ops"),
+    ("crates/app/src/server/api/frontline_admin.rs",      "Frontline & crew ops"),
+    ("crates/app/src/server/api/frontline_devices.rs",    "Frontline & crew ops"),
+    ("crates/app/src/server/api/frontline_grants.rs",     "Frontline & crew ops"),
+    ("web-app/src/components/settings/SettingsDialog/sections/organization/Crew",
+                                                          "Frontline & crew ops"),
+    ("crates/app/src/server/api/work",                    "Work assignment graph"),
+    ("crates/app/src/server/api/chat",                    "Chat channels"),
+    ("crates/app/src/server/api/notifications",           "Notifications & push"),
     ("crates/git",                                        "Git client / IDE git"),
     ("crates/app/src/server/api/custom_apps_shell_context.rs", "Client shell context"),
     ("web-app/.agents",                                   "Client shell (.agents)"),
@@ -206,7 +218,11 @@ def main():
     out.append("## Per-area primary / backup (by file-touch share)\n")
     out.append("| Area | Primary | Backup | Other focus touches |")
     out.append("| --- | --- | --- | --- |")
+    seen_areas = set()
     for _prefix, friendly in AREAS:
+        if friendly in seen_areas:        # multi-prefix area — one row, counts aggregated
+            continue
+        seen_areas.add(friendly)
         ranked = rank_focus(area_touch.get(friendly, Counter()))
         tot = sum(c for _, c in ranked)
         if tot == 0:

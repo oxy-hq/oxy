@@ -31,7 +31,10 @@
 crates/app/src/server/api/custom_apps_serve/       @luong-komorebi @NTtanh
 crates/app/src/server/api/custom_apps_functions/   @luong-komorebi @NTtanh
 crates/app/src/server/api/custom_apps_storage/     @luong-komorebi @NTtanh
-crates/app/src/server/api/custom_apps_*.rs         @luong-komorebi @NTtanh
+# No `.rs` suffix on the glob: several of these are now directories
+# (custom_apps_client/, custom_apps_health/, custom_apps_migrations/ — #3103),
+# which a `custom_apps_*.rs` pattern silently stops matching.
+crates/app/src/server/api/custom_apps_*            @luong-komorebi @NTtanh
 crates/app/src/custom_app_template/                @luong-komorebi @NTtanh
 sdk/create-oxy-app/                                @luong-komorebi @NTtanh
 internal-docs/customer-apps*.md                    @luong-komorebi @NTtanh
@@ -61,9 +64,24 @@ internal-docs/per-org-oltp-postgres.md             @luong-komorebi @hotay
 internal-docs/adr-neon-as-oltp-provider.md         @luong-komorebi @hotay
 
 # Authorization + authentication
+# server-authz flipped to Luong 2026-09: Tay extracted the crate (#2772) but
+# every ring in it since is Luong's (#2873, #2836, #3050, #3102, #3108).
 crates/authz/                                      @luong-komorebi @hotay
 crates/app/src/server/authz/                       @luong-komorebi @hotay
 crates/auth/                                       @luong-komorebi @hotay
+crates/server-authz/                               @luong-komorebi @hotay
+
+# Frontline & crew operations (new 2026-09, #3042 → #3111) — worker identity
+# (PIN sign-in, valid only on an enrolled kiosk), the assignment graph
+# (locations, tenant roles, work items), org chat, and the notification/push
+# seam. Mars backs up: org membership/invites and cross-pod live delivery
+# (#2823) are the adjacent surfaces.
+crates/app/src/server/api/frontline*.rs            @luong-komorebi @NTtanh
+crates/app/src/server/api/work/                    @luong-komorebi @NTtanh
+crates/app/src/server/api/chat/                    @luong-komorebi @NTtanh
+crates/app/src/server/api/notifications/           @luong-komorebi @NTtanh
+web-app/src/components/settings/SettingsDialog/sections/organization/Crew/  @luong-komorebi @NTtanh
+internal-docs/frontline-identity.md                @luong-komorebi @NTtanh
 
 # Fleet, routing, compile boundary, project/workspace domain
 crates/oxy-compile/                                @luong-komorebi @NTtanh
@@ -169,9 +187,8 @@ internal-docs/worker-fleet.md                      @hotay @luong-komorebi
 internal-docs/adr-postgres-as-worker-queue.md      @hotay @luong-komorebi
 .claude/skills/oxy-task-spec-default/              @hotay @luong-komorebi
 
-# Platform services + server-authz plumbing crate
+# Platform services (server-authz moved to Luong's section above, 2026-09)
 crates/platform/                                   @hotay @luong-komorebi
-crates/server-authz/                               @hotay @luong-komorebi
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -250,8 +267,11 @@ sdk/vite-plugin/                                   @luong-komorebi @NTtanh
 # Deliberately UNOWNED — shared, no single reviewer (gating them would stall
 # everyone; the highest-volume committer only appears to "lead" them):
 #   crates/core, crates/shared, crates/entity, crates/migration,
-#   web-app/src/{components,hooks,services,types}, web-app/src/pages/{thread,chat}.
-# Add an owner only if that changes.
+#   web-app/src/{components,hooks,services,types,libs,stores},
+#   web-app/src/pages/{thread,chat}.
+# Add an owner only if that changes. A single feature leaf inside one of them may
+# still be owned (e.g. .../organization/Crew/ above) — unowned is about the shared
+# directory, not a ban on owning one product surface that happens to live in it.
 
 
 # ═══════════════════════════════════════════════════════════════════════════
