@@ -1,0 +1,51 @@
+name: flat_lever
+description: |
+  A budget that barely moves for its own reasons. `budget_jitter_sd` drops from
+  0.12 to 0.005, so almost the only thing left moving spend is the demand shock
+  the budget is set from — which is the confounder.
+
+  This is the LEFT COLUMN of the outcome map, and the plan argues most customers
+  live in it: with nothing but the confounder driving the regressor, the honest
+  answer is "unidentified" and the gate is what saves you. A run here should
+  come back mostly REFUSED. A confident coefficient is the finding.
+
+  The knob is deliberately not `explore_jitter_sd` — that one belongs to a
+  policy. This is the world's own budget rule, and it is what the burn-in and
+  the `legacy` arm produce.
+
+seed: 7
+# Near the identification floor, so which side of `abs t >= 2` a period lands on
+# is partly the draw. Five seeds, or the cell reports a coin toss.
+replicates: 5
+periods: 30
+period_days: 7
+history_days: 180
+start_date: 2025-01-06
+
+entities:
+  count: 24
+  scale_sigma: 0.4
+
+baseline:
+  sales_per_entity_day: 1500.0
+  margin: 0.36
+  demand_shock_rho: 0.7
+  demand_shock_sd: 0.12
+  weekly_seasonality: 0.15
+  budget_jitter_sd: 0.005
+
+mechanism:
+  driver: marketing_spend
+  target: net_sales
+  lag_days: 7
+  noise_ratio: 0.05
+  calibrate:
+    anchor_spend_share: 0.02
+    local_slope_at_anchor: 4.0
+    optimum_at: 3.0
+
+lever:
+  min_multiple: 0.1
+  max_multiple: 5.0
+  max_move_per_period: 0.25
+  explore_jitter_sd: 0.15

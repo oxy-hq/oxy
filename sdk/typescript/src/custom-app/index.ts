@@ -76,14 +76,21 @@ export {
   _resetCustomAppManifestCacheForTest,
   loadCustomAppManifest
 } from "./manifest";
-// Metric-tree analysis hooks (drivers / what-if / RCA / opportunity sizing)
-export type { MetricTreeHookResult, UseMetricTreeOpts } from "./metric-tree-hooks";
+// Metric-tree analysis hooks (drivers / what-if / RCA / opportunity sizing /
+// scenario forecasting)
+export type {
+  MetricTreeHookResult,
+  UseMetricTreeOpts,
+  UsePredictOpts
+} from "./metric-tree-hooks";
 export {
+  useBaseline,
   useDistribution,
   useExplain,
   useMetricTree,
   useOpportunity,
   usePredict,
+  useProjection,
   useSensitivity,
   useTimeDimensions
 } from "./metric-tree-hooks";

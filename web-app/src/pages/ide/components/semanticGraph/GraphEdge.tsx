@@ -1,14 +1,14 @@
 import { BaseEdge, type EdgeProps, getSmoothStepPath } from "@xyflow/react";
 
-interface WmEdgeData extends Record<string, unknown> {
+interface GraphEdgeData extends Record<string, unknown> {
   waypoints?: { x: number; y: number }[];
 }
 
 /** Renders an orthogonal path with rounded corners through ELK-computed
- *  waypoints; edges added after layout (e.g. breakdown edges) carry no
- *  waypoints and fall back to React Flow's smooth-step router so they route
- *  with the same right-angle, rounded look instead of a raw diagonal. */
-export function WorldModelEdge({
+ *  waypoints; edges added after layout (e.g. World Model's breakdown edges)
+ *  carry no waypoints and fall back to React Flow's smooth-step router so they
+ *  route with the same right-angle, rounded look instead of a raw diagonal. */
+export function GraphEdge({
   sourceX,
   sourceY,
   sourcePosition,
@@ -26,7 +26,7 @@ export function WorldModelEdge({
   markerStart,
   interactionWidth
 }: EdgeProps) {
-  const waypoints = (data as WmEdgeData)?.waypoints;
+  const waypoints = (data as GraphEdgeData)?.waypoints;
   let path: string;
   let labelX = (sourceX + targetX) / 2;
   let labelY = (sourceY + targetY) / 2;

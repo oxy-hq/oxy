@@ -1,0 +1,38 @@
+name: thin_history
+description: |
+  Three months instead of six. Above the fitter's n >= 30 floor, well under
+  what a projection needs — the corner where a number comes back and should
+  not be trusted.
+
+seed: 7
+periods: 30
+period_days: 7
+history_days: 90
+start_date: 2025-01-06
+
+entities:
+  count: 24
+  scale_sigma: 0.4
+
+baseline:
+  sales_per_entity_day: 1500.0
+  margin: 0.36
+  demand_shock_rho: 0.7
+  demand_shock_sd: 0.12
+  weekly_seasonality: 0.15
+
+mechanism:
+  driver: marketing_spend
+  target: net_sales
+  lag_days: 7
+  noise_ratio: 0.05
+  calibrate:
+    anchor_spend_share: 0.02
+    local_slope_at_anchor: 4.0
+    optimum_at: 3.0
+
+lever:
+  min_multiple: 0.1
+  max_multiple: 5.0
+  max_move_per_period: 0.25
+  explore_jitter_sd: 0.15

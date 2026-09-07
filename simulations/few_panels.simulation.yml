@@ -1,0 +1,41 @@
+name: few_panels
+description: |
+  Six entities. Measured: the independent estimator returns -0.84 here, a
+  SIGN FLIP, against a true 3.7. Declared deliberately so the map has a point
+  where sampling noise, not bias, is the whole story.
+
+seed: 7
+# Six panels over 120 days is where the plan measured a −0.84 sign flip:
+# the estimator is reporting sampling noise, so one seed says nothing.
+replicates: 5
+periods: 30
+period_days: 7
+history_days: 120
+start_date: 2025-01-06
+
+entities:
+  count: 6
+  scale_sigma: 0.4
+
+baseline:
+  sales_per_entity_day: 1500.0
+  margin: 0.36
+  demand_shock_rho: 0.7
+  demand_shock_sd: 0.12
+  weekly_seasonality: 0.15
+
+mechanism:
+  driver: marketing_spend
+  target: net_sales
+  lag_days: 7
+  noise_ratio: 0.05
+  calibrate:
+    anchor_spend_share: 0.02
+    local_slope_at_anchor: 4.0
+    optimum_at: 3.0
+
+lever:
+  min_multiple: 0.1
+  max_multiple: 5.0
+  max_move_per_period: 0.25
+  explore_jitter_sd: 0.15

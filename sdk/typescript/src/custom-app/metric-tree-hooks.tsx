@@ -16,6 +16,8 @@
 
 import * as React from "react";
 import type {
+  BaselineRequest,
+  BaselineResponse,
   DistributionRequest,
   ExplainRequest,
   ExplainResult,
@@ -23,7 +25,10 @@ import type {
   OpportunityRequest,
   OpportunityResult,
   PredictChange,
+  PredictOptions,
   PredictResult,
+  ProjectionRequest,
+  ProjectionResponse,
   SensitivityResult,
   TimeDimensionsResponse
 } from "../metricTree";
@@ -158,18 +163,36 @@ export function useSensitivity(
 
 // ── usePredict (what-if) ──────────────────────────────────────────────────────
 
+export interface UsePredictOpts extends EndpointOpts, PredictOptions {}
+
 /**
  * Propagate hypothetical `(measure, delta)` changes upward through the
  * tree and return the estimated impact on every downstream measure — a
  * pure metric-tree walk, no warehouse query. Pass `null` to stay idle.
+ *
+ * Because it is database-free it can only use the coefficients it is GIVEN.
+ * Without `opts.coefficients` from {@link useBaseline}, every driver edge
+ * whose `.view.yml` declares no `coefficient:` contributes nothing and its
+ * downstream measures are simply absent from `impacts` — no error, no
+ * refusal. Without `opts.values`, multiplicative component edges come back
+ * `unquantifiable` rather than sized.
  */
 export function usePredict(
   changes: PredictChange[] | null,
-  opts: EndpointOpts = {}
+  opts: UsePredictOpts = {}
 ): MetricTreeHookResult<PredictResult> {
   const { projectId, fetcher } = useOxyApp();
   const enabled = opts.enabled !== false;
-  const key = projectId && changes ? JSON.stringify({ projectId, changes }) : null;
+  const { values, coefficients } = opts;
+  const body = {
+    changes,
+    ...(values ? { values } : {}),
+    // Sent verbatim, refusals included — the server ignores entries carrying
+    // no coefficient, and filtering them here would just be a second place for
+    // the two sides to disagree.
+    ...(coefficients?.length ? { coefficients } : {})
+  };
+  const key = projectId && changes ? JSON.stringify({ projectId, body }) : null;
 
   return useMetricTreeEndpoint<PredictResult>(
     key,
@@ -177,7 +200,79 @@ export function usePredict(
       postJson<PredictResult>(
         fetcher,
         `${metricTreePath(projectId as string)}/predict`,
-        { changes },
+        body,
+        signal
+      ),
+    enabled
+  );
+}
+
+// ── useBaseline (scenario levels + fitted coefficients) ───────────────────────
+
+/**
+ * Value a scenario's starting point, and measure the coefficients it needs.
+ *
+ * Two warehouse reads: the current value of every node reachable from
+ * `request.roots`, and — for driver edges declaring no `coefficient:` — a fit
+ * over the window. Both are expensive, which is why they live here and not in
+ * {@link usePredict}: predict is database-free by design so it can re-run per
+ * keystroke, and it CANNOT measure a coefficient itself.
+ *
+ * That is the whole reason to call this. Feed `data.values` and `data.fitted`
+ * into `usePredict`; omit them and an undeclared edge propagates nothing.
+ * Pass `null` to stay idle until levers and a period are chosen.
+ */
+export function useBaseline(
+  request: BaselineRequest | null,
+  opts: EndpointOpts = {}
+): MetricTreeHookResult<BaselineResponse> {
+  const { projectId, fetcher } = useOxyApp();
+  const enabled = opts.enabled !== false;
+  const key = projectId && request ? JSON.stringify({ projectId, request }) : null;
+
+  return useMetricTreeEndpoint<BaselineResponse>(
+    key,
+    (signal) =>
+      postJson<BaselineResponse>(
+        fetcher,
+        `${metricTreePath(projectId as string)}/baseline`,
+        request,
+        signal
+      ),
+    enabled
+  );
+}
+
+// ── useProjection (scenario forecasting over time) ────────────────────────────
+
+/**
+ * Bucketed history for the levers and everything downstream, plus the forward
+ * curve the forecaster expects next — the scenario's time axis.
+ *
+ * One warehouse query, so it belongs on a window change, not on a lever edit.
+ * It returns the BASELINE curve only: the scenario's second curve is
+ * arithmetic over this and a `usePredict` result — a proportional shift
+ * landing `lag` buckets in — composed client-side precisely so editing a lever
+ * costs no query.
+ *
+ * Treat a series with a `refusal` as a stated absence: it must not render as a
+ * flat forward line. Pass `null` to stay idle.
+ */
+export function useProjection(
+  request: ProjectionRequest | null,
+  opts: EndpointOpts = {}
+): MetricTreeHookResult<ProjectionResponse> {
+  const { projectId, fetcher } = useOxyApp();
+  const enabled = opts.enabled !== false;
+  const key = projectId && request ? JSON.stringify({ projectId, request }) : null;
+
+  return useMetricTreeEndpoint<ProjectionResponse>(
+    key,
+    (signal) =>
+      postJson<ProjectionResponse>(
+        fetcher,
+        `${metricTreePath(projectId as string)}/projection`,
+        request,
         signal
       ),
     enabled

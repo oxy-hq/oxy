@@ -109,12 +109,17 @@
       "type": "string"
     },
     "DriverForm": {
-      "description": "Functional form of a quantitative driver relationship.",
+      "description": "Functional form of a quantitative driver relationship.\n\nThis mirrors `oxy_airlayer_compat::schema::models::DriverForm`, which is where the shape is actually defined (a basis plus a link, in `oxy_airlayer_compat::engine::response`). The copy exists because this crate parses `.view.yml` itself, so a form the engine accepts and this enum does not is a deserialization failure on a perfectly valid file — keep the two variant lists in step.\n\nNote the multi-term shapes (`quadratic`, `cubic`, `linear-log-quadratic`) cannot be given their coefficients through this crate's [`Driver`], which carries only the scalar `coefficient`. Declared here they are fit-only: the shape is honoured, the magnitude comes from history.",
       "enum": [
         "linear",
         "log-log",
         "log-linear",
-        "linear-log"
+        "linear-log",
+        "quadratic",
+        "cubic",
+        "sqrt",
+        "inverse",
+        "linear-log-quadratic"
       ],
       "type": "string"
     },

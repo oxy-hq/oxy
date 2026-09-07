@@ -2,8 +2,8 @@ import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { OpportunityInstance, SegmentOpportunity } from "@/types/metricTree";
+import { MagnitudeBar, MetaBadge } from "../../components/semanticGraph";
 import { formatCompact, formatCount, formatDelta, formatSignedPct } from "./measureTarget";
-import { MagnitudeBar, MetaBadge } from "./panelPrimitives";
 import { WorldModelSegmentDrill } from "./WorldModelSegmentDrill";
 import { formatSegment, segmentQuestion } from "./worldModelNav";
 

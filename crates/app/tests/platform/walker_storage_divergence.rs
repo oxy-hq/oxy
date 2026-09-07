@@ -5,8 +5,15 @@
 //! different rules. Folding them behind one `Kind` abstraction would silently
 //! pick a winner, and the loser's behaviour would change without a diff.
 //!
-//! Every assertion below is a divergence that exists today. Changing one is
-//! allowed; changing one without noticing is not.
+//! Every assertion below is a divergence that exists today, or a former one
+//! now pinned as resolved. Changing one is allowed; changing one without
+//! noticing is not.
+//!
+//! The `.test.` file-name rule was a divergence and is now shared: the walker
+//! and `storage.rs`'s `list_entity_files` both drop it. The winner was picked
+//! deliberately and one-way — the working copy dropping a fixture costs an
+//! author nothing, while the walker keeping one would compile a test file into
+//! a `*_definitions` row and serve it to the fleet as a real entity.
 
 use std::fs;
 use std::path::Path;
@@ -187,19 +194,23 @@ async fn app_names_come_from_the_yaml_on_both_sides() {
     assert!(!orders.published, "the fixture declares no `published:`");
 }
 
-/// The `.test.` rule costs nothing at the names anyone actually writes, and
-/// everything at one name nobody does.
+/// The `.test.` rule now costs nothing at any spelling, because both arms
+/// apply it.
 ///
 /// The convention is `x.agent.test.yml` — it ends `.test.yml`, not
-/// `.agentic.yml`, so neither side lists it and the two arms of
-/// `list_analytics_agents` agree. That is what makes unifying them safe.
+/// `.agentic.yml`, so no extension match ever claimed it on either side.
+/// `x.test.agentic.yml` is the shape that used to diverge: it DOES end
+/// `.agentic.yml`, so the working copy listed it while the walker dropped it,
+/// and the same workspace showed a different agent set once compiled.
 ///
-/// `x.test.agentic.yml` is the one shape that would diverge, and it is pinned
-/// here rather than left to be discovered: such a file is listed by the working
-/// copy and dropped by the walker, so the same workspace would show a different
-/// agent set once compiled.
+/// **The winner picked is the walker**, and the reason is one-way: the working
+/// copy dropping a fixture costs an author nothing, while the walker keeping
+/// one would compile a test file into `agent_definitions` and serve it to the
+/// fleet as a real agent. `storage.rs`'s `list_entity_files` is the
+/// working-copy half of that one rule; `list_by_sub_extension` underneath it
+/// is untouched, because `list_tests` needs the names this drops.
 #[tokio::test]
-async fn agents_agree_except_on_a_test_mirror_that_still_ends_agentic_yml() {
+async fn agents_agree_on_every_test_mirror_spelling() {
     let dir = fixture();
     let root = dir.path();
 
@@ -226,19 +237,45 @@ async fn agents_agree_except_on_a_test_mirror_that_still_ends_agentic_yml() {
         "at the names the codebase actually uses, the two enumerations agree"
     );
 
-    // The one shape that does not. Kept as a pin, not a fix: if a file like this
-    // ever lands, the workspace lists different agents depending on whether it
-    // has been compiled, and someone should pick a winner deliberately.
+    // The shape that used to diverge, now agreed on.
     write(root, "drafts/scratch.test.agentic.yml", "name: scratch\n");
     assert_eq!(
         listed(root).await,
-        vec!["analyst.agentic.yml", "drafts/scratch.test.agentic.yml"],
-        "the working copy lists it"
+        vec!["analyst.agentic.yml"],
+        "the working copy drops it too, because the rule matches `.test.` \
+         anywhere in the file NAME — `scratch.test.agentic.yml` carries it \
+         regardless of which directory holds it"
     );
     assert_eq!(
         walked(root, FileKind::AgenticAgent),
         vec!["analyst.agentic.yml"],
-        "the walker drops it, because the rule matches `.test.` anywhere in the path"
+        "and the walker still drops it"
+    );
+    assert_eq!(
+        listed(root).await,
+        walked(root, FileKind::AgenticAgent),
+        "at every spelling, the two enumerations agree"
+    );
+
+    // A fixtures DIRECTORY is not a file name: the real agent under it stays,
+    // on both arms. This is the half of the rule that must NOT widen.
+    write(
+        root,
+        "drafts/v1.test.cases/real.agentic.yml",
+        "name: real\n",
+    );
+    assert_eq!(
+        listed(root).await,
+        vec![
+            "analyst.agentic.yml",
+            "drafts/v1.test.cases/real.agentic.yml"
+        ],
+        "a directory component carrying `.test.` does not drop the files under it"
+    );
+    assert_eq!(
+        listed(root).await,
+        walked(root, FileKind::AgenticAgent),
+        "and both arms agree about that too"
     );
 }
 
@@ -275,14 +312,21 @@ async fn automations_diverge_on_the_legacy_workflow_extension() {
     );
 }
 
+/// What survives of the old divergence: `list_tests` itself.
+///
+/// Both enumerations now drop a FILE NAME containing `.test.`, for every
+/// entity kind, unconditionally — but only the file name; a directory
+/// component carrying `.test.` is `is_skipped`'s question, not this rule's.
+/// The remaining asymmetry is that tests are a working-copy-only concept: the
+/// walker has no test `FileKind` at all, so `.test.yml` files reach
+/// `list_tests` and never reach a compiled revision.
 #[tokio::test]
-async fn the_walker_skips_test_mirrors_and_the_working_copy_does_not() {
+async fn test_mirrors_drop_on_both_arms_but_list_tests_is_working_copy_only() {
     let dir = fixture();
     let root = dir.path();
 
-    // `analyst.agent.test.yml` does not end in `.agentic.yml`, so neither side
-    // lists it as an agent. The divergence is the rule, not this file: the
-    // walker drops anything containing `.test.` for EVERY kind, unconditionally.
+    // `analyst.agent.test.yml` does not end in `.agentic.yml`, so no extension
+    // match claims it as an agent on either side.
     assert_eq!(
         walked(root, FileKind::AgenticAgent),
         vec!["analyst.agentic.yml"]
@@ -293,6 +337,16 @@ async fn the_walker_skips_test_mirrors_and_the_working_copy_does_not() {
             .iter()
             .any(|f| f.rel_path.contains(".test.")),
         "the walker drops every path containing `.test.`"
+    );
+    assert!(
+        !manager(root)
+            .await
+            .list_analytics_agents()
+            .await
+            .unwrap()
+            .iter()
+            .any(|e| e.file_path.contains(".test.")),
+        "and so does the working copy, now that both share the rule"
     );
 
     assert!(

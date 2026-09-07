@@ -74,6 +74,20 @@ pub struct CompiledArtifact {
     pub blob_key: Option<String>,
 }
 
+/// A declared world (`.simulation.yml`) as a listing row.
+///
+/// The one listing row that carries its whole `definition`. Both callers need
+/// the body and neither can get it from a second lookup for free: the grid
+/// renders each world's declared horizon and mechanism straight off the list,
+/// and a run reads its seed and replicate count out of the same value. A row
+/// without it would send every caller back for one read per world.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimulationEntry {
+    pub name: String,
+    pub file_path: String,
+    pub definition: serde_json::Value,
+}
+
 /// A verified query (`.sql`). No parsed `definition` — its body IS the SQL,
 /// carried verbatim with the hash the compile worker recorded so a reader can
 /// check the Postgres/S3 round-trip did not corrupt it.

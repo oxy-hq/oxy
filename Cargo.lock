@@ -702,8 +702,8 @@ dependencies = [
 
 [[package]]
 name = "airlayer"
-version = "0.3.6"
-source = "git+https://github.com/oxy-hq/airlayer?rev=a729c18c58dd1497612eb432834958807f71b32e#a729c18c58dd1497612eb432834958807f71b32e"
+version = "0.4.0"
+source = "git+https://github.com/oxy-hq/airlayer?rev=b141d8df83dd0bbd1f7b3d8c75f48d25f580281b#b141d8df83dd0bbd1f7b3d8c75f48d25f580281b"
 dependencies = [
  "anyhow",
  "chrono",
@@ -9346,6 +9346,7 @@ dependencies = [
  "oxy-semantic",
  "oxy-server-authz",
  "oxy-shared",
+ "oxy-simulation",
  "oxy-slack-client",
  "oxy-test-utils",
  "oxy-workspace-fs",
@@ -9564,6 +9565,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 
@@ -9857,6 +9859,20 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "oxy-simulation"
+version = "0.5.137"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "statrs 0.19.1",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tracing",
 ]
 
 [[package]]

@@ -1,11 +1,51 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { TooltipWrapper } from "@/components/ui/shadcn/utils/with-tooltip";
 import { useSensitivity } from "@/hooks/api/useMetricTree";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
+import ROUTES from "@/libs/utils/routes";
+import { EMPTY_SCENARIO, encodeScenario } from "@/pages/ide/MetricTree/scenario/scenarioUrl";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { SensitivityDriver } from "@/types/metricTree";
+import {
+  InfoTip,
+  MagnitudeBar,
+  SectionHeader,
+  SectionSpinner
+} from "../../components/semanticGraph";
 import { byLeverage, formatBeta, shortMeasureName } from "./measureTarget";
-import { InfoTip, MagnitudeBar, SectionHeader, SectionSpinner } from "./panelPrimitives";
 import { WorldModelWhatIf } from "./WorldModelWhatIf";
+
+/**
+ * Deep-link the current measure into the Metric Tree's Scenario mode, pinned
+ * as a lever. The Metric Tree lives on the Semantic Layer IDE tab (selected
+ * via `?view=metric-tree`, not its own route path), and that page's own
+ * `useSearchParams()` reads `mode` + the `encodeScenario` params off the same
+ * query string — so all three key sets share one URL.
+ */
+function useScenarioHref(nodeId: string): string {
+  const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
+  return useMemo(() => {
+    const params = encodeScenario({
+      ...EMPTY_SCENARIO,
+      // "+0", not "": `decodeScenario` round-trips the empty string faithfully
+      // and `resolveLever` maps it to `not_a_number`, so "Simulate this →"
+      // opened the canvas with a destructive-red error under an input nobody
+      // had touched. A signed zero delta is the one mode that needs no
+      // baseline, and resolves to the deliberate no-op a fresh lever wants.
+      // `pinLever` in `MetricTree/index.tsx` seeds the same value for the same
+      // reason — these are the two entry points into a pinned scenario.
+      levers: [{ nodeId, raw: "+0" }]
+    });
+    params.set("view", "metric-tree");
+    params.set("mode", "scenario");
+    const semanticRoot = ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.SEMANTIC.ROOT;
+    return `${semanticRoot}?${params.toString()}`;
+  }, [nodeId, orgSlug, project.id]);
+}
 
 const DIRECTION_GLYPH: Record<string, string> = {
   positive: "↑",
@@ -42,6 +82,7 @@ export function WorldModelDriversSection({
 }: WorldModelDriversSectionProps) {
   const [open, setOpen] = useState(true);
   const sensitivity = useSensitivity(open ? nodeId : undefined);
+  const scenarioHref = useScenarioHref(nodeId);
 
   const drivers = useMemo(
     () => [...(sensitivity.data?.drivers ?? [])].sort(byLeverage),
@@ -116,6 +157,16 @@ export function WorldModelDriversSection({
               <WorldModelWhatIf drivers={drivers} target={nodeId} />
             </>
           )}
+
+          <TooltipWrapper tooltip='Pin this measure as a lever on the metric tree and see everything it moves.'>
+            <Link
+              to={scenarioHref}
+              className='self-start font-mono text-[9.5px] text-info hover:underline'
+              data-testid={`wm-simulate-this-${nodeId}`}
+            >
+              Simulate this →
+            </Link>
+          </TooltipWrapper>
         </div>
       )}
     </section>

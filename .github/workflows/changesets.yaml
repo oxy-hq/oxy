@@ -9,6 +9,10 @@ on:
         value: ${{ jobs.changesets.outputs.web-app }}
       sdk:
         value: ${{ jobs.changesets.outputs.sdk }}
+      ci-scripts:
+        value: ${{ jobs.changesets.outputs.ci-scripts }}
+      ci-counter:
+        value: ${{ jobs.changesets.outputs.ci-counter }}
       docker:
         value: ${{ jobs.changesets.outputs.docker }}
       changes:
@@ -34,6 +38,8 @@ jobs:
       oxy: ${{ steps.changes.outputs.oxy }}
       web-app: ${{ steps.changes.outputs.web-app }}
       sdk: ${{ steps.changes.outputs.sdk }}
+      ci-scripts: ${{ steps.changes.outputs.ci-scripts }}
+      ci-counter: ${{ steps.changes.outputs.ci-counter }}
       docker: ${{ steps.changes.outputs.docker }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -103,6 +109,66 @@ jobs:
               - "package.json"
               - "turbo.json"
               - "biome.json"
+            # TWO filters for the CI-plumbing jobs, because two consumers need
+            # two different scopes.
+            #
+            # `ci-scripts` gates the FORMATTER. Each entry is something that
+            # decides whether a file gets formatted: the scripts Biome is
+            # configured to see, the two configs that decide what it does, and
+            # the workflows that run and gate it. The extensions mirror lint-staged's
+            # globs — the gate must match what actually hands a file over, or a
+            # file is configured as covered while nothing ever formats it.
+            ci-scripts:
+              # Every extension lint-staged hands to Biome, not just the JS set:
+              # `.lintstagedrc.js` also claims {css,json,html}, and biome.json's
+              # `.github/scripts/**` include is extension-agnostic — so a future
+              # `.github/scripts/foo.json` would be covered and ungated. Scoped
+              # rather than `**` because `ownership_analysis.py` lives here and
+              # matches none of those globs: a Python-only diff would spend a
+              # checkout and a pnpm install to format nothing.
+              - ".github/scripts/**/*.{js,mjs,ts,tsx,css,json,html}"
+              # Biome's ROOT includes, mirrored as globs rather than enumerated.
+              # `biome.json` lists `*.json`, `*.js`, `*.ts`, and neither its
+              # globs nor paths-filter's cross `/` — so these match root-level
+              # files only, exactly the set Biome sees. Enumerating them instead
+              # kept coming up one file short (`.lintstagedrc.js`, `biome.json`,
+              # then `package.json` / `turbo.json` / `commitlint.config.js`,
+              # then `skills-lock.json`); a glob closes it, and a root config
+              # added tomorrow is gated the day it lands.
+              - "*.json"
+              - "*.js"
+              - "*.ts"
+              # Named explicitly because the matchers may disagree about a
+              # leading dot. Biome's `*.json` DOES match one (verified — a probe
+              # `.zzz.json` at root was picked up by `biome check .`); bare
+              # picomatch does not, though paths-filter passes `dot`, so the
+              # globs above may already cover these. Naming them is the reading
+              # that is correct either way, and both are Biome-covered.
+              - ".lintstagedrc.js"
+              - ".mcp.json"
+              # And where the job is defined, and where these filters are.
+              - ".github/workflows/ci.yaml"
+              - ".github/workflows/changesets.yaml"
+            # `ci-counter` gates the two RATCHETS. The counter itself is the
+            # only file they consume; the other entries are where their logic
+            # and their gating live. Folding it into `ci-scripts` would run a
+            # typecheck ratchet for an unrelated script; folding it into
+            # `web-app` (which gates four jobs) would run an ARM `pnpm build`
+            # and the USD-priced agentic suite to exercise a shell precondition.
+            ci-counter:
+              - ".github/scripts/count-test-files.mjs"
+              # The counter is 47 lines; the ratchet shell that CONSUMES it is
+              # ~50 lines per job and lives in ci.yaml, so a change to the gate
+              # itself has to run the gate. This branch is the evidence: nearly
+              # every recent commit edits ci.yaml, and they exercised these jobs
+              # only because the PR diff also contains `web-app/**` —
+              # paths-filter diffs base…head, not the last push, so the gap is
+              # invisible here and live for the next PR.
+              - ".github/workflows/ci.yaml"
+              # And this file: a diff that edits only these filters decides
+              # which jobs run, so it has to run them. Self-reference is the
+              # fixed point, not a regress — once listed, editing it matches.
+              - ".github/workflows/changesets.yaml"
             docker:
               - "Dockerfile*"
               - ".dockerignore"

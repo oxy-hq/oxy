@@ -343,6 +343,36 @@ fn workspace_health_eval_is_fleet_ok() {
 }
 
 #[test]
+fn simulation_routes_are_fleet_ok_including_the_profit_race() {
+    // Every simulation route reads or writes persisted rows only:
+    // `simulation_definitions` through the compile boundary, `simulation_run*`
+    // through Postgres, and the POST merely enqueues a TaskSpec. The run itself
+    // DOES touch local disk — a per-run TempDir — but that happens on the
+    // worker, which is why it is queued work rather than a spawn in a handler.
+    //
+    // The race in particular is the HA half of the rule: it is a
+    // `workspace_id`-scoped join of `simulation_runs` onto
+    // `simulation_run_periods`, so pinning it IdeOnly would make *viewing* a
+    // finished race need the singleton — the exact failure the split exists to
+    // prevent.
+    let ws = "d9830be4-c6a4";
+    for (method, path) in [
+        ("GET", format!("/api/{ws}/simulations")),
+        ("POST", format!("/api/{ws}/simulations/validate")),
+        ("GET", format!("/api/{ws}/simulations/runs")),
+        ("GET", format!("/api/{ws}/simulations/runs/abc")),
+        ("POST", format!("/api/{ws}/simulations/demo/runs")),
+        ("GET", format!("/api/{ws}/simulations/demo/race")),
+    ] {
+        assert_eq!(
+            classify(method, &path),
+            RouteRole::FleetOk,
+            "{method} {path} must serve from any replica"
+        );
+    }
+}
+
+#[test]
 fn workspace_metric_tree_routes_are_fleet_ok() {
     // Every workspace-surface metric-tree route must serve from ANY replica.
     //
@@ -371,6 +401,14 @@ fn workspace_metric_tree_routes_are_fleet_ok() {
         ("POST", "/drill".to_string()),
         ("GET", "/time-dimensions".to_string()),
         ("POST", "/distribution".to_string()),
+        ("POST", "/baseline".to_string()),
+        // The scenario projection reads exactly what `baseline` reads — the
+        // compiled layer plus one warehouse query — differing only in that it
+        // asks for the window broken out by bucket. Classified with its
+        // sibling: if one of these two ever has to move, both do, and
+        // splitting them would leave the scenario canvas drawing levels from
+        // one fleet and curves from another.
+        ("POST", "/projection".to_string()),
     ] {
         assert_eq!(
             classify(method, &format!("/api/{ws}/semantic/metric-tree{path}")),
@@ -994,6 +1032,8 @@ fn the_customer_app_data_plane_is_fleet_ok() {
         ("POST", format!("{sem}/metric-tree/explain")),
         ("POST", format!("{sem}/metric-tree/opportunity")),
         ("POST", format!("{sem}/metric-tree/distribution")),
+        ("POST", format!("{sem}/metric-tree/baseline")),
+        ("POST", format!("{sem}/metric-tree/projection")),
         ("GET", format!("{sem}/world-model/measure-breakdown")),
         ("GET", format!("{sem}/world-model/instances")),
         // Pure ops, FleetOk all along.
@@ -1277,6 +1317,54 @@ fn parse_mounts(body: &str) -> Vec<(bool, String)> {
     out
 }
 
+/// The source text of `fn <name>`, up to its closing brace.
+fn fn_body<'a>(src: &'a str, name: &str) -> &'a str {
+    let start = src
+        .find(&format!("fn {name}"))
+        .unwrap_or_else(|| panic!("{name} fn present"));
+    let body = &src[start..];
+    &body[..body.find("\n}\n").unwrap_or(body.len())]
+}
+
+/// Names of the builders `body` `.merge`s in, in source order.
+///
+/// Discovered rather than listed so a second merged builder is picked up
+/// without anyone remembering to add it here. `.nest`ed builders are
+/// deliberately not matched — see the note at the call site.
+///
+/// Takes the text up to the next `(`, which for a `.merge(some_router)` that is
+/// not a call would run on to an unrelated paren — the `build_` prefix filter
+/// is what contains that, so a non-call argument is skipped rather than
+/// mis-parsed.
+fn merged_builders(body: &str) -> Vec<&str> {
+    let mut names = Vec::new();
+    for (idx, _) in body.match_indices(".merge(") {
+        let rest = &body[idx + ".merge(".len()..];
+        let Some(end) = rest.find('(') else { continue };
+        let name = rest[..end].trim();
+        if name.starts_with("build_") && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+#[test]
+fn discovers_every_merged_builder() {
+    let src = include_str!("router/workspace.rs");
+    let merged = merged_builders(fn_body(src, "build_workspace_routes"));
+    assert!(
+        merged.contains(&"build_metric_tree_routes"),
+        "the known merged builder must be discovered: {merged:?}"
+    );
+    // A `.nest`ed builder must NOT be picked up — its paths are relative to the
+    // nest prefix, so classifying them here would use the wrong URI.
+    assert!(
+        !merged.iter().any(|n| *n == "build_thread_routes"),
+        "nested builders must stay out: {merged:?}"
+    );
+}
+
 /// Skip whitespace AND `//` comments before a mount's path literal.
 ///
 /// Without this, `rustfmt` moving a comment *inside* the `.route(` call —
@@ -1351,12 +1439,28 @@ fn the_optional_working_copy_door_stays_shut() {
 #[test]
 fn every_workspace_mount_is_declared() {
     let src = include_str!("router/workspace.rs");
-    let start = src
-        .find("fn build_workspace_routes")
-        .expect("build_workspace_routes fn present");
-    let body = &src[start..];
-    let end = body.find("\n}\n").unwrap_or(body.len());
-    let mounts = parse_mounts(&body[..end]);
+    // `build_workspace_routes` plus every builder it `.merge`s. The `.nest`ed
+    // builders are deliberately excluded — their sub-routes carry no prefix at
+    // this layer, so a path parsed out of them would be checked against the
+    // wrong URI. A MERGED builder is the opposite case: its paths are absolute
+    // and land in the tree verbatim, so leaving one out would hide those routes
+    // from the very check that exists to catch an undeclared mount.
+    //
+    // So the merged builders are DISCOVERED, not listed: a hand-maintained list
+    // has to be remembered when a second one is added, and nothing fails if it
+    // isn't — the new routes just quietly stop being checked.
+    let root = fn_body(src, "build_workspace_routes");
+    let merged = merged_builders(root);
+    assert!(
+        !merged.is_empty(),
+        "found no .merge(build_*) in build_workspace_routes — the router shape \
+         changed; fix merged_builders"
+    );
+    let mut bodies = root.to_string();
+    for name in &merged {
+        bodies.push_str(fn_body(src, name));
+    }
+    let mounts = parse_mounts(&bodies);
     assert!(
         mounts.len() > 30,
         "parser found only {} mounts — the router shape changed; fix parse_mounts",

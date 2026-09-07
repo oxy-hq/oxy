@@ -17,7 +17,8 @@
 //! Mixed three ways, and the split is in `.config/nextest.toml`:
 //!
 //! * `compiled_reader_semantic`, `toast_webhook_compile_boundary`,
-//!   `airway_compile_boundary` and `anomaly_bulk_status` are database-backed
+//!   `airway_compile_boundary`, `anomaly_bulk_status`, `simulation_routes` and
+//!   `simulation_lifecycle` are database-backed
 //!   through [`common::fresh_db`] — own database each, so they sit in
 //!   `db-per-test` (`max-threads = 4`).
 //! * `projects_query` and `local_mode_router` call `api_router(..)`, which
@@ -25,7 +26,7 @@
 //!   unscoped UPDATE over `agentic_runs`. They are excluded from `db-per-test`
 //!   and pinned into `serial-db` with the other shared-schema tests.
 //! * everything else is in-process, but NOT ungrouped: that override matches
-//!   `binary(=platform)`, so every module here except those two exclusions runs
+//!   `binary(=platform)`, so every module here except those exclusions runs
 //!   under `db-per-test` (`max-threads = 4`, `retries = 2`) whether or not it
 //!   opens a connection. The four source scans folded in above inherit that.
 //!   Deliberate, and argued in the config: a per-binary rule stays true the day
@@ -36,8 +37,10 @@
 //!
 //! `authz::shared_db_registry` fails the build if that classification drifts.
 //!
-//! `workspace_details_fields` mutates the process cwd and carries
-//! `#[serial_test::serial]` for it. Anything folded in here that touches cwd,
+//! Two members mutate process cwd —
+//! `workspace_details_fields::storage_key_normalizes_relative_to_absolute` and
+//! all of `metric_tree_fit_panel`. Both carry `#[serial_test::serial]`, whose
+//! lock is global to this binary; anything folded in here that touches cwd,
 //! environment variables or another process-global needs the same attribute — a
 //! guard private to one file excludes nothing once the files share a binary.
 
@@ -46,6 +49,7 @@ mod common;
 
 mod airway_compile_boundary;
 mod anomaly_bulk_status;
+mod artifact_naming_agrees;
 mod build;
 mod chat_org_standing;
 mod compile;
@@ -57,11 +61,15 @@ mod frontline_app_grant;
 mod frontline_devices;
 mod frontline_pin;
 mod local_mode_router;
+mod metric_tree_fit_panel;
 mod no_dropped_partner_tables;
 mod notification_devices;
 mod oltp_provisioner;
 mod projects_query;
 mod run;
+mod simulation_lifecycle;
+mod simulation_router;
+mod simulation_routes;
 mod toast_webhook_compile_boundary;
 mod walker_storage_divergence;
 mod work_item_gates;

@@ -12,8 +12,13 @@ import type {
   WorldModelInducedMeasure,
   WorldModelMeasure
 } from "@/types/worldModel";
+import {
+  formatMeasureValue,
+  Row,
+  SectionHeader,
+  SectionSpinner
+} from "../../components/semanticGraph";
 import { measureSymbol, measureSymbolColor } from "../worldModelLayout";
-import { formatMeasureValue, Row, SectionHeader, SectionSpinner } from "./panelPrimitives";
 import { WorldModelDriverTreeLive } from "./WorldModelDriverTree";
 import { WorldModelInstanceOpportunity } from "./WorldModelInstanceOpportunity";
 import { WorldModelMeasureAnalysis } from "./WorldModelMeasureAnalysis";

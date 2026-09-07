@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.11.0] - 2026-09-06
 
+Scenario forecasting: three metric-tree hooks for the what-if canvas, split by
+what each one costs — documented in `docs/build/sdk/hooks.mdx` under "Scenario
+forecasting".
+
+### Added
+
+- **`useBaseline` / `client.metricTree.getBaseline`** — values every node
+  reachable from a set of levers over a window, and fits a coefficient for any
+  driver edge whose `.view.yml` declares none.
+- **`useProjection` / `client.metricTree.getProjection`** — bucketed history
+  for the levers and everything downstream, plus the forecaster's forward
+  curve. Returns the baseline curve only: the scenario's second curve is
+  composed client-side from this and a `usePredict` result, so editing a lever
+  never costs a query. A series carrying `refusal` (most often too little
+  history to fit) is a stated absence, never a flat forward line.
+- **`usePredict` / `predict()` take an options bag (`{ values, coefficients }`)**
+  — feed `useBaseline`'s `values` and `fitted` straight through so an
+  undeclared driver edge propagates instead of silently dropping its
+  downstream measures from `impacts`. Existing calls with no second argument
+  are unaffected.
+- New exported types: `BaselineInstance`, `BaselineRequest`, `BaselineResponse`,
+  `FittedDriver`, `ForecastPoint`, `HistoryPoint`, `MeasureProjection`,
+  `MeasureValues`, `PredictOptions`, `ProjectionGranularity`,
+  `ProjectionRequest`, `ProjectionResponse`, `UnvaluedNode`, `UsePredictOpts`.
+- `DriverForm` grows five shapes (`quadratic`, `cubic`, `sqrt`, `inverse`,
+  `linear-log-quadratic`) to match what airlayer can already emit — a tree
+  carrying one of these edges no longer types as a value the union couldn't
+  hold.
+- `MetricEdge.operator` (`"add" | "sub" | "mul" | "div"`, absent means `add`)
+  and `MetricEdge.form_declared` (whether the shape was authored in YAML or
+  inferred by the fit).
+- `MetricNode.drillable` — whether a measure can be drilled into; serialized
+  rather than re-derived, since `measure_type` alone misses eligible
+  composites.
+- `MetricTree.warnings` — refusals raised while building the tree, e.g. a
+  driver declaring both `coefficient:` and `coefficients:`.
+- **`useTrack` events name their app.** `useOxyApp()` now returns `appId`
+  (from `window.__OXY_APP__`), and each tracked event carries it as `app_id`.
+  The events endpoint is keyed by workspace, and a workspace can publish
+  several apps — without this the server attributed an event to *an* app in
+  the workspace. Bundles built against an older SDK keep working; the server
+  falls back to the old lookup when `app_id` is absent.
+
 ### Changed
 
 - **`ctx.user.email` is `string | null`.** It was typed `string`; the runtime
@@ -16,15 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scaffold's `notify.ts` did, and now answers 400 when there is nobody to send
   to). That null is the one field that tells the crew from the office inside a
   function.
-
-### Added
-
-- **`useTrack` events name their app.** `useOxyApp()` now returns `appId`
-  (from `window.__OXY_APP__`), and each tracked event carries it as `app_id`.
-  The events endpoint is keyed by workspace, and a workspace can publish
-  several apps — without this the server attributed an event to *an* app in
-  the workspace. Bundles built against an older SDK keep working; the server
-  falls back to the old lookup when `app_id` is absent.
 
 ## [2.10.0] - 2026-09-03
 

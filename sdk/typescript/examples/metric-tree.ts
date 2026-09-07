@@ -51,15 +51,57 @@ async function main() {
     console.log(`  ${dim.dimension}: +${dim.total_upside.toFixed(0)} (${dim.benchmark_basis})`);
   }
 
-  // 5. Predict downstream impact
-  const predict = await client.metricTree.predict([
-    { measure: "marketing_spend.total_spend", delta: 10_000 }
-  ]);
+  // 5. Scenario forecasting, part one: value the starting point and measure the
+  //    coefficients the propagation needs. `predict` is database-free and
+  //    cannot fit an undeclared driver edge itself — this is where that comes
+  //    from, which is why it is worth a warehouse query.
+  const lever = "marketing_spend.total_spend";
+  const baseline = await client.metricTree.getBaseline({
+    roots: [lever],
+    time_dimension: "orders.order_date",
+    period: ["2025-09-01", "2025-09-30"]
+  });
+
+  // 6. Predict downstream impact. Pass the baseline's values and fitted
+  //    coefficients through verbatim, refusals included — without them an edge
+  //    declaring no `coefficient:` propagates nothing and its downstream
+  //    measures are simply missing from `impacts`.
+  const predict = await client.metricTree.predict([{ measure: lever, delta: 10_000 }], {
+    values: baseline.values,
+    coefficients: baseline.fitted
+  });
   console.log("\n+$10k of marketing spend would propagate as:");
   for (const impact of predict.impacts.slice(0, 5)) {
     console.log(
       `  ${impact.measure} ${impact.estimated_delta >= 0 ? "+" : ""}` +
         `${impact.estimated_delta.toFixed(2)} (${impact.confidence})`
+    );
+  }
+
+  // 7. Scenario forecasting, part two: the time axis. A year of history, not
+  //    the baseline's month — the forecaster refuses anything under eight
+  //    seasonal cycles, so reusing the scenario window would refuse every
+  //    curve. This is the BASELINE curve; the scenario's second curve is
+  //    arithmetic over it and the `predict` result above.
+  const projection = await client.metricTree.getProjection({
+    roots: [lever],
+    time_dimension: "orders.order_date",
+    period: ["2024-09-01", "2025-08-31"],
+    granularity: "day",
+    horizon: 30
+  });
+  console.log(`\nProjection (${projection.forecaster}, ${projection.horizon} buckets):`);
+  for (const series of projection.series) {
+    if (series.refusal) {
+      // A refusal is a result, not a gap — never draw it as a flat line.
+      console.log(`  ${series.measure}: no curve — ${series.refusal}`);
+      continue;
+    }
+    const last = series.forecast[series.forecast.length - 1];
+    console.log(
+      `  ${series.measure}: ${series.history.length} historical buckets, ` +
+        `ends at ${last?.point.toFixed(2)} [${last?.lower?.toFixed(2) ?? "—"}, ` +
+        `${last?.upper?.toFixed(2) ?? "—"}]`
     );
   }
 }

@@ -1,0 +1,51 @@
+name: wide_lever
+description: |
+  `flat_lever`'s opposite end. Same confounding as `confounded` — rho 0.7,
+  demand_shock_sd 0.12 — but `budget_jitter_sd` goes up instead of down: 0.30
+  against the 0.12 default, on top of a legacy rule the burn-in and the
+  `legacy` arm both keep running. The map's top row shows CONFIDENTLY WRONG
+  holding all the way across, which says more of the budget's own noise does
+  not rescue identification once the regressor is confounded — this is the
+  file that puts a declared world at the right-hand end of that row instead of
+  leaving it as a prediction nobody ran.
+
+  Measured (`oxy_simulation::check`): bias 1.055 here, against `confounded`'s
+  1.066 at the default jitter and `flat_lever`'s 0.884 at the floor. Going
+  wide barely moves the number; going flat flips it from an OVERstatement to
+  an UNDERstatement instead of shrinking it toward 1.0. `budget_jitter_sd`
+  reads as an identification knob — how often the gate can even speak — more
+  than a bias one; it does not interpolate the bias ratio smoothly in between.
+
+seed: 7
+periods: 30
+period_days: 7
+history_days: 180
+start_date: 2025-01-06
+
+entities:
+  count: 24
+  scale_sigma: 0.4
+
+baseline:
+  sales_per_entity_day: 1500.0
+  margin: 0.36
+  demand_shock_rho: 0.7
+  demand_shock_sd: 0.12
+  weekly_seasonality: 0.15
+  budget_jitter_sd: 0.30
+
+mechanism:
+  driver: marketing_spend
+  target: net_sales
+  lag_days: 7
+  noise_ratio: 0.05
+  calibrate:
+    anchor_spend_share: 0.02
+    local_slope_at_anchor: 4.0
+    optimum_at: 3.0
+
+lever:
+  min_multiple: 0.1
+  max_multiple: 5.0
+  max_move_per_period: 0.25
+  explore_jitter_sd: 0.15

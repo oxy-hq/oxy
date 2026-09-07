@@ -1,0 +1,299 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# Metric Tree Scenario mode: pinning a lever propagates a delta to its
+# downstream driver target, and pinning two levers where one is downstream
+# of the other refuses with the conflict banner.
+#
+# FIXTURE (read before running): the demo project's Metric Tree has exactly
+# ONE driver edge — `oxymart.average_fuel_price` → `oxymart.total_sales`,
+# declared as a `drivers:` block on `total_sales` in
+# `demo_project/sales_semantics/views/oxymart.view.yml`. It DECLARES a
+# `coefficient:`, deliberately: left qualitative, the edge only carries a
+# magnitude when an OLS fit on this fixture clears the |t| >= 2 gate, which put
+# this test's pass/fail at the mercy of whether Walmart fuel prices predict
+# Walmart sales. They do not, so nothing propagated. The declared magnitude is
+# illustrative — see the comment on the block itself.
+#
+# Both cases below still DISCOVER the pair live via the Explore mode Drivers
+# panel rather than hardcoding those ids. That is deliberate: the flow then
+# survives the fixture growing a second edge or renaming this one, and it
+# fails with "no driver pair found" rather than a confusing selector miss if
+# the block is ever dropped.
+#
+# PERIOD — why case 1 navigates with `?period=9000d` instead of taking the
+# default. `oxymart.csv` spans 2010-02-05 to 2012-10-26, and the panel's
+# default window is a TRAILING 90 days ending yesterday (`DEFAULT_PERIOD_DAYS`,
+# `periodFromDays` in `useScenario.ts`). Zero overlap, so the baseline values
+# nothing, a `+20%` lever cannot resolve against an absent baseline, and the
+# panel correctly reports "Nothing was simulated". The case then failed on data
+# coverage rather than on the behaviour it exists to test.
+#
+# `PRESET_DAYS` tops out at 365, so NO toolbar preset reaches this fixture —
+# the URL is the only way to say it, and `decodeScenario` accepts any `<n>d`.
+#
+# 9,000 days, not the ~6,031 that merely reaches the first row: the window is
+# trailing, so its start marches forward one day per day, and a value chosen to
+# just clear the data would expire. 9,000 covers the fixture until ~2034. The
+# extra empty years cost nothing on a 6,435-row table.
+#
+# The durable fix is to move the fixture's dates forward, which also reaches
+# the oxymart dashboards, the analytics agent, and `examples/.db/oxymart.csv` —
+# out of scope here.
+#
+# TIME DIMENSION — why this case does NOT pick one by hand. The layer has FOUR
+# `week_date` dimensions, one per view (economic_factors, oxymart,
+# store_performance, time_analysis), and before a lever is pinned the toolbar
+# offers all of them. "Choose the first option" therefore selected a dimension
+# on a view the lever does not belong to. A foreign dimension is not merely
+# suboptimal: `MetricTree/index.tsx` NULLS it out of the request rather than
+# join two views on whatever key they share, so the baseline ran delta-only,
+# returned no values, and a `+20%` lever failed with `no_baseline` — the
+# "Nothing was simulated" banner, with the period entirely beside the point.
+#
+# Setting it by hand also suppressed the fix: the adopt effect is guarded on
+# `timeDimension === null`, so a hand-set value stops the app choosing
+# `oxymart.week_date` from the lever's own view. Pinning the lever and letting
+# it adopt is both simpler and the only thing that yields a real baseline.
+
+name: metric tree scenario simulation
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  max_steps: 30
+  backend_mode: local
+
+setup:
+  - "goto:/ide"
+
+cases:
+  - name: a pinned lever moves its downstream target as the edge's own claims describe
+    tags: [ide, metric-tree, scenario, regression]
+    steps:
+      - act: |
+          Open the Metric Tree: click [data-testid=ide-nav-semantic] (the
+          Semantic Layer icon in the narrow IDE sidebar rail), then click the
+          "Metric Tree" tab (role=tab, name "Metric Tree"). Wait for
+          [data-testid=metric-tree-view] to be visible. You are now in
+          Explore mode.
+
+      - act: |
+          Find a measure with at least one declared driver, using the
+          Drivers tab in the right-hand panel:
+          1. Click a measure node in the graph — selector
+             "[data-testid^=metric-node-]".
+          2. Click the "Drivers" tab (role=tab, name "Drivers") in the right
+             panel.
+          3. Read the panel. If it reads "No drivers found for ...", click a
+             DIFFERENT "[data-testid^=metric-node-]" node (the tab selection
+             stays on Drivers) and check again. There will only be a couple
+             of candidates, because the canvas shows only nodes carrying an
+             edge. Do NOT touch the "Hide unconnected" switch — turning it off
+             adds every unconnected measure and none of them has drivers. Stop
+             after 6 — if none has drivers by then, none will.
+             Prefer a node whose panel shows a driver row carrying a "coef"
+             value: the model already has a magnitude for that path, so the
+             move downstream does not depend on a regression clearing its
+             significance gate — the deterministic choice for this case.
+          4. Once a node's Drivers panel lists at least one driver row,
+             pick ONE row and read every variable below off that same row —
+             the first row showing a "coef" value if there is one, otherwise
+             the first row. Remember for the rest of this case:
+             - DOWNSTREAM = the id of the node you clicked. The panel heads
+               this section "Drivers" with the id right-aligned on the SAME
+               line as a subtitle — there is no "Drivers of <id>" heading.
+               The id is the same as its
+               "[data-testid=metric-node-<id>]" suffix.
+             - UPSTREAM = the `measure` value on the chosen row
+               (e.g. "oxymart.average_fuel_price").
+             - DIRECTION = the word on the chosen row beside "strength" —
+               "positive", "negative", or "unknown". It is the model's own
+               claim about which way the edge pushes, and this case checks
+               the simulation against it rather than a hardcoded sign.
+             - HAS_COEF = "yes" if the chosen row shows a "coef" value, else
+               "no". It means the model already has a magnitude for the whole
+               path without fitting — a declared driver `coefficient:`, or a
+               component edge's sign, multiplied along the hops. "no" does NOT
+               mean the edge is unsizable: this panel never fits, and the
+               baseline fits undeclared driver edges from history.
+
+      # Enter Scenario mode by URL rather than by clicking
+      # [data-testid=metric-tree-mode-scenario], because the period has to come
+      # with it and no toolbar preset can express this one — see PERIOD above.
+      # Every piece of scenario state lives in the query string
+      # (`scenarioUrl.ts`), so this is the supported way to say it. Case 2 still
+      # uses the button, so the toggle itself stays covered.
+      - act: |
+          Navigate to
+          "/ide/semantic?view=metric-tree&mode=scenario&period=9000d"
+          and wait for [data-testid=scenario-toolbar] to be visible.
+      - wait_for: "selector:[data-testid=scenario-toolbar];timeout_ms=15000"
+
+      # NO manual time-dimension step. Pinning a lever makes the app adopt one
+      # from the lever's OWN view (the effect in `MetricTree/index.tsx` guarded
+      # on `timeDimension === null`), which is the only correct choice — see
+      # TIME DIMENSION above for why picking one by hand broke this case.
+
+      # FIRST pin, so the node is still `metric-node-`. The canvas only swaps
+      # to `scenario-node-` once a lever exists (`showsScenario` gates on
+      # `levers.length > 0`), which is exactly what this click creates. Rule:
+      # the first pin is always a plain node, the second always a scenario one.
+      - act: |
+          Pin UPSTREAM as a lever: click
+          "[data-testid=metric-node-<UPSTREAM>]", substituting the id you
+          noted earlier (e.g.
+          "[data-testid=metric-node-oxymart.average_fuel_price]").
+          This adds it to the lever list on the right with its baseline
+          value pre-filled.
+      - wait_for: "selector:[data-testid=scenario-lever-list];timeout_ms=15000"
+      # Pinning is what triggers the time-dimension adopt AND the baseline
+      # query it enables, so settle before typing a percentage that needs the
+      # baseline value to resolve.
+      - wait_for: network_idle
+
+      - act: |
+          In the pinned lever's row (the only row inside
+          [data-testid=scenario-lever-list]), click its value input
+          (placeholder "11 · +5% · -3") and type "+20%" — replacing
+          whatever baseline value was pre-filled — to set a +20% lever
+          value.
+      - wait_for: network_idle
+
+    expect:
+      - assert: selector [data-testid=scenario-lever-list] is visible
+      # Both arms read the model's own claims (DIRECTION, HAS_COEF) rather
+      # than hardcoding this fixture's, so the flow survives an edge that
+      # pushes the other way or loses its illustrative coefficient. A DRIVER
+      # edge the baseline could not size emits NO impact, so its node renders
+      # "<baseline> unchanged" — that is the exception below.
+      #
+      # There is deliberately NO arm for the multiplicative-COMPONENT
+      # "can't size" mark. Only a MULTIPLICATIVE component may render it; an
+      # additive one is exact arithmetic and rendering it there would be a
+      # real defect, so an arm keyed on `edge_kind` ("component" | "driver")
+      # would pass that defect. The distinguishing fact is not on screen when
+      # this judge runs, for three reasons — selection is NOT one of them,
+      # since `handleSelect` both selects and pins:
+      #   * the mark's multiplicative reason lives in a tooltip;
+      #   * `ExplorePanel`, which renders a measure's `expr`, is mounted only
+      #     in Explore mode — Scenario mode shows the lever and impact lists
+      #     instead, so no `expr` renders whatever is selected;
+      #   * and `expr` belongs to the component edge's PARENT (DOWNSTREAM),
+      #     while the pin selects UPSTREAM.
+      # It is not just this judge: no surface distinguishes them. The expanded
+      # impact hop badges `kind` and a `−` for a subtracting component, and
+      # `propagationTrace` reads `sign` with a `?? 1` default, so a `*` and a
+      # `+` component render identically everywhere.
+      #
+      # It is a RENDERING gap, and a small one. airlayer's `MetricEdge` already
+      # carries `operator`, and `web-app` already mirrors that exact union and
+      # a glyph table for it — `WmBreakdownEdge.operator` in
+      # `types/worldModel.ts` and `OP_GLYPH` in `WorldModel/worldModelLayout.ts`
+      # ("+ − × ÷"), badged on the World Model driver tree. So whoever adds the
+      # first component edge makes this arm writable by importing `OP_GLYPH`
+      # and badging `edge.operator`: no type change, no server change, no glyph
+      # vocabulary to design, and NO parsing of the parent's `expr` — which
+      # would be a fourth hand-maintained mirror of an airlayer rule this repo
+      # has already written down wrong once.
+      #
+      # The field is OPTIONAL on both `MetricEdge` mirrors, and absent MEANS
+      # `add` — airlayer skips it at its default (`is_default_operator` is
+      # `op == Add`), the same shape as `sign?`. Reading absent as "unknown"
+      # would put an additive component into the multiplicative exception,
+      # passing a "can't size" render where the correct one is `= exact`,
+      # which is the failure this whole sequence closed.
+      #
+      # So apply the default at the READ: `OP_GLYPH` is an exactly-keyed
+      # Record, so `OP_GLYPH[edge.operator]` will not compile against an
+      # optional field. Either `OP_GLYPH[edge.operator ?? "add"]`, or resolve
+      # it on the `TraceHop` where `sign`'s own `?? 1` already lives in
+      # `propagationTrace`.
+      #
+      # demo_project has no component edges today, so one loud failure with the
+      # real render in front of them beats an arm written blind now.
+      #
+      # The lever assertion keeps the exception branch from passing vacuously:
+      # a resolved percentage lever always renders its own move, and rendering
+      # only its baseline was a live bug on this branch until 3bbd053fb. Kept
+      # out of the prompt: the model only needs the assertions.
+      - judge: |
+          The UPSTREAM box (a "[data-testid^=scenario-node-]" box marked
+          LEVER) must show its own move: a baseline value, an arrow and a
+          simulated value, not a bare number.
+
+          DOWNSTREAM — the box connected to it — must show a baseline value,
+          an arrow, and a simulated value with a non-zero percentage change,
+          agreeing with DIRECTION: "negative" means the simulated value is
+          LOWER than the baseline, "positive" means HIGHER, "unknown" means
+          no directional claim so either way passes. A move against a stated
+          direction is a failure.
+
+          One exception, which still requires the UPSTREAM assertion above:
+          when HAS_COEF is "no" the magnitude comes from a regression that may
+          decline to size the edge, so DOWNSTREAM correctly reads
+          "<baseline> unchanged" with no arrow. Accept that. When HAS_COEF is
+          "yes" an unchanged DOWNSTREAM is a failure.
+
+  - name: pinning a measure and one downstream of it shows the conflict banner naming both
+    tags: [ide, metric-tree, scenario, regression]
+    steps:
+      - act: |
+          Open the Metric Tree: click [data-testid=ide-nav-semantic] (the
+          Semantic Layer icon in the narrow IDE sidebar rail), then click the
+          "Metric Tree" tab (role=tab, name "Metric Tree"). Wait for
+          [data-testid=metric-tree-view] to be visible. You are now in
+          Explore mode.
+
+      - act: |
+          Find a measure with at least one declared driver, using the
+          Drivers tab in the right-hand panel:
+          1. Click a measure node in the graph — selector
+             "[data-testid^=metric-node-]".
+          2. Click the "Drivers" tab (role=tab, name "Drivers") in the right
+             panel.
+          3. Read the panel. If it reads "No drivers found for ...", click a
+             DIFFERENT "[data-testid^=metric-node-]" node (the tab selection
+             stays on Drivers) and check again. There will only be a couple
+             of candidates, because the canvas shows only nodes carrying an
+             edge. Do NOT touch the "Hide unconnected" switch — turning it off
+             adds every unconnected measure and none of them has drivers. Stop
+             after 6 — if none has drivers by then, none will.
+          4. Once a node's Drivers panel lists at least one driver row,
+             remember two ids for the rest of this case:
+             - DOWNSTREAM = the id of the node you clicked. The panel heads
+               this section "Drivers" with the id right-aligned on the SAME
+               line as a subtitle — there is no "Drivers of <id>" heading.
+               The id is the same as its
+               "[data-testid=metric-node-<id>]" suffix.
+             - UPSTREAM = the `measure` value shown on the first listed
+               driver row (e.g. "oxymart.average_fuel_price").
+
+      - act: |
+          Switch to Scenario mode: click
+          [data-testid=metric-tree-mode-scenario].
+      - wait_for: "selector:[data-testid=scenario-toolbar];timeout_ms=15000"
+
+      # FIRST pin — still a plain `metric-node-`; see case 1.
+      - act: |
+          Pin DOWNSTREAM first: click
+          "[data-testid=metric-node-<DOWNSTREAM>]", substituting the id
+          you noted earlier, to pin it as a lever.
+      - wait_for: "selector:[data-testid=scenario-lever-list];timeout_ms=15000"
+
+      - act: |
+          Pin UPSTREAM second: click
+          "[data-testid=scenario-node-<UPSTREAM>]", substituting the driver
+          id you noted earlier (the one listed on DOWNSTREAM's Drivers
+          panel). Pinning a measure that is upstream of an already-pinned
+          measure is exactly the conflicting-levers case.
+      - wait_for: "selector:[data-testid=scenario-conflict];timeout_ms=15000"
+
+    expect:
+      - assert: selector [data-testid=scenario-conflict] is visible
+      - judge: |
+          The conflict banner ([data-testid=scenario-conflict]) names both
+          DOWNSTREAM and UPSTREAM (by label or id) and explains that one is
+          downstream of the other, so the model can't tell whether it holds
+          at its pinned value or moves to the implied one.

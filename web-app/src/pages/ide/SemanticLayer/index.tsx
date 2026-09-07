@@ -53,7 +53,21 @@ export default function SemanticLayerPage() {
     <div className='flex h-full min-h-0 flex-1 flex-col overflow-hidden'>
       <Tabs
         value={active}
-        onValueChange={(v) => setSearchParams({ view: v }, { replace: true })}
+        // Set `view` on the EXISTING params rather than replacing the whole
+        // query string. The object form of `setSearchParams` writes the entire
+        // search, so switching to another tab and back dropped every param the
+        // Metric Tree's scenario keeps there — `mode`, `lever`, `period`,
+        // `time_dim`, `scope` — silently discarding a pinned scenario.
+        onValueChange={(v) =>
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.set("view", v);
+              return next;
+            },
+            { replace: true }
+          )
+        }
         className='flex min-h-0 flex-1 flex-col'
       >
         <div className='border-border border-b px-2 py-2'>

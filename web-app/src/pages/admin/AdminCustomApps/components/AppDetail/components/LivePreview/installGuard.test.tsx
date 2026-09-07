@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
+import type { Mock } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { GuardHooks } from "./usePreviewHistory";
 import { installGuard } from "./usePreviewHistory";
 
 /**
@@ -68,11 +70,11 @@ const anchorAt = (href: string, attrs: Record<string, string> = {}) => {
 const click = (el: Element, init: MouseEventInit = {}) =>
   el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init }));
 
-let hooks: {
-  onNavigate: ReturnType<typeof vi.fn>;
-  onTraverse: ReturnType<typeof vi.fn>;
-  onReload: ReturnType<typeof vi.fn>;
-};
+// Typed off `GuardHooks` rather than `ReturnType<typeof vi.fn>`: the bare
+// helper widens to `Mock<Procedure>`, which `installGuard` will not accept —
+// and a mock that does not have to match the interface stops reporting when
+// the interface moves under it.
+let hooks: { [K in keyof GuardHooks]: Mock<GuardHooks[K]> };
 // jsdom hands the whole file one `document`, so a guard left installed by an
 // earlier case keeps listening: its `preventDefault` would set the flag the
 // next case's guard checks, and every later assertion would pass or fail for
@@ -84,7 +86,11 @@ const guard = (win: Window) => {
 
 beforeEach(() => {
   document.body.innerHTML = "";
-  hooks = { onNavigate: vi.fn(), onTraverse: vi.fn(), onReload: vi.fn() };
+  hooks = {
+    onNavigate: vi.fn<GuardHooks["onNavigate"]>(),
+    onTraverse: vi.fn<GuardHooks["onTraverse"]>(),
+    onReload: vi.fn<GuardHooks["onReload"]>()
+  };
 });
 afterEach(() => {
   dispose?.();

@@ -9,6 +9,9 @@
 //! response shapes are the exact same types the IDE endpoints use — the SDK
 //! and the IDE never drift.
 //!
+//! The scenario projection is the same surface, in the sibling module
+//! [`super::metric_tree_projection`] — split out only for file size.
+//!
 //! **Fleet split (see `role_manifest.rs`).** Pure ops (tree, sensitivity,
 //! predict, time-dimensions) need only the parsed layer, so they run on the
 //! stateless serve fleet where published apps live (`FleetOk`). Query-executing
@@ -29,11 +32,20 @@ use oxy_airlayer_compat::schema::models::DimensionType;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-use crate::agentic_wiring::metric_tree_runner::OxyMetricTreeRunner;
+use crate::agentic_wiring::metric_tree_runner::{OxyMetricTreeRunner, build_query_executor};
 use crate::server::api::custom_apps_gates::parse_versioned_body;
 use crate::server::api::metric_tree::{
-    self as mt, DistributionRequest, ExplainRequest, OpportunityRequest, PredictRequest,
-    TimeDimensionsResponse, TreeQuery,
+    // `BASELINE_TIMEOUT` is THE workspace handler's constant, not a copy of it:
+    // both surfaces query the same warehouse, so the deadline is one number in
+    // one place rather than two that can be tuned apart.
+    self as mt,
+    BASELINE_TIMEOUT,
+    DistributionRequest,
+    ExplainRequest,
+    OpportunityRequest,
+    PredictRequest,
+    TimeDimensionsResponse,
+    TreeQuery,
 };
 use crate::server::api::projects::semantic_boundary::{
     SemanticBoundary, cache_lookup, cache_store, enter_semantic_boundary, err_with_code,
@@ -174,13 +186,31 @@ pub async fn post_predict(
         Ok(r) => r,
         Err(resp) => return resp,
     };
-    let tree = oxy_semantic::build_metric_tree(&layer);
+    let mut tree = oxy_semantic::build_metric_tree(&layer);
+    // A fitted coefficient must behave exactly as a declared one, so this
+    // lands before propagation — same ordering as the workspace twin.
+    oxy_airlayer_compat::engine::metric_tree_fit::apply_fitted_coefficients(
+        &mut tree,
+        &req.coefficients,
+    );
     let changes: Vec<(String, f64)> = req
         .changes
         .into_iter()
         .map(|c| (c.measure, c.delta))
         .collect();
-    match oxy_semantic::predict(&tree, &changes) {
+    // Same enforcement as the workspace twin's `post_predict`, and for the
+    // same reason: a custom app's Oxy Function or a scheduled run hits this
+    // route with no browser client in front of it to run `leverConflicts.ts`
+    // first, so refusing an ambiguous pinned-lever pair has to happen here
+    // rather than being assumed from the UI.
+    if let Err(message) = mt::reject_lever_conflicts(&tree, &changes) {
+        return err_with_code(StatusCode::BAD_REQUEST, message, "lever_conflict");
+    }
+    let result = match req.values {
+        Some(values) => oxy_semantic::predict_with_values(&tree, &changes, &values),
+        None => oxy_semantic::predict(&tree, &changes),
+    };
+    match result {
         Ok(res) => axum::Json(res).into_response(),
         Err(e) => err_with_code(StatusCode::BAD_REQUEST, e.to_string(), "predict_failed"),
     }
@@ -370,4 +400,229 @@ pub async fn post_distribution(
             "distribution_timeout",
         ),
     }
+}
+
+// ── Baseline (scenario simulation) ──────────────────────────────────────────
+
+/// Resolve `req.instance` into an engine scope, `Response`-erroring instead
+/// of `MetricTreeError`. Mirrors the workspace handler's inline scope
+/// resolution in `crate::server::api::metric_tree::post_baseline` — same
+/// rule: an instance that cannot be resolved is an error, never a silently
+/// dropped scope.
+fn baseline_scope(
+    layer: &oxy_airlayer_compat::SemanticLayer,
+    req: &mt::BaselineRequest,
+) -> Result<Vec<oxy_airlayer_compat::engine::query::QueryFilter>, Response> {
+    mt::baseline_scope_core(layer, req.instance.as_ref()).map_err(|message| {
+        err_with_code(
+            StatusCode::NOT_FOUND,
+            message,
+            "baseline_instance_not_found",
+        )
+    })
+}
+
+/// Build the executor and run the baseline's per-view value and per-group fit
+/// queries (see `mt::BASELINE_TIMEOUT`), off the async runtime. Split out of
+/// [`post_baseline`] to stay under the file's function-length budget.
+///
+/// Unlike the other query-executing ops on this surface, this does not go
+/// through `OxyMetricTreeRunner` — the fan-out `mt::baseline_reads` drives
+/// isn't part of the `MetricTreeRunner` trait — so the executor is built
+/// directly here, the same way the workspace handler's `post_baseline` does.
+async fn run_baseline_query(
+    boundary: &SemanticBoundary,
+    layer: oxy_airlayer_compat::SemanticLayer,
+    req: &mt::BaselineRequest,
+    scope: Vec<oxy_airlayer_compat::engine::query::QueryFilter>,
+) -> Result<mt::BaselineReads, Response> {
+    let databases = OxyMetricTreeRunner::list_databases_sync(boundary.proj_ctx.workspace_manager());
+    let engine = std::sync::Arc::new(
+        oxy_airlayer_compat::SemanticEngine::from_semantic_layer(
+            layer.clone(),
+            oxy_airlayer_compat::DatasourceDialectMap::from_config_databases(&databases),
+        )
+        .map_err(|e| {
+            err_with_code(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                e.to_string(),
+                "baseline_engine_build_failed",
+            )
+        })?,
+    );
+    let tree = oxy_semantic::build_metric_tree(&layer);
+    // `build_query_executor` asks for the read-only capability: it needs the
+    // workspace id, config and secrets, never the disk. Downgrading here is
+    // what states that, rather than handing it a working copy it must not use.
+    let workspace_manager = boundary
+        .proj_ctx
+        .workspace_manager()
+        .clone()
+        .into_read_only();
+    let user_id = boundary.app.user.id;
+    let handle = tokio::runtime::Handle::current();
+    // This surface pins the layer to the compile-boundary tempdir and carries
+    // no pre-aggregation cache of its own, so the short-circuit is off and the
+    // other two fields are inert; `freshness` is stated anyway so a later
+    // caller that DOES attach a cache inherits the read-surface posture.
+    let preagg = crate::agentic_wiring::metric_tree_runner::RunnerPreagg {
+        cache: None,
+        renewal_threshold_secs: 120,
+        freshness: crate::server::preagg_context::RollupFreshness::ServeStale,
+    };
+    let roots = req.roots.clone();
+    let period = req.period.clone();
+    let time_dimension = req.time_dimension.clone();
+
+    tokio::time::timeout(
+        BASELINE_TIMEOUT,
+        tokio::task::spawn_blocking(move || {
+            let executor = build_query_executor(
+                engine,
+                databases,
+                workspace_manager,
+                user_id,
+                // Customer-app requests carry no workspace role of their own
+                // to read through; Viewer matches `runner_for`'s read-only
+                // posture for this surface.
+                WorkspaceRole::Viewer,
+                handle,
+                preagg,
+            );
+            mt::baseline_reads(
+                &tree,
+                &layer,
+                &roots,
+                &time_dimension,
+                (period.0.as_str(), period.1.as_str()),
+                &scope,
+                executor,
+            )
+        }),
+    )
+    .await
+    .map_err(|_| {
+        err_with_code(
+            StatusCode::GATEWAY_TIMEOUT,
+            format!(
+                "baseline timed out after {}s — narrow the period or the scope",
+                BASELINE_TIMEOUT.as_secs()
+            ),
+            "baseline_timeout",
+        )
+    })?
+    .map_err(|e| {
+        err_with_code(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("baseline task panicked: {e}"),
+            "baseline_task_panicked",
+        )
+    })
+}
+
+/// Validate the request's lever roots against the tree, and resolve its
+/// scope. Split out of [`post_baseline`] to stay under the file's
+/// function-length budget now that the cache lookup/store adds to it.
+fn validate_and_scope(
+    layer: &oxy_airlayer_compat::SemanticLayer,
+    tree: &oxy_airlayer_compat::engine::metric_tree::MetricTree,
+    req: &mt::BaselineRequest,
+) -> Result<Vec<oxy_airlayer_compat::engine::query::QueryFilter>, Response> {
+    // Reject unknown levers up front: a typo must not read as "this measure
+    // has no value", a completely different message in the UI.
+    for root in &req.roots {
+        if !tree.nodes.iter().any(|n| &n.id == root) {
+            return Err(err_with_code(
+                StatusCode::NOT_FOUND,
+                format!("measure '{root}' not in tree"),
+                "measure_not_found",
+            ));
+        }
+    }
+    baseline_scope(layer, req)
+}
+
+/// `POST .../metric-tree/baseline` — current values for the levers and
+/// everything downstream of them.
+pub async fn post_baseline(
+    Path(project_id): Path<Uuid>,
+    uri: Uri,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    // Gate before cache read so a cached hit can't bypass authorization.
+    let boundary = match enter_semantic_boundary(&headers, project_id).await {
+        Ok(b) => b,
+        Err(resp) => return resp,
+    };
+    let key = String::from_utf8_lossy(&body).into_owned();
+    if let Some(hit) = cache_lookup(project_id, "mt-baseline", &key, wants_refresh(uri.query())) {
+        return hit;
+    }
+    let req: mt::BaselineRequest = match parse_versioned_body(&body) {
+        Ok(r) => r,
+        Err(resp) => return resp,
+    };
+    let layer = match load_layer(boundary.scan.path_buf()).await {
+        Ok(l) => l,
+        Err(resp) => return resp,
+    };
+    let tree = oxy_semantic::build_metric_tree(&layer);
+
+    let scope = match validate_and_scope(&layer, &tree, &req) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+
+    let reads = match run_baseline_query(&boundary, layer.clone(), &req, scope).await {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    // Now that the read runs one query per view, a warehouse failure need not
+    // reach the outcome at all: one view answering makes it `Valued` while
+    // another errored. Both have to suppress the cache, or a transient failure
+    // on one view gets remembered as that view having no values.
+    let failure = match &reads.outcome {
+        oxy_airlayer_compat::engine::metric_tree_ops::BaselineOutcome::ExecutorError(e) => {
+            Some(e.clone())
+        }
+        _ => reads
+            .skipped
+            .iter()
+            .find(|s| s.kind == mt::SkipKind::QueryFailed)
+            .map(|s| format!("`{}`: {}", s.view, s.reason)),
+    };
+
+    // Ask the engine WHY rather than inferring it from an empty map — an
+    // executor error and an empty window need opposite fixes.
+    let unvalued = mt::classify_unvalued(
+        &tree,
+        &req.roots,
+        &reads.values,
+        &reads.outcome,
+        &reads.skipped,
+    );
+
+    let body = mt::BaselineResponse {
+        values: reads.values,
+        unvalued,
+        resolved_period: req.period,
+        baseline_note: mt::baseline_note(&reads.outcome, &req.time_dimension, &reads.skipped),
+        fitted: reads.fitted,
+    };
+
+    // A warehouse that was down when this ran is not a fact about the
+    // workspace, and caching it means `?refresh` is the only way back — every
+    // sibling op on this router stores on `Ok` only. The failure still
+    // *responds*, with its note; it just doesn't get remembered.
+    if let Some(e) = failure {
+        tracing::warn!(
+            error = %e,
+            project_id = %boundary.project_id(),
+            "metric-tree baseline query failed; responding without caching"
+        );
+        return axum::Json(body).into_response();
+    }
+
+    cache_store(boundary.project_id(), "mt-baseline", &key, &body)
 }

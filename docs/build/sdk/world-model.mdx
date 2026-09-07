@@ -216,11 +216,14 @@ that already ship — it adds no new backend. If you want the underlying calls
 directly:
 
 - **React hooks** — `useMetricTree`, `useSensitivity`, `usePredict`,
-  `useExplain`, `useOpportunity`, `useTimeDimensions` (same
+  `useExplain`, `useOpportunity`, `useTimeDimensions`, plus `useBaseline` and
+  `useProjection` for [scenario
+  forecasting](/guide/build/sdk/hooks#scenario-forecasting) (same
   `/semantic/metric-tree*` endpoints, request/response shapes matching the
   server verbatim).
 - **Node client** — `MetricTreeClient` (`getTree`, `getSensitivity`, `predict`,
-  `explain`, `findOpportunities`) for API-key / server-side use — see
+  `explain`, `findOpportunities`, `getBaseline`, `getProjection`) for API-key /
+  server-side use — see
   [Hooks & components](/guide/build/sdk/hooks#metric-tree-analyses).
 
 These are the same analyses that power the IDE's

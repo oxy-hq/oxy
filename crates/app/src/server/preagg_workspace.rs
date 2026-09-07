@@ -10,12 +10,15 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use oxy::adapters::secrets::SecretsManager;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::WorkingCopy;
 use sea_orm::{DatabaseConnection, EntityTrait};
 use tokio::sync::Mutex as TokioMutex;
 use uuid::Uuid;
+
+use crate::server::service::secret_manager::SecretManagerService;
 
 /// Build a [`WorkspaceManager`] for `workspace_id` from nothing but a
 /// database handle — compiled config first (fleet-safe: works on any node,
@@ -28,6 +31,10 @@ use uuid::Uuid;
 /// as the pre-scheduling worker), no worktree bookkeeping, no HTTP-shaped
 /// error type. Errors are a plain string: the caller reports task failure
 /// through the executor's `TaskOutcome`, not an HTTP status.
+///
+/// The secrets manager is NOT among the trimmings, and this is the one place
+/// where the request path's shape has to be copied rather than simplified —
+/// see the comment at its construction below.
 pub(super) async fn build_workspace_manager(
     db: &DatabaseConnection,
     workspace_id: Uuid,
@@ -50,14 +57,37 @@ pub(super) async fn build_workspace_manager(
     // `OnMissing::Empty` rather than a hard error because a workspace that has
     // never been compiled is a real state here, and the rebuild has nothing to
     // do rather than something to fail at.
-    WorkspaceBuilder::new(workspace_id)
+    let builder = WorkspaceBuilder::new(workspace_id)
         .with_working_copy(
             std::path::Path::new(path),
             None,
             oxy::config::OnMissing::Empty,
         )
         .await
-        .map_err(|e| format!("preagg: workspace build failed: {e}"))?
+        .map_err(|e| format!("preagg: workspace build failed: {e}"))?;
+
+    // DB-first with env fallback, exactly as the request path does it
+    // (`workspace_context::try_attach_workspace_manager`), so a workspace's
+    // stored warehouse credentials are visible to the cycle.
+    //
+    // FAILING here rather than warning, which is where this diverges from the
+    // request path: `WorkspaceBuilder::build` falls back to
+    // `SecretsManager::from_environment()` when none is set, so without this
+    // every `{{ secrets.* }}` in a connection resolves to an EMPTY STRING —
+    // and a warehouse driver reads empty as absent, not as an error. A
+    // ClickHouse rollup then dials airlayer's default `http://localhost:8123`
+    // with `database = ''` and reports a connection failure that names a host
+    // nobody configured. On the request path a missing secrets manager
+    // degrades a live query the caller can retry; here it would silently
+    // rebuild every rollup in the workspace against the wrong warehouse.
+    let secrets_manager =
+        SecretsManager::from_database_with_env_fallback(SecretManagerService::new(workspace_id))
+            .map_err(|e| {
+                format!("preagg: secrets manager unavailable for workspace {workspace_id}: {e}")
+            })?;
+
+    builder
+        .with_secrets_manager(secrets_manager)
         .build()
         .await
         .map_err(|e| format!("preagg: workspace build failed: {e}"))

@@ -168,6 +168,46 @@ measures:
     description: "Total sales revenue across all stores and time periods"
     expr: Weekly_Sales
     synonyms: ["total revenue", "gross sales", "sales revenue"]
+    # The demo project's only driver edge, and the reason the Metric Tree has
+    # any edges at all — without one the graph is a set of isolated nodes and
+    # Scenario mode has nothing to propagate, which is what
+    # `metric-tree-scenario.flow.test.yml` needs.
+    #
+    # DECLARED, not left to the fit. Leaving it qualitative was the first
+    # attempt, on the reasoning that a fitted coefficient exercises the path the
+    # panel is built around. That is true and it is the wrong trade here: with
+    # no `coefficient:` the edge carries a magnitude only if an OLS fit on this
+    # fixture clears the |t| >= 2 gate, so a regression test's pass/fail hangs
+    # on whether Walmart fuel prices happen to predict Walmart sales. They did
+    # not — nothing propagated and `total_sales` rendered unchanged.
+    #
+    # The magnitude below is ILLUSTRATIVE and nothing measured it. The test
+    # depends only on it being non-zero; the number is sized to move
+    # `total_sales` about 1% on a +20% fuel-price lever over a window spanning
+    # the whole fixture — a declared linear coefficient yields an ABSOLUTE
+    # delta, so that percentage grows as the window shrinks (~2.7% on 365
+    # days). Large enough to read on the canvas, small enough not to look like
+    # a data error.
+    #
+    # SIGN: the coefficient's own sign is what propagates, and `direction:`
+    # does not compose with it. `compute_driver_impact` (airlayer
+    # `engine::metric_tree_ops`) reads only `coefficients`, and
+    # `infer_direction` DERIVES the displayed direction from the coefficient
+    # when one is present, falling back to the declared `direction:` only for a
+    # qualitative edge. So the two agree here rather than multiply: fuel up →
+    # sales down.
+    #
+    # That makes `direction: negative` INERT on this edge — the reader sees the
+    # direction derived from the coefficient, not this field. It is kept
+    # because it becomes load-bearing the moment the coefficient is removed,
+    # and because it is still the right claim about the relationship.
+    drivers:
+      - measure: oxymart.average_fuel_price
+        direction: negative
+        strength: moderate
+        confidence: low
+        coefficient: -100000000
+        description: "Fuel price pressure on discretionary retail spend. Direction is the standard prior; the magnitude is illustrative, declared so scenario propagation is deterministic in the demo project."
 
   - name: average_weekly_sales
     type: average

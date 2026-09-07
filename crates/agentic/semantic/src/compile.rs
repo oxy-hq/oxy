@@ -293,8 +293,10 @@ fn compile_against(
     let sql = substitute_params(&result.sql, &result.params);
 
     // Check local Parquet cache with freshness validation (Layer 1).
+    let live: Vec<&oxy_airlayer_compat::View> = semantic_layer.views.iter().collect();
+    let live = oxy_airlayer_compat::preagg::live_rollups(&live);
     if let Some(preagg) = preagg
-        && let Some(local) = try_resolve_preagg(preagg, &request, &sql, &database_name)
+        && let Some(local) = try_resolve_preagg(preagg, &request, &sql, &database_name, Some(&live))
     {
         return Ok(local);
     }
@@ -346,11 +348,20 @@ pub fn compile_with_engine(
 /// `s3://…` and lets DuckDB read it in place — no copy, no staging file, no
 /// blocking the caller on a download, and no divergence between what the two
 /// tiers answer, since it is the same object and the same SQL.
+///
+/// `live` is the set of rollups the loaded schema still declares, from
+/// [`oxy_airlayer_compat::preagg::live_rollups`]. A manifest row absent from it describes
+/// a rollup nobody asks for any more — a measure renamed, a `pre_aggregation:`
+/// block deleted — and is declined rather than served, since the Parquet
+/// beside it still holds the old definition's numbers. Pass `None` only where
+/// the schema genuinely isn't in scope: it means "don't check", not "nothing
+/// is live". An EMPTY set is the opposite of `None` and declines everything.
 pub fn try_resolve_preagg(
     preagg: &PreaggContext,
     request: &QueryRequest,
     warehouse_sql: &str,
     warehouse_database: &str,
+    live: Option<&oxy_airlayer_compat::preagg::LiveRollups>,
 ) -> Option<CompiledQuery> {
     let cache_dir = oxy_shared::state_dir::get_airlayer_cache_dir(preagg.workspace_id);
     let manifest_path = cache_dir.join("manifest.json");
@@ -358,7 +369,7 @@ pub fn try_resolve_preagg(
     let manifest: oxy_airlayer_compat::preagg::LocalManifest =
         serde_json::from_str(&content).ok()?;
 
-    let entry = oxy_airlayer_compat::preagg::check_coverage(request, &manifest.rollups)?;
+    let entry = oxy_airlayer_compat::preagg::check_coverage(request, &manifest.rollups, live)?;
     let is_fresh = check_and_seed_freshness(
         &preagg.cache,
         &entry.rollup_hash,
@@ -963,6 +974,7 @@ mod tests {
             &count_request(),
             "SELECT 1",
             "local",
+            None,
         );
         match found {
             Some(CompiledQuery::Preaggregation { source, .. }) => {
@@ -980,7 +992,8 @@ mod tests {
                 &ctx(uuid::Uuid::new_v4(), None),
                 &count_request(),
                 "SELECT 1",
-                "local"
+                "local",
+                None,
             )
             .is_none(),
             "a workspace that has built nothing must not resolve to another's Parquet"
@@ -1003,7 +1016,8 @@ mod tests {
                 &ctx(workspace_id, None),
                 &count_request(),
                 "SELECT 1",
-                "local"
+                "local",
+                None,
             )
             .is_none(),
             "a manifest entry with no local file and no blob store must not resolve"
@@ -1014,6 +1028,7 @@ mod tests {
             &count_request(),
             "SELECT 1",
             "local",
+            None,
         );
         let Some(CompiledQuery::Preaggregation {
             preagg_sql, source, ..

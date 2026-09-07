@@ -1,0 +1,50 @@
+name: lag_error
+description: |
+  The customer guessed the lag wrong. Spend lifts sales seven days out; the
+  `.view.yml` declares three, which is what the fitter pairs on.
+
+  `lag:` is declared by a human and never fitted, so on real data it is always a
+  guess — and nothing in the output says whether it was a good one. Because
+  spend is serially correlated (the budget tracks trailing sales), pairing on
+  the wrong offset still returns a healthy-looking slope: same t, same n, same
+  panel count, wrong number. That is the CONFIDENTLY WRONG cell reached without
+  any confounding argument at all.
+
+seed: 7
+replicates: 1
+periods: 30
+period_days: 7
+history_days: 180
+start_date: 2025-01-06
+
+entities:
+  count: 24
+  scale_sigma: 0.4
+
+baseline:
+  sales_per_entity_day: 1500.0
+  margin: 0.36
+  demand_shock_rho: 0.7
+  demand_shock_sd: 0.12
+  weekly_seasonality: 0.15
+
+mechanism:
+  driver: marketing_spend
+  target: net_sales
+  # The truth the world generates against.
+  lag_days: 7
+  # What the generated view claims, and therefore what the fit pairs on. The two
+  # fields exist separately because one field made the customer right by
+  # construction and put this whole axis out of reach.
+  declared_lag_days: 3
+  noise_ratio: 0.05
+  calibrate:
+    anchor_spend_share: 0.02
+    local_slope_at_anchor: 4.0
+    optimum_at: 3.0
+
+lever:
+  min_multiple: 0.1
+  max_multiple: 5.0
+  max_move_per_period: 0.25
+  explore_jitter_sd: 0.15

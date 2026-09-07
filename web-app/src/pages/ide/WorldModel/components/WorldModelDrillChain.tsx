@@ -1,8 +1,8 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { CandidateKind, DrillCandidate, DrillLevel, StopReason } from "@/types/metricTree";
+import { InfoTip, MetaBadge } from "../../components/semanticGraph";
 import { formatCompact, formatDelta, formatSignedPct, shortMeasureName } from "./measureTarget";
-import { InfoTip, MetaBadge } from "./panelPrimitives";
 import { formatSegment } from "./worldModelNav";
 
 /** The stop reason, in words, said where the chain ends. Every variant is

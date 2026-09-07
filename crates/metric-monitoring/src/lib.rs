@@ -5,6 +5,10 @@
 //!   (measure, time-dim, granularity) tuples.
 //! - [`detect`] — MSTL + AutoETS detector that flags anomalies in a tail
 //!   window of a single time-series.
+//! - [`forecast`] — the same model pointed forward: project a series past its
+//!   last bucket, for the metric-tree scenario canvas. Shares [`gates`] with
+//!   the detector so a projected expectation and a flagged one cannot
+//!   disagree about what normal was.
 //! - [`gates`] — statistical trust checks around the detector: how much
 //!   history a series needs before it is scored at all, and which flags to
 //!   suppress because the fit that produced them is not credible.
@@ -18,6 +22,7 @@
 
 pub mod config;
 pub mod detect;
+pub mod forecast;
 pub mod gates;
 pub mod persist;
 pub mod service;
@@ -31,6 +36,7 @@ pub use config::{
 pub use detect::{
     Continuation, DetectError, DetectInputs, DetectedAnomaly, Observation, Severity, detect,
 };
+pub use forecast::{DEFAULT_INTERVAL_LEVEL, ProjectError, ProjectInputs, ProjectedBucket, project};
 pub use gates::min_history_buckets;
 pub use persist::{load_open_events, persist_scan, upsert_anomalies, upsert_coverage};
 pub use service::{

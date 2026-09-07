@@ -7,7 +7,7 @@ use df_interchange::Interchange;
 use duckdb::Connection;
 use slugify::slugify;
 
-use super::duckdb_pool::{PoolKey, pool};
+use super::duckdb_pool::{PoolKey, PoolTarget, pool};
 use super::engine::Engine;
 use crate::adapters::secrets::SecretsManager;
 use crate::config::model::{DuckDBOptions, DuckDbS3Mirror};
@@ -292,6 +292,46 @@ pub fn checkout_file_connection(path: &str) -> Result<Connection, OxyError> {
 /// served after a file change.
 pub fn checkout_local_connection(file_search_path: &str) -> Result<Connection, OxyError> {
     checkout_local_blocking(file_search_path)
+}
+
+/// Hand the pool back a dataset directory whose lifetime has ended, dropping
+/// the in-memory database it pinned along with every table materialised into
+/// it.
+///
+/// The pool's bound is one slot per target, which bounds nothing when the
+/// caller mints a fresh target per unit of work — a per-run `TempDir` dataset
+/// is checked out once and then never again, so no same-key replacement ever
+/// evicts it. Callers that own such a directory's lifetime must call this when
+/// it ends; a caller pointing at a *stable* workspace dataset should not, since
+/// keeping the handle warm across queries is the whole point of the pool.
+///
+/// Call this while the directory still exists. The key is built the way
+/// [`checkout_local_blocking`] builds it — canonicalized — and canonicalization
+/// needs the path to resolve, so a release issued after the directory is gone
+/// falls back to the raw path and matches the checked-out key only where the
+/// two happen to coincide. On macOS they never do: every `TempDir` sits under
+/// the `/var` → `/private/var` symlink, so a late release there silently leaks
+/// the handle it meant to free.
+pub fn release_local_connection(dataset_dir: impl AsRef<Path>) {
+    let path = dataset_dir.as_ref();
+    let dir = match path.canonicalize() {
+        Ok(canonical) => canonical,
+        Err(e) => {
+            // Fall through with the raw path rather than returning: it is the
+            // right key in the case where the caller already handed us a
+            // canonical path, and a miss costs nothing beyond the leak we were
+            // already going to take.
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "DuckDB pool: cannot canonicalize a dataset directory being released, so the \
+                 release may not match the handle that was checked out; release before the \
+                 directory is removed"
+            );
+            path.to_path_buf()
+        }
+    };
+    pool().release(&PoolTarget::Local { dir });
 }
 
 /// Synchronous body of [`DuckDB::init_connection`] for `File` mode.
@@ -738,6 +778,216 @@ mod tests {
             .query_row("SELECT count(*) FROM stores.parquet", [], |r| r.get(0))
             .unwrap();
         assert_eq!(unquoted, 4, "unquoted schema.table parquet did not resolve");
+    }
+
+    #[test]
+    fn local_pool_serves_rows_appended_after_the_first_checkout() {
+        // The simulation runner appends a period's rows and then immediately
+        // asks the semantic layer to fit on them. `init_local_db` copies each
+        // CSV into an in-memory table, so a pool that handed back the cached
+        // handle regardless would feed the fitter a world frozen at period 0 —
+        // and it would look like a converging estimate rather than a bug,
+        // because a stale series is still a perfectly well-formed series.
+        //
+        // `PoolKey::local` captures every file's mtime for exactly this reason.
+        // This asserts the eviction actually fires end to end, through the
+        // public checkout path rather than against `init_local_db` directly.
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().to_str().unwrap().to_string();
+        write_file(tmp.path(), "store_days.csv", "day,sales\n1,10\n");
+
+        let conn = checkout_local_connection(&dir).unwrap();
+        let before: i64 = conn
+            .query_row("SELECT count(*) FROM store_days", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(before, 1);
+
+        // The rewrite has to land on a mtime the pool can tell apart from the
+        // first one, or the key legitimately matches and the test reports
+        // "eviction is broken" on a platform where nothing is broken. macOS
+        // HFS+ stamps whole seconds; APFS and ext4 stamp finer.
+        //
+        // Probed rather than slept through: a fixed 1.1s wait pays the HFS+
+        // worst case on every filesystem, and this was the slowest test in the
+        // crate for it. Rewriting until the stamp actually moves costs one
+        // attempt where the resolution is sub-second, and the same tick where
+        // it isn't. Bounded so a filesystem coarser than the deadline fails
+        // loudly instead of spinning.
+        let csv = tmp.path().join("store_days.csv");
+        let mtime = |p: &std::path::Path| fs::metadata(p).unwrap().modified().unwrap();
+        let before_mtime = mtime(&csv);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            write_file(
+                tmp.path(),
+                "store_days.csv",
+                "day,sales\n1,10\n2,20\n3,30\n",
+            );
+            if mtime(&csv) != before_mtime {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the filesystem did not advance store_days.csv's mtime within 5s, so the \
+                 pool key cannot distinguish the two writes and this test cannot assert \
+                 eviction at all"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        let conn2 = checkout_local_connection(&dir).unwrap();
+        let after: i64 = conn2
+            .query_row("SELECT count(*) FROM store_days", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            after, 3,
+            "appended rows were not visible — the pool served a stale in-memory copy"
+        );
+
+        // The sum, not just the count: a rebuild that re-read only the header
+        // or truncated would still satisfy a row count in some orderings.
+        let total: i64 = conn2
+            .query_row("SELECT sum(sales) FROM store_days", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(total, 60);
+    }
+
+    /// A per-run dataset directory is a `PoolTarget` that *dies*, and the pool
+    /// has no capacity bound, no TTL and no `Drop` hook — its only eviction is
+    /// same-key replacement. So a caller that materialises a fresh `TempDir`
+    /// per run (the simulation runner does) permanently pins one in-memory
+    /// DuckDB, plus every table materialised into it, for a directory that no
+    /// longer exists on disk. Nothing will ever check out that target again.
+    ///
+    /// Counted against a baseline rather than zero because the pool is a
+    /// process-global singleton: under `cargo test` this test shares it with
+    /// every other test in the binary.
+    #[test]
+    fn per_run_dataset_dirs_do_not_accumulate_pooled_handles() {
+        let slots_before = pool().slot_count();
+        let init_locks_before = pool().init_lock_count();
+
+        let mut targets = Vec::new();
+        for _ in 0..3 {
+            let tmp = TempDir::new().unwrap();
+            write_file(tmp.path(), "store_days.csv", "day,sales\n1,10\n");
+            let canonical = tmp.path().canonicalize().unwrap();
+            let dir = tmp.path().to_str().unwrap().to_string();
+
+            let conn = checkout_local_connection(&dir).unwrap();
+            let n: i64 = conn
+                .query_row("SELECT count(*) FROM store_days", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(n, 1);
+            drop(conn);
+
+            // The run ends. Release before `TempDir`'s drop takes the
+            // directory with it: after that the path no longer canonicalizes
+            // and the release cannot find the handle it meant to free. This is
+            // the ordering `WorldDir`'s `Drop` relies on.
+            release_local_connection(&canonical);
+            targets.push(PoolTarget::Local { dir: canonical });
+            drop(tmp);
+        }
+
+        let leaked: Vec<_> = targets
+            .iter()
+            .filter(|target| pool().holds_slot(target))
+            .collect();
+        assert!(
+            leaked.is_empty(),
+            "{} of {} dead dataset directories still pin a live in-memory DuckDB: {leaked:#?}",
+            leaked.len(),
+            targets.len()
+        );
+        assert_eq!(
+            pool().slot_count(),
+            slots_before,
+            "the slot map grew across runs — the per-target bound in this module's doc \
+             only holds while targets are reused"
+        );
+        assert_eq!(
+            pool().init_lock_count(),
+            init_locks_before,
+            "the init-lock map grew across runs — its 'bounded by the number of distinct \
+             targets' justification does not survive per-run-unique targets"
+        );
+    }
+
+    /// The two maps are released together. `invalidate` drops only the slot —
+    /// correct for a MotherDuck session that may be reopened, wrong for a
+    /// target that is gone, because the `init_locks` entry it leaves behind
+    /// accumulates on exactly the same per-run schedule the slot did.
+    #[test]
+    fn releasing_a_local_target_drops_its_slot_and_its_init_lock() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "store_days.csv", "day,sales\n1,10\n");
+        let canonical = tmp.path().canonicalize().unwrap();
+        let target = PoolTarget::Local {
+            dir: canonical.clone(),
+        };
+
+        let conn = checkout_local_connection(tmp.path().to_str().unwrap()).unwrap();
+        assert!(
+            pool().holds_slot(&target),
+            "checkout should have populated the slot this test is about to release"
+        );
+        assert!(pool().holds_init_lock(&target));
+        drop(conn);
+
+        // Deliberately released via the *uncanonicalized* path the caller
+        // actually holds: on macOS `TempDir` hands back a `/var/...` path while
+        // the pool is keyed on `/private/var/...`, so a release that skipped
+        // canonicalization would silently match nothing here.
+        release_local_connection(tmp.path());
+
+        assert!(
+            !pool().holds_slot(&target),
+            "release must drop the pooled in-memory database, not merely unlink it"
+        );
+        assert!(
+            !pool().holds_init_lock(&target),
+            "release must also drop the init-lock entry — it is per-target too, and a \
+             per-run target makes 'bounded by the number of distinct targets' unbounded"
+        );
+    }
+
+    /// `release` is not `invalidate`: a target that can be checked out again
+    /// must keep its init lock, because a caller may be blocked on it right now
+    /// and dropping the map's copy would let the next caller mint a second lock
+    /// and init concurrently.
+    #[test]
+    fn releasing_a_contended_init_lock_leaves_the_lock_entry_in_place() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "store_days.csv", "day,sales\n1,10\n");
+        let canonical = tmp.path().canonicalize().unwrap();
+        let target = PoolTarget::Local {
+            dir: canonical.clone(),
+        };
+
+        let conn = checkout_local_connection(tmp.path().to_str().unwrap()).unwrap();
+        drop(conn);
+
+        // Stand in for a caller sitting between "cloned the Arc out of the map"
+        // and "acquired it" — the exact window the count check exists for.
+        let waiter = pool()
+            .clone_init_lock(&target)
+            .expect("init lock must exist");
+        release_local_connection(tmp.path());
+        assert!(
+            !pool().holds_slot(&target),
+            "the slot is released regardless — a waiter is about to rebuild it"
+        );
+        assert!(
+            pool().holds_init_lock(&target),
+            "a waiter still holds the lock, so removing the map's copy would let the next \
+             caller mint an unrelated one and init concurrently"
+        );
+        drop(waiter);
+
+        // Once the waiter is gone the entry is collectable again.
+        release_local_connection(tmp.path());
+        assert!(!pool().holds_init_lock(&target));
     }
 
     use crate::config::model::{DuckDbS3Mirror, DuckDbS3Table};

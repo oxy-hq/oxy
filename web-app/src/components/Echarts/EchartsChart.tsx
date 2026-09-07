@@ -11,7 +11,12 @@ export interface EchartsProps {
   title?: string;
   testId?: string;
   chartIndex?: number;
+  /** CSS height for the canvas. Defaults to `400px`; override where the chart
+   *  has to carry extra chrome (a zoom slider) or a tight value range. */
+  height?: string;
 }
+
+const DEFAULT_HEIGHT = "400px";
 
 /**
  * ECharts host. Kept in a standalone module so `index.tsx` can `React.lazy` it —
@@ -23,7 +28,8 @@ export default function EchartsChart({
   isLoading,
   title,
   testId,
-  chartIndex
+  chartIndex,
+  height = DEFAULT_HEIGHT
 }: EchartsProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const [searchParams] = useSearchParams();
@@ -170,7 +176,7 @@ export default function EchartsChart({
   return (
     <div data-testid={testId} className='chart-wrapper' data-chart-index={chartIndex ?? 0}>
       {title && <h2 className='font-bold text-foreground text-xl'>{title}</h2>}
-      <div ref={chartRef} style={{ width: "100%", height: "400px" }} />
+      <div ref={chartRef} style={{ width: "100%", height }} />
       {isExportMode && !isLoading && (
         <button
           className={`chart-export-trigger chart-export-trigger-${chartIndex ?? 0}`}

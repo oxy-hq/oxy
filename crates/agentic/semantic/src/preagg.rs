@@ -475,10 +475,32 @@ pub async fn execute_build_plan(
     connector: &Arc<dyn DatabaseConnector>,
     plan: &oxy_airlayer_compat::preagg::BuildPlan,
 ) -> Result<(), SemanticError> {
-    for stmt in &plan.statements {
+    let run = async |stmt: &String| -> Result<(), SemanticError> {
         connector.execute_statement(stmt).await.map_err(|e| {
             SemanticError::Runtime(format!("build plan statement failed: {e}\nSQL: {stmt}"))
         })?;
+        Ok(())
+    };
+
+    // Three phases, and the order is load-bearing. `prelude_len` statements
+    // create the schema and `__manifest`; `migrations` ALTER that table; the
+    // rest write to it. Run in any other order the migrations are DDL against
+    // a table that does not exist yet, and the writes hit a manifest missing
+    // the columns they set.
+    let prelude_len = plan.prelude_len.min(plan.statements.len());
+    for stmt in &plan.statements[..prelude_len] {
+        run(stmt).await?;
+    }
+    // Best-effort by contract: on a manifest that already has the columns
+    // these are EXPECTED to fail, and not every dialect can express
+    // `ADD COLUMN IF NOT EXISTS`. A real problem surfaces on the write below.
+    for stmt in &plan.migrations {
+        if let Err(e) = run(stmt).await {
+            tracing::debug!(error = %e, "manifest migration declined (expected when already applied)");
+        }
+    }
+    for stmt in &plan.statements[prelude_len..] {
+        run(stmt).await?;
     }
     Ok(())
 }

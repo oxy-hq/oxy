@@ -79,6 +79,41 @@ describe("MetricTreeClient", () => {
     );
   });
 
+  it("getProjection POSTs the request body verbatim", async () => {
+    const { client, request } = makeClient();
+    const req = {
+      roots: ["marketing_spend.total_spend"],
+      time_dimension: "orders.order_date",
+      period: ["2024-09-01", "2025-08-31"] as [string, string],
+      granularity: "day" as const,
+      horizon: 30
+    };
+    await client.getProjection(req);
+    expect(request).toHaveBeenCalledWith(
+      "/proj-123/semantic/metric-tree/projection",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(req) })
+    );
+  });
+
+  // `seasonality: []` is a 400 server-side, not a client-side default — so the
+  // client must pass it through untouched rather than "helpfully" dropping an
+  // empty array on the way out.
+  it("getProjection forwards seasonality untouched", async () => {
+    const { client, request } = makeClient();
+    const req = {
+      roots: ["orders.net_revenue"],
+      time_dimension: "orders.order_date",
+      period: ["2024-01-01", "2025-08-31"] as [string, string],
+      horizon: 12,
+      seasonality: [7, 365]
+    };
+    await client.getProjection(req);
+    expect(request).toHaveBeenCalledWith(
+      "/proj-123/semantic/metric-tree/projection",
+      expect.objectContaining({ body: JSON.stringify(req) })
+    );
+  });
+
   it("appends branch to the query string when configured", async () => {
     const config: OxyConfig = {
       apiKey: "k",

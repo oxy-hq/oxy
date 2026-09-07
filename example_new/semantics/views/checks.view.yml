@@ -195,6 +195,37 @@ measures:
       Total check revenue, split into the two branches the decomposition cares
       about. Entrees are the big line; add-ons are where the gap lives.
     expr: "{{checks.entree_revenue}} + {{checks.addon_revenue}}"
+    drivers:
+      # Three claims that are NOT components. Each one would change the
+      # top-level identity if folded into `expr` — covers are not dollars,
+      # discounts are netted off a different line, and line-grain revenue is
+      # the same money counted at another grain. As drivers they connect the
+      # nodes without touching the arithmetic the drill relies on.
+      - measure: checks.total_guests
+        direction: positive
+        strength: strong
+        confidence: high
+        description: "More covers, more revenue. Sized from history at query time."
+      - measure: checks.discount_amount
+        direction: negative
+        strength: moderate
+        confidence: medium
+        description: |
+          Comps, promos and delivery commission pull against revenue. The one
+          NEGATIVE driver in this view, and the reason `discount_amount` is
+          reachable at all: it is deliberately not a component of
+          `net_revenue` (that would let the drill follow the discount branch
+          away from the attach story), so a driver edge is the only honest way
+          to connect it.
+      - measure: check_items.total_revenue
+        direction: positive
+        strength: strong
+        confidence: high
+        description: |
+          The same money at line grain. `check_items` carries this view's
+          revenue one level down, so the two move together by construction —
+          if a fit here ever came back anything but ~1.0, one of the two
+          paths has a bug.
 
   # ── Profit twins ─────────────────────────────────────────────────────────
   #
@@ -242,12 +273,39 @@ measures:
     type: custom
     description: "Total gross profit across entrees and add-ons"
     expr: "{{checks.entree_profit}} + {{checks.addon_profit}}"
+    drivers:
+      # The join between the revenue tree and its profit twin. They are two
+      # exact identities over the same checks, and nothing on the revenue side
+      # reaches this node through components — so the edge connects them
+      # without any path double-counting a dollar.
+      #
+      # No coefficient: the blended retention rate is exactly what the fit
+      # should measure here, and it is a property of the menu mix rather than
+      # a number worth asserting. The category spread that makes it interesting
+      # (~0.88 retained on beverages against ~0.45 on sides) is in
+      # `menu_items.avg_unit_margin`.
+      - measure: checks.net_revenue
+        direction: positive
+        strength: strong
+        confidence: high
+        description: "Gross profit follows revenue at the blended retention rate."
 
   # ── Convenience ──────────────────────────────────────────────────────────
+  # Written as the quotient it actually is, rather than `type: average` over
+  # `total_amount`. Two reasons: it makes the rate an exact identity the tree
+  # can decompose (a `/` edge, sized only against a baseline), and it is what
+  # pulls `total_checks` — the drill's rate denominator for this whole view —
+  # into the graph instead of leaving it a floating count.
+  #
+  # The number does not move. `gen_restaurant_data.py` asserts
+  # `total_amount == entree + sides + beverages + appetizers + desserts` at
+  # 100%, which is `net_revenue`, so this is the same average by a route the
+  # tree can see. If that generator invariant is ever relaxed, this measure
+  # and `AVG(total_amount)` part company — the invariant is the thing to keep.
   - name: avg_check
-    type: average
-    description: "Average check total"
-    expr: total_amount
+    type: custom
+    description: "Average check — the tree's top line per check"
+    expr: "{{checks.net_revenue}} / {{checks.total_checks}}"
   - name: total_guests
     type: sum
     description: "Guests served"
@@ -258,5 +316,6 @@ measures:
       Comps, promos, and third-party delivery commission. Deliberately NOT a
       component of net_revenue: folding it in would change the top-level
       identity and let the drill follow the discount branch away from the
-      attach story.
+      attach story. It reaches `net_revenue` as a negative DRIVER instead —
+      connected on the canvas, absent from the arithmetic.
     expr: discount_amount

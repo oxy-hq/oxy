@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { OpportunityInstance } from "@/types/metricTree";
-import { InfoTip } from "./panelPrimitives";
+import { InfoTip } from "../../components/semanticGraph";
 import { METHOD_HELP } from "./WorldModelDrillChain";
 import { WorldModelSegmentDrill } from "./WorldModelSegmentDrill";
 

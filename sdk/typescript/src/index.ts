@@ -19,6 +19,9 @@ export * from "./custom-app";
 
 // Metric-tree analyses
 export type {
+  BaselineInstance,
+  BaselineRequest,
+  BaselineResponse,
   DimensionOpportunity,
   DistributionRequest,
   DriverAttribution,
@@ -33,6 +36,11 @@ export type {
   ExplainResult,
   ExplainSibling,
   ExplainWarning,
+  FittedDriver,
+  ForecastPoint,
+  HistoryPoint,
+  MeasureProjection,
+  MeasureValues,
   MetricEdge,
   MetricNode,
   MetricTree,
@@ -40,13 +48,18 @@ export type {
   OpportunityResult,
   PredictChange,
   PredictImpact,
+  PredictOptions,
   PredictResult,
+  ProjectionGranularity,
+  ProjectionRequest,
+  ProjectionResponse,
   SegmentOpportunity,
   SensitivityDriver,
   SensitivityResult,
   SkippedDimension,
   SplitKind,
-  TimeDimensionsResponse
+  TimeDimensionsResponse,
+  UnvaluedNode
 } from "./metricTree";
 export { MetricTreeClient } from "./metricTree";
 // World-model graph + instances + driver-tree

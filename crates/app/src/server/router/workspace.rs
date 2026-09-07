@@ -15,10 +15,11 @@ use agentic_http::{AgenticState, airway_router, automation_router, router as age
 use crate::api::{
     agent, api_keys, app, apps, artifacts, automation, chart, competitors, compile, data,
     data_repo, database, execution_analytics, exported_chart, file, foot_traffic, integration,
-    local_setup, message, metric_anomalies, metric_tree, metrics, modeling, org_subdomain,
-    pipeline, preagg, result_files, run, schedules, semantic, task, test_file, test_project_run,
-    test_run, thread, traces, video, workspace_custom_apps, workspace_logo, workspace_members,
-    workspace_oxy_access, workspaces, world_model, world_model_graph,
+    local_setup, message, metric_anomalies, metric_tree, metric_tree_probe, metric_tree_projection,
+    metrics, modeling, org_subdomain, pipeline, preagg, result_files, run, schedules, semantic,
+    simulation, task, test_file, test_project_run, test_run, thread, traces, video,
+    workspace_custom_apps, workspace_logo, workspace_members, workspace_oxy_access, workspaces,
+    world_model, world_model_graph,
 };
 
 use oxy_shared::fleet_role::RouteRole;
@@ -198,6 +199,9 @@ pub(super) fn build_workspace_routes(
         .route_fleet("/semantic/compile", post(semantic::compile_semantic_query))
         .route_fleet("/semantic", post(semantic::execute_semantic_query))
         // Metric tree — structure + pure analysis ops over the semantic model.
+        // Merged as its own sub-router so the diagnostic probe layers over
+        // these ten routes and nothing else.
+        //
         // FleetOk on every route: the scan root resolves through the compile
         // boundary first (`semantic::resolve_query_scan_source`), working copy
         // second, and warehouse execution needs only config + secrets — so a
@@ -205,35 +209,26 @@ pub(super) fn build_workspace_routes(
         // `workspace_metric_tree_routes_are_fleet_ok`; the outage behind it is
         // oxy-hq/oxygen#878 (every call 500'd on the serve fleet when these
         // read `semantics_scan_path()` directly).
-        .route_fleet("/semantic/metric-tree", get(metric_tree::get_metric_tree))
+        .merge(build_metric_tree_routes(&app_state))
+        // Declared worlds and their runs. Reads come from the compile boundary
+        // (`simulation_definitions`) and Postgres (`simulation_run*`); the POST
+        // only enqueues a TaskSpec. A run DOES touch local disk — a per-run
+        // TempDir — but that happens on the worker, never in a handler, which
+        // is the whole reason it is queued work rather than a spawn.
+        .route_fleet("/simulations", get(simulation::list_simulations))
         .route_fleet(
-            "/semantic/metric-tree/{measure_id}/sensitivity",
-            get(metric_tree::get_sensitivity),
+            "/simulations/validate",
+            post(simulation::validate_simulation),
         )
-        .route_fleet(
-            "/semantic/metric-tree/predict",
-            post(metric_tree::post_predict),
-        )
-        .route_fleet(
-            "/semantic/metric-tree/explain",
-            post(metric_tree::post_explain),
-        )
-        .route_fleet(
-            "/semantic/metric-tree/opportunity",
-            post(metric_tree::post_opportunity),
-        )
-        .route_fleet(
-            "/semantic/metric-tree/drill",
-            post(metric_tree::post_opportunity_drill),
-        )
-        .route_fleet(
-            "/semantic/metric-tree/time-dimensions",
-            get(metric_tree::get_time_dimensions),
-        )
-        .route_fleet(
-            "/semantic/metric-tree/distribution",
-            post(metric_tree::post_distribution),
-        )
+        .route_fleet("/simulations/runs", get(simulation::list_runs))
+        .route_fleet("/simulations/runs/{run_id}", get(simulation::get_run))
+        .route_fleet("/simulations/{name}/runs", post(simulation::enqueue_run))
+        // The paired profit race over one world's runs. A `workspace_id`-
+        // scoped join of `simulation_runs` onto `simulation_run_periods` and
+        // nothing else — no working copy, no `.git`, no state dir — so it is
+        // FleetOk like every other read here, and pinning it to the ide
+        // would make *viewing* a finished race need the singleton.
+        .route_fleet("/simulations/{name}/race", get(simulation::get_profit_race))
         .route_ide(
             "/semantic/world-model",
             get(world_model_graph::get_world_model),
@@ -532,6 +527,55 @@ fn build_thread_routes(app_state: &AppState) -> RoleRouter {
 
 fn build_agent_routes(app_state: &AppState) -> RoleRouter {
     RoleRouter::new(app_state.clone()).route_fleet("/", get(agent::get_agents))
+}
+
+/// Metric-tree structure + analysis ops, carrying the diagnostic probe.
+///
+/// Kept as a sub-router purely so [`metric_tree_probe::probe`] covers exactly
+/// these routes: layering it on the workspace router would time every
+/// workspace endpoint, and the question it answers is about these ten.
+/// Paths stay absolute (`.merge`, not `.nest`) so the role manifest's
+/// classification of each one is unchanged.
+fn build_metric_tree_routes(app_state: &AppState) -> RoleRouter {
+    RoleRouter::new(app_state.clone())
+        .route_fleet("/semantic/metric-tree", get(metric_tree::get_metric_tree))
+        .route_fleet(
+            "/semantic/metric-tree/{measure_id}/sensitivity",
+            get(metric_tree::get_sensitivity),
+        )
+        .route_fleet(
+            "/semantic/metric-tree/predict",
+            post(metric_tree::post_predict),
+        )
+        .route_fleet(
+            "/semantic/metric-tree/explain",
+            post(metric_tree::post_explain),
+        )
+        .route_fleet(
+            "/semantic/metric-tree/opportunity",
+            post(metric_tree::post_opportunity),
+        )
+        .route_fleet(
+            "/semantic/metric-tree/drill",
+            post(metric_tree::post_opportunity_drill),
+        )
+        .route_fleet(
+            "/semantic/metric-tree/time-dimensions",
+            get(metric_tree::get_time_dimensions),
+        )
+        .route_fleet(
+            "/semantic/metric-tree/distribution",
+            post(metric_tree::post_distribution),
+        )
+        .route_fleet(
+            "/semantic/metric-tree/baseline",
+            post(metric_tree::post_baseline),
+        )
+        .route_fleet(
+            "/semantic/metric-tree/projection",
+            post(metric_tree_projection::post_projection),
+        )
+        .map_router(|r| r.layer(axum::middleware::from_fn(metric_tree_probe::probe)))
 }
 
 fn build_api_key_routes(app_state: &AppState) -> RoleRouter {

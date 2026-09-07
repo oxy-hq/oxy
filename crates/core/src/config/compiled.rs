@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use super::artifacts::{
     AgentEntry, AppEntry, ArtifactError, AutomationEntry, CompiledArtifact, PipelineEntry,
-    VerifiedQueryEntry,
+    SimulationEntry, VerifiedQueryEntry,
 };
 
 async fn conn() -> Result<DatabaseConnection, ArtifactError> {
@@ -288,6 +288,44 @@ pub(super) async fn list_automation_artifacts_at(
             blob_key: None,
         })
         .collect())
+}
+
+/// Every declared world (`simulation_definitions`) at a revision.
+///
+/// A workspace carries a *grid* of these, so listing is the primary access
+/// pattern — the runs surface enumerates what can be run before anything is.
+pub(super) async fn list_simulations_at(
+    revision_id: Uuid,
+) -> Result<Vec<SimulationEntry>, ArtifactError> {
+    Ok(entity::simulation_definitions::Entity::find()
+        .filter(entity::simulation_definitions::Column::RevisionId.eq(revision_id))
+        .all(&conn().await?)
+        .await
+        .map_err(|e| ArtifactError::Backend(e.to_string()))?
+        .into_iter()
+        .map(|m| SimulationEntry {
+            name: m.name,
+            file_path: m.file_path,
+            definition: m.definition,
+        })
+        .collect())
+}
+
+/// One declared world's compiled `definition`, keyed by `name`.
+///
+/// Name rather than path — a run references the world it is running, and that
+/// reference has to survive the file being moved.
+pub(super) async fn resolve_simulation_at(
+    revision_id: Uuid,
+    name: &str,
+) -> Result<Option<Value>, ArtifactError> {
+    Ok(
+        entity::simulation_definitions::Entity::find_by_id((revision_id, name.to_string()))
+            .one(&conn().await?)
+            .await
+            .map_err(|e| ArtifactError::Backend(e.to_string()))?
+            .map(|m| m.definition),
+    )
 }
 
 pub(super) async fn list_verified_queries_at(

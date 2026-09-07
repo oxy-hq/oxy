@@ -21,6 +21,7 @@ fn the_two_name_derivations_agree() {
         "p/x.procedure.yml",
         "p/z.automation.yml",
         "pipe/a.airway.yml",
+        "worlds/flat.simulation.yml",
         "plain.yml",
         "noext",
         "",

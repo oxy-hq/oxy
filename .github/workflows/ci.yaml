@@ -69,7 +69,14 @@ jobs:
     concurrency:
       group: fmt-web-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
-    if: inputs.agentic_only != true && needs.changesets.outputs.web-app == 'true'
+    # `ci-scripts` too: this is the ONLY Biome invocation in CI, so without it a
+    # counter-only diff formats nothing — which would leave `.github/scripts/**`
+    # in `biome.json` and `mjs` in the lint-staged glob doing nothing on exactly
+    # the file they were added for.
+    if: |
+      inputs.agentic_only != true &&
+      (needs.changesets.outputs.web-app == 'true' ||
+       needs.changesets.outputs.ci-scripts == 'true')
     runs-on:
       ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
       'ubuntu-latest' }}
@@ -179,7 +186,13 @@ jobs:
       cancel-in-progress: true
     # Own job, off the critical path (nothing `needs:` it). Gated on the web-app
     # changeset like fmt-web/build-web.
-    if: inputs.agentic_only != true && needs.changesets.outputs.web-app == 'true'
+    # `ci-counter` too: this job owns the counter's only web-app-side consumer,
+    # so a counter-only diff must exercise it — without dragging in the ARM
+    # build and the agentic suite that also gate on `web-app`.
+    if: |
+      inputs.agentic_only != true &&
+      (needs.changesets.outputs.web-app == 'true' ||
+       needs.changesets.outputs.ci-counter == 'true')
     # Warp arm64, like every other job in this repo that runs tests — the lint
     # and format jobs stay on `ubuntu-slim` because they are not tests.
     runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'warp-ubuntu-latest-arm64-4x' || 'ubuntu-latest' }}
@@ -208,6 +221,186 @@ jobs:
         continue-on-error: true
         run: pnpm --filter oxy-web run test:unit
 
+      # `src/**/*.test.tsx` is typechecked by no other project — `tsconfig.app.json`
+      # excludes it and `tsconfig.node.json` covers only `tests/`. See the header
+      # of `web-app/tsconfig.test.json` for why it is not in `references:` yet.
+      #
+      # A RATCHET, not a pass/fail gate: the project carries a documented backlog
+      # of pre-existing errors, so blocking on zero would block every contributor.
+      # Blocking on "no more than there were" catches the bug this exists to catch
+      # — a test file referencing a field the wire type no longer has — while the
+      # backlog drains. Lower TS_TEST_ERROR_BASELINE whenever a pass clears some;
+      # at 0, delete this step and add the project to `tsconfig.json`'s references.
+      - name: Typecheck unit tests (ratchet)
+        env:
+          # Matches a real tsc diagnostic's `(line,col): error TSxxxx:`.
+          # Requiring a `file` prefix in front of it is what makes a CONFIG
+          # failure — `error TS5058`, `error TS18003`, both at column 0 —
+          # count zero rather than read as a shrinking backlog.
+          TS_DIAG_TAIL: '\([0-9]+,[0-9]+\): error TS[0-9]+:'
+          TS_TEST_ERROR_BASELINE: 118
+          # 122 test files exist today (the `--showConfig` count this step runs);
+          # floor just under, so a real exclusion trips it but adding or
+          # deleting a handful of tests does not.
+          TS_TESTFILE_FLOOR: 115
+        run: |
+          # A gate that reports success while checking nothing is the bug this
+          # branch started from, and it has three keys. All three are closed.
+          #
+          # $DIAG requires a `file(line,col):` prefix, which every real
+          # diagnostic carries and no CONFIG failure does — `error TS5058: The
+          # specified path does not exist` and `error TS18003: No inputs were
+          # found` start at column 0 with no file. So a moved tsconfig counts 0
+          # and, exiting non-zero, trips the guard below.
+          #
+          # `--fail-if-no-match`: a filter matching no package prints "No
+          # projects matched the filters" and exits ZERO, which the guard cannot
+          # see — an exit-0 run with 0 errors is also what a genuinely cleared
+          # backlog looks like. The flag makes it the non-zero case instead.
+          #
+          # `rc=0; … || rc=$?`, not `…; rc=$?`: this workflow runs under
+          # `bash -eo pipefail`, so a bare assignment from a failing command
+          # aborts the step before the guard reads it. The `|| …` list is what
+          # errexit skips.
+          DIAG="^[^ ]+$TS_DIAG_TAIL"
+          progfiles=$(cd web-app && pnpm exec tsc -p tsconfig.test.json --showConfig \
+            | node "$GITHUB_WORKSPACE/.github/scripts/count-test-files.mjs") || progfiles=-1
+          case "$progfiles" in (-1) ;; (''|*[!0-9]*) progfiles=-1 ;; esac
+          if [ "$progfiles" -lt 0 ]; then
+            echo "::error::Could not count the test files in tsconfig.test.json — the error above this line says why. The ratchet cannot run without knowing the program it measures."
+            exit 1
+          fi
+          if [ "$progfiles" -lt "$TS_TESTFILE_FLOOR" ]; then
+            echo "::error::tsconfig.test.json resolves only $progfiles test files (floor $TS_TESTFILE_FLOOR). The project was narrowed — the ratchet below would measure a smaller program and read as a drained backlog."
+            exit 1
+          fi
+          rc=0
+          out=$(pnpm --fail-if-no-match --filter oxy-web run lint:ts:tests 2>&1) || rc=$?
+          echo "$out"
+          count=$(printf '%s\n' "$out" | grep -cE "$DIAG" || true)
+          if [ "$rc" -ne 0 ] && [ "$count" -eq 0 ]; then
+            echo "::error::lint:ts:tests exited $rc but produced no diagnostics — the invocation is broken, not the backlog cleared."
+            exit 1
+          fi
+          echo "typecheck errors in src/**/*.test.*: $count (baseline $TS_TEST_ERROR_BASELINE), over $progfiles test files (floor $TS_TESTFILE_FLOOR)"
+          if [ "$count" -gt "$TS_TEST_ERROR_BASELINE" ]; then
+            echo "::error::$count typecheck errors, above the baseline of $TS_TEST_ERROR_BASELINE. A test file references something that no longer typechecks."
+            exit 1
+          fi
+          if [ "$count" -lt "$TS_TEST_ERROR_BASELINE" ]; then
+            echo "::notice::Backlog is down to $count. Lower TS_TEST_ERROR_BASELINE in ci.yaml to hold the ground."
+          fi
+          # Gate on the SIZE of the slack, not on any gap: the gap IS the
+          # exclusion budget, and a gap of 1 is harmless where a gap of 70 is
+          # the failure. An always-on notice trains people to skim past
+          # notices, and the three error-baseline ones are self-extinguishing
+          # by construction — this one has to earn the same property.
+          slack=$(( progfiles - $TS_TESTFILE_FLOOR ))
+          allowed=$(( progfiles / 5 ))
+          if [ "$allowed" -lt 5 ]; then allowed=5; fi
+          if [ "$slack" -gt "$allowed" ]; then
+            echo "::notice::tsconfig.test.json resolves $progfiles test files against a floor of $TS_TESTFILE_FLOOR — $slack could be excluded before CI notices. Raise TS_TESTFILE_FLOOR in ci.yaml to hold the ground."
+          fi
+
+
+
+  sdk-typecheck:
+    name: SDK typecheck (ratchet)
+    needs: [changesets]
+    concurrency:
+      group: sdk-typecheck-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    # Its own job rather than a step on `vitest`: an SDK-only diff pays for one
+    # `pnpm install` and a `tsc`, not the whole web-app unit suite it shares
+    # nothing with. Gated on `sdk` OR `ci-counter`, the latter because this job
+    # is one of the counter's two consumers.
+    if: |
+      inputs.agentic_only != true &&
+      (needs.changesets.outputs.sdk == 'true' ||
+       needs.changesets.outputs.ci-counter == 'true')
+    runs-on:
+      ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
+      'ubuntu-latest' }}
+    # One tsc over ~60 files; 15m covers a cold pnpm store.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24.x
+          cache: "pnpm"
+      - name: Run pnpm install
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      # The SDK's own tests are invisible to every gate it has: `tsconfig.json`
+      # excludes `**/*.test.ts`, `tsdown` builds from that same config, vitest
+      # transpiles without checking, and no CI workflow but `sdk-publish` runs
+      # this package at all. A checked-in fixture stopped satisfying its own
+      # interface here and nothing reported it. Same ratchet shape as above.
+      - name: Typecheck SDK tests (ratchet)
+        env:
+          # See the web-app ratchet for what this pattern buys.
+          TS_DIAG_TAIL: '\([0-9]+,[0-9]+\): error TS[0-9]+:'
+          # TWO baselines, because this project is src + tests in one program
+          # (the tests import the sources, so a test-only `include` would pull
+          # them in anyway). Pooled, fixing one ambient-types error in src would
+          # mask a new fixture drift and the step would stay green on exactly
+          # what it exists to catch.
+          SDK_TEST_ERROR_BASELINE: 13
+          SDK_TESTFILE_ERROR_BASELINE: 6
+          # 12 test files today; floor just under. See the web-app ratchet.
+          SDK_TESTFILE_FLOOR: 10
+        run: |
+          # See the web-app ratchet above for $DIAG, --fail-if-no-match and
+          # the `|| rc=$?` form.
+          DIAG="^[^ ]+$TS_DIAG_TAIL"
+          progfiles=$(cd sdk/typescript && pnpm exec tsc -p tsconfig.test.json --showConfig \
+            | node "$GITHUB_WORKSPACE/.github/scripts/count-test-files.mjs") || progfiles=-1
+          case "$progfiles" in (-1) ;; (''|*[!0-9]*) progfiles=-1 ;; esac
+          if [ "$progfiles" -lt 0 ]; then
+            echo "::error::Could not count the test files in tsconfig.test.json — the error above this line says why. The ratchet cannot run without knowing the program it measures."
+            exit 1
+          fi
+          if [ "$progfiles" -lt "$SDK_TESTFILE_FLOOR" ]; then
+            echo "::error::tsconfig.test.json resolves only $progfiles test files (floor $SDK_TESTFILE_FLOOR). The project was narrowed — the ratchet below would measure a smaller program and read as a drained backlog."
+            exit 1
+          fi
+          rc=0
+          out=$(pnpm --fail-if-no-match --filter @oxy-hq/sdk run typecheck:tests 2>&1) || rc=$?
+          echo "$out"
+          count=$(printf '%s\n' "$out" | grep -cE "$DIAG" || true)
+          testcount=$(printf '%s\n' "$out" | grep -cE "^src/[^ ]*\.test\.tsx?$TS_DIAG_TAIL" || true)
+          if [ "$rc" -ne 0 ] && [ "$count" -eq 0 ]; then
+            echo "::error::typecheck:tests exited $rc but produced no diagnostics — the invocation is broken, not the backlog cleared."
+            exit 1
+          fi
+          echo "sdk typecheck errors: $count total (baseline $SDK_TEST_ERROR_BASELINE), $testcount in test files (baseline $SDK_TESTFILE_ERROR_BASELINE), over $progfiles test files (floor $SDK_TESTFILE_FLOOR)"
+          if [ "$testcount" -gt "$SDK_TESTFILE_ERROR_BASELINE" ]; then
+            echo "::error::$testcount typecheck errors in SDK test files, above the baseline of $SDK_TESTFILE_ERROR_BASELINE. A fixture no longer satisfies the type it is declared against."
+            exit 1
+          fi
+          if [ "$count" -gt "$SDK_TEST_ERROR_BASELINE" ]; then
+            echo "::error::$count SDK typecheck errors, above the baseline of $SDK_TEST_ERROR_BASELINE."
+            exit 1
+          fi
+          if [ "$count" -lt "$SDK_TEST_ERROR_BASELINE" ] || [ "$testcount" -lt "$SDK_TESTFILE_ERROR_BASELINE" ]; then
+            echo "::notice::SDK backlog is down to $count total / $testcount in tests. Lower the baselines in ci.yaml to hold the ground."
+          fi
+          # Gate on the SIZE of the slack, not on any gap: the gap IS the
+          # exclusion budget, and a gap of 1 is harmless where a gap of 70 is
+          # the failure. An always-on notice trains people to skim past
+          # notices, and the three error-baseline ones are self-extinguishing
+          # by construction — this one has to earn the same property.
+          slack=$(( progfiles - $SDK_TESTFILE_FLOOR ))
+          allowed=$(( progfiles / 5 ))
+          if [ "$allowed" -lt 5 ]; then allowed=5; fi
+          if [ "$slack" -gt "$allowed" ]; then
+            echo "::notice::tsconfig.test.json resolves $progfiles test files against a floor of $SDK_TESTFILE_FLOOR — $slack could be excluded before CI notices. Raise SDK_TESTFILE_FLOOR in ci.yaml to hold the ground."
+          fi
   sdk:
     name: SDK packages (typecheck, lint, test, build)
     needs: [changesets]

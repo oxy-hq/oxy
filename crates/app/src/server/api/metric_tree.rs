@@ -23,10 +23,13 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub(crate) use super::metric_tree_groups::{SkipKind, SkippedGroup};
+use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy_airlayer_compat::engine::metric_tree::MetricTree;
+use oxy_airlayer_compat::engine::metric_tree_fit::{FittedDriver, apply_fitted_coefficients};
 use oxy_airlayer_compat::engine::metric_tree_ops::{
-    ExplainConfig, ExplainResult, OpportunityResult,
+    BaselineOutcome, ExplainConfig, ExplainResult, OpportunityResult,
 };
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 
@@ -47,6 +50,11 @@ pub enum MetricTreeError {
     /// flattened into the generic 500 above.
     ScanUnavailable(String),
     NotFound(String),
+    /// The request itself is out of range — a caller error, not a failure.
+    /// Distinct from [`MetricTreeError::Op`] because that one is logged as a
+    /// server error and answered with a generic message, which is exactly
+    /// wrong for something the caller can fix by changing a number.
+    BadRequest(String),
     Op(String),
 }
 
@@ -72,6 +80,7 @@ impl IntoResponse for MetricTreeError {
                 (StatusCode::SERVICE_UNAVAILABLE, m.clone())
             }
             MetricTreeError::NotFound(m) => (StatusCode::NOT_FOUND, m.clone()),
+            MetricTreeError::BadRequest(m) => (StatusCode::BAD_REQUEST, m.clone()),
             MetricTreeError::Op(e) => {
                 tracing::error!("metric-tree op failed: {e}");
                 (
@@ -100,7 +109,7 @@ impl IntoResponse for MetricTreeError {
 /// drops the guard and deletes the directory underneath it. Keep it that way;
 /// the invariant "hold the guard across the blocking task" is not one the
 /// handler can actually enforce.
-async fn resolve_scan<S: oxy::config::DiskSlot>(
+pub(crate) async fn resolve_scan<S: oxy::config::DiskSlot>(
     workspace_manager: &WorkspaceManager<S>,
 ) -> Result<QueryScanSource, MetricTreeError> {
     resolve_query_scan_source(workspace_manager)
@@ -109,7 +118,7 @@ async fn resolve_scan<S: oxy::config::DiskSlot>(
 }
 
 /// Parse the workspace's semantic model from an already-resolved scan root.
-fn load_layer_at(
+pub(crate) fn load_layer_at(
     scan_path: &std::path::Path,
 ) -> Result<oxy_airlayer_compat::SemanticLayer, MetricTreeError> {
     OxyMetricTreeRunner::load_layer_at(scan_path)
@@ -122,7 +131,8 @@ fn load_tree_at(scan_path: &std::path::Path) -> Result<MetricTree, MetricTreeErr
     Ok(oxy_semantic::build_metric_tree(&layer))
 }
 
-fn workspace_databases<S: oxy::config::DiskSlot>(
+/// The airlayer database configs for the workspace.
+pub(crate) fn workspace_databases<S: oxy::config::DiskSlot>(
     workspace_manager: &WorkspaceManager<S>,
 ) -> Vec<oxy_airlayer_compat::DatabaseConfig> {
     OxyMetricTreeRunner::list_databases_sync(workspace_manager)
@@ -167,6 +177,18 @@ pub async fn get_sensitivity(
 #[derive(Debug, Deserialize)]
 pub struct PredictRequest {
     pub changes: Vec<PredictChange>,
+    /// Current values keyed by metric-node id. Absent → the historical
+    /// value-free behaviour, where multiplicative edges come back
+    /// `unquantifiable`. Present → those edges get sized.
+    #[serde(default)]
+    pub values: Option<std::collections::HashMap<String, f64>>,
+    /// Coefficients the baseline fitted, echoed back verbatim. This endpoint
+    /// stays database-free by design — the UI re-runs it on every keystroke —
+    /// so the fit rides in rather than being re-measured here. Refusals may be
+    /// included and are ignored; only an entry carrying a coefficient applies,
+    /// and only to an edge that declares none.
+    #[serde(default)]
+    pub coefficients: Vec<FittedDriver>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -175,21 +197,58 @@ pub struct PredictChange {
     pub delta: f64,
 }
 
+/// Refuse a `predict` request that pins two levers where one is reachable
+/// from the other.
+///
+/// A thin delegate: the rule and its message live in
+/// [`oxy_airlayer_compat::reject_lever_conflicts`], because the analytics tool
+/// needs the same refusal and cannot depend on this crate. This wrapper stays
+/// so the two `post_predict` handlers keep one local name to call and one
+/// place to read about which callers are covered.
+///
+/// **Three enforcement points, not two.** Both `/predict` handlers call this,
+/// and `agentic-analytics`'s `predict_impact` tool calls the shared function
+/// directly — so curl, `oxyc`, an SDK integration, an agentic analytics tool
+/// and a scheduled custom-app function all get the refusal rather than a
+/// confident `PredictResult` that silently picked one of the two readings. The
+/// browser client's `leverConflicts.ts` is a fourth copy on purpose, and a
+/// pre-flight rather than an enforcer: it keeps the UI from firing a request it
+/// already knows will 400.
+///
+/// Returns the message rather than an error type, so this one seam serves
+/// both `post_predict` handlers even though they answer in two different
+/// error currencies (`MetricTreeError::BadRequest` here, `err_with_code(..,
+/// "lever_conflict")` on the `projects/` twin).
+pub(crate) fn reject_lever_conflicts(
+    tree: &MetricTree,
+    changes: &[(String, f64)],
+) -> Result<(), String> {
+    oxy_airlayer_compat::reject_lever_conflicts(tree, changes)
+}
+
 /// `POST .../semantic/metric-tree/predict` — propagate hypothetical deltas.
 pub async fn post_predict(
     WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Json(req): Json<PredictRequest>,
 ) -> Result<Json<oxy_airlayer_compat::engine::metric_tree_ops::PredictResult>, MetricTreeError> {
     let source = resolve_scan(&workspace_manager).await?;
-    let tree = load_tree_at(&source.scan_path)?;
+    let mut tree = load_tree_at(&source.scan_path)?;
+    // Before propagation: a fitted coefficient has to make the edge behave
+    // exactly as a declared one would, or the forecast the user sees would
+    // depend on where the number came from.
+    apply_fitted_coefficients(&mut tree, &req.coefficients);
     let changes: Vec<(String, f64)> = req
         .changes
         .into_iter()
         .map(|c| (c.measure, c.delta))
         .collect();
-    oxy_semantic::predict(&tree, &changes)
-        .map(Json)
-        .map_err(|e| MetricTreeError::Op(e.to_string()))
+    reject_lever_conflicts(&tree, &changes).map_err(MetricTreeError::BadRequest)?;
+    match req.values {
+        Some(values) => oxy_semantic::predict_with_values(&tree, &changes, &values),
+        None => oxy_semantic::predict(&tree, &changes),
+    }
+    .map(Json)
+    .map_err(|e| MetricTreeError::Op(e.to_string()))
 }
 
 // ── Executor bridge ─────────────────────────────────────────────────────────
@@ -201,7 +260,7 @@ pub async fn post_predict(
 
 /// Build the airlayer `SemanticEngine` for the workspace, with dialects
 /// resolved from the configured databases.
-fn build_engine(
+pub(crate) fn build_engine(
     layer: oxy_airlayer_compat::SemanticLayer,
     databases: &[oxy_airlayer_compat::DatabaseConfig],
 ) -> Result<oxy_airlayer_compat::SemanticEngine, MetricTreeError> {
@@ -460,7 +519,6 @@ pub async fn post_opportunity(
 
     let result = tokio::task::spawn_blocking(move || {
         let executor = build_query_executor(
-            &req.target,
             engine,
             databases,
             workspace_manager,
@@ -492,6 +550,607 @@ pub async fn post_opportunity(
     Ok(Json(OpportunityResponse {
         result,
         rate_denominator,
+    }))
+}
+
+// ── Baseline (scenario simulation) ──────────────────────────────────────────
+
+/// Soft cap on the baseline read as a whole — not one query but a fan-out of
+/// them. `baseline_reads` asks `grouped_values` for one query per view in the
+/// forward-reachable set, then `grouped_fit` for one more per single-view
+/// group plus up to one per cross-view pair (worst case N + V(V-1)/2), all
+/// against the same warehouse a cold scan can already hang on its own — same
+/// reasoning as [`EXPLAIN_TIMEOUT`], on a shorter clock because this handler
+/// exists to show a lever's current value, not to explain a query plan.
+///
+/// The outer `tokio::time::timeout` around this handler's `spawn_blocking`
+/// only bounds how long the CLIENT waits — it cannot cancel the OS thread, so
+/// a fan-out with no deadline of its own would keep issuing warehouse queries
+/// after the response had already gone back as a timeout. What actually
+/// bounds the fan-out is the shared, absolute deadline `baseline_reads`
+/// builds from this constant and threads through
+/// `metric_tree_baseline::splitting_executor` — checked before every single
+/// query the executor is asked to run, not only inside its additivity-split
+/// retry — so the read degrades to partial values and a recorded budget
+/// refusal instead of outliving the request that asked for it.
+///
+/// `pub(crate)` so the `projects/` twin shares this exact number instead of
+/// keeping its own copy: two handlers hitting the same warehouse with two
+/// silently diverging deadlines is a bug waiting for someone to tune one.
+pub(crate) const BASELINE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The tail of [`BASELINE_TIMEOUT`] that [`BASELINE_QUERY_BUDGET`] deliberately
+/// does NOT spend — reserved for *finishing*, not for *starting*.
+///
+/// The deadline cannot make the response beat `BASELINE_TIMEOUT`: nothing
+/// bounds a single warehouse query, and the outer `tokio::time::timeout` wraps
+/// a `spawn_blocking` it cannot cancel. What it can do is stop the fan-out
+/// issuing a query so late that the request is already doomed when it lands.
+/// So the budget is `BASELINE_TIMEOUT` MINUS what one last query plus the work
+/// after it plausibly needs — a subtraction, not a fraction of the whole.
+///
+/// Ten seconds covers, in order of cost: the one query already in flight when
+/// the deadline passes — uncancellable, and the only genuinely unbounded term
+/// here — plus everything `baseline_reads` still has to do after it, which is
+/// `FittedDriver::with_profile`, [`classify_unvalued`], a sort and the JSON.
+/// That tail is in-memory over a few hundred rows: microseconds against the
+/// query's seconds. So this is effectively all in-flight-query allowance, and
+/// generous at that — more than ten times the per-call allowance the fan-out
+/// itself implies (see [`BASELINE_QUERY_BUDGET`]).
+pub(crate) const BASELINE_QUERY_HEADROOM: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// How long a scenario baseline may go on ISSUING warehouse queries.
+///
+/// **What it is.** `BASELINE_TIMEOUT - BASELINE_QUERY_HEADROOM`, as ONE
+/// absolute deadline shared by both of [`baseline_reads`]' reads and every
+/// query either of them provokes. Absolute and shared because a per-call
+/// duration would restart for each read and so bound nothing.
+///
+/// **What it has to fit — the whole fan-out, not one query.** For a
+/// forward-reachable set spanning `V` views, `baseline_reads` issues
+///
+/// ```text
+///   V              grouped_values  — one request per view
+/// + V              grouped_fit     — one panel request per single-view group
+/// + V(V-1)/2       grouped_fit     — one panel request per cross-view PAIR
+/// = V(V+3)/2 executor calls
+/// ```
+///
+/// and each of those may fan out again, into one query per (view, additivity)
+/// group, when airlayer refuses the batch. `example_new` — the workspace this
+/// repo's fixtures and `tests/platform/metric_tree_fit_panel` run against —
+/// ships six views, so `V = 6` gives `6 + 6 + 15 = 27` executor calls. Twenty
+/// seconds across 27 of them is ~740ms per warehouse round trip.
+///
+/// **Why not half of `BASELINE_TIMEOUT`.** It was `BASELINE_TIMEOUT / 2` when
+/// the deadline gated only the additivity-split RETRY: a rare path, a handful
+/// of queries, where spending half the request was plainly fine. It now gates
+/// every query the executor serves — `split_groups` checks it before issuing
+/// `req` at all — so that same 15s had to cover all 27 calls: ~550ms each,
+/// under a cold warehouse round trip. That made the DEADLINE, not the
+/// warehouse, the thing that failed the read: a six-view tree that used to
+/// answer in ~20s would start returning partial values and `BUDGET_SPENT`.
+/// Widening the remit without re-sizing the number was the regression.
+///
+/// **What happens when it is hit.** `split_groups` returns `BUDGET_SPENT`
+/// rather than issuing the query, so the read degrades to values for the views
+/// that answered plus a refusal naming the budget for the rest — instead of
+/// outliving the request that asked for it. That degradation is the point:
+/// pushing this any closer to `BASELINE_TIMEOUT` trades an honest partial
+/// answer for a timed-out response with queries still hitting the warehouse.
+pub(crate) const BASELINE_QUERY_BUDGET: std::time::Duration = std::time::Duration::from_secs(
+    BASELINE_TIMEOUT
+        .as_secs()
+        .saturating_sub(BASELINE_QUERY_HEADROOM.as_secs()),
+);
+
+/// The shared deadline a baseline fan-out starts against.
+///
+/// A function rather than an `Instant::now() + BASELINE_QUERY_BUDGET` at each
+/// call site: `metric_tree_projection` kept its own copy of the old
+/// `BASELINE_TIMEOUT / 2`, so tuning one of them tuned half the surface. Same
+/// reasoning that makes `BASELINE_TIMEOUT` itself `pub(crate)`.
+pub(crate) fn baseline_query_deadline() -> std::time::Instant {
+    std::time::Instant::now() + BASELINE_QUERY_BUDGET
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BaselineRequest {
+    /// Lever node ids. Values are fetched for these plus everything
+    /// forward-reachable from them — not the whole tree.
+    pub roots: Vec<String>,
+    pub time_dimension: String,
+    /// `[start, end]` inclusive date strings.
+    pub period: (String, String),
+    /// Narrow to one world-model instance. `None` values the whole population.
+    pub instance: Option<BaselineInstance>,
+}
+
+/// A world-model instance, addressed the way the rest of the world-model API
+/// addresses one. Identical in shape to `OpportunityInstance` on purpose: the
+/// scope picker is the same component, and one vocabulary beats two.
+#[derive(Debug, Deserialize)]
+pub struct BaselineInstance {
+    pub entity: String,
+    /// JSON array for a composite key, else a bare scalar.
+    pub key: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BaselineResponse {
+    /// node_id → current value over the window.
+    pub values: std::collections::HashMap<String, f64>,
+    /// Reachable nodes with no value, and why.
+    pub unvalued: Vec<UnvaluedNode>,
+    /// Echoed back: the query is expensive and the client caches on it.
+    pub resolved_period: (String, String),
+    /// Why the baseline produced no values, in words the UI can show. `None`
+    /// when measures were valued normally.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub baseline_note: Option<String>,
+    /// Coefficients measured from history for driver edges that declare none,
+    /// plus the refusals. Returned from the baseline rather than from
+    /// `predict` because fitting is a warehouse query and `predict` re-runs on
+    /// every keystroke; the client echoes these back into `predict`.
+    ///
+    /// Empty when every reachable driver edge already declares a coefficient,
+    /// which costs no query at all.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fitted: Vec<FittedDriver>,
+}
+
+/// What a scenario baseline's two reads produced.
+///
+/// A struct rather than a tuple because `skipped` has to reach both
+/// [`classify_unvalued`] and [`baseline_note`], and a four-tuple threaded
+/// through two handlers is where the fourth element quietly stops being
+/// passed.
+pub(crate) struct BaselineReads {
+    pub values: std::collections::HashMap<String, f64>,
+    pub outcome: BaselineOutcome,
+    pub fitted: Vec<FittedDriver>,
+    /// Views the values read could not ask about. Empty in the ordinary case.
+    pub skipped: Vec<SkippedGroup>,
+}
+
+/// Both warehouse reads a scenario baseline needs, against one executor.
+///
+/// They are two different queries — values are one aggregate over the window,
+/// the fit needs that window broken out by panel and day — but they share a
+/// window, a scope and a connection, so running them together is what keeps
+/// the executor construction in one place. Shared with the `projects/` twin,
+/// which builds its executor differently but needs the identical reads.
+pub(crate) fn baseline_reads(
+    tree: &MetricTree,
+    layer: &oxy_airlayer_compat::SemanticLayer,
+    roots: &[String],
+    time_dimension: &str,
+    period: (&str, &str),
+    scope: &[oxy_airlayer_compat::engine::query::QueryFilter],
+    executor: Box<oxy_airlayer_compat::engine::metric_tree_ops::QueryExecutor>,
+) -> BaselineReads {
+    // Both reads below batch measures for their own reasons, and both are
+    // refused when the batch mixes an additive measure with a non-additive one
+    // from the same view under a fan-out join. Which one breaks depends only
+    // on which lever was pinned, so the retry belongs around the executor
+    // rather than at either call site — see `metric_tree_baseline`. Only a
+    // refusal is retried, so a single-view tree still costs one round trip per
+    // read.
+    //
+    // Taken by value, and wrapped here rather than by the callers, so a third
+    // baseline call site cannot be added that quietly skips the retry.
+    // ONE deadline shared by both reads below, so a workspace whose view count
+    // makes the fan-out expensive degrades to the honest refusal instead of
+    // spending the whole `BASELINE_TIMEOUT` and timing the response out with
+    // queries still in flight. A per-call duration would give each read the
+    // full allowance and bound nothing. Sized in `BASELINE_QUERY_BUDGET`.
+    let split_deadline = baseline_query_deadline();
+    let executor =
+        super::metric_tree_baseline::splitting_executor(layer.clone(), executor, split_deadline);
+    let executor = &*executor;
+
+    // Both reads go one view at a time — see `metric_tree_groups`. A batch
+    // spanning views with no join path between them is refused as a whole, and
+    // the measures that needed no join go down with it: nine identical
+    // "could not be sized from history" refusals for one failed query, seven
+    // of whose edges were single-view. Grouping is what stops one unjoinable
+    // pair from speaking for the rest.
+    let grouped = super::metric_tree_groups::grouped_values(
+        tree,
+        layer,
+        roots,
+        time_dimension,
+        period,
+        scope,
+        executor,
+    );
+    let fitted: Vec<_> = super::metric_tree_groups::grouped_fit(
+        tree,
+        layer,
+        roots,
+        time_dimension,
+        period,
+        scope,
+        executor,
+    )
+    .into_iter()
+    // Sample each response here, because this is the only place that has both the
+    // fit and the target's current aggregate — a log link needs the latter and the
+    // fit never sees it. Without this the UI receives coefficients it would have to
+    // interpret per shape, which is exactly what the profile exists to avoid.
+    .map(|f| {
+        let target = grouped.values.get(&f.to).copied();
+        // The profile has to be sampled in the same space `predict` will apply
+        // the coefficients in, or the curve the UI draws and the number it
+        // reports come from two different evaluations of one fit.
+        let space = super::metric_tree_groups::space_of(tree, &f.to);
+        f.with_profile(target, space)
+    })
+    .collect();
+    BaselineReads {
+        values: grouped.values,
+        outcome: grouped.outcome,
+        fitted,
+        skipped: grouped.skipped,
+    }
+}
+
+/// Turn an engine outcome into something worth showing a person.
+///
+/// Each case names a different fix, which is the whole reason the engine
+/// reports them separately.
+///
+/// `skipped` is appended rather than folded into the outcome: a read where one
+/// view was valued and another was never asked about has *both* things to say,
+/// and the outcome enum can only carry one of them.
+pub(crate) fn baseline_note(
+    outcome: &BaselineOutcome,
+    time_dimension: &str,
+    skipped: &[SkippedGroup],
+) -> Option<String> {
+    let engine = match outcome {
+        // A partially-unreadable read still says so. The measures named here
+        // were asked for and came back as something that is not a number, so
+        // silence would leave them looking like nodes the window had nothing
+        // for — a different problem with a different fix.
+        BaselineOutcome::Valued { unreadable } if !unreadable.is_empty() => Some(format!(
+            "{} came back unreadable (not a number) and were left unvalued",
+            quoted_list(unreadable)
+        )),
+        BaselineOutcome::Valued { .. } => None,
+        BaselineOutcome::NothingRequested => None,
+        BaselineOutcome::ExecutorError(msg) => Some(format!("the warehouse rejected the query: {msg}")),
+        BaselineOutcome::NoRows => Some(format!(
+            "no rows in this period on `{time_dimension}` — try a longer window, or a time dimension the pinned measure actually has data for"
+        )),
+        BaselineOutcome::NoMatchingColumns => Some(
+            "the query returned rows but none carried these measures — the time dimension may not belong to the pinned measure's view".to_string(),
+        ),
+        // Deliberately not folded into `NoRows`: "your window is empty" would
+        // send someone lengthening a window that was never the problem.
+        BaselineOutcome::UnreadableValues(ids) => Some(format!(
+            "the query returned rows, but {} held values that are not numbers — check those measures' expressions",
+            quoted_list(ids)
+        )),
+        // `BaselineOutcome` is `#[non_exhaustive]`, so a variant added upstream
+        // lands here instead of failing the build. No note rather than a wrong
+        // one — but nothing will tell you, so re-read this match on a pin bump.
+        _ => None,
+    };
+    // Grouped by reason, because every view a tree reaches but cannot window
+    // is refused for the SAME reason: one sentence per view restated that
+    // reason verbatim, and a workspace with nine airhouse views turned the
+    // note into nine copies of one paragraph. First-appearance order, so the
+    // list still reads in the order the views were tried.
+    let mut groups: Vec<((SkipKind, &str), Vec<String>)> = Vec::new();
+    for s in skipped {
+        let key = (s.kind, s.reason.as_str());
+        match groups.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, views)) => views.push(s.view.clone()),
+            None => groups.push((key, vec![s.view.clone()])),
+        }
+    }
+    let skips: Vec<String> = groups
+        .iter()
+        .map(|((kind, reason), views)| {
+            let names = quoted_list(views);
+            match kind {
+                SkipKind::NotQueried => {
+                    let verb = if views.len() == 1 { "was" } else { "were" };
+                    format!("{names} {verb} not read: {reason}")
+                }
+                SkipKind::QueryFailed => {
+                    format!("the warehouse rejected the query for {names}: {reason}")
+                }
+            }
+        })
+        .collect();
+    match (engine, skips.is_empty()) {
+        (None, true) => None,
+        (None, false) => Some(skips.join("; ")),
+        (Some(note), true) => Some(note),
+        (Some(note), false) => Some(format!("{note}; {}", skips.join("; "))),
+    }
+}
+
+/// `` `a`, `b` `` — measure ids for a sentence, backticked so a dotted path
+/// reads as one token rather than as prose.
+fn quoted_list(ids: &[String]) -> String {
+    ids.iter()
+        .map(|id| format!("`{id}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct UnvaluedNode {
+    pub node_id: String,
+    pub reason: UnvaluedReason,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UnvaluedReason {
+    /// The query ran; this node's alias was absent from the row.
+    NoRowsInWindow,
+    /// The executor errored — applies to every reachable node.
+    QueryFailed,
+    /// Rows came back, but none carried any of the requested measures —
+    /// usually a time dimension outside the pinned measure's view.
+    ///
+    /// A fourth outcome the engine reports separately and this used to fold
+    /// into `NoRowsInWindow`, so every node said "no rows in window" while the
+    /// banner above it said the rows *were* there. The two name different
+    /// fixes: lengthen the window, versus pick a different time dimension.
+    NoMatchingColumns,
+    /// No query was issued for this node's view at all — see [`SkippedGroup`].
+    ///
+    /// Distinct from all three above, which describe a query that ran. The
+    /// fix is neither a longer window nor a different dimension on the *pinned*
+    /// measure: this view cannot be read over this window, and the note says
+    /// why. Folding it into `NoRowsInWindow` would advise lengthening a window
+    /// that was never applied.
+    NotQueried,
+}
+
+/// Diff the forward-reachable set against the values actually returned.
+///
+/// `reachable_values` silently omits any node whose alias is missing from the
+/// row, and returns an empty map outright when the query fails. Without this
+/// diff the canvas cannot tell "genuinely zero" from "we didn't get it", and
+/// `0` is the most dangerous default a simulation can show.
+///
+/// Takes the outcome rather than a `query_failed` flag, which is what caught
+/// the case that motivated this: under the flag, `NoMatchingColumns` fell into
+/// "no rows in window" while the banner directly above it said the rows WERE
+/// there. Note the guarantee has weakened — airlayer marked `BaselineOutcome`
+/// `#[non_exhaustive]`, so a new variant no longer fails this build; the
+/// wildcard arm below is what it hits, and a pin bump is when to re-read it.
+pub(crate) fn classify_unvalued(
+    tree: &oxy_airlayer_compat::engine::metric_tree::MetricTree,
+    roots: &[String],
+    values: &std::collections::HashMap<String, f64>,
+    outcome: &BaselineOutcome,
+    skipped: &[SkippedGroup],
+) -> Vec<UnvaluedNode> {
+    let reason = match outcome {
+        BaselineOutcome::ExecutorError(_) => UnvaluedReason::QueryFailed,
+        BaselineOutcome::NoMatchingColumns => UnvaluedReason::NoMatchingColumns,
+        // An unreadable value is a column that WAS there and could not be
+        // read as a number. Nearest existing reason: the column did not
+        // answer. It is not "no rows in window" — the rows were there — and
+        // the note above names the measures, which is where the detail lives
+        // until this enum grows a case of its own.
+        BaselineOutcome::UnreadableValues(_) => UnvaluedReason::NoMatchingColumns,
+        BaselineOutcome::Valued { .. }
+        | BaselineOutcome::NothingRequested
+        | BaselineOutcome::NoRows => UnvaluedReason::NoRowsInWindow,
+        // The compile-time guarantee this function's doc claims is only as
+        // strong as the enum: airlayer marked it `#[non_exhaustive]`, so a new
+        // outcome now reaches here silently. `NoMatchingColumns` is the
+        // least-wrong default — "this node did not come back" — because the
+        // alternative, `NoRowsInWindow`, is the one reading that tells someone
+        // to lengthen a window when we do not know that the window is why.
+        _ => UnvaluedReason::NoMatchingColumns,
+    };
+    // Per-node, and it wins over the outcome: with one view valued and another
+    // skipped the outcome is `Valued`, which would otherwise label the skipped
+    // nodes "no rows in window" — a query that never ran, or that errored,
+    // reporting on its window.
+    let per_view: std::collections::HashMap<&str, UnvaluedReason> = skipped
+        .iter()
+        .flat_map(|s| {
+            let reason = match s.kind {
+                SkipKind::NotQueried => UnvaluedReason::NotQueried,
+                SkipKind::QueryFailed => UnvaluedReason::QueryFailed,
+            };
+            s.nodes.iter().map(move |n| (n.as_str(), reason.clone()))
+        })
+        .collect();
+    // A root absent from the tree is rejected earlier with a 400, so
+    // everything this returns is genuinely part of the reachable set.
+    let mut unvalued: Vec<UnvaluedNode> =
+        super::metric_tree_baseline::forward_reachable(tree, roots)
+            .into_iter()
+            .filter(|id| !values.contains_key(id))
+            .map(|node_id| {
+                let reason = per_view
+                    .get(node_id.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| reason.clone());
+                UnvaluedNode { node_id, reason }
+            })
+            .collect();
+    // Sorted rather than left in traversal order, so the response is stable
+    // and the frontend cache key is meaningful.
+    unvalued.sort_by(|a, b| a.node_id.cmp(&b.node_id));
+    unvalued
+}
+
+/// Resolve a [`BaselineRequest`]'s optional instance into the engine scope.
+///
+/// Mirrors [`opportunity_scope`]: no instance → an empty scope, i.e. value
+/// the whole population. An instance that cannot be resolved is an error
+/// rather than an ignored scope — silently valuing the whole population
+/// under a request that named one instance is how a panel reports
+/// company-wide numbers under an instance header.
+fn baseline_scope(
+    layer: &oxy_airlayer_compat::SemanticLayer,
+    req: &BaselineRequest,
+) -> Result<Vec<oxy_airlayer_compat::engine::query::QueryFilter>, MetricTreeError> {
+    baseline_scope_core(layer, req.instance.as_ref()).map_err(MetricTreeError::NotFound)
+}
+
+/// The rule, once, for both surfaces.
+///
+/// The `projects/` twin needs the same decision in a different error currency
+/// (a `Response`, not a `MetricTreeError`), so the rule lives here and each
+/// caller supplies only the wrapping. Two copies of *this* is what a scope that
+/// silently drops on one surface and errors on the other would look like.
+///
+/// Returns the message on failure rather than an error type, so neither
+/// currency leaks into the other's module.
+pub(crate) fn baseline_scope_core(
+    layer: &oxy_airlayer_compat::SemanticLayer,
+    instance: Option<&BaselineInstance>,
+) -> Result<Vec<oxy_airlayer_compat::engine::query::QueryFilter>, String> {
+    let Some(instance) = instance else {
+        return Ok(Vec::new());
+    };
+    crate::server::api::world_model_graph::instance_scope_filters(
+        layer,
+        &instance.entity,
+        &instance.key,
+    )
+    .ok_or_else(|| {
+        format!(
+            "cannot scope to '{}': no entity named '{}' in the semantic layer",
+            instance.key, instance.entity
+        )
+    })
+}
+
+/// Build the executor and run the baseline's per-view value and per-group fit
+/// queries (see [`BASELINE_TIMEOUT`]), off the async runtime. Split out of
+/// [`post_baseline`] to stay under the file's function-length budget —
+/// mirrors the projects/ twin's `run_baseline_query`.
+///
+/// Unlike [`post_opportunity`], this does not go through
+/// `OxyMetricTreeRunner` — the fan-out `baseline_reads` drives isn't part of
+/// the `MetricTreeRunner` trait — so the executor is built directly here.
+#[allow(clippy::too_many_arguments)]
+async fn run_baseline_query(
+    workspace_manager: WorkspaceManager<oxy::config::ReadOnly>,
+    user_id: Uuid,
+    role: WorkspaceRole,
+    preagg_ctx: PreaggCacheCtx,
+    layer: oxy_airlayer_compat::SemanticLayer,
+    req: &BaselineRequest,
+    scope: Vec<oxy_airlayer_compat::engine::query::QueryFilter>,
+) -> Result<BaselineReads, MetricTreeError> {
+    let tree = oxy_semantic::build_metric_tree(&layer);
+    let databases = workspace_databases(&workspace_manager);
+    let engine = std::sync::Arc::new(build_engine(layer.clone(), &databases)?);
+    let handle = tokio::runtime::Handle::current();
+    let preagg = crate::agentic_wiring::metric_tree_runner::RunnerPreagg {
+        cache: preagg_ctx.cache.clone(),
+        renewal_threshold_secs: preagg_ctx
+            .renewal_threshold_secs_or(&workspace_manager.config_manager),
+        // A read surface, same as `post_opportunity` above: a baseline is a
+        // display of the data, so a rollup a cycle behind beats a warehouse
+        // scan across every root in the batch.
+        freshness: crate::server::preagg_context::RollupFreshness::ServeStale,
+    };
+    let roots = req.roots.clone();
+    let period = req.period.clone();
+    let time_dimension = req.time_dimension.clone();
+
+    tokio::time::timeout(
+        BASELINE_TIMEOUT,
+        tokio::task::spawn_blocking(move || {
+            let executor = build_query_executor(
+                engine,
+                databases,
+                workspace_manager,
+                user_id,
+                role,
+                handle,
+                preagg,
+            );
+            baseline_reads(
+                &tree,
+                &layer,
+                &roots,
+                &time_dimension,
+                (period.0.as_str(), period.1.as_str()),
+                &scope,
+                executor,
+            )
+        }),
+    )
+    .await
+    .map_err(|_| {
+        MetricTreeError::Op(format!(
+            "baseline timed out after {}s — consider narrowing the period or the scope",
+            BASELINE_TIMEOUT.as_secs()
+        ))
+    })?
+    .map_err(|e| MetricTreeError::Op(format!("baseline task panicked: {e}")))
+}
+
+/// `POST .../semantic/metric-tree/baseline` — current values for the levers
+/// and everything downstream of them.
+pub async fn post_baseline(
+    WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
+    preagg_ctx: PreaggCacheCtx,
+    Json(req): Json<BaselineRequest>,
+) -> Result<Json<BaselineResponse>, MetricTreeError> {
+    let source = resolve_scan(&workspace_manager).await?;
+    let layer = load_layer_at(&source.scan_path)?;
+    let tree = oxy_semantic::build_metric_tree(&layer);
+
+    // Reject unknown levers up front: a typo must not read as "this measure
+    // has no value", which is a completely different message in the UI.
+    for root in &req.roots {
+        if !tree.nodes.iter().any(|n| &n.id == root) {
+            return Err(MetricTreeError::NotFound(format!(
+                "measure '{root}' not in tree"
+            )));
+        }
+    }
+
+    let scope = baseline_scope(&layer, &req)?;
+
+    let reads = run_baseline_query(
+        workspace_manager,
+        user.id,
+        role,
+        preagg_ctx,
+        layer.clone(),
+        &req,
+        scope,
+    )
+    .await?;
+
+    // Ask the engine WHY rather than inferring it from an empty map: an
+    // executor error and an empty window are opposite problems with opposite
+    // fixes, and guessing produced a message that told users the wrong one.
+    let unvalued = classify_unvalued(
+        &tree,
+        &req.roots,
+        &reads.values,
+        &reads.outcome,
+        &reads.skipped,
+    );
+
+    Ok(Json(BaselineResponse {
+        values: reads.values,
+        unvalued,
+        resolved_period: req.period,
+        baseline_note: baseline_note(&reads.outcome, &req.time_dimension, &reads.skipped),
+        fitted: reads.fitted,
     }))
 }
 
@@ -609,6 +1268,7 @@ pub async fn post_opportunity_drill(
         max_depth: req.max_depth.unwrap_or(default_config.max_depth),
         alpha: req.alpha.unwrap_or(default_config.alpha),
         root: req.root.clone(),
+        ..default_config
     };
 
     let shared_for_exec = shared.clone();
@@ -780,6 +1440,440 @@ pub(crate) fn derive_baseline_period(start: &str, end: &str) -> Option<(String, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    /// A driver edge declaring no coefficient, so a fit has something to
+    /// apply to and `predict` has something to refuse without one.
+    fn qualitative_driver_tree() -> oxy_airlayer_compat::engine::metric_tree::MetricTree {
+        let view = r#"
+name: ops
+table: public.ops
+dialect: postgres
+measures:
+  - name: spend
+    type: sum
+    expr: spend
+  - name: sales
+    type: sum
+    expr: sales
+    drivers:
+      - measure: ops.spend
+        direction: positive
+"#;
+        let parsed = oxy_airlayer_compat::parse_view_yaml(view).unwrap();
+        let layer = oxy_airlayer_compat::SemanticLayer::new(vec![parsed], None);
+        oxy_semantic::build_metric_tree(&layer)
+    }
+
+    /// A `FittedDriver` from the fields a test cares about.
+    ///
+    /// Built through serde rather than as a struct literal: every field but
+    /// `from`/`to` carries a serde default, so this stays honest as airlayer
+    /// grows the shape (it has, twice) instead of breaking the build on
+    /// fields no test here has an opinion about.
+    fn fitted_driver(json: serde_json::Value) -> FittedDriver {
+        serde_json::from_value(json).expect("fixture should match FittedDriver")
+    }
+
+    #[test]
+    fn predict_request_accepts_a_baselines_fitted_coefficients_verbatim() {
+        // The wire contract between the two endpoints: whatever `baseline`
+        // serializes into `fitted`, `predict` must accept back as
+        // `coefficients`. If these shapes drift, the UI silently loses every
+        // fitted edge and the canvas goes inert with no error anywhere.
+        let fitted = vec![fitted_driver(serde_json::json!({
+            "from": "ops.spend",
+            "to": "ops.sales",
+            "lag": 7,
+            "n": 8592,
+            "n_panels": 24,
+            "coefficient": 5.78,
+            "se": 0.16,
+            "t_stat": 36.47,
+        }))];
+        // Serialized from the real struct, so this exercises `baseline`'s
+        // actual output shape rather than the JSON the fixture was written in.
+        let response_json = serde_json::to_value(&fitted).unwrap();
+        let body = serde_json::json!({
+            "changes": [{ "measure": "ops.spend", "delta": 100.0 }],
+            "coefficients": response_json,
+        });
+
+        let req: PredictRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(req.coefficients.len(), 1);
+        assert_eq!(req.coefficients[0].coefficient, Some(5.78));
+        assert_eq!(req.coefficients[0].lag, Some(7));
+    }
+
+    #[test]
+    fn a_fitted_coefficient_makes_a_qualitative_edge_propagate() {
+        let mut tree = qualitative_driver_tree();
+        // Untouched, the edge carries no magnitude and nothing moves.
+        let before = oxy_semantic::predict(&tree, &[("ops.spend".to_string(), 100.0)]).unwrap();
+        assert!(before.impacts.is_empty());
+
+        apply_fitted_coefficients(
+            &mut tree,
+            &[fitted_driver(serde_json::json!({
+                "from": "ops.spend",
+                "to": "ops.sales",
+                "n": 100,
+                "n_panels": 5,
+                "coefficient": 3.0,
+                "se": 0.1,
+                "t_stat": 30.0,
+            }))],
+        );
+        let after = oxy_semantic::predict(&tree, &[("ops.spend".to_string(), 100.0)]).unwrap();
+        let sales = after
+            .impacts
+            .iter()
+            .find(|i| i.measure == "ops.sales")
+            .expect("the fitted edge propagates");
+        assert_eq!(sales.estimated_delta, 300.0);
+        // Fitted or declared, an observational coefficient is an estimate.
+        assert_eq!(sales.confidence, "estimated");
+    }
+
+    #[test]
+    fn a_refusal_echoed_into_predict_leaves_the_edge_inert() {
+        // The client echoes back the whole `fitted` array, refusals included.
+        // Treating a refusal as a coefficient would turn "we could not size
+        // this" into a forecast of exactly zero — the lie this whole feature
+        // is built to avoid.
+        let mut tree = qualitative_driver_tree();
+        apply_fitted_coefficients(
+            &mut tree,
+            &[fitted_driver(serde_json::json!({
+                "from": "ops.spend",
+                "to": "ops.sales",
+                "n": 9600,
+                "n_panels": 24,
+                "se": 0.35,
+                "t_stat": 0.51,
+                "refusal": "no reliable relationship in this window",
+            }))],
+        );
+        let result = oxy_semantic::predict(&tree, &[("ops.spend".to_string(), 100.0)]).unwrap();
+        assert!(result.impacts.is_empty());
+    }
+
+    // `reject_lever_conflicts` is the seam `post_predict` calls before it
+    // dispatches to `predict`/`predict_with_values` — the enforcing copy of
+    // the check the browser client already runs in `leverConflicts.ts`.
+    // Neither `post_predict` handler (this one or the `projects/` twin) can
+    // run in a unit test: both start from a `WorkspaceManagerReadOnly` /
+    // `enter_semantic_boundary` extractor that resolves a compiled revision
+    // from Postgres, so there's no way to drive them without a database.
+    // These tests instead pin down the one seam that carries the actual
+    // decision, the same way this file already tests `classify_unvalued`
+    // and `baseline_note` as pure functions rather than through the
+    // handlers that call them.
+
+    #[test]
+    fn reject_lever_conflicts_allows_independent_levers() {
+        // `ops.spend` drives `ops.sales`; a second, unrelated lever pinned
+        // alongside it is not a conflict — same fixture, different question
+        // than `a_fitted_coefficient_makes_a_qualitative_edge_propagate`.
+        let view = r#"
+name: ops
+table: public.ops
+dialect: postgres
+measures:
+  - name: spend
+    type: sum
+    expr: spend
+  - name: headcount
+    type: sum
+    expr: headcount
+"#;
+        let parsed = oxy_airlayer_compat::parse_view_yaml(view).unwrap();
+        let layer = oxy_airlayer_compat::SemanticLayer::new(vec![parsed], None);
+        let tree = oxy_semantic::build_metric_tree(&layer);
+        let changes = vec![
+            ("ops.spend".to_string(), 100.0),
+            ("ops.headcount".to_string(), 1.0),
+        ];
+        assert!(reject_lever_conflicts(&tree, &changes).is_ok());
+    }
+
+    #[test]
+    fn reject_lever_conflicts_refuses_a_driver_and_its_target_pinned_together() {
+        // Pinning `ops.spend` (upstream) and `ops.sales` (downstream, reachable
+        // from `ops.spend` via the driver edge) together is exactly the
+        // ambiguity `oxy_semantic::lever_conflicts` exists to catch: does
+        // `ops.sales` hold at the pinned value despite the spend change, or
+        // move to the value the driver relationship implies? Before this seam
+        // existed, `post_predict` would silently pick one reading — this test
+        // is what a curl/oxyc/agentic caller sees fixed.
+        let tree = qualitative_driver_tree();
+        let changes = vec![
+            ("ops.spend".to_string(), 100.0),
+            ("ops.sales".to_string(), 50.0),
+        ];
+        let err = reject_lever_conflicts(&tree, &changes).expect_err("upstream/downstream overlap");
+        // The message must name the pair so a non-browser caller (no UI to
+        // read a conflicts list from) can act on it from the error text alone.
+        assert!(
+            err.contains("ops.spend"),
+            "message should name upstream: {err}"
+        );
+        assert!(
+            err.contains("ops.sales"),
+            "message should name downstream: {err}"
+        );
+    }
+
+    #[test]
+    fn reject_lever_conflicts_does_not_flag_the_same_lever_pinned_twice() {
+        // Deliberately distinct from the conflict case above: a duplicate
+        // lever id is one pinned value restated, not two readings in tension.
+        // `lever_conflicts` already dedupes internally — this pins down that
+        // the wiring here doesn't turn that dedup into a spurious refusal.
+        let tree = qualitative_driver_tree();
+        let changes = vec![
+            ("ops.spend".to_string(), 100.0),
+            ("ops.spend".to_string(), 100.0),
+        ];
+        assert!(reject_lever_conflicts(&tree, &changes).is_ok());
+    }
+
+    #[test]
+    fn baseline_response_omits_fitted_when_there_was_nothing_to_fit() {
+        // The common case — every reachable driver edge already declares a
+        // coefficient — must not add a key to a response every client parses.
+        let response = BaselineResponse {
+            values: HashMap::new(),
+            unvalued: vec![],
+            resolved_period: ("2026-01-01".to_string(), "2026-03-31".to_string()),
+            baseline_note: None,
+            fitted: vec![],
+        };
+        let json = serde_json::to_value(&response).unwrap();
+        assert!(json.get("fitted").is_none());
+    }
+
+    fn chain_tree() -> oxy_airlayer_compat::engine::metric_tree::MetricTree {
+        let view = r#"
+name: orders
+table: public.orders
+dialect: postgres
+measures:
+  - name: revenue
+    type: sum
+    expr: amount
+  - name: cost
+    type: sum
+    expr: cost
+  - name: profit
+    type: number
+    expr: "{{orders.revenue}} - {{orders.cost}}"
+"#;
+        let parsed = oxy_airlayer_compat::parse_view_yaml(view).unwrap();
+        let layer = oxy_airlayer_compat::SemanticLayer::new(vec![parsed], None);
+        oxy_semantic::build_metric_tree(&layer)
+    }
+
+    #[test]
+    fn a_failed_query_marks_every_reachable_node() {
+        let tree = chain_tree();
+        let unvalued = classify_unvalued(
+            &tree,
+            &["orders.revenue".to_string()],
+            &HashMap::new(),
+            &BaselineOutcome::ExecutorError("connection refused".to_string()),
+            &[],
+        );
+        assert!(
+            unvalued
+                .iter()
+                .all(|u| u.reason == UnvaluedReason::QueryFailed)
+        );
+        // revenue itself plus profit downstream of it.
+        assert!(unvalued.iter().any(|u| u.node_id == "orders.revenue"));
+        assert!(unvalued.iter().any(|u| u.node_id == "orders.profit"));
+    }
+
+    #[test]
+    fn a_missing_node_in_a_successful_query_is_no_rows() {
+        let tree = chain_tree();
+        let values = HashMap::from([("orders.revenue".to_string(), 100.0)]);
+        let unvalued = classify_unvalued(
+            &tree,
+            &["orders.revenue".to_string()],
+            &values,
+            &BaselineOutcome::Valued {
+                unreadable: Vec::new(),
+            },
+            &[],
+        );
+        assert_eq!(unvalued.len(), 1);
+        assert_eq!(unvalued[0].node_id, "orders.profit");
+        assert_eq!(unvalued[0].reason, UnvaluedReason::NoRowsInWindow);
+    }
+
+    #[test]
+    fn a_skipped_view_outranks_a_valued_outcome() {
+        // The case grouping introduced: one view answers, another was never
+        // asked. The outcome says `Valued` for both, so without the per-view
+        // override every node in the skipped view would read "no rows in
+        // window" — advice about a window that was never applied to it.
+        let tree = chain_tree();
+        let values = HashMap::from([("orders.revenue".to_string(), 100.0)]);
+        let unvalued = classify_unvalued(
+            &tree,
+            &["orders.revenue".to_string()],
+            &values,
+            &BaselineOutcome::Valued {
+                unreadable: Vec::new(),
+            },
+            &[SkippedGroup {
+                view: "orders".to_string(),
+                nodes: vec!["orders.profit".to_string()],
+                reason: "no time dimension".to_string(),
+                kind: SkipKind::NotQueried,
+            }],
+        );
+        assert_eq!(unvalued.len(), 1);
+        assert_eq!(unvalued[0].node_id, "orders.profit");
+        assert_eq!(unvalued[0].reason, UnvaluedReason::NotQueried);
+    }
+
+    #[test]
+    fn a_view_whose_query_errored_is_not_a_view_never_asked() {
+        let tree = chain_tree();
+        let values = HashMap::from([("orders.revenue".to_string(), 100.0)]);
+        let skipped = [SkippedGroup {
+            view: "orders".to_string(),
+            nodes: vec!["orders.profit".to_string()],
+            reason: "connection refused".to_string(),
+            kind: SkipKind::QueryFailed,
+        }];
+        let unvalued = classify_unvalued(
+            &tree,
+            &["orders.revenue".to_string()],
+            &values,
+            &BaselineOutcome::Valued {
+                unreadable: Vec::new(),
+            },
+            &skipped,
+        );
+        assert_eq!(unvalued[0].reason, UnvaluedReason::QueryFailed);
+        // And the note says so, next to nothing about the window.
+        let note = baseline_note(
+            &BaselineOutcome::Valued {
+                unreadable: Vec::new(),
+            },
+            "orders.order_date",
+            &skipped,
+        )
+        .expect("a failed view has something to say even under a valued outcome");
+        assert!(note.contains("connection refused"), "{note}");
+        assert!(!note.contains("longer window"), "{note}");
+    }
+
+    /// Views refused for the same reason say it once.
+    ///
+    /// Every view a tree reaches but cannot window is skipped for the SAME
+    /// reason, so a per-view sentence repeats that reason verbatim N times. On
+    /// a real workspace that filled the panel with one paragraph restated for
+    /// nine airhouse views. The reason belongs in the code; the panel needs
+    /// the list and the fact.
+    #[test]
+    fn views_refused_for_one_reason_are_named_together() {
+        let reason = "no `sales_daily.business_date` to anchor the window on";
+        let skipped: Vec<SkippedGroup> = ["daily_operations", "quickbooks_pl"]
+            .iter()
+            .map(|view| SkippedGroup {
+                view: view.to_string(),
+                nodes: vec![format!("{view}.something")],
+                reason: reason.to_string(),
+                kind: SkipKind::NotQueried,
+            })
+            .collect();
+
+        let note = baseline_note(
+            &BaselineOutcome::Valued {
+                unreadable: Vec::new(),
+            },
+            "sales_daily.business_date",
+            &skipped,
+        )
+        .expect("an unread view has something to say");
+
+        assert_eq!(
+            note,
+            "`daily_operations`, `quickbooks_pl` were not read: no \
+             `sales_daily.business_date` to anchor the window on"
+        );
+        // Said once, not once per view.
+        assert_eq!(note.matches("anchor the window on").count(), 1, "{note}");
+    }
+
+    #[test]
+    fn a_single_unread_view_reads_as_one_view() {
+        let skipped = [SkippedGroup {
+            view: "quickbooks_pl".to_string(),
+            nodes: vec!["quickbooks_pl.net_income".to_string()],
+            reason: "no `sales_daily.business_date` to anchor the window on".to_string(),
+            kind: SkipKind::NotQueried,
+        }];
+        let note = baseline_note(
+            &BaselineOutcome::Valued {
+                unreadable: Vec::new(),
+            },
+            "sales_daily.business_date",
+            &skipped,
+        )
+        .expect("an unread view has something to say");
+        assert_eq!(
+            note,
+            "`quickbooks_pl` was not read: no `sales_daily.business_date` to anchor the \
+             window on"
+        );
+    }
+
+    #[test]
+    fn a_fully_valued_reachable_set_reports_nothing() {
+        let tree = chain_tree();
+        let values = HashMap::from([
+            ("orders.revenue".to_string(), 100.0),
+            ("orders.profit".to_string(), 40.0),
+        ]);
+        let unvalued = classify_unvalued(
+            &tree,
+            &["orders.revenue".to_string()],
+            &values,
+            &BaselineOutcome::Valued {
+                unreadable: Vec::new(),
+            },
+            &[],
+        );
+        assert!(unvalued.is_empty());
+    }
+
+    #[test]
+    fn rows_that_carried_no_measures_are_not_an_empty_window() {
+        // The two name opposite fixes — lengthen the window versus pick a time
+        // dimension the pinned measure's view actually has — and folding this
+        // into `NoRowsInWindow` made every node contradict the banner over it,
+        // which says the rows were there.
+        let tree = chain_tree();
+        let unvalued = classify_unvalued(
+            &tree,
+            &["orders.revenue".to_string()],
+            &HashMap::new(),
+            &BaselineOutcome::NoMatchingColumns,
+            &[],
+        );
+        assert!(!unvalued.is_empty());
+        assert!(
+            unvalued
+                .iter()
+                .all(|u| u.reason == UnvaluedReason::NoMatchingColumns),
+            "{unvalued:?}"
+        );
+    }
 
     /// The handler source, excluding this test module — which necessarily
     /// names the very symbols the tests below assert are absent.
@@ -1003,5 +2097,133 @@ views:
             j.get("rate_denominator").is_none(),
             "a None denominator must be skipped: {j}"
         );
+    }
+
+    // ── The baseline query budget ───────────────────────────────────────────
+
+    /// Executor calls `baseline_reads` issues for a forward-reachable set
+    /// spanning `views` views — `V(V+3)/2`, derived in
+    /// [`BASELINE_QUERY_BUDGET`]: one `grouped_values` request per view, one
+    /// `grouped_fit` panel request per single-view group, and one more per
+    /// cross-view pair.
+    ///
+    /// A floor, not a ceiling: any of these may split again into one query per
+    /// (view, additivity) group. Sizing the budget against the floor is the
+    /// conservative direction — the real fan-out is only ever wider.
+    fn baseline_executor_calls(views: u32) -> u32 {
+        views + views + views * views.saturating_sub(1) / 2
+    }
+
+    /// Views in `example_new/semantics/views` — the workspace this repo's own
+    /// metric-tree fixtures and `tests/platform/metric_tree_fit_panel` run
+    /// against. Read from disk rather than hard-coded so adding a seventh view
+    /// re-derives the budget's reference fan-out instead of silently
+    /// invalidating it.
+    fn reference_view_count() -> u32 {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../example_new/semantics/views");
+        std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".view.yml"))
+            .count() as u32
+    }
+
+    #[test]
+    fn the_query_budget_and_its_headroom_partition_the_baseline_timeout() {
+        // Not decoration: the budget's whole claim is that what it does not
+        // spend is still available to the in-flight query and the assembly
+        // after it. A headroom that no longer complements the timeout — either
+        // constant edited alone — makes that claim false without failing
+        // anything else.
+        assert_eq!(
+            BASELINE_QUERY_BUDGET + BASELINE_QUERY_HEADROOM,
+            BASELINE_TIMEOUT,
+            "the query budget and its headroom must partition BASELINE_TIMEOUT"
+        );
+        assert!(
+            BASELINE_QUERY_BUDGET < BASELINE_TIMEOUT,
+            "a budget that reaches BASELINE_TIMEOUT stops reserving anything for \
+             the query already in flight — which the outer tokio::time::timeout \
+             cannot cancel, because it wraps a spawn_blocking"
+        );
+        assert!(
+            BASELINE_QUERY_HEADROOM >= std::time::Duration::from_secs(10),
+            "the headroom is the allowance for one uncancellable warehouse query \
+             plus response assembly; below ~10s it stops covering a cold round trip"
+        );
+    }
+
+    #[test]
+    fn the_query_budget_does_not_refuse_the_reference_workspaces_fan_out() {
+        // The regression this pins. The deadline used to gate only the
+        // additivity-split retry — a handful of queries — so BASELINE_TIMEOUT/2
+        // was ample. It now gates EVERY query the executor serves, and the same
+        // 15s had to cover the whole V(V+3)/2 fan-out: ~550ms per warehouse
+        // round trip on this repo's own six-view fixture, which is under a cold
+        // round trip. At that point the budget, not the warehouse, is what fails
+        // the read — partial values and BUDGET_SPENT where a 20s read used to
+        // succeed.
+        //
+        // 700ms is the floor a per-call allowance has to clear to be a bound on
+        // a runaway fan-out rather than a cap on how wide a workspace may be. It
+        // is deliberately modest: a windowed aggregate is a few hundred
+        // milliseconds warm and seconds cold, so this does not promise the read
+        // finishes — only that the budget is not the first thing to give up.
+        const MIN_PER_CALL: std::time::Duration = std::time::Duration::from_millis(700);
+
+        let views = reference_view_count();
+        let calls = baseline_executor_calls(views);
+        assert_eq!(
+            (views, calls),
+            (6, 27),
+            "example_new's shape changed; re-derive BASELINE_QUERY_BUDGET rather \
+             than just updating this number"
+        );
+        assert!(
+            BASELINE_QUERY_BUDGET >= MIN_PER_CALL * calls,
+            "BASELINE_QUERY_BUDGET is {:?}, which across the reference workspace's \
+             {calls} executor calls ({views} views, V(V+3)/2) leaves {:?} per \
+             warehouse round trip — under the {MIN_PER_CALL:?} floor. The budget \
+             would refuse queries a read that fits inside BASELINE_TIMEOUT still \
+             needs.",
+            BASELINE_QUERY_BUDGET,
+            BASELINE_QUERY_BUDGET / calls,
+        );
+    }
+
+    #[test]
+    fn both_baseline_surfaces_take_the_budget_from_one_place() {
+        // `metric_tree_projection` carried its own `BASELINE_TIMEOUT / 2`. Two
+        // handlers hitting the same warehouse with two silently diverging
+        // deadlines is exactly what `BASELINE_TIMEOUT` was made `pub(crate)` to
+        // prevent, and the fraction escaped that rule by being written out
+        // longhand at each call site.
+        //
+        // Comment lines are skipped, or this gate matches the very prose above
+        // that explains why the fraction is gone — the same trap
+        // `authz::shared_db_registry` documents. A gate that counts prose is a
+        // gate that fires for the wrong reason.
+        for (name, src) in [
+            ("metric_tree.rs", include_str!("metric_tree.rs")),
+            (
+                "metric_tree_projection.rs",
+                include_str!("metric_tree_projection.rs"),
+            ),
+        ] {
+            let offender = src
+                .split("\n#[cfg(test)]")
+                .next()
+                .expect("source splits on its own test-module attribute")
+                .lines()
+                .find(|l| !l.trim_start().starts_with("//") && l.contains("BASELINE_TIMEOUT /"));
+            assert_eq!(
+                offender, None,
+                "{name} re-derives the baseline query budget as a fraction of \
+                 BASELINE_TIMEOUT at the call site. It is BASELINE_QUERY_BUDGET, \
+                 reached through baseline_query_deadline(), so the two baseline \
+                 surfaces cannot be tuned apart."
+            );
+        }
     }
 }

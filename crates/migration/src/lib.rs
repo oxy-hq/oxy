@@ -144,8 +144,11 @@ mod m20260806_000001_platform_grants;
 mod m20260806_000002_create_app_storage_usage;
 mod m20260807_000001_airway_deployment_config;
 mod m20260808_000001_airway_deployment_cursor_lag_floor;
+mod m20260812_000001_create_simulation_definitions;
 mod m20260812_000001_metric_anomalies_event_count_index;
+mod m20260812_000002_create_simulation_runs;
 mod m20260817_000001_create_schema_migration_definitions;
+mod m20260819_000001_simulation_run_replicate;
 mod m20260821_000001_view_event_roles;
 mod m20260829_000001_frontline_identity;
 mod m20260830_000001_oauth_states_provider;
@@ -153,6 +156,7 @@ mod m20260831_000001_world_model_events;
 mod m20260901_000001_chat;
 mod m20260901_000002_assignment_graph;
 mod m20260901_000003_notifications;
+mod m20260902_000001_simulation_run_queued_at;
 mod m20260903_000001_function_result_status;
 mod m20260905_000001_create_custom_app_migrations;
 mod m20260906_000001_org_kiosk_devices;
@@ -301,8 +305,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20260806_000002_create_app_storage_usage::Migration),
             Box::new(m20260807_000001_airway_deployment_config::Migration),
             Box::new(m20260808_000001_airway_deployment_cursor_lag_floor::Migration),
+            Box::new(m20260812_000001_create_simulation_definitions::Migration),
             Box::new(m20260812_000001_metric_anomalies_event_count_index::Migration),
+            Box::new(m20260812_000002_create_simulation_runs::Migration),
             Box::new(m20260817_000001_create_schema_migration_definitions::Migration),
+            Box::new(m20260819_000001_simulation_run_replicate::Migration),
             Box::new(m20260821_000001_view_event_roles::Migration),
             Box::new(m20260829_000001_frontline_identity::Migration),
             Box::new(m20260830_000001_oauth_states_provider::Migration),
@@ -310,6 +317,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260901_000001_chat::Migration),
             Box::new(m20260901_000002_assignment_graph::Migration),
             Box::new(m20260901_000003_notifications::Migration),
+            Box::new(m20260902_000001_simulation_run_queued_at::Migration),
             Box::new(m20260903_000001_function_result_status::Migration),
             Box::new(m20260905_000001_create_custom_app_migrations::Migration),
             Box::new(m20260906_000001_org_kiosk_devices::Migration),

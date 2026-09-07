@@ -4,7 +4,7 @@ use tokio::fs;
 use crate::state_dir::resolve_state_dir_with_fallback;
 use oxy_shared::errors::OxyError;
 
-use super::artifacts::{AgentEntry, AppEntry, AutomationEntry, PipelineEntry};
+use super::artifacts::{AgentEntry, AppEntry, AutomationEntry, PipelineEntry, SimulationEntry};
 use super::model::{AppConfig, Automation, AutomationWithRawVariables, Config};
 use super::naming::artifact_name;
 use super::test_config::TestFileConfig;
@@ -13,7 +13,7 @@ use super::test_config::TestFileConfig;
 /// a validation error deeper in the file cannot make an app vanish from the
 /// listing or read as unpublished. The three defaults must match
 /// `oxy_compile::compile::compile_app`, which is what fills the same columns on
-/// the compiled arm — `crates/app/tests/artifact_naming_agrees.rs` pins `name`.
+/// the compiled arm — `crates/app/tests/platform/artifact_naming_agrees.rs` pins `name`.
 /// The `name:` field, or the path rule the compiler falls back to. Shared so a
 /// second entity kind cannot invent a third spelling.
 async fn yaml_name(path: &Path, relative: &str) -> String {
@@ -89,6 +89,7 @@ pub(super) trait ConfigStorage {
     async fn list_apps(&self) -> Result<Vec<AppEntry>, OxyError>;
     async fn list_workflows(&self) -> Result<Vec<AutomationEntry>, OxyError>;
     async fn list_pipelines(&self) -> Result<Vec<PipelineEntry>, OxyError>;
+    async fn list_simulations(&self) -> Result<Vec<SimulationEntry>, OxyError>;
     async fn load_app_config<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError>;
     async fn get_charts_dir(&self) -> Result<PathBuf, OxyError>;
     async fn get_results_dir(&self) -> Result<PathBuf, OxyError>;
@@ -156,12 +157,31 @@ impl FsStorage {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    let is_hidden = path
+                    // `oxy_compile::walker::is_skipped` is the one definition of
+                    // "a path the workspace does not enumerate" — see its doc
+                    // comment. Pruning here (rather than filtering after the
+                    // walk) keeps this arm from descending into e.g. a huge
+                    // `node_modules/`.
+                    let skipped = path
                         .file_name()
                         .and_then(|n| n.to_str())
-                        .map(|n| n.starts_with('.'))
+                        .map(oxy_compile::walker::is_skipped)
                         .unwrap_or(false);
-                    if !is_hidden {
+                    if skipped {
+                        // A pruned directory must leave a trace, the way the
+                        // compile walker's own drops do. Discovery is the only
+                        // thing between a file on disk and a listing, so a
+                        // silent prune reads to the user as "my agent
+                        // disappeared" with nothing to grep for. DEBUG rather
+                        // than WARN because the common case is a
+                        // `node_modules/` — one line per directory, not per
+                        // file, since this arm prunes before it descends.
+                        tracing::debug!(
+                            dir = %path.display(),
+                            sub_extension,
+                            "workspace listing: pruning a skipped directory"
+                        );
+                    } else {
                         files.extend(self.list_by_sub_extension(Some(&path), sub_extension));
                     }
                 } else if path.is_file()
@@ -177,6 +197,46 @@ impl FsStorage {
             }
         }
         files
+    }
+
+    /// [`Self::list_by_sub_extension`] as the ENTITY listers want it: minus the
+    /// test files that mirror an entity extension.
+    ///
+    /// `oxy_compile::walker` drops any path whose FILE NAME contains `.test.`,
+    /// and this is the working-copy half of that one rule. Without it the two
+    /// workspace enumerations disagree on exactly the names that end in a real
+    /// entity extension but are fixtures — `baseline.test.simulation.yml` ends
+    /// `.simulation.yml`, so the extension match below claims it while the
+    /// walker drops it, and the IDE resolves a world the fleet 404s.
+    ///
+    /// The rule is scoped to the file name, not the whole path, for the same
+    /// reason it is on the walker: a fixtures DIRECTORY like
+    /// `worlds/q3.test.grid/` is not a build dir and its real entities must
+    /// survive. `is_skipped` already owns the directory question.
+    ///
+    /// **Not folded into `list_by_sub_extension`**, which
+    /// [`ConfigStorage::list_tests`] calls with `sub_extension = "test"` —
+    /// every path it wants contains `.test.`, so a blanket filter one level
+    /// down would return nothing at all.
+    fn list_entity_files(&self, sub_extension: &str) -> Vec<PathBuf> {
+        self.list_by_sub_extension(None, sub_extension)
+            .into_iter()
+            .filter(|path| {
+                let is_fixture = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.contains(".test."))
+                    .unwrap_or(false);
+                if is_fixture {
+                    tracing::debug!(
+                        path = %path.display(),
+                        sub_extension,
+                        "workspace listing: dropping a test file mirroring an entity extension"
+                    );
+                }
+                !is_fixture
+            })
+            .collect()
     }
 
     fn try_ensure_dir_exists(&self, path: &Path) -> Result<(), OxyError> {
@@ -468,7 +528,7 @@ impl ConfigStorage for FsStorage {
     async fn list_analytics_agents(&self) -> Result<Vec<AgentEntry>, OxyError> {
         self.require_root()?;
         let mut out = Vec::new();
-        for path in self.list_by_sub_extension(None, "agentic") {
+        for path in self.list_entity_files("agentic") {
             let Ok(relative) = path.strip_prefix(&self.project_path) else {
                 continue;
             };
@@ -503,7 +563,7 @@ impl ConfigStorage for FsStorage {
             ("workflow", ".workflow.yml"),
             ("automation", ".automation.yml"),
         ] {
-            for path in self.list_by_sub_extension(None, sub_extension) {
+            for path in self.list_entity_files(sub_extension) {
                 let Ok(relative) = path.strip_prefix(&self.project_path) else {
                     continue;
                 };
@@ -521,7 +581,7 @@ impl ConfigStorage for FsStorage {
     async fn list_pipelines(&self) -> Result<Vec<PipelineEntry>, OxyError> {
         self.require_root()?;
         let mut out = Vec::new();
-        for path in self.list_by_sub_extension(None, "airway") {
+        for path in self.list_entity_files("airway") {
             let Ok(relative) = path.strip_prefix(&self.project_path) else {
                 continue;
             };
@@ -547,10 +607,61 @@ impl ConfigStorage for FsStorage {
         Ok(out)
     }
 
+    /// Every declared world (`*.simulation.yml`), body included.
+    ///
+    /// It carries the parsed `definition`, which is what
+    /// `simulation_definitions.definition` holds — the grid renders off it and
+    /// a run reads its seed out of it. That's the one thing this does that its
+    /// siblings do not; the skip set (`target/`, `node_modules/`, `dist/`,
+    /// `build/`, hidden dirs, all at any depth) comes from
+    /// [`Self::list_by_sub_extension`] pruning via `oxy_compile::walker::is_skipped`
+    /// — the same function the compile walker uses, so a stray copy under
+    /// `build/` or a nested `sub/target/` can't list on one arm and not the
+    /// other. See `crates/core/src/config/manager.rs::list_simulations`.
+    async fn list_simulations(&self) -> Result<Vec<SimulationEntry>, OxyError> {
+        self.require_root()?;
+        let mut out = Vec::new();
+        for path in self.list_entity_files("simulation") {
+            let Ok(relative) = path.strip_prefix(&self.project_path) else {
+                continue;
+            };
+            let relative = relative.to_string_lossy().replace('\\', "/");
+            let source = match fs::read_to_string(&path).await {
+                Ok(source) => source,
+                Err(e) => {
+                    tracing::warn!(path = %path.display(), error = %e, "skip unreadable world");
+                    continue;
+                }
+            };
+            // A malformed world is skipped with a warning rather than failing
+            // the listing: one broken file must not hide every other world on
+            // the page.
+            let definition: serde_json::Value = match serde_yaml::from_str(&source) {
+                Ok(definition) => definition,
+                Err(e) => {
+                    tracing::warn!(path = %relative, error = %e, "skip unparseable world");
+                    continue;
+                }
+            };
+            let name = definition
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| artifact_name(&relative));
+            out.push(SimulationEntry {
+                name,
+                file_path: relative,
+                definition,
+            });
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
     async fn list_apps(&self) -> Result<Vec<AppEntry>, OxyError> {
         self.require_root()?;
         let mut out = Vec::new();
-        for path in self.list_by_sub_extension(None, "app") {
+        for path in self.list_entity_files("app") {
             let Ok(relative) = path.strip_prefix(&self.project_path) else {
                 continue;
             };

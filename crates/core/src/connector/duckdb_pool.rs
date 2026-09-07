@@ -27,6 +27,22 @@
 //! map cannot grow unboundedly across mtime generations — the previous
 //! entry's `Arc<PoolEntry>` is dropped on insert, releasing the in-memory
 //! database (a non-trivial amount of RAM for large CSVs).
+//!
+//! # That bound is per *target*, and a target can be disposable
+//!
+//! "One entry per target" bounds the map only while targets recur. A caller
+//! that mints a **fresh** target per unit of work — the simulation runner
+//! materialises each run's dataset into its own `TempDir` — gets one slot per
+//! run, each pinning a live in-memory database and every table materialised
+//! into it, keyed on a directory that no longer exists. Nothing evicts them:
+//! there is no capacity bound, no TTL, and eviction is same-key replacement by
+//! a key that never recurs.
+//!
+//! Such a caller must hand the target back with [`DuckDBPool::release`] when
+//! its lifetime ends — ideally from the `Drop` of whatever owns the directory,
+//! so an early return or a panic releases it too. `release` clears the
+//! `init_locks` entry as well, which [`DuckDBPool::invalidate`] deliberately
+//! does not.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -328,6 +344,112 @@ impl DuckDBPool {
     pub(super) fn invalidate(&self, target: &PoolTarget) {
         let mut slots = self.slots.lock().expect("DuckDB pool slots mutex poisoned");
         slots.remove(target);
+    }
+
+    /// Drop **everything** the pool holds for `target` — the slot and the
+    /// entry in `init_locks` — because the target itself is gone.
+    ///
+    /// This is the counterpart to a *disposable* target: a dataset directory
+    /// that lives for one run (the simulation runner materialises one per run
+    /// in a `TempDir`) is a `PoolTarget` nobody will ever check out again.
+    /// [`Self::invalidate`] is the wrong tool there — it deliberately keeps the
+    /// init-lock entry, on the grounds that the map is "bounded by the number
+    /// of distinct targets", and that is exactly the assumption a per-run
+    /// target breaks. Left to the ordinary mechanisms the slot would never be
+    /// evicted at all: eviction is same-key replacement, and the key never
+    /// recurs.
+    ///
+    /// Callers must only use this when they *own* the target's lifetime and it
+    /// has ended. For a target that may be checked out again, use
+    /// [`Self::invalidate`]: the next `get_or_init` there rebuilds, whereas
+    /// removing the init lock out from under a live target reopens the
+    /// duplicate-init window that lock exists to close.
+    ///
+    /// # The init-lock waiter hazard
+    ///
+    /// A caller in [`Self::get_or_init`] clones the target's `Arc<Mutex<()>>`
+    /// out of `init_locks` and *then* blocks on it. If we removed the map's
+    /// copy in between, a later caller would mint a second, unrelated lock and
+    /// both would run `init` concurrently — the duplicate-init window the lock
+    /// closes. So the removal is conditional: the map's `Arc` is only dropped
+    /// when it is the sole strong reference. The check is sound because we hold
+    /// the `init_locks` mutex while making it, and the map is the only source
+    /// of clones — so no new reference can appear between the count and the
+    /// removal, and after the removal none can ever be minted from that entry.
+    ///
+    /// The slot is removed first. A caller racing us can then re-insert a slot
+    /// (it is mid-`init`), but that same caller necessarily holds a clone of
+    /// the init lock, so the count check leaves the lock in place and the two
+    /// maps stay consistent with each other.
+    pub(super) fn release(&self, target: &PoolTarget) {
+        {
+            let mut slots = self.slots.lock().expect("DuckDB pool slots mutex poisoned");
+            slots.remove(target);
+        }
+        let mut locks = self
+            .init_locks
+            .lock()
+            .expect("DuckDB pool init_locks mutex poisoned");
+        let uncontended = locks
+            .get(target)
+            .is_some_and(|lock| Arc::strong_count(lock) == 1);
+        if uncontended {
+            locks.remove(target);
+        } else if locks.contains_key(target) {
+            // Not a leak worth failing over — one `Arc<Mutex<()>>` — but it is
+            // the shape that would make this method stop bounding the map, and
+            // it should not be reachable for a target whose lifetime the caller
+            // owns. Worth seeing if it ever happens.
+            tracing::debug!(
+                ?target,
+                "DuckDB pool: released a target whose init lock still had a waiter; \
+                 leaving the lock entry in place"
+            );
+        }
+    }
+
+    /// Test-only visibility into the two maps. The invariant this module
+    /// asserts is about their *size*, so a leak is only assertable by counting
+    /// them — and neither map has (or should have) a production reader.
+    #[cfg(test)]
+    pub(super) fn slot_count(&self) -> usize {
+        self.slots.lock().expect("slots mutex poisoned").len()
+    }
+
+    #[cfg(test)]
+    pub(super) fn init_lock_count(&self) -> usize {
+        self.init_locks
+            .lock()
+            .expect("init_locks mutex poisoned")
+            .len()
+    }
+
+    #[cfg(test)]
+    pub(super) fn holds_slot(&self, target: &PoolTarget) -> bool {
+        self.slots
+            .lock()
+            .expect("slots mutex poisoned")
+            .contains_key(target)
+    }
+
+    /// Take the clone of a target's init lock that a caller inside
+    /// [`Self::get_or_init`] would be holding, so a test can stand in for the
+    /// waiter [`Self::release`]'s count check is guarding against.
+    #[cfg(test)]
+    pub(super) fn clone_init_lock(&self, target: &PoolTarget) -> Option<Arc<Mutex<()>>> {
+        self.init_locks
+            .lock()
+            .expect("init_locks mutex poisoned")
+            .get(target)
+            .cloned()
+    }
+
+    #[cfg(test)]
+    pub(super) fn holds_init_lock(&self, target: &PoolTarget) -> bool {
+        self.init_locks
+            .lock()
+            .expect("init_locks mutex poisoned")
+            .contains_key(target)
     }
 
     /// Returns the cached entry only if it matches `key` (i.e. mtimes

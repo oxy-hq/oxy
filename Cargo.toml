@@ -26,6 +26,7 @@ members = [
   "crates/project",
   "crates/semantic",
   "crates/shared",
+  "crates/simulation",
   "crates/test-utils",
   "crates/infrastructure/llm/anthropic",
   "crates/infrastructure/llm/ollama",
@@ -132,8 +133,8 @@ chrono = "0.4"
 # as an anomaly that isn't real, or hide one that is.
 #
 # `cargo tree` still shows chrono-tz 0.8.6 below this: airlayer declares it.
-# That is not a second stale bucketing path — as of airlayer 0.3.6 (`7e884e77`,
-# the rev pinned below) it has zero `chrono_tz` call sites, and its timezone
+# That is not a second stale bucketing path — re-checked at the rev pinned
+# below (`afe6daf`): airlayer still has zero `chrono_tz` call sites, and its timezone
 # handling (`sql_generator::time_col_expr`) emits `dialect.convert_tz(expr, tz)`,
 # passing the zone NAME into generated SQL. The warehouse's tzdata governs
 # there, not ours, so the fix above is complete.
@@ -282,53 +283,312 @@ aho-corasick = "1.1"
 # match. `contribution` is still emitted on a passthrough row (airlayer's own
 # CLI now prints `mechanical` for those rather than the raw value, matching how
 # `group()` files them — the same precedence the web panel applies).
-# Two pre-aggregation fixes since the metric-tree work above; ca3e72c is an
-# ancestor of this SHA, so nothing above is lost.
+# The entries below are a HISTORY of what each bump added, oldest first. Only
+# the last one describes the pin in force; every "branch head" named before it
+# is an ancestor of the current rev and needs no separate bump. The one thing
+# to carry forward is at the bottom: the pin in force is still a branch head.
 #
-# PR #96 (merged to main) fixes generate_reagg_sql / generate_warehouse_reagg_sql
-# always wrapping the local-preagg re-aggregation query in GROUP BY +
-# SUM/COUNT/..., even when the requested dimensions (and time dimension, at its
-# stored granularity) exactly match the rollup's stored grain — i.e. the rollup
-# already has exactly one row per requested group, so re-aggregating was a no-op
-# that still forced a full scan+aggregate (GROUP BY is a blocking operator, so it
-# can't honor LIMIT cheaply even then). Generated SQL only; nothing stored moves.
+# `feat/reachable-values-filtered` (https://github.com/oxy-hq/airlayer/pull/89)
+# added `reachable_values_filtered` (scope-narrowed baseline fetch) for
+# metric-tree scenario simulation — `reachable_values` keeps its exact
+# signature and delegates to it with an empty scope, producing a byte-identical
+# QueryRequest (asserted by a test in that PR).
 #
-# a729c18 is reachable only from #102's branch, so this pin MUST be moved to a
-# main SHA before this PR merges (see the merge gate in the PR description;
-# Cargo.lock records the same rev, so there is no fallback once the branch is
-# deleted).
+# `runtime-coefficient-fitting` added `engine::metric_tree_fit` — within-panel
+# lagged OLS that sizes a driver edge declaring no `coefficient:` from the same
+# window the baseline already queries, with a |t| >= 2.0 refusal gate. Purely
+# additive: no existing signature or serialized shape changes, so the TS
+# mirrors in web-app/src/types/metricTree.ts and
+# sdk/typescript/src/metricTree.ts stay valid (the new `fitted[]` is an added
+# optional field, not a changed one).
 #
-# It is 27 commits ahead of the previous pin (e89d1d0), not two — the full range
-# is `e89d1d0..a729c18`, and only the first and last items below are preagg:
+# Now also at bca26bb: a driver edge is fitted AND propagated under its
+# declared `form:`, which until then was metadata — the fit regressed raw
+# levels and `predict` multiplied, so `log-log` yielded a level slope labelled
+# an elasticity. `FittedDriver` gains `form` and `n_nonpositive`; both default
+# on deserialize, so an older payload still round-trips as the linear fit it
+# was. Two behaviour changes to know about: a non-linear form with no `values`
+# now reports `unquantifiable` instead of a silently-linear number, and
+# `explain`'s `estimated_target_impact` can be absent for an unsizable form as
+# well as for a missing coefficient.
 #
-#   * #99 (077aeef, merged) — resolves `{{view.member}}` / `{{member}}` refs in a
-#     rollup's CTAS and folds `Measure.filters` into the stored partials. This is
-#     the one that changes what a build WRITES; see the generation note below.
-#   * #100 (e0bca28, merged) — the metric-tree fitting/response model: driver
-#     response shapes, fitted coefficients, and `AggregateSpace`. NOT preagg, and
-#     the reason `world_model_graph/query.rs`'s fixtures move in this PR —
-#     `MetricNode.aggregate_space`, `MetricEdge.{coefficients,form_declared,
-#     moments,domain}` and `MetricTree.warnings` are new required fields. Nothing
-#     here DEserializes a stored `MetricTree` (it is built from the semantic model
-#     per request and serialized outward), so the additions are additive on the
-#     wire; a consumer that ignores unknown fields is unaffected.
-#   * #101 (b16548d, merged) — a nullable grouping key no longer refuses a rollup.
-#   * #102 (7b68799, a729c18, NOT merged) — READ-SIDE ONLY: binds `date_trunc`
-#     over the stored VARCHAR time column so a coarser-than-stored request stops
-#     falling back to the warehouse, and makes an `InDateRange` filter decline the
-#     rollup instead of being erased from the WHERE.
+# Now at 535c546: the four hand-written `form:` cases collapse into ONE
+# representation (`engine::response` — a basis of transformed regressors under a
+# link on the target), so a new shape is a table row rather than six edits. Adds
+# `form: quadratic`, the first shape that can TURN AROUND, and with it
+# `coefficients: Vec<f64>` on both `Driver` and `FittedDriver` — a scalar reads as
+# a one-element vector, so no existing `.view.yml` or serialized fit changes.
 #
-# THIS ONE CHANGES WHAT A BUILT ROLLUP CONTAINS. A filtered measure previously
-# stored the unfiltered total and served it under the Pre-aggregated badge, and
-# `compute_rollup_hash` covers only member NAMES, granularity and time dimension
-# — not exprs or filters — so the artifact keeps its name and a rebuild is not
-# implied by the fix. `PREAGG_BUILDER_GENERATION` in
-# crates/app/src/server/preagg_executor.rs is the invalidation lever: bump it in
-# the same commit as any airlayer bump that changes stored rollup contents, and
-# every workspace rebuilds once on its next cycle. It was bumped for #99; nothing
-# in #100–#102 writes a rollup, so none of them add a reason to bump it again —
-# which is why preagg_executor.rs is not in this diff.
-airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "a729c18c58dd1497612eb432834958807f71b32e" }
+# Three things to know, all covered in internal-docs/driver-response-standardization.md:
+#   * `FittedDriver` gains `coefficients`/`se_terms`/`t_stats`, plus `moments` and
+#     `domain`. The moments are load-bearing, not diagnostics: the fit is per row
+#     and a lever is a window aggregate, and a curved response cannot cross that
+#     gap without them (the naive alternative is 42,905x out with the sign
+#     flipped). They must survive the baseline -> predict round trip.
+#   * Log-link propagation is now EXACT where it was first-order, so existing
+#     numbers move slightly by design: +10% at an elasticity of 0.4 gives 38,860
+#     rather than 40,000, and the old shortcut was 12.4% out by +50%.
+#   * `MetricTree` gains `warnings` (additive, skipped when empty) — a driver that
+#     declares both `coefficient:` and `coefficients:`, or a wrong-width vector,
+#     is refused with a reason instead of silently going qualitative.
+#
+# And at 3f0e793: `form:` is now OPTIONAL. `Driver.form` is `Option<DriverForm>`
+# — left out, the engine infers the shape from history alongside the magnitude;
+# declared, it pins the shape and skips the search. Candidates are compared by
+# AIC in y-space (the Jacobian is what makes a `ln y` model comparable with a
+# `y` model), `linear` is the null, and a curve must beat it by 10 AIC AND clear
+# the per-term gate to be adopted. `FittedDriver` gains `form_source` and the
+# candidate scores so an inferred shape is auditable.
+#
+# And at 422aa7f: the per-shape vertex solver is gone. `FittedDriver.profile`
+# carries the response SAMPLED as (lever, delta) pairs over the range the fit has
+# evidence for, so peak / break-even / saturation are read off the curve instead
+# of solved per basis — and the client needs no shape vocabulary at all. Fill it
+# with `FittedDriver::with_profile(target)` wherever the target's aggregate is
+# known; the fit itself cannot, since a log link needs that value.
+#
+# Now 06b0761 (branch `feat/more-driver-shapes`), which cashes the "a shape is a
+# row" claim four times over: `cubic`, `sqrt`, `inverse` and
+# `linear-log-quadratic`, each one enum variant plus one `ResponseSpec`, with the
+# fit and the forecast unchanged. All four aggregate exactly, so all four are
+# inferable. Note the selection change that came with them: the richer shapes
+# NEST the simpler ones and can only ever score better, so the 10-AIC margin now
+# applies BETWEEN candidates too — within that band the fewest-term shape wins,
+# equal widths settled by the candidate list's order. Without it, adding `cubic`
+# silently re-labelled a quadratic edge on a 2.2-point margin.
+#
+# Then `feat/user-grain-time-dimensions` (6ed55f0), branched off that head:
+# time_dimensions are now supported on the user-grain CTE path, which used to
+# refuse them outright. That path is chosen per MEASURE — any non-additive
+# measure on a multiplied view routes there — so one such measure made every
+# bucketed query across the batch fail at SQL generation. The scenario
+# projection asks for that shape by definition (a measure series broken out by
+# day/week/month across views), so it could not draw a curve for a tree
+# containing an `avg`. The commit also re-applies `date_range` inside the CTEs
+# and the spine, which assemble their own WHERE and had been dropping it: the
+# window silently became "everything". 6ed55f0 then adds the time dimension's
+# own view to the join planning for each CTE — projecting a bucket column is not
+# enough if the view it comes from was never joined in, which surfaced as
+# "not reachable from view X" for a pair the entity graph connects fine.
+#
+# 67a3acb (airlayer PR #90, branched off 6ed55f0) makes `aggregate_delta` take
+# the target's `AggregateSpace`. A fitted response aggregates through the basis
+# moments, which are SUMS — so what it produces is a change in the target's
+# TOTAL, and adding that to a target whose window value is a MEAN is out by the
+# row count. `sales_per_guest -> avg_order_value` fitted `coefficient 1.00` over
+# n=2,005 rows and moved a 27.50 average to 8.3k. Identity links now convert;
+# log links are proportional and need none; a ratio or a median refuses.
+
+# THE BRANCH HAD SILENTLY FALLEN BEHIND MAIN, which is what `afe6daf` fixes by
+# merging main back in. The claim that stood here — "every rev named above is
+# an ancestor of it" — was false, and stating it is what let the gap sit
+# unnoticed: `feat/more-driver-shapes` was cut BEFORE PRs #86 and #87 merged,
+# so 19 commits of main were missing. Two of them mattered:
+#
+#   * `e8353db fix(sql): only timezone-convert a datetime time dimension`.
+#     Losing it re-broke every non-UTC query over a `type: date` dimension —
+#     silently a day out on Postgres, `Code: 43 ILLEGAL_TYPE_OF_ARGUMENT` on
+#     ClickHouse (`toTimeZone` takes DateTime/DateTime64 only), which is what a
+#     scenario projection panel surfaced as "the warehouse rejected the query".
+#   * PR #86's `direction` / `contribution` / `passthrough` on
+#     `DriverAttribution` — described above as if in force, but the pinned
+#     struct had none of those fields, so the explain panel's driver
+#     classification was inert and `agentic-analytics`' prompt described a
+#     `passthrough` object the engine never emitted. Nothing failed to compile,
+#     because both consumers made the fields optional. Restored by the merge,
+#     so that panel starts populating again.
+#
+# `afe6daf` and then `4ad34c1` merged airlayer main back into that branch and
+# added three commits over it: `346c2eb` is a clippy-only cleanup, `7f755c6`
+# fixes `aggregate_delta` treating a rate response's constant term as a per-row
+# factor instead of the whole delta, and `ddaed78` stops a fit's `t_stat` (and
+# its per-term siblings) from ever landing on a literal `f64::INFINITY` —
+# `serde_json` has no JSON literal for it and serializes it as `null`, so the
+# metric-tree `predict` endpoint's `PredictRequest.coefficients: Vec<FittedDriver>`
+# 400'd deserializing its own baseline fit's output back in whenever a fit had
+# zero residual standard error. It's now `b.signum() * f64::MAX`: still clears
+# `MIN_FIT_T`, still signed, and an ordinary finite JSON number.
+#
+# NOW AT 3199baa, which merges airlayer main INTO that branch — main having
+# moved twice underneath it while this PR was open:
+#
+#   * PR #96 (ca3e72c) stops generate_reagg_sql / generate_warehouse_reagg_sql
+#     wrapping the local-preagg re-aggregation query in GROUP BY + SUM/COUNT/...
+#     when the requested dimensions (and time dimension, at its stored
+#     granularity) already match the rollup's exact grain — one row per group
+#     already, so re-aggregating was a no-op that still forced a full
+#     scan+aggregate, and GROUP BY is blocking, so it cannot honor LIMIT
+#     cheaply even then. Generated SQL only; nothing stored moves.
+#   * PR #99 (e89d1d0, merged as 077aeef) resolves `{{view.member}}` /
+#     `{{member}}` refs in a rollup's CTAS and folds `Measure.filters` into the
+#     stored partials. THIS ONE CHANGES WHAT A BUILT ROLLUP CONTAINS: a
+#     filtered measure previously stored the unfiltered total and served it
+#     under the Pre-aggregated badge, and `compute_rollup_hash` covers only
+#     member NAMES, granularity and time dimension — not exprs or filters — so
+#     the artifact keeps its name and a rebuild is not implied by the fix.
+#     `PREAGG_BUILDER_GENERATION` in crates/app/src/server/preagg_executor.rs
+#     is the invalidation lever, and main already bumped it for this pin; every
+#     workspace rebuilds once on its next cycle.
+#
+# AND NOW ON MAIN, at last. Everything above was developed as a CHAIN of stacked
+# branches — `feat/more-driver-shapes` -> `feat/user-grain-time-dimensions` ->
+# `fix/aggregate-delta-target-space` — and airlayer PR #90 merged into
+# `feat/user-grain-time-dimensions` rather than into main, so for the whole life
+# of this PR the pin was a branch head and none of the stack was on main. PR
+# #100 (https://github.com/oxy-hq/airlayer/pull/100) landed the lot as `e0bca28`,
+# which is what this line now names: an ordinary commit on airlayer main, not a
+# rev that can be force-pushed out from under the lockfile.
+#
+# #100 carried one commit that was not in what this pinned before it merged —
+# `3189f0e`, ten defects found in review. Four of them are visible from Oxy:
+#
+#   * `aggregate_delta_from_total` had no `([Log], Identity)` arm, so a DECLARED
+#     `form: linear-log` could never be sized — `fittable_edges` excludes an edge
+#     that declares a coefficient, so it never acquired moments either, and the
+#     refusal was unconditional. Such an edge now sizes. A declaration states the
+#     aggregate response directly, so unlike a fit it carries no row-count factor.
+#   * A delta-only `predict` refused every log-form driver with a bare zero. The
+#     refusal itself is right — an elasticity applied as a level slope is wrong by
+#     target/driver — but it now names its cause, so the panel can say which
+#     levels are missing instead of showing an unexplained nothing.
+#   * `apply_fitted_coefficients` wrote `edge.form` BEFORE the width check that
+#     can reject the fit, leaving an inferred shape on an edge with no
+#     coefficients. Oxy calls this directly in the `predict` handler.
+#   * `n_nonpositive` read 0 on every successful inferred fit, hiding exactly the
+#     narrowing of `n` the field exists to disclose.
+#
+# Plus, on the SQL side, the user-grain CTE path now compiles a fanned-out CTE in
+# two halves (a DISTINCT over source key + projected dims, then a rejoin that
+# aggregates) rather than silently multiplying an all-additive CTE across a
+# one-to-many hop, and it no longer discards ORDER BY and measure filters while
+# still emitting LIMIT. A time dimension with neither granularity nor date_range
+# is refused on that path as it already was on the main one.
+#
+# Now b16548d (airlayer PR #101), three commits on: a ClickHouse rollup CTAS
+# makes the grouping key the MergeTree SORTING key, and MergeTree refuses a
+# nullable sorting key by default — so a view whose dimensions arrived as
+# `Nullable(String)`, which is most of what an ELT pipeline loads, could not
+# have a rollup built at all:
+#
+#   Code: 44. DB::Exception: Sorting key contains nullable columns, but merge
+#   tree setting `allow_nullable_key` is disabled. (ILLEGAL_COLUMN)
+#
+# The CTAS now carries `SETTINGS allow_nullable_key = 1`. Nothing stored changes
+# shape and no rebuild is implied: a rollup that previously built still builds
+# identically, and one that previously failed now exists. A NULL group stays its
+# own row rather than folding into the type default, and the key still prunes.
+#
+#
+# Now a729c18 (airlayer PR #102), two commits on b16548d and READ-SIDE ONLY:
+# `date_trunc` is bound over the stored VARCHAR time column so a coarser-than-
+# stored request stops falling back to the warehouse, and an `InDateRange` filter
+# declines the rollup instead of being erased from the WHERE. Nothing a build
+# WRITES changes, so `PREAGG_BUILDER_GENERATION` in
+# crates/app/src/server/preagg_executor.rs needs no bump — it was last moved for
+# #99, and nothing in #100-#102 writes a rollup.
+#
+# This branch pinned `6bc560e4` for the same two commits before merging main:
+# that was #102's pre-rebase branch copy, whose tree is byte-identical to
+# a729c18's (`git diff 6bc560e4 a729c18` is empty). a729c18 is the one that
+# landed on airlayer main, so it is the one that survives branch deletion.
+# NOW AT 34802d4 — airlayer main, and 30 commits on. PRs #103, #104 and #105,
+# essentially all of it pre-aggregation. `a729c18` is an ancestor, so this is a
+# clean fast-forward with nothing reverted. Four things to know:
+#
+#   * **Every rollup hash moves, and that is the invalidation.** `0b4cf10` folds
+#     a `definition_fingerprint` into `compute_rollup_hash` — view name and
+#     `table:`/`sql:`, each dimension's `expr`, and per measure
+#     `name:type:expr:filters`. The artifact is named `{view}__{hash}__{date}`,
+#     so every existing rollup gets a NEW name: old Parquet is orphaned rather
+#     than overwritten, and `RollupFreshness` is re-keyed on
+#     `(view_name, rollup_name, rollup_hash)` (`ceeac04`) so a moved hash can
+#     match no prior verdict and cannot be judged fresh. Expect one full rebuild
+#     after deploy, and a cold preagg tier until it finishes.
+#     This is ALSO why `PREAGG_BUILDER_GENERATION` is NOT bumped for this pin —
+#     see its doc in crates/app/src/server/preagg_generation.rs, which this bump
+#     corrects: the "the artifact keeps its name" premise it rested on no longer
+#     holds. Independently, `generate_build_sql` emits an unchanged CTAS for any
+#     rollup that previously built (`396e84b` only turns silently-dropped
+#     undeclared members into hard build errors), so nothing needs the lever.
+#
+#   * **Three API breaks and one silent one.** `check_coverage` takes a third
+#     `live: Option<&LiveRollups>`; `RollupFreshness` gains `view_name` +
+#     `rollup_name`; `DrillConfig` gains `dialect`. The silent one is
+#     `BuildPlan`, which gains `migrations` + `prelude_len`: it still COMPILES
+#     against a caller that runs only `plan.statements`, but an existing
+#     deployment's `__manifest` then never acquires `refresh_key_value` /
+#     `refresh_key_checked_at` and every upsert fails. `execute_build_plan` in
+#     crates/agentic/semantic/src/preagg.rs now runs prelude -> migrations
+#     (best-effort, they are expected to fail once applied) -> the rest.
+#
+#   * **`None` and an empty `LiveRollups` are opposites.** `None` means "don't
+#     check liveness" and keeps the old name-only matching; an EMPTY set declines
+#     every rollup (`719228c`). Oxy passes a real set everywhere the semantic
+#     layer is in scope; the analytics solver passes `None` deliberately, because
+#     its `engine` is the vendor abstraction and carries no airlayer view list.
+#
+#   * **One upstream fragility found landing this, worth knowing before the next
+#     bump.** `aa4bf15` wraps a rollup's stored time bucket in
+#     `NULLIF(col, '')`. That is only valid over VARCHAR: DuckDB resolves NULLIF
+#     to the column's own type, so on a DATE/TIMESTAMP bucket it casts `''` to
+#     TIMESTAMP and throws on the first row. `LocalRollupEntry` does not record
+#     the stored type, so the type-agnostic form is the fix
+#     (`CAST(NULLIF(CAST(col AS VARCHAR), '') AS TIMESTAMP)`). **Production is
+#     not affected** — `write_result_to_parquet` builds Parquet from `CellValue`
+#     rows whose only non-numeric variant is `Text`, so every bucket reaches disk
+#     as a string, and airlayer's own writer agrees. It surfaced only because
+#     `preagg_equivalence_tests`' fixture copied the CTAS table straight to
+#     Parquet and kept its temporal type — a divergence from the writer it claims
+#     to imitate, now fixed there rather than worked around.
+#
+#   * **Read-side hit rate moves in both directions.** Relative date ranges
+#     ("last 30 days") were declining EVERY rollup and now resolve (`ac88ebc`) —
+#     the commonest shape, so expect a large net increase. Against that, bounds
+#     must now land on a bucket boundary or the rollup is declined rather than
+#     silently widened (`3f5455c`, `99429e5`, `d98af15`); week-grain rollups
+#     serve no bounded query at all, since Monday-vs-Sunday start is not recorded
+#     in the manifest (`9717eee`, flagged upstream as a known consequence); and
+#     `segments`, `motif`, `ungrouped` and `timezone`+time_dimension are refused
+#     outright (`7c6815e`) where segments previously returned UNFILTERED totals.
+#     Bounds are now half-open, fixing a lexicographic VARCHAR compare that
+#     dropped the last bucket of every range (89 of 90 days). Limit-less queries
+#     now get `effective_limit` on the cache path; one previously returned the
+#     whole rollup while reporting `LIMIT 10000`.
+#
+# NOW AT b141d8d — airlayer **tag v0.4.0**, 19 commits on and the first pin that
+# names a release rather than a main-branch commit. `34802d4` is an ancestor, so
+# this is a clean fast-forward with nothing reverted. Nothing here touches the
+# semantic model, the query planner or pre-aggregation — `PREAGG_BUILDER_GENERATION`
+# in crates/app/src/server/preagg_generation.rs stays put, and no rollup hash moves.
+# Two things to know:
+#
+#   * **BigQuery grows service-account auth (#106), and it is additive.**
+#     `BigQueryConnection` gains `key_file` / `key_file_var` / `key_json` /
+#     `key_json_var` plus a private `#[serde(skip)] token_cache`, so airlayer
+#     mints and refreshes its own tokens instead of requiring a pre-minted
+#     `access_token` that dies in ~an hour. `get_access_token` still prefers an
+#     explicitly configured token, so an existing `access_token_var` connection
+#     behaves exactly as before. The new private field would break a struct
+#     literal, but oxy constructs no `BigQueryConnection` anywhere (it reaches
+#     BigQuery through its own connector), so the break cannot reach us. Worth
+#     knowing for the `access_token_var` note in product-context.md: the
+#     "read-only token keeps a pipeline out of the rotator role" reasoning is
+#     about QuickBooks, not BigQuery, and is unaffected.
+#
+#   * **Everything else is dependabot and CI.** tokio-postgres 0.7.16→0.7.18,
+#     postgres-protocol 0.6.10→0.6.12, quinn-proto 0.11.14→0.11.16, postcss in
+#     `sdk/`; plus per-warehouse gating of the cloud test jobs. No airlayer
+#     source outside `src/executor/bigquery.rs`, `src/executor/mod.rs` and the
+#     two CLI prompt/template files changed.
+#
+# Before bumping this line again, re-check with
+# `git log <new-rev>..origin/main --oneline` and prefer the next TAG over a bare
+# main commit — the entries above are a history of what each bump ADDED, and
+# nothing in them would have caught a subtraction. That is how `afe6daf` came to
+# be needed, and how an earlier bump came to have two of main's pre-aggregation
+# fixes to carry.
+# rev is the commit tagged v0.4.0 (tags can be moved; the rev cannot).
+airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "b141d8df83dd0bbd1f7b3d8c75f48d25f580281b" }
 # Anomaly detection: ETS forecasting + MSTL decomposition. augurs-ets gives
 # Holt-Winters family (with auto model selection); augurs-mstl handles
 # multi-seasonality (daily + weekly + yearly). Pulled in by oxy-metric-monitoring.

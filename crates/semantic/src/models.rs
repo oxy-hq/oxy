@@ -194,6 +194,17 @@ pub enum DriverConfidence {
 }
 
 /// Functional form of a quantitative driver relationship.
+///
+/// This mirrors `oxy_airlayer_compat::schema::models::DriverForm`, which is where the shape
+/// is actually defined (a basis plus a link, in `oxy_airlayer_compat::engine::response`).
+/// The copy exists because this crate parses `.view.yml` itself, so a form the
+/// engine accepts and this enum does not is a deserialization failure on a
+/// perfectly valid file — keep the two variant lists in step.
+///
+/// Note the multi-term shapes (`quadratic`, `cubic`, `linear-log-quadratic`)
+/// cannot be given their coefficients through this crate's [`Driver`], which
+/// carries only the scalar `coefficient`. Declared here they are fit-only: the
+/// shape is honoured, the magnitude comes from history.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum DriverForm {
@@ -202,6 +213,11 @@ pub enum DriverForm {
     LogLog,
     LogLinear,
     LinearLog,
+    Quadratic,
+    Cubic,
+    Sqrt,
+    Inverse,
+    LinearLogQuadratic,
 }
 
 /// A driver relationship: a measure that influences this measure's value.
@@ -558,6 +574,67 @@ confidence: high
         assert_eq!(d.strength, DriverStrength::Moderate);
         assert_eq!(d.confidence, DriverConfidence::Medium);
         assert_eq!(d.form, DriverForm::Linear);
+    }
+
+    /// Every spelling a `.view.yml` may use for `form:`, and the variant it must
+    /// land on. Written out rather than derived, because a derived list would
+    /// rename itself alongside the enum and assert nothing.
+    const FORM_SPELLINGS: &[(&str, DriverForm)] = &[
+        ("linear", DriverForm::Linear),
+        ("log-log", DriverForm::LogLog),
+        ("log-linear", DriverForm::LogLinear),
+        ("linear-log", DriverForm::LinearLog),
+        ("quadratic", DriverForm::Quadratic),
+        ("cubic", DriverForm::Cubic),
+        ("sqrt", DriverForm::Sqrt),
+        ("inverse", DriverForm::Inverse),
+        ("linear-log-quadratic", DriverForm::LinearLogQuadratic),
+    ];
+
+    /// The kebab spelling is a wire contract: it is what a user types in
+    /// `.view.yml`, so renaming a variant silently renames the YAML keyword.
+    #[test]
+    fn every_driver_form_deserializes_from_its_kebab_spelling() {
+        for (spelling, expected) in FORM_SPELLINGS {
+            let yaml = format!("measure: a.b\ncoefficient: 1.0\nform: {spelling}");
+            let d: Driver = serde_yaml::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("form: {spelling} failed to parse: {e}"));
+            assert_eq!(
+                &d.form, expected,
+                "form: {spelling} landed on the wrong variant"
+            );
+        }
+    }
+
+    /// The failure this crate's `DriverForm` doc warns about, made into a test.
+    ///
+    /// This enum is a copy of `oxy_airlayer_compat::schema::models::DriverForm` that exists
+    /// only because this crate parses `.view.yml` itself. When airlayer grows a
+    /// variant and this copy does not, the engine accepts a file that this crate
+    /// refuses — and serde's failure is on the WHOLE document, so one unknown
+    /// `form:` takes every view in the file down with it. Round-tripping each
+    /// spelling through both enums is what makes that drift a red test here
+    /// rather than a parse error in a customer's workspace.
+    ///
+    /// One-directional, and deliberately so: airlayer's enum derives neither
+    /// `JsonSchema` nor `strum`, so its variants cannot be enumerated from here
+    /// and "airlayer grew one we lack" cannot be asserted. That direction is the
+    /// benign one — the engine accepts a form this crate rejects, which fails
+    /// loudly at parse time on the file that uses it. The direction tested here
+    /// is the one that fails downstream, far from its cause.
+    #[test]
+    fn driver_form_mirrors_airlayers() {
+        for (spelling, _) in FORM_SPELLINGS {
+            let quoted = format!("\"{spelling}\"");
+            serde_json::from_str::<oxy_airlayer_compat::schema::models::DriverForm>(&quoted)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "airlayer does not accept form: {spelling}, which this crate does — the \
+                         mirror has drifted and a `.view.yml` this crate parses would be rejected \
+                         downstream: {e}"
+                    )
+                });
+        }
     }
 
     #[test]

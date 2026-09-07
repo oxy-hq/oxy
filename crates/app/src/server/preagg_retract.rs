@@ -20,6 +20,12 @@
 //!   was forcing it, so what is on disk is the previous builder's. Nothing
 //!   about that attempt should suppress or certify anything, so the ledger
 //!   entry is dropped with the artifact.
+//!
+//! They also differ in REACH, and for the same reason. `Empty` is a statement
+//! about a rollup — "`(view, rollup)` has no rows now" — so it removes every
+//! entry that identity holds, whatever hash each was built under. `Wrong` is a
+//! statement about one artifact the sweep is holding a hash for, so it removes
+//! exactly that hash.
 
 use std::sync::{Arc, RwLock};
 
@@ -29,7 +35,7 @@ use uuid::Uuid;
 use agentic_semantic::refresh_key_cache::RefreshKeyCache;
 
 use super::preagg_ledger;
-use super::preagg_rebuild::mirror_manifest_to_s3;
+use super::preagg_rebuild::{mirror_manifest_to_s3, same_rollup_identity};
 
 /// Why the artifact is going, which decides what is remembered about it.
 #[derive(Debug, Clone)]
@@ -37,8 +43,11 @@ pub(super) enum Retraction {
     /// Zero rows. The probed refresh-key value rides along so the next tick's
     /// staleness check has something to compare against — the manifest fields
     /// it would normally read are about to be deleted — and the names because
-    /// the status endpoint joins on `(view, rollup)` and the entry carrying
-    /// them is the one being removed.
+    /// they are what is actually retracted: `(view, rollup)` is the identity
+    /// the status endpoint joins on and the one an empty answer is ABOUT, and
+    /// the hash the rebuild was for may be a hash the manifest has never seen
+    /// (any airlayer change to `compute_rollup_hash` moves it) while the entry
+    /// still being served sits under the old one.
     Empty {
         view: String,
         rollup: String,
@@ -89,6 +98,15 @@ pub(super) async fn retract_rollup(
 /// rollup a concurrent one already dropped must not fail and leave the sweep
 /// pending. The caller uses the flag to skip re-uploading an unchanged
 /// manifest.
+///
+/// What gets removed is `rollup_hash`'s entry PLUS, for `Retraction::Empty`,
+/// every other entry the same `(view, rollup)` identity holds — the same
+/// question `commit_manifest_and_cache`'s reap asks, through the same
+/// predicate ([`same_rollup_identity`]), so the success and zero-row paths
+/// cannot disagree about what this rollup is still serving. `Retraction::Wrong`
+/// stays hash-scoped: the sweep is holding one specific artifact's hash and has
+/// checked that this node holds ITS file (`local_parquet_present`), so widening
+/// it would destroy entries the sweep never examined.
 pub(super) async fn retract_under_publish_lock(
     rollup_hash: &str,
     cache_dir: &std::path::Path,
@@ -98,20 +116,33 @@ pub(super) async fn retract_under_publish_lock(
 ) -> Result<bool, String> {
     let cache_dir_owned = cache_dir.to_path_buf();
     let rollup_hash_owned = rollup_hash.to_string();
+    let identity = match &reason {
+        Retraction::Empty { view, rollup, .. } => Some((view.clone(), rollup.clone())),
+        Retraction::Wrong => None,
+    };
 
-    let removed_file = tokio::task::spawn_blocking(move || {
+    let removed = tokio::task::spawn_blocking(move || {
         let Some(mut manifest) = agentic_semantic::preagg::load_local_manifest(&cache_dir_owned)
         else {
-            return Ok::<Option<String>, String>(None);
+            return Ok::<Vec<(String, String)>, String>(vec![]);
         };
-        let Some(position) = manifest
-            .rollups
-            .iter()
-            .position(|r| r.rollup_hash == rollup_hash_owned)
-        else {
-            return Ok(None);
-        };
-        let entry = manifest.rollups.remove(position);
+        let mut removed: Vec<(String, String)> = Vec::new();
+        manifest.rollups.retain(|r| {
+            let target = r.rollup_hash == rollup_hash_owned
+                || identity
+                    .as_ref()
+                    .is_some_and(|(view, rollup)| same_rollup_identity(r, view, rollup));
+            if target {
+                removed.push((r.rollup_hash.clone(), r.file.clone()));
+            }
+            !target
+        });
+        if removed.is_empty() {
+            // Nothing changed, so the manifest is not rewritten: `pulled_at`
+            // is what carries a retraction across the fleet, and bumping it
+            // for a no-op would re-date every OTHER node's entries.
+            return Ok(vec![]);
+        }
         manifest.pulled_at = chrono::Utc::now().to_rfc3339();
         // Manifest first, file second: a reader that sees the entry gone never
         // looks for the file, whereas deleting first would leave a window where
@@ -119,7 +150,13 @@ pub(super) async fn retract_under_publish_lock(
         // `commit_manifest_and_cache` exists to avoid, in reverse.
         agentic_semantic::preagg::save_local_manifest(&cache_dir_owned, &manifest)
             .map_err(|e| e.to_string())?;
-        Ok(Some(entry.file))
+        // A file a surviving entry still names is not ours to delete. Belt and
+        // braces — the `{view}__{hash}.parquet` shape rules out two identities
+        // resolving to one file — but the cost of being wrong is deleting a
+        // live rollup, so it is checked rather than argued. Same guard, same
+        // reason, as the reap's.
+        removed.retain(|(_, file)| !manifest.rollups.iter().any(|r| &r.file == file));
+        Ok(removed)
     })
     .await
     .map_err(|e| format!("manifest retraction task panicked: {e}"))??;
@@ -165,21 +202,48 @@ pub(super) async fn retract_under_publish_lock(
         }
     }
 
-    let Some(file) = removed_file else {
+    if removed.is_empty() {
         return Ok(false);
-    };
+    }
 
-    // The Parquet is best-effort: nothing references it once the entry is gone,
-    // so a failed unlink costs disk, not correctness.
-    let path = cache_dir.join(&file);
-    if let Err(e) = tokio::fs::remove_file(&path).await
-        && e.kind() != std::io::ErrorKind::NotFound
-    {
-        tracing::warn!(
-            error = %e,
-            file = %file,
-            "preagg: retracted the manifest entry but could not delete its parquet"
-        );
+    let (why, view, rollup) = match &reason {
+        Retraction::Empty { view, rollup, .. } => ("empty", view.as_str(), rollup.as_str()),
+        Retraction::Wrong => ("previous builder's", "", ""),
+    };
+    for (hash, file) in &removed {
+        // The Parquet is best-effort: nothing references it once the entry is
+        // gone, so a failed unlink costs disk, not correctness. An ABSENT file
+        // is ordinary — any node that did not run the build holds the
+        // fleet-synced manifest and no Parquet.
+        let path = cache_dir.join(file);
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => tracing::info!(
+                view = %view,
+                rollup = %rollup,
+                why,
+                retracted_hash = %hash,
+                rebuilt_hash = %rollup_hash,
+                file = %file,
+                "preagg: retracted a rollup — its manifest entry and local parquet are gone, \
+                 and queries fall back to the warehouse"
+            ),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => tracing::info!(
+                view = %view,
+                rollup = %rollup,
+                why,
+                retracted_hash = %hash,
+                rebuilt_hash = %rollup_hash,
+                file = %file,
+                "preagg: retracted a rollup's manifest entry; its parquet was not on this \
+                 node, which is normal for a manifest synced from the fleet"
+            ),
+            Err(e) => tracing::warn!(
+                error = %e,
+                retracted_hash = %hash,
+                file = %file,
+                "preagg: retracted the manifest entry but could not delete its parquet"
+            ),
+        }
     }
 
     Ok(true)

@@ -200,7 +200,7 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
         // loading the layer from the compile boundary (stateless-fleet safe).
         // SDK exposes via `useMetricTree` / `useSensitivity` / `usePredict` /
         // `useExplain` / `useOpportunity` / `useDistribution` /
-        // `useTimeDimensions`.
+        // `useTimeDimensions` / `useBaseline` / `useProjection`.
         .route_fleet(
             "/projects/{project_id}/semantic/metric-tree",
             get(projects::metric_tree::get_metric_tree),
@@ -226,8 +226,19 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
             get(projects::metric_tree::get_time_dimensions),
         )
         .route_fleet(
+            "/projects/{project_id}/semantic/metric-tree/baseline",
+            post(projects::metric_tree::post_baseline),
+        )
+        .route_fleet(
             "/projects/{project_id}/semantic/metric-tree/distribution",
             post(projects::metric_tree::post_distribution),
+        )
+        // Scenario forecasting's time axis: bucketed history + forward curve
+        // for the levers and everything downstream. SDK exposes via
+        // `useProjection` / `client.metricTree.getProjection`.
+        .route_fleet(
+            "/projects/{project_id}/semantic/metric-tree/projection",
+            post(projects::metric_tree_projection::post_projection),
         )
         // World-model graph + instances + per-instance driver-tree for
         // bundles — the entity/measure map the IDE's World Model surface

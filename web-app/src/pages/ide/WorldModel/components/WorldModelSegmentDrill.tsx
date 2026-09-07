@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useDrillQuery } from "@/hooks/api/useMetricTree";
 import type { DrillRequest, OpportunityInstance } from "@/types/metricTree";
-import { SectionSpinner } from "./panelPrimitives";
+import { SectionSpinner } from "../../components/semanticGraph";
 import { DrillChain } from "./WorldModelDrillChain";
 import { presetPeriod } from "./WorldModelOpportunitiesSection";
 

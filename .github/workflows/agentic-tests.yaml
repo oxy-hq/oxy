@@ -108,6 +108,7 @@ jobs:
             {"name":"ask-agent","flows":"chat-ask.flow.test.yml chat-panel-agent-switch.flow.test.yml","mode":"local","port":3000},
             {"name":"threads","flows":"threads-list.flow.test.yml","mode":"local","port":3000},
             {"name":"ide","flows":"ide-save.flow.test.yml","mode":"local","port":3000},
+            {"name":"metric-tree","flows":"metric-tree.flow.test.yml metric-tree-scenario.flow.test.yml","mode":"local","port":3000},
             {"name":"onboarding","flows":"onboarding-blank-workspace.flow.test.yml","mode":"cloud","port":3001}
           ]'
           if [ -z "$FLOW_BUCKET" ] || [ "$FLOW_BUCKET" = "all" ]; then

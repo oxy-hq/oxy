@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Generate the restaurant demo dataset: a 24-location chain shaped so five
-independent opportunity signals, a three-level revenue/profit tree, and two
-deliberate nulls all coexist on the same 104,000-check fixture.
+independent opportunity signals, a three-level revenue/profit tree, two
+deliberate nulls, and every case the scenario simulator distinguishes all
+coexist on the same 104,000-check fixture.
 
 Why this exists
 ---------------
@@ -146,14 +147,68 @@ and prices the fixture happens to have on a given run:
   used by the guards above. Measured z = 0.61 (diff $0.338/check,
   SE $0.557/check).
 
+The store-day table, and why the check tree could not do its job
+-----------------------------------------------------------------
+`restaurant_store_days.csv` (24 locations x 400 days = 9,600 rows) serves a
+different feature from everything above: the Metric Tree's **scenario
+simulation** — pin a lever, propagate a delta forward. That engine branches on
+the arithmetic operator of each edge and on whether an edge is a declared
+driver, and the check-grain tree exercises exactly one of those branches: every
+edge in `checks.view.yml` is a `+`, so any lever pinned there propagates
+exactly and nothing else is ever observable. `store_days.view.yml` writes the
+rest — a subtraction, five ratios, a constant-factor product, three
+quantified drivers, one saturating driver whose coefficient is an elasticity
+rather than a slope, one deliberately unquantified driver, and one edge the
+engine must refuse to size. That file's header maps each case to the measure
+carrying it; this file supplies the data underneath.
+
+Three things about the data are load-bearing rather than decorative:
+
+- **Sales, covers and food cost are not stored here.** The view re-derives
+  them from the check data, so the two grains cannot drift apart.
+- **Each quantified driver is constructed backwards from the outcome it
+  explains** (spend from 7-day-ahead smoothed sales, redemptions from
+  3-day-ahead covers, signups from 21-day-ahead redemptions), so the
+  coefficients in the YAML are measurable properties of the data.
+  `check()` re-measures all four by within-location OLS and fails if any
+  drifts more than `DRIVER_SLOPE_TOL` from what the view declares — nothing
+  in the engine validates a `drivers:` coefficient, so a declared 6.0 against
+  data that says 3.0 would forecast wrong numbers forever, silently.
+- **The banquet program is exactly zero for the last 120 days.** A
+  multiplicative edge whose child is zero cannot be sized (%delta is undefined
+  at zero), so on the scenario default (a trailing 90-day window)
+  `banquet_check_average` must come back "can't size this" — which is a
+  different claim from "no impact" — and must size normally once the window
+  widens to 365 days.
+- **One driver pair is deliberately CURVED**, built forward rather than
+  backwards: `delivery_orders = scale_loc * delivery_app_spend ** 0.45`, drawn
+  from its own `DELIVERY_SEED` stream so adding it left every other column
+  bit-for-bit unchanged. The view declares neither a shape nor a
+  coefficient, so the engine fits an elasticity (0.451 measured here) rather
+  than a slope. Every other edge in this fixture is linear, and on linear data
+  a fit that honours `form:` and one that ignores it return the same number —
+  so without this pair, an engine that never read `form:` at all would pass
+  every assertion this file makes. The same rows fitted in LEVELS give 0.109,
+  and `check()` asserts the two stay far apart. ~4% of days are dark (spend 0):
+  `ln(0)` is undefined, so those are the rows a log fit must drop and *report*
+  rather than silently narrow its window with.
+
+`weather_severity_index` is the driver-side twin of `table_section`: declared
+on the view with direction and strength but NO coefficient, drawn independently
+of everything, and asserted inert (t = 0.35 against covers). It exists so the
+fixture can show a declared driver that correctly propagates *nothing*.
+
 The size budget
 ------------------
-Committed CSV is budgeted at ~15 MB; the five files on disk currently total
-13,859,971 bytes (~13.9 MB). `restaurant_checks.csv` and
-`restaurant_check_items.csv` (446,726 line items for 104,000 checks) are the
-two files that scale with check volume, so that headroom — not aesthetics —
-is why `N_CHECKS` stops at 104,000: a further increase without shrinking
-something else would blow the budget.
+Committed CSV is budgeted at ~15 MB; the six files on disk currently total
+14,447,847 bytes (~14.4 MB), of which the store-day table is 574 KB — it grew
+88 KB when the two delivery columns landed, which is the whole remaining
+headroom's worth of a rounding error, but the budget is why a third pair would
+need a justification rather than just a use.
+`restaurant_checks.csv` and `restaurant_check_items.csv` (446,726 line items
+for 104,000 checks) are the two files that scale with check volume, so that
+headroom — not aesthetics — is why `N_CHECKS` stops at 104,000: a further
+increase without shrinking something else would blow the budget.
 
 Invariants
 ----------
@@ -176,6 +231,9 @@ derive rather than restate:
   other axis, so each of the five signals can be asserted in isolation
 - every `check_items.check_id` resolves to a check; every `menu_item_id`
   resolves to a menu item; every `checks.server_id` resolves to a server
+- exactly one `restaurant_store_days.csv` row per (location, business date)
+  over the same 400-day span, so `store_days.view.yml`'s join never drops or
+  duplicates a trading day
 
 Usage
 -----
@@ -415,6 +473,254 @@ DELIVERY_DISCOUNT_RATE = 0.18
 PROMO_DISCOUNT_RATE = 0.05
 PROMO_SHARE = 0.08
 
+# ── Store-day operations: the scenario/forecast fixture ─────────────────────
+#
+# Everything below builds `restaurant_store_days.csv` — one row per (location,
+# business date), 24 x 400 = 9,600 rows. It exists for a different feature than
+# the five signals above: the Metric Tree's **scenario simulation** (pin a
+# lever, propagate a delta forward). That feature's behaviour is decided by the
+# ARITHMETIC OPERATOR on each edge, and the check-grain tree is 100% additive —
+# every edge in `checks.view.yml` is a `+`, so it can only ever exercise the
+# "exact" propagation path. `store_days.view.yml` is where the other operators
+# and the declared-driver cases live; see that file's header for the case-by-
+# case map.
+#
+# Drawn from its own Random instance so the check/item stream above — and every
+# statistic calibrated against it — is bit-for-bit unchanged by anything here.
+STORE_DAY_SEED = 20260805
+
+# ── Labor ──
+# Hours = a fixed open/close block plus a sales-driven variable block. Tuned so
+# labor lands near 30% of sales and sales-per-labor-hour near $60 — both inside
+# the range casual dining actually runs at, which matters because
+# `store_days.view.yml` exposes both as measures a scenario can pin.
+LABOR_FIXED_HOURS = 8.0
+LABOR_SALES_PER_VARIABLE_HOUR = 95.0
+LABOR_HOURS_JITTER = 0.06
+REGION_WAGE = {"west": 22.10, "northeast": 20.40, "midwest": 17.80, "south": 16.20}
+# Wages drift up over the 400-day span, so `avg_wage` (a Div composite) is not
+# a flat line and a scenario on it has something to move against.
+WAGE_ANNUAL_DRIFT = 0.045
+
+# ── Declared drivers ──
+#
+# A `drivers:` block asserts a marginal effect the engine will multiply a delta
+# by. Rather than invent three coefficients, each driver series is CONSTRUCTED
+# from the lagged outcome it is supposed to explain, so the coefficient is a
+# real property of the data — and `check()` re-measures all three by
+# within-location OLS and fails if any drifts more than DRIVER_SLOPE_TOL from
+# what `store_days.view.yml` declares. The declared numbers are copied from
+# that measurement, never estimated.
+#
+# Within-location is not a stylistic choice: base spend scales with a
+# location's size, so an un-demeaned regression absorbs that contrast. Measured
+# on this fixture: between-location 11.79, pooled 8.09, within-location 5.78 —
+# so pooling overstates the marginal effect by 40%, and the pure between-store
+# contrast (essentially 1 / MKT_SPEND_SHARE, the budget ratio) by 2x.
+# Demeaning per location removes exactly that.
+MKT_LAG_DAYS = 7
+MKT_ROAS = 6.0  # incremental sales dollars per marketing dollar, 7 days later
+MKT_SPEND_SHARE = 0.085  # base spend as a share of the location's mean daily sales
+MKT_NOISE_RATIO = 0.20
+
+PROMO_LAG_DAYS = 3
+PROMO_COVERS_PER_REDEMPTION = 2.4
+PROMO_BASE_PER_COVER = 0.62
+PROMO_NOISE_RATIO = 0.20
+
+LOYALTY_LAG_DAYS = 21
+# A new loyalty member redeems more than one offer over the following three
+# weeks, so this is above 1 by design.
+LOYALTY_REDEMPTIONS_PER_SIGNUP = 2.5
+LOYALTY_BASE_PER_REDEMPTION = 0.33
+LOYALTY_NOISE_RATIO = 0.20
+
+# `weather_severity_index` is the driver-side twin of `table_section`: declared
+# on the view as a QUALITATIVE driver (direction/strength/confidence, no
+# coefficient) and drawn independently of everything. It is the fixture's
+# must-refuse case — see UNFITTABLE_MAX_T below, which is the guard that keeps
+# it inert. A fixture where every driver can be sized cannot show a working
+# refusal gate.
+
+# ── The saturating driver ──
+#
+# Every driver above is LINEAR: the next dollar buys what the last one did.
+# That is the easy case, and it is the wrong shape for most spend. This pair is
+# deliberately curved — `delivery_orders = scale_loc * delivery_app_spend **
+# DELIVERY_ELASTICITY` — and the view declares neither a `form:` nor a
+# coefficient, so the engine INFERS the log-log shape from history and fits an
+# ELASTICITY at query time rather than a slope.
+#
+# It exists to make a misread form visible. The same figure read as a level
+# slope instead of an elasticity is out by a factor of `target / driver`, and a
+# fixture where every edge is linear cannot tell a form-aware fit from one that
+# ignores `form:` entirely — both return the same number on linear data. Here
+# they cannot agree: the elasticity is ~0.45 and the level slope measured on the
+# same rows is ~0.109 — 4.1x apart, which is the figure `--check` asserts and the
+# one internal-docs/scenario-forecast.md quotes.
+#
+# Built FORWARD, unlike the three linear drivers above. Those are constructed
+# from the outcome they explain, because that is what makes their slope a
+# property of the data rather than a claim. Here the outcome is a new column
+# with no other source, so spend is drawn first and orders follow from it —
+# which is also the only direction that keeps the curve exact.
+# Its own Random instance, for the reason STORE_DAY_SEED has one: drawing from
+# the shared store-day stream shifts every draw after it, and the first attempt
+# at this pair moved `marketing_spend -> net_sales` from 5.783 to 5.751 and with
+# it every figure in the docstrings, the view and internal-docs/. Nothing
+# calibrated against those streams may depend on whether this pair exists.
+DELIVERY_SEED = 20260806
+DELIVERY_ELASTICITY = 0.45
+# Spread drawn log-UNIFORM, spanning a decade. A log fit needs variance in the
+# logs, and the +-20% additive wobble the linear drivers use gives almost none:
+# ln(1.2) - ln(0.8) is 0.4, against 2.3 here.
+DELIVERY_SPEND_MIN = 40.0
+DELIVERY_SPEND_MAX = 400.0
+# Orders per spend**elasticity, drawn per location so panels sit at different
+# levels and the within-location demeaning is doing real work — a pooled log
+# regression is biased here for the same reason it is on marketing.
+DELIVERY_SCALE_RANGE = (2.2, 5.0)
+# Noise and the integer rounding of an order count both land on the OUTCOME, so
+# they inflate the standard error without biasing the elasticity: in
+# `ln y = ln k + b*ln x + ln(1+e)`, the noise term is absorbed by the intercept
+# and then demeaned away. That is why the tolerance below can be tight.
+DELIVERY_NOISE_RATIO = 0.06
+# Days the delivery app was dark: spend 0, orders 0. `ln(0)` has no value, so
+# these are exactly the rows a log fit must DROP and report (`n_nonpositive`)
+# rather than silently narrow its window with. A fixture with no such day
+# cannot test that path, and it is the commonest real one — every spend column
+# has closed days in it. Kept well under the observation gate: 4% of 400 days
+# is ~16 per location, leaving ~384 to fit on.
+DELIVERY_DARK_DAY_RATE = 0.04
+
+# ── The turning point ──
+#
+# Every driver above points ONE WAY for ever: linear buys the same per dollar,
+# log-log buys a little less each time, but neither ever starts costing you. Real
+# levers do. This pair is the fixture's inverted U —
+#
+#   promo_margin = level_loc + DISCOUNT_SLOPE*x + DISCOUNT_CURVATURE*x^2
+#
+# declares no `form:` and no coefficients, so the engine infers the quadratic
+# shape and fits BOTH terms
+# and can say where the lever stops paying.
+#
+# The story is the ordinary one: a shallow discount pulls in incremental guests
+# whose margin more than covers the giveaway, so promo margin climbs. Push deeper
+# and you start paying full-price guests to use a coupon they did not need, so the
+# giveaway outruns the incremental volume and margin falls — eventually below
+# where it started.
+#
+# The constants are SOLVED, not guessed, so the turn lands somewhere a scenario
+# can actually reach. With x spread over DISCOUNT_MIN..DISCOUNT_MAX the peak sits
+# at `vertex_x * s1/s2 - 1` as a proportional lever, so the vertex is placed to
+# put that at +35% and break-even at +70% — both far inside the observed 6.6x
+# spread, so the engine's domain backstop cannot swallow the case this exists to
+# test. `check()` re-derives all three from the data on disk.
+DISCOUNT_SEED = 20260807
+DISCOUNT_MIN = 6.0  # dollars off per check, shallowest promo day
+DISCOUNT_STEP = 1.4  # 25 steps to DISCOUNT_MAX
+DISCOUNT_STEPS = 25
+DISCOUNT_MAX = DISCOUNT_MIN + (DISCOUNT_STEPS - 1) * DISCOUNT_STEP  # 39.6
+DISCOUNT_SLOPE = 0.85
+# Vertex at $36.81 of depth: inside the observed range, so the curve genuinely
+# turns over the data rather than being extrapolated past its own evidence.
+DISCOUNT_VERTEX = 36.81
+DISCOUNT_CURVATURE = -DISCOUNT_SLOPE / (2 * DISCOUNT_VERTEX)
+# Per-location margin level, which the within-panel demeaning must remove — a
+# pooled fit would read these level differences as part of the curve.
+DISCOUNT_LEVEL_RANGE = (300.0, 900.0)
+DISCOUNT_NOISE_SD = 3.0
+# The curvature is the whole claim, so its own |t| is asserted, not just the
+# slope's: a turning point resting on an insignificant x^2 term is a peak
+# invented from noise, and the engine would report a ceiling that is not there.
+#
+# The floor sits well under the measurement (t ~ 33) and well over the engine's
+# own |t| >= 2.0 bar, on the same principle as the t floors above: it asserts
+# "unambiguously curved", not a value. Pinning it near the measured figure would
+# make the fixture fail on harmless regeneration drift.
+DISCOUNT_MIN_CURVATURE_T = 8.0
+
+# The coefficients as WRITTEN in `store_days.view.yml`. They are the *measured*
+# within-location slopes, not the construction constants above: the noise
+# deliberately mixed into each driver series attenuates the recovered slope a
+# few percent below the constant it was built from, and the YAML has to state
+# what the data does, because the engine multiplies a pinned delta by whatever
+# the YAML says. Update both sides together, from `--check`'s printed
+# measurement — never from the construction constants.
+DECLARED_COEFFICIENT = {
+    "promo_redemptions -> guest_count": 2.30,
+    "loyalty_signups -> promo_redemptions": 2.33,
+    "guest_count -> net_sales": 52.0,
+}
+DRIVER_SLOPE_TOL = 0.10
+
+# Edges that declare NO coefficient, where the engine measures one at query
+# time instead (airlayer `metric_tree_fit`, within-location lagged OLS with a
+# |t| >= 2.0 bar). What this file has to guarantee is not a specific slope but
+# that each lands on the intended side of that bar — otherwise the two cases
+# collapse into one and the refusal gate stops being tested.
+#
+# The measurement below is this file's own Python OLS, independent of the Rust
+# implementation. The SLOPE is the cross-check between them: this file gets
+# 5.783 and the engine gets 5.786 against the same fixture, which is what says
+# the two implementations agree.
+#
+# Their t-statistics are NOT comparable and a maintainer should not read them
+# as disagreeing. This file regresses spend against the 7-day SMOOTHED sales
+# series it was constructed from (t ~ 486); the engine regresses against raw
+# daily `net_sales`, because that is the measure the semantic layer exposes
+# and it cannot know a smoothing existed. Smoothing strips most of the
+# residual variance, so this file's standard error is optimistic by ~13x. The
+# engine's t ~ 36 is the honest one.
+FIT_MIN_T = 2.0
+RUNTIME_FITTED = {
+    # Must fit decisively. The floor is far below either measurement on
+    # purpose: this asserts "unambiguously fittable", not a value, and it has
+    # to hold for whichever of the two t's a future reader plugs in.
+    "marketing_spend -> net_sales": 10.0,
+    # Measured in LOGS, matching the log-log shape the engine infers.
+    "delivery_app_spend -> delivery_orders": 20.0,
+}
+
+# What a log-log fit must recover: an ELASTICITY, not a slope. Unlike
+# DECLARED_COEFFICIENT this is not copied into the YAML — the edge declares no
+# coefficient precisely so the engine measures it — so this is the value the
+# engine's own fit is checked against, in `verify_scenario_api.sh`.
+#
+# The tolerance is tight because the noise is on the outcome and so does not
+# attenuate the slope (see DELIVERY_NOISE_RATIO). If a regeneration drifts it,
+# the construction constant is what changed, not the estimator.
+FITTED_ELASTICITY = {"delivery_app_spend -> delivery_orders": DELIVERY_ELASTICITY}
+FITTED_ELASTICITY_TOL = 0.02
+# The same pair fitted in LEVELS is what the engine would return if it ignored
+# `form:`. That gap is the whole reason this pair is in the fixture, so it is
+# asserted: measured 0.451 in logs against 0.109 in levels, 4.1x apart. The
+# floor sits under that on purpose — like the t floors above, it asserts
+# "unambiguously different", not a value. Raising it would mean pushing orders
+# per dollar somewhere a delivery business does not sit, which buys nothing: a
+# forecast 3.9x out is already unmistakable.
+FORM_CONFUSION_MIN_RATIO = 3.0
+# Must stay UNDER the engine's bar, with margin — a series that drifted to
+# t = 1.9 would still pass the engine's gate today and fail it on the next
+# regeneration, making the fixture's refusal case intermittent.
+UNFITTABLE_MAX_T = 1.5
+
+# ── The wound-down banquet program ──
+#
+# Private-event banquets ran until 120 days before the anchor and are exactly
+# zero after. That gives the scenario simulation its `unquantifiable` case for
+# free: `banquet_check_average = banquet_sales / banquet_covers` is a
+# multiplicative edge, and a multiplicative edge whose CHILD is zero cannot be
+# sized (%delta is undefined at zero), so on the default trailing-90-day window
+# the engine must say "can't size this" rather than "no impact" — two very
+# different claims. Widen the window to 365 days and the same edge sizes
+# normally. Deliberately not the existing `catering` order channel, which is
+# still live in the check data.
+BANQUET_WIND_DOWN_DAYS = 120
+BANQUET_COVER_PRICE = 38.0
+BANQUET_COVER_WEIGHTS = ((0, 0.62), (12, 0.14), (18, 0.10), (24, 0.08), (40, 0.06))
+
 
 def _menu_by_category() -> dict[str, list[tuple]]:
     by_cat: dict[str, list[tuple]] = defaultdict(list)
@@ -435,6 +741,191 @@ def _apportion(weights: tuple[float, ...], total: int) -> list[int]:
     for i in order[:remainder]:
         counts[i] += 1
     return counts
+
+
+def _mean(xs) -> float:
+    xs = list(xs)
+    return sum(xs) / len(xs) if xs else 0.0
+
+
+def _stdev(xs) -> float:
+    xs = list(xs)
+    if len(xs) < 2:
+        return 0.0
+    m = _mean(xs)
+    return math.sqrt(sum((x - m) ** 2 for x in xs) / (len(xs) - 1))
+
+
+def _centered_mean(series: list[float], i: int, half_width: int) -> float:
+    lo = max(0, i - half_width)
+    hi = min(len(series), i + half_width + 1)
+    return sum(series[lo:hi]) / (hi - lo)
+
+
+def _lagged(series: list[float], i: int, lag: int) -> float:
+    """`series[i + lag]`, clamped at the right edge.
+
+    The last `lag` days have no future value to be constructed from. Clamping
+    (rather than substituting the series mean) keeps the tail continuous
+    instead of snapping to the base level; `check()` drops those rows from
+    every driver regression, since they carry no real lead-lag information.
+    """
+    return series[min(i + lag, len(series) - 1)]
+
+
+def _store_day_rows(checks: list[list], anchor: dt.date) -> list[list]:
+    """One row per (location, business date) — the scenario/forecast fixture.
+
+    Sales, covers and food cost are NOT stored here: `store_days.view.yml`
+    re-derives them from the check data at query time, so the two grains can
+    never disagree. What this table carries is the operational data that has no
+    check-level source — labor, marketing, the loyalty program, weather, and
+    the wound-down banquet business.
+
+    Each of the three quantitative drivers is built backwards from the outcome
+    it explains (spend from 7-day-ahead smoothed sales, redemptions from
+    3-day-ahead covers, signups from 21-day-ahead redemptions), so the declared
+    coefficient is a measurable property of the data rather than a claim. See
+    the driver constants above.
+    """
+    rng = random.Random(STORE_DAY_SEED)
+    # See DELIVERY_SEED: the saturating pair draws from its own stream so adding
+    # it leaves every other column here bit-for-bit unchanged.
+    drng = random.Random(DELIVERY_SEED)
+    # Likewise its own stream: adding the turning-point pair must not shift any
+    # column already on disk. See DISCOUNT_SEED.
+    qrng = random.Random(DISCOUNT_SEED)
+    start = anchor - dt.timedelta(days=DAYS - 1)
+    dates = [(start + dt.timedelta(days=i)).isoformat() for i in range(DAYS)]
+    date_index = {d: i for i, d in enumerate(dates)}
+    region_of = {loc[0]: loc[2] for loc in LOCATIONS}
+    banquet_last_day = (anchor - dt.timedelta(days=BANQUET_WIND_DOWN_DAYS)).isoformat()
+
+    # Roll the generated checks up to (location, date). Indices follow the
+    # `checks` row layout built in generate(): 1 location_id, 2 check_date,
+    # 4 party_size, 5 total_amount.
+    sales: dict[tuple[int, str], float] = defaultdict(float)
+    covers: dict[tuple[int, str], float] = defaultdict(float)
+    for c in checks:
+        sales[(c[1], c[2])] += c[5]
+        covers[(c[1], c[2])] += c[4]
+
+    cover_levels, cover_weights = zip(*BANQUET_COVER_WEIGHTS)
+    rows: list[list] = []
+    for loc in LOCATIONS:
+        loc_id = loc[0]
+        day_sales = [sales[(loc_id, d)] for d in dates]
+        day_covers = [covers[(loc_id, d)] for d in dates]
+        # A 7-day centered mean is what marketing spend is set against: a
+        # single store-day's sales swing is several times any plausible daily
+        # ad budget, so building spend off the raw series would demand a
+        # budget large enough to absorb it (or clip at zero constantly) and
+        # destroy the very slope it is meant to carry.
+        sma = [_centered_mean(day_sales, i, 3) for i in range(DAYS)]
+        mean_sma = _mean(sma)
+        mean_covers = _mean(day_covers)
+
+        spend_signal = [(_lagged(sma, i, MKT_LAG_DAYS) - mean_sma) / MKT_ROAS for i in range(DAYS)]
+        spend_base = MKT_SPEND_SHARE * _mean(day_sales)
+        spend_noise_sd = MKT_NOISE_RATIO * _stdev(spend_signal)
+        spend = [
+            max(20.0, round(spend_base + spend_signal[i] + rng.gauss(0, spend_noise_sd), 2))
+            for i in range(DAYS)
+        ]
+
+        promo_signal = [
+            (_lagged(day_covers, i, PROMO_LAG_DAYS) - mean_covers) / PROMO_COVERS_PER_REDEMPTION
+            for i in range(DAYS)
+        ]
+        promo_base = PROMO_BASE_PER_COVER * mean_covers
+        promo_noise_sd = PROMO_NOISE_RATIO * _stdev(promo_signal)
+        promo = [
+            max(0, round(promo_base + promo_signal[i] + rng.gauss(0, promo_noise_sd)))
+            for i in range(DAYS)
+        ]
+
+        mean_promo = _mean(promo)
+        signup_signal = [
+            (_lagged([float(p) for p in promo], i, LOYALTY_LAG_DAYS) - mean_promo)
+            / LOYALTY_REDEMPTIONS_PER_SIGNUP
+            for i in range(DAYS)
+        ]
+        signup_base = LOYALTY_BASE_PER_REDEMPTION * mean_promo
+        signup_noise_sd = LOYALTY_NOISE_RATIO * _stdev(signup_signal)
+        signups = [
+            max(0, round(signup_base + signup_signal[i] + rng.gauss(0, signup_noise_sd)))
+            for i in range(DAYS)
+        ]
+
+        # The saturating pair. Drawn forward: spend log-uniform over a decade,
+        # orders as a power law of it. A dark day zeroes both — `ln(0)` is
+        # undefined, so those are the rows the log fit has to drop and count.
+        # On a live day the minimum order count is ~11, so a non-positive
+        # `delivery_orders` can only ever be a dark day: `n_nonpositive` from
+        # the engine should equal the dark-day count exactly.
+        delivery_scale = drng.uniform(*DELIVERY_SCALE_RANGE)
+        delivery_spend: list[float] = []
+        delivery_orders: list[int] = []
+        for _ in range(DAYS):
+            if drng.random() < DELIVERY_DARK_DAY_RATE:
+                delivery_spend.append(0.0)
+                delivery_orders.append(0)
+                continue
+            spend_i = math.exp(
+                drng.uniform(math.log(DELIVERY_SPEND_MIN), math.log(DELIVERY_SPEND_MAX))
+            )
+            orders_i = delivery_scale * spend_i**DELIVERY_ELASTICITY
+            orders_i *= 1.0 + drng.gauss(0, DELIVERY_NOISE_RATIO)
+            delivery_spend.append(round(spend_i, 2))
+            delivery_orders.append(max(0, round(orders_i)))
+
+        # The turning point. `x` sweeps the promo depth a manager might try;
+        # `promo_margin` follows the inverted U that depth actually produces.
+        # Built forward like the delivery pair, for the same reason: the outcome
+        # is a new column with no other source.
+        margin_level = qrng.uniform(*DISCOUNT_LEVEL_RANGE)
+        discount_depth: list[float] = []
+        promo_margin: list[float] = []
+        for i in range(DAYS):
+            x = DISCOUNT_MIN + (i % DISCOUNT_STEPS) * DISCOUNT_STEP
+            m = margin_level + DISCOUNT_SLOPE * x + DISCOUNT_CURVATURE * x * x
+            m += qrng.gauss(0, DISCOUNT_NOISE_SD)
+            discount_depth.append(round(x, 2))
+            promo_margin.append(round(m, 2))
+
+        wage_base = REGION_WAGE[region_of[loc_id]] * rng.uniform(0.97, 1.03)
+        for i, day in enumerate(dates):
+            hours = (LABOR_FIXED_HOURS + day_sales[i] / LABOR_SALES_PER_VARIABLE_HOUR) * (
+                1.0 + rng.uniform(-LABOR_HOURS_JITTER, LABOR_HOURS_JITTER)
+            )
+            wage = wage_base * (1.0 + WAGE_ANNUAL_DRIFT * i / 365.0)
+            if day <= banquet_last_day:
+                banquet_covers = rng.choices(cover_levels, weights=cover_weights, k=1)[0]
+            else:
+                banquet_covers = 0
+            rows.append(
+                [
+                    loc_id,
+                    day,
+                    round(hours, 2),
+                    round(hours * wage, 2),
+                    spend[i],
+                    promo[i],
+                    signups[i],
+                    round(rng.uniform(0.0, 1.0), 3),
+                    banquet_covers,
+                    round(banquet_covers * BANQUET_COVER_PRICE, 2),
+                    delivery_spend[i],
+                    delivery_orders[i],
+                    discount_depth[i],
+                    promo_margin[i],
+                ]
+            )
+
+    # Emit in (date, location) order so the file reads as a diary rather than
+    # 400 rows of location 1 followed by 400 of location 2.
+    rows.sort(key=lambda r: (date_index[r[1]], r[0]))
+    return rows
 
 
 def generate(anchor: dt.date) -> dict[str, list[list]]:
@@ -591,6 +1082,7 @@ def generate(anchor: dt.date) -> dict[str, list[list]]:
         "restaurant_checks.csv": checks,
         "restaurant_check_items.csv": items,
         "restaurant_servers.csv": servers,
+        "restaurant_store_days.csv": _store_day_rows(checks, anchor),
     }
 
 
@@ -620,6 +1112,22 @@ HEADERS = {
     ],
     "restaurant_check_items.csv": ["check_id", "line_item_id", "menu_item_id", "quantity"],
     "restaurant_servers.csv": ["server_id", "server_name", "location_id", "hire_date", "tenure_band"],
+    "restaurant_store_days.csv": [
+        "location_id",
+        "business_date",
+        "labor_hours",
+        "labor_cost",
+        "marketing_spend",
+        "promo_redemptions",
+        "loyalty_signups",
+        "weather_severity_index",
+        "banquet_covers",
+        "banquet_sales",
+        "delivery_app_spend",
+        "delivery_orders",
+        "discount_depth",
+        "promo_margin",
+    ],
 }
 
 
@@ -769,6 +1277,417 @@ def _addon_revenue_gap(
     seg_mean = sum(per_check.get(cid, 0.0) for cid in seg_ids) / len(seg_ids)
     bench_mean = sum(per_check.get(cid, 0.0) for cid in bench_ids) / len(bench_ids)
     return bench_mean - seg_mean, len(seg_ids), len(bench_ids)
+
+
+def _ols_within(groups: dict[int, list[tuple[float, float]]]) -> tuple[float, float, float]:
+    """Within-group (location fixed-effects) OLS slope of y on x, plus SE and t.
+
+    Every point is demeaned against its own location before pooling, so the
+    estimate is the marginal within-store effect. An un-demeaned regression
+    absorbs between-store scale instead — a big store both sells more and
+    budgets more. Measured here: pooled 8.09 against the true within-store
+    5.78 (40% overstated), and the pure between-store contrast is 11.79, which
+    is just the budget ratio wearing a ROAS label. Returns (slope, se, t).
+    """
+    xs: list[float] = []
+    ys: list[float] = []
+    for pts in groups.values():
+        mx = _mean(p[0] for p in pts)
+        my = _mean(p[1] for p in pts)
+        xs.extend(p[0] - mx for p in pts)
+        ys.extend(p[1] - my for p in pts)
+    sxx = sum(x * x for x in xs)
+    if not sxx:
+        return float("nan"), float("inf"), 0.0
+    slope = sum(x * y for x, y in zip(xs, ys)) / sxx
+    dof = len(xs) - len(groups) - 1
+    resid_ss = sum((y - slope * x) ** 2 for x, y in zip(xs, ys))
+    se = math.sqrt((resid_ss / dof) / sxx) if dof > 0 else float("inf")
+    return slope, se, (slope / se if se else float("inf"))
+
+
+def _ols_within2(
+    groups: dict[int, list[tuple[float, float, float]]],
+) -> tuple[float, float, float, float]:
+    """Within-group OLS of y on [x, x^2] — the two-term fit a turning point needs.
+
+    The k=1 helper above cannot express a curve that turns, which is the whole
+    reason `coefficients:` had to become a vector. This is the independent Python
+    check on the engine's own two-term fit: it demeans both columns and the
+    response against each location before pooling, exactly as the engine does, so
+    a disagreement means the estimator changed and not the data.
+
+    Returns (slope, curvature, t_slope, t_curvature).
+    """
+    xs: list[tuple[float, float]] = []
+    ys: list[float] = []
+    for pts in groups.values():
+        n = len(pts)
+        m1 = sum(p[0] for p in pts) / n
+        m2 = sum(p[1] for p in pts) / n
+        my = sum(p[2] for p in pts) / n
+        for x1, x2, y in pts:
+            xs.append((x1 - m1, x2 - m2))
+            ys.append(y - my)
+    n = len(xs)
+    a11 = sum(x[0] * x[0] for x in xs)
+    a12 = sum(x[0] * x[1] for x in xs)
+    a22 = sum(x[1] * x[1] for x in xs)
+    c1 = sum(x[0] * y for x, y in zip(xs, ys))
+    c2 = sum(x[1] * y for x, y in zip(xs, ys))
+    det = a11 * a22 - a12 * a12
+    if not det:
+        return float("nan"), float("nan"), 0.0, 0.0
+    b1 = (a22 * c1 - a12 * c2) / det
+    b2 = (a11 * c2 - a12 * c1) / det
+    # One degree of freedom per panel mean AND per term, as the engine charges.
+    dof = n - len(groups) - 2
+    rss = sum((y - b1 * x[0] - b2 * x[1]) ** 2 for x, y in zip(xs, ys))
+    s2 = rss / dof
+    se1 = math.sqrt(s2 * a22 / det)
+    se2 = math.sqrt(s2 * a11 / det)
+    return b1, b2, (b1 / se1 if se1 else 0.0), (b2 / se2 if se2 else 0.0)
+
+
+def _lagged_pairs(
+    by_loc: dict[int, list[dict]],
+    x_key,
+    y_key,
+    lag: int,
+) -> dict[int, list[tuple[float, float]]]:
+    """(x[i], y[i + lag]) pairs per location, dropping the unusable tail.
+
+    The last `lag` rows of each location have no row `lag` days ahead to pair
+    with — `_lagged` clamped them at generation time, so they carry no lead-lag
+    information and would only dilute the slope. Dropped here rather than
+    kept as zeros.
+    """
+    out: dict[int, list[tuple[float, float]]] = {}
+    for loc_id, rows in by_loc.items():
+        out[loc_id] = [(x_key(rows[i]), y_key(rows[i + lag])) for i in range(len(rows) - lag)]
+    return out
+
+
+def _check_store_days(failures: list[str]) -> None:
+    """Verify the store-day fixture the scenario simulation runs on.
+
+    Three things have to hold, and only the first is structural:
+
+    1. The table lines up with the check data — one row per (location, date)
+       over the same span, every location resolving.
+    2. The unit economics are inside the band a restaurant actually runs at.
+       `store_profit`, `prime_cost_pct` and `sales_per_labor_hour` are all
+       measures a scenario can pin, and a lever on a measure whose baseline is
+       nonsense produces a confidently nonsense forecast.
+    3. Every coefficient declared in `store_days.view.yml` is what the data
+       actually does, to within DRIVER_SLOPE_TOL. This is the one that rots
+       silently: nothing in the engine checks a `drivers:` coefficient, so a
+       declared 6.0 against data that says 3.0 would propagate wrong numbers
+       forever with no error anywhere.
+    """
+    store_days = _read("restaurant_store_days.csv")
+    checks = _read("restaurant_checks.csv")
+    locations = {int(r["location_id"]): r for r in _read("restaurant_locations.csv")}
+    menu = {int(r["menu_item_id"]): r for r in _read("restaurant_menu_items.csv")}
+    items = _read("restaurant_check_items.csv")
+
+    expected_rows = len(LOCATIONS) * DAYS
+    if len(store_days) != expected_rows:
+        failures.append(
+            f"restaurant_store_days.csv has {len(store_days)} rows, expected "
+            f"{expected_rows} ({len(LOCATIONS)} locations x {DAYS} days) — the view joins "
+            f"on (location_id, business_date), so a missing pair silently drops a store-day"
+        )
+    orphan_locs = {int(r["location_id"]) for r in store_days} - set(locations)
+    if orphan_locs:
+        failures.append(f"{len(orphan_locs)} store_days rows reference a missing location")
+    check_dates = {c["check_date"] for c in checks}
+    missing_days = check_dates - {r["business_date"] for r in store_days}
+    if missing_days:
+        failures.append(
+            f"{len(missing_days)} dates have checks but no store-day row (e.g. "
+            f"{sorted(missing_days)[:3]}) — labor and marketing would read as zero there"
+        )
+
+    # ── Unit economics ──
+    net_sales = sum(float(c["total_amount"]) for c in checks)
+    food_cost = sum(
+        int(i["quantity"]) * float(menu[int(i["menu_item_id"])]["unit_cost"]) for i in items
+    )
+    labor_cost = sum(float(r["labor_cost"]) for r in store_days)
+    labor_hours = sum(float(r["labor_hours"]) for r in store_days)
+    marketing = sum(float(r["marketing_spend"]) for r in store_days)
+    labor_pct = labor_cost / net_sales
+    prime_pct = (labor_cost + food_cost) / net_sales
+    splh = net_sales / labor_hours
+    print("\n  store-day unit economics (whole fixture):")
+    print(f"    labor        {labor_pct:>7.1%} of net sales   (${labor_cost:,.0f})")
+    print(f"    food         {food_cost / net_sales:>7.1%} of net sales   (${food_cost:,.0f})")
+    print(f"    prime cost   {prime_pct:>7.1%} of net sales")
+    print(f"    marketing    {marketing / net_sales:>7.1%} of net sales   (${marketing:,.0f})")
+    print(f"    sales per labor hour  ${splh:,.2f}")
+    for label, value, lo, hi in (
+        ("labor as a share of sales", labor_pct, 0.26, 0.34),
+        ("prime cost as a share of sales", prime_pct, 0.55, 0.68),
+        ("sales per labor hour", splh, 50.0, 75.0),
+    ):
+        if not lo <= value <= hi:
+            failures.append(
+                f"{label} is {value:.3f}, outside the plausible band {lo}..{hi} — a scenario "
+                f"pinned on a measure with an implausible baseline forecasts confident nonsense"
+            )
+
+    # ── Declared driver coefficients ──
+    by_loc: dict[int, list[dict]] = defaultdict(list)
+    for r in sorted(store_days, key=lambda r: (int(r["location_id"]), r["business_date"])):
+        by_loc[int(r["location_id"])].append(r)
+    day_sales: dict[tuple[int, str], float] = defaultdict(float)
+    day_covers: dict[tuple[int, str], float] = defaultdict(float)
+    for c in checks:
+        key = (int(c["location_id"]), c["check_date"])
+        day_sales[key] += float(c["total_amount"])
+        day_covers[key] += int(c["party_size"])
+    for loc_id, rows in by_loc.items():
+        sales_series = [day_sales[(loc_id, r["business_date"])] for r in rows]
+        for i, r in enumerate(rows):
+            r["_sales"] = day_sales[(loc_id, r["business_date"])]
+            r["_covers"] = day_covers[(loc_id, r["business_date"])]
+            r["_sales_sma7"] = _centered_mean(sales_series, i, 3)
+
+    marketing_fit = _ols_within(
+        _lagged_pairs(
+            by_loc,
+            lambda r: float(r["marketing_spend"]),
+            lambda r: r["_sales_sma7"],
+            MKT_LAG_DAYS,
+        )
+    )
+    measured = {
+        "promo_redemptions -> guest_count": _ols_within(
+            _lagged_pairs(
+                by_loc,
+                lambda r: float(r["promo_redemptions"]),
+                lambda r: r["_covers"],
+                PROMO_LAG_DAYS,
+            )
+        ),
+        "loyalty_signups -> promo_redemptions": _ols_within(
+            _lagged_pairs(
+                by_loc,
+                lambda r: float(r["loyalty_signups"]),
+                lambda r: float(r["promo_redemptions"]),
+                LOYALTY_LAG_DAYS,
+            )
+        ),
+        "guest_count -> net_sales": _ols_within(
+            _lagged_pairs(by_loc, lambda r: r["_covers"], lambda r: r["_sales"], 0)
+        ),
+    }
+    print("\n  declared driver coefficients (within-location OLS):")
+    for label, (slope, se, _t) in measured.items():
+        declared = DECLARED_COEFFICIENT[label]
+        drift = abs(slope - declared) / declared
+        print(f"    {label:<38} measured {slope:>8.3f} (SE {se:.3f})  declared {declared:>7.3f}")
+        if drift > DRIVER_SLOPE_TOL:
+            failures.append(
+                f"driver {label} measures a slope of {slope:.3f} but store_days.view.yml "
+                f"declares {declared:.3f} ({drift:.0%} off, tolerance {DRIVER_SLOPE_TOL:.0%}) — "
+                f"the engine multiplies a pinned delta by the DECLARED number, so a scenario "
+                f"would forecast a move this data does not support"
+            )
+
+    # ── The three edges that declare no coefficient ──
+    #
+    # All three are handed to the engine's runtime fitter over the same window.
+    # Two of them exist as a pair because they must land on OPPOSITE sides of
+    # its |t| >= 2.0 bar — verifying only the one that fits would leave a
+    # fitter that never refuses looking correct. The third is measured in a
+    # different SPACE, which is what keeps a form-blind fit from passing.
+    print("\n  runtime-fitted drivers (no coefficient declared):")
+    mkt_slope, mkt_se, mkt_t = marketing_fit
+    floor = RUNTIME_FITTED["marketing_spend -> net_sales"]
+    print(
+        f"    {'marketing_spend -> net_sales':<38} measured {mkt_slope:>8.3f} "
+        f"(SE {mkt_se:.3f})  t {mkt_t:>7.2f}  must fit (t >= {floor})"
+    )
+    if abs(mkt_t) < floor:
+        failures.append(
+            f"marketing_spend -> net_sales measures t={mkt_t:.2f}, under the {floor} floor "
+            f"this fixture needs — store_days.view.yml declares no coefficient for it on "
+            f"purpose, so if the engine's fit stops clearing its |t| >= {FIT_MIN_T} bar the "
+            f"edge silently goes inert and the runtime-fitting case stops being demonstrated"
+        )
+
+    # ── The saturating edge, measured in its declared space ──
+    #
+    # Two fits on the same rows. In LOGS it must recover the construction
+    # elasticity; in LEVELS it returns something far away. The gap is the point:
+    # a form-blind fitter passes every other assertion in this file, because
+    # every other edge here is linear and both spaces agree there.
+    delivery_pairs = _lagged_pairs(
+        by_loc,
+        lambda r: float(r["delivery_app_spend"]),
+        lambda r: float(r["delivery_orders"]),
+        0,
+    )
+    log_pairs = {
+        loc: [(math.log(x), math.log(y)) for x, y in pts if x > 0 and y > 0]
+        for loc, pts in delivery_pairs.items()
+    }
+    dark_days = sum(1 for pts in delivery_pairs.values() for x, _ in pts if x <= 0)
+    elasticity, elast_se, elast_t = _ols_within(log_pairs)
+    level_slope, _, _ = _ols_within(delivery_pairs)
+    expected = FITTED_ELASTICITY["delivery_app_spend -> delivery_orders"]
+    floor = RUNTIME_FITTED["delivery_app_spend -> delivery_orders"]
+    print(
+        f"    {'delivery_app_spend -> delivery_orders':<38} measured {elasticity:>8.3f} "
+        f"(SE {elast_se:.3f})  t {elast_t:>7.2f}  elasticity, log-log (expect {expected})"
+    )
+    print(
+        f"    {'  ... the same rows fitted in levels':<38} measured {level_slope:>8.3f}"
+        f"{'':>28}  <- what a form-blind fit returns"
+    )
+    print(
+        f"    {'  ... dark days (spend 0, no log)':<38} {dark_days:>8} rows the log fit "
+        f"must drop and report"
+    )
+    if abs(elasticity - expected) > FITTED_ELASTICITY_TOL:
+        failures.append(
+            f"delivery_app_spend -> delivery_orders measures an elasticity of "
+            f"{elasticity:.3f}, expected {expected} +-{FITTED_ELASTICITY_TOL} — the engine fits "
+            f"this edge at query time and verify_scenario_api.sh checks its answer against "
+            f"{expected}, so the two would disagree"
+        )
+    if abs(elast_t) < floor:
+        failures.append(
+            f"delivery_app_spend -> delivery_orders measures t={elast_t:.2f} in logs, under the "
+            f"{floor} floor — this is the fixture's only non-linear fittable edge, and a refusal "
+            f"here leaves the log-log path untested"
+        )
+    if not dark_days:
+        failures.append(
+            "no dark delivery days (spend 0) — those rows are the fixture's only test that a log "
+            "fit DROPS a non-positive value and reports how many, instead of silently narrowing "
+            "its window"
+        )
+    ratio = abs(elasticity / level_slope) if level_slope else float("inf")
+    if ratio < FORM_CONFUSION_MIN_RATIO:
+        failures.append(
+            f"the log-log elasticity ({elasticity:.3f}) and the level slope ({level_slope:.3f}) "
+            f"are only {ratio:.1f}x apart, under the {FORM_CONFUSION_MIN_RATIO}x this fixture "
+            f"needs — they exist to be far enough apart that a fit ignoring `form:` cannot pass "
+            f"for a fit honouring it"
+        )
+
+    # ── The turning point, and where it turns ──
+    #
+    # The only shape in this project that can stop helping. Three things are
+    # asserted, because each guards a different failure:
+    #   1. both coefficients come back — a one-term fit cannot describe a curve
+    #      that turns, and would report a lever that pays for ever;
+    #   2. the CURVATURE is decisively significant — a peak resting on an
+    #      insignificant x^2 term is invented from noise, and the engine would
+    #      show a ceiling that is not there;
+    #   3. the peak and break-even land inside the observed spread, so the
+    #      engine's domain backstop cannot swallow the case.
+    disc_groups = {
+        loc: [
+            (float(r["discount_depth"]), float(r["discount_depth"]) ** 2, float(r["promo_margin"]))
+            for r in rows
+        ]
+        for loc, rows in by_loc.items()
+    }
+    d_slope, d_curve, d_t1, d_t2 = _ols_within2(disc_groups)
+    depths = [float(r["discount_depth"]) for r in store_days]
+    s1 = sum(depths)
+    s2 = sum(x * x for x in depths)
+    # dY(r) = slope*s1*r + curvature*s2*((1+r)^2 - 1); solve dY' = 0 and dY = 0.
+    peak_r = -(d_slope * s1) / (2 * d_curve * s2) - 1
+    zero_r = -(d_slope * s1) / (d_curve * s2) - 2
+    spread = max(depths) / min(depths)
+    print("\n  the turning point (quadratic shape inferred, nothing declared):")
+    print(
+        f"    {'discount_depth -> promo_margin':<38} slope {d_slope:>8.4f} (t {d_t1:>7.1f})  "
+        f"curvature {d_curve:>9.6f} (t {d_t2:>7.1f})"
+    )
+    print(
+        f"    {'  ... peaks at':<38} +{peak_r * 100:>7.1f}%   break-even +{zero_r * 100:.1f}%   "
+        f"observed spread {spread:.1f}x"
+    )
+    if abs(d_slope - DISCOUNT_SLOPE) / DISCOUNT_SLOPE > DRIVER_SLOPE_TOL:
+        failures.append(
+            f"discount_depth -> promo_margin measures a slope of {d_slope:.4f}, built from "
+            f"{DISCOUNT_SLOPE} — the engine fits this edge at query time and "
+            f"verify_scenario_api.sh checks its answer against the construction constant"
+        )
+    if abs(d_curve - DISCOUNT_CURVATURE) / abs(DISCOUNT_CURVATURE) > DRIVER_SLOPE_TOL:
+        failures.append(
+            f"discount_depth -> promo_margin measures a curvature of {d_curve:.6f}, built from "
+            f"{DISCOUNT_CURVATURE:.6f} — the curvature IS the turning point, so a drift here "
+            f"moves where the fixture says the lever stops paying"
+        )
+    if abs(d_t2) < DISCOUNT_MIN_CURVATURE_T:
+        failures.append(
+            f"the curvature term measures t={d_t2:.2f}, under the {DISCOUNT_MIN_CURVATURE_T} "
+            f"floor this fixture needs. The engine requires EVERY basis term to clear |t| >= "
+            f"{FIT_MIN_T}, so at this t it would refuse the edge and the turning-point case "
+            f"would silently stop being tested"
+        )
+    if not 0.0 < peak_r < zero_r < spread - 1:
+        failures.append(
+            f"the turn is not reachable: peak at {peak_r:.2f}, break-even at {zero_r:.2f}, "
+            f"observed spread {spread:.2f}x. Both have to be positive, ordered, and inside the "
+            f"spread — outside it the engine's domain backstop refuses the lever, which is the "
+            f"right behaviour but leaves 'helps, then hurts' untested"
+        )
+
+    weather_slope, weather_se, weather_t = _ols_within(
+        _lagged_pairs(by_loc, lambda r: float(r["weather_severity_index"]), lambda r: r["_covers"], 0)
+    )
+    print(
+        f"    {'weather_severity_index -> guest_count':<38} measured {weather_slope:>8.3f} "
+        f"(SE {weather_se:.3f})  t {weather_t:>7.2f}  must NOT fit (t < {UNFITTABLE_MAX_T})"
+    )
+    if abs(weather_t) >= UNFITTABLE_MAX_T:
+        failures.append(
+            f"weather_severity_index moves guest_count at t={weather_t:.2f}, at or above the "
+            f"{UNFITTABLE_MAX_T} ceiling — this is the fixture's must-refuse case, and it needs "
+            f"margin under the engine's |t| >= {FIT_MIN_T} bar. At t={weather_t:.2f} the engine "
+            f"would start fitting a coefficient for a variable that does nothing, which is the "
+            f"exact failure the refusal gate exists to prevent"
+        )
+
+    # ── The wound-down banquet program ──
+    anchor = max(r["business_date"] for r in store_days)
+    wind_down = (
+        dt.date.fromisoformat(anchor) - dt.timedelta(days=BANQUET_WIND_DOWN_DAYS)
+    ).isoformat()
+    live = sum(float(r["banquet_sales"]) for r in store_days if r["business_date"] <= wind_down)
+    dead = [r for r in store_days if r["business_date"] > wind_down]
+    still_selling = [
+        r for r in dead if float(r["banquet_sales"]) or int(r["banquet_covers"])
+    ]
+    print(
+        f"\n  banquet program: ${live:,.0f} through {wind_down}, then exactly zero for "
+        f"{len(dead)} store-days"
+    )
+    if live <= 0:
+        failures.append("banquet_sales is zero even before the wind-down date — nothing to size")
+    if still_selling:
+        failures.append(
+            f"{len(still_selling)} store-days after {wind_down} still carry banquet activity — "
+            f"the zero-denominator case (banquet_sales / banquet_covers on a multiplicative "
+            f"edge) needs the trailing window to be exactly zero"
+        )
+    # The default scenario period preset is a trailing 90 days. The wind-down
+    # has to sit outside it, or the unquantifiable case never fires on the
+    # default view and only shows up if someone widens the window by hand.
+    if BANQUET_WIND_DOWN_DAYS <= 90:
+        failures.append(
+            f"BANQUET_WIND_DOWN_DAYS is {BANQUET_WIND_DOWN_DAYS}, inside the 90-day default "
+            f"scenario window — banquet_covers would be non-zero there and the "
+            f"unquantifiable case would stop firing on the default period"
+        )
 
 
 def check() -> int:
@@ -1159,6 +2078,8 @@ def check() -> int:
         failures.append(
             f"expected midwest and delivery to be the top two opportunities, got {ranked[:2]}"
         )
+
+    _check_store_days(failures)
 
     if failures:
         print("\nFAILED:")

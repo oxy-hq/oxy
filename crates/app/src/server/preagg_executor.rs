@@ -252,10 +252,15 @@ async fn run_preagg_task(
     // makes the sweep converge. A manifest entry for a rollup no longer
     // declared — or for a database this workspace's config no longer selects —
     // can never be rebuilt, so requiring it would leave the stamp unwritten and
-    // the cycle re-sweeping forever. Nothing removes those artifacts yet —
-    // `preagg_ledger::prune` below drops the LEDGER entry, not the manifest
-    // entry or the Parquet, and retraction is the only path that removes
-    // either. A known gap, not this constant's problem.
+    // the cycle re-sweeping forever. What removes the leftovers depends on WHY
+    // the hash went undeclared: a rollup whose definition merely changed is
+    // superseded, and `commit_manifest_and_cache` reaps its manifest entry and
+    // Parquet when the replacement publishes; one whose `pre_aggregations:`
+    // block was DELETED outright has no replacement coming, so its artifacts
+    // still sit until a retraction — which is only ever reached from a rebuild
+    // — takes them. `preagg_ledger::prune` below drops the LEDGER entry either
+    // way, which is a third thing again. The remaining gap is that second
+    // case, and it is not this constant's problem.
     let declared: std::collections::HashSet<String> = views
         .iter()
         .flat_map(|(view, _)| oxy_airlayer_compat::preagg::resolve_rollups(view))

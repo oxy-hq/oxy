@@ -1,7 +1,9 @@
 import { useCallback, useState } from "react";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useWmFilterCounts, useWmInstanceDetail, useWorldModel } from "@/hooks/api/useWorldModel";
+import { cn } from "@/libs/shadcn/utils";
 import type { WmFilterSeed, WmInstance, WmSelection } from "@/types/worldModel";
+import { PANEL_WIDTH } from "../components/semanticGraph";
 import { FilterPill } from "./components/FilterPill";
 import { InstancePickerPopover } from "./components/InstancePickerPopover";
 import { SampleBrowserPopover } from "./components/SampleBrowserPopover";
@@ -219,7 +221,7 @@ export default function WorldModelView() {
           />
         )}
       </div>
-      <div className='w-96 shrink-0 overflow-hidden border-border border-l'>
+      <div className={cn(PANEL_WIDTH, "shrink-0 overflow-hidden border-border border-l")}>
         <WorldModelDetailPanel
           model={model}
           selection={selection}

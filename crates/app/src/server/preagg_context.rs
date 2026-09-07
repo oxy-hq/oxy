@@ -177,6 +177,7 @@ mod tests {
                 &request,
                 "SELECT 'unused'",
                 "local",
+                None,
             )
             .is_some(),
             "a read surface serves the stale rollup and lets the rebuild catch up"
@@ -187,6 +188,7 @@ mod tests {
                 &request,
                 "SELECT 'unused'",
                 "local",
+                None,
             )
             .is_none(),
             "require_fresh must fall through to the warehouse on the same rollup"
@@ -209,11 +211,11 @@ mod tests {
         let mut preagg = blob_preagg(workspace_id, true);
         preagg.renewal_threshold_secs = 3600;
         assert!(
-            try_resolve_preagg(&preagg, &request, "SELECT 'unused'", "local").is_none(),
+            try_resolve_preagg(&preagg, &request, "SELECT 'unused'", "local", None).is_none(),
             "first look seeds the cache and reports not-fresh"
         );
         assert!(
-            try_resolve_preagg(&preagg, &request, "SELECT 'unused'", "local").is_some(),
+            try_resolve_preagg(&preagg, &request, "SELECT 'unused'", "local", None).is_some(),
             "second look hits the seeded entry and serves the rollup"
         );
     }
@@ -235,7 +237,7 @@ mod tests {
         write_one_rollup_manifest(&cache_dir);
         let request = covering_request();
         let preagg = blob_preagg(workspace_id, false);
-        let compiled = try_resolve_preagg(&preagg, &request, "SELECT 'unused'", "local")
+        let compiled = try_resolve_preagg(&preagg, &request, "SELECT 'unused'", "local", None)
             .expect("the blob tier resolves");
         let agentic_semantic::compile::CompiledQuery::Preaggregation { source, .. } = compiled
         else {

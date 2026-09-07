@@ -39,7 +39,7 @@ const { rows, truncated, loading, error } = useSemanticQuery({
   topic: "sales",
   dimensions: ["orders.status"],
   measures: ["orders.total_revenue"],
-  filters: [{ field: "orders.status", op: "equals", value: "active" }],
+  filters: [{ field: "orders.status", op: "eq", value: "active" }],
   limit: 100,
 });
 ```
@@ -101,7 +101,7 @@ thread. Link URL schemes are allowlisted (it rejects `javascript:` and similar),
 so it's safe to render model output.
 
 ```tsx
-<OxyAnswer artifacts={run.artifacts} />
+<OxyAnswer answer={run.answer} state={run.state} artifacts={run.artifacts} />
 ```
 
 ## Errors
@@ -118,6 +118,30 @@ and anomaly inbox, the package root also exports `MetricTreeClient` and
 `SensitivityResult`, `OpportunityResult`, `Anomaly`, and more). These call the
 same endpoints the World Model graph uses, so you can build custom
 root-cause and sensitivity views.
+
+### Scenario forecasting
+
+Three hooks — `useBaseline`, `usePredict` and `useProjection` — cover the
+what-if canvas, split by what each one costs:
+
+| Hook | Cost | Answers |
+| --- | --- | --- |
+| `useBaseline(request)` | one warehouse query | What are the levers and everything downstream worth over the window — and what coefficient does each undeclared driver edge actually carry? |
+| `usePredict(changes, { values, coefficients })` | none, pure | If I move this lever by δ, what happens downstream? |
+| `useProjection(request)` | one warehouse query | What has each measure been doing, and what does it do next? |
+
+Fetch the two query-backed ones when the **window** changes; `usePredict`
+touches no database and is meant to re-run as the analyst drags a lever. It is
+also why the split exists: `usePredict` cannot measure a coefficient itself, so
+feed it `useBaseline`'s `values` and `fitted` — without them, a driver edge
+whose `.view.yml` declares no `coefficient:` propagates nothing and its
+downstream measures are simply absent from `impacts`.
+
+`useProjection` returns the **baseline** curve only. The scenario's second curve
+is arithmetic over that curve and the `usePredict` result, composed on the
+client so a lever edit never costs a query. A series carrying a `refusal` —
+most often too little history to fit — is a stated absence, never a flat
+forward line.
 
 ## Next steps
 

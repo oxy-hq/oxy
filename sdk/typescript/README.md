@@ -36,10 +36,10 @@ read data with hooks:
 import { OxyAppProvider, useQuery, OxyChat } from "@oxy-hq/sdk";
 
 function Dashboard() {
-  const { rows, isLoading, error } = useQuery({
+  const { rows, loading, error } = useQuery({
     sql: "SELECT Store, SUM(Weekly_Sales) AS sales FROM oxymart GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
   });
-  if (isLoading) return <p>Loading…</p>;
+  if (loading) return <p>Loading…</p>;
   if (error) return <p>{error.message}</p>;
   return (
     <>
@@ -97,11 +97,14 @@ exploration itself. Each fetches when enabled and its input is present; pass
 
 | Export | What it does |
 | --- | --- |
-| `useWorldModel()` | The entity/measure graph — entities, their measures, and how measures promote across the hierarchy (edges). |
+| `useWorldModel()` | The World Model **node interface** — `world.metric(id)` returns a handle speaking `expand` / `drivers` / `explain` / `size` / `drill`. |
+| `useWorldModelGraph()` | The raw entity/measure graph — entities, their measures, and how measures promote across the hierarchy (edges). |
 | `useWorldModelInstances(entityId, { search?, limit? })` | Searchable listing of an entity's instances (primary key + display label). |
 | `useMetricTree({ root? })` | The metric tree (measures + component/driver edges), or the subtree at `root`. |
 | `useSensitivity(measureId)` | Ranked **drivers** of a measure — "what moves this?" |
-| `usePredict(changes)` | **What-if**: propagate hypothetical `(measure, delta)` changes upward (pure tree walk, no warehouse). |
+| `usePredict(changes, { values?, coefficients? })` | **What-if**: propagate hypothetical `(measure, delta)` changes upward (pure tree walk, no warehouse). Feed it `useBaseline`'s `values` / `fitted` or undeclared driver edges propagate nothing. |
+| `useBaseline(request)` | **Scenario levels**: current values for the levers and everything downstream, plus coefficients fitted for driver edges that declare none. |
+| `useProjection(request)` | **Scenario forecasting**: bucketed history + forward curve (with prediction band) for the levers and everything downstream. |
 | `useExplain(request)` | **RCA**: period-over-period root-cause decomposition. |
 | `useOpportunity(request)` | Segment **opportunity sizing** — addressable upside vs a benchmark peer. |
 | `useDistribution(request)` | Single-period distribution against an auto-derived prior baseline. |
@@ -131,6 +134,43 @@ function Upside() {
     period: ["2025-04-01", "2025-06-30"]
   });
   return <>{data?.dimensions.map((d) => <p key={d.dimension}>{d.dimension}: +{d.total_upside}</p>)}</>;
+}
+```
+
+Scenario forecasting is three hooks, split by what each one costs.
+`useBaseline` and `useProjection` each fire one warehouse query, so they belong
+on a *window* change; `usePredict` touches no database and re-runs per
+keystroke as the analyst drags a lever. `useProjection` returns the **baseline**
+curve only — the scenario's second curve is arithmetic over it and the
+`usePredict` result, composed client-side so a lever edit costs no query.
+
+```tsx
+import { useBaseline, useProjection, usePredict } from "@oxy-hq/sdk";
+
+function Scenario({ lever, delta }: { lever: string; delta: number }) {
+  const period: [string, string] = ["2025-08-01", "2025-08-31"];
+  const baseline = useBaseline({
+    roots: [lever],
+    time_dimension: "orders.order_date",
+    period
+  });
+  // Fitted coefficients go in verbatim, refusals included — filtering them here
+  // would just be a second place for client and server to disagree.
+  const predicted = usePredict([{ measure: lever, delta }], {
+    values: baseline.data?.values,
+    coefficients: baseline.data?.fitted
+  });
+  const projection = useProjection({
+    roots: [lever],
+    time_dimension: "orders.order_date",
+    // Its own, much longer window: the forecaster refuses under eight seasonal
+    // cycles, so reusing the baseline's month would refuse every curve.
+    period: ["2024-09-01", "2025-08-31"],
+    granularity: "day",
+    horizon: 30
+  });
+
+  return <p>{projection.data?.series.length} curves, {predicted.data?.impacts.length} impacts</p>;
 }
 ```
 

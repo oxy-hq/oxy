@@ -5,10 +5,17 @@
 # not from anything here, so adding or reordering entities cannot change the
 # decomposition the drill walks.
 #
-# The interesting node is `check`: it carries the full metric tree
-# (net_revenue -> entree + addon -> four category leaves) plus a profit twin
-# for every revenue measure, which is what lets the same decomposition be read
-# on two different measures.
+# Two nodes matter, for two different features:
+#
+#   `check`      the opportunity drill. Carries the full metric tree
+#                (net_revenue -> entree + addon -> four category leaves) plus a
+#                profit twin for every revenue measure, which is what lets the
+#                same decomposition be read on two different measures.
+#   `store_day`  the scenario simulation. Every edge under `check` is a `+`, so
+#                a lever pinned there can only ever propagate exactly; the
+#                store-day tree carries the subtraction, the ratios, the
+#                declared drivers and the edge the engine has to refuse to
+#                size. See semantics/views/store_days.view.yml.
 
 entities:
   - id: check
@@ -154,6 +161,74 @@ entities:
         label: Checks
       - name: avg_check
         label: Avg Check
+
+  - id: store_day
+    label: Store Day
+    description: |
+      One location's trading on one business date — the grain the scenario
+      simulation runs on. Distinct from `check` on purpose: the check tree is
+      entirely additive, so pinning a lever there only ever exercises exact
+      propagation. This node's measures carry the subtraction, the ratios, the
+      declared drivers and the one edge the engine has to refuse to size.
+    display_field: store_day_id
+    dimensions:
+      - name: business_date
+        label: Business Date
+      - name: location_name
+        label: Location
+      - name: region
+        label: Region
+      - name: city
+        label: City
+    measures:
+      - name: operating_days
+        label: Store-Days
+      # Pinnable leaves.
+      - name: net_sales
+        label: Net Sales
+      - name: labor_hours
+        label: Labor Hours
+      - name: labor_cost
+        label: Labor Cost
+      - name: food_cost
+        label: Food Cost
+      - name: marketing_spend
+        label: Marketing Spend
+      - name: promo_redemptions
+        label: Promo Redemptions
+      - name: loyalty_signups
+        label: Loyalty Signups
+      - name: guest_count
+        label: Covers
+      - name: check_count
+        label: Checks
+      - name: weather_severity_index
+        label: Weather Severity
+      # Additive branch — exact propagation, one negative sign.
+      - name: prime_cost
+        label: Prime Cost
+      - name: store_profit
+        label: Store Profit
+      # Multiplicative branch — sized only against a baseline.
+      - name: avg_wage
+        label: Avg Wage
+      - name: sales_per_check
+        label: Sales / Check
+      - name: sales_per_labor_hour
+        label: Sales / Labor Hour
+      - name: prime_cost_pct
+        label: Prime Cost %
+      - name: contribution_margin_pct
+        label: Contribution Margin %
+      - name: annualized_store_profit
+        label: Annualized Store Profit
+      # The wound-down program: zero denominator on any recent window.
+      - name: banquet_sales
+        label: Banquet Sales
+      - name: banquet_covers
+        label: Banquet Covers
+      - name: banquet_check_average
+        label: Banquet Avg / Cover
 
   - id: server
     label: Server

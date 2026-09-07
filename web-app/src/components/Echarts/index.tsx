@@ -16,7 +16,7 @@ export const Echarts = (props: EchartsProps) => (
         data-chart-index={props.chartIndex ?? 0}
       >
         {props.title && <h2 className='font-bold text-foreground text-xl'>{props.title}</h2>}
-        <div style={{ width: "100%", height: "400px" }} />
+        <div style={{ width: "100%", height: props.height ?? "400px" }} />
       </div>
     }
   >

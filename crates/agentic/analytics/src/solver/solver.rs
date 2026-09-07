@@ -413,7 +413,17 @@ impl AnalyticsSolver {
         use crate::types::SolutionPayload;
         match self.preagg.as_ref() {
             Some(preagg) => {
-                match agentic_semantic::compile::try_resolve_preagg(preagg, request, &sql, "") {
+                // `None`, not an empty set: this solver's `engine` is the
+                // vendor abstraction (cube / looker), which carries no
+                // airlayer view list to derive the live set from. `None`
+                // means "don't check liveness" and keeps the name-only
+                // matching this path already shipped; an empty set would
+                // decline every rollup. A rollup the schema has since
+                // dropped can still answer here — the narrower risk of the
+                // two, and the one that does not silently disable preagg
+                // for the analytics agent.
+                match agentic_semantic::compile::try_resolve_preagg(preagg, request, &sql, "", None)
+                {
                     Some(agentic_semantic::compile::CompiledQuery::Preaggregation {
                         preagg_sql,
                         source,

@@ -31,6 +31,7 @@ pub mod router;
 pub mod runtime_artifact;
 pub mod serve_safety;
 pub mod service;
+pub mod simulation;
 #[cfg(test)]
 pub(crate) mod test_support;
 pub mod worker_health;

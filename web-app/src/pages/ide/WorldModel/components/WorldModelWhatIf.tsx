@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -7,21 +7,27 @@ import {
   SelectValue
 } from "@/components/ui/shadcn/select";
 import { usePredict } from "@/hooks/api/useMetricTree";
-import type { SensitivityDriver } from "@/types/metricTree";
+import type { PredictImpact, SensitivityDriver } from "@/types/metricTree";
+import {
+  CONFIDENCE_HELP,
+  FORM_HELP,
+  InfoTip,
+  MetaBadge,
+  Row,
+  SectionHeader,
+  SectionSpinner
+} from "../../components/semanticGraph";
 import { formatDelta, shortMeasureName } from "./measureTarget";
-import { InfoTip, MetaBadge, Row, SectionHeader, SectionSpinner } from "./panelPrimitives";
 
-const FORM_HELP: Record<string, string> = {
-  linear: "Linear: a fixed change in the driver maps to a fixed change in the target.",
-  "log-log":
-    "Log-log: a percentage change in the driver maps to a percentage change in the target.",
-  "log-linear":
-    "Log-linear: a percentage change in the driver maps to a fixed change in the target.",
-  "linear-log":
-    "Linear-log: a fixed change in the driver maps to a percentage change in the target."
-};
+const DEBOUNCE_MS = 300;
 
-const CONFIDENCE_HELP = "The model's confidence in this edge's coefficient.";
+interface WhatIfResult {
+  impacts: PredictImpact[] | undefined;
+  error: Error | null;
+  isPending: boolean;
+}
+
+const IDLE_RESULT: WhatIfResult = { impacts: undefined, error: null, isPending: false };
 
 /**
  * Size a lever rather than a gap: move one driver by a delta (in that driver's
@@ -30,6 +36,20 @@ const CONFIDENCE_HELP = "The model's confidence in this edge's coefficient.";
  * Propagation is a pure metric-tree walk server-side (no warehouse query), so it
  * is free to re-run — the what-if updates live as you change the driver or the
  * delta rather than behind a manual "run", debounced only to coalesce keystrokes.
+ *
+ * `usePredict` is a mutation, not a query — like `useScenario`'s identical use
+ * of it, its shared `data`/`error`/`isPending` are not keyed by input, so two
+ * calls in flight together (the driver or delta changed again before the
+ * first answer lands) settle in whatever order the network delivers them, and
+ * the mutation object just reflects whichever one settled LAST. A slow,
+ * already-superseded response landing after a fast, current one would
+ * silently overwrite it. `requestIdRef` guards against exactly that, mirroring
+ * `useScenario`'s `useDebouncedPredict`: each fired request is stamped with a
+ * token, and its `onSuccess`/`onError` is only applied if that token is still
+ * the latest — a later edit (or a clear) bumps the ref first, so a superseded
+ * response is dropped on arrival instead of overwriting `impacts`/`error`, and
+ * `isPending` can't be revived by a response for a request the user has
+ * already moved past either.
  */
 export function WorldModelWhatIf({
   drivers,
@@ -54,19 +74,43 @@ export function WorldModelWhatIf({
   const delta = Number(deltaText);
   const runnable = !!selectedMeasure && Number.isFinite(delta) && delta !== 0;
 
+  const [result, setResult] = useState<WhatIfResult>(IDLE_RESULT);
+  const requestIdRef = useRef(0);
+
   // Live propagation: fire whenever the driver or delta settles. An empty or
-  // zero delta clears the stale result rather than leaving the last run showing.
+  // zero delta clears the stale result rather than leaving the last run
+  // showing, and bumps the request id so an in-flight response for the
+  // abandoned input cannot rehydrate state the user has already dismissed.
   useEffect(() => {
-    if (!selectedMeasure) return;
-    if (!Number.isFinite(delta) || delta === 0) {
+    if (!selectedMeasure || !Number.isFinite(delta) || delta === 0) {
+      requestIdRef.current++;
       resetPredict();
+      setResult(IDLE_RESULT);
       return;
     }
-    const handle = window.setTimeout(() => runPredict([{ measure: selectedMeasure, delta }]), 300);
+    const handle = window.setTimeout(() => {
+      const requestId = ++requestIdRef.current;
+      setResult((prev) => ({ ...prev, isPending: true }));
+      runPredict(
+        { changes: [{ measure: selectedMeasure, delta }], values: undefined },
+        {
+          onSuccess: (data) => {
+            // Superseded by a later edit while this was in flight — a stale
+            // result must not clobber the current one, or set/clear it either.
+            if (requestId !== requestIdRef.current) return;
+            setResult({ impacts: data.impacts, error: null, isPending: false });
+          },
+          onError: (error) => {
+            if (requestId !== requestIdRef.current) return;
+            setResult({ impacts: undefined, error, isPending: false });
+          }
+        }
+      );
+    }, DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [selectedMeasure, delta, runPredict, resetPredict]);
 
-  const impact = predict.data?.impacts.find((i) => i.measure === target);
+  const impact = result.impacts?.find((i) => i.measure === target);
 
   if (quantified.length === 0) {
     return (
@@ -121,16 +165,16 @@ export function WorldModelWhatIf({
         </p>
       )}
 
-      {runnable && predict.isPending && <SectionSpinner label='propagating…' />}
+      {runnable && result.isPending && <SectionSpinner label='propagating…' />}
 
-      {predict.error && (
+      {result.error && (
         <p className='font-mono text-[10px] text-destructive leading-relaxed'>
-          {predict.error instanceof Error ? predict.error.message : "Failed to run the what-if."}
+          {result.error instanceof Error ? result.error.message : "Failed to run the what-if."}
         </p>
       )}
 
       {runnable &&
-        predict.data &&
+        result.impacts &&
         (impact ? (
           <Row className='justify-between'>
             <span className='truncate text-muted-foreground'>{shortMeasureName(target)}</span>

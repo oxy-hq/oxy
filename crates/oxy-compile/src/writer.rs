@@ -527,6 +527,7 @@ async fn write_compiled_rows(
     let mut monitor_cfgs = Vec::new();
     let mut reconcile_cfgs = Vec::new();
     let mut world_model_cfgs = Vec::new();
+    let mut simulations = Vec::new();
 
     for row in rows {
         match row {
@@ -616,6 +617,14 @@ async fn write_compiled_rows(
                 file_path: Set(p.file_path.clone()),
                 definition: Set(p.definition.clone()),
             }),
+            CompiledRow::Simulation(s) => {
+                simulations.push(entity::simulation_definitions::ActiveModel {
+                    revision_id: Set(revision_id),
+                    name: Set(s.name.clone()),
+                    file_path: Set(s.file_path.clone()),
+                    definition: Set(s.definition.clone()),
+                })
+            }
             CompiledRow::Reference(r) => {
                 references.push(entity::compiled_references::ActiveModel {
                     revision_id: Set(revision_id),
@@ -688,6 +697,11 @@ async fn write_compiled_rows(
     }
     if !pipelines.is_empty() {
         entity::airway_pipelines::Entity::insert_many(pipelines)
+            .exec(txn)
+            .await?;
+    }
+    if !simulations.is_empty() {
+        entity::simulation_definitions::Entity::insert_many(simulations)
             .exec(txn)
             .await?;
     }

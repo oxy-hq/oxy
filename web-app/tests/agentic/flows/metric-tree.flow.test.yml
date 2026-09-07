@@ -40,6 +40,20 @@ cases:
       # which is indistinguishable in the summary from the view being missing.
       # This assert had never once evaluated.
       - assert: "selector [data-testid=metric-tree-view] is visible"
+      # The Definition/Drivers tab strip and the Explore/Scenario/Simulation
+      # mode toggle share ONE `justify-between` header row (`ExplorePanel` in
+      # `pages/ide/MetricTree/index.tsx`), so a screenshot judge sees five
+      # tab-like labels in that row, not two. Asserting the toggle by testid is
+      # deterministic and free; the judge below is worded non-exhaustively so
+      # mounting a FOURTH mode does not read as the panel being wrong. That is
+      # exactly what happened when Simulation was added as the third mode: the
+      # claim was written when only Explore/Scenario existed, and the judge
+      # rejected "has tabs labelled Definition and Drivers" as an exhaustive
+      # list. Reserve judge for the soft half of the claim (README: "reserve
+      # judge for soft semantic claims").
+      - assert: "selector [data-testid=metric-tree-mode-explore] is visible"
       - judge: |
-          the left side shows a graph of measure nodes, and the
-          right-hand panel has tabs labelled Definition and Drivers
+          the left side shows a graph of measure nodes, and the right-hand
+          panel includes tabs labelled Definition and Drivers. Other controls
+          in the same header row — an Explore / Scenario / Simulation mode
+          toggle — are expected and are NOT a reason to fail this claim.

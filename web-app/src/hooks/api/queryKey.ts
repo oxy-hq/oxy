@@ -779,6 +779,15 @@ const semanticKeys = {
     [...semanticKeys.all, "viewDetails", projectId, filePathB64, branchName] as const
 };
 
+const simulationKeys = {
+  all: ["simulation"] as const,
+  list: (projectId: string, branch: string) =>
+    [...simulationKeys.all, "list", projectId, branch] as const,
+  runs: (projectId: string) => [...simulationKeys.all, "runs", projectId] as const,
+  run: (projectId: string, runId: string) =>
+    [...simulationKeys.all, "run", projectId, runId] as const
+};
+
 const metricTreeKeys = {
   all: ["metric-tree"] as const,
   tree: (projectId: string, branch: string, root: string | undefined) =>
@@ -883,6 +892,55 @@ const metricTreeKeys = {
       instance?.key ?? null,
       root?.dimension ?? null,
       root?.segment ?? null
+    ] as const,
+  /** Baseline values for a lever set. Keyed by the full request because the
+   *  warehouse query is expensive: it must refetch when the levers, period or
+   *  scope change, and only then. */
+  baseline: (
+    projectId: string,
+    branch: string,
+    roots: readonly string[],
+    timeDimension: string,
+    period: readonly [string, string],
+    instanceKey: string | null
+  ) =>
+    [
+      ...metricTreeKeys.all,
+      "baseline",
+      projectId,
+      branch,
+      [...roots].sort().join(","),
+      timeDimension,
+      period[0],
+      period[1],
+      instanceKey
+    ] as const,
+  /** Bucketed history + forward forecast for a lever set. Keyed on everything
+   *  the warehouse query depends on — granularity and horizon included, since
+   *  a coarser bucket is a different query and a longer horizon a different
+   *  fit, not a slice of the same answer. */
+  projection: (
+    projectId: string,
+    branch: string,
+    roots: readonly string[],
+    timeDimension: string,
+    period: readonly [string, string],
+    instanceKey: string | null,
+    granularity: string,
+    horizon: number
+  ) =>
+    [
+      ...metricTreeKeys.all,
+      "projection",
+      projectId,
+      branch,
+      [...roots].sort().join(","),
+      timeDimension,
+      period[0],
+      period[1],
+      instanceKey,
+      granularity,
+      horizon
     ] as const
 };
 
@@ -992,6 +1050,7 @@ const queryKeys = {
   frontline: frontlineKeys,
   semantic: semanticKeys,
   metricTree: metricTreeKeys,
+  simulation: simulationKeys,
   worldModel: worldModelKeys,
   metricAnomalies: metricAnomaliesKeys,
   org: orgKeys,

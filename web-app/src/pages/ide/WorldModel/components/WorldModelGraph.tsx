@@ -1,16 +1,8 @@
-import {
-  Background,
-  BackgroundVariant,
-  Controls,
-  ReactFlow,
-  type Edge as RFEdge,
-  type Node as RFNode
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
+import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWmMeasureBreakdown } from "@/hooks/api/useWorldModel";
-import { cn } from "@/libs/shadcn/utils";
 import type { WmComputedMeasure, WmSelection, WorldModel } from "@/types/worldModel";
+import { GRAPH_EDGE_TYPE, GraphCanvas } from "../../components/semanticGraph";
 import {
   breakdownNodeToComputedMeasure,
   buildBreakdownEdges,
@@ -28,7 +20,6 @@ import {
   type WaypointMap,
   worldModelToFlow
 } from "../worldModelLayout";
-import { WorldModelEdge } from "./WorldModelEdge";
 import { WorldModelEntityNode } from "./WorldModelEntityNode";
 import { WorldModelExpandedEntityNode } from "./WorldModelExpandedEntityNode";
 
@@ -36,7 +27,6 @@ const nodeTypes = {
   "wm-entity": WorldModelEntityNode,
   "wm-entity-expanded": WorldModelExpandedEntityNode
 };
-const edgeTypes = { "wm-edge": WorldModelEdge };
 
 /** Debounce (ms) for size-driven reflows so streamed filter counts and the
  *  async breakdown load coalesce into a single animated layout move. */
@@ -352,7 +342,7 @@ export function WorldModelGraph({
           : (e.style?.opacity as number | undefined);
       return {
         ...e,
-        type: "wm-edge",
+        type: GRAPH_EDGE_TYPE,
         data: { ...e.data, waypoints: waypointMap.get(e.id) },
         style: { ...e.style, ...(opacity !== undefined ? { opacity } : {}) }
       };
@@ -392,48 +382,23 @@ export function WorldModelGraph({
     );
   }
 
+  if (displayNodes === null) {
+    return (
+      <div className='flex h-full items-center justify-center text-muted-foreground text-xs'>
+        Laying out…
+      </div>
+    );
+  }
+
   return (
-    <div className='wm-graph relative h-full w-full'>
-      {/* Animate nodes sliding to their new slots when a size-aware reflow moves
-          them (instance select / measure expand), so the change reads as the
-          neighbors making room rather than a jump. Scoped to this graph. */}
-      <style>{`.wm-graph .react-flow__node { transition: transform 300ms cubic-bezier(0.22, 0.61, 0.36, 1); }`}</style>
-      {displayNodes === null ? (
-        <div className='flex h-full items-center justify-center text-muted-foreground text-xs'>
-          Laying out…
-        </div>
-      ) : (
-        <ReactFlow
-          key={`${model.entities.length}-${edges.length}`}
-          nodes={displayNodes}
-          edges={finalEdges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onNodeClick={handleNodeClick}
-          onEdgeClick={handleEdgeClick}
-          onPaneClick={onClearSelection}
-          // Read-only map: nodes are ELK-positioned and reflow on selection —
-          // dragging would fight the layout and desync the ELK-routed edges.
-          nodesDraggable={false}
-          nodesConnectable={false}
-          fitView
-          fitViewOptions={{ padding: 0.16 }}
-          minZoom={0.3}
-          maxZoom={1.8}
-          proOptions={{ hideAttribution: true }}
-          style={{ background: "var(--background)" }}
-        >
-          <Background variant={BackgroundVariant.Dots} color='var(--border)' gap={22} size={1} />
-          <Controls
-            showInteractive={false}
-            className={cn(
-              "!overflow-hidden !rounded-lg !border !border-border !bg-card !shadow-sm",
-              "[&_button]:!border-border [&_button]:!bg-card [&_button]:!fill-foreground",
-              "[&_button:hover]:!bg-muted"
-            )}
-          />
-        </ReactFlow>
-      )}
-    </div>
+    <GraphCanvas
+      flowKey={`${model.entities.length}-${edges.length}`}
+      nodes={displayNodes}
+      edges={finalEdges}
+      nodeTypes={nodeTypes}
+      onNodeClick={handleNodeClick}
+      onEdgeClick={handleEdgeClick}
+      onPaneClick={onClearSelection}
+    />
   );
 }

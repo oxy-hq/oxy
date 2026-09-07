@@ -53,6 +53,7 @@
     "build:watch": "node scripts/watch-shell-css.mjs",
     "dev": "node scripts/watch-shell-css.mjs",
     "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "lint": "ESLINT_USE_FLAT_CONFIG=false eslint src --ext .ts",
     "test": "vitest run",
     "test:watch": "vitest",

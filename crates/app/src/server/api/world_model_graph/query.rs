@@ -2039,7 +2039,7 @@ mod breakdown_tests {
             is_composite: composite,
             expr: None,
             // Irrelevant to these tests — they exercise breakdown/edge
-            // resolution, not drill eligibility.
+            // resolution, not drill eligibility or response arithmetic.
             drillable: false,
             // Every node here is `type: number`; the sample tree's root is a
             // product, so neither a sum nor a mean carries over a window.

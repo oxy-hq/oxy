@@ -332,7 +332,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
             let pruned = prune_dims_for_explain(layer, &exclude_members, &time_dimension);
             let tree = MetricTree::build(&pruned);
             let inner = build_query_executor(
-                &target,
                 engine,
                 databases,
                 workspace_manager,
@@ -434,7 +433,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 ..
             } = inputs;
             let executor = build_query_executor(
-                &measure,
                 engine,
                 databases,
                 workspace_manager,
@@ -493,7 +491,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
         // the request and the trim window, so it — not this function body —
         // is what a regression here would have to touch.
         let (request, trim_window) = build_time_series_query_request(
-            &measure,
+            std::slice::from_ref(&measure),
             &time_dimension,
             &granularity,
             filters,
@@ -515,7 +513,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 ..
             } = inputs;
             let executor = build_query_executor(
-                &measure,
                 engine,
                 databases,
                 workspace_manager,
@@ -579,7 +576,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 ..
             } = inputs;
             let executor = build_query_executor(
-                &measure,
                 engine,
                 databases,
                 workspace_manager,
@@ -623,7 +619,6 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
             } = inputs;
             let tree = MetricTree::build(&layer);
             let executor = build_query_executor(
-                &target,
                 engine,
                 databases,
                 workspace_manager,
@@ -689,7 +684,7 @@ impl OxyMetricTreeRunner {
 /// are usually plain dates but may be full ISO-8601/RFC3339 timestamps (the
 /// `detect_anomalies` tool passes through whatever the LLM sent). Try each
 /// representation in turn; `None` means the string matched none of them.
-fn parse_flexible_date(s: &str) -> Option<NaiveDate> {
+pub(crate) fn parse_flexible_date(s: &str) -> Option<NaiveDate> {
     if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
         return Some(d);
     }
@@ -822,8 +817,13 @@ fn time_series_request(
 /// drops the trim window) has to change this function — and does change what
 /// [`build_time_series_query_request_widens_the_date_range_for_non_utc`] and
 /// its UTC/parse-failure counterparts below assert.
-fn build_time_series_query_request(
-    measure: &str,
+///
+/// Takes a **slice** of measures rather than one: the scenario projection
+/// batches every forward-reachable node into a single bucketed query, and it
+/// needs this same pad/trim decision. One measure is that slice with one
+/// element, so the two callers cannot drift apart on the workaround.
+pub(crate) fn build_time_series_query_request(
+    measures: &[String],
     time_dimension: &str,
     granularity: &str,
     filters: Vec<oxy_airlayer_compat::engine::query::QueryFilter>,
@@ -834,7 +834,7 @@ fn build_time_series_query_request(
     let (request_period, trim_window) = time_series_request(timezone.as_deref(), period);
     let dim_alias = format!("{time_dimension}.{granularity}");
     let request = QueryRequest {
-        measures: vec![measure.to_string()],
+        measures: measures.to_vec(),
         filters,
         time_dimensions: vec![TimeDimensionQuery {
             dimension: time_dimension.to_string(),
@@ -855,7 +855,7 @@ fn build_time_series_query_request(
 /// file is absent or unreadable. Deliberately lossy: a malformed monitor config
 /// must not break unrelated metric-tree queries — the scan path reports the
 /// real parse error.
-fn read_default_timezone(workspace_root: &std::path::Path) -> Option<String> {
+pub(crate) fn read_default_timezone(workspace_root: &std::path::Path) -> Option<String> {
     let path = oxy_metric_monitoring::default_config_path(workspace_root);
     match oxy_metric_monitoring::load_from_file(&path) {
         Ok(cfg) => cfg.timezone,
@@ -885,7 +885,6 @@ fn read_default_timezone(workspace_root: &std::path::Path) -> Option<String> {
 /// `/opportunity` handlers go through the exact same code path.
 #[allow(clippy::too_many_arguments)]
 pub fn build_query_executor(
-    _target_measure: &str,
     engine: Arc<oxy_airlayer_compat::SemanticEngine>,
     databases: Vec<DatabaseConfig>,
     workspace_manager: WorkspaceManager<ReadOnly>,
@@ -909,6 +908,15 @@ pub fn build_query_executor(
         Some(preagg.renewal_threshold_secs),
         preagg.freshness,
     );
+
+    // What the loaded schema still declares, computed once here rather than
+    // per query: the closure below runs a few hundred times in one explain,
+    // and this walks every view's `pre_aggregations:`. Owned so it can move
+    // into the closure alongside `engine`, which it is derived from.
+    let live_rollups = {
+        let views: Vec<&oxy_airlayer_compat::View> = engine.semantic_layer().views.iter().collect();
+        oxy_airlayer_compat::preagg::live_rollups(&views)
+    };
 
     let pool: std::sync::Mutex<std::collections::HashMap<String, Vec<Arc<dyn DatabaseConnector>>>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
@@ -958,7 +966,13 @@ pub fn build_query_executor(
                 preagg_sql,
                 source,
                 ..
-            }) = agentic_semantic::compile::try_resolve_preagg(preagg, request, &sql, &database)
+            }) = agentic_semantic::compile::try_resolve_preagg(
+                preagg,
+                request,
+                &sql,
+                &database,
+                Some(&live_rollups),
+            )
         {
             match execute_preagg_and_convert(&preagg_sql, &source) {
                 Ok(rows) => {
@@ -1089,6 +1103,16 @@ pub fn build_drill_query_executor(
         preagg.freshness,
     );
 
+    // Computed once from the shared layer, not per query, even though the
+    // engine is rebuilt per query: what the drill mutates mid-recursion is
+    // the MEASURE list (synthetic per-value measures), never a view's
+    // `pre_aggregations:` block — so the live set cannot move underneath us.
+    let live_rollups = {
+        let layer = shared_layer.read().expect("shared layer poisoned");
+        let views: Vec<&oxy_airlayer_compat::View> = layer.views.iter().collect();
+        oxy_airlayer_compat::preagg::live_rollups(&views)
+    };
+
     let pool: std::sync::Mutex<std::collections::HashMap<String, Vec<Arc<dyn DatabaseConnector>>>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
 
@@ -1141,7 +1165,13 @@ pub fn build_drill_query_executor(
                 preagg_sql,
                 source,
                 ..
-            }) = agentic_semantic::compile::try_resolve_preagg(preagg, request, &sql, &database)
+            }) = agentic_semantic::compile::try_resolve_preagg(
+                preagg,
+                request,
+                &sql,
+                &database,
+                Some(&live_rollups),
+            )
         {
             match execute_preagg_and_convert(&preagg_sql, &source) {
                 Ok(rows) => {
@@ -1880,6 +1910,33 @@ mod tests {
         }
     }
 
+    /// One ClickHouse view with both flavours of time dimension: an instant
+    /// (`created_at`) and a business date (`business_date`), the latter shaped
+    /// like the workspace whose projection panel this fix came from — a column
+    /// normalised to a DATE by the dimension's own expression.
+    fn ts_layer() -> SemanticLayer {
+        let orders = r#"
+name: orders
+table: analytics.orders
+dialect: clickhouse
+dimensions:
+  - name: created_at
+    type: datetime
+    expr: created_at
+  - name: business_date
+    type: date
+    expr: "toDate(parseDateTimeBestEffort(toString(business_date)))"
+measures:
+  - name: revenue
+    type: sum
+    expr: revenue
+"#;
+        SemanticLayer::new(
+            vec![oxy_airlayer_compat::parse_view_yaml(orders).unwrap()],
+            None,
+        )
+    }
+
     #[test]
     fn build_time_series_query_request_widens_the_date_range_for_non_utc() {
         // The seam a wiring regression would have to break: the `date_range`
@@ -1889,7 +1946,7 @@ mod tests {
         // assertion.
         let period = ("2026-07-20".to_string(), "2026-07-24".to_string());
         let (request, trim_window) = build_time_series_query_request(
-            "orders.revenue",
+            &["orders.revenue".to_string()],
             "orders.created_at",
             "day",
             vec![],
@@ -1916,7 +1973,7 @@ mod tests {
         let period = ("2026-07-20".to_string(), "2026-07-24".to_string());
         for tz in [None, Some("UTC".to_string())] {
             let (request, trim_window) = build_time_series_query_request(
-                "orders.revenue",
+                &["orders.revenue".to_string()],
                 "orders.created_at",
                 "day",
                 vec![],
@@ -1930,6 +1987,57 @@ mod tests {
             );
             assert_eq!(trim_window, None, "UTC-equivalent ({tz:?}) must not trim");
         }
+    }
+
+    /// The reported failure, pinned from the side that reported it: airlayer
+    /// compiled
+    /// `toTimeZone(toDate(parseDateTimeBestEffort(…)), 'America/Los_Angeles')`
+    /// and ClickHouse answered `Illegal type Date of argument of function
+    /// toTimezone`, taking down every curve in a projection panel.
+    ///
+    /// The gate that prevents it is airlayer's (`time_col_expr` converts only
+    /// a `DimensionType::Datetime`), and airlayer tests it — so this is not
+    /// that test again. It is a **pin canary**: the gate was lost once
+    /// already, not by anyone editing it but by a pin bump onto a branch cut
+    /// before it merged, and a subtraction is what a dependency's own test
+    /// suite cannot report to us. Asserted on compiled SQL for the same
+    /// reason: it is the only artefact that shows what the warehouse will
+    /// actually be asked.
+    #[test]
+    fn a_date_typed_dimension_compiles_to_clickhouse_without_a_timezone_conversion() {
+        let layer = ts_layer();
+        let period = ("2026-07-20".to_string(), "2026-07-24".to_string());
+        let dialects = oxy_airlayer_compat::DatasourceDialectMap::with_default(
+            oxy_airlayer_compat::Dialect::ClickHouse,
+        );
+        let engine =
+            oxy_airlayer_compat::SemanticEngine::from_semantic_layer(layer.clone(), dialects)
+                .expect("engine");
+
+        let compile = |dim: &str| {
+            let (request, _) = build_time_series_query_request(
+                &["orders.revenue".to_string()],
+                dim,
+                "day",
+                vec![],
+                &period,
+                Some("America/Los_Angeles".to_string()),
+            );
+            engine.compile_query(&request).expect("compile").sql
+        };
+
+        let date_sql = compile("orders.business_date");
+        assert!(
+            !date_sql.contains("toTimeZone"),
+            "a DATE argument to toTimeZone is a ClickHouse type error: {date_sql}"
+        );
+        // The other half of the claim: this is a narrowing, not a removal. A
+        // datetime dimension is an instant and still converts — a "fix" that
+        // dropped every conversion would pass the assertion above.
+        assert!(
+            compile("orders.created_at").contains("toTimeZone"),
+            "a type: datetime dimension must still be converted"
+        );
     }
 
     #[test]

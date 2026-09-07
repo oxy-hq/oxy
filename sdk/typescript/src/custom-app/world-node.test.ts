@@ -14,7 +14,8 @@ const TREE: MetricTree = {
       measure: "net_revenue",
       label: "Net Revenue",
       measure_type: "number",
-      is_composite: true
+      is_composite: true,
+      drillable: true
     },
     {
       id: "orders.gross_revenue",
@@ -22,7 +23,8 @@ const TREE: MetricTree = {
       measure: "gross_revenue",
       label: "Gross Revenue",
       measure_type: "sum",
-      is_composite: false
+      is_composite: false,
+      drillable: false
     },
     {
       id: "orders.discounts",
@@ -30,7 +32,8 @@ const TREE: MetricTree = {
       measure: "discounts",
       label: "Discounts",
       measure_type: "sum",
-      is_composite: false
+      is_composite: false,
+      drillable: false
     },
     {
       id: "orders.units",
@@ -38,7 +41,8 @@ const TREE: MetricTree = {
       measure: "units",
       label: "Units",
       measure_type: "sum",
-      is_composite: false
+      is_composite: false,
+      drillable: false
     }
   ],
   edges: [

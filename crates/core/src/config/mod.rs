@@ -30,7 +30,7 @@ use oxy_shared::errors::OxyError;
 
 pub use artifacts::{
     AgentEntry, AppEntry, ArtifactError, AutomationEntry, CompiledArtifact, PipelineEntry,
-    VerifiedQueryEntry, pipeline_source_kind,
+    SimulationEntry, VerifiedQueryEntry, pipeline_source_kind,
 };
 pub use builder::{ConfigBuilder, OnMissing};
 pub use manager::{ConfigManager, DiskSlot, Origin, ReadOnly, ResolveWorkspaceFile, WorkingCopy};

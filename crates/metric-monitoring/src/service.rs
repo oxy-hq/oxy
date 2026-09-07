@@ -505,7 +505,10 @@ fn parse_bucket_date(ts: &str) -> Result<NaiveDate, ScanError> {
 /// invented `0.0` must not count as evidence about what the metric normally
 /// does, or one gap drags a seasonal phase's floor to zero and swallows every
 /// real drop in that phase.
-fn fill_gaps(rows: Vec<(NaiveDate, f64)>, granularity: Granularity) -> Vec<(NaiveDate, f64, bool)> {
+pub(crate) fn fill_gaps(
+    rows: Vec<(NaiveDate, f64)>,
+    granularity: Granularity,
+) -> Vec<(NaiveDate, f64, bool)> {
     use std::collections::HashMap;
     if rows.len() < 2 {
         return rows.into_iter().map(|(d, v)| (d, v, false)).collect();

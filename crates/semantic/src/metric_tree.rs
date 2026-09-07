@@ -9,7 +9,8 @@ use oxy_airlayer_compat::SemanticLayer;
 use oxy_airlayer_compat::engine::EngineError;
 use oxy_airlayer_compat::engine::metric_tree::MetricTree;
 use oxy_airlayer_compat::engine::metric_tree_ops::{
-    PredictResult, SensitivityResult, predict as al_predict, sensitivity as al_sensitivity,
+    MeasureValues, PredictResult, SensitivityResult, predict as al_predict,
+    predict_with_values as al_predict_with_values, sensitivity as al_sensitivity,
 };
 
 pub fn build(layer: &SemanticLayer) -> MetricTree {
@@ -30,6 +31,28 @@ pub fn sensitivity(tree: &MetricTree, target: &str) -> Result<SensitivityResult,
 pub fn predict(tree: &MetricTree, changes: &[(String, f64)]) -> Result<PredictResult, EngineError> {
     al_predict(tree, changes)
 }
+
+/// Propagate hypothetical `(measure, delta)` changes upward, using current
+/// values so multiplicative edges can be sized instead of reported
+/// `unquantifiable` (pure graph op).
+pub fn predict_with_values(
+    tree: &MetricTree,
+    changes: &[(String, f64)],
+    values: &MeasureValues,
+) -> Result<PredictResult, EngineError> {
+    al_predict_with_values(tree, changes, values)
+}
+
+/// Lever-conflict detection and the refusal built on it.
+///
+/// Re-exported rather than defined here: `agentic-analytics` needs the same
+/// rule and must not depend on this crate (an agentic → platform edge —
+/// `internal-docs/backend-architecture.md`), so the one definition lives in
+/// `oxy-airlayer-compat`, which every caller already depends on. See that
+/// module's doc for the history.
+pub use oxy_airlayer_compat::lever_conflicts::{
+    LeverConflict, lever_conflicts, reject_lever_conflicts,
+};
 
 #[cfg(test)]
 mod tests {
@@ -102,5 +125,53 @@ measures:
         let tree = build(&layer);
         let result = predict(&tree, &[("orders.revenue".to_string(), 100.0)]).unwrap();
         assert!(result.impacts.iter().any(|i| i.measure == "orders.profit"));
+    }
+
+    #[test]
+    fn predict_with_values_sizes_a_multiplicative_edge() {
+        let layer = layer_from_views(&[r#"
+name: orders
+table: public.orders
+dialect: postgres
+measures:
+  - name: units
+    type: sum
+    expr: qty
+  - name: unit_price
+    type: number
+    expr: price
+  - name: revenue
+    type: number
+    expr: "{{orders.units}} * {{orders.unit_price}}"
+"#]);
+        let tree = build(&layer);
+        let values = oxy_airlayer_compat::engine::metric_tree_ops::MeasureValues::from([
+            ("orders.units".to_string(), 1000.0),
+            ("orders.unit_price".to_string(), 4.0),
+            ("orders.revenue".to_string(), 4000.0),
+        ]);
+
+        let with =
+            predict_with_values(&tree, &[("orders.units".to_string(), 100.0)], &values).unwrap();
+        let revenue = with
+            .impacts
+            .iter()
+            .find(|i| i.measure == "orders.revenue")
+            .expect("revenue is impacted");
+        assert_ne!(
+            revenue.confidence, "unquantifiable",
+            "supplying values must size the multiplicative edge"
+        );
+        assert!(revenue.estimated_delta.abs() > 0.0);
+
+        // And without values it stays honestly unsized — the contract today.
+        let without = predict(&tree, &[("orders.units".to_string(), 100.0)]).unwrap();
+        let revenue_unsized = without
+            .impacts
+            .iter()
+            .find(|i| i.measure == "orders.revenue")
+            .expect("revenue is still reported, just unsized");
+        assert_eq!(revenue_unsized.confidence, "unquantifiable");
+        assert_eq!(revenue_unsized.estimated_delta, 0.0);
     }
 }

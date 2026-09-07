@@ -237,8 +237,49 @@ fn fixture(workspace: &ScratchWorkspace) -> duckdb::Connection {
                 .rsplit_once('.')
                 .map(|(_, t)| t.to_string())
                 .unwrap_or_else(|| entry.table_name.clone());
+            // Export every temporal column as VARCHAR, because that is what
+            // production does and this fixture is only worth anything if it
+            // writes what production writes. `write_result_to_parquet` builds
+            // its Parquet from `VALUES` rows of `CellValue`, whose only
+            // non-numeric variant is `Text` — so a bucket column reaches disk
+            // as a string. Copying the CTAS table straight across instead kept
+            // the built table's DATE/TIMESTAMP, and the divergence was silent
+            // until airlayer `aa4bf15` began wrapping the stored bucket in
+            // `NULLIF(col, '')`: DuckDB resolves that to the column's type, so
+            // on a temporal column it casts `''` to TIMESTAMP and throws on the
+            // first row. That wrapper is only valid over VARCHAR and
+            // `LocalRollupEntry` does not record the type — filed upstream; the
+            // type-agnostic form is `CAST(NULLIF(CAST(col AS VARCHAR), '') AS
+            // TIMESTAMP)`. Nothing here is a workaround for that bug: this
+            // makes the fixture match the writer, which is what it always
+            // claimed to do.
+            let temporal: Vec<String> = {
+                let mut stmt = conn
+                    .prepare(&format!("PRAGMA table_info(\"{table}\")"))
+                    .expect("table_info prepares");
+                let mut rows = stmt.query([]).expect("table_info runs");
+                let mut cols = Vec::new();
+                while let Some(row) = rows.next().expect("table_info row reads") {
+                    let name: String = row.get(1).expect("column name");
+                    let ty: String = row.get(2).expect("column type");
+                    let ty = ty.to_ascii_uppercase();
+                    if ty.starts_with("DATE") || ty.starts_with("TIMESTAMP") {
+                        cols.push(name);
+                    }
+                }
+                cols
+            };
+            let projection = if temporal.is_empty() {
+                "*".to_string()
+            } else {
+                let replaces: Vec<String> = temporal
+                    .iter()
+                    .map(|c| format!("CAST(\"{c}\" AS VARCHAR) AS \"{c}\""))
+                    .collect();
+                format!("* REPLACE ({})", replaces.join(", "))
+            };
             conn.execute_batch(&format!(
-                "COPY \"{table}\" TO '{}' (FORMAT PARQUET);",
+                "COPY (SELECT {projection} FROM \"{table}\") TO '{}' (FORMAT PARQUET);",
                 parquet_path.display()
             ))
             .unwrap_or_else(|e| panic!("parquet export failed for {table}: {e}"));
@@ -302,6 +343,7 @@ fn assert_paths_agree(request: QueryRequest, what: &str, expected_rows: usize) {
         &request,
         "SELECT 'unused'",
         "local",
+        None,
     )
     .unwrap_or_else(|| panic!("{what}: no rollup covered the request"));
     let CompiledQuery::Preaggregation {
@@ -445,7 +487,8 @@ fn a_missing_parquet_and_no_blob_store_declines_instead_of_answering() {
             &preagg_ctx(&workspace, None),
             &request,
             "SELECT 'unused'",
-            "local"
+            "local",
+            None,
         )
         .is_none(),
         "a manifest entry whose Parquet is absent, with nowhere else to read it, must not resolve"
@@ -485,6 +528,7 @@ fn a_blob_source_pointing_at_nothing_errors_rather_than_answering_empty() {
         &request,
         "SELECT 'unused'",
         "local",
+        None,
     )
     .expect("the blob tier resolves without checking the object exists");
     let CompiledQuery::Preaggregation {
@@ -525,6 +569,7 @@ fn the_blob_tier_generates_the_same_sql_with_only_the_source_swapped() {
         &request,
         "SELECT 'unused'",
         "local",
+        None,
     )
     .expect("local tier resolves");
     let CompiledQuery::Preaggregation {
@@ -554,6 +599,7 @@ fn the_blob_tier_generates_the_same_sql_with_only_the_source_swapped() {
         &request,
         "SELECT 'unused'",
         "local",
+        None,
     )
     .expect("blob tier resolves");
     let CompiledQuery::Preaggregation {

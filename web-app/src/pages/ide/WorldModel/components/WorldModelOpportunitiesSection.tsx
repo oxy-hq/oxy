@@ -3,13 +3,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useMetricTree, useOpportunityQuery, useTimeDimensions } from "@/hooks/api/useMetricTree";
 import type { OpportunityInstance, OpportunityRequest } from "@/types/metricTree";
 import type { WmSelection, WorldModel } from "@/types/worldModel";
-import { InfoTip, SectionHeader, SectionSpinner } from "./panelPrimitives";
+import { InfoTip, SectionHeader, SectionSpinner } from "../../components/semanticGraph";
 import { METHOD_HELP } from "./WorldModelDrillChain";
 import { WorldModelMeasureDrill } from "./WorldModelMeasureDrill";
 import { ScanControls } from "./WorldModelScanControls";
 import { SizingBody } from "./WorldModelSegmentGroups";
 
 export const DEFAULT_PRESET_DAYS = 90;
+
+// The day-preset list (`PRESET_DAYS`) moved to `MetricTree/scenario/periodPresets.ts` —
+// the one source of truth shared by the World Model scan controls and the
+// Metric Tree scenario toolbar. Import it from there directly.
 
 /**
  * Substring of airlayer's skip reason when an additive sum can't be sized for

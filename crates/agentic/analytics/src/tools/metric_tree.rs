@@ -107,6 +107,13 @@ async fn run_predict(params: Value, runner: Arc<dyn MetricTreeRunner>) -> Result
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;
     let tree = oxy_airlayer_compat::engine::metric_tree::MetricTree::build(&layer);
+    // The lever-conflict refusal has to reach here and not only the two HTTP
+    // `/predict` handlers: an LLM picks these levers off the tree it was just
+    // shown, so pinning a measure and something upstream of it is a natural
+    // move rather than an operator error — and a confident `PredictResult` for
+    // an ambiguous pinned set is the worst possible answer to it. Shared
+    // definition, not a copy: see `oxy_airlayer_compat::lever_conflicts`.
+    oxy_airlayer_compat::reject_lever_conflicts(&tree, &changes).map_err(ToolError::BadParams)?;
     let result = metric_tree_ops::predict(&tree, &changes)
         .map_err(|e| ToolError::Execution(e.to_string()))?;
     serde_json::to_value(result).map_err(|e| ToolError::Execution(e.to_string()))
@@ -189,4 +196,128 @@ pub fn no_runner_error() -> ToolError {
 #[allow(dead_code)]
 pub fn empty_result(reason: &str) -> Value {
     json!({ "ok": false, "reason": reason })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::metric_tree_runner::MetricTreeRunnerError;
+    use oxy_airlayer_compat::DatabaseConfig;
+    use oxy_airlayer_compat::SemanticLayer;
+    use oxy_airlayer_compat::engine::metric_tree_ops::{ExplainResult, OpportunityResult};
+    use oxy_airlayer_compat::engine::query::QueryFilter;
+
+    /// A runner that only knows how to hand back a layer. The pure ops
+    /// (`sensitivity`, `predict`) never touch a warehouse, so every
+    /// query-executing method is unreachable from these tests.
+    struct LayerOnlyRunner(SemanticLayer);
+
+    #[async_trait::async_trait]
+    impl MetricTreeRunner for LayerOnlyRunner {
+        async fn load_layer(&self) -> Result<SemanticLayer, MetricTreeRunnerError> {
+            Ok(self.0.clone())
+        }
+        async fn list_databases(&self) -> Vec<DatabaseConfig> {
+            vec![]
+        }
+        async fn run_explain(
+            &self,
+            _target: String,
+            _time_dimension: String,
+            _current_period: (String, String),
+            _previous_period: (String, String),
+            _filters: Vec<QueryFilter>,
+            _config: ExplainConfig,
+        ) -> Result<ExplainResult, MetricTreeRunnerError> {
+            unreachable!("predict is a pure op")
+        }
+        async fn run_opportunity(
+            &self,
+            _target: String,
+            _time_dimension: String,
+            _period: (String, String),
+        ) -> Result<OpportunityResult, MetricTreeRunnerError> {
+            unreachable!("predict is a pure op")
+        }
+        async fn get_dimension_values(
+            &self,
+            _dimension: String,
+            _measure: String,
+            _since_days: u32,
+        ) -> Result<Vec<String>, MetricTreeRunnerError> {
+            unreachable!("predict is a pure op")
+        }
+        async fn run_time_series(
+            &self,
+            _measure: String,
+            _time_dimension: String,
+            _granularity: String,
+            _period: (String, String),
+            _filters: Vec<QueryFilter>,
+            _timezone: Option<String>,
+        ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError> {
+            unreachable!("predict is a pure op")
+        }
+    }
+
+    fn runner_with_revenue_over_cost() -> Arc<dyn MetricTreeRunner> {
+        let view = oxy_airlayer_compat::parse_view_yaml(
+            r#"
+name: orders
+table: public.orders
+dialect: postgres
+measures:
+  - name: revenue
+    type: sum
+    expr: amount
+  - name: cost
+    type: sum
+    expr: cost
+  - name: profit
+    type: number
+    expr: "{{orders.revenue}} - {{orders.cost}}"
+"#,
+        )
+        .expect("view parses");
+        Arc::new(LayerOnlyRunner(SemanticLayer::new(vec![view], None)))
+    }
+
+    /// The refusal has to reach THIS caller, not only the two HTTP handlers.
+    /// An LLM picks these levers off the tree it was just shown, so pinning a
+    /// measure and something upstream of it is a natural move here rather than
+    /// an operator error — and a confident `PredictResult` for an ambiguous set
+    /// is the worst possible answer to it.
+    #[tokio::test]
+    async fn predict_impact_refuses_a_driver_and_its_target_pinned_together() {
+        let params = json!({
+            "changes": [
+                {"measure": "orders.revenue", "delta": 100.0},
+                {"measure": "orders.profit", "delta": 50.0},
+            ]
+        });
+        let err =
+            execute_metric_tree_tool("predict_impact", params, runner_with_revenue_over_cost())
+                .await
+                .expect_err("revenue is upstream of profit, so the scenario is ambiguous");
+        let message = err.to_string();
+        assert!(
+            message.contains("ambiguous scenario"),
+            "expected the lever-conflict refusal, got: {message}"
+        );
+    }
+
+    /// The mirror case: independent levers still propagate, so the refusal is
+    /// not simply rejecting every multi-lever request.
+    #[tokio::test]
+    async fn predict_impact_allows_independent_levers() {
+        let params = json!({
+            "changes": [
+                {"measure": "orders.revenue", "delta": 100.0},
+                {"measure": "orders.cost", "delta": 50.0},
+            ]
+        });
+        execute_metric_tree_tool("predict_impact", params, runner_with_revenue_over_cost())
+            .await
+            .expect("neither lever is reachable from the other");
+    }
 }

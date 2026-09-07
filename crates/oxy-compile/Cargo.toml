@@ -30,4 +30,8 @@ glob = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# Dev-only: `discover` reports every drop at DEBUG, and
+# `a_dropped_file_is_reported_at_debug_rather_than_vanishing` asserts that
+# rather than trusting the call by inspection.
+tracing-subscriber = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }

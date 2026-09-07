@@ -1,5 +1,7 @@
 import { AxiosError } from "axios";
 import type {
+  BaselineRequest,
+  BaselineResponse,
   DistributionRequest,
   DrillRequest,
   DrillResponse,
@@ -9,7 +11,10 @@ import type {
   OpportunityRequest,
   OpportunityResult,
   PredictChange,
+  PredictOptions,
   PredictResult,
+  ProjectionRequest,
+  ProjectionResponse,
   SensitivityResult,
   TimeDimensionsResponse
 } from "@/types/metricTree";
@@ -56,16 +61,71 @@ export class MetricTreeService {
     }
   }
 
-  /** Propagate hypothetical `(measure, delta)` changes upward through the tree. */
+  /** Propagate hypothetical `(measure, delta)` changes upward through the tree.
+   *  Passing `values` sizes multiplicative edges that would otherwise come
+   *  back `unquantifiable`. */
   static async predict(
     projectId: string,
     changes: PredictChange[],
-    branchName?: string
+    branchName?: string,
+    // One object rather than two more positional optionals: they are the same
+    // pair the SDK's `predict` takes, and `PredictOptions` is where their
+    // meaning is documented — a caller passing them positionally had to read
+    // this signature to learn that omitting `coefficients` silently drops every
+    // undeclared edge from the result.
+    options: PredictOptions = {}
   ): Promise<PredictResult> {
+    const { values, coefficients } = options;
     try {
       const response = await apiClient.post<PredictResult>(
         `/${projectId}/semantic/metric-tree/predict`,
-        { changes },
+        {
+          changes,
+          ...(values ? { values } : {}),
+          // Sent verbatim, refusals included — the server ignores entries
+          // carrying no coefficient, and filtering them here would just be a
+          // second place for the two sides to disagree.
+          ...(coefficients?.length ? { coefficients } : {})
+        },
+        { params: branchName ? { branch: branchName } : {} }
+      );
+      return response.data;
+    } catch (error) {
+      rethrow(error);
+    }
+  }
+
+  /** Current values for the levers plus everything downstream of them. */
+  static async baseline(
+    projectId: string,
+    request: BaselineRequest,
+    branchName?: string
+  ): Promise<BaselineResponse> {
+    try {
+      const response = await apiClient.post<BaselineResponse>(
+        `/${projectId}/semantic/metric-tree/baseline`,
+        request,
+        { params: branchName ? { branch: branchName } : {} }
+      );
+      return response.data;
+    } catch (error) {
+      rethrow(error);
+    }
+  }
+
+  /** Bucketed history plus a forward forecast for the levers and everything
+   *  downstream of them. Returns the BASELINE curve only — the scenario curve
+   *  is composed client-side from this and the `predict` result, so editing a
+   *  lever costs no warehouse query. */
+  static async projection(
+    projectId: string,
+    request: ProjectionRequest,
+    branchName?: string
+  ): Promise<ProjectionResponse> {
+    try {
+      const response = await apiClient.post<ProjectionResponse>(
+        `/${projectId}/semantic/metric-tree/projection`,
+        request,
         { params: branchName ? { branch: branchName } : {} }
       );
       return response.data;

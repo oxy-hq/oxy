@@ -20,16 +20,30 @@ use super::preagg_retract;
 /// whenever an airlayer bump (or an oxy-side change) alters WHAT A BUILT ROLLUP
 /// CONTAINS — as opposed to how an already-built one is queried.
 ///
-/// Nothing else can notice such a change. `compute_rollup_hash` covers a
-/// rollup's member NAMES, time dimension and granularity — not the SQL those
-/// members expand to — so the artifact keeps its name; and the refresh key
-/// describes the source data, not the builder. airlayer #99 is the worked
-/// example: it folded `Measure.filters` into the stored partials, where a
-/// filtered measure had been storing the unfiltered total and serving it under
-/// the Pre-aggregated badge. Without a lever like this one, deploying that fix
-/// repairs nothing already cached — a rollup keyed `every: 24h` keeps serving
-/// the wrong number for a day, and one keyed on a `sql:` probe whose value has
-/// not moved keeps serving it indefinitely, reported Cached the whole time.
+/// The lever exists because a change in what a build WRITES is invisible to
+/// every other invalidation path: the refresh key describes the source data,
+/// not the builder. airlayer #99 is the worked example: it folded
+/// `Measure.filters` into the stored partials, where a filtered measure had
+/// been storing the unfiltered total and serving it under the Pre-aggregated
+/// badge. Without a lever like this one, deploying that fix repairs nothing
+/// already cached — a rollup keyed `every: 24h` keeps serving the wrong number
+/// for a day, and one keyed on a `sql:` probe whose value has not moved keeps
+/// serving it indefinitely, reported Cached the whole time.
+///
+/// **Since airlayer #104 the hash is no longer the blind spot it was.** This
+/// doc used to say `compute_rollup_hash` covers only member NAMES, time
+/// dimension and granularity, "so the artifact keeps its name". airlayer
+/// `0b4cf10` folded a `definition_fingerprint` into it — the view name and
+/// `table:`/`sql:`, each dimension's `expr`, and per measure
+/// `name:type:expr:filters` — so a change to what a member EXPANDS TO now
+/// moves the hash, the artifact gets a new name, and the invalidation is
+/// intrinsic. A #99-shaped change would today self-invalidate.
+///
+/// That narrows this constant's remit; it does not retire it. The fingerprint
+/// covers the rollup's DEFINITION, so a builder change that emits different
+/// SQL for an unchanged definition — a new `MeasureType` arm, a different
+/// partial for the same `avg`, an oxy-side change to how a plan is executed —
+/// still moves nothing the hash can see. That is what this is still for.
 ///
 /// A cycle that finds `<cache_dir>/builder_generation` disagreeing with this
 /// constant rebuilds every rollup the manifest says was BUILT — not every

@@ -9,7 +9,10 @@ pub mod variables;
 
 // Re-export the most commonly used types
 pub use errors::SemanticLayerError;
-pub use metric_tree::{build as build_metric_tree, predict, sensitivity, subtree};
+pub use metric_tree::{
+    LeverConflict, build as build_metric_tree, lever_conflicts, predict, predict_with_values,
+    sensitivity, subtree,
+};
 pub use models::{
     Dimension, DimensionType, Driver, DriverConfidence, DriverDirection, DriverForm,
     DriverStrength, Entity, EntityType, Measure, MeasureFilter, MeasureType, SemanticLayer, Topic,

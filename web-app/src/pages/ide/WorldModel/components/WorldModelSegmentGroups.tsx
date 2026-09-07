@@ -2,8 +2,8 @@ import { ArrowUpRight, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { DimensionOpportunity, OpportunityInstance } from "@/types/metricTree";
 import type { WmSelection, WorldModel } from "@/types/worldModel";
+import { InfoTip, MetaBadge } from "../../components/semanticGraph";
 import { formatDelta, formatSignedPct, rowUnit } from "./measureTarget";
-import { InfoTip, MetaBadge } from "./panelPrimitives";
 import { type RowDrillContext, SizedSegmentRow } from "./WorldModelSizedSegmentRow";
 import { dimensionNodeSelection } from "./worldModelNav";
 

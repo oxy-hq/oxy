@@ -1,0 +1,31 @@
+# Source is source, even when a stray control character says otherwise.
+#
+# git decides "binary" by sniffing the first 8000 bytes for a NUL. One literal
+# NUL inside a string literal — a perfectly reasonable separator for a composite
+# map key — is enough, and the consequence is silent and total: `git diff` prints
+# "Binary files differ", `--numstat` reports `-`/`-`, and GitHub renders no diff,
+# no line anchors and no blame. A module can land with nothing for a reviewer to
+# read while every test passes, which is exactly what happened to
+# `web-app/src/pages/ide/MetricTree/scenario/propagationTrace.ts`.
+#
+# Marking source extensions `diff` overrides the sniff, so these files always
+# render a textual diff — including across a commit whose parent blob really
+# does contain the byte. Prefer the two-character escape sequence in the source
+# anyway; this is the backstop that makes the next slip reviewable, not invisible.
+*.ts    diff
+*.tsx   diff
+*.js    diff
+*.jsx   diff
+*.mjs   diff
+*.cjs   diff
+*.rs    diff
+*.py    diff
+*.sh    diff
+*.md    diff
+*.yml   diff
+*.yaml  diff
+*.json  diff
+*.toml  diff
+*.css   diff
+*.html  diff
+*.sql   diff

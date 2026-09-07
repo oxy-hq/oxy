@@ -665,6 +665,36 @@ mod tests {
 
 // ── Connector translation ───────────────────────────────────────────────────
 
+/// Take a resolved connection field, or fall back — reporting WHY it fell back.
+///
+/// Both errors `SecretsManager::resolve_config_value` returns name a real
+/// misconfiguration: `SecretNotFound(var)` when a `*_var` is declared but the
+/// secrets store has no such secret, and `ConfigurationError` when neither the
+/// field nor its `*_var` is set. The fallbacks themselves are legitimate — an
+/// unset ClickHouse user, password or database means "use the server's default"
+/// — so this does not change which configurations connect. What it changes is
+/// that the reason is no longer discarded: an unresolvable `host_var` used to
+/// become a plausible-looking connection to `http://localhost:8123` with
+/// `database = ''`, and the failure surfaced as a connection error naming a
+/// host nobody had configured, with the missing var mentioned nowhere.
+fn or_default(
+    db_name: &str,
+    field: &str,
+    resolved: Result<String, OxyError>,
+    fallback: &str,
+) -> String {
+    match resolved {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(
+                db = %db_name,
+                "ClickHouse {field}: {e} — falling back to the default"
+            );
+            fallback.to_string()
+        }
+    }
+}
+
 async fn resolve_connector_impl(
     db_name: &str,
     workspace_manager: &WorkspaceManager<WorkingCopy>,
@@ -918,22 +948,13 @@ where
         }
 
         DatabaseType::ClickHouse(ch) => {
-            let host = ch
-                .get_host(&workspace_manager.secrets_manager)
-                .await
-                .unwrap_or_else(|_| "localhost".into());
-            let user = ch
-                .get_user(&workspace_manager.secrets_manager)
-                .await
-                .unwrap_or_default();
-            let password = ch
-                .get_password(&workspace_manager.secrets_manager)
-                .await
-                .unwrap_or_default();
-            let database = ch
-                .get_database(&workspace_manager.secrets_manager)
-                .await
-                .unwrap_or_default();
+            // Same fallbacks as before, but the reason for one is no longer
+            // discarded — see [`or_default`].
+            let sm = &workspace_manager.secrets_manager;
+            let host = or_default(&db.name, "host", ch.get_host(sm).await, "localhost");
+            let user = or_default(&db.name, "user", ch.get_user(sm).await, "");
+            let password = or_default(&db.name, "password", ch.get_password(sm).await, "");
+            let database = or_default(&db.name, "database", ch.get_database(sm).await, "");
             let url = if host.contains("://") {
                 // Caller already provided a full URL (scheme + host + optional
                 // port + optional path).  Pass it through verbatim — common for

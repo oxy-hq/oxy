@@ -149,6 +149,7 @@ ndarray = { workspace = true, features = ["rayon"] }
 arrow = { workspace = true, features = ["json"] }
 parquet = { workspace = true }
 duckdb = { workspace = true }
+oxy-simulation = { path = "../simulation" }
 
 # Utilities
 uuid = { workspace = true }

@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/simulation.json
+
+# A declared world shaped like this fixture's own `store_days` view.
+#
+# `store_days.net_sales` already carries a fittable driver edge from
+# `store_days.marketing_spend`, and against the real CSVs the engine recovers
+# 5.786 (t 36.5, n 8592). What it cannot tell you is whether 5.786 is RIGHT —
+# `t` says a slope is not zero, never that it is correct, so on this data
+# "converged" and "confidently wrong" are the same response byte for byte.
+#
+# This world is the same shape with a truth we chose: 24 locations, ~400 days
+# of history, ~1540 net sales per store-day. Run it and the same fitter is
+# asked a question that has an answer.
+#
+#   oxy serve --enterprise      # then
+#   POST /api/{workspace}/simulations/marketing_lift/runs?policies=hold,machine
+#   GET  /api/{workspace}/simulations/runs/{run_id}
+#
+# The policy is a property of the RUN, not of this file: `hold` and `machine`
+# over one world are a profit race, and `hold` is the null every claim is
+# measured against. Two files would have been two worlds that happened to look
+# alike.
+#
+# ── One result worth sitting with ─────────────────────────────────────────────
+#
+# This world's true marginal return is 3.70 at the spend it settles at. A clean
+# within-panel OLS over its 6,552 pairs measures 5.35 — a 1.45x overstatement,
+# from nothing but "the budget is a share of trailing sales". No misspecified
+# arrow, no lag error, no noise pathology.
+#
+# The fixture next door fits 5.786 on its own data.
+#
+# That is NOT proof the fixture's number is wrong: this world and
+# `gen_restaurant_data.py` are different processes, and a coincidence of two
+# numbers proves nothing on its own. What it does establish is that a
+# confounded world with a true effect near 3.7 produces a fitted 5.4 that looks
+# exactly as healthy as a correct one — same t, same n, same panel count. On
+# real data there is no second number to compare against, which is the whole
+# reason this file exists.
+
+name: marketing_lift
+description: |
+  Marketing spend lifts sales a week out, and the budget is set as a share of
+  trailing sales — which is what a real chain does and what makes the regressor
+  correlate with the demand shock it is supposed to be measured against.
+
+seed: 7
+periods: 30
+period_days: 7
+
+# 400 days per location in the fixture; 280 leaves room for the run's own
+# horizon inside a comparable span.
+history_days: 280
+start_date: 2025-01-06
+
+entities:
+  count: 24
+  scale_sigma: 0.4
+
+baseline:
+  # The fixture's measured mean: 1540.8 net sales per store-day.
+  sales_per_entity_day: 1540.0
+  margin: 0.36
+  demand_shock_rho: 0.7
+  demand_shock_sd: 0.12
+  weekly_seasonality: 0.15
+
+mechanism:
+  driver: marketing_spend
+  target: net_sales
+  lag_days: 7
+  noise_ratio: 0.05
+  calibrate:
+    # ── Why not the fixture's own 8.5% ────────────────────────────────────────
+    #
+    # The fixture spends 131.08 per store-day against 1540.8 of sales — an 8.5%
+    # share. It is tempting to anchor here and declare the 5.786 the fit
+    # recovers, so the simulated world "matches" the demo. That world cannot
+    # exist, and the arithmetic is worth following once.
+    #
+    # A power response satisfies R = R'·s/θ. At s = 131 with R' = 5.786 and any
+    # saturating θ < 1, marketing's TOTAL contribution exceeds 758 — roughly
+    # half of all revenue — and at θ = 0.5 it is 1517, essentially the entire
+    # 1540. A world where marketing explains all of revenue is not a world.
+    #
+    # Worse, the constraint bites from the other side too. For spending MORE to
+    # still be profitable you need margin × R' > 1, so R' > 2.78, which at an
+    # 8.5% share puts marketing above 24% of revenue whatever θ is. So at this
+    # fixture's own spend level, no plausible curve leaves room to spend more:
+    # it is already at or past its optimum.
+    #
+    # `example_new` carries 5.786 happily because nothing there has to close
+    # forward — it is built backwards from a target coefficient. A world has to
+    # close, so this one anchors at a 2% share with a 4.0 marginal return,
+    # putting marketing at ~12% of revenue.
+    anchor_spend_share: 0.02
+    local_slope_at_anchor: 4.0
+    # Where the profit optimum sits, as a multiple of the anchor. Must exceed
+    # margin × local_slope_at_anchor (1.44 here) or no saturating curve can
+    # place it; the spec refuses with the floor named.
+    optimum_at: 3.0
+
+lever:
+  min_multiple: 0.1
+  max_multiple: 5.0
+  max_move_per_period: 0.25
+  explore_jitter_sd: 0.15

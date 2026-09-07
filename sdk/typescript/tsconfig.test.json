@@ -1,0 +1,16 @@
+// Test files under `src/`, which the package's own `typecheck` cannot see.
+//
+// `tsconfig.json` excludes `**/*.test.ts`, `tsdown` builds from the same
+// config, and vitest transpiles without checking — so a checked-in fixture
+// could stop satisfying the interface it is typed against and every gate
+// stayed green. That is not hypothetical: widening `MetricNode.drillable` to
+// required left `custom-app/world-node.test.ts` with four TS2741s and nothing
+// reported them.
+//
+// Same compiler options as the package: a fixture that type-checks under
+// looser rules than the types it exercises is not checking the same types.
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "examples"]
+}

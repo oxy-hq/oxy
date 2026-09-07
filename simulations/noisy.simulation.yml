@@ -1,0 +1,46 @@
+name: noisy
+description: |
+  Six times the target noise. Drives se up and t down, so this is where the
+  abs t >= 2 gate should start refusing — the region where the gate earns its
+  keep.
+
+  0.30 and not higher for a measured reason: net_sales is floored at zero, and
+  above ~0.5 that clamp bites often enough that the world stops emitting its own
+  declared curve. The self-check catches it (theta recovers 0.6728 against a
+  declared 0.6681), which is exactly what the self-check is for — a drifted world
+  still produces a confident-looking run.
+
+seed: 7
+# At noise_ratio 0.30 a single seed classifies the draw, not the world.
+replicates: 5
+periods: 30
+period_days: 7
+history_days: 180
+start_date: 2025-01-06
+
+entities:
+  count: 24
+  scale_sigma: 0.4
+
+baseline:
+  sales_per_entity_day: 1500.0
+  margin: 0.36
+  demand_shock_rho: 0.7
+  demand_shock_sd: 0.12
+  weekly_seasonality: 0.15
+
+mechanism:
+  driver: marketing_spend
+  target: net_sales
+  lag_days: 7
+  noise_ratio: 0.30
+  calibrate:
+    anchor_spend_share: 0.02
+    local_slope_at_anchor: 4.0
+    optimum_at: 3.0
+
+lever:
+  min_multiple: 0.1
+  max_multiple: 5.0
+  max_move_per_period: 0.25
+  explore_jitter_sd: 0.15

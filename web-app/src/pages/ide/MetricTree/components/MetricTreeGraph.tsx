@@ -1,136 +1,37 @@
-import {
-  Background,
-  BackgroundVariant,
-  type ColorMode,
-  Controls,
-  Handle,
-  type NodeProps,
-  Position,
-  ReactFlow,
-  type Node as RFNode
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
+import type { Node as RFNode } from "@xyflow/react";
 import { useEffect, useMemo, useState } from "react";
 import { Label } from "@/components/ui/shadcn/label";
 import { Switch } from "@/components/ui/shadcn/switch";
-import { cn } from "@/libs/shadcn/utils";
-import useTheme from "@/stores/useTheme";
-import type { MetricNode, MetricTree } from "@/types/metricTree";
-import { layoutWithElk, metricTreeToFlow, NODE_WIDTH } from "../graphLayout";
+import type { MetricTree } from "@/types/metricTree";
+import { GraphCanvas, type WaypointMap } from "../../components/semanticGraph";
+import { layoutWithElk, metricTreeToFlow } from "../graphLayout";
+import { type ScenarioNodeData, scenarioEdgeOpacity } from "../scenario/nodeValue";
+import { ScenarioNode } from "../scenario/ScenarioNode";
+import { MetricMeasureNode } from "./MetricMeasureNode";
+import { deriveNodeRoles } from "./nodeRoles";
 
-type NodeRole = "composite" | "component" | "driver" | "leaf";
+const nodeTypes = { "metric-measure": MetricMeasureNode, "scenario-measure": ScenarioNode };
 
-interface MetricMeasureData {
-  node: MetricNode;
-  selected: boolean;
-  role: NodeRole;
-}
-
-const ROLE_STYLES: Record<
-  NodeRole,
-  { border: string; bg: string; badge: string; badgeText: string }
-> = {
-  composite: {
-    border: "border-primary/60",
-    bg: "bg-primary/5",
-    badge: "bg-primary/15 text-primary",
-    badgeText: "Composite"
-  },
-  component: {
-    border: "border-success/50",
-    bg: "bg-success/5",
-    badge: "bg-success/15 text-success",
-    badgeText: "Component"
-  },
-  driver: {
-    border: "border-amber-500/50",
-    bg: "bg-amber-500/5",
-    badge: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-    badgeText: "Driver"
-  },
-  leaf: {
-    border: "border-border",
-    bg: "bg-card",
-    badge: "bg-muted text-muted-foreground",
-    badgeText: ""
-  }
-};
-
-function MetricMeasureNode({ data }: NodeProps) {
-  const { node, selected, role } = data as unknown as MetricMeasureData;
-  const styles = ROLE_STYLES[role];
-
-  return (
-    <>
-      <Handle type='target' position={Position.Top} className='opacity-0' />
-      <div
-        className={cn(
-          "flex flex-col justify-center gap-1 rounded-xl border px-3 py-2.5 shadow-sm transition-all duration-150",
-          styles.border,
-          styles.bg,
-          selected && "ring-2 ring-primary/50 ring-offset-1 ring-offset-background"
-        )}
-        style={{ width: NODE_WIDTH }}
-        data-testid={`metric-node-${node.id}`}
-      >
-        <p
-          className='truncate font-semibold text-foreground text-sm leading-tight'
-          title={node.label}
-        >
-          {node.label}
-        </p>
-        <div className='flex items-center gap-1.5'>
-          <span
-            className={cn(
-              "rounded px-1.5 py-0.5 font-medium text-[10px] leading-none",
-              styles.badge
-            )}
-          >
-            {styles.badgeText || node.measure_type}
-          </span>
-          {role !== "composite" && (
-            <span className='truncate text-[10px] text-muted-foreground' title={node.measure}>
-              {node.measure}
-            </span>
-          )}
-        </div>
-      </div>
-      <Handle type='source' position={Position.Bottom} className='opacity-0' />
-    </>
-  );
-}
-
-const nodeTypes = { "metric-measure": MetricMeasureNode };
+/** The tree can run to hundreds of measures — well past what the World Model's
+ *  0.3 floor can fit on screen — so this canvas alone lowers it. */
+const MIN_ZOOM = 0.05;
 
 interface MetricTreeGraphProps {
   tree: MetricTree;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** Clicking empty canvas clears the selection, as it does in the World Model. */
+  onClearSelection?: () => void;
+  scenario?: Map<string, ScenarioNodeData>;
 }
 
-function deriveNodeRoles(tree: MetricTree): Map<string, NodeRole> {
-  const roles = new Map<string, NodeRole>();
-  const componentTargets = new Set(
-    tree.edges.filter((e) => e.kind === "component").map((e) => e.to)
-  );
-  const driverSources = new Set(tree.edges.filter((e) => e.kind === "driver").map((e) => e.from));
-
-  for (const node of tree.nodes) {
-    if (node.is_composite || componentTargets.has(node.id)) {
-      roles.set(node.id, "composite");
-    } else if (driverSources.has(node.id)) {
-      roles.set(node.id, "driver");
-    } else if (tree.edges.some((e) => e.to === node.id && e.kind === "component")) {
-      roles.set(node.id, "component");
-    } else {
-      roles.set(node.id, "leaf");
-    }
-  }
-  return roles;
-}
-
-export function MetricTreeGraph({ tree, selectedId, onSelect }: MetricTreeGraphProps) {
-  const theme = useTheme((s) => s.theme);
+export function MetricTreeGraph({
+  tree,
+  selectedId,
+  onSelect,
+  onClearSelection,
+  scenario
+}: MetricTreeGraphProps) {
   const [hideOrphans, setHideOrphans] = useState(true);
 
   const filteredTree = useMemo<MetricTree>(() => {
@@ -145,28 +46,79 @@ export function MetricTreeGraph({ tree, selectedId, onSelect }: MetricTreeGraphP
 
   const roles = useMemo(() => deriveNodeRoles(filteredTree), [filteredTree]);
 
-  const { nodes: rawNodes, edges } = useMemo(
-    () => metricTreeToFlow(filteredTree, selectedId, roles),
-    [filteredTree, selectedId, roles]
-  );
+  // Positions come from a structural pass — TREE SHAPE ONLY — so relayout
+  // never fires on a scenario propagation update, or on a selection. ELK reads
+  // `id`/`width`/`height` off these nodes and nothing else; `selectedId` and
+  // `roles` reach only `data`, and both node variants share the same
+  // dimensions, so the positions computed here are valid for every render
+  // below, scenario mode included.
+  //
+  // Passing them in anyway is what made every lever pin re-run ELK: the memo
+  // invalidated, the effect nulled `positions`, the canvas showed "Laying
+  // out…" and `fitView` threw the viewport away. In scenario mode a click IS
+  // the pin, and pinning the first lever also flips the node type — so this
+  // fired twice on the feature's opening interaction.
+  const structural = useMemo(() => metricTreeToFlow(filteredTree, null), [filteredTree]);
 
-  const [positioned, setPositioned] = useState<RFNode[] | null>(null);
+  const [positions, setPositions] = useState<Map<string, RFNode["position"]> | null>(null);
+  const [waypointMap, setWaypointMap] = useState<WaypointMap>(new Map());
 
   useEffect(() => {
     let cancelled = false;
-    setPositioned(null);
-    layoutWithElk(rawNodes, edges)
-      .then((laidOut) => {
-        if (!cancelled) setPositioned(laidOut);
+    setPositions(null);
+    layoutWithElk(structural.nodes, structural.edges)
+      .then(({ nodes: laidOut, waypointMap: wm }) => {
+        if (cancelled) return;
+        setPositions(new Map(laidOut.map((n) => [n.id, n.position])));
+        setWaypointMap(wm);
       })
       .catch((error) => {
         console.error("metric tree layout failed", error);
-        if (!cancelled) setPositioned(rawNodes);
+        if (!cancelled) {
+          setPositions(new Map(structural.nodes.map((n) => [n.id, n.position])));
+          setWaypointMap(new Map());
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [rawNodes, edges]);
+  }, [structural]);
+
+  // Data (including scenario values) is recomputed on every render — cheap
+  // object construction, no relayout — and merged with the positions above.
+  const { nodes: dataNodes, edges: dataEdges } = useMemo(
+    () => metricTreeToFlow(filteredTree, selectedId, roles, scenario),
+    [filteredTree, selectedId, roles, scenario]
+  );
+
+  // Hand each edge the waypoints ELK routed for it, so edges bend around node
+  // bodies instead of cutting through them — see `GraphEdge`.
+  //
+  // In scenario mode an edge also recedes with its endpoints. A fully lit edge
+  // running into a dimmed card reads as "the scenario propagated along here",
+  // which is the opposite of what a dimmed card means.
+  const edges = useMemo(
+    () =>
+      dataEdges.map((e) => {
+        const waypoints = waypointMap.get(e.id);
+        if (!scenario) return { ...e, data: { ...e.data, waypoints } };
+        const opacity = scenarioEdgeOpacity(
+          scenario.get(e.source)?.state,
+          scenario.get(e.target)?.state,
+          (e.style?.opacity as number | undefined) ?? 1
+        );
+        return { ...e, data: { ...e.data, waypoints }, style: { ...e.style, opacity } };
+      }),
+    [dataEdges, waypointMap, scenario]
+  );
+
+  const positioned = useMemo<RFNode[] | null>(() => {
+    if (!positions) return null;
+    return dataNodes.map((node) => ({
+      ...node,
+      position: positions.get(node.id) ?? node.position
+    }));
+  }, [dataNodes, positions]);
 
   if (tree.nodes.length === 0) {
     return (
@@ -178,55 +130,56 @@ export function MetricTreeGraph({ tree, selectedId, onSelect }: MetricTreeGraphP
 
   const orphanCount = tree.nodes.length - filteredTree.nodes.length;
 
-  return (
-    <div className='relative h-full w-full'>
-      <div className='absolute top-3 right-3 z-10 flex items-center gap-2 rounded-lg border border-border bg-card/90 px-3 py-1.5 shadow-sm backdrop-blur'>
-        <Switch
-          id='metric-tree-hide-orphans'
-          checked={hideOrphans}
-          onCheckedChange={setHideOrphans}
-        />
-        <Label htmlFor='metric-tree-hide-orphans' className='cursor-pointer text-xs'>
-          Hide unconnected
-          {hideOrphans && orphanCount > 0 && (
-            <span className='ml-1 text-muted-foreground'>({orphanCount})</span>
-          )}
-        </Label>
-      </div>
+  const orphanToggle = (
+    <div className='absolute top-3 right-3 z-10 flex items-center gap-2 rounded-lg border border-border bg-card/90 px-3 py-1.5 shadow-sm backdrop-blur'>
+      <Switch
+        id='metric-tree-hide-orphans'
+        checked={hideOrphans}
+        onCheckedChange={setHideOrphans}
+      />
+      <Label htmlFor='metric-tree-hide-orphans' className='cursor-pointer text-xs'>
+        Hide unconnected
+        {hideOrphans && orphanCount > 0 && (
+          <span className='ml-1 text-muted-foreground'>({orphanCount})</span>
+        )}
+      </Label>
+    </div>
+  );
 
-      {filteredTree.nodes.length === 0 ? (
+  if (filteredTree.nodes.length === 0) {
+    return (
+      <div className='relative h-full w-full'>
+        {orphanToggle}
         <div className='flex h-full flex-col items-center justify-center gap-1 text-muted-foreground text-sm'>
           <p>All measures are unconnected.</p>
           <p className='text-xs'>Toggle "Hide unconnected" off to see them.</p>
         </div>
-      ) : positioned === null ? (
+      </div>
+    );
+  }
+
+  if (positioned === null) {
+    return (
+      <div className='relative h-full w-full'>
+        {orphanToggle}
         <div className='flex h-full items-center justify-center text-muted-foreground text-xs'>
           Laying out…
         </div>
-      ) : (
-        <ReactFlow
-          key={`${filteredTree.nodes.length}-${edges.length}`}
-          nodes={positioned}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          colorMode={theme as ColorMode}
-          onNodeClick={(_event, node) => onSelect(node.id)}
-          fitView
-          fitViewOptions={{ padding: 0.15, minZoom: 0.1 }}
-          minZoom={0.05}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} className='opacity-40' />
-          <Controls
-            showInteractive={false}
-            className={cn(
-              "!overflow-hidden !rounded-lg !border !border-border !bg-card !shadow-sm",
-              "[&_button]:!border-border [&_button]:!bg-card [&_button]:!fill-foreground",
-              "[&_button:hover]:!bg-muted"
-            )}
-          />
-        </ReactFlow>
-      )}
-    </div>
+      </div>
+    );
+  }
+
+  return (
+    <GraphCanvas
+      flowKey={`${filteredTree.nodes.length}-${edges.length}`}
+      nodes={positioned}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      minZoom={MIN_ZOOM}
+      onNodeClick={(_event, node) => onSelect(node.id)}
+      onPaneClick={onClearSelection}
+    >
+      {orphanToggle}
+    </GraphCanvas>
   );
 }

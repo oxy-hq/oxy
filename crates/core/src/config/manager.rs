@@ -11,7 +11,7 @@ use oxy_shared::errors::OxyError;
 use super::{
     artifacts::{
         AgentEntry, AppEntry, ArtifactError, AutomationEntry, CompiledArtifact, PipelineEntry,
-        VerifiedQueryEntry,
+        SimulationEntry, VerifiedQueryEntry,
     },
     model::{
         AppConfig, Automation, AutomationWithRawVariables, BuilderAgentConfig, Config, Database,
@@ -724,7 +724,7 @@ impl<S: DiskSlot> ConfigManager<S> {
     /// The name is the compile boundary's key, so the disk arm has to translate
     /// it back: `list_analytics_agents` derives the same name from the same
     /// path (`artifact_name`, pinned against `oxy_compile` by
-    /// `crates/app/tests/artifact_naming_agrees.rs`), which is what makes the
+    /// `crates/app/tests/platform/artifact_naming_agrees.rs`), which is what makes the
     /// two arms answer about the same file.
     pub async fn agent_definition(
         &self,
@@ -864,11 +864,14 @@ impl<S: DiskSlot> ConfigManager<S> {
         }
     }
 
-    /// Every analytics agent. The walker drops any path containing `.test.`
-    /// and the working copy does not, but the convention is `x.agent.test.yml`
-    /// — which ends `.test.yml`, not `.agentic.yml` — so neither side lists one
-    /// and the enumerations agree. `agents_agree_on_the_test_mirror_convention`
-    /// pins that.
+    /// Every analytics agent. Both arms drop a file whose NAME contains
+    /// `.test.` — the walker in `oxy_compile::walker::discover`, the working
+    /// copy in `storage.rs`'s `list_entity_files` — so the enumerations agree
+    /// on both spellings: the conventional `x.agent.test.yml` (which ends
+    /// `.test.yml`, not `.agentic.yml`, so no extension match claims it
+    /// either way) and `x.test.agentic.yml` (which DOES end `.agentic.yml`,
+    /// and which only the shared `.test.` rule keeps off both lists).
+    /// `agents_agree_on_the_test_mirror_convention` pins that.
     pub async fn list_analytics_agents(&self) -> Result<Vec<AgentEntry>, ArtifactError> {
         match self.origin {
             Origin::Compiled { revision_id, .. } => {
@@ -912,6 +915,83 @@ impl<S: DiskSlot> ConfigManager<S> {
             }
             Origin::Disk => Ok(self.disk()?.list_pipelines().await?),
         }
+    }
+
+    /// Every declared world (`.simulation.yml`). The two arms enumerate the
+    /// same set — the walker and the working copy agree on the extension, on
+    /// the skip set, AND on the `.test.` file-name rule — and both carry the
+    /// body, because the grid renders off it and a run reads its seed out of
+    /// it. Each of those three is exactly one definition shared by both arms:
+    /// `oxy_compile::walker::is_skipped` for directories (called by the
+    /// compile walker and by `crates/core/src/config/storage.rs`'s
+    /// `list_by_sub_extension`), and the `.test.` file-name test that the
+    /// walker and `storage.rs`'s `list_entity_files` each apply. So neither a
+    /// world under `build/` or a nested `sub/target/`, nor a
+    /// `baseline.test.simulation.yml`, can exist on a replica and not the IDE
+    /// (or vice versa) depending on which arm answered.
+    ///
+    /// A promoted revision carrying no worlds is authoritatively empty and does
+    /// NOT fall through to the working copy: only a boundary FAILURE does, and
+    /// only on a node that has one. Answering `[]` for a node that could not
+    /// look is how "this replica holds no files" gets reported as "this
+    /// workspace declares no worlds".
+    pub async fn list_simulations(&self) -> Result<Vec<SimulationEntry>, ArtifactError> {
+        match self.origin {
+            Origin::Compiled { revision_id, .. } => {
+                match super::compiled::list_simulations_at(revision_id).await {
+                    Ok(simulations) => Ok(simulations),
+                    Err(e) => match self.working_copy() {
+                        Some(_) => {
+                            tracing::warn!(
+                                error = %e,
+                                "compile boundary failed; falling back to the working copy"
+                            );
+                            Ok(self.disk()?.list_simulations().await?)
+                        }
+                        None => Err(e),
+                    },
+                }
+            }
+            Origin::Disk => Ok(self.disk()?.list_simulations().await?),
+        }
+    }
+
+    /// One declared world's definition, keyed by NAME rather than by path —
+    /// same reasoning as [`Self::agent_definition`]: the name is the compile
+    /// boundary's key, and a run references the world it is running, so the
+    /// reference has to survive the file being moved.
+    ///
+    /// The disk arm translates the name back through
+    /// [`Self::list_simulations`], which derives it with the same rule the
+    /// walker uses (`artifact_name`, pinned by
+    /// `crates/app/tests/platform/artifact_naming_agrees.rs`) — that is what makes the
+    /// two arms answer about the same file. It already carries the body, so
+    /// unlike `agent_definition` there is no second read.
+    pub async fn simulation_definition(
+        &self,
+        name: &str,
+    ) -> Result<Option<serde_json::Value>, ArtifactError> {
+        if let Origin::Compiled { revision_id, .. } = self.origin {
+            match super::compiled::resolve_simulation_at(revision_id, name).await {
+                Ok(Some(value)) => return Ok(Some(value)),
+                Ok(None) => {}
+                Err(e) => match self.working_copy() {
+                    Some(_) => tracing::warn!(
+                        name,
+                        error = %e,
+                        "compile boundary failed; falling back to the working copy"
+                    ),
+                    None => return Err(e),
+                },
+            }
+        }
+        Ok(self
+            .disk()?
+            .list_simulations()
+            .await?
+            .into_iter()
+            .find(|s| s.name == name)
+            .map(|s| s.definition))
     }
 
     async fn list_apps_from_disk(
@@ -1687,6 +1767,210 @@ mod tests {
         assert!(
             message.contains("does not have"),
             "the caller needs the condition, not a canonicalize failure: {message}"
+        );
+    }
+
+    /// The review finding this guards: the compiled arm
+    /// (`oxy_compile::walker`) and the working-copy arm (`storage.rs`) used to
+    /// disagree on the skip set — root-prefix-only vs any-depth — so
+    /// `build/x.simulation.yml` and `sub/target/x.simulation.yml` existed on
+    /// one arm and not the other. Both now call the same
+    /// `oxy_compile::walker::is_skipped`; assert they still drop the same
+    /// paths rather than trusting the shared call site by inspection.
+    #[tokio::test]
+    async fn list_simulations_and_the_walker_drop_the_same_paths() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let write = |rel: &str| {
+            let path = root.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "name: w").unwrap();
+        };
+
+        write("legit/kept.simulation.yml");
+        write("build/dropped_build.simulation.yml");
+        write("sub/target/dropped_target.simulation.yml");
+        write(".git/dropped_git.simulation.yml");
+        write(".oxy_state/dropped_state.simulation.yml");
+        write(".draft.simulation.yml");
+        write("legit/.wip.simulation.yml");
+        // The `.test.` rule scopes to the file NAME, not the whole path — a
+        // directory that happens to carry `.test.` (a fixtures folder, say)
+        // is not a build dir and must not be skipped like one. Pinned here
+        // because this is exactly the divergence the walker fix closed: a
+        // whole-path match would drop this file while `list_simulations`
+        // kept it, splitting the two arms again.
+        write("worlds/q3.test.grid/w.simulation.yml");
+        // …but a file NAME carrying `.test.` IS a test fixture mirroring an
+        // entity extension, and both arms must drop it. This one ends
+        // `.simulation.yml`, so the working copy's extension match claims it
+        // while the walker's file-name rule drops it — the exact
+        // divergence this test exists to catch, one level down from the
+        // directory case above.
+        write("worlds/baseline.test.simulation.yml");
+
+        let manager = disk_manager(root).await;
+        let working_copy: std::collections::BTreeSet<String> = manager
+            .list_simulations()
+            .await
+            .expect("list_simulations")
+            .into_iter()
+            .map(|s| s.file_path)
+            .collect();
+
+        let compiled: std::collections::BTreeSet<String> = oxy_compile::walker::discover(root)
+            .expect("discover")
+            .into_iter()
+            .filter(|f| matches!(f.kind, oxy_compile::walker::FileKind::Simulation))
+            .map(|f| f.rel_path)
+            .collect();
+
+        let expected: std::collections::BTreeSet<String> = [
+            "legit/kept.simulation.yml".to_string(),
+            ".draft.simulation.yml".to_string(),
+            "legit/.wip.simulation.yml".to_string(),
+            "worlds/q3.test.grid/w.simulation.yml".to_string(),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(working_copy, expected, "working-copy arm");
+        assert_eq!(compiled, expected, "compiled arm (walker)");
+        assert_eq!(
+            working_copy, compiled,
+            "both arms must agree on what a workspace enumerates"
+        );
+    }
+
+    /// A pruned path must leave a trace on the working-copy arm too.
+    ///
+    /// The walker already logs its drops at DEBUG. This arm — the one that
+    /// backs `list_analytics_agents` / `list_apps` / `list_pipelines` /
+    /// `list_simulations` in the IDE — pruned silently, so "my agent
+    /// disappeared" had nothing to grep for on the side a developer is
+    /// actually looking at. DEBUG rather than WARN for the same reason as the
+    /// walker: `node_modules/` is the common case.
+    #[tokio::test]
+    async fn a_pruned_directory_and_a_test_fixture_are_reported_at_debug() {
+        use std::io::Write;
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone, Default)]
+        struct SharedBuf(Arc<Mutex<Vec<u8>>>);
+        impl Write for SharedBuf {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl tracing_subscriber::fmt::MakeWriter<'_> for SharedBuf {
+            type Writer = Self;
+            fn make_writer(&self) -> Self::Writer {
+                self.clone()
+            }
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let write = |rel: &str| {
+            let path = root.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "name: a").unwrap();
+        };
+        write("agents/kept.agentic.yml");
+        write("sub/build/stray.agentic.yml");
+        write("agents/kept.test.agentic.yml");
+
+        let manager = disk_manager(root).await;
+
+        let buf = SharedBuf::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(buf.clone())
+            .with_ansi(false)
+            .finish();
+        // `with_default` is thread-local, but the listing is async and may
+        // resume on another worker, so drive it to completion inside the
+        // guard on this thread rather than awaiting across it.
+        let agents = tracing::subscriber::with_default(subscriber, || {
+            futures::executor::block_on(manager.list_analytics_agents())
+        })
+        .expect("list_analytics_agents");
+        let logs = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
+
+        assert_eq!(
+            agents.into_iter().map(|a| a.file_path).collect::<Vec<_>>(),
+            vec!["agents/kept.agentic.yml".to_string()],
+            "one agent survives"
+        );
+        assert!(
+            logs.contains("pruning a skipped directory") && logs.contains("build"),
+            "a directory pruned by the skip set must be greppable; got:\n{logs}"
+        );
+        assert!(
+            logs.contains("kept.test.agentic.yml"),
+            "a file dropped as a test fixture must be greppable; got:\n{logs}"
+        );
+    }
+
+    /// `list_analytics_agents` claims both arms agree on the test-mirror
+    /// convention; assert it rather than trusting the claim.
+    ///
+    /// Two spellings, and only one of them used to be safe by accident. The
+    /// conventional `sales.agent.test.yml` ends `.test.yml`, so no
+    /// `.agentic.yml` extension match ever claimed it on either arm.
+    /// `sales.test.agentic.yml` DOES end `.agentic.yml` — the working copy
+    /// listed it, the walker dropped it, and the IDE resolved an agent the
+    /// fleet 404'd. The shared `.test.` file-name rule is what closes that.
+    #[tokio::test]
+    async fn agents_agree_on_the_test_mirror_convention() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let write = |rel: &str| {
+            let path = root.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "name: a").unwrap();
+        };
+
+        write("agents/sales.agentic.yml");
+        // The convention `load_test_config` infers a target from.
+        write("agents/sales.agent.test.yml");
+        // The spelling that ends in a real entity extension.
+        write("agents/sales.test.agentic.yml");
+        // A fixtures DIRECTORY is not a build dir: the agent under it stays.
+        write("agents/v1.test.cases/nested.agentic.yml");
+
+        let manager = disk_manager(root).await;
+        let working_copy: std::collections::BTreeSet<String> = manager
+            .list_analytics_agents()
+            .await
+            .expect("list_analytics_agents")
+            .into_iter()
+            .map(|a| a.file_path)
+            .collect();
+
+        let compiled: std::collections::BTreeSet<String> = oxy_compile::walker::discover(root)
+            .expect("discover")
+            .into_iter()
+            .filter(|f| matches!(f.kind, oxy_compile::walker::FileKind::AgenticAgent))
+            .map(|f| f.rel_path)
+            .collect();
+
+        let expected: std::collections::BTreeSet<String> = [
+            "agents/sales.agentic.yml".to_string(),
+            "agents/v1.test.cases/nested.agentic.yml".to_string(),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(working_copy, expected, "working-copy arm");
+        assert_eq!(compiled, expected, "compiled arm (walker)");
+        assert_eq!(
+            working_copy, compiled,
+            "both arms must agree on what a workspace enumerates"
         );
     }
 }

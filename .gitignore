@@ -18,6 +18,8 @@ __pycache__/
 # Distribution / packaging
 .Python
 .venv/
+# `just chronos-up` — the Chronos-2 server's python env (weights + torch).
+.venv-chronos/
 env/
 bin/
 build/

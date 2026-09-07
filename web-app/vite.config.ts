@@ -295,9 +295,19 @@ export default defineConfig(({ mode }) => {
       // this keeps that choice from being made by a bind default nobody read.
       host: rootEnv.OXY_DEV_HOST || "127.0.0.1",
       proxy: {
+        // `xfwd: true` for the same reason as /customer-apps below, but for a
+        // different gate: oxy's customer-app data gate (check_custom_app_gates)
+        // checks the browser's Origin against an allowlist of canonical dev
+        // ports (5173/5174, 3000-3005) and, failing that, against the request's
+        // X-Forwarded-Host/Host. `changeOrigin: true` rewrites Host to the
+        // backend's, so on a non-canonical OXY_DEV_PORT (e.g. 5273) neither
+        // check matches and SDK bundles calling /api/projects/{id}/semantic/*
+        // get 403 "origin not allowed". Forwarding the real host makes
+        // is_self_origin match whatever port this dev server is on.
         "/api": {
           target: DEV_PROXY_TARGET,
-          changeOrigin: true
+          changeOrigin: true,
+          xfwd: true
         },
         // Customer-app bundles live at the same origin as the SPA in
         // production (e.g. https://app.oxygen-hq.com/customer-apps/<uuid>/). Locally

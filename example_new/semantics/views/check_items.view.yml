@@ -133,10 +133,29 @@ measures:
   - name: total_line_items
     type: count
     description: "Number of line items"
+    drivers:
+      # A line only exists on a check, so the count of checks bounds the count
+      # of lines. Left unsized: lines-per-check is menu mix, and the fit is
+      # the right place to learn it from history.
+      - measure: checks.total_checks
+        direction: positive
+        strength: strong
+        confidence: high
+        description: "Every line rides on a check, so the two counts move together."
   - name: total_revenue
     type: sum
     description: "Revenue at menu price"
     expr: quantity * unit_price
+    drivers:
+      - measure: check_items.units_sold
+        direction: positive
+        strength: strong
+        confidence: high
+        description: |
+          Volume drives revenue at the average price rung. Not a component
+          edge: `units_sold * avg_price_rung` is a product of two aggregates,
+          which is not an identity — see the note in `store_days.view.yml` on
+          why no `X = A * B` is declared anywhere in this project.
   - name: total_cogs
     type: sum
     description: "Food cost"
@@ -151,13 +170,44 @@ measures:
       Revenue less food cost at line grain. Composite so the metric tree shows
       the two component edges rather than treating margin as an opaque number.
     expr: "{{check_items.total_revenue}} - {{check_items.total_cogs}}"
+    drivers:
+      # The menu's unit economics reach the line grain here. Safe on an
+      # identity node: nothing in the `menu_items` view feeds this one through
+      # components, so there is no path that counts a margin dollar twice.
+      - measure: menu_items.avg_unit_margin
+        direction: positive
+        strength: strong
+        confidence: high
+        description: |
+          Reprice the menu or cut a food cost and every line's margin moves
+          with it — this fixture joins price and cost in from the menu rather
+          than storing them on the line, so the link is exact by construction.
   - name: units_sold
     type: sum
     description: "Units sold"
     expr: quantity
+    drivers:
+      # The weakest claim in the project, and labelled as such. Menu breadth
+      # plausibly lifts units sold, but nothing here measures it and the fit
+      # has no reason to find it — `weak`/`low` is the honest reading, and it
+      # is what keeps `total_menu_items` from being a floating count.
+      - measure: menu_items.total_menu_items
+        direction: positive
+        strength: weak
+        confidence: low
+        description: "A broader menu gives a guest more to add. Unsized, and probably unsizable."
   # Likewise distinct from `menu_items.avg_unit_price`. This one is weighted by
   # what was actually rung; that one is the menu price itself.
   - name: avg_price_rung
     type: average
     description: "Average menu price across units actually sold"
     expr: unit_price
+    drivers:
+      - measure: menu_items.avg_unit_price
+        direction: positive
+        strength: strong
+        confidence: high
+        description: |
+          The same prices, weighted two ways: the menu's own average against
+          the average across units actually sold. A reprice moves both; the
+          gap between them is menu mix.

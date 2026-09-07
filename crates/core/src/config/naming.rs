@@ -6,6 +6,7 @@ const STRIPS: &[&str] = &[
     ".procedure.yml",
     ".automation.yml",
     ".airway.yml",
+    ".simulation.yml",
     ".yml",
 ];
 
@@ -27,6 +28,10 @@ mod tests {
         assert_eq!(artifact_name("apps/a.app.yml"), "apps/a");
         assert_eq!(artifact_name("agents/foo.agentic.yml"), "agents/foo");
         assert_eq!(artifact_name("a/b/c.app.yml"), "a/b/c");
+        // Longest suffix wins over the bare `.yml`, or a nameless world would
+        // be identified as `worlds/flat.simulation` while the compile worker
+        // called the same file `worlds/flat`.
+        assert_eq!(artifact_name("worlds/flat.simulation.yml"), "worlds/flat");
         assert_eq!(artifact_name("noext"), "noext");
     }
 }

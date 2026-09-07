@@ -32,8 +32,10 @@ styled-system-studio
 dist/*
 !dist/.gitkeep
 
-tsconfig.app.tsbuildinfo
-tsconfig.node.tsbuildinfo
+# Incremental-compile caches. Keyed on absolute paths, so they are worthless to
+# anyone else and noisy in every diff — match them by suffix rather than adding
+# a line each time a tsconfig is added.
+*.tsbuildinfo
 
 bundle-report.html
 

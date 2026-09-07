@@ -59,6 +59,22 @@ pub enum CompiledRow {
     MonitorConfig(CompiledMonitorConfig),
     ReconcileConfig(CompiledReconcileConfig),
     WorldModelConfig(CompiledWorldModelConfig),
+    Simulation(CompiledSimulation),
+}
+
+/// One `.simulation.yml`.
+///
+/// The body is carried as an opaque `Value`, like every other kind here —
+/// nothing in `oxy-compile` deserializes a domain type, and a `SimulationSpec`
+/// that parses but declares an incoherent world (an unreachable optimum, too
+/// little history to fit on) is a *run* failure with a diagnosable message, not
+/// a compile failure that takes the whole revision down with it. Compile still
+/// catches what it is the authority on: the file is well-formed YAML.
+#[derive(Debug, Clone)]
+pub struct CompiledSimulation {
+    pub name: String,
+    pub file_path: String,
+    pub definition: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -604,6 +620,13 @@ async fn compile_one(file: &DiscoveredFile) -> Result<Vec<CompiledRow>, FileFail
         FileKind::Automation(p) => compile_automation(file, &content, p),
         FileKind::AirwayPipeline => compile_named_yaml(file, &content, |name, file_path, def| {
             CompiledRow::Pipeline(CompiledPipeline {
+                name,
+                file_path,
+                definition: def,
+            })
+        }),
+        FileKind::Simulation => compile_named_yaml(file, &content, |name, file_path, def| {
+            CompiledRow::Simulation(CompiledSimulation {
                 name,
                 file_path,
                 definition: def,
@@ -1292,6 +1315,7 @@ pub fn derive_name_from_path(rel_path: &str) -> String {
         ".procedure.yml",
         ".automation.yml",
         ".airway.yml",
+        ".simulation.yml",
         ".yml",
     ];
     for s in STRIPS {
@@ -1320,6 +1344,7 @@ fn row_dedupe_key(row: &CompiledRow, _kind: &FileKind) -> Option<String> {
         CompiledRow::MonitorConfig(_) => None,
         CompiledRow::ReconcileConfig(_) => None,
         CompiledRow::WorldModelConfig(_) => None,
+        CompiledRow::Simulation(s) => Some(format!("simulation:{}", s.name)),
     }
 }
 
@@ -1472,6 +1497,51 @@ mod tests {
                 assert!(c.definition.get("checks").unwrap().is_array());
             }
             other => panic!("expected ReconcileConfig, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn simulation_yml_compiles_to_a_named_row() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "simulations/confounded.simulation.yml",
+            "name: confounded_marketing\nseed: 7\nperiods: 40\n",
+        );
+        let files = discover(root).unwrap();
+        let file = files
+            .iter()
+            .find(|f| matches!(f.kind, FileKind::Simulation))
+            .unwrap();
+        let rows = compile_one(file).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        match &rows[0] {
+            CompiledRow::Simulation(s) => {
+                assert_eq!(s.name, "confounded_marketing");
+                assert_eq!(s.file_path, "simulations/confounded.simulation.yml");
+                assert_eq!(s.definition.get("periods").unwrap(), 40);
+            }
+            other => panic!("expected Simulation, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_nameless_simulation_derives_its_name_from_the_path() {
+        // Without the `.simulation.yml` strip, the fallback would leave the
+        // literal `.simulation` on the identifier and the run's reference to
+        // its world would not match what a list returned.
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(root, "worlds/flat_budget.simulation.yml", "seed: 1\n");
+        let files = discover(root).unwrap();
+        let file = files
+            .iter()
+            .find(|f| matches!(f.kind, FileKind::Simulation))
+            .unwrap();
+        match &compile_one(file).await.unwrap()[0] {
+            CompiledRow::Simulation(s) => assert_eq!(s.name, "worlds/flat_budget"),
+            other => panic!("expected Simulation, got {other:?}"),
         }
     }
 

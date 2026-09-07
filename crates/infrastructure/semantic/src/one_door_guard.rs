@@ -93,6 +93,24 @@ const ALLOWED: &[(&str, &str)] = &[
          `AppState` to carry a cache. The workspace caller passes its cached \
          engine.",
     ),
+    (
+        "crates/app/src/server/api/projects/metric_tree.rs",
+        "`run_baseline_query`, on the same customer-app boundary as \
+         `world_model_graph/handlers.rs` above: these routes are mounted in \
+         `router/public.rs`, which does not carry `workspace_middleware`, so \
+         the `SemanticEngineCacheCtx` extension that supplies the cache is \
+         never inserted. `SemanticBoundary` holds a `CustomAppContext` and a \
+         scan dir and nothing else. The workspace twin \
+         (`server/api/metric_tree.rs`) takes the extractor and IS cached.",
+    ),
+    (
+        "crates/app/src/server/simulation/probe.rs",
+        "Run-scoped: `FitProbe` parses its layer out of the materialised world \
+         directory a run generates, not the workspace's. The cache is keyed by \
+         workspace id, so an entry for it would hand the next run — or a real \
+         request — an engine built over a temp dir that no longer exists. \
+         Built once per run, not per period; see `FitProbe::new`.",
+    ),
     // ── 3. Hypothetical layers ──────────────────────────────────────────────
     (
         "crates/infrastructure/semantic/src/lib.rs",

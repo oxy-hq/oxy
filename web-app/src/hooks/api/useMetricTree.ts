@@ -2,11 +2,15 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { MetricTreeService } from "@/services/api/metricTree";
 import type {
+  BaselineRequest,
   DistributionRequest,
   DrillRequest,
   ExplainRequest,
+  FittedDriver,
+  MeasureValues,
   OpportunityRequest,
-  PredictChange
+  PredictChange,
+  ProjectionRequest
 } from "@/types/metricTree";
 import queryKeys from "./queryKey";
 
@@ -124,13 +128,86 @@ export function useDistributionQuery(request: DistributionRequest | null, enable
 
 /** Propagate a hypothetical `(measure, delta)` up the driver graph — the
  *  "what-if" lever. A pure metric-tree walk server-side (no warehouse query),
- *  so it is cheap and safe to re-run on every input change. */
+ *  so it is cheap and safe to re-run on every input change. Passing `values`
+ *  sizes multiplicative edges that would otherwise come back `unquantifiable`. */
 export function usePredict() {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
 
   return useMutation({
-    mutationFn: (changes: PredictChange[]) => MetricTreeService.predict(projectId, changes)
+    // The branch is load-bearing, not decoration: the workspace extractor
+    // resolves a different working copy per branch, so predicting without it
+    // walks a different semantic layer than the tree the user is looking at —
+    // measure ids silently stop matching on any non-default branch.
+    mutationFn: ({
+      changes,
+      values,
+      coefficients
+    }: {
+      changes: PredictChange[];
+      values?: MeasureValues;
+      coefficients?: FittedDriver[];
+    }) => MetricTreeService.predict(projectId, changes, branchName, { values, coefficients })
+  });
+}
+
+/** Baseline values for a lever set. Disabled until there is a request. */
+export function useBaseline(request: BaselineRequest | null) {
+  const { project, branchName } = useCurrentProjectBranch();
+  const projectId = project.id;
+
+  return useQuery({
+    queryKey: request
+      ? queryKeys.metricTree.baseline(
+          projectId,
+          branchName,
+          request.roots,
+          request.time_dimension,
+          request.period,
+          request.instance ? `${request.instance.entity}:${request.instance.key}` : null
+        )
+      : ([...queryKeys.metricTree.all, "baseline", "idle"] as const),
+    queryFn: () => {
+      if (!request) throw new Error("a baseline request is required");
+      return MetricTreeService.baseline(projectId, request, branchName);
+    },
+    enabled: !!request && request.roots.length > 0,
+    // The warehouse query is expensive and the underlying window is
+    // historical, so it does not go stale within a working session.
+    staleTime: 5 * 60 * 1000,
+    retry: false
+  });
+}
+
+/** Bucketed history + forward forecast for a lever set. Disabled until there
+ *  is a request — the projection panel is opt-in, and a closed panel must not
+ *  spend a warehouse query. */
+export function useProjection(request: ProjectionRequest | null) {
+  const { project, branchName } = useCurrentProjectBranch();
+  const projectId = project.id;
+
+  return useQuery({
+    queryKey: request
+      ? queryKeys.metricTree.projection(
+          projectId,
+          branchName,
+          request.roots,
+          request.time_dimension,
+          request.period,
+          request.instance ? `${request.instance.entity}:${request.instance.key}` : null,
+          request.granularity ?? "day",
+          request.horizon
+        )
+      : ([...queryKeys.metricTree.all, "projection", "idle"] as const),
+    queryFn: () => {
+      if (!request) throw new Error("a projection request is required");
+      return MetricTreeService.projection(projectId, request, branchName);
+    },
+    enabled: !!request && request.roots.length > 0,
+    // Same reasoning as `useBaseline`: an expensive query over a historical
+    // window, which does not go stale within a working session.
+    staleTime: 5 * 60 * 1000,
+    retry: false
   });
 }
 

@@ -1,0 +1,46 @@
+// Unit tests under `src/`, which no other project covers.
+//
+// `tsconfig.app.json` excludes `**/*.test.*` and `tsconfig.node.json` includes
+// only the config files and `tests/**` (Playwright + agentic). That leaves
+// every `src/**/*.test.tsx` typechecked by nothing at all — vitest transpiles
+// without checking — so even now that `lint:ts` really runs, it cannot catch a
+// TS2304 or TS2345 in a test file. That is not theoretical: renaming one hook
+// field in this PR left three test files passing a prop that no longer
+// existed, and every one of them still went green.
+//
+// NOT in `tsconfig.json`'s `references`, deliberately. Turning it on today
+// surfaces 118 pre-existing errors across 21 files — mostly fixtures missing
+// fields the wire types have since grown — and a referenced project that fails
+// would break the pre-commit gate for every contributor. Run it directly:
+//
+//     pnpm lint:ts:tests
+//
+// Clearing that backlog and adding the reference is the follow-up; every test
+// file under `src/pages/ide/MetricTree/` is already clean, so the count only
+// goes down from here.
+//
+// Same compiler options as the app: a test that type-checks under looser rules
+// than the code it exercises is not testing the same types.
+{
+  "extends": "./tsconfig.app.json",
+  // `src/test-setup.ts` must be in the program, not merely on disk: its
+  // `@testing-library/jest-dom/vitest` import is what augments vitest's
+  // `Assertion` with `toBeInTheDocument` and friends. Without it every such
+  // matcher is a TS2339.
+  //
+  // No `types` override — an explicit array turns OFF automatic @types
+  // inclusion, which drops `vite/client` and takes the app's own sources down
+  // with it (`?worker` imports, `react-markdown`).
+  "include": [
+    // Ambient declarations (`src/types/*.d.ts`). `tsconfig.app.json` gets these
+    // for free by including all of `src`; a project that lists only test files
+    // does not, and their absence invents errors in the app's own sources —
+    // `react-markdown.d.ts` alone accounted for 22 of them.
+    "src/**/*.d.ts",
+    "src/test-setup.ts",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/__tests__/**/*"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

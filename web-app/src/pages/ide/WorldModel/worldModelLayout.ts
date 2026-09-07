@@ -1,5 +1,4 @@
 import { type NodeHandle, Position, type Edge as RFEdge, type Node as RFNode } from "@xyflow/react";
-import ELK from "elkjs";
 import type {
   WmBreakdownEdge,
   WmBreakdownNode,
@@ -9,12 +8,20 @@ import type {
   WorldModel,
   WorldModelEntity
 } from "@/types/worldModel";
+import { NODE_HEIGHT_COLLAPSED, NODE_WIDTH, type NodeSize } from "../components/semanticGraph";
 
-const elk = new ELK();
+// Card geometry and the ELK runner are shared with the Metric Tree — see
+// `pages/ide/components/semanticGraph`. Re-exported here so this module stays
+// the one import site for everything World Model's own layout code needs.
+export {
+  layoutWithElk,
+  NODE_HEIGHT_COLLAPSED,
+  NODE_WIDTH,
+  type NodeSize,
+  type NodeSizeOf,
+  type WaypointMap
+} from "../components/semanticGraph";
 
-export const NODE_WIDTH = 184;
-/** 3-row compact card: name row + grain/depth row + obs/calc row + padding. */
-export const NODE_HEIGHT_COLLAPSED = 80;
 /** Width of the in-place expanded entity node (measure-tree mode). */
 export const EXPANDED_NODE_WIDTH = 360;
 
@@ -235,100 +242,6 @@ export function worldModelToFlow(
 
   return { nodes, edges };
 }
-
-/** Ordered waypoints (ELK section start + bendPoints + end) per ReactFlow edge ID. */
-export type WaypointMap = Map<string, { x: number; y: number }[]>;
-
-/** A node's box size handed to ELK. */
-export interface NodeSize {
-  width: number;
-  height: number;
-}
-
-/** Per-node layout size lookup. Returns the size ELK should reserve for a node
- *  in the CURRENT display state — a grown (expanded / measure-chip / sample)
- *  card is bigger than a collapsed one, so neighbors reflow to make room instead
- *  of being overlapped. Falls back to the collapsed box when a node isn't
- *  covered. See {@link buildLayoutSizeMap}. */
-export type NodeSizeOf = (id: string) => NodeSize | undefined;
-
-/** Position nodes with ELK layered layout + SPLINES edge routing.
- *  Edges are forced to exit the bottom of source nodes and enter the top
- *  of target nodes via explicit SOUTH/NORTH port constraints.
- *
- *  `sizeOf` supplies each node's real (possibly grown) box so the layout
- *  reserves room for expanded/measure/sample cards; without it every node is
- *  laid out at the collapsed size. */
-export async function layoutWithElk(
-  nodes: RFNode[],
-  edges: RFEdge[],
-  sizeOf?: NodeSizeOf
-): Promise<{ nodes: RFNode[]; waypointMap: WaypointMap }> {
-  if (nodes.length === 0) return { nodes, waypointMap: new Map() };
-
-  const graph = {
-    id: "root",
-    layoutOptions: {
-      "elk.algorithm": "layered",
-      "elk.direction": "DOWN",
-      "elk.edgeRouting": "ORTHOGONAL",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "100",
-      "elk.spacing.nodeNode": "64",
-      "elk.separateConnectedComponents": "true",
-      "elk.spacing.componentComponent": "100",
-      "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-      "elk.layered.crossingMinimization.greedySwitchType": "TWO_SIDED",
-      "elk.layered.thoroughness": "50",
-      "elk.layered.unnecessaryBendpoints": "true",
-      "elk.layered.cycleBreaking.strategy": "GREEDY",
-      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "40",
-      "elk.layered.spacing.edgeEdgeBetweenLayers": "20"
-    },
-    children: nodes.map((n) => {
-      const size = sizeOf?.(n.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT_COLLAPSED };
-      return {
-        id: n.id,
-        width: size.width,
-        height: size.height,
-        ports: [
-          { id: `${n.id}__src`, properties: { "port.side": "SOUTH" } },
-          { id: `${n.id}__tgt`, properties: { "port.side": "NORTH" } }
-        ],
-        properties: { portConstraints: "FIXED_SIDE" }
-      };
-    }),
-    edges: edges.map((e) => ({
-      id: e.id,
-      sources: [`${e.source}__src`],
-      targets: [`${e.target}__tgt`]
-    }))
-  };
-
-  const result = await elk.layout(graph);
-  const positions = new Map((result.children ?? []).map((c) => [c.id, c]));
-
-  const positionedNodes = nodes.map((node) => {
-    const pos = positions.get(node.id);
-    return pos ? { ...node, position: { x: pos.x ?? 0, y: pos.y ?? 0 } } : node;
-  });
-
-  const waypointMap: WaypointMap = new Map();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const elkEdge of (result.edges ?? []) as any[]) {
-    const section = elkEdge.sections?.[0];
-    if (!section) continue;
-    const pts: { x: number; y: number }[] = [];
-    if (section.startPoint) pts.push({ x: section.startPoint.x, y: section.startPoint.y });
-    for (const bp of section.bendPoints ?? []) pts.push({ x: bp.x, y: bp.y });
-    if (section.endPoint) pts.push({ x: section.endPoint.x, y: section.endPoint.y });
-    if (pts.length >= 2) waypointMap.set(elkEdge.id as string, pts);
-  }
-
-  return { nodes: positionedNodes, waypointMap };
-}
-
 /** A breakdown node's value, reshaped to the same contract entity cards
  *  already render (`WmComputedMeasure`) so a contributor can be shown via the
  *  entity's normal measure-chip UI instead of a bespoke rendering path. */

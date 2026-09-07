@@ -2,12 +2,8 @@ import { Handle, type NodeProps, Position } from "@xyflow/react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/libs/shadcn/utils";
 import type { WmComputedMeasure, WorldModelEntity } from "@/types/worldModel";
-import {
-  contributorHandleId,
-  measureSymbol,
-  measureSymbolColor,
-  NODE_WIDTH
-} from "../worldModelLayout";
+import { GraphNodeCard, GraphNodeHandles } from "../../components/semanticGraph";
+import { contributorHandleId, measureSymbol, measureSymbolColor } from "../worldModelLayout";
 
 interface WmEntityData {
   entity: WorldModelEntity;
@@ -153,21 +149,11 @@ export function WorldModelEntityNode({ data }: NodeProps) {
 
   return (
     <>
-      <Handle id='top-in' type='target' position={Position.Top} className='opacity-0' />
-      <Handle id='top-out' type='source' position={Position.Top} className='opacity-0' />
-      <div
-        className={cn(
-          "flex cursor-pointer select-none flex-col gap-1 border bg-card p-2",
-          "transition-all duration-250 ease-out",
-          // De-emphasized (not in the selected instance's cluster) nodes stay
-          // fully visible — only the blue accent + glow are dropped so the
-          // highlighted cluster stands out. Never fade to invisible.
-          dimmed ? "border-border" : "border-info/60 hover:shadow-[0_0_20px_rgba(96,165,250,0.18)]",
-          selected && "shadow-[0_0_26px_rgba(96,165,250,0.32)] ring-2 ring-info/60",
-          // A breakdown foregrounds its own cluster; everything else recedes.
-          blurred && "opacity-40 blur-[1.5px]"
-        )}
-        style={{ width: NODE_WIDTH }}
+      <GraphNodeHandles />
+      <GraphNodeCard
+        selected={selected}
+        dimmed={dimmed}
+        blurred={blurred}
         data-testid={`wm-entity-${entity.id}`}
       >
         {/* Row 1: entity name */}
@@ -279,9 +265,7 @@ export function WorldModelEntityNode({ data }: NodeProps) {
             </div>
           )}
         </div>
-      </div>
-      <Handle id='bottom-in' type='target' position={Position.Bottom} className='opacity-0' />
-      <Handle id='bottom-out' type='source' position={Position.Bottom} className='opacity-0' />
+      </GraphNodeCard>
     </>
   );
 }

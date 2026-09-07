@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useMetricTree } from "@/hooks/api/useMetricTree";
 import type { WmSelection, WorldModel } from "@/types/worldModel";
+import { InfoTip, SectionSpinner } from "../../components/semanticGraph";
 import { declaringView } from "./measureTarget";
-import { InfoTip, SectionSpinner } from "./panelPrimitives";
 import { WorldModelDriversSection } from "./WorldModelDriversSection";
 import {
   DEFAULT_PRESET_DAYS,

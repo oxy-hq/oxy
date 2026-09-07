@@ -112,12 +112,27 @@ pub(super) async fn rebuild_rollup(
         // hash stops being something a builder-generation sweep waits on
         // forever (see `PREAGG_BUILDER_GENERATION`).
         //
+        // What is retracted is the ROLLUP, not `rollup.hash`. Nothing was
+        // committed for that hash — `file_written` is false, so this returns
+        // before `commit_manifest_and_cache`, the only place that reaps an
+        // entry under a DIFFERENT hash. Retracting by hash alone held only
+        // while a hash was stable across rebuilds of an unchanged definition:
+        // folding `definition_fingerprint` into `compute_rollup_hash` moves
+        // every rollup's hash once, and from then on the hash being built
+        // matches nothing while the entry actually being served survives under
+        // the old one — exactly the freshness lie above. `Retraction::Empty`
+        // carries the `(view, rollup)` identity so the retraction reaches it,
+        // through the same `same_rollup_identity` predicate the reap uses.
+        //
         // `Retraction::Empty`, not `Wrong`: the artifact goes, but the ATTEMPT
         // stays on record. It is the only surviving evidence that this rollup
         // was evaluated — the manifest's `build_date` and `refresh_key_value`
         // are what the retraction just deleted — and without it a legitimately
         // empty rollup reads as never-built and rebuilds on every cadence tick
-        // for as long as it stays empty.
+        // for as long as it stays empty. The record is keyed on `rollup.hash`,
+        // the hash the NEXT cycle will resolve and check staleness for, and
+        // `insert_replacing_same_rollup` drops the superseded hash's record in
+        // the same write the manifest entry goes in.
         let retracted = retract_under_publish_lock(
             &rollup.hash,
             &cache_dir,
@@ -135,9 +150,10 @@ pub(super) async fn rebuild_rollup(
             mirror_manifest_to_s3(&cache_dir).await;
         }
         tracing::info!(
+            view = %view.name,
             rollup = %rollup.name,
-            "preagg: rebuild produced zero rows; retracted the previous build and \
-             recorded the empty result so the refresh key still gates the next cycle"
+            "preagg: rebuild produced zero rows; retracted every build still serving this \
+             rollup and recorded the empty result so the refresh key still gates the next cycle"
         );
         return Ok(false);
     }
@@ -301,6 +317,8 @@ fn plan_rollup_build(
     let freshness: Vec<oxy_airlayer_compat::preagg::RollupFreshness> = all_rollups
         .iter()
         .map(|r| oxy_airlayer_compat::preagg::RollupFreshness {
+            view_name: view.name.clone(),
+            rollup_name: r.name.clone(),
             rollup_hash: r.hash.clone(),
             is_fresh: r.hash != rollup.hash,
             current_refresh_key_value: if r.hash == rollup.hash {
@@ -379,11 +397,56 @@ async fn materialize_parquet(
 
 // ── Phase 3: manifest + cache ─────────────────────────────────────────────────
 
+/// Is this manifest row the rollup `(view_name, rollup_name)` addresses?
+///
+/// THE identity predicate for a rollup, and deliberately the only one. The
+/// manifest is keyed on `rollup_hash`, but a hash is a fact about one
+/// DEFINITION — fold `definition_fingerprint` into `compute_rollup_hash` and
+/// every already-built rollup's hash moves — whereas `(view_name,
+/// rollup_name)` is the one declared `pre_aggregations:` entry that the status
+/// endpoint joins on and a person names. Both places that remove an artifact
+/// on this rollup's behalf ask the question through here: the publish-time
+/// reap in [`commit_manifest_and_cache`], and the zero-row retraction in
+/// [`rebuild_rollup`]. Two matchers would be two chances to disagree about
+/// what is still being served.
+pub(super) fn same_rollup_identity(
+    entry: &oxy_airlayer_compat::preagg::LocalRollupEntry,
+    view_name: &str,
+    rollup_name: &str,
+) -> bool {
+    entry.view_name == view_name && entry.rollup_name == rollup_name
+}
+
+/// Manifest rows that a build under `new_hash` for `(view_name, rollup_name)`
+/// would reap: same identity, different hash. Pulled out of the retain below
+/// so the degenerate case — more than one candidate — can be checked and
+/// warned on without duplicating the reap's own matching logic.
+fn superseded_candidates<'a>(
+    rollups: &'a [oxy_airlayer_compat::preagg::LocalRollupEntry],
+    view_name: &str,
+    rollup_name: &str,
+    new_hash: &str,
+) -> Vec<&'a oxy_airlayer_compat::preagg::LocalRollupEntry> {
+    rollups
+        .iter()
+        .filter(|r| same_rollup_identity(r, view_name, rollup_name) && r.rollup_hash != new_hash)
+        .collect()
+}
+
 /// Update the local manifest and seed the in-memory refresh-key cache.
 ///
 /// Called after a successful Parquet pull, with the caller already holding the
 /// per-workspace publish lock — the hot-swap and this write are one atomic
 /// publish, so the lock cannot be taken here (see `rebuild_rollup`).
+///
+/// Publishing is also where a rollup's PREVIOUS build is reaped: the manifest
+/// row and local Parquet this identity held under an older hash go with the
+/// same write. See the comment at the `retain` below for why that identity is
+/// `(view_name, rollup_name)` and what survives it. The reach is one
+/// workspace's directory — `cache_dir` is
+/// `<state>/airlayer/cache/<workspace_id>/`, and the lock guarding it is keyed
+/// by the same id (`manifest_write_lock_for`) — so no other tenant's cache,
+/// and no other view's or rollup's artifact, is visible from here.
 async fn commit_manifest_and_cache(
     entry: &oxy_airlayer_compat::preagg::ManifestEntry,
     rollup_hash: &str,
@@ -414,7 +477,7 @@ async fn commit_manifest_and_cache(
     let rollup_hash_owned = rollup_hash.to_string();
     let local_entry_owned = local_entry;
 
-    tokio::task::spawn_blocking(move || {
+    let superseded = tokio::task::spawn_blocking(move || {
         let mut manifest = agentic_semantic::preagg::load_local_manifest(&cache_dir_owned)
             .unwrap_or_else(|| oxy_airlayer_compat::preagg::LocalManifest {
                 pulled_at: chrono::Utc::now().to_rfc3339(),
@@ -427,17 +490,130 @@ async fn commit_manifest_and_cache(
             .iter_mut()
             .find(|r| r.rollup_hash == rollup_hash_owned)
         {
-            *existing = local_entry_owned;
+            *existing = local_entry_owned.clone();
         } else {
-            manifest.rollups.push(local_entry_owned);
+            manifest.rollups.push(local_entry_owned.clone());
         }
+
+        // Reap what this build just SUPERSEDED. The manifest is keyed on
+        // `rollup_hash` alone, but the rollup's IDENTITY is
+        // `(view_name, rollup_name)` — one declared `pre_aggregations:` entry,
+        // whatever hash its current definition happens to compute to. The
+        // status endpoint already joins on that pair, and airlayer's own
+        // liveness check (`live_rollups`) is `(view_name, rollup_hash)`, so an
+        // entry under this identity's OLD hash is a row no schema declares any
+        // more: nothing will ever rebuild it and nothing may serve it, while
+        // its Parquet keeps a full copy of the rollup on disk forever. That is
+        // not a rare edge — folding `definition_fingerprint` into
+        // `compute_rollup_hash` moved the hash of every rollup already built,
+        // so one airlayer bump doubles a workspace's cache.
+        //
+        // Identity, not view: two rollups of the same view with different
+        // NAMES are different rollups and both survive, including a sibling
+        // `plan_rollup_build` marked fresh and skipped this cycle — it never
+        // reaches this function, and its name does not match.
+        //
+        // Nothing in airlayer enforces that `pre_aggregations` names are
+        // unique WITHIN a view — the status endpoint's `(view, rollup)`
+        // HashMap (`crates/app/src/server/api/preagg.rs:217`) already
+        // collapses two such rows arbitrarily for display. Here it is worse
+        // than a display bug: two differently-defined rollups sharing a name
+        // both land under this one identity, so whichever one just built
+        // reaps the OTHER as "superseded", and the next rebuild of that other
+        // one reaps this one right back — churn, not convergence. That schema
+        // is already broken; this only warns so an operator sees the cause
+        // instead of a manifest that never settles.
+        let candidates = superseded_candidates(
+            &manifest.rollups,
+            &local_entry_owned.view_name,
+            &local_entry_owned.rollup_name,
+            &local_entry_owned.rollup_hash,
+        );
+        if candidates.len() > 1 {
+            let hashes: Vec<String> = candidates.iter().map(|r| r.rollup_hash.clone()).collect();
+            tracing::warn!(
+                view = %local_entry_owned.view_name,
+                rollup = %local_entry_owned.rollup_name,
+                new_hash = %local_entry_owned.rollup_hash,
+                superseded_hashes = ?hashes,
+                "preagg: more than one manifest entry supersedes this rollup identity — the \
+                 view likely declares two differently-defined pre_aggregations under the same \
+                 name, and the reap will keep colliding on them instead of converging"
+            );
+        }
+        let mut reaped: Vec<String> = Vec::new();
+        manifest.rollups.retain(|r| {
+            let superseded = same_rollup_identity(
+                r,
+                &local_entry_owned.view_name,
+                &local_entry_owned.rollup_name,
+            ) && r.rollup_hash != local_entry_owned.rollup_hash;
+            if superseded {
+                reaped.push(r.file.clone());
+            }
+            !superseded
+        });
+        // A file another surviving entry still names is not ours to delete.
+        // Belt and braces — two entries sharing a `file` means two identities
+        // resolved to one `{view}__{hash}.parquet`, which the filename shape
+        // rules out — but the cost of being wrong here is deleting a live
+        // rollup, so it is checked rather than argued.
+        reaped.retain(|file| !manifest.rollups.iter().any(|r| &r.file == file));
+
         manifest.pulled_at = chrono::Utc::now().to_rfc3339();
 
+        // ORDERING: both edits are applied to the in-memory manifest before it
+        // is written, so the single atomic `save_local_manifest` rename is the
+        // only thing a reader ever observes — it goes straight from "the old
+        // entry" to "the new entry", never through a state where this identity
+        // names no rollup. And the Parquet unlinks below happen only after
+        // this returns, so no reader can hold an entry pointing at a file we
+        // already removed. This is `preagg_retract`'s manifest-first rule
+        // applied to a replacement rather than a removal.
         agentic_semantic::preagg::save_local_manifest(&cache_dir_owned, &manifest)
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        Ok::<Vec<String>, String>(reaped)
     })
     .await
     .map_err(|e| format!("manifest write task panicked: {e}"))??;
+
+    for file in &superseded {
+        // Best-effort by design: the entry is already gone from the manifest,
+        // so nothing resolves to this path any more and a failed unlink costs
+        // disk, not correctness. A file that is simply ABSENT is the normal
+        // case on any node that did not build the old artifact itself — it
+        // holds the fleet-synced manifest and no Parquet — and on a node whose
+        // previous reap was interrupted. Neither may fail the publish.
+        let path = cache_dir.join(file);
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => tracing::info!(
+                view = %entry.view_name,
+                rollup = %entry.rollup_name,
+                superseded_file = %file,
+                new_hash = %entry.rollup_hash,
+                "preagg: reaped the superseded build of this rollup — its manifest entry \
+                 and local parquet are gone, replaced by the hash just published"
+            ),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => tracing::info!(
+                view = %entry.view_name,
+                rollup = %entry.rollup_name,
+                superseded_file = %file,
+                "preagg: reaped the superseded manifest entry for this rollup; its parquet \
+                 was not on this node, which is normal for a manifest synced from the fleet"
+            ),
+            Err(e) => tracing::warn!(
+                error = %e,
+                superseded_file = %file,
+                "preagg: dropped the superseded manifest entry but could not delete its \
+                 parquet; the file is unreferenced and costs disk until it is cleaned up"
+            ),
+        }
+    }
+    // S3 IS NOT CLEANED. The shrunken manifest is re-mirrored by the caller, so
+    // no entry references the old blob any more and no node will read it — but
+    // the object itself stays in the bucket. `oxy_compile::preagg_blob` has no
+    // delete path at all; `preagg_retract` documents the same gap for the
+    // artifacts it removes. Reaping locally does not close it.
 
     {
         let mut guard = cache.write().expect("preagg cache lock poisoned");
@@ -469,149 +645,4 @@ pub(super) fn connector_to_airlayer_dialect(dialect: SqlDialect) -> oxy_airlayer
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{build_layer_engine, plan_rollup_build};
-
-    /// `orders.order` rolls up to `customers.customer`: the parent entity is
-    /// owned by a DIFFERENT view, which is the case the planner used to be
-    /// blind to.
-    fn orders_view() -> oxy_airlayer_compat::View {
-        serde_yaml::from_str(
-            r#"
-name: orders
-table: orders
-refresh_key:
-  every: "1h"
-pre_aggregations:
-  - name: orders_by_month
-    dimensions: [status]
-    measures: [order_count]
-    time_dimension: ordered_at
-    granularity: month
-entities:
-  - name: order
-    type: primary
-    key: order_id
-    parent: customer
-  - name: customer
-    type: foreign
-    key: customer_id
-dimensions:
-  - name: order_id
-    type: string
-    expr: order_id
-  - name: customer_id
-    type: string
-    expr: customer_id
-  - name: status
-    type: string
-    expr: status
-  - name: ordered_at
-    type: datetime
-    expr: ordered_at
-measures:
-  - name: order_count
-    type: count
-    expr: order_id
-"#,
-        )
-        .expect("orders view fixture parses")
-    }
-
-    fn customers_view() -> oxy_airlayer_compat::View {
-        serde_yaml::from_str(
-            r#"
-name: customers
-table: customers
-entities:
-  - name: customer
-    type: primary
-    key: customer_id
-dimensions:
-  - name: customer_id
-    type: string
-    expr: customer_id
-measures:
-  - name: customer_count
-    type: count
-    expr: customer_id
-"#,
-        )
-        .expect("customers view fixture parses")
-    }
-
-    fn plan_orders_rollup(layer_views: Vec<oxy_airlayer_compat::View>) -> Result<usize, String> {
-        let view = orders_view();
-        let rollup = oxy_airlayer_compat::preagg::resolve_rollups(&view)
-            .into_iter()
-            .find(|r| r.name == "orders_by_month")
-            .expect("declared rollup resolves");
-        let engine = build_layer_engine(layer_views, &oxy_airlayer_compat::Dialect::DuckDB)?;
-        plan_rollup_build(
-            &view,
-            &rollup,
-            &None,
-            &engine,
-            "preagg",
-            "20260825T000000",
-            &oxy_airlayer_compat::Dialect::DuckDB,
-        )
-        .map(|plan| plan.manifest_entries.len())
-    }
-
-    #[test]
-    fn a_rollup_on_a_view_whose_entity_has_a_cross_view_parent_plans() {
-        // The regression: `order` declares `parent: customer`, and `customer`
-        // is a primary entity on another view. Planning must see both.
-        let entries =
-            plan_orders_rollup(vec![orders_view(), customers_view()]).expect("plan succeeds");
-        assert_eq!(entries, 1, "exactly the targeted rollup is planned");
-    }
-
-    #[test]
-    fn planning_that_view_alone_is_what_used_to_fail() {
-        // Pins the cause, so a future refactor that quietly narrows the engine
-        // back to one view fails here rather than in production. The failure
-        // now lands in `build_layer_engine` — which is the point of hoisting
-        // it: a layer that will not validate says so ONCE per cycle, not once
-        // per rollup.
-        let err = plan_orders_rollup(vec![orders_view()])
-            .expect_err("a one-view layer cannot resolve the parent");
-        assert!(
-            err.contains("customer"),
-            "expected the dead-end hierarchy error, got: {err}"
-        );
-    }
-
-    #[test]
-    fn only_the_targeted_view_is_built_even_though_the_engine_sees_the_layer() {
-        // Engine scope ≠ generation scope: `customers` is in the layer for
-        // resolution, but nothing of its own is built.
-        let view = orders_view();
-        let rollup = oxy_airlayer_compat::preagg::resolve_rollups(&view)
-            .into_iter()
-            .find(|r| r.name == "orders_by_month")
-            .expect("declared rollup resolves");
-        let engine = build_layer_engine(
-            vec![orders_view(), customers_view()],
-            &oxy_airlayer_compat::Dialect::DuckDB,
-        )
-        .expect("the layer validates");
-        let plan = plan_rollup_build(
-            &view,
-            &rollup,
-            &None,
-            &engine,
-            "preagg",
-            "20260825T000000",
-            &oxy_airlayer_compat::Dialect::DuckDB,
-        )
-        .expect("plan succeeds");
-        assert!(
-            plan.manifest_entries
-                .iter()
-                .all(|e| e.view_name == "orders"),
-            "no other view's rollups leaked into the plan"
-        );
-    }
-}
+mod tests;

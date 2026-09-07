@@ -22,10 +22,12 @@
 
 pub mod engine_cache;
 pub mod layer_cache;
+pub mod lever_conflicts;
 mod one_door_guard;
 
 pub use engine_cache::{EngineKey, LayerSource, SemanticEngineCache, dialect_fingerprint};
 pub use layer_cache::{LayerKey, SemanticLayerCache};
+pub use lever_conflicts::{LeverConflict, lever_conflicts, reject_lever_conflicts};
 
 use std::path::{Path, PathBuf};
 

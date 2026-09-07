@@ -184,6 +184,10 @@ df-interchange = { workspace = true, features = ["arrow_54", "arrow_58"] }
 tempfile = { workspace = true }
 serial_test = { workspace = true }
 oxy-test-utils = { workspace = true }
+# Only for the listing tests that assert a pruned path is greppable at DEBUG —
+# a silent prune is the failure they exist to catch, so the assertion has to
+# read what was actually logged.
+tracing-subscriber = { workspace = true }
 
 [lib]
 name = "oxy"

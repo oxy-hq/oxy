@@ -72,10 +72,65 @@
   warm_usd: 0.01
 
 - flow: metric-tree
-  # Local-mode: navigate to /ide/metric-tree, wait for the view, click a
-  # measure node. Three act steps plus one judge call — no streaming run.
+  # Local-mode: click the Semantic Layer rail icon, then the Metric Tree tab
+  # (there is no /ide/metric-tree route — the page is /ide/semantic with
+  # view=metric-tree), then click a measure node. Three act steps plus one
+  # judge call — no streaming run.
   cold_usd: 0.30
   warm_usd: 0.005
+
+- flow: metric-tree-scenario
+  # Local-mode, two cases sharing the same prelude (open the Metric Tree and
+  # wait for the graph): 17 steps in total — 10 act plus 7 wait_for, split 9
+  # and 8 — with one judge call per case. Case 1 pins a lever, sets a value
+  # and reads the impact list; case 2 pins a second measure downstream of the
+  # first to raise the conflict banner.
+  #
+  # No streaming run in either, and NO fit: demo_project's one driver edge
+  # declares a `coefficient:`, and `fittable_edges` only returns edges that
+  # declare none — with an empty candidate set `metric_tree.rs` skips the fit
+  # query outright, so the baseline is one values query. (This line has been
+  # wrong in both directions: it claimed no-fit while the edge was qualitative,
+  # then claimed a fit after the coefficient was declared. It tracks the edge.)
+  #
+  # cold_usd is MEASURED on a GREEN run — the first 3/3 pass of this bucket:
+  # $0.7377 (case 1, 9 steps, cache 0/5) + $0.5717 (case 2, 8 steps, cache 0/5)
+  # = $1.3094. Two earlier figures are superseded. A $0.60 guess scaled off
+  # `metric-tree`'s 3-step cost, ~2x low because these cases spend far more per
+  # step reading the Drivers panel across candidate nodes. And a $1.6948
+  # reading taken while case 1 still failed: a failing case burns act
+  # iterations in the agentic loop up to `max_steps`, and that run also still
+  # carried the manual time-dimension act step deleted in `5a96bd96c` — which
+  # is why the step count here was stale by one until now. (Not judge cost:
+  # there is no judge retry, `runs: 1` is the only case-level loop, and
+  # `evaluateExpectations` is gated on `!stepError`, so a step failure skips
+  # the judge entirely.)
+  #
+  # 1.90 was chosen when this was a guess and generous headroom was the only
+  # safe option. Now that it is measured, ~1.55 (≈18%) still absorbs the
+  # runner's step-to-step variance while leaving the ceiling able to fire on a
+  # real regression — a 45% margin would swallow one silently.
+  #
+  # Step 3's node hunt looks like the dominant variance term and is NOT: it is
+  # structurally capped at two attempts. The demo layer has 53 measures and
+  # exactly one declares `drivers:` (`oxymart.total_sales`), but
+  # `MetricTreeGraph` defaults `hideOrphans` to true and filters the tree to
+  # nodes touched by an edge — with one edge that renders exactly TWO
+  # `metric-node-` elements, and neither case toggles the switch. So the hunt
+  # is at worst one wasted click (`average_fuel_price`, "No drivers found")
+  # before the hit, never the six the step allows.
+  #
+  # That matters for diagnosis: if this ever reports over budget on unchanged
+  # code, the hunt is bounded and the cause is elsewhere — act iterations
+  # under `max_steps: 30`, or a step that started failing. The one change that
+  # would make the hunt expensive again is `hideOrphans` defaulting to false,
+  # putting 53 nodes on the canvas — a one-word edit in a component file
+  # nobody would think to check against a cost budget.
+  #
+  # warm_usd remains an estimate: no warm run has happened yet. Two judge calls
+  # over full-page screenshots is the whole cost once the actions replay.
+  cold_usd: 1.55
+  warm_usd: 0.05
 
 - flow: ide-pipeline-quickbooks
   # 4 act steps (open wizard, pick source, pick destination, type name) +

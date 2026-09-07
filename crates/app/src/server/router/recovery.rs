@@ -1242,6 +1242,10 @@ fn build_custom_task_registry(
             preagg: preagg.clone(),
         }),
     );
+    reg.register(
+        crate::server::simulation::SIMULATION_RUN_KIND,
+        Arc::new(crate::server::simulation::SimulationTaskExecutor { db: db.clone() }),
+    );
     // Same shape as health eval: one executor instance, workspace context
     // rebuilt fresh per task from `workspace_id` in the payload. See
     // `preagg_executor`'s module doc for why this replaced a single
