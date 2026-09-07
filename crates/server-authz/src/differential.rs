@@ -209,6 +209,14 @@ fn manage_org_roles_ring_matches_the_shipped_guard() {
 }
 
 #[test]
+fn manage_assignments_ring_matches_the_shipped_guard() {
+    // operating_graph::assignments::create / remove — OrgAdmin
+    assert_matches_oracle(Action::ManageAssignments, |s| {
+        matches!(s.ctx_role, OrgRole::Owner | OrgRole::Admin)
+    });
+}
+
+#[test]
 fn org_admin_strict_ring_matches_the_shipped_guard() {
     // role_guards::OrgAdminStrict — rejects the override.
     assert_matches_oracle(Action::OrgBilling, |s| {

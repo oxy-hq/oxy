@@ -10,6 +10,23 @@ pub struct WmInstancesQuery {
     pub search: Option<String>,
     #[serde(default = "default_limit")]
     pub limit: usize,
+    /// `reach` — on the customer-app route, list only the instances whose
+    /// place the viewer reaches, filtered inside the scan so the page is a
+    /// page of the right set (`internal-docs/operating-graph.md` §3.6).
+    /// Ignored on the workspace route, where the viewer is a builder.
+    #[serde(default)]
+    pub scope: Option<String>,
+    /// The bundle's own app, so app-admin standing counts toward `scope`.
+    /// Parsed leniently — see `app_id()` — so a malformed value narrows the
+    /// reach rather than failing the listing.
+    #[serde(default)]
+    pub app: Option<String>,
+}
+
+impl WmInstancesQuery {
+    pub fn app_id(&self) -> Option<uuid::Uuid> {
+        self.app.as_deref().and_then(|a| a.parse().ok())
+    }
 }
 fn default_limit() -> usize {
     50
@@ -19,6 +36,21 @@ fn default_limit() -> usize {
 pub struct WmInstanceItem {
     pub key: String,
     pub display: String,
+    /// The org location this instance is, when the entity is bound to the
+    /// registry and the key is mapped. Absent otherwise — an unmapped store
+    /// is a fact the screen can show, not an error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<WmInstanceLocation>,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct WmInstanceLocation {
+    pub id: uuid::Uuid,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<uuid::Uuid>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

@@ -1,6 +1,7 @@
 import {
   Activity,
   AppWindow,
+  BriefcaseBusiness,
   CreditCard,
   Database,
   GitBranch,
@@ -8,6 +9,7 @@ import {
   Key,
   KeyRound,
   type LucideIcon,
+  MapPin,
   Plug,
   Settings as SettingsIcon,
   ShieldCheck,
@@ -86,6 +88,16 @@ export const CLOUD_NAV: NavGroup[] = [
       // carries the gate the nav comment above promises: no panel the API will
       // refuse to fill.
       { value: "organization.crew", label: "Crew", icon: HardHat, requires: "orgAdmin" },
+      // Locations and Positions are the operating graph: the places work
+      // happens and the positions people hold there. The same authority as
+      // Crew — the shape of the org — so the same gate.
+      { value: "organization.locations", label: "Locations", icon: MapPin, requires: "orgAdmin" },
+      {
+        value: "organization.positions",
+        label: "Positions",
+        icon: BriefcaseBusiness,
+        requires: "orgAdmin"
+      },
       {
         value: "organization.billing",
         label: "Billing",

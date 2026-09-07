@@ -94,6 +94,14 @@ export interface UseWorldModelInstancesOpts {
   /** Max rows to return (default 50 server-side). */
   limit?: number;
   enabled?: boolean;
+  /**
+   * `"reach"` — only the instances whose place the viewer reaches, filtered
+   * inside the scan so a page is a page of the right set. Needs the entity
+   * bound to the org's locations registry (refused otherwise); an instance
+   * whose key is unmapped is not in anyone's reach. The bundle's own app is
+   * sent along so app-admin standing counts.
+   */
+  scope?: "reach";
 }
 
 export interface UseWorldModelInstancesResult {
@@ -112,9 +120,9 @@ export function useWorldModelInstances(
   entityId: string | null,
   opts: UseWorldModelInstancesOpts = {}
 ): UseWorldModelInstancesResult {
-  const { projectId, fetcher } = useOxyApp();
+  const { projectId, appId, fetcher } = useOxyApp();
   const enabled = opts.enabled !== false;
-  const { search, limit } = opts;
+  const { search, limit, scope } = opts;
   const [data, setData] = React.useState<WmInstancesResponse | null>(null);
   const [loading, setLoading] = React.useState<boolean>(enabled && !!projectId && !!entityId);
   const [error, setError] = React.useState<Error | null>(null);
@@ -132,6 +140,10 @@ export function useWorldModelInstances(
     const params = new URLSearchParams({ entity: entityId });
     if (search) params.set("search", search);
     if (limit != null) params.set("limit", String(limit));
+    if (scope) {
+      params.set("scope", scope);
+      if (appId) params.set("app", appId);
+    }
     fetcher(`${worldModelPath(projectId)}/instances?${params}`, {
       method: "GET",
       signal: ctrl.signal
@@ -155,7 +167,7 @@ export function useWorldModelInstances(
       cancelled = true;
       ctrl.abort();
     };
-  }, [enabled, projectId, entityId, search, limit, fetcher]);
+  }, [enabled, projectId, entityId, search, limit, fetcher, scope, appId]);
 
   const refetch = React.useCallback(() => setNonce((n) => n + 1), []);
   return { data, loading, error, refetch };

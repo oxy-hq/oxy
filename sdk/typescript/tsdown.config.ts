@@ -10,7 +10,11 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     shell: "src/shell/index.ts",
-    email: "src/email.ts"
+    email: "src/email.ts",
+    // `@oxy-hq/sdk/ops` — reach applied inside a function. Pure TS, no
+    // React, no isolate-hostile builtins; its own entry so a bundle that
+    // only needs the browser half never carries it.
+    ops: "src/ops/index.ts"
   },
   format: ["cjs", "esm"],
   dts: true,

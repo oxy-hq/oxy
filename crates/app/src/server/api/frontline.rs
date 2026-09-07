@@ -26,6 +26,8 @@
 //! singleton would mean a deploy locks every store out of its own checklists.
 
 use crate::server::api::middlewares::role_guards::OrgAdmin;
+use crate::server::api::operating_graph::assignments;
+use crate::server::api::operating_graph::dto::AssignmentSpec;
 use axum::extract::{Path, Query};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
@@ -534,6 +536,11 @@ pub struct EnrolRequest {
     /// or the whole request is refused before the worker exists.
     #[serde(default)]
     pub apps: Vec<Uuid>,
+    /// Where they work, and as what — positions at places, written after the
+    /// worker exists and checked before. Optional: a manager can also roster
+    /// them later from Settings.
+    #[serde(default)]
+    pub assignments: Vec<AssignmentSpec>,
 }
 
 /// Enrol a frontline worker — the door `enroll_worker` never had.
@@ -619,6 +626,19 @@ pub async fn enrol(
         };
     }
 
+    // The positions next, still before the worker exists: a position that is
+    // not this org's, or a store for an org-wide position, refuses the whole
+    // request rather than leaving a person half rostered.
+    for spec in &req.assignments {
+        if let Err(e) = assignments::validate_targets(&db, org_id, spec).await {
+            return (
+                e.status(),
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    }
+
     match frontline::enroll_worker(
         &db,
         org_id,
@@ -680,6 +700,32 @@ pub async fn enrol(
                 )
                 .await;
             }
+            // Then the roster. Validated above, so again only the database
+            // can fail this — and then the worker exists with their apps but
+            // not their positions, which the response says.
+            let rostered = match assignments::roster_at_enrolment(
+                &db,
+                org_id,
+                user_id,
+                &req.assignments,
+                &actor,
+            )
+            .await
+            {
+                Ok(ids) => ids,
+                Err(e) => {
+                    error!(%org_id, %user_id, "worker enrolled, but rostering failed: {e}");
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({
+                            "error": "the worker was enrolled but could not be rostered \
+                                      — add their positions from Settings → Crew",
+                            "user_id": user_id,
+                        })),
+                    )
+                        .into_response();
+                }
+            };
             // The PIN is not echoed. An admin who did not keep it re-enrols or
             // resets; a response that repeats it would put it in every proxy
             // log between here and the browser.
@@ -690,6 +736,7 @@ pub async fn enrol(
                     "identifier": req.identifier.trim(),
                     "name": req.name.trim(),
                     "apps": apps,
+                    "assignments": rostered,
                 })),
             )
                 .into_response()

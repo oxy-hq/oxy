@@ -76,6 +76,7 @@ pub mod metrics;
 pub mod middlewares;
 pub mod modeling;
 pub mod notifications;
+pub mod operating_graph;
 pub mod org_logo;
 pub mod org_subdomain;
 pub mod org_teams;

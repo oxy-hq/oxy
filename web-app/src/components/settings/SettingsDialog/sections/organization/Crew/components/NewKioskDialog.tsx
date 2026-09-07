@@ -16,9 +16,10 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/shadcn/select";
-import { useCreateDevice } from "@/hooks/api/organizations";
+import { useCreateDevice, useLocations } from "@/hooks/api/organizations";
 import type { AppAccessSummary } from "@/types/appAccess";
 import type { CreatedKioskDevice } from "@/types/frontline";
+import { LocationSelect, NO_LOCATION } from "../../shared/LocationSelect";
 import { apiErrorMessage, appReturnTo } from "../utils";
 
 /** Radix Select can't carry an empty value, so "no app" needs a name. App ids are uuids. */
@@ -78,8 +79,10 @@ function NewKioskForm({
   onCancel: () => void;
 }) {
   const createDevice = useCreateDevice();
+  const locations = useLocations(orgId);
   const [name, setName] = useState("");
   const [appId, setAppId] = useState<string>(ORG_HOME);
+  const [locationId, setLocationId] = useState<string>(NO_LOCATION);
   const [error, setError] = useState<string | null>(null);
   const canSubmit = name.trim().length > 0;
 
@@ -93,7 +96,8 @@ function NewKioskForm({
         orgId,
         request: {
           name: name.trim(),
-          ...(app ? { return_to: appReturnTo(orgSlug, app.slug) } : {})
+          ...(app ? { return_to: appReturnTo(orgSlug, app.slug) } : {}),
+          ...(locationId !== NO_LOCATION ? { location_id: locationId } : {})
         }
       });
       onCreated(device);
@@ -131,6 +135,19 @@ function NewKioskForm({
           </SelectContent>
         </Select>
         <p className='text-muted-foreground text-xs'>Where the tablet lands after a sign-in.</p>
+      </div>
+      <div className='space-y-1.5'>
+        <Label htmlFor='kiosk-location'>Location</Label>
+        <LocationSelect
+          id='kiosk-location'
+          locations={locations.data ?? []}
+          value={locationId}
+          onValueChange={setLocationId}
+          allowNone
+          noneLabel='No location'
+          testId='settings-crew-kiosk-location'
+        />
+        <p className='text-muted-foreground text-xs'>The place this tablet sits at. Optional.</p>
       </div>
       {error && <p className='text-destructive text-sm'>{error}</p>}
       <div className='flex justify-end gap-2'>

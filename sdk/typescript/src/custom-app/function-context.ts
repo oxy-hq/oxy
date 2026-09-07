@@ -171,6 +171,25 @@ export interface OxyFunctionUser {
    * ```
    */
   kind?: OxyIdentityKind;
+  /**
+   * Where the caller may act, derived by the platform from their assignments
+   * (`internal-docs/operating-graph.md` §3.3): a system invocation or an app
+   * admin everywhere; a holder of an org-wide position everywhere; an
+   * assigned person exactly their places; an unassigned org member
+   * everywhere and an unassigned frontline worker nowhere. Apply it with
+   * `@oxy-hq/sdk/ops` (`requireReach`, `predicate`); tighten it if the app
+   * needs to, never widen it. A lookup failure lands on nowhere.
+   */
+  reach: OxyReach;
+}
+
+/** `ctx.user.reach` — see {@link OxyFunctionUser.reach}. */
+export interface OxyReach {
+  everywhere: boolean;
+  /** Why everywhere, when it is; `null` when scoped or nowhere. */
+  via: "system" | "app-admin" | "org-wide-position" | "org-member" | null;
+  /** The caller's assigned location ids, in id order; empty when none. */
+  locations: string[];
 }
 
 /** Result of a `ctx.fetch` call. */
@@ -293,7 +312,15 @@ export interface OxySecretsApi {
 
 /** `ctx.semantic` — airlayer-compiled semantic queries (inherits the pre-agg fast path). */
 export interface OxySemanticApi {
-  query(spec: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Run a semantic query. `scope: "reach"` pins it server-side to the
+   * caller's `ctx.user.reach`: one `in` filter per view the query names whose
+   * primary entity is bound to the org's locations registry, over the keys the
+   * caller's places carry in that system. A caller who reaches everywhere is
+   * left alone; a query naming no bound view is refused rather than answered
+   * whole. `internal-docs/operating-graph.md` §3.6.
+   */
+  query(spec: Record<string, unknown> & { scope?: "reach" }): Promise<unknown>;
 }
 
 /** `ctx.airway` — seed/await an Airway ELT pipeline run. */
@@ -567,6 +594,45 @@ export interface OxyStorageApi {
 
 // ── ctx ───────────────────────────────────────────────────────────────────────
 
+/** One of the org's locations, as `ctx.org.places()` returns it. */
+export interface OxyOrgPlace {
+  id: string;
+  org_id: string;
+  name: string;
+  /** The tenant's word for this level — `region`, `store` — or `null`. */
+  kind: string | null;
+  /** The place this one sits inside, or `null` for a root. */
+  parent_id: string | null;
+  status: "pre_launch" | "launching" | "open" | "archived" | "terminated";
+  /** IANA zone; what "due by close" means here. */
+  timezone: string;
+  /** The tenant's own id, if any. */
+  external_id: string | null;
+  /** `system` → id: what Toast, a camera console, payroll call this place. */
+  external_ids: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One assignment — a person holding a position at a place (or org-wide). */
+export interface OxyOrgAssignment {
+  id: string;
+  user_id: string;
+  user_name: string;
+  user_kind: "member" | "frontline";
+  role_id: string;
+  role_name: string;
+  /** `location` — held at one place; `franchisor` — held across the org. */
+  role_scope: "location" | "franchisor";
+  /** `null` for an org-wide position. */
+  location_id: string | null;
+  location_name: string | null;
+  /** Who they report to at that place, if recorded. */
+  supervisor_id: string | null;
+  supervisor_name: string | null;
+  created_at: string;
+}
+
 /**
  * The data-plane context passed as the second argument to a function's default
  * export. Mirrors the host-assembled `ctx` (`__buildCtx` in `runtime.rs`);
@@ -609,6 +675,22 @@ export interface OxyFunctionContext {
       }>;
       total: number;
     }>;
+    /**
+     * The org's places — every location, with its hierarchy (`parent_id`,
+     * the tenant-named `kind`), lifecycle `status`, `timezone`, and what each
+     * integration calls it (`external_ids`, e.g. `{ toast: "…" }`). The whole
+     * registry, not a reach-scoped slice: an app that shows "Clovis" needs
+     * the row before it knows whether the caller reaches it. Same `org.read`
+     * capability as `people()`.
+     */
+    places(): Promise<{ places: OxyOrgPlace[]; total: number }>;
+    /**
+     * Who holds which position where — the roster, read. Scoped like
+     * `people()`: the assignments of people who can reach this app. Same
+     * `org.read` capability. Rosters are edited in Settings, not from a
+     * function.
+     */
+    assignments(): Promise<{ assignments: OxyOrgAssignment[]; total: number }>;
   };
   /** Read-only view of the app's configured secrets (project-scoped). */
   env: Record<string, string>;

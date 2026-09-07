@@ -78,6 +78,8 @@ fn order(order_id: &str) -> OrderEvent {
         amount: 42.75,
         order_id: order_id.to_string(),
         ts: chrono::Utc::now(),
+        location_id: None,
+        location_name: None,
     }
 }
 

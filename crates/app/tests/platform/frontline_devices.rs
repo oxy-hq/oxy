@@ -66,7 +66,7 @@ async fn a_kiosk_binds_once_and_then_resolves_from_its_cookie() {
     let org = seed_org(&db).await;
     let admin = seed_admin(&db).await;
 
-    let (row, token) = create(&db, org, "Front counter", None, Some(admin))
+    let (row, token) = create(&db, org, "Front counter", None, None, Some(admin))
         .await
         .expect("create");
     assert!(row.bound_at.is_none() && row.secret_hash.is_none());
@@ -125,7 +125,7 @@ async fn an_expired_or_foreign_link_binds_nothing_and_a_foreign_org_cannot_revok
     let other_org = seed_org(&db).await;
 
     // Expired: push the deadline into the past and the link is dead.
-    let (row, token) = create(&db, org, "Back office", None, None)
+    let (row, token) = create(&db, org, "Back office", None, None, None)
         .await
         .expect("create");
     org_kiosk_devices::ActiveModel {
@@ -150,7 +150,7 @@ async fn an_expired_or_foreign_link_binds_nothing_and_a_foreign_org_cannot_revok
     ));
 
     // Another org cannot revoke this org's device — the org filter is the fence.
-    let (mine, token) = create(&db, org, "Counter", None, None)
+    let (mine, token) = create(&db, org, "Counter", None, None, None)
         .await
         .expect("create");
     bind_with_token(&db, &token).await.expect("bind");
@@ -161,11 +161,19 @@ async fn an_expired_or_foreign_link_binds_nothing_and_a_foreign_org_cannot_revok
 
     // Bad inputs are refused before any row exists.
     assert!(matches!(
-        create(&db, org, "   ", None, None).await,
+        create(&db, org, "   ", None, None, None).await,
         Err(DeviceError::BadName)
     ));
     assert!(matches!(
-        create(&db, org, "Counter", Some("https://evil.example.com/"), None).await,
+        create(
+            &db,
+            org,
+            "Counter",
+            Some("https://evil.example.com/"),
+            None,
+            None
+        )
+        .await,
         Err(DeviceError::BadReturnTo)
     ));
 }

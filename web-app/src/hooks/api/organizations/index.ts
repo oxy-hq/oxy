@@ -9,6 +9,21 @@ export {
   useSetWorkerStanding
 } from "./useFrontline";
 export {
+  useAssignments,
+  useCreateAssignment,
+  useCreateLocation,
+  useCreateRole,
+  useDeleteAssignment,
+  useDeleteExternalId,
+  useDeleteRole,
+  useLocations,
+  useOrgRoles,
+  usePeople,
+  useRenameRole,
+  useSetExternalId,
+  useUpdateLocation
+} from "./useOperatingGraph";
+export {
   useCreateOrg,
   useDeleteOrg,
   useDeleteOrgLogo,

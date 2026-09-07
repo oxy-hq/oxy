@@ -12,9 +12,11 @@ import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { useEnrolWorker } from "@/hooks/api/organizations";
 import type { AppAccessSummary } from "@/types/appAccess";
+import { NO_PERSON } from "../../shared/PersonSelect";
 import { apiErrorMessage, apiStatus, pinProblem } from "../utils";
 import { AppChecklist } from "./AppChecklist";
 import { PinFields } from "./PinFields";
+import { WhereTheyWork, type WorkDraft, workDraftsProblem } from "./WhereTheyWork";
 
 export function EnrolWorkerDialog({
   open,
@@ -29,7 +31,7 @@ export function EnrolWorkerDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='sm:max-w-md'>
+      <DialogContent className='sm:max-w-lg'>
         <DialogHeader>
           <DialogTitle>Enrol worker</DialogTitle>
           <DialogDescription>
@@ -60,6 +62,7 @@ function EnrolWorkerForm({
   const [pin, setPin] = useState("");
   const [confirm, setConfirm] = useState("");
   const [selectedApps, setSelectedApps] = useState<string[]>([]);
+  const [work, setWork] = useState<WorkDraft[]>([]);
   const [identifierError, setIdentifierError] = useState<string | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -75,11 +78,32 @@ function EnrolWorkerForm({
     const problem = pinProblem(pin, confirm);
     setPinError(problem);
     if (problem) return;
+    const workProblem = workDraftsProblem(work);
+    if (workProblem) {
+      setFormError(workProblem);
+      return;
+    }
 
     try {
       const created = await enrol.mutateAsync({
         orgId,
-        request: { name: name.trim(), identifier: identifier.trim(), pin, apps: selectedApps }
+        request: {
+          name: name.trim(),
+          identifier: identifier.trim(),
+          pin,
+          apps: selectedApps,
+          // The server validates these before the worker exists: a bad row
+          // means no worker, so the form never has to undo a half-enrolment.
+          ...(work.length > 0
+            ? {
+                assignments: work.map((row) => ({
+                  role_id: row.role_id,
+                  location_id: row.location_id,
+                  supervisor_id: row.supervisor_id === NO_PERSON ? null : row.supervisor_id
+                }))
+              }
+            : {})
+        }
       });
       toast.success(`Enrolled ${created.name}`);
       onDone();
@@ -159,6 +183,14 @@ function EnrolWorkerForm({
           onChange={setSelectedApps}
         />
       </div>
+      <WhereTheyWork
+        orgId={orgId}
+        rows={work}
+        onChange={(rows) => {
+          setWork(rows);
+          if (formError) setFormError(null);
+        }}
+      />
       {formError && <p className='text-destructive text-sm'>{formError}</p>}
       <div className='flex justify-end gap-2'>
         <Button type='button' variant='outline' size='sm' onClick={onDone}>

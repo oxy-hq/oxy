@@ -72,6 +72,9 @@ pub struct ProjectFunctionHost {
     /// it from. Both fields `None` (the scheduled path, or a composition with no
     /// rebuild worker) means every semantic query compiles to warehouse SQL.
     preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
+    /// Where the caller may act — the same `Reach` `ctx.user.reach` carries,
+    /// so `ctx.semantic.query({ scope: "reach" })` pins to it server-side.
+    reach: crate::server::api::operating_graph::reach::Reach,
     /// Resolved `ctx.oltp` writer connection, cached for this invocation so N
     /// calls cost one control-plane resolve (a query + decrypt) rather than N.
     /// The per-call TCP+TLS connect to the tenant still happens (each call is a
@@ -170,6 +173,7 @@ impl ProjectFunctionHost {
         app_name: String,
         caps: FunctionCapabilities,
         preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
+        reach: crate::server::api::operating_graph::reach::Reach,
     ) -> Self {
         Self {
             proj_ctx,
@@ -183,6 +187,7 @@ impl ProjectFunctionHost {
             app_name,
             caps,
             preagg,
+            reach,
             email_send_count: std::sync::atomic::AtomicUsize::new(0),
             transactions: super::tx::TxRegistry::default(),
             oltp_conn: tokio::sync::Mutex::new(None),
@@ -447,12 +452,57 @@ impl FunctionHost for ProjectFunctionHost {
         Ok(serde_json::json!({ "status": status, "body": body, "encoding": encoding }))
     }
 
-    async fn semantic_query(&self, spec: serde_json::Value) -> Result<serde_json::Value, String> {
-        let query: SemanticQueryConfig = serde_json::from_value(spec)
+    async fn semantic_query(
+        &self,
+        mut spec: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        // `scope: "reach"` is oxy's, not the query's: peeled off before the
+        // config parses, then honoured below by pinning the bound view's key
+        // to the keys the caller's places carry. Anything else in `scope` is a
+        // typo, and a typo that silently answered everything is the one
+        // outcome this option exists to prevent.
+        let scope = spec
+            .as_object_mut()
+            .and_then(|m| m.remove("scope"))
+            .map(|v| v.as_str().map(str::to_string).unwrap_or_default());
+        let scoped = match scope.as_deref() {
+            None | Some("") => false,
+            Some("reach") => true,
+            Some(other) => {
+                return Err(format!(
+                    "invalid semantic query spec: unknown scope `{other}`"
+                ));
+            }
+        };
+        let mut query: SemanticQueryConfig = serde_json::from_value(spec)
             .map_err(|e| format!("invalid semantic query spec: {e}"))?;
 
         let cm = &self.proj_ctx.workspace_manager().config_manager;
         let scan_path = cm.semantics_scan_path();
+        // A scoped query needs the layer before it compiles, to know which of
+        // its views are bound. Loaded once and handed to the compile below,
+        // so the directory is walked one time, not two.
+        let pre_loaded_layer = if scoped {
+            let scan_for_layer = scan_path.clone();
+            let layer = tokio::task::spawn_blocking(move || {
+                oxy_airlayer_compat::load_layer_from_dir(&scan_for_layer)
+            })
+            .await
+            .map_err(|e| format!("semantic layer task panicked: {e}"))?
+            .map_err(|e| format!("semantic layer failed to load: {e}"))?;
+            crate::server::api::operating_graph::binding::apply_reach_scope(
+                &self.db,
+                self.org_id,
+                &layer,
+                &self.reach,
+                &mut query,
+            )
+            .await
+            .map_err(|e| format!("ctx.semantic.query: {e}"))?;
+            Some(layer)
+        } else {
+            None
+        };
         let databases: Vec<oxy_airlayer_compat::DatabaseConfig> = cm
             .list_databases()
             .iter()
@@ -482,7 +532,13 @@ impl FunctionHost for ProjectFunctionHost {
         );
 
         let compiled = tokio::task::spawn_blocking(move || {
-            resolve_and_compile(&scan_path, &databases, &query, preagg.as_ref(), None)
+            resolve_and_compile(
+                &scan_path,
+                &databases,
+                &query,
+                preagg.as_ref(),
+                pre_loaded_layer,
+            )
         })
         .await
         .map_err(|e| format!("semantic compile task panicked: {e}"))?
@@ -908,6 +964,27 @@ impl FunctionHost for ProjectFunctionHost {
             );
         }
         org_directory(&self.db, self.org_id, self.app_id).await
+    }
+
+    /// `ctx.org.places()` — the org's locations, hierarchy and external ids.
+    /// Same capability as `people()`: a place is not a secret, and an app
+    /// that shows "Clovis" needs the row before it knows whether the caller
+    /// reaches it. The whole registry, not a reach-scoped slice.
+    async fn org_places(&self) -> Result<serde_json::Value, String> {
+        if !self.caps.org_read {
+            return Err(org_capability_missing("places"));
+        }
+        org_places_directory(&self.db, self.org_id).await
+    }
+
+    /// `ctx.org.assignments()` — who holds which position where. Scoped like
+    /// `people()`: the assignments of people who can reach this app, which is
+    /// what makes it not a widening of the directory.
+    async fn org_assignments(&self) -> Result<serde_json::Value, String> {
+        if !self.caps.org_read {
+            return Err(org_capability_missing("assignments"));
+        }
+        org_assignments_directory(&self.db, self.org_id, self.app_id).await
     }
 
     async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
@@ -1952,96 +2029,178 @@ mod tests {
 /// construct; this needs a database, an org and an app. Splitting them is what
 /// lets the scoping rule — the part with a decision in it — be driven against a
 /// real database without standing up an isolate.
+fn org_capability_missing(member: &str) -> String {
+    format!(
+        "OrgCapabilityMissing: this function has not declared the `org.read` capability \
+         (add \"org\": {{ \"read\": true }} to its oxy-app.json entry) — ctx.org.{member}"
+    )
+}
+
+/// `ctx.org.places()`'s query. The org's whole registry, name-sorted, each
+/// place with its hierarchy and what every integration calls it.
+pub async fn org_places_directory(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+) -> Result<serde_json::Value, String> {
+    let rows = crate::server::api::operating_graph::locations::location_rows(db, org_id)
+        .await
+        .map_err(|e| format!("ctx.org.places: {e}"))?;
+    Ok(serde_json::json!({ "total": rows.len(), "places": rows }))
+}
+
+/// Who can reach this app, and the membership rows that said so.
+pub struct Audience {
+    pub ids: std::collections::HashSet<Uuid>,
+    /// The org's members — every one is in `ids`. Returned so a caller that
+    /// needs their roles does not read the table a second time.
+    pub members: Vec<entity::org_members::Model>,
+}
+
+/// The people who can reach this app: org members, plus frontline workers
+/// holding a grant on it — the one audience rule `people()` and
+/// `assignments()` share, factored so it cannot drift between them.
+pub async fn app_audience(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+    app_id: Uuid,
+) -> Result<Audience, String> {
+    use entity::{app_members, org_frontline_members, org_members};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    let members = org_members::Entity::find()
+        .filter(org_members::Column::OrgId.eq(org_id))
+        .all(db)
+        .await
+        .map_err(|e| format!("ctx.org: {e}"))?;
+    let mut audience: std::collections::HashSet<Uuid> = members.iter().map(|m| m.user_id).collect();
+    let workers: std::collections::HashSet<Uuid> = org_frontline_members::Entity::find()
+        .filter(org_frontline_members::Column::OrgId.eq(org_id))
+        .filter(org_frontline_members::Column::Status.eq(org_frontline_members::STATUS_ACTIVE))
+        .all(db)
+        .await
+        .map_err(|e| format!("ctx.org: {e}"))?
+        .into_iter()
+        .map(|w| w.user_id)
+        .collect();
+    if !workers.is_empty() {
+        let granted = app_members::Entity::find()
+            .filter(app_members::Column::AppId.eq(app_id))
+            .all(db)
+            .await
+            .map_err(|e| format!("ctx.org: {e}"))?;
+        audience.extend(
+            granted
+                .into_iter()
+                .map(|g| g.user_id)
+                .filter(|u| workers.contains(u)),
+        );
+    }
+    Ok(Audience {
+        ids: audience,
+        members,
+    })
+}
+
+/// `ctx.org.assignments()`'s query: every assignment held by somebody in the
+/// app's audience, with the names a screen shows.
+pub async fn org_assignments_directory(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+    app_id: Uuid,
+) -> Result<serde_json::Value, String> {
+    use crate::server::api::operating_graph::{assignments, dto::AssignmentsQuery};
+    let audience = app_audience(db, org_id, app_id).await?.ids;
+    let rows: Vec<_> = assignments::rows(db, org_id, &AssignmentsQuery::default())
+        .await
+        .map_err(|e| format!("ctx.org.assignments: {e}"))?
+        .into_iter()
+        .filter(|a| audience.contains(&a.user_id))
+        .map(|mut a| {
+            // The supervisor is a person too. One the app may not name — an
+            // area manager holding no grant on it — is withheld from the
+            // row, not the row from the app: the assignment is still real.
+            if a.supervisor_id.is_some_and(|s| !audience.contains(&s)) {
+                a.supervisor_id = None;
+                a.supervisor_name = None;
+            }
+            a
+        })
+        .collect();
+    Ok(serde_json::json!({ "total": rows.len(), "assignments": rows }))
+}
+
 pub async fn org_directory(
     db: &DatabaseConnection,
     org_id: Uuid,
     app_id: Uuid,
 ) -> Result<serde_json::Value, String> {
-    use entity::{app_members, org_frontline_members, org_members, users};
+    use entity::{org_frontline_members, users};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
-    let members = org_members::Entity::find()
-        .filter(org_members::Column::OrgId.eq(org_id))
-        .find_also_related(users::Entity)
-        .order_by_asc(org_members::Column::UserId)
+    // WHO is in the directory is `app_audience`'s decision — the one rule
+    // `people()` and `assignments()` share. This function only decorates:
+    // a name, an org role for a member, `kind` for both.
+    let Audience {
+        ids: audience,
+        mut members,
+    } = app_audience(db, org_id, app_id).await?;
+    members.sort_by_key(|m| m.user_id);
+
+    // The members' names, one batch; the membership rows came with the
+    // audience, so `org_members` is read once.
+    let member_ids: Vec<Uuid> = members.iter().map(|m| m.user_id).collect();
+    let names: std::collections::HashMap<Uuid, String> = users::Entity::find()
+        .filter(users::Column::Id.is_in(member_ids))
         .all(db)
         .await
-        .map_err(|e| format!("ctx.org.people: {e}"))?;
-
+        .map_err(|e| format!("ctx.org.people: {e}"))?
+        .into_iter()
+        .map(|u| (u.id, u.name))
+        .collect();
     let mut people: Vec<serde_json::Value> = members
         .into_iter()
-        .filter_map(|(m, u)| {
+        .filter_map(|m| {
             // A membership whose user row is missing is data drift, not a
             // person. Dropped rather than emitted with a null name, because
             // a directory entry nobody can be is worse than a shorter list.
-            let u = u?;
+            let name = names.get(&m.user_id)?;
             Some(serde_json::json!({
-                "id": u.id.to_string(),
-                "name": u.name,
+                "id": m.user_id.to_string(),
+                "name": name,
                 "role": m.role.as_str(),
                 "kind": "member",
             }))
         })
         .collect();
 
-    // Frontline workers who hold a grant on THIS app.
-    //
-    // The first version returned org members only, and for a store-ops app
-    // that named the office and not the shop floor — the crew are frontline
-    // workers, who hold no `org_members` row by design. An app that could
-    // not name most of the people using it was going to grow its own people
-    // model, which is the fiction this capability exists to end.
-    //
-    // Scoped by REACHABILITY, and that is what makes it not a widening. The
-    // rule is one sentence for both halves: **the directory names people who
-    // can reach this app.** For office staff that is org membership; for a
-    // worker it is the explicit `app_members` grant, which is already the
-    // only way they reach anything — `Ring::AppAccess` ANDs their standing
-    // with it. So every name returned belongs to somebody who can already
-    // use the app, and an app that serves you can name you.
-    //
-    // Consequence worth knowing: two apps in one org see different frontline
-    // slices, because they have different grants. That is correct — a grant
-    // is per-app — and it will surprise anybody expecting "the org's people".
+    // Frontline workers: in the audience only with a grant on THIS app, which
+    // is the reason two apps in one org see different frontline slices — a
+    // grant is per-app — and the reason this is not a widening: every name
+    // here belongs to somebody who can already use the app.
     let workers = org_frontline_members::Entity::find()
         .filter(org_frontline_members::Column::OrgId.eq(org_id))
-        // Suspension is what takes a worker out of the directory, the same
-        // column the login and the kiosk roster read. One switch, four
-        // behaviours.
-        .filter(org_frontline_members::Column::Status.eq(org_frontline_members::STATUS_ACTIVE))
         .find_also_related(users::Entity)
         .order_by_asc(org_frontline_members::Column::UserId)
         .all(db)
         .await
         .map_err(|e| format!("ctx.org.people: {e}"))?;
-
-    if !workers.is_empty() {
-        let granted: std::collections::HashSet<uuid::Uuid> = app_members::Entity::find()
-            .filter(app_members::Column::AppId.eq(app_id))
-            .all(db)
-            .await
-            .map_err(|e| format!("ctx.org.people: {e}"))?
+    people.extend(
+        workers
             .into_iter()
-            .map(|g| g.user_id)
-            .collect();
-
-        people.extend(workers.into_iter().filter_map(|(w, u)| {
-            let u = u?;
-            if !granted.contains(&w.user_id) {
-                return None;
-            }
-            Some(serde_json::json!({
-                "id": u.id.to_string(),
-                "name": u.name,
-                // `role` is the org-membership vocabulary and a worker has
-                // none, so it is null rather than an invented "worker" that
-                // would sort beside owner/admin/member as if it were one.
-                // `kind` is where the distinction lives.
-                "role": serde_json::Value::Null,
-                "kind": "frontline",
-            }))
-        }));
-    }
+            .filter(|(w, _)| audience.contains(&w.user_id))
+            .filter_map(|(_, u)| {
+                let u = u?;
+                Some(serde_json::json!({
+                    "id": u.id.to_string(),
+                    "name": u.name,
+                    // `role` is the org-membership vocabulary and a worker has
+                    // none, so it is null rather than an invented "worker" that
+                    // would sort beside owner/admin/member as if it were one.
+                    // `kind` is where the distinction lives.
+                    "role": serde_json::Value::Null,
+                    "kind": "frontline",
+                }))
+            }),
+    );
 
     Ok(serde_json::json!({ "people": people, "total": people.len() }))
 }

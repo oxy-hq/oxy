@@ -39,7 +39,7 @@ use axum::extract::{Path, Query};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use chrono::{Duration, Utc};
-use entity::{org_kiosk_devices as devices, organizations};
+use entity::{locations, org_kiosk_devices as devices, organizations};
 use oxy::database::client::establish_connection;
 use oxy_app_core::audit;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
@@ -116,6 +116,8 @@ pub struct BoundDevice {
     pub org_id: Uuid,
     pub name: String,
     pub return_to: Option<String>,
+    /// Where the tablet sits, when the admin said.
+    pub location_id: Option<Uuid>,
 }
 
 /// Resolve the device a request's kiosk cookie names — bound, unrevoked, and
@@ -143,6 +145,7 @@ pub async fn bound_device(db: &DatabaseConnection, headers: &HeaderMap) -> Optio
         org_id: row.org_id,
         name: row.name,
         return_to: row.return_to,
+        location_id: row.location_id,
     })
 }
 
@@ -165,6 +168,8 @@ pub enum DeviceError {
     BadName,
     #[error("return_to is not a destination this deployment allows")]
     BadReturnTo,
+    #[error("no such location in this org")]
+    BadLocation,
     /// Covers expired, already used, revoked and never issued — one arm, so the
     /// public bind route cannot be used to tell those apart.
     #[error("that enrol link is not valid")]
@@ -182,6 +187,7 @@ pub async fn create(
     org_id: Uuid,
     name: &str,
     return_to: Option<&str>,
+    location_id: Option<Uuid>,
     created_by: Option<Uuid>,
 ) -> Result<(devices::Model, String), DeviceError> {
     let name = name.trim();
@@ -193,6 +199,18 @@ pub async fn create(
         Some(url) if validate_return_to_url(url) => Some(url.to_string()),
         Some(_) => return Err(DeviceError::BadReturnTo),
     };
+    // A place must be this org's. Checked here rather than left to the FK:
+    // another org's location id would otherwise bind a tablet to it.
+    if let Some(loc) = location_id {
+        let present = locations::Entity::find_by_id(loc)
+            .filter(locations::Column::OrgId.eq(org_id))
+            .one(db)
+            .await?
+            .is_some();
+        if !present {
+            return Err(DeviceError::BadLocation);
+        }
+    }
     let token = random_secret();
     let now = Utc::now();
     let row = devices::ActiveModel {
@@ -208,6 +226,7 @@ pub async fn create(
         bound_at: Set(None),
         last_seen_at: Set(None),
         revoked_at: Set(None),
+        location_id: Set(location_id),
     }
     .insert(db)
     .await?;
@@ -435,12 +454,23 @@ async fn device_status_body(headers: &HeaderMap) -> Response {
     else {
         return unbound();
     };
+    // The place, by name, so the login page can say "Front counter · Clovis".
+    let location = match device.location_id {
+        Some(id) => locations::Entity::find_by_id(id)
+            .one(&db)
+            .await
+            .ok()
+            .flatten()
+            .map(|l| serde_json::json!({ "id": l.id, "name": l.name })),
+        None => None,
+    };
     Json(serde_json::json!({
         "bound": true,
         "org": org.slug,
         "orgName": org.name,
         "device": device.name,
         "returnTo": device.return_to,
+        "location": location,
     }))
     .into_response()
 }
@@ -553,6 +583,9 @@ pub struct CreateDeviceRequest {
     pub name: String,
     #[serde(default)]
     pub return_to: Option<String>,
+    /// Where the tablet sits — one of this org's locations, or none.
+    #[serde(default)]
+    pub location_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
@@ -617,6 +650,7 @@ pub async fn create_device(
         org_id,
         &req.name,
         req.return_to.as_deref(),
+        req.location_id,
         Some(actor.id),
     )
     .await
@@ -646,7 +680,7 @@ pub async fn create_device(
             )
                 .into_response()
         }
-        Err(e @ (DeviceError::BadName | DeviceError::BadReturnTo)) => {
+        Err(e @ (DeviceError::BadName | DeviceError::BadReturnTo | DeviceError::BadLocation)) => {
             json_error(StatusCode::BAD_REQUEST, e.to_string())
         }
         Err(e) => {
@@ -668,6 +702,8 @@ pub struct DeviceRow {
     /// Set while an enrol link is outstanding; the link itself is not
     /// recoverable — create another device if it was lost.
     pub enrol_expires_at: Option<String>,
+    pub location_id: Option<Uuid>,
+    pub location_name: Option<String>,
 }
 
 /// `GET /api/orgs/{org_id}/frontline/devices` — org admin. Newest first; no
@@ -684,6 +720,17 @@ pub async fn list_devices(OrgAdmin(_ctx): OrgAdmin, Path(org_id): Path<Uuid>) ->
         .await
     {
         Ok(rows) => {
+            let places: std::collections::HashMap<Uuid, String> = match locations::Entity::find()
+                .filter(locations::Column::OrgId.eq(org_id))
+                .all(&db)
+                .await
+            {
+                Ok(ls) => ls.into_iter().map(|l| (l.id, l.name)).collect(),
+                Err(e) => {
+                    warn!(error = %e, "kiosk device list: locations not loaded");
+                    Default::default()
+                }
+            };
             let rfc = |t: Option<chrono::DateTime<chrono::FixedOffset>>| t.map(|t| t.to_rfc3339());
             let devices: Vec<DeviceRow> = rows
                 .into_iter()
@@ -696,6 +743,8 @@ pub async fn list_devices(OrgAdmin(_ctx): OrgAdmin, Path(org_id): Path<Uuid>) ->
                     last_seen_at: rfc(r.last_seen_at),
                     revoked_at: rfc(r.revoked_at),
                     enrol_expires_at: rfc(r.enrol_expires_at),
+                    location_name: r.location_id.and_then(|l| places.get(&l).cloned()),
+                    location_id: r.location_id,
                 })
                 .collect();
             Json(serde_json::json!({ "devices": devices })).into_response()

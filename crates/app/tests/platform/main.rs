@@ -65,6 +65,7 @@ mod metric_tree_fit_panel;
 mod no_dropped_partner_tables;
 mod notification_devices;
 mod oltp_provisioner;
+mod operating_graph;
 mod projects_query;
 mod run;
 mod simulation_lifecycle;

@@ -170,9 +170,40 @@ pub async fn run_semantic_query(
     };
 
     // 2. Parse versioned body.
-    let req: SemanticQueryConfig = match parse_versioned_body(&body) {
+    let mut req: SemanticQueryConfig = match parse_versioned_body(&body) {
         Ok(r) => r,
         Err(resp) => return resp,
+    };
+    // 2b. `scope: "reach"` — oxy's, not the query's. Read off the raw body
+    //     (the config ignores keys it does not know), decided per viewer
+    //     below, and folded into the cache key so two viewers with different
+    //     reach never share an entry.
+    let scope = serde_json::from_slice::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v.get("scope").and_then(|s| s.as_str().map(str::to_string)));
+    let viewer_reach = match scope.as_deref() {
+        None | Some("") => None,
+        Some("reach") => {
+            let app = serde_json::from_slice::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| {
+                    v.get("app")
+                        .and_then(|a| a.as_str().and_then(|a| a.parse().ok()))
+                });
+            Some(
+                crate::server::api::operating_graph::reach::reach_for_viewer(
+                    &ctx.db, ctx.org_id, &ctx.user, project_id, app,
+                )
+                .await,
+            )
+        }
+        Some(other) => {
+            return err_with_code(
+                StatusCode::BAD_REQUEST,
+                &format!("unknown scope `{other}`; the one scope is `reach`"),
+                "semantic_scope_unknown",
+            );
+        }
     };
 
     // 3. Body validation. The compile step would also reject these
@@ -197,7 +228,20 @@ pub async fn run_semantic_query(
     //     Gates and body validation must run first (above), so malformed
     //     bodies still 400 and unauthenticated callers still 401/403.
     //     `?refresh` bypasses the cache to force a warehouse round-trip.
-    let cache_sql = String::from_utf8_lossy(&body).into_owned();
+    let cache_sql = match &viewer_reach {
+        None => String::from_utf8_lossy(&body).into_owned(),
+        Some(reach) => format!(
+            "{}\n#reach:{}:{}",
+            String::from_utf8_lossy(&body),
+            reach.everywhere,
+            reach
+                .locations
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+    };
     // `?debug=1` populates the compiled `sql` in the response body (see below), so a
     // debug response must never share a cache entry with a plain one — otherwise a
     // plain caller could read a cached debug body (leaking the compiled warehouse
@@ -348,6 +392,45 @@ pub async fn run_semantic_query(
         crate::server::preagg_context::RollupFreshness::ServeStale,
     );
 
+    // 5a. Pin a scoped query to the viewer's reach before it compiles. The
+    //     layer comes from the process cache the workspace handlers share —
+    //     keyed on the source this request actually read — and is handed to
+    //     the compile below, so a scoped request walks the model at most
+    //     once, and only on a cache miss.
+    let mut scoped_layer: Option<std::sync::Arc<oxy_airlayer_compat::SemanticLayer>> = None;
+    if let Some(reach) = &viewer_reach {
+        let layers = crate::server::api::middlewares::workspace_context::SemanticLayerCacheCtx {
+            cache: app_state.semantic_layer_cache.clone(),
+            workspace_id: proj_ctx.workspace_manager().workspace_id,
+            engine_cache: app_state.semantic_engine_cache.clone(),
+        };
+        let layer = match layers.get_or_load(source_revision, scan_path.clone()).await {
+            Ok(layer) => layer,
+            Err(e) => {
+                return err_with_code(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("semantic layer failed to load: {e}"),
+                    "semantic_layer_load_failed",
+                );
+            }
+        };
+        if let Err(e) = crate::server::api::operating_graph::binding::apply_reach_scope(
+            &ctx.db, ctx.org_id, &layer, reach, &mut req,
+        )
+        .await
+        {
+            let (status, code) = match e {
+                crate::server::api::operating_graph::binding::ScopeError::NoBoundView => {
+                    (StatusCode::BAD_REQUEST, "semantic_scope_unbound")
+                }
+                crate::server::api::operating_graph::binding::ScopeError::Db(_) => {
+                    (StatusCode::INTERNAL_SERVER_ERROR, "semantic_scope_failed")
+                }
+            };
+            return err_with_code(status, &e.to_string(), code);
+        }
+        scoped_layer = Some(layer);
+    }
     let req_clone = req;
     // The custom-app data plane is the highest-QPS semantic surface there is,
     // and it was rebuilding the join graph on every request. Keyed on the
@@ -363,6 +446,14 @@ pub async fn run_semantic_query(
         source_revision,
         &databases,
     );
+    // The layer a scoped request already holds is handed to the compile only
+    // when the engine cache has nothing under this key — that is the one case
+    // the compile would otherwise walk the model again, and cloning a whole
+    // layer for a hit that never reads it is the cost the cache exists to
+    // avoid.
+    let pre_loaded_layer = scoped_layer
+        .filter(|_| engine_cache.lookup(&engine_key).is_none())
+        .map(|layer| (*layer).clone());
     let compiled = match tokio::task::spawn_blocking(move || {
         agentic_semantic::compile::resolve_and_compile_cached(
             &engine_cache,
@@ -371,7 +462,7 @@ pub async fn run_semantic_query(
             &databases,
             &req_clone,
             preagg.as_ref(),
-            None,
+            pre_loaded_layer,
         )
     })
     .await

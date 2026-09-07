@@ -86,6 +86,10 @@ pub struct CreateLocation {
     pub status: Option<String>,
     pub timezone: Option<String>,
     pub external_id: Option<String>,
+    /// The place this one sits inside; must be this org's and not a descendant.
+    pub parent_id: Option<Uuid>,
+    /// The tenant's word for this level: `region`, `store`. Lowercased.
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

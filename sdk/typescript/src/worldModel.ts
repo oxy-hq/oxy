@@ -67,6 +67,11 @@ export interface WorldModel {
 export interface WmInstance {
   key: string;
   display: string;
+  /**
+   * The org location this instance is, when the entity is bound to the
+   * locations registry and the key is mapped; absent otherwise.
+   */
+  location?: { id: string; name: string; kind?: string | null; parent_id?: string | null };
 }
 
 export interface WmInstancesResponse {

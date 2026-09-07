@@ -25,8 +25,16 @@ pub struct Model {
     /// "due by close" meaning 23:00 UTC at a store two time zones away.
     pub timezone: String,
     /// The tenant's own identifier for this store, when they have one. Carried
-    /// so an import can be re-run without duplicating rows.
+    /// so an import can be re-run without duplicating rows. Per-integration
+    /// ids live in `location_external_ids`; this one is the tenant's own.
     pub external_id: Option<String>,
+    /// The place this one sits inside — a store's district, a district's
+    /// region. NULL for a root. One self-reference is the whole hierarchy; the
+    /// tenant names the levels with `kind`.
+    pub parent_id: Option<Uuid>,
+    /// What the tenant calls this level: `region`, `district`, `store`,
+    /// `station`. A word, not a foreign key — a level is vocabulary.
+    pub kind: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
     #[sea_orm(has_many)]

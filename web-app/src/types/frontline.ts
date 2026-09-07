@@ -1,3 +1,5 @@
+import type { AssignmentDraft, WorkerAssignment } from "./operatingGraph";
+
 /**
  * Frontline (crew) sign-in — restaurant staff on a shared kiosk tablet who have
  * no email and no Oxygen account. An HttpOnly kiosk cookie binds the browser to
@@ -73,6 +75,8 @@ export interface FrontlineWorker {
   apps: string[];
   /** Set while too many wrong PINs have locked sign-in; a PIN reset clears it. */
   locked_until: string | null;
+  /** Where they work: the positions they hold, at which places. */
+  assignments: WorkerAssignment[];
 }
 
 export interface ListWorkersResponse {
@@ -89,6 +93,8 @@ export interface EnrolWorkerRequest {
   /** 4–8 digits. */
   pin: string;
   apps: string[];
+  /** Validated before the worker exists: a bad row means no worker. */
+  assignments?: AssignmentDraft[];
 }
 
 export interface EnrolledWorker {
@@ -126,6 +132,9 @@ export interface KioskDeviceRow {
   last_seen_at: string | null;
   revoked_at: string | null;
   enrol_expires_at: string | null;
+  /** The place this tablet sits at, or null when it was enrolled without one. */
+  location_id: string | null;
+  location_name: string | null;
 }
 
 export interface ListDevicesResponse {
@@ -135,6 +144,7 @@ export interface ListDevicesResponse {
 export interface CreateKioskDeviceRequest {
   name: string;
   return_to?: string;
+  location_id?: string | null;
 }
 
 /**

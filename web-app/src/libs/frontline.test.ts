@@ -14,6 +14,8 @@ const kiosk = (over: Partial<KioskDeviceRow> = {}): KioskDeviceRow => ({
   last_seen_at: null,
   revoked_at: null,
   enrol_expires_at: new Date(NOW + 23 * HOUR).toISOString(),
+  location_id: null,
+  location_name: null,
   ...over
 });
 

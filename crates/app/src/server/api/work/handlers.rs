@@ -254,7 +254,7 @@ pub async fn has_standing_in_org(
 /// Sea-ORM does not model constraint kinds, so the driver's SQLSTATE is the only
 /// thing that distinguishes "this name is taken" from "the database is down".
 fn is_unique_violation(e: &DbErr) -> bool {
-    e.to_string().contains("23505")
+    crate::server::api::operating_graph::is_unique_violation(e)
 }
 
 /// Map a lookup failure to a 500 that says so, rather than to a refusal.
@@ -501,31 +501,6 @@ pub async fn update(
 // A different authority from doing the work: these decide the SHAPE of the org,
 // so unlike the reads above they go through the model.
 
-/// `GET /api/orgs/{org_id}/locations`
-///
-/// `OrgMemberStrict` rather than a bare authenticated user. The route sits under
-/// `/orgs/{org_id}`, so `org_middleware` already 404s a non-member — but a
-/// handler whose signature does not say so reads as ungated, and the day
-/// somebody moves this route the gate leaves with it silently. Strict excludes
-/// the cross-tenant operator override too: a tenant's store roster is not
-/// something staff should read incidentally.
-#[instrument(skip_all, fields(org_id = %org_id))]
-pub async fn list_locations(
-    OrgMemberStrict(_ctx): OrgMemberStrict,
-    Path(org_id): Path<Uuid>,
-) -> Result<Json<Vec<locations::Model>>, StatusCode> {
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let rows = locations::Entity::find()
-        .filter(locations::Column::OrgId.eq(org_id))
-        .order_by_asc(locations::Column::Name)
-        .all(&db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(rows))
-}
-
 /// `POST /api/orgs/{org_id}/locations` — org owner/admin only.
 ///
 /// The org is in the PATH, not the body, and that is deliberate: `OrgAdmin`
@@ -538,7 +513,13 @@ pub async fn create_location(
     OrgAdmin(_ctx): OrgAdmin,
     Path(org_id): Path<Uuid>,
     Json(body): Json<CreateLocation>,
-) -> Result<(StatusCode, Json<locations::Model>), StatusCode> {
+) -> Result<
+    (
+        StatusCode,
+        Json<crate::server::api::operating_graph::dto::LocationRow>,
+    ),
+    StatusCode,
+> {
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
@@ -556,14 +537,37 @@ pub async fn create_location(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    let status = body.status.clone().unwrap_or_else(|| "open".to_string());
+    if !crate::server::api::operating_graph::dto::is_location_status(&status) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let id = Uuid::new_v4();
+    // The hierarchy is one self-reference, checked by the same rule PATCH
+    // uses: this org's, and not a loop.
+    let parent_id = crate::server::api::operating_graph::locations::check_parent(
+        &db,
+        org_id,
+        id,
+        body.parent_id,
+    )
+    .await
+    .map_err(|e| e.status())?;
+    let kind = body
+        .kind
+        .as_deref()
+        .map(|k| k.trim().to_lowercase())
+        .filter(|k| !k.is_empty());
+
     let now = Utc::now().fixed_offset();
     let saved = locations::ActiveModel {
-        id: Set(Uuid::new_v4()),
+        id: Set(id),
         org_id: Set(org_id),
         name: Set(name.to_string()),
-        status: Set(body.status.clone().unwrap_or_else(|| "open".to_string())),
+        status: Set(status),
         timezone: Set(timezone),
         external_id: Set(body.external_id.clone()),
+        parent_id: Set(parent_id),
+        kind: Set(kind),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -582,10 +586,15 @@ pub async fn create_location(
     })?;
 
     info!(id = %saved.id, "location created");
-    Ok((StatusCode::CREATED, Json(saved)))
+    // The same shape `GET` and `PATCH` answer — with `external_ids`, empty
+    // here — so a client can treat every location it holds alike.
+    match crate::server::api::operating_graph::locations::one_row(&db, org_id, saved.id).await {
+        Ok(Some(row)) => Ok((StatusCode::CREATED, Json(row))),
+        _ => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
-/// `GET /api/orgs/{org_id}/roles` — same reasoning as `list_locations`.
+/// `GET /api/orgs/{org_id}/roles` — any member: a picker needs the vocabulary.
 #[instrument(skip_all, fields(org_id = %org_id))]
 pub async fn list_roles(
     OrgMemberStrict(_ctx): OrgMemberStrict,

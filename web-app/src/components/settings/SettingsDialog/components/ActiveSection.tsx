@@ -7,7 +7,9 @@ import Billing from "../sections/organization/Billing";
 import OrgCrew from "../sections/organization/Crew";
 import General from "../sections/organization/General";
 import Integration from "../sections/organization/Integration";
+import OrgLocations from "../sections/organization/Locations";
 import OrgMembers from "../sections/organization/Members";
+import OrgPositions from "../sections/organization/Positions";
 import OrgTeams from "../sections/organization/Teams";
 import Appearance from "../sections/preferences/Appearance";
 import ActivityLogs from "../sections/workspace/ActivityLogs";
@@ -65,6 +67,12 @@ export function ActiveSection({ activeSection, org, role, workspace, close }: Ac
       )}
       {org && role && activeSection === "organization.crew" && (
         <OrgCrew org={org} viewerRole={role} />
+      )}
+      {org && role && activeSection === "organization.locations" && (
+        <OrgLocations org={org} viewerRole={role} />
+      )}
+      {org && role && activeSection === "organization.positions" && (
+        <OrgPositions org={org} viewerRole={role} />
       )}
       {org && role && activeSection === "organization.billing" && (
         <CanOrgAdmin

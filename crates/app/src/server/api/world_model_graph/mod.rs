@@ -27,5 +27,7 @@ pub use types::*;
 
 // Transport-agnostic reuse cores shared with the customer-app-gated
 // `projects/world_model.rs` handlers and the metric-tree ops.
-pub(crate) use handlers::{build_world_model_response, instances_core, measure_breakdown_core};
+pub(crate) use handlers::{
+    GraphScope, build_world_model_response, instances_core, measure_breakdown_core,
+};
 pub(crate) use query::instance_scope_filters;

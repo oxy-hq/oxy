@@ -16,6 +16,9 @@ use entity::prelude::AppMembers;
 use entity::{app_members, apps, org_frontline_members, user_credentials, users};
 use oxy::database::client::establish_connection;
 use oxy_app_core::audit;
+
+use crate::server::api::operating_graph::assignments;
+use crate::server::api::operating_graph::dto::WorkerAssignment;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_auth::frontline::{self, KIND_PIN, PinPolicy};
 use oxy_shared::errors::OxyError;
@@ -43,6 +46,8 @@ pub struct WorkerRow {
     /// Set while the PIN lockout is in force — the state a manager sees when a
     /// worker says "it won't let me in" and the answer is a reset, not a wait.
     pub locked_until: Option<String>,
+    /// Where they work, and as what: every position they hold.
+    pub assignments: Vec<WorkerAssignment>,
 }
 
 /// Every worker enrolled in the org, with the facts a roster screen shows.
@@ -73,6 +78,7 @@ pub async fn workers_of(db: &DatabaseConnection, org_id: Uuid) -> Result<Vec<Wor
         .filter(app_members::Column::UserId.is_in(ids))
         .all(db)
         .await?;
+    let mut held = assignments::by_user(db, org_id).await?;
 
     let mut rows: Vec<WorkerRow> = standing
         .into_iter()
@@ -96,6 +102,7 @@ pub async fn workers_of(db: &DatabaseConnection, org_id: Uuid) -> Result<Vec<Wor
                     .and_then(|c| c.locked_until)
                     .filter(|t| *t > chrono::Utc::now())
                     .map(|t| t.to_rfc3339()),
+                assignments: held.remove(&s.user_id).unwrap_or_default(),
             }
         })
         .collect();

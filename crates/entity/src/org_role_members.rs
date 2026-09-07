@@ -21,6 +21,10 @@ pub struct Model {
     /// NULL for a franchisor-scope role — see the module docs.
     #[sea_orm(indexed)]
     pub location_id: Option<Uuid>,
+    /// Who this person reports to AT THIS PLACE. The same person may report
+    /// to somebody else at their other store, so it hangs off the assignment
+    /// and not the user.
+    pub supervisor_id: Option<Uuid>,
     pub created_at: DateTimeWithTimeZone,
 }
 

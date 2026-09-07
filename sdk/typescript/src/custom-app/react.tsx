@@ -559,6 +559,13 @@ export interface UseSemanticQueryInput {
   time_dimensions?: SemanticTimeDimension[];
   filters?: SemanticFilter[];
   limit?: number;
+  /**
+   * `"reach"` — pin the query server-side to the viewer's places: one `in`
+   * filter per view it names whose primary entity is bound to the org's
+   * locations registry. The bundle's own app is sent along so app-admin
+   * standing counts. A query naming no bound view is refused.
+   */
+  scope?: "reach";
 }
 
 export interface UseSemanticQueryOpts {
@@ -599,7 +606,7 @@ export function useSemanticQuery<Row = Record<string, unknown>>(
   input: UseSemanticQueryInput,
   opts: UseSemanticQueryOpts = {}
 ): UseSemanticQueryResult<Row> {
-  const { projectId, fetcher } = useOxyApp();
+  const { projectId, appId, fetcher } = useOxyApp();
   const enabled = opts.enabled !== false;
   const debug = opts.debug === true;
 
@@ -646,7 +653,8 @@ export function useSemanticQuery<Row = Record<string, unknown>>(
       measures: input.measures ?? [],
       time_dimensions: input.time_dimensions ?? [],
       filters: input.filters ?? [],
-      ...(input.limit != null ? { limit: input.limit } : {})
+      ...(input.limit != null ? { limit: input.limit } : {}),
+      ...(input.scope ? { scope: input.scope, ...(appId ? { app: appId } : {}) } : {})
     });
 
     const url = `/api/projects/${projectId}/semantic-query${debug ? "?debug=1" : ""}`;
@@ -695,7 +703,7 @@ export function useSemanticQuery<Row = Record<string, unknown>>(
       cancelled = true;
       ctrl.abort();
     };
-  }, [enabled, projectId, inputKey, debug, nonce, fetcher]);
+  }, [enabled, projectId, appId, inputKey, debug, nonce, fetcher]);
 
   return {
     rows: state.rows,

@@ -1730,23 +1730,6 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
             );
         }
     };
-    let host = host::into_arc(host::ProjectFunctionHost::new(
-        // Hand the runtime the project context behind its trait, so the host
-        // depends on `FunctionProjectContext`, not on `agentic_wiring`. The
-        // concrete `OxyProjectContext` is only named here (outside the runtime).
-        std::sync::Arc::new(proj_ctx) as std::sync::Arc<dyn seam::FunctionProjectContext>,
-        args.query_exec.clone(),
-        args.db.clone(),
-        args.write_destinations.clone(),
-        args.app.project_id,
-        args.app.id,
-        args.org_id,
-        args.user_id,
-        args.app.name.clone(),
-        args.caps.clone(),
-        args.preagg.clone(),
-    ));
-
     // Everything the isolate needs before it can start, resolved together.
     //
     // Identity facts for `ctx.user` are all resolved server-side so none of it can
@@ -1772,7 +1755,7 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
     // so a blip on one can't blank the other, and an errored lookup yields no role,
     // never "admin".
     let human = args.identity_kind == runtime::CtxIdentityKind::User;
-    let (env, app_role, org_standing) = tokio::join!(
+    let (env, app_role, org_standing, held) = tokio::join!(
         resolve_function_env(args.db, args.app.project_id, args.app.id),
         crate::server::api::custom_apps_auth::resolve_app_role(
             args.db,
@@ -1791,6 +1774,20 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
                 .await
             } else {
                 Ok((None, Vec::new()))
+            }
+        },
+        async {
+            // The caller's positions — what reach is decided from. A schedule
+            // has none to read: it reaches everywhere as the system.
+            if human {
+                crate::server::api::operating_graph::reach::held_by(
+                    args.db,
+                    args.org_id,
+                    args.user_id,
+                )
+                .await
+            } else {
+                Ok(Vec::new())
             }
         },
     );
@@ -1819,6 +1816,44 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
         }
     };
 
+    // Reach: the rule over the facts above. Fail-closed like its siblings — a
+    // positions read that errored yields nowhere, never everywhere.
+    let reach = {
+        use crate::server::api::operating_graph::reach::{Caller, Reach, reach_of};
+        let caller = Caller {
+            system: !human,
+            app_admin: app_role.as_deref() == Some("admin"),
+            member: org_role.is_some(),
+        };
+        match held {
+            Ok(held) => reach_of(caller, &held),
+            Err(e) => {
+                error!("reach lookup failed for app {}: {e}", args.app.id);
+                Reach::nowhere()
+            }
+        }
+    };
+
+    let host = host::into_arc(host::ProjectFunctionHost::new(
+        // Hand the runtime the project context behind its trait, so the host
+        // depends on `FunctionProjectContext`, not on `agentic_wiring`. The
+        // concrete `OxyProjectContext` is only named here (outside the runtime).
+        std::sync::Arc::new(proj_ctx) as std::sync::Arc<dyn seam::FunctionProjectContext>,
+        args.query_exec.clone(),
+        args.db.clone(),
+        args.write_destinations.clone(),
+        args.app.project_id,
+        args.app.id,
+        args.org_id,
+        args.user_id,
+        args.app.name.clone(),
+        args.caps.clone(),
+        args.preagg.clone(),
+        // The same reach `ctx.user` carries, so `ctx.semantic.query({ scope:
+        // "reach" })` pins to what the function itself was told.
+        reach.clone(),
+    ));
+
     let ctx = runtime::InvocationCtx {
         user: runtime::CtxUser {
             id: args.user_id.to_string(),
@@ -1830,6 +1865,7 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
             org_role,
             teams,
             kind: args.identity_kind,
+            reach,
         },
         env,
     };

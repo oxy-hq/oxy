@@ -136,6 +136,14 @@ pub struct OrderEvent {
     pub amount: f64,
     pub order_id: String,
     pub ts: DateTime<Utc>,
+    /// The org location `key` resolves to through `location_external_ids`
+    /// (system `toast`), when it is mapped. Optional on both sides: rows
+    /// published before the operating graph carry neither, and an unmapped
+    /// store is still an order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location_id: Option<uuid::Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location_name: Option<String>,
 }
 
 /// How long a published event stays readable. Long enough that a viewer opening

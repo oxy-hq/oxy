@@ -100,9 +100,35 @@ pub struct ShellLinks {
 #[derive(Serialize)]
 pub struct ShellUser {
     pub name: String,
+    /// Empty for a frontline worker, who has no mailbox.
     pub email: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub picture: Option<String>,
+    pub id: Uuid,
+    /// `member` holds an org membership; `frontline` is a crew member — the
+    /// same signal `ctx.user.email === null` gives a function.
+    pub kind: &'static str,
+    /// Display-only reach, the same rule the function's `ctx.user.reach`
+    /// applies (`internal-docs/operating-graph.md` §3.3). App-admin standing
+    /// is known only when the bundle names its app (`?app=`); without it the
+    /// browser may read scoped where the function reads everywhere — never
+    /// the other way round.
+    pub reach: crate::server::api::operating_graph::reach::Reach,
+}
+
+/// `?app=<id>` — the bundle's own app, so the viewer's app-admin standing
+/// can be part of the display reach. Optional: an older bundle sends nothing.
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct ShellContextQuery {
+    /// Parsed leniently: a malformed value must not cost the bundle its
+    /// workspace, org, apps and links over a display-only enhancement.
+    pub app: Option<String>,
+}
+
+impl ShellContextQuery {
+    pub fn app_id(&self) -> Option<Uuid> {
+        self.app.as_deref().and_then(|a| a.parse().ok())
+    }
 }
 
 /// Prefix for product URLs: empty (relative) unless the request arrived
@@ -123,7 +149,11 @@ fn product_url_base(headers: &HeaderMap) -> String {
     }
 }
 
-pub async fn get_shell_context(Path(project_id): Path<Uuid>, headers: HeaderMap) -> Response {
+pub async fn get_shell_context(
+    Path(project_id): Path<Uuid>,
+    axum::extract::Query(query): axum::extract::Query<ShellContextQuery>,
+    headers: HeaderMap,
+) -> Response {
     // Gates first — same chain as /query. Nothing below runs (and nothing
     // is cached) for callers who can't access the project.
     let ctx = match check_custom_app_gates(&headers, project_id).await {
@@ -169,10 +199,14 @@ pub async fn get_shell_context(Path(project_id): Path<Uuid>, headers: HeaderMap)
         .collect();
 
     let ws_root = format!("{base}/{}/workspaces/{}", org.slug, project_id);
-    // The rail user menu's display string: the address when there is one,
-    // otherwise the name. Bound here because `label()` borrows all of
-    // `ctx.user`, which cannot happen once `name` has been moved out below.
-    let user_label = ctx.user.label().to_string();
+    let reach = crate::server::api::operating_graph::reach::reach_for_viewer(
+        &ctx.db,
+        ctx.org_id,
+        &ctx.user,
+        project_id,
+        query.app_id(),
+    )
+    .await;
     let body = ShellContextResponse {
         workspace: ShellWorkspace {
             id: ctx.workspace.id,
@@ -199,11 +233,18 @@ pub async fn get_shell_context(Path(project_id): Path<Uuid>, headers: HeaderMap)
             settings: format!("{ws_root}/home?settings=organization.general"),
         },
         user: Some(ShellUser {
-            // Bound before `name` moves out of `ctx.user` — `label()` borrows
-            // the whole struct, so it cannot be evaluated after a partial move.
-            email: user_label,
-            name: ctx.user.name,
-            picture: ctx.user.picture,
+            name: ctx.user.name.clone(),
+            // The address itself, or empty: `useIdentity()` reads an empty
+            // address as the crew signal, the way a function reads `null`.
+            email: ctx.user.email.clone().unwrap_or_default(),
+            picture: ctx.user.picture.clone(),
+            id: ctx.user.id,
+            kind: if ctx.user.email.is_some() {
+                "member"
+            } else {
+                "frontline"
+            },
+            reach,
         }),
     };
 

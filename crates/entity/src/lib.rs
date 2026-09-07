@@ -98,6 +98,7 @@ pub mod device_tokens;
 pub mod feature_flag;
 pub mod git_namespaces;
 pub mod github_accounts;
+pub mod location_external_ids;
 pub mod locations;
 pub mod logs;
 pub mod messages;

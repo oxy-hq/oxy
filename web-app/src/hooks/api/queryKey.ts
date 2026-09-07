@@ -365,7 +365,16 @@ const orgKeys = {
   // kiosk's own unauthenticated reads, and a worker list must never share a
   // cache lineage with what a shared tablet fetches.
   frontlineWorkers: (orgId: string) => [...orgKeys.all, "frontline-workers", orgId] as const,
-  frontlineDevices: (orgId: string) => [...orgKeys.all, "frontline-devices", orgId] as const
+  frontlineDevices: (orgId: string) => [...orgKeys.all, "frontline-devices", orgId] as const,
+  // The operating graph: places, the position vocabulary, and who holds what
+  // where. `assignments` without a filter is the prefix every filtered read
+  // shares, so one invalidation reaches the per-location and per-person views.
+  locations: (orgId: string) => [...orgKeys.all, "locations", orgId] as const,
+  roles: (orgId: string) => [...orgKeys.all, "roles", orgId] as const,
+  assignments: (orgId: string, filter?: { user_id?: string; location_id?: string }) =>
+    filter
+      ? ([...orgKeys.all, "assignments", orgId, filter] as const)
+      : ([...orgKeys.all, "assignments", orgId] as const)
 };
 
 /**

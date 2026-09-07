@@ -24,6 +24,7 @@ import type { AppAccessSummary } from "@/types/appAccess";
 import type { FrontlineWorker } from "@/types/frontline";
 import { ResetPinDialog } from "./ResetPinDialog";
 import { WorkerAppsDialog } from "./WorkerAppsDialog";
+import { WorkerAssignmentsDialog } from "./WorkerAssignmentsDialog";
 
 /**
  * Everything an admin does to one worker after enrolment. Suspend asks first
@@ -40,6 +41,7 @@ export function WorkerRowActions({
   apps: AppAccessSummary[];
 }) {
   const [appsOpen, setAppsOpen] = useState(false);
+  const [assignmentsOpen, setAssignmentsOpen] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
   const [suspendOpen, setSuspendOpen] = useState(false);
   const setStanding = useSetWorkerStanding();
@@ -77,6 +79,12 @@ export function WorkerRowActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end' className='w-44'>
           <DropdownMenuItem onClick={() => setAppsOpen(true)}>Apps…</DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setAssignmentsOpen(true)}
+            data-testid='settings-crew-assignments'
+          >
+            Assignments…
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setPinOpen(true)}>Reset PIN…</DropdownMenuItem>
           <DropdownMenuSeparator />
           {suspended ? (
@@ -98,6 +106,12 @@ export function WorkerRowActions({
         orgId={orgId}
         worker={worker}
         apps={apps}
+      />
+      <WorkerAssignmentsDialog
+        open={assignmentsOpen}
+        onOpenChange={setAssignmentsOpen}
+        orgId={orgId}
+        worker={worker}
       />
       <ResetPinDialog open={pinOpen} onOpenChange={setPinOpen} orgId={orgId} worker={worker} />
 

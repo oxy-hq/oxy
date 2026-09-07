@@ -33,6 +33,9 @@ pub struct Model {
     pub bound_at: Option<DateTimeWithTimeZone>,
     pub last_seen_at: Option<DateTimeWithTimeZone>,
     pub revoked_at: Option<DateTimeWithTimeZone>,
+    /// Where the tablet sits. A physical object has a place; the login page
+    /// can name it and, later, a roster can be narrowed to it.
+    pub location_id: Option<Uuid>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

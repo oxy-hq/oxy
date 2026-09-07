@@ -172,15 +172,21 @@ pub async fn toast_order_webhook(
 
     let total: f64 = order.checks.iter().filter_map(|c| c.total_amount).sum();
 
+    // The store, by name, when the org has mapped this restaurant GUID to one
+    // of its locations. Best-effort: the ripple is published either way, and
+    // a consumer that still keeps its own marker list keeps working.
+    let place = resolve_store(query.project_id, &envelope.details.restaurant_guid).await;
     publish_order(
         query.project_id,
         OrderEvent {
             kind: "order_ripple",
             key: envelope.details.restaurant_guid,
-            store_name: None, // FE resolves from its live marker list.
+            store_name: place.as_ref().map(|p| p.name.clone()),
             amount: total,
             order_id: order.guid,
             ts: paid_at,
+            location_id: place.as_ref().map(|p| p.id),
+            location_name: place.map(|p| p.name),
         },
     );
 
@@ -407,4 +413,34 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
         diff |= x ^ y;
     }
     diff == 0
+}
+
+/// The org location a Toast restaurant GUID names, if the tenant mapped it
+/// (`location_external_ids`, system `toast`). `None` for every failure:
+/// the webhook must accept the order whether or not the store is known.
+async fn resolve_store(
+    project_id: Uuid,
+    restaurant_guid: &str,
+) -> Option<crate::server::api::operating_graph::binding::LocationBrief> {
+    let db = establish_connection().await.ok()?;
+    let org_id = Workspaces::find_by_id(project_id)
+        .one(&db)
+        .await
+        .ok()
+        .flatten()?
+        .org_id?;
+    match crate::server::api::operating_graph::binding::locations_by_external_ids(
+        &db,
+        org_id,
+        "toast",
+        &[restaurant_guid.to_string()],
+    )
+    .await
+    {
+        Ok(mut places) => places.remove(restaurant_guid),
+        Err(e) => {
+            tracing::debug!(workspace = %project_id, error = %e, "toast store not resolved");
+            None
+        }
+    }
 }

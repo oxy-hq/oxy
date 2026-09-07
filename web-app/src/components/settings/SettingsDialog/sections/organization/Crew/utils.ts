@@ -1,4 +1,3 @@
-import { isAxiosError } from "axios";
 import type { AppAccessSummary } from "@/types/appAccess";
 import type { FrontlineWorker } from "@/types/frontline";
 
@@ -58,26 +57,8 @@ export function appForReturnTo(
   return apps.find((app) => path === `${APP_PATH_PREFIX}/${orgSlug}/${app.slug}`);
 }
 
-/**
- * The message an org route put in its error body. The crew routes answer
- * `{ error }`; older org routes answer `{ message }`. Neither is guaranteed.
- */
-export function apiErrorMessage(err: unknown, fallback: string): string {
-  if (isAxiosError(err)) {
-    const data: unknown = err.response?.data;
-    if (data && typeof data === "object") {
-      const body = data as { error?: unknown; message?: unknown };
-      if (typeof body.error === "string" && body.error) return body.error;
-      if (typeof body.message === "string" && body.message) return body.message;
-    }
-    return fallback;
-  }
-  return err instanceof Error && err.message ? err.message : fallback;
-}
-
-export function apiStatus(err: unknown): number | undefined {
-  return isAxiosError(err) ? err.response?.status : undefined;
-}
+// Shared with Locations and Positions: every org route answers the same body shape.
+export { apiErrorMessage, apiStatus } from "@/libs/apiError";
 
 /** Order-insensitive equality for two id lists — the "anything to save?" check. */
 export function sameIds(a: string[], b: string[]): boolean {

@@ -485,11 +485,38 @@ fn build_org_routes(app_state: &AppState) -> RoleRouter {
         // `route_fleet`: Postgres only, no working copy.
         .route_fleet(
             "/locations",
-            get(work::handlers::list_locations).post(work::handlers::create_location),
+            get(crate::server::api::operating_graph::locations::list_locations)
+                .post(work::handlers::create_location),
+        )
+        // The rest of the operating graph — the hierarchy, what each
+        // integration calls a place, the positions vocabulary, and who holds
+        // which position where. `internal-docs/operating-graph.md`.
+        .route_fleet(
+            "/locations/{id}",
+            axum::routing::patch(crate::server::api::operating_graph::locations::patch_location),
+        )
+        .route_fleet(
+            "/locations/{id}/external-ids/{system}",
+            put(crate::server::api::operating_graph::locations::put_external_id)
+                .delete(crate::server::api::operating_graph::locations::delete_external_id),
         )
         .route_fleet(
             "/roles",
             get(work::handlers::list_roles).post(work::handlers::create_role),
+        )
+        .route_fleet(
+            "/roles/{id}",
+            axum::routing::patch(crate::server::api::operating_graph::positions::patch_role)
+                .delete(crate::server::api::operating_graph::positions::delete_role_handler),
+        )
+        .route_fleet(
+            "/assignments",
+            get(crate::server::api::operating_graph::assignments::list)
+                .post(crate::server::api::operating_graph::assignments::create),
+        )
+        .route_fleet(
+            "/assignments/{id}",
+            axum::routing::delete(crate::server::api::operating_graph::assignments::delete),
         )
         .route_fleet(
             "/teams/{team_id}",

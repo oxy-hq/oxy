@@ -178,6 +178,12 @@ pub struct CtxUser {
     pub teams: Vec<CtxTeam>,
     /// Whether a human or the platform invoked this function.
     pub kind: CtxIdentityKind,
+    /// Where the caller may act — the operating graph's answer, decided from
+    /// their assignments before the function runs and applied by the function
+    /// through `@oxy-hq/sdk/ops`. A system invocation reaches everywhere; a
+    /// lookup failure reaches nowhere, so a blip cannot widen anything.
+    /// `internal-docs/operating-graph.md` §3.3.
+    pub reach: crate::server::api::operating_graph::reach::Reach,
 }
 
 /// Result of running a function to completion.
@@ -252,6 +258,15 @@ pub trait FunctionHost: Send + Sync {
     /// double that forgets to override it denies rather than inventing people.
     async fn org_people(&self) -> Result<serde_json::Value, String> {
         Err("ctx.org.people is not available in this host".to_string())
+    }
+    /// `ctx.org.places()` — the org's locations. Same shape and same
+    /// fail-closed default as `org_people`.
+    async fn org_places(&self) -> Result<serde_json::Value, String> {
+        Err("ctx.org.places is not available in this host".to_string())
+    }
+    /// `ctx.org.assignments()` — who holds which position where.
+    async fn org_assignments(&self) -> Result<serde_json::Value, String> {
+        Err("ctx.org.assignments is not available in this host".to_string())
     }
     /// `ctx.airway.run(pipelineRef, variables)` — seed an Airway ELT run.
     /// Returns `{ runId }`; the run is driven asynchronously by the worker
@@ -368,6 +383,12 @@ enum HostCall {
     /// `ctx.org.people()` — no arguments; the org is the host's, never the
     /// function's.
     OrgPeople {
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    OrgPlaces {
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    OrgAssignments {
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
     },
     Tx {
@@ -743,6 +764,44 @@ async fn op_ctx_org_people(state: Rc<RefCell<OpState>>) -> Result<String, JsErro
 
 #[op2]
 #[string]
+async fn op_ctx_org_places(state: Rc<RefCell<OpState>>) -> Result<String, JsErrorBox> {
+    check_cancelled(&state)?;
+    let tx = state
+        .borrow()
+        .borrow::<mpsc::UnboundedSender<HostCall>>()
+        .clone();
+    let (reply, rx) = oneshot::channel();
+    // No payload: the org comes from the host. A function that could name its
+    // own org here would be a manifest pointing at another tenant's roster.
+    tx.send(HostCall::OrgPlaces { reply })
+        .map_err(|_| JsErrorBox::generic("function host unavailable"))?;
+    let result = rx
+        .await
+        .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
+    Ok(reply_json("ctx.org.places", result))
+}
+
+#[op2]
+#[string]
+async fn op_ctx_org_assignments(state: Rc<RefCell<OpState>>) -> Result<String, JsErrorBox> {
+    check_cancelled(&state)?;
+    let tx = state
+        .borrow()
+        .borrow::<mpsc::UnboundedSender<HostCall>>()
+        .clone();
+    let (reply, rx) = oneshot::channel();
+    // No payload: the org comes from the host. A function that could name its
+    // own org here would be a manifest pointing at another tenant's roster.
+    tx.send(HostCall::OrgAssignments { reply })
+        .map_err(|_| JsErrorBox::generic("function host unavailable"))?;
+    let result = rx
+        .await
+        .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
+    Ok(reply_json("ctx.org.assignments", result))
+}
+
+#[op2]
+#[string]
 async fn op_ctx_semantic_query(
     state: Rc<RefCell<OpState>>,
     #[string] spec_json: String,
@@ -975,6 +1034,8 @@ deno_core::extension!(
         op_ctx_email_send,
         op_ctx_storage,
         op_ctx_org_people,
+        op_ctx_org_places,
+        op_ctx_org_assignments,
         op_ctx_tx,
         op_ctx_oltp,
         op_ctx_hmac,
@@ -1329,6 +1390,13 @@ globalThis.__buildCtx = (ctxData) => ({
     // Naming a colleague is a different need from being able to message them,
     // and only the first one was blocking anything.
     people: () => __wrapOp("op_ctx_org_people")(),
+    // places() — the org's locations: hierarchy, status, timezone, and what
+    // each integration calls the place. The whole registry; reach is applied
+    // by the app, on top.
+    places: () => __wrapOp("op_ctx_org_places")(),
+    // assignments() — who holds which position where, for the people who can
+    // reach this app. The roster, read.
+    assignments: () => __wrapOp("op_ctx_org_assignments")(),
   },
   storage: {
     // The app's asset store — uploaded files AND generated ones, one silo.
@@ -1593,6 +1661,12 @@ pub async fn run(
                                 }
                                 HostCall::OrgPeople { reply } => {
                                     let _ = reply.send(host.org_people().await);
+                                }
+                                HostCall::OrgPlaces { reply } => {
+                                    let _ = reply.send(host.org_places().await);
+                                }
+                                HostCall::OrgAssignments { reply } => {
+                                    let _ = reply.send(host.org_assignments().await);
                                 }
                             }
                         });
@@ -1878,6 +1952,7 @@ mod tests {
                 org_role: None,
                 teams: Vec::new(),
                 kind: CtxIdentityKind::User,
+                reach: crate::server::api::operating_graph::reach::Reach::nowhere(),
             },
             env: Default::default(),
         }
@@ -1919,6 +1994,10 @@ mod tests {
                 name: "Finance".into(),
             }],
             kind: CtxIdentityKind::User,
+            reach: crate::server::api::operating_graph::reach::Reach::everywhere(
+                "app-admin",
+                Vec::new(),
+            ),
         }
     }
 
@@ -1958,6 +2037,7 @@ mod tests {
             org_role: None,
             teams: Vec::new(),
             kind: CtxIdentityKind::User,
+            reach: crate::server::api::operating_graph::reach::Reach::nowhere(),
         })
         .unwrap();
         assert_eq!(

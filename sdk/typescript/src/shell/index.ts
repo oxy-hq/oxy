@@ -29,9 +29,11 @@ export { ShellRail } from "./ShellRail";
 export type {
   ShellContextApp,
   ShellContextData,
-  UseShellContextResult
+  ShellContextUser,
+  UseShellContextResult,
+  ViewerIdentity
 } from "./shellContext";
-export { useShellContext } from "./shellContext";
+export { useIdentity, useShellContext } from "./shellContext";
 export { ShellTooltip } from "./Tooltip";
 export { Breadcrumb, SystemIndicator, TopBar, WorkspaceClock } from "./TopBar";
 export type {

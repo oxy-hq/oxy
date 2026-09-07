@@ -13,6 +13,7 @@ const worker = (over: Partial<FrontlineWorker> = {}): FrontlineWorker => ({
   created_at: "2026-09-07T10:00:00Z",
   apps: [],
   locked_until: null,
+  assignments: [],
   ...over
 });
 

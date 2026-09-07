@@ -5,6 +5,45 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.0] - 2026-09-07
+
+### Added
+
+- **`ctx.org.places()` and `ctx.org.assignments()`.** The org's locations
+  (hierarchy via `parent_id` and a tenant-named `kind`, lifecycle `status`,
+  `timezone`, and `external_ids` — what Toast, a camera console or payroll
+  call the place) and the roster (who holds which position where, and under
+  whom). Same `org.read` capability as `people()`, same fail-closed refusal
+  without it; `assignments()` is scoped to people who can reach the app, as
+  `people()` is. Types `OxyOrgPlace` and `OxyOrgAssignment`. This is the
+  platform half of "where you work decides what you see": an app reads the
+  roster instead of keeping its own `staff` and `locations` tables. Design:
+  `internal-docs/operating-graph.md`.
+- **`ctx.user.reach`.** Where the caller may act, decided by the platform from
+  their assignments before the function runs: `{ everywhere, via, locations }`
+  — a system invocation, an app admin or a holder of an org-wide position
+  everywhere; an assigned person exactly their places; an unassigned member
+  everywhere and an unassigned frontline worker nowhere. A lookup failure
+  lands on nowhere.
+- **`@oxy-hq/sdk/ops`.** `reachOf`, `reaches`, `requireReach` (403
+  `OutOfReach`), `predicate` (the WHERE fragment), `isAdmin`, `adminOnly` —
+  Store Ops's `functions/access.ts` lifted into the SDK minus its roster SQL.
+  Tighten, never widen: an absent reach reads as nowhere, including for a
+  system invocation on a server without the graph.
+- **Place in the semantic model.** A view's primary entity may declare
+  `binding: { registry: locations, system: toast }`; with it,
+  `useWorldModelInstances` items carry `location` (`{ id, name, kind,
+  parent_id }`) when the key is mapped, `useWorldModelInstances(id, { scope:
+  "reach" })` keeps only the instances the viewer reaches (`withheld` counts
+  the rest), and `ctx.semantic.query({ ..., scope: "reach" })` — and the
+  browser semantic query with `scope: "reach"` in its body — pins the query to
+  the caller's places server-side. Toast order events now carry `location_id`
+  / `location_name` when the restaurant GUID is mapped.
+- **`useIdentity()`** (`@oxy-hq/sdk/shell`): the viewer in one shape on every
+  server version — `id`, `name`, `email` (`null` for the crew), `picture`,
+  `kind`, display-only `reach`. The shell context's `user` gains `id`, `kind`
+  and `reach` on servers that carry the graph.
+
 ## [2.11.0] - 2026-09-06
 
 Scenario forecasting: three metric-tree hooks for the what-if canvas, split by

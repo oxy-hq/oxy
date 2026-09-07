@@ -53,6 +53,9 @@ pub enum SemanticError {
     /// airlayer engine construction / compile validation failure.
     #[error("semantic engine error: {0}")]
     Engine(String),
+    /// A `binding:` on an entity that the operating graph cannot honour.
+    #[error("entity binding: {0}")]
+    Binding(String),
 }
 
 // ── YAML shim types ──────────────────────────────────────────────────────────
@@ -78,7 +81,7 @@ struct ViewShim {
     #[serde(default)]
     sql: Option<String>,
     #[serde(default)]
-    entities: Vec<airlayer::Entity>,
+    entities: Vec<EntityShim>,
     #[serde(default)]
     dimensions: Vec<airlayer::Dimension>,
     #[serde(default)]
@@ -93,6 +96,138 @@ struct ViewShim {
     /// the `check_data_freshness` tool). Must survive the shim round-trip.
     #[serde(default)]
     meta: Option<std::collections::HashMap<String, Vec<String>>>,
+}
+
+/// An entity as oxy YAML writes it: airlayer's shape plus `binding:`.
+///
+/// airlayer has no `binding` field and no `deny_unknown_fields`, so a bare
+/// `airlayer::Entity` would accept the key and silently drop it — the worst
+/// outcome for a declaration that decides which store a number lands on. The
+/// shim captures it and carries it through `Entity::meta` (`binding:
+/// [registry, system]`), which airlayer keeps verbatim, so no airlayer change
+/// is needed and every reader goes through [`entity_binding`].
+#[derive(Debug, Deserialize)]
+struct EntityShim {
+    #[serde(flatten)]
+    inner: airlayer::Entity,
+    #[serde(default)]
+    binding: Option<EntityBinding>,
+}
+
+/// `binding: { registry: locations, system: toast }` on a view's primary
+/// entity: this entity's key is what `system` calls one of the org's
+/// locations, so the platform can resolve a warehouse key to a place through
+/// `location_external_ids`. See `internal-docs/operating-graph.md` §3.6.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct EntityBinding {
+    /// The platform registry bound to. Only `locations` exists.
+    pub registry: String,
+    /// The integration whose ids the key carries — `toast`, `unifi`,
+    /// `payroll`: a lowercase token, the same shape the registry accepts.
+    pub system: String,
+}
+
+/// The `meta` key the binding travels under inside `airlayer::Entity`.
+pub const BINDING_META_KEY: &str = "binding";
+
+impl EntityBinding {
+    fn validate(&self, entity: &airlayer::Entity) -> Result<(), SemanticError> {
+        if self.registry != "locations" {
+            return Err(SemanticError::Binding(format!(
+                "entity `{}` binds to registry `{}`; only `locations` exists",
+                entity.name, self.registry
+            )));
+        }
+        let token_ok = !self.system.is_empty()
+            && self.system.len() <= 32
+            && self
+                .system
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-');
+        if !token_ok {
+            return Err(SemanticError::Binding(format!(
+                "entity `{}` binds system `{}`; a system is a short lowercase token like `toast`",
+                entity.name, self.system
+            )));
+        }
+        if !matches!(
+            entity.entity_type,
+            airlayer::schema::models::EntityType::Primary
+        ) {
+            return Err(SemanticError::Binding(format!(
+                "entity `{}` is bound but not primary; bind where the entity is defined",
+                entity.name
+            )));
+        }
+        if entity.get_keys().len() != 1 {
+            return Err(SemanticError::Binding(format!(
+                "entity `{}` is bound but has {} keys; a binding needs exactly one",
+                entity.name,
+                entity.get_keys().len()
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl EntityShim {
+    fn into_entity(self) -> Result<airlayer::Entity, SemanticError> {
+        let EntityShim { mut inner, binding } = self;
+        if let Some(binding) = binding {
+            binding.validate(&inner)?;
+            inner.meta.get_or_insert_with(Default::default).insert(
+                BINDING_META_KEY.to_string(),
+                vec![binding.registry, binding.system],
+            );
+        }
+        Ok(inner)
+    }
+}
+
+/// The binding an entity carries, if any. The one reader of the `meta` slot,
+/// so the spelling lives in exactly one place.
+pub fn entity_binding(entity: &airlayer::Entity) -> Option<EntityBinding> {
+    let slot = entity.meta.as_ref()?.get(BINDING_META_KEY)?;
+    match slot.as_slice() {
+        [registry, system] => Some(EntityBinding {
+            registry: registry.clone(),
+            system: system.clone(),
+        }),
+        _ => None,
+    }
+}
+
+/// A view whose primary entity is bound: the dimension its warehouse key
+/// lives in, and what that key means.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundView {
+    pub view: String,
+    pub entity: String,
+    /// The primary entity's single key — the dimension a scope filter binds.
+    pub key: String,
+    pub binding: EntityBinding,
+}
+
+/// Every bound view in the layer.
+pub fn bound_views(layer: &airlayer::SemanticLayer) -> Vec<BoundView> {
+    layer
+        .views
+        .iter()
+        .filter_map(|v| {
+            let e = v
+                .entities
+                .iter()
+                .find(|e| matches!(e.entity_type, airlayer::schema::models::EntityType::Primary))?;
+            let binding = entity_binding(e)?;
+            let key = e.get_keys().into_iter().next()?;
+            Some(BoundView {
+                view: v.name.clone(),
+                entity: e.name.clone(),
+                key,
+                binding,
+            })
+        })
+        .collect()
 }
 
 /// Intermediate topic representation for oxy YAML files.
@@ -130,7 +265,11 @@ pub fn parse_view_yaml(yaml: &str) -> Result<airlayer::View, SemanticError> {
         dialect: shim.dialect,
         table: shim.table,
         sql: shim.sql,
-        entities: shim.entities,
+        entities: shim
+            .entities
+            .into_iter()
+            .map(EntityShim::into_entity)
+            .collect::<Result<Vec<_>, _>>()?,
         dimensions: shim.dimensions,
         measures: shim.measures,
         segments: shim.segments,
@@ -483,6 +622,67 @@ mod tests {
         assert_eq!(v.datasource.as_deref(), Some("warehouse"));
         assert!(v.description.is_none());
         assert!(v.dimensions.is_empty());
+    }
+
+    #[test]
+    fn a_binding_survives_parsing_and_reads_back_through_one_door() {
+        let yaml = "name: sales\ntable: sales\nentities:\n  - name: store\n    type: primary\n    key: restaurant_id\n    binding: { registry: locations, system: toast }\n";
+        let v = parse_view_yaml(yaml).expect("valid view");
+        let store = &v.entities[0];
+        assert_eq!(
+            entity_binding(store),
+            Some(EntityBinding {
+                registry: "locations".into(),
+                system: "toast".into()
+            })
+        );
+        assert_eq!(store.key.as_deref(), Some("restaurant_id"));
+        let layer = airlayer::SemanticLayer {
+            views: vec![v],
+            topics: None,
+            motifs: None,
+            saved_queries: None,
+            metadata: None,
+        };
+        let bound = bound_views(&layer);
+        assert_eq!(bound.len(), 1);
+        assert_eq!(bound[0].view, "sales");
+        assert_eq!(bound[0].key, "restaurant_id");
+        assert_eq!(bound[0].binding.system, "toast");
+    }
+
+    #[test]
+    fn an_unbound_entity_binds_nothing() {
+        let yaml = "name: sales\ntable: sales\nentities:\n  - name: store\n    type: primary\n    key: restaurant_id\n";
+        let v = parse_view_yaml(yaml).expect("valid view");
+        assert_eq!(entity_binding(&v.entities[0]), None);
+    }
+
+    #[test]
+    fn a_binding_that_cannot_be_honoured_is_refused_at_parse() {
+        let cases = [
+            ("registry: warehouses, system: toast", "only `locations`"),
+            ("registry: locations, system: Toast", "lowercase"),
+            (
+                "registry: locations, system: toast }\n    keys: [a, b]\n    x: { y",
+                "exactly one",
+            ),
+        ];
+        for (binding, expect) in cases {
+            let yaml = format!(
+                "name: sales\ntable: sales\nentities:\n  - name: store\n    type: primary\n    key: restaurant_id\n    binding: {{ {binding} }}\n"
+            );
+            match parse_view_yaml(&yaml) {
+                Err(SemanticError::Binding(msg)) => assert!(msg.contains(expect), "{msg}"),
+                Err(SemanticError::Parse(_)) if expect == "exactly one" => {}
+                other => panic!("expected a binding refusal for {binding:?}, got {other:?}"),
+            }
+        }
+        // A foreign entity is a usage, not a definition.
+        let yaml = "name: sales\ntable: sales\nentities:\n  - name: store\n    type: foreign\n    key: restaurant_id\n    binding: { registry: locations, system: toast }\n";
+        assert!(
+            matches!(parse_view_yaml(yaml), Err(SemanticError::Binding(m)) if m.contains("primary"))
+        );
     }
 
     #[test]

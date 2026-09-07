@@ -71,6 +71,13 @@ pub enum Action {
     /// conflation this comment exists to prevent.
     ManageLocations,
     ManageOrgRoles,
+    /// Put a person in a position at a place, or take them out of one —
+    /// `org_role_members`. Same ring again: an assignment decides the shape of
+    /// the org's roster, and a store manager holding a position is not thereby
+    /// able to hand one to somebody else. Note the grantee side is NOT decided
+    /// here — an assignment names a member or an active frontline worker, and
+    /// the writer checks that standing the way the app access settings do.
+    ManageAssignments,
     /// Billing (Stripe portal / invoices / checkout) — a **real** org owner or
     /// admin. Mirrors the `OrgAdminStrict` guard: unlike member management, the
     /// cross-tenant global-operator override does NOT reach it (Oxy staff are
@@ -274,10 +281,11 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 40] = [
+    pub const ALL: [Action; 41] = [
         Action::OrgRead,
         Action::ManageLocations,
         Action::ManageOrgRoles,
+        Action::ManageAssignments,
         Action::MemberInvite,
         Action::MemberSetRole,
         Action::MemberRemove,
@@ -325,6 +333,7 @@ impl Action {
             Action::OrgRead => "org_read",
             Action::ManageLocations => "manage_locations",
             Action::ManageOrgRoles => "manage_org_roles",
+            Action::ManageAssignments => "manage_assignments",
             Action::MemberInvite => "member_invite",
             Action::MemberSetRole => "member_set_role",
             Action::MemberRemove => "member_remove",
@@ -372,7 +381,9 @@ impl Action {
         match self {
             Action::OrgRead => Ring::Read,
             Action::MemberInvite | Action::MemberSetRole | Action::MemberRemove => Ring::OrgAdmin,
-            Action::ManageLocations | Action::ManageOrgRoles => Ring::OrgAdmin,
+            Action::ManageLocations | Action::ManageOrgRoles | Action::ManageAssignments => {
+                Ring::OrgAdmin
+            }
             Action::OrgBilling => Ring::OrgAdminStrict,
             Action::OrgOwnerManage => Ring::OwnerOnly,
             Action::OrgReadStrict => Ring::MemberStrict,
@@ -2115,7 +2126,11 @@ mod policy_tests {
             admin_orgs: vec![org()],
             ..facts()
         };
-        for a in [Action::ManageLocations, Action::ManageOrgRoles] {
+        for a in [
+            Action::ManageLocations,
+            Action::ManageOrgRoles,
+            Action::ManageAssignments,
+        ] {
             assert!(allows(&org_admin, a, &Resource::org(org())));
         }
 
@@ -2126,7 +2141,11 @@ mod policy_tests {
             member_orgs: vec![org()],
             ..facts()
         };
-        for a in [Action::ManageLocations, Action::ManageOrgRoles] {
+        for a in [
+            Action::ManageLocations,
+            Action::ManageOrgRoles,
+            Action::ManageAssignments,
+        ] {
             assert!(!allows(&member, a, &Resource::org(org())));
         }
     }

@@ -78,6 +78,8 @@ async fn seed_org(db: &DatabaseConnection, label: &str) -> Org {
         status: ActiveValue::Set("open".into()),
         timezone: ActiveValue::Set("UTC".into()),
         external_id: ActiveValue::Set(None),
+        parent_id: ActiveValue::Set(None),
+        kind: ActiveValue::Set(None),
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
     }

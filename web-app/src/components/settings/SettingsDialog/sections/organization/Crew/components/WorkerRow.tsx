@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/shadcn/badge";
 import { TableCell, TableRow } from "@/components/ui/shadcn/table";
+import { assignmentLabel } from "@/libs/operatingGraph";
 import type { AppAccessSummary } from "@/types/appAccess";
 import type { FrontlineWorker } from "@/types/frontline";
 import { workerStanding } from "../utils";
@@ -58,6 +59,19 @@ export function WorkerRow({
           <span className='text-muted-foreground text-xs'>
             {worker.apps.length} {worker.apps.length === 1 ? "app" : "apps"}
           </span>
+        ) : (
+          <span className='text-muted-foreground text-xs'>None</span>
+        )}
+      </TableCell>
+      <TableCell data-label='Works at' className={CELL}>
+        {worker.assignments.length > 0 ? (
+          <div className='flex flex-wrap gap-1'>
+            {worker.assignments.map((a) => (
+              <Badge key={a.id} variant='outline' className='font-normal text-muted-foreground'>
+                {assignmentLabel(a)}
+              </Badge>
+            ))}
+          </div>
         ) : (
           <span className='text-muted-foreground text-xs'>None</span>
         )}

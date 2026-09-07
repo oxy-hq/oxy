@@ -75,17 +75,39 @@ pub async fn get_world_model_instances(
         Ok(l) => l,
         Err(resp) => return resp,
     };
+    // The graph, from the gate context this route already holds: no second
+    // connection, no second workspace read. Reach only when asked, and it
+    // goes into the scan rather than over the page.
+    let reach = if q.scope.as_deref() == Some("reach") {
+        Some(
+            crate::server::api::operating_graph::reach::reach_for_viewer(
+                &boundary.app.db,
+                boundary.app.org_id,
+                &boundary.app.user,
+                project_id,
+                q.app_id(),
+            )
+            .await,
+        )
+    } else {
+        None
+    };
+    let graph = crate::server::api::world_model_graph::GraphScope {
+        db: boundary.app.db.clone(),
+        org_id: boundary.app.org_id,
+        reach,
+    };
     match instances_core(
         boundary.proj_ctx.workspace_manager(),
         boundary.app.user.id,
         WorkspaceRole::Viewer,
         &layer,
-        project_id,
         boundary.scan.path_buf(),
         // No engine cache on this path: `enter_semantic_boundary` is
         // headers-driven and carries no `AppState`.
         None,
         &q,
+        Some(&graph),
     )
     .await
     {

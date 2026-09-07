@@ -45,6 +45,8 @@ describe("visibleNavGroups", () => {
       for (const denied of [
         "organization.general",
         "organization.crew",
+        "organization.locations",
+        "organization.positions",
         "organization.billing",
         "organization.integration",
         "workspace.databases",
@@ -107,6 +109,8 @@ describe("visibleNavGroups", () => {
         "organization.teams",
         "organization.app_access",
         "organization.crew",
+        "organization.locations",
+        "organization.positions",
         "organization.billing",
         "organization.integration",
         "workspace.members",
@@ -128,6 +132,8 @@ describe("visibleNavGroups", () => {
       expect(sections).toContain("organization.general");
       expect(sections).toContain("organization.teams");
       expect(sections).toContain("organization.crew");
+      expect(sections).toContain("organization.locations");
+      expect(sections).toContain("organization.positions");
       expect(sections).toContain("organization.integration");
       expect(sections).toContain("workspace.oxy_access");
     });

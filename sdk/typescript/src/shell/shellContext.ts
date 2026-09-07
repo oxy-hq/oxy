@@ -10,6 +10,7 @@
 // `crates/app/src/server/api/custom_apps_shell_context.rs`.
 
 import * as React from "react";
+import type { OxyReach } from "../custom-app/function-context";
 import { getOxyAppLogger } from "../custom-app/logger";
 import { useOxyApp } from "../custom-app/react";
 
@@ -39,7 +40,24 @@ export interface ShellContextData {
    *  (optional: absent on servers older than the link). */
   links: { home: string; threads: string; settings?: string };
   /** Viewer display identity; null on unauthenticated/local modes. */
-  user: { name: string; email: string; picture?: string | null } | null;
+  user: ShellContextUser | null;
+}
+
+/**
+ * The viewer, for display. `id`, `kind` and `reach` arrive on servers that
+ * carry the operating graph (2026-09-07 on) and are absent before — read them
+ * through `useIdentity()`, which fills the gaps with the fail-closed answer.
+ * None of this is a gate: the function's `ctx.user` is.
+ */
+export interface ShellContextUser {
+  name: string;
+  /** Empty for a frontline worker, who has no mailbox. */
+  email: string;
+  picture?: string | null;
+  id?: string;
+  /** `member` holds an org membership; `frontline` is a crew member. */
+  kind?: "member" | "frontline";
+  reach?: OxyReach | null;
 }
 
 export interface UseShellContextResult {
@@ -55,7 +73,7 @@ export interface UseShellContextResult {
  * endpoint), so errors are surfaced on the result, never thrown.
  */
 export function useShellContext(): UseShellContextResult {
-  const { projectId, fetcher } = useOxyApp();
+  const { projectId, appId, fetcher } = useOxyApp();
   const [state, setState] = React.useState<UseShellContextResult>({
     data: null,
     loading: true,
@@ -71,7 +89,10 @@ export function useShellContext(): UseShellContextResult {
       return;
     }
     let cancelled = false;
-    fetcher(`/api/projects/${projectId}/shell-context`, { method: "GET" })
+    // The bundle names its own app so the viewer's app-admin standing can be
+    // part of the display reach; an older server ignores the parameter.
+    const query = appId ? `?app=${encodeURIComponent(appId)}` : "";
+    fetcher(`/api/projects/${projectId}/shell-context${query}`, { method: "GET" })
       .then(async (resp) => {
         if (!resp.ok) {
           throw new Error(`shell-context failed: HTTP ${resp.status}`);
@@ -89,7 +110,42 @@ export function useShellContext(): UseShellContextResult {
     return () => {
       cancelled = true;
     };
-  }, [projectId, fetcher]);
+  }, [projectId, appId, fetcher]);
 
   return state;
+}
+
+/** What `useIdentity()` returns. */
+export interface ViewerIdentity {
+  id: string | null;
+  name: string;
+  /** `null` for a frontline worker — the crew signal, as in `ctx.user.email`. */
+  email: string | null;
+  picture: string | null;
+  kind: "member" | "frontline" | null;
+  /** Display-only reach; the fail-closed answer until the server says otherwise. */
+  reach: OxyReach;
+  loading: boolean;
+}
+
+const NOWHERE: OxyReach = { everywhere: false, via: null, locations: [] };
+
+/**
+ * The viewer, in one shape, on every server version: who is signed in, the
+ * crew-or-office signal, and where they work — for a greeting, a "your
+ * store" default, or hiding a tab. Never for authorization: a browser can
+ * edit what it renders, and the function's `ctx.user.reach` is the gate.
+ */
+export function useIdentity(): ViewerIdentity {
+  const { data, loading } = useShellContext();
+  const u = data?.user ?? null;
+  return {
+    id: u?.id ?? null,
+    name: u?.name ?? "",
+    email: u?.email ? u.email : null,
+    picture: u?.picture ?? null,
+    kind: u?.kind ?? null,
+    reach: u?.reach ?? NOWHERE,
+    loading
+  };
 }

@@ -106,6 +106,7 @@ export function KiosksPane({
             <TableHeader>
               <TableRow>
                 <TableHead className='px-4'>Name</TableHead>
+                <TableHead className='px-4'>Location</TableHead>
                 <TableHead className='px-4'>State</TableHead>
                 <TableHead className='px-4'>Opens</TableHead>
                 <TableHead className='w-12' />
@@ -119,6 +120,12 @@ export function KiosksPane({
                   <TableRow key={device.id} data-testid={`settings-crew-kiosk-${device.id}`}>
                     <TableCell data-label='Name' className='px-4 py-3 max-md:px-0 max-md:py-0'>
                       <span className='font-medium text-sm'>{device.name}</span>
+                    </TableCell>
+                    <TableCell
+                      data-label='Location'
+                      className='px-4 py-3 text-sm max-md:px-0 max-md:py-0'
+                    >
+                      {device.location_name ?? <span className='text-muted-foreground'>—</span>}
                     </TableCell>
                     <TableCell data-label='State' className='px-4 py-3 max-md:px-0 max-md:py-0'>
                       <div className='flex flex-col items-start gap-1'>

@@ -6,6 +6,8 @@ export type SettingsSection =
   | "organization.teams"
   | "organization.app_access"
   | "organization.crew"
+  | "organization.locations"
+  | "organization.positions"
   | "organization.billing"
   | "organization.integration"
   | "workspace.members"

@@ -251,7 +251,7 @@ pub async fn get_world_model_instances(
     layer_cache: SemanticLayerCacheCtx,
     engine_cache: SemanticEngineCacheCtx,
     axum::extract::State(_app_state): axum::extract::State<crate::server::router::AppState>,
-    Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
+    Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     axum::extract::Query(q): axum::extract::Query<WmInstancesQuery>,
 ) -> Result<extract::Json<WmInstancesResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     let semantics_path = workspace_manager.config_manager.semantics_scan_path();
@@ -275,10 +275,10 @@ pub async fn get_world_model_instances(
         user.id,
         role,
         &layer,
-        workspace_id,
         semantics_path,
         engine,
         &q,
+        None,
     )
     .await
     .map(extract::Json)
@@ -303,10 +303,10 @@ pub(crate) async fn instances_core(
     user_id: uuid::Uuid,
     role: WorkspaceRole,
     layer: &oxy_airlayer_compat::SemanticLayer,
-    _workspace_id: uuid::Uuid,
     scan_path: std::path::PathBuf,
     engine: Option<CachedEngine>,
     q: &WmInstancesQuery,
+    graph: Option<&GraphScope>,
 ) -> Result<WmInstancesResponse, (StatusCode, extract::Json<ErrorResponse>)> {
     let is_search = q.search.as_deref().is_some_and(|s| !s.is_empty());
     let view = primary_view_of(layer, &q.entity).ok_or_else(|| {
@@ -388,12 +388,20 @@ pub(crate) async fn instances_core(
     // For no-search: scan limit+1 to detect whether more records exist.
     let scan_limit = Some((q.limit as u64) + if is_search { 0 } else { 1 });
 
+    // Reach goes INTO the query, before the LIMIT: a viewer scoped to one
+    // store whose label sorts past the page must still get that store on
+    // page one, which a filter applied after the scan cannot promise.
+    let mut filters = search_filter;
+    if let Some(graph) = graph {
+        filters.extend(reach_filter(graph, view, &q.entity).await?);
+    }
+
     let semantic_config = SemanticQueryConfig {
         topic: None,
         dimensions: disp.dims.clone(),
         measures: vec![],
         time_dimensions: vec![],
-        filters: search_filter,
+        filters,
         orders: vec![SemanticOrder {
             field: order_by,
             direction: "asc".to_string(),
@@ -481,17 +489,24 @@ pub(crate) async fn instances_core(
             } else {
                 display
             };
-            WmInstanceItem { key, display }
+            WmInstanceItem {
+                key,
+                display,
+                location: None,
+            }
         })
         .collect();
 
     // For non-search we fetched limit+1 rows to detect overflow; trim to limit.
     let has_more = !is_search && all_items.len() > q.limit;
-    let items: Vec<WmInstanceItem> = if has_more {
+    let mut items: Vec<WmInstanceItem> = if has_more {
         all_items.into_iter().take(q.limit).collect()
     } else {
         all_items
     };
+    if let Some(graph) = graph {
+        attach_places(graph, view, &mut items).await;
+    }
     let total = items.len();
 
     let response = WmInstancesResponse {
@@ -633,7 +648,11 @@ pub async fn get_world_model_filter_instances(
             } else {
                 display
             };
-            WmInstanceItem { key, display }
+            WmInstanceItem {
+                key,
+                display,
+                location: None,
+            }
         })
         .collect();
 
@@ -2662,4 +2681,115 @@ pub(crate) async fn measure_breakdown_core(
     });
 
     Ok(rx)
+}
+
+/// The operating graph, as an instances request sees it: the org whose
+/// registry a bound entity resolves against, a handle to read it, and the
+/// viewer's reach when the listing is scoped. The customer-app route
+/// supplies it from the gate context it already holds; the workspace route
+/// passes nothing, so the IDE's instance list is the warehouse's view of
+/// the world and carries no places.
+pub struct GraphScope {
+    pub db: sea_orm::DatabaseConnection,
+    pub org_id: uuid::Uuid,
+    /// `Some` for `scope=reach`. An everywhere reach adds no filter.
+    pub reach: Option<crate::server::api::operating_graph::reach::Reach>,
+}
+
+fn bound_primary(
+    view: &oxy_airlayer_compat::View,
+) -> Option<(String, oxy_airlayer_compat::EntityBinding)> {
+    let e = view.entities.iter().find(|e| {
+        matches!(
+            e.entity_type,
+            oxy_airlayer_compat::schema::models::EntityType::Primary
+        )
+    })?;
+    let binding = oxy_airlayer_compat::entity_binding(e)?;
+    let key = e.get_keys().into_iter().next()?;
+    Some((key, binding))
+}
+
+/// The `in` filter that pins a scoped listing to the viewer's places: over
+/// the bound key, with the keys their places carry in the bound system, or
+/// one value no key equals. A scoped request on an entity that is not bound
+/// is refused — the same rule `semantic.query` applies — rather than
+/// answered whole.
+async fn reach_filter(
+    graph: &GraphScope,
+    view: &oxy_airlayer_compat::View,
+    entity: &str,
+) -> Result<Vec<SemanticFilter>, (StatusCode, extract::Json<ErrorResponse>)> {
+    use crate::server::api::operating_graph::binding::{
+        NO_REACH_SENTINEL, external_ids_for_locations,
+    };
+    let Some(reach) = graph.reach.as_ref() else {
+        return Ok(vec![]);
+    };
+    let Some((key, binding)) = bound_primary(view) else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            extract::Json(ErrorResponse {
+                message: format!(
+                    "scope `reach` needs entity '{entity}' bound to the locations registry"
+                ),
+            }),
+        ));
+    };
+    if reach.everywhere {
+        return Ok(vec![]);
+    }
+    let mut keys =
+        external_ids_for_locations(&graph.db, graph.org_id, &binding.system, &reach.locations)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    extract::Json(ErrorResponse {
+                        message: format!("reach could not be resolved: {e}"),
+                    }),
+                )
+            })?;
+    if keys.is_empty() {
+        keys.push(NO_REACH_SENTINEL.to_string());
+    }
+    Ok(vec![SemanticFilter {
+        field: format!("{}.{}", view.name, key),
+        filter_type: SemanticFilterType::In(agentic_semantic::config::ArrayFilter {
+            values: keys.into_iter().map(serde_json::Value::String).collect(),
+        }),
+    }])
+}
+
+/// When the entity is bound to the locations registry, name each instance's
+/// place. Best-effort: a lookup that fails leaves the items as they were,
+/// because a list of stores is still a list of stores without the mapping.
+async fn attach_places(
+    graph: &GraphScope,
+    view: &oxy_airlayer_compat::View,
+    items: &mut [WmInstanceItem],
+) {
+    use crate::server::api::operating_graph::binding::locations_by_external_ids;
+    let Some((_, binding)) = bound_primary(view) else {
+        return;
+    };
+    if items.is_empty() {
+        return;
+    }
+    let keys: Vec<String> = items.iter().map(|i| i.key.clone()).collect();
+    match locations_by_external_ids(&graph.db, graph.org_id, &binding.system, &keys).await {
+        Ok(places) => {
+            for item in items.iter_mut() {
+                item.location = places
+                    .get(&item.key)
+                    .map(|p| super::types::WmInstanceLocation {
+                        id: p.id,
+                        name: p.name.clone(),
+                        kind: p.kind.clone(),
+                        parent_id: p.parent_id,
+                    });
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "world model instances: places not resolved"),
+    }
 }

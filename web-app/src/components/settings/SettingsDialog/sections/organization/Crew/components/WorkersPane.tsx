@@ -103,6 +103,7 @@ export function WorkersPane({
                     <TableHead className='px-4'>Identifier</TableHead>
                     <TableHead className='px-4'>Status</TableHead>
                     <TableHead className='px-4'>Apps</TableHead>
+                    <TableHead className='px-4'>Works at</TableHead>
                     <TableHead className='px-4'>Enrolled</TableHead>
                     <TableHead className='w-12' />
                   </TableRow>

@@ -99,6 +99,15 @@ const ALLOWED_SEAMS: &[Seam] = &[
         prefix: "crate::server::service::secret_manager",
         why: "the workspace secret manager (function ctx.secrets, gate authentication).",
     },
+    Seam {
+        prefix: "crate::server::api::operating_graph",
+        why: "the operating graph — the org's places, positions and assignments, and the \
+               reach rule over them (internal-docs/operating-graph.md). The function runtime \
+               decides `ctx.user.reach` from it before the isolate starts (mod.rs), and \
+               `ctx.org.places()` / `ctx.org.assignments()` read it (host.rs). It is org \
+               data behind the app, like the secret manager: a platform fact every tenant's \
+               app consumes, never one an app writes.",
+    },
 ];
 
 /// Compute a file's module path (`crate::a::b`) from its path relative to `src/`.
