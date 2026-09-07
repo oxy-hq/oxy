@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.139] - 2026-09-07
+
+### 🚀 Features
+
+- The operating graph — places, positions, assignments, reach, and Place in the semantic model (slices one to three) (#3113)
+- Org settings before a workspace exists — the crew first, and a settings deep link (#3114)
+- Platform telemetry — OTLP traces + logs to ClickStack/HyperDX, flat JSON logs, semconv HTTP spans (#3115)
+- Custom-app functions — one trace per invocation, from the browser click to the warehouse query (#3118)
+
+### 📚 Documentation
+
+- Custom-app function telemetry on the platform trace — design (#3117)
+
 ## [0.5.138] - 2026-09-07
 
 ### 🚀 Features
@@ -47,6 +60,7 @@ All notable changes to this project will be documented in this file.
 - Remove 2 draft docs
 - @oxy-hq/sdk 2.11.0 (#3105)
 - The SDK publish skips a version that is already on the registry (#3107)
+- Release 0.5.138 (#3089)
 
 ## [0.5.137] - 2026-09-03
 
