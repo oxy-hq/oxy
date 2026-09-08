@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.140] - 2026-09-08
+
+### 🚀 Features
+
+- Llm calls — OpenTelemetry GenAI semconv on every model-call span, content capture opt-in, tenant context (#3119)
+- Custom-app functions — the host is the audit record for every OLTP and Airhouse write (#3121)
+- Audit log — append-only at the database, chain heads anchored hourly to S3 Object Lock (#3122)
+
+### 🐛 Bug Fixes
+
+- Http spans — readiness, liveness and health probes get no span and no log line (#3127)
+
+### 🚜 Refactor
+
+- Drop the execute module, relocate live utils to exec_runtime (Phase 4c) (#3070)
+
+### 📚 Documentation
+
+- Custom-app function observability — the Workers direction, gaps and five slices (#3125)
+
 ## [0.5.139] - 2026-09-07
 
 ### 🚀 Features
@@ -14,6 +34,10 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - Custom-app function telemetry on the platform trace — design (#3117)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.139 (#3116)
 
 ## [0.5.138] - 2026-09-07
 
