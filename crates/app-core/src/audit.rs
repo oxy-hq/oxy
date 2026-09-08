@@ -326,11 +326,74 @@ pub const AUDIT_RETENTION_DAYS: i64 = 30;
 /// and cheap to run often — it only ever touches rows past the cutoff.
 pub async fn prune_older_than(db: &DatabaseConnection, retain_days: i64) -> Result<u64, DbErr> {
     let cutoff = (Utc::now() - chrono::Duration::days(retain_days)).fixed_offset();
+    // The table is append-only at the database (a `BEFORE UPDATE OR DELETE`
+    // trigger); DELETE is opened for this transaction alone by the flag the
+    // trigger checks. `SET LOCAL` dies with the transaction, so nothing else on
+    // the connection inherits it.
+    let txn = db.begin().await?;
+    if txn.get_database_backend() == DatabaseBackend::Postgres {
+        txn.execute_unprepared(&format!("SET LOCAL {PRUNE_SETTING} = 'on'"))
+            .await?;
+    }
     let res = AuditEvents::delete_many()
         .filter(audit_events::Column::CreatedAt.lt(cutoff))
-        .exec(db)
+        .exec(&txn)
         .await?;
+    txn.commit().await?;
     Ok(res.rows_affected)
+}
+
+/// The transaction-scoped Postgres setting that lets the retention prune
+/// delete. Checked by the `audit_events_append_only` trigger.
+pub const PRUNE_SETTING: &str = "oxy.audit_prune";
+
+/// The current head of one chain: the row with the highest `seq` for an org.
+/// Rows recorded without an org are unchained (see the module doc) and are
+/// not heads; neither is a row without a hash.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChainHead {
+    pub org_id: Uuid,
+    pub seq: i64,
+    pub hash: String,
+    pub created_at: chrono::DateTime<chrono::FixedOffset>,
+}
+
+/// Every chain's head, one row per org, for anchoring outside the database.
+pub async fn chain_heads(db: &DatabaseConnection) -> Result<Vec<ChainHead>, DbErr> {
+    let rows = db
+        .query_all_raw(Statement::from_string(
+            db.get_database_backend(),
+            "SELECT DISTINCT ON (org_id) org_id, seq, hash, created_at \
+             FROM audit_events WHERE org_id IS NOT NULL AND hash IS NOT NULL \
+             ORDER BY org_id, seq DESC",
+        ))
+        .await?;
+    rows.iter()
+        .map(|r| {
+            Ok(ChainHead {
+                org_id: r.try_get("", "org_id")?,
+                seq: r.try_get("", "seq")?,
+                hash: r.try_get("", "hash")?,
+                created_at: r.try_get("", "created_at")?,
+            })
+        })
+        .collect()
+}
+
+/// The row at `seq` on an org's chain: `None` when no such row exists,
+/// `Some(hash)` when it does — with the hash itself `None` if the row carries
+/// no hash, which is a different finding from a missing row.
+pub async fn hash_at(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+    seq: i64,
+) -> Result<Option<Option<String>>, DbErr> {
+    Ok(AuditEvents::find()
+        .filter(audit_events::Column::Seq.eq(seq))
+        .filter(audit_events::Column::OrgId.eq(org_id))
+        .one(db)
+        .await?
+        .map(|m| m.hash))
 }
 
 /// Spawn a detached **daily** loop that prunes audit events past

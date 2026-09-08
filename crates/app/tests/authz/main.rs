@@ -17,6 +17,7 @@
 
 mod admin_membership_audit;
 mod app_scope_boundary;
+mod audit_append_only;
 mod authz_boundaries;
 mod authz_loader_differential;
 mod org_invitations;

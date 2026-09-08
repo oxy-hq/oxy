@@ -144,6 +144,6 @@ retries = 2
 # The real fix is porting these onto `common::fresh_db()`; see
 # `internal-docs/testing.md`. Until then they belong here.
 [[profile.default.overrides]]
-filter = "kind(test) & package(=oxy-app) & (binary(=authz) | binary(=slack) | binary(=platform)) & test(/^(authz_loader_differential|org_invitations|admin_membership_audit|slack_resolution|slack_oauth_state|slack_oauth_install|slack_uninstall|slack_user_links|slack_cross_org_collision|projects_query|local_mode_router|simulation_router)::/)"
+filter = "kind(test) & package(=oxy-app) & (binary(=authz) | binary(=slack) | binary(=platform)) & test(/^(authz_loader_differential|org_invitations|admin_membership_audit|audit_append_only|slack_resolution|slack_oauth_state|slack_oauth_install|slack_uninstall|slack_user_links|slack_cross_org_collision|projects_query|local_mode_router|simulation_router)::/)"
 test-group = "serial-db"
 retries = 2

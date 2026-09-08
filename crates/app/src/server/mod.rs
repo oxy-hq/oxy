@@ -3,6 +3,7 @@
 pub mod admission;
 pub mod api;
 pub mod app_function_executor;
+pub mod audit_anchor;
 pub mod authz;
 pub mod builder_test_runner;
 pub mod compile_config_gate;

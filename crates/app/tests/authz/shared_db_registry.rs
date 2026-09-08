@@ -3,15 +3,15 @@
 //!
 //! `oxy-app`'s six integration binaries are mixed. Most of what's in them is
 //! in-process — source scanning, router shape, pure authz decisions — and runs at
-//! full parallelism. Eleven modules are not. They reach the raw shared
+//! full parallelism. Twelve modules are not. They reach the raw shared
 //! `OXY_DATABASE_URL` with no per-test database, so they touch the same `public`
 //! schema that the `serial-db` members (`oxy`, `oxy-cameras`, `agentic-*`) run
 //! `Migrator::up` against, and one of them *writes* to `agentic_runs`. Those
-//! eleven are pinned into `serial-db` by an explicit list in
+//! twelve are pinned into `serial-db` by an explicit list in
 //! `.config/nextest.toml`.
 //!
 //! Two routes in, which is the reason this gate looks for more than one string:
-//! nine call `oxy::database::client::establish_connection()` directly, and
+//! ten call `oxy::database::client::establish_connection()` directly, and
 //! `projects_query`/`local_mode_router` reach it through `api_router(..)`.
 //!
 //! An explicit list is only as good as its freshness, and this one fails in the

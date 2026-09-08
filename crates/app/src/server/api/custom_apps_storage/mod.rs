@@ -59,7 +59,7 @@ mod local;
 pub mod metering;
 pub mod quota;
 pub mod retention;
-mod s3;
+pub(crate) mod s3;
 pub mod sweeper;
 #[cfg(test)]
 mod tests;

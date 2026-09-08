@@ -24,6 +24,9 @@ pub(crate) fn router() -> Router<AppState> {
         // Makes the tamper-evident chain actually falsifiable (review #9): walks
         // one org's chain in seq order and recomputes every link.
         .route("/audit/verify/{org_id}", get(verify_audit_chain))
+        // The chain checked against something the database cannot rewrite:
+        // the latest S3 Object Lock anchor (`server::audit_anchor`).
+        .route("/audit/anchor/{org_id}", get(verify_audit_anchor))
 }
 
 /// `GET /admin/audit/verify/{org_id}` — recompute an org's hash chain.
@@ -46,6 +49,37 @@ pub async fn verify_audit_chain(
             tracing::error!("admin/audit: chain verification failed: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })
+}
+
+/// `GET /admin/audit/anchor/{org_id}` — compare an org's chain with the most
+/// recent anchor written to S3 under Object Lock. `configured: false` when no
+/// anchor bucket is set.
+pub async fn verify_audit_anchor(
+    oxy_auth::extractor::AuthenticatedUserExtractor(actor): oxy_auth::extractor::AuthenticatedUserExtractor,
+    axum::extract::Path(org_id): axum::extract::Path<Uuid>,
+) -> Result<Json<crate::server::audit_anchor::AnchorReport>, StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("admin/audit: DB connect failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    // Same scope rule as the chain verifier: another tenant's anchor is a
+    // read of that tenant's audit trail.
+    crate::server::api::admin::scope::deny_out_of_scope(&db, &actor, org_id).await?;
+    let cfg = crate::server::audit_anchor::AnchorConfig::from_env();
+    let s3 = crate::server::api::custom_apps_storage::s3::client().await;
+    // A verification that cannot complete — an unlocked or lapsed object, a
+    // rewritten pointer, S3 unreachable — is itself what the operator came to
+    // learn, so it is a 200 with `present`/`matches` false and the reason in
+    // `detail`, not a bare 500 with the reason in a log line.
+    Ok(Json(
+        match crate::server::audit_anchor::verify_latest(&db, &s3, cfg.as_ref(), org_id).await {
+            Ok(report) => report,
+            Err(reason) => {
+                tracing::warn!(%org_id, %reason, "admin/audit: anchor verification failed");
+                crate::server::audit_anchor::AnchorReport::failed(org_id, reason)
+            }
+        },
+    ))
 }
 
 #[derive(Deserialize)]

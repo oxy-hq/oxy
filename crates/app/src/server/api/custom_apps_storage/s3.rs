@@ -16,10 +16,11 @@ use super::{ListPage, PutOptions, StorageError, StoredObject};
 /// Build an S3 client, honoring `AWS_ENDPOINT_URL` (LocalStack/MinIO) with
 /// path-style addressing — identical to the build store's client.
 ///
-/// `pub(super)` so `retention` can issue the bucket-lifecycle calls against the
-/// same endpoint configuration; a second client builder would be one more place
-/// for the MinIO path-style flag to be forgotten.
-pub(super) async fn client() -> S3Client {
+/// `pub(crate)` so `retention` (bucket-lifecycle calls) and
+/// `server::audit_anchor` (the Object Lock anchors) share the same endpoint
+/// configuration; a second client builder would be one more place for the
+/// MinIO path-style flag to be forgotten.
+pub(crate) async fn client() -> S3Client {
     let shared = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let mut builder = aws_sdk_s3::config::Builder::from(&shared);
     if std::env::var("AWS_ENDPOINT_URL")
