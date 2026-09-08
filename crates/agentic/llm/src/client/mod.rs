@@ -10,9 +10,11 @@ use super::constants::DEFAULT_MODEL;
 /// Text beyond this limit is truncated with a count suffix to keep log lines
 /// readable without losing all context for long outputs.
 const LLM_OUTPUT_PREVIEW_MAX_CHARS: usize = 2000;
+use super::genai::{self, GenAiContext, InferenceRequest};
 use super::{
     AnthropicProvider, Chunk, LlmError, LlmProvider, OpenAiCompatProvider, ThinkingConfig, Usage,
 };
+use tracing::Instrument as _;
 
 // ── LlmClient ─────────────────────────────────────────────────────────────────
 
@@ -36,21 +38,19 @@ use super::{
 #[derive(Clone)]
 pub struct LlmClient {
     provider: Arc<dyn LlmProvider>,
+    /// Stamped on every inference span — see [`GenAiContext`].
+    genai: Arc<GenAiContext>,
 }
 
 impl LlmClient {
     /// Create a client backed by [`AnthropicProvider`] with the default model.
     pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            provider: Arc::new(AnthropicProvider::new(api_key, DEFAULT_MODEL)),
-        }
+        Self::with_provider(AnthropicProvider::new(api_key, DEFAULT_MODEL))
     }
 
     /// Create a client backed by [`AnthropicProvider`] with a custom model.
     pub fn with_model(api_key: impl Into<String>, model: impl Into<String>) -> Self {
-        Self {
-            provider: Arc::new(AnthropicProvider::new(api_key, model)),
-        }
+        Self::with_provider(AnthropicProvider::new(api_key, model))
     }
 
     /// Create a client backed by [`OpenAiCompatProvider`] (Chat Completions API).
@@ -63,16 +63,63 @@ impl LlmClient {
         model: impl Into<String>,
         base_url: impl Into<String>,
     ) -> Self {
-        Self {
-            provider: Arc::new(OpenAiCompatProvider::new(api_key, model, base_url)),
-        }
+        Self::with_provider(OpenAiCompatProvider::new(api_key, model, base_url))
     }
 
     /// Create a client backed by a fully custom provider.
     pub fn with_provider(provider: impl LlmProvider + 'static) -> Self {
         Self {
             provider: Arc::new(provider),
+            genai: Arc::new(GenAiContext::default()),
         }
+    }
+
+    /// Attach who is asking, so every inference span carries the tenant,
+    /// conversation and agent for per-tenant accounting in the platform
+    /// trace store. Absent fields are simply not recorded.
+    pub fn with_genai_context(mut self, ctx: GenAiContext) -> Self {
+        self.genai = Arc::new(ctx);
+        self
+    }
+
+    /// The context stamped on inference spans.
+    pub fn genai_context(&self) -> &GenAiContext {
+        &self.genai
+    }
+
+    /// Open the provider stream inside `span`, recording a request-level
+    /// failure on it, and hand back the stream wrapped so the span also
+    /// learns the response (usage, finish reason, error class).
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn observed_stream(
+        &self,
+        span: &tracing::Span,
+        system: &str,
+        system_date_suffix: &str,
+        messages: &[Value],
+        tools: &[agentic_core::tools::ToolDef],
+        thinking: &ThinkingConfig,
+        response_schema: Option<&super::ResponseSchema>,
+        max_tokens_override: Option<u32>,
+    ) -> Result<genai::ChunkStream, LlmError> {
+        // Every caller already runs inside `span`; this only opens and wraps.
+        // The clock starts here, before the request leaves, so time to first
+        // chunk includes connect, upload and the provider's queue.
+        let started = std::time::Instant::now();
+        let stream = self
+            .provider
+            .stream(
+                system,
+                system_date_suffix,
+                messages,
+                tools,
+                thinking,
+                response_schema,
+                max_tokens_override,
+            )
+            .await
+            .inspect_err(|e| genai::record_error(span, e))?;
+        Ok(genai::observe(span.clone(), started, stream))
     }
 
     /// Build the message history for resuming after an `ask_user` suspension.
@@ -188,97 +235,127 @@ impl LlmClient {
         max_tokens: u32,
     ) -> Result<String, LlmError> {
         let messages = vec![json!({"role": "user", "content": user})];
-        let s = self
-            .provider
-            .stream(
+        let span = genai::inference_span(
+            &*self.provider,
+            &self.genai,
+            &InferenceRequest {
                 system,
-                "",
-                &messages,
-                &[],
-                &ThinkingConfig::Disabled,
-                None,
-                Some(max_tokens),
-            )
-            .await?;
+                messages: &messages,
+                max_tokens: Some(max_tokens),
+                tool_count: 0,
+                structured_output: false,
+                state: None,
+                round: None,
+            },
+        );
+        async {
+            let s = self
+                .observed_stream(
+                    &span,
+                    system,
+                    "",
+                    &messages,
+                    &[],
+                    &ThinkingConfig::Disabled,
+                    None,
+                    Some(max_tokens),
+                )
+                .await?;
 
-        let mut text = String::new();
-        let mut s = std::pin::pin!(s);
-        while let Some(chunk) = {
-            use tokio_stream::StreamExt as _;
-            s.next().await
-        } {
-            if let Chunk::Text(t) = chunk? {
-                text.push_str(&t)
+            let mut text = String::new();
+            let mut s = std::pin::pin!(s);
+            while let Some(chunk) = {
+                use tokio_stream::StreamExt as _;
+                s.next().await
+            } {
+                if let Chunk::Text(t) = chunk? {
+                    text.push_str(&t)
+                }
             }
-        }
 
-        if text.is_empty() {
-            return Err(LlmError::Parse("no text content in response".into()));
-        }
+            if text.is_empty() {
+                let err = LlmError::Parse("no text content in response".into());
+                genai::record_error(&span, &err);
+                return Err(err);
+            }
 
-        Ok(text)
+            Ok(text)
+        }
+        .instrument(span.clone())
+        .await
     }
 
     /// Like [`complete`] but also returns the [`Usage`] reported by the API.
     ///
     /// [`complete`]: LlmClient::complete
-    #[tracing::instrument(
-        skip_all,
-        fields(
-            oxy.name = "llm.call",
-            oxy.span_type = "llm",
-            gen_ai.request.model = %self.provider.model_name(),
-        )
-    )]
     pub async fn complete_with_usage(
         &self,
         system: &str,
         user: &str,
     ) -> Result<(String, Usage), LlmError> {
         let messages = vec![json!({"role": "user", "content": user})];
-        let s = self
-            .provider
-            .stream(
+        let span = genai::inference_span(
+            &*self.provider,
+            &self.genai,
+            &InferenceRequest {
                 system,
-                "",
-                &messages,
-                &[],
-                &ThinkingConfig::Disabled,
-                None,
-                None,
-            )
-            .await?;
-
-        let mut text = String::new();
-        let mut usage = Usage::default();
-
-        let mut s = std::pin::pin!(s);
-        while let Some(chunk) = {
-            use tokio_stream::StreamExt as _;
-            s.next().await
-        } {
-            match chunk? {
-                Chunk::Text(t) => text.push_str(&t),
-                Chunk::Done(u) => usage = u,
-                _ => {}
-            }
-        }
-
-        if text.is_empty() {
-            return Err(LlmError::Parse("no text content in response".into()));
-        }
-
-        tracing::info!(
-            name: "llm.usage",
-            is_visible = true,
-            prompt_tokens = usage.input_tokens as i64,
-            completion_tokens = usage.output_tokens as i64,
-            total_tokens = (usage.input_tokens + usage.output_tokens) as i64,
-            model = %self.provider.model_name(),
-            stop_reason = %format!("{:?}", usage.stop_reason),
+                messages: &messages,
+                max_tokens: None,
+                tool_count: 0,
+                structured_output: false,
+                state: None,
+                round: None,
+            },
         );
+        async {
+            let s = self
+                .observed_stream(
+                    &span,
+                    system,
+                    "",
+                    &messages,
+                    &[],
+                    &ThinkingConfig::Disabled,
+                    None,
+                    None,
+                )
+                .await?;
 
-        Ok((text, usage))
+            let mut text = String::new();
+            let mut usage = Usage::default();
+
+            let mut s = std::pin::pin!(s);
+            while let Some(chunk) = {
+                use tokio_stream::StreamExt as _;
+                s.next().await
+            } {
+                match chunk? {
+                    Chunk::Text(t) => text.push_str(&t),
+                    Chunk::Done(u) => usage = u,
+                    _ => {}
+                }
+            }
+
+            if text.is_empty() {
+                let err = LlmError::Parse("no text content in response".into());
+                genai::record_error(&span, &err);
+                return Err(err);
+            }
+
+            tracing::info!(
+                name: "llm.usage",
+                is_visible = true,
+                prompt_tokens = usage.input_tokens as i64,
+                completion_tokens = usage.output_tokens as i64,
+                total_tokens = (usage.input_tokens + usage.output_tokens) as i64,
+                model = %self.provider.model_name(),
+                stop_reason = %format!("{:?}", usage.stop_reason),
+            );
+
+            Ok((text, usage))
+        }
+        .instrument(span.clone())
+        .await
     }
 }
 

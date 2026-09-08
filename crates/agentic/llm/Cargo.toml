@@ -22,3 +22,4 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
+tracing-subscriber = { workspace = true }

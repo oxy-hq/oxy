@@ -68,4 +68,17 @@ pub trait LlmProvider: Send + Sync {
 
     /// The model identifier used by this provider (e.g. `"claude-sonnet-4-6"`).
     fn model_name(&self) -> &str;
+
+    /// `gen_ai.provider.name` for the span around every call: a semconv
+    /// well-known value (`anthropic`, `openai`, `azure.ai.openai`, …) or a
+    /// custom one. Defaults to `"custom"` for providers that do not say.
+    fn provider_name(&self) -> &str {
+        "custom"
+    }
+
+    /// The base URL the provider talks to, for `server.address` /
+    /// `server.port`. `None` when the provider has no fixed endpoint.
+    fn endpoint(&self) -> Option<&str> {
+        None
+    }
 }

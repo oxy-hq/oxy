@@ -52,6 +52,30 @@ Extended thinking (reasoning) uses opaque encrypted blobs:
 - `CoreEvent::ThinkingStart` / `ThinkingToken` / `ThinkingEnd` — per thinking block
 - `CoreEvent::ToolCall` / `ToolResult` — per tool invocation
 
+## Tracing: one span per HTTP round, two vocabularies
+
+`genai.rs` builds the span around every `provider.stream()` call (the three
+call sites in `client/`), and only it records the outcome. The span carries
+the product store's `oxy.name = "llm.call"` / `oxy.span_type = "llm"` **and**
+the OpenTelemetry GenAI conventions (`otel.name = "chat <model>"`,
+`gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.usage.*`,
+`gen_ai.response.finish_reasons`, `server.address`, `error.type`), pinned to
+`semantic-conventions-genai@94f432d7126f` — a Development-status spec, so an
+upstream rename is a deliberate edit here.
+
+- Prompt/completion content (`gen_ai.input.messages`, `gen_ai.system_instructions`,
+  `gen_ai.output.messages`) is **Opt-In**: only with `OXY_GENAI_CAPTURE_CONTENT=true`,
+  capped at 64 KB per attribute; tool-call arguments and tool results are
+  stripped from both the input history and the output, names stay. Default
+  off — the span also lands in the tenant-visible product store, which no
+  collector sits in front of.
+- Tenant / conversation / agent come from `LlmClient::with_genai_context`;
+  the analytics `BuildContext.genai` and the builder client builder set what
+  they know. Absent fields are not recorded.
+- A provider says who it is through `LlmProvider::provider_name` / `endpoint`
+  (defaults: `"custom"`, none); the three real providers map their host to the
+  semconv value (`api.openai.com` → `openai`, `*.openai.azure.com` → `azure.ai.openai`).
+
 ## Rules
 
 - Infrastructure crate — may be imported by any domain.

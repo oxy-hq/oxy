@@ -173,6 +173,8 @@ pub struct AnthropicProvider {
     /// (`/chat/completions`). All three therefore accept a model's `api_url`
     /// verbatim, which is a root in every vendor's config.
     base_url: String,
+    /// `gen_ai.provider.name`, resolved once from the endpoint.
+    provider_name: &'static str,
     /// Extra headers sent with every request, on top of the standard
     /// `x-api-key` / `anthropic-version` / `content-type` set.
     headers: HashMap<String, String>,
@@ -204,6 +206,7 @@ impl AnthropicProvider {
         Self {
             api_key: api_key.into(),
             model: model.into(),
+            provider_name: "anthropic",
             base_url: ANTHROPIC_BASE_URL.to_string(),
             headers: HashMap::new(),
             client: build_llm_http_client(),
@@ -229,6 +232,7 @@ impl AnthropicProvider {
         Self {
             api_key: api_key.into(),
             model: model.into(),
+            provider_name: crate::genai::provider_name_for_url(&base, "anthropic"),
             base_url: base,
             headers: HashMap::new(),
             client: build_llm_http_client(),
@@ -864,6 +868,14 @@ impl LlmProvider for AnthropicProvider {
 
     fn model_name(&self) -> &str {
         &self.model
+    }
+
+    fn provider_name(&self) -> &str {
+        self.provider_name
+    }
+
+    fn endpoint(&self) -> Option<&str> {
+        Some(&self.base_url)
     }
 }
 

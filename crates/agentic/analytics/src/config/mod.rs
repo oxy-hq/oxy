@@ -250,6 +250,10 @@ pub struct BuildContext {
     /// The local-rollup short-circuit. `None` when no rebuild worker is
     /// running (CLI, tests).
     pub preagg: Option<agentic_semantic::compile::PreaggContext>,
+    /// Stamped on every inference span the solver's clients open — the
+    /// agent, tenant and conversation for per-tenant accounting in the
+    /// platform trace store. See `agentic_llm::genai`.
+    pub genai: agentic_llm::GenAiContext,
 }
 
 // ── AgentConfig methods ───────────────────────────────────────────────────────
@@ -629,7 +633,7 @@ impl AgentConfig {
             azure_api_version,
             headers,
         };
-        let client = build_llm_client(spec);
+        let client = build_llm_client(spec).with_genai_context(build_ctx.genai.clone());
 
         // Build per-state clients for states that declare a `model:` override.
         // Inherits vendor / api_key / base_url / headers / azure from the global config.
@@ -641,7 +645,8 @@ impl AgentConfig {
                     let c = build_llm_client(LlmClientSpec {
                         model: state_model,
                         ..spec
-                    });
+                    })
+                    .with_genai_context(build_ctx.genai.clone());
                     (state_name.clone(), c)
                 })
             })
@@ -714,7 +719,8 @@ impl AgentConfig {
             let override_client = build_llm_client(LlmClientSpec {
                 model: override_model,
                 ..spec
-            });
+            })
+            .with_genai_context(build_ctx.genai.clone());
             solver = solver.with_client_override(override_client);
         }
         // `with_client_override` already sets `extended_thinking_active = true`

@@ -174,6 +174,8 @@ pub struct OpenAiCompatProvider {
     model: String,
     /// Full Chat Completions URL used for every request.
     completions_url: String,
+    /// `gen_ai.provider.name`, resolved once from the endpoint.
+    provider_name: &'static str,
     /// Extra headers sent with every request, on top of the standard
     /// `content-type` / `Authorization` pair. Gateways such as Portkey and
     /// Helicone authenticate or route on their own headers.
@@ -199,6 +201,7 @@ impl OpenAiCompatProvider {
         Self {
             api_key: api_key.into(),
             model: model.into(),
+            provider_name: crate::genai::provider_name_for_url(&base, "openai_compat"),
             completions_url: format!("{base}/chat/completions"),
             headers: HashMap::new(),
             client: build_llm_http_client(),
@@ -215,10 +218,12 @@ impl OpenAiCompatProvider {
         model: impl Into<String>,
         completions_url: impl Into<String>,
     ) -> Self {
+        let completions_url = completions_url.into();
         Self {
             api_key: api_key.into(),
             model: model.into(),
-            completions_url: completions_url.into(),
+            provider_name: crate::genai::provider_name_for_url(&completions_url, "openai_compat"),
+            completions_url,
             headers: HashMap::new(),
             client: build_llm_http_client(),
         }
@@ -619,6 +624,14 @@ impl LlmProvider for OpenAiCompatProvider {
 
     fn model_name(&self) -> &str {
         &self.model
+    }
+
+    fn provider_name(&self) -> &str {
+        self.provider_name
+    }
+
+    fn endpoint(&self) -> Option<&str> {
+        Some(&self.completions_url)
     }
 }
 

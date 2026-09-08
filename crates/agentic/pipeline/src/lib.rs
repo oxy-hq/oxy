@@ -1043,8 +1043,15 @@ async fn build_builder_llm_client(ctx: &dyn ProjectContext, model: Option<String
     } else {
         ctx.resolve_model(None, false).await
     };
+    let genai = agentic_llm::GenAiContext {
+        agent_name: Some("builder".to_string()),
+        workspace_id: Some(ctx.workspace_id())
+            .filter(|id| !id.is_nil())
+            .map(|id| id.to_string()),
+        ..Default::default()
+    };
     if let Some(info) = info {
-        return platform::build_llm_client(&info);
+        return platform::build_llm_client(&info).with_genai_context(genai);
     }
     tracing::warn!(
         model = ?model,

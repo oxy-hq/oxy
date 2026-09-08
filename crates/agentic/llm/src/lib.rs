@@ -19,8 +19,10 @@
 mod constants;
 pub use constants::DEFAULT_MODEL;
 
+pub mod genai;
 pub mod pricing;
 pub mod retry;
+pub use genai::GenAiContext;
 
 mod error;
 pub use error::LlmError;

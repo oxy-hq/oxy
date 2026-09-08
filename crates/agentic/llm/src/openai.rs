@@ -98,6 +98,8 @@ pub struct OpenAiProvider {
     /// Root of the Responses API, e.g. `"https://api.openai.com/v1"`.
     /// The `/responses` path is appended by [`Self::responses_url`].
     base_url: String,
+    /// `gen_ai.provider.name`, resolved once from the endpoint.
+    provider_name: &'static str,
     /// Extra headers sent with every request, on top of the standard
     /// `content-type` / `Authorization` pair.
     headers: HashMap<String, String>,
@@ -109,6 +111,7 @@ impl OpenAiProvider {
         Self {
             api_key: api_key.into(),
             model: model.into(),
+            provider_name: "openai",
             base_url: OPENAI_BASE_URL.to_string(),
             headers: HashMap::new(),
             client: build_llm_http_client(),
@@ -140,6 +143,7 @@ impl OpenAiProvider {
         Self {
             api_key: api_key.into(),
             model: model.into(),
+            provider_name: crate::genai::provider_name_for_url(&base, "openai"),
             base_url: base,
             headers: HashMap::new(),
             client: build_llm_http_client(),
@@ -564,6 +568,14 @@ impl LlmProvider for OpenAiProvider {
 
     fn model_name(&self) -> &str {
         &self.model
+    }
+
+    fn provider_name(&self) -> &str {
+        self.provider_name
+    }
+
+    fn endpoint(&self) -> Option<&str> {
+        Some(&self.base_url)
     }
 }
 

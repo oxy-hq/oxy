@@ -146,6 +146,11 @@ pub async fn start_pipeline(
         extra_connectors: params.connectors,
         extra_default_connector: params.default_connector,
         project_model_info: params.project_model,
+        genai: agentic_llm::GenAiContext {
+            agent_name: Some(params.agent_id.clone()),
+            workspace_id: Some(params.workspace_id.to_string()),
+            ..Default::default()
+        },
         schema_cache: params.schema_cache,
         thinking_override,
         model_override,
@@ -319,6 +324,11 @@ pub async fn resume_pipeline(
         extra_connectors: params.connectors,
         extra_default_connector: params.default_connector,
         project_model_info: params.project_model,
+        genai: agentic_llm::GenAiContext {
+            agent_name: Some(params.agent_id.clone()),
+            workspace_id: Some(params.workspace_id.to_string()),
+            ..Default::default()
+        },
         schema_cache: params.schema_cache,
         thinking_override,
         model_override,

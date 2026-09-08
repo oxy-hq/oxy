@@ -115,13 +115,21 @@ impl LlmClient {
             // then surfaced as `Span::current()` clone panics (ref_count==0)
             // in later sqlx queries on the coordinator — see the
             // cancel-race panic from `insert_event`.
-            let llm_span = tracing::info_span!(
-                "llm_round",
-                oxy.name = "llm.call",
-                oxy.span_type = "llm",
-                gen_ai.request.model = %self.provider.model_name(),
-                llm.state = %config.state,
-                llm.round = rounds,
+            // One span per HTTP round, in both vocabularies: the product
+            // store's `oxy.*` and the OTel GenAI conventions (`gen_ai.*`).
+            let state_name = config.state.to_string();
+            let llm_span = crate::genai::inference_span(
+                &*self.provider,
+                &self.genai,
+                &crate::genai::InferenceRequest {
+                    system,
+                    messages: &messages,
+                    max_tokens: effective_max_tokens,
+                    tool_count: tools.len(),
+                    structured_output: config.response_schema.is_some(),
+                    state: Some(&state_name),
+                    round: Some(rounds),
+                },
             );
 
             #[allow(clippy::type_complexity)]
@@ -151,8 +159,8 @@ impl LlmClient {
                 .await;
 
                 let s = self
-                    .provider
-                    .stream(
+                    .observed_stream(
+                        &llm_span,
                         system,
                         config.system_date_hint.as_deref().unwrap_or(""),
                         &messages,
