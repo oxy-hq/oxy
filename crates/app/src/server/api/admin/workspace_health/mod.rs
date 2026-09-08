@@ -67,7 +67,7 @@ pub struct WorkspaceHealthRow {
     org_name: Option<String>,
     status: String,
     reasons: Vec<String>,
-    /// Per-dimension breakdown (job liveness / pipeline / correctness / queue /
+    /// Per-dimension breakdown (job liveness / pipeline / queue /
     /// reconciliation), each with its own status. Served verbatim from the
     /// stored payload as opaque JSON — the read path does no live evaluation.
     dimensions: serde_json::Value,
@@ -341,5 +341,20 @@ mod tests {
         assert_eq!(parts.reconciliation.as_array().unwrap().len(), 1);
         assert_eq!(parts.smoke.as_array().unwrap().len(), 1);
         assert_eq!(parts.smoke_probes.as_array().unwrap().len(), 1);
+    }
+
+    /// Anomalies no longer vote on the verdict (see `evaluator::WorkspaceSignals`),
+    /// but the counts must still reach the Health tab — "visible, non-voting" is
+    /// the whole point, and dropping them from the DTO would silently make the
+    /// panel's anomaly rows read zero.
+    #[test]
+    fn anomaly_counts_still_reach_the_dto() {
+        let mut s = WorkspaceSignals::empty(uuid::Uuid::nil());
+        s.open_high_anomalies = 4;
+        s.open_medium_anomalies = 2;
+        let row = SignalsRow::from(&s);
+        let json = serde_json::to_value(&row).unwrap();
+        assert_eq!(json["open_high_anomalies"], 4);
+        assert_eq!(json["open_medium_anomalies"], 2);
     }
 }

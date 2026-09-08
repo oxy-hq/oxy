@@ -32,7 +32,6 @@ impl HealthStatus {
 pub enum HealthDimension {
     JobLiveness,
     Pipeline,
-    Correctness,
     Queue,
     Reconciliation,
     SmokeTest,
@@ -49,6 +48,12 @@ pub struct WorkspaceSignals {
     pub total_runs: i64,
     pub airway_last_run_failed: bool,
     pub airway_completed_with_errors: bool,
+    /// Open anomaly counts. Reported on the health panel but deliberately NOT
+    /// evaluated into any dimension: severity measures distance past the
+    /// seasonal envelope (`severity_from_headroom`), so a campaign, a holiday or
+    /// a new location scores High while nothing is broken. Correctness is
+    /// `reconcile.yml`'s job — it compares a measure against the live external
+    /// source, which is a defect signal rather than a business observation.
     pub open_high_anomalies: i64,
     pub open_medium_anomalies: i64,
     pub dead_letter_count: i64,
@@ -201,7 +206,6 @@ pub fn evaluate(s: &WorkspaceSignals, t: &HealthThresholds) -> WorkspaceHealth {
     let dimensions = vec![
         eval_job_liveness(s, t),
         eval_pipeline(s),
-        eval_correctness(s),
         eval_queue(s),
         eval_reconciliation(s),
         eval_smoke_test(s),
@@ -260,25 +264,6 @@ fn eval_pipeline(s: &WorkspaceSignals) -> DimensionResult {
         )
     } else {
         clear(HealthDimension::Pipeline)
-    }
-}
-
-fn eval_correctness(s: &WorkspaceSignals) -> DimensionResult {
-    if s.open_high_anomalies > 0 {
-        unhealthy(
-            HealthDimension::Correctness,
-            format!("{} open high-severity anomaly(ies)", s.open_high_anomalies),
-        )
-    } else if s.open_medium_anomalies > 0 {
-        degraded(
-            HealthDimension::Correctness,
-            format!(
-                "{} open medium-severity anomaly(ies)",
-                s.open_medium_anomalies
-            ),
-        )
-    } else {
-        clear(HealthDimension::Correctness)
     }
 }
 
@@ -448,13 +433,25 @@ mod tests {
         assert_eq!(t.min_runs_for_rate, 1);
     }
 
+    /// Anomalies are a business observation, not a defect signal: severity
+    /// measures distance past the seasonal envelope, so a marketing push or a
+    /// holiday scores High while the workspace is working perfectly. They are
+    /// reported as signal counts and deliberately do not vote on the verdict —
+    /// `reconcile.yml` is the correctness check that does.
     #[test]
-    fn high_anomaly_is_unhealthy() {
+    fn anomalies_do_not_move_the_verdict() {
         let mut s = base();
-        s.open_high_anomalies = 1;
+        s.open_high_anomalies = 7;
+        s.open_medium_anomalies = 3;
         let h = evaluate(&s, &HealthThresholds::default());
-        assert_eq!(h.status, HealthStatus::Unhealthy);
-        assert!(h.reasons.iter().any(|r| r.contains("high-severity")));
+        assert_eq!(h.status, HealthStatus::Healthy);
+        assert!(h.reasons.is_empty());
+        assert!(
+            !h.dimensions.iter().any(|d| format!("{:?}", d.dimension)
+                .to_lowercase()
+                .contains("correct")),
+            "the correctness dimension must be gone, not merely silent"
+        );
     }
 
     #[test]
@@ -670,7 +667,8 @@ mod tests {
     #[test]
     fn worst_dimension_wins() {
         let mut s = base();
-        s.open_medium_anomalies = 1; // degraded on correctness
+        s.total_runs = 10; // 3/10 = 30% -> degraded on job liveness
+        s.failed_runs = 3;
         s.dead_letter_count = 1; // unhealthy on queue
         assert_eq!(
             evaluate(&s, &HealthThresholds::default()).status,

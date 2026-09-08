@@ -20,7 +20,6 @@ import { SmokeTestSection } from "./SmokeTestSection";
 const DIMENSION_LABELS: Record<WorkspaceHealthDimensionKey, string> = {
   job_liveness: "Jobs",
   pipeline: "Pipeline",
-  correctness: "Correctness",
   queue: "Queue",
   reconciliation: "Reconciliation",
   smoke_test: "Smoke test",
@@ -153,6 +152,12 @@ export default function WorkspaceHealthPanel({ workspaceId }: { workspaceId: str
                 <dd>{health.signals ? airwayLabel(health.signals) : "—"}</dd>
               </div>
             </dl>
+            <p className='text-[11px] text-muted-foreground'>
+              Anomaly counts are informational — they do not affect the health status. Severity
+              measures how far a value sits past its seasonal band, so a campaign or a holiday
+              scores high while nothing is broken. Data-correctness failures surface under
+              Reconciliation.
+            </p>
           </section>
 
           {health.reconciliation.length > 0 ? (

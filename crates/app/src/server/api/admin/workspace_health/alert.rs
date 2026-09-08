@@ -361,8 +361,8 @@ mod tests {
     fn a_dimension_getting_worse_repages_before_the_interval() {
         // Degraded → unhealthy on a dimension we already paged about is a real
         // escalation, even though the set of failing dimensions is unchanged.
-        let alerted = vec![fail(HealthDimension::Correctness, Degraded)];
-        let now = vec![fail(HealthDimension::Correctness, Unhealthy)];
+        let alerted = vec![fail(HealthDimension::Reconciliation, Degraded)];
+        let now = vec![fail(HealthDimension::Reconciliation, Unhealthy)];
         let i = AlertInput {
             alerted_failures: Some(&alerted),
             next_failures: &now,

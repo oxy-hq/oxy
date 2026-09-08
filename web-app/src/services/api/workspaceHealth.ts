@@ -5,7 +5,6 @@ export type WorkspaceHealthStatus = "healthy" | "degraded" | "unhealthy";
 export type WorkspaceHealthDimensionKey =
   | "job_liveness"
   | "pipeline"
-  | "correctness"
   | "queue"
   | "reconciliation"
   | "smoke_test"
