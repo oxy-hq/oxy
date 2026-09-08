@@ -121,24 +121,26 @@ fn client_address(headers: &HeaderMap) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Request paths that get **no span and no log line**: the kubelet's
-/// readiness / liveness probes and the load balancer's health check. At the
+/// Request paths that get **no span and, when they succeed, no log line**:
+/// the kubelet's readiness / liveness probes and the load balancer's health
+/// check, exactly as the app routes them (the api router is nested at `/api`;
+/// a bare `/ready` is a 404, which kubelet counts as a failure — a documented
+/// incident — so it is deliberately *not* here and stays visible). At the
 /// chart's cadence (readiness every 5 s, liveness every 30 s, the ALB on top,
 /// per pod) they are the majority of all requests a fleet serves, so tracing
 /// them would fill the platform trace store — and the tenant-visible product
 /// store, which sees the same span — with hundreds of thousands of identical
-/// rows a day before a single user request. A probe that *fails* still logs:
-/// `on_failure` runs whether or not the request had a span.
-pub const PROBE_PATHS: &[&str] = &[
-    "/api/health",
-    "/api/ready",
-    "/api/live",
-    "/health",
-    "/ready",
-    "/live",
-];
+/// rows a day before a single user request.
+///
+/// A probe that does **not** succeed still logs: a 4xx as a `warn` from
+/// `on_response`, a 5xx as the `error` from `on_failure`. Those lines carry
+/// the status and latency but, having no span, no route, path or request id
+/// — they say "a probe", not which; the readiness handler logs the cause
+/// itself, and only probes are span-less.
+pub const PROBE_PATHS: &[&str] = &["/api/health", "/api/ready", "/api/live"];
 
-/// Whether a request path is one of [`PROBE_PATHS`] (exact match).
+/// Whether a request path is one of [`PROBE_PATHS`] (exact match). Callers
+/// pair it with a `GET` check: only a GET to these paths is a probe.
 pub fn is_probe(path: &str) -> bool {
     PROBE_PATHS.contains(&path)
 }
@@ -150,7 +152,10 @@ pub struct OxyMakeSpan {
 
 impl<B> MakeSpan<B> for OxyMakeSpan {
     fn make_span(&mut self, req: &Request<B>) -> Span {
-        if is_probe(req.uri().path()) {
+        // GET only: a `POST /api/health` is a 405 from a client, not a probe,
+        // and keeps its span (and the throttled paths that go with it) so an
+        // unauthenticated loop cannot write one unthrottled `warn` per hit.
+        if req.method() == http::Method::GET && is_probe(req.uri().path()) {
             return Span::none();
         }
         let method = req.method().as_str();
@@ -203,12 +208,24 @@ pub struct OxyOnResponse;
 
 impl<B> OnResponse<B> for OxyOnResponse {
     fn on_response(self, response: &Response<B>, latency: Duration, span: &Span) {
-        if span.is_none() {
-            return; // a probe: no span, no line (a failing one logs via `on_failure`)
-        }
         let status = response.status();
-        span.record("http.response.status_code", status.as_u16());
         let latency_ms = latency.as_millis() as u64;
+        if span.is_none() {
+            // A GET to a real probe path. Healthy: no line. A 4xx — a `421`
+            // from role routing, or an auth layer someone later puts in
+            // front — is exactly the case worth seeing; a 5xx is
+            // `on_failure`'s. (A misrouted bare `/ready` is not span-less:
+            // it is a 404 with a span and a line like any request.)
+            if status.is_client_error() {
+                tracing::warn!(
+                    status = status.as_u16(),
+                    latency_ms,
+                    "probe request did not succeed"
+                );
+            }
+            return;
+        }
+        span.record("http.response.status_code", status.as_u16());
         if status.is_server_error() {
             // Semconv for SERVER spans: only 5xx is an error; a 4xx is the
             // client's problem and leaves the status unset. `on_failure`
@@ -232,14 +249,20 @@ impl OnFailure<ServerErrorsFailureClass> for OxyOnFailure {
     fn on_failure(&mut self, class: ServerErrorsFailureClass, latency: Duration, span: &Span) {
         span.record("otel.status_code", "ERROR");
         let latency_ms = latency.as_millis() as u64;
+        // Only probes are span-less; say so, since the line has no route.
+        let what = if span.is_none() {
+            "probe request failed"
+        } else {
+            "request failed"
+        };
         match class {
             ServerErrorsFailureClass::StatusCode(code) => {
                 span.record("error.type", code.as_str());
-                tracing::error!(status = code.as_u16(), latency_ms, "request failed");
+                tracing::error!(status = code.as_u16(), latency_ms, "{what}");
             }
             ServerErrorsFailureClass::Error(err) => {
                 span.record("error.type", "transport");
-                tracing::error!(error = %err, latency_ms, "request failed");
+                tracing::error!(error = %err, latency_ms, "{what}");
             }
         }
     }
@@ -306,20 +329,38 @@ mod tests {
     }
 
     #[test]
-    fn probe_paths_are_exact_and_cover_both_prefix_forms() {
-        for p in [
-            "/api/health",
-            "/api/ready",
-            "/api/live",
-            "/health",
-            "/ready",
-            "/live",
-        ] {
-            assert!(is_probe(p), "{p}");
-        }
+    fn probe_paths_are_the_served_ones_only() {
+        assert!(is_probe("/api/health"));
+        assert!(is_probe("/api/ready"));
+        assert!(is_probe("/api/live"));
+        // A bare `/ready` is a 404 in the served shape — a misrouted probe
+        // must stay visible, so it is not a probe path.
+        assert!(!is_probe("/ready"));
         assert!(!is_probe("/api/healthz"));
         assert!(!is_probe("/api/ready/"));
         assert!(!is_probe("/api/threads"));
+    }
+
+    #[tokio::test]
+    async fn a_non_get_to_a_probe_path_is_not_a_probe_and_keeps_its_span() {
+        let (status, spans) = spans_for(
+            Request::builder()
+                .method("POST")
+                .uri("/api/ready")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(
+            spans.len(),
+            1,
+            "a 405 from a client is traced like any request"
+        );
+        assert_eq!(
+            attr(&spans[0], "http.response.status_code").as_deref(),
+            Some("405")
+        );
     }
 
     #[tokio::test]

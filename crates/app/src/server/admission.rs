@@ -98,12 +98,22 @@ fn tenant_counts() -> &'static DashMap<Uuid, usize> {
     COUNTS.get_or_init(DashMap::new)
 }
 
-/// Probes that must always be served regardless of load.
+/// The exemption decision: a `GET` to a probe path. Method-gated like the
+/// span layer, so a `POST /api/health` flood is a client's traffic and stays
+/// under the ceiling.
+fn is_probe_request(method: &axum::http::Method, path: &str) -> bool {
+    method == axum::http::Method::GET && is_probe(path)
+}
+
+/// Probes that must always be served regardless of load: the paths the
+/// telemetry layer treats as probes (one list, `oxy_telemetry::http_trace`)
+/// plus `/api/version`. The bare forms are kept for the pre-`/api` shape.
 fn is_probe(path: &str) -> bool {
-    matches!(
-        path,
-        "/health" | "/ready" | "/live" | "/version" | "/healthz" | "/readyz"
-    )
+    oxy_telemetry::http_trace::is_probe(path)
+        || matches!(
+            path,
+            "/api/version" | "/health" | "/ready" | "/live" | "/version" | "/healthz" | "/readyz"
+        )
 }
 
 /// The workspace id in an `/api/{workspace_id}/...` path, if any. Non-workspace
@@ -145,7 +155,7 @@ fn try_enter_tenant(ws: Uuid, cap: usize) -> Option<TenantGuard> {
 /// proxy work) but inside CORS (so the 503 still carries CORS headers).
 pub async fn admission_control(req: Request, next: Next) -> Response {
     let path = req.uri().path();
-    if is_probe(path) {
+    if is_probe_request(req.method(), path) {
         return next.run(req).await;
     }
 
@@ -203,13 +213,34 @@ mod tests {
     #[test]
     fn probes_are_exempt_from_shedding() {
         for p in [
-            "/health", "/ready", "/live", "/version", "/healthz", "/readyz",
+            "/api/health",
+            "/api/ready",
+            "/api/live",
+            "/api/version",
+            "/health",
+            "/ready",
+            "/live",
+            "/version",
+            "/healthz",
+            "/readyz",
         ] {
             assert!(is_probe(p), "{p} must be exempt from admission control");
         }
         for p in ["/api/x/threads", "/api/x/analytics/runs", "/ide", "/"] {
             assert!(!is_probe(p), "{p} must be subject to admission control");
         }
+    }
+
+    #[test]
+    fn only_a_get_to_a_probe_path_is_exempt() {
+        use axum::http::Method;
+        assert!(is_probe_request(&Method::GET, "/api/live"));
+        assert!(
+            !is_probe_request(&Method::POST, "/api/live"),
+            "a client's 405 is shed like any request"
+        );
+        assert!(!is_probe_request(&Method::HEAD, "/api/health"));
+        assert!(!is_probe_request(&Method::GET, "/api/x/threads"));
     }
 
     #[test]
