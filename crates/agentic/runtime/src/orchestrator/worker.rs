@@ -198,7 +198,7 @@ impl Worker {
     /// another worker (or this one, later) — claiming first would lock
     /// the row under us while we wait for capacity, defeating the cap.
     pub async fn run(&self) {
-        tracing::info!(target: "worker", "worker run loop started");
+        tracing::debug!(target: "worker", "worker run loop started");
         loop {
             // `acquire_owned` only errors if the Semaphore is closed; we
             // never close it, so the `expect` is structurally infallible.
@@ -221,7 +221,7 @@ impl Worker {
                 drop(permit);
             });
         }
-        tracing::info!(target: "worker", "assignment channel closed, shutting down");
+        tracing::debug!(target: "worker", "assignment channel closed, shutting down");
     }
 
     async fn handle_task(

@@ -364,7 +364,7 @@ pub async fn recover_pending_global_runs(
         {
             Ok(RecoveryOutcome::Drove) => {
                 driven += 1;
-                tracing::info!(target: "recovery", run_id = %s.run_id, "latency loop: drove Global run");
+                tracing::debug!(target: "recovery", run_id = %s.run_id, "latency loop: drove Global run");
             }
             Ok(RecoveryOutcome::Retired) => {}
             Err(e) => {
@@ -628,7 +628,7 @@ async fn recover_single_run_owned(
         .unwrap_or(-1)
         + 1;
     let is_fresh_seed = prior_event_count == 0;
-    tracing::info!(target: "recovery", run_id = %root.id, attempt, prior_event_count, "starting transparent recovery");
+    tracing::debug!(target: "recovery", run_id = %root.id, attempt, prior_event_count, "starting transparent recovery");
 
     // Delete partial events: find the last completed boundary and remove
     // everything after it. This cleans up step_started events that were
@@ -981,7 +981,7 @@ async fn recover_single_run_owned(
         retire_transport.retire_worker_loop();
     });
 
-    tracing::info!(
+    tracing::debug!(
         target: "recovery",
         run_id = %root.id,
         tree_size = tree.len(),

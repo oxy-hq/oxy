@@ -50,6 +50,10 @@ pub mod with_dispatch;
 /// something an operator acts on: HTTP frames, raw SQL, TLS handshakes. Both
 /// the stderr layers and the OTLP layers append this to whatever level the
 /// operator asked for, so raising `OXY_LOG_LEVEL=debug` stays readable.
+/// Measured on oxy-dev at debug (2026-09-08): the OpenTelemetry SDK narrating
+/// its own exports (`BatchSpanProcessor.ExportingDueToTimer`,
+/// `HttpClient.ExportStarted/Succeeded`) was ~9k lines an hour and the AWS SDK
+/// config/credential chain ~2.5k — none of it about oxy, all of it in the way.
 /// `RUST_LOG` / `OXY_OTEL_FILTER` bypass it entirely — the expert escape hatch.
 ///
 /// `custom_app_function` is not framework chatter but a privacy boundary: it
@@ -61,7 +65,10 @@ pub mod with_dispatch;
 pub const NOISY_CRATE_DIRECTIVES: &str = "tower_http=warn,h2=warn,hyper=warn,hyper_util=warn,\
      reqwest=warn,sqlx=warn,sea_orm=warn,tonic=warn,rustls=warn,tokio_postgres=warn,\
      tungstenite=warn,tokio_tungstenite=warn,deser_incomplete=off,\
-     custom_app_function=warn";
+     custom_app_function=warn,\
+     opentelemetry=warn,opentelemetry_sdk=warn,opentelemetry-otlp=warn,opentelemetry-http=warn,\
+     aws_config=warn,aws_runtime=warn,aws_smithy_runtime=warn,aws_smithy_runtime_api=warn,\
+     aws_smithy_http=warn,aws_sdk_s3=warn,aws_sdk_sesv2=warn,tower=warn,hyper_rustls=warn";
 
 /// `"{level},{NOISY_CRATE_DIRECTIVES}"` — the directive string both the stderr
 /// and the export filters are built from when the operator gives only a level.

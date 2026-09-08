@@ -246,6 +246,36 @@ pub fn spawn(db: DatabaseConnection, shutdown: CancellationToken) {
     });
 }
 
+/// How long one workspace's `summarize failed` stays at `debug` after a `warn`.
+const SUMMARIZE_FAILURE_WARN_EVERY: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// `true` when this workspace has not been warned about in the last hour, and
+/// records the warn. Process-wide, so every alerter tick shares the clock.
+fn summarize_failure_is_new(workspace_id: Uuid, now: Instant) -> bool {
+    static LAST: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<Uuid, Instant>>> =
+        std::sync::OnceLock::new();
+    let mut last = LAST
+        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    warn_is_due(&mut last, workspace_id, now)
+}
+
+/// The throttle decision, separated from the process-wide map for tests.
+fn warn_is_due(
+    last: &mut std::collections::HashMap<Uuid, Instant>,
+    workspace_id: Uuid,
+    now: Instant,
+) -> bool {
+    match last.get(&workspace_id) {
+        Some(prev) if now.duration_since(*prev) < SUMMARIZE_FAILURE_WARN_EVERY => false,
+        _ => {
+            last.insert(workspace_id, now);
+            true
+        }
+    }
+}
+
 /// One pass of the alert detector. Public so tests can drive it
 /// deterministically.
 pub async fn alerter_tick(db: &DatabaseConnection, state: &mut AlertState) -> ServiceResult<()> {
@@ -273,11 +303,19 @@ pub async fn alerter_tick(db: &DatabaseConnection, state: &mut AlertState) -> Se
         let summary = match camera_health::summarize_for_workspace(db, workspace_id).await {
             Ok(rows) => rows,
             Err(e) => {
-                warn!(
-                    workspace_id = %workspace_id,
-                    error = %e,
-                    "alerter: summarize failed"
-                );
+                // Once an hour per workspace at `warn`; the tick is every
+                // few seconds and a workspace without an Airhouse tenant
+                // fails the same way on every one of them (measured: ~530
+                // identical warns an hour on oxy-dev).
+                if summarize_failure_is_new(workspace_id, now) {
+                    warn!(
+                        workspace_id = %workspace_id,
+                        error = %e,
+                        "alerter: summarize failed (repeats for this workspace are logged at debug for the next hour)"
+                    );
+                } else {
+                    tracing::debug!(workspace_id = %workspace_id, error = %e, "alerter: summarize failed");
+                }
                 continue;
             }
         };
@@ -544,5 +582,38 @@ mod transition_tests {
         // Operator already got the first signal when ok → degraded.
         // degraded → stale is "still bad," not a new problem.
         assert!(!should_alert_on_transition("degraded", "stale"));
+    }
+}
+
+#[cfg(test)]
+mod summarize_throttle_tests {
+    use super::*;
+
+    #[test]
+    fn a_workspace_is_warned_about_once_an_hour() {
+        let mut last = std::collections::HashMap::new();
+        let ws = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let t0 = Instant::now();
+        assert!(warn_is_due(&mut last, ws, t0), "first failure warns");
+        assert!(!warn_is_due(
+            &mut last,
+            ws,
+            t0 + std::time::Duration::from_secs(5)
+        ));
+        assert!(!warn_is_due(
+            &mut last,
+            ws,
+            t0 + std::time::Duration::from_secs(59 * 60)
+        ));
+        assert!(
+            warn_is_due(&mut last, other, t0),
+            "another workspace is independent"
+        );
+        assert!(warn_is_due(
+            &mut last,
+            ws,
+            t0 + SUMMARIZE_FAILURE_WARN_EVERY + std::time::Duration::from_secs(1)
+        ));
     }
 }

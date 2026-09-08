@@ -95,7 +95,7 @@ impl Coordinator {
             TaskOutcome::Cancelled => "Cancelled",
             TaskOutcome::Deferred { .. } => "Deferred",
         };
-        tracing::info!(target: "coordinator", task_id, outcome_type, "handle_outcome");
+        tracing::debug!(target: "coordinator", task_id, outcome_type, "handle_outcome");
         match outcome {
             // Unreachable by construction: the worker converts `Deferred` into
             // `WorkerMessage::Defer` and never forwards it as an outcome. If it

@@ -384,7 +384,7 @@ pub(crate) async fn flush_all(buffers: &Mutex<Buffers>, sink: &dyn Sink) {
         let started = std::time::Instant::now();
         match sink.write_events(ws, &rows).await {
             Ok(()) => {
-                tracing::info!(
+                tracing::debug!(
                     workspace_id = %ws,
                     stream = "events",
                     rows = n,
@@ -427,7 +427,7 @@ pub(crate) async fn flush_all(buffers: &Mutex<Buffers>, sink: &dyn Sink) {
         let started = std::time::Instant::now();
         match sink.write_camera_health(ws, &rows).await {
             Ok(()) => {
-                tracing::info!(
+                tracing::debug!(
                     workspace_id = %ws,
                     stream = "camera_health",
                     rows = n,
@@ -470,7 +470,7 @@ pub(crate) async fn flush_all(buffers: &Mutex<Buffers>, sink: &dyn Sink) {
         let started = std::time::Instant::now();
         match sink.write_box_health(ws, &rows).await {
             Ok(()) => {
-                tracing::info!(
+                tracing::debug!(
                     workspace_id = %ws,
                     stream = "box_health",
                     rows = n,

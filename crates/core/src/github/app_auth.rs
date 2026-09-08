@@ -7,7 +7,7 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use std::env;
-use tracing::info;
+use tracing::debug;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct AppTokenClaims {
@@ -185,7 +185,7 @@ impl GitHubAppAuth {
     }
 
     pub async fn get_installation_token(&self, installation_id: &str) -> Result<String, OxyError> {
-        info!(
+        debug!(
             "Getting installation token for installation ID: {}",
             installation_id
         );
@@ -219,7 +219,7 @@ impl GitHubAppAuth {
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Failed to parse token response: {e}")))?;
 
-        info!(
+        debug!(
             "Successfully obtained installation token, expires at: {}",
             token_response.expires_at
         );

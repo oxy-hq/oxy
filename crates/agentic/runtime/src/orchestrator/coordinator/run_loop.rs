@@ -13,7 +13,7 @@ impl Coordinator {
     /// Processes messages from the transport until all tasks are terminal
     /// or the transport is closed.
     pub async fn run(&mut self) {
-        tracing::info!(target: "coordinator", task_count = self.tasks.len(), "run loop started");
+        tracing::debug!(target: "coordinator", task_count = self.tasks.len(), "run loop started");
         loop {
             let has_active = self.tasks.values().any(|t| {
                 matches!(
@@ -24,7 +24,7 @@ impl Coordinator {
                 )
             });
             if !has_active && !self.tasks.is_empty() {
-                tracing::info!(target: "coordinator", "all tasks terminal, shutting down");
+                tracing::debug!(target: "coordinator", "all tasks terminal, shutting down");
                 break;
             }
 

@@ -920,7 +920,7 @@ fn spawn_latency_worker(
                         n = tick => n,
                     };
                     if n > 0 {
-                        tracing::info!(
+                        tracing::debug!(
                             target: "recovery",
                             picked_up = n,
                             mode = mode.label(),
