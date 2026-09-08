@@ -258,6 +258,7 @@ impl ProjectContext for OxyProjectContext {
             user_id,
             role,
             self.runner_preagg(RollupFreshness::ServeStale),
+            self.semantic_scan_root(),
         ))
     }
 
@@ -287,6 +288,12 @@ impl ProjectContext for OxyProjectContext {
             uuid::Uuid::nil(),
             WorkspaceRole::Owner,
             self.runner_preagg(RollupFreshness::RequireFresh),
+            // The compile-boundary scan root when this context carries one.
+            // Without it the runner parses the semantic model out of
+            // `working_copy().root()`, and every caller of this accessor is a
+            // background one that may be running where that directory is not —
+            // or, for workspace health, where it holds edits nobody promoted.
+            self.semantic_scan_root(),
         ))
     }
 

@@ -102,6 +102,51 @@ pub async fn scan_dir<S: DiskSlot>(
         return scan_dir_for_empty_revision(config_manager);
     }
 
+    materialise(&views, &topics).await
+}
+
+/// The scan directory for the COMPILED revision and nothing else.
+///
+/// [`scan_dir`] falls back to this node's working copy twice — when the manager
+/// reads from disk at all, and when a promoted revision has no semantic rows
+/// (where preferring the files on disk avoids reporting absence as emptiness).
+/// Both are right for a reader that SERVES what the IDE is editing.
+///
+/// Both are wrong for a reader that JUDGES the workspace. The workspace-health
+/// eval is the one such reader: it can land on a node that holds a working
+/// copy, and that working copy holds whatever someone is editing right now. A
+/// half-written view there would page the on-call about a workspace whose
+/// promoted revision — and so everything actually being served — is fine. So
+/// health asks here, and takes `NoSource` as the answer when nothing is
+/// compiled: no opinion beats an opinion about the wrong files.
+pub async fn compiled_scan_dir<S: DiskSlot>(
+    config_manager: &ConfigManager<S>,
+) -> Result<ScanDir, ArtifactError> {
+    let (Some(views), Some(topics)) = (
+        config_manager.compiled_semantic_views().await?,
+        config_manager.compiled_semantic_topics().await?,
+    ) else {
+        return Err(ArtifactError::NoSource);
+    };
+
+    // A promoted revision with zero semantic rows is a complete answer, and the
+    // only one this caller may act on: the workspace models nothing. An empty
+    // scan dir states exactly that, and the probes that need a measure report
+    // it as nothing-to-check rather than as a failure.
+    if views.is_empty() && topics.is_empty() {
+        return empty_scan_dir();
+    }
+
+    materialise(&views, &topics).await
+}
+
+/// Write compiled rows into the tempdir layout airlayer expects. Shared by both
+/// resolvers so the two can only differ in WHICH source they accept, never in
+/// how a compiled one is laid out.
+async fn materialise(
+    views: &[CompiledArtifact],
+    topics: &[CompiledArtifact],
+) -> Result<ScanDir, ArtifactError> {
     let dir = TempDir::new().map_err(io_err)?;
     let scan_path = dir.path().join("semantics");
     let views_dir = scan_path.join("views");
@@ -113,10 +158,10 @@ pub async fn scan_dir<S: DiskSlot>(
         .await
         .map_err(io_err)?;
 
-    write_artifacts(&views, &views_dir, "view.yml")
+    write_artifacts(views, &views_dir, "view.yml")
         .await
         .map_err(io_err)?;
-    write_artifacts(&topics, &topics_dir, "topic.yml")
+    write_artifacts(topics, &topics_dir, "topic.yml")
         .await
         .map_err(io_err)?;
 

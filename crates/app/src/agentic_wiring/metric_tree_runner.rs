@@ -95,7 +95,7 @@ pub struct OxyMetricTreeRunner {
     /// not exist — they materialise the compiled layer from the compile
     /// boundary into a tempdir and point the runner at it. The caller MUST
     /// keep the tempdir guard alive for the duration of the run.
-    scan_path_override: Option<PathBuf>,
+    scan_root: ScanRoot,
     /// The shared engine cache, when the caller could reach one.
     ///
     /// `None` on the paths that build a runner without an `AppState` to take
@@ -125,7 +125,7 @@ impl OxyMetricTreeRunner {
             role,
             preagg: RunnerPreagg::default(),
             default_timezone: std::sync::OnceLock::new(),
-            scan_path_override: None,
+            scan_root: ScanRoot::WorkingCopy,
             engine_cache: None,
         }
     }
@@ -224,21 +224,40 @@ impl OxyMetricTreeRunner {
     /// The `scan_path` must remain valid for the lifetime of every run (hold
     /// the `ScanDir` tempdir guard in the caller).
     pub fn with_scan_path(mut self, scan_path: PathBuf) -> Self {
-        self.scan_path_override = Some(scan_path);
+        self.scan_root = ScanRoot::Compiled(scan_path);
         self
     }
 
-    /// The directory the semantic model is parsed from: the override when set
-    /// (compile boundary), else this node's working copy. `None` means neither
-    /// exists — a stateless replica that was not handed a materialised root.
+    /// Refuse this node's working copy outright: with no compile-boundary root,
+    /// answer with nothing rather than with whatever is on disk here. See
+    /// [`ScanRoot::Unavailable`].
+    pub fn without_working_copy_fallback(mut self) -> Self {
+        if matches!(self.scan_root, ScanRoot::WorkingCopy) {
+            self.scan_root = ScanRoot::Unavailable;
+        }
+        self
+    }
+
+    /// The directory the semantic model is parsed from — see [`ScanRoot`].
+    /// `None` means there is nothing this runner is allowed to read.
     fn effective_scan_path(&self) -> Option<PathBuf> {
-        match &self.scan_path_override {
-            Some(p) => Some(p.clone()),
-            None => self
+        match &self.scan_root {
+            ScanRoot::Compiled(p) => Some(p.clone()),
+            ScanRoot::Unavailable => None,
+            ScanRoot::WorkingCopy => self
                 .workspace_manager
                 .config_manager
                 .working_copy()
-                .map(|wc| wc.root().to_path_buf()),
+                .map(|wc| wc.root().to_path_buf())
+                // The slot being FULL does not mean the files are here:
+                // `effective_workspace_path` returns the database column
+                // without stat-ing it, so on a stateless replica this arm
+                // always yielded a path and airlayer reported the workspace
+                // root as an I/O fault (`failed to read <root>: No such file
+                // or directory`). That reads as a broken workspace. `None`
+                // instead, so the caller's error names the real cause: no scan
+                // root was resolved on this node.
+                .filter(|root| root.is_dir()),
         }
     }
 
@@ -282,12 +301,7 @@ impl OxyMetricTreeRunner {
 impl MetricTreeRunner for OxyMetricTreeRunner {
     async fn load_layer(&self) -> Result<SemanticLayer, MetricTreeRunnerError> {
         let scan_path = self.effective_scan_path().ok_or_else(|| {
-            MetricTreeRunnerError::LayerLoad(
-                "no semantic scan root on this node — resolve one through the \
-                 compile boundary (with_scan_path) or run where the working \
-                 copy lives"
-                    .to_string(),
-            )
+            MetricTreeRunnerError::LayerLoad(self.scan_root.unavailable_reason().to_string())
         })?;
         oxy_airlayer_compat::load_layer_from_dir(&scan_path)
             .map_err(|e| MetricTreeRunnerError::LayerLoad(e.to_string()))
@@ -1322,6 +1336,46 @@ fn rows_to_maps(rows: Vec<Vec<String>>) -> Vec<Map<String, Value>> {
     .collect()
 }
 
+/// Where a metric-tree runner parses the semantic model from.
+///
+/// The three answers are not "a path or not": they are three different callers.
+/// The IDE reads what is in front of the user; the stateless fleet reads what
+/// the compile boundary handed it; workspace health reads the promoted revision
+/// or nothing, because its job is to judge the workspace and the working copy
+/// is whatever someone is editing right now.
+#[derive(Debug, Clone)]
+pub enum ScanRoot {
+    /// Whatever this node has on disk. The IDE, local mode, and any caller that
+    /// resolved nothing — reading the editable copy is the point.
+    WorkingCopy,
+    /// A root the caller resolved through the compile boundary. Valid only
+    /// while the caller's `ScanDir` guard lives: a materialised scan is a
+    /// tempdir.
+    Compiled(PathBuf),
+    /// The caller requires the compile boundary and none was available. Falling
+    /// back would answer with files the caller has said it must not judge, so
+    /// answer with nothing instead.
+    Unavailable,
+}
+
+impl ScanRoot {
+    /// Why `effective_scan_path` came back empty, worded for whoever reads the
+    /// failure — an operator in a health alert, a developer in a 500.
+    fn unavailable_reason(&self) -> &'static str {
+        match self {
+            Self::Unavailable => {
+                "the semantic model is not compiled for this workspace — this check reads the \
+                 promoted revision only and will not fall back to a working copy, which may \
+                 hold uncommitted edits"
+            }
+            _ => {
+                "no semantic scan root on this node — resolve one through the compile boundary \
+                 (with_scan_path) or run where the working copy lives"
+            }
+        }
+    }
+}
+
 /// Construct an `Arc<dyn MetricTreeRunner>` from a workspace + user + role
 /// triple. Used by [`crate::agentic_wiring::OxyProjectContext::metric_tree_runner`]
 /// to populate the agentic platform port.
@@ -1330,13 +1384,18 @@ pub fn make_runner(
     user_id: Uuid,
     role: WorkspaceRole,
     preagg: RunnerPreagg,
+    scan_root: ScanRoot,
 ) -> Arc<dyn MetricTreeRunner> {
     // The runner only needs the read capability; `into_read_only` keeps the
     // working copy, so the FS scan-path fallback still works on this node.
-    Arc::new(
-        OxyMetricTreeRunner::new(workspace_manager.into_read_only(), user_id, role)
-            .with_preagg_ctx(preagg),
-    )
+    let runner = OxyMetricTreeRunner::new(workspace_manager.into_read_only(), user_id, role)
+        .with_preagg_ctx(preagg);
+    let runner = match scan_root {
+        ScanRoot::Compiled(p) => runner.with_scan_path(p),
+        ScanRoot::Unavailable => runner.without_working_copy_fallback(),
+        ScanRoot::WorkingCopy => runner,
+    };
+    Arc::new(runner)
 }
 
 /// Strip dimensions from every view that are bad split candidates for

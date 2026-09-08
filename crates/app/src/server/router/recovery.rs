@@ -1507,7 +1507,53 @@ pub(crate) async fn build_workspace_ctx(
     // Reconciliation compares an Oxy measure against a live external source, so
     // answering the Oxy side from a rollup would report drift that is really
     // rollup lag — the check would be measuring its own cache.
-    build_cloud_project_ctx(workspace_id, &path, db, &PreaggCacheCtx::default()).await
+    let ctx =
+        build_cloud_project_ctx_inner(workspace_id, &path, db, &PreaggCacheCtx::default()).await?;
+
+    // Resolve the semantic scan root from the PROMOTED REVISION, and only from
+    // it. Two failures, one line:
+    //
+    // 1. The eval runs as a queued task on the global-run fleet, which holds a
+    //    workspace's ROW and not its DIRECTORY. Reading `working_copy().root()`
+    //    there failed with `failed to load semantic model: failed to read
+    //    <workspace path>: No such file or directory` — an alert about the
+    //    node, worded as an alert about the workspace, on a workspace whose
+    //    every other surface was querying that same model fine.
+    // 2. On a node that DOES hold a working copy — a single instance, or the
+    //    factory doubling as the global-run node — that copy holds whatever
+    //    someone is editing in the IDE right now. Health judges the workspace,
+    //    so it must judge what is promoted: an uncommitted `.view.yml` must
+    //    never page the on-call about a revision that is fine.
+    //
+    // Hence `resolve_compiled_scan_source`, not `resolve_query_scan_source` —
+    // the serving resolver falls back to the working copy by design, which is
+    // right for every reader that is not this one.
+    //
+    // The scan is resolved ONCE and held for the life of the context: a
+    // materialised scan is a tempdir, and every probe in the pass reads it.
+    let ctx = ctx.requiring_compiled_semantic_scan();
+    let ctx =
+        match crate::server::api::semantic::resolve_compiled_scan_source(ctx.workspace_manager())
+            .await
+        {
+            Ok(scan) => ctx.with_semantic_scan(scan),
+            Err(unavailable) => {
+                // Not fatal: the connection and app probes don't need a layer, and
+                // the workspace is still evaluated on everything else. A compile is
+                // enqueued, and the semantic checks report that the model is not
+                // compiled rather than blaming the YAML — or, worse, judging
+                // someone's draft.
+                tracing::warn!(
+                    target: "health_eval",
+                    %workspace_id,
+                    reason = %unavailable.message(),
+                    "no compiled semantic model for the health eval; semantic checks will \
+                     report unavailable until a compile lands"
+                );
+                ctx
+            }
+        };
+    Some(Arc::new(ctx))
 }
 
 /// Deserialize a compiled `config.yml` and stamp the workspace path onto it.
@@ -1523,6 +1569,20 @@ async fn build_cloud_project_ctx(
     db: &DatabaseConnection,
     preagg: &PreaggCacheCtx,
 ) -> Option<Arc<OxyProjectContext>> {
+    build_cloud_project_ctx_inner(workspace_id, path, db, preagg)
+        .await
+        .map(Arc::new)
+}
+
+/// [`build_cloud_project_ctx`] before the `Arc`, so a caller that has more to
+/// attach (`build_workspace_ctx` resolves a semantic scan root) can do it
+/// without unwrapping one.
+async fn build_cloud_project_ctx_inner(
+    workspace_id: uuid::Uuid,
+    path: &str,
+    db: &DatabaseConnection,
+    preagg: &PreaggCacheCtx,
+) -> Option<OxyProjectContext> {
     // Resolve the config the same way the request middleware does: the promoted
     // compiled revision first, the working copy only on a miss.
     //
@@ -1590,11 +1650,11 @@ async fn build_cloud_project_ctx(
     // context, and `compile_dispatcher()` (like the anomaly tools) is `None`
     // unless `db` is set — without it every compile fails with
     // "compile_dispatcher() returned None". See OxyProjectContext::with_db.
-    Some(Arc::new(
+    Some(
         OxyProjectContext::new(wm)
             .with_db(Arc::new(db.clone()))
             .with_preagg(preagg),
-    ))
+    )
 }
 
 /// Reconcile per-workspace `health_eval` schedule rows on startup. Removes the
@@ -2151,5 +2211,49 @@ mod tests {
         assert!(active.last_missed_at.is_not_set());
         assert!(active.created_at.is_not_set());
         assert!(active.updated_at.is_not_set());
+    }
+}
+
+#[cfg(test)]
+mod health_scan_wiring_tests {
+    /// Source up to this module's own test attribute — the same shape guard
+    /// `api::metric_tree::handlers_never_scan_the_working_copy` uses.
+    fn src() -> &'static str {
+        include_str!("recovery.rs")
+            .split("\n#[cfg(test)]")
+            .next()
+            .expect("source splits on its own test-module attribute")
+    }
+
+    /// `build_workspace_ctx` is the ONLY context builder the workspace-health
+    /// eval uses. That eval judges a workspace, so it must read the promoted
+    /// revision and nothing else: the fleet node it runs on may not hold the
+    /// workspace directory at all, and a node that does holds whatever is being
+    /// edited in the IDE.
+    ///
+    /// Guarded as source shape because the regression is an ABSENCE: dropping
+    /// either call compiles perfectly and silently restores the working-copy
+    /// fallback, which is only wrong in cloud. Poke House Staging paged for 58
+    /// days on exactly that. `resolve_query_scan_source` is named here as the
+    /// wrong door — it falls back to the working copy by design.
+    #[test]
+    fn the_health_context_reads_the_promoted_revision_and_nothing_else() {
+        let s = src();
+        let body = s
+            .split("pub(crate) async fn build_workspace_ctx")
+            .nth(1)
+            .expect("build_workspace_ctx is defined here");
+        assert!(
+            body.contains("resolve_compiled_scan_source") && body.contains("with_semantic_scan"),
+            "build_workspace_ctx must hand its context a compile-boundary scan root; \
+             without one the health eval parses the semantic model out of a working \
+             copy the fleet does not have"
+        );
+        assert!(
+            body.contains("requiring_compiled_semantic_scan"),
+            "and it must REFUSE the working-copy fallback: on a node that does hold the \
+             files, falling back judges someone's uncommitted IDE edit and pages the \
+             on-call about a promoted revision that is fine"
+        );
     }
 }

@@ -87,6 +87,22 @@ pub struct OxyProjectContext {
     /// compile fails with "compile_dispatcher() returned None". Pure CLI / test
     /// paths may leave it unset; anomaly tools + compile are then disabled.
     db: Option<Arc<sea_orm::DatabaseConnection>>,
+    /// The semantic scan root resolved through the compile boundary, and the
+    /// guard keeping it alive.
+    ///
+    /// `None` means "nobody resolved one", and the metric-tree runners then
+    /// fall back to this node's working copy. That fallback is right for the
+    /// IDE and wrong everywhere else: a background context built on the
+    /// stateless fleet holds a workspace *row* whose *directory* is on another
+    /// machine. Set it on any path that builds a context away from an HTTP
+    /// request — see `recovery::build_workspace_ctx`.
+    semantic_scan: Option<Arc<crate::server::api::semantic::QueryScanSource>>,
+    /// Whether this context may fall back to the node's working copy when no
+    /// scan was resolved. `true` for a reader that JUDGES the workspace rather
+    /// than serving it — workspace health — where the working copy is whatever
+    /// someone is editing in the IDE right now and an uncommitted edit must
+    /// never page the on-call about a promoted revision that is fine.
+    semantic_scan_required: bool,
 }
 
 impl OxyProjectContext {
@@ -100,6 +116,8 @@ impl OxyProjectContext {
             preagg_renewal_threshold_secs: None,
             semantic_engine_cache: None,
             db: None,
+            semantic_scan: None,
+            semantic_scan_required: false,
         }
     }
 
@@ -175,6 +193,45 @@ impl OxyProjectContext {
     ) -> Self {
         self.semantic_engine_cache = Some(cache);
         self
+    }
+
+    /// Attach the semantic scan root this context's metric-tree runners must
+    /// read, resolved through the compile boundary
+    /// (`semantic::resolve_query_scan_source`).
+    ///
+    /// The `QueryScanSource` is held for the life of the context because a
+    /// materialised scan is a tempdir that vanishes when its guard drops.
+    pub(crate) fn with_semantic_scan(
+        mut self,
+        scan: crate::server::api::semantic::QueryScanSource,
+    ) -> Self {
+        self.semantic_scan = Some(Arc::new(scan));
+        self
+    }
+
+    /// [`Self::with_semantic_scan`] for a root that is already on disk.
+    pub(crate) fn with_semantic_scan_path(self, scan_path: PathBuf) -> Self {
+        self.with_semantic_scan(crate::server::api::semantic::QueryScanSource::at(scan_path))
+    }
+
+    /// Refuse the working-copy fallback: with no resolved scan, the metric-tree
+    /// runners built from this context read nothing rather than reading this
+    /// node's disk. Set by `recovery::build_workspace_ctx` for the
+    /// workspace-health eval.
+    pub(crate) fn requiring_compiled_semantic_scan(mut self) -> Self {
+        self.semantic_scan_required = true;
+        self
+    }
+
+    /// Where the metric-tree runners built from this context read the semantic
+    /// model.
+    pub(crate) fn semantic_scan_root(&self) -> crate::agentic_wiring::metric_tree_runner::ScanRoot {
+        use crate::agentic_wiring::metric_tree_runner::ScanRoot;
+        match (&self.semantic_scan, self.semantic_scan_required) {
+            (Some(scan), _) => ScanRoot::Compiled(scan.path().to_path_buf()),
+            (None, true) => ScanRoot::Unavailable,
+            (None, false) => ScanRoot::WorkingCopy,
+        }
     }
 
     /// Attach the preagg renewal threshold (seconds). Must match the
@@ -1572,6 +1629,127 @@ mod read_error_shape_tests {
         assert!(
             !missing.is_unavailable() && !missing.is_invalid(),
             "an absent file on a node holding the workspace is a plain 404: {missing:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod semantic_scan_root_tests {
+    use agentic_pipeline::platform::ProjectContext;
+
+    /// A manager whose working-copy slot names `root`, stat-ed or not:
+    /// `effective_workspace_path` returns the database column without checking
+    /// it, so the slot is full whether or not the directory exists. Pass a
+    /// missing path for a stateless replica, a real one for a node holding the
+    /// files.
+    async fn manager_at(
+        root: &std::path::Path,
+    ) -> oxy::adapters::workspace::manager::WorkspaceManager<oxy::config::WorkingCopy> {
+        oxy::adapters::workspace::builder::WorkspaceBuilder::new(uuid::Uuid::nil())
+            .with_working_copy(root, None, oxy::config::OnMissing::Empty)
+            .await
+            .expect("a manager builds from the database column, unstat-ed")
+            .build()
+            .await
+            .expect("workspace manager")
+    }
+
+    /// The workspace-health eval builds its context on the global-run fleet and
+    /// took its semantic model from `working_copy().root()` — a directory that
+    /// node does not have. Poke House Staging read
+    /// `failed to load semantic model: failed to read /workspace/oxy_data/
+    /// workspaces/<id>/oxy: No such file or directory` for 58 days while every
+    /// product surface queried the same model happily, because those resolve
+    /// through the compile boundary and this did not.
+    #[tokio::test]
+    async fn the_system_runner_reads_the_scan_root_the_context_was_handed() {
+        let parent = tempfile::tempdir().expect("tempdir");
+        let absent = parent.path().join("never-cloned");
+
+        // What `resolve_query_scan_source` materialises out of the compiled
+        // rows: the same shape, somewhere this node can actually read.
+        let scan = parent.path().join("scan");
+        std::fs::create_dir_all(scan.join("semantics/views")).expect("scan dirs");
+        std::fs::write(
+            scan.join("semantics/views/orders.view.yml"),
+            "name: orders\ndata_source: warehouse\ntable: orders\n",
+        )
+        .expect("view");
+
+        assert!(!absent.is_dir(), "the node holds no working copy");
+
+        let stateless = super::OxyProjectContext::new(manager_at(&absent).await);
+        let err = stateless
+            .metric_tree_runner_system()
+            .expect("system runner")
+            .load_layer()
+            .await
+            .expect_err("there is no layer to read on this node");
+        let err = err.to_string();
+        assert!(
+            !err.contains("No such file or directory"),
+            "a node with no files must name the missing SCAN ROOT, not report the \
+             workspace directory as an I/O fault — that reads as a broken workspace \
+             and sent operators to audit YAML for two months: {err}"
+        );
+
+        let boundary = super::OxyProjectContext::new(manager_at(&absent).await)
+            .with_semantic_scan_path(scan.clone());
+        let layer = boundary
+            .metric_tree_runner_system()
+            .expect("system runner")
+            .load_layer()
+            .await
+            .expect("the compile-boundary scan is readable on any node");
+        assert_eq!(
+            layer.views.len(),
+            1,
+            "the layer must come from the scan root, not the absent working copy"
+        );
+    }
+
+    /// Workspace health JUDGES a workspace; it does not serve it. So it reads
+    /// the promoted revision and nothing else.
+    ///
+    /// The eval can land on a node that holds a working copy — a single
+    /// instance, or the factory doubling as the global-run node — and that
+    /// working copy holds whatever someone is editing in the IDE right now: a
+    /// half-written view, a branch mid-refactor. Falling back to it means an
+    /// uncommitted edit pages the on-call about a workspace whose promoted
+    /// revision, and therefore everything actually being served, is fine.
+    #[tokio::test]
+    async fn a_health_context_refuses_the_working_copy_it_could_have_read() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("semantics/views")).expect("dirs");
+        // The IDE edit: on disk, on this node, and broken enough that a probe
+        // against it would report the workspace unhealthy.
+        std::fs::write(
+            dir.path().join("semantics/views/orders.view.yml"),
+            "name: orders\ndata_source: warehouse\ntable: orders\n",
+        )
+        .expect("view");
+
+        let manager = manager_at(dir.path()).await;
+        assert!(
+            manager
+                .config_manager
+                .working_copy()
+                .is_some_and(|wc| wc.root().is_dir()),
+            "this node really does hold the files — that is the trap"
+        );
+
+        let health = super::OxyProjectContext::new(manager).requiring_compiled_semantic_scan();
+        let err = health
+            .metric_tree_runner_system()
+            .expect("system runner")
+            .load_layer()
+            .await
+            .expect_err("a health context must not read the working copy")
+            .to_string();
+        assert!(
+            err.contains("not compiled"),
+            "and it must say WHY it read nothing, so the alert names the promoted \
+             revision rather than the model: {err}"
         );
     }
 }

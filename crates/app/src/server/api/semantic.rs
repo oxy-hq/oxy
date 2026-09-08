@@ -386,6 +386,25 @@ pub(crate) struct QueryScanSource {
 }
 
 impl QueryScanSource {
+    /// A scan rooted at a directory that is already on disk — the working-copy
+    /// arm, where there is no materialised tempdir to guard.
+    ///
+    /// Lets a caller that resolved a root some other way (or a test) hand one
+    /// to something that takes a `QueryScanSource`, without making `_guard`
+    /// public and inviting a materialised scan to be built without its guard.
+    pub(crate) fn at(scan_path: std::path::PathBuf) -> Self {
+        Self {
+            scan_path,
+            _guard: None,
+        }
+    }
+
+    /// The directory to scan. Valid only while `self` is alive: a materialised
+    /// scan's tempdir is deleted when the guard drops.
+    pub(crate) fn path(&self) -> &std::path::Path {
+        &self.scan_path
+    }
+
     /// The revision this scan actually READ, or `None` for the working copy.
     pub(crate) fn source_revision<S: oxy::config::DiskSlot>(
         &self,
@@ -420,10 +439,23 @@ pub(crate) fn scan_source_revision<S: oxy::config::DiskSlot>(
 /// copy to fall back to.
 pub(crate) struct ScanUnavailable {
     workspace_id: Uuid,
+    /// The caller refused the working-copy fallback rather than lacking one.
+    /// Same absence, different thing to tell the reader: one is "this node
+    /// doesn't hold the files", the other is "these files are not the ones I am
+    /// allowed to judge".
+    compiled_only: bool,
 }
 
 impl ScanUnavailable {
     pub(crate) fn message(&self) -> String {
+        if self.compiled_only {
+            return format!(
+                "workspace {} has no compiled semantic model; this check reads the promoted \
+                 revision only and will not fall back to a working copy — a (re)compile has \
+                 been enqueued",
+                self.workspace_id
+            );
+        }
         format!(
             "workspace {} has no compiled semantic model available on this stateless \
              replica; a (re)compile has been enqueued — retry shortly",
@@ -499,13 +531,62 @@ pub(crate) async fn resolve_query_scan_source<S: oxy::config::DiskSlot>(
             )
             .await;
         }
-        return Err(ScanUnavailable { workspace_id });
+        return Err(ScanUnavailable {
+            workspace_id,
+            compiled_only: false,
+        });
     };
 
     Ok(QueryScanSource {
         scan_path,
         _guard: None,
     })
+}
+
+/// [`resolve_query_scan_source`] for a reader that must JUDGE the workspace
+/// rather than serve it: the promoted revision only, never the working copy.
+///
+/// The workspace-health eval is that reader. It can run on a node that holds a
+/// working copy — a single instance, or the factory doubling as the global-run
+/// node — and that copy holds whatever someone is editing in the IDE right now.
+/// Falling back to it means a half-written `.view.yml` on a feature branch
+/// pages the on-call about a workspace whose promoted revision, and therefore
+/// everything actually being served, is fine.
+///
+/// The `Err` arm is a real answer, not a failure to look: the workspace has no
+/// compiled semantic model, so health has no opinion about its semantic layer
+/// and says so (Degraded — "we learned nothing"). A compile is enqueued, so the
+/// next pass succeeds without operator action. A workspace with no promoted
+/// config has no health schedule row at all, so in practice this is the manual
+/// `POST /workspace-health/{id}/eval` and the mid-deploy window.
+pub(crate) async fn resolve_compiled_scan_source<S: oxy::config::DiskSlot>(
+    workspace_manager: &WorkspaceManager<S>,
+) -> Result<QueryScanSource, ScanUnavailable> {
+    let workspace_id = workspace_manager.workspace_id;
+    match oxy::config::scan::compiled_scan_dir(&workspace_manager.config_manager).await {
+        Ok(scan) => Ok(QueryScanSource {
+            scan_path: scan.path().to_path_buf(),
+            _guard: Some(scan),
+        }),
+        Err(e) => {
+            tracing::warn!(
+                workspace_id = %workspace_id,
+                error = %e,
+                "compiled-only semantic scan: nothing compiled to read"
+            );
+            if let Ok(db) = oxy::database::client::establish_connection().await {
+                crate::server::api::middlewares::workspace_context::enqueue_lazy_compile(
+                    &db,
+                    workspace_id,
+                )
+                .await;
+            }
+            Err(ScanUnavailable {
+                workspace_id,
+                compiled_only: true,
+            })
+        }
+    }
 }
 
 // Pre-aggregation status moved to `api::preagg` (#2989), which also made a
