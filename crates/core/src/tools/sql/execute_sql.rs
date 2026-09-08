@@ -10,15 +10,15 @@ use crate::{
 use oxy_shared::errors::OxyError;
 
 #[derive(Debug, Clone)]
-pub struct SQLExecutable;
+pub struct SqlRunner;
 
-impl Default for SQLExecutable {
+impl Default for SqlRunner {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl SQLExecutable {
+impl SqlRunner {
     pub fn new() -> Self {
         Self
     }

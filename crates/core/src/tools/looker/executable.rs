@@ -10,15 +10,15 @@ use std::collections::HashMap;
 
 /// Shared executor for Looker queries that can be used by both tools and automation tasks
 #[derive(Debug, Clone)]
-pub struct LookerQueryExecutable {}
+pub struct LookerQueryRunner {}
 
-impl Default for LookerQueryExecutable {
+impl Default for LookerQueryRunner {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl LookerQueryExecutable {
+impl LookerQueryRunner {
     pub fn new() -> Self {
         Self {}
     }

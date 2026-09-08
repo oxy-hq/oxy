@@ -1,3 +1,3 @@
 pub mod execute_sql;
 
-pub use execute_sql::SQLExecutable;
+pub use execute_sql::SqlRunner;

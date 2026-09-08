@@ -7,7 +7,7 @@ use oxy::config::model::{IntegrationType, LookerQueryParams, LookerSortField};
 use oxy::exec_runtime::ExecutionContext;
 use oxy::exec_runtime::renderer::Renderer;
 use oxy::exec_types::{Output, Source};
-use oxy::tools::looker::executable::LookerQueryExecutable;
+use oxy::tools::looker::executable::LookerQueryRunner;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_looker::MetadataStorage;
 use serde::{Deserialize, Serialize};
@@ -158,7 +158,7 @@ pub async fn compile_looker_query(
         limit: payload.limit,
     };
 
-    let executable = LookerQueryExecutable::new();
+    let executable = LookerQueryRunner::new();
     let sql = executable
         .get_sql(
             &execution_context,
@@ -196,7 +196,7 @@ pub async fn execute_looker_query(
         limit: payload.limit,
     };
 
-    let output = LookerQueryExecutable::new()
+    let output = LookerQueryRunner::new()
         .execute_query(
             &execution_context,
             &params,

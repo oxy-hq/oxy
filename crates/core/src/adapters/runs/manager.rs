@@ -8,9 +8,8 @@ use crate::{
     },
     database::client::establish_connection,
     types::{
-        block::Group,
         pagination::{Paginated, Pagination},
-        run::{RootReference, RunDetails, RunInfo},
+        run::{RunDetails, RunInfo},
     },
 };
 use oxy_shared::errors::OxyError;
@@ -40,19 +39,12 @@ impl RunsManager {
         }
     }
 
-    pub fn is_noop(&self) -> bool {
-        matches!(self.storage, RunsStorageImpl::Noop(_))
-    }
-
     pub async fn list_runs(
         &self,
         source_id: &str,
         pagination: &Pagination,
     ) -> Result<Paginated<RunInfo>, OxyError> {
         self.storage.list_runs(source_id, pagination).await
-    }
-    pub async fn upsert_run(&self, group: Group, user_id: Option<Uuid>) -> Result<(), OxyError> {
-        self.storage.upsert_run(group, user_id).await
     }
     pub async fn find_run_details(
         &self,
@@ -64,29 +56,6 @@ impl RunsManager {
 
     pub async fn lookup(&self, lookup_id: &str) -> Result<Option<RunDetails>, OxyError> {
         self.storage.lookup(lookup_id).await
-    }
-
-    pub async fn update_run_variables(
-        &self,
-        source_id: &str,
-        run_index: i32,
-        variables: Option<IndexMap<String, serde_json::Value>>,
-    ) -> Result<RunInfo, OxyError> {
-        self.storage
-            .update_run_variables(source_id, run_index, variables)
-            .await
-    }
-
-    pub async fn update_run_output(
-        &self,
-        source_id: &str,
-        run_index: i32,
-        task_name: String,
-        output: serde_json::Value,
-    ) -> Result<(), OxyError> {
-        self.storage
-            .update_run_output(source_id, run_index, task_name, output)
-            .await
     }
 
     pub async fn find_run(
@@ -110,18 +79,6 @@ impl RunsManager {
             .new_run(source_id, None, variables, lookup_id, user_id)
             .await
     }
-    pub async fn nested_run(
-        &self,
-        source_id: &str,
-        root_ref: RootReference,
-        variables: Option<IndexMap<String, serde_json::Value>>,
-        user_id: Option<Uuid>,
-    ) -> Result<RunInfo, OxyError> {
-        self.storage
-            .new_run(source_id, Some(root_ref), variables, None, user_id)
-            .await
-    }
-
     pub async fn delete_run(&self, source_id: &str, run_index: i32) -> Result<(), OxyError> {
         self.storage.delete_run(source_id, run_index).await
     }

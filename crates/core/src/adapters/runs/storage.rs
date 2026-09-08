@@ -4,7 +4,6 @@ use uuid::Uuid;
 use crate::{
     adapters::runs::database::RunsDatabaseStorage,
     types::{
-        block::Group,
         pagination::{Paginated, Pagination},
         run::{RootReference, RunDetails, RunInfo, RunStatus},
     },
@@ -22,20 +21,6 @@ pub trait RunsStorage {
         lookup_id: Option<Uuid>,
         user_id: Option<Uuid>,
     ) -> Result<RunInfo, OxyError>;
-    async fn upsert_run(&self, group: Group, user_id: Option<Uuid>) -> Result<(), OxyError>;
-    async fn update_run_variables(
-        &self,
-        source_id: &str,
-        run_index: i32,
-        variables: Option<IndexMap<String, serde_json::Value>>,
-    ) -> Result<RunInfo, OxyError>;
-    async fn update_run_output(
-        &self,
-        source_id: &str,
-        run_index: i32,
-        task_name: String,
-        output: serde_json::Value,
-    ) -> Result<(), OxyError>;
     async fn find_run(
         &self,
         source_id: &str,
@@ -98,44 +83,6 @@ impl RunsStorage for RunsNoopStorage {
             created_at: now,
             updated_at: now,
         })
-    }
-
-    async fn upsert_run(&self, _group: Group, _user_id: Option<Uuid>) -> Result<(), OxyError> {
-        Ok(())
-    }
-
-    async fn update_run_variables(
-        &self,
-        source_id: &str,
-        _run_index: i32,
-        variables: Option<IndexMap<String, serde_json::Value>>,
-    ) -> Result<RunInfo, OxyError> {
-        // Return a stub RunInfo. This path is hit when an automation with sub-automation
-        // steps runs without a database (normal `oxy run` without --retry flags).
-        // Explicit retry operations always use RunsManager::default() with a real DB.
-        let now = chrono::Utc::now();
-        Ok(RunInfo {
-            root_ref: None,
-            metadata: None,
-            source_id: source_id.to_string(),
-            run_index: Some(1),
-            lookup_id: None,
-            user_id: None,
-            status: RunStatus::Pending,
-            variables,
-            created_at: now,
-            updated_at: now,
-        })
-    }
-
-    async fn update_run_output(
-        &self,
-        _source_id: &str,
-        _run_index: i32,
-        _task_name: String,
-        _output: serde_json::Value,
-    ) -> Result<(), OxyError> {
-        Ok(())
     }
 
     async fn find_run(
