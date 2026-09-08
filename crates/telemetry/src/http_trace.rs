@@ -121,6 +121,28 @@ fn client_address(headers: &HeaderMap) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Request paths that get **no span and no log line**: the kubelet's
+/// readiness / liveness probes and the load balancer's health check. At the
+/// chart's cadence (readiness every 5 s, liveness every 30 s, the ALB on top,
+/// per pod) they are the majority of all requests a fleet serves, so tracing
+/// them would fill the platform trace store — and the tenant-visible product
+/// store, which sees the same span — with hundreds of thousands of identical
+/// rows a day before a single user request. A probe that *fails* still logs:
+/// `on_failure` runs whether or not the request had a span.
+pub const PROBE_PATHS: &[&str] = &[
+    "/api/health",
+    "/api/ready",
+    "/api/live",
+    "/health",
+    "/ready",
+    "/live",
+];
+
+/// Whether a request path is one of [`PROBE_PATHS`] (exact match).
+pub fn is_probe(path: &str) -> bool {
+    PROBE_PATHS.contains(&path)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct OxyMakeSpan {
     request_id_header: &'static str,
@@ -128,6 +150,9 @@ pub struct OxyMakeSpan {
 
 impl<B> MakeSpan<B> for OxyMakeSpan {
     fn make_span(&mut self, req: &Request<B>) -> Span {
+        if is_probe(req.uri().path()) {
+            return Span::none();
+        }
         let method = req.method().as_str();
         let route = req
             .extensions()
@@ -165,7 +190,10 @@ impl<B> MakeSpan<B> for OxyMakeSpan {
 pub struct OxyOnRequest;
 
 impl<B> OnRequest<B> for OxyOnRequest {
-    fn on_request(&mut self, _req: &Request<B>, _span: &Span) {
+    fn on_request(&mut self, _req: &Request<B>, span: &Span) {
+        if span.is_none() {
+            return; // a probe: no span, no line
+        }
         tracing::debug!("request received");
     }
 }
@@ -175,6 +203,9 @@ pub struct OxyOnResponse;
 
 impl<B> OnResponse<B> for OxyOnResponse {
     fn on_response(self, response: &Response<B>, latency: Duration, span: &Span) {
+        if span.is_none() {
+            return; // a probe: no span, no line (a failing one logs via `on_failure`)
+        }
         let status = response.status();
         span.record("http.response.status_code", status.as_u16());
         let latency_ms = latency.as_millis() as u64;
@@ -270,7 +301,52 @@ mod tests {
         Router::new()
             .route("/items/{id}", get(|| async { "ok" }))
             .route("/boom", get(|| async { StatusCode::INTERNAL_SERVER_ERROR }))
+            .route("/api/ready", get(|| async { "ready" }))
             .layer(trace_layer("x-oxy-request-id"))
+    }
+
+    #[test]
+    fn probe_paths_are_exact_and_cover_both_prefix_forms() {
+        for p in [
+            "/api/health",
+            "/api/ready",
+            "/api/live",
+            "/health",
+            "/ready",
+            "/live",
+        ] {
+            assert!(is_probe(p), "{p}");
+        }
+        assert!(!is_probe("/api/healthz"));
+        assert!(!is_probe("/api/ready/"));
+        assert!(!is_probe("/api/threads"));
+    }
+
+    #[tokio::test]
+    async fn a_probe_request_exports_no_span_and_a_real_request_still_does() {
+        let (status, spans) = spans_for(
+            Request::builder()
+                .uri("/api/ready")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            spans.is_empty(),
+            "a probe must not reach any store: {spans:?}"
+        );
+
+        let (status, spans) = spans_for(
+            Request::builder()
+                .uri("/items/7")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].name, "GET /items/{id}");
     }
 
     /// Run one request under an in-memory exporter and return the finished
