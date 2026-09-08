@@ -7,6 +7,7 @@ publish.workspace = true
 description = "Platform telemetry: OTLP export of traces + logs to the cluster OTel collector (ClickStack / HyperDX), the structured log format, HTTP request spans and W3C trace propagation"
 
 [dependencies]
+oxy-shared = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }
 http = { workspace = true }

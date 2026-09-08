@@ -50,10 +50,9 @@ pub mod with_dispatch;
 /// something an operator acts on: HTTP frames, raw SQL, TLS handshakes. Both
 /// the stderr layers and the OTLP layers append this to whatever level the
 /// operator asked for, so raising `OXY_LOG_LEVEL=debug` stays readable.
-/// Measured on oxy-dev at debug (2026-09-08): the OpenTelemetry SDK narrating
-/// its own exports (`BatchSpanProcessor.ExportingDueToTimer`,
-/// `HttpClient.ExportStarted/Succeeded`) was ~9k lines an hour and the AWS SDK
-/// config/credential chain ~2.5k — none of it about oxy, all of it in the way.
+/// The framework half is `oxy_shared::log_noise::FRAMEWORK_NOISE_DIRECTIVES`
+/// (prefix semantics and the measurements behind each entry are documented
+/// there); this constant is that list plus the one platform-only entry below.
 /// `RUST_LOG` / `OXY_OTEL_FILTER` bypass it entirely — the expert escape hatch.
 ///
 /// `custom_app_function` is not framework chatter but a privacy boundary: it
@@ -62,13 +61,15 @@ pub mod with_dispatch;
 /// OTLP) gets an app's `warn`/`error` lines with their trace id and nothing
 /// below; the product store keeps every line behind the app-admin gate
 /// through its own filter, which this list does not touch.
-pub const NOISY_CRATE_DIRECTIVES: &str = "tower_http=warn,h2=warn,hyper=warn,hyper_util=warn,\
-     reqwest=warn,sqlx=warn,sea_orm=warn,tonic=warn,rustls=warn,tokio_postgres=warn,\
-     tungstenite=warn,tokio_tungstenite=warn,deser_incomplete=off,\
-     custom_app_function=warn,\
-     opentelemetry=warn,opentelemetry_sdk=warn,opentelemetry-otlp=warn,opentelemetry-http=warn,\
-     aws_config=warn,aws_runtime=warn,aws_smithy_runtime=warn,aws_smithy_runtime_api=warn,\
-     aws_smithy_http=warn,aws_sdk_s3=warn,aws_sdk_sesv2=warn,tower=warn,hyper_rustls=warn";
+pub const NOISY_CRATE_DIRECTIVES: &str = concat!(
+    oxy_shared::framework_noise_directives!(),
+    ",custom_app_function=warn"
+);
+
+/// The framework half alone — what every filter shares, the product
+/// observability store included. Lives in `oxy-shared` so that store's crate
+/// does not take the OTLP SDK for one string.
+pub use oxy_shared::log_noise::FRAMEWORK_NOISE_DIRECTIVES;
 
 /// `"{level},{NOISY_CRATE_DIRECTIVES}"` — the directive string both the stderr
 /// and the export filters are built from when the operator gives only a level.
@@ -80,6 +81,61 @@ pub fn directives_for_level(level: &str) -> String {
 mod tests {
     use super::*;
     use tracing_subscriber::EnvFilter;
+
+    /// Parsing proves the string is well-formed; this proves the *prefix*
+    /// semantics the list relies on — a segment-vs-prefix mistake would pass
+    /// the parse test and suppress nothing.
+    #[test]
+    fn the_noisy_list_suppresses_by_prefix_and_leaves_oxy_alone() {
+        use std::sync::{Arc, Mutex};
+        use tracing_subscriber::Layer;
+        use tracing_subscriber::layer::SubscriberExt;
+
+        #[derive(Clone, Default)]
+        struct Seen(Arc<Mutex<Vec<String>>>);
+        impl<S: tracing::Subscriber> Layer<S> for Seen {
+            fn on_event(
+                &self,
+                event: &tracing::Event<'_>,
+                _ctx: tracing_subscriber::layer::Context<'_, S>,
+            ) {
+                self.0.lock().unwrap().push(format!(
+                    "{}:{}",
+                    event.metadata().target(),
+                    event.metadata().level()
+                ));
+            }
+        }
+        let seen = Seen::default();
+        let filter = EnvFilter::new(directives_for_level("debug"));
+        let subscriber = tracing_subscriber::registry().with(seen.clone().with_filter(filter));
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        tracing::debug!(target: "opentelemetry_sdk", "BatchSpanProcessor.ExportingDueToTimer");
+        tracing::debug!(target: "opentelemetry-otlp", "HttpClient.ExportStarted");
+        tracing::debug!(target: "aws_smithy_runtime_api::client::interceptors", "x");
+        tracing::debug!(target: "aws_sdk_s3::operation", "x");
+        tracing::debug!(target: "hyper_rustls::config", "x");
+        tracing::debug!(target: "tower_http::trace", "x");
+        tracing::debug!(target: "tower::buffer::worker", "x");
+        tracing::debug!(target: "clickhouse::insert", "x");
+        tracing::info!(target: "custom_app_function", "a tenant's ctx.log() line");
+        tracing::warn!(target: "opentelemetry_sdk", "BatchSpanProcessor.SpanDropped");
+        tracing::debug!(target: "oxy_app::server::api", "kept");
+        tracing::debug!(target: "agentic_llm::genai", "kept");
+
+        let seen = seen.0.lock().unwrap().clone();
+        assert_eq!(
+            seen,
+            vec![
+                "opentelemetry_sdk:WARN".to_string(),
+                "oxy_app::server::api:DEBUG".to_string(),
+                "agentic_llm::genai:DEBUG".to_string(),
+            ],
+            "framework debug (tower family included) and a tenant's ctx.log() info are \
+             suppressed on the platform side; warns and oxy's own debug pass"
+        );
+    }
 
     #[test]
     fn the_noisy_list_parses_as_env_filter_directives() {

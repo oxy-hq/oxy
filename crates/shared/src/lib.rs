@@ -15,6 +15,7 @@ pub mod errors;
 pub mod fleet_role;
 pub mod infrastructure;
 pub mod key_validation;
+pub mod log_noise;
 pub mod openai_config;
 pub mod state_dir;
 pub mod utils;

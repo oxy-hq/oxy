@@ -210,6 +210,9 @@ const COOLDOWN: Duration = Duration::from_secs(30 * 60);
 /// `last_status` for the next tick's diff regardless.
 #[derive(Debug, Default)]
 struct AlertState {
+    /// When each workspace was last warned about a failing health summary;
+    /// repeats inside `SUMMARIZE_FAILURE_WARN_EVERY` are logged at `debug`.
+    last_summarize_warn_at: HashMap<Uuid, Instant>,
     started_at: Option<Instant>,
     last_status: HashMap<(Uuid, Uuid), String>,
     last_alert_at: HashMap<(Uuid, Uuid), Instant>,
@@ -249,19 +252,8 @@ pub fn spawn(db: DatabaseConnection, shutdown: CancellationToken) {
 /// How long one workspace's `summarize failed` stays at `debug` after a `warn`.
 const SUMMARIZE_FAILURE_WARN_EVERY: std::time::Duration = std::time::Duration::from_secs(60 * 60);
 
-/// `true` when this workspace has not been warned about in the last hour, and
-/// records the warn. Process-wide, so every alerter tick shares the clock.
-fn summarize_failure_is_new(workspace_id: Uuid, now: Instant) -> bool {
-    static LAST: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<Uuid, Instant>>> =
-        std::sync::OnceLock::new();
-    let mut last = LAST
-        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    warn_is_due(&mut last, workspace_id, now)
-}
-
-/// The throttle decision, separated from the process-wide map for tests.
+/// The throttle decision over the state's map: deterministic given the map
+/// and `now`, which is what the test relies on.
 fn warn_is_due(
     last: &mut std::collections::HashMap<Uuid, Instant>,
     workspace_id: Uuid,
@@ -307,11 +299,12 @@ pub async fn alerter_tick(db: &DatabaseConnection, state: &mut AlertState) -> Se
                 // few seconds and a workspace without an Airhouse tenant
                 // fails the same way on every one of them (measured: ~530
                 // identical warns an hour on oxy-dev).
-                if summarize_failure_is_new(workspace_id, now) {
+                if warn_is_due(&mut state.last_summarize_warn_at, workspace_id, now) {
                     warn!(
                         workspace_id = %workspace_id,
                         error = %e,
-                        "alerter: summarize failed (repeats for this workspace are logged at debug for the next hour)"
+                        warn_throttled_secs = SUMMARIZE_FAILURE_WARN_EVERY.as_secs(),
+                        "alerter: summarize failed"
                     );
                 } else {
                     tracing::debug!(workspace_id = %workspace_id, error = %e, "alerter: summarize failed");

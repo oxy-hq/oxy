@@ -9986,6 +9986,7 @@ dependencies = [
  "opentelemetry-http",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "oxy-shared",
  "serde_json",
  "tokio",
  "tower 0.5.3",

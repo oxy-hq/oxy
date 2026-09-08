@@ -40,24 +40,70 @@ fn build_env_filter() -> EnvFilter {
 fn build_observability_filter() -> EnvFilter {
     let level = std::env::var("OXY_OBSERVABILITY_LOG_LEVEL")
         .unwrap_or_else(|_| DEFAULT_OBSERVABILITY_LOG_LEVEL.to_string());
+    observability_filter_for(&level)
+}
 
-    let filter = match EnvFilter::try_new(&level) {
-        Ok(filter) => filter,
+/// The filter for a level (or a full directive string) — the env-free half,
+/// so it can be tested without touching `OXY_OBSERVABILITY_LOG_LEVEL`.
+fn observability_filter_for(level: &str) -> EnvFilter {
+    // Whether the operator wrote their own filter is decided on the string
+    // that *parsed*: a typo falls back to the default level with the
+    // suppressions, not to an unfiltered `debug`.
+    let (filter, operator_filter) = match EnvFilter::try_new(level) {
+        Ok(filter) => (filter, is_full_directive_string(level)),
         Err(_) => {
             eprintln!(
                 "Warning: Invalid observability log level '{}', falling back to '{}'",
                 level, DEFAULT_OBSERVABILITY_LOG_LEVEL
             );
-            EnvFilter::try_new(DEFAULT_OBSERVABILITY_LOG_LEVEL).unwrap()
+            (
+                EnvFilter::try_new(DEFAULT_OBSERVABILITY_LOG_LEVEL).unwrap(),
+                false,
+            )
         }
     };
-    filter
+    let filter = filter
         .add_directive("deser_incomplete=off".parse().unwrap())
         // Custom-app host-op spans (one per `ctx.query` / `ctx.fetch` / …) are
         // platform telemetry: they go to the OTLP trace, not to this store,
         // which keeps one row per invocation rather than one per query. See
         // `custom_apps_functions::host_call_attrs::HOST_CALL_TARGET`.
         .add_directive("oxy::host_call=off".parse().unwrap())
+        // HTTP request spans are platform telemetry too. Nothing tenant-facing
+        // reads them (the console roots on `agent.run_agent` / `analytics.run`),
+        // and on oxy-dev they were ~380k rows a day of this store, mostly the
+        // kubelet's probes before those stopped being traced at all.
+        .add_directive("oxy_telemetry::http_trace=off".parse().unwrap());
+    // A full directive string is the operator's own filter and is left alone,
+    // as the telemetry side treats `RUST_LOG` / `OXY_OTEL_FILTER`; only a bare
+    // level gets the framework suppressions appended.
+    if operator_filter {
+        return filter;
+    }
+    // The framework half of what the stderr and OTLP filters carry — never
+    // `custom_app_function`, whose `info` lines are a tenant's `ctx.log()` and
+    // are exactly what this store must keep. With the store defaulting to
+    // `debug`, the AWS SDK's credential chain and the OTel exporter's own
+    // narration were landing here as tenant-visible spans (~280k a day on
+    // oxy-dev: `try_op`, `finally_attempt`, `clickhouse.insert`).
+    oxy_shared::log_noise::FRAMEWORK_NOISE_DIRECTIVES
+        .split(',')
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+        .fold(filter, |f, d| match d.parse() {
+            Ok(directive) => f.add_directive(directive),
+            Err(e) => {
+                // Never take the process down over a filter string; the
+                // framework line just stays at the operator's level.
+                eprintln!("Warning: skipping observability filter directive '{d}': {e}");
+                f
+            }
+        })
+}
+
+/// `info,opentelemetry=debug` is a filter the operator wrote; `info` is a level.
+fn is_full_directive_string(level: &str) -> bool {
+    level.contains(',') || level.contains('=')
 }
 
 /// Build just the `SpanCollectorLayer` and its receiver. No store, no bridge.
@@ -265,6 +311,83 @@ pub fn shutdown() {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    /// Records the target of every event a filter lets through.
+    #[derive(Clone, Default)]
+    struct Seen(Arc<Mutex<Vec<String>>>);
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Seen {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            self.0
+                .lock()
+                .unwrap()
+                .push(event.metadata().target().to_string());
+        }
+    }
+
+    #[test]
+    fn a_full_directive_string_is_the_operators_own_filter() {
+        assert!(super::is_full_directive_string("info,opentelemetry=debug"));
+        assert!(super::is_full_directive_string("opentelemetry=debug"));
+        assert!(!super::is_full_directive_string("debug"));
+        assert!(!super::is_full_directive_string("INFO"));
+    }
+
+    #[test]
+    fn a_typo_falls_back_to_the_default_with_the_suppressions_not_to_bare_debug() {
+        use tracing_subscriber::Layer;
+        use tracing_subscriber::layer::SubscriberExt;
+        let seen = Seen::default();
+        // Looks like an operator filter, does not parse: must not become
+        // "debug with nothing suppressed".
+        let subscriber = tracing_subscriber::registry().with(
+            seen.clone()
+                .with_filter(super::observability_filter_for("debug,oxy=trace!")),
+        );
+        let _guard = tracing::subscriber::set_default(subscriber);
+        tracing::debug!(target: "opentelemetry_sdk", "export");
+        tracing::debug!(target: "agentic_analytics::solver", "kept");
+        assert_eq!(
+            seen.0.lock().unwrap().clone(),
+            vec!["agentic_analytics::solver".to_string()]
+        );
+    }
+
+    #[test]
+    fn the_product_filter_keeps_platform_spans_and_framework_noise_out() {
+        use tracing_subscriber::Layer;
+        use tracing_subscriber::layer::SubscriberExt;
+        let seen = Seen::default();
+        let subscriber = tracing_subscriber::registry().with(
+            seen.clone()
+                .with_filter(super::observability_filter_for("debug")),
+        );
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        tracing::info!(target: "oxy_telemetry::http_trace", "request");
+        tracing::info!(target: "oxy::host_call", "db.query");
+        tracing::debug!(target: "aws_smithy_runtime::client::orchestrator", "try_op");
+        tracing::debug!(target: "opentelemetry_sdk", "export");
+        tracing::debug!(target: "tower::buffer::worker", "x");
+        tracing::debug!(target: "clickhouse::insert", "the store's own write");
+        tracing::info!(target: "custom_app_function", "a tenant's ctx.log() line — kept");
+        tracing::debug!(target: "agentic_analytics::solver", "kept");
+        tracing::info!(target: "oxy_app::server::api::custom_apps_functions", "kept");
+
+        assert_eq!(
+            seen.0.lock().unwrap().clone(),
+            vec![
+                "custom_app_function".to_string(),
+                "agentic_analytics::solver".to_string(),
+                "oxy_app::server::api::custom_apps_functions".to_string(),
+            ]
+        );
+    }
+
     use super::*;
     use async_trait::async_trait;
     use oxy_shared::errors::OxyError;
