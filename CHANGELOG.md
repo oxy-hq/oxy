@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.142] - 2026-09-08
+
+### 🚜 Refactor
+
+- Close the old-executor retirement loose ends (dead telemetry, runs sweep, renames, checkpoints drop) (#3123)
+
 ## [0.5.141] - 2026-09-08
 
 ### 🐛 Bug Fixes
@@ -11,6 +17,10 @@ All notable changes to this project will be documented in this file.
 - Workspace health — anomalies no longer decide the verdict (#3126)
 - Logs — SDK and AWS targets always suppressed, per-tick lines to debug, the alerter warns once an hour per workspace (#3131)
 - Logs — throttle state in AlertState, prefix-honest noisy list, product store gets the same suppressions (#3132)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.141 (#3130)
 
 ## [0.5.140] - 2026-09-08
 
