@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::{
-    execute::types::{Output, Source},
+    exec_types::{Output, Source},
     service::types::{Block, BlockValue, ContainerKind, Content},
 };
 use oxy_shared::errors::OxyError;

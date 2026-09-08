@@ -1,7 +1,7 @@
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    execute::types::{Usage, event::ArtifactKind},
+    exec_types::{Usage, event::ArtifactKind},
     service::types::{AnswerContent, AnswerStream, ArtifactValue},
 };
 use oxy_shared::errors::OxyError;

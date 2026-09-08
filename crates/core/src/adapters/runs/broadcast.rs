@@ -1,10 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
-use crate::{
-    execute::{types::Event, writer::EventHandler},
-    types::event::EventKind,
-};
+use crate::{exec_runtime::writer::EventHandler, exec_types::Event, types::event::EventKind};
 use oxy_shared::errors::OxyError;
 
 pub trait Mergeable {

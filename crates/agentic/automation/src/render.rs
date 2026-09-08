@@ -32,7 +32,7 @@ use serde_json::Value;
 ///
 /// Used for step bodies, formatters, and any user-authored template
 /// where a typo'd path should expand to empty rather than fail — this
-/// matches the legacy `oxy_core::execute::renderer::setup_jinja_environment`
+/// matches the legacy `oxy_core::exec_runtime::renderer::setup_jinja_environment`
 /// behaviour so templates ported from the previous automation engine
 /// keep rendering. The filters registered are the same as
 /// [`automation_env_strict`]:
@@ -291,7 +291,7 @@ mod tests {
     }
 
     /// `sqlquote` wraps in single quotes and doubles embedded ones —
-    /// matches the legacy `oxy_core::execute::renderer` semantics, so
+    /// matches the legacy `oxy_core::exec_runtime::renderer` semantics, so
     /// templates ported from the previous engine render the same SQL.
     #[test]
     fn sqlquote_filter_escapes_single_quotes() {

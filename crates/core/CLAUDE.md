@@ -29,7 +29,7 @@ other domain crates     ┘
 | ------ | ---- |
 | `config` (~6.6k) | Project/workspace config model + `ConfigManager` (`resolve_*`, `default_model`, path resolution). `config/model.rs` is the 3k-line schema — the biggest file in the crate. |
 | `connector` (~5.1k) | Warehouse backends (DuckDB, Snowflake, BigQuery via connectorx, Postgres/MySQL, ClickHouse). Empty-result + result-cap short-circuits live here (see product-context gotchas). |
-| `execute` (~1.3k) | Shrinking remnant of the pre-agentic execution engine, **mid-retirement** (see `internal-docs/old-executor-retirement.md`): `ExecutionContext`, `renderer`, `writer`, `formatters`. The type vocabulary moved to `oxy::exec_types` (Phase 3); the dead `ExecutableBuilder` pipeline was removed (Phase 4a). |
+| `exec_runtime` (~1.3k) | Execution runtime the pre-agentic executor left behind: `ExecutionContext`, `renderer`, `writer`, `formatters`. The type vocabulary is the sibling `oxy::exec_types` (Phase 3). The `execute` module + its dead pipeline were fully retired (old-executor-retirement Phases 4a–4c). |
 | `service` (~4.8k) | Cross-cutting services: `secret_manager.rs`, DB pool, project services. |
 | `adapters` (~3.2k) | External-system adapters. |
 | `semantic` (~2.5k) | Semantic-model file discovery + `loader.rs` (skips hidden/build dirs — stray copies cause "duplicate view" errors). Compilation itself is `oxy-semantic`/airlayer. |
@@ -42,7 +42,7 @@ other domain crates     ┘
 ## Key entry points
 
 - `oxy::config::ConfigManager` — resolve project files/paths, read `default_model`, mode detection.
-- `oxy::execute::ExecutionContext` — event-sink/render context threaded through query + tool execution (mid-retirement — see `internal-docs/old-executor-retirement.md`).
+- `oxy::exec_runtime::ExecutionContext` — event-sink/render context threaded through query + tool execution.
 - `oxy::exec_types` — execution/result type vocabulary; the result-truncation flag is `is_result_truncated` (`exec_types/reference.rs`).
 - `oxy::service::secret_manager` — project-scoped secret lookups (must filter by project — tenant isolation invariant).
 - `oxy::render::{render_stream, ClientRenderer}` — streaming render surface.

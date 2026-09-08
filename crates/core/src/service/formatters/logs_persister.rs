@@ -1,4 +1,4 @@
-use crate::execute::types::{EventKind, Source};
+use crate::exec_types::{EventKind, Source};
 use chrono;
 use entity::logs;
 use oxy_shared::errors::OxyError;

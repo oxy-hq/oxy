@@ -193,11 +193,11 @@ fn create_execution_context(
     workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager<WorkingCopy>,
     kind: &str,
 ) -> (
-    oxy::execute::ExecutionContext,
+    oxy::exec_runtime::ExecutionContext,
     tokio::sync::mpsc::Receiver<oxy::exec_types::Event>,
 ) {
+    use oxy::exec_runtime::{ExecutionContext, renderer::Renderer};
     use oxy::exec_types::{Event, Source};
-    use oxy::execute::{ExecutionContext, renderer::Renderer};
 
     let (tx, rx) = tokio::sync::mpsc::channel::<Event>(EVENT_CHANNEL_SIZE);
     let source = Source {

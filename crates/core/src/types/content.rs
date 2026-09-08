@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::execute::types::{
+use crate::exec_types::{
     VizParams,
     event::{DataApp, SandboxAppKind},
 };

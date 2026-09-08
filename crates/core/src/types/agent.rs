@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::execute::types::{ReferenceKind, Usage};
+use crate::exec_types::{ReferenceKind, Usage};
 
 /// Log types for automation execution
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, JsonSchema)]

@@ -8,7 +8,7 @@ use utoipa::{
 
 use crate::{
     config::model::Automation,
-    execute::types::{
+    exec_types::{
         VizParams,
         event::{ArtifactKind, DataApp, SandboxAppKind, Step},
     },

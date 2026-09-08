@@ -1,9 +1,7 @@
 use crate::{
     config::model::{LookerIntegration, LookerQueryParams, LookerSortField},
-    execute::{
-        ExecutionContext,
-        types::{Chunk, EventKind, Output, Table, TableReference},
-    },
+    exec_runtime::ExecutionContext,
+    exec_types::{Chunk, EventKind, Output, Table, TableReference},
     types::LookerQuery,
 };
 use oxy_looker::{InlineQueryRequest, LookerApiClient, LookerAuthConfig, MetadataStorage};

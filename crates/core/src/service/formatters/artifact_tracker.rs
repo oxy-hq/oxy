@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     config::constants::MARKDOWN_MAX_FENCES,
-    execute::types::event::{ArtifactKind, SandboxAppKind, SandboxInfo},
+    exec_types::event::{ArtifactKind, SandboxAppKind, SandboxInfo},
     service::types::{
         ArtifactContent, Block, BlockValue, ContainerKind, Content, LookerArtifactContent,
         OmniArtifactContent, SemanticQuery,

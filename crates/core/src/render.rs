@@ -8,8 +8,8 @@
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
-use crate::execute::types::Usage;
-use crate::execute::types::event::{ArtifactKind, Step};
+use crate::exec_types::Usage;
+use crate::exec_types::event::{ArtifactKind, Step};
 use crate::types::{AnswerContent, AnswerStream, ArtifactValue};
 
 /// Renders an agent stream into surface-specific output. All callbacks
@@ -97,7 +97,7 @@ pub async fn render_stream<R: ClientRenderer>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execute::types::event::StepKind;
+    use crate::exec_types::event::StepKind;
     use crate::types::{AnswerContent, AnswerStream};
 
     /// Records each callback invocation so tests can assert dispatch.

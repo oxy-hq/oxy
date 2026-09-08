@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 
 use crate::{
     config::model::SemanticFilter,
-    execute::types::{
+    exec_types::{
         ReferenceKind, Table, Usage,
         event::{ArtifactKind, SandboxInfo, Step},
     },

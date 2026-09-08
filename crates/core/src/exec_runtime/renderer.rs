@@ -92,24 +92,6 @@ fn add_global_functions(env: &mut Environment<'static>) {
     );
 }
 
-pub trait TemplateRegister: Sync + Send {
-    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError>;
-}
-
-impl TemplateRegister for &str {
-    fn register_template(&self, renderer: &Renderer) -> Result<(), OxyError> {
-        renderer.register_template(self)
-    }
-}
-
-pub struct NoopRegister;
-
-impl TemplateRegister for NoopRegister {
-    fn register_template(&self, _renderer: &Renderer) -> Result<(), OxyError> {
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Renderer {
     env: Arc<RwLock<Environment<'static>>>,
@@ -126,15 +108,6 @@ impl Renderer {
             global_context: Arc::new(global_context),
             current_context: Default::default(),
         }
-    }
-
-    pub fn from_template<T: TemplateRegister>(
-        global_context: Value,
-        template: &T,
-    ) -> Result<Self, OxyError> {
-        let renderer = Renderer::new(global_context);
-        renderer.register(template)?;
-        Ok(renderer)
     }
 
     pub fn wrap(&self, context: &Value) -> Renderer {
@@ -156,14 +129,6 @@ impl Renderer {
             global_context: Arc::new(global_context),
             current_context: context,
         }
-    }
-
-    pub fn register<T: TemplateRegister>(&self, item: &T) -> Result<(), OxyError> {
-        item.register_template(self)
-    }
-
-    pub fn child_register(&self) -> ChildRegister<'_> {
-        ChildRegister::new(self)
     }
 
     pub fn register_template(&self, value: &str) -> Result<(), OxyError> {
@@ -299,32 +264,6 @@ impl Renderer {
           ..Value::from_serialize(self.global_context.as_ref()),
           ..Value::from_serialize(&self.current_context),
         }
-    }
-}
-
-pub struct ChildRegister<'register> {
-    renderer: &'register Renderer,
-}
-
-impl<'register> ChildRegister<'register> {
-    pub fn new(renderer: &'register Renderer) -> Self {
-        ChildRegister { renderer }
-    }
-
-    pub fn entries<T, I>(&mut self, values: I) -> Result<(), OxyError>
-    where
-        T: TemplateRegister,
-        I: IntoIterator<Item = T>,
-    {
-        for value in values {
-            self.entry(&value)?;
-        }
-        Ok(())
-    }
-
-    pub fn entry<T: TemplateRegister>(&self, value: &T) -> Result<&Self, OxyError> {
-        value.register_template(self.renderer)?;
-        Ok(self)
     }
 }
 

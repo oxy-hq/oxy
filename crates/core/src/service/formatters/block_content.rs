@@ -1,6 +1,6 @@
 use crate::{
     config::constants::MARKDOWN_MAX_FENCES,
-    execute::types::Output,
+    exec_types::Output,
     service::types::{Block, ContainerKind, Content},
 };
 

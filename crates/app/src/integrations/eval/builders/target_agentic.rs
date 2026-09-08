@@ -1,7 +1,7 @@
 //! Eval target on the agentic path — the "run the target agent" step of the
 //! eval harness, with no old-executor scaffolding.
 //!
-//! Uses **none** of `oxy::execute`'s pipeline machinery — no `Executable`,
+//! Uses **none** of the old-executor's pipeline machinery — no `Executable`,
 //! `execute_with_handler`, `OutputContainer` / `OutputGetter`, or
 //! `EventHandler` / `writer`. See `internal-docs/old-executor-retirement.md`.
 //!

@@ -28,7 +28,7 @@ pub mod run_workflow {
     /// Record automation output event (service layer - no metrics, just tracing).
     /// DEBUG level: the output payload is verbose and floods the console;
     /// observability backends capture it independently.
-    pub fn output(output: &crate::execute::types::OutputContainer) {
+    pub fn output(output: &crate::exec_types::OutputContainer) {
         event!(
             Level::DEBUG,
             name = OUTPUT,
@@ -106,7 +106,7 @@ pub mod launcher {
     }
 
     pub mod launch {
-        use crate::execute::ExecutionContext;
+        use crate::exec_runtime::ExecutionContext;
 
         use super::*;
 
@@ -128,7 +128,7 @@ pub mod launcher {
         /// Record automation output event, track response in metrics, and finalize
         pub fn output(
             execution_context: &ExecutionContext,
-            output: &crate::execute::types::OutputContainer,
+            output: &crate::exec_types::OutputContainer,
         ) {
             execution_context.record_response(&output.to_string());
 
@@ -179,7 +179,7 @@ pub mod task {
             );
         }
 
-        pub fn output(task_name: &str, output: &crate::execute::types::OutputContainer) {
+        pub fn output(task_name: &str, output: &crate::exec_types::OutputContainer) {
             event!(
                 Level::DEBUG,
                 name = OUTPUT,
@@ -221,7 +221,7 @@ pub mod task {
             );
         }
 
-        pub fn output(agent_ref: &str, output: &crate::execute::types::OutputContainer) {
+        pub fn output(agent_ref: &str, output: &crate::exec_types::OutputContainer) {
             event!(
                 Level::DEBUG,
                 name = OUTPUT,
@@ -325,7 +325,7 @@ pub mod task {
             );
         }
 
-        pub fn execute_output(output: &crate::execute::types::Output) {
+        pub fn execute_output(output: &crate::exec_types::Output) {
             event!(
                 Level::DEBUG,
                 name = OUTPUT_EXECUTE,
@@ -478,7 +478,7 @@ pub mod task {
             );
         }
 
-        pub fn execute_output(output: &crate::execute::types::Output) {
+        pub fn execute_output(output: &crate::exec_types::Output) {
             event!(
                 Level::DEBUG,
                 name = OUTPUT_EXECUTE,
@@ -588,7 +588,7 @@ pub mod task {
             );
         }
 
-        pub fn output(workflow_ref: &str, output: &crate::execute::types::OutputContainer) {
+        pub fn output(workflow_ref: &str, output: &crate::exec_types::OutputContainer) {
             event!(
                 Level::INFO,
                 name = OUTPUT,

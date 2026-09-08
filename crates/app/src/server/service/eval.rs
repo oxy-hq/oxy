@@ -7,8 +7,8 @@ use tokio::sync::Mutex;
 use oxy::{
     adapters::workspace::manager::WorkspaceManager,
     config::constants::EVAL_SOURCE,
+    exec_runtime::writer::EventHandler,
     exec_types::{Event, EventKind, ProgressType},
-    execute::writer::EventHandler,
 };
 use oxy_shared::errors::OxyError;
 

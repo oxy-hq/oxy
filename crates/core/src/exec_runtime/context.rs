@@ -6,22 +6,16 @@ use tokio::sync::mpsc::Sender;
 use crate::{
     adapters::{session_filters::SessionFilters, workspace::manager::WorkspaceManager},
     config::model::ConnectionOverrides,
-    execute::{
-        renderer::Renderer,
-        types::{
-            Usage,
-            event::{SandboxAppKind, SandboxInfo, Step},
-        },
+    exec_runtime::renderer::Renderer,
+    exec_types::{
+        Chunk, Event, EventKind, ProgressType, Source, Usage,
+        event::{SandboxAppKind, SandboxInfo, Step},
     },
     metrics::{MetricContext, SharedMetricCtx, SourceType},
 };
 use oxy_shared::errors::OxyError;
 
-use super::{
-    renderer::TemplateRegister,
-    types::{Chunk, Event, EventKind, ProgressType, Source},
-    writer::Writer,
-};
+use super::writer::Writer;
 use crate::config::WorkingCopy;
 
 #[derive(Debug, Clone)]
@@ -346,7 +340,7 @@ impl ExecutionContext {
 
     pub async fn write_data_app(
         &self,
-        data_app: crate::execute::types::event::DataApp,
+        data_app: crate::exec_types::event::DataApp,
     ) -> Result<(), OxyError> {
         self.write_kind(EventKind::DataAppCreated { data_app })
             .await
@@ -406,15 +400,6 @@ impl ExecutionContextBuilder {
             metric_context: None,
             data_app_file_path: None,
         }
-    }
-
-    pub fn with_template<T: TemplateRegister>(
-        mut self,
-        global_context: Value,
-        template_register: &T,
-    ) -> Result<Self, OxyError> {
-        self.renderer = Some(Renderer::from_template(global_context, template_register)?);
-        Ok(self)
     }
 
     pub fn with_global_context(mut self, global_context: Value) -> Self {

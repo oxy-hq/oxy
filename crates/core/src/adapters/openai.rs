@@ -256,7 +256,7 @@ impl OpenAIAdapter {
         C: Into<Vec<ChatCompletionTool>>,
     >(
         &self,
-        execution_context: &crate::execute::ExecutionContext,
+        execution_context: &crate::exec_runtime::ExecutionContext,
         messages: M,
         tools: C,
         tool_choice: Option<ChatCompletionToolChoiceOption>,
@@ -296,7 +296,7 @@ impl OpenAIAdapter {
                 usage_data.completion_tokens as i64,
             );
             execution_context
-                .write_usage(crate::execute::types::Usage::new(
+                .write_usage(crate::exec_types::Usage::new(
                     usage_data.prompt_tokens as i32,
                     usage_data.completion_tokens as i32,
                 ))

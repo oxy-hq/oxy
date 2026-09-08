@@ -7,8 +7,8 @@ use std::path::Path;
 
 use agentic_builder::BuilderTestRunner;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
+use oxy::exec_runtime::writer::EventHandler;
 use oxy::exec_types::Event;
-use oxy::execute::writer::EventHandler;
 use oxy_shared::errors::OxyError;
 use serde_json::{Value, json};
 

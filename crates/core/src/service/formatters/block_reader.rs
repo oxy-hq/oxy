@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     config::constants::MARKDOWN_MAX_FENCES,
-    execute::types::{Usage, event::SandboxInfo},
+    exec_types::{Usage, event::SandboxInfo},
     service::types::Block,
     utils::try_unwrap_arc_tokio_mutex,
 };

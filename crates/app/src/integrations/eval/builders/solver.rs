@@ -6,8 +6,8 @@ use oxy::{
         constants::{EVAL_METRICS_POSTFIX, EVAL_SOURCE},
         model::SolverKind,
     },
+    exec_runtime::ExecutionContext,
     exec_types::{ProgressType, TargetOutput},
-    execute::ExecutionContext,
 };
 use oxy_shared::errors::OxyError;
 
@@ -18,7 +18,7 @@ use super::{
 };
 
 /// Score one metric over the target outputs, on the plain-async path (no
-/// `oxy::execute` pipeline). The `.test.yml` entry point only ever builds
+/// old-executor pipeline). The `.test.yml` entry point only ever builds
 /// `SolverKind::Correctness`; the `Similarity` / `ContextRecall` solvers went
 /// with the classic-agent eval retirement and are rejected here.
 pub(super) async fn run_solver(

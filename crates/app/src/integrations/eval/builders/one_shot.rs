@@ -2,7 +2,7 @@
 //!
 //! A single chat completion against `model_name` via
 //! `oxy::adapters::openai::OpenAIAdapter` — no tool calling, no streaming, and
-//! no `oxy::execute` pipeline (`Executable`/`ParamMapper`). The solver drives it
+//! no old-executor pipeline (the retired `Executable`/`ParamMapper`). The solver drives it
 //! directly with a plain async call.
 
 use async_openai::types::chat::{

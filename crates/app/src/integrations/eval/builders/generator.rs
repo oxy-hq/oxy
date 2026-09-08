@@ -2,15 +2,15 @@ use futures::stream::StreamExt;
 
 use oxy::{
     config::model::EvalKind,
+    exec_runtime::ExecutionContext,
     exec_types::{EventKind, ProgressType, TargetOutput, Usage},
-    execute::ExecutionContext,
 };
 use oxy_shared::errors::OxyError;
 
 use super::{target_agentic::run_target, types::AgenticInput};
 
 /// Run the eval target for every case × run and pair each result with its
-/// expected answer, on the plain-async agentic path (no `oxy::execute`
+/// expected answer, on the plain-async agentic path (no old-executor
 /// pipeline). Returns `(successful (actual, expected) pairs, (error, expected)
 /// pairs)` for the solver to score.
 ///

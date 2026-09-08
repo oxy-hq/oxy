@@ -8,7 +8,7 @@ use crate::{
         },
         model::Automation,
     },
-    execute::types::{
+    exec_types::{
         Event, EventKind as ExecuteEventKind, Output, Usage,
         event::{ArtifactKind, Step},
     },

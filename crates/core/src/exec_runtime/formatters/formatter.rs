@@ -1,7 +1,5 @@
-use crate::execute::{
-    types::{Event, EventKind, Source},
-    writer::EventHandler,
-};
+use crate::exec_runtime::writer::EventHandler;
+use crate::exec_types::{Event, EventKind, Source};
 use oxy_shared::errors::OxyError;
 
 pub type FormatterResult = Result<(), OxyError>;

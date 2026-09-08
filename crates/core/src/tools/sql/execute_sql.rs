@@ -2,10 +2,8 @@ use std::{collections::HashMap, path::PathBuf};
 
 use crate::{
     connector::Connector,
-    execute::{
-        ExecutionContext,
-        types::{Chunk, EventKind, SQL, Table, TableReference},
-    },
+    exec_runtime::ExecutionContext,
+    exec_types::{Chunk, EventKind, SQL, Table, TableReference},
     observability::events,
     tools::types::SQLInput,
 };

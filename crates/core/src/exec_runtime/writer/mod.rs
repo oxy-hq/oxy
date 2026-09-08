@@ -1,12 +1,10 @@
 use oxy_shared::errors::OxyError;
 
-use super::types::Event;
+use crate::exec_types::Event;
 
 mod buf_writer;
-mod ordered_writer;
 
 pub use buf_writer::BufWriter;
-pub use ordered_writer::OrderedWriter;
 use tokio::sync::mpsc::Sender;
 
 #[async_trait::async_trait]

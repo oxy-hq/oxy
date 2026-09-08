@@ -8,9 +8,9 @@ use super::stream::StreamDispatcher;
 use crate::config::constants::{
     AGENT_SOURCE, CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE,
 };
-use crate::execute::formatters::{FormatterResult, SourceHandler};
-use crate::execute::types::event::{ArtifactKind, SandboxInfo};
-use crate::execute::types::{EventKind, Output, Source, Usage};
+use crate::exec_runtime::formatters::{FormatterResult, SourceHandler};
+use crate::exec_types::event::{ArtifactKind, SandboxInfo};
+use crate::exec_types::{EventKind, Output, Source, Usage};
 use crate::service::formatters::logs_persister::LogsPersister;
 use crate::service::formatters::streaming_message_persister::StreamingMessagePersister;
 use crate::service::types::{
@@ -219,7 +219,7 @@ impl BlockHandler {
     async fn handle_content_update(
         &mut self,
         source: &Source,
-        chunk: &crate::execute::types::Chunk,
+        chunk: &crate::exec_types::Chunk,
     ) -> Result<(), OxyError> {
         tracing::info!(
             "Handling content update for source {}({}): finished={}",
