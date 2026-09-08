@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.141] - 2026-09-08
+
+### 🐛 Bug Fixes
+
+- Http spans — only the served probe paths are silent, a failing probe says so, one probe list (#3128)
+- Workspace health reads the semantic model through the compile boundary (#3124)
+- Workspace health — anomalies no longer decide the verdict (#3126)
+- Logs — SDK and AWS targets always suppressed, per-tick lines to debug, the alerter warns once an hour per workspace (#3131)
+- Logs — throttle state in AlertState, prefix-honest noisy list, product store gets the same suppressions (#3132)
+
 ## [0.5.140] - 2026-09-08
 
 ### 🚀 Features
@@ -21,6 +31,10 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - Custom-app function observability — the Workers direction, gaps and five slices (#3125)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.140 (#3120)
 
 ## [0.5.139] - 2026-09-07
 
