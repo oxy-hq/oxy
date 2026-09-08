@@ -19,8 +19,12 @@ use oxy::service::secret_manager::SecretManagerService;
 
 use crate::server::api::custom_apps_storage::RetentionPolicy;
 
+use super::data_audit::{self, InvocationIdentity, WriteRecord};
+use super::host_call_attrs::db_query_summary;
 use super::runtime::{FUNCTION_MAX_ROWS, FUNCTION_STREAM_MAX_ROWS, FunctionHost};
 use super::seam::{FunctionProjectContext, FunctionQueryExecutor};
+use agentic_connector::SqlDialect;
+use agentic_connector::SqlTransaction;
 
 /// Outbound fetch response size cap (design doc §11.9).
 const FETCH_MAX_BYTES: u64 = 10 * 1024 * 1024;
@@ -81,6 +85,23 @@ pub struct ProjectFunctionHost {
     /// one-shot transaction on its own connection — see `oltp`); this only saves
     /// the resolve. Filled lazily on the first `ctx.oltp` call.
     oltp_conn: tokio::sync::Mutex<Option<oxy_oltp::resolver::WriterConnection>>,
+    /// Who is running, for the audit record on every data-plane write.
+    identity: InvocationIdentity,
+    /// The writes each open `ctx.tx()` handle has made so far, keyed by the
+    /// handle id; audited as one row at commit, dropped at rollback.
+    tx_writes: tokio::sync::Mutex<std::collections::HashMap<u64, TxAudit>>,
+    /// Every committed `ctx.oltp` / `ctx.warehouse` write of this invocation,
+    /// coalesced by target; written as one row per plane when the invocation
+    /// ends (`end_of_invocation`), so the hot path pays no control-plane
+    /// round trip.
+    writes: tokio::sync::Mutex<data_audit::WriteBuffer>,
+}
+
+/// The audit state of one open transaction.
+struct TxAudit {
+    plane: &'static str,
+    database: String,
+    writes: Vec<WriteRecord>,
 }
 
 /// The fail-closed capability gates a function's manifest grants, plus the
@@ -174,8 +195,12 @@ impl ProjectFunctionHost {
         caps: FunctionCapabilities,
         preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
         reach: crate::server::api::operating_graph::reach::Reach,
+        identity: InvocationIdentity,
     ) -> Self {
         Self {
+            identity,
+            tx_writes: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            writes: tokio::sync::Mutex::new(data_audit::WriteBuffer::new()),
             proj_ctx,
             query_exec,
             db,
@@ -235,6 +260,111 @@ impl ProjectFunctionHost {
                 .map_err(|e| format!("failed to connect to database '{db_name}': {e}"))
         })
         .await
+    }
+
+    /// `(trace id, traceparent)` of the host-op span this call runs under.
+    fn trace_context() -> (Option<String>, Option<String>) {
+        (
+            oxy_telemetry::propagation::current_ids().map(|(t, _)| t),
+            oxy_telemetry::propagation::current_traceparent(),
+        )
+    }
+
+    /// Name the session for the transaction's lifetime (layer 1 of
+    /// `data_audit`). Postgres only. A failure is a **platform error** raised
+    /// before any tenant statement runs: the `SET LOCAL` executes inside the
+    /// open block, so "log and continue" would leave the transaction aborted
+    /// and the author's next statement failing with SQL they never wrote.
+    async fn name_session(
+        &self,
+        tx: &mut dyn SqlTransaction,
+        trace_id: Option<&str>,
+    ) -> Result<(), String> {
+        let tag = data_audit::session_tag(&self.identity, trace_id);
+        let sql = data_audit::set_application_name_sql(&tag);
+        with_db_timeout("name-session", async {
+            tx.exec(&sql, &[]).await.map(|_| ()).map_err(|e| {
+                format!("could not name the database session (platform-side application_name): {e}")
+            })
+        })
+        .await
+    }
+
+    /// Layer 3, immediate: one hash-chained row now. Used for a committed
+    /// `ctx.tx()` handle, which is already one row per transaction.
+    async fn record_writes(
+        &self,
+        action: &'static str,
+        writes: Vec<WriteRecord>,
+        trace_id: Option<&str>,
+    ) {
+        if writes.is_empty() {
+            return;
+        }
+        let entry = data_audit::entry(
+            action,
+            &self.identity,
+            self.org_id,
+            self.project_id,
+            &writes,
+            trace_id,
+        );
+        oxy_app_core::audit::record_best_effort(&self.db, entry).await;
+    }
+
+    /// Layer 3, deferred: fold a committed `ctx.oltp` / `ctx.warehouse` write
+    /// into the invocation's buffer; `end_of_invocation` writes the rows.
+    ///
+    /// Host calls are detached tasks and `runtime::run` returns on cancel or
+    /// timeout without awaiting them, so a write can commit after
+    /// `end_of_invocation` drained the buffer. The buffer is then closed and
+    /// hands the write back; it is recorded on its own, right here — the
+    /// per-write round trip is the right trade on a path that has already
+    /// timed out, and a committed write never goes unaudited.
+    async fn note_write(&self, write: WriteRecord) {
+        let late = self.writes.lock().await.note(write);
+        if let Some(write) = late {
+            let action = if write.plane == "oltp" {
+                data_audit::ACTION_OLTP_WRITE
+            } else {
+                data_audit::ACTION_WAREHOUSE_WRITE
+            };
+            let (trace_id, _) = Self::trace_context();
+            self.record_writes(action, vec![write], trace_id.as_deref())
+                .await;
+        }
+    }
+
+    /// Remember a write made through a `ctx.tx()` handle until it commits.
+    async fn note_tx_write(
+        &self,
+        id: u64,
+        summary: super::host_call_attrs::QuerySummary,
+        rows: Option<u64>,
+    ) {
+        if !data_audit::is_write_verb(&summary.verb) {
+            return;
+        }
+        if let Some(audit) = self.tx_writes.lock().await.get_mut(&id) {
+            let write = WriteRecord {
+                plane: audit.plane,
+                namespace: audit.database.clone(),
+                verb: summary.verb,
+                table: summary.table,
+                rows,
+                statements: 1,
+            };
+            data_audit::coalesce(&mut audit.writes, write);
+        }
+    }
+
+    /// The database a `ctx.tx()` handle was opened on, for the span.
+    async fn tx_database(&self, id: u64) -> Option<String> {
+        self.tx_writes
+            .lock()
+            .await
+            .get(&id)
+            .map(|a| a.database.clone())
     }
 
     /// §11.3 — a write may only target a database the function declared in its
@@ -338,6 +468,30 @@ impl ProjectFunctionHost {
 
 #[async_trait::async_trait]
 impl FunctionHost for ProjectFunctionHost {
+    /// Layer 3 for the buffered planes: one `app.oltp.write` and one
+    /// `app.warehouse.write` row per invocation, each listing every target
+    /// it touched with statement counts and row sums. Runs after the isolate
+    /// has finished, off the hot path; `ctx.tx()` commits were recorded as
+    /// they happened.
+    async fn end_of_invocation(&self) {
+        // Drain and close under the one lock `note_write` checks, so a write
+        // racing this either lands in `writes` here or records itself.
+        let writes = self.writes.lock().await.drain();
+        if writes.is_empty() {
+            return;
+        }
+        let (trace_id, _) = Self::trace_context();
+        let (oltp, other): (Vec<_>, Vec<_>) = writes.into_iter().partition(|w| w.plane == "oltp");
+        self.record_writes(data_audit::ACTION_OLTP_WRITE, oltp, trace_id.as_deref())
+            .await;
+        self.record_writes(
+            data_audit::ACTION_WAREHOUSE_WRITE,
+            other,
+            trace_id.as_deref(),
+        )
+        .await;
+    }
+
     async fn query(&self, sql: String) -> Result<serde_json::Value, String> {
         let db_name = self.default_database()?;
         let connector = self.connect(&db_name).await?;
@@ -637,6 +791,7 @@ impl FunctionHost for ProjectFunctionHost {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "warehouse.query: `sql` is required".to_string())?;
 
+        data_audit::record_db_span(&db_query_summary(sql), Some(database), None);
         let connector = self.connect(database).await?;
         let (rows, truncated) =
             query_with_truncation(&self.query_exec, connector, sql, FUNCTION_MAX_ROWS).await?;
@@ -668,15 +823,39 @@ impl FunctionHost for ProjectFunctionHost {
             other => return Err(format!("unknown op '{other}'")),
         };
 
+        let summary = db_query_summary(&sql);
+        let payload_table = payload.get("table").and_then(|v| v.as_str());
+        data_audit::record_db_span(&summary, Some(database), payload_table);
+        let (_, traceparent) = Self::trace_context();
+        let tagged = data_audit::commented(&sql, &self.identity, traceparent.as_deref());
         let connector = self.connect(database).await?;
+        let plane = data_audit::plane_for_dialect(connector.dialect());
         let label = format!("warehouse {op}");
         with_db_timeout(&label, async {
             connector
-                .execute_statement(&sql)
+                .execute_statement(&tagged)
                 .await
                 .map_err(|e| format!("warehouse {op} failed: {e}"))
         })
         .await?;
+        // The verb decides, not the method: `ctx.warehouse.exec("SELECT …")`
+        // is a read and leaves no row.
+        if data_audit::is_write_verb(&summary.verb) {
+            let table = if summary.table.is_empty() {
+                payload_table.unwrap_or_default().to_string()
+            } else {
+                summary.table
+            };
+            self.note_write(WriteRecord {
+                plane,
+                namespace: database.to_string(),
+                verb: summary.verb,
+                table,
+                rows: None,
+                statements: 1,
+            })
+            .await;
+        }
         Ok(serde_json::json!({ "ok": true }))
     }
 
@@ -703,28 +882,54 @@ impl FunctionHost for ProjectFunctionHost {
                     .ok_or_else(|| "`database` is required".to_string())?;
                 self.check_write_destination(database)?;
                 let connector = self.connect(database).await?;
-                let tx = with_db_timeout("begin", async {
+                let mut tx = with_db_timeout("begin", async {
                     connector
                         .begin_transaction()
                         .await
                         .map_err(|e| format!("could not open a transaction on '{database}': {e}"))
                 })
                 .await?;
+                data_audit::record_db_namespace(database);
+                if connector.dialect() == SqlDialect::Postgres {
+                    let (trace_id, _) = Self::trace_context();
+                    // On error `tx` drops here, which closes the connection
+                    // and rolls the empty transaction back.
+                    self.name_session(&mut *tx, trace_id.as_deref()).await?;
+                }
                 let id = self.transactions.insert(tx).await?;
+                self.tx_writes.lock().await.insert(
+                    id,
+                    TxAudit {
+                        plane: data_audit::plane_for_dialect(connector.dialect()),
+                        database: database.to_string(),
+                        writes: Vec::new(),
+                    },
+                );
                 Ok(serde_json::json!({ "id": id }))
             }
             "query" => {
                 let (id, sql, params) = Self::tx_statement(&payload)?;
+                let summary = db_query_summary(&sql);
+                data_audit::record_db_span(&summary, self.tx_database(id).await.as_deref(), None);
+                let (_, traceparent) = Self::trace_context();
+                let tagged = data_audit::commented(&sql, &self.identity, traceparent.as_deref());
                 let rows =
-                    with_db_timeout("query", self.transactions.query(id, &sql, &params)).await?;
+                    with_db_timeout("query", self.transactions.query(id, &tagged, &params)).await?;
+                self.note_tx_write(id, summary, Some(rows.len() as u64))
+                    .await;
                 let result = serde_json::json!({ "rows": rows });
                 enforce_result_byte_cap(&result)?;
                 Ok(result)
             }
             "exec" => {
                 let (id, sql, params) = Self::tx_statement(&payload)?;
+                let summary = db_query_summary(&sql);
+                data_audit::record_db_span(&summary, self.tx_database(id).await.as_deref(), None);
+                let (_, traceparent) = Self::trace_context();
+                let tagged = data_audit::commented(&sql, &self.identity, traceparent.as_deref());
                 let count =
-                    with_db_timeout("exec", self.transactions.exec(id, &sql, &params)).await?;
+                    with_db_timeout("exec", self.transactions.exec(id, &tagged, &params)).await?;
+                self.note_tx_write(id, summary, Some(count)).await;
                 Ok(serde_json::json!({ "rowCount": count }))
             }
             "commit" | "rollback" => {
@@ -749,6 +954,17 @@ impl FunctionHost for ProjectFunctionHost {
                     outcome.map_err(|e| format!("{op} failed: {e}"))
                 })
                 .await?;
+                // A rollback leaves no trace: nothing was written.
+                let audit = self.tx_writes.lock().await.remove(&id);
+                if committing && let Some(audit) = audit {
+                    let (trace_id, _) = Self::trace_context();
+                    self.record_writes(
+                        data_audit::ACTION_TX_COMMIT,
+                        audit.writes,
+                        trace_id.as_deref(),
+                    )
+                    .await;
+                }
                 Ok(serde_json::json!({ "ok": true }))
             }
             other => Err(format!("unknown op '{other}'")),
@@ -806,6 +1022,9 @@ impl FunctionHost for ProjectFunctionHost {
             }
         };
         let (sql, params) = Self::oltp_statement(&payload)?;
+        let summary = db_query_summary(&sql);
+        let (trace_id, traceparent) = Self::trace_context();
+        let tagged = data_audit::commented(&sql, &self.identity, traceparent.as_deref());
         // Resolve once per invocation, then reuse: N `ctx.oltp` calls cost one
         // control-plane resolve, not N. The isolate drives calls sequentially,
         // so holding this lock across the (first) resolve serialises nothing
@@ -858,17 +1077,28 @@ impl FunctionHost for ProjectFunctionHost {
                 .map_err(|e| format!("could not open a transaction: {e}"))
         })
         .await?;
+        data_audit::record_db_span(&summary, Some(&conn.schema), None);
+        // On error `tx` drops here, which closes the connection and rolls
+        // the empty transaction back.
+        self.name_session(&mut *tx, trace_id.as_deref()).await?;
+        let mut rows_touched: Option<u64> = None;
         let outcome = match op.as_str() {
             "query" => with_db_timeout("query", async {
-                tx.query(&sql, &params).await.map_err(|e| e.to_string())
+                tx.query(&tagged, &params).await.map_err(|e| e.to_string())
             })
             .await
-            .map(|rows| serde_json::json!({ "rows": rows })),
+            .map(|rows| {
+                rows_touched = Some(rows.len() as u64);
+                serde_json::json!({ "rows": rows })
+            }),
             "exec" => with_db_timeout("exec", async {
-                tx.exec(&sql, &params).await.map_err(|e| e.to_string())
+                tx.exec(&tagged, &params).await.map_err(|e| e.to_string())
             })
             .await
-            .map(|count| serde_json::json!({ "rowCount": count })),
+            .map(|count| {
+                rows_touched = Some(count);
+                serde_json::json!({ "rowCount": count })
+            }),
             other => {
                 // Nothing ran; dropping `tx` rolls back the empty transaction.
                 return Err(format!("unknown op '{other}'"));
@@ -880,6 +1110,17 @@ impl FunctionHost for ProjectFunctionHost {
                     tx.commit().await.map_err(|e| format!("commit failed: {e}"))
                 })
                 .await?;
+                if data_audit::is_write_verb(&summary.verb) {
+                    self.note_write(WriteRecord {
+                        plane: "oltp",
+                        namespace: conn.schema.clone(),
+                        verb: summary.verb,
+                        table: summary.table,
+                        rows: rows_touched,
+                        statements: 1,
+                    })
+                    .await;
+                }
                 enforce_result_byte_cap(&result)?;
                 Ok(result)
             }

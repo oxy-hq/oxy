@@ -16,6 +16,10 @@
 //! call is an invocation only — no durable run, not in the coordinator. A job
 //! runs the SAME isolate, wrapped in the queue/monitoring/trigger machinery.
 
+/// The audit record for every data-plane write a function makes (session
+/// tag, statement trailer, `audit_events` row).
+#[cfg(feature = "custom-app-functions")]
+mod data_audit;
 #[cfg(feature = "custom-app-functions")]
 pub mod host;
 /// What a host op may say about itself on the platform trace (shape, never
@@ -1893,6 +1897,15 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
         // The same reach `ctx.user` carries, so `ctx.semantic.query({ scope:
         // "reach" })` pins to what the function itself was told.
         reach.clone(),
+        data_audit::InvocationIdentity {
+            invocation_id: args.invocation_id,
+            function_name: args.function_name.to_string(),
+            mode: args.mode.to_string(),
+            request_id: args.request_id,
+            app_slug: args.app.slug.clone(),
+            user_id: human.then_some(args.user_id),
+            user_email: if human { args.user_email.clone() } else { None },
+        },
     ));
 
     let ctx = runtime::InvocationCtx {
@@ -1929,6 +1942,9 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
     let function_name = args.function_name.to_string();
     let mode = args.mode.to_string();
 
+    // The host outlives the run by one call: the audit rows for the writes
+    // this invocation made are written once, here, not on every write.
+    let host_for_audit = host.clone();
     let result = runtime::run(
         args.artifact_js,
         ctx,
@@ -1960,6 +1976,7 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
     )
     .await;
     watchdog.abort();
+    host_for_audit.end_of_invocation().await;
 
     match result {
         Ok(resp) => ("success", None, resp.body, resp.status),

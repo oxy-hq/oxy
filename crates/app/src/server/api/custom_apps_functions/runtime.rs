@@ -233,6 +233,10 @@ pub trait FunctionHost: Send + Sync {
     /// `ctx.query(sql)` — read-only SQL, function-scoped row cap. Returns
     /// the rows as a JSON array value.
     async fn query(&self, sql: String) -> Result<serde_json::Value, String>;
+    /// Called once after the isolate has finished (or been cancelled), on the
+    /// caller's side of the channel: the place for work that must happen once
+    /// per invocation rather than once per host call.
+    async fn end_of_invocation(&self) {}
     /// `ctx.queryStream(sql)` — read-only SQL with a higher row cap
     /// (`FUNCTION_STREAM_MAX_ROWS`) for large scans. Returns the rows as a
     /// JSON array value; the isolate yields them to the function in batches.
@@ -1723,35 +1727,48 @@ fn host_call_span(call: &HostCall) -> (tracing::Span, HostCallKind) {
             ),
             HostCallKind::Other,
         ),
-        HostCall::WarehouseWrite { op, .. } => (
-            tracing::info_span!(target: HOST_CALL_TARGET,
+        HostCall::WarehouseWrite { op, .. } => {
+            let span = tracing::info_span!(target: HOST_CALL_TARGET,
                 "db.query",
                 db.system = "airhouse",
                 db.operation.name = %op,
+                db.namespace = Empty,
+                db.query.summary = Empty,
+                db.collection.name = Empty,
                 otel.status_code = Empty,
                 error.type = Empty,
-            ),
-            HostCallKind::Other,
-        ),
-        HostCall::Tx { op, .. } => (
-            tracing::info_span!(target: HOST_CALL_TARGET,
+            );
+            (span, HostCallKind::Other)
+        }
+        HostCall::Tx { op, .. } => {
+            let span = tracing::info_span!(target: HOST_CALL_TARGET,
                 "db.transaction",
                 db.operation.name = %op,
+                db.namespace = Empty,
+                db.query.summary = Empty,
+                db.collection.name = Empty,
                 otel.status_code = Empty,
                 error.type = Empty,
-            ),
-            HostCallKind::Other,
-        ),
-        HostCall::Oltp { op, .. } => (
-            tracing::info_span!(target: HOST_CALL_TARGET,
+            );
+            (span, HostCallKind::Other)
+        }
+        HostCall::Oltp { op, .. } => {
+            let span = tracing::info_span!(target: HOST_CALL_TARGET,
                 "db.query",
                 db.system = "postgres",
                 db.operation.name = %op,
+                // `db.namespace` / `db.query.summary` / `db.collection.name`
+                // are recorded by the host once it has resolved the schema
+                // and summarised the SQL (`host::record_db_span`), so the
+                // statement is not summarised twice.
+                db.namespace = Empty,
+                db.query.summary = Empty,
+                db.collection.name = Empty,
                 otel.status_code = Empty,
                 error.type = Empty,
-            ),
-            HostCallKind::Other,
-        ),
+            );
+            (span, HostCallKind::Other)
+        }
         HostCall::SecretsSet { key, .. } => (
             tracing::info_span!(target: HOST_CALL_TARGET,
                 "oxy.secrets.set",
