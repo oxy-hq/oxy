@@ -5,6 +5,20 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.0] - 2026-09-09
+
+### Added
+
+- **`signOut(fetcher, links.login)` in `@oxy-hq/sdk/shell`, and `links.login`
+  on the shell context.** An app ends its viewer's platform session with
+  `GET /api/logout` and leaves for the product's login page with itself as
+  `return_to`. On an enrolled tablet that page is "Who's on shift?", and the
+  next PIN comes back into the app as that person; elsewhere it is the
+  ordinary sign-in. `signOutUrl` is the pure half. A refused logout throws so
+  the caller never navigates away from a session that still exists. The
+  server names the login page because a custom-app subdomain cannot derive
+  the product host.
+
 ## [2.12.0] - 2026-09-07
 
 ### Added

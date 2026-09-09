@@ -38,7 +38,8 @@ export interface ShellContextData {
   /** Product-surface navigation targets, host-aware. `settings` opens the
    *  Unified Settings Dialog via the SPA's `?settings=<section>` deep link
    *  (optional: absent on servers older than the link). */
-  links: { home: string; threads: string; settings?: string };
+  /** `login` is the product's login page, for `signOut()`; absent on a server that predates it. */
+  links: { home: string; threads: string; settings?: string; login?: string };
   /** Viewer display identity; null on unauthenticated/local modes. */
   user: ShellContextUser | null;
 }
@@ -148,4 +149,40 @@ export function useIdentity(): ViewerIdentity {
     reach: u?.reach ?? NOWHERE,
     loading
   };
+}
+
+/**
+ * Where a signed-out person lands: the product's login page, with this app
+ * as the place to come back to.
+ *
+ * `loginUrl` is `links.login` from the shell context — the product host's,
+ * which a custom-app subdomain cannot derive — and `/login` on the current
+ * origin when the context is unavailable or the server predates the field.
+ * `returnTo` is the app's own address, which it knows legitimately.
+ */
+export function signOutUrl(loginUrl: string | null | undefined, returnTo: string): string {
+  const base = loginUrl?.trim() ? loginUrl.trim() : "/login";
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}return_to=${encodeURIComponent(returnTo)}`;
+}
+
+/**
+ * End the platform session, then leave for the login page.
+ *
+ * `GET /api/logout` clears the session cookie server-side. That is the same
+ * cookie a crew member's PIN session rides, so on an enrolled tablet the login
+ * page comes back as "Who's on shift?" and returns to the app after the next
+ * PIN; elsewhere it is the ordinary sign-in. Throws when the server refused,
+ * so a caller can say so rather than navigate away from a session that still
+ * exists. Pass the app's `fetcher` from `useOxyApp()` so credentials ride.
+ */
+export async function signOut(
+  fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+  loginUrl?: string | null,
+  returnTo?: string
+): Promise<void> {
+  const res = await fetcher("/api/logout", { method: "GET", credentials: "include" });
+  if (!res.ok) throw new Error(`sign-out refused: HTTP ${res.status}`);
+  if (typeof window === "undefined") return;
+  window.location.assign(signOutUrl(loginUrl, returnTo ?? window.location.href));
 }

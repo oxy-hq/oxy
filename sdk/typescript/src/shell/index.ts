@@ -33,7 +33,7 @@ export type {
   UseShellContextResult,
   ViewerIdentity
 } from "./shellContext";
-export { useIdentity, useShellContext } from "./shellContext";
+export { signOut, signOutUrl, useIdentity, useShellContext } from "./shellContext";
 export { ShellTooltip } from "./Tooltip";
 export { Breadcrumb, SystemIndicator, TopBar, WorkspaceClock } from "./TopBar";
 export type {

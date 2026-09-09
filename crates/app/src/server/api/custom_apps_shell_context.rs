@@ -95,6 +95,12 @@ pub struct ShellLinks {
     /// has no dedicated route — the SPA reads `?settings=<section>` on any
     /// workspace page (App.tsx WorkspaceLayout) and opens it in place.
     pub settings: String,
+    /// The product's login page, for an app that signs its viewer out
+    /// (`GET /api/logout`, then here with `?return_to=<the app>`). Named by
+    /// the server for the same reason as the rest: on a custom-app subdomain
+    /// the login page lives on the product host, which the bundle cannot
+    /// derive. On an enrolled tablet this page is "Who's on shift?".
+    pub login: String,
 }
 
 #[derive(Serialize)]
@@ -231,6 +237,7 @@ pub async fn get_shell_context(
             // Same default section the web-app rail user menu opens for
             // cloud viewers; invalid sections fall back SPA-side anyway.
             settings: format!("{ws_root}/home?settings=organization.general"),
+            login: format!("{base}/login"),
         },
         user: Some(ShellUser {
             name: ctx.user.name.clone(),
