@@ -2,11 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.143] - 2026-09-09
+
+### 🚀 Features
+
+- Custom apps sign out — links.login on the shell context, signOut() in the SDK (#3135)
+- *(sp_api)* Bump airway to 0.1.41 and reach the Vendor Central reports (#3134)
+
 ## [0.5.142] - 2026-09-08
 
 ### 🚜 Refactor
 
 - Close the old-executor retirement loose ends (dead telemetry, runs sweep, renames, checkpoints drop) (#3123)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.142 (#3133)
 
 ## [0.5.141] - 2026-09-08
 
