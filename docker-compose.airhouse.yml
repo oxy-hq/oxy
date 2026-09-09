@@ -19,7 +19,7 @@
 #        http://localhost:8080/admin/v1/tenants
 #   psql -h localhost -p 5445 -U alice -d demo   # password: alice
 #
-# Override the default Airhouse image tag (defaults to `0.1.2`). Use
+# Override the default Airhouse image tag (defaults to `0.1.48`). Use
 # `edge-latest` to track the rolling edge build, or pin to a commit:
 #   AIRHOUSE_IMAGE_TAG=edge-abcdef0 docker compose -f docker-compose.airhouse.yml up -d
 #
@@ -32,7 +32,7 @@
 # ---------------------------------------------------------------------------
 
 x-airhouse-image: &airhouse-image
-  image: ghcr.io/oxy-hq/airhouse:${AIRHOUSE_IMAGE_TAG:-0.1.5}
+  image: ghcr.io/oxy-hq/airhouse:${AIRHOUSE_IMAGE_TAG:-0.1.48}
 
 services:
   airhouse-postgres:
