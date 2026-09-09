@@ -157,6 +157,8 @@ struct FunctionManifestEntry {
     /// `raw_*` schemas. The writer must be provisioned first.
     #[serde(default)]
     oltp: Option<OltpSpec>,
+    #[serde(default)]
+    webhook: Option<WebhookSpec>,
     /// Opt-in capability for `ctx.org.people()` — the org's people directory
     /// (fail-closed: absent → the call is rejected).
     ///
@@ -243,6 +245,45 @@ struct StorageSpec {
     read: Option<bool>,
     #[serde(default)]
     write: Option<bool>,
+}
+
+/// `webhook:` — makes a function reachable by an UNAUTHENTICATED POST from a
+/// third party, with the platform verifying the sender before app code runs.
+///
+/// Declaring this is what opens the door; a function without it is not
+/// reachable on the webhook route at all. And declaring it without a resolvable
+/// secret is a 401, never an open endpoint: an unauthenticated route with no
+/// signing secret lets anyone forge events against a workspace, which is the
+/// same reasoning `webhooks::toast` documents for failing closed.
+///
+/// Verification is the PLATFORM's job rather than the function's, deliberately.
+/// A function could verify — `x-*` headers reach app code and `req.body` is the
+/// raw bytes — but then an unverified request has already reached app code, and
+/// a forgotten check is silent. Here it cannot be forgotten.
+#[derive(Debug, Deserialize, Default, Clone)]
+struct WebhookSpec {
+    /// Workspace-secret key holding the signing key(s).
+    ///
+    /// **Comma-separated for rotation.** Providers that support two live keys
+    /// (Uber's `BASIC_HMAC` issues a pair) need both accepted at once, or a
+    /// rotation drops every event signed with the key you have not adopted yet.
+    /// Any match passes.
+    #[serde(rename = "secretVar")]
+    secret_var: Option<String>,
+    /// Header carrying the signature, e.g. `x-uber-signature`.
+    ///
+    /// Named per function rather than inferred: providers disagree
+    /// (`x-hub-signature-256`, `stripe-signature`, `x-slack-signature`), and
+    /// guessing would make an unrecognised provider fail as "no signature"
+    /// instead of "you did not tell me where to look".
+    #[serde(rename = "signatureHeader")]
+    signature_header: Option<String>,
+    /// How the digest is encoded: `hex` (default) or `base64`.
+    ///
+    /// Uber sends lowercase hex; Toast sends base64. Both are HMAC-SHA256 over
+    /// the raw body, so encoding is the only axis that varies here.
+    #[serde(default)]
+    encoding: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -349,6 +390,50 @@ pub(crate) fn function_task_policy(
     })
 }
 
+/// The webhook contract a function declares, from its raw `manifest_json`.
+///
+/// `None` means the function did not declare one, which the route treats as
+/// "not a webhook endpoint" — a 404, not a 401. Telling an anonymous caller
+/// apart "wrong signature" from "no such endpoint" is a small thing, but the
+/// route is unauthenticated, so it is the only thing separating a probe from a
+/// map of every function an app has.
+pub(crate) fn function_webhook_contract(
+    manifest: &serde_json::Value,
+) -> Option<(String, String, String)> {
+    let entry: FunctionManifestEntry = serde_json::from_value(manifest.clone()).ok()?;
+    let w = entry.webhook?;
+    Some((
+        w.secret_var?,
+        w.signature_header?,
+        w.encoding.unwrap_or_else(|| "hex".to_string()),
+    ))
+}
+
+/// Why a one-off function job was enqueued.
+///
+/// An enum rather than a `&str` because the label is not free text: it is
+/// replayed by `app_function_executor` as the invocation `mode`, and any value
+/// that executor does not recognise silently becomes `schedule` — a function
+/// branching on `mode` would then be told a webhook was a cron fire. Making the
+/// set closed here means a new trigger cannot be added without visiting that
+/// match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FunctionJobTrigger {
+    /// Admin console **Run now**, or the API job trigger.
+    Manual,
+    /// A verified inbound webhook from a third party.
+    Webhook,
+}
+
+impl FunctionJobTrigger {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Webhook => "webhook",
+        }
+    }
+}
+
 /// Trigger a **one-off background run** of a custom-app function as a job — the
 /// manual/API "run now" that isn't tied to a cron schedule. Validates the app +
 /// function exist in the active build, resolves the function's retry policy from
@@ -372,6 +457,12 @@ pub(crate) async fn trigger_function_job(
     app_id: Uuid,
     function_name: &str,
     input: Option<serde_json::Value>,
+    // How this run was triggered. Stamped on the run's `metadata.trigger` and
+    // replayed by `app_function_executor` as the invocation `mode`, so the
+    // history distinguishes an admin's **Run now** (`"manual"`) from a provider
+    // webhook (`"webhook"`). A label the executor does not know falls back to
+    // `schedule`, so add one there in the same change.
+    trigger: FunctionJobTrigger,
 ) -> Result<String, String> {
     let app = entity::apps::Entity::find_by_id(app_id)
         .one(db)
@@ -401,7 +492,7 @@ pub(crate) async fn trigger_function_job(
         function_name,
         app.project_id,
         policy,
-        "manual",
+        trigger.as_str(),
         input,
         oxy_telemetry::propagation::current_traceparent(),
     )
@@ -1194,8 +1285,9 @@ pub(crate) type RunEventSink = tokio::sync::mpsc::Sender<(String, serde_json::Va
 /// the **org owner's** identity (apps have no owner field; the org owner is the
 /// natural actor — the same data + secret access), records an
 /// `app_function_invocations` row with the given `mode` (`"schedule"` for a cron
-/// fire, `"manual"` for a run-now / API trigger — so the invocation history
-/// agrees with the run's `metadata.trigger`), `user_id=None`, and — when `events`
+/// fire, `"manual"` for a run-now / API trigger, `"webhook"` for a verified
+/// inbound provider event — so the invocation history agrees with the run's
+/// `metadata.trigger`), `user_id=None`, and — when `events`
 /// is set — drains the isolate's log buffer into `function_log` events so the
 /// run's output is persisted and observable. Returns the response body on success.
 #[cfg(feature = "custom-app-functions")]
@@ -2463,5 +2555,79 @@ mod org_capability_tests {
         assert!(!m.secrets_write(), "org.read must not imply secrets.write");
         assert!(!m.storage_read(), "org.read must not imply storage.read");
         assert!(!m.storage_write(), "org.read must not imply storage.write");
+    }
+}
+
+#[cfg(test)]
+mod webhook_contract_tests {
+    use super::function_webhook_contract;
+
+    fn manifest(webhook: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({ "route": true, "webhook": webhook })
+    }
+
+    #[test]
+    fn reads_a_complete_declaration() {
+        let m = manifest(serde_json::json!({
+            "secretVar": "UBER_SIGNING_KEYS",
+            "signatureHeader": "x-uber-signature",
+            "encoding": "base64",
+        }));
+        assert_eq!(
+            function_webhook_contract(&m),
+            Some((
+                "UBER_SIGNING_KEYS".to_string(),
+                "x-uber-signature".to_string(),
+                "base64".to_string()
+            ))
+        );
+    }
+
+    /// Hex is the default because it is what most providers send (Uber included),
+    /// so the common manifest does not have to say so.
+    #[test]
+    fn encoding_defaults_to_hex() {
+        let m = manifest(serde_json::json!({
+            "secretVar": "K",
+            "signatureHeader": "x-sig",
+        }));
+        assert_eq!(function_webhook_contract(&m).unwrap().2, "hex");
+    }
+
+    /// No `webhook:` block is the 404 case — the function exists and is
+    /// invocable by its owner, but it is not a webhook endpoint, and an
+    /// anonymous caller learns nothing about it.
+    #[test]
+    fn a_function_without_a_webhook_block_has_no_contract() {
+        let m = serde_json::json!({ "route": true, "timeoutSeconds": 30 });
+        assert_eq!(function_webhook_contract(&m), None);
+    }
+
+    /// A half-written declaration must fail CLOSED. Both of these would
+    /// otherwise leave an anonymous route with nothing to verify against: no
+    /// secret to check, or no header to read the signature from.
+    #[test]
+    fn an_incomplete_declaration_yields_no_contract() {
+        for partial in [
+            serde_json::json!({ "signatureHeader": "x-sig" }),
+            serde_json::json!({ "secretVar": "K" }),
+            serde_json::json!({}),
+        ] {
+            assert_eq!(
+                function_webhook_contract(&manifest(partial.clone())),
+                None,
+                "incomplete webhook block yielded a contract: {partial}"
+            );
+        }
+    }
+
+    /// An unparseable manifest is not a webhook endpoint either — it must not
+    /// panic, and it must not resolve to a contract.
+    #[test]
+    fn a_malformed_manifest_yields_no_contract() {
+        assert_eq!(
+            function_webhook_contract(&serde_json::json!("not an object")),
+            None
+        );
     }
 }

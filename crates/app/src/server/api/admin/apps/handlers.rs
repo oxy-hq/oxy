@@ -919,13 +919,18 @@ pub async fn run_function_job(
         tracing::error!("run_function_job DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let run_id =
-        crate::server::api::custom_apps_functions::trigger_function_job(&db, id, &name, input)
-            .await
-            .map_err(|e| {
-                tracing::warn!("run_function_job failed for {id}/{name}: {e}");
-                StatusCode::BAD_REQUEST
-            })?;
+    let run_id = crate::server::api::custom_apps_functions::trigger_function_job(
+        &db,
+        id,
+        &name,
+        input,
+        crate::server::api::custom_apps_functions::FunctionJobTrigger::Manual,
+    )
+    .await
+    .map_err(|e| {
+        tracing::warn!("run_function_job failed for {id}/{name}: {e}");
+        StatusCode::BAD_REQUEST
+    })?;
     Ok(Json(RunFunctionJobResponse { run_id }))
 }
 

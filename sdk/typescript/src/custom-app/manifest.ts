@@ -35,6 +35,31 @@ export interface OxyAppFunctionManifest {
   route?: boolean;
   /** Wire the function in as an Airway pipeline transform step. */
   airwayStep?: { pipeline: string; resource: string };
+  /**
+   * Receive an unauthenticated POST from a third party at
+   * `POST /api/webhooks/apps/<org>/<app>/<name>`.
+   *
+   * The PLATFORM verifies every request — HMAC-SHA256 over the raw body, in
+   * constant time — before the function is enqueued, so app code never sees an
+   * unverified request. Omit the block and that endpoint answers 404, as if it
+   * did not exist.
+   */
+  webhook?: {
+    /**
+     * App-secret key holding the signing key(s) — the same `apps/<app-id>/`
+     * namespace `ctx.env` reads. The manifest names the secret, never holds it.
+     *
+     * **Comma-separated for rotation.** Providers that keep two live signing
+     * keys (Uber's `BASIC_HMAC` does) sign with either during a rotation; any
+     * match passes, so adopting a new key does not drop the events still
+     * signed with the old one.
+     */
+    secretVar: string;
+    /** Header carrying the signature, e.g. `x-uber-signature`. */
+    signatureHeader: string;
+    /** How the digest is encoded. Default `hex`. */
+    encoding?: "hex" | "base64";
+  };
   /** Wall-clock timeout. Default 30, max 300. */
   timeoutSeconds?: number;
   /**
@@ -583,6 +608,35 @@ function validateFunctions(raw: unknown): Record<string, OxyAppFunctionManifest>
       }
       fn.retries = retries;
     }
+    if (value.webhook !== undefined) {
+      const w = value.webhook;
+      if (!isRecord(w)) {
+        throw new Error(`oxy-app.json: function "${fnName}" \`webhook\` must be an object`);
+      }
+      // Both are required, and the error is loud on purpose: a webhook block
+      // the server cannot read is not a degraded endpoint, it is a permanent
+      // 404 on a URL the author has already handed to a provider.
+      for (const key of ["secretVar", "signatureHeader"] as const) {
+        if (typeof w[key] !== "string" || !(w[key] as string).trim()) {
+          throw new Error(
+            `oxy-app.json: function "${fnName}" \`webhook.${key}\` must be a non-empty string`
+          );
+        }
+      }
+      const webhook: NonNullable<OxyAppFunctionManifest["webhook"]> = {
+        secretVar: w.secretVar as string,
+        signatureHeader: w.signatureHeader as string
+      };
+      if (w.encoding !== undefined) {
+        if (w.encoding !== "hex" && w.encoding !== "base64") {
+          throw new Error(
+            `oxy-app.json: function "${fnName}" \`webhook.encoding\` must be "hex" or "base64"`
+          );
+        }
+        webhook.encoding = w.encoding;
+      }
+      fn.webhook = webhook;
+    }
     if (value.inputExample !== undefined) {
       // Arbitrary JSON sample — passed through verbatim for the "Run now" prefill.
       fn.inputExample = value.inputExample;
@@ -591,10 +645,12 @@ function validateFunctions(raw: unknown): Record<string, OxyAppFunctionManifest>
     // to true only when no other surface is declared, matching the doc.
     const hasSchedule = fn.schedule !== undefined;
     const hasAirway = fn.airwayStep !== undefined;
-    const routeActive = fn.route ?? !(hasSchedule || hasAirway);
-    if (!routeActive && !hasSchedule && !hasAirway) {
+    const hasWebhook = fn.webhook !== undefined;
+    const routeActive = fn.route ?? !(hasSchedule || hasAirway || hasWebhook);
+    if (!routeActive && !hasSchedule && !hasAirway && !hasWebhook) {
       throw new Error(
-        `oxy-app.json: function "${fnName}" must enable at least one of route/schedule/airwayStep`
+        `oxy-app.json: function "${fnName}" must enable at least one of ` +
+          `route/schedule/airwayStep/webhook`
       );
     }
     out[fnName] = fn;

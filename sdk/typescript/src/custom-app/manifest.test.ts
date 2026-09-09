@@ -377,3 +377,51 @@ describe("parseOxyAppManifest — functions", () => {
     );
   });
 });
+
+describe("webhook declarations", () => {
+  const load = (webhook: unknown) => {
+    mockFetchReturning({
+      schemaVersion: 2,
+      slug: "demo",
+      functions: { "ingest-report": { route: false, webhook } }
+    });
+    return loadCustomAppManifest({ manifestUrl: "/oxy-app.json" });
+  };
+
+  it("accepts a complete declaration and leaves the encoding to default", async () => {
+    const resolved = await load({ secretVar: "UBER_KEYS", signatureHeader: "x-uber-signature" });
+    expect(resolved.manifest.functions?.["ingest-report"].webhook).toEqual({
+      secretVar: "UBER_KEYS",
+      signatureHeader: "x-uber-signature"
+    });
+  });
+
+  it("keeps an explicit encoding", async () => {
+    const resolved = await load({
+      secretVar: "K",
+      signatureHeader: "x-sig",
+      encoding: "base64"
+    });
+    expect(resolved.manifest.functions?.["ingest-report"].webhook?.encoding).toBe("base64");
+  });
+
+  // A half-written block is the dangerous case: the server reads no contract
+  // and answers 404 forever, on a URL the author has already handed to a
+  // provider, with nothing anywhere saying why. Fail at authoring time instead.
+  it.each([
+    [{ signatureHeader: "x-sig" }, /webhook\.secretVar/],
+    [{ secretVar: "K" }, /webhook\.signatureHeader/],
+    [{ secretVar: "  ", signatureHeader: "x-sig" }, /webhook\.secretVar/],
+    [{ secretVar: "K", signatureHeader: "x-sig", encoding: "base32" }, /webhook\.encoding/],
+    ["not-an-object", /`webhook` must be an object/]
+  ])("rejects an unusable declaration %#", async (webhook, message) => {
+    await expect(load(webhook)).rejects.toThrow(message);
+  });
+
+  // A webhook is an invocation surface in its own right, so declaring one must
+  // not force the function to also expose the authenticated `/fn/` route.
+  it("is a sufficient invocation surface on its own", async () => {
+    const resolved = await load({ secretVar: "K", signatureHeader: "x-sig" });
+    expect(resolved.manifest.functions?.["ingest-report"].route).toBe(false);
+  });
+});

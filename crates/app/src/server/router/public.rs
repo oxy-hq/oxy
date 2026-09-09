@@ -1,5 +1,11 @@
 //! Routes that do not require authentication: health probes, auth endpoints,
-//! current-user lookup, and Slack-originated webhooks/callbacks.
+//! current-user lookup, and provider-originated webhooks/callbacks (Slack,
+//! Toast, and per-app function webhooks).
+//!
+//! "No auth gate" here means no *user session*, not "no caller check". The
+//! webhook receivers authenticate the SENDER instead, by HMAC over the raw
+//! body — see `webhooks::app_function`, which fails closed twice (undeclared
+//! webhook → 404, unresolvable secret → 401) precisely because it is anonymous.
 //!
 //! Every route here is `route_fleet`, and that is a declaration of what was
 //! already true rather than a change: this file used to mount 51 routes with a
@@ -81,6 +87,20 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
         .route_fleet(
             "/webhooks/toast/orders",
             post(webhooks::toast::toast_order_webhook),
+        )
+        // Custom-app webhooks. Unauthenticated by design — the sender is proven
+        // by an HMAC the PLATFORM verifies against a secret the app's manifest
+        // declares, before any app code runs. A function that declares no
+        // `webhook:` block is a 404 here, so this cannot be walked to enumerate
+        // an app's functions.
+        //
+        // `route_fleet`: it must answer on every replica. A provider retrying
+        // against whichever instance it reaches has no idea which one owns a
+        // workspace, and a webhook that only works on the singleton is a webhook
+        // that silently drops events.
+        .route_fleet(
+            "/webhooks/apps/{org_slug}/{app_slug}/{function_name}",
+            post(webhooks::app_function::app_function_webhook),
         )
         // Slack-originated traffic. None of these carry a user Authorization
         // header; they're either signature-verified (webhooks) or reached

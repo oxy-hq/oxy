@@ -9,7 +9,7 @@ mounted under `/api` by [`crate::cli::commands::serve`].
 |---|---|
 | [`mod.rs`](./mod.rs) | `AppState`, `WorkspaceExtractor`, shared `build_cors_layer`, router tests |
 | [`entry.rs`](./entry.rs) | `api_router` / `internal_api_router` — assembles the full router, applies CORS, timeout, Sentry |
-| [`public.rs`](./public.rs) | Routes with no auth gate (health, auth handshake, current user, Slack webhooks) |
+| [`public.rs`](./public.rs) | Routes with no *user session* gate (health, auth handshake, current user, and webhook receivers — Slack, Toast, and `POST /webhooks/apps/{org}/{app}/{fn}`, which authenticates the sender by HMAC instead) |
 | [`global.rs`](./global.rs) | Cloud-only flat routes (logout, org CRUD, per-user GitHub) |
 | [`workspace.rs`](./workspace.rs) | The `/{workspace_id}/…` tree and every per-resource sub-builder |
 | [`secrets.rs`](./secrets.rs) | Secret CRUD + the admin-only gating middleware |

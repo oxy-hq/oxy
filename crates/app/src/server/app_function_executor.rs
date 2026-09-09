@@ -48,15 +48,7 @@ impl TaskExecutor for AppFunctionTaskExecutor {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "app_function payload missing string function_name".to_string())?
             .to_string();
-        // The trigger stamped on the task by the seeding path drives the
-        // invocation `mode`, so the invocation history agrees with the run's
-        // `metadata.trigger`: a run-now / API trigger records `mode="manual"`, a
-        // cron fire records `mode="schedule"`. A legacy payload without the field
-        // (pre-this-change queued tasks) defaults to `schedule`.
-        let mode = match payload.get("trigger").and_then(|v| v.as_str()) {
-            Some("manual") => "manual".to_string(),
-            _ => "schedule".to_string(),
-        };
+        let mode = invocation_mode(payload.get("trigger").and_then(|v| v.as_str()));
         // Optional input params (JSON) supplied at trigger time — serialized back
         // to the request-body bytes the isolate receives as `req`. Absent (cron
         // fire) → empty body.
@@ -188,4 +180,54 @@ async fn run_job(args: JobArgs) {
     };
 
     let _ = outcome_tx.send(outcome).await;
+}
+
+/// The invocation `mode` a queued job reports, from the trigger its seeding path
+/// stamped on the task — so the invocation history agrees with the run's
+/// `metadata.trigger`.
+///
+/// **The fallback is the trap.** An unrecognised label does not error, it becomes
+/// `schedule`: a trigger added to `FunctionJobTrigger` without a matching arm
+/// here would tell a function that a provider's webhook was a cron fire. The
+/// fallback exists for legacy tasks queued before the field was carried at all,
+/// which really were cron fires — it is not a place to route new labels through.
+fn invocation_mode(trigger: Option<&str>) -> String {
+    match trigger {
+        Some("manual") => "manual",
+        // A verified inbound webhook. Distinct from `manual` because a function
+        // may legitimately branch on it — the payload is a provider's event, not
+        // an operator's click — and distinct from `route` because there is no
+        // HTTP caller to attribute it to.
+        Some("webhook") => "webhook",
+        _ => "schedule",
+    }
+    .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::invocation_mode;
+    use crate::server::api::custom_apps_functions::FunctionJobTrigger;
+
+    /// Every label the seeding side can produce must have an arm here. Written
+    /// over the enum rather than string literals so adding a variant without an
+    /// arm fails this test instead of silently reporting `schedule`.
+    #[test]
+    fn every_trigger_label_maps_to_its_own_mode() {
+        for trigger in [FunctionJobTrigger::Manual, FunctionJobTrigger::Webhook] {
+            let label = trigger.as_str();
+            assert_eq!(
+                invocation_mode(Some(label)),
+                label,
+                "trigger '{label}' does not round-trip to its own mode — it is \
+                 falling through to the legacy `schedule` default"
+            );
+        }
+    }
+
+    /// A task queued before the field existed is a cron fire, and stays one.
+    #[test]
+    fn a_payload_without_a_trigger_is_a_schedule() {
+        assert_eq!(invocation_mode(None), "schedule");
+    }
 }
