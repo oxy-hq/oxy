@@ -57,7 +57,8 @@ export const SOURCE_OPTIONS: SourceOption[] = [
   {
     id: "sp_api",
     label: "Amazon Selling Partner",
-    description: "Seller reports (ledger, FBA inventory, shipments)",
+    description:
+      "Seller or Vendor Central reports (ledger, FBA inventory, shipments, vendor sales)",
     airwayKind: "sp_api"
   },
   {
@@ -158,6 +159,7 @@ const SOURCE_CONFIG: Record<string, string> = {
     client_secret_var: SP_API_CLIENT_SECRET
     refresh_token_var: SP_API_REFRESH_TOKEN
     marketplace_id: ATVPDKIKX0DER # US; CA=A2EUQ1WTGCTBG2
+    partner_type: seller # or vendor — these are separate Amazon accounts
     default_start: "<YYYY-MM-DD>"`,
   filesystem: `    base_path: /path/to/data # or s3://bucket/prefix, gs://..., az://...
     pattern: "*.jsonl"
@@ -211,21 +213,76 @@ interface QuickBooksScaffold {
   baseUrl?: string;
 }
 
+/** Which Amazon account a set of SP-API credentials belongs to.
+ *
+ * Not a filter over one roster. Seller Central and Vendor Central are separate
+ * accounts with separate authorizations, and a refresh token belongs to one of
+ * them for as long as it exists — so the connector publishes only the reports
+ * the configured account can reach, and the two need SEPARATE pipelines. */
+export type SpApiPartnerType = "seller" | "vendor";
+
+/** The secret names the wizard offers, per account.
+ *
+ * Distinct per account on purpose, and it is the one default here that
+ * prevents a silent wrong answer rather than saving typing. A vendor pipeline
+ * offered `SP_API_REFRESH_TOKEN` — the seller pipeline's name — passes
+ * validation with a blank value, because a secret under that name already
+ * exists and blank means "reuse it". The vendor pipeline would then run with
+ * the SELLER's token and be refused on every vendor report, which reads as a
+ * credentials problem rather than as the wrong credential. */
+export const SP_API_SECRET_DEFAULTS: Record<
+  SpApiPartnerType,
+  { clientSecret: string; refreshToken: string }
+> = {
+  seller: {
+    clientSecret: "SP_API_CLIENT_SECRET",
+    refreshToken: "SP_API_REFRESH_TOKEN"
+  },
+  vendor: {
+    clientSecret: "SP_API_VENDOR_CLIENT_SECRET",
+    refreshToken: "SP_API_VENDOR_REFRESH_TOKEN"
+  }
+};
+
+/** Re-default a secret name when the account changes, without clobbering one
+ * the operator typed.
+ *
+ * Only rewrites a name that still equals the OTHER account's default, so
+ * switching seller/vendor back and forth tracks the defaults while any custom
+ * name survives untouched. Pure and exported so this is pinned by a test
+ * rather than by whichever wizard state happens to reach it.
+ */
+export function retargetSpApiSecretName(
+  current: string,
+  from: SpApiPartnerType,
+  to: SpApiPartnerType,
+  field: "clientSecret" | "refreshToken"
+): string {
+  return current === SP_API_SECRET_DEFAULTS[from][field]
+    ? SP_API_SECRET_DEFAULTS[to][field]
+    : current;
+}
+
 /** Amazon SP-API wizard fields.
  *
  * `clientSecretVar` / `refreshTokenVar` are secret-manager names resolved at
  * run time — the values themselves never reach the `.airway.yml`. Unlike
  * QuickBooks there is no OAuth flow here: an SP-API refresh token comes from
- * authorizing the app in Seller Central, so the operator already holds one.
+ * authorizing the app in the account's own console — Seller Central or Vendor
+ * Central — so the operator already holds one.
  *
  * `defaultStart` is REQUIRED, not optional, and that is deliberate — see
- * `buildSpApiConfig`. */
+ * `buildSpApiConfig`. `partnerType` is required for a different reason: the
+ * wizard now asks the question, and a scaffold that could omit the answer
+ * would be one that sometimes wrote a pipeline nobody had chosen an account
+ * for. */
 interface SpApiScaffold {
   clientId: string;
   clientSecretVar: string;
   refreshTokenVar: string;
   marketplaceId: string;
   defaultStart: string;
+  partnerType: SpApiPartnerType;
 }
 
 /** ClickHouse wizard fields. `passwordVar` is the secret-manager name
@@ -310,7 +367,7 @@ function buildSpApiConfig(s: SpApiScaffold): string {
   // `default_start` is always emitted, never omitted-to-default. The
   // connector pulls FORWARD only, so this single value is the entire backfill
   // policy: too recent and the history is simply absent with nothing to signal
-  // it, too far back and the first run spends report jobs against a
+  // it, too far back and the first run spends a report job per chunk against a
   // per-account budget that restores about once a minute. `build_sp_api`
   // refuses a config without it rather than guessing, so the wizard must not
   // produce one either.
@@ -318,11 +375,18 @@ function buildSpApiConfig(s: SpApiScaffold): string {
   // Quoted so YAML keeps `2026-01-01` a string rather than parsing it as a
   // date — the connector's field is a String it parses itself, and an unquoted
   // date arrives as a serde type error naming the struct, not the field.
+  //
+  // `partner_type` is emitted ALWAYS, including for `seller` where it matches
+  // the connector's default. A generated file should say which account it is
+  // without the reader having to know what the default was — and writing it
+  // only for vendor would make the vendor case look like the special one,
+  // when the two are simply different accounts.
   return [
     `    client_id: ${s.clientId}`,
     `    client_secret_var: ${s.clientSecretVar}`,
     `    refresh_token_var: ${s.refreshTokenVar}`,
     `    marketplace_id: ${s.marketplaceId}`,
+    `    partner_type: ${s.partnerType}`,
     `    default_start: "${s.defaultStart}"`
   ].join("\n");
 }

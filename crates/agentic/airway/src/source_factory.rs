@@ -33,7 +33,7 @@ use airway::connector::sources::overture::{OvertureConfig, overture_source};
 use airway::connector::sources::postgres_cdc::PostgresCdcSource;
 use airway::connector::sources::quickbooks::{QuickBooksSource, SANDBOX_BASE_URL};
 use airway::connector::sources::rest_api::{RestApiConfig, RestApiSource};
-use airway::connector::sources::sp_api::{LwaCredentials, SpApiSource};
+use airway::connector::sources::sp_api::{LwaCredentials, PartnerType, SpApiSource};
 use airway::connector::sources::sql_database::{
     ClickHouseConn, DatabaseBackend, SqlDatabaseSource, TableConfig,
 };
@@ -1253,6 +1253,25 @@ struct SpApiParams {
     backfill_start: Option<String>,
     #[serde(default)]
     backfill_end: Option<String>,
+    /// Which Amazon account the credentials above belong to: `seller` or
+    /// `vendor`. Defaults to seller.
+    ///
+    /// A property of the CREDENTIAL, not of the run. Seller Central and Vendor
+    /// Central are separate accounts with separate authorizations, and a
+    /// refresh token belongs to one of them for as long as it exists.
+    ///
+    /// It decides which resources the pipeline can see AT ALL. `resources()`
+    /// publishes only the reports the configured account can reach, so a
+    /// pipeline that names no subset pulls that half and no more — which is
+    /// why this is not merely a filter. Getting it wrong does not pull the
+    /// wrong data; it pulls nothing, and every named resource is refused by
+    /// name with a message saying which account it belongs to.
+    ///
+    /// The two therefore need SEPARATE pipelines rather than one with both
+    /// sets of resources: one source holds one set of credentials, and those
+    /// belong to one account.
+    #[serde(default)]
+    partner_type: PartnerType,
 }
 
 /// Hand-written: `{params:?}` must not put the seller's refresh token or the
@@ -1265,6 +1284,10 @@ impl std::fmt::Debug for SpApiParams {
             .field("refresh_token", &"<redacted>")
             .field("marketplace_id", &self.marketplace_id)
             .field("default_start", &self.default_start)
+            // Not a secret, and worth showing: it decides which resources the
+            // pipeline can reach, so a run that pulled nothing is diagnosed
+            // from this line.
+            .field("partner_type", &self.partner_type)
             .finish()
     }
 }
@@ -1347,6 +1370,11 @@ fn build_sp_api(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
         params.marketplace_id,
         default_start,
     )?;
+    // Unconditional, not `if vendor`. The builder's default is `Seller` and so
+    // is the field's, so passing it always keeps ONE place deciding — a
+    // conditional would leave the seller case relying on two defaults agreeing,
+    // in two crates, with nothing that fails when they stop.
+    source = source.with_partner_type(params.partner_type);
     if let Some((start, end)) = parse_backfill_window(&params.backfill_start, &params.backfill_end)?
     {
         // RESUMABLE, and the builder is named for it — `with_resumable_backfill_window`,
@@ -1723,6 +1751,53 @@ mod tests {
         assert!(msg.contains("marketplace"), "{msg}");
     }
 
+    // The two roster tests that belonged here — that an absent `partner_type`
+    // pulls the seller reports and `vendor` pulls the vendor ones — live in
+    // `tests/integration/sp_api_partner_type_test.rs` instead.
+    //
+    // They have to call `build_source_connector`, which constructs an HTTP
+    // client, which reads airway's process-global deployment config. That is a
+    // `OnceCell`: set once per process, never reset. `deployment_config_tests`
+    // in this crate installs a `tls_ca_cert` of `/etc/pki/ca.pem`, which does
+    // not exist, so every later `build` in THIS binary fails on a TLS error
+    // having nothing to do with what it was testing — six tests in this module
+    // are red on `main` for that reason, including two of sp_api's own.
+    //
+    // An integration test gets its own binary and its own `OnceCell`. Putting
+    // them there is the difference between covering the wiring and adding two
+    // more names to a list of failures nobody reads.
+
+    /// A misspelled partner type is refused rather than silently defaulted.
+    ///
+    /// The dangerous direction, and the reason this is worth a test of its own:
+    /// `#[serde(default)]` means a value serde cannot read would otherwise
+    /// become `Seller`, so a vendor pipeline with `partner_type: Vendor`
+    /// (capitalised, as an operator reasonably might) would check the seller
+    /// roster, be refused on every report for want of the role, and look like a
+    /// credentials problem. `deny_unknown_fields` does not help — the field
+    /// name is right and only the value is wrong.
+    #[test]
+    fn sp_api_refuses_a_partner_type_it_cannot_read() {
+        for wrong in ["Vendor", "VENDOR", "vendour", "vendor_central"] {
+            let msg = refusal(build(&sp_api_cfg(
+                json!({ "partner_type": wrong })
+                    .as_object()
+                    .expect("object")
+                    .clone(),
+            )));
+            // Serde names the VARIANT and the accepted set rather than the
+            // field — "unknown variant `Vendor`, expected `seller` or
+            // `vendor`" — which is the actionable half. Asserted on the
+            // accepted values, because that is what an operator needs and it
+            // is what would go missing if the enum ever lost its
+            // `rename_all`.
+            assert!(
+                msg.contains("seller") && msg.contains("vendor"),
+                "{wrong} must be refused with the values that ARE accepted: {msg}"
+            );
+        }
+    }
+
     /// `{params:?}` must not put the seller's refresh token in a log.
     #[test]
     fn sp_api_params_debug_redacts_both_credentials() {
@@ -1738,11 +1813,16 @@ mod tests {
             // a log line.
             backfill_start: None,
             backfill_end: None,
+            partner_type: PartnerType::Seller,
         };
         let rendered = format!("{params:?}");
         assert!(!rendered.contains("SUPER_SECRET_VALUE"), "{rendered}");
         assert!(!rendered.contains("SUPER_SECRET_TOKEN"), "{rendered}");
         assert!(rendered.contains("<redacted>"), "{rendered}");
+        // Not a secret, and the one field that explains a run which pulled
+        // nothing — so it must be IN the rendering, not merely absent from the
+        // redacted set.
+        assert!(rendered.contains("partner_type"), "{rendered}");
         // The identifiers stay legible — that is the point of the hand-written
         // impl rather than redacting the whole struct.
         assert!(rendered.contains("ATVPDKIKX0DER"), "{rendered}");

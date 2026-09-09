@@ -10,4 +10,5 @@
 mod pipeline_lease_test;
 mod reset_test;
 mod run_scoped_state_store_test;
+mod sp_api_partner_type_test;
 mod worker_integration;

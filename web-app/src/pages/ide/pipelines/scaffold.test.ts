@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPipelineScaffold, firstOfLastMonth } from "./scaffold";
+import {
+  buildPipelineScaffold,
+  firstOfLastMonth,
+  retargetSpApiSecretName,
+  SP_API_SECRET_DEFAULTS
+} from "./scaffold";
 
 describe("buildPipelineScaffold", () => {
   it("emits a database-reference destination, not raw credentials", () => {
@@ -76,7 +81,8 @@ describe("buildPipelineScaffold", () => {
         clientSecretVar: "SP_API_PROD_SECRET",
         refreshTokenVar: "SP_API_PROD_REFRESH",
         marketplaceId: "A2EUQ1WTGCTBG2",
-        defaultStart: "2026-01-01"
+        defaultStart: "2026-01-01",
+        partnerType: "seller"
       },
       destinationDatabase: "wh",
       datasetName: "amazon_daily"
@@ -100,7 +106,8 @@ describe("buildPipelineScaffold", () => {
         clientSecretVar: "S",
         refreshTokenVar: "R",
         marketplaceId: "ATVPDKIKX0DER",
-        defaultStart: "2026-01-01"
+        defaultStart: "2026-01-01",
+        partnerType: "seller"
       },
       destinationDatabase: "wh",
       datasetName: "amazon_daily"
@@ -112,6 +119,76 @@ describe("buildPipelineScaffold", () => {
     // the entire backfill policy and `build_sp_api` refuses a config without
     // it — the wizard must not be able to produce one.
     expect(yaml).toMatch(/default_start:/);
+  });
+
+  it("writes the chosen Amazon account, including when it is the default", () => {
+    // Emitted ALWAYS, `seller` included. A generated file should say which
+    // account it is without the reader having to know the connector's default,
+    // and writing it only for vendor would make vendor look like the special
+    // case when the two are simply different accounts.
+    for (const partnerType of ["seller", "vendor"] as const) {
+      const yaml = buildPipelineScaffold({
+        name: "amazon_daily",
+        sourceId: "sp_api",
+        spApi: {
+          clientId: "c",
+          clientSecretVar: "S",
+          refreshTokenVar: "R",
+          marketplaceId: "A2EUQ1WTGCTBG2",
+          defaultStart: "2026-01-01",
+          partnerType
+        },
+        destinationDatabase: "wh",
+        datasetName: "amazon_daily"
+      });
+      expect(yaml).toContain(`partner_type: ${partnerType}`);
+      // Types are stripped at runtime, so a caller omitting the field would
+      // emit `partner_type: undefined` and the connector would refuse the
+      // whole pipeline on a serde error. Cheap to assert, and the only thing
+      // standing between that and a scaffold nobody re-reads.
+      expect(yaml).not.toContain("undefined");
+    }
+  });
+
+  it("gives each Amazon account its own secret names", () => {
+    // The one default here that prevents a wrong ANSWER rather than saving
+    // typing. Sharing `SP_API_REFRESH_TOKEN` between a seller and a vendor
+    // pipeline passes validation — a secret under that name exists, and a
+    // blank value means "reuse it" — and the vendor pipeline then runs with
+    // the seller's token, refused on every vendor report in a way that reads
+    // as a credentials problem rather than the wrong credential.
+    expect(SP_API_SECRET_DEFAULTS.seller.refreshToken).not.toBe(
+      SP_API_SECRET_DEFAULTS.vendor.refreshToken
+    );
+    expect(SP_API_SECRET_DEFAULTS.seller.clientSecret).not.toBe(
+      SP_API_SECRET_DEFAULTS.vendor.clientSecret
+    );
+  });
+
+  it("re-points a default secret name when the account changes, but never a typed one", () => {
+    // Switching accounts tracks the defaults...
+    expect(
+      retargetSpApiSecretName(
+        SP_API_SECRET_DEFAULTS.seller.refreshToken,
+        "seller",
+        "vendor",
+        "refreshToken"
+      )
+    ).toBe(SP_API_SECRET_DEFAULTS.vendor.refreshToken);
+    // ...in both directions, so flipping back and forth is not a one-way door.
+    expect(
+      retargetSpApiSecretName(
+        SP_API_SECRET_DEFAULTS.vendor.clientSecret,
+        "vendor",
+        "seller",
+        "clientSecret"
+      )
+    ).toBe(SP_API_SECRET_DEFAULTS.seller.clientSecret);
+    // ...and a name the operator typed is left exactly alone, which is the
+    // half that makes the rewrite safe to do silently.
+    expect(retargetSpApiSecretName("BMG_VENDOR_TOKEN", "seller", "vendor", "refreshToken")).toBe(
+      "BMG_VENDOR_TOKEN"
+    );
   });
 
   it("omits base_url when not provided", () => {

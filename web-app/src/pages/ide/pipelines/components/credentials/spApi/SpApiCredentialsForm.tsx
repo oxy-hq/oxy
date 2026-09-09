@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/shadcn/select";
+import type { SpApiPartnerType } from "../../../scaffold";
 import type { useSpApiCredentials } from "./useSpApiCredentials";
 
 interface SpApiCredentialsFormProps {
@@ -21,6 +22,34 @@ const SpApiCredentialsForm: React.FC<SpApiCredentialsFormProps> = ({
 }) => (
   <div className='grid gap-3 rounded-md border border-border p-3'>
     <p className='font-medium text-sm'>Amazon Selling Partner credentials</p>
+
+    <div className='grid gap-2'>
+      <Label htmlFor='sp-api-partner-type'>Amazon account</Label>
+      <Select
+        value={credentials.partnerType}
+        onValueChange={(v) => {
+          credentials.setPartnerType(v as SpApiPartnerType);
+          onClearError();
+        }}
+      >
+        <SelectTrigger id='sp-api-partner-type'>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value='seller'>Seller Central</SelectItem>
+          <SelectItem value='vendor'>Vendor Central</SelectItem>
+        </SelectContent>
+      </Select>
+      <p className='text-muted-foreground text-xs'>
+        Separate Amazon accounts with separate authorizations, not two views of one — so the
+        credentials below belong to whichever you pick, and each needs its own pipeline. This
+        decides which reports the pipeline can pull <em>at all</em>: choosing the wrong one does not
+        fetch the wrong data, it fetches nothing, and every report is refused for want of the role.
+        Switching this re-points the secret names below and clears any credential you have pasted,
+        since both belong to the account — so a vendor pipeline cannot end up holding the
+        seller&apos;s token under a vendor name.
+      </p>
+    </div>
 
     <div className='grid gap-2'>
       <Label htmlFor='sp-api-client-id'>LWA Client ID</Label>
@@ -72,8 +101,9 @@ const SpApiCredentialsForm: React.FC<SpApiCredentialsFormProps> = ({
         placeholder='Atzr|... — leave blank to reuse an existing secret'
       />
       <p className='text-muted-foreground text-xs'>
-        Issued when the app is authorized in Seller Central. This is the credential that grants
-        access to this seller&apos;s data — rotate it there to revoke access.
+        Issued when the app is authorized in the account&apos;s own console — Seller Central or
+        Vendor Central, whichever you picked above. This is the credential that grants access to
+        that account&apos;s data; rotate it there to revoke access.
       </p>
     </div>
     <div className='grid gap-2'>
@@ -142,11 +172,12 @@ const SpApiCredentialsForm: React.FC<SpApiCredentialsFormProps> = ({
       />
       <p className='text-muted-foreground text-xs'>
         Where the first run begins, and the entire backfill policy — this connector only pulls
-        forward, so anything earlier stays missing until someone resets the cursor. Reaching too far
-        back is the riskier direction: the whole span is requested as a <em>single</em> report, and
-        a window too large for Amazon to build in time fails the same way on every later run rather
-        than catching up. Defaults to the first of last month, which keeps the span between one and
-        two months.
+        forward, so anything earlier stays missing until someone resets the cursor. A long span no
+        longer stalls the way it once did: it is split into report-sized windows Amazon will finish,
+        and an interrupted run resumes at the one it reached. It still costs one report job per
+        window on that first run, against a per-account budget that refills about once a minute, so
+        reaching far back is slow rather than free. Defaults to the first of last month, which keeps
+        the span between one and two months.
       </p>
     </div>
   </div>

@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { useCreateSecret } from "@/hooks/api/secrets/useSecretMutations";
 import useSecrets from "@/hooks/api/secrets/useSecrets";
 import useSpApiMarketplaces from "@/hooks/api/spApi/useSpApiMarketplaces";
-import { firstOfLastMonth } from "../../../scaffold";
+import {
+  firstOfLastMonth,
+  retargetSpApiSecretName,
+  SP_API_SECRET_DEFAULTS,
+  type SpApiPartnerType
+} from "../../../scaffold";
 
 export interface SpApiScaffoldConfig {
   clientId: string;
@@ -10,6 +15,7 @@ export interface SpApiScaffoldConfig {
   refreshTokenVar: string;
   marketplaceId: string;
   defaultStart: string;
+  partnerType: SpApiPartnerType;
 }
 
 /** `YYYY-MM-DD`, which is what `<input type="date">` produces and what the
@@ -20,15 +26,53 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
  *  persistence and scaffold-config shaping for the New Pipeline wizard.
  *
  * No OAuth flow, unlike QuickBooks: an SP-API refresh token is issued when the
- * app is authorized in Seller Central, so the operator already holds one and
- * only needs to name the secret it lives in.
+ * app is authorized in the account's own console — Seller Central or Vendor
+ * Central — so the operator already holds one and only needs to name the
+ * secret it lives in.
  */
 export function useSpApiCredentials() {
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
-  const [clientSecretName, setClientSecretName] = useState("SP_API_CLIENT_SECRET");
+  const [partnerType, setPartnerTypeState] = useState<SpApiPartnerType>("seller");
+  const [clientSecretName, setClientSecretName] = useState(
+    SP_API_SECRET_DEFAULTS.seller.clientSecret
+  );
   const [refreshToken, setRefreshToken] = useState("");
-  const [refreshTokenName, setRefreshTokenName] = useState("SP_API_REFRESH_TOKEN");
+  const [refreshTokenName, setRefreshTokenName] = useState(
+    SP_API_SECRET_DEFAULTS.seller.refreshToken
+  );
+
+  /** Changing the account re-points the secret NAMES and CLEARS the pasted
+   *  values, because both belong to the account rather than to the form.
+   *
+   *  The names first. Two accounts hold different refresh tokens, and a vendor
+   *  pipeline left on `SP_API_REFRESH_TOKEN` passes validation with a blank
+   *  value — blank means "reuse the secret already stored under this name",
+   *  and the seller pipeline created one. It would then run with the seller's
+   *  token and be refused on every vendor report, which reads as a credentials
+   *  problem rather than as the wrong credential entirely. A name the operator
+   *  typed is left alone: only one still equal to the other account's default
+   *  is re-pointed.
+   *
+   *  The values matter for the same reason and were missed at first, which
+   *  made this WORSE than the case it was written to prevent. Paste the seller
+   *  token, then realise this is the vendor pipeline and flip the select: the
+   *  name became `SP_API_VENDOR_REFRESH_TOKEN`, the value stayed the seller's,
+   *  and `persistSecret` stored it under the vendor name with a "Vendor
+   *  Central" description. The mismatch is then invisible in the secret list
+   *  too — the one place someone would later go to untangle it.
+   *
+   *  Clearing them is safe rather than destructive: blank already means "reuse
+   *  the secret stored under this name", and the name is now the new
+   *  account's, so a blank cannot reach the other account's secret either. */
+  const setPartnerType = (next: SpApiPartnerType) => {
+    if (next === partnerType) return;
+    setClientSecretName((n) => retargetSpApiSecretName(n, partnerType, next, "clientSecret"));
+    setRefreshTokenName((n) => retargetSpApiSecretName(n, partnerType, next, "refreshToken"));
+    setClientSecret("");
+    setRefreshToken("");
+    setPartnerTypeState(next);
+  };
   // Server-owned, so the picker cannot drift from `build_sp_api`'s refusal.
   // Empty until it loads; `validate` treats that as "not chosen yet" rather
   // than letting a blank reach the YAML.
@@ -53,9 +97,10 @@ export function useSpApiCredentials() {
   const reset = () => {
     setClientId("");
     setClientSecret("");
-    setClientSecretName("SP_API_CLIENT_SECRET");
+    setPartnerTypeState("seller");
+    setClientSecretName(SP_API_SECRET_DEFAULTS.seller.clientSecret);
     setRefreshToken("");
-    setRefreshTokenName("SP_API_REFRESH_TOKEN");
+    setRefreshTokenName(SP_API_SECRET_DEFAULTS.seller.refreshToken);
     setMarketplaceId("");
     setDefaultStart(firstOfLastMonth());
   };
@@ -77,9 +122,10 @@ export function useSpApiCredentials() {
     if (marketplaces.data && !marketplaces.data.some((m) => m.id === marketplaceId))
       return "Amazon SP-API: pick a North America marketplace — the connector only reaches that endpoint";
     // Required, not defaulted: this is the whole backfill policy for a
-    // forward-only connector, and both a too-recent and a too-old value fail
-    // silently (missing history, or a first run that exhausts the report
-    // budget). The backend refuses without it rather than guessing.
+    // forward-only connector, and both a too-recent and a too-old value cost
+    // something silently — missing history, or a first run that spends one
+    // report job per chunk against a per-account budget. The backend refuses
+    // without it rather than guessing.
     if (!defaultStart.trim()) return "Amazon SP-API: a start date is required";
     if (!ISO_DATE.test(defaultStart.trim())) return "Amazon SP-API: start date must be YYYY-MM-DD";
 
@@ -130,24 +176,29 @@ export function useSpApiCredentials() {
     clientSecretVar: clientSecretName.trim(),
     refreshTokenVar: refreshTokenName.trim(),
     marketplaceId,
-    defaultStart: defaultStart.trim()
+    defaultStart: defaultStart.trim(),
+    partnerType
   });
 
   /** Stores both credentials in the secret manager. A blank value means
    *  "reuse an existing secret with this name" — skip create, same as Toast. */
   const persistSecret = async (pipelineName: string) => {
+    // The account is named in the description because the two tokens are
+    // indistinguishable once stored — both are `Atzr|…` — and the secret list
+    // is where someone later works out which pipeline a name belongs to.
+    const account = partnerType === "vendor" ? "Vendor Central" : "Seller Central";
     if (clientSecret.trim()) {
       await createSecret.mutateAsync({
         name: clientSecretName.trim(),
         value: clientSecret,
-        description: `Amazon LWA client secret for pipeline ${pipelineName}`
+        description: `Amazon LWA client secret (${account}) for pipeline ${pipelineName}`
       });
     }
     if (refreshToken.trim()) {
       await createSecret.mutateAsync({
         name: refreshTokenName.trim(),
         value: refreshToken,
-        description: `Amazon SP-API refresh token for pipeline ${pipelineName}`
+        description: `Amazon SP-API refresh token (${account}) for pipeline ${pipelineName}`
       });
     }
   };
@@ -155,6 +206,8 @@ export function useSpApiCredentials() {
   return {
     clientId,
     setClientId,
+    partnerType,
+    setPartnerType,
     clientSecret,
     setClientSecret,
     clientSecretName,
