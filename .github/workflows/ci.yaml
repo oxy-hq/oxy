@@ -1249,7 +1249,7 @@ jobs:
 
       - name: Upload oxy binary artifact
         if: matrix.task == 'test'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v7
         with:
           name: oxy-binary-ci
           path: target/debug/oxy
@@ -1604,7 +1604,7 @@ jobs:
       # traces off, and no page or response body is collected.
       - name: Upload server log
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v7
         with:
           name: custom-app-canary-server-log
           path: ${{ runner.temp }}/custom-app-canary/oxy-server.log
@@ -1703,7 +1703,7 @@ jobs:
           echo "Consistency tests completed successfully!"
 
       - name: Upload consistency test results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v7
         if: always()
         with:
           name: consistency-test-results
@@ -1769,7 +1769,7 @@ jobs:
 
       # Upload test results and traces
       - name: Upload Playwright report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v7
         if: always()
         with:
           name: playwright-report
@@ -1777,7 +1777,7 @@ jobs:
           retention-days: 1
 
       - name: Upload test results with traces
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v7
         if: failure()
         with:
           name: playwright-results
