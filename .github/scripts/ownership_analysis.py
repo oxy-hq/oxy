@@ -128,6 +128,14 @@ AREAS = [
     ("web-app/src/components/settings/SettingsDialog/sections/organization/Crew",
                                                           "Frontline & crew ops"),
     ("web-app/src/pages/login",                           "Login & crew sign-in (UI)"),
+    ("web-app/src/pages/auth",                            "Sign-in callbacks & CLI auth (UI)"),
+    # API & agent tokens (new 2026-10, #3408) — API + settings surfaces; the
+    # token core is under crates/auth and counts toward Authentication.
+    ("crates/app/src/server/api/user_tokens",             "API & agent tokens"),
+    ("web-app/src/components/settings/SettingsDialog/sections/account/PersonalTokens",
+                                                          "API & agent tokens"),
+    ("web-app/src/components/settings/SettingsDialog/sections/organization/ApiAccess",
+                                                          "API & agent tokens"),
     ("crates/app/src/server/api/work",                    "Work assignment graph"),
     ("crates/api-documents",                              "Document model (KB & compliance)"),
     # Pre-extraction path (#3388) — without it the extraction reads as authorship.
