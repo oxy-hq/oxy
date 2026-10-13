@@ -3,17 +3,18 @@
 //! Flow: `POST /era/v1/metrics` with the restaurant ids + business-date window
 //! returns a `reportRequestGuid`; `GET /era/v1/metrics/{guid}` returns the data
 //! once generated (polled until ready). The response is an array of rows, one
-//! per restaurant × business date × revenue center; we reduce it to a per-guid
-//! sum. `parse_report_guid`, `parse_metrics_array`, and `reduce_check` are pure
-//! and unit-tested without a network.
+//! per restaurant × business date × revenue center; a check reduces it to a
+//! per-guid sum, and a grouped check also to a sum per restaurant and/or date.
+//! `parse_report_guid`, `parse_metrics_rows`, `reduce_check` and `reduce` are
+//! pure and unit-tested without a network.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use super::super::config::ExternalSpec;
-use super::super::source::ReconcileError;
+use super::super::config::{ExternalKey, ExternalSpec};
+use super::super::source::{ExternalValue, ReconcileError};
 use super::truncate_body;
 
 /// Per-restaurant sums across the report's rows (dates + revenue centers).
@@ -29,6 +30,26 @@ pub struct RestaurantMetrics {
 }
 
 impl RestaurantMetrics {
+    fn add_row(&mut self, row: &Value) {
+        self.net_sales += field(row, "netSalesAmount");
+        self.gross_sales += field(row, "grossSalesAmount");
+        self.orders += field(row, "ordersCount");
+        self.guests += field(row, "guestCount");
+        self.discounts += field(row, "discountAmount");
+        self.voids += field(row, "voidAmount");
+        self.refunds += field(row, "refundAmount");
+    }
+
+    fn add(&mut self, other: &RestaurantMetrics) {
+        self.net_sales += other.net_sales;
+        self.gross_sales += other.gross_sales;
+        self.orders += other.orders;
+        self.guests += other.guests;
+        self.discounts += other.discounts;
+        self.voids += other.voids;
+        self.refunds += other.refunds;
+    }
+
     /// Value for a config `metric`. Accepts both the raw Toast Analytics field
     /// (`netSalesAmount`) and the natural snake_case alias (`net_sales`), so the
     /// config can read like the Oxy measure side. Errors on an unknown name so a
@@ -51,7 +72,17 @@ impl RestaurantMetrics {
     }
 }
 
-/// Create the report, poll until ready, and reduce to per-restaurant sums.
+/// One restaurant's metrics on one business date, summed across revenue centers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MetricsRow {
+    pub restaurant: String,
+    /// `YYYY-MM-DD` (Toast sends `YYYYMMDD`); empty when the row had none.
+    pub business_date: String,
+    pub metrics: RestaurantMetrics,
+}
+
+/// Create the report, poll until ready, and parse it into per-restaurant,
+/// per-date rows.
 /// A rate-limit (HTTP 429) propagates as `ReconcileError::RateLimited`, which
 /// degrades the affected checks with the rate-limited reason rather than
 /// serving a stale prior report.
@@ -62,12 +93,12 @@ pub async fn fetch_report(
     restaurant_ids: &[String],
     window: &[String; 2],
     timeout: Duration,
-) -> Result<HashMap<String, RestaurantMetrics>, ReconcileError> {
+) -> Result<Vec<MetricsRow>, ReconcileError> {
     let guid = create_report(http, base_url, token, restaurant_ids, window).await?;
     let body = poll_report(http, base_url, token, &guid, timeout).await?;
-    let map = parse_metrics_array(&body);
-    log_report_summary(window, restaurant_ids, &map);
-    Ok(map)
+    let rows = parse_metrics_rows(&body);
+    log_report_summary(window, restaurant_ids, &by_restaurant(&rows));
+    Ok(rows)
 }
 
 /// `POST /era/v1/metrics` → `reportRequestGuid`.
@@ -196,26 +227,92 @@ fn parse_report_guid(text: &str) -> Result<String, ReconcileError> {
     Ok(t.to_string())
 }
 
-/// Reduce the report array to per-`restaurantGuid` sums across all rows.
-pub fn parse_metrics_array(body: &Value) -> HashMap<String, RestaurantMetrics> {
-    let mut map: HashMap<String, RestaurantMetrics> = HashMap::new();
-    let Some(rows) = body.as_array() else {
-        return map;
-    };
-    for row in rows {
+/// Reduce the report array to one row per `(restaurantGuid, businessDate)`,
+/// summed across revenue centers. Rows without a restaurant are skipped.
+pub fn parse_metrics_rows(body: &Value) -> Vec<MetricsRow> {
+    let mut map: BTreeMap<(String, String), RestaurantMetrics> = BTreeMap::new();
+    for row in body.as_array().into_iter().flatten() {
         let Some(guid) = row.get("restaurantGuid").and_then(Value::as_str) else {
             continue;
         };
-        let entry = map.entry(guid.to_string()).or_default();
-        entry.net_sales += field(row, "netSalesAmount");
-        entry.gross_sales += field(row, "grossSalesAmount");
-        entry.orders += field(row, "ordersCount");
-        entry.guests += field(row, "guestCount");
-        entry.discounts += field(row, "discountAmount");
-        entry.voids += field(row, "voidAmount");
-        entry.refunds += field(row, "refundAmount");
+        map.entry((guid.to_string(), business_date(row)))
+            .or_default()
+            .add_row(row);
+    }
+    map.into_iter()
+        .map(|((restaurant, business_date), metrics)| MetricsRow {
+            restaurant,
+            business_date,
+            metrics,
+        })
+        .collect()
+}
+
+/// `businessDate` (`YYYYMMDD`, typed as a string but sometimes a number) as
+/// `YYYY-MM-DD`, the spelling a warehouse date key has. Anything else is kept.
+fn business_date(row: &Value) -> String {
+    let raw = match row.get("businessDate") {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Number(n)) => n.to_string(),
+        _ => return String::new(),
+    };
+    match raw.as_bytes() {
+        [_, _, _, _, _, _, _, _] if raw.bytes().all(|b| b.is_ascii_digit()) => {
+            format!("{}-{}-{}", &raw[..4], &raw[4..6], &raw[6..])
+        }
+        _ => raw,
+    }
+}
+
+/// Per-`restaurantGuid` sums across all of a report's rows.
+pub fn by_restaurant(rows: &[MetricsRow]) -> HashMap<String, RestaurantMetrics> {
+    let mut map: HashMap<String, RestaurantMetrics> = HashMap::new();
+    for row in rows {
+        map.entry(row.restaurant.clone())
+            .or_default()
+            .add(&row.metrics);
     }
     map
+}
+
+#[cfg(test)]
+fn parse_metrics_array(body: &Value) -> HashMap<String, RestaurantMetrics> {
+    by_restaurant(&parse_metrics_rows(body))
+}
+
+/// A request's value from the report: the total [`reduce_check`] computes
+/// and, when `group_by` is non-empty, `spec.metric` summed per group over the
+/// same restaurants.
+pub fn reduce(
+    rows: &[MetricsRow],
+    spec: &ExternalSpec,
+    group_by: &[ExternalKey],
+) -> Result<ExternalValue, ReconcileError> {
+    let total = reduce_check(&by_restaurant(rows), spec)?;
+    if group_by.is_empty() {
+        return Ok(ExternalValue {
+            total,
+            groups: None,
+        });
+    }
+    let mut groups: BTreeMap<Vec<String>, f64> = BTreeMap::new();
+    for row in rows {
+        if !spec.restaurants.is_empty() && !spec.restaurants.contains(&row.restaurant) {
+            continue;
+        }
+        let key = group_by
+            .iter()
+            .map(|k| match k {
+                ExternalKey::Restaurant => row.restaurant.clone(),
+                ExternalKey::BusinessDate => row.business_date.clone(),
+            })
+            .collect();
+        *groups.entry(key).or_insert(0.0) += row.metrics.value(&spec.metric)?;
+    }
+    Ok(ExternalValue {
+        total,
+        groups: Some(groups.into_iter().collect()),
+    })
 }
 
 fn field(row: &Value, name: &str) -> f64 {
@@ -306,6 +403,7 @@ mod tests {
             integration: None,
             metric: metric.to_string(),
             restaurants: restaurants.iter().map(|s| s.to_string()).collect(),
+            keys: Default::default(),
         }
     }
 
@@ -395,6 +493,80 @@ mod tests {
     fn reduce_unknown_metric_errors_even_on_empty_report() {
         let empty: HashMap<String, RestaurantMetrics> = HashMap::new();
         assert!(reduce_check(&empty, &spec("bogus", &[])).is_err());
+    }
+
+    fn dated() -> Value {
+        // Restaurant "a" on two dates, the first split across two revenue
+        // centers; "b" on one date, with a numeric businessDate.
+        serde_json::json!([
+            { "restaurantGuid": "a", "businessDate": "20260701", "netSalesAmount": 100.0 },
+            { "restaurantGuid": "a", "businessDate": "20260701", "netSalesAmount": 20.0 },
+            { "restaurantGuid": "a", "businessDate": "20260702", "netSalesAmount": 30.0 },
+            { "restaurantGuid": "b", "businessDate": 20260701, "netSalesAmount": 200.0 }
+        ])
+    }
+
+    fn groups(v: &ExternalValue) -> Vec<(Vec<&str>, f64)> {
+        v.groups
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|(k, n)| (k.iter().map(String::as_str).collect(), *n))
+            .collect()
+    }
+
+    #[test]
+    fn rows_sum_revenue_centers_per_restaurant_and_date() {
+        let rows = parse_metrics_rows(&dated());
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].restaurant, "a");
+        assert_eq!(rows[0].business_date, "2026-07-01");
+        assert_eq!(rows[0].metrics.net_sales, 120.0);
+        assert_eq!(rows[2].business_date, "2026-07-01", "numeric date");
+    }
+
+    #[test]
+    fn reduce_groups_by_restaurant_and_date_with_an_unchanged_total() {
+        let rows = parse_metrics_rows(&dated());
+        let s = spec("net_sales", &[]);
+        let ungrouped = reduce(&rows, &s, &[]).unwrap();
+        assert_eq!(ungrouped.total, 350.0);
+        assert_eq!(ungrouped.groups, None);
+
+        let v = reduce(
+            &rows,
+            &s,
+            &[ExternalKey::Restaurant, ExternalKey::BusinessDate],
+        )
+        .unwrap();
+        assert_eq!(v.total, 350.0);
+        assert_eq!(
+            groups(&v),
+            vec![
+                (vec!["a", "2026-07-01"], 120.0),
+                (vec!["a", "2026-07-02"], 30.0),
+                (vec!["b", "2026-07-01"], 200.0),
+            ]
+        );
+
+        let by_date = reduce(&rows, &s, &[ExternalKey::BusinessDate]).unwrap();
+        assert_eq!(
+            groups(&by_date),
+            vec![(vec!["2026-07-01"], 320.0), (vec!["2026-07-02"], 30.0)]
+        );
+    }
+
+    #[test]
+    fn reduce_groups_only_the_listed_restaurants() {
+        let rows = parse_metrics_rows(&dated());
+        let v = reduce(
+            &rows,
+            &spec("net_sales", &["b"]),
+            &[ExternalKey::Restaurant],
+        )
+        .unwrap();
+        assert_eq!(v.total, 200.0);
+        assert_eq!(groups(&v), vec![(vec!["b"], 200.0)]);
     }
 
     #[test]

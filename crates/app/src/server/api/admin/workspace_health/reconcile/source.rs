@@ -13,7 +13,7 @@ use async_trait::async_trait;
 
 use oxy::config::model::ToastAnalyticsIntegration;
 
-use super::config::ExternalSpec;
+use super::config::{ExternalKey, ExternalSpec};
 use super::toast::ToastSource;
 
 /// One external value to fetch: an [`ExternalSpec`] (metric + restaurants) and
@@ -23,6 +23,18 @@ use super::toast::ToastSource;
 pub struct ExternalRequest<'a> {
     pub spec: &'a ExternalSpec,
     pub window: &'a [String; 2],
+    /// The check's `group_by`, mapped to source dimensions. Empty for an
+    /// ungrouped check, which then gets no `groups`.
+    pub group_by: &'a [ExternalKey],
+}
+
+/// One external operand's value: the total (exactly what an ungrouped check
+/// compares) and, for a grouped request, the value per group — each key holds
+/// the group's values in `ExternalRequest::group_by` order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternalValue {
+    pub total: f64,
+    pub groups: Option<Vec<(Vec<String>, f64)>>,
 }
 
 /// Per-batch context: the reference instant for window resolution, the
@@ -71,7 +83,7 @@ pub trait ReconcileSource: Send + Sync {
         &self,
         ctx: &SourceCtx,
         requests: &[ExternalRequest<'_>],
-    ) -> Vec<Result<f64, ReconcileError>>;
+    ) -> Vec<Result<ExternalValue, ReconcileError>>;
 }
 
 /// Registry: `reconcile.yml` `source:` string → adapter instance. The

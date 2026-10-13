@@ -536,6 +536,7 @@ mod tests {
                 window_start: "2026-07-12".into(),
                 window_end: "2026-07-18".into(),
                 window_timezone: "UTC".into(),
+                segments: None,
             },
             DriftVerdict {
                 check: "b".into(),
@@ -551,6 +552,7 @@ mod tests {
                 window_start: "2026-07-12".into(),
                 window_end: "2026-07-18".into(),
                 window_timezone: "UTC".into(),
+                segments: None,
             },
         ];
         let h = evaluate(&s, &HealthThresholds::default());

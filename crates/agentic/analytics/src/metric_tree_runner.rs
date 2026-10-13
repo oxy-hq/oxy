@@ -149,6 +149,24 @@ pub trait MetricTreeRunner: Send + Sync {
             "run_query_scalar not supported by this runner".to_string(),
         ))
     }
+
+    /// Execute a full airlayer query grouped by its dimensions and return one
+    /// `(key, value)` per row: `key` holds the row's values of the `keys`
+    /// members as text, in `keys` order, and `value` is the single measure. A
+    /// key is a dimension (`view.dim`) or a time dimension at the granularity
+    /// the request buckets it by (`view.dim.day`). Used by reconciliation's
+    /// `group_by` fan-out. Defaults to unsupported so existing runners need no
+    /// change.
+    async fn run_query_grouped(
+        &self,
+        request: oxy_airlayer_compat::engine::query::QueryRequest,
+        keys: Vec<String>,
+    ) -> Result<Vec<(Vec<String>, f64)>, MetricTreeRunnerError> {
+        let _ = (request, keys);
+        Err(MetricTreeRunnerError::Op(
+            "run_query_grouped not supported by this runner".to_string(),
+        ))
+    }
 }
 
 /// Failure modes for runner construction. Op-level errors come back as

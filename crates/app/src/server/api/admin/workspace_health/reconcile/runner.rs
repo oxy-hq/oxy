@@ -4,8 +4,9 @@
 //! runner collects every external operand across both slots of all checks and
 //! batch-fetches per `(source, integration)` (one Toast report per window,
 //! shared), evaluates the non-external operands directly, then pairs each
-//! check's two scalars into a verdict. The sweep depends only on the source
-//! trait, so it is testable with a fake.
+//! check's two scalars into a verdict. A check with `group_by` also evaluates
+//! both operands per group and attaches the disputed segments to its verdict.
+//! The sweep depends only on the source trait, so it is testable with a fake.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -16,9 +17,15 @@ use agentic_pipeline::platform::ProjectContext;
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 
-use super::config::{ExternalSpec, Operand, OperandKind, ReconcileCheck, parse_reconcile_config};
-use super::oxy_query::{cell_to_f64, render_sql, semantic_request};
-use super::source::{ExternalRequest, ReconcileError, SourceCtx, source_for};
+use super::config::{
+    ExternalKey, ExternalSpec, GroupByPlan, Operand, OperandKind, ReconcileCheck,
+    parse_reconcile_config,
+};
+use super::oxy_query::{
+    cell_to_f64, grouped_rows, grouped_semantic_request, render_sql, semantic_request,
+};
+use super::segments::{GroupedSide, fan_out, segment_error};
+use super::source::{ExternalRequest, ExternalValue, ReconcileError, SourceCtx, source_for};
 use super::window::resolve_window;
 use super::{
     DriftVerdict, ResolvedWindow, VerdictMeta, compare, error_verdict, unreachable_verdict,
@@ -59,6 +66,20 @@ struct ExternalSlot<'a> {
     side: Side,
     spec: &'a ExternalSpec,
     window: [String; 2],
+    /// The check's `group_by` in source dimensions; empty when ungrouped.
+    group_by: Vec<ExternalKey>,
+}
+
+/// Row cap for a grouped `sql` operand. A result that hits it is refused rather
+/// than summed short, because the total it feeds is the verdict's number.
+const MAX_GROUPED_SQL_ROWS: u64 = 10_000;
+
+/// One operand of a `group_by` check: the total the verdict compares, and the
+/// per-group values its segments are cut from. `groups` failing leaves the
+/// verdict intact and only marks the detail unavailable.
+struct GroupedOperand {
+    total: f64,
+    groups: Result<GroupedSide, String>,
 }
 
 /// How an operand evaluation failed, mapped to the matching degraded verdict.
@@ -143,6 +164,8 @@ impl LiveReconcileRunner {
                         side,
                         spec,
                         window: windows[i].dates.clone(),
+                        // Validated at parse; an unmapped key cannot reach here.
+                        group_by: spec.group_keys(&check.group_keys()).unwrap_or_default(),
                     });
                 }
             }
@@ -160,7 +183,7 @@ impl LiveReconcileRunner {
         checks: &[ReconcileCheck],
         windows: &[ResolvedWindow],
         toast_integrations: &[(String, ToastAnalyticsIntegration)],
-    ) -> HashMap<(usize, Side), Result<f64, ReconcileError>> {
+    ) -> HashMap<(usize, Side), Result<ExternalValue, ReconcileError>> {
         let slots = Self::collect_external_slots(checks, windows);
         let mut by_group: BTreeMap<(&str, Option<&str>), Vec<usize>> = BTreeMap::new();
         for (slot_idx, slot) in slots.iter().enumerate() {
@@ -178,6 +201,7 @@ impl LiveReconcileRunner {
                 .map(|&si| ExternalRequest {
                     spec: slots[si].spec,
                     window: &slots[si].window,
+                    group_by: &slots[si].group_by,
                 })
                 .collect();
             let results = self
@@ -201,7 +225,7 @@ impl LiveReconcileRunner {
         source_id: &str,
         requests: &[ExternalRequest<'_>],
         toast: Option<&ToastAnalyticsIntegration>,
-    ) -> Vec<Result<f64, ReconcileError>> {
+    ) -> Vec<Result<ExternalValue, ReconcileError>> {
         let Some(source) = source_for(source_id, toast) else {
             return requests
                 .iter()
@@ -238,7 +262,7 @@ impl LiveReconcileRunner {
         check: &ReconcileCheck,
         window: &ResolvedWindow,
         measure_runner: &Option<Arc<dyn MetricTreeRunner>>,
-        externals: &HashMap<(usize, Side), Result<f64, ReconcileError>>,
+        externals: &HashMap<(usize, Side), Result<ExternalValue, ReconcileError>>,
     ) -> DriftVerdict {
         let meta = VerdictMeta {
             check: check.name.clone(),
@@ -247,6 +271,60 @@ impl LiveReconcileRunner {
             expected_label: check.expected.label_or("Expected"),
             window: window.clone(),
         };
+        match check.group_by_plan() {
+            // A bad group_by degrades its own check, never the file.
+            Err(reason) => error_verdict(&meta, reason),
+            Ok(GroupByPlan::Grouped) => {
+                self.grouped_verdict(
+                    workspace_id,
+                    check_index,
+                    check,
+                    &meta,
+                    measure_runner,
+                    externals,
+                )
+                .await
+            }
+            Ok(GroupByPlan::Ungrouped(note)) => {
+                let mut verdict = self
+                    .ungrouped_verdict(
+                        workspace_id,
+                        check_index,
+                        check,
+                        &meta,
+                        measure_runner,
+                        externals,
+                    )
+                    .await;
+                verdict.segments = Some(segment_error(&check.group_keys(), note));
+                verdict
+            }
+            Ok(GroupByPlan::None) => {
+                self.ungrouped_verdict(
+                    workspace_id,
+                    check_index,
+                    check,
+                    &meta,
+                    measure_runner,
+                    externals,
+                )
+                .await
+            }
+        }
+    }
+
+    /// The comparison every check without `group_by` gets: each operand to a
+    /// scalar, then `compare`.
+    async fn ungrouped_verdict(
+        &self,
+        workspace_id: uuid::Uuid,
+        check_index: usize,
+        check: &ReconcileCheck,
+        meta: &VerdictMeta,
+        measure_runner: &Option<Arc<dyn MetricTreeRunner>>,
+        externals: &HashMap<(usize, Side), Result<ExternalValue, ReconcileError>>,
+    ) -> DriftVerdict {
+        let window = &meta.window;
         let actual = match self
             .eval_operand(
                 workspace_id,
@@ -259,7 +337,7 @@ impl LiveReconcileRunner {
             .await
         {
             Ok(v) => v,
-            Err(f) => return f.into_verdict(&meta),
+            Err(f) => return f.into_verdict(meta),
         };
         let expected = match self
             .eval_operand(
@@ -273,15 +351,149 @@ impl LiveReconcileRunner {
             .await
         {
             Ok(v) => v,
-            Err(f) => return f.into_verdict(&meta),
+            Err(f) => return f.into_verdict(meta),
         };
-        compare(
-            &meta,
-            actual,
-            expected,
+        compare(meta, actual, expected, &check.tolerance, self.pct_unhealthy)
+    }
+
+    /// A `group_by` check: the verdict is compared on the operands' totals, the
+    /// same way an ungrouped check is, and the per-group comparison is attached
+    /// as `segments`. A grouped `sql` operand's total is the sum of its rows (it
+    /// returns one row per group, so there is no separate scalar to read).
+    async fn grouped_verdict(
+        &self,
+        workspace_id: uuid::Uuid,
+        check_index: usize,
+        check: &ReconcileCheck,
+        meta: &VerdictMeta,
+        measure_runner: &Option<Arc<dyn MetricTreeRunner>>,
+        externals: &HashMap<(usize, Side), Result<ExternalValue, ReconcileError>>,
+    ) -> DriftVerdict {
+        let mut sides = Vec::with_capacity(2);
+        for (side, operand) in [
+            (Side::Actual, &check.actual),
+            (Side::Expected, &check.expected),
+        ] {
+            match self
+                .eval_grouped_operand(
+                    workspace_id,
+                    (check_index, side),
+                    operand,
+                    check,
+                    &meta.window,
+                    measure_runner,
+                    externals,
+                )
+                .await
+            {
+                Ok(g) => sides.push(g),
+                Err(f) => return f.into_verdict(meta),
+            }
+        }
+        let expected = sides.pop().expect("two sides");
+        let actual = sides.pop().expect("two sides");
+        let mut verdict = compare(
+            meta,
+            actual.total,
+            expected.total,
             &check.tolerance,
             self.pct_unhealthy,
-        )
+        );
+        let keys = check.group_keys();
+        verdict.segments = Some(match (actual.groups, expected.groups) {
+            (Ok(a), Ok(e)) => fan_out(&keys, a, e, &check.tolerance),
+            (Err(err), _) | (_, Err(err)) => segment_error(&keys, err),
+        });
+        verdict
+    }
+
+    /// Evaluate one operand of a `group_by` check to its total and its groups.
+    async fn eval_grouped_operand(
+        &self,
+        workspace_id: uuid::Uuid,
+        key: (usize, Side),
+        operand: &Operand,
+        check: &ReconcileCheck,
+        window: &ResolvedWindow,
+        measure_runner: &Option<Arc<dyn MetricTreeRunner>>,
+        externals: &HashMap<(usize, Side), Result<ExternalValue, ReconcileError>>,
+    ) -> Result<GroupedOperand, OperandFailure> {
+        let kind = operand.resolve_kind().map_err(OperandFailure::Error)?;
+        match kind {
+            OperandKind::Constant(n) => Ok(GroupedOperand {
+                total: n,
+                groups: Ok(GroupedSide::Broadcast(n)),
+            }),
+            OperandKind::Sql(spec) => {
+                let rows = self
+                    .run_sql_grouped(
+                        workspace_id,
+                        &spec.database,
+                        &spec.sql,
+                        window,
+                        &check.group_keys(),
+                    )
+                    .await
+                    .map_err(OperandFailure::Error)?;
+                Ok(GroupedOperand {
+                    total: rows.iter().map(|(_, v)| v).sum(),
+                    groups: Ok(GroupedSide::Rows(rows)),
+                })
+            }
+            OperandKind::Semantic(spec) => {
+                // The total is the ungrouped scalar, not a sum of the groups:
+                // an average or count-distinct does not add up across groups.
+                let total = self
+                    .eval_operand(
+                        workspace_id,
+                        key,
+                        operand,
+                        window,
+                        measure_runner,
+                        externals,
+                    )
+                    .await?;
+                let runner = measure_runner
+                    .as_ref()
+                    .ok_or_else(|| OperandFailure::Error("no workspace semantic context".into()))?;
+                let (request, keys) = grouped_semantic_request(
+                    &spec.query,
+                    &spec.time_dimension,
+                    window,
+                    &spec.group_dimensions(&check.group_by),
+                );
+                let groups = runner
+                    .run_query_grouped(request, keys)
+                    .await
+                    .map(GroupedSide::Rows)
+                    .map_err(|e| e.to_string());
+                Ok(GroupedOperand { total, groups })
+            }
+            // Cut from the same pre-fetched report as the total.
+            OperandKind::External(spec) => {
+                let total = self
+                    .eval_operand(
+                        workspace_id,
+                        key,
+                        operand,
+                        window,
+                        measure_runner,
+                        externals,
+                    )
+                    .await?;
+                let groups = match externals.get(&key) {
+                    Some(Ok(ExternalValue {
+                        groups: Some(groups),
+                        ..
+                    })) => Ok(GroupedSide::Rows(groups.clone())),
+                    _ => Err(format!(
+                        "source '{}' returned no per-group values",
+                        spec.source
+                    )),
+                };
+                Ok(GroupedOperand { total, groups })
+            }
+        }
     }
 
     /// Resolve one operand to a scalar per its kind. External operands read the
@@ -295,7 +507,7 @@ impl LiveReconcileRunner {
         operand: &Operand,
         window: &ResolvedWindow,
         measure_runner: &Option<Arc<dyn MetricTreeRunner>>,
-        externals: &HashMap<(usize, Side), Result<f64, ReconcileError>>,
+        externals: &HashMap<(usize, Side), Result<ExternalValue, ReconcileError>>,
     ) -> Result<f64, OperandFailure> {
         let kind = operand.resolve_kind().map_err(OperandFailure::Error)?;
         match kind {
@@ -315,7 +527,7 @@ impl LiveReconcileRunner {
                 .await
                 .map_err(OperandFailure::Error),
             OperandKind::External(spec) => match externals.get(&key) {
-                Some(Ok(v)) => Ok(*v),
+                Some(Ok(v)) => Ok(v.total),
                 Some(Err(ReconcileError::Unreachable(_))) => {
                     Err(OperandFailure::Unreachable(spec.source.clone()))
                 }
@@ -373,6 +585,42 @@ impl LiveReconcileRunner {
             .first()
             .ok_or_else(|| "reconcile sql returned no columns".to_string())?;
         cell_to_f64(cell)
+    }
+
+    /// Run a grouped raw-SQL operand: one row per group, a column per
+    /// `group_by` key plus one value column (see [`grouped_rows`]).
+    async fn run_sql_grouped(
+        &self,
+        workspace_id: uuid::Uuid,
+        database: &str,
+        sql: &str,
+        period: &ResolvedWindow,
+        keys: &[String],
+    ) -> Result<Vec<(Vec<String>, f64)>, String> {
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| "no workspace context".to_string())?;
+        let ctx = build_workspace_ctx(workspace_id, db)
+            .await
+            .ok_or_else(|| "no workspace context".to_string())?;
+        let connector = ctx
+            .build_connector_for(database)
+            .await
+            .map_err(|e| format!("reconcile sql: database '{database}': {e}"))?;
+        let rendered = render_sql(sql, period)?;
+        let res = connector
+            .execute_query(&rendered, MAX_GROUPED_SQL_ROWS)
+            .await
+            .map_err(|e| e.to_string())?;
+        if res.result.truncated {
+            return Err(format!(
+                "reconcile sql: grouped result has {} rows, over the {MAX_GROUPED_SQL_ROWS} \
+                 a group_by check reads",
+                res.result.total_row_count
+            ));
+        }
+        grouped_rows(&res.result.columns, &res.result.rows, keys)
     }
 }
 
@@ -640,7 +888,7 @@ mod tests {
                 pct: 0.5,
                 combinator: Combinator::And,
             },
-            group_by: None,
+            group_by: Vec::new(),
             actual: semantic_operand("m.x"),
             expected: constant_operand(100.0),
         }
@@ -784,5 +1032,490 @@ checks:
         assert_eq!(v.status, HealthStatus::Healthy);
         assert_eq!(v.actual, 0.0);
         assert_eq!(v.expected, 0.0);
+    }
+
+    /// A warehouse stand-in: a scalar and a per-group result per measure, and
+    /// the dimensions every grouped request asked for.
+    struct FakeWarehouse {
+        scalars: HashMap<String, f64>,
+        groups: HashMap<String, Result<Vec<(Vec<String>, f64)>, String>>,
+        grouped_dimensions: std::sync::Mutex<Vec<Vec<String>>>,
+    }
+
+    impl FakeWarehouse {
+        fn new(
+            scalars: &[(&str, f64)],
+            groups: Vec<(&str, Result<Vec<(Vec<String>, f64)>, String>)>,
+        ) -> Arc<Self> {
+            Arc::new(Self {
+                scalars: scalars.iter().map(|(m, v)| (m.to_string(), *v)).collect(),
+                groups: groups
+                    .into_iter()
+                    .map(|(m, g)| (m.to_string(), g))
+                    .collect(),
+                grouped_dimensions: Default::default(),
+            })
+        }
+    }
+
+    use agentic_analytics::MetricTreeRunnerError;
+    use oxy_airlayer_compat::engine::query::{QueryFilter, QueryRequest};
+
+    #[async_trait::async_trait]
+    impl MetricTreeRunner for FakeWarehouse {
+        async fn load_layer(
+            &self,
+        ) -> Result<oxy_airlayer_compat::SemanticLayer, MetricTreeRunnerError> {
+            Err(MetricTreeRunnerError::LayerLoad("unused".into()))
+        }
+        async fn list_databases(&self) -> Vec<oxy_airlayer_compat::DatabaseConfig> {
+            vec![]
+        }
+        async fn run_explain(
+            &self,
+            _: String,
+            _: String,
+            _: (String, String),
+            _: (String, String),
+            _: Vec<QueryFilter>,
+            _: oxy_airlayer_compat::engine::metric_tree_ops::ExplainConfig,
+        ) -> Result<
+            oxy_airlayer_compat::engine::metric_tree_ops::ExplainResult,
+            MetricTreeRunnerError,
+        > {
+            Err(MetricTreeRunnerError::Op("unused".into()))
+        }
+        async fn run_opportunity(
+            &self,
+            _: String,
+            _: String,
+            _: (String, String),
+            _: oxy_airlayer_compat::engine::metric_tree_ops::BenchmarkStatistic,
+        ) -> Result<
+            oxy_airlayer_compat::engine::metric_tree_ops::OpportunityResult,
+            MetricTreeRunnerError,
+        > {
+            Err(MetricTreeRunnerError::Op("unused".into()))
+        }
+        async fn get_dimension_values(
+            &self,
+            _: String,
+            _: String,
+            _: u32,
+        ) -> Result<Vec<String>, MetricTreeRunnerError> {
+            Err(MetricTreeRunnerError::Op("unused".into()))
+        }
+        async fn run_time_series(
+            &self,
+            _: String,
+            _: String,
+            _: String,
+            _: (String, String),
+            _: Vec<QueryFilter>,
+            _: Option<String>,
+        ) -> Result<Vec<(String, f64)>, MetricTreeRunnerError> {
+            Err(MetricTreeRunnerError::Op("unused".into()))
+        }
+        async fn run_query_scalar(
+            &self,
+            request: QueryRequest,
+        ) -> Result<f64, MetricTreeRunnerError> {
+            // A grouped request must never reach the scalar path.
+            assert!(request.dimensions.is_empty());
+            Ok(self.scalars[&request.measures[0]])
+        }
+        async fn run_query_grouped(
+            &self,
+            request: QueryRequest,
+            keys: Vec<String>,
+        ) -> Result<Vec<(Vec<String>, f64)>, MetricTreeRunnerError> {
+            self.grouped_dimensions.lock().unwrap().push(keys);
+            self.groups[&request.measures[0]]
+                .clone()
+                .map_err(MetricTreeRunnerError::Op)
+        }
+    }
+
+    fn group_rows(rows: &[(&[&str], f64)]) -> Vec<(Vec<String>, f64)> {
+        rows.iter()
+            .map(|(k, v)| (k.iter().map(|s| s.to_string()).collect(), *v))
+            .collect()
+    }
+
+    fn grouped_check(actual: Operand, expected: Operand, group_by: &[&str]) -> ReconcileCheck {
+        let mut check = check_with_grain(Grain::Day);
+        check.actual = actual;
+        check.expected = expected;
+        check.group_by = group_by.iter().map(|s| s.to_string()).collect();
+        check
+    }
+
+    async fn run(check: &ReconcileCheck, warehouse: &Arc<FakeWarehouse>) -> DriftVerdict {
+        let r = LiveReconcileRunner::from_env(chrono::Utc::now());
+        let window = resolve_window(&check.window, r.now);
+        r.verdict_for_check(
+            uuid::Uuid::nil(),
+            0,
+            check,
+            &window,
+            &Some(warehouse.clone() as Arc<dyn MetricTreeRunner>),
+            &HashMap::new(),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn grouped_check_that_agrees_passes_with_no_disputes() {
+        let wh = FakeWarehouse::new(
+            &[("m.x", 150.0), ("m.y", 150.0)],
+            vec![
+                ("m.x", Ok(group_rows(&[(&["a"], 100.0), (&["b"], 50.0)]))),
+                ("m.y", Ok(group_rows(&[(&["a"], 100.0), (&["b"], 50.0)]))),
+            ],
+        );
+        let check = grouped_check(semantic_operand("m.x"), semantic_operand("m.y"), &["store"]);
+        let v = run(&check, &wh).await;
+        assert_eq!(v.status, HealthStatus::Healthy);
+        let seg = v.segments.expect("a grouped check reports segments");
+        assert_eq!(seg.group_by, vec!["store"]);
+        assert_eq!(seg.groups_compared, 2);
+        assert_eq!(seg.groups_disputed, 0);
+        assert!(seg.disputed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn grouped_check_that_fails_names_its_groups_and_keeps_the_total() {
+        // Groups sum to 140, but the verdict compares the ungrouped scalar
+        // (130), exactly as without group_by.
+        let wh = FakeWarehouse::new(
+            &[("m.x", 130.0), ("m.y", 100.0)],
+            vec![
+                (
+                    "m.x",
+                    Ok(group_rows(&[
+                        (&["a", "2026-07-01"], 60.0),
+                        (&["b", "2026-07-01"], 80.0),
+                    ])),
+                ),
+                (
+                    "m.y",
+                    Ok(group_rows(&[
+                        (&["a", "2026-07-01"], 60.0),
+                        (&["b", "2026-07-01"], 40.0),
+                    ])),
+                ),
+            ],
+        );
+        let check = grouped_check(
+            semantic_operand("m.x"),
+            semantic_operand("m.y"),
+            &["store", "other.date"],
+        );
+        let v = run(&check, &wh).await;
+        let ungrouped = compare(
+            &meta("c"),
+            130.0,
+            100.0,
+            &check.tolerance,
+            LiveReconcileRunner::from_env(chrono::Utc::now()).pct_unhealthy,
+        );
+        assert_eq!((v.actual, v.expected), (130.0, 100.0));
+        assert_eq!(v.status, ungrouped.status);
+        assert_eq!(v.reason, ungrouped.reason);
+        let seg = v.segments.unwrap();
+        assert_eq!(seg.group_by, vec!["store", "date"]);
+        assert_eq!(seg.groups_disputed, 1);
+        assert_eq!(seg.disputed[0].key, vec!["b", "2026-07-01"]);
+        assert_eq!(seg.disputed[0].delta, 40.0);
+        // Bare keys are qualified with the measure's view; dotted ones are not.
+        let asked = wh_dimensions(&wh);
+        assert_eq!(asked[0], vec!["m.store", "other.date"]);
+    }
+
+    fn wh_dimensions(wh: &FakeWarehouse) -> Vec<Vec<String>> {
+        wh.grouped_dimensions.lock().unwrap().clone()
+    }
+
+    #[tokio::test]
+    async fn a_group_on_one_side_is_disputed_against_zero() {
+        let wh = FakeWarehouse::new(
+            &[("m.x", 100.0)],
+            vec![(
+                "m.x",
+                Ok(group_rows(&[(&["clean"], 0.0), (&["drifted"], 100.0)])),
+            )],
+        );
+        let check = grouped_check(semantic_operand("m.x"), constant_operand(0.0), &["key"]);
+        let v = run(&check, &wh).await;
+        assert_eq!(v.status, HealthStatus::Unhealthy);
+        let seg = v.segments.unwrap();
+        assert_eq!(seg.groups_compared, 2);
+        assert_eq!(seg.disputed.len(), 1);
+        assert_eq!(seg.disputed[0].key, vec!["drifted"]);
+
+        // Two semantic sides: the group only one returned reads 0 on the other.
+        let wh = FakeWarehouse::new(
+            &[("m.x", 100.0), ("m.y", 100.0)],
+            vec![
+                ("m.x", Ok(group_rows(&[(&["a"], 70.0), (&["late"], 30.0)]))),
+                ("m.y", Ok(group_rows(&[(&["a"], 70.0)]))),
+            ],
+        );
+        let check = grouped_check(semantic_operand("m.x"), semantic_operand("m.y"), &["store"]);
+        let v = run(&check, &wh).await;
+        assert_eq!(v.status, HealthStatus::Healthy, "the totals agree");
+        let seg = v.segments.unwrap();
+        assert_eq!(seg.disputed[0].key, vec!["late"]);
+        assert_eq!(seg.disputed[0].expected, 0.0);
+        assert_eq!(
+            seg.disputed[0].missing,
+            Some(super::super::segments::MissingSide::Expected)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_grouped_query_keeps_the_verdict_and_says_why() {
+        let wh = FakeWarehouse::new(
+            &[("m.x", 100.0)],
+            vec![("m.x", Err("no such dimension m.store".to_string()))],
+        );
+        let check = grouped_check(semantic_operand("m.x"), constant_operand(100.0), &["store"]);
+        let v = run(&check, &wh).await;
+        assert_eq!(v.status, HealthStatus::Healthy);
+        let seg = v.segments.unwrap();
+        assert!(seg.error.unwrap().contains("no such dimension m.store"));
+        assert!(seg.disputed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_ungrouped_check_is_unchanged_on_the_wire() {
+        let wh = FakeWarehouse::new(&[("m.x", 130.0)], vec![]);
+        let check = check_with_grain(Grain::Day);
+        let v = run(&check, &wh).await;
+        assert!(v.segments.is_none());
+        assert!(wh_dimensions(&wh).is_empty(), "no grouped query runs");
+        let json = serde_json::to_value(&v).unwrap();
+        let mut keys: Vec<&str> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec![
+                "abs_diff",
+                "actual",
+                "actual_label",
+                "check",
+                "description",
+                "expected",
+                "expected_label",
+                "pct_diff",
+                "reason",
+                "status",
+                "window_end",
+                "window_start",
+                "window_timezone",
+            ]
+        );
+        let expected = compare(
+            &VerdictMeta {
+                window: resolve_window(&check.window, chrono::Utc::now()),
+                ..meta("c")
+            },
+            130.0,
+            100.0,
+            &check.tolerance,
+            5.0,
+        );
+        assert_eq!(json, serde_json::to_value(&expected).unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_grouped_toast_operand_reads_its_groups_from_the_prefetched_report() {
+        let wh = FakeWarehouse::new(
+            &[("m.x", 350.0)],
+            vec![(
+                "m.x",
+                Ok(group_rows(&[
+                    (&["a", "2026-07-01"], 120.0),
+                    (&["b", "2026-07-01"], 230.0),
+                ])),
+            )],
+        );
+        let mut external = constant_operand(0.0);
+        external.constant = None;
+        external.external = Some(ExternalSpec {
+            source: "toast".to_string(),
+            integration: None,
+            metric: "net_sales".to_string(),
+            restaurants: vec![],
+            keys: [
+                ("restaurant_id".to_string(), ExternalKey::Restaurant),
+                ("business_date".to_string(), ExternalKey::BusinessDate),
+            ]
+            .into(),
+        });
+        let check = grouped_check(
+            semantic_operand("m.x"),
+            external,
+            &["restaurant_id", "business_date"],
+        );
+        let externals = HashMap::from([(
+            (0, Side::Expected),
+            Ok(ExternalValue {
+                total: 350.0,
+                groups: Some(group_rows(&[
+                    (&["a", "2026-07-01"], 150.0),
+                    (&["b", "2026-07-01"], 200.0),
+                ])),
+            }),
+        )]);
+        let r = LiveReconcileRunner::from_env(chrono::Utc::now());
+        let window = resolve_window(&check.window, r.now);
+        let v = r
+            .verdict_for_check(
+                uuid::Uuid::nil(),
+                0,
+                &check,
+                &window,
+                &Some(wh.clone() as Arc<dyn MetricTreeRunner>),
+                &externals,
+            )
+            .await;
+        // The chain totals agree; two stores offset each other.
+        assert_eq!(v.status, HealthStatus::Healthy);
+        let seg = v.segments.unwrap();
+        assert_eq!(seg.group_by, vec!["restaurant_id", "business_date"]);
+        assert_eq!(seg.groups_disputed, 2);
+        assert_eq!(seg.disputed[0].key, vec!["a", "2026-07-01"]);
+        assert_eq!(seg.disputed[0].delta, -30.0);
+        assert_eq!(seg.disputed[1].delta, 30.0);
+        assert_eq!(
+            wh_dimensions(&wh)[0],
+            vec!["m.restaurant_id", "m.business_date"]
+        );
+
+        // The slot the batch fetch builds carries the mapped source keys.
+        let slots = LiveReconcileRunner::collect_external_slots(
+            std::slice::from_ref(&check),
+            std::slice::from_ref(&window),
+        );
+        assert_eq!(
+            slots[0].group_by,
+            vec![ExternalKey::Restaurant, ExternalKey::BusinessDate]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_bad_group_by_degrades_only_its_own_check() {
+        let cfg = parse_reconcile_config(
+            &serde_yaml::from_str(
+                r#"
+checks:
+  - name: two_constants
+    window: { last: 1, grain: day, offset: 1 }
+    tolerance: { abs: 1.0, pct: 0.5 }
+    group_by: [k]
+    actual: { constant: 5 }
+    expected: { constant: 5 }
+  - name: stray_keys
+    window: { last: 1, grain: day, offset: 1 }
+    tolerance: { abs: 1.0, pct: 0.5 }
+    actual: { constant: 100 }
+    expected: { external: { source: toast, metric: net_sales, keys: { store: restaurant } } }
+  - name: fine
+    window: { last: 1, grain: day, offset: 1 }
+    tolerance: { abs: 1.0, pct: 0.5 }
+    actual: { constant: 5 }
+    expected: { constant: 5 }
+  - name: unkeyed_toast
+    window: { last: 1, grain: day, offset: 1 }
+    tolerance: { abs: 1.0, pct: 0.5 }
+    group_by: sales.restaurant_id
+    actual: { constant: 100 }
+    expected: { external: { source: toast, metric: net_sales } }
+"#,
+            )
+            .unwrap(),
+        )
+        .expect("a group_by problem must not fail the file");
+        let externals = HashMap::from([
+            (
+                (1, Side::Expected),
+                Ok(ExternalValue {
+                    total: 100.0,
+                    groups: None,
+                }),
+            ),
+            (
+                (3, Side::Expected),
+                Ok(ExternalValue {
+                    total: 100.0,
+                    groups: None,
+                }),
+            ),
+        ]);
+        let r = LiveReconcileRunner::from_env(chrono::Utc::now());
+        let mut verdicts = Vec::new();
+        for (i, check) in cfg.checks.iter().enumerate() {
+            let window = resolve_window(&check.window, r.now);
+            verdicts.push(
+                r.verdict_for_check(uuid::Uuid::nil(), i, check, &window, &None, &externals)
+                    .await,
+            );
+        }
+
+        let two_constants = &verdicts[0];
+        assert_eq!(two_constants.status, HealthStatus::Degraded);
+        let reason = two_constants.reason.as_deref().unwrap();
+        assert!(reason.contains("both operands are constants"), "{reason}");
+        assert!(two_constants.actual.is_nan(), "no comparison ran");
+
+        let stray_keys = &verdicts[1];
+        assert_eq!(stray_keys.status, HealthStatus::Degraded);
+        let reason = stray_keys.reason.as_deref().unwrap();
+        assert!(reason.contains("only applies with group_by"), "{reason}");
+
+        assert_eq!(verdicts[2].status, HealthStatus::Healthy);
+        assert!(verdicts[2].segments.is_none());
+
+        // The pre-`keys` shape: compared on totals exactly as before, with the
+        // reason group_by did nothing.
+        let unkeyed = &verdicts[3];
+        assert_eq!(unkeyed.status, HealthStatus::Healthy);
+        assert_eq!((unkeyed.actual, unkeyed.expected), (100.0, 100.0));
+        assert_eq!(unkeyed.reason, None);
+        let seg = unkeyed.segments.as_ref().unwrap();
+        assert!(seg.disputed.is_empty());
+        assert!(seg.error.as_deref().unwrap().contains("has no `keys`"));
+    }
+
+    #[tokio::test]
+    async fn a_key_naming_the_time_dimension_is_read_as_a_daily_bucket() {
+        // `semantic_operand` binds the window to `m.d`; grouping by `d` must
+        // read the day bucket, not the raw (possibly datetime) column.
+        let wh = FakeWarehouse::new(
+            &[("m.x", 100.0), ("m.y", 100.0)],
+            vec![
+                (
+                    "m.x",
+                    Ok(group_rows(&[(&["a", "2026-07-01T00:00:00.000"], 100.0)])),
+                ),
+                ("m.y", Ok(group_rows(&[(&["a", "2026-07-01"], 100.0)]))),
+            ],
+        );
+        let check = grouped_check(
+            semantic_operand("m.x"),
+            semantic_operand("m.y"),
+            &["store", "d"],
+        );
+        let v = run(&check, &wh).await;
+        assert_eq!(wh_dimensions(&wh)[0], vec!["m.store", "m.d.day"]);
+        let seg = v.segments.unwrap();
+        assert_eq!(seg.groups_compared, 1, "the bucket joins a plain date");
+        assert_eq!(seg.groups_disputed, 0);
     }
 }

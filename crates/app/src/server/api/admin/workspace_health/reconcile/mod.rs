@@ -4,6 +4,7 @@ pub(crate) mod compare;
 pub(crate) mod config;
 pub(crate) mod oxy_query;
 pub(crate) mod runner;
+pub(crate) mod segments;
 pub(crate) mod source;
 pub(crate) mod toast;
 pub(crate) mod window;

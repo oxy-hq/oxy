@@ -13,8 +13,8 @@ use async_trait::async_trait;
 
 use oxy::config::model::ToastAnalyticsIntegration;
 
-use super::source::{ExternalRequest, ReconcileError, ReconcileSource, SourceCtx};
-use analytics::RestaurantMetrics;
+use super::source::{ExternalRequest, ExternalValue, ReconcileError, ReconcileSource, SourceCtx};
+use analytics::MetricsRow;
 use std::collections::HashMap;
 
 /// Logical secret slots, used as the keys into `SourceCtx::secrets`. The
@@ -85,7 +85,7 @@ impl ReconcileSource for ToastSource {
         &self,
         ctx: &SourceCtx,
         requests: &[ExternalRequest<'_>],
-    ) -> Vec<Result<f64, ReconcileError>> {
+    ) -> Vec<Result<ExternalValue, ReconcileError>> {
         // Optional narrowing filter for the report: the union of the GUIDs the
         // requests already name. Empty ⇒ omit it ⇒ Toast covers the whole
         // management group. No separate restaurant config is ever required.
@@ -95,10 +95,8 @@ impl ReconcileSource for ToastSource {
             Err(e) => return err_for_all(requests, e),
         };
 
-        let mut reports: HashMap<
-            [String; 2],
-            Result<HashMap<String, RestaurantMetrics>, ReconcileError>,
-        > = HashMap::new();
+        let mut reports: HashMap<[String; 2], Result<Vec<MetricsRow>, ReconcileError>> =
+            HashMap::new();
         let mut out = Vec::with_capacity(requests.len());
         for req in requests {
             let window = req.window;
@@ -114,8 +112,10 @@ impl ReconcileSource for ToastSource {
                 .await;
                 reports.insert(window.clone(), report);
             }
+            // The grouped value is cut from the same report: one report per
+            // window either way, so group_by costs no extra Toast request.
             out.push(match reports.get(window).expect("just inserted") {
-                Ok(map) => analytics::reduce_check(map, req.spec),
+                Ok(rows) => analytics::reduce(rows, req.spec, req.group_by),
                 Err(e) => Err(e.clone()),
             });
         }
@@ -144,7 +144,7 @@ fn restaurant_filter(requests: &[ExternalRequest<'_>]) -> Vec<String> {
 fn err_for_all(
     requests: &[ExternalRequest<'_>],
     err: ReconcileError,
-) -> Vec<Result<f64, ReconcileError>> {
+) -> Vec<Result<ExternalValue, ReconcileError>> {
     requests.iter().map(|_| Err(err.clone())).collect()
 }
 
@@ -171,6 +171,7 @@ mod tests {
             integration: None,
             metric: "net_sales".to_string(),
             restaurants: restaurants.iter().map(|s| s.to_string()).collect(),
+            keys: Default::default(),
         }
     }
 
@@ -180,6 +181,7 @@ mod tests {
         ExternalRequest {
             spec,
             window: &WINDOW,
+            group_by: &[],
         }
     }
 

@@ -638,6 +638,67 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
         .map_err(|e| MetricTreeRunnerError::Op(format!("scalar task panicked: {e}")))?
     }
 
+    async fn run_query_grouped(
+        &self,
+        request: oxy_airlayer_compat::engine::query::QueryRequest,
+        keys: Vec<String>,
+    ) -> Result<Vec<(Vec<String>, f64)>, MetricTreeRunnerError> {
+        let measure = request.measures.first().cloned().ok_or_else(|| {
+            MetricTreeRunnerError::Op("run_query_grouped: request has no measure".to_string())
+        })?;
+        let inputs = self.snapshot_for_blocking().await?;
+        // Same aliasing as the scalar and time-series paths: `view.member`
+        // comes back keyed `view__member`, a bucketed time dimension
+        // `view__member__day`.
+        let measure_alias = measure.replace('.', "__");
+        let dim_aliases: Vec<String> = keys.iter().map(|k| k.replace('.', "__")).collect();
+        tokio::task::spawn_blocking(move || {
+            let RunInputs {
+                databases,
+                engine,
+                workspace_manager,
+                user_id,
+                role,
+                handle,
+                preagg,
+                holds_writes,
+                ..
+            } = inputs;
+            let executor = build_query_executor(
+                engine,
+                databases,
+                workspace_manager,
+                user_id,
+                role,
+                handle,
+                preagg,
+                holds_writes,
+            );
+            let rows =
+                (executor)(&request).map_err(|e| MetricTreeRunnerError::Op(e.to_string()))?;
+            Ok(rows
+                .iter()
+                .map(|row| {
+                    let key = dim_aliases
+                        .iter()
+                        .map(|alias| match row.get(alias) {
+                            None | Some(Value::Null) => "null".to_string(),
+                            Some(Value::String(s)) => s.clone(),
+                            Some(v) => v.to_string(),
+                        })
+                        .collect();
+                    let value = row
+                        .get(&measure_alias)
+                        .and_then(Value::as_f64)
+                        .unwrap_or(0.0);
+                    (key, value)
+                })
+                .collect())
+        })
+        .await
+        .map_err(|e| MetricTreeRunnerError::Op(format!("grouped task panicked: {e}")))?
+    }
+
     async fn run_opportunity(
         &self,
         target: String,

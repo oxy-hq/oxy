@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::ResolvedWindow;
+use super::segments::SegmentReport;
 use crate::server::api::admin::workspace_health::evaluator::HealthStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,6 +68,12 @@ pub struct DriftVerdict {
     pub window_end: String,
     /// IANA calendar the two dates were resolved on (`"UTC"` when unset).
     pub window_timezone: String,
+    /// Per-segment detail for a check that declares `group_by`: which groups
+    /// are outside tolerance. Detail only — `status` and the totals above are
+    /// computed exactly as for an ungrouped check. Absent (and not serialized)
+    /// without `group_by`, so an ungrouped verdict is unchanged on the wire.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub segments: Option<SegmentReport>,
 }
 
 /// Compare the `actual` number against the `expected` (reference) number.
@@ -79,22 +86,7 @@ pub fn compare(
     tol: &Tolerance,
     pct_unhealthy: f64,
 ) -> DriftVerdict {
-    let abs_diff = (actual - expected).abs();
-    // pct relative to the reference `expected` value. expected == 0 → undefined;
-    // report 0.0 when both are zero, else fall back to the abs arm only
-    // (INFINITY, which compares as breached).
-    let pct_diff = if expected == 0.0 {
-        if actual == 0.0 { 0.0 } else { f64::INFINITY }
-    } else {
-        (abs_diff / expected.abs()) * 100.0
-    };
-
-    let abs_breached = abs_diff > tol.abs;
-    let pct_breached = pct_diff > tol.pct; // INFINITY > tol.pct is true
-    let breached = match tol.combinator {
-        Combinator::And => abs_breached && pct_breached,
-        Combinator::Or => abs_breached || pct_breached,
-    };
+    let (abs_diff, pct_diff, breached) = breach(actual, expected, tol);
 
     let pct_stored = if pct_diff.is_finite() { pct_diff } else { 0.0 };
 
@@ -131,6 +123,29 @@ pub fn compare(
     verdict(meta, actual, expected, abs_diff, pct_stored, status, reason)
 }
 
+/// `(abs_diff, pct_diff, breached)` for one pair of numbers under `tol`. The
+/// single definition of "outside tolerance", shared by the check total and
+/// every `group_by` segment so the two cannot disagree on what a breach is.
+pub(super) fn breach(actual: f64, expected: f64, tol: &Tolerance) -> (f64, f64, bool) {
+    let abs_diff = (actual - expected).abs();
+    // pct relative to the reference `expected` value. expected == 0 → undefined;
+    // report 0.0 when both are zero, else fall back to the abs arm only
+    // (INFINITY, which compares as breached).
+    let pct_diff = if expected == 0.0 {
+        if actual == 0.0 { 0.0 } else { f64::INFINITY }
+    } else {
+        (abs_diff / expected.abs()) * 100.0
+    };
+
+    let abs_breached = abs_diff > tol.abs;
+    let pct_breached = pct_diff > tol.pct; // INFINITY > tol.pct is true
+    let breached = match tol.combinator {
+        Combinator::And => abs_breached && pct_breached,
+        Combinator::Or => abs_breached || pct_breached,
+    };
+    (abs_diff, pct_diff, breached)
+}
+
 /// Assemble a `DriftVerdict`, echoing the resolved presentation fields.
 fn verdict(
     meta: &VerdictMeta,
@@ -155,6 +170,7 @@ fn verdict(
         window_start: meta.window.dates[0].clone(),
         window_end: meta.window.dates[1].clone(),
         window_timezone: meta.window.timezone.clone(),
+        segments: None,
     }
 }
 
