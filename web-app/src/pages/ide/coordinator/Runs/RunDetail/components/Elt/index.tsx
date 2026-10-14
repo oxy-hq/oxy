@@ -41,7 +41,7 @@ export const EltBody: React.FC<{
    *  IDE pipeline page does. */
   runError?: string | null;
   /** Authoring `.airway.yml` ref (`metadata.pipeline_ref`), needed to
-   *  start a "retry failed tables" run. `null` for runs without a YAML
+   *  start a "re-run failed tables" run. `null` for runs without a YAML
    *  source — the retry action is hidden then. */
   pipelineRef?: string | null;
 }> = ({ tables, events, pipelineName, sourceKind, destinationLabel, runError, pipelineRef }) => {
@@ -107,13 +107,13 @@ export const EltBody: React.FC<{
             onConfirm={async (tablesToRetry) => {
               try {
                 await startRun.mutateAsync({ pipeline_ref: pipelineRef, resources: tablesToRetry });
-                toast.success("Retry started", {
+                toast.success("New run started", {
                   description: `Re-running ${tablesToRetry.length} failed table${
                     tablesToRetry.length === 1 ? "" : "s"
                   }. It'll appear in the runs list.`
                 });
               } catch (e) {
-                toast.error("Couldn't start retry", {
+                toast.error("Couldn't start the new run", {
                   description: e instanceof Error ? e.message : "Please try again."
                 });
               }

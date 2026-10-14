@@ -840,6 +840,58 @@ pub async fn dead_letter_run(
     .await
 }
 
+/// Finish a root run whose work completed but whose `Done` outcome was lost.
+/// Returns whether the run was changed.
+///
+/// The window this closes: `DurableTransport` stamps the task's queue row
+/// `completed` and only then hands the outcome to the in-process coordinator,
+/// which is what writes `task_status = done`. A process that dies between the
+/// two leaves a finished run non-terminal with nothing to resume, and recovery
+/// used to retire it as `failed` — a visible boundary over a run whose work had
+/// finished.
+///
+/// Domain-agnostic on purpose: deciding that the work *did* finish needs the
+/// domain's own terminal events, so that is the caller's job (for airway,
+/// `agentic_pipeline::airway_recovery`). This only writes the result, with the
+/// same `metadata` the coordinator's `update_run_done` would have written.
+///
+/// **Refuses — returns `false` and writes nothing — while any task in the run's
+/// tree is still `queued` or `claimed`.** Live work means the evidence the
+/// caller read may describe an earlier attempt (a reset-in-place retry whose
+/// event delete failed, say), and finishing the run would drop that work. The
+/// check sits in the same statement as the write, so a row queued in between
+/// cannot slip past it; and since nothing live is ever cancelled here, the run
+/// row and its queue rows cannot end up disagreeing, which is the asymmetry
+/// [`retire_run`] documents. Also `false` for a run that is already terminal.
+pub async fn complete_run_with_lost_outcome(
+    db: &DatabaseConnection,
+    run_id: &str,
+    metadata: Option<serde_json::Value>,
+) -> Result<bool, DbErr> {
+    // `COALESCE($2, task_metadata)`: `None` keeps what is there, matching
+    // `transition_run`'s "None means leave unchanged". `answer = ''` matches
+    // what a root `Done` with an empty answer writes (airway's always is). The
+    // tree predicate is `cancel_queued_tasks_for_run`'s.
+    let res = db
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE agentic_runs \
+                SET task_status = 'done', answer = COALESCE(answer, ''), \
+                    task_metadata = COALESCE($2, task_metadata), error_message = NULL, \
+                    driver_id = NULL, driver_heartbeat_at = NULL, updated_at = now() \
+              WHERE id = $1 \
+                AND (task_status IS NULL \
+                     OR task_status NOT IN ('done', 'failed', 'cancelled', 'timed_out')) \
+                AND NOT EXISTS ( \
+                    SELECT 1 FROM agentic_task_queue q \
+                     WHERE (q.task_id = $1 OR q.task_id LIKE $1 || '.%') \
+                       AND q.queue_status IN ('queued', 'claimed'))",
+            [run_id.into(), metadata.into()],
+        ))
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
 /// The **root** run id that owns `task_id` — itself for a root task, the
 /// prefix for a `run_id.N` descendant.
 ///

@@ -70,6 +70,9 @@ enum RecoveryOutcome {
     Drove,
     /// The run exhausted [`MAX_RECOVERY_ATTEMPTS`] and was dead-lettered.
     Retired,
+    /// The run's work had already finished before the restart — only the
+    /// terminal write was lost — so it was marked `done` without re-driving.
+    Finished,
 }
 
 /// Has this run spent its recovery budget?
@@ -188,8 +191,9 @@ pub async fn recover_active_runs(
             }
             // Deliberately not counted: retiring a run is the guard firing, not
             // work getting done. Counting it would hide the one signal that
-            // tells an operator this bound is active.
-            Ok(RecoveryOutcome::Retired) => {}
+            // tells an operator this bound is active. A `Finished` run was not
+            // driven either — its work was already done — and logs itself.
+            Ok(RecoveryOutcome::Retired | RecoveryOutcome::Finished) => {}
             Err(e) => {
                 log_recovery_failure(&run_id, &e, "failed to recover run");
                 // `retire_run`, not `mark_recovery_failed`: failing the run
@@ -390,7 +394,7 @@ pub async fn recover_stranded_runs(
                 recovered += 1;
                 tracing::info!(target: "recovery", run_id = %s.run_id, "global loop: drove stranded run");
             }
-            Ok(RecoveryOutcome::Retired) => {}
+            Ok(RecoveryOutcome::Retired | RecoveryOutcome::Finished) => {}
             Err(e) => {
                 log_recovery_failure(&s.run_id, &e, "global loop: failed to drive stranded run");
                 // See `recover_active_runs` — retire, don't merely fail, or the
@@ -517,7 +521,7 @@ pub async fn recover_pending_global_runs(
                 driven += 1;
                 tracing::debug!(target: "recovery", run_id = %s.run_id, "latency loop: drove Global run");
             }
-            Ok(RecoveryOutcome::Retired) => {}
+            Ok(RecoveryOutcome::Retired | RecoveryOutcome::Finished) => {}
             Err(e) => {
                 log_recovery_failure(&s.run_id, &e, "latency loop: failed to drive Global run");
                 // See `recover_active_runs` — retire, don't merely fail, or the
@@ -591,6 +595,32 @@ async fn recover_single_run(
     if crate::platform::preview_stamp::is_stamped(root.metadata.as_ref()) {
         crate::platform::preview_stamp::retire_interrupted(&db, &root.id).await?;
         return Ok(RecoveryOutcome::Retired);
+    }
+
+    // An airway run whose load already emitted `load_completed` is finished:
+    // only the coordinator's `done` write was lost to the restart (see
+    // `airway_recovery`). Re-driving it cannot work — airway never suspends,
+    // so `resume_from_state` refuses it and the caller would retire a finished
+    // run as `failed`. Checked before the budget so a finished run is never
+    // retired for exhausting it, and before step 0 so it gets no
+    // `recovery_resumed` marker: recovery stays invisible, as documented.
+    // A run with a task still queued or claimed is never finished here — that
+    // work may be a newer attempt — so it falls through to the paths below.
+    // A read or write error here falls through to the existing path rather than
+    // failing the recovery: the caller retires a run whose recovery errs.
+    // After the preview check: a preview load's writes died with its branch,
+    // so a `load_completed` there does not make the run finished.
+    if root.source_type.as_deref() == Some("airway") {
+        match crate::airway_recovery::finish_if_load_completed(&db, &root.id).await {
+            Ok(true) => return Ok(RecoveryOutcome::Finished),
+            Ok(false) => {}
+            Err(e) => tracing::warn!(
+                target: "recovery",
+                run_id = %root.id,
+                error = %e,
+                "could not check whether the airway load had completed; recovering as usual"
+            ),
+        }
     }
 
     // Spend one unit of the run's recovery budget, and retire it if that was the
@@ -671,7 +701,9 @@ async fn recover_single_run(
     // and nothing else frees it — so the pipeline stayed blocked for the full
     // 6h TTL. `resume_from_state` dispatches airway into its `_` arm, which
     // resumes only from `suspend_data`, and airway runs never suspend — so
-    // recovery CANNOT resume one and always force-fails it.
+    // recovery CANNOT resume one and always force-fails it. (A run whose load
+    // had already completed never gets here: `airway_recovery` finishes it as
+    // `done` before the drive.)
     //
     // SCOPE — narrower than it first appears, and measured rather than
     // inferred. Reaching `resume_from_state` at all requires the run's queued

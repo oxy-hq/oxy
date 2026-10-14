@@ -265,7 +265,7 @@ Extended-thinking content requires special handling:
 
 On crash recovery:
 
-1. **Partial event cleanup**: Delete events after the last `step_end` / `done` / `error` marker on the interrupted run. Prevents duplicate state transitions on replay.
+1. **Partial event cleanup**: Delete events after the last `step_end` / `done` / `error` marker on the interrupted run. Prevents duplicate state transitions on replay. Airway runs emit none of these, so nothing is deleted from them; an airway run whose events already carry `load_completed` is finished as `done` before this step and gets no marker at all.
 2. **Event dedup**: `ON CONFLICT DO NOTHING` on `(run_id, seq)` means re-emitted events are silently dropped.
 3. **Seq consistency**: `Coordinator::from_db()` uses `get_max_seq() + 1` — no seq collisions.
 4. **`recovery_resumed` marker**: A lightweight event emitted once on recovery. The frontend shows no attempt boundary; the event is there for debugging only.

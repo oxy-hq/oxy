@@ -30,7 +30,7 @@ export type StartAirwayRequest = {
   /** Optional conversation-thread association. */
   thread_id?: string;
   /** Explicit subset of resources (tables) to run, overriding the spec's
-   *  `resources` — used by "retry failed tables". Omit to run the whole spec. */
+   *  `resources` — used by "re-run failed tables". Omit to run the whole spec. */
   resources?: string[];
 };
 

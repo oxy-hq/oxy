@@ -8,6 +8,7 @@
  */
 
 import type { AirwayEvent, ResourceContract } from "@/services/api/airway";
+import { type FailedTable, FailedTableTracker } from "./airwayFailedTables";
 
 export type PhaseState = "pending" | "active" | "done";
 
@@ -70,8 +71,11 @@ export type AirwayRunView = {
   resources: ResourceRow[];
   status: AirwayRunStatus;
   error?: string;
-  /** Resources skipped via `resource_failed` (run still completed). */
-  failedResources: { table: string; error: string }[];
+  /** Tables that failed in the latest attempt (`resource_failed` /
+   *  `table_load_failed`, not superseded by a `table_loaded`) — see
+   *  `airwayFailedTables.ts`. Never inferred from the run status: a run
+   *  failed at the run level with no table failure leaves this empty. */
+  failedResources: FailedTable[];
   /** `SchemaEvolved` payload, surfaced as a diff badge. */
   schemaChanges?: unknown;
   durationMs?: number;
@@ -182,13 +186,33 @@ function upsertChild(view: AirwayRunView, parent: string, table: string): Resour
   return row;
 }
 
-function markResourceFailed(view: AirwayRunView, table: string, error: string): void {
-  const row = upsertResource(view, table);
+/** Record a per-table failure event and mark its row failed with the
+ *  error the tracker kept (first error wins when one table emits both
+ *  failure events). */
+function markResourceFailed(
+  view: AirwayRunView,
+  failed: FailedTableTracker,
+  ev: Extract<AirwayEvent, { type: "resource_failed" | "table_load_failed" }>
+): void {
+  failed.observe(ev.type, ev.payload);
+  const row = upsertResource(view, ev.payload.table);
   row.status = "error";
-  row.error = error;
-  if (!view.failedResources.some((f) => f.table === table)) {
-    view.failedResources.push({ table, error });
-  }
+  row.error = failed.errorFor(ev.payload.table) ?? ev.payload.error;
+  view.failedResources = failed.list();
+}
+
+/**
+ * A second `load_started` on the same run is a reset-in-place re-drive:
+ * the prior attempt's events stay on the run, but its outcome no longer
+ * describes the run. Start the view over so rows, phases and the failed
+ * list reflect the latest attempt only.
+ */
+function startNewAttempt(view: AirwayRunView): void {
+  // Drop optional fields (error, endedAt, durationMs, …) too, not just
+  // the ones `emptyView` sets.
+  for (const key of Object.keys(view)) delete (view as Record<string, unknown>)[key];
+  Object.assign(view, emptyView());
+  rowIndex.delete(view);
 }
 
 function markRunFailed(view: AirwayRunView, error: string, ts: string | undefined): void {
@@ -209,10 +233,15 @@ function markRunFailed(view: AirwayRunView, error: string, ts: string | undefine
  */
 export function reduceAirwayEvents(events: AirwayEvent[]): AirwayRunView {
   const view = emptyView();
+  const failed = new FailedTableTracker();
+  let sawLoadStarted = false;
 
   for (const ev of events) {
     switch (ev.type) {
       case "load_started": {
+        if (sawLoadStarted) startNewAttempt(view);
+        sawLoadStarted = true;
+        failed.observe(ev.type, ev.payload);
         view.pipelineName = ev.payload.pipeline_name;
         view.loadId = ev.payload.load_id;
         view.phase.extract = "active";
@@ -333,7 +362,7 @@ export function reduceAirwayEvents(events: AirwayEvent[]): AirwayRunView {
         break;
       }
       case "table_load_failed": {
-        markResourceFailed(view, ev.payload.table, ev.payload.error);
+        markResourceFailed(view, failed, ev);
         break;
       }
       case "table_loaded": {
@@ -362,7 +391,7 @@ export function reduceAirwayEvents(events: AirwayEvent[]): AirwayRunView {
         break;
       }
       case "resource_failed": {
-        markResourceFailed(view, ev.payload.table, ev.payload.error);
+        markResourceFailed(view, failed, ev);
         break;
       }
       case "schema_evolved": {

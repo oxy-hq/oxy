@@ -13,9 +13,20 @@ import {
 } from "@/components/ui/shadcn/alert-dialog";
 import { Button } from "@/components/ui/shadcn/button";
 
+const RERUN_FAILED_TABLES_HINT = "Start a new run for the tables that failed in this run";
+
+/** Visible text, aria-label and dialog title — one string so they can't drift. */
+const rerunFailedTablesLabel = (count: number): string =>
+  `Re-run ${count} failed ${count === 1 ? "table" : "tables"}`;
+
 /**
- * "Retry failed tables" — re-runs only the resources that failed in a
- * run, by starting a new pipeline run scoped to those table names.
+ * "Re-run N failed tables" — an OFFER to start a new pipeline run scoped
+ * to the tables that failed in this run. Worded as an action, not a
+ * status: "Retry failed (N)" was read as "a retry ran and failed".
+ *
+ * `failedTables` must come from `airwayFailedTables.ts` (per-table
+ * failure events of the latest attempt) — never from the run status, or
+ * a run failed at the run level offers to re-run tables that loaded.
  *
  * Surfaces the at-least-once safety caveat: airway commits per-batch and
  * advances cursors only after a successful load, so re-running a table
@@ -37,7 +48,7 @@ const RetryFailedTablesButton: React.FC<{
   const [open, setOpen] = useState(false);
   if (failedTables.length === 0) return null;
 
-  const count = failedTables.length;
+  const label = rerunFailedTablesLabel(failedTables.length);
   return (
     <>
       <Button
@@ -45,20 +56,19 @@ const RetryFailedTablesButton: React.FC<{
         variant={variant}
         onClick={() => setOpen(true)}
         disabled={pending}
-        aria-label='Retry failed tables'
+        aria-label={label}
+        title={RERUN_FAILED_TABLES_HINT}
       >
         {pending ? <Loader2 className='h-4 w-4 animate-spin' /> : <RefreshCw className='h-4 w-4' />}
-        Retry failed ({count})
+        {label}
       </Button>
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              Retry {count} failed table{count === 1 ? "" : "s"}?
-            </AlertDialogTitle>
+            <AlertDialogTitle>{label}?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className='space-y-2'>
-                <p>This starts a new run scoped to only the failed tables:</p>
+                <p>This starts a new run for only the tables that failed in this run:</p>
                 <ul className='max-h-32 overflow-y-auto rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-xs'>
                   {failedTables.map((t) => (
                     <li key={t} className='truncate'>
@@ -84,7 +94,7 @@ const RetryFailedTablesButton: React.FC<{
                 await onConfirm(failedTables);
               }}
             >
-              Retry
+              Start run
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

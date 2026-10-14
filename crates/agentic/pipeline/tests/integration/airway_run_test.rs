@@ -100,9 +100,9 @@ pub(crate) async fn test_db() -> Option<DatabaseConnection> {
 /// `compiled` stands in for the host's compile-boundary hook: `Some(yaml)`
 /// is a workspace whose `.airway.yml` is a compiled `airway_pipelines` row
 /// (what a stateless replica sees), `None` is "read the filesystem".
-struct TmpWorkspace {
-    root: PathBuf,
-    compiled: Option<String>,
+pub(super) struct TmpWorkspace {
+    pub(super) root: PathBuf,
+    pub(super) compiled: Option<String>,
 }
 
 #[async_trait]

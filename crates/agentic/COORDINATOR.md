@@ -347,6 +347,13 @@ Server Startup
     │
     ├─ For each resumable root:
     │     │
+    │     ├─ Airway root whose events already carry load_completed (no failure
+    │     │   for that load, no later load_started) and no queued/claimed task
+    │     │   → finish it `done` and stop: only the coordinator's terminal
+    │     │   write was lost (no marker, no re-drive). Live work is left to the
+    │     │   path below. A preview-stamped root is retired before this
+    │     │   check. See pipeline/src/airway_recovery.rs.
+    │     │
     │     ├─ Delete partial events from interrupted execution
     │     │   (find last step_end/done/error, delete everything after it)
     │     │
@@ -371,7 +378,7 @@ Server Startup
     │     │   ├─ children all reported → leave to the pending resume
     │     │   ├─ delegating, children still out → leave waiting
     │     │   ├─ running + suspend data → re-launch from checkpoint
-    │     │   └─ stale (no checkpoint) → mark failed
+    │     │   └─ stale (no checkpoint) → mark failed (a root: retire_run → `failed`)
     │     │
     │     ├─ Process pending resumes (assign Resume / AutomationDecision
     │     │   carrying the children's answer)

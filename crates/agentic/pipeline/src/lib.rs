@@ -6,6 +6,7 @@
 
 pub mod agent_run;
 pub mod airway_config;
+mod airway_recovery;
 pub mod airway_request;
 pub mod airway_run;
 /// The typed payload of a queued custom-app function run.

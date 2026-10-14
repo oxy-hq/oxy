@@ -1,4 +1,5 @@
 import type { EltTableSummary, RunEventEntry } from "@/services/api/coordinator";
+import { FailedTableTracker } from "@/utils/airwayFailedTables";
 
 /**
  * ELT (airway) run model. Combines the backend's `elt_tables` summary
@@ -207,11 +208,29 @@ export const buildEltModel = (
   // the loop overwrites this with the richer payload when present.
   let pipelineError: string | null = metadata.runError ?? null;
   let cancelled = false;
+  // Shared with the IDE pipeline page — see `airwayFailedTables.ts`.
+  const failed = new FailedTableTracker();
+  let sawLoadStarted = false;
 
   for (const e of events) {
     const p = e.payload as Record<string, unknown>;
     const at = eventTimeMs(e) ?? 0;
     switch (e.event_type) {
+      case "load_started":
+        // A second `load_started` is a reset-in-place re-drive of the same
+        // run: the earlier attempt's per-table state and pipeline error no
+        // longer describe the run, so only the latest attempt is shown.
+        // Deliberately attempt-independent: the plan (`declaredResources`,
+        // from the first `pipeline_plan`) — a re-drive reuses the stored spec —
+        // and `schemaChanges`, since evolved columns stay evolved.
+        if (sawLoadStarted) {
+          tableState.clear();
+          pipelineError = metadata.runError ?? null;
+          cancelled = false;
+        }
+        sawLoadStarted = true;
+        failed.observe(e.event_type, p);
+        break;
       case "extract_started":
         openPhase(str(p.table), "extract", at);
         break;
@@ -246,14 +265,15 @@ export const buildEltModel = (
       case "table_load_failed": {
         const t = str(p.table);
         closePhase(t, "load", at);
-        const s = ensure(t);
-        s.error = str(p.error) || "load failed";
+        failed.observe(e.event_type, p);
+        ensure(t).error = failed.errorFor(t) ?? null;
         break;
       }
       case "resource_failed": {
         const t = str(p.table);
+        failed.observe(e.event_type, p);
         const s = ensure(t);
-        s.error = str(p.error) || "extract failed";
+        s.error = failed.errorFor(t) ?? null;
         s.currentPhase = null;
         break;
       }
@@ -382,10 +402,13 @@ const deriveStatus = (
   if (s?.extract?.completedAtMs !== null && s?.extract) return "extracted";
   if (s?.extract) return "extracting";
   // Fall back to summary status if events haven't been observed yet.
+  // Never "failed": the summary folds `resource_failed` across EVERY
+  // attempt on the run, while a table's failure is decided from the
+  // event log alone (latest attempt only) — the failure events it counts
+  // are in `events` too, so the tracker has already seen them.
   if (summary) {
     const m = summary.status;
     if (m === "loaded") return "loaded";
-    if (m === "failed") return "failed";
     if (m === "loading") return "loading";
     if (m === "extracting") return "extracting";
     if (m === "extracted") return "extracted";
