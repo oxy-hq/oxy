@@ -1,7 +1,8 @@
 /**
  * Remembers the workspace each user last opened per org, plus the last org they
- * visited. Used by the post-login dispatcher to skip the workspace picker when
- * a returning user already has a clear "resume where I left off" target.
+ * visited. Used by the post-login and org dispatchers to skip the workspace
+ * picker when a returning user already has a clear "resume where I left off"
+ * target.
  *
  * Scoped to localStorage because the value is per-device and survives token
  * refreshes; there is no backend column for it. Keys are also scoped by user
@@ -95,31 +96,53 @@ export function clearLastOrgSlug(): void {
 }
 
 /**
- * Picks a workspace for a given org, preferring the "last opened" id when it
- * still matches a navigable workspace. Navigable = `ready` or `failed`:
- * cloning is skipped because it's transient (would loop the dispatcher), but
- * failed is kept so the user lands on the last workspace and can retry from
- * the workspace shell instead of being silently routed away. Returns null
- * when no navigable workspace exists — the org root then shows "being set up".
+ * Navigable = `ready` or `failed`: cloning is skipped because it's transient
+ * (would loop the dispatcher), but failed is kept so the user lands on the last
+ * workspace and can retry from the workspace shell instead of being silently
+ * routed away.
  */
-export function pickWorkspace(
+export function navigableWorkspaces(workspaces: WorkspaceSummary[]): WorkspaceSummary[] {
+  return workspaces.filter((w) => w.status === "ready" || w.status === "failed");
+}
+
+/** The remembered workspace for `orgId`, when it is still navigable. */
+export function rememberedWorkspace(
   workspaces: WorkspaceSummary[],
   orgId: string
 ): WorkspaceSummary | null {
-  const navigable = workspaces.filter((w) => w.status === "ready" || w.status === "failed");
+  const lastId = getLastWorkspaceId(orgId);
+  if (!lastId) return null;
+  return navigableWorkspaces(workspaces).find((w) => w.id === lastId) ?? null;
+}
+
+/**
+ * Picks a workspace for a given org. The remembered workspace wins while it is
+ * still navigable — it is the user's own last choice. Otherwise the navigable
+ * workspace with the most custom apps: HQ is apps-first, and landing an org
+ * whose apps live in one workspace on another one shows an empty home (an org
+ * on prod landed on a zero-app workspace because nothing else ordered the
+ * list). Ties keep the older order, `last_opened_at` newest first — only the
+ * seed writes that column, so on real data it is the API's order.
+ *
+ * `appCounts` omits a workspace it could not count; that reads as zero.
+ * Returns null when no navigable workspace exists — the org root then shows
+ * "being set up".
+ */
+export function pickWorkspace(
+  workspaces: WorkspaceSummary[],
+  orgId: string,
+  appCounts?: ReadonlyMap<string, number>
+): WorkspaceSummary | null {
+  const navigable = navigableWorkspaces(workspaces);
   if (navigable.length === 0) return null;
 
-  const lastId = getLastWorkspaceId(orgId);
-  if (lastId) {
-    const byLastId = navigable.find((w) => w.id === lastId);
-    if (byLastId) return byLastId;
-  }
+  const remembered = rememberedWorkspace(navigable, orgId);
+  if (remembered) return remembered;
 
-  const sorted = [...navigable].sort((a, b) => {
-    const aTime = a.last_opened_at ? Date.parse(a.last_opened_at) : 0;
-    const bTime = b.last_opened_at ? Date.parse(b.last_opened_at) : 0;
-    return bTime - aTime;
-  });
+  const apps = (w: WorkspaceSummary) => appCounts?.get(w.id) ?? 0;
+  const opened = (w: WorkspaceSummary) => (w.last_opened_at ? Date.parse(w.last_opened_at) : 0);
+  // `sort` is stable, so a full tie keeps the API's order.
+  const sorted = [...navigable].sort((a, b) => apps(b) - apps(a) || opened(b) - opened(a));
 
   return sorted[0];
 }

@@ -5,11 +5,11 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useOrgs } from "@/hooks/api/organizations";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
+import { useLandingWorkspace } from "@/hooks/useLandingWorkspace";
 import { getInjectedOrg } from "@/libs/orgSubdomain";
 import {
   clearLastWorkspaceId,
   getLastOrgSlug,
-  pickWorkspace,
   setLastWorkspaceId
 } from "@/libs/utils/lastWorkspace";
 import ROUTES from "@/libs/utils/routes";
@@ -24,7 +24,7 @@ import type { Organization } from "@/types/organization";
  *                                   or the admin console for staff standing
  *   has orgs, 0 workspaces        → /:slug (OrgDispatcher renders "being set up")
  *   has orgs, no navigable ws     → /:slug (every ws is still cloning)
- *   has orgs, ≥1 navigable ws     → /:slug/workspaces/:last-or-first-navigable
+ *   has orgs, ≥1 navigable ws     → /:slug/workspaces/:last-or-most-apps
  *
  * …**unless the user holds a partner role**, in which case every branch that would
  * have left them without a workspace sends them to `/partners` instead. A partner's
@@ -74,8 +74,10 @@ export default function PostLoginDispatcher() {
   // the org identity, so we skip the org/workspace picker entirely and go
   // straight to the admin-chosen default project (or the org root, which
   // lets OrgDispatcher pick when no default is set). This branch is below the
-  // hook calls so the Rules of Hooks hold.
+  // hook calls so the Rules of Hooks hold — the landing hook is handed no
+  // workspaces there, so it counts nobody's apps for a pick it won't make.
   const injectedOrg = getInjectedOrg();
+  const landing = useLandingWorkspace(injectedOrg ? undefined : workspaces, chosenOrg?.id);
   if (injectedOrg) {
     return injectedOrg.defaultProjectId ? (
       <Navigate
@@ -119,7 +121,9 @@ export default function PostLoginDispatcher() {
     );
   }
 
-  const target = pickWorkspace(workspaces, chosenOrg.id);
+  // Counting each workspace's apps, to land on the one with the most.
+  if (landing.isPending) return <FullPageSpinner />;
+  const target = landing.target;
   if (!target) {
     // No workspace is navigable yet (all still cloning) — the org root shows
     // "being set up" until one is. Drop any stale per-org lastWorkspace id so

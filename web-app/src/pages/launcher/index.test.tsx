@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CustomAppSummary } from "@/types/apps";
 import type { OrgRole } from "@/types/organization";
 import LauncherPage from "./index";
@@ -44,8 +44,28 @@ const app: CustomAppSummary = {
   visibility: "org"
 };
 
+// Mutable so the zero-app cases can empty this workspace and fill another.
+let currentApps: CustomAppSummary[] = [app];
+let workspaces: { id: string; name: string }[] = [];
+let appsElsewhere = new Map<string, CustomAppSummary[]>();
+let elsewherePending = false;
+
 vi.mock("@/hooks/api/customApps/useCustomApps", () => ({
-  useCustomApps: () => ({ data: [app], isPending: false })
+  useCustomApps: () => ({ data: currentApps, isPending: false })
+}));
+vi.mock("@/hooks/api/workspaces/useWorkspaces", () => ({
+  useAllWorkspaces: () => ({ data: workspaces, isLoading: false })
+}));
+// Answers only for the ids it is asked about, so a test sees what the page asked.
+const askedFor = vi.fn();
+vi.mock("@/hooks/api/customApps/useWorkspacesCustomApps", () => ({
+  useWorkspacesCustomApps: (ids: readonly string[]) => {
+    askedFor(ids);
+    return {
+      appsByWorkspace: new Map(ids.map((id) => [id, appsElsewhere.get(id) ?? []])),
+      isPending: ids.length > 0 && elsewherePending
+    };
+  }
 }));
 
 vi.mock("@/hooks/useCurrentProjectBranch", () => ({
@@ -61,7 +81,11 @@ vi.mock("@/components/RecentThreads", () => ({ RecentThreads: () => null }));
 vi.mock("./components/NeedsAttention", () => ({ NeedsAttention: () => null }));
 vi.mock("./components/CriticalAlertBanner", () => ({ CriticalAlertBanner: () => null }));
 vi.mock("./components/ProjectSetupToast", () => ({ ProjectSetupToast: () => null }));
-vi.mock("./components/AskForwardFallback", () => ({ AskForwardFallback: () => null }));
+vi.mock("./components/AskForwardFallback", () => ({
+  AskForwardFallback: ({ secondary }: { secondary?: boolean }) => (
+    <div data-testid={secondary ? "ask-secondary" : "ask-fallback"} />
+  )
+}));
 
 // A marker, so "did the gate mount the dialog" is observable without standing up a
 // QueryClientProvider for a dialog that is closed in every one of these cases.
@@ -70,6 +94,14 @@ vi.mock("@/components/appAccess/AppAccessDialog", () => ({
 }));
 
 afterEach(cleanup);
+
+beforeEach(() => {
+  currentApps = [app];
+  workspaces = [];
+  appsElsewhere = new Map();
+  elsewherePending = false;
+  askedFor.mockClear();
+});
 
 const renderAs = (state: typeof orgState) => {
   orgState = state;
@@ -118,5 +150,82 @@ describe("launcher access gate", () => {
     // The gate must subtract the control, not the page.
     renderAs({ org: { id: "org-1" }, role: "member" });
     expect(screen.getByTestId("launcher-app-card-revenue")).toBeInTheDocument();
+  });
+});
+
+describe("launcher with no apps in this workspace", () => {
+  const forecast: CustomAppSummary = {
+    ...app,
+    id: "app-2",
+    slug: "forecast",
+    name: "Forecast"
+  };
+
+  beforeEach(() => {
+    currentApps = [];
+    workspaces = [
+      { id: "ws-1", name: "Pokehouse" },
+      { id: "ws-2", name: "Oxygen" },
+      { id: "ws-3", name: "Sandbox" }
+    ];
+  });
+
+  it("shows the org's apps from other workspaces, with Ask below them", () => {
+    appsElsewhere = new Map([["ws-2", [app, forecast]]]);
+    renderAs({ org: { id: "org-1" }, role: "member" });
+
+    expect(screen.getByText("Apps in Oxygen")).toBeInTheDocument();
+    expect(screen.getByTestId("launcher-app-grid-ws-2")).toBeInTheDocument();
+    expect(screen.getByTestId("launcher-app-card-revenue")).toBeInTheDocument();
+    expect(screen.getByTestId("launcher-app-card-forecast")).toBeInTheDocument();
+    // A workspace with nothing to show gets no heading.
+    expect(screen.queryByText("Apps in Sandbox")).toBeNull();
+    // Ask stays, as the secondary composer — not the full-page greeting.
+    expect(screen.getByTestId("ask-secondary")).toBeInTheDocument();
+    expect(screen.queryByTestId("ask-fallback")).toBeNull();
+    // Cards come before Ask in the page.
+    const grid = screen.getByTestId("launcher-other-workspace-apps");
+    expect(
+      grid.compareDocumentPosition(screen.getByTestId("ask-secondary")) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it("asks only about the other workspaces", () => {
+    renderAs({ org: { id: "org-1" }, role: "member" });
+    expect(askedFor).toHaveBeenLastCalledWith(["ws-2", "ws-3"]);
+  });
+
+  it("keeps the greeting and composer when the org has no apps anywhere", () => {
+    renderAs({ org: { id: "org-1" }, role: "member" });
+    expect(screen.getByTestId("ask-fallback")).toBeInTheDocument();
+    expect(screen.queryByTestId("launcher-other-workspace-apps")).toBeNull();
+  });
+
+  it("waits for the other workspaces rather than flash the greeting", () => {
+    elsewherePending = true;
+    renderAs({ org: { id: "org-1" }, role: "member" });
+    expect(screen.queryByTestId("ask-fallback")).toBeNull();
+    expect(screen.queryByTestId("ask-secondary")).toBeNull();
+  });
+
+  it("offers an org admin the access control on those cards too", () => {
+    appsElsewhere = new Map([["ws-2", [app]]]);
+    renderAs({ org: { id: "org-1" }, role: "admin" });
+    expect(accessButton()).toBeInTheDocument();
+  });
+});
+
+describe("launcher with apps in this workspace", () => {
+  it("does not look at other workspaces", () => {
+    workspaces = [
+      { id: "ws-1", name: "Here" },
+      { id: "ws-2", name: "There" }
+    ];
+    appsElsewhere = new Map([["ws-2", [app]]]);
+    renderAs({ org: { id: "org-1" }, role: "member" });
+    expect(askedFor).toHaveBeenLastCalledWith([]);
+    expect(screen.queryByTestId("launcher-other-workspace-apps")).toBeNull();
+    expect(screen.getByTestId("launcher-app-grid")).toBeInTheDocument();
   });
 });

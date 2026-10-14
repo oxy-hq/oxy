@@ -28,6 +28,15 @@ vi.mock("@/hooks/api/organizations", () => ({
 vi.mock("@/hooks/api/workspaces/useWorkspaces", () => ({
   useAllWorkspaces: () => ({ data: workspaces, isPending: false, isError: false })
 }));
+// Published-app counts per workspace, for the landing order. Only the length matters.
+let appCounts: Record<string, number> = {};
+let countsPending = false;
+vi.mock("@/hooks/api/customApps/useWorkspacesCustomApps", () => ({
+  useWorkspacesCustomApps: (ids: readonly string[]) => ({
+    appsByWorkspace: new Map(ids.map((id) => [id, Array.from({ length: appCounts[id] ?? 0 })])),
+    isPending: ids.length > 0 && countsPending
+  })
+}));
 vi.mock("@/hooks/api/users/useCurrentUser", () => ({
   default: () => ({ data: user, isPending: false })
 }));
@@ -75,6 +84,9 @@ beforeEach(() => {
   org = { id: "org-1", name: "Acme", slug: "acme", role: "member" };
   workspaces = [];
   user = MEMBER_USER;
+  appCounts = {};
+  countsPending = false;
+  localStorage.clear();
 });
 afterEach(cleanup);
 
@@ -167,5 +179,34 @@ describe("OrgDispatcher — an org with a ready workspace", () => {
     expect(screen.getByTestId("location")).toHaveTextContent(
       /^\/acme\/workspaces\/ws-1\?settings=organization\.crew$/
     );
+  });
+});
+
+describe("OrgDispatcher — an org with several workspaces", () => {
+  beforeEach(() => {
+    // The prod repro: the API lists an app-less workspace first.
+    workspaces = [
+      { id: "ws-empty", status: "ready" },
+      { id: "ws-apps", status: "ready" }
+    ];
+    appCounts = { "ws-apps": 3 };
+  });
+
+  it("lands on the workspace with the most apps", () => {
+    renderAt();
+    expect(screen.getByTestId("location")).toHaveTextContent(/^\/acme\/workspaces\/ws-apps$/);
+  });
+
+  it("waits for the counts instead of landing on the first in the list", () => {
+    countsPending = true;
+    renderAt();
+    expect(screen.queryByTestId("location")).toBeNull();
+  });
+
+  it("keeps the workspace this user opened last", () => {
+    localStorage.setItem("user", JSON.stringify({ id: "user-1" }));
+    localStorage.setItem("oxy:last_workspace:user-1:org-1", "ws-empty");
+    renderAt();
+    expect(screen.getByTestId("location")).toHaveTextContent(/^\/acme\/workspaces\/ws-empty$/);
   });
 });

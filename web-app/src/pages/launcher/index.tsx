@@ -8,17 +8,22 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import useAskDock from "@/stores/useAskDock";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { CustomAppSummary } from "@/types/apps";
-import { AppCard } from "./components/AppCard";
+import { AppGrid } from "./components/AppGrid";
 import { AskForwardFallback } from "./components/AskForwardFallback";
 import { CriticalAlertBanner } from "./components/CriticalAlertBanner";
 import { NeedsAttention } from "./components/NeedsAttention";
+import { OtherWorkspaceApps } from "./components/OtherWorkspaceApps";
 import { ProjectSetupToast } from "./components/ProjectSetupToast";
+import useOtherWorkspaceApps from "./useOtherWorkspaceApps";
 import useWorkspaceReadiness from "./useWorkspaceReadiness";
 
 const LauncherPage = () => {
   const readiness = useWorkspaceReadiness();
   const { project } = useCurrentProjectBranch();
   const { data: customApps = [], isPending: appsPending } = useCustomApps(project?.id ?? "");
+  const hasApps = customApps.length > 0;
+  // Only asked once this workspace's own list says it has none.
+  const elsewhere = useOtherWorkspaceApps(project?.id ?? "", !appsPending && !hasApps);
   const location = useLocation();
   const navigate = useNavigate();
   const openAsk = useAskDock((s) => s.open);
@@ -39,6 +44,7 @@ const LauncherPage = () => {
   const orgRole = useCurrentOrg((s) => s.role);
   const manageableOrgId = org && (orgRole === "owner" || orgRole === "admin") ? org.id : null;
   const [managing, setManaging] = useState<CustomAppSummary | null>(null);
+  const manageAccess = manageableOrgId ? setManaging : undefined;
 
   // Back-compat with navigate(HOME, { state: { prefillQuestion, ... } })
   // callers (onboarding EXPLORE buttons etc.): open the Ask dock
@@ -60,7 +66,7 @@ const LauncherPage = () => {
     navigate(location.pathname + location.search, { replace: true, state: null });
   }, [readiness.status, locationState, openAsk, navigate, location.pathname, location.search]);
 
-  if (readiness.status === "loading" || appsPending) {
+  if (readiness.status === "loading" || appsPending || elsewhere.isPending) {
     return (
       <div className='flex h-full items-center justify-center'>
         <Spinner className='size-6' />
@@ -68,7 +74,13 @@ const LauncherPage = () => {
     );
   }
 
-  const hasApps = customApps.length > 0;
+  const ask = (secondary: boolean) => (
+    <AskForwardFallback
+      shouldDisableChat={readiness.shouldDisableChat}
+      hasSetupSteps={readiness.gaps.length > 0}
+      secondary={secondary}
+    />
+  );
 
   return (
     <div className='flex h-full flex-col overflow-auto'>
@@ -81,31 +93,25 @@ const LauncherPage = () => {
           <CriticalAlertBanner />
           {/* Apps — the primary operating surfaces, lead the page */}
           <div className='mx-auto w-full max-w-6xl px-6 pt-12 pb-8'>
-            <div
-              className='grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3'
-              data-testid='launcher-app-grid'
-            >
-              {customApps.map((app, i) => (
-                // art_url in the key remounts the card when art changes, resetting its error fallback
-                <AppCard
-                  key={`${app.id}:${app.art_url ?? ""}`}
-                  app={app}
-                  // The first row at the widest layout (xl:grid-cols-3) is on screen at
-                  // first paint, so its art should not wait for layout; the rest stay lazy.
-                  eagerArt={i < 3}
-                  onManageAccess={manageableOrgId ? setManaging : undefined}
-                />
-              ))}
-            </div>
+            <AppGrid
+              apps={customApps}
+              eagerCount={3}
+              onManageAccess={manageAccess}
+              testId='launcher-app-grid'
+            />
           </div>
           {/* Needs attention — secondary intelligence module below the apps */}
           <NeedsAttention />
         </>
+      ) : elsewhere.groups.length > 0 ? (
+        // No apps here, but the org has some the viewer can reach in other
+        // workspaces: show those, with Ask below them rather than instead.
+        <>
+          <OtherWorkspaceApps groups={elsewhere.groups} onManageAccess={manageAccess} />
+          {ask(true)}
+        </>
       ) : (
-        <AskForwardFallback
-          shouldDisableChat={readiness.shouldDisableChat}
-          hasSetupSteps={readiness.gaps.length > 0}
-        />
+        ask(false)
       )}
       <RecentThreads className='mx-auto w-full max-w-6xl px-6 pb-8' />
       {/* Gated on the same value as the button, so a member doesn't mount a dialog

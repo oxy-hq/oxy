@@ -6,18 +6,23 @@ import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 
 /**
- * Empty-state home for workspaces with zero published custom apps
- * (every `oxy init` user): the classic greeting + composer, so the
- * launcher never renders a dead grid. Submitting navigates to the full
- * thread page (the Ask dock is the surface for in-context asks).
+ * Empty-state home for an org with zero published custom apps (every
+ * `oxy init` user): the classic greeting + composer, so the launcher never
+ * renders a dead grid. Submitting navigates to the full thread page (the Ask
+ * dock is the surface for in-context asks).
+ *
+ * `secondary` is the same composer under the apps of the org's other
+ * workspaces: a short line instead of the greeting, not centred in the page.
  */
 export function AskForwardFallback({
   shouldDisableChat,
-  hasSetupSteps
+  hasSetupSteps,
+  secondary = false
 }: {
   shouldDisableChat: boolean;
   /** Whether the setup toast lists steps this viewer can take. */
   hasSetupSteps: boolean;
+  secondary?: boolean;
 }) {
   const orgName = useCurrentOrg((s) => s.org?.name);
   // The workspace switcher navigates to this workspace's ROOT (the
@@ -26,11 +31,27 @@ export function AskForwardFallback({
   // workspace id so a typed draft can't survive the switch (see #2962).
   const wsId = useCurrentWorkspace((s) => s.workspace?.id);
   return (
-    <div className='flex flex-1 flex-col items-center justify-center gap-6 px-4 sm:gap-10'>
-      <p className='text-balance text-center text-xl sm:text-3xl'>
-        {getGreeting()}! How can I assist you?
+    <div
+      className={cn(
+        "flex flex-col items-center px-4",
+        secondary ? "gap-3 pb-8" : "flex-1 justify-center gap-6 sm:gap-10"
+      )}
+      data-testid={secondary ? "launcher-ask-secondary" : "launcher-ask-fallback"}
+    >
+      <p
+        className={cn(
+          "text-balance text-center",
+          secondary ? "text-muted-foreground text-sm" : "text-xl sm:text-3xl"
+        )}
+      >
+        {secondary ? "Or ask a question" : `${getGreeting()}! How can I assist you?`}
       </p>
-      <div className='flex w-full max-w-4xl flex-col items-center gap-3'>
+      <div
+        className={cn(
+          "flex w-full flex-col items-center gap-3",
+          secondary ? "max-w-3xl" : "max-w-4xl"
+        )}
+      >
         {shouldDisableChat && (
           <p
             className='text-center text-muted-foreground/50 text-xs'

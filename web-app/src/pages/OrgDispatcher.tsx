@@ -5,16 +5,14 @@ import { SETTINGS_PARAM } from "@/components/settings/SettingsDialog/useSettings
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useOrgs } from "@/hooks/api/organizations";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
-import {
-  clearLastWorkspaceId,
-  pickWorkspace,
-  setLastWorkspaceId
-} from "@/libs/utils/lastWorkspace";
+import { useLandingWorkspace } from "@/hooks/useLandingWorkspace";
+import { clearLastWorkspaceId, setLastWorkspaceId } from "@/libs/utils/lastWorkspace";
 import ROUTES from "@/libs/utils/routes";
 
 /**
  * Landing at `/:orgSlug`. OrgGuard has already verified the slug resolves to a
- * member org, so we just pick a workspace and redirect. An org with no
+ * member org, so we just pick a workspace (`useLandingWorkspace`: the
+ * remembered one, else the one with the most apps) and redirect. An org with no
  * navigable workspace — none yet, or every one still cloning — renders the
  * "being set up" screen in place (clearing a stale lastWorkspace id) rather
  * than sending anyone into onboarding: orgs are provisioned for their members.
@@ -37,6 +35,7 @@ export default function OrgDispatcher() {
   const { data: orgs, isPending: orgsPending } = useOrgs();
   const org = orgs?.find((o) => o.slug === orgSlug);
   const { data: workspaces, isPending: wsPending, isError } = useAllWorkspaces(org?.id);
+  const landing = useLandingWorkspace(workspaces, org?.id);
   // Keyed by org: this element survives an org switch, and "creating" must not.
   const [creatingInOrgId, setCreatingInOrgId] = useState<string | null>(null);
 
@@ -44,13 +43,13 @@ export default function OrgDispatcher() {
   // optional. Bail to root rather than spin forever on the false branch below.
   if (!orgSlug) return <Navigate to={ROUTES.ROOT} replace />;
 
-  if (orgsPending || !org || wsPending) {
-    return (
-      <div className='flex h-full w-full items-center justify-center'>
-        <Spinner className='size-6' />
-      </div>
-    );
-  }
+  const spinner = (
+    <div className='flex h-full w-full items-center justify-center'>
+      <Spinner className='size-6' />
+    </div>
+  );
+
+  if (orgsPending || !org || wsPending) return spinner;
 
   const setupPending = (
     <OrgSetupPending
@@ -74,7 +73,9 @@ export default function OrgDispatcher() {
 
   if (!workspaces || workspaces.length === 0) return setupPending;
 
-  const target = pickWorkspace(workspaces, org.id);
+  // Counting each workspace's apps, to land on the one with the most.
+  if (landing.isPending) return spinner;
+  const target = landing.target;
   if (!target) {
     clearLastWorkspaceId(org.id);
     return setupPending;

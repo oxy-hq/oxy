@@ -67,6 +67,12 @@
 # tagged) against the normal shared workspace as usual. Both were run this
 # way against the fleet and passed — see the per-case tag note below.
 #
+# Since 2026-10-14 a zero-app workspace's HQ shows the apps of the org's OTHER
+# workspaces (a smaller "Or ask a question" composer below them); the greeting
+# renders only when the whole org has no published app. So a dedicated empty
+# workspace in the shared fleet org no longer gets the greeting — the
+# `fleet-empty-workspace` run needs an org with no published app at all.
+#
 # `chat-panel-agent-switch.flow.test.yml` hit the identical zero-apps
 # precondition and was ported by switching its entry point from the home
 # fallback to the Ask dock; that adaptation does not fit here because this
