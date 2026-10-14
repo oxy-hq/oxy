@@ -1,0 +1,29 @@
+{
+  // The review pipeline is TypeScript run directly by Node 26, the same arrangement
+  // as .github/scripts: Node strips types at load and does not check them, so CI runs
+  // `tsc --noEmit -p scripts/review` against this config. See .github/scripts/tsconfig.json
+  // for why each of these flags is on.
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2024"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    // Stricter than .github/scripts: this code posts to PRs and spends model budget,
+    // so an unread value or a silently missing return is a bug, not a style nit.
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["*.ts", "src/*.ts", "eval/*.ts"]
+}

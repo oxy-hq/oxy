@@ -1,0 +1,5 @@
+# Present so this directory is its own pnpm root, outside the repo's workspace: the
+# review pipeline installs one runtime dependency in CI (plus TypeScript and Node's
+# types, to check it) and nothing else. Same arrangement as
+# customer-apps/examples/platform-canary.
+packages: []

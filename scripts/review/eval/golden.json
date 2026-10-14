@@ -1,0 +1,59 @@
+{
+  "about": "Known defects at a known commit. `expect` lists what a good review must find (file, line in the head version, minimum severity); an empty `expect` is a clean case where any should-fix finding counts as a false alarm. Add a case whenever the weekly report names an escaped bug. Run: node scripts/review/eval/eval.ts --max-total-usd 15",
+  "cases": [
+    {
+      "id": "3560-group-by-parse",
+      "pr": 3560,
+      "base": "d9c7a20ece382c0d0f62fc79b337f0cfe7f5472e",
+      "head": "e612cee14cf46cf9f5a826dd3a389c29584a0cc3",
+      "source": "Caught by the previous reviewer; fixed in 9f379e47b.",
+      "expect": [
+        {
+          "file": "crates/app/src/server/api/admin/workspace_health/reconcile/config.rs",
+          "line": 450,
+          "tolerance": 15,
+          "severity": "should_fix",
+          "what": "validate_group_by runs inside parse_reconcile_config, so one bad group_by fails the whole file and the Reconciliation dimension goes absent instead of red"
+        },
+        {
+          "file": "crates/app/src/server/api/admin/workspace_health/reconcile/config.rs",
+          "line": 79,
+          "tolerance": 25,
+          "severity": "should_fix",
+          "what": "group_by became a list: a running older binary types it as a string, and the old single-string shape beside an external operand without keys stops parsing"
+        },
+        {
+          "file": "crates/app/src/server/api/admin/workspace_health/reconcile/runner.rs",
+          "line": 421,
+          "tolerance": 20,
+          "severity": "should_fix",
+          "what": "a group_by key naming the time dimension is sent as a plain dimension instead of read by day (the author fixed it later in the PR, 9061daee; the previous reviewer never flagged it)"
+        }
+      ]
+    },
+    {
+      "id": "3539-email-scan",
+      "pr": 3539,
+      "base": "f60cb6ecb46cef9585e77b5ab2020057e7dd1ae0",
+      "head": "8f6f87d6359e8b984166ddba3dfeaa62c55a75bb",
+      "source": "The previous reviewer called it a nit; fixed in #3541.",
+      "expect": [
+        {
+          "file": "crates/platform/src/filters.rs",
+          "line": 22,
+          "tolerance": 10,
+          "severity": "should_fix",
+          "what": "email_matches compares lower(users.email) with no matching index, so filter_by_email scans every user on each sign-in and session lookup"
+        }
+      ]
+    },
+    {
+      "id": "3556-clean-test-only",
+      "pr": 3556,
+      "base": "d9c7a20ece382c0d0f62fc79b337f0cfe7f5472e",
+      "head": "096c43b6f4ec14d3cfbf039322373afd0011d642",
+      "source": "A 49-line test-only PR with no later fix: any should-fix finding is a false alarm.",
+      "expect": []
+    }
+  ]
+}

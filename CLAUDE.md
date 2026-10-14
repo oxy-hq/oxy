@@ -171,6 +171,9 @@ The bounds it comes with, which are not optional:
   scratch directories; name your paths.
 - A change that is risky, destructive, or outward-facing beyond opening a PR — a release,
   a force-push, anything touching production — still gets confirmed first.
+- **Every PR gets an automated review** (`internal-docs/code-review.md`): act on its
+  findings, or dispute one with a reason in its thread; the next push rechecks it.
+  **Never apply the `review-override` label** — overriding a Blocking verdict is a person's call.
 
 Conventional Commits, types `feat|fix|refactor|docs|test|build|chore|perf|style|ci`.
 Name the **area** after the colon (`fix: web-app chart rendering bug`) — this repo uses

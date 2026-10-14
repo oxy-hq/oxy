@@ -1,10 +1,10 @@
 name: CI check
 
 on:
+  # Every base branch, stacked PRs included. A filter on `main` and release branches
+  # let a stack merge into its feature branch with no CI at all, so the stack's PR
+  # into main was the first place its tests ran, on the whole stack at once.
   pull_request:
-    branches:
-      - main
-      - "[0-9]+.[0-9]+.x"
     paths-ignore:
       - "docs/**"
       - "internal-docs/**"
@@ -692,6 +692,10 @@ jobs:
           cache: "pnpm"
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile --prefer-offline
+      # The reviewer is its own package (one pinned SDK), outside the root workspace:
+      # without its install, type-aware Oxlint and tsc see its imports as `any`.
+      - name: Install the reviewer
+        run: pnpm --dir scripts/review install --frozen-lockfile --prefer-offline
       - name: Lint (Biome errors, then type-aware Oxlint)
         run: pnpm lint:bugs
       - name: The baseline may only shrink
@@ -712,6 +716,12 @@ jobs:
           node scripts/ci/verify-lint-baseline.mjs "$base"
       - name: Baseline check self-test
         run: node --test scripts/ci/verify-lint-baseline.test.mjs
+      # The automated reviewer: Node strips its types without checking them, so tsc
+      # is what holds them; the self-test pins its logic (no model calls).
+      - name: Review pipeline typecheck
+        run: pnpm --dir scripts/review typecheck
+      - name: Review pipeline self-test
+        run: node --test 'scripts/review/src/*.test.ts'
 
   cargo-fmt:
     name: Format cargo (rustfmt --check)

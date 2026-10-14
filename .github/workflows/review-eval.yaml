@@ -1,0 +1,65 @@
+name: Review eval
+
+# Replays the automated reviewer on the golden cases in
+# scripts/review/eval/golden.json and scores it: known bugs found, at what severity,
+# and false alarms on clean cases. Run it before changing a prompt, a threshold or a
+# model, and after, and compare. Manual only: every case costs real money, and the
+# run stops before it could pass `max_total_usd`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_total_usd:
+        description: "Hard cap for the whole run, in USD (each case reserves the per-review cap before it starts)"
+        required: true
+        default: "15"
+      only:
+        description: "Comma-separated case ids (empty: all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  eval:
+    if: ${{ github.repository == 'oxy-hq/oxygen-internal' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          run_install: false
+          package_json_file: scripts/review/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 26
+          cache: pnpm
+          cache-dependency-path: scripts/review/pnpm-lock.yaml
+      - uses: ./.github/actions/claude-search-tools
+        with:
+          graph: "false"
+      - name: Install the reviewer
+        working-directory: scripts/review
+        run: pnpm install --prod --frozen-lockfile --prefer-offline
+
+      - name: Score the golden cases
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAX_TOTAL_USD: ${{ inputs.max_total_usd }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          args=(--max-total-usd "$MAX_TOTAL_USD" --out "$RUNNER_TEMP/review-eval.json")
+          [ -n "$ONLY" ] && args+=(--only "$ONLY")
+          node scripts/review/eval/eval.ts "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v7
+        with:
+          name: review-eval
+          path: ${{ runner.temp }}/review-eval.json
+          retention-days: 90

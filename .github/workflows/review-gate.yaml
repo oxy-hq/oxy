@@ -1,0 +1,73 @@
+name: Review gate
+
+# The only writer of the two merge statuses:
+#   review-gate          the automated review's verdict for the PR head: pending while
+#                        the review runs, then from its posted state when the review run
+#                        finishes, and again whenever `review-override` is added or
+#                        removed.
+#   high-risk-approval   a person (not the author, an owner in CODEOWNERS) approved a
+#                        PR touching the HIGH_RISK paths in scripts/review/config.ts.
+# internal-docs/code-review.md says which of them branch protection requires.
+#
+# This job holds a token that can set statuses, so it never runs the PR's code:
+# `workflow_run` runs this file and the scripts from the default branch, and
+# `pull_request_target` from the PR's base branch, which the job condition below limits
+# to the default branch. The PR is read only through the API. Review events arrive through
+# review-submitted.yaml and review results through claude-review.yaml finishing, because
+# both of those run the PR's own copy and hold no status permission.
+#
+# What this does not stop: the review state is read from a comment the workflow bot
+# posted, and any `pull_request` job that runs PR code with a write token (CI's own jobs
+# included) could post one. Editing a workflow or scripts/review to do that is a
+# HIGH_RISK change that needs a person's approval; a test that does it is not. The gate
+# guards against mistakes, not against someone with write access set on getting round it.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
+  workflow_run:
+    workflows: ["Review submitted", "Claude Code Review"]
+    types: [completed]
+
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  gate:
+    # pull_request_target runs the BASE branch's copy of this file, so only for PRs into
+    # the default branch. A stacked PR gets its statuses from the workflow_run path,
+    # which always runs the default branch's copy (a label change on one is not seen
+    # until its next review run).
+    if: ${{ github.repository == 'oxy-hq/oxygen-internal' && ((github.event_name == 'pull_request_target' &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch) ||
+      github.event.workflow_run.pull_requests[0].number) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR: ${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      # The default branch's scripts, never the PR head.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          sparse-checkout: scripts/review
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 26
+
+      - name: review-gate
+        env:
+          REVIEW_CONCLUSION: ${{ github.event.workflow_run.name == 'Claude Code Review' && github.event.workflow_run.conclusion || '' }}
+          REVIEW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/review/gate.ts --pr "$PR" --gate
+
+      - name: high-risk-approval
+        run: node scripts/review/gate.ts --pr "$PR" --risk

@@ -1,0 +1,24 @@
+name: Review submitted
+
+# A relay. An approval changes `high-risk-approval`, but a `pull_request_review`
+# workflow runs the PR's own code, so it must not hold a token that sets statuses.
+# This one holds nothing and does nothing; its completion triggers review-gate.yaml,
+# which runs from the default branch.
+
+on:
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions: {}
+
+jobs:
+  relay:
+    if: ${{ github.repository == 'oxy-hq/oxygen-internal' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          PR: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          echo "review $ACTION on PR $PR; review-gate.yaml recomputes high-risk-approval"

@@ -112,6 +112,7 @@
       "sdk/cli/**",
       "sdk/setup-oxyc/**",
       "scripts/ci/**",
+      "scripts/review/**",
       "!sdk/cli/template",
       "!sdk/cli/skills",
       "!sdk/typescript/src/testing/shape-zoo.json",
