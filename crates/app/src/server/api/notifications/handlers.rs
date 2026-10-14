@@ -49,7 +49,7 @@ fn yes() -> bool {
 #[derive(Debug, Serialize)]
 pub struct InboxResponse {
     pub unread: u64,
-    pub items: Vec<notifications::Model>,
+    pub items: Vec<super::inbox_view::InboxItem>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,8 +125,13 @@ pub async fn inbox(
         find = find.filter(notifications::Column::ReadAt.is_null());
     }
 
-    let items = find
+    let page = find
         .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // What each one says is in its org's own store; the badge count above
+    // never reads it.
+    let items = super::inbox_view::items(&db, page)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(InboxResponse { unread, items }))

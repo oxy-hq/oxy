@@ -199,6 +199,16 @@ pub const WHEN_BLOCKED: &[(&str, Blocked, &str)] = &[
         "leaves a blocked org's notifications unread",
     ),
     (
+        "/notifications/unread",
+        Blocked::LeftOut,
+        "does not count a blocked org's notifications",
+    ),
+    (
+        "/notifications/preferences",
+        Blocked::LeftOut,
+        "lists no app of a blocked org; muting one of its apps is 404",
+    ),
+    (
         "/notifications/{id}/read",
         Blocked::LeftOut,
         "404 for a blocked org's notification",

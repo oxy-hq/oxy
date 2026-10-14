@@ -69,7 +69,13 @@ pub(crate) struct Fx {
 
 impl Fx {
     async fn create() -> Self {
-        let (db, _url) = crate::common::fresh_db(crate::common::Schema::CentralOltp).await;
+        Self::create_on(crate::common::Schema::CentralOltp).await
+    }
+
+    /// [`Self::create`] on a database migrated by `schema` — `Schema::All` for
+    /// a test whose code also queues work on the durable task queue.
+    async fn create_on(schema: crate::common::Schema) -> Self {
+        let (db, _url) = crate::common::fresh_db(schema).await;
         let admin_url = crate::common::admin_url().await;
 
         // `LocalProvider` wants the cluster's host:port separately from the DSN
@@ -248,7 +254,24 @@ where
     F: FnOnce(std::sync::Arc<Fx>) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
-    let fx = std::sync::Arc::new(Fx::create().await);
+    run_fx(Fx::create().await, body).await;
+}
+
+/// [`with_fx`] on a database migrated by `schema`.
+pub(crate) async fn with_fx_on<F, Fut>(schema: crate::common::Schema, body: F)
+where
+    F: FnOnce(std::sync::Arc<Fx>) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    run_fx(Fx::create_on(schema).await, body).await;
+}
+
+async fn run_fx<F, Fut>(fx: Fx, body: F)
+where
+    F: FnOnce(std::sync::Arc<Fx>) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    let fx = std::sync::Arc::new(fx);
     let outcome = std::panic::AssertUnwindSafe(body(fx.clone()))
         .catch_unwind()
         .await;

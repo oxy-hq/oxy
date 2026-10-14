@@ -96,7 +96,7 @@ mod upload;
 
 pub use held::{
     HELD_LABEL, REFUSED_LABEL, branch_held_message, branch_refused_message, held_email_result,
-    held_fetch_response, held_message, held_statement_message, is_read_method,
+    held_fetch_response, held_message, held_notify_result, held_statement_message, is_read_method,
     is_read_only_violation, refused_message,
 };
 pub use oltp_branch_sql::{
@@ -172,6 +172,7 @@ host_ops! {
     StorageCopy = "storage.copy",
     SecretsSet = "secrets.set",
     EmailSend = "email.send",
+    Notify = "notify",
     OrgPeople = "org.people",
     OrgPlaces = "org.places",
     OrgAssignments = "org.assignments",
@@ -209,10 +210,14 @@ pub enum Target {
     /// source read it first and then production's same relative key,
     /// read-only; `list` lists it alone.
     StorageSilo,
-    /// Delivered to the invoking user only (the app owner for a system run),
-    /// subject prefixed `[<env>]`; the call's `to` / `cc` / `bcc` are dropped
-    /// and reported back.
+    /// Delivered to the invoking user only, subject prefixed `[<env>]`; the
+    /// call's `to` / `cc` / `bcc` are dropped and reported back. A system run
+    /// has no invoking user, so its send is refused — never redirected to the
+    /// app owner, who did not ask to test anything.
     InvokerEmail,
+    /// `ctx.notify` told to the invoking user only, title prefixed `[<env>]`,
+    /// whoever the call named; a system run is refused, as for email.
+    InvokerNotify,
     /// The environment's secret path, `apps/<id>/<env>/<KEY>`.
     EnvSecrets,
     /// The org's OLTP staging branch (P4a): a copy of production's database,
@@ -417,6 +422,7 @@ fn non_production(op: HostOp, oltp: &OltpHome) -> Decision {
         // The environment's secret path; invoker-only email (P5a).
         SecretsSet => Decision::Isolate(Target::EnvSecrets),
         EmailSend => Decision::Isolate(Target::InvokerEmail),
+        Notify => Decision::Isolate(Target::InvokerNotify),
         // `fetch`: a read method is still sent; a mutating one is held —
         // unless it is this invocation's own upload into the environment's
         // silo, which `decide_on_fetch` isolates there (`upload`).

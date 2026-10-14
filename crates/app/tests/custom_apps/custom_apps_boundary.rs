@@ -146,6 +146,15 @@ const ALLOWED_SEAMS: &[Seam] = &[
                moves with the function runtime.",
     },
     Seam {
+        prefix: "crate::server::api::notifications",
+        why: "the notification service behind `ctx.notify`: payload limits, recipient \
+               resolution against the app's audience, the inbox write and the delivery queue, \
+               and the email composition — plus the key hash `ctx.email.send`'s idempotency \
+               claim shares with it. The platform's own notices use the same service, so it \
+               stays outside the function runtime and the host reaches it through this one \
+               module.",
+    },
+    Seam {
         prefix: "crate::server::previews::sql_kind",
         why: "the previews statement classifier (read vs write, failing closed on anything \
                that does not parse). A non-production run holds its writes with it — \

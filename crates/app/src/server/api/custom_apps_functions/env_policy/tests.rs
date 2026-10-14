@@ -93,6 +93,7 @@ const ROWS: &[Row] = &[
     write(HostOp::StorageCopy, SILO),
     write(HostOp::SecretsSet, Decision::Isolate(Target::EnvSecrets)),
     write(HostOp::EmailSend, Decision::Isolate(Target::InvokerEmail)),
+    write(HostOp::Notify, Decision::Isolate(Target::InvokerNotify)),
     read(HostOp::OrgPeople),
     read(HostOp::OrgPlaces),
     read(HostOp::OrgAssignments),

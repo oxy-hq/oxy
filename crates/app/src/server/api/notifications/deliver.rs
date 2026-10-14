@@ -1,19 +1,21 @@
-//! The push-delivery seam, and the inbox write that does not depend on it.
+//! The push-delivery seam, and the platform's own entry point.
 //!
-//! [`notify`] is the one function the rest of the product calls. It writes the
-//! durable row FIRST and then attempts delivery, in that order and never the
-//! other: a push that arrives for a notification the inbox does not have is a
-//! tap that lands on nothing.
+//! [`notify`] is what the rest of the product calls to tell one person
+//! something; `ctx.notify` reaches the same [`send`](super::send::send) from a
+//! custom app. Either way the durable inbox row is written FIRST and delivery is
+//! attempted after, in that order and never the other: a push that arrives for
+//! a notification the inbox does not have is a tap that lands on nothing.
 
 use std::sync::{Arc, OnceLock};
 
-use chrono::Utc;
-use entity::{device_tokens, notifications};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
-use tracing::{info, warn};
+use entity::device_tokens;
+use sea_orm::DatabaseConnection;
+use tracing::info;
 use uuid::Uuid;
 
-/// One thing to tell one person.
+use super::send::{Outgoing, SendError, Sent, send};
+
+/// One thing the platform tells one person.
 #[derive(Debug, Clone)]
 pub struct Notice {
     pub org_id: Uuid,
@@ -23,8 +25,25 @@ pub struct Notice {
     pub body: Option<String>,
     /// Relative, so it resolves on whichever host the reader is on.
     pub link: Option<String>,
-    pub subject_kind: Option<String>,
-    pub subject_id: Option<String>,
+}
+
+/// What a push carries: nothing but who it is for and what kind it is.
+///
+/// A push is a wake signal, not the message (`web_push` explains why it is
+/// bodiless), so the transport is never handed the content.
+#[derive(Debug, Clone)]
+pub struct PushSignal {
+    pub user_id: Uuid,
+    pub kind: String,
+}
+
+/// What one fan-out to a person's devices achieved.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PushReport {
+    /// Devices the push service accepted the message for.
+    pub delivered: usize,
+    /// Devices whose push failed for a reason other than being gone.
+    pub failed: usize,
 }
 
 /// A push transport.
@@ -34,23 +53,24 @@ pub struct Notice {
 /// become a second place that decides who gets told what.
 #[async_trait::async_trait]
 pub trait Push: Send + Sync {
-    /// Best-effort. An error here must never propagate to the caller of
-    /// [`notify`] — the durable row is already written, and failing the
-    /// business operation because a phone was unreachable is the wrong trade.
+    /// Best-effort. A failure is reported, never raised — the durable row is
+    /// already written, and failing the business operation because a phone was
+    /// unreachable is the wrong trade.
     ///
     /// `async` because every transport this seam exists for is network I/O:
     /// APNs is an HTTP/2 request, FCM an HTTPS call, Web Push one HTTPS POST
-    /// per endpoint. A blocking signature would leave an adapter two bad
-    /// options — park a Tokio worker for a whole fan-out, or `spawn` internally
-    /// and lose the ability to report its own failures, which is exactly the
-    /// distinction [`Push::name`] exists to preserve. Cheaper to settle here,
-    /// while the logging default is the only implementation, than to change
-    /// under an adapter later.
-    async fn send(&self, tokens: &[device_tokens::Model], notice: &Notice);
+    /// per endpoint.
+    async fn send(&self, tokens: &[device_tokens::Model], signal: &PushSignal) -> PushReport;
 
     /// For the log line, so an operator can tell "no push configured" from
     /// "push configured and silent".
     fn name(&self) -> &'static str;
+
+    /// Whether this transport sends anything at all. The delivery ledger
+    /// records an unconfigured one as `not_configured`, never as `sent`.
+    fn configured(&self) -> bool {
+        true
+    }
 }
 
 /// The default: records what WOULD have been sent.
@@ -62,16 +82,20 @@ pub struct LoggingPush;
 
 #[async_trait::async_trait]
 impl Push for LoggingPush {
-    async fn send(&self, tokens: &[device_tokens::Model], notice: &Notice) {
+    async fn send(&self, tokens: &[device_tokens::Model], signal: &PushSignal) -> PushReport {
         info!(
-            user = %notice.user_id,
-            kind = %notice.kind,
+            user = %signal.user_id,
+            kind = %signal.kind,
             devices = tokens.len(),
             "push not configured — notification is in the inbox only"
         );
+        PushReport::default()
     }
     fn name(&self) -> &'static str {
         "logging"
+    }
+    fn configured(&self) -> bool {
+        false
     }
 }
 
@@ -80,64 +104,41 @@ static PUSH: OnceLock<Arc<dyn Push>> = OnceLock::new();
 /// Register the transport. First call wins; the app does this once at startup.
 pub fn set_push(push: Arc<dyn Push>) {
     if PUSH.set(push).is_err() {
-        warn!("push transport already registered; ignoring the second");
+        tracing::warn!("push transport already registered; ignoring the second");
     }
 }
 
-fn push() -> Arc<dyn Push> {
+pub(super) fn push() -> Arc<dyn Push> {
     PUSH.get().cloned().unwrap_or_else(|| Arc::new(LoggingPush))
 }
 
-/// Tell somebody something.
+/// Tell somebody something, from the platform itself.
 ///
-/// Writes the inbox row, then attempts a push. Returns the row, so a caller
-/// that wants to link to it can.
-///
-/// The write is the contract; the push is decoration. If the row fails, that IS
-/// an error worth propagating — nobody was told, and a caller that thought they
-/// had notified somebody should find out.
-pub async fn notify(
-    db: &DatabaseConnection,
-    notice: Notice,
-) -> Result<notifications::Model, sea_orm::DbErr> {
-    let row = notifications::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        org_id: Set(notice.org_id),
-        user_id: Set(notice.user_id),
-        kind: Set(notice.kind.clone()),
-        title: Set(notice.title.clone()),
-        body: Set(notice.body.clone()),
-        link: Set(notice.link.clone()),
-        subject_kind: Set(notice.subject_kind.clone()),
-        subject_id: Set(notice.subject_id.clone()),
-        created_at: Set(Utc::now().fixed_offset()),
-        read_at: Set(None),
-    }
-    .insert(db)
-    .await?;
-
-    // Everything below is best-effort and must not fail the caller. Best-effort
-    // is not the same as silent: an empty token list because the query failed
-    // must not read in the log as "this user has no devices", which is the
-    // distinction the rest of this module is careful about.
-    let tokens = match device_tokens::Entity::find()
-        .filter(device_tokens::Column::UserId.eq(notice.user_id))
-        .all(db)
-        .await
-    {
-        Ok(t) => t,
-        Err(e) => {
-            warn!(
-                user = %notice.user_id,
-                error = %e,
-                "could not load device tokens — notification is in the inbox, push skipped"
-            );
-            Vec::new()
-        }
-    };
-    push().send(&tokens, &notice).await;
-
-    Ok(row)
+/// Writes the inbox content to the org's store and the signal to Oxy's, then
+/// attempts a push inline — there is no app and no workspace here to queue a
+/// delivery run under. Fails when the inbox cannot be written (the org has no
+/// OLTP store, say): nobody was told, and a caller that thought they had
+/// notified somebody should find out.
+pub async fn notify(db: &DatabaseConnection, notice: Notice) -> Result<Sent, SendError> {
+    send(
+        db,
+        Outgoing {
+            org_id: notice.org_id,
+            app: None,
+            environment: "production".to_string(),
+            workspace_id: None,
+            kind: notice.kind,
+            critical: false,
+            title: notice.title,
+            body: notice.body,
+            link: notice.link,
+            email: None,
+            slack: false,
+            idempotency_key: None,
+            recipients: vec![notice.user_id],
+        },
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -150,29 +151,11 @@ mod tests {
         // messages nobody receives. The name is what lets an operator tell
         // "push not configured" from "push configured and broken".
         assert_eq!(LoggingPush.name(), "logging");
+        assert!(!LoggingPush.configured());
         assert_eq!(
             push().name(),
             "logging",
             "unregistered must fall back, not panic"
         );
-    }
-
-    #[test]
-    fn a_notice_carries_a_relative_link() {
-        // Absolute links break the moment the reader is on an org subdomain
-        // rather than the admin host — and the sender cannot know which they
-        // will be on, because a notification outlives the request that made it.
-        let n = Notice {
-            org_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
-            kind: "work_assigned".into(),
-            title: "Re-test the sanitiser".into(),
-            body: None,
-            link: Some("/work/123".into()),
-            subject_kind: Some("work_item".into()),
-            subject_id: Some("123".into()),
-        };
-        assert!(n.link.as_deref().is_some_and(|l| l.starts_with('/')));
-        assert!(!n.link.as_deref().is_some_and(|l| l.contains("://")));
     }
 }

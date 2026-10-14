@@ -24,6 +24,11 @@ export interface FunctionGates {
   writerSchema: string | null;
   secretsWrite: boolean;
   emailSend: boolean;
+  /**
+   * `notify.kinds`: each kind `ctx.notify` may send, mapped to whether it is
+   * critical; `null` when the function does not declare `notify` at all.
+   */
+  notifyKinds: Record<string, boolean> | null;
   orgRead: boolean;
   storageRead: boolean;
   storageWrite: boolean;
@@ -73,6 +78,17 @@ export function writerSchema(slug: string): string | null {
   return `app_${name}`;
 }
 
+/** `notify_kinds` in `host.rs`: `null` without the block, kind → critical with it. */
+function notifyKinds(spec: Record<string, unknown>): Record<string, boolean> | null {
+  if (!isObject(spec.notify)) return null;
+  const kinds = isObject(spec.notify.kinds) ? spec.notify.kinds : {};
+  const out: Record<string, boolean> = {};
+  for (const [kind, k] of Object.entries(kinds)) {
+    out[kind] = isObject(k) && k.critical === true;
+  }
+  return out;
+}
+
 /** Read the gates for `functionName` from `manifest`, or throw naming what is missing. */
 export function readGates(manifest: ManifestLike, functionName: string): FunctionGates {
   const spec = manifest.functions?.[functionName];
@@ -99,6 +115,7 @@ export function readGates(manifest: ManifestLike, functionName: string): Functio
     writerSchema: writerSchema(slug),
     secretsWrite: flag(spec, "secrets", "write"),
     emailSend: flag(spec, "email", "send"),
+    notifyKinds: notifyKinds(spec),
     orgRead: flag(spec, "org", "read"),
     storageRead: flag(spec, "storage", "read"),
     storageWrite: flag(spec, "storage", "write"),

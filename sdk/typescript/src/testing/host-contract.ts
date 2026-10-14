@@ -69,6 +69,7 @@ export const HOST_OPS = [
   "storage.copy",
   "secrets.set",
   "email.send",
+  "notify",
   "org.people",
   "org.places",
   "org.assignments"
@@ -93,6 +94,7 @@ export const SURFACES = {
   airhouse: "ctx.airhouse",
   secretsSet: "ctx.secrets.set",
   emailSend: "ctx.email.send",
+  notify: "ctx.notify",
   storage: "ctx.storage",
   orgPeople: "ctx.org.people",
   orgPlaces: "ctx.org.places",
@@ -124,6 +126,16 @@ export const REFUSALS = {
     source: "host.rs",
     refusal:
       'EmailCapabilityMissing: this function has not declared the `email.send` capability (add "email": { "send": true } to its oxy-app.json entry)'
+  },
+  notifyCapability: {
+    source: "host/notify_op.rs",
+    refusal:
+      'NotifyCapabilityMissing: this function has not declared the `notify` capability (add "notify": { "kinds": { "<kind>": {} } } to its oxy-app.json entry)'
+  },
+  notifyKindUndeclared: {
+    source: "host/notify_op.rs",
+    refusal:
+      'NotifyKindUndeclared: kind `{kind}` is not declared for this function (add "notify": { "kinds": { "{kind}": {} } } to its oxy-app.json entry) — a kind is what a person mutes, so each one is named up front'
   },
   orgPeople: {
     source: "host.rs",
@@ -297,6 +309,11 @@ export const GATES = [
     hostField: "email_send",
     manifest: "email.send",
     ops: ["email.send"]
+  },
+  {
+    hostField: "notify_kinds",
+    manifest: "notify",
+    ops: ["notify"]
   },
   {
     hostField: "org_read",

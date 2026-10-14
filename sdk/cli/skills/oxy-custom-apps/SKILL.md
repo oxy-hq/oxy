@@ -189,6 +189,29 @@ async function completeChecklist(ctx, runId: string, storeGuid: string) {
 }
 ```
 
+## Telling people something
+
+Name **people**; the platform reaches them. Don't build a recipient table, a
+"sent" log or a Slack webhook helper:
+
+```ts
+await ctx.notify({
+  to: { role: "Store Manager", location: storeId }, // or { userId } · { team }
+  kind: "list_overdue",                             // declared in oxy-app.json
+  title: "Opening list is 30 minutes late",
+  link: `/lists/${listId}`,                         // a path inside the app
+  email: true,                                      // optional; slack: true too
+  idempotencyKey: `overdue:${occurrenceId}`,        // retry-safe
+});
+```
+
+`oxy-app.json`: `"notify": { "kinds": { "list_overdue": {} } }` on the function
+(`{ "critical": true }` for a kind people must not mute). Everyone lands in
+their Oxygen inbox — frontline crew too, who have no email — and is pushed,
+emailed or Slacked where they can be. Needs the org's OLTP store. Use
+`ctx.email.send` only for addresses **outside** the org (a vendor, an
+accountant), and give it an `idempotencyKey` in a scheduled function.
+
 ## Four pitfalls
 
 - **CORS errors are usually wrong-URL errors in disguise.** The SDK's

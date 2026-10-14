@@ -530,9 +530,12 @@ export interface EmailSendInput {
   /** Plain-text body. Provide at least one of `html` / `text`. */
   text?: string;
   /**
-   * Optional idempotency key (≤256 chars). Accepted and validated in v1 but a
-   * no-op until the persisted idempotency table lands — adopt it now so
-   * background (retried) sends become exactly-once once it does.
+   * Optional idempotency key (≤256 chars). A second send with the same key, in
+   * the same app and environment, sends nothing and resolves to the first
+   * send's `messageId` with `deduplicated: true` — so a retried background run
+   * does not mail the same person twice. A send that fails releases its key,
+   * so the retry that follows can send. Make it name the thing being sent
+   * (`receiving:${id}:r${rev}`), never a constant.
    */
   idempotencyKey?: string;
   /**
@@ -577,8 +580,14 @@ export interface EmailAttachment {
 
 /** Result of a successful `ctx.email.send`. */
 export interface EmailSendResult {
-  /** Provider (SES) message id of the sent message. */
+  /**
+   * Provider (SES) message id of the sent message — or, when
+   * `deduplicated`, of the earlier send with the same key (empty while that
+   * send is still in flight).
+   */
   messageId: string;
+  /** An earlier send with the same `idempotencyKey` answered; nothing was sent. */
+  deduplicated?: boolean;
   /**
    * Outside production only: the environment that redirected the message
    * (`"staging"`). Absent in production, which sends to the recipients named.
@@ -600,6 +609,91 @@ export interface EmailSendResult {
 /** `ctx.email` — send email (gated by the `email.send` capability). */
 export interface OxyEmailApi {
   send(input: EmailSendInput): Promise<EmailSendResult>;
+}
+
+// ── Notify ────────────────────────────────────────────────────────────────────
+
+/**
+ * Who a notification is for. Name people, never addresses — the platform knows
+ * how to reach each one (inbox, push, email, Slack) and never hands the app
+ * an address.
+ *
+ * - `{ userId }` — one person: `ctx.user.id`, or an id from `ctx.org.people()`.
+ * - `{ role, location? }` — whoever holds a position (`role_id`, or the exact
+ *   `role_name` from `ctx.org.assignments()`), at one place when `location`
+ *   (a `ctx.org.places()` id) is given.
+ * - `{ team }` — every member of an org team (`ctx.user.teams[].id`).
+ *
+ * Only people who can reach the app are told; a target that reaches nobody
+ * comes back in {@link NotifyResult.skipped} rather than failing the call.
+ */
+export type NotifyTarget =
+  | { userId: string }
+  | { role: string; location?: string }
+  | { team: string };
+
+/** Input to `ctx.notify`. */
+export interface NotifyInput {
+  /** One target or up to 50. Distinct people, at most 500 per call. */
+  to: NotifyTarget | NotifyTarget[];
+  /**
+   * What kind of notification this is — `list_overdue`, `delivery_received`.
+   * Must be declared under this function's `notify.kinds` in `oxy-app.json`:
+   * a kind is what a person mutes, and a kind declared `critical` cannot be
+   * muted. 1–64 lowercase letters, digits, `_`, `-`, `.`.
+   */
+  kind: string;
+  /** What a phone shows. Plain text, ≤200 characters. Required. */
+  title: string;
+  /** More detail. Plain text, ≤2,000 characters. */
+  body?: string;
+  /**
+   * Where tapping it lands — a path INSIDE the app (`/lists/42`). The
+   * platform turns it into the right URL per surface: relative in the inbox,
+   * absolute in an email or Slack message, on the environment's own host.
+   */
+  link?: string;
+  /**
+   * Also email the people who have a mailbox (frontline crew have none).
+   * `true` sends a platform email built from `title`, `body` and `link`;
+   * an object supplies your own subject and/or body (render a template with
+   * `render` from `@oxy-hq/sdk/email`). Omit for no email.
+   */
+  email?: true | { subject?: string; html?: string; text?: string };
+  /** Also DM the people linked to the org's Slack. */
+  slack?: boolean;
+  /**
+   * Make the call safe to retry: a second call with the same key, in the same
+   * app and environment, tells nobody and resolves to the first call's
+   * result with `deduplicated: true`. Name the event (`overdue:${occurrenceId}`).
+   */
+  idempotencyKey?: string;
+}
+
+/** What `ctx.notify` did. */
+export interface NotifyResult {
+  /** The notification's id (one id for everyone it reached). */
+  notificationId: string;
+  /** How many distinct people it was written to. */
+  recipients: number;
+  /** Targets that reached nobody, as you named them, with why. */
+  skipped: {
+    target: NotifyTarget;
+    reason: "not_in_audience" | "no_one_holds_it" | "empty_or_unknown_team";
+  }[];
+  /** An earlier call with the same `idempotencyKey` answered; nobody new was told. */
+  deduplicated: boolean;
+  /** Outside production only: the environment that redirected it (`"staging"`). */
+  environment?: string;
+  /**
+   * Outside production only: the one person it reached — the verified human
+   * caller. A system run (a schedule) is refused there, never redirected.
+   */
+  deliveredTo?: string[];
+  /** Outside production only: how many people production would have told. */
+  wouldReach?: number;
+  /** A production run reading a branch holds the call: nobody was told. */
+  held?: boolean;
 }
 
 // ── Storage ───────────────────────────────────────────────────────────────────
@@ -1005,6 +1099,15 @@ export interface OxyFunctionContext {
   semantic: OxySemanticApi;
   airway: OxyAirwayApi;
   email: OxyEmailApi;
+  /**
+   * Tell people in this org something: by user, role at a location, or team.
+   * Always lands in their Oxygen inbox; pushed to their devices, emailed
+   * (`email`) and DMed on Slack (`slack`) where they can be reached and have
+   * not muted the kind. Gated by the fail-closed `notify` capability, with
+   * each `kind` declared. Delivery is queued: the call returns once the inbox
+   * rows are written. See {@link NotifyInput}.
+   */
+  notify(input: NotifyInput): Promise<NotifyResult>;
   /** **Files: bytes.** The app's private storage silo. See {@link OxyStorageApi}. */
   storage: OxyStorageApi;
 }

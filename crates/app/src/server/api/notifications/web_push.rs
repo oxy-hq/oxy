@@ -18,7 +18,7 @@
 //! worker's `push` handler re-reads `/api/notifications`. That is the same shape
 //! chat's `LISTEN/NOTIFY` already uses, for the same reason stated there: the
 //! notification is a **wake signal, not the message**. The durable row written
-//! by [`notify`](super::deliver::notify) is the source of truth, a client that
+//! by [`send`](super::send::send) is the source of truth, a client that
 //! misses a wake is repaired by the next one or by a navigation, and the push
 //! service is never handed the content of a notification it has no business
 //! seeing.
@@ -53,7 +53,7 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Serialize;
 use tracing::{info, warn};
 
-use super::deliver::{Notice, Push};
+use super::deliver::{Push, PushReport, PushSignal};
 
 /// The `web` platform value in `device_tokens`. APNs and FCM rows are for
 /// adapters that do not exist yet, and sending an APNs token to a Web Push
@@ -367,13 +367,13 @@ impl WebPush {
 
 #[async_trait::async_trait]
 impl Push for WebPush {
-    async fn send(&self, tokens: &[device_tokens::Model], notice: &Notice) {
+    async fn send(&self, tokens: &[device_tokens::Model], signal: &PushSignal) -> PushReport {
         let web: Vec<&device_tokens::Model> = tokens
             .iter()
             .filter(|t| t.platform == PLATFORM_WEB)
             .collect();
         if web.is_empty() {
-            return;
+            return PushReport::default();
         }
 
         let mut expired: Vec<uuid::Uuid> = Vec::new();
@@ -397,7 +397,7 @@ impl Push for WebPush {
                         // written, so a failed push costs immediacy rather than
                         // the notification — and an operator has to be able to
                         // tell that from "nothing was sent".
-                        warn!(user = %notice.user_id, error = %e, "web push failed");
+                        warn!(user = %signal.user_id, error = %e, "web push failed");
                     }
                 }
             }
@@ -427,13 +427,14 @@ impl Push for WebPush {
         }
 
         info!(
-            user = %notice.user_id,
-            kind = %notice.kind,
+            user = %signal.user_id,
+            kind = %signal.kind,
             delivered,
             failed,
             expired = web.len() - delivered - failed,
             "web push fan-out complete"
         );
+        PushReport { delivered, failed }
     }
 
     fn name(&self) -> &'static str {

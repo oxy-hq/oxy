@@ -25,6 +25,7 @@ export type SettingsSection =
   | "workspace.activity_logs"
   | "workspace.oxy_access"
   | "account.tokens"
+  | "account.notifications"
   | "preferences.appearance";
 
 interface SettingsDialogState {

@@ -1,0 +1,288 @@
+//! What a person has turned off, and the routes to change it.
+//!
+//! One switch per (app, kind, channel), listed for the kinds the person has
+//! actually been sent or has muted — the inbox is the catalogue, so a kind
+//! appears the first time an app uses it. Push, email and Slack can be muted;
+//! the inbox cannot, because it is the record that the person was told. A kind
+//! the app declared critical ignores mutes, and says so here.
+//!
+//! Self-scoped like the inbox: every query filters `user_id = me`.
+
+use std::collections::{BTreeMap, HashSet};
+
+use axum::Json;
+use axum::http::StatusCode;
+use chrono::Utc;
+use entity::{apps, device_tokens, notification_mutes, notification_sends, notifications, users};
+use oxy::database::client::establish_connection;
+use oxy_auth::extractor::AuthenticatedUserExtractor;
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
+    Set,
+};
+use serde::{Deserialize, Serialize};
+use tracing::instrument;
+use uuid::Uuid;
+
+use super::delivery::Channel;
+use super::inbox_view::InboxApp;
+use super::input::valid_kind;
+
+#[derive(Debug, Serialize)]
+pub struct KindPreference {
+    pub kind: String,
+    /// Channels turned off for this kind.
+    pub muted: Vec<&'static str>,
+    /// Declared critical by the app: mutes are kept but do not apply.
+    pub critical: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AppPreferences {
+    pub app: InboxApp,
+    pub kinds: Vec<KindPreference>,
+}
+
+/// Whether each channel can reach this person at all, so the settings page
+/// can say "add a device" rather than show a switch that does nothing.
+#[derive(Debug, Serialize)]
+pub struct Reachability {
+    pub push_devices: u64,
+    pub email: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PreferencesResponse {
+    pub apps: Vec<AppPreferences>,
+    pub reach: Reachability,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetPreference {
+    pub app_id: Uuid,
+    pub kind: String,
+    /// `push` | `email` | `slack`.
+    pub channel: String,
+    pub muted: bool,
+}
+
+/// `GET /api/notifications/preferences`
+#[instrument(skip_all)]
+pub async fn get_preferences(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+) -> Result<Json<PreferencesResponse>, StatusCode> {
+    let db = establish_connection()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let blocked: HashSet<Uuid> = user.blocked_orgs().iter().copied().collect();
+    let apps = app_preferences(&db, user.id, &blocked)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let reach = reachability(&db, user.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(PreferencesResponse { apps, reach }))
+}
+
+/// `PUT /api/notifications/preferences` — mute or unmute one channel for one
+/// kind from one app.
+#[instrument(skip_all, fields(channel = %body.channel))]
+pub async fn set_preference(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Json(body): Json<SetPreference>,
+) -> Result<StatusCode, StatusCode> {
+    let channel = Channel::parse(&body.channel).ok_or(StatusCode::BAD_REQUEST)?;
+    if !valid_kind(&body.kind) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let db = establish_connection()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    // 404 for an app this person cannot be told by, as for one that does not
+    // exist: a mute is not a way to probe the app registry.
+    let app = apps::Entity::find_by_id(body.app_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .filter(|a| user.reaches_org(a.org_id))
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if !may_be_told_by(&db, user.id, &app)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    write_mute(&db, user.id, app.id, &body.kind, channel, body.muted)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Whether `app` can notify this person: they already hold a notification
+/// from it, or they are in its audience (the rule `ctx.notify` resolves with).
+/// `reaches_org` alone is true for every session, so it bounds nothing here.
+pub async fn may_be_told_by(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    app: &apps::Model,
+) -> Result<bool, DbErr> {
+    let received = notifications::Entity::find()
+        .filter(notifications::Column::UserId.eq(user_id))
+        .filter(notifications::Column::AppId.eq(app.id))
+        .one(db)
+        .await?
+        .is_some();
+    if received {
+        return Ok(true);
+    }
+    let audience =
+        crate::server::api::custom_apps_functions::audience::app_audience(db, app.org_id, app.id)
+            .await
+            .map_err(DbErr::Custom)?;
+    Ok(audience.ids.contains(&user_id))
+}
+
+async fn write_mute(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    app_id: Uuid,
+    kind: &str,
+    channel: Channel,
+    muted: bool,
+) -> Result<(), DbErr> {
+    use notification_mutes as m;
+    if muted {
+        m::Entity::insert(m::ActiveModel {
+            user_id: Set(user_id),
+            app_id: Set(app_id),
+            kind: Set(kind.to_string()),
+            channel: Set(channel.as_str().to_string()),
+            created_at: Set(Utc::now().fixed_offset()),
+        })
+        .on_conflict(
+            sea_orm::sea_query::OnConflict::columns([
+                m::Column::UserId,
+                m::Column::AppId,
+                m::Column::Kind,
+                m::Column::Channel,
+            ])
+            .do_nothing()
+            .to_owned(),
+        )
+        .exec_without_returning(db)
+        .await?;
+    } else {
+        m::Entity::delete_many()
+            .filter(m::Column::UserId.eq(user_id))
+            .filter(m::Column::AppId.eq(app_id))
+            .filter(m::Column::Kind.eq(kind))
+            .filter(m::Column::Channel.eq(channel.as_str()))
+            .exec(db)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Every (app, kind) this person was sent or muted, with its mutes.
+async fn app_preferences(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    blocked: &HashSet<Uuid>,
+) -> Result<Vec<AppPreferences>, DbErr> {
+    let received: Vec<(Uuid, String)> = notifications::Entity::find()
+        .select_only()
+        .column(notifications::Column::AppId)
+        .column(notifications::Column::Kind)
+        .filter(notifications::Column::UserId.eq(user_id))
+        .filter(notifications::Column::AppId.is_not_null())
+        .distinct()
+        .into_tuple::<(Option<Uuid>, String)>()
+        .all(db)
+        .await?
+        .into_iter()
+        .filter_map(|(app, kind)| app.map(|a| (a, kind)))
+        .collect();
+    let mutes = notification_mutes::Entity::find()
+        .filter(notification_mutes::Column::UserId.eq(user_id))
+        .all(db)
+        .await?;
+    let mut by_app: BTreeMap<Uuid, BTreeMap<String, Vec<&'static str>>> = BTreeMap::new();
+    for (app, kind) in received {
+        by_app.entry(app).or_default().entry(kind).or_default();
+    }
+    for m in &mutes {
+        if let Some(c) = Channel::parse(&m.channel) {
+            let kinds = by_app.entry(m.app_id).or_default();
+            kinds.entry(m.kind.clone()).or_default().push(c.as_str());
+        }
+    }
+    let critical = critical_kinds(db, by_app.keys().copied().collect()).await?;
+    let app_rows = apps::Entity::find()
+        .filter(apps::Column::Id.is_in(by_app.keys().copied()))
+        .all(db)
+        .await?;
+    let mut out = Vec::new();
+    for a in app_rows
+        .into_iter()
+        .filter(|a| !blocked.contains(&a.org_id))
+    {
+        let kinds = by_app.remove(&a.id).unwrap_or_default();
+        out.push(AppPreferences {
+            kinds: kinds
+                .into_iter()
+                .map(|(kind, muted)| KindPreference {
+                    critical: critical.contains(&(a.id, kind.clone())),
+                    kind,
+                    muted,
+                })
+                .collect(),
+            app: InboxApp {
+                id: a.id,
+                slug: a.slug,
+                name: a.name,
+            },
+        });
+    }
+    out.sort_by(|x, y| x.app.name.cmp(&y.app.name));
+    Ok(out)
+}
+
+/// The (app, kind) pairs an app has ever sent as critical.
+async fn critical_kinds(
+    db: &DatabaseConnection,
+    app_ids: Vec<Uuid>,
+) -> Result<HashSet<(Uuid, String)>, DbErr> {
+    if app_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    Ok(notification_sends::Entity::find()
+        .select_only()
+        .column(notification_sends::Column::AppId)
+        .column(notification_sends::Column::Kind)
+        .filter(notification_sends::Column::AppId.is_in(app_ids))
+        .filter(notification_sends::Column::Critical.eq(true))
+        .distinct()
+        .into_tuple::<(Option<Uuid>, String)>()
+        .all(db)
+        .await?
+        .into_iter()
+        .filter_map(|(app, kind)| app.map(|a| (a, kind)))
+        .collect())
+}
+
+async fn reachability(db: &DatabaseConnection, user_id: Uuid) -> Result<Reachability, DbErr> {
+    let push_devices = device_tokens::Entity::find()
+        .filter(device_tokens::Column::UserId.eq(user_id))
+        .filter(device_tokens::Column::Platform.eq("web"))
+        .count(db)
+        .await?;
+    let email = users::Entity::find_by_id(user_id)
+        .one(db)
+        .await?
+        .and_then(|u| u.email)
+        .is_some_and(|e| !e.trim().is_empty());
+    Ok(Reachability {
+        push_devices,
+        email,
+    })
+}

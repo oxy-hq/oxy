@@ -99,6 +99,13 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
         // `route_fleet`: Postgres only. A badge that stops updating during a
         // deploy is a badge nobody trusts afterwards.
         .route_fleet("/notifications", get(notifications::handlers::inbox))
+        // The badge: Oxy's database only, never an org's store.
+        .route_fleet("/notifications/unread", get(notifications::badge::unread))
+        .route_fleet(
+            "/notifications/preferences",
+            get(notifications::preferences::get_preferences)
+                .put(notifications::preferences::set_preference),
+        )
         .route_fleet(
             "/notifications/read-all",
             post(notifications::handlers::mark_all_read),

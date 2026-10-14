@@ -69,6 +69,12 @@ describe("PostLoginDispatcher", () => {
     expect(landed.endsWith("?settings=organization.api_access")).toBe(true);
   });
 
+  it("carries the page a push notification opens, so the inbox opens there", () => {
+    const landed = land("/?notifications=open&utm=push");
+    expect(landed).toContain("ws-1");
+    expect(landed.endsWith("?notifications=open")).toBe(true);
+  });
+
   it("forwards nothing else", () => {
     expect(land("/?utm=mail")).not.toContain("?");
   });

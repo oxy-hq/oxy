@@ -19,6 +19,12 @@
 //   await invoke({ name: "Ada" });
 // or add a `schedule` in oxy-app.json to run it in the background.
 //
+// TO TELL PEOPLE IN YOUR ORG — a store manager, a team, a colleague by id —
+// use `ctx.notify` instead: it addresses people, not mailboxes, lands in their
+// Oxygen inbox, and pushes / emails / Slacks them where they can be reached
+// (frontline crew included, who have no email). It needs the `notify`
+// capability with each `kind` declared, and an OLTP store for the org.
+//
 // LOCAL DEV: on a cloud-mode dev server, set OXY_APP_EMAIL_LOCAL_TEST=1 to
 // preview the rendered email in the browser instead of sending it via SES.
 // To iterate on the template alone, `pnpm email:dev` renders it with sample

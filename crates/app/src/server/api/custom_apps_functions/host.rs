@@ -31,9 +31,11 @@ use agentic_connector::{SqlDialect, StringLiteral};
 mod airhouse_ops;
 mod config_source;
 mod destinations;
+mod email_idempotency;
 mod env_guard;
 mod env_homes;
 mod held_log;
+mod notify_op;
 mod oltp_guard;
 mod oltp_home;
 mod oltp_ops;
@@ -42,6 +44,7 @@ mod tx_ops;
 mod uploads;
 mod warehouse_home;
 
+pub use super::audience::{Audience, app_audience};
 use super::env_policy::HostOp;
 pub use oltp_home::writer_connection;
 
@@ -92,6 +95,9 @@ pub struct ProjectFunctionHost {
     /// Per-invocation `ctx.email.send` counter (this host lives for exactly one
     /// invocation), bounding email fan-out from a single run.
     email_send_count: std::sync::atomic::AtomicUsize,
+    /// Per-invocation `ctx.notify` counter, bounding how many sends one run
+    /// makes (each send can name many people).
+    notify_count: std::sync::atomic::AtomicUsize,
     /// Transactions `ctx.tx()` has open. Per-invocation like the counter above,
     /// which is what makes cleanup automatic — see `tx`'s module docs.
     transactions: super::tx::TxRegistry,
@@ -197,6 +203,9 @@ pub struct FunctionCapabilities {
     pub secrets_write: bool,
     /// Gate for `ctx.email.send`.
     pub email_send: bool,
+    /// Gate for `ctx.notify`: the kinds the manifest declared, each mapped to
+    /// whether it is critical. `None` → not declared, every call refused.
+    pub notify_kinds: Option<BTreeMap<String, bool>>,
     /// Gate for `ctx.org.people()` — the org's people directory, read-only.
     pub org_read: bool,
     /// Gate for `ctx.storage` reads (getDownloadUrl / get / head / list, and
@@ -324,6 +333,7 @@ impl ProjectFunctionHost {
             preagg,
             reach,
             email_send_count: std::sync::atomic::AtomicUsize::new(0),
+            notify_count: std::sync::atomic::AtomicUsize::new(0),
             transactions: super::tx::TxRegistry::default(),
             oltp_conn: tokio::sync::Mutex::new(None),
             airhouse_conn: tokio::sync::Mutex::new(std::collections::HashMap::new()),
@@ -1222,7 +1232,30 @@ impl FunctionHost for ProjectFunctionHost {
         if let Some(held) = self.held_email(&input).await {
             return Ok(held);
         }
-        self.deliver_email(parsed).await
+        // A key within the documented bound is claimed before anything is
+        // sent; one outside it is left for the emailer to refuse by name.
+        let key = parsed
+            .idempotency_key()
+            .filter(|k| !k.is_empty() && k.len() <= 256)
+            .map(str::to_string);
+        let claim = match key {
+            Some(k) => Some(self.claim_email_key(&k).await?),
+            None => None,
+        };
+        let hash = match claim {
+            Some(email_idempotency::EmailClaim::Taken(prior)) => return Ok(prior),
+            Some(email_idempotency::EmailClaim::Fresh(hash)) => Some(hash),
+            None => None,
+        };
+        let result = self.deliver_email(parsed).await;
+        if let Some(hash) = hash {
+            self.settle_email_claim(&hash, &result).await;
+        }
+        result
+    }
+
+    async fn notify(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
+        self.notify_op(input).await
     }
 
     async fn storage(
@@ -2700,58 +2733,6 @@ pub async fn org_places_directory(
         .await
         .map_err(|e| format!("ctx.org.places: {e}"))?;
     Ok(serde_json::json!({ "total": rows.len(), "places": rows }))
-}
-
-/// Who can reach this app, and the membership rows that said so.
-pub struct Audience {
-    pub ids: std::collections::HashSet<Uuid>,
-    /// The org's members — every one is in `ids`. Returned so a caller that
-    /// needs their roles does not read the table a second time.
-    pub members: Vec<entity::org_members::Model>,
-}
-
-/// The people who can reach this app: org members, plus frontline workers
-/// holding a grant on it — the one audience rule `people()` and
-/// `assignments()` share, factored so it cannot drift between them.
-pub async fn app_audience(
-    db: &DatabaseConnection,
-    org_id: Uuid,
-    app_id: Uuid,
-) -> Result<Audience, String> {
-    use entity::{app_members, org_frontline_members, org_members};
-    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-    let members = org_members::Entity::find()
-        .filter(org_members::Column::OrgId.eq(org_id))
-        .all(db)
-        .await
-        .map_err(|e| format!("ctx.org: {e}"))?;
-    let mut audience: std::collections::HashSet<Uuid> = members.iter().map(|m| m.user_id).collect();
-    let workers: std::collections::HashSet<Uuid> = org_frontline_members::Entity::find()
-        .filter(org_frontline_members::Column::OrgId.eq(org_id))
-        .filter(org_frontline_members::Column::Status.eq(org_frontline_members::STATUS_ACTIVE))
-        .all(db)
-        .await
-        .map_err(|e| format!("ctx.org: {e}"))?
-        .into_iter()
-        .map(|w| w.user_id)
-        .collect();
-    if !workers.is_empty() {
-        let granted = app_members::Entity::find()
-            .filter(app_members::Column::AppId.eq(app_id))
-            .all(db)
-            .await
-            .map_err(|e| format!("ctx.org: {e}"))?;
-        audience.extend(
-            granted
-                .into_iter()
-                .map(|g| g.user_id)
-                .filter(|u| workers.contains(u)),
-        );
-    }
-    Ok(Audience {
-        ids: audience,
-        members,
-    })
 }
 
 /// `ctx.org.assignments()`'s query: every assignment held by somebody in the

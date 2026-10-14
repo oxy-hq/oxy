@@ -188,7 +188,7 @@ impl ProjectFunctionHost {
 
     /// An op whose policy names a home other than its own: refuse, never fall
     /// through to production.
-    fn misrouted(&self, op: HostOp) -> String {
+    pub(super) fn misrouted(&self, op: HostOp) -> String {
         env_policy::refused_message(op, self.policy.environment(), env_policy::MISROUTED_FIX)
     }
 }

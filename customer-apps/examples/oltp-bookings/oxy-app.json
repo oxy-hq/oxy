@@ -7,7 +7,8 @@
     "bookings": {
       "route": true,
       "timeoutSeconds": 30,
-      "oltp": { "enabled": true }
+      "oltp": { "enabled": true },
+      "notify": { "kinds": { "booking_created": {} } }
     }
   }
 }

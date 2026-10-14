@@ -41,6 +41,7 @@ describe("visibleNavGroups", () => {
         "workspace.legacy_api_keys",
         "workspace.activity_logs",
         "account.tokens",
+        "account.notifications",
         "preferences.appearance"
       ]);
     });
@@ -74,6 +75,7 @@ describe("visibleNavGroups", () => {
       expect(sectionsFor({ hasWorkspace: false })).toEqual([
         "organization.members",
         "account.tokens",
+        "account.notifications",
         "preferences.appearance"
       ]);
     });
@@ -83,12 +85,17 @@ describe("visibleNavGroups", () => {
       // must be reachable from the "you're not in an organization yet" state too.
       expect(sectionsFor({ hasOrg: false, hasWorkspace: false })).toEqual([
         "account.tokens",
+        "account.notifications",
         "preferences.appearance"
       ]);
     });
 
     it("has no Account group in local mode, which has no sign-in to mint a token for", () => {
       expect(sectionsFor({ isLocalMode: true, hasOrg: false })).not.toContain("account.tokens");
+      // Nor anyone to notify.
+      expect(sectionsFor({ isLocalMode: true, hasOrg: false })).not.toContain(
+        "account.notifications"
+      );
     });
 
     it("never renders an empty group heading", () => {
@@ -151,6 +158,7 @@ describe("visibleNavGroups", () => {
         "workspace.oxy_access",
         "workspace.activity_logs",
         "account.tokens",
+        "account.notifications",
         "preferences.appearance"
       ]);
     });

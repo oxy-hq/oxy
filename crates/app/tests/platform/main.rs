@@ -76,6 +76,7 @@ mod migration_rollback_safety;
 mod migration_rollback_tolerance;
 mod no_dropped_partner_tables;
 mod notification_devices;
+mod notifications_send;
 mod oltp_branches;
 mod oltp_branches_guards;
 mod oltp_branches_local;

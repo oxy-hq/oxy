@@ -56,6 +56,7 @@ pub mod config;
 pub mod connect;
 pub mod entity;
 mod host;
+pub mod inbox;
 pub mod local_seed;
 pub mod migration;
 pub mod migrator;

@@ -121,6 +121,18 @@ export interface OxyAppFunctionManifest {
    */
   email?: { send?: boolean };
   /**
+   * Capability for `ctx.notify` — tell people in this org something, by user,
+   * role at a location, or team (fail-closed: omit → every call rejected).
+   * Declare each `kind` the function sends: a kind is what a person mutes, and
+   * one marked `critical: true` (a safety alert) ignores their mutes. A call
+   * with an undeclared kind is refused.
+   *
+   * ```json
+   * "notify": { "kinds": { "list_overdue": {}, "safety_alert": { "critical": true } } }
+   * ```
+   */
+  notify?: { kinds?: Record<string, { critical?: boolean }> };
+  /**
    * Capability for `ctx.org.people()` — the org's people directory, READ-ONLY
    * (fail-closed: omit → the call is rejected before any query).
    *
@@ -129,9 +141,10 @@ export interface OxyAppFunctionManifest {
    *
    * Three things it deliberately is not, so nobody plans around them:
    * it returns **no email and no phone** — naming a colleague is a different
-   * need from contacting them off-platform; it returns **no location**, which
-   * the platform does not hold for a member; and it does **not include
-   * frontline workers**, who hold no org-membership row by design.
+   * need from contacting them off-platform (to reach someone, `ctx.notify`
+   * them by id); and it returns **no location**, which the platform does not
+   * hold for a member. It does include frontline workers granted to this app,
+   * tagged `kind: "frontline"`.
    *
    * One flag, not `read`/`write`: there is no write. Editing the directory
    * would put tenant membership behind an app's manifest.

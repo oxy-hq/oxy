@@ -40,6 +40,15 @@ const EXEMPT: &[(&str, &str)] = &[
          decision and a sink address.",
     ),
     (
+        "notify",
+        "every call writes an inbox row for real people, and a scheduled canary run has no \
+         invoking user to aim it at — production would tell the org's members every five \
+         minutes. It also needs an OLTP store for the `oxy-canary` org, which holds the \
+         content. Unblocked by: provisioning that store and a dedicated canary member whose \
+         inbox absorbs one row per run, then a step that notifies them with an \
+         `idempotencyKey` per run and reads the send back.",
+    ),
+    (
         "semantic.query",
         "needs a semantic model in the canary workspace — a topic with a measure — and the \
          workspace has none, so a call would fail on the missing topic rather than prove the \

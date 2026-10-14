@@ -43,6 +43,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("host/destinations.rs", include_str!("host/destinations.rs")),
     ("host/airhouse_ops.rs", include_str!("host/airhouse_ops.rs")),
     ("host/tx_ops.rs", include_str!("host/tx_ops.rs")),
+    ("host/notify_op.rs", include_str!("host/notify_op.rs")),
     ("host_call_attrs.rs", include_str!("host_call_attrs.rs")),
     ("upsert_support.rs", include_str!("upsert_support.rs")),
     ("tx.rs", include_str!("tx.rs")),
@@ -357,7 +358,7 @@ fn every_capability_refusal_the_host_writes_has_a_template() {
     let ts = strip_comments(CONTRACT_TS);
     let templates: Vec<String> = refusals(&ts).into_iter().map(|e| e.template).collect();
     let mut uncarried = Vec::new();
-    for name in ["host.rs", "host/airhouse_ops.rs"] {
+    for name in ["host.rs", "host/airhouse_ops.rs", "host/notify_op.rs"] {
         let hay = flatten(source(name));
         // Each gate literal is one `"…"` on the flattened text; find every one
         // that carries the marker and check some template covers it.

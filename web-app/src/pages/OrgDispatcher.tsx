@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Navigate, useParams, useSearchParams } from "react-router-dom";
 import OrgSetupPending from "@/components/org/OrgSetupPending";
+import { NOTIFICATIONS_PARAM } from "@/components/Shell/TopBar/NotificationsBell/constants";
 import { SETTINGS_PARAM } from "@/components/settings/SettingsDialog/useSettingsDeepLink";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useOrgs } from "@/hooks/api/organizations";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
 import { useLandingWorkspace } from "@/hooks/useLandingWorkspace";
+import { carriedSearch } from "@/libs/utils/carriedSearch";
 import { clearLastWorkspaceId, setLastWorkspaceId } from "@/libs/utils/lastWorkspace";
 import ROUTES from "@/libs/utils/routes";
 
@@ -84,9 +86,9 @@ export default function OrgDispatcher() {
 
   // `/<org>?settings=<section>` opens the dialog in whichever workspace this
   // picks — the workspace layout reads the same param — so the section rides
-  // along. Only that param: the rest of an org-root query was never forwarded.
-  const settings = searchParams.get(SETTINGS_PARAM);
-  const search = settings ? `?${new URLSearchParams({ [SETTINGS_PARAM]: settings })}` : "";
+  // along, as does `?notifications=open` (a push notification's click) for the
+  // inbox bell. Only those: the rest of an org-root query was never forwarded.
+  const search = carriedSearch(searchParams, [SETTINGS_PARAM, NOTIFICATIONS_PARAM]);
   return (
     <Navigate to={{ pathname: ROUTES.ORG(org.slug).WORKSPACE(target.id).ROOT, search }} replace />
   );

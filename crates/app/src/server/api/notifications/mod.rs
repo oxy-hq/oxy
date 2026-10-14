@@ -1,31 +1,51 @@
-//! Notifications — the inbox, and the seam push delivery plugs into.
+//! Notifications — telling a person something, and the inbox they read it in.
+//!
+//! # Who, not which channel
+//!
+//! A sender names **people** — a user, a role at a location, a team — and the
+//! platform decides how each one is reached. That is the whole reason this is a
+//! platform service rather than `ctx.email.send` plus `ctx.fetch`: Oxy owns the
+//! identity (members, positions, frontline crew with no mailbox) and keeps the
+//! addresses away from app code. Custom apps reach it through `ctx.notify`;
+//! the product itself through [`deliver::notify`]. Both are [`send::send`].
 //!
 //! # Two halves, deliberately not one
 //!
-//! The **inbox** is a durable row a person opens and reads. It is the product
-//! surface, and it needs no vendor, no credentials and no network.
+//! The **inbox** is a durable row a person opens and reads. It needs no
+//! vendor, no credentials and no network, and it is written before anything
+//! else is attempted.
 //!
-//! **Push** is a best-effort attempt to draw attention to one of those rows.
-//! It is external, failable, and — today — not configured.
+//! **Delivery** — Web Push, email, a Slack DM — is a best-effort attempt to
+//! draw attention to that row, queued as a `notification_deliver` task
+//! ([`task`]) and recorded per recipient and channel ([`delivery`]). A
+//! notification that existed only as a push would be gone when the send
+//! failed, and "we told them" would become unfalsifiable at exactly the moment
+//! somebody asks whether the store was warned.
 //!
-//! Building the inbox first is not a shortcut. A notification that exists only
-//! as a push is gone when the send fails, the device is offline, or the user
-//! reinstalls, and "we told them" becomes unfalsifiable at exactly the moment
-//! somebody is asking whether the store was warned. Every surface that needs to
-//! chase somebody — an overdue task, an announcement's read receipts — reads
-//! the inbox, and gets more reliable rather than less when push lands.
+//! # Where the data lives
 //!
-//! # What is NOT here
+//! The inbox *signal* — who, which org, read or not — is Oxy's, in Oxy's
+//! database. What the notification *says* is the org's, in the org's OLTP
+//! store (`oxy_oltp::inbox`). Design and the rest of the reasoning:
+//! `internal-docs/custom-app-notifications.md`.
 //!
-//! Actual APNs / FCM / Web Push delivery. That needs Apple and Google
-//! credentials this cannot be built or tested against, so what ships instead is
-//! the seam: [`deliver::Push`], with a logging implementation registered by
-//! default. Adding a real adapter is one impl and one registration, and nothing
-//! above this line changes.
+//! # Not here
 //!
-//! Shipping a half-working sender would be worse than shipping none: it would
-//! log successes for pushes nobody received.
+//! APNs and FCM need Apple and Google accounts this cannot be tested against;
+//! [`deliver::Push`] is the seam an adapter plugs into. SMS needs phone numbers
+//! the platform does not hold and carrier registration no code can do.
 
+pub mod badge;
+mod channels;
+pub mod compose;
 pub mod deliver;
+pub mod delivery;
 pub mod handlers;
+pub mod inbox_view;
+pub mod input;
+pub mod links;
+pub mod preferences;
+pub mod recipients;
+pub mod send;
+pub mod task;
 pub mod web_push;

@@ -26,6 +26,13 @@
 // the surface that takes end-user input; placeholders are the only thing that
 // makes it safe.
 //
+// TELLING PEOPLE — a new booking is announced with `ctx.notify`, which names
+// PEOPLE, never addresses: whoever holds the "Host" position, plus the person
+// who took the booking. The platform resolves who that is, writes each one an
+// inbox row, and pushes / emails them where it can. Declared as
+// `"notify": { "kinds": { "booking_created": {} } }` — a kind is what a person
+// can mute in their notification settings.
+//
 // Invoke from the frontend with `useFunction("bookings")`:
 //   const { invoke } = useFunction("bookings");
 //   await invoke({ action: "create", name: "Ada", partySize: 4 });
@@ -56,6 +63,37 @@ async function ensureTable(ctx: OxyFunctionContext): Promise<void> {
   );
 }
 
+/**
+ * Tell the floor about a new booking. A role nobody holds comes back in
+ * `skipped` rather than failing the booking, and the idempotency key makes a
+ * retried request tell nobody twice. The booking is already committed, so a
+ * refused notify is logged, not returned as an error: a client that retried a
+ * 500 would book the table twice.
+ */
+async function announce(
+  ctx: OxyFunctionContext,
+  row: { id: number },
+  name: string,
+  partySize: number
+) {
+  try {
+    return await ctx.notify({
+      to: [{ role: "Host" }, { userId: ctx.user.id }],
+      kind: "booking_created",
+      title: `New booking: ${name}, party of ${partySize}`,
+      body: "Added from the bookings app.",
+      // A path inside the app. This example has no pages, so it opens the app's
+      // root; a real app links to the booking's own page.
+      link: "/",
+      email: true,
+      idempotencyKey: `booking:${row.id}`
+    });
+  } catch (err) {
+    console.error(`booking ${row.id} saved but not announced: ${err}`);
+    return { recipients: 0, skipped: [] };
+  }
+}
+
 export default async function bookings(
   req: OxyFunctionRequest,
   ctx: OxyFunctionContext
@@ -77,7 +115,8 @@ export default async function bookings(
       "INSERT INTO bookings (name, party_size) VALUES ($1, $2) RETURNING id, name, party_size, created_at",
       [name, partySize]
     );
-    return Response.json({ booking: row }, { status: 201 });
+    const notice = await announce(ctx, row as { id: number }, name, partySize);
+    return Response.json({ booking: row, notified: notice.recipients, skipped: notice.skipped }, { status: 201 });
   }
 
   // Default: list the most recent bookings from the app's own schema.

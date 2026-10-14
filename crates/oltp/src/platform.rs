@@ -30,7 +30,7 @@ use crate::schema::{SchemaError, analyst_role_for, validate_name};
 ///
 /// Recorded on `oltp_tenants.platform_schema_version`. A tenant below this is
 /// reconciled the next time anything touches it.
-pub const PLATFORM_SCHEMA_VERSION: i32 = 3;
+pub const PLATFORM_SCHEMA_VERSION: i32 = 4;
 
 /// Table recording which workspace migrations a tenant has applied.
 ///
@@ -45,6 +45,20 @@ pub const MIGRATIONS_TABLE: &str = "oxy_meta.schema_migrations";
 /// do as it likes there, but it must not be able to rewrite its own migration
 /// history.
 pub const META_SCHEMA: &str = "oxy_meta";
+
+/// Schema holding the org's notification inbox — what each notification says.
+///
+/// Oxy-owned like [`META_SCHEMA`], and for the same reason not owned by any
+/// writer: a custom app sends notifications through `ctx.notify`, it does not
+/// get to rewrite the inbox. Content lives here, in the org's own database,
+/// because it is the org's data; Oxy's database keeps only who was told and
+/// whether they read it (`notifications.message_id` points here). The org
+/// takes these rows with it if it leaves. Design:
+/// `internal-docs/custom-app-notifications.md`.
+pub const INBOX_SCHEMA: &str = "oxy_inbox";
+
+/// The inbox content table, schema-qualified.
+pub const INBOX_MESSAGES_TABLE: &str = "oxy_inbox.messages";
 
 /// One versioned change to the Oxy-owned state of a tenant database.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +80,7 @@ pub fn platform_steps(provider: &str, database: &str) -> Result<Vec<PlatformStep
     validate_name(database)?;
     let db = quote(database);
     let meta = quote(META_SCHEMA);
+    let inbox = quote(INBOX_SCHEMA);
     let analyst_name = analyst_role_for(provider, database);
     let analyst = quote(&analyst_name);
 
@@ -141,6 +156,36 @@ pub fn platform_steps(provider: &str, database: &str) -> Result<Vec<PlatformStep
                 ),
                 format!("REVOKE CREATE ON SCHEMA public FROM {analyst}"),
                 format!("REVOKE ALL ON SCHEMA {meta} FROM {analyst}"),
+            ],
+        },
+        PlatformStep {
+            version: 4,
+            description: "notification inbox content",
+            // One row per notification sent, however many people it went to:
+            // the per-recipient rows (and their read state) are signals in
+            // Oxy's database, keyed by this id. Written and read as the owner.
+            //
+            // No foreign keys and no `app_id` reference: the app registry is
+            // Oxy's, not the tenant's. The analyst does not see it — an inbox
+            // is addressed to people, and publishing it to analytics is the
+            // org's call, not a default.
+            statements: vec![
+                format!("CREATE SCHEMA IF NOT EXISTS {inbox}"),
+                format!(
+                    "CREATE TABLE IF NOT EXISTS {inbox}.messages (
+                     id            UUID        PRIMARY KEY,
+                     app_id        UUID,
+                     kind          TEXT        NOT NULL,
+                     title         TEXT        NOT NULL,
+                     body          TEXT,
+                     link          TEXT,
+                     email_subject TEXT,
+                     email_html    TEXT,
+                     email_text    TEXT,
+                     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+                 )"
+                ),
+                format!("REVOKE ALL ON SCHEMA {inbox} FROM {analyst}"),
             ],
         },
     ])
@@ -248,6 +293,27 @@ mod tests {
                 analyst_role_for("neon", "neondb")
             )),
             "got {sql}"
+        );
+    }
+
+    #[test]
+    fn the_inbox_is_oxys_and_hidden_from_the_analyst() {
+        let sql = statements_since(3, "neon", "neondb").unwrap().join("; ");
+        assert!(
+            sql.contains(&format!(r#"CREATE SCHEMA IF NOT EXISTS "{INBOX_SCHEMA}""#)),
+            "got {sql}"
+        );
+        assert!(
+            sql.contains(&format!(
+                r#"REVOKE ALL ON SCHEMA "{INBOX_SCHEMA}" FROM "{}""#,
+                analyst_role_for("neon", "neondb")
+            )),
+            "an inbox is addressed to people; analytics must not see it by default: {sql}"
+        );
+        assert_eq!(
+            INBOX_MESSAGES_TABLE,
+            format!("{INBOX_SCHEMA}.messages"),
+            "the table the reader queries is the one the step creates"
         );
     }
 

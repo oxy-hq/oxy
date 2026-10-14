@@ -79,6 +79,31 @@ pub struct EmailSendInput {
     from: Option<String>,
 }
 
+impl EmailSendInput {
+    /// A platform-composed message to one address — how a `ctx.notify`
+    /// email leaves. Same validation, sender and transport as an app's own
+    /// `ctx.email.send`, so the two cannot drift on what a valid message is.
+    pub fn to_one(to: &str, subject: &str, html: Option<String>, text: Option<String>) -> Self {
+        Self {
+            to: Some(OneOrMany::One(to.to_string())),
+            cc: None,
+            bcc: None,
+            reply_to: None,
+            subject: Some(subject.to_string()),
+            html,
+            text,
+            idempotency_key: None,
+            attachments: None,
+            from: None,
+        }
+    }
+
+    /// The app's idempotency key, as sent.
+    pub fn idempotency_key(&self) -> Option<&str> {
+        self.idempotency_key.as_deref()
+    }
+}
+
 /// One author-supplied attachment. `content` defaults to base64 (the only way
 /// binary can cross the isolate's JSON op boundary); it is decoded and
 /// size-checked here.

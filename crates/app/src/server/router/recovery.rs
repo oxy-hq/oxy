@@ -1345,6 +1345,18 @@ fn build_custom_task_registry(
             Arc::new(AnomalyNotifyExecutor { db: db.clone() }),
         );
     }
+    // A custom app's `ctx.notify`: push, email and Slack for one send, queued
+    // in the send's own transaction. A pod that predates the kind fails the
+    // task as unknown and the retry policy lands it on one that knows.
+    {
+        use crate::server::api::notifications::task::{
+            NOTIFICATION_DELIVER_KIND, NotificationDeliverExecutor,
+        };
+        reg.register(
+            NOTIFICATION_DELIVER_KIND,
+            Arc::new(NotificationDeliverExecutor { db: db.clone() }),
+        );
+    }
     // A custom app's procedure run, queued by `POST …/procedures/{id}/runs`.
     // It builds its own context from the caller the request authenticated —
     // never from this driver's platform, which has no subject. A pod without

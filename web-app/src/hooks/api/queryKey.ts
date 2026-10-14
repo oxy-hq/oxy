@@ -700,6 +700,15 @@ const usageReportKeys = {
   recipients: () => [...usageReportKeys.all, "recipients"] as const
 };
 
+// The signed-in person's own notifications — not scoped to an org or workspace.
+const notificationKeys = {
+  all: ["notifications"] as const,
+  inbox: () => [...notificationKeys.all, "inbox"] as const,
+  unread: () => [...notificationKeys.all, "unread"] as const,
+  preferences: () => [...notificationKeys.all, "preferences"] as const,
+  vapidPublicKey: () => [...notificationKeys.all, "vapid-public-key"] as const
+};
+
 const internalJobsKeys = {
   all: ["admin", "internal-jobs"] as const,
   queueStats: () => [...internalJobsKeys.all, "queue-stats"] as const,
@@ -1117,6 +1126,7 @@ const queryKeys = {
   orgSubdomain: orgSubdomainKeys,
   featureFlags: featureFlagKeys,
   usageReport: usageReportKeys,
+  notifications: notificationKeys,
   internalJobs: internalJobsKeys,
   compiles: compilesKeys,
   compile: compileKeys,

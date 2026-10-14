@@ -137,6 +137,91 @@ describe("the manifest's capability gates, in the host's words", () => {
   });
 });
 
+describe("ctx.notify", () => {
+  const notifier = () => {
+    const t = createTestContext(
+      {
+        slug: "store-ops",
+        functions: {
+          f: { notify: { kinds: { list_overdue: {}, safety: { critical: true } } } },
+          g: {}
+        }
+      },
+      { function: "f" }
+    );
+    t.state.org.people.push(
+      { id: "u-mgr", name: "Mo", role: "member", kind: "member" },
+      { id: "u-crew", name: "Cy", role: null, kind: "frontline" }
+    );
+    t.state.org.assignments.push({
+      id: "a1",
+      user_id: "u-mgr",
+      user_name: "Mo",
+      user_kind: "member",
+      role_id: "r-sm",
+      role_name: "Store Manager",
+      role_scope: "location",
+      location_id: "loc-12",
+      location_name: "Clovis",
+      supervisor_id: null,
+      supervisor_name: null,
+      created_at: "2026-10-14T00:00:00Z"
+    });
+    t.state.org.teams.push({ id: "team-open", members: ["u-crew", "u-outsider"] });
+    return t;
+  };
+
+  it("reads the declared kinds, critical ones marked", () => {
+    expect(notifier().gates.notifyKinds).toEqual({ list_overdue: false, safety: true });
+    expect(
+      createTestContext({ slug: "s", functions: { g: {} } }, { function: "g" }).gates.notifyKinds
+    ).toBeNull();
+  });
+
+  it("refuses without the capability, and an undeclared kind, in the host's words", async () => {
+    const bare = createTestContext({ slug: "s", functions: { g: {} } }, { function: "g" });
+    expect(
+      (await refusal(() => bare.ctx.notify({ to: { userId: "u" }, kind: "x", title: "t" }))).message
+    ).toBe(`ctx.notify: ${REFUSALS.notifyCapability.refusal}`);
+    const t = notifier();
+    expect(
+      (await refusal(() => t.ctx.notify({ to: { userId: "u-mgr" }, kind: "digest", title: "t" })))
+        .message
+    ).toBe(`ctx.notify: ${REFUSALS.notifyKindUndeclared.refusal.split("{kind}").join("digest")}`);
+  });
+
+  it("resolves people, roles at a place and teams within the audience", async () => {
+    const t = notifier();
+    const r = await t.ctx.notify({
+      to: [
+        { role: "store manager", location: "loc-12" },
+        { team: "team-open" },
+        { userId: "u-mgr" },
+        { userId: "u-stranger" }
+      ],
+      kind: "list_overdue",
+      title: "Opening list is late"
+    });
+    expect(r.recipients).toBe(2);
+    expect(t.state.notifications[0]?.recipients).toEqual(["u-mgr", "u-crew"]);
+    expect(r.skipped).toEqual([{ target: { userId: "u-stranger" }, reason: "not_in_audience" }]);
+  });
+
+  it("answers a repeated idempotency key with the first send", async () => {
+    const t = notifier();
+    const input = {
+      to: { userId: "u-mgr" },
+      kind: "list_overdue",
+      title: "Late",
+      idempotencyKey: "overdue:1"
+    };
+    const first = await t.ctx.notify(input);
+    const again = await t.ctx.notify(input);
+    expect(again).toEqual({ ...first, deduplicated: true });
+    expect(t.state.notifications).toHaveLength(1);
+  });
+});
+
 describe("writes to a named database, in the host's order", () => {
   it("refuses a database outside destinations, then one not configured, then by kind", async () => {
     const t = canary();

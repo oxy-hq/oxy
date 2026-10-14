@@ -180,6 +180,14 @@ describe("OrgDispatcher — an org with a ready workspace", () => {
       /^\/acme\/workspaces\/ws-1\?settings=organization\.crew$/
     );
   });
+
+  it("carries the inbox deep link a push notification opens", () => {
+    workspaces = [{ id: "ws-1", status: "ready" }];
+    renderAt("/acme?notifications=open&slack_installed=ok");
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      /^\/acme\/workspaces\/ws-1\?notifications=open$/
+    );
+  });
 });
 
 describe("OrgDispatcher — an org with several workspaces", () => {

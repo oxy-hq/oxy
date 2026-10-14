@@ -2,6 +2,7 @@ import { OxyMark } from "@/components/OxyMark";
 import { cn } from "@/libs/shadcn/utils";
 import useAskDock from "@/stores/useAskDock";
 import { Breadcrumb } from "./Breadcrumb";
+import { NotificationsBell } from "./NotificationsBell";
 import { SystemIndicator } from "./SystemIndicator";
 import { WorkspaceClock } from "./WorkspaceClock";
 
@@ -32,8 +33,8 @@ function AskOxygenButton() {
 }
 
 /**
- * The universal top bar: breadcrumb (left) + system status, clock, and the
- * Ask Oxygen toggle (right). Spans the content column above `<main>` and the
+ * The universal top bar: breadcrumb (left) + system status, clock, the inbox
+ * bell, and the Ask Oxygen toggle (right). Spans the content column above `<main>` and the
  * Ask dock. Hidden inside the IDE and onboarding (gated with the rail in
  * WorkspaceShell). Mirrors the rail's `bg-sidebar-background` so the two read
  * as one frame. Follow-up: lift into `@oxy-hq/sdk` for custom apps.
@@ -48,6 +49,7 @@ export function TopBar() {
       <div className='ml-auto flex items-center gap-3'>
         <SystemIndicator />
         <WorkspaceClock />
+        <NotificationsBell />
         <AskOxygenButton />
       </div>
     </header>

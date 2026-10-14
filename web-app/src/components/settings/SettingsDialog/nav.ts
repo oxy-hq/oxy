@@ -1,6 +1,7 @@
 import {
   Activity,
   AppWindow,
+  Bell,
   BriefcaseBusiness,
   CreditCard,
   Database,
@@ -209,9 +210,14 @@ export const CLOUD_NAV: NavGroup[] = [
   // The viewer's own credentials, across every org and workspace: the group
   // needs neither loaded, and the item is ungated because a token is always
   // its owner's to manage. Cloud only — local mode has no sign-in to mint for.
+  // Notifications are the viewer's own the same way: every
+  // `/notifications/preferences` route reads and writes the caller's settings.
   {
     label: "Account",
-    items: [{ value: "account.tokens", label: "Personal access tokens", icon: Fingerprint }]
+    items: [
+      { value: "account.tokens", label: "Personal access tokens", icon: Fingerprint },
+      { value: "account.notifications", label: "Notifications", icon: Bell }
+    ]
   },
   {
     label: "Preferences",

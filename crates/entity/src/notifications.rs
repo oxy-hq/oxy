@@ -1,5 +1,9 @@
 //! The notification inbox — the durable half of "we told them".
 //!
+//! This row is the **signal**: who was told, by which org (and app), and
+//! whether they have read it. What they were told lives in the org's own OLTP
+//! store, keyed by `message_id` — see `internal-docs/custom-app-notifications.md`.
+//!
 //! Deliberately separate from push delivery. A row here is the record a person
 //! opens and reads; it works with no vendor, no credentials and no network. A
 //! push is a best-effort attempt to draw attention to one.
@@ -26,16 +30,24 @@ pub struct Model {
     /// A string rather than an enum so adding a kind is a deploy rather than a
     /// migration plus a coordinated rollout across every reader.
     pub kind: String,
+    /// Legacy content columns, written empty (`title`, still `NOT NULL` so the
+    /// previous deploy can decode the row) and `NULL` since content moved to
+    /// the org's OLTP store (`oxy_inbox.messages`, read by
+    /// [`Self::message_id`]). They drop in the contract step that follows
+    /// `m20261014_000001_app_notifications`; nothing reads them.
     pub title: String,
     pub body: Option<String>,
-    /// Where tapping it should land — a RELATIVE path, so it works on an org
-    /// subdomain, a custom-app subdomain and the admin host without the sender
-    /// having to know which one the reader is on.
     pub link: Option<String>,
     pub subject_kind: Option<String>,
     pub subject_id: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub read_at: Option<DateTimeWithTimeZone>,
+    /// The content row in the org's OLTP store — what the notification says.
+    /// Ids only here: the title and body are the org's data, not Oxy's.
+    pub message_id: Option<Uuid>,
+    /// The custom app that sent it, when one did. Loose (no foreign key), like
+    /// `org_id` on most signal tables.
+    pub app_id: Option<Uuid>,
 }
 
 impl Model {

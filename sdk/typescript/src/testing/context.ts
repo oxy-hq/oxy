@@ -13,6 +13,8 @@
 
 import * as nodeCryptoImport from "node:crypto";
 import type {
+  NotifyResult,
+  NotifyTarget,
   OxyFunctionContext,
   OxyFunctionRow,
   OxyFunctionUser,
@@ -102,6 +104,16 @@ export type HostOpImpl = (args: Record<string, unknown>) => Promise<unknown> | u
 
 type Person = { id: string; name: string; role: string | null; kind: "member" | "frontline" };
 
+/** An org team as `ctx.notify({ to: { team } })` reads it: its id and members' user ids. */
+type Team = { id: string; members: string[] };
+
+/** One `ctx.notify` the function made: its payload and who it reached. */
+export interface SentNotification {
+  readonly input: Record<string, unknown>;
+  /** User ids, resolved as the host resolves them against `state.org`. */
+  readonly recipients: string[];
+}
+
 /** The stores, for a test to seed and inspect. */
 export interface TestState {
   warehouse(database: string): TableStore;
@@ -110,8 +122,19 @@ export interface TestState {
   readonly storage: Map<string, StoredObject>;
   readonly secrets: Map<string, string>;
   readonly emails: Record<string, unknown>[];
+  /** Every `ctx.notify`, with who it reached. */
+  readonly notifications: SentNotification[];
   readonly fetch: FetchStore;
-  readonly org: { people: Person[]; places: OxyOrgPlace[]; assignments: OxyOrgAssignment[] };
+  /**
+   * The org the function sees. `people` is the app's audience — who
+   * `ctx.notify` can reach; `teams` is what a `{ team }` target resolves to.
+   */
+  readonly org: {
+    people: Person[];
+    places: OxyOrgPlace[];
+    assignments: OxyOrgAssignment[];
+    teams: Team[];
+  };
   readonly semantic: { on(answer: (spec: Record<string, unknown>) => unknown): void };
   readonly airway: { runs: { pipelineRef: string; variables: unknown }[] };
 }
@@ -171,8 +194,9 @@ export function createTestContext(
     storage: new Map(),
     secrets: new Map(),
     emails: [],
+    notifications: [],
     fetch: new FetchStore(),
-    org: { people: [], places: [], assignments: [] },
+    org: { people: [], places: [], assignments: [], teams: [] },
     semantic: {
       on: (answer) => {
         semanticAnswer = answer;
@@ -180,6 +204,44 @@ export function createTestContext(
     },
     airway: { runs: [] }
   };
+
+  const notifyKeys = new Map<string, NotifyResult>();
+
+  /**
+   * `notifications::recipients::resolve`: each target to user ids, kept only
+   * when they can reach the app (`state.org.people`), deduplicated in order.
+   */
+  function resolveTargets(to: unknown): {
+    recipients: string[];
+    skipped: NotifyResult["skipped"];
+  } {
+    const targets = (Array.isArray(to) ? to : [to]) as NotifyTarget[];
+    const audience = new Set(state.org.people.map((p) => p.id));
+    const recipients: string[] = [];
+    const skipped: NotifyResult["skipped"] = [];
+    for (const target of targets) {
+      let found: string[];
+      let reason: NotifyResult["skipped"][number]["reason"];
+      if ("userId" in target) {
+        found = [target.userId];
+        reason = "not_in_audience";
+      } else if ("role" in target) {
+        const role = target.role.toLowerCase();
+        found = state.org.assignments
+          .filter((a) => a.role_id === target.role || a.role_name.toLowerCase() === role)
+          .filter((a) => target.location === undefined || a.location_id === target.location)
+          .map((a) => a.user_id);
+        reason = "no_one_holds_it";
+      } else {
+        found = state.org.teams.find((t) => t.id === target.team)?.members ?? [];
+        reason = "empty_or_unknown_team";
+      }
+      const reachable = found.filter((u) => audience.has(u));
+      if (reachable.length === 0) skipped.push({ target, reason });
+      for (const u of reachable) if (!recipients.includes(u)) recipients.push(u);
+    }
+    return { recipients, skipped };
+  }
 
   /** Run one host op: the override or `impl`, recorded either way. */
   async function op(
@@ -526,6 +588,29 @@ export function createTestContext(
           return { messageId: `message-${state.emails.length}` };
         }) as Promise<{ messageId: string }>
     },
+    notify: (input) =>
+      op("notify", { ...input }, (a) => {
+        if (gates.notifyKinds === null) throw refuse(SURFACES.notify, REFUSALS.notifyCapability);
+        const kind = String(a.kind);
+        // `Object.keys`, not `in` (which also finds "constructor") and not
+        // `Object.hasOwn`, which this package's ES2020 lib does not declare.
+        if (!Object.keys(gates.notifyKinds).includes(kind)) {
+          throw refuse(SURFACES.notify, REFUSALS.notifyKindUndeclared, { kind });
+        }
+        const key = typeof a.idempotencyKey === "string" ? a.idempotencyKey : null;
+        const prior = key === null ? undefined : notifyKeys.get(key);
+        if (prior) return { ...prior, deduplicated: true };
+        const { recipients, skipped } = resolveTargets(a.to);
+        state.notifications.push({ input: a, recipients });
+        const result: NotifyResult = {
+          notificationId: `notification-${state.notifications.length}`,
+          recipients: recipients.length,
+          skipped,
+          deduplicated: false
+        };
+        if (key !== null) notifyKeys.set(key, result);
+        return result;
+      }) as Promise<NotifyResult>,
     org: {
       people: () =>
         op("org.people", {}, () => {

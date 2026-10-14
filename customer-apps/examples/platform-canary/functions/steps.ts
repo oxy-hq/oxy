@@ -87,6 +87,7 @@ export type HostOp =
   | "storage.copy"
   | "secrets.set"
   | "email.send"
+  | "notify"
   | "org.people"
   | "org.places"
   | "org.assignments";

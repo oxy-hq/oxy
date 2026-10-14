@@ -6,6 +6,7 @@ pub mod billing_checkout;
 pub mod billing_past_due;
 pub mod local_test;
 mod mime;
+pub mod notification;
 pub mod ses;
 pub mod token_expiring;
 pub mod token_grant_revoked;

@@ -101,7 +101,8 @@ const PUT_KEY: &str = r#"out["storage.put"].ok.key"#;
 
 /// One step per op staging runs in its isolated home (P5a), in the order the
 /// calls depend on each other. `None`: not run here — `email.send` would reach
-/// real SES; `staging_function_homes` sends it to a mock.
+/// real SES (`staging_function_homes` sends it to a mock), and `notify` needs
+/// an OLTP store for its content.
 const ISOLATED_STEPS: &[(&str, Option<&str>)] = &[
     (
         "storage.put",
@@ -130,6 +131,10 @@ const ISOLATED_STEPS: &[(&str, Option<&str>)] = &[
         Some(r#"ctx.secrets.set("STAGING_PROBE", "v")"#),
     ),
     ("email.send", None),
+    // `None`: a notification's content needs the org's OLTP store, which the
+    // probe's org has none of. Where staging sends it — the invoking user
+    // alone — is `notify_op`'s routing, pinned by the env-policy differential.
+    ("notify", None),
 ];
 
 /// The probe function: every step, each result or error kept under its op.

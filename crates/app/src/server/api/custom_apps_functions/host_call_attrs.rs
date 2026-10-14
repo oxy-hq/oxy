@@ -318,6 +318,15 @@ const CALLER_ERROR_LABELS: &[&str] = &[
     // is added (`host.rs`), because leaving it to `send()` produced reqwest's
     // opaque `builder error`: it named nothing, and it paged.
     "InvalidFetchHeader",
+    // `ctx.notify`'s payload malformed or over a documented limit
+    // (`notifications/input.rs`) — a title too long, a link that leaves the
+    // app, a target that is not one.
+    "InvalidNotifyPayload",
+    // The app's own `ctx.notify` loop against `MAX_NOTIFY_PER_INVOCATION`.
+    "TooManyNotifications",
+    // A kind the call sends that its manifest entry does not declare. Its own
+    // mistake, and the message names the line to add.
+    "NotifyKindUndeclared",
 ];
 
 /// The typed labels the host writes for a condition that is not the app's
@@ -355,6 +364,13 @@ const PLATFORM_ERROR_LABELS: &[&str] = &[
     "OltpCapabilityMissing",
     "OrgCapabilityMissing",
     "StorageCapabilityMissing",
+    // A capability the manifest lacks, as for the others above.
+    "NotifyCapabilityMissing",
+    // The org has no OLTP store to keep notification content in: an operator
+    // provisions one. Pages, because nothing the app does fixes it.
+    "NotifyStoreMissing",
+    // The org's store or Oxy's bookkeeping failing mid-send.
+    "NotifyFailed",
 ];
 
 /// `label` is the lowercased head of the message, up to its first `: `.
@@ -424,6 +440,7 @@ pub const HOST_OPS: &[&str] = &[
     "storage.copy",
     "secrets.set",
     "email.send",
+    "notify",
     "org.people",
     "org.places",
     "org.assignments",
@@ -896,6 +913,7 @@ mod tests {
             "src/server/api/custom_apps_functions/host.rs",
             "src/server/api/custom_apps_functions/host",
             "src/server/api/custom_apps_storage",
+            "src/server/api/notifications",
         ];
         let mut labels = BTreeSet::new();
         for source in HOST_SOURCES {

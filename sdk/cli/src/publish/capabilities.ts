@@ -87,6 +87,14 @@ export const GATED_CAPABILITIES: readonly GatedCapability[] = [
     declares: (spec) => flag(spec, "email", "send")
   },
   {
+    hostField: "notify_kinds",
+    manifest: "notify",
+    declare: '"notify": { "kinds": { "<kind>": {} } }',
+    ops: ["notify"],
+    gate: "manifest",
+    declares: (spec) => isObject(spec.notify)
+  },
+  {
     hostField: "org_read",
     manifest: "org.read",
     declare: '"org": { "read": true }',

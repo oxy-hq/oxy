@@ -511,29 +511,7 @@ impl OltpProvisioner {
         &self,
         row: &oltp_tenants::Model,
     ) -> Result<oltp_tenants::Model, ProvisionerError> {
-        let from = row.platform_schema_version;
-        if from >= platform::PLATFORM_SCHEMA_VERSION {
-            return Ok(row.clone());
-        }
-
-        let statements = platform::statements_since(from, &row.provider, &row.database_name)?;
-        let owner_password = self.owner_password(row, row.org_id)?;
-        self.run_batch(row, &owner_password, statements).await?;
-
-        // Recorded only after the batch succeeds. A tenant left behind is
-        // recoverable on its next touch; one recorded as current but missing
-        // the change never gets it.
-        let mut active: oltp_tenants::ActiveModel = row.clone().into();
-        active.platform_schema_version = ActiveValue::Set(platform::PLATFORM_SCHEMA_VERSION);
-        active.updated_at = ActiveValue::Set(Utc::now().into());
-        let updated = active.update(&self.db).await?;
-
-        info!(
-            from,
-            to = platform::PLATFORM_SCHEMA_VERSION,
-            "reconciled tenant platform schema"
-        );
-        Ok(updated)
+        reconcile_platform_schema_as_owner(&self.db, self.sql.as_ref(), row).await
     }
 
     fn owner_password(
@@ -541,11 +519,7 @@ impl OltpProvisioner {
         tenant: &oltp_tenants::Model,
         org_id: Uuid,
     ) -> Result<String, ProvisionerError> {
-        let sealed = tenant
-            .owner_password_ciphertext
-            .as_ref()
-            .ok_or(ProvisionerError::OwnerPasswordMissing(org_id))?;
-        open(sealed)
+        owner_password(tenant, org_id)
     }
 
     /// All DDL runs as the database owner, never as the writer being granted.
@@ -679,6 +653,50 @@ fn is_unconfined(e: &SqlError) -> bool {
         SqlError::Statement { source_message, .. } => source_message.starts_with("[OXY01]"),
         _ => false,
     }
+}
+
+/// [`OltpProvisioner::reconcile_platform_schema`] for a caller that holds no
+/// provisioner and needs none: the steps run over SQL as the tenant's owner,
+/// and the provider API is never involved. Writers of Oxy-owned tenant tables
+/// (the notification inbox) call this before they write, which is what "call
+/// it wherever a tenant is touched" means for them.
+pub async fn reconcile_platform_schema_as_owner(
+    db: &DatabaseConnection,
+    sql: &dyn TenantSqlExecutor,
+    row: &oltp_tenants::Model,
+) -> Result<oltp_tenants::Model, ProvisionerError> {
+    let from = row.platform_schema_version;
+    if from >= platform::PLATFORM_SCHEMA_VERSION {
+        return Ok(row.clone());
+    }
+
+    let statements = platform::statements_since(from, &row.provider, &row.database_name)?;
+    let password = owner_password(row, row.org_id)?;
+    let dsn = dsn_for(row, &row.owner_role, &password);
+    sql.execute_batch(&dsn, &statements).await?;
+
+    // Recorded only after the batch succeeds. A tenant left behind is
+    // recoverable on its next touch; one recorded as current but missing
+    // the change never gets it.
+    let mut active: oltp_tenants::ActiveModel = row.clone().into();
+    active.platform_schema_version = ActiveValue::Set(platform::PLATFORM_SCHEMA_VERSION);
+    active.updated_at = ActiveValue::Set(Utc::now().into());
+    let updated = active.update(db).await?;
+
+    info!(
+        from,
+        to = platform::PLATFORM_SCHEMA_VERSION,
+        "reconciled tenant platform schema"
+    );
+    Ok(updated)
+}
+
+fn owner_password(tenant: &oltp_tenants::Model, org_id: Uuid) -> Result<String, ProvisionerError> {
+    let sealed = tenant
+        .owner_password_ciphertext
+        .as_ref()
+        .ok_or(ProvisionerError::OwnerPasswordMissing(org_id))?;
+    open(sealed)
 }
 
 fn open(ciphertext: &[u8]) -> Result<String, ProvisionerError> {

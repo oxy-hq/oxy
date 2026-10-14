@@ -140,6 +140,16 @@ fn email_recipients(policy: &EnvPolicy) -> BTreeSet<String> {
     }
 }
 
+/// Who a `ctx.notify` reaches: the person the call names, or — isolated —
+/// the invoking user alone (`host/notify_op.rs`).
+fn notify_recipients(policy: &EnvPolicy) -> BTreeSet<String> {
+    match policy.decide(HostOp::Notify) {
+        Decision::Allow => ["user:store-manager".to_string()].into(),
+        Decision::Isolate(Target::InvokerNotify) => [format!("user:{INVOKER}")].into(),
+        _ => BTreeSet::new(),
+    }
+}
+
 fn written(policy: &EnvPolicy, op: HostOp, target: Target) -> BTreeSet<String> {
     match target {
         Target::MappedDestination => databases(policy, op),
@@ -147,6 +157,7 @@ fn written(policy: &EnvPolicy, op: HostOp, target: Target) -> BTreeSet<String> {
         Target::StorageSilo => storage_writes(policy, op),
         Target::EnvSecrets => secret_writes(policy),
         Target::InvokerEmail => email_recipients(policy),
+        Target::InvokerNotify => notify_recipients(policy),
         Target::OltpBranch => oltp_databases(policy, op),
     }
 }
@@ -189,9 +200,9 @@ fn every_isolated_write_touches_disjoint_resources_in_production_and_staging() {
         checked += 1;
     }
     assert_eq!(
-        checked, 12,
+        checked, 13,
         "warehouse insert/exec/upsert, tx.begin, airhouse exec/append, storage ×4, \
-         secrets.set, email.send"
+         secrets.set, email.send, notify"
     );
 }
 
@@ -212,9 +223,10 @@ fn sandbox(handle: &str) -> EnvPolicy {
 /// sandbox's. Two handles where one is a prefix of the other, so a home named
 /// by a prefix match would show here.
 ///
-/// The two homes a sandbox **shares** are pinned as shared, so widening them
-/// is a deliberate change: the mapped warehouse destination is one map for
-/// every non-production environment, and email goes to the invoker alone.
+/// The homes a sandbox **shares** are pinned as shared, so widening them is a
+/// deliberate change: the mapped warehouse destination is one map for every
+/// non-production environment, and email and notifications go to the invoker
+/// alone.
 #[test]
 fn every_isolated_write_of_a_sandbox_is_disjoint_from_production_and_its_neighbours() {
     let production = EnvPolicy::production();
@@ -253,6 +265,9 @@ fn every_isolated_write_of_a_sandbox_is_disjoint_from_production_and_its_neighbo
             }
             Target::InvokerEmail => {
                 assert_eq!(in_a, BTreeSet::from([INVOKER.to_string()]), "{op:?}");
+            }
+            Target::InvokerNotify => {
+                assert_eq!(in_a, BTreeSet::from([format!("user:{INVOKER}")]), "{op:?}");
             }
             Target::OltpBranch => unreachable!("no row isolates to the branch without one"),
         }

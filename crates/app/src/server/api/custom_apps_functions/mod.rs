@@ -18,16 +18,18 @@
 
 /// A sandbox agent token at the function gate: its entrance, and its id.
 mod agent_gate;
+/// Drift guard: `oxyc`'s copy of the capability gates
+/// (`sdk/cli/src/publish/capabilities.ts`) names exactly the fields of
+/// `FunctionCapabilities`. Text scans of `host.rs` and the TypeScript, so it
+/// runs whether or not the feature that compiles `host` is on.
+/// Who can reach an app — the rule `ctx.org.*` and `ctx.notify` share.
+pub mod audience;
 /// Whose call this is — the scope every per-call key (result cache,
 /// idempotency record, rate-limit bucket) is built from, environment included.
 mod call_scope;
 /// A queued run in a named app environment: how one is triggered, and the
 /// rule that admits it outside production only for a `check: true` function.
 pub(crate) mod check_run;
-/// Drift guard: `oxyc`'s copy of the capability gates
-/// (`sdk/cli/src/publish/capabilities.ts`) names exactly the fields of
-/// `FunctionCapabilities`. Text scans of `host.rs` and the TypeScript, so it
-/// runs whether or not the feature that compiles `host` is on.
 #[cfg(test)]
 mod cli_capabilities_drift;
 /// The audit record for every data-plane write a function makes (session
@@ -174,6 +176,13 @@ struct FunctionManifestEntry {
     /// may set `replyTo` only. Declare for functions that email end-users.
     #[serde(default)]
     email: Option<EmailSpec>,
+    /// Opt-in capability for `ctx.notify` — tell people in this org something,
+    /// by user, role-at-location or team (fail-closed: absent → every call
+    /// rejected). The platform resolves who and how; the function never sees
+    /// an address. Each `kind` the function sends is declared here, because a
+    /// kind is what a person mutes, and `critical: true` is a kind they cannot.
+    #[serde(default)]
+    notify: Option<NotifySpec>,
     /// Opt-in capability for `ctx.storage` (fail-closed: absent → all storage ops
     /// rejected). `read` permits getDownloadUrl/list/get; `write` permits
     /// getUploadUrl/put. Scoped to the app's own `customer-app-storage/<app_id>/`
@@ -270,6 +279,21 @@ struct SecretsSpec {
 struct EmailSpec {
     #[serde(default)]
     send: Option<bool>,
+}
+
+/// `"notify": { "kinds": { "list_overdue": {}, "safety": { "critical": true } } }`.
+#[derive(Debug, Deserialize, Default, Clone)]
+struct NotifySpec {
+    #[serde(default)]
+    kinds: std::collections::BTreeMap<String, NotifyKindSpec>,
+}
+
+#[derive(Debug, Deserialize, Default, Clone)]
+struct NotifyKindSpec {
+    /// A critical kind ignores the recipient's mutes — a safety alert, not a
+    /// digest. Declared, so a reviewer of the manifest sees which ones are.
+    #[serde(default)]
+    critical: Option<bool>,
 }
 
 /// `"org": { "read": true }` — opt in to the people directory.
@@ -379,6 +403,20 @@ impl FunctionManifestEntry {
     /// Whether `ctx.email.send` is permitted (fail-closed default: false).
     fn email_send(&self) -> bool {
         self.email.as_ref().and_then(|e| e.send).unwrap_or(false)
+    }
+
+    /// The kinds `ctx.notify` may send, each mapped to whether it is critical.
+    /// `None` when the capability is not declared (every call refused); an
+    /// empty map when it is declared with no kinds (every call refused, with a
+    /// message saying which kind to declare).
+    fn notify_kinds(&self) -> Option<std::collections::BTreeMap<String, bool>> {
+        let spec = self.notify.as_ref()?;
+        Some(
+            spec.kinds
+                .iter()
+                .map(|(kind, k)| (kind.clone(), k.critical.unwrap_or(false)))
+                .collect(),
+        )
     }
 
     /// Whether `ctx.storage` reads (getDownloadUrl/get/head/list, and copy's
@@ -611,6 +649,7 @@ fn manifest_capabilities(
     host::FunctionCapabilities {
         secrets_write: entry.secrets_write(),
         email_send: entry.email_send(),
+        notify_kinds: entry.notify_kinds(),
         org_read: entry.org_read(),
         storage_read: entry.storage_read(),
         storage_write: entry.storage_write(),

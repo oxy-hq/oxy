@@ -101,6 +101,18 @@ pub fn held_email_result(input: &serde_json::Value, held: &str) -> serde_json::V
     })
 }
 
+/// What a held `ctx.notify` resolves to: nobody was told, and the call says
+/// so in the value rather than by throwing, as a held email does.
+pub fn held_notify_result(input: &serde_json::Value, held: &str) -> serde_json::Value {
+    serde_json::json!({
+        "held": true,
+        "reason": held,
+        "kind": input.get("kind").cloned().unwrap_or(serde_json::Value::Null),
+        "title": input.get("title").cloned().unwrap_or(serde_json::Value::Null),
+        "recipients": 0,
+    })
+}
+
 /// Postgres's answer to a write inside a `READ ONLY` transaction (SQLSTATE
 /// 25006), recognised by its message: connectors surface errors as strings.
 pub fn is_read_only_violation(err: &str) -> bool {

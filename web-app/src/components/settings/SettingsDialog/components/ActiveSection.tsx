@@ -2,6 +2,7 @@ import { CanOrgAdmin } from "@/components/auth/Can";
 import type { SettingsSection } from "@/stores/useSettingsDialog";
 import type { Organization, OrgRole } from "@/types/organization";
 import type { Workspace } from "@/types/workspace";
+import AccountNotifications from "../sections/account/Notifications";
 import PersonalTokens from "../sections/account/PersonalTokens";
 import OrgApiAccess from "../sections/organization/ApiAccess";
 import OrgAppAccess from "../sections/organization/AppAccess";
@@ -119,6 +120,7 @@ export function ActiveSection({ activeSection, org, role, workspace, close }: Ac
       {workspace && activeSection === "workspace.activity_logs" && <ActivityLogs />}
 
       {activeSection === "account.tokens" && <PersonalTokens />}
+      {activeSection === "account.notifications" && <AccountNotifications />}
 
       {activeSection === "preferences.appearance" && <Appearance />}
     </>

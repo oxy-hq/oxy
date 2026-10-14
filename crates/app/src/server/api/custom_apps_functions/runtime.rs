@@ -379,6 +379,11 @@ pub trait FunctionHost: Send + Sync {
     /// `from` address (the author may set `replyTo` only). `input` is the JS
     /// payload object; returns `{ messageId }`.
     async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String>;
+    /// `ctx.notify(input)` — tell people in the org something, by user, role
+    /// at a location, or team. Gated by the fail-closed `notify` capability;
+    /// the platform resolves recipients and channels and never hands the
+    /// function an address. Returns `{ notificationId, recipients, skipped }`.
+    async fn notify(&self, input: serde_json::Value) -> Result<serde_json::Value, String>;
     /// `ctx.storage.{getUploadUrl,getDownloadUrl,put,get,head,list,delete,copy}`
     /// — presigned S3 file storage scoped to the app's silo. `op` selects the
     /// operation; `payload` carries its args. Gated by the fail-closed
@@ -458,6 +463,10 @@ enum HostCall {
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
     },
     SendEmail {
+        input: serde_json::Value,
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    Notify {
         input: serde_json::Value,
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
     },
@@ -835,6 +844,30 @@ async fn op_ctx_email_send(
     Ok(reply_json("ctx.email.send", result))
 }
 
+/// `ctx.notify(input)` — bridge to `FunctionHost::notify`. `input` is the JS
+/// payload object, JSON-stringified by the bootstrap `__wrapOp`.
+#[op2]
+#[string]
+async fn op_ctx_notify(
+    state: Rc<RefCell<OpState>>,
+    #[string] input_json: String,
+) -> Result<String, JsErrorBox> {
+    check_cancelled(&state)?;
+    let tx = state
+        .borrow()
+        .borrow::<mpsc::UnboundedSender<HostCall>>()
+        .clone();
+    let input: serde_json::Value =
+        serde_json::from_str(&input_json).unwrap_or(serde_json::Value::Null);
+    let (reply, rx) = oneshot::channel();
+    tx.send(HostCall::Notify { input, reply })
+        .map_err(|_| JsErrorBox::generic("function host unavailable"))?;
+    let result = rx
+        .await
+        .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
+    Ok(reply_json("ctx.notify", result))
+}
+
 /// `ctx.storage.*` — bridge to `FunctionHost::storage`. `op` selects the
 /// operation ("getUploadUrl" / "getDownloadUrl" / "put" / "get" / "head" /
 /// "list" / "delete" / "copy"), `payload` carries its args (JSON-stringified by
@@ -1176,6 +1209,7 @@ deno_core::extension!(
         op_ctx_semantic_query,
         op_ctx_airway_run,
         op_ctx_email_send,
+        op_ctx_notify,
         op_ctx_storage,
         op_ctx_org_people,
         op_ctx_org_places,
@@ -1554,6 +1588,11 @@ globalThis.__buildCtx = (ctxData) => ({
     // with `render` from @oxy-hq/sdk/email before calling this.
     send: (input) => __wrapOp("op_ctx_email_send")(input),
   },
+  // notify(input) — tell people in this org something: { to, kind, title,
+  // body?, link?, email?, slack?, idempotencyKey? }. `to` names people (a user
+  // id, a role at a location, a team), never an address; the platform picks
+  // inbox, push, email and Slack per person.
+  notify: (input) => __wrapOp("op_ctx_notify")(input),
   org: {
     // people() — who is in this org, by name. Read-only, and NOT a contact
     // list: a display name and a role, never an email or a phone. No location —
@@ -2226,6 +2265,23 @@ fn host_call_span(call: &HostCall) -> (tracing::Span, HostCallKind, &'static str
                 "email.send",
             )
         }
+        HostCall::Notify { input, .. } => {
+            let targets = match input.get("to") {
+                Some(serde_json::Value::Array(a)) => a.len(),
+                Some(serde_json::Value::Object(_)) => 1,
+                _ => 0,
+            };
+            (
+                tracing::info_span!(target: HOST_CALL_TARGET,
+                    "oxy.notify",
+                    oxy.notify.targets = targets,
+                    otel.status_code = Empty,
+                    error.type = Empty,
+                ),
+                HostCallKind::Other,
+                "notify",
+            )
+        }
         HostCall::Storage { op, .. } => (
             tracing::info_span!(target: HOST_CALL_TARGET,
                 "oxy.storage",
@@ -2298,6 +2354,7 @@ async fn dispatch_host_call(
         HostCall::Airhouse { op, payload, reply } => (reply, host.airhouse(op, payload).await),
         HostCall::SecretsSet { key, value, reply } => (reply, host.secrets_set(key, value).await),
         HostCall::SendEmail { input, reply } => (reply, host.send_email(input).await),
+        HostCall::Notify { input, reply } => (reply, host.notify(input).await),
         HostCall::Storage { op, payload, reply } => (reply, host.storage(op, payload).await),
         HostCall::OrgPeople { reply } => (reply, host.org_people().await),
         HostCall::OrgPlaces { reply } => (reply, host.org_places().await),
@@ -2593,6 +2650,10 @@ mod tests {
                 input: json.clone(),
                 reply: reply(),
             },
+            HostCall::Notify {
+                input: json.clone(),
+                reply: reply(),
+            },
             HostCall::Storage {
                 op: "put".into(),
                 payload: json.clone(),
@@ -2628,6 +2689,7 @@ mod tests {
                 | HostCall::WarehouseWrite { .. }
                 | HostCall::SecretsSet { .. }
                 | HostCall::SendEmail { .. }
+                | HostCall::Notify { .. }
                 | HostCall::Storage { .. }
                 | HostCall::OrgPeople { .. }
                 | HostCall::OrgPlaces { .. }
@@ -2700,6 +2762,8 @@ mod tests {
     #[derive(Default)]
     struct MockHost {
         last_email: std::sync::Mutex<Option<serde_json::Value>>,
+        /// What the last `ctx.notify` handed the host.
+        last_notify: std::sync::Mutex<Option<serde_json::Value>>,
         /// Every `ctx.tx` op this host saw, in order — the bootstrap wrapper's
         /// commit/rollback bracket is only observable from here.
         tx_ops: std::sync::Mutex<Vec<String>>,
@@ -2825,6 +2889,10 @@ mod tests {
         async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
             *self.last_email.lock().unwrap() = Some(input);
             Ok(serde_json::json!({ "messageId": "test-message-id" }))
+        }
+        async fn notify(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
+            *self.last_notify.lock().unwrap() = Some(input);
+            Ok(serde_json::json!({ "notificationId": "n-1", "recipients": 2, "skipped": [] }))
         }
         async fn query_stream(&self, _sql: String) -> Result<serde_json::Value, String> {
             Err("unused".into())
@@ -4169,6 +4237,50 @@ mod tests {
         let att = &email["attachments"][0];
         assert_eq!(att["encoding"], "utf8");
         assert_eq!(att["content"], "name,total\nCafé,3\n");
+    }
+
+    /// `ctx.notify` exists in the isolate, hands the host the payload as
+    /// written — targets, kind, and the email block — and resolves to what the
+    /// host answered.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn notify_reaches_the_host_with_its_payload() {
+        let artifact = r#"
+            export default async (req, ctx) => {
+                const r = await ctx.notify({
+                    to: [{ role: "Store Manager", location: "6f1c2a8e-1b7a-4c35-9d55-0c3f1f2b9a10" }],
+                    kind: "list_overdue",
+                    title: "Opening list is late",
+                    link: "/lists/42",
+                    email: true,
+                    idempotencyKey: "overdue:42",
+                });
+                return Response.json({ id: r.notificationId, recipients: r.recipients });
+            };
+        "#;
+        let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        let host = Arc::new(MockHost::default());
+        let resp = run(
+            artifact.to_string(),
+            uuid::Uuid::new_v4(),
+            test_ctx(),
+            FnRequest::from_body(b"{}".to_vec()),
+            host.clone(),
+            cancel_rx,
+            std::time::Duration::from_secs(10),
+            Arc::new(std::sync::Mutex::new(Vec::new())),
+            InvocationMeters::start(),
+            tracing::Span::none(),
+        )
+        .await
+        .expect("handler must complete");
+
+        assert!(resp.body.contains(r#""id":"n-1""#), "{}", resp.body);
+        assert!(resp.body.contains(r#""recipients":2"#), "{}", resp.body);
+        let sent = host.last_notify.lock().unwrap().clone().expect("notified");
+        assert_eq!(sent["to"][0]["role"], "Store Manager");
+        assert_eq!(sent["kind"], "list_overdue");
+        assert_eq!(sent["email"], true);
+        assert_eq!(sent["idempotencyKey"], "overdue:42");
     }
 
     // ── Invocation meters ────────────────────────────────────────────────

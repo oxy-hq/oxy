@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
+import { NOTIFICATIONS_PARAM } from "@/components/Shell/TopBar/NotificationsBell/constants";
 import { SETTINGS_PARAM } from "@/components/settings/SettingsDialog/useSettingsDeepLink";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useOrgs } from "@/hooks/api/organizations";
@@ -7,6 +8,7 @@ import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
 import { useLandingWorkspace } from "@/hooks/useLandingWorkspace";
 import { getInjectedOrg } from "@/libs/orgSubdomain";
+import { carriedSearch } from "@/libs/utils/carriedSearch";
 import {
   clearLastWorkspaceId,
   getLastOrgSlug,
@@ -53,13 +55,12 @@ export default function PostLoginDispatcher() {
 
   const chosenOrg = useMemo(() => pickOrg(orgs), [orgs]);
   // `/?settings=<section>` — the link the token emails carry — rides into the
-  // org or workspace chosen here, where the dialog reads it. Only that param.
+  // org or workspace chosen here, where the dialog reads it; so does
+  // `/?notifications=open`, the page a push notification opens, for the inbox
+  // bell. Only those params.
   const [searchParams] = useSearchParams();
-  const settings = searchParams.get(SETTINGS_PARAM);
-  const into = (pathname: string) => ({
-    pathname,
-    search: settings ? `?${new URLSearchParams({ [SETTINGS_PARAM]: settings })}` : ""
-  });
+  const search = carriedSearch(searchParams, [SETTINGS_PARAM, NOTIFICATIONS_PARAM]);
+  const into = (pathname: string) => ({ pathname, search });
 
   // Pass chosenOrg.id explicitly — the dispatcher runs at `/` before any
   // OrgGuard has primed the store, so `useAllWorkspaces`'s store fallback

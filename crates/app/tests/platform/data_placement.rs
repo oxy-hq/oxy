@@ -143,6 +143,10 @@ const TABLES: &[(&str, Placement)] = &[
     ),
     ("app_definitions", Control("compiled .app.yml")),
     (
+        "app_email_sends",
+        Control("ctx.email.send idempotency claims: the key's hash and SES message id"),
+    ),
+    (
         "app_environment_events",
         Control("custom-app environment pointer history; ids only"),
     ),
@@ -365,10 +369,22 @@ const TABLES: &[(&str, Placement)] = &[
     ),
     ("monitor_configs", Control("compiled .monitor.yml")),
     (
+        "notification_deliveries",
+        Control("per-channel delivery claims: ids, status and a reason code"),
+    ),
+    (
+        "notification_mutes",
+        Control("which channels a person turned off, per app and kind"),
+    ),
+    (
+        "notification_sends",
+        Control("one row per notify call: ids, kind, counts, the idempotency key's hash"),
+    ),
+    (
         "notifications",
         Backlog {
-            holds: "inbox title, body and link",
-            belongs: "org OLTP; only the push signal stays",
+            holds: "legacy title, body and link columns, written empty since content moved",
+            belongs: "dropped by the contract step; content is in org OLTP oxy_inbox.messages",
         },
     ),
     (
