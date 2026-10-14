@@ -728,7 +728,7 @@ dependencies = [
 [[package]]
 name = "airlayer"
 version = "0.4.0"
-source = "git+https://github.com/oxy-hq/airlayer?rev=abe99c23c675ad75067f6119d9ab788d4c5dea36#abe99c23c675ad75067f6119d9ab788d4c5dea36"
+source = "git+https://github.com/oxy-hq/airlayer?rev=8c7d6046846d5a633cfbc58106eff4e24982963d#8c7d6046846d5a633cfbc58106eff4e24982963d"
 dependencies = [
  "anyhow",
  "chrono",
@@ -747,6 +747,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sqlparser 0.62.0",
  "statrs 0.17.1",
  "thiserror 1.0.69",
 ]

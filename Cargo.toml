@@ -706,7 +706,30 @@ aho-corasick = "1.1"
 #
 # rev is a bare main commit; there is no tag on it (tags can be moved; the rev
 # cannot).
-airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "abe99c23c675ad75067f6119d9ab788d4c5dea36" }
+#
+# NOW AT 8c7d604 — airlayer main, the merge of PR #125
+# (`haitrr/predict-by-evaluation`): seven commits on `abe99c2` and nothing else
+# from main. Not a tag; v0.4.0 is still the newest.
+#
+#   * **`predict_with_values` and `opportunity` take a `dialect: Option<Dialect>`.**
+#     Predict now recomputes every composite from its parsed expression in
+#     floating point, and refuses a move integer division would change where
+#     the warehouse truncates `/` (Postgres, Redshift, Presto, SQLite) or the
+#     dialect is `None`. `None` compiles, but on DuckDB / Snowflake / BigQuery /
+#     MySQL / ClickHouse / Databricks it makes a `0/50` ratio come back
+#     `unquantifiable` for nothing — so every call site resolves the real one
+#     through `oxy_airlayer_compat::predict_dialect`.
+#
+#   * **MySQL and Domo round `/` to 4 places** (`div_precision_increment`), and
+#     predict now allows for that gap instead of refusing most ratios there.
+#     A fractional lever on a whole-number operand of a division is refused
+#     where integer division is suspected.
+#
+#   * **Additive:** `reachable_values_outcome_in` reads induced measures back
+#     by their source alias. `simulation/probe.rs` still calls the old
+#     `reachable_values_outcome`, so composites over an induced measure stay
+#     unvalued there until it switches.
+airlayer = { git = "https://github.com/oxy-hq/airlayer", rev = "8c7d6046846d5a633cfbc58106eff4e24982963d" }
 # Anomaly detection: ETS forecasting + MSTL decomposition. augurs-ets gives
 # Holt-Winters family (with auto model selection); augurs-mstl handles
 # multi-seasonality (daily + weekly + yearly). Pulled in by oxy-metric-monitoring.

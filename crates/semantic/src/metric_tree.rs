@@ -5,13 +5,13 @@
 //! graph ops. The query-executing ops (`explain`, `opportunity`) require a
 //! query executor and are orchestrated by the HTTP layer in `oxy-app`.
 
-use oxy_airlayer_compat::SemanticLayer;
 use oxy_airlayer_compat::engine::EngineError;
 use oxy_airlayer_compat::engine::metric_tree::MetricTree;
 use oxy_airlayer_compat::engine::metric_tree_ops::{
     MeasureValues, PredictResult, SensitivityResult, predict as al_predict,
     predict_with_values as al_predict_with_values, sensitivity as al_sensitivity,
 };
+use oxy_airlayer_compat::{Dialect, SemanticLayer};
 
 pub fn build(layer: &SemanticLayer) -> MetricTree {
     MetricTree::build(layer)
@@ -35,12 +35,18 @@ pub fn predict(tree: &MetricTree, changes: &[(String, f64)]) -> Result<PredictRe
 /// Propagate hypothetical `(measure, delta)` changes upward, using current
 /// values so multiplicative edges can be sized instead of reported
 /// `unquantifiable` (pure graph op).
+///
+/// `dialect` is the warehouse the values came from — resolve it with
+/// [`oxy_airlayer_compat::predict_dialect`]. `None` means unknown and is the
+/// conservative path: a ratio move integer division could change is refused
+/// even on a warehouse that never integer-divides.
 pub fn predict_with_values(
     tree: &MetricTree,
     changes: &[(String, f64)],
     values: &MeasureValues,
+    dialect: Option<Dialect>,
 ) -> Result<PredictResult, EngineError> {
-    al_predict_with_values(tree, changes, values)
+    al_predict_with_values(tree, changes, values, dialect)
 }
 
 /// Lever-conflict detection and the refusal built on it.
@@ -151,8 +157,13 @@ measures:
             ("orders.revenue".to_string(), 4000.0),
         ]);
 
-        let with =
-            predict_with_values(&tree, &[("orders.units".to_string(), 100.0)], &values).unwrap();
+        let with = predict_with_values(
+            &tree,
+            &[("orders.units".to_string(), 100.0)],
+            &values,
+            Some(Dialect::Postgres),
+        )
+        .unwrap();
         let revenue = with
             .impacts
             .iter()
@@ -173,5 +184,63 @@ measures:
             .expect("revenue is still reported, just unsized");
         assert_eq!(revenue_unsized.confidence, "unquantifiable");
         assert_eq!(revenue_unsized.estimated_delta, 0.0);
+    }
+
+    /// A `0/50` conversion rate, moved by ten conversions, read through the
+    /// dialect the workspace's databases resolve to.
+    fn conversion_move(
+        db_type: &str,
+    ) -> oxy_airlayer_compat::engine::metric_tree_ops::PredictImpact {
+        let layer = layer_from_views(&[r#"
+name: sales
+table: main.sales
+datasource: warehouse
+measures:
+  - name: converted
+    type: count
+    expr: order_id
+  - name: visits
+    type: count
+    expr: visit_id
+  - name: conversion
+    type: number
+    expr: "{{sales.converted}} / {{sales.visits}}"
+"#]);
+        let tree = build(&layer);
+        let databases = [oxy_airlayer_compat::database_config("warehouse", db_type)];
+        let changes = [("sales.converted".to_string(), 10.0)];
+        let dialect =
+            oxy_airlayer_compat::predict_dialect(&layer, &databases, &tree, &["sales.converted"]);
+        let values = oxy_airlayer_compat::engine::metric_tree_ops::MeasureValues::from([
+            ("sales.converted".to_string(), 0.0),
+            ("sales.visits".to_string(), 50.0),
+            ("sales.conversion".to_string(), 0.0),
+        ]);
+        predict_with_values(&tree, &changes, &values, dialect)
+            .unwrap()
+            .impacts
+            .into_iter()
+            .find(|i| i.measure == "sales.conversion")
+            .expect("conversion is impacted")
+    }
+
+    #[test]
+    fn a_ratio_move_on_duckdb_is_sized() {
+        // DuckDB divides integers fractionally, so 0/50 → 10/50 is a clean
+        // +0.2 and nothing about integer division can change it.
+        let conversion = conversion_move("duckdb");
+        assert_ne!(conversion.confidence, "unquantifiable", "{conversion:?}");
+        assert!(
+            (conversion.estimated_delta - 0.2).abs() < 1e-9,
+            "{conversion:?}"
+        );
+    }
+
+    #[test]
+    fn a_ratio_move_on_postgres_is_refused() {
+        // Postgres truncates `count / count`, and a level of 0 cannot rule
+        // that out: 10/50 reads 0 there, not 0.2.
+        let conversion = conversion_move("postgres");
+        assert_eq!(conversion.confidence, "unquantifiable", "{conversion:?}");
     }
 }

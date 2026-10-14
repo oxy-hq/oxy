@@ -242,13 +242,31 @@ pub(crate) fn reject_lever_conflicts(
     oxy_airlayer_compat::reject_lever_conflicts(tree, changes)
 }
 
+/// The warehouse dialect for a `predict` on `changes`.
+///
+/// The request's `values` were fetched by the baseline read, which queries
+/// each view's database through the metric-tree executor — so the dialect is
+/// read off those same databases ([`oxy_airlayer_compat::predict_dialect`]),
+/// not trusted from the body. `None` when one cannot be resolved, which makes
+/// predict refuse a ratio move integer division could change.
+pub(crate) fn predict_dialect(
+    layer: &oxy_airlayer_compat::SemanticLayer,
+    databases: &[oxy_airlayer_compat::DatabaseConfig],
+    tree: &MetricTree,
+    changes: &[(String, f64)],
+) -> Option<oxy_airlayer_compat::Dialect> {
+    let levers: Vec<&str> = changes.iter().map(|(m, _)| m.as_str()).collect();
+    oxy_airlayer_compat::predict_dialect(layer, databases, tree, &levers)
+}
+
 /// `POST .../semantic/metric-tree/predict` — propagate hypothetical deltas.
 pub async fn post_predict(
     WorkspaceManagerReadOnly(workspace_manager): WorkspaceManagerReadOnly,
     Json(req): Json<PredictRequest>,
 ) -> Result<Json<oxy_airlayer_compat::engine::metric_tree_ops::PredictResult>, MetricTreeError> {
     let source = resolve_scan(&workspace_manager).await?;
-    let mut tree = load_tree_at(&source.scan_path)?;
+    let layer = load_layer_at(&source.scan_path)?;
+    let mut tree = oxy_semantic::build_metric_tree(&layer);
     // Before propagation: a fitted coefficient has to make the edge behave
     // exactly as a declared one would, or the forecast the user sees would
     // depend on where the number came from.
@@ -260,7 +278,15 @@ pub async fn post_predict(
         .collect();
     reject_lever_conflicts(&tree, &changes).map_err(MetricTreeError::BadRequest)?;
     match req.values {
-        Some(values) => oxy_semantic::predict_with_values(&tree, &changes, &values),
+        Some(values) => {
+            let dialect = predict_dialect(
+                &layer,
+                &workspace_databases(&workspace_manager),
+                &tree,
+                &changes,
+            );
+            oxy_semantic::predict_with_values(&tree, &changes, &values, dialect)
+        }
         None => oxy_semantic::predict(&tree, &changes),
     }
     .map(Json)
@@ -530,6 +556,10 @@ pub async fn post_opportunity(
         .split_once('.')
         .and_then(|(view, _)| count_measure_id(&layer, view));
     let databases = workspace_databases(&workspace_manager);
+    // Off the same `databases` the executor below queries, so the values its
+    // downstream predict reads and the dialect it judges them by agree.
+    let dialect =
+        oxy_airlayer_compat::predict_dialect(&layer, &databases, &tree, &[req.target.as_str()]);
     // Not cached, and deliberately: `augment_layer_for_opportunity` above
     // rewrote `layer` for this request's target, so this engine is unique to
     // the request and shares nothing with the workspace's.
@@ -566,6 +596,7 @@ pub async fn post_opportunity(
             &scope,
             req.statistic,
             OPPORTUNITY_MIN_SUPPORT,
+            dialect,
             &executor,
         )
     })

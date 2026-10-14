@@ -176,9 +176,10 @@ pub async fn post_predict(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    // `_boundary` (the tempdir guard) is held until the layer is parsed;
-    // `predict` then operates on the in-memory tree, so it may drop after.
-    let (_boundary, layer) = match boundary_with_layer(&headers, project_id).await {
+    // `boundary` (the tempdir guard) is held until the layer is parsed;
+    // `predict` then operates on the in-memory tree. It is kept for its
+    // project context, which names the databases the dialect is read off.
+    let (boundary, layer) = match boundary_with_layer(&headers, project_id).await {
         Ok(v) => v,
         Err(resp) => return resp,
     };
@@ -207,7 +208,15 @@ pub async fn post_predict(
         return err_with_code(StatusCode::BAD_REQUEST, message, "lever_conflict");
     }
     let result = match req.values {
-        Some(values) => oxy_semantic::predict_with_values(&tree, &changes, &values),
+        Some(values) => {
+            // Same databases the baseline read queried for `values`; on a serve
+            // replica with no working copy the list is empty, so this is `None`
+            // and predict takes the conservative path.
+            let databases =
+                OxyMetricTreeRunner::list_databases_sync(boundary.proj_ctx.workspace_manager());
+            let dialect = mt::predict_dialect(&layer, &databases, &tree, &changes);
+            oxy_semantic::predict_with_values(&tree, &changes, &values, dialect)
+        }
         None => oxy_semantic::predict(&tree, &changes),
     };
     match result {

@@ -720,6 +720,10 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 holds_writes,
             } = inputs;
             let tree = MetricTree::build(&layer);
+            // Off the `databases` the executor queries, so the values and the
+            // dialect they are judged by come from one warehouse.
+            let dialect =
+                oxy_airlayer_compat::predict_dialect(&layer, &databases, &tree, &[target.as_str()]);
             let executor = build_query_executor(
                 engine,
                 databases,
@@ -742,6 +746,7 @@ impl MetricTreeRunner for OxyMetricTreeRunner {
                 &[],
                 statistic,
                 OPPORTUNITY_MIN_SUPPORT,
+                dialect,
                 &*executor,
             )
             .map_err(|e| MetricTreeRunnerError::Op(e.to_string()))
@@ -1411,12 +1416,10 @@ fn resolve_database(
         .or_else(|| request.dimensions.first())
         .ok_or_else(|| EngineError::QueryError("query has no measures".to_string()))?;
     let view_name = member.split('.').next().unwrap_or(member.as_str());
-    if let Some(datasource) = engine.view(view_name).and_then(|v| v.datasource.clone()) {
-        return Ok(datasource);
-    }
-    databases
-        .first()
-        .map(|d| d.name.clone())
+    // One rule with `predict_dialect`, so the dialect a predict judges these
+    // rows by is the dialect of the warehouse that produced them.
+    let datasource = engine.view(view_name).and_then(|v| v.datasource.clone());
+    oxy_airlayer_compat::view_database(datasource.as_deref(), databases)
         .ok_or_else(|| EngineError::QueryError("no database configured".to_string()))
 }
 
