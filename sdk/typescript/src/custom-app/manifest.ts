@@ -151,6 +151,14 @@ export interface OxyAppFunctionManifest {
    */
   org?: { read?: boolean };
   /**
+   * Capability for `ctx.platform.facts()` — ids and counts about every org on
+   * the deployment, for an internal app (fail-closed: omit → the call is
+   * rejected). Necessary, not sufficient: the host also requires the app's org
+   * to be one of the deployment's internal orgs (`OXY_INTERNAL_ORGS`), so
+   * declaring it in any other org's app opens nothing.
+   */
+  platform?: { facts?: boolean };
+  /**
    * Capability for `ctx.oltp` — read/write the app's OWN per-org OLTP schema on
    * the managed Postgres tenant (fail-closed: omit → every `ctx.oltp` call
    * rejected). A pure GATE: the target schema is derived from the app's own slug

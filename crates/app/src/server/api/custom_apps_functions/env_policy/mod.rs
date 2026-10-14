@@ -176,6 +176,7 @@ host_ops! {
     OrgPeople = "org.people",
     OrgPlaces = "org.places",
     OrgAssignments = "org.assignments",
+    PlatformFacts = "platform.facts",
 }
 
 impl HostOp {
@@ -409,8 +410,10 @@ fn non_production(op: HostOp, oltp: &OltpHome) -> Decision {
     use HostOp::*;
     match op {
         // Reads of production data (§4.2). `tx.rollback` writes nothing.
+        // `platform.facts` reads ids and counts the platform holds, the same in
+        // every environment.
         Query | QueryStream | SemanticQuery | WarehouseQuery | AirhouseQuery | OrgPeople
-        | OrgPlaces | OrgAssignments | TxRollback => Decision::Allow,
+        | OrgPlaces | OrgAssignments | PlatformFacts | TxRollback => Decision::Allow,
         // The environment's own storage silo (P5a). Reads look there first,
         // then at production's same key, read-only; `list` is the silo alone.
         StorageGetUploadUrl | StoragePut | StorageDelete | StorageCopy => {

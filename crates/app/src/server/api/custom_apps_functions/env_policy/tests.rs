@@ -97,6 +97,7 @@ const ROWS: &[Row] = &[
     read(HostOp::OrgPeople),
     read(HostOp::OrgPlaces),
     read(HostOp::OrgAssignments),
+    read(HostOp::PlatformFacts),
 ];
 
 fn staging() -> EnvPolicy {

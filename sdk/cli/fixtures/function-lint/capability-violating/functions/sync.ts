@@ -9,5 +9,6 @@ export default async function sync(_req: unknown, ctx: any) {
   await ctx.storage.copy("x", "z");
   await ctx.oltp.query("SELECT 1");
   await ctx.airhouse.append("t", [{ a: 1 }]);
-  return Response.json({ people, url });
+  const facts = await ctx.platform.facts({ weeks: 4 });
+  return Response.json({ people, url, facts });
 }

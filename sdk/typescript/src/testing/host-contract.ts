@@ -72,7 +72,8 @@ export const HOST_OPS = [
   "notify",
   "org.people",
   "org.places",
-  "org.assignments"
+  "org.assignments",
+  "platform.facts"
 ] as const;
 
 /** One of the host's closed list of op names. */
@@ -99,6 +100,7 @@ export const SURFACES = {
   orgPeople: "ctx.org.people",
   orgPlaces: "ctx.org.places",
   orgAssignments: "ctx.org.assignments",
+  platformFacts: "ctx.platform.facts",
   semanticQuery: "ctx.semantic.query",
   airwayRun: "ctx.airway.run"
 } as const;
@@ -146,6 +148,11 @@ export const REFUSALS = {
     source: "host.rs",
     refusal:
       'OrgCapabilityMissing: this function has not declared the `org.read` capability (add "org": { "read": true } to its oxy-app.json entry) — ctx.org.{member}'
+  },
+  platformFacts: {
+    source: "host/platform_facts/serve.rs",
+    refusal:
+      'PlatformCapabilityMissing: this function has not declared the `platform.facts` capability (add "platform": { "facts": true } to its oxy-app.json entry)'
   },
   storageWrite: {
     source: "host.rs",
@@ -319,6 +326,11 @@ export const GATES = [
     hostField: "org_read",
     manifest: "org.read",
     ops: ["org.people", "org.places", "org.assignments"]
+  },
+  {
+    hostField: "platform_facts",
+    manifest: "platform.facts",
+    ops: ["platform.facts"]
   },
   {
     hostField: "storage_read",

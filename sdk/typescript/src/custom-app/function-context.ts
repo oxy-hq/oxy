@@ -934,6 +934,104 @@ export interface OxyOrgAssignment {
 }
 
 /**
+ * One window of activity in {@link OxyPlatformOrg.weekly} or `last7d`. Only
+ * production counts, and the `*People` counts leave staff out: staff are the
+ * members of the deployment's internal orgs (`OXY_INTERNAL_ORGS`).
+ */
+export interface OxyPlatformWeek {
+  /** Distinct non-staff users with a production app view or a thread. */
+  activePeople: number;
+  /** Distinct non-staff users with a production app view. */
+  appPeople: number;
+  /** Production app views, staff included. */
+  appViews: number;
+  /** Distinct non-staff users who started a thread. */
+  chatPeople: number;
+  threads: number;
+  agentRuns: number;
+  agentRunFailures: number;
+  /** Production function invocations. */
+  functionCalls: number;
+  functionFailures: number;
+  /** Promotions to production. */
+  releases: number;
+}
+
+/** One org on the deployment, as {@link OxyPlatformFacts.orgs} lists it. Ids and counts only. */
+export interface OxyPlatformOrg {
+  id: string;
+  slug: string;
+  name: string;
+  createdAt: string;
+  /** One of the deployment's internal orgs (`OXY_INTERNAL_ORGS`): one of our own. */
+  internal: boolean;
+  /** The managing partner's org, or `null`. */
+  partnerOrgId: string | null;
+  /**
+   * Every org member, staff who belong to the org included: billing's seat
+   * count, not a count of the customer's own people.
+   */
+  members: number;
+  workspaces: number;
+  billing: { status: string | null; seatsPaid: number | null; graceEndsAt: string | null };
+  /**
+   * The latest sign-in among the org's members, staff included. A member
+   * provisioned and never signed in reads as their provisioning time.
+   */
+  lastSignInAt: string | null;
+  /**
+   * The customer's own latest app view, thread or function call in the last
+   * 180 days; never staff's or a schedule's. `null` means no customer activity
+   * in the last 180 days.
+   */
+  lastActivityAt: string | null;
+  apps: {
+    id: string;
+    slug: string;
+    name: string;
+    publishedAt: string | null;
+    lastActiveAt: string | null;
+  }[];
+  milestones: {
+    firstWorkspaceAt: string | null;
+    firstAppPublishedAt: string | null;
+    firstThreadAt: string | null;
+  };
+  /** Aligned with {@link OxyPlatformFacts.weeks}: same length, same order. */
+  weekly: OxyPlatformWeek[];
+  /** The rolling seven days up to `generatedAt`. */
+  last7d: OxyPlatformWeek;
+}
+
+/** What `ctx.platform.facts()` resolves to. */
+export interface OxyPlatformFacts {
+  /** ISO timestamp of the build; a reply may be up to five minutes old. */
+  generatedAt: string;
+  /** The Monday (UTC, `YYYY-MM-DD`) of each completed ISO week, oldest first. */
+  weeks: string[];
+  /** Every org on the deployment, sorted by name. */
+  orgs: OxyPlatformOrg[];
+}
+
+/**
+ * `ctx.platform` — reads about the platform itself, for an internal app.
+ *
+ * Two gates, both fail closed. The function's manifest entry must declare
+ * `"platform": { "facts": true }`, or the call throws with
+ * `PlatformCapabilityMissing` in its message; and the app's org must be one of
+ * the deployment's internal orgs (`OXY_INTERNAL_ORGS`), or it throws with
+ * `PlatformFactsNotEnabled`. A failed read throws `PlatformFactsUnavailable`,
+ * and a `weeks` that is not a number `PlatformFactsBadRequest`.
+ */
+export interface OxyPlatformApi {
+  /**
+   * Ids and counts about every org on the deployment, never an email, a
+   * message or a row of customer data. `weeks` is held to 1..26 (default 8).
+   */
+  facts(opts?: { weeks?: number }): Promise<OxyPlatformFacts>;
+}
+
+/**
  * The data-plane context passed as the second argument to a function's default
  * export. Mirrors the host-assembled `ctx` (`__buildCtx` in `runtime.rs`);
  * every member is a host-provided async function bridged to a Rust backend,
@@ -993,6 +1091,18 @@ export interface OxyFunctionContext {
      */
     assignments(): Promise<{ assignments: OxyOrgAssignment[]; total: number }>;
   };
+  /**
+   * Ids and counts about every org, for an internal app. See
+   * {@link OxyPlatformApi}.
+   *
+   * Optional, unlike `org`: a server older than October 2026 does not bind it,
+   * so `ctx.platform.facts()` there throws a `TypeError` rather than a host
+   * refusal. Use `ctx.platform?.facts()` and treat `undefined` as "not on
+   * this deployment", as you would `PlatformFactsNotEnabled`. On a current
+   * server the binding is always there, whatever the manifest says, and the
+   * gates are in the host.
+   */
+  platform?: OxyPlatformApi;
   /**
    * Read-only view of the app's configured secrets (project-scoped). Outside
    * production it holds the environment's own values, plus production's for

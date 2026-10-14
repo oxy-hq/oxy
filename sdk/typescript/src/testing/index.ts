@@ -17,6 +17,7 @@ export {
   type TestContext,
   type TestContextOptions,
   type TestDatabase,
+  type TestFunctionContext,
   type TestState
 } from "./context";
 export { isSafeOutbound } from "./fetch-rules";

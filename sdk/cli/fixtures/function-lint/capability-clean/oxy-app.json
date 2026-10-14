@@ -9,7 +9,8 @@
       "org": { "read": true },
       "storage": { "read": true, "write": true },
       "oltp": { "enabled": true },
-      "airhouse": { "enabled": true }
+      "airhouse": { "enabled": true },
+      "platform": { "facts": true }
     }
   }
 }

@@ -345,6 +345,12 @@ pub trait FunctionHost: Send + Sync {
     async fn org_assignments(&self) -> Result<serde_json::Value, String> {
         Err("ctx.org.assignments is not available in this host".to_string())
     }
+    /// `ctx.platform.facts(opts)` — ids and counts about every org, for an
+    /// internal app. `opts` carries `weeks` only; the org is the host's. The
+    /// same fail-closed default as `org_people`.
+    async fn platform_facts(&self, _opts: serde_json::Value) -> Result<serde_json::Value, String> {
+        Err("ctx.platform.facts is not available in this host".to_string())
+    }
     /// `ctx.airway.run(pipelineRef, variables)` — seed an Airway ELT run.
     /// Returns `{ runId }`; the run is driven asynchronously by the worker
     /// fleet (it does not block on completion — ELT runs routinely exceed
@@ -484,6 +490,11 @@ enum HostCall {
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
     },
     OrgAssignments {
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    /// `ctx.platform.facts(opts)` — `opts` names a span, never an org.
+    PlatformFacts {
+        opts: serde_json::Value,
         reply: oneshot::Sender<Result<serde_json::Value, String>>,
     },
     Tx {
@@ -952,6 +963,31 @@ async fn op_ctx_org_assignments(state: Rc<RefCell<OpState>>) -> Result<String, J
     Ok(reply_json("ctx.org.assignments", result))
 }
 
+/// `ctx.platform.facts(opts)` — bridge to `FunctionHost::platform_facts`.
+/// `opts` (JSON-stringified by `__wrapOp`) names a span; which org is asking
+/// is the host's to know, so nothing here can name one.
+#[op2]
+#[string]
+async fn op_ctx_platform_facts(
+    state: Rc<RefCell<OpState>>,
+    #[string] opts_json: String,
+) -> Result<String, JsErrorBox> {
+    check_cancelled(&state)?;
+    let tx = state
+        .borrow()
+        .borrow::<mpsc::UnboundedSender<HostCall>>()
+        .clone();
+    let opts: serde_json::Value =
+        serde_json::from_str(&opts_json).unwrap_or(serde_json::Value::Null);
+    let (reply, rx) = oneshot::channel();
+    tx.send(HostCall::PlatformFacts { opts, reply })
+        .map_err(|_| JsErrorBox::generic("function host unavailable"))?;
+    let result = rx
+        .await
+        .map_err(|_| JsErrorBox::generic("function host dropped the request"))?;
+    Ok(reply_json("ctx.platform.facts", result))
+}
+
 #[op2]
 #[string]
 async fn op_ctx_semantic_query(
@@ -1214,6 +1250,7 @@ deno_core::extension!(
         op_ctx_org_people,
         op_ctx_org_places,
         op_ctx_org_assignments,
+        op_ctx_platform_facts,
         op_ctx_tx,
         op_ctx_oltp,
         op_ctx_airhouse,
@@ -1609,6 +1646,14 @@ globalThis.__buildCtx = (ctxData) => ({
     // assignments() — who holds which position where, for the people who can
     // reach this app. The roster, read.
     assignments: () => __wrapOp("op_ctx_org_assignments")(),
+  },
+  platform: {
+    // facts({ weeks }) — ids and counts about every org on the deployment,
+    // for an internal app. Two gates, both fail closed: the manifest's
+    // `platform.facts`, and this app's org one of the deployment's internal
+    // orgs (OXY_INTERNAL_ORGS). Never an email, a message or a row of customer
+    // data.
+    facts: (opts) => __wrapOp("op_ctx_platform_facts")(opts || {}),
   },
   storage: {
     // The app's asset store — uploaded files AND generated ones, one silo.
@@ -2319,6 +2364,15 @@ fn host_call_span(call: &HostCall) -> (tracing::Span, HostCallKind, &'static str
             HostCallKind::Other,
             "org.assignments",
         ),
+        HostCall::PlatformFacts { .. } => (
+            tracing::info_span!(target: HOST_CALL_TARGET,
+                "oxy.platform.facts",
+                otel.status_code = Empty,
+                error.type = Empty,
+            ),
+            HostCallKind::Other,
+            "platform.facts",
+        ),
     }
 }
 
@@ -2359,6 +2413,7 @@ async fn dispatch_host_call(
         HostCall::OrgPeople { reply } => (reply, host.org_people().await),
         HostCall::OrgPlaces { reply } => (reply, host.org_places().await),
         HostCall::OrgAssignments { reply } => (reply, host.org_assignments().await),
+        HostCall::PlatformFacts { opts, reply } => (reply, host.platform_facts(opts).await),
     }
 }
 
@@ -2662,6 +2717,10 @@ mod tests {
             HostCall::OrgPeople { reply: reply() },
             HostCall::OrgPlaces { reply: reply() },
             HostCall::OrgAssignments { reply: reply() },
+            HostCall::PlatformFacts {
+                opts: json.clone(),
+                reply: reply(),
+            },
             HostCall::Tx {
                 op: "begin".into(),
                 payload: json.clone(),
@@ -2694,6 +2753,7 @@ mod tests {
                 | HostCall::OrgPeople { .. }
                 | HostCall::OrgPlaces { .. }
                 | HostCall::OrgAssignments { .. }
+                | HostCall::PlatformFacts { .. }
                 | HostCall::Tx { .. }
                 | HostCall::Oltp { .. }
                 | HostCall::Airhouse { .. } => {}
@@ -2785,6 +2845,9 @@ mod tests {
             std::sync::Mutex<Vec<(&'static str, &'static str, String, Option<String>)>>,
         /// Every `(op, target)` the broker reported a success for, in order.
         host_call_successes: std::sync::Mutex<Vec<(&'static str, Option<String>)>>,
+        /// When set, `ctx.platform.facts` fails with this message instead of
+        /// echoing its options back.
+        platform_facts_error: Option<String>,
     }
 
     impl MockHost {
@@ -2884,6 +2947,17 @@ mod tests {
                 "exec" => Ok(serde_json::json!({ "rowCount": 1 })),
                 "commit" | "rollback" => Ok(serde_json::json!({ "ok": true })),
                 other => Err(format!("unexpected tx op '{other}'")),
+            }
+        }
+        async fn platform_facts(
+            &self,
+            opts: serde_json::Value,
+        ) -> Result<serde_json::Value, String> {
+            match &self.platform_facts_error {
+                Some(message) => Err(message.clone()),
+                // Echo what crossed the boundary, so a test sees the options
+                // arrive as an object rather than a stringified blob.
+                None => Ok(serde_json::json!({ "echo": opts })),
             }
         }
         async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
@@ -3335,6 +3409,57 @@ mod tests {
         );
         assert_eq!(parsed["type"], "string");
         assert_eq!(parsed["body"], expected);
+    }
+
+    /// `ctx.platform.facts` is bound, carries its options to the host as an
+    /// object (`{}` when called bare), and resolves to the host's reply.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ctx_platform_facts_hands_the_host_its_options() {
+        let (result, _host) = run_with_mock(
+            r#"
+            export default async (req, ctx) => {
+              const asked = await ctx.platform.facts({ weeks: 4 });
+              const bare = await ctx.platform.facts();
+              return Response.json({ asked, bare });
+            };
+            "#,
+        )
+        .await;
+        let resp = result.expect("handler must complete");
+        let parsed: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+        assert_eq!(parsed["asked"]["echo"], serde_json::json!({ "weeks": 4 }));
+        assert_eq!(parsed["bare"]["echo"], serde_json::json!({}));
+    }
+
+    /// The internal app tells a refusal apart by the label inside the thrown
+    /// error's message, so the message has to arrive as
+    /// `ctx.platform.facts: <Label>: …`, label intact.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_refused_platform_facts_call_throws_the_label_in_its_message() {
+        let host = Arc::new(MockHost {
+            platform_facts_error: Some(
+                "PlatformFactsNotEnabled: this app's org is not an internal org".into(),
+            ),
+            ..Default::default()
+        });
+        let resp = run_on(
+            r#"
+            export default async (req, ctx) => {
+              try { await ctx.platform.facts(); return new Response("resolved"); }
+              catch (e) { return Response.json({ name: e.name, message: e.message }); }
+            };
+            "#,
+            test_ctx(),
+            host,
+        )
+        .await
+        .expect("the handler caught the refusal and returned");
+        let parsed: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+        assert_eq!(parsed["name"], "HostError");
+        assert_eq!(
+            parsed["message"],
+            "ctx.platform.facts: PlatformFactsNotEnabled: this app's org is not an internal org"
+        );
     }
 
     /// A handler that catches a failed `ctx.*` call and answers 200 is the

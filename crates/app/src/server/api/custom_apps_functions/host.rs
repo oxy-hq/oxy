@@ -39,6 +39,7 @@ mod notify_op;
 mod oltp_guard;
 mod oltp_home;
 mod oltp_ops;
+pub mod platform_facts;
 mod semantic_op;
 mod tx_ops;
 mod uploads;
@@ -208,6 +209,10 @@ pub struct FunctionCapabilities {
     pub notify_kinds: Option<BTreeMap<String, bool>>,
     /// Gate for `ctx.org.people()` — the org's people directory, read-only.
     pub org_read: bool,
+    /// Gate for `ctx.platform.facts()` — ids and counts about every org. The
+    /// first of two: the app's org must also be one of the deployment's
+    /// internal orgs, `OXY_INTERNAL_ORGS` ([`platform_facts::platform_facts_gate`]).
+    pub platform_facts: bool,
     /// Gate for `ctx.storage` reads (getDownloadUrl / get / head / list, and
     /// the source side of copy).
     pub storage_read: bool,
@@ -1195,6 +1200,19 @@ impl FunctionHost for ProjectFunctionHost {
         self.admit_op(HostOp::OrgAssignments, ("org", "", "READ", ""))
             .await?;
         org_assignments_directory(&self.db, self.org_id, self.app_id).await
+    }
+
+    /// `ctx.platform.facts(opts)` — ids and counts about every org on the
+    /// deployment, for an internal app (`host/platform_facts`). Both gates
+    /// come first and fail closed (`platform_facts::admit`), then the
+    /// environment policy, then the build. The org is the host's, never the
+    /// function's.
+    async fn platform_facts(&self, opts: serde_json::Value) -> Result<serde_json::Value, String> {
+        let internal = platform_facts::admit(self.caps.platform_facts, self.org_id)?;
+        self.admit_op(HostOp::PlatformFacts, ("platform", "facts", "READ", ""))
+            .await?;
+        let weeks = platform_facts::requested_weeks(&opts)?;
+        platform_facts::cached_reply(&self.db, internal, weeks).await
     }
 
     async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {

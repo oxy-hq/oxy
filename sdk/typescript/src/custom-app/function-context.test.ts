@@ -3,7 +3,8 @@ import type {
   OxyCryptoApi,
   OxyFunctionContext,
   OxyFunctionRequest,
-  OxyFunctionRow
+  OxyFunctionRow,
+  OxyPlatformApi
 } from "./function-context";
 
 // The fixtures below are typed against `OxyFunctionContext`, so the SDK
@@ -101,5 +102,16 @@ describe("OxyFunctionRequest", () => {
     // unused, the type has regressed to the shape that could not read a signature.
     const bodyOnly: OxyFunctionRequest = { body: "{}" };
     expect(bodyOnly.body).toBe("{}");
+  });
+});
+
+describe("OxyFunctionContext.platform", () => {
+  it("is optional: a server older than ctx.platform binds none, and `?.` degrades", async () => {
+    const older: Pick<OxyFunctionContext, "platform"> = {};
+    expect(await older.platform?.facts({ weeks: 4 })).toBeUndefined();
+    // @ts-expect-error — `platform` may be absent; if this directive turns unused, the
+    // type is back to promising a binding an older server never makes.
+    const bound: OxyPlatformApi = older.platform;
+    expect(bound).toBeUndefined();
   });
 });

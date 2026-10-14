@@ -166,6 +166,24 @@ const ALLOWED_SEAMS: &[Seam] = &[
                into a crate both sides depend on.",
     },
     Seam {
+        prefix: "crate::server::api::admin::usage_report::period::Period",
+        why: "the usage report's week, `Period::last_completed` — the one type, not the \
+               module. `ctx.platform.facts()` \
+               (`host/platform_facts`) counts usage by completed week, and taking the \
+               report's own boundary is what keeps the internal accounts app and the weekly \
+               usage email agreeing on where a week starts. A pure date helper. The facts \
+               builder is a platform read, not a custom-app one: at a Functions-crate cut it \
+               becomes an injected port, like `FunctionQueryExecutor`.",
+    },
+    Seam {
+        prefix: "crate::server::api::admin::workspace_health::queries::exclude_daemon_runs",
+        why: "`exclude_daemon_runs` alone (not the rest of `queries`), the one predicate for a customer's run as opposed to \
+               the platform's own (pre-aggregation cycles, health evals, previews, sandbox \
+               upkeep). `ctx.platform.facts()` counts agent runs with it, so the facts and \
+               Workspace Health cannot disagree on what a customer run is. A SQL fragment, \
+               no state; it leaves with the facts builder at a Functions-crate cut.",
+    },
+    Seam {
         prefix: "crate::server::api::user_tokens::sandboxes_queued",
         why: "the one writer of `token.expired_sandboxes_queued` and its input type. The sandbox \
                sweep (`custom_apps_sandboxes/token_ended.rs`) tears down the sandboxes an ended \
@@ -378,6 +396,29 @@ fn inside_files(src: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The [`ALLOWED_SEAMS`] entry an absolute import path falls under: the
+/// prefix itself or anything below it, never a sibling that merely shares
+/// its leading characters.
+fn seam_index(joined: &str) -> Option<usize> {
+    ALLOWED_SEAMS
+        .iter()
+        .position(|s| joined == s.prefix || joined.starts_with(&format!("{}::", s.prefix)))
+}
+
+/// A seam named down to one symbol admits that symbol and nothing beside it,
+/// so a second borrowing from the same module has to be argued for.
+#[test]
+fn a_symbol_seam_admits_its_symbol_and_nothing_beside_it() {
+    let queries = "crate::server::api::admin::workspace_health::queries";
+    assert!(seam_index(&format!("{queries}::exclude_daemon_runs")).is_some());
+    assert!(seam_index(&format!("{queries}::gather_signals")).is_none());
+    assert!(seam_index(queries).is_none());
+    let period = "crate::server::api::admin::usage_report::period";
+    assert!(seam_index(&format!("{period}::Period")).is_some());
+    assert!(seam_index(&format!("{period}::PeriodKind")).is_none());
+    assert!(seam_index("crate::server::api::admin::usage_report::collect").is_none());
+}
+
 #[test]
 fn custom_apps_stays_behind_its_seams() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -417,9 +458,7 @@ fn custom_apps_stays_behind_its_seams() {
                     continue;
                 }
                 let joined = resolved.join("::");
-                match ALLOWED_SEAMS.iter().position(|s| {
-                    joined == s.prefix || joined.starts_with(&format!("{}::", s.prefix))
-                }) {
+                match seam_index(&joined) {
                     Some(idx) => seam_hits[idx] = true,
                     None => violations.push(format!(
                         "  {}\n    imports: {joined}",

@@ -64,6 +64,13 @@ const EXEMPT: &[(&str, &str)] = &[
     ("airhouse.query", AIRHOUSE),
     ("airhouse.exec", AIRHOUSE),
     ("airhouse.append", AIRHOUSE),
+    (
+        "platform.facts",
+        "reads ids and counts about every org, and the host answers it only for an app \
+         in one of the deployment's internal orgs (OXY_INTERNAL_ORGS). The `oxy-canary` org \
+         is not internal and must not be: the gate is the point. Out of scope for the canary \
+         by design; the internal accounts app is its live caller.",
+    ),
 ];
 
 #[test]

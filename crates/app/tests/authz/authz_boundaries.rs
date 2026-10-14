@@ -65,6 +65,15 @@ const BANNED: &[Banned] = &[
         needle: "is_oxy_app_admin(",
         door: "read platform standing through `server::authz::globals` — see `is_oxy_owner`.",
     },
+    // Matches the call and a `use …::internal_orgs::internal_orgs;` alike.
+    Banned {
+        needle: "internal_orgs::internal_orgs",
+        door: "the deployment's internal orgs (`OXY_INTERNAL_ORGS`) are configuration, not an \
+               `oxy-authz` ring: whoever can publish into an internal org inherits what the list \
+               grants. They are read once, behind `ctx.platform.facts`' gate \
+               (`host/platform_facts/serve.rs`, `admit`). A new consumer is a new grant — decide \
+               it in `oxy_authz::allows`, do not read the list beside a handler.",
+    },
 ];
 
 /// Files permitted to contain a banned shape, and why. Paths are relative to the workspace
@@ -128,6 +137,12 @@ const ALLOWED: &[(&str, &str)] = &[
         "role-*transition* invariants (actor x target x new role). `target.role >= caller.role` is \
          NOT `authorize_target_modification`: for Owner-on-Owner the former denies and the latter \
          allows, so merging them would silently change behaviour",
+    ),
+    (
+        "app/src/server/api/custom_apps_functions/host/platform_facts/",
+        "the one reader of the internal orgs: `ctx.platform.facts`' gate (`serve::admit`), which \
+         hands the list it checked to the build as its staff. The host op in `host.rs` takes the \
+         list from the gate and never reads it",
     ),
     // ---- Surfaced, awaiting a decision. See the divergence note below. ----
     (

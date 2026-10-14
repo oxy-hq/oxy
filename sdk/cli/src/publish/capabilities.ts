@@ -103,6 +103,14 @@ export const GATED_CAPABILITIES: readonly GatedCapability[] = [
     declares: (spec) => flag(spec, "org", "read")
   },
   {
+    hostField: "platform_facts",
+    manifest: "platform.facts",
+    declare: '"platform": { "facts": true }',
+    ops: ["platform.facts"],
+    gate: "manifest",
+    declares: (spec) => flag(spec, "platform", "facts")
+  },
+  {
     hostField: "storage_read",
     manifest: "storage.read",
     declare: '"storage": { "read": true }',

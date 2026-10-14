@@ -13,6 +13,7 @@
 //! | `custom_apps_publish_function_artifacts` | a bundle declaring functions it lacks is refused |
 //! | `custom_apps_publish_machine` | a trusted (OIDC) publish records its build with no user, attributed to its workflow |
 //! | `function_failure_alerts` | the pager's SQL over invocation rows inserted by hand |
+//! | `platform_facts` | `build_platform_facts` (the data behind `ctx.platform.facts()`): staff count in the totals and in no `*People` count; `lastActivityAt` moves only on a customer's own activity (never staff, an unattended run or a thread nobody owns) and is null past its 180-day horizon; staging views, invocations and promotes count nowhere; `weekly` lines up with `weeks` (clamped to 1..=26), `last7d` is the rolling seven days; only an internal org (`OXY_INTERNAL_ORGS`) is `internal`; the host op's gate (capability, then the internal orgs) passes the staff org and refuses a customer's, in staging too, the reply is cached, and a database error reaches the function as `PlatformFactsUnavailable` with no Postgres text |
 //! | `app_environments_phase_1b` | staging hosts serve staging HTML to staff only; staging `/fn` runs for staff only; a sandbox host and a sandbox's `/fn` serve the sandbox's own build to staff only, read per request, and a name nobody created runs nothing; a cookie header and a cross-environment origin are refused; a staging task is refused by the runner |
 //! | `environment_scoped_keys` | an idempotency key, a cached result or a ledger row from a non-production environment never stands in for production's |
 //! | `staging_functions` | a staging host runs the staging build as `ctx.channel = "staging"` for staff; the held row is written on throw and timeout; a GET carrying a body is held |
@@ -135,6 +136,7 @@ mod environment_scoped_keys;
 mod example_app_serving;
 mod function_failure_alerts;
 mod nonprod_function_uploads;
+mod platform_facts;
 mod preview_read_only_session;
 mod publish_audit;
 mod sandbox_agent_token;

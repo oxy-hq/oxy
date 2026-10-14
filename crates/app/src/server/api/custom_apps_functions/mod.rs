@@ -231,6 +231,14 @@ struct FunctionManifestEntry {
     /// follow-up.
     #[serde(default)]
     org: Option<OrgSpec>,
+    /// Opt-in capability for `ctx.platform.facts()` — ids and counts about
+    /// every org on the deployment (fail-closed: absent → the call is
+    /// rejected). Necessary, not sufficient: the host also requires the app's
+    /// org to be one of the deployment's internal orgs (`OXY_INTERNAL_ORGS`),
+    /// so declaring it in a customer's app opens nothing. For the internal app
+    /// staff read accounts in.
+    #[serde(default)]
+    platform: Option<PlatformSpec>,
     /// Retry policy for **background** runs (scheduled or manual job triggers) —
     /// absent → a job run is attempted once. Route invocations are request-scoped
     /// and never retried. Maps to the durable queue's `RetryPolicy` so a transient
@@ -305,6 +313,14 @@ struct NotifyKindSpec {
 struct OrgSpec {
     #[serde(default)]
     read: Option<bool>,
+}
+
+/// `"platform": { "facts": true }` — opt in to `ctx.platform.facts()`. Read
+/// only, like [`OrgSpec`]; the deployment's internal orgs are the second gate.
+#[derive(Debug, Deserialize, Default, Clone)]
+struct PlatformSpec {
+    #[serde(default)]
+    facts: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -398,6 +414,15 @@ impl FunctionManifestEntry {
     /// Whether `ctx.org.people()` is permitted (fail-closed default: false).
     fn org_read(&self) -> bool {
         self.org.as_ref().and_then(|o| o.read).unwrap_or(false)
+    }
+
+    /// Whether `ctx.platform.facts()` is permitted by the manifest (fail-closed
+    /// default: false). The deployment's internal orgs decide the rest.
+    fn platform_facts(&self) -> bool {
+        self.platform
+            .as_ref()
+            .and_then(|p| p.facts)
+            .unwrap_or(false)
     }
 
     /// Whether `ctx.email.send` is permitted (fail-closed default: false).
@@ -651,6 +676,7 @@ fn manifest_capabilities(
         email_send: entry.email_send(),
         notify_kinds: entry.notify_kinds(),
         org_read: entry.org_read(),
+        platform_facts: entry.platform_facts(),
         storage_read: entry.storage_read(),
         storage_write: entry.storage_write(),
         // DERIVED from the invoking app's slug, gated by the manifest — never
@@ -3078,6 +3104,49 @@ mod org_capability_tests {
         assert!(!m.secrets_write(), "org.read must not imply secrets.write");
         assert!(!m.storage_read(), "org.read must not imply storage.read");
         assert!(!m.storage_write(), "org.read must not imply storage.write");
+        assert!(
+            !m.platform_facts(),
+            "org.read must not imply platform.facts"
+        );
+    }
+
+    /// `ctx.platform.facts()` is DENIED unless the manifest asks for it, by
+    /// the one shape that grants it, and asking grants nothing else.
+    #[test]
+    fn platform_facts_fails_closed_on_every_way_of_not_asking() {
+        let deny = [
+            ("no manifest block at all", r#"{}"#),
+            ("an empty platform block", r#"{"platform":{}}"#),
+            ("facts explicitly false", r#"{"platform":{"facts":false}}"#),
+            ("platform present but null", r#"{"platform":null}"#),
+            ("the org directory instead", r#"{"org":{"read":true}}"#),
+        ];
+        for (why, json) in deny {
+            let m: FunctionManifestEntry = serde_json::from_str(json)
+                .unwrap_or_else(|e| panic!("{why}: manifest did not parse: {e}"));
+            assert!(
+                !m.platform_facts(),
+                "platform.facts must be denied when there is {why}"
+            );
+        }
+        let granted: FunctionManifestEntry =
+            serde_json::from_str(r#"{"platform":{"facts":true}}"#).unwrap();
+        assert!(
+            granted.platform_facts(),
+            "platform.facts must be granted when asked for"
+        );
+        assert!(
+            !granted.org_read(),
+            "platform.facts must not imply org.read"
+        );
+        assert!(
+            !granted.email_send(),
+            "platform.facts must not imply email.send"
+        );
+        assert!(
+            !granted.storage_read(),
+            "platform.facts must not imply storage.read"
+        );
     }
 }
 

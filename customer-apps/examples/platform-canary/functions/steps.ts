@@ -90,7 +90,8 @@ export type HostOp =
   | "notify"
   | "org.people"
   | "org.places"
-  | "org.assignments";
+  | "org.assignments"
+  | "platform.facts";
 
 /**
  * The host ops each step makes, in the order it makes them. Checked both

@@ -135,6 +135,29 @@ describe("the manifest's capability gates, in the host's words", () => {
       `ctx.storage: ${REFUSALS.storageWrite.refusal}`
     );
   });
+
+  it("refuses ctx.platform.facts without platform.facts, with the label an app matches on", async () => {
+    const t = echo();
+    const err = await refusal(() => t.ctx.platform.facts({ weeks: 4 }));
+    expect(err.name).toBe(HOST_ERROR_NAME);
+    expect(err.message).toBe(`ctx.platform.facts: ${REFUSALS.platformFacts.refusal}`);
+    expect(err.message).toContain("PlatformCapabilityMissing");
+    expect(t.calls).toEqual([
+      { op: "platform.facts", args: { weeks: 4 }, outcome: "refused", message: err.message }
+    ]);
+  });
+
+  it("answers ctx.platform.facts with the seeded facts, or an empty snapshot", async () => {
+    const granted = { slug: "accounts", functions: { f: { platform: { facts: true } } } };
+    const empty = await createTestContext(granted, { function: "f" }).ctx.platform.facts();
+    expect(empty).toMatchObject({ weeks: [], orgs: [] });
+    expect(Number.isNaN(Date.parse(empty.generatedAt))).toBe(false);
+
+    const platformFacts = { generatedAt: "2026-10-14T05:00:00Z", weeks: ["2026-10-05"], orgs: [] };
+    const seeded = createTestContext(granted, { function: "f", platformFacts });
+    expect(await seeded.ctx.platform.facts({ weeks: 1 })).toEqual(platformFacts);
+    expect(seeded.callsTo("platform.facts")).toMatchObject([{ args: { weeks: 1 }, outcome: "ok" }]);
+  });
 });
 
 describe("ctx.notify", () => {

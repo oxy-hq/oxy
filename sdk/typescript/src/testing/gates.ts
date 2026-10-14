@@ -30,6 +30,8 @@ export interface FunctionGates {
    */
   notifyKinds: Record<string, boolean> | null;
   orgRead: boolean;
+  /** `platform.facts` — the manifest half; the deployment's internal orgs are the host's. */
+  platformFacts: boolean;
   storageRead: boolean;
   storageWrite: boolean;
   oltp: boolean;
@@ -117,6 +119,7 @@ export function readGates(manifest: ManifestLike, functionName: string): Functio
     emailSend: flag(spec, "email", "send"),
     notifyKinds: notifyKinds(spec),
     orgRead: flag(spec, "org", "read"),
+    platformFacts: flag(spec, "platform", "facts"),
     storageRead: flag(spec, "storage", "read"),
     storageWrite: flag(spec, "storage", "write"),
     oltp: flag(spec, "oltp", "enabled"),

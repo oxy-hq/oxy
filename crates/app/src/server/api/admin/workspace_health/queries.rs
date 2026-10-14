@@ -83,7 +83,7 @@ const NON_WORKSPACE_RUN_SOURCES: &[&str] = &[
 /// `agentic_runs` gets a `created_at` index and this predicate is the thing
 /// keeping it non-sargable — see the follow-up in
 /// `internal-docs/workspace-previews.md`.
-fn exclude_daemon_runs(alias: &str) -> String {
+pub(crate) fn exclude_daemon_runs(alias: &str) -> String {
     let col = format!("{alias}source_type");
     let list = NON_WORKSPACE_RUN_SOURCES
         .iter()

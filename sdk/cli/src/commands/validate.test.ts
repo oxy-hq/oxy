@@ -642,7 +642,7 @@ describe("oxyc validate lints an app's functions", () => {
     const root = fixtureWorkspace("capability-violating");
     const human = oxycValidate(root, []);
     expect(human.status).toBe(ExitCode.FAILURE);
-    expect(human.stdout).toContain("10 problem(s) in 1 file(s)");
+    expect(human.stdout).toContain("11 problem(s) in 1 file(s)");
     expect(human.stdout).toContain("functions/sync.ts");
     expect(human.stdout).toContain("line 3");
     expect(human.stdout).toContain("`ctx.secrets.set(` needs the `secrets.write` capability");

@@ -327,6 +327,10 @@ const CALLER_ERROR_LABELS: &[&str] = &[
     // A kind the call sends that its manifest entry does not declare. Its own
     // mistake, and the message names the line to add.
     "NotifyKindUndeclared",
+    // `ctx.platform.facts({ weeks })` with a `weeks` that is not a number
+    // (`host/platform_facts/serve.rs`): refused from the payload alone, before
+    // any read, the same way on every call.
+    "PlatformFactsBadRequest",
 ];
 
 /// The typed labels the host writes for a condition that is not the app's
@@ -351,7 +355,14 @@ const CALLER_ERROR_LABELS: &[&str] = &[
 ///   `StorageCapabilityMissing` — a capability the manifest lacks. `oxyc`
 ///   refuses to publish a function that calls one, so a live hit is a
 ///   platform surprise; the word `capability` classifies these
-///   `not_allowed` before any marker is consulted.
+///   `not_allowed` before any marker is consulted. `PlatformCapabilityMissing`
+///   is the same gate for `ctx.platform.facts`.
+/// - `PlatformFactsNotEnabled` — the app's org is not one of the deployment's
+///   internal orgs (`OXY_INTERNAL_ORGS`): the deployment's configuration, which
+///   the app cannot change and an operator can. `not allowed` in its text
+///   classifies it `not_allowed`.
+/// - `PlatformFactsUnavailable` — the facts build failed (the database), with
+///   the detail logged rather than handed to the app.
 #[cfg(test)]
 const PLATFORM_ERROR_LABELS: &[&str] = &[
     "SenderRejected",
@@ -363,6 +374,9 @@ const PLATFORM_ERROR_LABELS: &[&str] = &[
     "EmailCapabilityMissing",
     "OltpCapabilityMissing",
     "OrgCapabilityMissing",
+    "PlatformCapabilityMissing",
+    "PlatformFactsNotEnabled",
+    "PlatformFactsUnavailable",
     "StorageCapabilityMissing",
     // A capability the manifest lacks, as for the others above.
     "NotifyCapabilityMissing",
@@ -444,6 +458,7 @@ pub const HOST_OPS: &[&str] = &[
     "org.people",
     "org.places",
     "org.assignments",
+    "platform.facts",
 ];
 
 /// The fixed name a host op pages under: its family and sub-op from a closed

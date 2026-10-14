@@ -20,6 +20,8 @@ import type {
   OxyFunctionUser,
   OxyOrgAssignment,
   OxyOrgPlace,
+  OxyPlatformApi,
+  OxyPlatformFacts,
   OxyTransaction
 } from "../custom-app/function-context";
 import { isSafeOutbound } from "./fetch-rules";
@@ -82,6 +84,13 @@ export interface TestContextOptions {
   env?: Record<string, string>;
   /** `ctx.user`, over a default org member. */
   user?: Partial<OxyFunctionUser>;
+  /**
+   * What `ctx.platform.facts()` answers once the manifest grants
+   * `platform.facts`; no orgs and no weeks when omitted. The deployment's
+   * internal orgs are not modelled: to see `PlatformFactsNotEnabled`, override
+   * the `platform.facts` op and throw.
+   */
+  platformFacts?: OxyPlatformFacts;
 }
 
 /** One host op the function made, as the context recorded it. */
@@ -139,8 +148,15 @@ export interface TestState {
   readonly airway: { runs: { pipelineRef: string; variables: unknown }[] };
 }
 
+/**
+ * The context `createTestContext` hands out: a current host's, so `platform`
+ * (optional on {@link OxyFunctionContext} for an older server's sake) is
+ * always bound, gated by the manifest as the host gates it.
+ */
+export type TestFunctionContext = OxyFunctionContext & { platform: OxyPlatformApi };
+
 export interface TestContext {
-  ctx: OxyFunctionContext;
+  ctx: TestFunctionContext;
   /** Every host op made, in order. */
   readonly calls: readonly HostCall[];
   /** The de-duplicated first-call order of op names. */
@@ -460,7 +476,7 @@ export function createTestContext(
 
   // ── ctx ──────────────────────────────────────────────────────────────────
 
-  const ctx: OxyFunctionContext = {
+  const ctx: TestFunctionContext = {
     user: { ...DEFAULT_USER, ...options.user },
     env: { ...(options.env ?? {}) },
     // A test context runs as production: nothing is held.
@@ -629,6 +645,15 @@ export function createTestContext(
             throw refuse(SURFACES.orgAssignments, REFUSALS.orgMember, { member: "assignments" });
           return { total: state.org.assignments.length, assignments: [...state.org.assignments] };
         }) as Promise<{ assignments: OxyOrgAssignment[]; total: number }>
+    },
+    platform: {
+      facts: (opts) =>
+        op("platform.facts", { ...opts }, () => {
+          if (!gates.platformFacts) throw refuse(SURFACES.platformFacts, REFUSALS.platformFacts);
+          return (
+            options.platformFacts ?? { generatedAt: new Date().toISOString(), weeks: [], orgs: [] }
+          );
+        }) as Promise<OxyPlatformFacts>
     },
     storage: storageApi(),
     semantic: {

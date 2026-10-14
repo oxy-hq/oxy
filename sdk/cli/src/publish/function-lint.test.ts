@@ -45,6 +45,7 @@ describe("the capability map", () => {
   it("answers a member path, an area wildcard, and two gates for storage.copy", () => {
     expect(capabilitiesFor("secrets.set").map((c) => c.manifest)).toEqual(["secrets.write"]);
     expect(capabilitiesFor("oltp.tx").map((c) => c.manifest)).toEqual(["oltp.enabled"]);
+    expect(capabilitiesFor("platform.facts").map((c) => c.manifest)).toEqual(["platform.facts"]);
     expect(capabilitiesFor("storage.copy").map((c) => c.manifest)).toEqual([
       "storage.read",
       "storage.write"
@@ -71,7 +72,8 @@ describe("capability", () => {
       ["line 9", "storage.read"],
       ["line 9", "storage.write"],
       ["line 10", "oltp.enabled"],
-      ["line 11", "airhouse.enabled"]
+      ["line 11", "airhouse.enabled"],
+      ["line 12", "platform.facts"]
     ]);
     const put = capability.find((i) => i.path === "line 7");
     expect(put).toEqual(at("functions/sync.ts", 7));
@@ -425,9 +427,9 @@ describe("engines", () => {
     const error = functionLintFailure(result.issues);
     expect(error.code).toBe(ExitCode.FAILURE);
     expect(error.message).toBe(
-      "10 Oxy Function lint problem(s) — the host would refuse these at the first call"
+      "11 Oxy Function lint problem(s) — the host would refuse these at the first call"
     );
-    expect(error.detail?.split("\n")).toHaveLength(10);
+    expect(error.detail?.split("\n")).toHaveLength(11);
     expect(error.detail).toContain(
       "[function-lint/capability] functions/sync.ts (line 3): `ctx.secrets.set(`"
     );
