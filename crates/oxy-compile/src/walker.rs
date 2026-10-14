@@ -2,9 +2,11 @@
 //!
 //! Walks the workspace once and classifies each interesting file by
 //! kind so the compiler can dispatch to the right per-kind parser.
-//! Skips the obvious non-source directories (`.git`, `target`,
-//! `node_modules`, `dist`, `.semantics`, `.preagg`) at any depth, the same
-//! way the preagg executor's walk does — see [`is_skipped`].
+//! Skips every dot-prefixed directory (`.git`, `.worktrees`, `.claude` — whose
+//! `worktrees/` holds agent worktrees, each a full copy of the project —
+//! `.semantics`, `.oxy_state`, ...) and the build/vendor directories
+//! (`target`, `node_modules`, `dist`, `build`) at any depth — see
+//! [`is_skipped`].
 
 use crate::errors::CompileError;
 use glob::glob;
@@ -588,6 +590,50 @@ mod tests {
             vec!["semantics/orders.view.yml"],
             "exactly one view survives: every stray copy is pruned and both \
              `.test.`-named fixtures are dropped"
+        );
+    }
+
+    /// Claude Code keeps agent worktrees under `.claude/worktrees/<name>/`, each
+    /// a full checkout of the project. If discovery walked into them, every
+    /// view, topic and agent would compile twice and each copy would be a
+    /// Duplicate failure, so one agent session left behind fails every view
+    /// in the workspace. A dossier that carried such worktrees reported 99
+    /// duplicate errors and none of them were real. This test covers the
+    /// shape it had: real files at the root and stale copies nested under
+    /// the worktree.
+    #[test]
+    fn claude_code_agent_worktrees_are_not_discovered() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+
+        write(root, "config.yml", "databases: []");
+        write(root, "semantics/views/orders.view.yml", "name: orders");
+        write(root, "semantics/topics/sales.topic.yml", "name: sales");
+        for wt in [".claude/worktrees/x", ".claude/worktrees/fix-y"] {
+            write(root, &format!("{wt}/config.yml"), "databases: []");
+            write(
+                root,
+                &format!("{wt}/semantics/views/orders.view.yml"),
+                "name: orders",
+            );
+            write(
+                root,
+                &format!("{wt}/semantics/topics/sales.topic.yml"),
+                "name: sales",
+            );
+        }
+
+        let found = discover(root).unwrap();
+        let paths: Vec<_> = found.iter().map(|f| f.rel_path.as_str()).collect();
+
+        assert_eq!(
+            paths.iter().filter(|p| p.ends_with(".view.yml")).count(),
+            1,
+            "only the root view is discovered, so compile sees no duplicate; got {paths:?}"
+        );
+        assert!(
+            paths.iter().all(|p| !p.starts_with(".claude/")),
+            "nothing under .claude/worktrees/ is discovered; got {paths:?}"
         );
     }
 
