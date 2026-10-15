@@ -11,7 +11,7 @@ name: Skills reconcile
 #   table to $GITHUB_STEP_SUMMARY. Always exits 0 — a PR that edits a skill
 #   is expected to leave its card behind; the reconcile job catches it up.
 #
-# - `reconcile` (push to main touching the skills + weekly cron + manual):
+# - `reconcile` (after each Skills publish run + weekly cron + manual):
 #   drives anthropics/claude-code-action@v1 through detect → re-condense →
 #   record hash → re-sync templates → verify → open PR. Never auto-merges;
 #   the cards are opinionated prose and review-by-default is the design.
@@ -30,10 +30,14 @@ on:
   schedule:
     - cron: "0 10 * * 1" # Mon 10:00 UTC (safety net)
   workflow_dispatch:
-  push:
+  # After each publish, which runs on every merge to main that touches the skills.
+  # Not `push`: claude-code-action runs a prompt only on workflow_dispatch,
+  # repository_dispatch, schedule and workflow_run, and fails any other event with
+  # "Unsupported event type" before it reads one.
+  workflow_run:
+    workflows: ["Skills publish"]
+    types: [completed]
     branches: [main]
-    paths:
-      - "sdk/cli/skills/**"
   pull_request:
     paths:
       - "crates/agentic/builder/knowledge/**"

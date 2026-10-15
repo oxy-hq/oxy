@@ -80,8 +80,9 @@ longer exists, say).
 - on PRs that touch this directory, the sync scripts, or `sdk/cli/skills/`
   (informational `check` job — it never blocks; a skill edit that leaves a
   card behind is expected, and the reconcile job catches it up), and
-- on every merge to `main` that touches `sdk/cli/skills/` (plus a weekly
-  safety-net cron), via the `reconcile` job, which re-condenses the behind
+- after every merge to `main` that touches `sdk/cli/skills/` — it follows
+  the Skills publish run — plus a weekly safety-net cron, via the
+  `reconcile` job, which re-condenses the behind
   cards, re-syncs the templates, and opens a PR for human review.
 
 ## Why compile-time embedding
