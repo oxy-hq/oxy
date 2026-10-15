@@ -2,7 +2,7 @@
 source:
   - sdk/cli/skills/oxy-agents/SKILL.md
   - sdk/cli/skills/oxy-agents/references/quick-reference.md
-reconciled-hash: pending
+reconciled-hash: 9849ec17c0a8c3250a949c9116f1cb69b286ee03
 note: |
   Authored condensation of the platform skills listed above. Not auto-synced —
   scripts/sync-skills.sh only copies the verbatim YAML templates. Re-condense
@@ -12,222 +12,223 @@ note: |
 
 # Oxy `.agentic.yml` Builder Reference
 
-Agentic agents live in `*.agentic.yml` files. Each one is a multi-step FSM
-that turns a natural-language question into a grounded query, runs it, and
-explains the result. Reach for this format — not classic `.agent.yml` —
-when you want a chat-style agent backed by the semantic model.
+An Oxy agent is one file, `<name>.agentic.yml`. It configures a **fixed**
+pipeline that turns a question into a grounded query against the semantic
+model, runs it, checks the result and explains it. You configure the pipeline;
+you do not define its states or its tools.
 
-## When to use which agent file
+## There is one kind of agent
 
-| Need                                    | File               |
-| --------------------------------------- | ------------------ |
-| Chat over the semantic model            | `.agentic.yml`     |
-| One-shot tool-using agent (no FSM)      | `.agent.yml`       |
-| Deterministic multi-step pipeline       | `.automation.yml`  |
+- **`.agentic.yml` is the agent.** The classic `.agent.yml` format has been
+  removed — never create one or copy one from an old workspace.
+- **There is no `kind:` field.** Every `.agentic.yml` runs the same analytics
+  pipeline; a file named `app_builder.agentic.yml` is not special. Generating
+  apps, views or agent files is the Builder Agent (chat Build mode), which no
+  `.agentic.yml` configures.
+- **Automations are a different file** (`.automation.yml`; `.procedure.yml`
+  still works; `.workflow.yml` is no longer recognised). An agent can *run* an
+  automation in its context; it cannot *be* one.
+- **Instruction-only agents skip the pipeline.** `instructions:` with no
+  `databases:`, `context:` or `states:` is one LLM call that queries nothing.
 
-The filename stem becomes the agent_id (`analytics.agentic.yml` →
-`analytics`). Place the file at the project root or under any subdirectory.
+Use an agent for conversational questions over modelled data; a **verified
+query** (`.sql` with an `oxy:` header) when one question must always get the
+same SQL; an automation when the steps are fixed.
 
-## File shape
+## File
 
 ```yaml
-instructions: |                  # global system prompt, every state inherits
-  You are a revenue analytics assistant for Acme Corp.
-  Always report currency in USD and dates in ISO 8601.
-
-databases:                        # names from config.yml `databases:`
-  - warehouse
-
-context:                          # globs relative to this file
+instructions: |              # every LLM state's system prompt
+  You are a revenue analyst for Acme. Report currency in USD.
+timezone: America/New_York   # IANA; falls back to config.yml, then UTC
+databases: [warehouse]       # config.yml `databases:` names
+context:                     # globs relative to this file's directory
   - ./semantics/**/*.view.yml
   - ./semantics/**/*.topic.yml
-  - ./example_sql/*.sql
-  - ./docs/glossary.md
-  - ./procedures/**/*.procedure.yml
-
+  - ./verified/*.sql
+  - ./docs/*.md
 llm:
-  ref: claude-sonnet-4-6          # resolves vendor/key/model from config.yml
-  max_tokens: 8192
-  extended_thinking:              # UI-toggled preset, inherits the rest
-    model: claude-opus-4-6
-    thinking: adaptive
-
-thinking: adaptive                # global default; per-state can override
-
+  ref: claude                # a `name:` under config.yml `models:`
+  extended_thinking: { model: claude-opus-4-6, thinking: adaptive }
 states:
-  clarifying:   { ... }
-  specifying:   { ... }
-  solving:      { ... }
-  executing:    { ... }
-  interpreting: { ... }
-
-validation:
-  rules:
-    specified: []
-    solvable:  []
-    solved:    []
-
-semantic_engine:                  # OPTIONAL — Cube/Looker delegation
-  vendor: cube
-  base_url: https://cube.example.com
-  api_token: "${CUBE_API_TOKEN}"
+  clarifying:   { instructions: "..." }
+  interpreting: { thinking: disabled }
 ```
 
-## Pipeline states (fixed — DO NOT invent new state names)
+Minimal file: `llm: { ref: … }` plus `context:` globs for views and topics —
+enough when the views declare a `datasource`. Top-level keys: `instructions`,
+`timezone`, `databases`, `context`, `llm`, `thinking`, `states`, `validation`,
+`semantic_engine` — all optional. **Unknown keys are ignored silently at every
+level**, by the runtime and both validators, so a typo (`stats:`, `solve:`)
+silently drops the setting. Duplicate keys are a YAML parse error. File rules:
+`.agentic.yaml`, a path under a dot-directory / `build/` / `dist/` / `target/`
+/ `node_modules/`, or `.test.` in the name is not deployed to the cloud.
 
-| State          | Purpose                                | Notes                                   |
-| -------------- | -------------------------------------- | --------------------------------------- |
-| `clarifying`   | Triage the question, resolve metrics   | Cheap/fast model is usually right       |
-| `specifying`   | Ground intent into a query spec        | Resolves joins                          |
-| `solving`      | Generate SQL                           | **Skipped** when semantic model compiled the spec |
-| `executing`    | Run the query, run validators          | —                                       |
-| `interpreting` | Natural-language answer + chart        | Thinking usually disabled               |
-| `diagnosing`   | Back-edge entered when a validator fails | Internal — not directly configurable    |
+## How a question flows
 
-**Skipping & retries.** When `clarifying` produces an intent the semantic
-model can compile directly, `solving` is dynamically skipped — never write
-`solving` `instructions:` assuming the LLM authors SQL, because it may
-never see them. When `diagnosing` re-enters an upstream state, the retry
-generates fresh from the spec; it does not anchor on the previous attempt.
-
-Each `states.<name>` block accepts `instructions` (appended to — not
-replacing — the global prompt for that state), `thinking`, `max_retries`,
-and `model`. State keys must match a fixed name above; otherwise the
-override is silently ignored.
-
-## `llm:` fields
-
-| Field               | Default            | Notes                                                      |
-| ------------------- | ------------------ | ---------------------------------------------------------- |
-| `ref`               | —                  | Model entry from `config.yml`; vendor/key/base_url inherit |
-| `vendor`            | `anthropic`        | `anthropic` \| `openai` \| `openai_compat`                 |
-| `model`             | from `ref`         | Overrides the resolved model ID                            |
-| `api_key`           | env var            | Falls back to `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`       |
-| `base_url`          | provider default   | Anthropic proxy / OpenAI Responses base / compat root      |
-| `max_tokens`        | 4096               | Per-call output cap                                        |
-| `thinking`          | none               | Beats top-level `thinking:`                                |
-| `extended_thinking` | none               | UI-toggled `{ model, thinking }` preset                    |
-
-## `thinking:` forms (top-level OR per-state)
-
-```yaml
-thinking: adaptive                # shorthand
-thinking: disabled                # bare or quoted both work; never use `false`
-thinking: effort:low              # shorthand for { effort: low }
-thinking: { effort: medium }      # low | medium | high | xhigh | max
-thinking: { budget_tokens: 10000 }  # Claude 4.6 and earlier ONLY -- see below
+```
+clarifying → specifying → solving → executing → interpreting → done
+     ↑            ↑           ↑                        ↑
+     └──────── diagnosing (when a check fails) ────────┘
 ```
 
-**Write the form that says what you mean.** You do not have to match it to the
-model: the provider rewrites whatever it is handed into a shape the target
-accepts, warning once. What each form natively means --
+1. **clarifying** classifies the question (trend, comparison, breakdown,
+   single value, distribution, general inquiry, root cause, opportunity),
+   searches the catalog and automations, may ask the user. Early exits: a
+   general inquiry is answered directly; root cause / opportunity goes to
+   metric-tree and anomaly tools; a confident semantic query that compiles, or
+   a chosen verified query/automation, skips specifying and solving.
+2. **specifying** turns it into a semantic query; if that compiles, **solving
+   is skipped**.
+3. **solving** writes SQL only when the semantic model could not answer.
+4. **executing** runs the SQL (no LLM), then the result checks.
+5. **interpreting** writes the answer and picks a chart.
 
-- `adaptive` — the model decides when and how much (native 4.6+)
-- `{ effort: <level> }` — a depth hint, five levels (native 4.6+; `xhigh` 4.7+)
-- `{ budget_tokens: N }` — a hard token ceiling (native 3.7–4.6)
+Diagnosing: unresolved metric/join, empty result, compile error or bad SQL →
+specifying (fresh attempt); ambiguous column → clarifying; outlier, freshness
+gap or bad chart → interpreting, which answers and states the caveat.
 
--- and what happens outside that range:
+**Guidance every answer needs goes in the global `instructions:`,
+`clarifying` or `interpreting` — never only in `solving`**, which rarely runs
+on a well-modelled workspace.
 
-- `budget_tokens` on 4.7+ is sent as an effort level.
-- `adaptive` below 4.6 is sent as a mid-range thinking budget.
-- `effort` below 4.6 is sent as a thinking budget at that level.
-- `xhigh` below 4.7 is clamped to `high`; `max` is fine on 4.6.
+## Tools by state (fixed; there is no `tools:` key)
 
-Prefer `effort` on a current model — it is the graded control there. The
-conversions are coarse buckets, because a budget is a hard ceiling and effort is
-a depth hint, so the native form is still more precise where you know the model.
-Nothing below Claude 3.7 supports extended thinking at all, and no conversion
-helps there.
+| State | Tools |
+| --- | --- |
+| clarifying | `search_catalog`, `search_automations`, `propose_semantic_query`, `ask_user` |
+| root cause / opportunity | `explain_metric`, `find_opportunities`, `metric_sensitivity`, `predict_impact` (+ `list_anomalies`, `detect_anomalies`, `explain_anomaly` with anomaly monitoring) |
+| specifying | `search_catalog`, `sample_columns`, `ask_user`; with a semantic model `check_data_freshness`; without, `get_join_path`, `list_tables`, `describe_table` |
+| solving | `execute_preview` (candidate query, `LIMIT 5`) |
+| executing | none |
+| interpreting | `render_chart` |
 
-## Context globs by extension
+`search_automations` finds only automations and verified queries this agent's
+`context:` reaches. Root cause / opportunity needs a metric tree; metric-tree
+and anomaly tools are not offered in workspace previews or scheduled runs.
 
-| Pattern             | Where it goes                                       |
-| ------------------- | --------------------------------------------------- |
-| `*.view.yml`        | Semantic catalog                                    |
-| `*.topic.yml`       | Semantic catalog                                    |
-| `*.sql`             | Example queries injected into the Solving prompt    |
-| `*.md`              | Domain docs injected into Clarifying / Interpreting |
-| `*.procedure.yml`   | Indexed for the `search_procedures` tool            |
+## Fields
 
-Globs are resolved relative to the directory containing the `.agentic.yml`.
+**`instructions`** — persona, business conventions, which views/topics to
+prefer. Per-state `instructions` are **appended**, so don't repeat the global
+text there.
+
+**`databases`** — the agent queries exactly these plus every database its
+context references (a view's `datasource`/`data_source`, a verified query's
+`database:`, an automation task's `database:`). **No fallback to every
+config.yml database**; with none, the run fails `no databases configured`.
+
+**`context`** buckets by file name:
+
+| Matches | Becomes |
+| --- | --- |
+| `*.view.yml`, `*.topic.yml` | semantic catalog |
+| `*.sql` with an `oxy:` header | **verified query**, run verbatim when chosen |
+| `*.sql` without the header | SQL style examples in the solving prompt only |
+| `*.md` | domain notes for clarifying and interpreting |
+| `*.automation.yml`, `*.procedure.yml` | automations the agent may run |
+| anything else | ignored |
+
+```sql
+/*
+  oxy:
+    description: Monthly revenue by region   # used to match the question
+    database: warehouse
+*/
+SELECT ...
+```
+
+**`llm`** — `ref` names a config.yml model (vendor, key — a workspace secret
+in the cloud — and base URL come from it; prefer it). With neither `ref` nor
+`model`, the first config.yml model is used. A `ref` not in config.yml is
+**not** a load error: it falls back to a built-in Claude model and the
+server's `ANTHROPIC_API_KEY`. `model` alone skips config.yml (key from
+`api_key` or server env). `vendor`: `anthropic`, `open_ai` (Responses API),
+`open_ai_compat` (`/chat/completions`) — write these spellings; `oxyc validate`
+rejects `openai`/`openai_compat`. Google/Gemini is not supported. Leave
+`max_tokens` unset (default 4,096, or 16,384 / budget + 4,096 with thinking);
+a set value is used as-is and thinking counts against it.
+
+**`states`** honours `clarifying`, `specifying`, `solving`, `interpreting`.
+`executing` is accepted and does nothing; any other key (`solve`,
+`diagnosing`) is ignored. Each takes `instructions`, `thinking`, `model`
+(same provider as `llm:`) and `max_retries` — **tool-call rounds per visit**,
+after which the run pauses to ask the user whether to continue; not a
+failure-retry count. Defaults: specifying 5, solving 3, interpreting 5;
+clarifying's limit is fixed.
+
+**`semantic_engine`** — Cube (`base_url`, `api_token`) or Looker (`base_url`,
+`client_id`, `client_secret`) ahead of Oxy's semantic model. `${VAR}` reads
+the **server's environment**, not workspace secrets; an unset var or an
+unreachable engine at run start fails the run. Omit it normally.
+
+## Thinking
+
+Precedence: extended-thinking toggle → `states.<s>.thinking` → `llm.thinking`
+→ top-level `thinking` → state default (**adaptive for solving, disabled for
+everything else**). A global value replaces every default, so top-level
+`thinking: adaptive` makes every state think — prefer per-state settings.
+
+| Form | Meaning |
+| --- | --- |
+| `adaptive` | model decides |
+| `disabled` | off (bare or quoted; **never** `false`/`true` — parse error) |
+| `effort:high` / `{effort: high}` | `low`, `medium`, `high`, `xhigh`, `max`; unknown level → `medium` |
+| `{budget_tokens: N}` | hard ceiling, native Claude 3.7–4.6 |
+| any other string (`enabled`, `high`) | silently **disabled** |
+
+Anthropic: `adaptive`/`effort` native from 4.6 (`xhigh` from 4.7); 4.7+
+rejects `budget_tokens`, so Oxy sends the nearest effort and warns; older
+models get a budget, `xhigh` → `high`. OpenAI: `effort` → reasoning effort
+(`xhigh`/`max` → `high`), `adaptive` = model default, `budget_tokens` ignored.
+`open_ai_compat`: anything but `disabled` adds a chain-of-thought prompt.
+Write `effort` on current models. `llm.extended_thinking: {model, thinking}`
+replaces both in every state while the user's toggle is on; without it the
+toggle does nothing.
 
 ## Validation rules
 
-| Stage       | Available rule names                                                                                              |
-| ----------- | ----------------------------------------------------------------------------------------------------------------- |
-| `specified` | `metric_resolves`, `join_key_exists`, `filter_unambiguous`                                                        |
-| `solvable`  | `sql_syntax`, `tables_exist_in_catalog`, `spec_tables_present`, `column_refs_valid`, `timeseries_order_by_check`  |
-| `solved`    | `non_empty`, `shape_match`, `no_nan_inf`, `outlier_detection`, `timeseries_date_check`, `truncation_warning`, `null_ratio_check`, `duplicate_row_check` |
+Omit `validation:` and 15 default rules run. **Including it replaces the
+defaults**: only listed rules run (`enabled: false` skips one) and a stage
+with no list is unchecked — to turn one off, list every rule you still want.
+Entry: `- name: <rule>` plus params at the same level (misspelled params are
+ignored).
 
-Tunable params:
+| Stage | Rules (`*` = not default) |
+| --- | --- |
+| `specified` | `metric_resolves`, `join_key_exists`, `filter_unambiguous` |
+| `solvable` | `sql_syntax` (`dialect` accepted, parsing is generic), `tables_exist_in_catalog`, `spec_tables_present`, `column_refs_valid`, `timeseries_order_by_check` |
+| `solved` | `non_empty`, `truncation_warning`, `no_nan_inf`, `outlier_detection` (`threshold_sigma` 5.0, `min_rows` 4), `null_ratio_check` (`threshold` 0.5), `duplicate_row_check` (`max_duplicate_ratio` 0.1), `freshness_check` (`threshold_days` 1), `shape_match`*, `timeseries_date_check`* |
 
-| Rule                  | Params                                                                          |
-| --------------------- | ------------------------------------------------------------------------------- |
-| `sql_syntax`          | `dialect`: generic \| ansi \| postgresql \| mysql \| bigquery \| duckdb \| snowflake |
-| `outlier_detection`   | `threshold_sigma` (default `5.0`), `min_rows` (default `4`)                     |
-| `null_ratio_check`    | `threshold` (default `0.5`)                                                     |
-| `duplicate_row_check` | `max_duplicate_ratio` (default `0.1`)                                           |
+## Validate, run, test
 
-Omit the `validation:` section entirely to run every built-in rule with
-defaults. Listing rules disables the unlisted ones.
+- `oxyc validate --file <path>` (offline schema) and `oxy validate --file
+  <path>` (runtime parser) — use the builder's `validate_project` tool after
+  every edit. Both are **structural only**: they miss unknown keys, `llm.ref`,
+  `databases:`, globs, rule names, timezones and `${VAR}`.
+- The first full check is a run: `oxy agentic run <path> -q "<question>"`
+  (needs Oxy's Postgres; `--json`, `--thinking-mode extended_thinking`).
+- `oxy test <file>.test.yml` runs LLM-judged evals (`target:`, `settings:
+  {runs, concurrency, judge_model}`, `cases: [{prompt, expected, tags}]`).
+- **`oxy build` does not check agents** (embeddings + integration sync).
+- A JSON schema *is* published for `.agentic.yml`; an editor header on line 1
+  is optional — preserve it if present:
+  `# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/agentic.json`.
 
-## `semantic_engine:` (optional Cube / Looker delegation)
+## Pitfalls
 
-| Field                           | Cube       | Looker     |
-| ------------------------------- | ---------- | ---------- |
-| `vendor`                        | `cube`     | `looker`   |
-| `base_url`                      | required   | required   |
-| `api_token`                     | required   | —          |
-| `client_id` / `client_secret`   | —          | required   |
-
-`${VAR}` env-var interpolation is supported. A missing env var fails fast
-at startup. Omit the section entirely to use Oxy's bundled semantic model
-(the default and most common case).
-
-## Authoring patterns
-
-1. **State the persona once, in the global `instructions:` block.** Per-state
-   `instructions:` are appended on top — keep them tactical (dialect quirks,
-   tie-breaking rules, output conventions) not a full re-statement of who
-   the agent is.
-2. **Enumerate the topics the agent can see.** A short list of `topic` /
-   `view` names with a one-line description of each dramatically cuts
-   hallucinated metric/dimension references.
-3. **Use a cheap model for `clarifying` and a powerful one for `solving`.**
-   The Solving stage benefits from extended thinking; Clarifying does not.
-4. **Use `thinking: disabled`, never `thinking: false`.** Both bare
-   `disabled` (parsed as a YAML identifier) and quoted `"disabled"` are
-   accepted at runtime; a bare boolean `false` is rejected.
-5. **Don't add `# yaml-language-server:` schema comments.** Oxy publishes
-   no canonical schema URL for `.agentic.yml`, so the directive points at
-   nothing actionable and creates noise in IDEs that flag unknown
-   directives. Each top-level key (`llm`, `databases`, `context`,
-   `states`, …) must appear at most once per file — duplicate keys cause
-   the backend to reject the file.
-
-## Common errors → fix
-
-| Error                                      | Likely fix                                                |
-| ------------------------------------------ | --------------------------------------------------------- |
-| `no databases configured`                  | Add a connector name to `databases:`                      |
-| `unsupported connector type: '…'`          | Match the name to a `config.yml` `databases:` entry       |
-| `ambiguous table: '…'`                     | Drop one DB, or qualify the view's `data_source`          |
-| `environment variable '${X}' is not set`   | Export the env var before launch                          |
-| `unsupported semantic engine vendor: '…'`  | Use `cube` or `looker`, or omit `semantic_engine`         |
-| `validation config error: unknown rule …`  | Use a rule name from the validation tables above          |
-| `YAML parse error: duplicate key`          | Each top-level key must appear exactly once               |
-| State override silently ignored            | The state key must be one of the five fixed names         |
-| `thinking: false` rejected                 | Use `thinking: disabled` (bare or quoted), never `false`  |
-
-## Validation workflow
-
-```bash
-oxy validate --file path/to/your.agentic.yml   # structural parse only
-oxy validate                                   # all configs in the project
-oxy build                                      # compile semantic model
-```
-
-After authoring or editing an `.agentic.yml`, run `oxy validate --file …`
-on the file before doing anything else; the structural parse catches the
-majority of mistakes (missing `databases`, malformed `thinking`, unknown
-fields).
+| Symptom | Fix |
+| --- | --- |
+| `no databases configured` | name a database, or give context views a `datasource` |
+| agent can't see a table | add its database to `databases:` |
+| wrong model / auth error on first question | `llm.ref` isn't a config.yml `name:` (silent Claude fallback), or the key secret is unset |
+| "does not have a metric tree configured" | define a metric tree, or ask for the numbers directly |
+| `solving` instructions never apply | move them to global `instructions:` or `clarifying` |
+| verified query never chosen | add the `oxy:` header with a `description`; check the glob |
+| state override does nothing | misspelled key, `executing`, or `clarifying.max_retries` |
+| thinking silently off | unknown string like `enabled` — use a listed form |
+| a default check stopped running | a `validation:` section replaced the defaults |
+| `validation config error: unknown … rule` | fix the name or move it to its stage |
+| `invalid timezone '…'` | use an IANA name (`UTC`, `America/New_York`) |
+| `environment variable '${X}' … is not set` | set it in the server environment |
+| agent missing in the cloud, fine locally | `.agentic.yaml`, excluded path, or `.test.` in the name |

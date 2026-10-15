@@ -2,7 +2,7 @@
 source:
   - sdk/cli/skills/oxy-data-apps/SKILL.md
   - sdk/cli/skills/oxy-data-apps/references/quick-reference.md
-reconciled-hash: pending
+reconciled-hash: 246b6d44626fbbeb50b1d377e5dab234f0f670b2
 note: |
   Authored condensation of the platform skills listed above. Not auto-synced —
   scripts/sync-skills.sh only copies the verbatim YAML templates. Re-condense
@@ -10,703 +10,270 @@ note: |
   scripts/check-skills-drift.sh flags a changed source and prints the hash to record.
 ---
 
-# Oxy App Builder Reference
+# Oxy Data App Reference
 
-An Oxy data app is a `*.app.yml` file that pairs **tasks** (operations that
-produce tabular or text output) with **displays** (visualizations that render
-that output). Mental model: `task -> output -> display`.
+A **Data App** is one file, `<name>.app.yml`: **tasks** fetch data,
+**displays** render it as tables, charts and markdown, optional **controls**
+filter it live. Oxy renders the file directly — no build step, no front-end
+code.
 
-> **Two app models — don't confuse them.** This card covers the declarative
-> `*.app.yml` app (tasks + displays, rendered by `oxy serve --enterprise`). The
-> other model is a **custom-code (React/Vite) app** identified by an
-> **`oxy-app.json`** manifest at the app root and deployed with `oxyc publish` —
-> see "## Custom-code apps (`oxy-app.json`)" at the end. `oxy-app.json` is the
-> deploy manifest for that path, **not** an alternative to `*.app.yml`; never
-> claim "there is no oxy-app.json." Build a `*.app.yml` for a dashboard; build
-> the custom-code path for bespoke UI beyond tables/charts/markdown.
+> **Two app models — don't confuse them.** A **custom app** is a
+> React/TypeScript/Vite bundle identified by an **`oxy-app.json`** manifest
+> and shipped with `oxyc publish` (the `oxy-custom-apps` platform skill covers
+> it). `oxy-app.json` is that product's manifest, not an alternative to
+> `.app.yml` — never claim "there is no oxy-app.json". Build a `.app.yml` when
+> the page is tables, charts and markdown; a custom app when the UI is bespoke.
 
-## File shape
-
-```yaml
-name: snake_case_app_name            # optional, but recommended
-title: "Human-Friendly App Title"    # recommended — surfaces in app
-                                     # listings; falls back to filename
-description: |                        # optional, multi-line OK
-  What this app shows.
-
-controls:                             # optional, interactive widgets
-  - name: region                      # see "## Interactive controls"
-    type: select
-    options: [All, North, South]
-    default: "All"
-
-tasks:                                # REQUIRED, at least one entry
-  - name: task_name                   # unique, snake_case
-    type: semantic_query              # or execute_sql | workflow | agent
-    mode: server                      # optional, see "## Task execution mode"
-    # ... type-specific fields
-
-display:                              # REQUIRED, at least one entry
-  - type: table
-    title: "Section Title"            # optional
-    data: task_name                   # references a task by name
-
-published: false                      # optional
-```
-
-`AppConfig` uses `deny_unknown_fields`. The only accepted top-level keys
-are: `name`, `title`, `description`, `controls`, `tasks`, `display`,
-`published`. Anything else fails validation.
-
-## Task types
-
-### `semantic_query` — preferred when the semantic model covers the data
+## File
 
 ```yaml
-- name: revenue_by_month
-  type: semantic_query
-  topic: sales_mrr                    # must match a *.topic.yml name
-  dimensions:
-    - sales.month                     # view.dimension
-  measures:
-    - sales.total_revenue
-    - sales.order_count
-  filters:                            # optional
-    - field: sales.year
-      op: eq                          # eq | neq | gt | gte | lt | lte | in
-      value: 2024
-  orders:                             # optional
-    - field: sales.month
-      direction: asc                  # asc | desc
-```
-
-**Column naming:** semantic query outputs use `view__field` (double underscore)
-in display references. So `dimensions: [sales.month]` and
-`measures: [sales.total_revenue]` are referenced as `x: sales__month` and
-`y: sales__total_revenue`.
-
-**Time-dimension granularity suffix.** When a `time_dimensions` entry sets
-`granularity:`, the output column gets an extra `__<granularity>` suffix
-appended. So:
-
-```yaml
-time_dimensions:
-  - dimension: orders.created_date
-    granularity: month
-```
-
-produces an output column literally named `orders__created_date__month`, and
-chart `x:` must reference it with the suffix:
-`x: orders__created_date__month` (NOT `x: orders__created_date`). Omitting
-the suffix produces a "column not found" Binder error in the in-browser
-DuckDB chart engine and the chart silently fails to render.
-
-**Entity labeling — never put a raw UUID/FK on a chart axis.** When the
-primary entity's `key:` is an opaque ID (`guid`, `restaurant_id`,
-`customer_id`, `order_id`, …), do NOT use that field as the chart `x:`,
-`name:`, or table-row label — the dashboard will render uninformative UUIDs.
-Two ways to surface a human-readable label instead:
-
-1. **Preferred — semantic_query via foreign entity.** If the joined view
-   exposes a name dimension (e.g. `restaurants.location_name`), make sure
-   the FK side declares the joined view as a `foreign` entity (see
-   semantic-layer card), and pull the name through the topic:
-   `dimensions: [restaurants.location_name]` instead of
-   `dimensions: [orders.restaurant_id]`. Output column is then
-   `restaurants__location_name`.
-2. **Fallback — execute_sql with a JOIN.** When semantic_query can't reach
-   the name (no foreign entity, multi-view topic doesn't exist), use
-   `execute_sql` with an explicit JOIN to the lookup view and `SELECT`
-   the name column directly.
-
-If neither path is available (no name field exists in any related view),
-fall back to the FK but warn in the markdown header that rows are keyed
-by ID — never silently render UUIDs as a chart axis.
-
-### `execute_sql` — fallback for custom SQL
-
-```yaml
-- name: sales_by_region
-  type: execute_sql
-  database: clickhouse                # clickhouse | postgres | bigquery | local
-  sql_query: |
-    SELECT region, SUM(amount) AS total_sales
-    FROM sales
-    GROUP BY region
-```
-
-Or with a file reference:
-
-```yaml
-- name: sales_report
-  type: execute_sql
-  database: clickhouse
-  sql_file: queries/sales_report.sql
-```
-
-Column names come from the SELECT aliases (`x: region`, `y: total_sales`).
-
-### `workflow` — invoke a sub-workflow
-
-```yaml
-- name: ops
-  type: workflow
-  src: workflows/operations.automation.yml
-  variables:
-    period: "2024-Q4"
-```
-
-Reference the inner task outputs with dot notation: `data: ops.location_summary`.
-
-### `agent` — AI-generated narrative
-
-```yaml
-- name: insights
-  type: agent
-  agent_ref: analyst.agent.yml
-  inputs:                             # previous task names passed as context
-    - revenue_data
-  prompt: |
-    Summarize the revenue data in 3 bullet points.
-```
-
-Reference the agent's text output in markdown via `{{insights}}`.
-
-## Display types
-
-### `markdown`
-
-```yaml
-- type: markdown
-  title: "AI Insights"                # optional
-  content: |
-    # Header
-    Free-form markdown. Agent outputs can be interpolated: {{agent_task_name}}.
-```
-
-### `table`
-
-```yaml
-- type: table
-  title: "Regional Details"           # optional
-  data: task_name                     # REQUIRED
-```
-
-### `line_chart`
-
-```yaml
-- type: line_chart
-  title: "Revenue Over Time"
-  data: monthly_revenue
-  x: month                            # REQUIRED
-  y: revenue                          # REQUIRED
-  x_axis_label: "Month"               # optional
-  y_axis_label: "Revenue ($)"         # optional
-  series: region                      # optional; splits into multiple lines
-```
-
-### `bar_chart`
-
-```yaml
-- type: bar_chart
-  title: "Sales by Region"
-  data: regional_sales
-  x: region                           # categorical
-  y: total_sales                      # numeric
-  series: product_category            # optional; grouped/stacked bars
-```
-
-### `pie_chart`
-
-```yaml
-- type: pie_chart
-  title: "Market Share"
-  data: market_data
-  name: company                       # label column
-  value: market_share                 # numeric column
-```
-
-### `row` — side-by-side layout
-
-```yaml
-- type: row
-  columns: 2                          # optional; defaults to len(children). >= 1.
-  children:                            # required, list of display blocks
-    - type: bar_chart
-      data: by_category
-      x: category
-      y: revenue
-    - type: pie_chart
-      data: by_region
-      name: region
-      value: revenue
-```
-
-`children` may contain any display block (charts, tables, markdown, or
-`control` blocks). Use rows to place paired charts or KPI tables next
-to each other.
-
-## Interactive controls
-
-Controls are widgets (dropdown / date picker / on-off toggle) rendered
-as a bar above the dashboard. Changing a control re-runs every task
-whose SQL references it via `{{ controls.<name> }}` Jinja.
-
-### Three widget kinds
-
-| Widget kind | Renders as     | Value type            | Use for                     |
-| ----------- | -------------- | --------------------- | --------------------------- |
-| `select`    | Dropdown       | string                | Pick one option from a list |
-| `date`      | Date picker    | string `YYYY-MM-DD`   | Pick a date                 |
-| `toggle`    | On/off switch  | boolean               | Yes/no filters              |
-
-### Two declaration forms — pick one, do not mix
-
-**Inline `- type: control` inside `display:` (preferred).** The widget
-kind uses the key **`control_type:`**, not `type:` — `type:` is already
-consumed by the display discriminant.
-
-```yaml
-display:
-  - type: control
-    name: region                      # -> {{ controls.region }}
-    control_type: select              # control_type, NOT type
-    label: Region                     # optional, defaults to name
-    options: [All, North, South]
-    default: "All"
-
-  - type: control
-    name: start_date
-    control_type: date
-    default: "2024-01-01"
-
-  - type: control
-    name: holidays_only
-    control_type: toggle
-    default: false
-```
-
-**Top-level `controls:` array (alternative).** Each entry uses plain
-`type:` for the widget kind:
-
-```yaml
-controls:
-  - name: region
-    type: select                      # plain `type:` at top level
-    options: [All, North, South]
-    default: "All"
-```
-
-The two forms are merged at load time — declaring the same control in
-both duplicates the widget.
-
-> **#1 controls mistake.** Inside `- type: control`, writing
-> `type: select` instead of `control_type: select` is invalid. The
-> display-form key is `control_type:`; the top-level-array form key is
-> `type:`. They are not interchangeable.
-
-### Control fields
-
-| Field          | Required | Applies to | Notes                                                            |
-| -------------- | -------- | ---------- | ---------------------------------------------------------------- |
-| `name`         | yes      | all        | snake_case; referenced as `{{ controls.<name> }}`                |
-| `control_type` | yes      | inline     | `select` \| `date` \| `toggle`. Top-level array uses `type:`.    |
-| `label`        | no       | all        | UI label; defaults to `name`.                                    |
-| `default`      | no       | all        | Initial value. Quote strings; toggle uses `true`/`false`. Jinja OK. |
-| `options`      | no       | select     | Static list of dropdown choices.                                 |
-| `source`       | no       | select     | Task name whose first column populates the dropdown.             |
-
-Use `source:` OR `options:`, not both.
-
-### Populating a `select` from data
-
-```yaml
-tasks:
-  - name: store_list                  # feeds the dropdown
+title: Sales Overview            # listings; falls back to the filename
+description: Revenue KPIs and the monthly trend.
+published: true                  # default false = hidden from the sidebar
+tasks:                           # required, ≥ 1
+  - name: monthly_revenue
     type: execute_sql
-    database: local
+    database: warehouse          # a config.yml database name
     sql_query: |
-      SELECT 'All' AS Store
-      UNION ALL
-      SELECT DISTINCT CAST(Store AS VARCHAR) FROM 'sales.csv' ORDER BY Store
-
-display:
-  - type: control
-    name: store
-    control_type: select
-    source: store_list                # use `source:`, NOT `options:`
-    default: "All"
+      SELECT DATE_TRUNC('month', order_date) AS month, SUM(amount) AS revenue
+      FROM orders GROUP BY 1 ORDER BY 1
+display:                         # required, ≥ 1
+  - type: line_chart
+    title: Revenue by month
+    data: monthly_revenue
+    x: month
+    y: revenue
+    y_format: currency
 ```
 
-The dropdown can't be empty, so include the `All` sentinel row yourself.
+- **Top-level keys are fixed:** `title`, `description`, `controls`, `tasks`,
+  `display`, `published`. Anything else is rejected.
+- **Leave `name:` out** — the filename is the name (`sales.app.yml` →
+  `sales`); `oxyc validate` reports `name` as an unknown field.
+- **Location:** any `**/*.app.yml` except under a dot-directory, `target`,
+  `node_modules`, `dist` or `build`, and never with `.test.` in the name —
+  those paths are skipped and the app silently does not exist.
+- **`published` defaults to `false`** = hidden from the sidebar (authors still
+  see it in the IDE). "Works for me but nobody can find it" is this line.
 
-### Referencing controls in SQL
+## Tasks
 
-```sql
-SELECT region, SUM(revenue) AS total
-FROM sales
-WHERE sale_date >= {{ controls.start_date | sqlquote }}
-  AND ({{ controls.region | sqlquote }} = 'All'
-       OR region = {{ controls.region | sqlquote }})
-  {% if controls.holidays_only %}AND period = 'Holiday'{% endif %}
-GROUP BY region
-```
+Every task has a unique `name` (letter first; letters, digits, underscores)
+and a `type`. Use `execute_sql` and `semantic_query`.
 
-Rules — the agent gets these wrong:
-
-1. **Pipe every string/date value through `| sqlquote`.** It wraps in
-   single quotes and escapes the value the way the task's `database` reads
-   a literal (`O'Brien` → `'O''Brien'` on DuckDB and Postgres, `'O\'Brien'`
-   on BigQuery; a backslash is doubled on ClickHouse, MySQL, Snowflake,
-   Redshift and BigQuery). Use it only inside an `execute_sql` task's SQL
-   or `variables:` — anywhere else no database is known, and a value
-   holding a quote or a backslash fails the render instead of being guessed.
-2. **Never add your own quotes around a `sqlquote` value.**
-   `'{{ controls.x | sqlquote }}'` produces `''value''` — broken SQL.
-3. **Optional-filter idiom.** A `select` can't be empty, so use the
-   `All` sentinel:
-   `({{ controls.x | sqlquote }} = 'All' OR col = {{ controls.x | sqlquote }})`.
-4. **Toggle filters inside `{% if %}`** —
-   `{% if controls.flag %}AND ...{% endif %}` (no `else` clause).
-5. **Date values are strings.** Compare directly
-   (`col >= {{ controls.d | sqlquote }}`) or `TRY_CAST(... AS DATE)`.
-
-### Client-mode Jinja is intentionally minimal
-
-Client-mode tasks re-run in the browser's DuckDB WASM engine, which
-understands **only these four Jinja forms**:
-
-- `{{ controls.x }}` — raw substitution
-- `{{ controls.x | sqlquote }}` — quoted SQL string literal
-- `{{ controls.x | default('v') }}` — substitution with fallback
-- `{% if controls.x %}...{% endif %}` — truthy-only conditional
-
-Anything else — `{% for %}` loops, `{% if a == b %}` comparisons,
-`{% else %}` / `{% elif %}`, other filters — breaks the live re-run.
-Put comparison logic in SQL (`CASE`, `OR`), not in Jinja.
-
-`default:` and `options:` may use Jinja evaluated once at app load,
-most usefully `now()`:
+### `semantic_query` — prefer it when a matching topic exists
 
 ```yaml
-- type: control
-  name: year
-  control_type: select
-  options: ["All", "{{ now(fmt='%Y') }}", "{{ now(fmt='%Y') | int - 1 }}"]
-  default: "All"
+- name: revenue_trend
+  type: semantic_query
+  topic: sales
+  measures: [orders.total_revenue]
+  dimensions: [stores.store_name]
+  time_dimensions:
+    - dimension: orders.order_date
+      granularity: month          # year|quarter|month|week|day|hour|minute|second
+  filters:
+    - field: orders.order_date
+      op: gte                     # eq neq gt gte lt lte → `value`
+      value: "2024-01-01"         # in / not_in → `values: [...]`
+  orders:                         # in_date_range / not_in_date_range → `from`, `to`
+    - field: orders.order_date
+      direction: asc
+  limit: 500                      # also `offset`
 ```
 
-## Task execution mode (`mode`)
+- **Output columns are `view__field`** (`orders__total_revenue`,
+  `stores__store_name`); with a granularity, one more suffix:
+  `orders__order_date__month`. Reference exactly those from displays or the
+  chart fails to bind its column.
+- **Controls do not reach a `semantic_query`** — `{{ controls.x }}` is not
+  rendered there. A filter that must follow a control needs `execute_sql`.
 
-Every task takes an optional `mode:` — `client` (default) or `server` —
-that controls how it re-runs when a control changes:
-
-| `mode`             | Re-runs on            | Use when                                                |
-| ------------------ | --------------------- | ------------------------------------------------------- |
-| `client` (default) | Browser DuckDB WASM   | `execute_sql` + inline `sql_query` + `database: local`  |
-| `server`           | Server                | External warehouse, `sql_file:`, workflow/semantic/agent |
+### `execute_sql`
 
 ```yaml
-- name: revenue
+- name: by_region
   type: execute_sql
-  database: clickhouse
-  mode: server                        # external DB -> server mode
+  database: warehouse
   sql_query: |
-    SELECT ... WHERE store = {{ controls.store | sqlquote }}
+    SELECT region, SUM(amount) AS total FROM orders GROUP BY region ORDER BY total DESC
 ```
 
-Tasks against non-local databases are forced to server mode regardless
-of the YAML, so **when in doubt set `mode: server`** — it always works.
-For local-DuckDB apps with inline SQL, leave `mode` unset.
+- `sql_query` (inline) **or** `sql_file` (workspace-relative `.sql`, always
+  server-side). Optional `variables:` map is available to the template.
+- Output columns are the `SELECT` aliases. Results cap at **10,000 rows** —
+  aggregate in SQL, never ship raw rows to a chart.
 
-## SQL dialect notes
+### Other task types — don't
 
-When you author or profile SQL inside an `execute_sql` task — or when
-you ask the warehouse for shape/distribution stats before picking
-fields — pick the right dialect for the configured database. The
-common gotchas:
+- **`type: agent` does not work** in a Data App: it validates, then fails
+  with `agent step '…' requires an InlineAgentRunner`. For AI commentary,
+  point people at chat with an `.agentic.yml` agent.
+- **`type: workflow`** (`src: automations/x.automation.yml`, `variables:`)
+  returns **one text value**, so `data: report.some_step` passes validation
+  and renders nothing. Put the queries in the app instead.
+- **`type: airway`** cannot run in an app. A misspelled `type:` passes
+  `oxy validate` and fails at run time with `unknown task type`.
 
-| Dialect    | `DATE_TRUNC` form                                  | Stddev fn                |
-| ---------- | -------------------------------------------------- | ------------------------ |
-| BigQuery   | `DATE_TRUNC(<col>, MONTH)` (column first, no quotes) | `STDDEV(<col>)`          |
-| Snowflake  | `DATE_TRUNC('month', <col>)`                       | `STDDEV(<col>)`          |
-| Postgres   | `DATE_TRUNC('month', <col>)`                       | `STDDEV(<col>)`          |
-| DuckDB     | `DATE_TRUNC('month', <col>)`                       | `STDDEV(<col>)`          |
-| ClickHouse | `toStartOfMonth(<col>)`                            | `stddevPop(<col>)` (lowercase) |
+## Displays
 
-Other places `.app.yml` SQL diverges across dialects:
+Rendered top to bottom; a block that fails to parse becomes one error card.
 
-| Concern             | Postgres / DuckDB            | Snowflake               | BigQuery                          | ClickHouse / MySQL    |
-| ------------------- | ---------------------------- | ----------------------- | --------------------------------- | --------------------- |
-| Identifier quoting  | `"col"`                      | `"col"`                 | `` `col` ``                       | `` `col` `` / unquoted |
-| Cast to date        | `CAST(x AS DATE)`, `x::date` | `CAST(x AS DATE)`       | `CAST(x AS DATE)`                 | `toDate(x)`           |
-| Date arithmetic     | `d + INTERVAL '1 day'`       | `DATEADD(day, 1, d)`    | `DATE_ADD(d, INTERVAL 1 DAY)`     | `d + INTERVAL 1 DAY`  |
+| `type` | Required | Optional |
+| --- | --- | --- |
+| `markdown` | `content` | — (a `title:` is silently ignored) |
+| `table` | `data` | `title`, `formats: { column: currency\|percent\|number }` |
+| `line_chart` | `data`, `x`, `y` | `title`, `series`, `x_axis_label`, `y_axis_label`, `y_format` |
+| `bar_chart` | `data`, `x`, `y` | `title`, `series`, `y_format` (axis labels silently ignored) |
+| `pie_chart` | `data`, `name`, `value` | `title`, `value_format` |
+| `row` | `children` (displays only) | `columns` (≥ 1; default = number of children) |
 
-## Profiling template
+- `data:` names a task. `series:` splits a chart per value of that column.
+- Formats: `currency` (USD), `percent` (value already 0–100, not a ratio),
+  `number` (thousands separators).
+- `markdown` `content` is a template: `{{ task_name }}` inserts a text result
+  (a table renders as a JSON code block). Put headings in `content`.
+- **`row` children are displays, never controls** — a control inside a row
+  is not registered and does not render.
+- **Labels, not IDs.** Never put an opaque key (`customer_id`, a UUID) on an
+  axis, a pie `name:`, or as a table's only label. Pull a readable name
+  through the semantic model (a foreign entity → the joined view's name
+  dimension, e.g. `stores__store_name`; see the semantic-layer card) or an
+  explicit `JOIN` in `execute_sql`. If none exists, keep the ID and say so in
+  a markdown note.
 
-Before committing to a measure or entity for a chart or ranked table,
-profile the underlying data so you don't ship a flat-line trend or a
-top-10 with one row in it. One consolidated SELECT is enough:
+## Controls
+
+| Kind | Widget | Value |
+| --- | --- | --- |
+| `select` | dropdown | string |
+| `date` | date picker | string `YYYY-MM-DD` |
+| `toggle` | on/off | boolean |
+
+Three equivalent declaration places — **pick one per app**; they merge, so a
+control declared twice renders twice:
+
+```yaml
+display:
+  - type: control              # 1. inline (recommended): kind is `control_type:`
+    name: region
+    control_type: select       # NOT `type:` — `type: control` took that key
+    label: Region
+    options: [All, North, South]
+    default: All
+  - type: controls             # 2. inline group: items use plain `type:`
+    items:
+      - { name: start_date, type: date, default: "2024-01-01" }
+controls:                      # 3. top-level array: items use plain `type:`
+  - { name: holidays_only, type: toggle, default: false }
+```
+
+Fields: `name` (read as `controls.<name>`), the kind, `label`, `default`, and
+`options` (static) **or** `source` (a task whose **first column** fills the
+dropdown — include an `All` sentinel row in that query yourself). `default:`
+and `options:` may be Jinja rendered once at load
+(`"{{ now(fmt='%Y-%m-%d') }}"`). An empty viewer value falls back to the
+default; a value for an undeclared control is dropped.
+
+**Using them in SQL** (`execute_sql` only):
 
 ```sql
-SELECT
-  COUNT(*) AS rows,
-  COUNT(DISTINCT <entity_expr>) AS entity_card,
-  MIN(<time_expr>) AS min_date, MAX(<time_expr>) AS max_date,
-  COUNT(DISTINCT DATE_TRUNC('month', <time_expr>)) AS month_count,
-  MIN(<measure_expr>) AS min_val, MAX(<measure_expr>) AS max_val,
-  STDDEV(<measure_expr>) AS measure_stddev
+WHERE sale_date >= {{ controls.start_date | sqlquote }}
+  AND ({{ controls.region | sqlquote }} = 'All' OR region = {{ controls.region | sqlquote }})
+  {% if controls.holidays_only %}AND period = 'Holiday'{% endif %}
+```
+
+1. Pipe every string and date through `| sqlquote` (adds and escapes quotes).
+2. **Never add quotes around it** — `'{{ controls.x | sqlquote }}'` → `''value''`.
+3. Optional filters use the `All` sentinel; a `select` always has a value.
+4. Toggles go in `{% if controls.flag %}…{% endif %}`.
+5. Dates are strings — compare directly or `CAST(… AS DATE)`.
+
+**`mode`:** `client` (default) re-runs in the browser's DuckDB only when
+**every** task feeding a display is inline `execute_sql` on a **local DuckDB**
+database (quoted files or `VALUES`); each runs alone, so one task can't read
+another's result. Everything else — warehouses, DuckLake, `sql_file`,
+`semantic_query` — runs on the **server** automatically; `mode: server` is
+always safe. The browser understands only `{{ controls.x }}`,
+`{{ controls.x | sqlquote }}`, `{{ controls.x | default('v') }}` and
+`{% if controls.x %}…{% endif %}`; anything else (`{% else %}`, loops,
+comparisons) falls back to the server for the rest of the session — still
+works, slower. Put comparison logic in SQL (`CASE`, `OR`).
+
+## SQL dialects and profiling
+
+| Dialect | Month bucket | Std-dev | Notes |
+| --- | --- | --- | --- |
+| BigQuery | `DATE_TRUNC(col, MONTH)` | `STDDEV(col)` | backtick identifiers; `DATE_ADD(d, INTERVAL 1 DAY)` |
+| Snowflake | `DATE_TRUNC('month', col)` | `STDDEV(col)` | `"col"` identifiers |
+| Postgres | `DATE_TRUNC('month', col)` | `STDDEV(col)` | `x::date` works here only |
+| DuckDB | `DATE_TRUNC('month', col)` | `STDDEV(col)` | `INTERVAL '1 day'` |
+| ClickHouse | `toStartOfMonth(col)` | `stddevPop(col)` | functions are case-sensitive |
+
+`CAST(x AS DATE)` is the portable cast. **Profile before charting** a trend
+or ranking — one query per candidate table, with the view's real `expr:`
+strings (never guessed columns):
+
+```sql
+SELECT COUNT(*) AS row_count, COUNT(DISTINCT <entity_expr>) AS entity_count,
+       MIN(<time_expr>) AS min_date, MAX(<time_expr>) AS max_date,
+       COUNT(DISTINCT DATE_TRUNC('month', <time_expr>)) AS month_count,
+       MIN(<measure_expr>) AS min_val, MAX(<measure_expr>) AS max_val,
+       STDDEV(<measure_expr>) AS measure_stddev
 FROM <table>
 ```
 
-Substitute `<entity_expr>`, `<time_expr>`, `<measure_expr>`, and
-`<table>` with the view's actual `expr:` strings — never guess column
-names. Apply the dialect substitutions from the table above for
-`DATE_TRUNC` and `STDDEV` when the warehouse is BigQuery or
-ClickHouse.
+Worth charting when `row_count ≥ 100`, `month_count ≥ 3` (trend),
+`measure_stddev > 0` (not a flat line), `entity_count` 5–500 (top-N). If it
+fails, simplify once (drop `STDDEV`, swap the date function); if it fails
+again, drop that chart rather than ship a misleading one.
 
-A topic is fit for ranking and trend visualizations when:
+## Building and validating
 
-- `rows ≥ 100`,
-- `month_count ≥ 3` (enough time for a meaningful trend),
-- `measure_stddev > 0` (not a flat measure that draws as a horizontal
-  line at one value),
-- `entity_card` is between 5 and 500 (top/bottom-N actually differ).
+For a new app, plan first and confirm it with the user (`App`, `Data`,
+`Tasks: name → columns`, `Displays: type (data: task)`). Start from the
+template, match the dialect, alias every column, `ORDER BY` what a chart
+draws. Editing: read the file, say what it does, make the smallest change in
+its existing style.
 
-## Failure recovery
+- `validate_project` / `oxyc validate --file` — schema: unknown keys, wrong
+  `type`, `type:` vs `control_type:`. `oxy validate --file` also checks each
+  `database:` exists and each `data:` names a task. **Neither runs SQL**,
+  checks `{{ controls.x }}` against declared controls, or checks `source:`.
+- Locally, apps open via `oxy start --enterprise` in the IDE.
 
-Profiling queries fail mid-build for routine reasons — dialect
-mismatch, type-cast errors, an aggregation function the warehouse
-doesn't expose. The recovery rule is:
+### Smoke-test the app (do this before declaring done)
 
-1. **Simplify and retry once** — drop `STDDEV`, drop `month_count`, or
-   replace `DATE_TRUNC` with the dialect's equivalent. At most two
-   attempts per topic in total.
-2. **Skip the topic on the second failure** — never loop on the same
-   failing query. Move on to the next candidate; if none qualify,
-   omit the affected block entirely rather than ship a misleading
-   chart.
+Validation misses SQL that *parses* but doesn't *run* on the target warehouse
+— the most common failure is a new app that opens as a blank dashboard. After
+every write or edit to a `.app.yml`, call `run_app(file_path, params_json)`
+when available — it runs the same path as the dashboard's first load and
+returns a per-task summary. `params_json: "{}"` exercises control defaults;
+pass real values to test non-default behaviour. Without `run_app`, run each
+task manually: `semantic_query` with the same topic/measures/dimensions,
+`execute_sql` with the rendered SQL against the same `database`.
 
-This rule applies anywhere in `.app.yml` authoring where you query
-the warehouse before committing layout decisions, not just the
-onboarding flow.
+**Fix once, then stop:** if a task fails, read the error and make **one**
+targeted `edit_file` (restate a `JOIN … ON`, swap a function for the
+dialect's equivalent, drop a measure that won't resolve), re-run once, and if
+it still fails report the error verbatim — don't loop on guesses. This is
+non-negotiable for onboarding apps (the user can't fix the file before
+opening it); for chat-builder edits, smoke-test whenever warehouse tools are
+reachable.
 
-## Common patterns
+## Pitfalls
 
-### Multi-task dashboard (KPIs + trend + breakdown)
-
-```yaml
-name: executive_dashboard
-
-tasks:
-  - name: kpis
-    type: semantic_query
-    topic: sales_mrr
-    measures:
-      - sales.total_revenue
-      - sales.order_count
-      - sales.avg_order_value
-
-  - name: monthly
-    type: semantic_query
-    topic: sales_mrr
-    dimensions:
-      - sales.month
-    measures:
-      - sales.total_revenue
-    orders:
-      - field: sales.month
-        direction: asc
-
-  - name: regional
-    type: semantic_query
-    topic: sales_mrr
-    dimensions:
-      - sales.region
-    measures:
-      - sales.total_revenue
-    orders:
-      - field: sales.total_revenue
-        direction: desc
-
-display:
-  - type: markdown
-    content: "# Executive Dashboard"
-
-  - type: table
-    title: "Key Metrics"
-    data: kpis
-
-  - type: line_chart
-    title: "Monthly Revenue"
-    data: monthly
-    x: sales__month
-    y: sales__total_revenue
-
-  - type: bar_chart
-    title: "Revenue by Region"
-    data: regional
-    x: sales__region
-    y: sales__total_revenue
-
-  - type: table
-    title: "Regional Details"
-    data: regional
-```
-
-### Semantic query + agent insights
-
-```yaml
-tasks:
-  - name: revenue_by_segment
-    type: semantic_query
-    topic: sales_metrics
-    dimensions: [segment.name]
-    measures: [sales.total_revenue]
-
-  - name: callouts
-    type: agent
-    agent_ref: sales_analyst.agent.yml
-    inputs: [revenue_by_segment]
-    prompt: "Give 3 bullet-point callouts on segment performance."
-
-display:
-  - type: markdown
-    title: "Callouts"
-    content: "{{callouts}}"
-
-  - type: bar_chart
-    title: "Revenue by Segment"
-    data: revenue_by_segment
-    x: segment__name
-    y: sales__total_revenue
-```
-
-## Build rules
-
-1. **Prefer `semantic_query` over `execute_sql`** whenever a matching topic
-   exists. It surfaces join logic the LLM otherwise has to re-derive.
-2. **Every `display.data` must match a `tasks[].name` exactly.** Dot notation
-   (`workflow_task.inner`) is allowed only for `workflow`-type tasks.
-3. **Chart column fields (`x`, `y`, `series`, `name`, `value`) must match
-   real output columns.** For semantic queries that means `view__field`.
-4. **Unique, snake_case task names.** Duplicates silently shadow each other
-   in some dialects.
-5. **Never add `# yaml-language-server:` schema comments.** Oxy's validator
-   treats unknown fields strictly.
-6. **Inline `- type: control` blocks set the widget kind with
-   `control_type:`, not `type:`.** Use one declaration form per app —
-   inline `display:` or top-level `controls:`, never both for the same
-   control.
-7. **Tasks that read controls and run against non-local databases must
-   set `mode: server`.** Client mode only works for local-DuckDB inline
-   `execute_sql`.
-
-## Validation
-
-- `oxy validate --file=my_app.app.yml` checks YAML structure only — it
-  does **not** execute task SQL, verify that `{{ controls.x }}` matches
-  a declared control, or check that `source:` names a real task.
-- Apps render in the Oxy web UI (`oxy start --enterprise`). `oxy run` does
-  **not** execute `.app.yml` files.
-- **Pre-test referenced workflows and agents before finalizing the app.**
-  Each task that points at a `workflow_ref` / `agent_ref` is opaque to
-  `oxy validate`; SQL errors inside those files won't surface until the
-  app runs. Run any referenced `*.automation.yml` and `*.agent.yml` once
-  to confirm they execute clean before opening the app.
-- **After adding controls, smoke-test the app and change each control**
-  to confirm dependent tasks re-run — control wiring fails only at
-  runtime.
-
-## Smoke-testing the app (do this before declaring done)
-
-Schema validation (`validate_project`) only catches structural YAML errors.
-It does **not** catch malformed SQL — broken JOIN syntax, dialect-specific
-type mismatches, missing `ON` clauses, type coercion failures — which all
-fail at task-execution time. The most common failure mode is a brand-new
-`.app.yml` that loads as a blank dashboard with a runtime error, because
-the model wrote SQL that *parses* but doesn't *run* on the target warehouse.
-
-After every write or edit to a `.app.yml`, run the file end-to-end and
-confirm every task succeeds. Use the `run_app(file_path, params_json)`
-tool when it is available — it executes the same path the dashboard takes
-on first load and returns a per-task summary. Pass `params_json: "{}"` to
-exercise control defaults; pass a real JSON object when you specifically
-need to validate behavior under non-default control values. If the tool
-is not available in the current run, fall back to running each task
-manually: invoke `semantic_query` for `type: semantic_query` tasks
-(passing the same topic / dimensions / measures) and `execute_sql` for
-`type: execute_sql` tasks (passing the rendered `sql_query` against the
-same `database`).
-
-Failure-recovery loop (matches the pattern used by view smoke-tests):
-
-1. If every task succeeds, stop — the file is done.
-2. If any task fails, read the error, diagnose, and call `edit_file`
-   **once** with a targeted corrective edit — exact `old_string` /
-   `new_string` pair (most common fixes: re-state the JOIN with `ON`,
-   replace a dialect-specific function with the matrix entry from
-   `## SQL dialect notes`, or drop the offending measure / dimension
-   and pick a different one from the view).
-3. Re-run `run_app` (or the manual fallback) **once**. If it still
-   fails, stop and report the error verbatim — do **not** loop. A second
-   silent retry usually compounds the bad guess.
-
-This step is non-negotiable for onboarding apps because the user has no
-chance to fix the file before opening it; for chat-builder edits, prefer
-running the smoke test whenever the warehouse tools are reachable.
-
-## Custom-code apps (`oxy-app.json`)
-
-Everything above is the declarative `*.app.yml` path (no manifest needed). The
-**custom-code** path is a React/TS/Vite front-end deployed with `oxyc publish`;
-every publishable app is identified by an **`oxy-app.json`** manifest at its
-root. Build this path when the user wants bespoke UI beyond tables/charts/
-markdown, or says "publish", "deploy", "oxy-app.json", or points at a
-`module-designs`-style React app. For a plain dashboard, build a `*.app.yml`.
-
-**The manifest** (`oxy-app.json`, the single source of truth the CLI reads):
-required `schemaVersion` (currently `2`), `slug`, `orgSlug`, `name`, and
-`build.outDir` (normally `dist`); optional `description`, `status` (card
-subtitle line), `art` (card image), `icon`, and `ask`
-(`{ agent: <path to .agentic.yml>, suggestedQuestions: [...] }` wires the
-launcher ask box to an agent). `env` / `target` / `project` are **not** baked
-into the manifest — CI or CLI flags supply them (`OXY_TARGET`, `OXY_ORG`,
-`OXY_ENV`, `--project`).
-
-**Three load-bearing rules** (getting any one wrong breaks the publish, not
-local dev):
-
-1. `oxy-app.json` at the module root.
-2. `vite.config.ts` with `base: process.env.OXY_APP_BASE_PATH || "/"` (so
-   code-split chunks resolve under `/customer-apps/<org>/<app>/`; local
-   `pnpm dev`/`build` fall back to `/`) **and** a `copyOxyAssets()` plugin that
-   copies `oxy-app.json` + its referenced `icon`/`art` into `dist/` on
-   `closeBundle`. Load-bearing: `oxyc publish` tars only the built dir, and the
-   server captures launcher-card metadata from the bundle's own `oxy-app.json`
-   (`app_builds.manifest_json`) — a manifest left only at the module root never
-   reaches the server.
-3. **The workspace root belongs to whoever owns the repo.** An app inside the
-   customer-apps monorepo must NOT carry its own `pnpm-workspace.yaml`: pnpm
-   resolves a workspace root as the nearest ancestor, so one at
-   `apps/<org>/<app>/` makes that app its own root and cuts it off from the
-   monorepo's overrides, catalog, and `workspace:` links to the shared packages
-   its bundle imports. The monorepo root owns that file — including any
-   `allowBuilds` entry the app's dependencies need. A *standalone* app,
-   scaffolded by `create-oxy-app` outside the monorepo, does own its root, and
-   needs `allowBuilds: { esbuild: false }` there **only if it depends on esbuild
-   directly**: under Vite 8 esbuild is an **optional peer**, not a dependency,
-   so it is not pulled in transitively and a frontend-only app needs no
-   build-script declaration at all. (`false` rather than `true` because esbuild
-   ships its platform binary as an optional dependency and runs fine without its
-   postinstall.)
-
-**Publish flow:** run `oxyc publish` from the module dir — it builds, tars
-`dist/`, and uploads the app as a **draft**; an Oxy admin promotes the draft to
-live in the admin UI (CI never publishes straight to the live channel). First
-publish auto-registers the app when `--project` is passed. `oxyc` is the
-`@oxy-hq/cli` npm package (`npm install -g @oxy-hq/cli`); the `oxy` binary no
-longer has a `publish` subcommand. Check `oxyc publish --help` for the flags.
-Reference
-implementations live in `module-designs/` (`DEPLOYMENT.md` + each module's
-`oxy-app.json`).
+| Symptom | Fix |
+| --- | --- |
+| missing from the sidebar | `published: true` (default is false) |
+| app doesn't exist at all | move out of a dot/`build`/`dist` dir; drop `.test.` from the name |
+| `oxyc validate`: unknown field `name` | delete top-level `name:` |
+| chart blank, column not found | use `view__field` and the `__<granularity>` suffix |
+| control changes nothing | template it into `execute_sql`; it can't feed `semantic_query` |
+| `type: select` inside `- type: control` rejected | `control_type: select` |
+| SQL error near `''value''` | remove your quotes around `sqlquote` |
+| control inside a `row` never appears | move it to the top level of `display:` |
+| `requires an InlineAgentRunner` | remove the `type: agent` task |
+| `data: task.step` renders nothing | query directly in the app |
+| slow on every control change | keep to the four Jinja forms; aggregate in SQL |
+| axis is a list of UUIDs | join to a readable name |

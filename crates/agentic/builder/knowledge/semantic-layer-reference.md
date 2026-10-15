@@ -1,7 +1,7 @@
 ---
 source:
   - sdk/cli/skills/oxy-semantic-modeling/SKILL.md
-reconciled-hash: pending
+reconciled-hash: eda741a8ea6cd05a46bedd9ca547754870ff88a5
 note: |
   Authored condensation of the platform skills listed above. Not auto-synced —
   scripts/sync-skills.sh only copies the verbatim YAML templates. Re-condense
@@ -11,499 +11,268 @@ note: |
 
 # Oxy Semantic Model Reference
 
-The semantic model is a pair of YAML file types:
+The semantic model is two YAML file types:
 
-- `*.view.yml` — maps a database table to entities, typed dimensions, and
-  measures.
-- `*.topic.yml` — groups related views into a business domain that
-  natural-language queries target.
+- `*.view.yml` — one physical table plus the vocabulary (entities, typed
+  dimensions, measures) an agent may use against it.
+- `*.topic.yml` — a question area: a `base_view`, the views it may join to,
+  and filters that always apply.
 
-Files can live anywhere under `semantics/` — flat (`semantics/orders.view.yml`)
-or nested (`semantics/views/orders.view.yml`). The parser walks the tree
-recursively, so layout is up to you. Onboarding-generated projects
-scaffold flat; large projects often split into `semantics/views/` and
-`semantics/topics/` for organization. Both are equally valid.
+Views and topics **anywhere in the workspace** compile; `semantics/views/` and
+`semantics/topics/` is the conventional layout (and the only place a bare
+`oxy validate` looks). Upstream field reference:
+<https://www.oxygen-hq.com/docs/guide/build/semantic-model/simple-model>.
 
-## View file shape
+## View anatomy
 
 ```yaml
-name: snake_case_view_name
-description: "Business-friendly explanation of what this view represents"
-datasource: "database_name"        # Must match a database name in config.yml
-table: "schema_name.table_name"
+name: sales_daily
+description: >-
+  Daily sales by restaurant and business date. Loaded several times daily;
+  the current business day is always intraday-partial - the prior full day
+  is the latest complete day.
+datasource: "clickhouse"            # a database name from config.yml
+table: "restaurant_analytics.sales_daily_metrics"
 
 entities:
-  - name: primary_entity
-    type: primary                   # exactly one primary entity per view
-    description: "The main subject of this view"
-    key: primary_key_dimension      # MUST reference a dimension name below
+  - name: sales_day
+    type: primary                   # the grain of the row — exactly one
+    key: sales_day_key              # a DIMENSION name, never a raw column
+    parent: restaurant              # hierarchy: a sales day belongs to a restaurant
+  - name: restaurant
+    type: foreign                   # an edge to restaurants.view.yml
+    key: restaurant_id
 
 dimensions:
-  - name: primary_key_dimension     # referenced by entity.key above
+  - name: sales_day_key
     type: string                    # string|number|date|datetime|boolean
-    description: "Primary key of the table"
-    expr: primary_key_column        # raw SQL expression
-
-  - name: dimension_name
+    expr: sales_day_key
+  - name: restaurant_id
     type: string
-    description: "Business-friendly attribute description"
-    expr: column_or_expression
-    samples: ["value1", "value2"]   # optional; helps the LLM pick valid filter values
-    synonyms: ["alt name"]          # optional; improves natural-language matching
+    expr: restaurant_id
+  - name: order_status
+    type: string
+    expr: status
+    samples: ["OPEN", "PAID", "CLOSED"]   # full value set, always strings
+    synonyms: ["status"]
 
 measures:
-  - name: total_records
-    type: count                     # count is the only measure type that omits `expr`
-
-  - name: total_amount
+  - name: order_count
+    type: count                     # the only type that omits `expr`
+  - name: total_net_sales
     type: sum
-    description: "Sum of amount_column"
-    expr: amount_column             # required for every non-count measure
+    expr: net_sales
+    synonyms: ["net sales", "net revenue", "revenue", "sales"]
+```
 
-  - name: active_count
-    type: count
+**Rules:**
+
+1. **Entities are the join graph.** Every view declares exactly one
+   `type: primary` entity. Joins resolve by matching entity **names** — two
+   views join when one's foreign entity has the same `name:` as the other's
+   primary. A foreign entity with no matching primary is only a *warning*;
+   the join silently does not exist.
+2. **`key:` names a dimension, not a column.** In a `restaurants` view the
+   entity `restaurant` has `key: restaurant_id`, and the `restaurant_id`
+   dimension is `expr: guid`. Resolve keys against `dimensions:`. Keep keys
+   single — a compound natural key is one pre-concatenated dimension.
+3. **Declare a foreign entity for every FK column.** When a fact view holds
+   an ID pointing at another view's primary key (`orders.restaurant_id` →
+   `restaurants.guid`), add a `type: foreign` entity with the lookup view's
+   primary entity name and `key:` set to the FK dimension. That edge lets a
+   query group by `restaurants.location_name`; without it every chart built
+   on the view renders opaque UUIDs.
+4. **`expr` is required** on every dimension and every measure except
+   `count`. Dimension types are lowercase.
+5. **`samples` is always a list of strings** — `["true", "false"]`,
+   `["5", "10"]`, never bare literals. One bare literal makes the view fail
+   to load, and with it the whole semantic model. (The upstream docs show a
+   numeric example with bare numbers — don't copy it.)
+6. **`inherits_from:` and `{{ globals.* }}` were removed** from views; a file
+   using either is refused at load. Inline the values.
+7. **Never add a `# yaml-language-server:` header.** No schema is published
+   for views or topics, so the header validates against nothing.
+
+Measure types: `count`, `count_distinct`, `sum`, `average`, `min`, `max`
+(all re-aggregatable), plus `median`, `number` and `custom` (free-form SQL,
+e.g. `CORR(a, b)`), which never serve from a rollup.
+
+## The description is a contract with the agent
+
+Say **when the data is complete and what it excludes**, not what the table
+holds. Without "the current business day is intraday-partial", an agent asked
+"how are sales today?" confidently reports a half-loaded day as a real number.
+
+## The `meta:` freshness block
+
+```yaml
+meta:
+  freshness_watermark_column: ["business_date"]
+  freshness_expected_cadence: ["several times daily"]
+  freshness_complete_through: ["prior full day (America/Los_Angeles)"]
+  freshness_caveat: ["Current business day is intraday-partial."]
+```
+
+- `meta` (on views, dimensions, measures, entities, segments, topics) maps a
+  key to a **list of strings** — a bare string fails to parse. The four
+  `freshness_*` names are a convention the analytics agent reads by name
+  (first element of each). It's the cheapest quality win on any
+  batch-loaded view — add it.
+- The watermark resolves against a dimension name or `expr` first, else a raw
+  column. **Without it the agent falls back to the view's first
+  `date`/`datetime` dimension**, which may be an order date, not the load
+  watermark.
+- A view-level `refresh_key: { sql: … }` doubles as the agent's recency probe.
+
+## Craft
+
+- **`synonyms`** are the natural-language surface — map jargon and plain
+  English onto one name; colliding common words across views is fine.
+- **"Aggregate X where Y" is a filtered measure, not a `custom` `CASE WHEN`:**
+
+  ```yaml
+  - name: delivery_revenue
+    type: sum
+    expr: order_amount
     filters:
-      - expr: "status = 'active'"       # raw column SQL, never {{ }}
-```
+      - expr: "order_type = 'delivery'"   # raw column SQL, or {{dimension}}
+  ```
 
-## Critical rules
+  It reads better and re-aggregates from a rollup. Reserve `custom` for
+  ratios, correlations and cross-period math.
+- **`{{ }}` references inside a measure `expr` or `filters:`:** `{{is_voided}}`
+  names a dimension/measure of the **same** view and is expanded (the norm);
+  `{{view.member}}` reaches another view (rare). A `{{ }}` that names nothing
+  resolvable fails with an "unresolved reference" error. Raw column SQL
+  (`status = 'completed'`) is equally fine.
+- **Derived time dimensions** (`business_year`, `business_month`,
+  `business_quarter`, `day_of_week`, `is_weekend`) so the agent never writes
+  date arithmetic — each re-derives from the raw column rather than
+  referencing the base date dimension.
+- **`drivers`** (on measures; documented under the metric-tree docs, as
+  `parent:` is under world-model) must state a mechanism:
 
-1. **Entities are required.** Every view declares exactly one `type: primary`
-   entity. Without it the view cannot participate in joins and several
-   validators reject the file outright.
-2. **Entity `key:` MUST reference a dimension name**, never a raw column. If the
-   column you want to key on is called `order_id`, define a dimension with
-   `name: order_id` and `expr: order_id`, then set `key: order_id` on the
-   entity.
-3. **`expr` is required** on every dimension. It's required on every measure
-   except `count` (which counts rows). Omitting it produces cryptic compile
-   errors at `oxy build` time.
-4. **Dimension types are lowercase:** `string`, `number`, `date`, `datetime`,
-   `boolean`. Any other spelling silently breaks type-aware behavior.
-5. **Cross-view joins happen by matching entity names.** To join
-   `orders.view.yml` and `customers.view.yml`, both views must declare an
-   entity named `customer` (one primary, one foreign). Name mismatch = no join.
-   In practice, this means: whenever a fact-style view has a UUID/FK column
-   pointing at another view's primary key (e.g. `orders.restaurant_id` →
-   `restaurants.guid`), declare a **`type: foreign`** entity on the fact
-   view with the same `name:` as the lookup view's primary entity, and
-   `key:` set to the FK dimension. Without this, dashboards can only show
-   the raw FK and end up rendering opaque UUIDs on chart axes.
+  ```yaml
+  drivers:
+    - measure: sales_daily.discount_rate
+      direction: negative
+      strength: strong
+      confidence: high
+      description: "A larger share of gross sales given away as discounts lowers net sales. Unlike discount dollars, the rate does not move with volume."
+  ```
 
-   ```yaml
-   # in orders.view.yml
-   entities:
-     - name: order
-       type: primary
-       key: order_id
-     - name: restaurant            # same name as restaurants.view.yml's primary entity
-       type: foreign
-       key: restaurant_id          # the FK dimension on this view
+  A driver without a `description` is not finished.
 
-   dimensions:
-     - name: restaurant_id
-       type: string
-       expr: restaurant_id
-   ```
+## Dates: declare them as dates
 
-   Then a topic that includes both `orders` and `restaurants` lets a
-   `semantic_query` ask for `restaurants.location_name` directly, and
-   airlayer resolves the join.
-6. **Never add `# yaml-language-server:` schema comments.** Oxy's validator
-   deny-lists unknown fields and these comments trigger false positives in
-   strict parsing paths.
+A dimension meaning a date or timestamp (`*_date`, `*_at`, `business_date`,
+`created`, `event_time`, …) must be `type: date` / `datetime`, and its `expr`
+must produce a real date. Declared `number`/`string` over a string, integer
+(`20240131`) or epoch column, nothing complains at load; the first query that
+filters on it fails with **`TYPE_MISMATCH`**. **Sample first**
+(`SELECT <col> FROM <table> LIMIT 1`), then cast:
 
-## Dimension & measure types
+| Warehouse  | Cast functions |
+| ---------- | -------------- |
+| ClickHouse | `toDate(<col>)`, `toDateTime(<col>)`, `parseDateTimeBestEffort(<col>)`, `toDate(toString(<col>))` for integer dates |
+| BigQuery   | `CAST(<col> AS DATE)`, `PARSE_DATE('<fmt>', <col>)`, `PARSE_TIMESTAMP('<fmt>', <col>)`, `TIMESTAMP_SECONDS(<col>)` |
+| Snowflake  | `TO_DATE(<col>[, '<fmt>'])`, `TO_TIMESTAMP(<col>)`, `TRY_TO_DATE(<col>)` |
+| Postgres   | `(<col>)::date`, `(<col>)::timestamp`, `to_date(<col>, '<fmt>')`, `to_timestamp(<col>)` |
+| DuckDB / Airhouse | `CAST(<col> AS DATE)`, `strptime(<col>, '<fmt>')`, `to_timestamp(<col>)`, `epoch_ms(<col>)` |
 
-| Dimension type | Example literal         | Typical use                 |
-| -------------- | ----------------------- | --------------------------- |
-| `string`       | `"active"`              | Categories, IDs, text       |
-| `number`       | `42`, `3.14`            | Counts, amounts, metrics    |
-| `date`         | `"2024-01-01"`          | Dates without a time-of-day |
-| `datetime`     | `"2024-01-01 10:30:00"` | Timestamps                  |
-| `boolean`      | `true` / `false`        | Flags                       |
+A column already typed `DATE`/`TIMESTAMP` needs no cast. The same cast chain
+repeated in many dimensions is a smell — the column type should be fixed
+upstream in the pipeline.
 
-| Measure type     | Requires `expr`? | Notes                        |
-| ---------------- | ---------------- | ---------------------------- |
-| `count`          | No               | Counts rows                  |
-| `count_distinct` | Yes              | Counts distinct values of expr |
-| `sum`            | Yes              |                              |
-| `average`        | Yes              |                              |
-| `median`         | Yes              |                              |
-| `min` / `max`    | Yes              |                              |
-| `custom`         | Yes              | Free-form SQL, e.g. `CORR(a, b)` |
-
-## Common dimension patterns
-
-**Date parts (use `EXTRACT`, supported across all dialects):**
-
-```yaml
-- name: order_year
-  type: number
-  expr: "EXTRACT(YEAR FROM order_date)"
-
-- name: order_month
-  type: number
-  expr: "EXTRACT(MONTH FROM order_date)"
-
-- name: order_quarter
-  type: number
-  expr: "EXTRACT(QUARTER FROM order_date)"
-```
-
-**Categorical bucketing via `CASE`:**
-
-```yaml
-- name: price_tier
-  type: string
-  expr: |
-    CASE
-      WHEN price < 100 THEN 'Low'
-      WHEN price < 500 THEN 'Medium'
-      ELSE 'High'
-    END
-  samples: ["Low", "Medium", "High"]
-```
-
-**Filtered measures — "aggregate X where Y" (conditional aggregation).**
-Write a typed measure (`sum`, `average`, `count`, …) with `expr` plus a
-`filters:` list. Each filter `expr` is a **raw SQL boolean condition over
-the table's columns** — exactly what you'd put in a `WHERE` clause. This
-is the correct, re-aggregatable pattern; do **not** express it as a
-`type: custom` `CASE WHEN`.
-
-```yaml
-- name: completed_revenue
-  type: sum
-  expr: amount
-  filters:
-    - expr: "status = 'completed'"       # raw column condition (WHERE-style)
-
-- name: high_value_orders
-  type: count
-  filters:
-    - expr: "amount >= 1000"
-```
-
-> **Never wrap a column in `{{ }}` inside a measure or filter `expr`.** A
-> `{{column}}` placeholder is **not** substituted there — it leaks into
-> the compiled SQL literally (e.g. `{{"view"."col"}}`) and the warehouse
-> rejects the query with `syntax error at or near "{"`. This applies to
-> filter `expr` **and** `custom` measure `expr` alike. Always write bare
-> column SQL — `fuel_price > 3.5`, never `{{fuel_price}} > 3.5`. A
-> filter `expr` references the **underlying columns** (same as a SQL
-> `WHERE`), not dimension names. (Brace references like
-> `{{entity.field}}` exist only for advanced cross-view measures and
-> have no place in ordinary same-view filters or aggregations.)
-
-**When to reach for `type: custom`.** Reserve it for metrics a typed
-measure + `filters` **cannot** express — ratios, correlations,
-cross-period math. For plain "aggregate X where Y", use a filtered
-measure (above), not a `custom` `CASE WHEN`: the filtered form is
-clearer and re-aggregates through pre-aggregations, whereas `custom`
-(like `median` and bare `number`) always falls back to the warehouse.
-Inside a `custom` `expr`, write **bare column names** — the same
-no-`{{ }}` rule as filters.
-
-## Topic file shape
-
-```yaml
-name: snake_case_topic_name
-description: "What kinds of questions this topic answers"
-base_view: primary_view_name        # the main view for this topic
-views:
-  - primary_view_name                # include base_view here too
-  # - related_view_name              # add more if they share entities
-
-default_filters:
-  - field: view_name.status
-    eq:
-      value: "active"
-
-  - field: view_name.status
-    not_in:
-      values: ["cancelled", "test"]
-
-  - field: view_name.created_date
-    in_date_range:
-      from: "90 days ago"
-      to: "now"
-```
-
-Default-filter operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`,
-`not_in`, `in_date_range`, `not_in_date_range`. Scalar operators take
-`value:`; array operators take `values:`; range operators take `from:` /
-`to:`.
-
-## Naming and style
-
-- **snake_case** for every `name:` — views, topics, dimensions, measures,
-  entities.
-- Descriptions are **business-friendly**, not column commentary. Prefer
-  "Revenue in USD" to "SUM of amount_column".
-- Prefer one topic per view unless two views genuinely share a domain.
-- Add `synonyms:` on any dimension/measure where a non-technical user would
-  use a different word ("revenue" vs "total_amount", "customer" vs "client").
-- Add `samples:` on categorical dimensions so the LLM can suggest valid filter
-  values without querying the data. **`samples` is always a list of strings**,
-  even when the dimension `type` is `boolean` or `number` — write
-  `samples: ["true", "false"]` and `samples: ["129.99", "89.50"]`, never bare
-  literals. Bare booleans/numbers fail YAML deserialization and break the
-  whole semantic model load.
-
-## Date columns: detect format, then cast
-
-A date dimension MUST be `type: date` (or `type: datetime`) so the semantic
-model compiles filters as date literals. The expression must produce a real
-`Date` / `DateTime`, not the raw underlying column. Mismatch produces a
-`TYPE_MISMATCH` at filter time — silent at view-creation, trips the first
-analytics query that filters on the dimension.
-
-**Recognition heuristic.** Any column whose business meaning is a date or
-timestamp (`*_date`, `*_at`, `business_date`, `order_date`, `created`,
-`updated`, `event_time`, …) where the underlying SQL type is **not already**
-`Date` / `DateTime` / `TIMESTAMP` needs a wrapping cast. Match by the
-column's business meaning, not its physical type.
-
-**Sample first, then cast.** Stored formats vary across warehouses and
-across tables within the same warehouse — ISO strings (`"2024-01-31"`),
-compact strings (`"20240131"`), date integers (`20240131`), Unix epoch
-seconds, milliseconds, and so on. Run `SELECT <col> FROM <table> LIMIT 1`
-to see what's actually there before deciding the cast. Guessing is cheap
-to get wrong (silent failure at query time) and cheap to verify (one tool
-call).
-
-**Cast functions per warehouse.** Combine these with the format you
-sampled. The dimension is `type: date` (or `datetime`); the `expr:` wraps
-the column.
-
-| Warehouse  | Functions                                                                     |
-| ---------- | ----------------------------------------------------------------------------- |
-| ClickHouse | `toDate(<col>)`, `toDateTime(<col>)`, `parseDateTimeBestEffort(<col>)`, `toDate(toString(<col>))` for integer-encoded dates |
-| BigQuery   | `CAST(<col> AS DATE)`, `PARSE_DATE('<format>', <col>)`, `PARSE_TIMESTAMP('<format>', <col>)`, `TIMESTAMP_SECONDS(<col>)` |
-| Snowflake  | `TO_DATE(<col>[, '<format>'])`, `TO_TIMESTAMP(<col>)`, `TRY_TO_DATE(<col>)`   |
-| Postgres   | `(<col>)::date`, `(<col>)::timestamp`, `to_date(<col>, '<format>')`, `to_timestamp(<col>, '<format>')` |
-| DuckDB     | `CAST(<col> AS DATE)`, `strptime(<col>, '<format>')`, `epoch_ms(<col>)`       |
-
-For columns already typed `Date` / `DateTime` / `TIMESTAMP`, no cast is
-needed — `expr: <col>` is enough.
-
-## Common error triage
-
-| Error                    | Likely cause                                    | Fix                                               |
-| ------------------------ | ----------------------------------------------- | ------------------------------------------------- |
-| "Entity key not found"   | `entity.key` points to a column, not a dimension | Add a dimension whose `name` matches the key     |
-| "View not found"         | File outside `semantics/` tree or `views:` typo  | Must live anywhere under `semantics/` (flat or `views/` subdir, both work); fix typos in any topic's `views:` list |
-| "Cannot join views"      | Entity names differ between the two views        | Use identical entity names on both sides         |
-| "Invalid SQL in `expr`"  | Column doesn't exist or dialect mismatch         | Verify against `semantics.yml` / `.databases/`    |
-| `TYPE_MISMATCH` at filter | Date dimension declared `type: number` / `string` over a non-Date column; semantic model compiles a date literal that the column type rejects | Sample one row, switch to `type: date` (or `datetime`), wrap `expr` with the appropriate cast function from the table above |
-| Unknown field on parse   | Schema-comment or typo                           | Remove `# yaml-language-server:` and fix casing  |
-
-## Pre-aggregations
-
-Pre-aggregations let Oxy cache heavy aggregations as local Parquet files so
-that repeated semantic queries skip the warehouse entirely and run in
-milliseconds against an in-memory DuckDB instance.
-
-### Declaring a pre-aggregation
-
-Add a `pre_aggregations:` block inside a `*.view.yml`. A `refresh_key` is
-required on every rollup (or set once at the view level — see below).
-
-```yaml
-pre_aggregations:
-  - name: orders_by_customer_daily   # snake_case, unique within the view
-    measures:
-      - total_orders                 # measure names from this view's measures:
-      - total_revenue
-    dimensions:
-      - customer_id                  # dimension names from this view's dimensions:
-      - status
-    time_dimension: order_date       # optional; a date/datetime dimension
-    granularity: day                 # required when time_dimension is set
-                                     # second|minute|hour|day|week|month|quarter|year
-    refresh_key:
-      every: 1h                      # rebuild whenever 1 h has elapsed since last build
-
-  - name: orders_summary
-    measures:
-      - total_orders
-    dimensions:
-      - status
-    refresh_key:
-      sql: "SELECT MAX(updated_at) FROM orders"   # rebuild when the result changes
-```
-
-**Field summary:**
-
-| Field            | Required | Description                                          |
-| ---------------- | -------- | ---------------------------------------------------- |
-| `name`           | Yes      | Unique rollup identifier (snake_case)                |
-| `measures`       | Yes      | One or more measure names to pre-aggregate           |
-| `dimensions`     | No       | Dimension names to group by                          |
-| `time_dimension` | No       | Date/datetime dimension for time-based rollups       |
-| `granularity`    | If `time_dimension` set | `second`, `minute`, `hour`, `day`, `week`, `month`, `quarter`, `year` |
-| `refresh_key`    | Yes (per rollup, or inherited from the view) | See below |
-
-### refresh_key reference
-
-A `refresh_key` tells Oxy when a cached rollup is stale and must be rebuilt.
-There are two mutually exclusive forms:
-
-**`every:` (interval-based)**
-```yaml
-refresh_key:
-  every: 1h        # rebuild after this interval regardless of data changes
-                   # examples: 30m  1h  6h  24h
-```
-Oxy compares the time elapsed since the last successful build against the
-interval. If enough time has passed the rollup is queued for rebuild. The
-result is cached in-process for `renewal_threshold` (default 120 s) so the
-interval is not checked on every single query.
-
-**`sql:` (change-detection)**
-```yaml
-refresh_key:
-  sql: "SELECT MAX(updated_at) FROM orders"
-```
-Oxy runs the SQL against the rollup's source database and compares the
-first cell of the first row against the value stored in `manifest.json`
-from the last build. If the values differ, the rollup is stale and rebuilt.
-Use any single-value query that advances with new data — `MAX(updated_at)`,
-`COUNT(*)`, a checksum, etc. If the SQL fails (network error, bad query),
-Oxy logs a warning and skips the rebuild rather than crashing.
-
-**View-level `refresh_key` (default for all rollups)**
-
-Set `refresh_key:` at the top of the view (outside `pre_aggregations:`) to
-apply the same key to every rollup that does not declare its own:
+## Topics are question areas, not tables
 
 ```yaml
 name: orders
-datasource: warehouse
-table: "public.orders"
-refresh_key:              # default for all rollups in this view
-  every: 1h
+description: "Order volume, value and mix by restaurant and dining option"
+base_view: orders
+views: [orders, order_checks, restaurants, dining_options]  # include base_view
+default_filters:
+  - field: "orders.is_voided"
+    eq:
+      value: false
+```
 
+Shape: `name`, `description`, `base_view`, `views`, `default_filters`. Name
+topics after the questions people ask; a topic usually spans several views
+("one topic per view" is not the pattern). Let `default_filters` carry rules
+nobody should have to remember. Operators: `eq`/`neq`/`gt`/`gte`/`lt`/`lte`
+(`value:`), `in`/`not_in` (`values:`), `in_date_range`/`not_in_date_range`
+(`from:`/`to:`). **Qualify `field:` as `view.dimension`** — a bare field
+resolves against a view *named like the topic*, not `base_view`.
+
+**Twin views** (e.g. a ClickHouse → Airhouse migration leaving `sales_daily`
+and `airhouse_sales_daily`) are not mirrors: their measures diverge, and
+their entity names differ (`airhouse_restaurant` vs `restaurant`) so a topic
+mixing families silently fails to join. Keep each topic within one family,
+read the twin before assuming a measure exists, and don't copy the pattern.
+
+## Pre-aggregations (rollups)
+
+A rollup is a materialized partial aggregate of **one** view; a fully covered
+query is answered from it instead of scanning the warehouse. **Opt-in per
+view — no `pre_aggregations:` block means no rollups at all** (no implicit
+default).
+
+```yaml
+refresh_key:                     # view-level default for every rollup below
+  every: "1h"
 pre_aggregations:
-  - name: by_status
+  - name: orders_by_month
+    dimensions: [order_status]   # names declared in THIS view
+    measures: [total_orders, total_order_value]
+    time_dimension: order_date   # a date/datetime dimension of this view
+    granularity: month           # second|minute|hour|day|week|month|quarter|year
+  - name: orders_summary
     measures: [total_orders]
-    dimensions: [status]
-    # inherits refresh_key: every: 1h from the view
-
-  - name: by_customer
-    measures: [total_orders]
-    dimensions: [customer_id]
-    refresh_key:          # overrides the view-level key for this rollup only
+    refresh_key:                 # per-rollup override
       sql: "SELECT MAX(updated_at) FROM orders"
 ```
 
-Rollup-level `refresh_key` always takes precedence over the view-level one.
-A rollup with no `refresh_key` and no view-level default will be skipped
-by the background worker.
+- `refresh_key` takes **exactly one** of `every` or `sql` — both, neither or
+  another key is a parse error. `sql` re-runs every cycle; keep it a cheap
+  `MAX`.
+- A rollup naming a member the view doesn't declare is **refused**.
+- A rollup serves only when: every requested and filtered dimension is in its
+  `dimensions` (a filter on `time_dimension` is fine); every measure is listed
+  **and** re-aggregatable; the requested granularity is the stored one or
+  coarser — **except `week`**, which serves neither `month`, `quarter` nor
+  `year` (store `day` for both). Otherwise the warehouse answers — correct,
+  just slower.
+- Limits: one view's members only; fixed granularities. Multi-view or custom
+  buckets need a rollup table built by an automation.
 
-**Disabling pre-aggregations for a view**
+`config.yml` (all optional): `pre_aggregations: { schema: AIRLAYER, database:
+<connector, default each view's datasource>, refresh_worker: { enabled: true,
+heartbeat: "10m" (clamped 30s–24h), renewal_threshold: "120s" (clamped
+10s–1h) } }`.
 
-```yaml
-pre_aggregations_enabled: false   # skip all rollups in this view during oxy build
-```
+## Validating a change
 
-### Config: enable the refresh worker
+1. **`validate_project` / `oxy validate --file <view-or-topic>`** on every
+   file you touch — catches a bare literal in `samples`, a missing
+   `entities:`/`dimensions:` list, a removed feature. It does **not** look
+   inside `pre_aggregations:` or `refresh_key:`.
+2. **Run a real query through the topic** with the builder's `semantic_query`
+   tool before calling it done. Validators don't check cross-file wiring — an
+   entity join that matches nothing, a topic naming a missing view, a measure
+   a twin lacks.
+3. **`oxy build` does not validate the semantic model** (embeddings and
+   integration sync only). Read real column names from `.databases/` (written
+   by `oxy sync`).
 
-Pre-aggregations need a top-level `pre_aggregations:` block in `config.yml`
-so the background refresh worker actually runs. All fields are optional —
-defaults shown below apply when omitted:
+When refreshing a view, build fresh from the schema source (`.databases/`),
+not from git history — old definitions drift from the live schema.
 
-```yaml
-pre_aggregations:
-  schema: AIRLAYER             # warehouse schema for rollup tables (default: AIRLAYER)
-  database: local              # connector for builds (default: each view's datasource)
-  refresh_worker:
-    enabled: true              # set false to disable the worker
-    heartbeat: "30s"           # how often the worker checks staleness
-    renewal_threshold: "120s"  # how long a cached refresh_key result stays valid
-```
-
-### Default rollup (no `pre_aggregations:` block)
-
-A view with no `pre_aggregations:` block still gets **one** default rollup
-covering all dimensions × all measures at `day` granularity. Define
-explicit rollups to control the grain and avoid an oversized default.
-
-### Build and cache
-
-```bash
-oxy build          # compiles semantic model and builds all pre-aggregation Parquet files
-```
-
-Parquet files land in `.airlayer/cache/` (next to `config.yml`). A
-`manifest.json` in that directory records which rollup covers which query
-shape. The directory is created automatically by `oxy build` — do not
-create or edit it by hand.
-
-### Runtime behaviour
-
-When a semantic query arrives (agentic analytics pipeline, IDE semantic
-explorer, or procedure step), Oxy checks `manifest.json` for a rollup
-that covers the requested dimensions and measures. If one exists **and**
-the Parquet file is present on disk, the query executes against the local
-cache — no warehouse round-trip. The ⚡ badge appears in the UI whenever
-preagg served the result.
-
-If no rollup covers the query, or the file is missing, Oxy falls back to
-the warehouse transparently.
-
-### Coverage rules (when does a rollup cover a query?)
-
-A rollup covers a query when:
-- **Every requested measure** is listed in the rollup's `measures:`.
-- **Every requested dimension** is listed in the rollup's `dimensions:`.
-- **Every filtered dimension** is in `dimensions:` *or* is the rollup's
-  `time_dimension` (filters on the time dimension don't need it duplicated
-  into `dimensions:`).
-- **If a time dimension is requested**, it matches the rollup's
-  `time_dimension` at an equal or coarser `granularity` (a `month` rollup
-  serves `month`/`quarter`/`year`, not `day`).
-
-A query that adds an extra dimension not in the rollup is **not** covered —
-the rollup would need to include that dimension to avoid data loss during
-re-aggregation.
-
-**Non-rollupable measure types.** `custom`, `median`, and bare `number`
-measures are not re-aggregatable. A query touching one falls back to the
-warehouse even when the measure is listed in a rollup. `count`,
-`count_distinct`, `sum`, `average`, `min`, and `max` re-aggregate
-correctly.
-
-### Common mistakes
-
-| Mistake | Symptom | Fix |
-| ------- | ------- | --- |
-| Referencing a dimension that doesn't exist | `oxy build` error | Check `dimensions:` list in the view |
-| `time_dimension` set without `granularity` | Schema validation error | Add `granularity: day` (or coarser) |
-| Rollup exists but query still hits warehouse | Query uses a dimension not in the rollup, a filtered dimension absent from `dimensions:`, or a `custom`/`median`/`number` measure | Add the missing member to the rollup (or accept the warehouse fallback for non-rollupable measure types); then `oxy build` |
-| Background worker never builds the rollup | No `pre_aggregations:` block in `config.yml`, or `refresh_worker.enabled: false` | Add the top-level `pre_aggregations:` block (see "Config: enable the refresh worker") |
-| `.airlayer/cache/` missing or stale | No preagg badge in UI | Run `oxy build` |
-| `refresh_key.every` too infrequent | Stale results served from cache | Shorten the interval, or rebuild with `oxy build` |
-| `refresh_key.sql` query fails at runtime | Warning logged, rebuild skipped silently | Run the SQL manually against the source database to verify it returns one row/cell |
-| Rollup has no `refresh_key` and no view-level default | Background worker skips the rollup | Add `refresh_key:` to the rollup or set a view-level default |
-
-## Validation workflow
-
-1. `oxy build` — **mandatory final step.** Compiles the semantic model;
-   catches entity-key references, cross-view join wiring, and SQL
-   expression errors that pure YAML parsing cannot. Do **not** consider
-   a view or topic edit done until `oxy build` passes.
-2. `semantic_query` tool (inside the builder) — runs a real query against a
-   topic and surfaces compile-time errors with the generated SQL, which is
-   the fastest way to confirm a view+topic pair is wired correctly.
-
-**Do NOT use `oxy validate` on view or topic files.** It is for
-`*.automation.yml`, `*.agent.yml`, and `*.app.yml` files only. Running it on
-view/topic files will report misleading results — passing it does not
-mean the semantic model compiles. Use `oxy build` instead.
-
-When refreshing or rebuilding a view, **always build fresh from the
-schema source** (`semantics.yml` / `.databases/`). Do not consult git
-history to recover previous definitions — old views drift from the live
-schema and reintroducing them silently re-introduces bugs.
+| Error | Fix |
+| --- | --- |
+| "measure not found" after switching topics | the twin view lacks it — read the twin |
+| topic returns missing rows / no join | entity names differ between views, or the topic mixes twin families |
+| `TYPE_MISMATCH` on a date filter | sample one row; `type: date` + cast from the table above |
+| "unresolved reference" | a `{{ }}` names no dimension/measure |
+| whole model fails to load | a bare boolean/number in `samples`, or a bare string in `meta` |
+| rollup never serves | missing dimension, filtered dimension not listed, non-re-aggregatable measure, or `week` → month |
