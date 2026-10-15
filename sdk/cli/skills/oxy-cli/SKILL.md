@@ -74,8 +74,10 @@ never sent to the server as a literal.
 `oxyc validate` is the one command that works entirely offline. It checks
 `config.yml`, `.automation.yml`, `.agentic.yml`, `.app.yml` and
 `.agent.test.yml` against the schemas the Rust config types generate. It is
-STRUCTURAL only — `oxy validate` also resolves `databases:` and `llm.ref`, and
-wins where the two disagree.
+STRUCTURAL only — `oxy validate` additionally checks an automation's or app's
+`database:` names against `config.yml`, but it too is structural for
+`.agentic.yml` (`databases:` and `llm.ref` are not resolved), so an agent both
+accept can still fail at run time.
 
 To look at a deployed environment in a browser, navigate your browser tool to
 `$(oxyc login-link --env dev --next /ide)`. It is a one-time link that signs
@@ -165,7 +167,7 @@ app UUID; each command takes `--json`.
 - **A listed route can still 404** if it is `ide-only` or `worker-only`; those
   are hidden by default and shown by `oxyc routes --all`.
 - **Pick the environment deliberately.** `--env local|dev|staging|production`
-  (default production), or paste a URL: `--env https://poke-house.oxygen-hq.com`
+  (default production), or paste a URL: `--env https://your-org.oxygen-hq.com`
   targets that deployment *and* sets `{org}`.
 - **Staff hitting a tenant surface need an assume-role session.** A 403 there
   usually means no active session, not a mis-modeled role — check with

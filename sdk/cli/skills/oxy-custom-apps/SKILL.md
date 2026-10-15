@@ -1,14 +1,30 @@
 ---
 name: oxy-custom-apps
-description: Use when building, debugging, reviewing, or shipping an Oxy custom-app bundle (a code-first React/Vite app served by oxy), including writing Oxy Functions and driving them from the UI. Encodes the contract rules, pitfalls, performance guardrails, and the self-serve `oxyc publish` ship flow.
+description: >-
+  Use when building, debugging, reviewing, shipping, or verifying an Oxy
+  custom-app bundle (a code-first React/Vite app served by Oxy at
+  /customer-apps/<org>/<slug>/), including writing Oxy Functions, driving them
+  from the UI, and checking a published app in the browser with the Playwright
+  MCP server (no CI checks a published bundle). Covers the oxy-app.json
+  contract, @oxy-hq/sdk and @oxy-hq/vite-plugin, where app data goes
+  (ctx.airhouse, ctx.oltp, ctx.storage), pitfalls, performance guardrails, load
+  speed and usage tracking (service worker, Activity tab, useTrackEvent), the
+  self-serve oxyc publish ship flow, dev-<handle> sandboxes and workspace
+  previews, how an AI agent gets its own short-lived credential (oxyc tokens
+  create --sandbox-agent or --agent, never the engineer's oxyc login), and
+  reading a deployment's live data with oxyc api and oxyc proxy (which replaced
+  oxy api and the Rust oxy login, publish and proxy).
 ---
 
-# Customer-app development
+# Custom-app development
 
-Customer-app bundles are arbitrary JS apps served by oxy at
+Custom-app bundles are arbitrary JS apps served by Oxy at
 `https://<env>/customer-apps/<org>/<slug>/`. Oxy is a data gateway:
 serves static assets, gates cookie auth, and proxies queries. The
 bundle is opaque above the data plane — no per-app server config.
+
+This file is the contract. The detail lives in `references/` — see
+[Read next](#read-next) for which file answers what.
 
 ## The Oxy App Kit (use it)
 
@@ -16,21 +32,16 @@ Two small packages remove the footguns — default to them rather than wiring a
 bundle by hand:
 
 - **`@oxy-hq/sdk`** — the data layer (`useQuery`, `useSemanticQuery`,
-  `useAgentRun`, `<OxyChat>`); see rule 2 and `oxy-hq/customer-apps:
-  docs/sdk-flow.md`.
+  `useAgentRun`, `<OxyChat>`); see rule 2 and the `@oxy-hq/sdk` README.
 - **`@oxy-hq/vite-plugin`** (`oxyApp()` in `vite.config.ts`) — bakes the asset
   **base path** from the manifest, copies `oxy-app.json` into `out/`, proxies
   `/api` in dev, and injects the `window.__OXY_APP__` shim. Dropping it
   re-introduces the #1 bug — asset 404s → blank dashboard (rule 3).
 
-Scaffold both with `@oxy-hq/create-oxy-app` or by copying `oxy-hq/customer-apps:
-examples/hello-oxy/`. The
-platform is kit-agnostic (any bundle with a correct base path works), but
-hand-rolling means owning the base-path + dev-proxy wiring yourself.
-
-(**`oxy-hq/customer-apps:` prefixes a path in that repo**, not in whatever repo
-you are sitting in. This skill loads globally, so every such pointer is
-qualified.)
+Scaffold both with `pnpm create @oxy-hq/oxy-app my-app` (templates `vite` — the
+default — `functions`, `dashboard`, `single-store`; `-t functions` adds Oxy
+Functions). The platform is kit-agnostic (any bundle with a correct base path
+works), but hand-rolling means owning the base-path + dev-proxy wiring yourself.
 
 ## Three rules
 
@@ -60,9 +71,10 @@ qualified.)
    don't exist in v2 and the probe rejects them.
 
    File location: **`<root>/oxy-app.json`**, sibling to
-   `vite.config.ts`. The vite-plugin reads it from there; legacy
-   bundles that kept it under `public/` won't see the plugin's
-   base-path derivation kick in.
+   `vite.config.ts`. The vite-plugin reads it from there, and so does
+   `oxyc publish` (only from the directory it runs in); legacy bundles
+   that kept it under `public/` get neither the plugin's base-path
+   derivation nor the publish's `slug` / `orgSlug`.
 
 2. **All data flows through SDK hooks → oxy HTTP endpoints.** The
    surface is intentionally small:
@@ -86,8 +98,8 @@ qualified.)
    <OxyChat agentId="analytics" />
    ```
 
-   See `oxy-hq/customer-apps: docs/sdk-flow.md` for the full reference,
-   including `OxyApiError` parsing and beta-surface caveats.
+   See the `@oxy-hq/sdk` README for the full reference, including
+   `OxyApiError` parsing and beta-surface caveats.
 
    **Server-side work → Oxy Functions, not the browser.** `useQuery` &
    friends run in the client; for work the browser shouldn't do
@@ -118,9 +130,10 @@ qualified.)
    `ctx.storage` — and customer warehouses are read-only. See
    **Where data goes** below before writing anything.
    `oxyc publish` bundles `functions/*.ts` with
-   esbuild — no separate backend to stand up. Worked example +
-   author-facing `ctx` types: `oxy-hq/customer-apps:
-   examples/hello-oxy/functions/`.
+   esbuild — no separate backend to stand up. Author-facing types:
+   `OxyFunctionContext` / `OxyFunctionRequest` from `@oxy-hq/sdk`; a worked
+   example ships in the `functions` template (`pnpm create @oxy-hq/oxy-app
+   my-app -t functions`).
 
 3. **`OXY_APP_BASE_PATH` must match the path the bundle is linked
    under.** `@oxy-hq/vite-plugin` resolves it from (in order):
@@ -139,20 +152,12 @@ qualified.)
 | **Files** — photos, PDFs, exports | Your app's storage silo | `ctx.storage` | function: `"storage": { "read": true, "write": true }` |
 | **The customer's warehouse** — ClickHouse, Snowflake, BigQuery, their Postgres | Theirs | `ctx.query` · `ctx.warehouse.query(db, sql)` | read-only: a write is refused unless the function declares `"customerWarehouseWrites": { "<db>": "<why>" }` |
 
-**Availability.** `ctx.airhouse`, `ctx.oltp.tx`, `airhouseMigrations`, the
-read-only rule for customer warehouses and `oxyc validate`'s data-placement
-and manifest checks arrive with the Oxy release carrying oxygen-internal#3187,
-together with the `@oxy-hq/sdk` and `@oxy-hq/cli` published from it. Against
-an older Oxy, `ctx.airhouse` is `undefined` and the new manifest fields are
-ignored; vendored `oxy.d.ts` copies (`examples/hello-oxy/functions/oxy.d.ts`)
-gain the types when they are re-synced from that SDK.
-
 Three questions, in order: **Is it bytes?** → storage (keep the key in a record
 or fact). **Does it change after it's written?** No → a fact; yes → a record;
 both when you need history (the record says what is true now, the fact says
 what changed). **Is it already in the customer's warehouse?** → read it there.
 
-`<writer>` is your slug with `-` → `_` (`store-ops` → `app_store_ops`); a slug
+`<writer>` is your slug with `-` → `_` (`my-app` → `app_my_app`); a slug
 with `_` can't back a schema. Both stores are written **as the app**, whoever
 invoked the function, so a scheduled run writes like a click.
 
@@ -253,154 +258,64 @@ Oxygen's Settings → Notifications — don't build them. In tests,
   rely on the nil UUID `00000000-...` as a default project; don't
   assume `OXY_STATE_DIR` is writable.
 
-## Performance guardrails
-
-Any app that ships an Oxy Function or drives a batch of them should keep these —
-cheap up front, hard to retrofit. (Established by the pokehouse `post-je` function.)
-
-**In an Oxy Function — count the round-trips.** Each isolate run is stateless and
-pays a fresh network hop per `ctx.query` / `ctx.warehouse.*`, so serial *dependent*
-calls dominate latency.
-- Run independent data-plane calls with `Promise.all`, not sequential `await`
-  (e.g. resolve reference data **and** provision tables concurrently — only the
-  final step needs both).
-- Fold a check into a query that already runs: a duplicate/existence guard is a
-  scalar subquery on the main `SELECT`, not a second round-trip.
-- `Promise.all` idempotent DDL (`CREATE TABLE IF NOT EXISTS`); better, keep
-  provisioning off the hot path if a migration can own it.
-- A "cheap" extra `ctx.query`/`ctx.log` is N× the cost across N invocations.
-
-**Driving many function calls from the UI (bulk actions) — don't go serial.**
-- Independent calls run with **bounded concurrency** (~3–4) via a worker-pool over a
-  queue, not one-at-a-time — turns an O(N) wall-clock batch into a few waves.
-- If the calls share mutable server state that races under concurrency (a rotating
-  token, a lazily-created table), the best fix is to **remove the shared mutation**
-  (e.g. a single-writer scheduled refresher owns the token; requests only read).
-  When you can't, warm the state with one call first, then fan out.
-- Don't refetch derived state (a status ledger) after *every* item — the progress UI
-  is the live feedback; **throttle** the refetch (~1/s) and flush once at the end.
-- Guard `setState` after the component may have unmounted mid-batch (`mounted` ref).
-
-**Trust the server, not the client body.** Environment / tenant / which-secret
-selection is derived server-side (a function secret, a server-side mapping table,
-the authed identity), never from the request body — validate or override anything
-the client sends that picks a target.
-
-**Reuse the SDK's data-plane caching.** `useQuery` already dedups concurrent identical
-queries and short-caches results — don't hand-roll a fetch that bypasses it. Mark
-read-only functions `cache: { ttlSeconds }` in the manifest; **never** cache a
-side-effecting one (it silently drops writes). `idempotencyKey` = a fresh UUID
-per ATTEMPT (click), never a stable per-subject key: the server stores each
-key's response indefinitely and replays it WITHOUT running the function, so a
-`store:period` key silently breaks any post → compensate (delete) → post-again
-cycle — the second post "succeeds" with the stale response and writes nothing.
-The key shields one request from transport duplication; cross-attempt dedup
-belongs in the function itself (a server-side guard over real state, e.g. a
-posted-ledger row the compensating action clears).
-
-**Watch-outs when optimizing (each surfaced in review):**
-- **Clear UI running-state in `finally`.** An async batch driver must reset its
-  `running`/loading flag (and do its final refetch) in a `finally`, not after the
-  `await` — a stray throw otherwise leaves the bar stuck at "…" with the button
-  disabled.
-- **Parallelizing can move a side effect ahead of a gate.** Running an independent
-  side-effecting call concurrently with a validation query means it can now fire
-  even when validation would reject. Fine if the side effect is benign — just know
-  you traded the ordering for the latency.
-- **Additive migration for a scoped guard → backfill legacy rows to their TRUE value,
-  not a constant.** When a dedup/uniqueness guard starts keying on a new column,
-  `ADD COLUMN … DEFAULT <constant>` silently defeats the guard for pre-existing rows.
-  Derive the real value from an existing column (e.g. a DocNumber prefix) so old rows
-  stay correctly scoped.
-
-## Minimal starter
-
-Easiest path: `pnpm dlx @oxy-hq/create-oxy-app@latest my-app --template vite`.
-The scaffolded layout:
-
-```
-my-app/
-├── oxy-app.json            ← project root, not public/
-├── src/
-│   ├── App.tsx
-│   └── main.tsx
-├── package.json
-├── vite.config.ts
-└── tsconfig.json
-```
-
-`oxy-app.json`:
-```json
-{ "schemaVersion": 2, "slug": "my-app", "orgSlug": "test", "name": "My App" }
-```
-
-`src/main.tsx`:
-```tsx
-import { OxyAppProvider } from "@oxy-hq/sdk";
-import { createRoot } from "react-dom/client";
-import { App } from "./App";
-
-createRoot(document.getElementById("root")!).render(
-  <OxyAppProvider><App /></OxyAppProvider>
-);
-```
-
-`src/App.tsx`:
-```tsx
-import { useQuery } from "@oxy-hq/sdk";
-
-export function App() {
-  const { rows, loading, error } = useQuery({
-    sql: "SELECT 1 AS hello",
-  });
-  if (loading) return <p>loading…</p>;
-  if (error) return <p style={{ color: "red" }}>{error.message}</p>;
-  return <pre>{JSON.stringify(rows, null, 2)}</pre>;
-}
-```
-
-`vite.config.ts`:
-```ts
-import oxyApp from "@oxy-hq/vite-plugin";
-import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
-
-export default defineConfig({
-  plugins: [react(), oxyApp()],
-});
-```
-
-The plugin handles `outDir = "out"`, base-path resolution from the
-manifest, dev-server proxy to `/api`, and the `window.__OXY_APP__`
-dev shim. Plain `pnpm build` produces a bundle with the correct
-asset base baked in.
+Two more that read as bugs — `useTrackEvent("oxy-…")` is refused (`400`,
+the prefix is reserved), and a hovered-but-never-opened app records no view —
+are in [references/performance-and-usage.md](references/performance-and-usage.md).
 
 ## Publishing
 
-Ship with `oxyc publish` — **no CI, no S3 sync, no folder picker**. From
-the app directory (`oxy-hq/customer-apps: examples/hello-oxy/` is the worked
-shell; note its manifest deliberately carries no `orgSlug`, leaving the org to
-be resolved at publish time):
+**These commands are a person's.** `oxyc login` is the engineer's own browser
+login, and a publish to a channel or a promote is refused under a sandbox
+agent token. As an agent, publish into your own sandbox
+([references/sandbox-agent-loop.md](references/sandbox-agent-loop.md)) and
+leave the ship step to your engineer.
+
+Ship with `oxyc publish` (`npm i -g @oxy-hq/cli`) — **no CI step, no S3 sync,
+no folder picker**. From the app directory:
 
 ```bash
 oxyc login --env production    # once; browser flow, caches a token,
                                # and prints whether you're an app-admin
 oxyc validate                           # data-placement and manifest checks first
-oxyc publish --env production           # build → tar → upload (draft channel)
+oxyc publish --env production           # build → bundle functions → tar → upload (draft channel)
 oxyc publish --env production --promote # …straight to live
 ```
 
-- **Identity** is the manifest's `slug` + `orgSlug` (override with
-  `--app` / `--org`). The server upserts the app row — there is no
-  separate `oxy apps create` step.
-- **First publish of a new app** needs `--project <workspace-uuid>`: the
-  build-config lookup can't resolve a project until the app exists. Drop
-  the flag after the first publish — it's auto-resolved from then on.
-- **`--env` targets:** `local` → the oxy web-app Vite dev server `:5173`
-  (run `pnpm dev` there; it serves `/cli-auth` and proxies `/api` to
-  oxy on `:3000`), `dev`/`staging`/`production` →
-  `app{-dev,-staging,}.oxygen-hq.com`.
-- `--dir out` skips the build and uploads a prebuilt directory.
+- **Identity**, for each half, is `--app` / `--org`, then `OXY_APP` /
+  `OXY_ORG`, then the manifest's `slug` + `orgSlug`, then an
+  `apps/<org>/<app>/` working directory. `--org` takes a slug or a UUID; pass
+  the slug whenever `oxyc` runs the build, because the asset base path is
+  baked from what you pass. With no org from any of those, the build stops
+  with `missing org: the app's base path needs it` (exit `2`): add
+  `--org <org-slug>`, and `--app <slug>` when the directory has no manifest.
+  The server upserts the app row — there is no separate create step.
+- **First publish of a new app** needs `--project <workspace-uuid>` (unless
+  the app was registered in the admin UI): the build-config lookup can't
+  resolve a project until the app exists. A pinned workspace also supplies
+  the org. Drop the flag after the first publish — it's auto-resolved from
+  then on.
+- **`--env` targets:** `local` → a local Oxy web-app Vite dev server `:5173`
+  (it serves `/cli-auth` and proxies `/api` to oxy on `:3000`), `dev` →
+  `aip.dev.oxy.tech`, `staging` → `aip.staging.oxy.tech`, `production` (the
+  default) → `app.oxygen-hq.com`. A value with a `.`, `/` or `:` is read as a
+  URL.
+- **Function lint.** Before the build, each Oxy Function's source is checked
+  for what the host would refuse at the first call: a `ctx.*` call whose
+  capability the manifest lacks, a global the isolate does not have
+  (`Buffer`, `TextEncoder`, `process`, …), a write outside `destinations`. A finding fails
+  the publish (exit `1`); `--allow-function-lint` publishes past a false
+  positive.
+- `--dir out` skips the build and uploads a prebuilt directory (declared
+  functions are still bundled into it); `--build-only` builds and bundles
+  without a credential or an upload; `--prebuilt` (with `--dir`) uploads a
+  directory whose functions are already bundled. Server warnings print on
+  stderr; `--json` prints the result.
+- `.env.local` / `.env` are loaded from the app directory and its parents
+  (never overriding what is already set), so a stray `OXY_PROJECT` there
+  retargets a publish.
+- **Credential:** `OXY_TOKEN`, then `oxyc login`'s cache — or, in a GitHub
+  Actions job with `id-token: write`, the job's OIDC identity.
+  `oxyc init-ci` writes a workflow that publishes with no stored secret.
 - Promote / roll back / unpublish from the oxy admin app-detail console;
   every publish is audited (who shipped each build, when).
 - **What is live now:** `oxyc apps show <org>/<app>` prints the live build, the
@@ -409,7 +324,8 @@ oxyc publish --env production --promote # …straight to live
   lists the commits in your checkout that touch the app after the live build's
   commit — `unknown` there means it could not compare, not that nothing changed.
 
-Full hands-on guide: `oxy-hq/customer-apps: docs/local-development.md`.
+The build is not the check: after a publish, drive the page
+([references/verifying-in-the-browser.md](references/verifying-in-the-browser.md)).
 
 ## Sandboxes — try a change on real data before shipping it
 
@@ -417,13 +333,12 @@ A sandbox (`dev-<handle>`, 1-12 lowercase letters/digits/hyphens, no leading,
 trailing or double hyphen) is a named, short-lived environment of one app: its
 own build pointer, storage silo, secrets and Airhouse sibling schema. Reads
 hit production; most writes are isolated or *held* (recorded, not performed —
-`ctx.oltp`/`ctx.warehouse` stay shared — see
-`internal-docs/custom-app-sandboxes.md` if you have this repo checked out; if
-not, the per-call table is in this skill's "Where data goes" section above,
-and a held write's `note` field in `invocations held` names the manifest key
-that would make it land instead). It starts with no build, costs nothing
-idle, and is gone after 7 idle days or an explicit delete — safe to use for
-every iteration that would otherwise touch staging. Limit: 20 per app.
+`ctx.oltp`/`ctx.warehouse` stay shared; a held write's `note` field in
+`invocations held` names the manifest key that would make it land instead).
+Schedules and webhooks do not fire in a sandbox: call the function. It starts
+with no build, costs nothing idle, and is gone after 7 idle days or an
+explicit delete — safe to use for every iteration that would otherwise touch
+staging. Limit: 20 per app, counting ones still being deleted.
 
 ```bash
 oxyc env create acme/store dev-x --env dev --json          # starts with no build
@@ -433,46 +348,11 @@ oxyc fn call acme/store submit-order --app-env dev-x --env dev --data '{}' --jso
 oxyc checks run acme/store --app-env dev-x --env dev --json # run its checks
 oxyc invocations list acme/store --app-env dev-x --env dev --json  # what ran; a row's id is `id`
 oxyc invocations held acme/store <invocation-id> --env dev --json  # what it held, not wrote
+oxyc logs acme/store --app-env dev-x --env dev --json       # its function logs
 oxyc env delete acme/store dev-x --env dev --yes --wait --json     # done; tears its homes down
 ```
 
 (`--data` has no short form — don't write `-d`.)
-
-**An agent's credential is a sandbox agent token** (`oxy_sbx_…`), not a staff
-login. Get it yourself, once per task — your operator approves in the browser
-that opens — and end it when the task is done:
-
-```bash
-eval "$(oxyc tokens create --sandbox-agent --app acme/store --env dev)"   # prints: export OXY_TOKEN=oxy_sbx_…
-oxyc whoami --env dev --json     # kind "sandbox_agent", your app in `apps`, `expires_at` after the task ends
-# … the loop above …
-oxyc tokens revoke --current --env dev                                     # last, after the delete
-```
-
-It does this loop on the apps it was minted for (`--app`, up to five), in
-sandboxes it created, for 8 hours (`--hours`, up to 168) — and nothing else:
-production, staging, other apps, `oxyc api`, `oxyc apps` and a secret's value
-are all refused. With it, every verb that takes `--app-env` requires a
-`dev-<handle>` (exit `2` otherwise), and at most three of its sandboxes may be
-live at once.
-
-**Over MCP.** If your runtime speaks MCP, `oxyc mcp --env dev` serves the same
-loop as tools — `oxy_env_create` / `oxy_env_list` / `oxy_env_show` /
-`oxy_env_delete`, `oxy_publish_sandbox`, `oxy_fn_call`, `oxy_checks_run`,
-`oxy_invocations_list` / `oxy_invocations_held`, `oxy_logs`. It reads its
-credential from `OXY_TOKEN` and nowhere else (a person on their own login
-adds `--login`). With a sandbox agent token the list is those ten,
-`oxy_whoami`, `oxy_env_secret_list` / `_set` / `_delete` and
-`oxy_token_revoke` (`confirm: true`) — and no `oxy_request`. Prefer them to
-shelling out: each calls its verb's own request-building code, so the result
-is the document that verb's `--json` prints, and the choice changes nothing
-on the server. There is no exit code over MCP: a failure is `isError: true`
-with the class at the end of its text (`[exit 5 NOT_FOUND]`, plus `server
-code: <code>` when the server sent one) — branch on that the way you would
-on the exit code. `oxy_fn_call` and `oxy_checks_run` set `isError` when the
-function or a check failed, with the full document still in the result.
-`oxy_env_delete` needs `confirm: true`. `oxy_publish_sandbox` takes only a
-`dev-<handle>` and cannot reach staging or production.
 
 Iterate from `publish` as the code changes — each publish is a new build, and
 the sandbox always serves the newest. A sandbox build is **never promoted**:
@@ -481,86 +361,24 @@ Staff only (needs `develop_apps` + `manage_apps`) — or a sandbox agent token
 such staff approved; a publish token is refused on every sandbox operation,
 so CI cannot use one.
 
-**Driving this loop unattended (an agent, not a human at a keyboard):**
-
-- Name your sandbox `dev-<short-task-slug>` — one per agent/task, never reused
-  across unrelated tasks, so parallel agents don't collide. `env create`
-  answers exit `6` if the name is already taken.
-- Branch on exit codes and JSON fields only, never on stderr text: `0` ok,
-  `1` it ran and the thing itself failed, `2` you called it wrong, `4` not
-  authenticated — your token expired, was revoked, or your operator lost
-  access (stop — don't try another credential, a cached `oxyc login`
-  included), `5` not found
-  (environment/function/invocation — check the name, or publish first if
-  the environment has no build), `6` a conflict or bad name (pick another
-  name, wait out a teardown, or free up the 20-sandbox limit — or, on
-  `token_sandbox_limit`, delete one of your own three with `--wait` first: a
-  sandbox still being deleted counts toward the three), `7` retryable
-  (network/5xx, or a `--wait` deadline), `8` refused (stop and report), `9`
-  a check failed — read `invocations held` for that check's invocation
-  before assuming the function is broken.
-- Hard rules: never pass `--promote` in this loop; never `publish` without
-  `--app-env` while iterating in a sandbox; never use `production` as
-  `--app-env` to "check" something — reads already hit production. Always
-  delete the sandbox you created, **even when an earlier step failed**. On
-  exit `4` or `8`, stop and report to a human rather than retrying with a
-  different credential or flag. A held write is information to report, not
-  an error to engineer around. Set a sandbox's secret with `oxyc env secret
-  set` (`oxy_env_secret_set`), never a hand-built request, and never try to
-  read a value back. Revoke your token last: `oxyc tokens revoke --current`.
-- Report back: the sandbox name, the build id(s) published, each check's
-  `passed`, every held write (`op`/`plane`/`table`/`note`), and confirmation
-  the sandbox was deleted.
+**An agent runs this loop on its own sandbox agent token**, never a person's
+login, with `--token-env OXY_TOKEN` on every command — the mint, exit codes,
+rules and what to hand back are in
+[references/sandbox-agent-loop.md](references/sandbox-agent-loop.md). Read it
+before an agent runs any `oxyc` command against a deployment.
 
 **A sandbox isolates the app, not the workspace.** The semantic model,
 automations and Airway pipelines it reads are `main`'s. To try a workspace
-branch, open a **workspace preview** (staff only) — a separate loop:
+branch, open a workspace preview (staff only, `oxyc preview …`), or publish to
+the sandbox with `--semantic-branch <branch>` — see
+[references/sandbox-agent-loop.md](references/sandbox-agent-loop.md#a-sandbox-isolates-the-app-not-the-workspace).
 
-```bash
-oxyc preview create <branch> --wait --workspace <id> --json      # compile the branch; idempotent
-oxyc preview checks <branch> --workspace <id> --json             # Airway change check of that revision
-oxyc preview run <branch> procedure <file.automation.yml> --wait --workspace <id> --json  # held dry run
-oxyc preview runs list <branch> --workspace <id> --json          # every run, the server's own included
-oxyc preview runs show <run-id> --wait --workspace <id> --json   # one run: held steps, outcome
-oxyc preview delete <branch> --yes --workspace <id> --json       # done
-```
+## Read next
 
-`preview run`'s kind is `procedure` or `airway_sample`; never post a
-`transform_build` or `compare` run — the server queues those itself, and you
-read them with `preview runs list` / `runs show`. A `--wait` verb exits `1`
-when what it waited for ended `failed` or `cancelled`, `7` past its deadline.
-Over MCP the same verbs are `oxy_preview_create` / `_list` / `_show` /
-`_delete` (`confirm: true`) / `_checks` / `_run` / `_runs_list` / `_run_show`.
-To make a sandbox read the branch's semantic model, publish to it with
-`--semantic-branch <branch>`.
-
-## Reading data while vibe-coding
-
-You don't need an `X-API-Key` to poke at the data API by hand — your
-`oxyc login` token authenticates as a bearer. From an app directory:
-
-```bash
-oxyc login --env local       # once; caches a token per host
-
-# gh-api-style client (resolves the target + bearer for you, no headers):
-oxyc api user --env local                                   # who am I?
-oxyc api projects/<projectId>/query --env local -f sql='select 1'
-
-# raw curl with your token (e.g. to script or debug):
-curl -H "Authorization: Bearer $(oxyc token --env local)" \
-     -H 'content-type: application/json' \
-     localhost:5173/api/projects/<projectId>/query -d '{"sql":"select 1"}'
-```
-
-`oxyc api <path>` takes the path relative to `/api/`; `-X` sets the method
-(POST when a body is given), `-f`/`-F` set the body (string / JSON-typed),
-`--input` sends a raw one, `-i` includes response headers. `--env` resolves the
-same targets as `oxyc publish` (`local` → the Vite dev server `:5173`, which
-proxies `/api` → oxy `:3000`).
-
-Do not guess a path: `oxyc routes <filter>` lists what exists and
-`oxyc schema <path>` gives the body it expects.
-
-Access is your **normal org membership** — fine for your own test
-workspace, not a cross-customer backdoor. The `projectId` is the one the
-vite-plugin already resolved for the app (it's in `window.__OXY_APP__`).
+| File | Read it when |
+| --- | --- |
+| [references/sandbox-agent-loop.md](references/sandbox-agent-loop.md) | You are an AI agent about to touch a deployment: minting the sandbox agent token, the loop, exit codes, rules, what to hand back, when you cannot get a token, the MCP tools, workspace previews. |
+| [references/verifying-in-the-browser.md](references/verifying-in-the-browser.md) | You changed something a person sees (`src/**`, or a function a card calls) and need to prove it on the published page. |
+| [references/reading-data.md](references/reading-data.md) | You need a deployment's live data while building: an agent's own `--agent` token, `oxyc api` / `routes` / `schema`, and `oxyc proxy` for `pnpm dev` against cloud data. |
+| [references/performance-and-usage.md](references/performance-and-usage.md) | You write an Oxy Function, a bulk action, caching or idempotency keys — or need to know what Oxy does for load speed and usage tracking, and the opt-outs. |
+| [references/minimal-starter.md](references/minimal-starter.md) | You are writing an app by hand instead of scaffolding it, or need the smallest correct layout. |

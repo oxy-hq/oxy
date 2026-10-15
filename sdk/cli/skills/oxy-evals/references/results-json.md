@@ -1,0 +1,145 @@
+# Reading `oxy test` results
+
+`oxy test <file> --output-json` writes `<file without .yml>.results.json` next to the test
+file (`tests/sales.performance.test.yml` → `tests/sales.performance.test.results.json`).
+Without a file argument it writes `test-results.json` in the current directory.
+`--format json` prints the same document on stdout.
+
+## Shape
+
+The file is a JSON array with **one element per test file**:
+
+```jsonc
+[
+  {
+    "test_name": "sales.performance.test.yml",
+    "errors": [                       // one string per run that produced no answer
+      "agentic pipeline asked a clarifying question: Which region do you mean?"
+    ],
+    "stats": {
+      "total_attempted": 9,           // cases × runs
+      "answered": 8                   // runs that returned an answer (judged or not)
+    },
+    "metrics": [
+      {
+        "type": "Correctness",        // the only metric `oxy test` produces
+        "score": 0.6667,              // mean of every record's score in this file
+        "records": [
+          {
+            "prompt": "What was total revenue across all stores in 2025?",
+            "expected": "Total revenue across all stores in 2025 was approximately $6.7 billion.",
+            "actual_output": "Total revenue in 2025 was $6.74B across 45 stores…",
+            "cot": "1. Key facts in the expected answer… Verdict: PASS",
+            "choice": "PASS",         // PASS or FAIL
+            "score": 1.0,             // 1.0 for PASS, 0.0 for FAIL — never partial
+            "duration_ms": 18234.5,
+            "input_tokens": 41210,
+            "output_tokens": 1830
+          }
+          // … one record per run: `runs: 3` gives 3 records per case
+        ]
+      }
+    ]
+  }
+]
+```
+
+What is **not** in it: the SQL, the tool calls, the rows the agent saw. Records for an
+`.agentic.yml` target carry no `references` array. Diagnose the path with the commands under
+"Seeing what the agent did" below.
+
+## Field by field
+
+| Field | Use it for |
+| --- | --- |
+| `prompt` | Grouping. A case's runs share the same prompt string. |
+| `expected` | The specification, exactly as written in the test file. |
+| `actual_output` | The agent's final answer. This is your main evidence. `[ERROR] …` means the run failed. |
+| `cot` | The judge's whole response: its reasoning, then its verdict line. |
+| `choice` | The parsed verdict. Compare it with `cot` to spot judge parse problems. |
+| `score` | `choice` as a number. |
+| `duration_ms`, `*_tokens` | Cost and latency of the agent run, not of the judge. Zero on errored runs. |
+| `errors` | The error text of every run that never answered, in run order. |
+| `stats.answered` vs `total_attempted` | The answer rate. A gap means runs ended in errors. |
+
+## Ordering
+
+Answered runs come first, in case order. **Errored runs are appended at the end of
+`records`**, each with `choice: "FAIL"`, `actual_output: "[ERROR] <message>"` and
+`cot: "Run failed with error: <message>"`. Don't assume a case's runs are adjacent. Group by
+`prompt`.
+
+## How the verdict is parsed
+
+The judge gets one prompt: the question, the expected answer and the agent's answer. It's
+asked to list the expected answer's key facts, check whether the agent's answer contains them,
+look for contradictions or significant omissions, ignore formatting, style, phrasing and level
+of detail, allow extra correct information, and end with `PASS` or `FAIL`.
+
+The verdict is read from the **last five lines** of the judge's response:
+
+- A line that contains `PASS` and not `FAIL` → PASS.
+- A line that contains `FAIL` → FAIL. That includes a line containing both words, such as an
+  echoed `Verdict: PASS or FAIL`.
+- No verdict in the last five lines → **FAIL**.
+
+So a judge false negative usually looks like this: the `cot` reasoning concludes the answer
+matches, but the verdict is missing, buried higher up, or written as "PASS or FAIL". The fix
+for that is the judge model, never the agent.
+
+## Recipes
+
+Without tools: for a single `--case` run, the file is small, so read it whole. For a full
+suite, search the file for a distinctive phrase from the prompt and read the records around
+each hit.
+
+With `jq`:
+
+```bash
+R=tests/sales.performance.test.results.json
+
+# Pass count per case
+jq -r '.[].metrics[] | select(.type=="Correctness") | .records
+       | group_by(.prompt)[] | "\(map(.score)|add|floor)/\(length)  \(.[0].prompt)"' "$R"
+
+# Every answer to one case, side by side
+jq -r '.[].metrics[].records[] | select(.prompt | test("total revenue"; "i"))
+       | "\(.choice)  \(.actual_output)\n"' "$R"
+
+# Failing runs with the judge's reasoning
+jq -r '.[].metrics[].records[] | select(.score < 1)
+       | "## \(.prompt)\n\(.actual_output)\n--- judge ---\n\(.cot)\n"' "$R"
+
+# Runs that never answered
+jq -r '.[].errors[]' "$R"
+```
+
+## Seeing what the agent did
+
+The results only show answers. To see the route an answer took, replay the prompt:
+
+```bash
+oxy agentic run <path/to/agent.agentic.yml> -q "<prompt>" --json
+```
+
+This needs `OXY_DATABASE_URL` (a Postgres URL; the command records the run there). It prints
+one JSON object per line, `{"seq", "event_type", "payload"}`. The events that matter for
+diagnosis:
+
+| `event_type` | What to read in `payload` |
+| --- | --- |
+| `semantic_shortcut_attempted` / `semantic_shortcut_resolved` | whether the semantic model answered directly |
+| `spec_resolved` | the tables, joins and assumptions the agent settled on |
+| `query_generated` | SQL the model wrote |
+| `query_executed` | `query`, `row_count`, `rows` (a preview), `error`, and `source`: `semantic`, `llm`, `verified_sql` or `vendor` |
+| `analytics_validation_failed` | `state`, `reason`: a check that sent the agent back to retry |
+
+Run it two or three times for a flaky case. Different `source` values or different SQL across
+runs is the flakiness, made visible.
+
+## The pretty report
+
+Without `--format json`, each case prints as `PASS (n/n)`, `FLKY (k/n)` or `FAIL (0/n)`,
+followed by the file's Correctness score and a `Failures:` section with the judge's reasoning.
+`-v` adds each failing run's actual answer, and `-q` prints only the summary. The footer gives
+the overall `Tests: x/y passed`, the answer rate, the time taken and the token totals.

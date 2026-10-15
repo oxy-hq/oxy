@@ -64,6 +64,9 @@ sdk/cli/                    # (@oxy-hq/cli) the `oxyc` CLI — the gh-api-style 
                             #   the HTTP API, plus the customer-account tooling. TypeScript,
                             #   NOT Rust: it replaced `oxy api`, which was deleted from
                             #   crates/app. See internal-docs/oxy-api-cli.md
+sdk/cli/skills/             # THE Oxy platform skills — published to oxy-hq/skills and installed
+                            #   by customers' agents. Update one in the PR that changes the
+                            #   behaviour it describes. internal-docs/platform-skills.md
 ```
 
 Many crates carry their own `CLAUDE.md` — all `agentic/*`, `authz`, `cameras`,
@@ -260,14 +263,21 @@ skill** rather than reasoning it out again — its `SKILL.md` carries the full c
 | Skill | Governs — invoke when… | Non-negotiable |
 | ----- | ---------------------- | -------------- |
 | `oxy-scaling-design` | multi-instance / worker fleet / lease table / `OXY_ROLE` / stateless serve | code-first is sacred; git is source of truth; task-claim ≠ workspace-ownership (two leases) |
-| `oxy-task-spec-default` | background work in `crates/app/src/server/` (`tokio::spawn`, periodic loops, LLM calls, clones >5s) | new long-running work is a `TaskSpec` in `agentic_task_queue`, **not** a spawn in an HTTP handler |
+| `oxy-task-spec-default` ¹ | background work in `crates/app/src/server/` (`tokio::spawn`, periodic loops, LLM calls, clones >5s) | new long-running work is a `TaskSpec` in `agentic_task_queue`, **not** a spawn in an HTTP handler |
 | `oxy-compile-boundary` | new `.foo.yml` file type, or any per-request read that walks the workspace FS | every workspace artifact is a `*_definitions` Postgres row keyed by `revision_id`, not an FS read |
-| `oxy-route-classification` | add/move a route under `server/router/`, or a handler touching disk/`.git`/state dir | FS-touching routes MUST be `IdeOnly` in `role_manifest.rs`; persisted-data reads MUST stay `FleetOk` |
-| `oxy-customer-apps-perf` | add/move a `/customer-apps/**` route or custom-app data endpoint; any per-request read on that hot path | serving routes need Cache-Control + SSE-safe compression; result caches keyed `project_id`-first, read after auth gates, honor `?refresh` |
+| `oxy-route-classification` ¹ | add/move a route under `server/router/`, or a handler touching disk/`.git`/state dir | FS-touching routes MUST be `IdeOnly` in `role_manifest.rs`; persisted-data reads MUST stay `FleetOk` |
+| `oxy-customer-apps-perf` ¹ | add/move a `/customer-apps/**` route or custom-app data endpoint; any per-request read on that hot path | serving routes need Cache-Control + SSE-safe compression; result caches keyed `project_id`-first, read after auth gates, honor `?refresh` |
 | `oxy-run-and-verify` | verify a change in the running app, seed data, sign in as a persona, screenshot a feature or reproduce a UI bug | never `--local`; `just up`, not hand-started servers; sign in by persona (`/dev-login?as=`), never by editing env |
 | `oxy-data-placement` | a new table or migration, a webhook/ingest that stores org data, a custom-app data surface, a failing `data_placement` test | org data never in Oxy's Postgres; the shape picks the store (facts → Airhouse, records → org OLTP, files → storage); customer warehouses read-only; OLTP provisioning stays manual |
 
 PRs that violate the right-hand column should be challenged through the matching skill.
+
+¹ **Scoped to `crates/app/`** (`crates/app/.claude/skills/`): Claude Code loads a nested skill
+the first time it reads or edits a file under that directory, not at startup, so read the
+relevant `crates/app` file before reaching for it; it is invoked as `/crates/app:<name>`.
+Area-only skills live next to their area this way (`web-app/.claude/skills/` too) so they cost
+no context elsewhere. The platform skills in `sdk/cli/skills/` are symlinked the same way into
+the crates that implement them — see `internal-docs/platform-skills.md`.
 
 ## Docs
 

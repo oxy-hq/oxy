@@ -7,8 +7,9 @@
  *   1. the tool describes itself — `--help`, `routes`, `schema`, `exit-codes`.
  *      Works for ANY agent with no setup, and is the foundation. But it is
  *      pull-based: the agent has to already suspect `oxyc` is the right tool.
- *   2. the bundled Claude skill (`oxyc skills install`). Rich, but Claude-only
- *      and behind an install step.
+ *   2. the platform skills (`sdk/cli/skills/`, installed by `oxyc skills install`,
+ *      `npx skills add oxy-hq/skills` or the Claude Code plugin). Rich, but
+ *      behind an install step.
  *   3. error messages that name the next command. The highest-bandwidth
  *      channel, because it arrives exactly when the agent is stuck — but only
  *      once it is already stuck.

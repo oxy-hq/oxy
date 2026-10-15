@@ -10,6 +10,11 @@ import { openAdminPalette } from "@/pages/admin/components/AdminEntitySearch";
 import type { AppStorageUsageRow, FleetStorageResponse } from "@/types/apps";
 import { AllowListError, isAllowListError } from "./AllowListError";
 import type { HealthIndex } from "./appStatus";
+import {
+  AgentSkillsButton,
+  AgentSkillsStrip,
+  useAgentSkillsDismissed
+} from "./components/AgentSkills";
 import { AppConsole } from "./components/AppConsole";
 import { AppIdentity } from "./components/AppIdentity";
 import { AppSwitcherTrigger } from "./components/AppSwitcher";
@@ -73,6 +78,10 @@ export default function AdminCustomApps() {
   const storage = useMemo(() => storageIndex(storageResponse), [storageResponse]);
 
   const [createOpen, setCreateOpen] = useState(false);
+  // The fleet carries the reminder as a strip until it is dismissed; after that, and on
+  // every app console, it is the header's "Agent skills" button.
+  const [skillsDismissed, dismissSkills] = useAgentSkillsDismissed();
+  const skillsStrip = onFleet && !skillsDismissed;
 
   // Deliberately NOT a second ⌘K binding. The admin console already has one palette on
   // that key (`AdminEntitySearch`), and binding it again here opened both dialogs
@@ -105,6 +114,7 @@ export default function AdminCustomApps() {
             Every custom app on this deployment, worst first.
           </span>
         )}
+        {!skillsStrip && <AgentSkillsButton />}
         <Button
           variant='outline'
           size='sm'
@@ -115,6 +125,8 @@ export default function AdminCustomApps() {
           New app
         </Button>
       </header>
+
+      {skillsStrip && <AgentSkillsStrip onDismiss={dismissSkills} />}
 
       {/* A 403 is the one failure here an operator can fix themselves, and `AdminAsync`
           cannot say so — `errorDetail` strips axios's "status code 403". Ahead of the

@@ -1,338 +1,245 @@
 ---
 name: oxy-airway-pipelines
-description: Use when writing, reviewing, or debugging an Oxy Airway ELT pipeline (`.airway.yml`) — sources, the `kind` values Oxy actually wires, credentials, reset and retry — or when one misbehaves: "unsupported source kind", a pipeline that parses then fails at run time, credentials that do not resolve, a *pipeline* run landing `completed_with_errors` (an *automation* run with that status is `oxy-automations`), a schema that will not change, or duplicate rows. Airway has no published docs; this skill is the reference.
+description: >-
+  Use when writing, reviewing, or debugging an Oxy Airway ELT pipeline (`.airway.yml`) — sources,
+  the `kind` values Oxy actually wires, credentials, reset, rewind and retry — or when one
+  misbehaves: "unsupported source kind", a pipeline that parses then fails at run time,
+  credentials that do not resolve, a *pipeline* run landing `completed_with_errors` (an
+  *automation* run with that status is `oxy-automations`), a schema that will not change, missing
+  history after a backfill, or duplicate rows. Carries the traps the published pipeline reference
+  does not.
 ---
 
 # Oxy Airway pipelines
 
-**Unlike every other Oxy subsystem, Airway has no published documentation** — no
-`airway.mdx`, no `.airway.yml` reference page, no JSON schema. So this skill
-carries content instead of pointing at a doc, which also makes it the
-fastest-rotting thing in this set. Treat it as a map, not the territory.
+**The reference is upstream — read it first:**
+<https://www.oxygen-hq.com/docs/guide/build/data-infrastructure/airway/pipelines>
+(keys, supported `kind` values, credentials, how a run works), with the
+overview beside it at
+<https://www.oxygen-hq.com/docs/guide/build/data-infrastructure/airway>.
 
-## Version anchor, and what is actually authoritative
+That page owns the key table and the basic run model. This skill does not
+restate them; it carries the traps that cost time, from one production
+workspace's 19 pipelines.
 
-Everything below was read on 2026-08-17/18 against:
+## A pinned engine, so the wired set moves
 
-| | |
-|---|---|
-| `oxy-internal` workspace version | **0.5.126** (`Cargo.toml:522`) |
-| `airway` engine dependency | git tag **0.1.30** (declared in `Cargo.toml`, the `airway = { git = …, tag = … }` line — `:509` today) resolving to rev `7c1737af9e69e0f9ad4e7a26a7969e4d1309538a` (the rev lives **only** in `Cargo.lock`, `[[package]] name = "airway"` — `:731` today; `Cargo.toml` never names it) |
-| Real corpus | Poke House's 19 `oxy/pipelines/*.airway.yml` |
+Airway is an external engine. Each Oxy release pins one engine version and
+gives a concrete connector to a **subset** of the sources that engine ships.
+The lists below were checked against the engine Oxy pinned in October 2026
+(airway 0.1.51). A newer Oxy may wire more; when this page and a run disagree,
+the run's `unsupported source kind` error is the authority.
 
-**Bumped since.** On 2026-08-19 `Cargo.lock` reads airway **0.1.32**
-(`55e2794490ebcfffdf69a9693a6044efe313d702`). Everything below was read at
-0.1.30 and wants re-checking against the live `source_factory.rs`. One error has
-since been corrected in place (the `replacing` buffer's location, under
-duplicate rows) — note that it was **not** caused by the bump: it was wrong at
-0.1.30 too. A stale claim here is at least as likely to be a misreading as it is
-to be drift; check which before blaming the pin.
+## Anatomy traps
 
-Airway is an **external engine fetched by git tag**, not a vendored copy —
-`crates/agentic/airway` is only Oxy's wiring around it. So a dependency bump can
-change which `kind`s work, and how they behave, with no oxy-internal commit at
-all. Re-check `Cargo.lock` before trusting any list here.
+- **Strict at the top, strict-later inside `config:`.** An unknown top-level
+  key is a parse error. The `config:` block is free-form when the file is
+  parsed and checked only when a run builds the connector — and most kinds
+  then reject an unknown key. So a typo inside `config:` sails through
+  compilation and fails the first run with `invalid <kind> config: unknown
+  field`.
+- **Use the reference destination form** — `destination: { database,
+  dataset_name }`, resolved to a `config.yml` database at run time. An inline
+  destination shape also parses, but it exists for tests; no real pipeline uses
+  it.
+- **`name` must not start with `preview:`** — the prefix is reserved and
+  refused.
+- **Off the beaten path:** across 19 real files, `resources`,
+  `allow_concurrent_runs`, `streaming` and `channel_capacity` appear **zero**
+  times. They work, but there is no house precedent to copy.
 
-**Two files are authoritative. When they disagree with this skill, they win:**
+## Source kinds: what is wired
 
-- **`crates/agentic/airway/src/config.rs`** — the parser. Which keys exist,
-  which are required, what the defaults are.
-- **`crates/agentic/airway/src/source_factory.rs`** — the dispatch. Which
-  `kind` values Oxy can actually build. (Changing that crate rather than using
-  it? Read its `CLAUDE.md` first.)
+**Wired (16):** `rest_api`, `http_file`, `filesystem`, `google_sheets`,
+`sql_database`, `postgres_cdc`, `clickhouse`, `toast`, `ubereats`, `sp_api`,
+`quickbooks`, `netsuite`, `weather`, `besttime`, `overture`, `overpass`.
 
-**How the "no published doc" claim was established, so you can redo it:** the
-live docs sitemap — <https://www.oxygen-hq.com/docs/sitemap.xml> — carries 146
-URLs, **zero** mentioning airway, and `docs/build/data-infrastructure/` covers
-three of the four similarly-named engines (Airform, airlayer, Airhouse) but not
-this one. The single docs page whose URL says "pipeline",
-<https://www.oxygen-hq.com/docs/guide/build/agents/pipeline>, is a same-word
-false positive documenting the **agentic reasoning FSM**, not ELT. Do not send
-anyone there for Airway.
-
-## Anatomy
-
-`AirwayPipelineSpec` (`config.rs`) is `#[serde(deny_unknown_fields)]`, so an
-unrecognised top-level key is a **hard parse error**, not a silent no-op. That
-is the friendly half; the traps below are the rest.
-
-| Key | Required | Default | Notes |
-|---|---|---|---|
-| `name` | **yes** | — | validated non-empty |
-| `source` | **yes** | — | `{kind: String, config: <free-form>}` |
-| `destination` | **yes** | — | `{database, dataset_name, schema_separator?}` |
-| `description` | no | — | free text; `>` block scalar is house style |
-| `resources` | no | `[]` = all | subset of the source's advertised resources |
-| `concurrency` | no | **`1`** | validated, capped at `MAX_CONCURRENCY = 16` |
-| `allow_concurrent_runs` | no | `false` | single-flight; see run semantics below |
-| `streaming` | no | `true` | falls back to the bulk path transparently |
-| `channel_capacity` | no | `2 * concurrency` | streaming path only |
-
-The corpus's smallest file (`quickbooks_financials.airway.yml`; IDs redacted and
-comments stripped — the real file's comments cover `database:` resolving
-credentials at run time via `airhouse_managed` ephemeral creds, plus commented
-`resources:` / `streaming:` exemplars):
-
-```yaml
-name: quickbooks_financials
-source:
-  kind: quickbooks
-  config:
-    client_id: <literal>          # not a secret; see credentials below
-    client_secret_var: QB_CLIENT_SECRET
-    refresh_token_var: QB_REFRESH_TOKEN
-    realm_id: "<literal>"
-destination:
-  database: pokehouse
-  dataset_name: quickbooks_financials
-concurrency: 1
-```
-
-**All 19 real files use that `destination: {database, dataset_name}` reference
-form**, resolved by the `agentic-pipeline` executor at run time. `config.rs` also
-accepts an `Inline{kind, config}` destination, but its own doc comment calls that
-a test-fixture / post-resolution shape — no real file uses it. Field presence
-across the 19: `name`/`source`/`destination` 19, `concurrency` 14, `description`
-12, `schema_separator` 1, and `resources` / `allow_concurrent_runs` / `streaming`
-/ `channel_capacity` **0** — those four are off the beaten path.
-
-**The extension is `.airway.yml`, and it is load-bearing.** All 19 use it; none
-uses a bare `.yml`. The compile-boundary walker
-(`crates/oxy-compile/src/walker.rs:170`) globs literally `**/*.airway.yml` to
-produce `FileKind::AirwayPipeline` — a `pipelines/foo.yml` is not a broken
-pipeline, it is *invisible to compilation*, with no error to explain it.
-
-## The wired `kind` set — the trap that costs the most time
-
-**Oxy wires a strict subset of the engine's sources.** The upstream airway crate
-registers roughly **40** source modules; `source_factory.rs` gives **14** of them
-a concrete arm. YAML has no `kind` enum — `SourceConfig.kind` is a plain `String`
-— so `kind: shopify` parses perfectly and only then fails at *run time*, in the
-`other =>` fallback arm of the dispatch `match` inside
-`source_factory.rs`'s `build_source_connector_inner`, with
-``unsupported source kind `shopify`. Wire it up in
-agentic_airway::source_factory::build_source_connector — …`` (cited by symbol,
-not line: that arm is the *last* one in the table, so every source added above
-it shifts it. Two did on 2026-08-17 alone — `ubereats` (#2937) and `netsuite`
-(#2939).)
-
-The 14 wired kinds, and how hard the real corpus exercises each:
-
-| `kind` | Real pipelines using it |
-|---|---|
-| `http_file` | 5 (census LODES + gazetteer pulls) |
-| `quickbooks` | 5 (see below — not one pattern) |
-| `rest_api` | 3 (`census_acs`, `nces_schools`, `yelp_fusion`) |
-| `clickhouse` | 2 (`clickhouse_ingest`, `clickhouse_mirror`) |
-| `besttime` | 1 |
-| `overpass` | 1 (`osm_augmentation`) |
-| `overture` | 1 (`overture_places`) |
-| `toast` | 1 (`restaurant_analytics`) |
-| `filesystem`, `sql_database`, `postgres_cdc`, `weather`, `netsuite`, `ubereats` | 0 — wired, never exercised here |
-
-Registered upstream but **not** wired here, so unavailable today: `shopify`,
+**Shipped by the engine but not wired — unavailable in Oxy:** `shopify`,
 `stripe`, `github`, `hubspot`, `salesforce`, `slack`, `jira`, `notion`,
-`zendesk`, `google_ads`, `google_analytics`, `google_sheets`, `facebook_ads`,
-`airtable`, `mongodb`, `kafka`, `kinesis`, and more. **Reading airway's own
-source list and concluding a `kind` works here is the most expensive mistake
-this file format offers.** Check the live `match` arms instead.
+`zendesk`, `google_ads`, `google_analytics`, `facebook_ads`, `airtable`,
+`mongodb`, `kafka`, `kinesis`, and more. `kind` is a free-text field, so
+`kind: shopify` parses perfectly and fails only when the pipeline runs.
+**Reading the engine's own source list and concluding a `kind` works here is
+the most expensive mistake this file format offers.**
 
-**`rest_api` is the generic escape hatch.** Per `source_factory.rs`'s own doc
-comment, the vendor-specific helpers (`shopify`, `github`, `stripe`, …) are all
-built on `RestApiSource` upstream, so most can be expressed directly as a
-`rest_api` config; per-vendor sugar is deferred until a real consumer asks. A
-source with no dedicated arm is a `rest_api` config, not a blocker.
+**`rest_api` is the escape hatch.** The engine's vendor connectors (`shopify`,
+`github`, `stripe`, …) are built on its generic REST source, so most can be
+written directly as a `rest_api` config with its own pagination and `auth`
+settings. A source with no dedicated kind is a `rest_api` config, not a blocker.
 
-Destinations are narrower still — `destination_factory.rs` wires exactly three:
-`memory` (test fixture), `airhouse` (production; where all 19 real pipelines
-land), and `postgres`.
+**No Excel.** `filesystem` reads `json`, `jsonl` and `csv` only (from a local
+path or `s3://`, `gs://`, `az://` plus a glob `pattern`); `ubereats` reads its
+`.csv` reports only; `http_file` downloads a file over HTTP. An `.xlsx`
+workbook has **no Airway path** — read as CSV it is binary noise. Export it to
+CSV, or keep the data in a Google Sheet and use `google_sheets`.
 
-### `quickbooks` is not a normal match arm
+**Destinations** are `airhouse` (production — where every real pipeline lands)
+and `postgres`; a `memory` destination exists for tests only.
 
-It is dispatched by an **early return before the dispatch table**
-(`source_factory.rs:229`), ahead of the `match` at line 236, because it is the
-one source needing plumbing the host must supply: the `RefreshTokenSink` and
-`AccessTokenSource` traits (`source_factory.rs:61` / `:106`), threaded in as
-`QuickBooksTokens`. Two mutually exclusive custody modes fall out of that, and
-`build_quickbooks` **fails closed** if a config mixes them:
+### `quickbooks`: two custody modes, never mixed
 
-- **Rotating custody** — `client_secret_var` + `refresh_token_var`: the pipeline
-  refreshes against Intuit itself and writes the new token back through the sink.
+QuickBooks is the one source whose token the host must plumb in, and it comes
+in two mutually exclusive custody modes. A config that mixes them **fails
+closed** rather than guessing:
+
+- **Rotating custody** — `client_secret_var` + `refresh_token_var`: the
+  pipeline refreshes against Intuit itself and stores the new refresh token.
 - **Read-only custody** — `access_token_var` alone: some *other* component owns
   rotation, and the value is re-read per request rather than substituted once,
-  since a 60-minute token pinned at the start of a long backfill expires mid-run.
+  since a 60-minute token pinned at the start of a long backfill expires
+  mid-run.
 
-**Why that check exists, and why it matters far beyond this file:** Intuit voids
-the old refresh token whenever it issues a new one, so two components rotating
-the same grant deadlock into `invalid_grant` — each invalidating the other's —
-until a human re-authorises by hand. Exactly one component may ever hold rotating
-custody; `access_token_var` is how you keep a pipeline out of that role. The
-source comment says it outright: a second refresher "would fork this grant's
-rotation chain."
+**Why that matters far beyond this file:** Intuit voids the old refresh token
+whenever it issues a new one, so two components rotating the same grant
+deadlock into `invalid_grant` — each invalidating the other's — until a human
+re-authorises by hand. Exactly one component may ever hold rotating custody;
+`access_token_var` is how you keep a pipeline out of that role.
 
-Hence the five real QuickBooks pipelines are **not one pattern**. The base
-`quickbooks_financials.airway.yml` is rotating; the four per-location files
-(`_clovis`, `_eastbay`, `_lakeoswego`, `_santarosa`) are read-only, fenced from
-Intuit's token endpoint because a scheduled Oxy Function owns rotation. Copying
-"the QuickBooks pipeline" as a template for a new company means first knowing
-which custody mode that company's secret was provisioned under.
+Hence QuickBooks pipelines in one workspace are often **not one pattern**: a
+base pipeline that rotates, and per-location pipelines that are read-only
+because a scheduled job owns rotation. Copying "the QuickBooks pipeline" as a
+template means first knowing which custody mode that company's secret was
+provisioned under.
 
-## Credentials live in the secret manager, never in the YAML
+### `google_sheets`: store the key, never a token
 
-The convention is a `*_var` suffix naming a secret **key**, never a value;
-`crates/agentic/pipeline/src/executor/mod.rs` (`resolve_airway_source_secrets`)
-holds the per-kind `(field, var_key)` table.
+- Set **`service_account_json_var`** to a secret holding the service-account
+  **JSON key**. A fresh, read-only access token is minted from it on every run.
+  Do not store an access token: it lives an hour, so the pipeline would succeed
+  once and then return 401 forever. With no key resolved, the run fails with
+  `no access token was resolved` rather than a misleading "not found".
+- **`ranges:` decides the resource names.** Each entry (`Main`, `Main!A:S`)
+  becomes one resource named after the part before `!`, lowercased, spaces
+  turned into underscores — `Main!A:S` is the resource `main`, and that is the
+  name `resources:` has to list. Empty `ranges` loads every sheet as one
+  resource called `sheet_data`.
 
-- Flat configs. **The per-kind sets are disjoint — read them per row, never as
-  a shared menu:**
+### `sp_api` (Amazon): two settings with no safe default
 
-  | `kind` | `*_var` keys it manages |
-  |---|---|
-  | `toast` | `client_secret_var`, `client_id_var` |
-  | `quickbooks` | `client_secret_var`, `refresh_token_var` (plus `access_token_var` — see below, resolved differently) |
-  | `netsuite` | `private_key_var` |
-  | `clickhouse` | `password_var` |
-  | `weather`, `besttime` | `api_key_var` |
+- **`default_start` is the entire backfill policy.** The connector only pulls
+  *forward*, from one window spanning `default_start` to now, with no
+  chunking. Too recent loses history *quietly* — nothing signals it, and only a
+  cursor rewind brings it back. Too far back is worse: a window too large for
+  Amazon to build in time fails identically on every subsequent run, so the
+  pipeline stalls permanently instead of catching up. Pick it deliberately.
+- **`partner_type` (`seller`, the default, or `vendor`) belongs to the
+  credential.** It decides which reports exist at all; the wrong value pulls
+  nothing and refuses every named resource. A business with both accounts
+  needs two pipelines.
 
-  A `kind` with no arm in that `match` carries no managed credentials at all.
-  Borrowing across rows fails, and not gently: put `client_id_var` on a
-  quickbooks config and the executor leaves it in place (its quickbooks arm
-  strips only the two it owns), so it reaches `QuickBooksParams` — which is
-  itself `#[serde(deny_unknown_fields)]` and has no such field. Unlike the
-  top-level `deny_unknown_fields` at anatomy above, this one bites when the
-  connector is **built**, i.e. at run time: a spec that parsed cleanly dies on
-  `invalid quickbooks config: unknown field`. Same for `refresh_token_var` on a
-  toast config.
-- **`rest_api` nests differently** — auth lives under `config.auth`, handled by
-  a separate `resolve_rest_api_auth_secrets`, as `token_var` (bearer) or
-  `key_var` (`api_key` header/query). Real, from `census_acs.airway.yml`:
+## Credentials: per-kind `*_var` keys
 
-  ```yaml
-  auth:
-    type: api_key_query
-    key_var: CENSUS_API_KEY
-    param: key
-  ```
+A `*_var` key names a secret **key**, never a value; the run resolves it from
+the secret manager, writes the value under the plain name (`client_secret_var`
+→ `client_secret`), and removes the `_var` key. **The sets are per kind and do
+not overlap — read the row for your kind, never borrow from another:**
 
-The executor resolves `*_var` → literal and then **strips the `_var` key**, so
-the connector factory (and airway itself) only sees the resolved value under the
-plain name — `client_secret_var` becomes `client_secret`. Hence **`password_var`
-is not an accepted field on `ClickHouseParams`**, nor any other pair: the `_var`
-form is valid *only* at the YAML layer.
+| `kind` | `*_var` keys it manages |
+|---|---|
+| `toast` | `client_id_var`, `client_secret_var` |
+| `quickbooks` | `client_secret_var`, `refresh_token_var`, `client_id_var` — or `access_token_var` alone (read-only custody) |
+| `sp_api` | `client_secret_var`, `refresh_token_var` |
+| `netsuite` | `private_key_var` — a multi-line PEM; the secret store must keep its newlines |
+| `clickhouse` | `password_var` |
+| `sql_database`, `postgres_cdc` | `connection_string_var` (a whole DSN) |
+| `weather`, `besttime` | `api_key_var` |
+| `google_sheets` | `service_account_json_var` |
+| `rest_api` | nested under `config.auth`: `token_var` (bearer) or `key_var` (`api_key` header or query) |
+
+Any other kind manages no credentials.
+
+- **Borrowing across rows fails at run time, not at parse time.** Put
+  `refresh_token_var` on a `toast` config, or `client_id_var` on an `sp_api`
+  config, and nothing resolves or removes it; it reaches the connector's strict
+  config and the run dies on `unknown field` — in a file that compiled cleanly.
+- **The `_var` form is valid only in the YAML.** The connector never accepts
+  `password_var` and the like; it only ever sees the resolved plain field.
+- **An unresolvable secret name fails the run and names the secret. A secret
+  that resolves to an empty string counts as unset** — the field is left out
+  entirely (ClickHouse then sends no password at all, not an empty one).
 
 ## Run semantics
 
 - **Partial failures are their own status.** A run that loaded some resources
-  and failed others records as **`completed_with_errors`**, not as a failure.
-  This is airway-engine behaviour Oxy inherits — it lives in the pinned engine
-  (`src/pipeline/mod.rs:743,1316,2993`, `src/airstack/mod.rs:313,352`), not in
-  the wiring crate — so a dashboard or alert that only matches "failed" reports
-  it as clean success.
-- **Schema migration is additive-only, structurally.** `schema/evolution.rs`
-  (`diff_schemas` / `diff_tables`) emits only four changes: `TableAdded`,
-  `ColumnAdded`, `VariantColumnCreated` (a type conflict creates a *new* variant
-  column, leaving the old one alone), `WriteDispositionChanged` — no "column
-  dropped", no "type changed in place". The enum cannot represent a narrowing
-  change, so **a pipeline sitting on a wrong schema never self-heals, however
-  many times you rerun it.**
-- **Reset schema is the explicit escape**, and a real mechanism:
-  `crates/agentic/airway/src/reset.rs` drops the pipeline's destination tables
-  and deletes its `airway_pipeline_state` row, so the next run re-infers a fresh
-  schema. Exposed as an HTTP route (`crates/agentic/http/src/routes/airway.rs`)
-  and a UI button (`web-app/src/components/airway/ResetSchemaButton.tsx`).
-  Destructive on purpose.
-- **A retry resumes from a cursor; it does not re-pull history.** There are two
-  cursors, and confusing them wastes time. The **pipeline-global** one is
-  `airway_pipeline_state` (`state_store.rs`), keyed by `pipeline_name`: ordinary
-  incremental runs advance it, ordinary retries reuse it, and Reset is the only
-  sanctioned way to wipe it. Two runs racing that single row is half of why
-  `allow_concurrent_runs` exists — see below for the other half. The **per-run**
-  one is `airway_run_extensions.resume_state` (beside `retry_count`), used only
-  by **backfill** runs; retry there is *reset-in-place*, re-driving the same
-  `run_id` rather than cloning a new run (Toast:
-  `with_resumable_backfill_window`).
+  and failed others records as **`completed_with_errors`**. A dashboard or
+  alert that only matches "failed" reports it as a clean success.
+- **Schema migration is additive-only, structurally.** A run can add a table, a
+  column, or a *variant* column for a type conflict (the old column is left
+  alone); it can never drop or narrow a column in place. **A pipeline sitting
+  on a wrong schema never self-heals, however many times you rerun it.**
+- **Two recoveries, and they are not interchangeable:**
+  - **Reset schema** drops the pipeline's destination tables and clears its
+    cursors, so the next run re-infers a fresh schema and re-pulls everything.
+    Destructive on purpose.
+  - **Rewind cursors** (all of them, or one resource's) keeps every table and
+    row and only moves the cursor back, so the next run re-pulls a window. It
+    is **refused** where re-pulling would duplicate rows — an append-only
+    table, or a merge without a key — unless explicitly forced. A
+    `replace` table, or a keyed merge, converges safely.
+- **A retry resumes from the cursor; it does not re-pull history.** Cursors
+  are kept per workspace and pipeline, and advance only after a load commits,
+  so ordinary retries are gap-free. A backfill run keeps its own resumable
+  window and is retried in place rather than cloned.
+- **A `modified`/`updated_at` cursor can lie.** Some sources change a record
+  without advancing its modified timestamp (Toast does not advance it when a
+  card payment is captured), so an incremental run never sees the change. A
+  backfill meant to repair that must widen **both** ends of its window — not
+  only the start — or it re-reads the same stale rows.
 
 ### Duplicate rows in a `replacing` table
 
 `write_disposition: replacing` never writes the served table directly — it
-appends to a buffer that a merge-on-read fold rebuilds latest-wins, chosen to
-avoid the O(target) `MERGE INTO` that OOMs the data plane (the
-`WriteDispositionLabel::Replacing` doc comment in `source_factory.rs`). **That
-fold runs twice over: inline at the end of every successful load, and again on
-the scheduled airhouse vacuum, from identical SQL.** Either can be the one that
-promotes a given row, which is why the failure below is about overlap rather
-than about the vacuum alone.
+appends to a buffer in a sibling *schema*, `<schema>_raw.<table>`, that a
+merge-on-read fold rebuilds latest-wins (chosen to avoid a full-table
+`MERGE INTO` that runs the data plane out of memory). **That fold runs twice
+over: inline at the end of every successful load, and again on the scheduled
+warehouse vacuum, from identical SQL.** Either can be the one that promotes a
+given row.
 
-**That doc comment names the buffer `<table>_raw`, and it is wrong** — the
-buffer is a sibling *schema*, `<schema>_raw.<table>`. So was an earlier version
-of this skill; the correction is not a version bump, since the migration
-predates every airway rev oxy has pinned, including 0.1.30. `oxy-data-architecture`
-carries the location, the stale comments, and where the buffer sits in the wider
-picture. That shape is where duplicates come from:
-each run ends with a merge-on-read fold, and **two folds whose snapshots overlap
-each purge against a base the other has not committed yet, so both versions of a
-changed row survive** (`extension/migration.rs:432`). Measured, not
-hypothetical — pokehouse, 2026-08-05: 34 excess rows in `toast_pos.orders`, 104
-in `order_selections`, **every duplicate pair spanning two `_aw_load_id`s**
-(`migration.rs:435`). That span is the diagnostic, so check it *before* auditing
-your own config: a pair straddling two load ids is this bug, not yours — and if
-it doesn't straddle, this section does not explain your duplicates.
+That shape is where duplicates come from: **two folds whose snapshots overlap
+each purge against a base the other has not committed yet, so both versions of
+a changed row survive.** Measured, not hypothetical — dozens of excess rows in
+a production orders table, **every duplicate pair spanning two
+`_aw_load_id`s**. That span is the diagnostic, so check it *before* auditing
+your own config: a pair straddling two load ids is this, not your config — and
+if it does not straddle, this section does not explain your duplicates.
 
-The guard is the single-flight lease `airway_pipeline_leases` — at most one
-active run per `(workspace_id, pipeline_name)`, taken by one atomic
-`INSERT … ON CONFLICT DO UPDATE … WHERE expires_at < now()` so the database
-resolves the race rather than application code (`extension/pipeline_lease.rs:1`,
-`:16`). A process-local mutex was rejected explicitly: Oxy runs multiple
-`oxy-serve`/`oxy-worker` replicas, and the engine's own `COMPACTION_GATE` rests
-on a single-writer assumption that stopped holding once the data plane scaled
-past one replica (`pipeline_lease.rs:7`). Two consequences follow.
-**`allow_concurrent_runs: true` turns the guard off** — `config.rs:44` says to
-set it only on a pipeline owning no cursor and writing no `replacing` table,
-since on a `replacing` pipeline it re-admits exactly this bug. And **a
-dead-lettered run never releases its lease**: the 6-hour `LEASE_TTL_SECS` is a
-crash backstop, not a reclaim policy, and the generic reaper cannot touch the
-table without leaking a domain table into `agentic-runtime`
-(`pipeline_lease.rs:73`, `:104`) — so a pipeline stuck "busy" with nothing
-running is that gap, and wants the manual release, not a six-hour wait.
+The guard is a **single-flight lease**: at most one active run per
+(workspace, pipeline), taken atomically in the database so that replicas
+racing each other cannot both win. Two consequences:
+
+- **`allow_concurrent_runs: true` turns the guard off.** Set it only on a
+  pipeline that owns no cursor and writes no `replacing` table; on a
+  `replacing` pipeline it re-admits exactly this bug.
+- **A dead-lettered run never releases its lease.** The lease's 6-hour expiry
+  is a crash backstop, not a reclaim policy, so a pipeline stuck "busy" with
+  nothing running is this gap — ask an operator to release the lease rather
+  than waiting six hours.
 
 The lease stops *new* overlapping folds; being an admission guard, it cannot
-repair rows that already landed. Those need Reset schema.
+repair rows that already landed. Those need **Reset schema**.
 
 ## Traps
 
-**The `$schema` header several real pipelines carry is dead, and its failure is
-silent.** Four of the 19 (`quickbooks_financials_clovis`, `_eastbay`,
-`_lakeoswego`, `_santarosa`) open with a `# yaml-language-server: $schema=`
-comment pointing at
-`raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/pipeline.json`
-(scheme omitted deliberately — the link is dead and this repo's link check fails
-any non-200). Curled: **404**. `oxy-hq/oxy` was renamed to `oxy-hq/oxygen` and
-the path 404s there too; that repo's `json-schemas/` holds 8 files and **no
-`pipeline.json` — no schema for `.airway.yml` exists at all.** Start from a real
-pipeline and you inherit an editor integration that validates nothing, warns
-about nothing, and looks like it works. Delete the line. (The other 15 carry no
-pointer at all, so IDE validation is inconsistent across the corpus even before
-the link being dead.)
+**A `# yaml-language-server: $schema=` header on a pipeline is dead, and its
+failure is silent.** Some real pipelines open with one pointing at a
+`json-schemas/pipeline.json` on GitHub. That URL returns **404**, and no JSON
+schema for `.airway.yml` is published anywhere. Start from such a file and you
+inherit an editor integration that validates nothing, warns about nothing, and
+looks like it works. Delete the line.
 
-**Omitting `concurrency` means `1`, not "unlimited".** The default is forced
-sequential and nothing announces it: the 5 files that omit it (the census
-`http_file` pulls) run serially, while the 14 that set it use 2–4. A pipeline
-that just forgets the key is not misconfigured — it is quietly slow.
+**Two `clickhouse` source footguns, both silent.** (a) `port: 8443` with no
+`secure:` silently uses plaintext on a TLS port — tolerable only because the
+setup wizard emits both keys together, and these are hand-edited files. State
+`secure:` explicitly and match it to the port (`8123`/`false`,
+`8443`/`true`). (b) Socket timeouts belong in the source's `settings:` map,
+never in a SQL `SETTINGS` clause: ClickHouse fixes the response socket's
+timeout at request setup, *before* parsing the query body, so an inline
+`SETTINGS http_send_timeout=…` is accepted and ignored — exactly what someone
+reaches for when tuning a slow mirror.
 
-**Two `clickhouse` source footguns, both silent.** (a) `ClickHouseParams`' own
-doc comment admits that `port: 8443` with no `secure:` "silently uses plaintext
-on a TLS port… left as-is deliberately" — tolerable only because the wizard emits
-both keys together, and these are hand-edited files. State `secure:` explicitly
-and match it to the port, as `clickhouse_mirror.airway.yml` does (`8123`/`false`).
-(b) Socket timeouts belong in `settings:`, never a SQL `SETTINGS` clause:
-ClickHouse fixes the response socket's timeout at request setup, *before* parsing
-the query body, so an inline `SETTINGS http_send_timeout=…` is accepted and
-ignored — exactly what someone reaches for when tuning a slow mirror.
-
-**A `kind` claim is only as good as the pin it was checked against, and in-tree
-comments do not self-update.** `overture_places.airway.yml` still carries a
-header saying the connector has not landed and the airway rev must be pinned to
-a build registering `kind: overture` — which at 0.1.30 it does, so the comment
-has been stale for a while with nothing to flag it. Read that as the standing
-warning about this whole document: verify against `source_factory.rs` at the rev
-you are running.
+**Comments inside pipeline files do not self-update.** One real pipeline still
+carries a header saying its connector "has not landed" and the engine must be
+pinned to a build registering that `kind` — long after it was wired, with
+nothing to flag the comment as stale. Treat every in-file claim about what is
+supported, this page included, as dated; the run is the authority.

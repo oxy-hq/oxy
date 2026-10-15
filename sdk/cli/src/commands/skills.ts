@@ -54,8 +54,9 @@ interface SkillResult {
 function shipped(): string[] {
   const dir = skillsDir();
   if (!existsSync(dir)) return [];
+  // Same rule as scripts/skills-repo.mjs: a dot-directory is tooling state, not a skill.
   return readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
+    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
     .map((e) => e.name)
     .sort();
 }

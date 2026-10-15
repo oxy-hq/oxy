@@ -1,124 +1,122 @@
-# Vendored from oxy-hq/skills @ 95c6475
-# Source: skills/oxy-semantic-layer/view-template.yml
-# Do not edit by hand — edit the skills repo and re-run scripts/sync-skills.sh.
+# Vendored from sdk/cli/skills — do not edit here; edit the skill and run scripts/sync-skills.sh.
+# Source: sdk/cli/skills/oxy-semantic-modeling/templates/view-template.yml
 
-# Oxy View Template
-# Copy this template and fill in the details for your data model
+# Oxy view template — copy, rename to <name>.view.yml, and fill in.
+# One view = one table (or `sql:`) plus the vocabulary an agent may use on it.
+# No `# yaml-language-server: $schema=` header: no schema is published for views.
 
 name: my_view_name
-description: "Brief business-friendly description of what this view represents"
-datasource: "database_name"  # Must match name in config.yml
+description: "What a row is, when the data is complete, and what it excludes"
+datasource: "database_name"  # a database name from config.yml
 table: "schema_name.table_name"
 
 entities:
-  # Primary entity - the main subject of this view (required)
+  # Primary entity: the grain of one row (one per view).
   - name: primary_entity_name
     type: primary
-    description: "What this entity represents"
-    key: primary_key_dimension_name  # Must reference a dimension name below
+    description: "What one row represents"
+    key: primary_key_dimension  # a DIMENSION name below, never a raw column
 
-  # Foreign entities - references to other views (optional)
+  # Foreign entity: one per foreign-key column. Use the SAME name as the other
+  # view's primary entity — matching names are what create the join.
   # - name: related_entity_name
   #   type: foreign
-  #   description: "Related entity from another view"
-  #   key: foreign_key_dimension_name
+  #   description: "The related row in another view"
+  #   key: foreign_key_dimension
 
 dimensions:
-  # Key dimensions (for entity relationships)
+  # Key dimensions (entity keys reference these by name)
   - name: primary_key_dimension
     type: string
-    description: "Primary key description"
+    description: "Primary key"
     expr: primary_key_column
 
-  # Regular dimensions (filterable/groupable attributes)
+  # Regular dimensions (filterable / groupable)
   - name: dimension_name
-    type: string  # string|number|date|datetime|boolean
+    type: string  # string | number | date | datetime | boolean
     description: "Business-friendly description"
     expr: column_name_or_sql_expression
-    samples: ["example1", "example2"]  # Optional, helps with understanding
-    synonyms: ["alternative name", "abbreviation"]  # Optional, for natural language
+    samples: ["VALUE_A", "VALUE_B"]  # the FULL set of valid values for enum-like fields
+    synonyms: ["alternative name", "abbreviation"]
 
-  # Date dimensions
+  # Date dimensions: type date/datetime, and expr must yield a real date.
+  # If the column is a string, integer or epoch, wrap it in a cast (sample one
+  # row first) — otherwise date filters fail with TYPE_MISMATCH.
   - name: created_date
     type: date
-    description: "Date record was created"
+    description: "Date the record was created"
     expr: created_at
 
-  # Calculated dimensions
-  - name: year
+  # Derived date parts, so the agent never writes date arithmetic
+  - name: created_year
     type: number
-    description: "Year extracted from date"
+    description: "Year the record was created"
     expr: "EXTRACT(YEAR FROM created_at)"
     synonyms: ["year"]
 
   # Boolean dimensions
   - name: is_active
     type: boolean
-    description: "Whether record is active"
-    expr: status = 'active'
-    samples: ["true", "false"]   # samples are ALWAYS strings, even for boolean/number dimensions
+    description: "Whether the record is active"
+    expr: "status = 'active'"
+    samples: ["true", "false"]  # samples are ALWAYS strings, even for boolean/number dimensions
 
 measures:
-  # Count measures
   - name: total_records
     type: count
-    description: "Total number of records"
-    synonyms: ["record count", "total"]
+    description: "Number of records"
+    synonyms: ["record count"]
 
-  # Sum measures
   - name: total_amount
     type: sum
-    description: "Sum of all amounts"
+    description: "Sum of amounts"
     expr: amount_column
-    synonyms: ["total", "sum"]
+    synonyms: ["total"]
 
-  # Average measures
   - name: average_amount
     type: average
     description: "Average amount per record"
     expr: amount_column
-    synonyms: ["avg amount", "mean"]
 
-  # Filtered measures — "aggregate X where Y" (conditional aggregation).
-  # The filter `expr` is a raw SQL condition over the table's columns, exactly
-  # like a WHERE clause. NEVER wrap a column in {{ }}: a {{col}} placeholder is
-  # not substituted — it leaks into the compiled SQL and fails with
-  # `syntax error at or near "{"`. Prefer this over a custom CASE WHEN.
-  - name: filtered_total
+  # Filtered measure: "aggregate X where Y". Each filter expr is a SQL
+  # condition over this view's columns, or a bare {{dimension}} naming a
+  # dimension of THIS view. Prefer this over a custom CASE WHEN: it can be
+  # answered from a pre-aggregation, a custom measure never can.
+  - name: completed_amount
     type: sum
-    description: "Sum of amounts for a subset of rows"
+    description: "Sum of amounts for completed records only"
     expr: amount_column
     filters:
       - expr: "status = 'completed'"
 
-  # Custom measures — only for metrics a filtered measure can't express
-  # (ratios, correlations, cross-period math). Write bare column names; no {{ }}.
-  # NOT re-aggregatable by pre-aggregations (a query touching one always hits
-  # the warehouse), so don't use custom for plain conditional aggregation.
-  - name: custom_calculation
+  # Custom measure: only for what a filtered measure cannot express (ratios,
+  # correlations, cross-period math). The expr is already an aggregate.
+  # Never served from a pre-aggregation (nor are median or number measures).
+  - name: completion_rate
     type: custom
-    description: "Custom SQL calculation"
-    expr: |
-      CASE
-        WHEN condition THEN calculation
-        ELSE other_calculation
-      END
+    description: "Share of records that are completed"
+    expr: "SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)"
 
-# Pre-aggregations (rollups) — OPTIONAL. Materialized partial aggregates that
-# the engine serves from local Parquet instead of scanning the warehouse.
-# Add for views backing dashboards / frequent KPI queries. Requires a
-# top-level `pre_aggregations:` block in config.yml for the refresh worker.
+# Freshness — OPTIONAL but cheap. Every value is a one-element LIST of strings.
+# Without freshness_watermark_column the agent uses the first date dimension.
+# meta:
+#   freshness_watermark_column: ["created_date"]
+#   freshness_expected_cadence: ["hourly"]
+#   freshness_complete_through: ["previous full hour (UTC)"]
+#   freshness_caveat: ["The current hour is partial."]
+
+# Pre-aggregations (rollups) — OPTIONAL and opt-in: with no block, the view has
+# no rollups at all. Members are names declared above, never raw columns.
 #
-# refresh_key:                 # view-level default for all rollups below
-#   every: "1h"                # exactly one of `every` or `sql`
+# refresh_key:                   # view-level default; exactly ONE of every / sql
+#   every: "1h"
 #
 # pre_aggregations:
-#   - name: rollup_name
-#     dimensions:              # names defined above, never raw columns
-#       - dimension_name
-#     measures:                # count/count_distinct/sum/average/min/max only;
-#       - total_amount         # custom/median/number measures cannot roll up
-#     time_dimension: created_date  # a date/datetime dimension name
-#     granularity: month       # second|minute|hour|day|week|month|quarter|year
-#     refresh_key:             # OPTIONAL per-rollup override of the view-level key
+#   - name: by_month
+#     dimensions: [dimension_name]
+#     measures: [total_records, total_amount]  # count/count_distinct/sum/average/min/max
+#     time_dimension: created_date             # a date/datetime dimension above
+#     granularity: day   # second|minute|hour|day|week|month|quarter|year; serves this
+#                        # grain or coarser — but a `week` rollup never serves month+
+#     refresh_key:       # optional per-rollup override
 #       sql: "SELECT MAX(updated_at) FROM schema_name.table_name"

@@ -46,7 +46,7 @@ internal-docs/customer-apps*.md                    @luong-komorebi @NTtanh
 # `custom-app*` and `customer-apps*` are both in use as doc prefixes; the
 # vibe-coding doc that used to sit here went away with v0 sources (#3244).
 internal-docs/custom-app*.md                       @luong-komorebi @NTtanh
-.claude/skills/oxy-customer-apps-perf/             @luong-komorebi @NTtanh
+crates/app/.claude/skills/oxy-customer-apps-perf/             @luong-komorebi @NTtanh
 
 # Admin & staff surfaces (workspace-health carve-out is re-owned by Hai below)
 crates/app/src/server/api/admin/                   @luong-komorebi @haitrr
@@ -118,7 +118,7 @@ internal-docs/compile-boundary.md                  @luong-komorebi @NTtanh
 internal-docs/ephemeral-workspace-environments.md  @luong-komorebi @NTtanh
 internal-docs/architecture-review-checklist.md     @luong-komorebi @NTtanh
 .claude/skills/oxy-scaling-design/                 @luong-komorebi @NTtanh
-.claude/skills/oxy-route-classification/           @luong-komorebi @NTtanh
+crates/app/.claude/skills/oxy-route-classification/           @luong-komorebi @NTtanh
 .claude/skills/oxy-compile-boundary/               @luong-komorebi @NTtanh
 
 # Customer-facing observability (traces console)
@@ -249,7 +249,7 @@ crates/agentic/pipeline/                           @hotay @luong-komorebi
 crates/agentic/http/                               @hotay @luong-komorebi
 internal-docs/worker-fleet.md                      @hotay @luong-komorebi
 internal-docs/adr-postgres-as-worker-queue.md      @hotay @luong-komorebi
-.claude/skills/oxy-task-spec-default/              @hotay @luong-komorebi
+crates/app/.claude/skills/oxy-task-spec-default/              @hotay @luong-komorebi
 
 # LLM stack — moved from Luong 2026-09-28, on the condition the old rule named:
 # Tay consolidated the whole stack onto agentic-llm in two parts (#3190, #3254),
@@ -363,7 +363,7 @@ sdk/vite-plugin/                                   @luong-komorebi @NTtanh
 
 # Split-fleet route classification. A new route that touches the workspace FS
 # must be classified IdeOnly in role_manifest.rs or it 404s/421s on the serve
-# fleet. See .claude/skills/oxy-route-classification/SKILL.md.
+# fleet. See crates/app/.claude/skills/oxy-route-classification/SKILL.md.
 crates/app/src/server/role_manifest.rs             @luong-komorebi @NTtanh
 crates/app/src/server/router/                      @luong-komorebi @NTtanh
 

@@ -1,13 +1,13 @@
 ---
 source:
-  - oxy-hq/skills/skills/oxy-app-builder/SKILL.md
-  - oxy-hq/skills/skills/oxy-app-builder/QUICK-REFERENCE.md
-reconciled-at: 0c51d931c1f9c1900d4e92e3a55cfa053e50d94c
+  - sdk/cli/skills/oxy-data-apps/SKILL.md
+  - sdk/cli/skills/oxy-data-apps/references/quick-reference.md
+reconciled-hash: pending
 note: |
-  Authored condensation. Not auto-synced — scripts/sync-skills.sh only copies
-  the verbatim YAML templates. Re-condense by hand when source material
-  changes materially; keep under ~200 lines so the LLM context stays focused.
-  scripts/check-skills-drift.sh flags upstream changes.
+  Authored condensation of the platform skills listed above. Not auto-synced —
+  scripts/sync-skills.sh only copies the verbatim YAML templates. Re-condense
+  when a source changes; keep under ~200 lines so the LLM context stays focused.
+  scripts/check-skills-drift.sh flags a changed source and prints the hash to record.
 ---
 
 # Oxy App Builder Reference

@@ -3,31 +3,26 @@
 This directory holds reference documents that are **compile-time embedded**
 into the `agentic-builder` crate via `include_str!` (see
 [`src/prompts.rs`](../src/prompts.rs)). Every document here is either a
-verbatim copy from the [`oxy-hq/skills`](https://github.com/oxy-hq/skills)
-repository or an authored condensation of material from that repository.
-The skills repo is the **source of truth**; everything in this directory
-exists to vendor that knowledge into the builder binary.
+verbatim copy of a file in Oxy's platform skills
+([`sdk/cli/skills/`](../../../../sdk/cli/skills/), published as
+[`oxy-hq/skills`](https://github.com/oxy-hq/skills)) or an authored
+condensation of one. The skills are the **source of truth**; this directory
+exists to put that knowledge inside the builder binary.
 
 ## Contents
 
-| File                            | Provenance                                                                        | Shape    |
-| ------------------------------- | --------------------------------------------------------------------------------- | -------- |
-| `semantic-layer-reference.md`   | Condensed from `skills/oxy-semantic-layer/SKILL.md` + `QUICK-REFERENCE.md`        | authored |
-| `view-template.yml`             | `skills/oxy-semantic-layer/view-template.yml`                                     | verbatim |
-| `topic-template.yml`            | `skills/oxy-semantic-layer/topic-template.yml`                                    | verbatim |
-| `app-builder-reference.md`      | Authored from `skills/oxy-app-builder/SKILL.md` + `QUICK-REFERENCE.md`            | authored |
-| `agentic-builder-reference.md`  | Authored from `skills/oxy-agentic-builder/SKILL.md` + `QUICK-REFERENCE.md`        | authored |
-| `agentic-template.yml`          | `skills/oxy-agentic-builder/agentic-template.yml`                                 | verbatim |
+| File                            | Condensed or copied from (`sdk/cli/skills/…`)                          | Shape    |
+| ------------------------------- | ---------------------------------------------------------------------- | -------- |
+| `semantic-layer-reference.md`   | `oxy-semantic-modeling/SKILL.md`                                       | authored |
+| `view-template.yml`             | `oxy-semantic-modeling/templates/view-template.yml`                    | verbatim |
+| `topic-template.yml`            | `oxy-semantic-modeling/templates/topic-template.yml`                   | verbatim |
+| `app-builder-reference.md`      | `oxy-data-apps/SKILL.md` + `references/quick-reference.md`             | authored |
+| `agentic-builder-reference.md`  | `oxy-agents/SKILL.md` + `references/quick-reference.md`                | authored |
+| `agentic-template.yml`          | `oxy-agents/templates/agentic-template.yml`                            | verbatim |
 
-Last synced: skills@95c64756ee5b3cf9dc0781fde0e13489c94a1b2d
-
-> **Pending upstream rename.** "Semantic layer" was renamed to "semantic model"
-> across Oxy's copy and docs, including the `authored` cards here. The `verbatim`
-> files (`view-template.yml`, `topic-template.yml`, `agentic-template.yml`) were
-> deliberately left alone — a local edit to them is silently overwritten by
-> `scripts/sync-skills.sh`, and `check-skills-drift.sh` compares upstream commit
-> SHAs, not content, so the regression would be invisible. Land the rename in
-> `oxy-hq/skills` and re-sync to carry it through.
+The file names keep their old spellings (`semantic-layer`, `app-builder`) because
+`prompts.rs` and its tests name them; the skills they come from were renamed when
+they moved into this repository.
 
 ## Provenance frontmatter on authored cards
 
@@ -37,9 +32,9 @@ frontmatter at the top of the file:
 ```yaml
 ---
 source:
-  - oxy-hq/skills/skills/<skill>/SKILL.md
-  - oxy-hq/skills/skills/<skill>/QUICK-REFERENCE.md
-reconciled-at: <skills-repo-commit-sha>
+  - sdk/cli/skills/<skill>/SKILL.md
+  - sdk/cli/skills/<skill>/references/quick-reference.md
+reconciled-hash: <git blob hash of the sources, concatenated in order>
 note: |
   Free-form note for human maintainers.
 ---
@@ -49,66 +44,45 @@ The frontmatter is **stripped** by `strip_vendoring_header()` in
 `src/prompts.rs` before the card is fenced into the system prompt, so
 the LLM never sees it. Treat the fields as the contract:
 
-- `source:` — list of upstream paths in `oxy-hq/skills` that the card
-  condenses. Used by the drift detector below.
-- `reconciled-at:` — full SHA on `oxy-hq/skills@main` that the card was
-  last reconciled against. Bump this whenever you re-condense the card.
+- `source:` — repo-relative paths of the skill files the card condenses.
+- `reconciled-hash:` — what `scripts/check-skills-drift.sh --hash <card>`
+  printed when the card was last re-condensed. `pending` means it never has
+  been against these sources, which the drift check reports as behind.
 
 ## Do not edit by hand
 
-These files feed the builder agent's system prompts. Hand-editing them
-creates drift between the canonical skills documentation and the prompts
-the builder ships with. Instead:
+These files feed the builder agent's system prompts. Editing one here
+creates drift between the skills and the prompts the builder ships with.
+Instead:
 
-1. Edit the source in `../skills` (the `oxy-hq/skills` repository).
-2. Push your change there.
-3. Run `./scripts/sync-skills.sh` from the `oxygen-internal` repo root. The
-   script copies the verbatim YAML templates back into this directory
-   and stamps the `Last synced:` line above with the skills-repo commit.
-   Pin to a specific upstream SHA with `SKILLS_PIN=<sha>`.
-4. For authored documents (`*-reference.md`) the script does **not**
-   overwrite them. When the drift check below flags one as `BEHIND`,
-   re-condense it by hand from the upstream sources, then bump the
-   `reconciled-at:` field in its frontmatter to a recent SHA on
-   `skills@main`. Keep each card under ~200 lines so the LLM context
-   stays focused.
+1. Edit the skill under `sdk/cli/skills/`, in the same PR as the behaviour
+   it describes.
+2. For a template, run `./scripts/sync-skills.sh` from the repo root; it
+   copies the verbatim YAML back into this directory.
+3. For an authored card, re-condense it from its sources, then record
+   `reconciled-hash:` as printed by
+   `./scripts/check-skills-drift.sh --hash crates/agentic/builder/knowledge/<card>`.
+   Keep each card under ~200 lines so the LLM context stays focused.
 
 ## Drift detection
 
-`scripts/check-skills-drift.sh` reports whether any card has fallen
-behind upstream. It reads each card's frontmatter, asks the GitHub
-compare API whether any commit on `oxy-hq/skills@main` since the card's
-`reconciled-at` SHA modified one of the listed `source:` paths, and
-prints a status table. Exit code is `0` when every card is current,
-`1` when any card is behind.
+`scripts/check-skills-drift.sh` compares each card's `reconciled-hash` with
+the hash of its sources today, and each template with its source byte for
+byte. It needs no network and no history. Exit code is `0` when everything
+is current, `1` on drift, `2` on a broken setup (a listed source that no
+longer exists, say).
 
 ```bash
-# Run locally (uses anonymous GitHub API, 60 req/hr limit):
-bash scripts/check-skills-drift.sh
-
-# Or with a token to lift the rate limit:
-GH_TOKEN=$(gh auth token) bash scripts/check-skills-drift.sh
+./scripts/check-skills-drift.sh
 ```
 
-The check also runs in CI via `.github/workflows/skills-reconcile.yaml`:
-- on PRs that touch this directory or the sync scripts (informational
-  `check` job, doesn't block the PR), and
-- on `main` via the `reconcile` job, which goes a step further than
-  reporting and opens a PR with re-condensed cards for human review.
-
-The `reconcile` job is webhook-driven: a companion workflow in
-`oxy-hq/skills` (`.github/workflows/notify-oxygen-internal.yaml`) fires
-a `skills-updated` repository_dispatch on every push to `skills@main`
-that touches a tracked file, and oxygen-internal runs the reconcile
-flow within seconds. A weekly Monday cron stays as a safety net for
-missed dispatches (token expiry, a tracked path filter we forgot to
-extend upstream, etc.).
-
-The reconcile loop is therefore: **upstream push →** dispatch → drift
-detected → re-condense the affected card from the listed sources →
-**bump `reconciled-at:`** to the new SHA → **re-run**
-`scripts/sync-skills.sh` so the templates and `Last synced:` line move
-together → open PR for human review.
+`.github/workflows/skills-reconcile.yaml` runs it:
+- on PRs that touch this directory, the sync scripts, or `sdk/cli/skills/`
+  (informational `check` job — it never blocks; a skill edit that leaves a
+  card behind is expected, and the reconcile job catches it up), and
+- on every merge to `main` that touches `sdk/cli/skills/` (plus a weekly
+  safety-net cron), via the `reconcile` job, which re-condenses the behind
+  cards, re-syncs the templates, and opens a PR for human review.
 
 ## Why compile-time embedding
 
@@ -126,6 +100,6 @@ Add a new file here when a builder phase starts duplicating non-trivial
 domain knowledge inside its prompt string. Good signals:
 
 - You're about to inline a YAML template into a `format!` macro.
-- You're about to re-document a rule that already lives in `../skills`.
+- You're about to re-document a rule that already lives in `sdk/cli/skills/`.
 - Two different phases are each restating the same constraint in their
   own words.

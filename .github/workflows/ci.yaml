@@ -698,6 +698,11 @@ jobs:
         run: pnpm --dir scripts/review install --frozen-lockfile --prefer-offline
       - name: Lint (Biome errors, then type-aware Oxlint)
         run: pnpm lint:bugs
+      # Every `.claude/skills` entry in the repo loads. The platform skills are symlinked
+      # into the crates that implement them, so renaming one leaves links dangling, and a
+      # description with an unquoted `: ` is a YAML error to every reader but Claude Code's.
+      - name: Agent skills load (frontmatter, symlinks)
+        run: node sdk/cli/scripts/skills-repo.mjs check-repo
       - name: The baseline may only shrink
         env:
           EVENT_NAME: ${{ github.event_name }}

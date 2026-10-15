@@ -752,7 +752,7 @@ fn build_integration_routes(app_state: &AppState) -> RoleRouter {
 // Skipping it is how `/apps/source` shipped FleetOk and 404'd on the serve fleet;
 // the `every_app_sub_route_is_classified` test now backstops THIS builder so a
 // new sub-route fails CI unless it is IdeOnly or explicitly acknowledged FleetOk.
-// See `.claude/skills/oxy-route-classification/SKILL.md`.
+// See `crates/app/.claude/skills/oxy-route-classification/SKILL.md`.
 fn build_app_routes(app_state: &AppState) -> RoleRouter {
     RoleRouter::new(app_state.clone())
         .route_fleet("/", get(app::list_apps))

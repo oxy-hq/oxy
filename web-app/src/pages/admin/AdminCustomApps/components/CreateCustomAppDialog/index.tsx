@@ -20,6 +20,7 @@ import { useOrgs } from "@/hooks/api/organizations";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
 import type { CustomApp } from "@/types/apps";
 import { resolveBundleUrl } from "../../resolveBundleUrl";
+import { QUICK_INSTALL } from "../AgentSkills/installMethods";
 
 type Props = {
   open: boolean;
@@ -390,6 +391,10 @@ oxyc publish --env production --promote  # → live`}
     <p className='text-muted-foreground text-xs'>
       No app code yet? Scaffold one:{" "}
       <code className='font-mono'>pnpm dlx create-oxy-app {app.slug} --template vite</code>
+    </p>
+    <p className='text-muted-foreground text-xs' data-testid='apps-new-agent-skills'>
+      Building it with a coding agent? Give it the Oxy skills first:{" "}
+      <code className='font-mono'>{QUICK_INSTALL}</code>
     </p>
   </div>
 );

@@ -210,6 +210,8 @@ jobs:
               - "scripts/ci/**"
               # The automated reviewer: linted here, and its self-test runs here.
               - "scripts/review/**"
+              # Agent skills anywhere in the repo: `skills-repo.mjs check-repo` runs here.
+              - "**/.claude/skills/**"
             # `canary-zoo` gates the drift check between the zoo fixture and
             # the canary's bundled copy of it. The copy exists because an Oxy
             # Function bundle cannot read outside itself, so the two files are

@@ -1,13 +1,12 @@
 ---
 source:
-  - oxy-hq/skills/skills/oxy-semantic-layer/SKILL.md
-  - oxy-hq/skills/skills/oxy-semantic-layer/QUICK-REFERENCE.md
-reconciled-at: 95c64756ee5b3cf9dc0781fde0e13489c94a1b2d
+  - sdk/cli/skills/oxy-semantic-modeling/SKILL.md
+reconciled-hash: pending
 note: |
-  Authored condensation. Not auto-synced — scripts/sync-skills.sh only copies
-  the verbatim YAML templates. Re-condense by hand when source material
-  changes materially; keep under ~200 lines so the LLM context stays focused.
-  scripts/check-skills-drift.sh flags upstream changes.
+  Authored condensation of the platform skills listed above. Not auto-synced —
+  scripts/sync-skills.sh only copies the verbatim YAML templates. Re-condense
+  when a source changes; keep under ~200 lines so the LLM context stays focused.
+  scripts/check-skills-drift.sh flags a changed source and prints the hash to record.
 ---
 
 # Oxy Semantic Model Reference

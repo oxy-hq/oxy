@@ -1069,9 +1069,12 @@ them, and a tool that can only fail still costs its schema every turn. A dead
 token ends the server at startup with exit `4`.
 
 **`guide`** prints a page to paste into `AGENTS.md` / `CLAUDE.md`.
-**`skills install`** symlinks the six bundled Claude skills into
+**`skills install`** symlinks the bundled Oxy platform skills into
 `~/.claude/skills`; it refuses to run from an `npx` cache, whose symlinks dangle
-once npm reclaims it.
+once npm reclaims it. The same skills are published to
+[`oxy-hq/skills`](https://github.com/oxy-hq/skills) for every other agent —
+`npx skills add oxy-hq/skills`, or the Claude Code plugin `oxy@oxy-hq`. They are
+written in `skills/` here; see `internal-docs/platform-skills.md`.
 
 ## Exit codes
 

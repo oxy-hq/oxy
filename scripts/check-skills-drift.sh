@@ -1,41 +1,28 @@
 #!/usr/bin/env bash
-# Report whether any authored reference card under
-# crates/agentic/builder/knowledge/ has drifted from its upstream source
-# in oxy-hq/skills.
+# Report whether the builder knowledge under crates/agentic/builder/knowledge/
+# has drifted from the platform skills it is condensed from.
 #
-# Each *-reference.md card carries YAML frontmatter:
+# The sources live in this repo, in sdk/cli/skills/ — the same files that are
+# published to oxy-hq/skills — so drift is a local comparison, with no API call
+# and no history needed:
 #
-#   ---
-#   source:
-#     - oxy-hq/skills/skills/<skill>/SKILL.md
-#     - oxy-hq/skills/skills/<skill>/QUICK-REFERENCE.md
-#   reconciled-at: <skills-repo-commit-sha>
-#   ---
+#   *-reference.md   an authored card. Its frontmatter lists `source:` paths and
+#                    records `reconciled-hash:`, the git blob hash of those
+#                    sources concatenated in order. A different hash now means a
+#                    source changed since the card was last re-condensed: BEHIND.
+#   *.yml            a verbatim template. Its `# Source:` header names the file;
+#                    everything after the header must match it byte for byte.
 #
-# This script asks GitHub's compare endpoint for the file-level diff
-# between `reconciled-at` and `main`, then reports any source file that
-# appears in that diff. Ancestry is handled correctly: if every commit
-# touching the source path is an ancestor of `reconciled-at`, the card
-# is `current`; if any commit on main since `reconciled-at` modified the
-# source, the card is `BEHIND`.
+# Usage:
+#   scripts/check-skills-drift.sh                  status table
+#   scripts/check-skills-drift.sh --hash <card>    the reconciled-hash to record
+#                                                  after re-condensing <card>
 #
-# Exit code:
-#   0 if every card is current,
-#   1 if any card is behind (drift detected),
-#   2 on infrastructure / parsing failure.
-#
-# Optional env:
-#   GH_TOKEN          - GitHub token used for the API call. Avoids the
-#                       60 req/hr unauth rate limit. CI sets this.
-#   SKILLS_REPO       - "owner/repo" override (default: oxy-hq/skills).
-#   SKILLS_REF        - branch / sha to compare against (default: main).
-#   KNOWLEDGE_DIR     - cards directory override (default:
-#                       crates/agentic/builder/knowledge).
+# Exit code: 0 every card current, 1 drift, 2 setup or parse failure.
+# Optional env: KNOWLEDGE_DIR (default crates/agentic/builder/knowledge).
 
 set -euo pipefail
 
-SKILLS_REPO="${SKILLS_REPO:-oxy-hq/skills}"
-SKILLS_REF="${SKILLS_REF:-main}"
 KNOWLEDGE_DIR="${KNOWLEDGE_DIR:-crates/agentic/builder/knowledge}"
 
 if [ ! -d "$KNOWLEDGE_DIR" ]; then
@@ -44,25 +31,7 @@ if [ ! -d "$KNOWLEDGE_DIR" ]; then
   exit 2
 fi
 
-if ! command -v curl >/dev/null 2>&1; then
-  echo "curl is required" >&2
-  exit 2
-fi
-
-api_call () {
-  local path="$1"
-  local args=(-fsSL)
-  if [ -n "${GH_TOKEN:-}" ]; then
-    args+=(-H "Authorization: Bearer ${GH_TOKEN}")
-  fi
-  args+=(-H "Accept: application/vnd.github+json")
-  args+=(-H "X-GitHub-Api-Version: 2022-11-28")
-  curl "${args[@]}" "https://api.github.com/repos/${SKILLS_REPO}/${path}"
-}
-
-# Extract the YAML frontmatter block at the top of a markdown file.
-# Frontmatter must start on line 1 with `---` and end with another
-# `---` line.
+# Print the YAML frontmatter body (between the leading `---` fences).
 read_frontmatter () {
   awk '
     NR == 1 && $0 != "---" { exit 1 }
@@ -86,97 +55,81 @@ field_list () {
   ' <<< "$1"
 }
 
-# Print one row of the report.
-row () {
-  printf "%-58s %-10s %-10s %s\n" "$1" "$2" "$3" "$4"
+# The hash of a card's sources, concatenated in the order the card lists them.
+sources_hash () {
+  local card="$1" fm src
+  local files=()
+  fm=$(read_frontmatter "$card") || { echo "MISSING FRONTMATTER: $card" >&2; return 2; }
+  while IFS= read -r src; do
+    [ -z "$src" ] && continue
+    if [ ! -f "$src" ]; then
+      echo "MISSING SOURCE: $src (listed by $card)" >&2
+      return 2
+    fi
+    files+=("$src")
+  done < <(field_list "$fm" "source")
+  if [ "${#files[@]}" -eq 0 ]; then
+    echo "NO source: ENTRIES IN: $card" >&2
+    return 2
+  fi
+  cat "${files[@]}" | git hash-object --stdin
 }
 
-drift_count=0
-total_count=0
+if [ "${1:-}" = "--hash" ]; then
+  [ -n "${2:-}" ] || { echo "usage: $0 --hash <card>" >&2; exit 2; }
+  sources_hash "$2"
+  exit
+fi
 
-# Memoize the most recent compare response. Cards reconciled at the same
-# upstream SHA (the common case) reuse the previous lookup. Implemented
-# with simple variables so the script runs on bash 3.x (macOS default)
-# without needing `declare -A`.
-last_pinned=""
-last_changed=""
+row () {
+  printf "%-46s %-62s %s\n" "$1" "$2" "$3"
+}
 
-row "card / source" "pinned" "head" "status"
-row "------------" "------" "----" "------"
+drift=0
+checked=0
+row "card" "source" "status"
+row "----" "------" "------"
 
 for card in "$KNOWLEDGE_DIR"/*-reference.md; do
   [ -e "$card" ] || continue
+  fm=$(read_frontmatter "$card") || { echo "MISSING FRONTMATTER: $card" >&2; exit 2; }
+  recorded=$(field_scalar "$fm" "reconciled-hash")
+  now=$(sources_hash "$card") || exit 2
+  checked=$((checked + 1))
+  status="current"
+  if [ "$recorded" != "$now" ]; then
+    status="BEHIND (re-condense, then reconciled-hash: $now)"
+    drift=$((drift + 1))
+  fi
+  row "$(basename "$card")" "$(field_list "$fm" "source" | head -1)" "$status"
+done
 
-  fm=$(read_frontmatter "$card") || {
-    echo "MISSING FRONTMATTER: $card" >&2
-    exit 2
-  }
-
-  pinned=$(field_scalar "$fm" "reconciled-at")
-  if [ -z "$pinned" ]; then
-    echo "MISSING reconciled-at IN: $card" >&2
+for template in "$KNOWLEDGE_DIR"/*.yml; do
+  [ -e "$template" ] || continue
+  src=$(awk '/^# Source: / { sub(/^# Source: /, ""); print; exit } /^$/ { exit }' "$template")
+  if [ -z "$src" ] || [ ! -f "$src" ]; then
+    echo "TEMPLATE WITHOUT A READABLE '# Source:' HEADER: $template (${src:-none})" >&2
     exit 2
   fi
-
-  # Fetch the diff lazily. If consecutive cards share the same pinned
-  # SHA (common when bumping the whole knowledge module) we reuse the
-  # previous result.
-  if [ "$pinned" != "$last_pinned" ]; then
-    if resp=$(api_call "compare/${pinned}...${SKILLS_REF}" 2>/dev/null); then
-      # When the compare diff is empty (HEAD == base) `grep -oE` finds
-      # no matches and exits 1, which kills the script under `set -e`.
-      # Absorb that here so an empty diff yields an empty list instead.
-      last_changed=$(printf "%s" "$resp" \
-        | { grep -oE '"filename":[[:space:]]*"[^"]*"' || true; } \
-        | sed -E 's/.*"filename":[[:space:]]*"([^"]+)".*/\1/')
-    else
-      last_changed="__API_ERROR__"
-    fi
-    last_pinned="$pinned"
+  checked=$((checked + 1))
+  # The body is everything after the header's first blank line — the same
+  # boundary `strip_vendoring_header` in crates/agentic/builder/src/prompts.rs uses.
+  if awk 'body { print; next } /^$/ { body = 1 }' "$template" | cmp -s - "$src"; then
+    row "$(basename "$template")" "$src" "current"
+  else
+    row "$(basename "$template")" "$src" "BEHIND (run scripts/sync-skills.sh)"
+    drift=$((drift + 1))
   fi
-  changed="$last_changed"
-
-  while IFS= read -r src; do
-    [ -z "$src" ] && continue
-    total_count=$((total_count + 1))
-
-    expected_prefix="${SKILLS_REPO}/"
-    if [[ "$src" != "$expected_prefix"* ]]; then
-      row "$(basename "$card") <- $src" "${pinned:0:8}" "?" \
-        "BAD-PATH (expected $expected_prefix prefix)"
-      drift_count=$((drift_count + 1))
-      continue
-    fi
-    repo_path="${src#${expected_prefix}}"
-
-    if [ "$changed" = "__API_ERROR__" ]; then
-      row "$(basename "$card") <- $repo_path" "${pinned:0:8}" "?" "API-ERROR"
-      drift_count=$((drift_count + 1))
-      continue
-    fi
-
-    if printf "%s\n" "$changed" | grep -qFx "$repo_path"; then
-      row "$(basename "$card") <- $repo_path" "${pinned:0:8}" \
-        "$SKILLS_REF" "BEHIND"
-      drift_count=$((drift_count + 1))
-    else
-      row "$(basename "$card") <- $repo_path" "${pinned:0:8}" \
-        "$SKILLS_REF" "current"
-    fi
-  done < <(field_list "$fm" "source")
 done
 
 echo
-if [ "$total_count" -eq 0 ]; then
-  echo "No source entries found across $KNOWLEDGE_DIR/*-reference.md." >&2
+if [ "$checked" -eq 0 ]; then
+  echo "Nothing to check under $KNOWLEDGE_DIR." >&2
   exit 2
 fi
-
-if [ "$drift_count" -gt 0 ]; then
-  echo "Drift detected on $drift_count of $total_count source(s). Re-condense the affected card(s)"
-  echo "from upstream and bump 'reconciled-at:' to a more recent SHA on ${SKILLS_REPO}@${SKILLS_REF}."
+if [ "$drift" -gt 0 ]; then
+  echo "Drift on $drift of $checked file(s). Re-condense each BEHIND card from its sources and"
+  echo "record the printed reconciled-hash; refresh templates with scripts/sync-skills.sh."
   exit 1
 fi
-
-echo "All $total_count card source(s) are current against ${SKILLS_REPO}@${SKILLS_REF}."
-exit 0
+echo "All $checked knowledge file(s) are current with sdk/cli/skills."

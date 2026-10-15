@@ -1,6 +1,18 @@
 ---
 name: oxy-route-classification
-description: Use when adding, moving, or renaming an HTTP route under `crates/app/src/server/router/` (any `.route(...)` / `.nest(...)` mount), or writing a request handler that reads the workspace working copy, `.git`, or the local state dir (`config_manager.workspace_path()`, `ConfigManager::resolve_*`, `resolve_state_dir()`, `fs::read*(workspace_path…)`, a `glob` of the workspace dir, a `GitClient`). Also triggers on "add an endpoint", "new API route", "421", "x-oxy-required-role", "served on serve but the file isn't there", "role_manifest", "RoleRouter", "route_ide", "route_fleet", "IdeState", "IdeOnly", "self-routing", and the HIGH-AVAILABILITY side: "high availability", "thread/conversation won't load when the ide is down", "a read is pinned to the singleton", "viewing needs the factory". Every route that touches node-local disk MUST be classified IdeOnly or it 404s/421s on the stateless serve fleet — and conversely, every persisted-data READ must stay FleetOk (any replica) or HA hinges on one instance.
+description: >-
+  Use when adding, moving, or renaming an HTTP route under `crates/app/src/server/router/` (any
+  `.route(...)` / `.nest(...)` mount), or writing a request handler that reads the workspace
+  working copy, `.git`, or the local state dir (`config_manager.workspace_path()`,
+  `ConfigManager::resolve_*`, `resolve_state_dir()`, `fs::read*(workspace_path…)`, a `glob` of the
+  workspace dir, a `GitClient`). Also triggers on "add an endpoint", "new API route", "421",
+  "x-oxy-required-role", "served on serve but the file isn't there", "role_manifest",
+  "RoleRouter", "route_ide", "route_fleet", "IdeState", "IdeOnly", "self-routing", and the
+  HIGH-AVAILABILITY side: "high availability", "thread/conversation won't load when the ide is
+  down", "a read is pinned to the singleton", "viewing needs the factory". Every route that
+  touches node-local disk MUST be classified IdeOnly or it 404s/421s on the stateless serve fleet
+  — and conversely, every persisted-data READ must stay FleetOk (any replica) or HA hinges on one
+  instance.
 ---
 
 # Classify every workspace-FS route IdeOnly

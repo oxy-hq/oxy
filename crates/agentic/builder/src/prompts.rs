@@ -6,8 +6,8 @@
 //! `crates/agentic/builder/knowledge/` and is embedded here via
 //! [`include_str!`]. Keeping it out of the task-specific prompt strings
 //! means we have a single source of truth that survives schema changes
-//! and stays in sync with `oxy-hq/skills`. See `knowledge/README.md` for
-//! the sync process.
+//! and stays in sync with the platform skills in `sdk/cli/skills/`. See
+//! `knowledge/README.md` for the sync process.
 //!
 //! This mirrors `crates/agentic/analytics/src/solver/prompts.rs`, which
 //! is the precedent for prompt-constant organization inside an agentic
@@ -188,9 +188,9 @@ pub(crate) fn with_reference(reference: &str, task: &str) -> String {
 ///
 /// 1. YAML frontmatter (`---\n…\n---\n`) — used on authored markdown
 ///    reference cards to carry machine-readable `source:` and
-///    `reconciled-at:` fields that the drift script reads. It must not
+///    `reconciled-hash:` fields that the drift script reads. It must not
 ///    leak into the prompt the LLM sees.
-/// 2. The `# Vendored from oxy-hq/skills @ …` comment — prepended by
+/// 2. The `# Vendored from sdk/cli/skills …` comment — prepended by
 ///    `scripts/sync-skills.sh` to verbatim YAML templates so a reader
 ///    knows where to edit the source. It must not leak either, because
 ///    a language model may faithfully reproduce comments in files it
@@ -312,8 +312,8 @@ mod tests {
 
     #[test]
     fn strip_vendoring_header_drops_header_when_present() {
-        let input = "# Vendored from oxy-hq/skills @ abc\n\
-                     # Source: foo.yml\n\
+        let input = "# Vendored from sdk/cli/skills — do not edit here\n\
+                     # Source: sdk/cli/skills/x/templates/view-template.yml\n\
                      \n\
                      name: my_view\n";
         let stripped = strip_vendoring_header(input);
@@ -330,15 +330,15 @@ mod tests {
     #[test]
     fn strip_vendoring_header_drops_yaml_frontmatter() {
         let input = "---\n\
-                     source:\n  - oxy-hq/skills/skills/x/SKILL.md\n\
-                     reconciled-at: deadbeef\n\
+                     source:\n  - sdk/cli/skills/x/SKILL.md\n\
+                     reconciled-hash: deadbeef\n\
                      ---\n\
                      \n\
                      # Title\n\
                      body line\n";
         let stripped = strip_vendoring_header(input);
         assert!(!stripped.contains("source:"));
-        assert!(!stripped.contains("reconciled-at:"));
+        assert!(!stripped.contains("reconciled-hash:"));
         assert!(stripped.starts_with("# Title"));
     }
 
@@ -347,8 +347,8 @@ mod tests {
         let input = "---\n\
                      source:\n  - x.md\n\
                      ---\n\
-                     # Vendored from oxy-hq/skills @ abc\n\
-                     # Source: foo.yml\n\
+                     # Vendored from sdk/cli/skills — do not edit here\n\
+                     # Source: sdk/cli/skills/x/templates/view-template.yml\n\
                      \n\
                      name: my_view\n";
         let stripped = strip_vendoring_header(input);
@@ -377,7 +377,7 @@ mod tests {
             "vendoring header leaked into full_reference_context: {out}"
         );
         assert!(
-            !out.contains("reconciled-at:"),
+            !out.contains("reconciled-hash:"),
             "card frontmatter leaked into full_reference_context: {out}"
         );
         // Every domain area is represented.
@@ -505,7 +505,7 @@ mod tests {
                 "vendoring comment leaked for cards={cards:?}"
             );
             assert!(
-                !out.contains("reconciled-at:"),
+                !out.contains("reconciled-hash:"),
                 "frontmatter leaked for cards={cards:?}"
             );
         }

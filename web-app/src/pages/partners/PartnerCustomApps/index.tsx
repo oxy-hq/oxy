@@ -9,6 +9,7 @@ import {
   useSetAppPublished
 } from "@/hooks/api/partners";
 import { cn } from "@/libs/shadcn/utils";
+import { AgentSkillsButton } from "@/pages/admin/AdminCustomApps/components/AgentSkills";
 import CiInstructions from "@/pages/admin/AdminPublishTokens/components/CiInstructions";
 import {
   ADMIN_HEADER_ROW_CLASS,
@@ -36,6 +37,7 @@ export default function PartnerCustomApps() {
       title='Custom apps'
       description='Every app you ship to your clients — published state at a glance, plus how to deploy from CI.'
       testId='partner-custom-apps-page'
+      actions={<AgentSkillsButton />}
     >
       {/* The partner's OWN apps sit above the client fleet and OUTSIDE the
           manage_apps gate: they're reached by org authority, not the ceiling, so an
