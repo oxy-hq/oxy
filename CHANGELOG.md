@@ -2,6 +2,67 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.156] - 2026-10-15
+
+### 🚀 Features
+
+- Sign-in is one plain card — every way in on screen at once, fewer words, a stable handle on each control (#3532)
+- Admin staff & partner tokens, every personal token that carries a standing, with revoke (#3534)
+- An oxyc login lasts a year instead of 90 days (#3537)
+- Agent token, a short-lived credential an agent asks for itself and its engineer approves once (#3543)
+- A sandbox agent token can be granted an app's staging, with guards on what its draft publish touches (#3545)
+- *(reconcile)* A group_by check names its disputed segments (#3560)
+- Custom apps notify people with ctx.notify — inbox, push, email and slack, content kept in the org's store (#3579)
+- Ctx.platform.facts for apps in internal orgs (#3588)
+- Notifications reach phones, custom apps and the platform's own events (#3589)
+- One installable bundle of Oxy platform skills, with a reminder in the custom-apps console (#3584)
+- Sandbox follow-ups — checks run --browser, builds record where they were published, bounded template renders (#3603)
+
+### 🐛 Bug Fixes
+
+- The staff & partner tokens page tells a token session to sign in, and the list never shows a token twice (#3536)
+- Sessions are signed with a per-deployment key, not a source constant; one account per email, whatever its case (#3539)
+- Cli login page asks before it hands the session token to a program on this computer (#3538)
+- An oxyc login lasts no longer than the tightest lifetime cap among its owner's orgs (#3540)
+- Email lookup lowers both sides in Postgres and has an index; each instance logs a session-key fingerprint (#3541)
+- Airway runs whose load completed no longer read failed after a server restart (#3379)
+- Web-app hq lands on the workspace with apps and shows the org's apps from other workspaces (#3582)
+- Web-app hq lands on the workspace with apps and shows the org's apps from other workspaces (#3582)
+- Metric tree predict and opportunity pass the workspace's warehouse dialect (#3558)
+- Skills-reconcile runs after each Skills publish instead of on push (#3594)
+- Web-app vitest — pin react-hook-form to 7.89.0, 7.90.0 crashes clearing an optional form section (#3610)
+
+### 💼 Other
+
+- Bump @oxy-hq/cli to 0.8.0 (#3531)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 12 updates (#3549)
+- *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 9 updates (#3548)
+- *(deps)* Bump actions/upload-artifact from 4 to 6 (#3547)
+- *(deps)* Bump dorny/paths-filter from 4.0.2 to 4.0.3 (#3546)
+- *(deps)* Bump astral-sh/setup-uv from 10.2.0 to 10.3.0 (#3591)
+- *(deps)* Bump dtolnay/rust-toolchain from 1.98.1 to 1.120.0 (#3590)
+- *(deps)* Bump docker/build-push-action from 7.3.0 to 7.4.0 (#3606)
+- *(deps)* Bump jlumbroso/free-disk-space from 1.3.1 to 2.0.0 (#3605)
+- *(deps)* Bump the prod-npm-minor-dependencies group across 1 directory with 32 updates (#3609)
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#3568)
+- Refresh ownership matrix + CODEOWNERS (weekly) (#3566)
+- Customer insight proposal, an accounts app on our own platform instead of a crm in the admin panel (#3576)
+
+### 🧪 Testing
+
+- The agent token's bad-mint test names the token, so the hours are what it is refused for (#3544)
+- Pin that compile discovery skips .claude/worktrees agent copies (#3556)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release @oxy-hq/cli 0.8.0 (#3533)
+- Automated review pipeline with focused lenses, a verifier, review-gate and weekly metrics (#3577)
+- Reconcile builder knowledge cards with sdk/cli/skills (#3595)
+- Rust jobs install 1.98.1 again — dependabot moved the toolchain pin to a rust that does not exist (#3604)
+
 ## [0.5.155] - 2026-10-07
 
 ### 🚀 Features
@@ -124,6 +185,7 @@ All notable changes to this project will be documented in this file.
 - Release @oxy-hq/cli 0.7.0 (#3513)
 - Monthly dead code cleanup 2026-10-07 (#3524)
 - Weekly release PR opens Monday 10:00 UTC+7 instead of Thursday (#3530)
+- Release 0.5.155 (#3526)
 
 ## [0.5.154] - 2026-10-01
 
