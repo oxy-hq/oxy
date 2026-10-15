@@ -1,0 +1,136 @@
+<svg viewBox="0 0 1560 900" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#f59e0b"/>
+    </marker>
+    <linearGradient id="objectFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a2232"/>
+      <stop offset="1" stop-color="#131a27"/>
+    </linearGradient>
+    <linearGradient id="outcomeFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d3b2e"/>
+      <stop offset="1" stop-color="#0a2c23"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="20" y="20" width="1520" height="860" rx="28" fill="#0b0f1a" stroke="#2b3446" stroke-width="2"/>
+  <text x="64" y="84" fill="#e5e7eb" font-size="32" font-weight="700">From object state to outcome state</text>
+  <text x="64" y="120" fill="#94a3b8" font-size="17">Palantir models the operational state of the business. Oxygen adds a computational model of how business outcomes behave.</text>
+
+  <!-- ===================== Palantir: object state ===================== -->
+  <rect x="64" y="156" width="500" height="620" rx="20" fill="url(#objectFill)" stroke="#475569" stroke-width="2"/>
+  <text x="96" y="196" fill="#94a3b8" font-size="13" font-weight="700" letter-spacing="2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">PALANTIR</text>
+  <text x="96" y="232" fill="#cbd5e1" font-size="27" font-weight="700">Object state</text>
+  <text x="96" y="262" fill="#94a3b8" font-size="16">What things exist, what state they are in,</text>
+  <text x="96" y="284" fill="#94a3b8" font-size="16">and how they relate.</text>
+
+  <rect x="96" y="340" width="150" height="60" rx="10" fill="#0b1220" stroke="#475569" stroke-width="1.5"/>
+  <text x="171" y="376" text-anchor="middle" fill="#f1f5f9" font-size="18" font-weight="600">Supplier</text>
+  <rect x="382" y="340" width="150" height="60" rx="10" fill="#0b1220" stroke="#475569" stroke-width="1.5"/>
+  <text x="457" y="376" text-anchor="middle" fill="#f1f5f9" font-size="18" font-weight="600">Warehouse</text>
+  <rect x="254" y="490" width="120" height="60" rx="10" fill="#0b1220" stroke="#94a3b8" stroke-width="2"/>
+  <text x="314" y="526" text-anchor="middle" fill="#f1f5f9" font-size="19" font-weight="700">SKU</text>
+  <rect x="96" y="640" width="150" height="60" rx="10" fill="#0b1220" stroke="#475569" stroke-width="1.5"/>
+  <text x="171" y="676" text-anchor="middle" fill="#f1f5f9" font-size="18" font-weight="600">Order</text>
+  <rect x="382" y="640" width="150" height="60" rx="10" fill="#0b1220" stroke="#475569" stroke-width="1.5"/>
+  <text x="457" y="665" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">Amazon FBA</text>
+  <text x="457" y="687" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">inventory</text>
+
+  <line x1="210" y1="400" x2="274" y2="486" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="230" y="450" text-anchor="end" fill="#94a3b8" font-size="15" font-style="italic">supplies</text>
+  <line x1="352" y1="490" x2="418" y2="404" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="398" y="450" fill="#94a3b8" font-size="15" font-style="italic">stored at</text>
+  <line x1="210" y1="640" x2="274" y2="554" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="230" y="602" text-anchor="end" fill="#94a3b8" font-size="15" font-style="italic">contains</text>
+  <line x1="352" y1="550" x2="418" y2="636" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="398" y="602" fill="#94a3b8" font-size="15" font-style="italic">inventory at</text>
+
+  <text x="96" y="748" fill="#cbd5e1" font-size="16" font-weight="600">Objects + object relationships</text>
+
+  <!-- ===================== Oxygen: outcome state ===================== -->
+  <rect x="596" y="156" width="900" height="620" rx="20" fill="url(#outcomeFill)" stroke="#10b981" stroke-width="2"/>
+  <text x="628" y="196" fill="#10b981" font-size="13" font-weight="700" letter-spacing="2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">OXYGEN</text>
+  <text x="628" y="232" fill="#6ee7b7" font-size="27" font-weight="700">Outcome state</text>
+
+  <!-- retained object layer, muted -->
+  <text x="628" y="284" fill="#7d8ea6" font-size="15">Object state</text>
+  <rect x="740" y="262" width="92" height="34" rx="8" fill="#0b1220" fill-opacity="0.6" stroke="#1f3b33" stroke-width="1.2"/>
+  <text x="786" y="284" text-anchor="middle" fill="#8b9ab0" font-size="15">Supplier</text>
+  <rect x="842" y="262" width="60" height="34" rx="8" fill="#0b1220" fill-opacity="0.6" stroke="#1f3b33" stroke-width="1.2"/>
+  <text x="872" y="284" text-anchor="middle" fill="#8b9ab0" font-size="15">SKU</text>
+  <rect x="912" y="262" width="110" height="34" rx="8" fill="#0b1220" fill-opacity="0.6" stroke="#1f3b33" stroke-width="1.2"/>
+  <text x="967" y="284" text-anchor="middle" fill="#8b9ab0" font-size="15">Warehouse</text>
+  <rect x="1032" y="262" width="190" height="34" rx="8" fill="#0b1220" fill-opacity="0.6" stroke="#1f3b33" stroke-width="1.2"/>
+  <text x="1127" y="284" text-anchor="middle" fill="#8b9ab0" font-size="15">Amazon FBA inventory</text>
+  <rect x="1232" y="262" width="76" height="34" rx="8" fill="#0b1220" fill-opacity="0.6" stroke="#1f3b33" stroke-width="1.2"/>
+  <text x="1270" y="284" text-anchor="middle" fill="#8b9ab0" font-size="15">Order</text>
+
+  <!-- legends -->
+  <text x="628" y="342" fill="#f1f5f9" font-size="19" font-weight="700">Causal graph</text>
+  <line x1="772" y1="336" x2="822" y2="336" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="628" y="364" fill="#fbbf24" font-size="14">Learned, probabilistic</text>
+  <text x="1200" y="342" fill="#f1f5f9" font-size="19" font-weight="700">Metric tree</text>
+  <line x1="1322" y1="336" x2="1372" y2="336" stroke="#34d399" stroke-width="2"/>
+  <text x="1200" y="364" fill="#6ee7b7" font-size="14">Deterministic</text>
+
+  <!-- causal graph nodes -->
+  <rect x="628" y="396" width="124" height="44" rx="10" fill="#0b1220" stroke="#5c4413" stroke-width="1.5"/>
+  <text x="690" y="424" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">Promotion</text>
+  <rect x="800" y="396" width="150" height="44" rx="10" fill="#0b1220" stroke="#5c4413" stroke-width="1.5"/>
+  <text x="875" y="424" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">Demand</text>
+  <rect x="1000" y="396" width="130" height="44" rx="10" fill="#0b1220" stroke="#5c4413" stroke-width="1.5"/>
+  <text x="1065" y="424" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">Inventory</text>
+  <rect x="628" y="476" width="124" height="44" rx="10" fill="#0b1220" stroke="#5c4413" stroke-width="1.5"/>
+  <text x="690" y="504" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">Price</text>
+  <rect x="800" y="476" width="150" height="44" rx="10" fill="#0b1220" stroke="#5c4413" stroke-width="1.5"/>
+  <text x="875" y="504" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">Stockout risk</text>
+  <rect x="1000" y="476" width="130" height="44" rx="10" fill="#0b1220" stroke="#5c4413" stroke-width="1.5"/>
+  <text x="1065" y="504" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">Lost sales</text>
+
+  <!-- causal edges -->
+  <g stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="6 4" fill="none" marker-end="url(#arrowAmber)">
+    <line x1="752" y1="418" x2="796" y2="418"/>
+    <line x1="752" y1="490" x2="806" y2="442"/>
+    <line x1="950" y1="418" x2="996" y2="418"/>
+    <line x1="875" y1="440" x2="875" y2="472"/>
+    <line x1="1010" y1="440" x2="954" y2="478"/>
+    <line x1="950" y1="498" x2="996" y2="498"/>
+    <line x1="1130" y1="498" x2="1196" y2="498"/>
+  </g>
+
+  <!-- metric tree nodes -->
+  <rect x="1268" y="396" width="110" height="44" rx="10" fill="#10241d" stroke="#34d399" stroke-width="1.8"/>
+  <text x="1323" y="424" text-anchor="middle" fill="#f1f5f9" font-size="17" font-weight="700">EBITDA</text>
+  <rect x="1200" y="476" width="110" height="44" rx="10" fill="#10241d" stroke="#34d399" stroke-width="1.5"/>
+  <text x="1255" y="504" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">Revenue</text>
+  <text x="1340" y="505" text-anchor="middle" fill="#6ee7b7" font-size="22" font-weight="700">−</text>
+  <rect x="1370" y="476" width="100" height="44" rx="10" fill="#10241d" stroke="#34d399" stroke-width="1.5"/>
+  <text x="1420" y="504" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">Costs</text>
+  <rect x="1200" y="556" width="76" height="44" rx="10" fill="#10241d" stroke="#34d399" stroke-width="1.5"/>
+  <text x="1238" y="584" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">Units</text>
+  <text x="1288" y="584" text-anchor="middle" fill="#6ee7b7" font-size="18" font-weight="700">×</text>
+  <rect x="1300" y="556" width="76" height="44" rx="10" fill="#10241d" stroke="#34d399" stroke-width="1.5"/>
+  <text x="1338" y="584" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">Price</text>
+  <g stroke="#34d399" stroke-width="1.8" fill="none">
+    <line x1="1323" y1="440" x2="1255" y2="476"/>
+    <line x1="1323" y1="440" x2="1420" y2="476"/>
+    <line x1="1255" y1="520" x2="1238" y2="556"/>
+    <line x1="1255" y1="520" x2="1338" y2="556"/>
+  </g>
+
+  <!-- propagation -->
+  <line x1="628" y1="628" x2="1464" y2="628" stroke="#1f5a45" stroke-width="1.2"/>
+  <text x="628" y="664" fill="#f1f5f9" font-size="19" font-weight="700">Change → propagate effects → compute outcomes</text>
+  <rect x="628" y="682" width="312" height="34" rx="8" fill="#10241d"/>
+  <text x="784" y="704" text-anchor="middle" fill="#a7f3d0" font-size="15">↑ Demand → ↑ Stockout risk → ↓ Revenue</text>
+  <rect x="952" y="682" width="252" height="34" rx="8" fill="#10241d"/>
+  <text x="1078" y="704" text-anchor="middle" fill="#a7f3d0" font-size="15">↑ Price → Δ Demand → Δ EBITDA</text>
+  <rect x="628" y="726" width="432" height="34" rx="8" fill="#10241d"/>
+  <text x="844" y="748" text-anchor="middle" fill="#a7f3d0" font-size="15">Policy change → Δ Inventory → Δ Service level → Δ EBITDA</text>
+
+  <!-- takeaway -->
+  <text x="64" y="830" font-size="22" font-weight="600"><tspan fill="#cbd5e1">Palantir makes object state computable.</tspan><tspan dx="8" fill="#6ee7b7" font-weight="700">Oxygen makes outcome state computable.</tspan></text>
+</svg>

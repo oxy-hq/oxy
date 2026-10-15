@@ -1,44 +1,89 @@
 ---
 title: "Calibration"
-description: "The feedback loop's write-back: tuning the physics to truth"
+description: "The layer that learns: estimating the physics' uncertain parameters and keeping them honest as evidence arrives"
 ---
 
 The physics layer makes claims about the business: a forecast claims what a
 measure will do next, a declared lag claims how long a cause takes to show
-its effect, and a driver edge claims that one measure moves another.
-**Calibration** is the final step of the control layer's feedback loop,
-taking what [evaluation](/guide/build/world-model/evaluation) measured,
-scoring those claims against it, and writing corrections back into the
-physics.
+its effect, and a driver edge claims that one measure moves another. Some of
+those claims are accounting identities, such as `gross_profit = revenue -
+cogs`, and are exact by definition. Most are empirical hypotheses whose
+parameters nobody knows in advance.
+
+The **calibration layer** owns those parameters. The physics layer
+*declares* a relationship, calibration *estimates* it, and every new
+observation or intervention revises the estimate. The control layer then
+makes its next decision on the updated physics.
+
+## Why calibration is its own layer
+
+Any application can fit a model. What a separate layer adds is that the
+fitting, scoring, and retiring of estimates happens once, against the shared
+World Model, instead of inside each application that needs a forecast or a
+driver coefficient. Because the physics states each relationship explicitly
+(which measure, which drivers, at which grain), calibration has a common
+interface for three recurring jobs:
+
+- **Comparing predictions with observations** for every component, using
+  the same semantic definitions the rest of the platform queries.
+- **Monitoring drift**, so that a relationship that held last quarter but no
+  longer does is caught before a control acts on it.
+- **Updating the model that subsequent decisions use**, so that forecasts,
+  scenarios, anomaly detection, and controls all read the same current
+  estimate rather than each keeping a private copy.
+
+Keeping this separate from both the physics and the controls means a model
+assumption, a policy threshold, and a retraining rule are never tangled
+together in one application-specific function.
 
 ## What gets calibrated
 
 - **Forecasts.** Seasonal models refit continuously as new history arrives,
   and each forecast carries an envelope that states its own uncertainty.
+- **Driver coefficients.** Where the physics declares that a measure depends
+  on its drivers, such as sales on ad spend, price, and availability,
+  calibration holds the estimated strength of each dependency and revises it
+  incrementally as evidence accumulates. The estimator can be any online
+  procedure suited to the relationship, from recursive least squares to
+  stochastic gradient updates to Bayesian filtering.
 - **Lags and structural claims.** A declared lead time or a claimed causal
   direction is checked against the realized relationship as data
   accumulates.
-- **Observational estimates.** Where no control acts on a driver, any
-  magnitude on that edge is an observational fit, so calibration's job is
-  mostly bookkeeping: these estimates stay labeled as weak, and any whose
-  predictions drift are retired rather than trusted.
-
-Driver magnitudes themselves belong to evaluation rather than calibration. A
-magnitude is a causal claim that only intervention can identify, so the
-control that acts on a driver estimates its effect through
-[evaluation](/guide/build/world-model/evaluation), and that estimate
-supersedes anything observational.
+- **Functional form, where warranted.** When a component's error stays high
+  however its parameters are tuned, the relationship itself is likely wrong,
+  and calibration flags it for a human to revise rather than refitting it
+  forever.
 
 ## Prediction error is the signal
 
 Every claim the physics layer makes is eventually scored against what
 actually happened, and calibration tracks that prediction error for each
 component. A forecast that keeps landing outside its envelope, or an
-observational estimate whose predictions drift away from outcomes, is flagged
-for a refit or for human revision, while components with healthy error keep
-their standing. This is what keeps the exact, estimated, and refused labels
+estimate whose predictions drift away from outcomes, is flagged for a refit
+or for human revision, while components with healthy error keep their
+standing. This is what keeps the exact, estimated, and refused labels
 truthful, since an estimate is only worth its label if something is checking
 it.
+
+## Learning is not causal proof
+
+Online learning is not causal inference. A coefficient fitted from history
+absorbs everything that moved alongside its driver: seasonality, a price
+change, a selection effect, or the feedback of the business's own past
+decisions. Calibration therefore keeps track of where each estimate came
+from:
+
+- An **observational** estimate, fitted from passive history, stays labeled
+  as weak. It can inform a forecast, but it is retired rather than trusted
+  once its predictions drift.
+- An **interventional** estimate, measured by
+  [evaluation](/guide/build/world-model/evaluation) from the actions of a
+  control, identifies the driver's effect from deliberate changes and
+  supersedes any observational fit on the same edge.
+
+The architectural claim is that explicitly declared drivers and
+interventions make calibration and evaluation reusable across every
+application, not that a declared graph establishes causality on its own.
 
 ## Evaluation feeds calibration
 
@@ -56,12 +101,12 @@ little sharper than it was.
     Measure what controls do, with results feeding back here
   </Card>
   <Card title="Metric Tree" icon="sitemap" href="/guide/build/world-model/metric-tree">
-    The driver edges calibration keeps honest
+    The driver edges calibration estimates and keeps honest
   </Card>
   <Card title="Controls" icon="sliders" href="/guide/build/world-model/controls">
-    The criteria that lean on calibrated physics
+    The decision rules that run on calibrated physics
   </Card>
   <Card title="World Model" icon="cube" href="/guide/build/world-model">
-    The two layers and how they fit together
+    The three layers and how they fit together
   </Card>
 </CardGroup>

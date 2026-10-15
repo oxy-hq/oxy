@@ -1,0 +1,184 @@
+---
+title: "Compared to Palantir"
+description: "How Oxygen's outcome-centric World Model differs from Palantir Foundry's object-centric Ontology, and where each fits"
+---
+
+Palantir Foundry's
+[Ontology](https://www.palantir.com/docs/foundry/ontology/models) and Oxygen's
+World Model both aim to represent an organization's state, explain its
+performance, forecast the effect of interventions, and execute decisions. The
+key difference between them is that they start from different primitives. We'll
+discuss what these primitives are and the ramifications for such choices in
+what follows.
+
+
+## Objects first or outcomes first
+
+Most operational platforms (Foundry included) begin with **entities**:
+stores, customers, products, inventory items, and the links between them.
+Behavior is attached to those objects through executable functions, actions,
+and deployed models.
+
+The questions that motivate building such a system, though, are usually
+about **outcomes**. Why did gross margin fall? Which intervention would
+prevent a stockout? How should ad spend change to maximize contribution
+profit?
+
+The World Model makes outcomes primary. Measures, the dependencies between
+them, the drivers you can control, and the policies that move those drivers
+are first-class parts of the model. Entities are still there, in the
+[entity graph](/guide/build/semantic-model/entities#the-entity-graph), but
+they are subordinate to the explanation and control of measurable outcomes.
+
+## Object state and outcome state
+
+The shortest way to put the difference: **Palantir makes object state
+computable. Oxygen adds outcome state, and makes business outcomes
+computable.**
+
+<Frame caption="Both platforms model object state. Oxygen adds a second computational model on top of it: business outcomes, and the deterministic and causal relationships between them.">
+  <img src="../../images/palantir-object-vs-outcome-state.svg" alt="Two panels. Left, Palantir object state: Supplier, Warehouse, Order, and Amazon FBA inventory linked to a SKU by supplies, stored at, contains, and inventory at relationships. Right, Oxygen outcome state: the same objects in a muted row, then a causal graph (Promotion and Price drive Demand, Demand drives Inventory and Stockout risk, Stockout risk drives Lost sales, which drives Revenue) and a metric tree (EBITDA is Revenue minus Costs, Revenue is Units times Price). Beneath, change propagates through both to compute outcomes, for example rising demand raises stockout risk and lowers revenue." />
+</Frame>
+
+An ontology makes **objects and their relationships** first-class: what
+things exist, what state they are in, and how they relate. The World Model
+keeps that layer, as the
+[entity graph](/guide/build/semantic-model/entities#the-entity-graph), and
+adds **measures and the relationships between them** as a second
+first-class layer, in two distinct structures:
+
+- The **[metric tree](/guide/build/world-model/metric-tree)** holds
+  *deterministic* relationships, the definitions and identities such as
+  EBITDA = revenue − costs and revenue = units × price.
+- The **causal graph** holds *learned, probabilistic* relationships, the
+  driver edges such as promotion → demand or stockout → lost sales, whose
+  magnitudes the [calibration layer](/guide/build/world-model/calibration)
+  estimates from evidence.
+
+Because both structures are executable, a change can be propagated through
+them to compute outcomes: a rise in demand raises stockout risk and lowers
+revenue, a price change moves demand and therefore EBITDA, and a policy
+change moves inventory, service level, and EBITDA in turn. Objects tell you
+what exists; outcome relationships let you compute what happens.
+
+## Not a question of expressivity
+
+Foundry supports typed objects and links, [executable
+functions](https://www.palantir.com/docs/foundry/functions/overview),
+[function-backed actions](https://www.palantir.com/docs/foundry/functions/use-functions)
+with external side effects, [deployed models](https://www.palantir.com/docs/foundry/ontology/models),
+and [scenario analysis](https://www.palantir.com/docs/foundry/vertex/scenarios-overview).
+It would be wrong to say it cannot do root-cause analysis, simulation,
+machine learning, or automated action. Either architecture can, in
+principle, implement the same computations.
+
+The difference is which recurring behaviors the platform supplies as shared
+infrastructure and which each application has to build. A function can
+compute a metric, but its existence does not tell the platform whether that
+metric is additive, how it decomposes, which dimensions are compatible with
+it, or which interventions affect it. Those semantics are either declared
+once in a shared representation, or reconstructed separately by every
+application that needs them.
+
+## Where the difference shows up
+
+| Recurring task | Object-first (Foundry) | Outcome-first (World Model) |
+| --- | --- | --- |
+| **Root-cause analysis** | Metrics can be modeled as objects and links, with functions that compute and explain them. A generic engine still needs standardized dependency, aggregation, and evaluation semantics that arbitrary functions do not expose. | The [metric tree](/guide/build/world-model/metric-tree) declares how each metric decomposes, so once definitions are correct, recursive decomposition is a platform operation rather than a per-metric project. |
+| **Learning driver relationships** | Deployed models and chained model evaluation in scenarios. The dependency structure and learning lifecycle live with each model. | Drivers are declared in the physics and estimated in the [calibration layer](/guide/build/world-model/calibration), so scenario propagation, drift monitoring, and refitting share one outcome-level interface. |
+| **Standing decisions** | An action modifies a property, and a function or webhook dispatches the change. Valid and flexible, especially for unusual workflows. | A [control](/guide/build/world-model/controls) evaluates criteria over measures and dispatches a reusable action. Evaluation, trigger execution, versioning, backtesting, and logging come from the platform, and per-customer variation is mostly mappings, thresholds, and credentials. |
+
+The hoped-for property is that a second deployment of the same kind of
+decision needs mostly configuration rather than a new implementation. That
+does not make Foundry deployments inherently non-reusable: it has model,
+action, and packaging mechanisms that support shared implementations. The
+claim is narrower: a controller whose interface is natively expressed in
+measures and levers can reduce the incremental engineering for repeated
+classes of operational decisions.
+
+## Example: replenishment
+
+Consider deciding how much inventory to send from a warehouse to Amazon FBA.
+Both platforms can implement it. What differs is what else comes for free
+once it is implemented.
+
+<Frame caption="On Palantir, replenishment is an application built on the ontology. On Oxygen, it is a policy configured against the World Model, and impact calculation, policy simulation, and counterfactual measurement are further computations over that same policy.">
+  <img src="../../images/palantir-replenishment.svg" alt="Two columns. Left, Palantir: an ontology of SKU, Warehouse, Amazon FBA inventory, and Orders feeds a replenishment application of business logic, workflow, and UI. Right, Oxygen: the World Model (object state plus outcome state, metric tree plus causal graph) feeds a control system configuration, the replenishment policy, with target inventory, reorder thresholds, allocation rules, and safety stock. The policy branches into impact calculation (physics plus calibration), policy simulation (physics layer), and counterfactual measurement (calibration layer). A feedback arrow returns experiments and observations to calibrate drivers and update the world model. Footer: a continuously improving system for managing replenishment, Control, Simulate, Measure, Calibrate." />
+</Frame>
+
+On an ontology, replenishment is typically an **application**: business
+logic, a workflow, and a UI that read warehouse inventory, Amazon inventory,
+and expected demand, and decide how much to send. That is a sound
+architecture, and the logic can be shared across deployments.
+
+On the World Model, replenishment is a **[control](/guide/build/world-model/controls)**:
+a policy of target inventory, reorder thresholds, allocation rules, and
+safety stock, configured against measures the model already defines. Because
+the policy is expressed in the same terms as the outcomes it affects, three
+further questions are computations over the same policy and model rather
+than separate projects:
+
+- **Impact calculation** (physics and calibration). Propagate the policy
+  through inventory and stockout risk to revenue and EBITDA: *what business
+  impact will this policy have?*
+- **Policy simulation** (physics). Run policy A against policies B and C:
+  *what happens under a different replenishment policy?*
+- **Counterfactual measurement** (calibration). Compare observed results
+  with the modeled counterfactual through
+  [evaluation](/guide/build/world-model/evaluation): *did the policy actually
+  improve the outcome?*
+
+What is measured then flows back as evidence: the calibration layer refits
+the drivers, and the next decision runs on a sharper model. The result is a
+continuously improving system for managing replenishment — control,
+simulate, measure, calibrate — rather than an application that has to be
+extended for each new question.
+
+## Trade-offs
+
+Outcome-centric primitives bring constraints as well as leverage:
+
+- A metric graph can be incomplete or wrong, and aggregation semantics can
+  be subtle.
+- Feedback loops can become unstable, so consequential interventions need
+  safeguards, permissions, and idempotent execution.
+- Declarative controls may not fit exceptional business logic, which is why
+  the platform keeps [functions](/guide/build/sdk/functions) and custom apps
+  as escape hatches.
+- Real dependencies can be cyclic or delayed, which needs richer dynamic
+  models than a simple tree.
+- A declared dependency is not a causally identified one, and mathematical
+  decomposition is not proof of causation.
+
+## How to judge the difference
+
+The right comparison is empirical, and the right question is not which
+system can build a demo, but how marginal cost and reliability change as the
+number of analogous deployments grows. For matched implementations, measure:
+
+- Engineer-hours to the first correct deployment, and the volume of custom
+  code it needed.
+- Time to replicate the same workflow for additional customers.
+- Maintenance burden after a policy change.
+- Forecast quality, intervention safety, and the correctness of root-cause
+  explanations.
+
+Control for developer experience, existing integrations, security
+requirements, and task complexity.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="World Model" icon="cube" href="/guide/build/world-model">
+    The physics, calibration, and control layers
+  </Card>
+  <Card title="Calibration" icon="code-compare" href="/guide/build/world-model/calibration">
+    How estimated relationships are learned and kept honest
+  </Card>
+  <Card title="Metric Tree" icon="sitemap" href="/guide/build/world-model/metric-tree">
+    The declared decomposition behind root-cause analysis
+  </Card>
+  <Card title="Controls" icon="sliders" href="/guide/build/world-model/controls">
+    Standing decisions written over measures
+  </Card>
+</CardGroup>

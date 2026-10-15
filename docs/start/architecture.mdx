@@ -33,11 +33,14 @@ consistent surfaces.
 The **World Model** is the piece that sets Oxygen apart. Rather than a bottom-up
 digital twin of every object in your business, it models the business top-down —
 starting from the outcomes you care about and working down to the drivers you can
-move. It has three layers: the **Semantic Model** composes deterministic SQL from
-business-relevant measures and dimensions; the **Metric Tree** captures how those
-measures relate, so a top-line metric decomposes into its drivers; and the
-**Entity Graph** links measures to the real objects — stores, employees,
-customers — that produce them. [Explore the World Model →](/guide/build/world-model)
+move. It has three layers. The **physics layer** declares how outcomes depend on
+their drivers: the **Semantic Model** composes deterministic SQL from
+business-relevant measures and dimensions, the **Metric Tree** captures how those
+measures relate, and the **Entity Graph** links measures to the real objects —
+stores, employees, customers — that produce them. The **calibration layer** learns
+the uncertain parameters behind those relationships and revises them as evidence
+arrives. The **control layer** turns the model into standing decisions and
+measures what each one did. [Explore the World Model →](/guide/build/world-model)
 
 ## Building Applications
 

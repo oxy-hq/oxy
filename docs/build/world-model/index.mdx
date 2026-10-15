@@ -1,7 +1,7 @@
 ---
 title: "World Model"
 sidebarTitle: "Overview"
-description: "A formula-first Digital Twin of the business: a physics layer that models your outcomes, and a control layer that runs on it"
+description: "A formula-first Digital Twin of the business: a physics layer that models your outcomes, a calibration layer that keeps it accurate, and a control layer that runs on it"
 ---
 
 The **World Model** is Oxygen's formula-first model of your business. It
@@ -9,18 +9,20 @@ defines every metric that matters as an equation over its drivers, so that
 agents and applications can explain why an outcome moved and what to do about
 it.
 
-Everything in the World Model fits into two layers:
+Everything in the World Model fits into three layers:
 
 - The **physics layer** models what the business *is*: its measures and the
   equations that define them, the qualitative map of what drives what, and
   the real objects that produce them.
+- The **calibration layer** models what the business has *learned*: the
+  estimated parameters behind the physics, such as forecasts, lags, and driver
+  magnitudes, revised continuously as new evidence arrives.
 - The **control layer** models what the business *does*: the versioned
-  decision rules that read the physics and move its levers, together with the
-  feedback loop of forecasts, evaluation, and calibration that scores every
-  change and updates the physics in turn.
+  decision rules that read the physics and move its levers, and the
+  evaluation that measures what each change actually did.
 
-<Frame caption="Controls read the physics and act on the business, while the feedback loop of forecasts, evaluation, and calibration scores every intervention and updates the physics.">
-  <img src="../../images/world-model-layers.svg" alt="World Model architecture. A physics layer (semantic model, metric tree, entity graph) feeds a control layer of versioned controls with anomaly, opportunity, and trigger criteria. A feedback loop of forecasts, evaluation, and calibration updates the physics and learns driver magnitudes." />
+<Frame caption="The physics layer declares how outcomes depend on their drivers, the control layer acts on the business, and the calibration layer learns from every observation and intervention and writes the result back into the physics.">
+  <img src="../../images/world-model-layers.svg" alt="World Model architecture as three layers. A physics layer (semantic model, metric tree, entity graph) is read by a control layer of versioned controls with anomaly, opportunity, and trigger criteria, plus evaluation. A calibration layer of forecasts, online estimation, and drift monitoring takes observations and evaluation results and updates the physics." />
 </Frame>
 
 ## A Digital Twin of the physics
@@ -32,7 +34,8 @@ accountable for and modeling downward toward the drivers you can actually
 move. The result is a set of equations faithful enough to forecast with,
 backtest against, and use to change what the business produces. Where a twin
 of the parts tells you the state of everything, a twin of the physics tells
-you what to do.
+you what to do. For how this differs from an object-first platform such as
+Palantir Foundry, see [Compared to Palantir](/guide/build/world-model/compared-to-palantir).
 
 ## The physics layer
 
@@ -47,6 +50,23 @@ you what to do.
 - **[Entity Graph](/guide/build/semantic-model/entities#the-entity-graph): the
   objects.** Measures are tied to the stores, employees, customers, and orders
   that produce them, so any metric can be sliced, rolled up, and acted on.
+
+## The calibration layer
+
+The physics layer *declares* relationships: that sales depend on ad spend,
+price, and availability, or that a supplier's lead time is about a week.
+Some of those relationships are accounting identities and are exact. Most
+are empirical, and their parameters are uncertain. The
+[**calibration layer**](/guide/build/world-model/calibration) owns those
+parameters. It refits them incrementally as new data lands, compares every
+prediction with what actually happened, and flags any component whose error
+drifts. Because this happens in one shared layer rather than inside each
+application, every forecast, scenario, and control reads the same estimates
+and inherits the same drift monitoring.
+
+Calibration is learning, not proof. An estimate fitted from history stays
+labeled as observational, and only the measured effect of an intervention
+can promote a driver magnitude to an authoritative one.
 
 ## The control layer
 
@@ -64,11 +84,18 @@ The same primitive powers three engines:
 - The **Anomaly Engine** *fixes* it, detecting when an outcome breaks from its
   forecast and tracing the break to its root cause.
 
-Every action then feeds a loop: **forecasts** set the expected value,
-[**evaluation**](/guide/build/world-model/evaluation) measures what each
-change actually did, and [**calibration**](/guide/build/world-model/calibration)
-writes the result back, so the physics the next decision runs on is sharper
-than the last.
+[**Evaluation**](/guide/build/world-model/evaluation) then measures what each
+change actually did.
+
+## The feedback cycle
+
+The three layers form one loop: the physics **observes and predicts**, the
+control layer **decides and acts**, evaluation **measures** the result, and
+calibration **updates** the physics that the next prediction runs on.
+Keeping these responsibilities separate means a model assumption, a policy
+threshold, and a retraining rule never have to be buried together inside a
+single application's code, and each decision runs on physics that is a
+little sharper than the last.
 
 ## Next steps
 
@@ -83,6 +110,9 @@ than the last.
     Version comparison and criteria-triggered measurement
   </Card>
   <Card title="Calibration" icon="code-compare" href="/guide/build/world-model/calibration">
-    How the feedback loop keeps the physics accurate
+    How the physics learns from every observation and intervention
+  </Card>
+  <Card title="Compared to Palantir" icon="code-branch" href="/guide/build/world-model/compared-to-palantir">
+    Outcome-centric versus object-centric operational models
   </Card>
 </CardGroup>

@@ -1,0 +1,124 @@
+<svg viewBox="0 0 1560 900" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#34d399"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#f59e0b"/>
+    </marker>
+    <linearGradient id="objectFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a2232"/>
+      <stop offset="1" stop-color="#131a27"/>
+    </linearGradient>
+    <linearGradient id="outcomeFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d3b2e"/>
+      <stop offset="1" stop-color="#0a2c23"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="20" y="20" width="1520" height="860" rx="28" fill="#0b0f1a" stroke="#2b3446" stroke-width="2"/>
+  <text x="64" y="84" fill="#e5e7eb" font-size="32" font-weight="700">Replenishment: app over ontology vs. policy over world model</text>
+
+  <!-- ===================== Palantir ===================== -->
+  <rect x="64" y="120" width="400" height="740" rx="20" fill="url(#objectFill)" stroke="#475569" stroke-width="2"/>
+  <text x="96" y="160" fill="#94a3b8" font-size="13" font-weight="700" letter-spacing="2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">PALANTIR</text>
+
+  <rect x="96" y="184" width="336" height="110" rx="12" fill="#0b1220" stroke="#475569" stroke-width="1.5"/>
+  <text x="120" y="220" fill="#f1f5f9" font-size="19" font-weight="700">Ontology</text>
+  <text x="120" y="250" fill="#94a3b8" font-size="16">SKU ↔ Warehouse ↔</text>
+  <text x="120" y="274" fill="#94a3b8" font-size="16">Amazon FBA inventory ↔ Orders</text>
+
+  <line x1="264" y1="294" x2="264" y2="336" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="96" y="340" width="336" height="290" rx="12" fill="#0b1220" stroke="#94a3b8" stroke-width="2"/>
+  <text x="120" y="380" fill="#f1f5f9" font-size="21" font-weight="700">Replenishment</text>
+  <text x="120" y="406" fill="#f1f5f9" font-size="21" font-weight="700">application</text>
+  <text x="120" y="438" fill="#94a3b8" font-size="15">Business logic + workflow + UI</text>
+  <text x="120" y="490" fill="#7d8ea6" font-size="15" font-style="italic">“Given warehouse inventory,</text>
+  <text x="120" y="514" fill="#7d8ea6" font-size="15" font-style="italic">Amazon inventory and expected</text>
+  <text x="120" y="538" fill="#7d8ea6" font-size="15" font-style="italic">demand, determine how much</text>
+  <text x="120" y="562" fill="#7d8ea6" font-size="15" font-style="italic">inventory to send to Amazon.”</text>
+
+  <text x="96" y="680" fill="#94a3b8" font-size="16">Replenishment is an application</text>
+  <text x="96" y="704" fill="#94a3b8" font-size="16">built on top of the ontology.</text>
+
+  <!-- ===================== Oxygen ===================== -->
+  <rect x="496" y="120" width="1000" height="740" rx="20" fill="url(#outcomeFill)" stroke="#10b981" stroke-width="2"/>
+  <text x="528" y="160" fill="#10b981" font-size="13" font-weight="700" letter-spacing="2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">OXYGEN</text>
+
+  <!-- world model -->
+  <rect x="528" y="184" width="880" height="80" rx="12" fill="#10241d" stroke="#10b981" stroke-width="1.5"/>
+  <text x="556" y="233" fill="#f1f5f9" font-size="24" font-weight="700">World model</text>
+  <text x="1388" y="218" text-anchor="end" fill="#a7f3d0" font-size="16">Object state + outcome state</text>
+  <text x="1388" y="244" text-anchor="end" fill="#a7f3d0" font-size="16">Metric tree + causal graph</text>
+
+  <line x1="968" y1="264" x2="968" y2="300" stroke="#34d399" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- policy -->
+  <rect x="528" y="304" width="880" height="110" rx="12" fill="#0b1220" stroke="#34d399" stroke-width="2"/>
+  <text x="556" y="342" fill="#6ee7b7" font-size="13" font-weight="700" letter-spacing="2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">CONTROL SYSTEM CONFIGURATION</text>
+  <text x="556" y="386" fill="#6ee7b7" font-size="30" font-weight="700">Replenishment policy</text>
+  <rect x="1040" y="324" width="170" height="34" rx="8" fill="#10241d"/>
+  <text x="1125" y="346" text-anchor="middle" fill="#a7f3d0" font-size="15">Target inventory</text>
+  <rect x="1222" y="324" width="170" height="34" rx="8" fill="#10241d"/>
+  <text x="1307" y="346" text-anchor="middle" fill="#a7f3d0" font-size="15">Reorder thresholds</text>
+  <rect x="1040" y="366" width="170" height="34" rx="8" fill="#10241d"/>
+  <text x="1125" y="388" text-anchor="middle" fill="#a7f3d0" font-size="15">Allocation rules</text>
+  <rect x="1222" y="366" width="170" height="34" rx="8" fill="#10241d"/>
+  <text x="1307" y="388" text-anchor="middle" fill="#a7f3d0" font-size="15">Safety stock</text>
+
+  <!-- branches -->
+  <g stroke="#34d399" stroke-width="2" fill="none">
+    <line x1="968" y1="414" x2="968" y2="438"/>
+    <line x1="668" y1="438" x2="1268" y2="438"/>
+    <line x1="668" y1="438" x2="668" y2="466" marker-end="url(#arrowGreen)"/>
+    <line x1="968" y1="438" x2="968" y2="466" marker-end="url(#arrowGreen)"/>
+    <line x1="1268" y1="438" x2="1268" y2="466" marker-end="url(#arrowGreen)"/>
+  </g>
+
+  <!-- card 1: impact calculation -->
+  <rect x="528" y="470" width="280" height="250" rx="12" fill="#0b1220" stroke="#1f5a45" stroke-width="1.5"/>
+  <text x="552" y="508" fill="#f1f5f9" font-size="19" font-weight="700">Impact</text>
+  <text x="552" y="532" fill="#f1f5f9" font-size="19" font-weight="700">calculation</text>
+  <rect x="552" y="548" width="200" height="30" rx="6" fill="#141d1a"/>
+  <text x="564" y="569" font-size="14" font-weight="700"><tspan fill="#6ee7b7">Physics</tspan><tspan fill="#8b9ab0" dx="5">+</tspan><tspan fill="#fbbf24" dx="5">calibration</tspan></text>
+  <text x="552" y="608" fill="#cbd5e1" font-size="15">Policy → inventory →</text>
+  <text x="552" y="630" fill="#cbd5e1" font-size="15">stockout risk → revenue / EBITDA</text>
+  <text x="552" y="672" fill="#8b9ab0" font-size="15" font-style="italic">“What business impact</text>
+  <text x="552" y="694" fill="#8b9ab0" font-size="15" font-style="italic">will this policy have?”</text>
+
+  <!-- card 2: policy simulation -->
+  <rect x="828" y="470" width="280" height="250" rx="12" fill="#0b1220" stroke="#1f5a45" stroke-width="1.5"/>
+  <text x="852" y="508" fill="#f1f5f9" font-size="19" font-weight="700">Policy</text>
+  <text x="852" y="532" fill="#f1f5f9" font-size="19" font-weight="700">simulation</text>
+  <rect x="852" y="548" width="124" height="30" rx="6" fill="#10241d"/>
+  <text x="864" y="569" fill="#6ee7b7" font-size="14" font-weight="700">Physics layer</text>
+  <text x="852" y="608" fill="#cbd5e1" font-size="15">Policy A vs. Policy B</text>
+  <text x="852" y="630" fill="#cbd5e1" font-size="15">vs. Policy C</text>
+  <text x="852" y="672" fill="#8b9ab0" font-size="15" font-style="italic">“What happens under a different</text>
+  <text x="852" y="694" fill="#8b9ab0" font-size="15" font-style="italic">replenishment policy?”</text>
+
+  <!-- card 3: counterfactual measurement -->
+  <rect x="1128" y="470" width="280" height="250" rx="12" fill="#0b1220" stroke="#1f5a45" stroke-width="1.5"/>
+  <text x="1152" y="508" fill="#f1f5f9" font-size="19" font-weight="700">Counterfactual</text>
+  <text x="1152" y="532" fill="#f1f5f9" font-size="19" font-weight="700">measurement</text>
+  <rect x="1152" y="548" width="152" height="30" rx="6" fill="#2a1e08"/>
+  <text x="1164" y="569" fill="#fbbf24" font-size="14" font-weight="700">Calibration layer</text>
+  <text x="1152" y="608" fill="#cbd5e1" font-size="15">Observed results vs.</text>
+  <text x="1152" y="630" fill="#cbd5e1" font-size="15">modeled counterfactual</text>
+  <text x="1152" y="672" fill="#8b9ab0" font-size="15" font-style="italic">“Did the policy actually</text>
+  <text x="1152" y="694" fill="#8b9ab0" font-size="15" font-style="italic">improve the outcome?”</text>
+
+  <!-- feedback: measured results calibrate the world model -->
+  <path d="M 1408 620 L 1440 620 L 1440 224 L 1414 224" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowAmber)"/>
+  <text transform="translate(1462 422) rotate(-90)" text-anchor="middle" fill="#fbbf24" font-size="13">Experiment / observation → calibrate drivers</text>
+  <text transform="translate(1480 422) rotate(-90)" text-anchor="middle" fill="#fbbf24" font-size="13">→ update world model</text>
+
+  <!-- summary -->
+  <rect x="528" y="752" width="880" height="84" rx="12" fill="#10241d" stroke="#10b981" stroke-width="1.5"/>
+  <text x="556" y="788" fill="#f1f5f9" font-size="20" font-weight="700">A continuously improving system for managing replenishment</text>
+  <text x="556" y="816" fill="#6ee7b7" font-size="16" font-weight="700">Control → Simulate → Measure → Calibrate</text>
+</svg>

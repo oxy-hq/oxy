@@ -115,10 +115,16 @@
                 "pages": [
                   "build/world-model/controls",
                   "build/world-model/opportunity-sizing",
-                  "build/world-model/evaluation",
+                  "build/world-model/evaluation"
+                ]
+              },
+              {
+                "group": "Calibration Layer",
+                "pages": [
                   "build/world-model/calibration"
                 ]
-              }
+              },
+              "build/world-model/compared-to-palantir"
             ]
           },
           {
