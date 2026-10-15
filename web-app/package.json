@@ -82,7 +82,7 @@
     "react-day-picker": "^10.0.2",
     "react-dom": "^19.3.0",
     "react-error-boundary": "^6.1.6",
-    "react-hook-form": "^7.90.0",
+    "react-hook-form": "7.89.0",
     "react-hotkeys-hook": "5.3.3",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^4.14.4",

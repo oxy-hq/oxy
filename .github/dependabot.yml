@@ -47,6 +47,14 @@ updates:
     open-pull-requests-limit: 5
     allow:
       - dependency-type: "direct"
+    ignore:
+      # 7.90.0 throws in getDirtyFields when setValue(path, undefined, { shouldDirty })
+      # clears an object that had a default value — what the agent form's remove /
+      # "Use Defaults" buttons and the automation variables editor do. #3609 took it
+      # and Vitest went red. Pinned to 7.89.0 in web-app/package.json; a later
+      # release still gets proposed, and those Vitest cases are what vet it.
+      - dependency-name: "react-hook-form"
+        versions: ["7.90.0"]
     groups:
       prod-npm-minor-dependencies:
         dependency-type: "production"
