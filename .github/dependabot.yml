@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 2
+    ignore:
+      # Its tag IS the Rust toolchain it installs, pinned to rust-toolchain.toml and
+      # bumped with it by hand. Dependabot reads the tag as an action release:
+      # #3590 moved it to 1.120.0, a Rust that does not exist, and every Rust job
+      # failed at install.
+      - dependency-name: "dtolnay/rust-toolchain"
   - package-ecosystem: "cargo"
     directories: ["/"]
     schedule:
