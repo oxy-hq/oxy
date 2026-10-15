@@ -11,6 +11,9 @@ source:
     restaurant_guids:
       - "00000000-0000-0000-0000-000000000000"
     base_url: https://ws-api.toasttab.com
+    # Optional (default false): also land selection modifiers as
+    # order_selections rows with parent_selection_guid and depth.
+    # include_modifiers: true
 destination:
   # A database defined in config.yml. Credentials are resolved at run
   # time (airhouse_managed mints an ephemeral per-user credential).

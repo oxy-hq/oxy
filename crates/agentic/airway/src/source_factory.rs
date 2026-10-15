@@ -940,6 +940,11 @@ struct ToastParams {
     backfill_start: Option<String>,
     #[serde(default)]
     backfill_end: Option<String>,
+    /// Lift each order selection's modifiers into `order_selections` rows
+    /// that carry `parent_selection_guid` and `depth`, instead of dropping
+    /// them. Defaults to false (modifiers are not landed).
+    #[serde(default)]
+    include_modifiers: Option<bool>,
 }
 
 fn build_toast(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
@@ -958,6 +963,7 @@ fn build_toast(raw: &Value) -> Result<Box<dyn SourceConnector>, AirwayError> {
     if let Some(base) = params.base_url.as_deref() {
         source = source.with_base_url(base);
     }
+    source = source.with_include_modifiers(params.include_modifiers.unwrap_or(false));
     if let Some((start, end)) = parse_backfill_window(&params.backfill_start, &params.backfill_end)?
     {
         // Toast backfills are RESUMABLE: the cursor advances into the run's
@@ -2583,6 +2589,35 @@ mod tests {
             }),
         ))
         .expect("build toast with backfill window");
+        assert_eq!(source.name(), "toast");
+    }
+
+    #[test]
+    fn toast_builds_with_include_modifiers() {
+        let source = build(&cfg(
+            "toast",
+            json!({
+                "client_id": "abc",
+                "client_secret": "shh",
+                "restaurant_guids": ["g"],
+                "include_modifiers": true,
+            }),
+        ))
+        .expect("build toast with include_modifiers");
+        assert_eq!(source.name(), "toast");
+    }
+
+    #[test]
+    fn toast_include_modifiers_is_optional() {
+        let source = build(&cfg(
+            "toast",
+            json!({
+                "client_id": "abc",
+                "client_secret": "shh",
+                "restaurant_guids": ["g"],
+            }),
+        ))
+        .expect("build toast without include_modifiers");
         assert_eq!(source.name(), "toast");
     }
 
