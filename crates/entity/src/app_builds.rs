@@ -62,6 +62,13 @@ pub struct Model {
     /// it is set, production never falls back to the build and no promote or
     /// rollback ships it (`custom_apps_agent_built`).
     pub published_token_id: Option<Uuid>,
+    /// The environment the publish moved first: `staging` for a publish to
+    /// the app's channels, `dev-<handle>` for one to a sandbox. Written with
+    /// the row, before any pointer moves, so retention and read-back know a
+    /// sandbox build from a channel build even before (and after) any
+    /// environment serves it. NULL for a build published before the column
+    /// whose events name no publish (m20261015_000001).
+    pub published_to: Option<String>,
     #[sea_orm(
         belongs_to,
         from = "app_id",

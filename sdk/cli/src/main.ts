@@ -589,11 +589,21 @@ function buildProgram(): Command {
       .option("--json", "emit results as JSON")
       .option("--timeout <seconds>", "per-check timeout", "300")
       .option("--app-env <environment>", "run against this environment instead of production")
+      .option(
+        "--browser",
+        "also load the app in headless Chromium, in --app-env, and prove it mounted (needs Playwright)"
+      )
+      .option(
+        "--expect-selector <css>",
+        "with --browser: a selector that must be visible once the app is ready"
+      )
   ).action(async (app: string, opts: Record<string, unknown>) => {
     await runChecks(createContext(globals(opts)), app, {
       json: Boolean(opts.json),
       timeoutSeconds: Number(opts.timeout),
-      appEnv: opts.appEnv as string | undefined
+      appEnv: opts.appEnv as string | undefined,
+      browser: Boolean(opts.browser),
+      expectSelector: opts.expectSelector as string | undefined
     });
   });
 

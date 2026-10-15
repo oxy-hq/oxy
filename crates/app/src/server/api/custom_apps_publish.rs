@@ -385,6 +385,16 @@ impl PublishTarget {
         }
     }
 
+    /// What `app_builds.published_to` records: the environment the publish
+    /// moves first — staging for the channels, with or without `promote`,
+    /// and for an agent's draft.
+    fn published_to(&self) -> AppEnvironment {
+        match self {
+            PublishTarget::Sandbox(environment) => environment.clone(),
+            PublishTarget::Channels | PublishTarget::AgentDraft => AppEnvironment::Staging,
+        }
+    }
+
     /// A sandbox publish moves one sandbox's pointer; it cannot also promote.
     fn refuse_promote(&self, input: &PublishInput) -> Result<(), PublishError> {
         match self {
@@ -1137,7 +1147,7 @@ async fn record_build(
     db: &DatabaseConnection,
     app_id: Uuid,
     input: &PublishInput,
-    s3_prefix: String,
+    (s3_prefix, published_to): (String, AppEnvironment),
     manifest_json: Option<serde_json::Value>,
     // The sandbox agent token that published this build, to a sandbox or as
     // a draft; `None` for everyone else's (`agent_publish::author`).
@@ -1164,6 +1174,10 @@ async fn record_build(
         validation_detail: ActiveValue::NotSet,
         // Validated in `publish` before any work (draft-only, same workspace).
         semantic_revision_id: ActiveValue::Set(input.semantic_revision_id),
+        // With the row, before any pointer moves: retention and read-back tell
+        // a sandbox's build from a channel's by this, not by a pointer event
+        // that may not have committed yet.
+        published_to: ActiveValue::Set(Some(published_to.name())),
         published_token_id: ActiveValue::Set(published_token_id),
     };
     model
@@ -1941,8 +1955,9 @@ async fn store_and_point(
     // Bytes are now stored. If recording the row or moving the pointer fails,
     // roll the orphaned build back out so a partial publish leaves no
     // half-state (leaked storage prefix, or a row no channel points at).
+    let stored = (s3_prefix, target.published_to());
     let author = sandbox_agent_publish::author(&input);
-    let build_pk = match record_build(&db, app_id, &input, s3_prefix, manifest_json, author).await {
+    let build_pk = match record_build(&db, app_id, &input, stored, manifest_json, author).await {
         Ok(pk) => pk,
         Err(e) => {
             if let Err(cleanup) = store::delete_build(app_id, &input.build_id).await {

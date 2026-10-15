@@ -753,6 +753,26 @@ object to stdout instead:
 { "app": "acme/dashboards", "appId": "…", "checks": [{ "name": "canary", "runId": "…", "status": "done", "passed": true, "durationMs": 4123 }] }
 ```
 
+**`--browser`** also loads the app's page in headless Chromium and proves it
+mounted: the platform runtime's `oxy-app-ready` beacon fires, nothing on the
+page throws, and `--expect-selector <css>` (optional) becomes visible. With
+`--app-env` the page must also report that environment and the build it serves
+(`oxyc env show`'s `build_uuid`) in `window.__OXY_APP__`. The credential and
+`X-Oxy-App-Env` ride only on requests under the app's own base path
+(`/customer-apps/<org>/<app>/`: the document, assets, beacon and `/fn` calls).
+The rest of the deployment's API is on the same origin, and the code under test
+is often a build someone else published, so its `/api/…` calls go without the
+credential, as an anonymous visitor's would. The result is one more entry in `checks[]`, with `"kind": "browser"` and
+the `/fn` calls the page made. Playwright is not a dependency: it is resolved
+from the working directory (`playwright`, `playwright-core` or
+`@playwright/test`), so run it where one is installed. The page loads as a
+user, so a publish, service-account, CI or sandbox agent token is refused
+before any request.
+
+```bash
+oxyc checks run acme/store --app-env dev-a1 --browser --expect-selector 'main'
+```
+
 **Auth** follows the same rule as `oxyc api`'s bearer surface, with one
 difference: `checks run` talks to `/api/admin/**`, which is not the
 `/external/api/*` surface, so a configured API key is sent explicitly as

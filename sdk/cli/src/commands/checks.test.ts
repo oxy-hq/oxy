@@ -18,7 +18,7 @@ import { resetOidcExchanges } from "../auth/oidc.js";
 import { type Context, createContext } from "../context/resolve.js";
 import { SERVICE_ACCOUNT_ID } from "../testing/stub-fetch.js";
 import { CliError, ExitCode } from "../util/errors.js";
-import { type ChecksReport, runChecks } from "./checks.js";
+import { type CheckResult, type ChecksReport, runChecks } from "./checks.js";
 
 const TARGET = "https://oxy.test";
 const APP_ID = "a1a1a1a1-2222-3333-4444-555555555555";
@@ -811,7 +811,7 @@ describe("runChecks --app-env", () => {
 
     const parsed = JSON.parse(printed.trim()) as ChecksReport;
     expect(parsed.environment).toBe("dev-a1");
-    expect(parsed.checks[0]?.invocationId).toBe("inv-1");
+    expect((parsed.checks[0] as CheckResult | undefined)?.invocationId).toBe("inv-1");
   });
 
   it("without --app-env, the requests and the report stay byte-identical to today's", async () => {
@@ -970,5 +970,64 @@ describe("runChecks --app-env", () => {
 
     expect(runs).toBe(1);
     expect(calls.some((c) => c.url.includes("/oidc-exchange"))).toBe(true);
+  });
+});
+
+describe("runChecks --browser refusals", () => {
+  let calls: { method: string; url: string; headers: Record<string, string> }[];
+
+  beforeEach(() => {
+    calls = [];
+    resetOidcExchanges();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  /** A run with `--browser` that must stop before any request. */
+  async function refusedBeforeAnyRequest(ctx: Context, extra: object = {}): Promise<void> {
+    stubFetch({}, calls);
+    const error = await runChecks(ctx, "oxy-canary/platform-canary", {
+      json: false,
+      timeoutSeconds: 5,
+      pollMs: 0,
+      browser: true,
+      ...extra
+    }).catch((e: unknown) => e as CliError);
+
+    expect(error).toBeInstanceOf(CliError);
+    expect((error as CliError).code).toBe(ExitCode.USAGE);
+    expect(calls).toHaveLength(0);
+  }
+
+  // Each of these reaches `/customer-apps` API routes only, and the page
+  // refuses it: a run would end in a sign-in redirect, not a check.
+  for (const [kind, bearer] of [
+    ["publish", "oxypublish_stored"],
+    ["service-account", "oxy_sat_stored"],
+    ["CI", "oxy_ci_stored"]
+  ] as const) {
+    it(`refuses a stored ${kind} token before any request (exit 2)`, async () => {
+      await refusedBeforeAnyRequest(contextWith({ bearer }));
+    });
+  }
+
+  // In its own sandbox, where the token may otherwise run checks.
+  it("refuses a stored sandbox agent token in its own sandbox before any request (exit 2)", async () => {
+    await refusedBeforeAnyRequest(contextWith({ bearer: "oxy_sbx_stored" }), { appEnv: "dev-a1" });
+  });
+
+  it("refuses before minting when only GitHub OIDC could supply a credential", async () => {
+    inGithubActions();
+    await refusedBeforeAnyRequest(contextWith());
+  });
+
+  it("refuses --expect-selector without --browser", async () => {
+    await refusedBeforeAnyRequest(contextWith({ bearer: "oxy_pat_stored" }), {
+      browser: false,
+      expectSelector: "main"
+    });
   });
 });

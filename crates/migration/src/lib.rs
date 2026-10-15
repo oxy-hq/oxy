@@ -211,6 +211,7 @@ mod m20261007_000002_users_email_lower_index;
 mod m20261007_000003_app_builds_published_token;
 mod m20261014_000001_app_notifications;
 mod m20261014_000002_platform_notification_mutes;
+mod m20261015_000001_app_builds_published_to;
 
 pub use m20260922_000001_app_environments::BACKFILL_SQL as APP_ENVIRONMENTS_BACKFILL_SQL;
 pub use m20261001_000001_api_tokens::BACKFILL_SQL as API_TOKENS_BACKFILL_SQL;
@@ -438,6 +439,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261007_000003_app_builds_published_token::Migration),
             Box::new(m20261014_000001_app_notifications::Migration),
             Box::new(m20261014_000002_platform_notification_mutes::Migration),
+            Box::new(m20261015_000001_app_builds_published_to::Migration),
         ]
     }
 

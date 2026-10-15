@@ -26,7 +26,15 @@
 
 import { parseJson, request } from "../api/request.js";
 import { parseAppEnv } from "../apps/environment.js";
-import { type Creds as BaseCreds, ensureOk, resolveApp } from "../apps/resolve.js";
+import {
+  type Creds as BaseCreds,
+  ensureOk,
+  type ResolvedApp,
+  resolveApp
+} from "../apps/resolve.js";
+import { githubOidcAvailable } from "../auth/oidc.js";
+import type { BrowserCheckResult } from "../checks/browser.js";
+import { refuseMachineBrowser, runBrowserStep } from "../checks/browser-step.js";
 import type { Context } from "../context/resolve.js";
 import { err } from "../ui/tty.js";
 import { CliError, ExitCode, usageError } from "../util/errors.js";
@@ -36,9 +44,20 @@ import { MACHINE_SURFACE, resolveCredentials, UUID_RE } from "./checks-credentia
 export interface ChecksReport {
   app: string;
   appId: string;
-  checks: CheckResult[];
+  /** The function checks, then — with `--browser` — the browser check (`kind: "browser"`). */
+  checks: (CheckResult | BrowserCheckResult)[];
   /** Only present with `--app-env` — absent, the report is today's shape. */
   environment?: string;
+}
+
+export interface ChecksOptions {
+  timeoutSeconds: number;
+  pollMs?: number;
+  appEnv?: string;
+  /** Also load the app in a browser, in `appEnv` (`checks/browser.ts`). */
+  browser?: boolean;
+  /** With `browser`: a CSS selector that must become visible once the app is ready. */
+  expectSelector?: string;
 }
 
 export interface CheckResult {
@@ -80,8 +99,8 @@ const TERMINAL: ReadonlySet<RunStatus> = new Set(["done", "failed", "cancelled",
 export async function runChecksCore(
   ctx: Context,
   app: string,
-  opts: { timeoutSeconds: number; pollMs?: number; appEnv?: string },
-  onResult?: (result: CheckResult) => void
+  opts: ChecksOptions,
+  onResult?: (result: CheckResult | BrowserCheckResult) => void
 ): Promise<ChecksReport> {
   // `main.ts` passes `Number(--timeout)`. A NaN deadline never passes, so the
   // poll would never end; zero or less times out every check before it runs.
@@ -91,8 +110,12 @@ export async function runChecksCore(
       "e.g. --timeout 60 (the default is 300)"
     );
   }
+  if (opts.expectSelector !== undefined && !opts.browser) {
+    throw usageError("--expect-selector needs --browser", "it is what the browser check waits for");
+  }
   // Usage, before any request: a malformed name, same grammar every verb uses.
   const appEnv = opts.appEnv !== undefined ? parseAppEnv(opts.appEnv) : undefined;
+  if (opts.browser) refuseMachineBrowser(ctx, githubOidcAvailable());
 
   const target = ctx.target();
   const machine = await resolveCredentials(ctx, target, app, appEnv);
@@ -114,7 +137,7 @@ export async function runChecksCore(
       "resolving a slug means listing every app, which a publish or service-account token may not do; the id is on the app's admin page, and `oxyc publish --json` reports it"
     );
   }
-  const { appId, label } = machine.appId
+  const resolved: ResolvedApp | { appId: string; label: string } = machine.appId
     ? { appId: machine.appId, label: app }
     : creds.surface === MACHINE_SURFACE && UUID_RE.test(app)
       ? // Never touch `/api/admin/apps/{id}` with a machine token — it is
@@ -122,17 +145,34 @@ export async function runChecksCore(
         // app, so there is nothing left for `resolveApp` to add.
         { appId: app, label: app }
       : await resolveApp(creds, app);
+  const { appId, label } = resolved;
   const checks = await listChecks(creds, appId, appEnv);
-  if (checks.length === 0) {
+  // With `--browser` the page is itself a check, so an app with no check
+  // functions still has one to run.
+  if (checks.length === 0 && !opts.browser) {
     throw new CliError(`${label} declares no checks (no function has "check": true)`, {
       code: ExitCode.FAILURE,
-      hint: `mark a function "check": true in oxy-app.json to give it one`
+      hint: `mark a function "check": true in oxy-app.json to give it one, or pass --browser`
     });
   }
 
-  const results: CheckResult[] = [];
+  const results: (CheckResult | BrowserCheckResult)[] = [];
   for (const fn of checks) {
     const result = await runOneCheck(creds, appId, fn.name, appEnv, opts);
+    results.push(result);
+    onResult?.(result);
+  }
+  if (opts.browser) {
+    // `refuseMachineBrowser` kept every machine and sandbox-agent token out,
+    // so the app was resolved by `resolveApp` and carries its slugs. Should a
+    // new path skip it, say so rather than report a run with no browser check.
+    if (!("orgSlug" in resolved)) {
+      throw new CliError(`cannot load ${label} in a browser: its slugs were not resolved`, {
+        code: ExitCode.USAGE,
+        hint: "--browser needs a user credential: oxyc login, OXY_TOKEN set to a user token, or an API key"
+      });
+    }
+    const result = await runBrowserStep(creds, resolved, { ...opts, appEnv });
     results.push(result);
     onResult?.(result);
   }
@@ -143,7 +183,7 @@ export async function runChecksCore(
 export async function runChecks(
   ctx: Context,
   app: string,
-  opts: { json: boolean; timeoutSeconds: number; pollMs?: number; appEnv?: string }
+  opts: ChecksOptions & { json: boolean }
 ): Promise<void> {
   const report = await runChecksCore(ctx, app, opts, opts.json ? undefined : printResultLine);
 
@@ -298,7 +338,7 @@ function failureMessage(detail: RunDetail, answerFailed: boolean, timeoutSeconds
   return `status ${detail.status}`;
 }
 
-function printResultLine(result: CheckResult): void {
+function printResultLine(result: CheckResult | BrowserCheckResult): void {
   if (process.env.OXYC_QUIET) return;
   const seconds = `${(result.durationMs / 1000).toFixed(1)}s`;
   if (result.passed) {

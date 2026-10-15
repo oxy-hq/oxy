@@ -27,6 +27,8 @@ log = { workspace = true }
 
 # Utilities
 chrono = { workspace = true }
+# `fuel`: every server-side Jinja environment is built with `jinja::apply_limits`.
+minijinja = { workspace = true, features = ["fuel"] }
 uuid = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }

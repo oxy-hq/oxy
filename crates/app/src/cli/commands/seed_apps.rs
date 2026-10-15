@@ -490,6 +490,8 @@ async fn upsert_build(
         validation_detail: ActiveValue::Set(None),
         semantic_revision_id: ActiveValue::Set(None),
         published_token_id: ActiveValue::Set(None),
+        // Seeded as a channel publish would be: both channels serve it.
+        published_to: ActiveValue::Set(Some("staging".to_string())),
     }
     .insert(conn)
     .await

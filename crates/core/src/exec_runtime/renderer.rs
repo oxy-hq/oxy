@@ -3,68 +3,23 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use chrono::{DateTime, Local, Utc};
 use futures::TryFutureExt;
 use minijinja::{Environment, Value, context, value::Enumerator};
 use tokio::task::spawn_blocking;
 
 use oxy_shared::errors::OxyError;
+use oxy_shared::jinja::{name_the_limit, render_bounded};
 
-/// Helper function to add the now() global function to a minijinja Environment.
-///
-/// The `now()` function is available in all Jinja2 templates (including agent system instructions)
-/// and returns the current datetime, optionally formatted via strftime.
-///
-/// # Usage in Templates
+/// `now(utc?, fmt?)` — see [`oxy_shared::jinja::add_now_function`]:
 ///
 /// ```jinja2
-/// {{ now() }}                           # Returns current local datetime in RFC3339 format
-/// {{ now(utc=true) }}                   # Returns current UTC datetime in RFC3339 format
-/// {{ now(fmt='%Y-%m-%d') }}            # Returns current date as "2024-10-21"
-/// {{ now(utc=true, fmt='%Y-%m-%d %H:%M:%S') }}  # Returns UTC datetime as "2024-10-21 15:30:45"
+/// {{ now() }}                           # local datetime, RFC 3339
+/// {{ now(utc=true, fmt='%Y-%m-%d') }}   # UTC date, "2024-10-21"
 /// ```
 ///
-/// # Parameters
-///
-/// - `utc` (optional, default: false): If true, returns UTC time; otherwise returns local time
-/// - `fmt` (optional): A strftime format string for custom datetime formatting
-///
-/// # Common Format Strings
-///
-/// - `%Y-%m-%d` - Date (e.g., "2024-10-21")
-/// - `%Y-%m-%d %H:%M:%S` - Datetime (e.g., "2024-10-21 15:30:45")
-/// - `%A, %B %d, %Y` - Full date (e.g., "Monday, October 21, 2024")
-/// - `%I:%M %p` - 12-hour time (e.g., "03:30 PM")
-///
-fn add_now_function(env: &mut Environment<'static>) {
-    env.add_function(
-        "now",
-        |kwargs: minijinja::value::Kwargs| -> Result<String, minijinja::Error> {
-            let utc = kwargs.get::<Option<bool>>("utc")?.unwrap_or(false);
-            let fmt = kwargs.get::<Option<String>>("fmt")?;
-
-            let datetime_str = if utc {
-                let now: DateTime<Utc> = Utc::now();
-                if let Some(format) = fmt {
-                    now.format(&format).to_string()
-                } else {
-                    now.to_rfc3339()
-                }
-            } else {
-                let now: DateTime<Local> = Local::now();
-                if let Some(format) = fmt {
-                    now.format(&format).to_string()
-                } else {
-                    now.to_rfc3339()
-                }
-            };
-            Ok(datetime_str)
-        },
-    );
-}
-
+/// A `fmt` chrono rejects is a render error, never a panic.
 fn add_global_functions(env: &mut Environment<'static>) {
-    add_now_function(env);
+    oxy_shared::jinja::add_now_function(env);
 
     env.add_filter(
         "tojson",
@@ -155,9 +110,11 @@ impl Renderer {
     pub fn render_str(&self, source: &str) -> Result<String, OxyError> {
         let ctx = self.get_context();
         let env = self.env.read()?;
-        env.render_str(source, ctx).map_err(|err| {
-            OxyError::RuntimeError(format!("Error rendering template string: {err:?}"))
-        })
+        env.template_from_str(source)
+            .and_then(|tmpl| render_bounded(&tmpl, ctx))
+            .map_err(|err| {
+                OxyError::RuntimeError(format!("Error rendering template string: {err:?}"))
+            })
     }
 
     pub fn render_once(&self, template: &str, context: Value) -> Result<String, OxyError> {
@@ -188,12 +145,15 @@ impl Renderer {
             OxyError::RuntimeError(format!("Failed to compile expression {template} :{err}"))
         })?;
         let context = self.get_context();
-        let value = expression.eval(&context).map_err(|err| {
-            OxyError::RuntimeError(format!(
-                "Error evaluating expression: {} with context: {:?}",
-                err, context
-            ))
-        })?;
+        let value = expression
+            .eval(&context)
+            .map_err(name_the_limit)
+            .map_err(|err| {
+                OxyError::RuntimeError(format!(
+                    "Error evaluating expression: {} with context: {:?}",
+                    err, context
+                ))
+            })?;
         tracing::debug!(
             "Evaluated expression: {} -> {:?} with context: {:?}",
             template,
@@ -250,7 +210,7 @@ impl Renderer {
                     )));
                 }
             };
-            tmpl.render(context)
+            render_bounded(&tmpl, context)
                 .map_err(|err| OxyError::RuntimeError(format!("Error rendering template: {err:?}")))
         })
         .map_err(|err| OxyError::RuntimeError(format!("Error rendering template: {err:?}")))
@@ -262,7 +222,7 @@ impl Renderer {
         let tmpl = env.get_template(template).map_err(|err| {
             OxyError::ConfigurationError(format!("Template \"{template}\" not found: {err}"))
         })?;
-        tmpl.render(context)
+        render_bounded(&tmpl, context)
             .map_err(|err| OxyError::RuntimeError(format!("Error rendering template: {err:?}")))
     }
 
@@ -276,6 +236,7 @@ impl Renderer {
 
 pub fn setup_jinja_environment() -> Environment<'static> {
     let mut env = Environment::new();
+    oxy_shared::jinja::apply_limits(&mut env);
     add_global_functions(&mut env);
     env
 }
@@ -324,6 +285,31 @@ mod tests {
         let result = renderer.render(template).unwrap();
         // Should return a datetime in YYYY-MM-DD HH:MM:SS format
         assert_eq!(result.len(), 19, "Expected YYYY-MM-DD HH:MM:SS format"); // "YYYY-MM-DD HH:MM:SS" is 19 characters
+    }
+
+    /// A format chrono rejects used to panic inside `to_string()`, unwinding
+    /// the request's task. It is a render error on every entry point now.
+    #[test]
+    fn now_with_a_bad_format_is_an_error_not_a_panic() {
+        let renderer = Renderer::new(context! {});
+        let template = "{{ now(fmt='%Q') }}";
+        let err = renderer.render_str(template).unwrap_err().to_string();
+        assert!(err.contains("is not a strftime format"), "{err}");
+        renderer.register_template(template).unwrap();
+        assert!(renderer.render(template).is_err());
+    }
+
+    /// The environment carries the fuel limit, and the error names it.
+    #[test]
+    fn an_endless_loop_stops_and_names_the_limit() {
+        let renderer = Renderer::new(context! {});
+        let err = renderer
+            .render_str(
+                "{% for a in range(100000) %}{% for b in range(100000) %}{% endfor %}{% endfor %}",
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("TEMPLATE_FUEL"), "{err}");
     }
 
     fn sqlquote(value: &str) -> Result<String, OxyError> {

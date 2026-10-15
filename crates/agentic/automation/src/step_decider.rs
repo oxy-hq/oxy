@@ -1164,8 +1164,7 @@ fn execute_formatter(render_context: &Value, template: &str) -> Result<Value, St
         .template_from_str(template)
         .map_err(|e| format!("template parse error: {e}"))?;
     let ctx = build_minijinja_context(render_context);
-    let rendered = tmpl
-        .render(&ctx)
+    let rendered = crate::render::render_bounded(&tmpl, &ctx)
         .map_err(|e| format!("template render error: {e}"))?;
     Ok(json!({ "text": rendered }))
 }
@@ -1379,13 +1378,16 @@ fn resolve_loop_values(values: &Value, render_context: &Value) -> Result<Vec<Val
         .compile_expression(inner)
         .map_err(|e| format!("invalid loop values expression {template:?}: {e}"))?;
     let ctx = build_minijinja_context(render_context);
-    let rendered = expr.eval(&ctx).map_err(|e| {
-        let available: Vec<String> = render_context
-            .as_object()
-            .map(|obj| obj.keys().cloned().collect())
-            .unwrap_or_default();
-        format!("eval loop values {template:?}: {e}\nAvailable keys: {available:?}")
-    })?;
+    let rendered = expr
+        .eval(&ctx)
+        .map_err(crate::render::name_the_limit)
+        .map_err(|e| {
+            let available: Vec<String> = render_context
+                .as_object()
+                .map(|obj| obj.keys().cloned().collect())
+                .unwrap_or_default();
+            format!("eval loop values {template:?}: {e}\nAvailable keys: {available:?}")
+        })?;
 
     let json_value: Value = serde_json::to_value(rendered)
         .map_err(|e| format!("loop values {template:?} did not serialise to JSON: {e}"))?;

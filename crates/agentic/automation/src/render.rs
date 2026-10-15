@@ -26,6 +26,7 @@
 use std::path::{Path, PathBuf};
 
 use agentic_connector::StringLiteral;
+pub(crate) use oxy_shared::jinja::{name_the_limit, render_bounded};
 use serde_json::Value;
 
 /// Build a chainable-undefined minijinja [`Environment`] preloaded with
@@ -37,6 +38,11 @@ use serde_json::Value;
 /// behaviour so templates ported from the previous automation engine
 /// keep rendering. The filters registered are the same as
 /// [`automation_env_strict`]:
+///
+/// Every environment here runs under `oxy_shared::jinja`'s limits: fuel
+/// ([`apply_limits`](oxy_shared::jinja::apply_limits)) on every render and
+/// expression, and an output cap when the render goes through
+/// [`render_bounded`], which every call site in this crate does.
 ///
 /// - `now(utc?, fmt?)` — current datetime, RFC3339 by default.
 /// - `tojson` — serialize to a compact JSON string.
@@ -66,6 +72,7 @@ pub(crate) fn automation_env_for(
 ) -> minijinja::Environment<'static> {
     let mut env = minijinja::Environment::new();
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Chainable);
+    oxy_shared::jinja::apply_limits(&mut env);
     add_global_helpers(&mut env, literal);
     env
 }
@@ -80,6 +87,7 @@ pub(crate) fn automation_env_for(
 /// not resolve" / "available keys" message.
 pub(crate) fn automation_env_strict() -> minijinja::Environment<'static> {
     let mut env = minijinja::Environment::new();
+    oxy_shared::jinja::apply_limits(&mut env);
     add_global_helpers(&mut env, None);
     env
 }
@@ -99,29 +107,8 @@ fn sqlquote(literal: Option<StringLiteral>, value: &str) -> Result<String, minij
 }
 
 fn add_global_helpers(env: &mut minijinja::Environment<'static>, literal: Option<StringLiteral>) {
-    use chrono::{DateTime, Local, Utc};
-
-    env.add_function(
-        "now",
-        |kwargs: minijinja::value::Kwargs| -> Result<String, minijinja::Error> {
-            let utc = kwargs.get::<Option<bool>>("utc")?.unwrap_or(false);
-            let fmt = kwargs.get::<Option<String>>("fmt")?;
-            let out = if utc {
-                let now: DateTime<Utc> = Utc::now();
-                match fmt {
-                    Some(f) => now.format(&f).to_string(),
-                    None => now.to_rfc3339(),
-                }
-            } else {
-                let now: DateTime<Local> = Local::now();
-                match fmt {
-                    Some(f) => now.format(&f).to_string(),
-                    None => now.to_rfc3339(),
-                }
-            };
-            Ok(out)
-        },
-    );
+    // `now(utc?, fmt?)`: a `fmt` chrono rejects is a render error, never a panic.
+    oxy_shared::jinja::add_now_function(env);
 
     env.add_filter(
         "tojson",
@@ -215,7 +202,7 @@ pub(crate) fn render_sql_checked(
             is_quote_refusal: false,
         })?;
     let ctx = crate::step_orchestrator::build_minijinja_context(context);
-    tmpl.render(&ctx).map_err(|e| SqlRenderError {
+    render_bounded(&tmpl, &ctx).map_err(|e| SqlRenderError {
         is_quote_refusal: sqlquote_refused(&e),
         message: format!("render error: {e}"),
     })
@@ -354,7 +341,7 @@ pub(crate) fn condition_holds(
     let tmpl = env
         .template_from_str(&source)
         .map_err(|e| format!("condition parse error: {e}"))?;
-    let rendered = match tmpl.render(ctx) {
+    let rendered = match render_bounded(&tmpl, ctx) {
         Ok(text) => text,
         Err(e) if sqlquote_refused(&e) => return Err(format!("condition `{condition}`: {e}")),
         Err(e) => {
@@ -575,6 +562,23 @@ mod tests {
         let out = render_jinja_string("{{ now(fmt='%Y-%m-%d') }}", &ctx).unwrap();
         assert_eq!(out.len(), 10, "expected YYYY-MM-DD, got {out:?}");
         assert_eq!(out.chars().filter(|c| *c == '-').count(), 2);
+    }
+
+    /// A format chrono rejects used to panic inside `to_string()`; it is a
+    /// render error, so the step fails with a message instead of unwinding.
+    #[test]
+    fn now_with_a_bad_format_is_a_render_error_not_a_panic() {
+        let err = render_jinja_string("{{ now(fmt='%Q') }}", &json!({})).unwrap_err();
+        assert!(err.contains("is not a strftime format"), "{err}");
+    }
+
+    /// Nested loops are bounded by fuel; the step's error names the limit.
+    #[test]
+    fn an_endless_loop_in_sql_stops_and_names_the_limit() {
+        let sql = "SELECT 1 {% for a in range(100000) %}{% for b in range(100000) %}\
+                   {% endfor %}{% endfor %}";
+        let err = render_sql_string(sql, &json!({}), None).unwrap_err();
+        assert!(err.contains("TEMPLATE_FUEL"), "{err}");
     }
 
     #[test]

@@ -8,10 +8,16 @@
 //! **only a sandbox ever served** are kept in a window of their own, and
 //! every other build in the window it always had.
 //!
-//! A build is *sandbox-only* when it has pointer events
-//! (`app_environment_events`) and every one names a `dev-…` environment. A
-//! build with no events at all — published before events were recorded — is
-//! not, and stays in the app's own window.
+//! A build is *sandbox-only* when no environment but a `dev-…` one has ever
+//! pointed at it (`app_environment_events`) **and** it was published to a
+//! sandbox — `app_builds.published_to`, written with the row before any
+//! pointer moves. Reading the row rather than waiting for the pointer event
+//! is what keeps two publishes at once honest: a sandbox build whose move has
+//! not committed yet is already sandbox-only to the other publish's pruning.
+//! A build published before the column (`published_to` NULL) is
+//! sandbox-only when it has events and all of them name a sandbox, as before;
+//! one with no events at all stays in the app's own window. A sandbox build
+//! promoted to staging has a staging event, and joins the drafts.
 //!
 //! **Drafts do not spend a rollback slot either.** The window that was left
 //! held two kinds of build: the ones production ran, and drafts that only
@@ -25,7 +31,7 @@
 //! | Window | A build is in it when | Kept |
 //! | --- | --- | --- |
 //! | production | some pointer event names `production` | newest `keep` |
-//! | sandbox | it has events and every one names a `dev-…` environment | newest `keep` |
+//! | sandbox | published to a `dev-…` environment, and no other one has served it | newest `keep` |
 //! | drafts | anything else: staging only, or no event at all | newest `keep` |
 //!
 //! Nothing that was kept before is pruned now: a build stays in whichever of
@@ -38,8 +44,9 @@ use std::collections::HashSet;
 use sea_orm::{ConnectionTrait, DatabaseBackend, DbErr, Statement};
 use uuid::Uuid;
 
-/// The builds of `app_id` that only sandboxes ever pointed at. One grouped
-/// read of the app's events.
+/// The builds of `app_id` published to a sandbox that no other environment
+/// has pointed at (the module docs' *sandbox-only*). One read of the app's
+/// builds and their events.
 pub(crate) async fn sandbox_only_builds<C: ConnectionTrait>(
     db: &C,
     app_id: Uuid,
@@ -47,10 +54,14 @@ pub(crate) async fn sandbox_only_builds<C: ConnectionTrait>(
     let rows = db
         .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "SELECT build_id FROM app_environment_events \
-              WHERE app_id = $1 AND build_id IS NOT NULL \
-              GROUP BY build_id \
-             HAVING bool_and(environment LIKE 'dev-%')",
+            "SELECT b.id AS build_id FROM app_builds b \
+              WHERE b.app_id = $1 \
+                AND NOT EXISTS (SELECT 1 FROM app_environment_events e \
+                                 WHERE e.build_id = b.id AND e.environment NOT LIKE 'dev-%') \
+                AND (b.published_to LIKE 'dev-%' \
+                     OR (b.published_to IS NULL \
+                         AND EXISTS (SELECT 1 FROM app_environment_events e \
+                                      WHERE e.build_id = b.id)))",
             [app_id.into()],
         ))
         .await?;

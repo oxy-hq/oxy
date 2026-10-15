@@ -10075,6 +10075,7 @@ dependencies = [
  "indexmap 2.14.0",
  "itertools 0.15.0",
  "log",
+ "minijinja",
  "once_cell",
  "reqwest 0.13.4",
  "schemars 0.8.22",

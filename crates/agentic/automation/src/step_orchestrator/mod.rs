@@ -510,7 +510,7 @@ impl AutomationStepOrchestrator {
 
         // Build context with ColumnTable wrappers for table step results.
         let ctx = build_minijinja_context(&self.render_context);
-        let rendered = tmpl.render(&ctx).map_err(|e| {
+        let rendered = crate::render::render_bounded(&tmpl, &ctx).map_err(|e| {
             let available_keys: Vec<String> = self
                 .render_context
                 .as_object()

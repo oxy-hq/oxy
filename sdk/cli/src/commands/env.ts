@@ -15,7 +15,7 @@
 
 import { parseJson, request } from "../api/request.js";
 import { parseAppEnv, requireSandboxName } from "../apps/environment.js";
-import { ensureOk, resolveApp, staffCreds } from "../apps/resolve.js";
+import { type Creds, ensureOk, resolveApp, staffCreds } from "../apps/resolve.js";
 import { isSandboxAgentToken } from "../auth/token-kind.js";
 import type { Context } from "../context/resolve.js";
 import { out } from "../ui/tty.js";
@@ -153,9 +153,23 @@ export async function envShow(ctx: Context, app: string, name: string): Promise<
     );
   }
   const resolved = await resolveApp(creds, app);
+  return fetchEnvironment(creds, resolved.appId, envName);
+}
+
+/**
+ * `GET …/environments/{name}` for an app already resolved — `env show`'s
+ * request, for a caller that holds the credential and the id already (the
+ * browser check). The route requires non-production reach for every name,
+ * `production` included.
+ */
+export async function fetchEnvironment(
+  creds: Creds,
+  appId: string,
+  name: string
+): Promise<Environment> {
   const response = await request({
     target: creds.target,
-    path: environmentsPath(resolved.appId, envName),
+    path: environmentsPath(appId, name),
     method: "GET",
     bearer: creds.bearer,
     headers: creds.headers

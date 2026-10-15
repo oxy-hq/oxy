@@ -125,6 +125,12 @@ pre-materialised prior-cache snapshot.
   building a connector. `render_jinja_string` is for text no database reads (paths, prompts, HTTP
   parts): there `sqlquote` refuses a value holding a quote or a backslash, because no spelling of
   one is read the same on every engine. A new step type that sends SQL takes the first.
+- **Every render goes through `render::render_bounded`, in an environment built by
+  `automation_env*`.** Those set `oxy_shared::jinja::TEMPLATE_FUEL` (instructions per render or
+  expression) and `render_bounded` caps output at `MAX_RENDERED_BYTES`; a bare `tmpl.render(..)`
+  skips the output cap, and an expression's `eval` error goes through `name_the_limit` so a
+  tripped limit is named in the step's error. `now(fmt=…)` with a format chrono rejects is a
+  render error (it used to panic). Renders stay on the async worker: fuel bounds each one.
 - Migrator is independent (`seaql_migrations_workflow`) so the workflow schema
   evolves without coordinating with runtime/analytics migrations.
 - Used by `agentic-pipeline` directly (via `WorkflowDecider` +
