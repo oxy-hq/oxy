@@ -1055,7 +1055,7 @@ jobs:
     steps:
       - name: Free disk space
         if: matrix.task == 'test' && runner.environment == 'github-hosted'
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # main
         with:
           tool-cache: false
           android: true
