@@ -23,7 +23,12 @@ export interface InboxItem {
    * platform notice's is a path inside this SPA.
    */
   href: string | null;
-  /** `null` for a platform notice. */
+  /**
+   * The path exactly as the app passed it to `ctx.notify` (e.g. `/bookings/1`),
+   * for the app's own router. `null` for a platform notice. Oxygen follows `href`.
+   */
+  link: string | null;
+  /** `null` for a platform notice, whose `kind` starts with `oxy.`. */
   app: NotificationApp | null;
 }
 
@@ -41,6 +46,12 @@ export interface KindPreference {
   muted: NotificationChannel[];
   /** A critical kind is delivered whatever is muted. */
   critical: boolean;
+  /**
+   * The channels this kind can reach someone on: the only switches that do
+   * anything. Every channel for an app's kind; a fixed set for Oxygen's own.
+   * Absent from a server older than the field, which means every channel.
+   */
+  channels?: NotificationChannel[];
 }
 
 export interface AppPreferences {
@@ -55,11 +66,14 @@ export interface NotificationReach {
 
 export interface NotificationPreferences {
   apps: AppPreferences[];
+  /** Oxygen's own kinds (`oxy.*`) this person has received. */
+  platform: KindPreference[];
   reach: NotificationReach;
 }
 
 export interface SetNotificationPreference {
-  app_id: string;
+  /** `null` for a platform kind. */
+  app_id: string | null;
   kind: string;
   channel: NotificationChannel;
   muted: boolean;

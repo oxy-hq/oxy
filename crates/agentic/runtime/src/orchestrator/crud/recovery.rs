@@ -1005,5 +1005,9 @@ async fn retire_run_with_message(
         [run_id.into(), error_message.into()],
     ))
     .await?;
-    txn.commit().await
+    txn.commit().await?;
+    // Retired or dead-lettered is terminal. The observer reads the row, so a
+    // root that had already finished (and kept its own outcome) is told apart.
+    crate::lifecycle::failure_hook::root_run_failed(run_id).await;
+    Ok(())
 }

@@ -209,6 +209,9 @@ pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
     if !crate::server::api::notifications::web_push::register_if_configured() {
         tracing::info!("no push transport configured — notifications are inbox-only");
     }
+    // Workers drive most global runs to their end, so their failures are
+    // announced from here (`oxy.run_failed`).
+    crate::server::api::notifications::platform::run_failed::install();
 
     // Same first line as `start_server_and_web_app`, and for a sharper reason
     // here. `current_process_role()` falls back to `Role::All` when nothing set

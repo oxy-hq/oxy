@@ -2,20 +2,22 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useEnablePushOnThisDevice, useVapidPublicKey } from "@/hooks/api/notifications";
-import { pushSupported } from "@/libs/webPush";
+import { pushNeedsHomeScreenHere, pushSupported } from "@/libs/webPush";
 import { deviceCount } from "../utils";
 
 /**
  * Turn push on for the browser in front of you. Needs both a deployment with a
  * Web Push key and a browser with service workers and the Push API; anything
- * less reads "Not available here".
+ * less reads "Not available here" — except an iPhone or iPad in a browser tab,
+ * where push needs Oxygen on the Home Screen first, so it says how.
  */
 export function PushOnThisDevice({ devices }: { devices: number | undefined }) {
   const vapid = useVapidPublicKey();
   const enable = useEnablePushOnThisDevice();
   const publicKey = vapid.data?.configured ? vapid.data.public_key : null;
 
-  let action: ReactNode;
+  let action: ReactNode = null;
+  let hint: ReactNode = null;
   if (vapid.isPending) {
     action = <Skeleton className='h-8 w-20' />;
   } else if (publicKey && pushSupported()) {
@@ -29,6 +31,12 @@ export function PushOnThisDevice({ devices }: { devices: number | undefined }) {
       >
         {enable.isSuccess ? "On" : "Turn on"}
       </Button>
+    );
+  } else if (publicKey && pushNeedsHomeScreenHere()) {
+    hint = (
+      <span className='text-muted-foreground text-xs' data-testid='notifications-push-home-screen'>
+        Add Oxygen to your Home Screen (Share → Add to Home Screen) to get notifications here.
+      </span>
     );
   } else {
     action = (
@@ -47,6 +55,7 @@ export function PushOnThisDevice({ devices }: { devices: number | undefined }) {
             {deviceCount(devices)}
           </span>
         )}
+        {hint}
       </div>
       {action}
     </div>

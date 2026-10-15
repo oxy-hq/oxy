@@ -327,6 +327,10 @@ const CALLER_ERROR_LABELS: &[&str] = &[
     // A kind the call sends that its manifest entry does not declare. Its own
     // mistake, and the message names the line to add.
     "NotifyKindUndeclared",
+    // A kind in the `oxy.` namespace the platform keeps for its own notices
+    // (`notifications/input.rs`). Publish refuses a manifest declaring one, so
+    // a live hit is an app published before the rule, and still its own fix.
+    "NotifyKindReserved",
     // `ctx.platform.facts({ weeks })` with a `weeks` that is not a number
     // (`host/platform_facts/serve.rs`): refused from the payload alone, before
     // any read, the same way on every call.

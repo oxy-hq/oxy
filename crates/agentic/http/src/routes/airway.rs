@@ -144,7 +144,7 @@ pub async fn create_airway_run(
         }
     }
 
-    start_and_drive(state, platform, body).await
+    start_and_drive(state, platform, body, user.id).await
 }
 
 /// Shared tail for the airway start handlers: seed the run, map
@@ -181,6 +181,7 @@ async fn start_and_drive(
     state: Arc<AgenticState>,
     platform: Arc<dyn PlatformContext>,
     request: StartAirwayRequest,
+    started_by: uuid::Uuid,
 ) -> Response {
     // `PlatformContext: WorkflowWorkspaceContext`, so this coercion is free —
     // `start_airway_run` only needs the workspace surface. `workspace_id`
@@ -239,6 +240,11 @@ async fn start_and_drive(
         }
     };
 
+    // Who to tell if it fails; best-effort, as for an automation.
+    if let Err(e) = agentic_pipeline::stamp_started_by(&state.db, &run_id, started_by).await {
+        tracing::warn!(%e, run_id = %run_id, "airway run: could not record who started it");
+    }
+
     // Register cancel + answer channels so the Stop button works. Airway never
     // consumes answers (no HITL), but `register` wants the pair; the answer_rx
     // is simply dropped.
@@ -292,7 +298,7 @@ pub struct BackfillAirwayRequest {
 pub async fn backfill_airway(
     Extension(state): Extension<Arc<AgenticState>>,
     Extension(platform): Extension<Arc<dyn PlatformContext>>,
-    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(body): Json<BackfillAirwayRequest>,
 ) -> Response {
     if body.from >= body.to {
@@ -316,7 +322,7 @@ pub async fn backfill_airway(
         backfill_to: Some(body.to.to_rfc3339()),
     };
 
-    start_and_drive(state, platform, request).await
+    start_and_drive(state, platform, request, user.id).await
 }
 
 // ── POST /agentic-airway/chunked-backfill ──────────────────────────────────

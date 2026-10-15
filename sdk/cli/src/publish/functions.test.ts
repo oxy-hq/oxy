@@ -15,7 +15,8 @@ import {
   enforceReservedFunctionsDir,
   functionsDirConflicts,
   requirePrebuiltFunctions,
-  validateFunctionNames
+  validateFunctionNames,
+  validateNotifyKinds
 } from "./functions.js";
 
 let root: string;
@@ -203,5 +204,35 @@ describe("validateFunctionNames", () => {
   it("refuses a name outside the grammar", () => {
     expect(() => validateFunctionNames(["../../x"])).toThrow(/invalid function name/);
     expect(() => validateFunctionNames(["top-stores", "a1"])).not.toThrow();
+  });
+});
+
+describe("validateNotifyKinds", () => {
+  it("refuses a kind in Oxygen's reserved namespace, naming each one", () => {
+    let error: CliError | undefined;
+    try {
+      validateNotifyKinds({
+        functions: {
+          watch: { notify: { kinds: { "oxy.anomaly": {}, late: {} } } },
+          ping: { notify: { kinds: { "oxy.run_failed": { critical: true } } } }
+        }
+      });
+    } catch (e) {
+      error = e as CliError;
+    }
+    expect(error).toBeInstanceOf(CliError);
+    expect(error?.code).toBe(ExitCode.USAGE);
+    expect(error?.message).toContain('start with "oxy."');
+    expect(error?.detail).toBe("  watch: oxy.anomaly\n  ping: oxy.run_failed");
+  });
+
+  it("allows every other kind, and a manifest with none", () => {
+    expect(() =>
+      validateNotifyKinds({
+        functions: { f: { notify: { kinds: { "oxygen.tank_low": {}, "store.oxy.x": {} } } } }
+      })
+    ).not.toThrow();
+    expect(() => validateNotifyKinds({ functions: { f: {} } })).not.toThrow();
+    expect(() => validateNotifyKinds(undefined)).not.toThrow();
   });
 });

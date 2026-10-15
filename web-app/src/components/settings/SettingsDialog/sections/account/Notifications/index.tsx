@@ -3,15 +3,16 @@ import type { ReactNode } from "react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useNotificationPreferences } from "@/hooks/api/notifications";
 import SectionHeader from "../../../components/SectionHeader";
-import { AppKinds } from "./components/AppKinds";
+import { KindGroup } from "./components/KindGroup";
 import { PushOnThisDevice } from "./components/PushOnThisDevice";
 
 const NOTE = "text-muted-foreground text-sm";
 
 /**
- * Account → Notifications: what each app may send the signed-in person, and where.
- * The inbox always gets everything; these switches only mute the other channels.
- * Needs no org or workspace — every preference is the caller's own.
+ * Account → Notifications: what Oxygen and each app may send the signed-in
+ * person, and where. The inbox always gets everything; these switches only mute
+ * the other channels. Needs no org or workspace — every preference is the
+ * caller's own.
  */
 export default function AccountNotifications() {
   const prefs = useNotificationPreferences();
@@ -22,13 +23,14 @@ export default function AccountNotifications() {
     body = <Skeleton className='h-24 w-full' />;
   } else if (prefs.isError || !reach) {
     body = <p className={NOTE}>Couldn't load your notification settings</p>;
-  } else if (prefs.data.apps.length === 0) {
+  } else if (prefs.data.apps.length === 0 && prefs.data.platform.length === 0) {
     body = (
       <p className={NOTE} data-testid='notifications-prefs-empty'>
-        No app sends you notifications yet
+        Nothing sends you notifications yet
       </p>
     );
   } else {
+    const { apps, platform } = prefs.data;
     body = (
       <div className='flex flex-col gap-3'>
         {!reach.email && (
@@ -36,8 +38,18 @@ export default function AccountNotifications() {
             No email on this account
           </p>
         )}
-        {prefs.data.apps.map((app) => (
-          <AppKinds key={app.app.id} prefs={app} reach={reach} />
+        {platform.length > 0 && (
+          <KindGroup title='Oxygen' appId={null} testKey='oxygen' kinds={platform} reach={reach} />
+        )}
+        {apps.map(({ app, kinds }) => (
+          <KindGroup
+            key={app.id}
+            title={app.name}
+            appId={app.id}
+            testKey={app.slug}
+            kinds={kinds}
+            reach={reach}
+          />
         ))}
       </div>
     );

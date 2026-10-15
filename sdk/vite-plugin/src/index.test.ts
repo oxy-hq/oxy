@@ -111,6 +111,19 @@ describe("validateManifest", () => {
     expect(errs.some((e) => e.includes("function name"))).toBe(false);
   });
 
+  test("rejects a notify kind in Oxygen's reserved namespace", () => {
+    const errs = validateManifest({
+      schemaVersion: 2,
+      slug: "app",
+      functions: {
+        watch: { notify: { kinds: { "oxy.anomaly": {}, "oxygen.tank_low": {}, late: {} } } }
+      }
+    });
+    expect(errs.filter((e) => e.includes("reserved for Oxygen's own notices"))).toEqual([
+      expect.stringContaining('function "watch" declares notify kind "oxy.anomaly"')
+    ]);
+  });
+
   test("rejects missing schemaVersion as if it were v1", () => {
     const errs = validateManifest({ slug: "x" });
     expect(errs.some((e) => e.includes("schemaVersion"))).toBe(true);

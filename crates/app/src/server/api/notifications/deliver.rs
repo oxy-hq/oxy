@@ -1,31 +1,15 @@
-//! The push-delivery seam, and the platform's own entry point.
+//! The push-delivery seam.
 //!
-//! [`notify`] is what the rest of the product calls to tell one person
-//! something; `ctx.notify` reaches the same [`send`](super::send::send) from a
-//! custom app. Either way the durable inbox row is written FIRST and delivery is
-//! attempted after, in that order and never the other: a push that arrives for
-//! a notification the inbox does not have is a tap that lands on nothing.
+//! The durable inbox row is always written before delivery is attempted, and
+//! never the other way round: a push that arrives for a notification the inbox
+//! does not have is a tap that lands on nothing. The product's own notices go
+//! through [`super::platform::notify`]; a custom app's through `ctx.notify`.
 
 use std::sync::{Arc, OnceLock};
 
 use entity::device_tokens;
-use sea_orm::DatabaseConnection;
 use tracing::info;
 use uuid::Uuid;
-
-use super::send::{Outgoing, SendError, Sent, send};
-
-/// One thing the platform tells one person.
-#[derive(Debug, Clone)]
-pub struct Notice {
-    pub org_id: Uuid,
-    pub user_id: Uuid,
-    pub kind: String,
-    pub title: String,
-    pub body: Option<String>,
-    /// Relative, so it resolves on whichever host the reader is on.
-    pub link: Option<String>,
-}
 
 /// What a push carries: nothing but who it is for and what kind it is.
 ///
@@ -110,35 +94,6 @@ pub fn set_push(push: Arc<dyn Push>) {
 
 pub(super) fn push() -> Arc<dyn Push> {
     PUSH.get().cloned().unwrap_or_else(|| Arc::new(LoggingPush))
-}
-
-/// Tell somebody something, from the platform itself.
-///
-/// Writes the inbox content to the org's store and the signal to Oxy's, then
-/// attempts a push inline — there is no app and no workspace here to queue a
-/// delivery run under. Fails when the inbox cannot be written (the org has no
-/// OLTP store, say): nobody was told, and a caller that thought they had
-/// notified somebody should find out.
-pub async fn notify(db: &DatabaseConnection, notice: Notice) -> Result<Sent, SendError> {
-    send(
-        db,
-        Outgoing {
-            org_id: notice.org_id,
-            app: None,
-            environment: "production".to_string(),
-            workspace_id: None,
-            kind: notice.kind,
-            critical: false,
-            title: notice.title,
-            body: notice.body,
-            link: notice.link,
-            email: None,
-            slack: false,
-            idempotency_key: None,
-            recipients: vec![notice.user_id],
-        },
-    )
-    .await
 }
 
 #[cfg(test)]

@@ -13,6 +13,24 @@ export function humanizeKind(kind: string): string {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : kind;
 }
 
+/** Oxygen's own kinds, as people read them. */
+const PLATFORM_KIND_LABELS: Partial<Record<string, string>> = {
+  "oxy.billing_past_due": "Billing past due",
+  "oxy.workspace_ready": "Workspace ready",
+  "oxy.run_failed": "Run failed",
+  "oxy.anomaly": "Anomalies"
+};
+
+/** The prefix every Oxygen kind carries, and no app may use. */
+const PLATFORM_PREFIX = "oxy.";
+
+/** A kind's label: Oxygen's own by name, anything else (a new `oxy.*` kind too) humanized. */
+export function kindLabel(kind: string): string {
+  const known = PLATFORM_KIND_LABELS[kind];
+  if (known) return known;
+  return humanizeKind(kind.startsWith(PLATFORM_PREFIX) ? kind.slice(PLATFORM_PREFIX.length) : kind);
+}
+
 /** How many devices push reaches, in a few words. */
 export function deviceCount(n: number): string {
   if (n <= 0) return "Not on any device yet";

@@ -63,6 +63,42 @@ fn bad(why: impl std::fmt::Display) -> String {
     format!("InvalidNotifyPayload: {why}")
 }
 
+/// The prefix of the platform's own notice kinds (`oxy.workspace_ready`, …).
+/// An app may neither declare nor send one: a person's mute of a platform kind
+/// is keyed by the kind alone, and a settings page groups these under Oxygen,
+/// so an app kind wearing the prefix would borrow both.
+pub const RESERVED_KIND_PREFIX: &str = "oxy.";
+
+/// Whether `kind` is in the platform's reserved namespace.
+pub fn is_reserved_kind(kind: &str) -> bool {
+    kind.starts_with(RESERVED_KIND_PREFIX)
+}
+
+/// The refusal for an app kind in the reserved namespace, shared by
+/// `ctx.notify` and publish.
+pub fn reserved_kind_refusal(kind: &str) -> String {
+    format!(
+        "NotifyKindReserved: kind `{kind}` starts with `{RESERVED_KIND_PREFIX}`, which is \
+         reserved for Oxygen's own notices; rename it"
+    )
+}
+
+/// The reserved kinds a function's manifest entry declares under
+/// `notify.kinds`, sorted. Publish refuses an entry with any.
+pub fn reserved_kinds_declared(function_spec: &Value) -> Vec<String> {
+    function_spec
+        .pointer("/notify/kinds")
+        .and_then(Value::as_object)
+        .map(|kinds| {
+            kinds
+                .keys()
+                .filter(|k| is_reserved_kind(k))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// A kind is an identifier the person mutes by: short, lowercase, stable.
 pub fn valid_kind(kind: &str) -> bool {
     !kind.is_empty()
@@ -79,6 +115,9 @@ pub fn parse(v: &Value) -> Result<NotifyInput, String> {
         return Err(bad(
             "`kind` must be 1–64 lowercase letters, digits, `_`, `-` or `.` — it is what a person mutes",
         ));
+    }
+    if is_reserved_kind(&kind) {
+        return Err(reserved_kind_refusal(&kind));
     }
     let title = str_field(obj, "title")?
         .map(|t| t.trim().to_string())
@@ -291,6 +330,29 @@ mod tests {
         let mut v = minimal();
         v["email"] = json!({ "to": "x@y.com" });
         assert!(parse(&v).unwrap_err().contains("`email.to` is not a field"));
+    }
+
+    #[test]
+    fn the_platforms_kind_prefix_is_refused_with_its_own_label() {
+        let mut v = minimal();
+        v["kind"] = json!("oxy.workspace_ready");
+        let err = parse(&v).unwrap_err();
+        assert!(err.starts_with("NotifyKindReserved: "), "{err}");
+        // Only the prefix is reserved, not the word.
+        v["kind"] = json!("oxygen.tank_low");
+        assert!(parse(&v).is_ok());
+        v["kind"] = json!("store.oxy.x");
+        assert!(parse(&v).is_ok());
+    }
+
+    #[test]
+    fn a_manifest_entry_declaring_a_platform_kind_is_found() {
+        let spec = json!({ "notify": { "kinds": { "oxy.anomaly": {}, "late": {} } } });
+        assert_eq!(reserved_kinds_declared(&spec), vec!["oxy.anomaly"]);
+        assert!(
+            reserved_kinds_declared(&json!({ "notify": { "kinds": { "late": {} } } })).is_empty()
+        );
+        assert!(reserved_kinds_declared(&json!({})).is_empty());
     }
 
     #[test]

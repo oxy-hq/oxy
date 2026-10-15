@@ -20,6 +20,7 @@ vi.mock("@/services/api/notifications", () => ({
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ isLocalMode: false }) }));
 
 import { NotificationsBell } from ".";
+import { POPOVER_MEDIA_QUERY } from "./constants";
 
 const service = vi.mocked(NotificationsService);
 
@@ -34,21 +35,46 @@ const item = (over: Partial<InboxItem> = {}): InboxItem => ({
   title: "Walk-in cooler list is overdue",
   body: "3 of 12 checks are still open.",
   href: "/customer-apps/acme/store-ops/lists/42",
+  link: "/lists/42",
   app: { id: "app-1", slug: "store-ops", name: "Store Ops" },
   ...over
 });
 
 const platformItem = item({
   id: "n-platform",
-  kind: "workspace_ready",
+  kind: "oxy.workspace_ready",
   title: "Your workspace is ready",
   body: null,
   href: "/acme/workspaces/ws-1/threads",
+  link: null,
   app: null,
   read_at: "2026-10-14T11:00:00Z"
 });
 
-const unreadableItem = item({ id: "n-unreadable", title: null, body: null, href: null });
+const unreadableItem = item({
+  id: "n-unreadable",
+  title: null,
+  body: null,
+  href: null,
+  link: null
+});
+
+/** A phone-width screen: the popover's `min-width` query stops matching. */
+function onAPhone() {
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query: string) =>
+      ({
+        matches: query !== POPOVER_MEDIA_QUERY,
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false
+      }) as unknown as MediaQueryList
+  );
+}
 
 function Where() {
   const location = useLocation();
@@ -103,6 +129,7 @@ afterEach(() => {
   cleanup();
   document.removeEventListener("click", stopNavigation);
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -144,8 +171,10 @@ describe("NotificationsBell inbox", () => {
     expect(appRow).toHaveTextContent("5 minutes ago");
     expect(appRow).toHaveAttribute("data-unread", "true");
 
+    // A platform notice has no app; Oxygen sent it.
     const platformRow = within(panel).getByTestId("notifications-item-n-platform");
     expect(platformRow).toHaveTextContent("Oxygen");
+    expect(platformRow).toHaveTextContent("Your workspace is ready");
     expect(platformRow).toHaveAttribute("data-unread", "false");
     expect(service.inbox).toHaveBeenCalledWith({ unreadOnly: false, limit: 50 });
   });
@@ -198,6 +227,13 @@ describe("NotificationsBell inbox", () => {
     expect(within(panel).getByTestId("notifications-mark-all-read")).toBeDisabled();
   });
 
+  it("is a popover under the bell on a wide screen", async () => {
+    renderBell();
+    await openInbox();
+    expect(screen.getByTestId("notifications-popover")).toBeInTheDocument();
+    expect(screen.queryByTestId("notifications-sheet")).toBeNull();
+  });
+
   it("shows one line when the inbox is empty", async () => {
     service.inbox.mockResolvedValue({ unread: 0, items: [] });
     renderBell();
@@ -232,5 +268,49 @@ describe("NotificationsBell opened from outside", () => {
     } finally {
       Reflect.deleteProperty(navigator, "serviceWorker");
     }
+  });
+});
+
+describe("NotificationsBell on a phone", () => {
+  beforeEach(onAPhone);
+
+  it("opens the inbox as a sheet that fills the screen, not a popover", async () => {
+    renderBell();
+    const panel = await openInbox();
+    const sheet = screen.getByTestId("notifications-sheet");
+    expect(sheet).toContainElement(panel);
+    expect(screen.queryByTestId("notifications-popover")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Notifications" })).toBe(sheet);
+    // The sheet takes focus itself, not the close button that comes first while loading.
+    expect(sheet).toHaveFocus();
+    expect(await within(panel).findByTestId("notifications-item-n-app")).toHaveTextContent(
+      "Store Ops"
+    );
+    expect(within(panel).getByTestId("notifications-item-n-platform")).toHaveTextContent("Oxygen");
+  });
+
+  it("opens the sheet for ?notifications=open, and drops the param", async () => {
+    renderBell("/acme/workspaces/ws-1/home?notifications=open");
+    const sheet = await screen.findByTestId("notifications-sheet");
+    expect(within(sheet).getByTestId("notifications-panel")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("where")).toHaveTextContent(/^\/acme\/workspaces\/ws-1\/home$/)
+    );
+  });
+
+  it("closes the sheet when a notice is followed", async () => {
+    renderBell();
+    const panel = await openInbox();
+    expect(screen.getByTestId("notifications-sheet")).toBeInTheDocument();
+    await userEvent.click(await within(panel).findByTestId("notifications-item-n-platform"));
+    expect(screen.getByTestId("where")).toHaveTextContent("/acme/workspaces/ws-1/threads");
+    await waitFor(() => expect(screen.queryByTestId("notifications-sheet")).toBeNull());
+  });
+
+  it("closes the sheet from its close button", async () => {
+    renderBell();
+    await openInbox();
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByTestId("notifications-sheet")).toBeNull());
   });
 });

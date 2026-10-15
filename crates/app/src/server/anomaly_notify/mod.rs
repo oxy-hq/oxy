@@ -1,5 +1,6 @@
-//! Insights delivery: after a monitor scan, post the events it newly found to
-//! the Slack channel the workspace's `.monitor.yml` names under `notify:`.
+//! Insights delivery: after a monitor scan, announce the events it newly found
+//! to the Slack channel and the people the workspace's `.monitor.yml` names
+//! under `notify:`.
 //!
 //! The scan decides nothing about delivery. Having persisted, it calls
 //! [`enqueue_if_due`], which queues one `anomaly_notify` task when the file has
@@ -29,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub mod executor;
+pub mod people;
 
 /// The `kind` of the delivery task, and the `source_type` of its run.
 pub const ANOMALY_NOTIFY_KIND: &str = "anomaly_notify";
@@ -63,7 +65,7 @@ pub async fn enqueue_if_due(
     };
     // Asked first so a quiet scan leaves no run behind: a daily "nothing new"
     // row per workspace would bury the runs that did something.
-    match ledger::anything_due(db, due).await {
+    match anything_due(db, due, notify).await {
         Ok(true) => {}
         Ok(false) => return None,
         Err(e) => {
@@ -94,6 +96,25 @@ pub async fn enqueue_if_due(
     }
 }
 
+/// Whether any destination the block names has an unannounced event. Each
+/// channel claims on its own, so a person added to `people` is not owed what
+/// Slack already carried — only events due on the inbox channel.
+async fn anything_due(
+    db: &DatabaseConnection,
+    due: Due,
+    notify: &NotifyConfig,
+) -> Result<bool, DbErr> {
+    if notify.slack_channel.is_some()
+        && ledger::anything_due_on(db, due, ledger::CHANNEL_SLACK).await?
+    {
+        return Ok(true);
+    }
+    if !notify.people.is_empty() && ledger::anything_due_on(db, due, ledger::CHANNEL_INBOX).await? {
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 /// Write the run row and its one task together. The task id is the run id —
 /// what the global-run driver expects of a root task — and the run row goes
 /// first because the queue row references it.
@@ -106,6 +127,7 @@ async fn enqueue(db: &DatabaseConnection, payload: &AnomalyNotifyPayload) -> Res
     let metadata = serde_json::json!({
         "trigger": "monitor_scan",
         "slack_channel": payload.notify.slack_channel,
+        "people": payload.notify.people.len(),
     });
     let txn = db.begin().await?;
     insert_run(

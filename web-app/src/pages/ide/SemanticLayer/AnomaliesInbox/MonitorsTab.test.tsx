@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useMonitorNotify, useMonitorPreview, useMonitors } from "@/hooks/api/useMetricAnomalies";
-import type { MonitorEntry, MonitorPreview } from "@/types/metricAnomalies";
+import type { MonitorEntry, MonitorNotify, MonitorPreview } from "@/types/metricAnomalies";
 import MonitorsTab from "./MonitorsTab";
 
 vi.mock("@/hooks/api/useMetricAnomalies", () => ({
@@ -29,14 +29,18 @@ const MONITORS: MonitorEntry[] = [
 
 type PreviewHook = ReturnType<typeof useMonitorPreview>;
 
-function mount(preview: Partial<PreviewHook> = {}, monitors: MonitorEntry[] = MONITORS) {
+function mount(
+  preview: Partial<PreviewHook> = {},
+  monitors: MonitorEntry[] = MONITORS,
+  notify: MonitorNotify | null = null
+) {
   vi.mocked(useMonitors).mockReturnValue({
     data: monitors,
     isLoading: false,
     error: null
   } as unknown as ReturnType<typeof useMonitors>);
   vi.mocked(useMonitorNotify).mockReturnValue({
-    data: null
+    data: notify
   } as unknown as ReturnType<typeof useMonitorNotify>);
   const hook = {
     isIdle: true,
@@ -55,6 +59,39 @@ function mount(preview: Partial<PreviewHook> = {}, monitors: MonitorEntry[] = MO
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+
+describe("MonitorsTab delivery note", () => {
+  const note = () => screen.getByTestId("monitors-delivery-note");
+
+  it("names the Slack channel", () => {
+    mount({}, MONITORS, { slack_channel: "C0123ABCDEF", min_severity: "high" });
+    expect(note()).toHaveTextContent(
+      "New insights at high severity are posted to Slack channel C0123ABCDEF, once each."
+    );
+  });
+
+  it("names the people told in Oxygen when there is no Slack channel", () => {
+    mount({}, MONITORS, {
+      people: [{ email: "dana@acme.com" }, { role: "admin" }],
+      min_severity: "medium"
+    });
+    expect(note()).toHaveTextContent(
+      "New insights at medium severity or above are sent to dana@acme.com and the admins in Oxygen, once each."
+    );
+    expect(note()).not.toHaveTextContent("Slack");
+  });
+
+  it("says both when the block has both", () => {
+    mount({}, MONITORS, {
+      slack_channel: "C0123ABCDEF",
+      people: [{ team: "Finance" }],
+      min_severity: "low"
+    });
+    expect(note()).toHaveTextContent(
+      "New insights of any severity are posted to Slack channel C0123ABCDEF and sent to team Finance in Oxygen, once each."
+    );
+  });
 });
 
 describe("MonitorsTab", () => {

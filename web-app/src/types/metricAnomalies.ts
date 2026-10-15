@@ -182,11 +182,22 @@ export interface MonitorCoverage {
   last_scanned_at: string;
 }
 
-/** The `notify:` block of `.monitor.yml`: where a scan posts the insights it
- *  newly found, and from what severity. */
+/** One `people` entry of a `notify:` block: exactly one of the three. A role
+ *  means everyone holding it or a higher one (`admin` = admins and owners). */
+export interface MonitorNotifyPerson {
+  email?: string;
+  role?: "owner" | "admin" | "member";
+  team?: string;
+}
+
+/** The `notify:` block of `.monitor.yml`: where a scan announces the insights
+ *  it newly found — a Slack channel, people's Oxygen inboxes, or both — and
+ *  from what severity. At least one of the two is present. */
 export interface MonitorNotify {
   /** A Slack channel id in the org's connected Slack, e.g. `C0123ABCDEF`. */
-  slack_channel: string;
+  slack_channel?: string | null;
+  /** People told in their Oxygen inbox. Absent when there are none. */
+  people?: MonitorNotifyPerson[] | null;
   min_severity: AnomalySeverity;
 }
 

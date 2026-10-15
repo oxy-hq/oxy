@@ -377,6 +377,10 @@ const TABLES: &[(&str, Placement)] = &[
         Control("which channels a person turned off, per app and kind"),
     ),
     (
+        "notification_platform_mutes",
+        Control("which channels a person turned off, per platform notice kind"),
+    ),
+    (
         "notification_sends",
         Control("one row per notify call: ids, kind, counts, the idempotency key's hash"),
     ),

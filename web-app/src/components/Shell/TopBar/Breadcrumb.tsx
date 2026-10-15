@@ -9,7 +9,8 @@ import { usePageName } from "./usePageName";
  * link back to the HQ home. Page identity lives here, replacing the launcher's
  * removed HQ heading + status line. The workspace logo is intentionally NOT
  * shown — the rail's workspace tile already carries it, so a second copy here
- * is redundant.
+ * is redundant. Where space runs out (a phone, a long org name) the name
+ * truncates rather than run under the bell; the page name is always one short word.
  */
 export function Breadcrumb() {
   const orgName = useCurrentOrg((s) => s.org?.name);
@@ -27,12 +28,12 @@ export function Breadcrumb() {
       <Link
         to={ws.HOME}
         data-testid='topbar-workspace-link'
-        className='shrink-0 font-medium text-foreground transition-opacity hover:opacity-70'
+        className='min-w-0 truncate font-medium text-foreground transition-opacity hover:opacity-70'
       >
         {workspaceName}
       </Link>
-      <span className='text-muted-foreground/40'>/</span>
-      <span className='truncate text-muted-foreground'>{pageName}</span>
+      <span className='shrink-0 text-muted-foreground/40'>/</span>
+      <span className='shrink-0 text-muted-foreground'>{pageName}</span>
     </div>
   );
 }

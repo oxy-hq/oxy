@@ -1,27 +1,39 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { NotificationsService } from "@/services/api/notifications";
-import type { NotificationPreferences, SetNotificationPreference } from "@/types/notifications";
+import type {
+  KindPreference,
+  NotificationPreferences,
+  SetNotificationPreference
+} from "@/types/notifications";
 import queryKeys from "../queryKey";
 
-/** `prefs` with one channel of one kind muted or unmuted. Everything else is untouched. */
+function withMuted(
+  kinds: KindPreference[],
+  { kind, channel, muted }: SetNotificationPreference
+): KindPreference[] {
+  return kinds.map((k) => {
+    if (k.kind !== kind) return k;
+    const others = k.muted.filter((c) => c !== channel);
+    return { ...k, muted: muted ? [...others, channel] : others };
+  });
+}
+
+/**
+ * `prefs` with one channel of one kind muted or unmuted — an app's kind, or an
+ * Oxygen kind when `app_id` is `null`. Everything else is untouched.
+ */
 export function withPreference(
   prefs: NotificationPreferences,
-  { app_id, kind, channel, muted }: SetNotificationPreference
+  input: SetNotificationPreference
 ): NotificationPreferences {
+  if (input.app_id === null) {
+    return { ...prefs, platform: withMuted(prefs.platform, input) };
+  }
   return {
     ...prefs,
     apps: prefs.apps.map((entry) =>
-      entry.app.id !== app_id
-        ? entry
-        : {
-            ...entry,
-            kinds: entry.kinds.map((k) => {
-              if (k.kind !== kind) return k;
-              const others = k.muted.filter((c) => c !== channel);
-              return { ...k, muted: muted ? [...others, channel] : others };
-            })
-          }
+      entry.app.id === input.app_id ? { ...entry, kinds: withMuted(entry.kinds, input) } : entry
     )
   };
 }

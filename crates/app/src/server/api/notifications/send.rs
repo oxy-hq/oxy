@@ -1,7 +1,8 @@
 //! One notification, sent to people who are already resolved.
 //!
-//! [`send`] is the single write path for both senders — a custom app's
-//! `ctx.notify` and the platform's own [`notify`](super::deliver::notify):
+//! [`send`] is the write path for a custom app's `ctx.notify` (the
+//! platform's own notices store no content and are written by
+//! [`super::platform::send`]):
 //!
 //! 1. An idempotency key that was already used answers with the first send,
 //!    and nothing is written.
@@ -48,8 +49,8 @@ pub struct Outgoing {
     pub app: Option<AppRef>,
     /// `production`, `staging` or a sandbox — the sending run's environment.
     pub environment: String,
-    /// The workspace the delivery run is recorded under. `None` (a platform
-    /// notice) delivers inline instead of queueing.
+    /// The workspace the delivery run is recorded under. `None` delivers
+    /// inline instead of queueing.
     pub workspace_id: Option<Uuid>,
     pub kind: String,
     pub critical: bool,
@@ -122,11 +123,10 @@ pub async fn send(db: &DatabaseConnection, out: Outgoing) -> Result<Sent, SendEr
     }
     let sent = record_or_dedupe(db, id, &out, hash.as_deref()).await?;
     if !sent.deduplicated && sent.recipients > 0 && out.workspace_id.is_none() {
-        // A platform notice has no workspace to queue a run under, so it
-        // delivers here, as `notify` always did. Best-effort: the inbox row is
-        // written, and that is the contract.
+        // No workspace to queue a run under: deliver here. Best-effort: the
+        // inbox row is written, and that is the contract.
         let report = super::delivery::deliver_send(db, sent.id).await;
-        tracing::info!(send = %sent.id, ?report, "platform notice delivered inline");
+        tracing::info!(send = %sent.id, ?report, "notification delivered inline");
     }
     Ok(sent)
 }

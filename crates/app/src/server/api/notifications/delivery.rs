@@ -11,8 +11,8 @@
 //! - **Skips are recorded, with a code.** "Muted", "no devices", "no address",
 //!   "not linked to Slack" and "push not configured" are answers someone will
 //!   ask for; an absent row could mean any of them, or that nothing ran.
-//! - **Mutes apply per (app, kind, channel)**, except to a kind the app
-//!   declared critical.
+//! - **Mutes apply per (app, kind, channel)**, or per (kind, channel) for a
+//!   platform notice, except to a critical kind.
 
 use std::collections::HashSet;
 
@@ -115,7 +115,7 @@ async fn deliver(db: &DatabaseConnection, send_id: Uuid) -> Result<DeliveryRepor
     let muted = mutes(db, &send, &users)
         .await
         .map_err(|e| format!("load mutes: {e}"))?;
-    let channels = Channels::load(db, &send, &users).await?;
+    let channels = Channels::load(db, &send, &signals).await?;
     for signal in &signals {
         for channel in requested(&send) {
             let outcome = deliver_one(db, &channels, signal, channel, &muted)
@@ -159,15 +159,18 @@ async fn deliver_one(
     Ok(outcome)
 }
 
-/// Who muted which channel for this send's app and kind. Empty for a critical
-/// kind and for a platform notice, which has no app to mute.
+/// Who muted which channel for this send's app and kind — or, for a
+/// platform notice, for its kind alone. Empty for a critical kind.
 async fn mutes(
     db: &DatabaseConnection,
     send: &notification_sends::Model,
     users: &[Uuid],
 ) -> Result<HashSet<(Uuid, Channel)>, DbErr> {
-    let Some(app_id) = send.app_id.filter(|_| !send.critical) else {
+    if send.critical {
         return Ok(HashSet::new());
+    }
+    let Some(app_id) = send.app_id else {
+        return super::platform::preferences::muted(db, &send.kind, users).await;
     };
     Ok(notification_mutes::Entity::find()
         .filter(notification_mutes::Column::AppId.eq(app_id))

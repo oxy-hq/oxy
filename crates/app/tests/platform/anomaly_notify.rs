@@ -31,6 +31,7 @@ use sea_orm::{
 use uuid::Uuid;
 
 mod due_rules;
+mod people;
 mod task;
 
 const CHANNEL: &str = "C0123ABCDEF";

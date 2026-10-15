@@ -147,7 +147,8 @@ async fn queued(db: &DatabaseConnection) -> Vec<Queued> {
 
 fn notify_block() -> NotifyConfig {
     NotifyConfig {
-        slack_channel: CHANNEL.into(),
+        slack_channel: Some(CHANNEL.into()),
+        people: Vec::new(),
         min_severity: Severity::High,
     }
 }

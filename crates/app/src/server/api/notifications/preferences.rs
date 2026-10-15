@@ -26,15 +26,19 @@ use uuid::Uuid;
 
 use super::delivery::Channel;
 use super::inbox_view::InboxApp;
-use super::input::valid_kind;
+use super::input::{is_reserved_kind, valid_kind};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct KindPreference {
     pub kind: String,
     /// Channels turned off for this kind.
     pub muted: Vec<&'static str>,
     /// Declared critical by the app: mutes are kept but do not apply.
     pub critical: bool,
+    /// The channels this kind can reach someone on: the only switches that do
+    /// anything. Every channel for an app, since each call picks email and
+    /// Slack itself; a platform kind's fixed set (`platform::kinds::channels`).
+    pub channels: Vec<&'static str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -54,12 +58,15 @@ pub struct Reachability {
 #[derive(Debug, Serialize)]
 pub struct PreferencesResponse {
     pub apps: Vec<AppPreferences>,
+    /// Oxygen's own notices (`oxy.*` kinds) this person has received or muted.
+    pub platform: Vec<KindPreference>,
     pub reach: Reachability,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SetPreference {
-    pub app_id: Uuid,
+    /// The app whose kind this is; `null` for a platform notice (`oxy.*`).
+    pub app_id: Option<Uuid>,
     pub kind: String,
     /// `push` | `email` | `slack`.
     pub channel: String,
@@ -78,14 +85,21 @@ pub async fn get_preferences(
     let apps = app_preferences(&db, user.id, &blocked)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let platform = super::platform::preferences::kinds(&db, user.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let reach = reachability(&db, user.id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(PreferencesResponse { apps, reach }))
+    Ok(Json(PreferencesResponse {
+        apps,
+        platform,
+        reach,
+    }))
 }
 
 /// `PUT /api/notifications/preferences` — mute or unmute one channel for one
-/// kind from one app.
+/// kind from one app, or (`app_id: null`) for one kind of platform notice.
 #[instrument(skip_all, fields(channel = %body.channel))]
 pub async fn set_preference(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -98,9 +112,18 @@ pub async fn set_preference(
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let Some(app_id) = body.app_id else {
+        return super::platform::preferences::set(&db, user.id, &body.kind, channel, body.muted)
+            .await;
+    };
+    // An app's kind never wears the platform's prefix (publish and
+    // `ctx.notify` both refuse one), so a mute naming one is a mistake.
+    if is_reserved_kind(&body.kind) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
     // 404 for an app this person cannot be told by, as for one that does not
     // exist: a mute is not a way to probe the app registry.
-    let app = apps::Entity::find_by_id(body.app_id)
+    let app = apps::Entity::find_by_id(app_id)
         .one(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -234,6 +257,7 @@ async fn app_preferences(
                     critical: critical.contains(&(a.id, kind.clone())),
                     kind,
                     muted,
+                    channels: Channel::ALL.iter().map(|c| c.as_str()).collect(),
                 })
                 .collect(),
             app: InboxApp {

@@ -8,7 +8,36 @@
 //! insert**, not written afterwards: a run that exists without it is a run
 //! recovery would drive without it.
 
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement};
 use serde_json::{Map, Value};
+use uuid::Uuid;
+
+/// The metadata key naming the person who started a run from a request.
+pub const STARTED_BY_KEY: &str = "started_by";
+
+/// Record on run `run_id` who started it — the person a host tells when it
+/// fails. Written after the insert, unlike [`merge`]: nothing in the pipeline
+/// reads it, so a run that loses the race with its own failure is only a run
+/// whose failure goes to the workspace's admins instead. Never overwrites.
+pub async fn stamp_started_by(
+    db: &DatabaseConnection,
+    run_id: &str,
+    user_id: Uuid,
+) -> Result<(), DbErr> {
+    db.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE agentic_runs \
+            SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object($2::text, $3::text) \
+          WHERE id = $1 AND NOT (COALESCE(metadata, '{}'::jsonb) ? $2)",
+        [
+            run_id.into(),
+            STARTED_BY_KEY.into(),
+            user_id.to_string().into(),
+        ],
+    ))
+    .await?;
+    Ok(())
+}
 
 /// Add `extra` to a new run's `metadata` — never over a key already there.
 ///

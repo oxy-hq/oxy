@@ -1,5 +1,50 @@
 import { describe, expect, it } from "vitest";
-import { urlBase64ToUint8Array } from "./webPush";
+import { type PushEnvironment, pushNeedsHomeScreen, urlBase64ToUint8Array } from "./webPush";
+
+const IPHONE =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
+const IPHONE_CHROME =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/129.0.6668.46 Mobile/15E148 Safari/604.1";
+const IPHONE_16_3 =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.3 Mobile/15E148 Safari/604.1";
+const IPAD =
+  "Mozilla/5.0 (iPad; CPU OS 16_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)";
+const MAC =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+const ANDROID =
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36";
+
+const env = (over: Partial<PushEnvironment>): PushEnvironment => ({
+  userAgent: IPHONE,
+  platform: "iPhone",
+  maxTouchPoints: 5,
+  standalone: false,
+  ...over
+});
+
+describe("pushNeedsHomeScreen", () => {
+  it("is true for an iPhone or iPad in a browser tab", () => {
+    expect(pushNeedsHomeScreen(env({}))).toBe(true);
+    expect(pushNeedsHomeScreen(env({ userAgent: IPHONE_CHROME }))).toBe(true);
+    expect(pushNeedsHomeScreen(env({ userAgent: IPAD, platform: "iPad" }))).toBe(true);
+  });
+
+  it("is true for an iPad that asks for the desktop site", () => {
+    expect(pushNeedsHomeScreen(env({ userAgent: MAC, platform: "MacIntel" }))).toBe(true);
+  });
+
+  it("is false once Oxygen runs from the Home Screen", () => {
+    expect(pushNeedsHomeScreen(env({ standalone: true }))).toBe(false);
+  });
+
+  it("is false on a Mac, on Android, and on an iOS without web push", () => {
+    expect(
+      pushNeedsHomeScreen(env({ userAgent: MAC, platform: "MacIntel", maxTouchPoints: 0 }))
+    ).toBe(false);
+    expect(pushNeedsHomeScreen(env({ userAgent: ANDROID, platform: "Linux armv8l" }))).toBe(false);
+    expect(pushNeedsHomeScreen(env({ userAgent: IPHONE_16_3 }))).toBe(false);
+  });
+});
 
 describe("urlBase64ToUint8Array", () => {
   it("decodes unpadded base64url, the alphabet VAPID keys come in", () => {

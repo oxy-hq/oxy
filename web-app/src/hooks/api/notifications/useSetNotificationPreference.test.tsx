@@ -29,6 +29,7 @@ const prefs = (): NotificationPreferences => ({
       kinds: [{ kind: "list_overdue", muted: [], critical: false }]
     }
   ],
+  platform: [{ kind: "oxy.run_failed", muted: [], critical: false }],
   reach: { push_devices: 1, email: true }
 });
 
@@ -66,6 +67,27 @@ describe("withPreference", () => {
       muted: true
     });
     expect(again.apps[0].kinds[0].muted).toEqual(["email"]);
+  });
+
+  it("mutes an Oxygen kind when app_id is null, and leaves every app alone", () => {
+    const next = withPreference(prefs(), {
+      app_id: null,
+      kind: "oxy.run_failed",
+      channel: "email",
+      muted: true
+    });
+    expect(next.platform[0].muted).toEqual(["email"]);
+    expect(next.apps).toEqual(prefs().apps);
+  });
+
+  it("leaves Oxygen's kinds alone when an app's kind moves", () => {
+    const next = withPreference(prefs(), {
+      app_id: "app-1",
+      kind: "oxy.run_failed",
+      channel: "email",
+      muted: true
+    });
+    expect(next.platform).toEqual(prefs().platform);
   });
 });
 

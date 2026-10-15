@@ -88,6 +88,7 @@ pub async fn create_automation_run(
     Extension(state): Extension<Arc<AgenticState>>,
     Extension(platform): Extension<Arc<dyn PlatformContext>>,
     Extension(bridges): Extension<BuilderBridges>,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(body): Json<StartAutomationRequest>,
 ) -> Response {
     // Interactive run: a co-located scoped coordinator is spawned right
@@ -113,6 +114,13 @@ pub async fn create_automation_run(
             return (StatusCode::INTERNAL_SERVER_ERROR, format!("start: {e}")).into_response();
         }
     };
+
+    // Who to tell if it fails. Before the drive starts, so the run cannot
+    // finish first; best-effort, because without it the failure goes to the
+    // workspace's admins instead.
+    if let Err(e) = agentic_pipeline::stamp_started_by(&state.db, &run_id, user.id).await {
+        tracing::warn!(%e, run_id = %run_id, "create_automation_run: could not record who started it");
+    }
 
     // Register cancel + answer channels so the run is cancellable via SSE.
     // The cancel_rx is handed to `spawn_automation_run_drive`'s forwarder

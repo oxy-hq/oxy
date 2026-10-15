@@ -46,7 +46,12 @@ pub async fn send_past_due_email(args: PastDueEmail<'_>) -> Result<(), OxyError>
         return Ok(());
     };
 
-    let billing_url = format!("{}/{}/billing/plans", args.public_url, args.org_slug);
+    // Billing is a section of the settings dialog, opened by `?settings=`
+    // (`useSettingsDeepLink`); there is no `/billing/plans` route.
+    let billing_url = format!(
+        "{}/{}?settings=organization.billing",
+        args.public_url, args.org_slug
+    );
     let grace_human = args
         .grace_ends_at
         .format("%B %-d, %Y at %H:%M UTC")

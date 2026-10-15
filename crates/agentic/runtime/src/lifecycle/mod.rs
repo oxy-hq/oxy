@@ -14,5 +14,6 @@ pub mod bridge;
 pub mod crud;
 pub mod entity;
 pub mod event_registry;
+pub mod failure_hook;
 pub mod handle;
 pub mod state;

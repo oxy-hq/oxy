@@ -1,0 +1,344 @@
+// `useNotifications` — the person's inbox, read from inside a custom app.
+//
+// Polls the cheap unread count (Oxy's own database, never the org's store)
+// every 30 s while the tab is visible, and fetches the list only when asked —
+// the bell asks when it opens. Never throws: a server without the routes, or a
+// page nobody is signed in to, leaves `available` false and the bell renders
+// nothing; any other failure is reported on `error`.
+
+import * as React from "react";
+import { readAppEnvironment } from "./inject";
+import {
+  createInboxClient,
+  type InboxClient,
+  type InboxOutcome,
+  type NotificationItem,
+  type NotificationsScope,
+  serverScopesToApp,
+  WRITE_REFUSED
+} from "./notifications";
+import { useOxyApp, useResolvedManifest } from "./react";
+
+export interface UseNotificationsOptions {
+  /**
+   * `"app"` (default): this app's notifications only — what it sent with
+   * `ctx.notify`. `"all"`: the person's whole inbox, other apps and Oxygen's
+   * own notices included.
+   */
+  scope?: NotificationsScope;
+  /** How often to poll the unread count, in ms. Default 30 000; 0 polls once. */
+  pollInterval?: number;
+  /** How many items `refresh()` fetches. Default 20, at most 100. */
+  limit?: number;
+  /** Set false to make no requests at all. */
+  enabled?: boolean;
+}
+
+export interface UseNotificationsResult {
+  /** Newest first, read and unread. Empty until `refresh()` has run. */
+  items: NotificationItem[];
+  /** Unread count, kept current by polling. */
+  unread: number;
+  /** True while `refresh()` is fetching the list. */
+  isLoading: boolean;
+  /** The last failure, or null. Never thrown. */
+  error: Error | null;
+  /**
+   * False until the inbox has answered once, and for good when it cannot: a
+   * server without the routes, nobody signed in, or a page with no app id (a
+   * `pnpm dev` server) under `scope: "app"`. Render nothing while false.
+   */
+  available: boolean;
+  /**
+   * True on a staging or `dev-*` app host, which may read the inbox but not
+   * change read state (read state carries no environment, so it would change
+   * production's). `markRead` and `markAllRead` do nothing there.
+   */
+  readOnly: boolean;
+  /**
+   * Mark one read. Optimistic; a failure lands on `error` and the state
+   * re-syncs. A 403 (a host that refuses writes) re-syncs without an error.
+   */
+  markRead: (id: string) => Promise<void>;
+  /** Mark every item in this scope read. Same failure rules as `markRead`. */
+  markAllRead: () => Promise<void>;
+  /** Fetch the list (and the count with it). */
+  refresh: () => Promise<void>;
+}
+
+const DEFAULT_POLL_MS = 30_000;
+const DEFAULT_LIMIT = 20;
+
+type Status = "unknown" | "available" | "unavailable";
+
+/** `scope: "app"` needs to know which app this is; `pnpm dev` does not say. */
+const NO_APP_ID = new Error(
+  'useNotifications: this page has no app id (window.__OXY_APP__.appId), so scope "app" ' +
+    'cannot be honored — oxy sets it when it serves the app. Use scope: "all" in pnpm dev.'
+);
+
+/** A server that ignored `app_id`: its "mark all read" would clear every app's. */
+const NOT_SCOPED = new Error(
+  "useNotifications: this server cannot narrow the inbox to one app yet, so the app's " +
+    'inbox is hidden. Use scope: "all", or upgrade the server.'
+);
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function markAllInList(items: NotificationItem[]): NotificationItem[] {
+  const at = nowIso();
+  return items.map((i) => (i.read_at === null ? { ...i, read_at: at } : i));
+}
+
+/**
+ * The person's notifications, from inside a custom app. Must be called inside
+ * `<OxyAppProvider>`.
+ *
+ * ```tsx
+ * const inbox = useNotifications();
+ * if (!inbox.available) return null;
+ * return <button onClick={() => void inbox.refresh()}>Inbox ({inbox.unread})</button>;
+ * ```
+ */
+export function useNotifications(opts: UseNotificationsOptions = {}): UseNotificationsResult {
+  const { fetcher } = useOxyApp();
+  const { appId, apiBaseUrl } = useResolvedManifest();
+  const scope = opts.scope ?? "app";
+  const enabled = opts.enabled !== false;
+  const pollInterval = Math.max(0, opts.pollInterval ?? DEFAULT_POLL_MS);
+  const limit = Math.min(100, Math.max(1, opts.limit ?? DEFAULT_LIMIT));
+  const missingApp = scope === "app" && !appId;
+  // Absent on a server older than app environments, which is production.
+  const environment = readAppEnvironment();
+  const readOnly = environment !== undefined && environment !== "production";
+
+  const client = React.useMemo(
+    () => createInboxClient(fetcher, apiBaseUrl, scope === "app" ? appId : undefined),
+    [fetcher, apiBaseUrl, scope, appId]
+  );
+  const store = useInboxState(missingApp, client);
+  const refresh = useRefresh(client, store, { scope, limit, missingApp });
+  const pollUnread = usePollUnread(client, store, refresh);
+  usePolling(enabled && !missingApp && store.status !== "unavailable", pollInterval, pollUnread);
+  const { markRead, markAllRead } = useMarking(client, store, {
+    scope,
+    readOnly,
+    refresh,
+    pollUnread
+  });
+
+  return {
+    items: store.items,
+    unread: store.unread,
+    isLoading: store.isLoading,
+    error: store.error,
+    available: store.status === "available",
+    readOnly,
+    markRead,
+    markAllRead,
+    refresh
+  };
+}
+
+// ── State ───────────────────────────────────────────────────────────────────
+
+interface InboxState {
+  items: NotificationItem[];
+  unread: number;
+  isLoading: boolean;
+  error: Error | null;
+  status: Status;
+  set: React.Dispatch<React.SetStateAction<Snapshot>>;
+  /** Mutable facts the callbacks read without re-subscribing. */
+  live: React.MutableRefObject<{
+    mounted: boolean;
+    items: NotificationItem[];
+    unread: number;
+    listed: boolean;
+    scoped: boolean | null;
+  }>;
+}
+
+type Snapshot = Omit<InboxState, "set" | "live">;
+
+function initialSnapshot(missingApp: boolean): Snapshot {
+  return {
+    items: [],
+    unread: 0,
+    isLoading: false,
+    error: missingApp ? NO_APP_ID : null,
+    status: missingApp ? "unavailable" : "unknown"
+  };
+}
+
+/** The hook's state, started over when what it reads changes (`client`: scope, app). */
+function useInboxState(missingApp: boolean, client: InboxClient): InboxState {
+  const [state, set] = React.useState<Snapshot>(() => initialSnapshot(missingApp));
+  const live = React.useRef({
+    mounted: true,
+    items: state.items,
+    unread: state.unread,
+    listed: false,
+    scoped: null as boolean | null
+  });
+  live.current.items = state.items;
+  live.current.unread = state.unread;
+  React.useEffect(() => {
+    live.current.mounted = true;
+    return () => {
+      live.current.mounted = false;
+    };
+  }, []);
+  const readFrom = React.useRef(client);
+  React.useEffect(() => {
+    if (readFrom.current === client) return;
+    readFrom.current = client;
+    live.current.listed = false;
+    live.current.scoped = null;
+    set(initialSnapshot(missingApp));
+  }, [client, missingApp]);
+  return { ...state, set, live };
+}
+
+/** Record a failed request: `unavailable` turns the inbox off for good. */
+function fail(
+  set: InboxState["set"],
+  outcome: Extract<InboxOutcome<unknown>, { ok: false }>
+): void {
+  set((s) => ({
+    ...s,
+    isLoading: false,
+    error: outcome.error,
+    status: outcome.unavailable ? "unavailable" : s.status
+  }));
+}
+
+// ── Reads ───────────────────────────────────────────────────────────────────
+
+function useRefresh(
+  client: InboxClient,
+  { set, live }: InboxState,
+  opts: { scope: NotificationsScope; limit: number; missingApp: boolean }
+): () => Promise<void> {
+  const { scope, limit, missingApp } = opts;
+  return React.useCallback(async () => {
+    if (missingApp) return;
+    set((s) => ({ ...s, isLoading: true }));
+    const r = await client.list(limit);
+    if (!live.current.mounted) return;
+    if (!r.ok) return fail(set, r);
+    const scoped = serverScopesToApp(r.value.items);
+    if (scope === "app" && scoped === false) {
+      live.current.scoped = false;
+      set((s) => ({ ...s, isLoading: false, error: NOT_SCOPED, status: "unavailable" }));
+      return;
+    }
+    if (scoped) live.current.scoped = true;
+    live.current.listed = true;
+    set({
+      items: r.value.items,
+      unread: r.value.unread,
+      isLoading: false,
+      error: null,
+      status: "available"
+    });
+  }, [client, limit, scope, missingApp, set, live]);
+}
+
+function usePollUnread(
+  client: InboxClient,
+  { set, live }: InboxState,
+  refresh: () => Promise<void>
+): () => Promise<void> {
+  return React.useCallback(async () => {
+    const r = await client.unread();
+    if (!live.current.mounted) return;
+    if (!r.ok) return fail(set, r);
+    const changed = r.value !== live.current.unread;
+    set((s) => ({ ...s, unread: r.value, error: null, status: "available" }));
+    // The list is open somewhere and something arrived (or was read elsewhere).
+    if (changed && live.current.listed) void refresh();
+  }, [client, refresh, set, live]);
+}
+
+/** Poll now, every `interval` ms while the tab is visible, and on coming back to it. */
+function usePolling(active: boolean, interval: number, poll: () => Promise<void>): void {
+  React.useEffect(() => {
+    if (!active || typeof document === "undefined") return;
+    const tick = () => {
+      if (!document.hidden) void poll();
+    };
+    tick();
+    const id = interval > 0 ? setInterval(tick, interval) : null;
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      if (id !== null) clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [active, interval, poll]);
+}
+
+// ── Writes ──────────────────────────────────────────────────────────────────
+
+interface MarkingDeps {
+  scope: NotificationsScope;
+  readOnly: boolean;
+  refresh: () => Promise<void>;
+  pollUnread: () => Promise<void>;
+}
+
+function useMarking(
+  client: InboxClient,
+  { set, live }: InboxState,
+  { scope, readOnly, refresh, pollUnread }: MarkingDeps
+): Pick<UseNotificationsResult, "markRead" | "markAllRead"> {
+  /**
+   * After a write: re-sync with the server — the open list if there is one,
+   * else the count — then report a failure (after, so the re-sync's success
+   * does not wipe it). A 403 is a host that refuses writes, not a failure to
+   * show; the bell stays up.
+   */
+  const settle = React.useCallback(
+    async (r: InboxOutcome<void>, always: boolean) => {
+      if (!live.current.mounted || (r.ok && !always)) return;
+      await (live.current.listed ? refresh() : pollUnread());
+      if (r.ok || r.status === WRITE_REFUSED || !live.current.mounted) return;
+      set((s) => ({ ...s, error: r.error }));
+    },
+    [set, live, refresh, pollUnread]
+  );
+
+  const markRead = React.useCallback(
+    async (id: string) => {
+      if (readOnly) return;
+      const known = live.current.items.find((i) => i.id === id);
+      if (known && known.read_at !== null) return;
+      const at = nowIso();
+      set((s) => ({
+        ...s,
+        items: s.items.map((i) => (i.id === id ? { ...i, read_at: at } : i)),
+        unread: known ? Math.max(0, s.unread - 1) : s.unread
+      }));
+      // An item that was not in the list was not counted down: re-sync then too.
+      await settle(await client.markRead(id), !known);
+    },
+    [client, set, live, readOnly, settle]
+  );
+
+  const markAllRead = React.useCallback(async () => {
+    if (readOnly) return;
+    // Never "read-all" under an app scope the server may not honor: learn first.
+    // (A function, so the check after the await reads the ref afresh.)
+    const confirmed = () => live.current.scoped === true;
+    if (scope === "app" && !confirmed()) {
+      await refresh();
+      if (!confirmed()) return;
+    }
+    set((s) => ({ ...s, items: markAllInList(s.items), unread: 0 }));
+    await settle(await client.markAllRead(), false);
+  }, [client, scope, set, live, readOnly, refresh, settle]);
+
+  return { markRead, markAllRead };
+}

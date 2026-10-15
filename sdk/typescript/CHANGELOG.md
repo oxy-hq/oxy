@@ -5,6 +5,48 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.0] - 2026-10-14
+
+### Added
+
+- **`ctx.notify` — tell people in this org something.** A function names
+  people (`{ userId }`, `{ role, location? }`, `{ team }`), a declared `kind`,
+  a `title`, and optionally a `body`, a `link` inside the app, `email`, `slack`
+  and an `idempotencyKey`. Each person gets an inbox row (frontline crew
+  included), then push, email or Slack where they can be reached. Needs
+  `"notify": { "kinds": { … } }` on the function in `oxy-app.json` and an OLTP
+  store for the org. Kinds starting with `oxy.` are Oxygen's own and refused
+  (`NotifyKindReserved`). `NotifyInput`, `NotifyResult` and `NotifyTarget` are
+  exported from the root, and `createTestContext` enforces the capability and
+  the declared kinds in the host's words and records each send on
+  `state.notifications`.
+- **`useNotifications()` and `<NotificationsBell />` — the inbox inside the
+  app.** A custom app opens in its own tab, so people who live in one app
+  (crew on a kiosk, a single-app user) never saw Oxygen's bell. Drop
+  `<NotificationsBell />` into the app's header: a bell with an unread badge
+  that opens this app's notifications, newest first, with "Mark all read". A
+  tap on one of this app's opens it in place — `onNavigate(link)` for the
+  app's router, else the page navigates to the link under the app's base path;
+  another app's or one of Oxygen's own opens where Oxygen would, in a new tab.
+  It polls the unread count every 30 s while the tab is visible and fetches
+  the list only when opened. `scope: "all"` shows the whole inbox. Inline
+  styles only; theme it with `--oxy-notifications-*` CSS variables (it also
+  follows `<OxyShell>`'s tokens and Tailwind v4 `--color-*` ones).
+  `useNotifications()` is the same data for an app that draws its own. On a
+  staging or `dev-*` host it is read-only (`readOnly: true`): read state is
+  shared with production, so the bell shows no "Mark all read" and a tap does
+  not mark read.
+
+  **Renders nothing where there is no inbox:** a server without
+  `/api/notifications`, a page nobody is signed in to, or `pnpm dev` (which
+  has no app id; use `scope: "all"` there). It needs a server that takes
+  `app_id` on the inbox routes; on one that ignores it, the app's inbox hides
+  itself rather than show, or mark read, other apps' notifications.
+- **`createTestInbox()` in `@oxy-hq/sdk/testing`** — a `fetch` that answers the
+  inbox routes from items a test holds, for `<OxyAppProvider fetcher={…}>`.
+  `inbox.receive(state.notifications[0].input)` shows what a function test
+  sent with `ctx.notify`.
+
 ## [2.17.0] - 2026-10-03
 
 ### Changed

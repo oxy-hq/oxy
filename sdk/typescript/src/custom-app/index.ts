@@ -32,6 +32,9 @@ export type {
   EmailAttachment,
   EmailSendInput,
   EmailSendResult,
+  NotifyInput,
+  NotifyResult,
+  NotifyTarget,
   OxyAirhouseApi,
   OxyAirwayApi,
   OxyCryptoApi,
@@ -105,6 +108,17 @@ export {
   useSensitivity,
   useTimeDimensions
 } from "./metric-tree-hooks";
+// The in-app inbox: the person's notifications, read from inside the app
+export type {
+  NotificationApp,
+  NotificationItem,
+  NotificationsPage,
+  NotificationsScope
+} from "./notifications";
+export type { NotificationsBellProps } from "./notifications-bell";
+export { NotificationsBell } from "./notifications-bell";
+export type { UseNotificationsOptions, UseNotificationsResult } from "./notifications-hooks";
+export { useNotifications } from "./notifications-hooks";
 export type {
   AgentArtifact,
   AgentRunEvent,

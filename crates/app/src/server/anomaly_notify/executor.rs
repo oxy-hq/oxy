@@ -4,8 +4,9 @@
 //! `internal-docs/agentic-runtime-integration.md` ("One-shot queue work").
 //!
 //! All this file decides is *where* a workspace's message goes — its org's
-//! Slack installation, the channel the payload names. What is announced, and
-//! the claim around it, is `oxy_metric_monitoring::notify`.
+//! Slack installation and the channel the payload names, and the people it
+//! names (`people.rs`). What is announced, and the claim around it, is
+//! `oxy_metric_monitoring::notify`.
 
 use agentic_core::delegation::{TaskAssignment, TaskOutcome, TaskSpec};
 use agentic_runtime::worker::{ExecutingTask, TaskExecutor};
@@ -20,6 +21,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use super::people::PeopleInbox;
 use super::{ANOMALY_NOTIFY_KIND, AnomalyNotifyPayload};
 use crate::integrations::slack::config::SlackConfig;
 use crate::integrations::slack::services::installations::InstallationsService;
@@ -87,7 +89,9 @@ async fn outcome_of(db: &DatabaseConnection, payload: &AnomalyNotifyPayload) -> 
     }
 }
 
-/// Find the workspace's Slack and announce what is due. The `Ok` text is the
+/// Announce what is due to every destination the block names: its Slack
+/// channel, its people, or both. Each claims on its own, so one failing still
+/// lets the other announce; the run fails if either did. The `Ok` text is the
 /// run's answer; the `Err` text is what a failed run shows, so each one names
 /// what to change.
 async fn deliver(
@@ -101,20 +105,7 @@ async fn deliver(
         .ok_or("the workspace no longer exists")?;
     let org_id = workspace
         .org_id
-        .ok_or("the workspace belongs to no org, so it has no Slack to post to")?;
-    let installation = InstallationsService::find_active_by_org(org_id)
-        .await
-        .map_err(|e| format!("load Slack installation: {e}"))?
-        .ok_or("`.monitor.yml` has a `notify:` block, but this org has not connected Slack")?;
-    let bot_token = InstallationsService::decrypt_bot_token(&installation)
-        .await
-        .map_err(|e| format!("open the Slack bot token: {e}"))?;
-
-    let to = SlackChannel {
-        client: SlackClient::new(),
-        bot_token,
-        channel: payload.notify.slack_channel.clone(),
-    };
+        .ok_or("the workspace belongs to no org, so it has nobody to tell")?;
     let inbox_url = inbox_url(db, org_id, workspace.id).await;
     let heading = Heading {
         workspace_name: &workspace.name,
@@ -125,11 +116,56 @@ async fn deliver(
         min_severity: payload.notify.min_severity,
         now: Utc::now(),
     };
-    match announce(db, due, heading, &to).await {
-        Ok(0) => Ok("nothing new to announce".to_string()),
-        Ok(events) => Ok(format!("announced {events} insight(s) in {}", to.channel)),
-        Err(e) => Err(e.to_string()),
+    let mut said = Vec::new();
+    let mut failed = Vec::new();
+    if let Some(channel) = &payload.notify.slack_channel {
+        match slack_channel(org_id, channel).await {
+            Ok(to) => match announce(db, due, heading, &to).await {
+                Ok(0) => {}
+                Ok(events) => said.push(format!("announced {events} insight(s) in {channel}")),
+                Err(e) => failed.push(e.to_string()),
+            },
+            Err(e) => failed.push(e),
+        }
     }
+    if !payload.notify.people.is_empty() {
+        match PeopleInbox::resolve(db, org_id, workspace.id, &payload.notify).await {
+            Ok(to) => match announce(db, due, heading, &to).await {
+                Ok(0) => {}
+                Ok(events) => said.push(format!(
+                    "told {} people about {events} insight(s)",
+                    to.reach()
+                )),
+                Err(e) => failed.push(e.to_string()),
+            },
+            Err(e) => failed.push(e),
+        }
+    }
+    if !failed.is_empty() {
+        return Err(failed.join("; "));
+    }
+    Ok(match said.is_empty() {
+        true => "nothing new to announce".to_string(),
+        false => said.join("; "),
+    })
+}
+
+/// The org's Slack, posting to `channel` as the org's Oxygen app.
+async fn slack_channel(org_id: Uuid, channel: &str) -> Result<SlackChannel, String> {
+    let installation = InstallationsService::find_active_by_org(org_id)
+        .await
+        .map_err(|e| format!("load Slack installation: {e}"))?
+        .ok_or(
+            "`.monitor.yml` names a `notify.slack_channel`, but this org has not connected Slack",
+        )?;
+    let bot_token = InstallationsService::decrypt_bot_token(&installation)
+        .await
+        .map_err(|e| format!("open the Slack bot token: {e}"))?;
+    Ok(SlackChannel {
+        client: SlackClient::new(),
+        bot_token,
+        channel: channel.to_string(),
+    })
 }
 
 /// The workspace's Insights Inbox on the main site, when this deployment knows

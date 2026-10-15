@@ -70,6 +70,19 @@ const SLUG_MAX_LEN = 63;
 // publish.
 const FUNCTION_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 
+/** Notification kinds an app may not declare: kept for Oxygen's own notices. */
+const RESERVED_NOTIFY_KIND_PREFIX = "oxy.";
+
+/** The `notify.kinds` of one function entry that are in the reserved namespace. */
+function reservedNotifyKinds(spec: unknown): string[] {
+  if (!spec || typeof spec !== "object") return [];
+  const notify = (spec as { notify?: unknown }).notify;
+  if (!notify || typeof notify !== "object") return [];
+  const kinds = (notify as { kinds?: unknown }).kinds;
+  if (!kinds || typeof kinds !== "object") return [];
+  return Object.keys(kinds).filter((k) => k.startsWith(RESERVED_NOTIFY_KIND_PREFIX));
+}
+
 export interface OxyAppPluginOptions {
   /**
    * Path to the manifest, relative to project root. Default: oxy-app.json.
@@ -398,10 +411,17 @@ export function validateManifest(m: OxyManifest): string[] {
     ) {
       errors.push("functions must be an object keyed by function name.");
     } else {
-      for (const name of Object.keys(m.functions as Record<string, unknown>)) {
+      for (const [name, spec] of Object.entries(m.functions as Record<string, unknown>)) {
         if (!FUNCTION_NAME_PATTERN.test(name)) {
           errors.push(
             `function name "${name}" is malformed; must match ${FUNCTION_NAME_PATTERN.source}.`
+          );
+        }
+        for (const kind of reservedNotifyKinds(spec)) {
+          errors.push(
+            `function "${name}" declares notify kind "${kind}", which starts with ` +
+              `"${RESERVED_NOTIFY_KIND_PREFIX}" — reserved for Oxygen's own notices; rename it. ` +
+              `oxyc publish and the server refuse it otherwise.`
           );
         }
       }

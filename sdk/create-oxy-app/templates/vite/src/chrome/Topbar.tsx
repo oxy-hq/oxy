@@ -1,3 +1,4 @@
+import { NotificationsBell } from "@oxy-hq/sdk";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
@@ -13,7 +14,12 @@ function useLocalClock(): string {
   return now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-// The 36px top bar: OXYGEN wordmark · breadcrumb · live status.
+// The 36px top bar: OXYGEN wordmark · breadcrumb · live status · inbox.
+//
+// <NotificationsBell /> is the person's inbox for THIS app: what your
+// functions send with `ctx.notify`. It renders nothing until the inbox answers,
+// so it is safe before your app sends anything. With a router, pass
+// `onNavigate={(link) => navigate(link)}` so a tap stays in the SPA.
 export function Topbar({ breadcrumb }: { breadcrumb: ReactNode }) {
   const time = useLocalClock();
   return (
@@ -28,6 +34,7 @@ export function Topbar({ breadcrumb }: { breadcrumb: ReactNode }) {
         />
         <span>live · {time}</span>
       </div>
+      <NotificationsBell />
     </header>
   );
 }

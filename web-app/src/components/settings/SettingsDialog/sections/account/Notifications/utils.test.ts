@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deviceCount, humanizeKind } from "./utils";
+import { deviceCount, humanizeKind, kindLabel } from "./utils";
 
 describe("humanizeKind", () => {
   it("reads a kind as words, first letter up", () => {
@@ -22,5 +22,22 @@ describe("deviceCount", () => {
     expect(deviceCount(0)).toBe("Not on any device yet");
     expect(deviceCount(1)).toBe("Reaches 1 device");
     expect(deviceCount(3)).toBe("Reaches 3 devices");
+  });
+});
+
+describe("kindLabel", () => {
+  it("names Oxygen's own kinds", () => {
+    expect(kindLabel("oxy.billing_past_due")).toBe("Billing past due");
+    expect(kindLabel("oxy.workspace_ready")).toBe("Workspace ready");
+    expect(kindLabel("oxy.run_failed")).toBe("Run failed");
+    expect(kindLabel("oxy.anomaly")).toBe("Anomalies");
+  });
+
+  it("humanizes an Oxygen kind it does not know yet, without the prefix", () => {
+    expect(kindLabel("oxy.seat_limit_near")).toBe("Seat limit near");
+  });
+
+  it("humanizes an app's kind as before", () => {
+    expect(kindLabel("list_overdue")).toBe("List overdue");
   });
 });

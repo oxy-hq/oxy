@@ -14,6 +14,8 @@
 const OPEN_INBOX_MESSAGE = "oxy:open-notifications";
 const INBOX_CHANGED_MESSAGE = "oxy:inbox-changed";
 const INBOX_URL = "/?notifications=open";
+// The installable app's icon (public/manifest.webmanifest), so a push reads as Oxygen's.
+const ICON_URL = "/icons/icon-192.png";
 
 self.addEventListener("install", () => {
   // Nothing to cache, so nothing for an old version to keep consistent.
@@ -31,6 +33,7 @@ self.addEventListener("push", (event) => {
     (async () => {
       await self.registration.showNotification("Oxygen", {
         body: "You have a new notification",
+        icon: ICON_URL,
         tag: "oxy-inbox",
         renotify: true,
         data: { url: INBOX_URL }

@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { CliError, ExitCode } from "../util/errors.js";
-import { isValidFunctionName } from "./manifest.js";
+import { isValidFunctionName, type PublishManifest } from "./manifest.js";
 
 /** What sits in `functions/` that this publish did not put there, sorted. */
 export interface FunctionsDirConflicts {
@@ -201,4 +201,33 @@ export function validateFunctionNames(declared: string[]): void {
       hint: "function names must match ^[a-z][a-z0-9-]{0,63}$"
     });
   }
+}
+
+/** Notification kinds an app may not declare: kept for Oxygen's own notices. */
+export const RESERVED_NOTIFY_KIND_PREFIX = "oxy.";
+
+/**
+ * Refuse a function that declares a `notify` kind in Oxygen's reserved
+ * namespace, before anything is built. The server refuses the publish anyway
+ * (422 `notify_kind_reserved`) and `ctx.notify` refuses the call
+ * (`NotifyKindReserved`); this says so before a build is spent on it.
+ */
+export function validateNotifyKinds(manifest: PublishManifest | undefined): void {
+  const reserved: string[] = [];
+  for (const [name, spec] of Object.entries(manifest?.functions ?? {})) {
+    const kinds = spec?.notify?.kinds;
+    if (!kinds || typeof kinds !== "object") continue;
+    for (const kind of Object.keys(kinds)) {
+      if (kind.startsWith(RESERVED_NOTIFY_KIND_PREFIX)) reserved.push(`  ${name}: ${kind}`);
+    }
+  }
+  if (reserved.length === 0) return;
+  throw new CliError(
+    `${reserved.length} notify kind(s) start with "${RESERVED_NOTIFY_KIND_PREFIX}", which is reserved for Oxygen's own notices`,
+    {
+      code: ExitCode.USAGE,
+      detail: reserved.join("\n"),
+      hint: 'rename each kind in oxy-app.json `functions.<name>.notify.kinds` (e.g. "low_stock")'
+    }
+  );
 }

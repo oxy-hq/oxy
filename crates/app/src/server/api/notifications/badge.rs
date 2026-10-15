@@ -31,16 +31,10 @@ pub async fn unread(
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let mut find = notifications::Entity::find()
-        .filter(notifications::Column::UserId.eq(user.id))
+    let find = q
+        .scope()
+        .apply(notifications::Entity::find(), &user)
         .filter(notifications::Column::ReadAt.is_null());
-    if let Some(org) = q.org_id {
-        find = find.filter(notifications::Column::OrgId.eq(org));
-    }
-    let blocked = user.blocked_orgs();
-    if !blocked.is_empty() {
-        find = find.filter(notifications::Column::OrgId.is_not_in(blocked.iter().copied()));
-    }
     let unread = find
         .count(&db)
         .await

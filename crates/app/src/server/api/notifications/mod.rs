@@ -6,8 +6,9 @@
 //! platform decides how each one is reached. That is the whole reason this is a
 //! platform service rather than `ctx.email.send` plus `ctx.fetch`: Oxy owns the
 //! identity (members, positions, frontline crew with no mailbox) and keeps the
-//! addresses away from app code. Custom apps reach it through `ctx.notify`;
-//! the product itself through [`deliver::notify`]. Both are [`send::send`].
+//! addresses away from app code. Custom apps reach it through `ctx.notify`
+//! ([`send::send`]); the product itself through [`platform::notify`], whose
+//! notices store a kind and a subject and are rendered from Oxy's records.
 //!
 //! # Two halves, deliberately not one
 //!
@@ -44,6 +45,7 @@ pub mod handlers;
 pub mod inbox_view;
 pub mod input;
 pub mod links;
+pub mod platform;
 pub mod preferences;
 pub mod recipients;
 pub mod send;

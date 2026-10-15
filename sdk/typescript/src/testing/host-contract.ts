@@ -139,6 +139,13 @@ export const REFUSALS = {
     refusal:
       'NotifyKindUndeclared: kind `{kind}` is not declared for this function (add "notify": { "kinds": { "{kind}": {} } } to its oxy-app.json entry) — a kind is what a person mutes, so each one is named up front'
   },
+  // Checked while the payload is parsed, after the capability and before the
+  // declared-kinds check; `{prefix}` is `RESERVED_KIND_PREFIX` (`oxy.`).
+  notifyKindReserved: {
+    source: "notifications/input.rs",
+    refusal:
+      "NotifyKindReserved: kind `{kind}` starts with `{prefix}`, which is reserved for Oxygen's own notices; rename it"
+  },
   orgPeople: {
     source: "host.rs",
     refusal:
@@ -401,6 +408,12 @@ export const FETCH_MAX_BYTES = 10 * 1024 * 1024;
 
 /** `MAX_OPEN` in `tx.rs`: transactions one invocation may hold open at once. */
 export const MAX_OPEN_TRANSACTIONS = 4;
+
+/**
+ * `RESERVED_KIND_PREFIX` in `notifications/input.rs`: notification kinds an app
+ * may not declare or send, kept for Oxygen's own notices.
+ */
+export const RESERVED_NOTIFY_KIND_PREFIX = "oxy.";
 
 /**
  * How each dialect names itself in a refusal — `SqlDialect::as_str` in the

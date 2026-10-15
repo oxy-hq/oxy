@@ -35,9 +35,12 @@ use super::message::Bucket;
 use crate::detect::{Severity, severity_rank, severity_rank_case_sql};
 use crate::persist::severity_to_str;
 
-/// The only channel there is so far. In the key so that a second one — a
-/// digest, an email — claims on its own.
+/// A Slack channel (`notify.slack_channel`). The channel is in the key so
+/// that each one claims on its own: a refused Slack post leaves the inbox
+/// announcement standing, and the other way round.
 pub const CHANNEL_SLACK: &str = "slack";
+/// The inboxes of the people `notify.people` names.
+pub const CHANNEL_INBOX: &str = "inbox";
 
 /// How long after a bucket is first detected it can still cause an
 /// announcement.
@@ -74,9 +77,20 @@ fn due_params(due: Due) -> Vec<Value> {
     ]
 }
 
-/// Whether a claim made now would take anything — read by the scan to decide
-/// if a delivery task is worth queueing. Advisory: [`claim`] decides.
+/// Whether a Slack claim made now would take anything. [`anything_due_on`]
+/// for the Slack channel.
 pub async fn anything_due(db: &impl ConnectionTrait, due: Due) -> Result<bool, DbErr> {
+    anything_due_on(db, due, CHANNEL_SLACK).await
+}
+
+/// Whether a claim on `channel` made now would take anything — read by the
+/// scan to decide if a delivery task is worth queueing. Advisory: [`claim_on`]
+/// decides.
+pub async fn anything_due_on(
+    db: &impl ConnectionTrait,
+    due: Due,
+    channel: &str,
+) -> Result<bool, DbErr> {
     let sql = format!(
         "SELECT EXISTS (\
            SELECT 1 FROM ({due_events}) d \
@@ -87,7 +101,7 @@ pub async fn anything_due(db: &impl ConnectionTrait, due: Due) -> Result<bool, D
         due_events = due_events_sql(),
     );
     let mut params = due_params(due);
-    params.push(CHANNEL_SLACK.into());
+    params.push(channel.into());
     params.push(at(grace_cutoff(due.now)));
     let row = db.query_one_raw(statement(sql, params)).await?;
     match row {
@@ -96,13 +110,24 @@ pub async fn anything_due(db: &impl ConnectionTrait, due: Due) -> Result<bool, D
     }
 }
 
-/// Claim every due event not already announced, under `claim_id`, and return
-/// how many were taken. Atomic per event: the upsert's `WHERE` is the only
-/// thing that lets a second claimant in, and it admits only a stale,
-/// undelivered row.
+/// [`claim_on`] the Slack channel.
 pub async fn claim(
     db: &impl ConnectionTrait,
     due: Due,
+    destination: &str,
+    claim_id: Uuid,
+) -> Result<u64, DbErr> {
+    claim_on(db, due, CHANNEL_SLACK, destination, claim_id).await
+}
+
+/// Claim on `channel` every due event not already announced there, under
+/// `claim_id`, and return how many were taken. Atomic per event: the upsert's
+/// `WHERE` is the only thing that lets a second claimant in, and it admits
+/// only a stale, undelivered row.
+pub async fn claim_on(
+    db: &impl ConnectionTrait,
+    due: Due,
+    channel: &str,
     destination: &str,
     claim_id: Uuid,
 ) -> Result<u64, DbErr> {
@@ -120,7 +145,7 @@ pub async fn claim(
     );
     let mut params = due_params(due);
     params.extend([
-        CHANNEL_SLACK.into(),
+        channel.into(),
         destination.into(),
         claim_id.into(),
         at(due.now),

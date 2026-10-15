@@ -31,6 +31,47 @@ export function pushSupported(): boolean {
   );
 }
 
+/** What `pushNeedsHomeScreen` reads from the browser. */
+export interface PushEnvironment {
+  userAgent: string;
+  platform: string;
+  maxTouchPoints: number;
+  /** Running as an installed web app (`display-mode: standalone`, or iOS's `navigator.standalone`). */
+  standalone: boolean;
+}
+
+/** `iPhone OS 17_5 like Mac OS X`, `CPU OS 16_3 like Mac OS X` — not a Mac's `OS X 10_15_7`. */
+const IOS_VERSION = /\bOS (\d+)_(\d+)(?:_\d+)? like Mac OS X/;
+
+/**
+ * True for an iPhone or iPad browsing in a tab. iOS gives push only to a web app
+ * added to the Home Screen (iOS 16.4 and later), so there the way to turn it on
+ * is to install Oxygen first. False inside the installed app, on any other
+ * device, and on an iOS too old to have web push at all.
+ */
+export function pushNeedsHomeScreen(env: PushEnvironment): boolean {
+  if (env.standalone) return false;
+  // iPadOS asks for the desktop site by default, so it reads as a Mac with a touchscreen.
+  const iPadAsMac = env.platform === "MacIntel" && env.maxTouchPoints > 1;
+  if (!/iPhone|iPad|iPod/.test(env.userAgent) && !iPadAsMac) return false;
+  const version = IOS_VERSION.exec(env.userAgent);
+  if (!version) return true;
+  const [major, minor] = [Number(version[1]), Number(version[2])];
+  return major > 16 || (major === 16 && minor >= 4);
+}
+
+/** `pushNeedsHomeScreen` for the browser this page is running in. */
+export function pushNeedsHomeScreenHere(): boolean {
+  if (typeof window === "undefined") return false;
+  const nav = navigator as Navigator & { standalone?: boolean };
+  return pushNeedsHomeScreen({
+    userAgent: nav.userAgent,
+    platform: nav.platform,
+    maxTouchPoints: nav.maxTouchPoints,
+    standalone: nav.standalone === true || window.matchMedia("(display-mode: standalone)").matches
+  });
+}
+
 /** A VAPID public key (base64url, unpadded) as the bytes `subscribe` wants. */
 export function urlBase64ToUint8Array(base64Url: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64Url.length % 4)) % 4);

@@ -33,6 +33,7 @@ import {
   type HostOp,
   MAX_OPEN_TRANSACTIONS,
   REFUSALS,
+  RESERVED_NOTIFY_KIND_PREFIX,
   SURFACES
 } from "./host-contract";
 import { contextError, hostError, isHostError, refuse } from "./host-error";
@@ -608,6 +609,14 @@ export function createTestContext(
       op("notify", { ...input }, (a) => {
         if (gates.notifyKinds === null) throw refuse(SURFACES.notify, REFUSALS.notifyCapability);
         const kind = String(a.kind);
+        // Parsing the payload refuses the platform's namespace before the
+        // declared kinds are read, so it wins even over a manifest declaring it.
+        if (kind.startsWith(RESERVED_NOTIFY_KIND_PREFIX)) {
+          throw refuse(SURFACES.notify, REFUSALS.notifyKindReserved, {
+            kind,
+            prefix: RESERVED_NOTIFY_KIND_PREFIX
+          });
+        }
         // `Object.keys`, not `in` (which also finds "constructor") and not
         // `Object.hasOwn`, which this package's ES2020 lib does not declare.
         if (!Object.keys(gates.notifyKinds).includes(kind)) {

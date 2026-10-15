@@ -45,6 +45,12 @@ pub mod session {
     };
 }
 
+/// Platform notices a surface raises when something it drives happens — the
+/// notifications service is platform, whichever context the event belongs to.
+pub mod notices {
+    pub use crate::server::api::notifications::platform::workspace_ready::notify_workspace_ready;
+}
+
 /// The CORS origin allowlist, for routes that gate on where a call came from.
 pub use crate::server::router::is_allowed_origin;
 

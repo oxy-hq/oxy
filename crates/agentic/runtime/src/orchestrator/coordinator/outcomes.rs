@@ -473,15 +473,17 @@ impl Coordinator {
             self.state.notify(&run_id);
             self.state.deregister_notifier(&run_id);
         } else {
-            // Root task failed.
-            if let Err(e) = crud::update_run_failed(&self.db, &run_id, &msg).await {
-                tracing::error!(
+            // Root task failed. Terminal: `handle_failed` already found no
+            // retry or fallback for it.
+            match crud::update_run_failed(&self.db, &run_id, &msg).await {
+                Ok(()) => crate::lifecycle::failure_hook::root_run_failed(&run_id).await,
+                Err(e) => tracing::error!(
                     target: "coordinator",
                     task_id,
                     run_id = %run_id,
                     error = %e,
                     "failed to persist run failed status"
-                );
+                ),
             }
             self.state
                 .statuses

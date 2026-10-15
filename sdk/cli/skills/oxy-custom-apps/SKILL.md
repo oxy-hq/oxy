@@ -212,6 +212,25 @@ emailed or Slacked where they can be. Needs the org's OLTP store. Use
 `ctx.email.send` only for addresses **outside** the org (a vendor, an
 accountant), and give it an `idempotencyKey` in a scheduled function.
 
+The app opens in its own tab, so show the inbox **in the app** — people who
+live in it (crew on a kiosk) never see Oxygen's bell:
+
+```tsx
+import { NotificationsBell } from "@oxy-hq/sdk";
+
+<NotificationsBell onNavigate={(link) => navigate(link)} /> // in the header
+```
+
+It lists this app's notifications (`scope="all"` for the whole inbox); a tap
+hands the `link` you passed to `ctx.notify` to `onNavigate` (without it, the
+page loads that path under the app's base). It renders nothing where there is
+no inbox (signed out, an older server, `pnpm dev`). `useNotifications()` gives
+`{ items, unread, markRead, markAllRead, refresh, … }` to draw your own. Theme
+it with `--oxy-notifications-*` CSS variables. Push sign-up and mutes stay in
+Oxygen's Settings → Notifications — don't build them. In tests,
+`createTestInbox()` from `@oxy-hq/sdk/testing` is a fake inbox to pass as
+`<OxyAppProvider fetcher={inbox.fetcher}>`.
+
 ## Four pitfalls
 
 - **CORS errors are usually wrong-URL errors in disguise.** The SDK's

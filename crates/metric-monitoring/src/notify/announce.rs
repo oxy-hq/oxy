@@ -9,18 +9,46 @@ use async_trait::async_trait;
 use sea_orm::{ConnectionTrait, DbErr};
 use uuid::Uuid;
 
-use super::ledger::{self, Due};
-use super::message::{self, SlackMessage};
+use super::ledger::{self, CHANNEL_SLACK, Due};
+use super::message::{self, Bucket, SlackMessage};
 
-/// Where a message goes.
+/// Where an announcement goes.
+///
+/// A Slack channel implements [`post`](Self::post) and takes the rest as
+/// given. A destination that does not speak Slack (the people's inboxes)
+/// overrides [`channel`](Self::channel) and [`deliver`](Self::deliver).
 #[async_trait]
 pub trait Destination: Send + Sync {
     /// What is recorded on the claim as where it went — the Slack channel id.
     fn id(&self) -> &str;
 
+    /// The ledger channel this destination claims under. Each channel claims
+    /// on its own, so one failing does not hold back another.
+    fn channel(&self) -> &'static str {
+        CHANNEL_SLACK
+    }
+
     /// Deliver `message`. An `Err` means it did not go out; its text is shown
     /// to whoever reads the failed run.
-    async fn post(&self, message: &SlackMessage) -> Result<(), String>;
+    async fn post(&self, _message: &SlackMessage) -> Result<(), String> {
+        Err(format!("{} does not post Slack messages", self.channel()))
+    }
+
+    /// Deliver the claimed `buckets` and return how many events that was, or
+    /// `None` when there turned out to be nothing to say. The default builds
+    /// the Slack message and [`post`](Self::post)s it.
+    async fn deliver(
+        &self,
+        heading: Heading<'_>,
+        buckets: &[Bucket],
+    ) -> Result<Option<usize>, String> {
+        let Some(message) = message::build(heading.workspace_name, heading.inbox_url, buckets)
+        else {
+            return Ok(None);
+        };
+        self.post(&message).await?;
+        Ok(Some(message.events))
+    }
 }
 
 /// What the message says around the events themselves.
@@ -56,7 +84,7 @@ pub async fn announce(
     to: &dyn Destination,
 ) -> Result<usize, AnnounceError> {
     let claim_id = Uuid::new_v4();
-    if ledger::claim(db, due, to.id(), claim_id).await? == 0 {
+    if ledger::claim_on(db, due, to.channel(), to.id(), claim_id).await? == 0 {
         return Ok(0);
     }
     let workspace_id = due.workspace_id;
@@ -103,9 +131,7 @@ async fn compose_and_post(
     to: &dyn Destination,
 ) -> Result<Option<usize>, AnnounceError> {
     let buckets = ledger::claimed_buckets(db, workspace_id, claim_id).await?;
-    let Some(message) = message::build(heading.workspace_name, heading.inbox_url, &buckets) else {
-        return Ok(None);
-    };
-    to.post(&message).await.map_err(AnnounceError::Refused)?;
-    Ok(Some(message.events))
+    to.deliver(heading, &buckets)
+        .await
+        .map_err(AnnounceError::Refused)
 }

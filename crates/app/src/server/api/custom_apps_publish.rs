@@ -1264,9 +1264,33 @@ fn check_declared_functions(
     specs: &[(String, serde_json::Value)],
 ) -> Result<(), PublishError> {
     validate_function_names(specs)?;
+    refuse_reserved_notify_kinds(specs)?;
     let missing = missing_function_artifacts(files, specs);
     if !missing.is_empty() {
         return Err(PublishError::MissingFunctionArtifacts { missing });
+    }
+    Ok(())
+}
+
+/// A function may not declare a `notify` kind in the platform's `oxy.`
+/// namespace: `ctx.notify` refuses to send one, so the publish says so first.
+fn refuse_reserved_notify_kinds(specs: &[(String, serde_json::Value)]) -> Result<(), PublishError> {
+    use crate::server::api::notifications::input::{RESERVED_KIND_PREFIX, reserved_kinds_declared};
+    for (name, spec) in specs {
+        if let Some(kind) = reserved_kinds_declared(spec).first() {
+            return Err(PublishError::Invalid(
+                crate::server::api::custom_apps_validate::BundleValidation::new(
+                    "notify_kind_reserved",
+                    format!(
+                        "Function {name:?} declares the notify kind {kind:?}. Kinds starting \
+                         with {RESERVED_KIND_PREFIX:?} are reserved for Oxygen's own notices."
+                    ),
+                    format!(
+                        "Rename the kind in functions.{name}.notify.kinds and in the ctx.notify calls that send it."
+                    ),
+                ),
+            ));
+        }
     }
     Ok(())
 }
@@ -2644,6 +2668,20 @@ mod tests {
             msg.contains("0.5.96"),
             "names the CLI version to upgrade to: {msg}"
         );
+    }
+
+    #[test]
+    fn a_function_declaring_a_platform_notify_kind_is_refused() {
+        let specs = vec![(
+            "remind".to_string(),
+            serde_json::json!({ "notify": { "kinds": { "oxy.billing_past_due": {} } } }),
+        )];
+        let err = check_declared_functions(&[], &specs).unwrap_err();
+        assert!(
+            matches!(&err, PublishError::Invalid(v) if v.check == "notify_kind_reserved"),
+            "expected notify_kind_reserved, got {err:?}"
+        );
+        assert_eq!(err.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     #[test]

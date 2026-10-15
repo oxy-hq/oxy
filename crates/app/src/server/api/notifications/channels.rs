@@ -8,7 +8,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use entity::{device_tokens, notification_sends, organizations, slack_user_links, users};
+use entity::{
+    device_tokens, notification_sends, notifications, organizations, slack_user_links, users,
+};
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use oxy_oltp::inbox::{self, InboxMessage};
 use oxy_slack_client::SlackClient;
@@ -17,6 +19,7 @@ use uuid::Uuid;
 
 use super::deliver::{Push, PushSignal, push};
 use super::delivery::Channel;
+use super::platform::render;
 use crate::emails::app_emailer::{AppEmailer, EmailSendInput};
 use crate::integrations::slack::services::installations::InstallationsService;
 
@@ -51,27 +54,19 @@ impl Channels {
     pub async fn load(
         db: &DatabaseConnection,
         send: &notification_sends::Model,
-        users: &[Uuid],
+        signals: &[notifications::Model],
     ) -> Result<Self, String> {
-        let tokens = tokens(db, users).await?;
-        let needs_content = send.email || send.slack;
-        let content = if needs_content {
-            inbox::read(db, send.org_id, &[send.id])
-                .await
-                .map_err(|e| e.to_string())?
-                .into_iter()
-                .next()
-        } else {
-            None
-        };
+        let users: Vec<Uuid> = signals.iter().map(|s| s.user_id).collect();
+        let tokens = tokens(db, &users).await?;
+        let content = content(db, send, signals).await?;
         let (app_name, url) = names_and_url(db, send, content.as_ref()).await?;
         let email = if send.email {
-            Some((AppEmailer::from_env(app_name), addresses(db, users).await?))
+            Some((AppEmailer::from_env(app_name), addresses(db, &users).await?))
         } else {
             None
         };
         let slack = if send.slack {
-            slack_dm(send.org_id, users).await?
+            slack_dm(send.org_id, &users).await?
         } else {
             None
         };
@@ -168,6 +163,29 @@ impl Channels {
             }
         }
     }
+}
+
+/// What email and Slack say, when the send asked for either: an app's from
+/// the org's store, a platform notice's rendered from Oxy's records.
+async fn content(
+    db: &DatabaseConnection,
+    send: &notification_sends::Model,
+    signals: &[notifications::Model],
+) -> Result<Option<InboxMessage>, String> {
+    if !(send.email || send.slack) {
+        return Ok(None);
+    }
+    if let Some(signal) = signals.first().filter(|s| render::is_platform(s)) {
+        return render::message(db, signal)
+            .await
+            .map(Some)
+            .map_err(|e| format!("render the notice: {e}"));
+    }
+    Ok(inbox::read(db, send.org_id, &[send.id])
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .next())
 }
 
 async fn tokens(

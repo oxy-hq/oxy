@@ -51,6 +51,7 @@ use crate::platform::{BuilderBridges, PlatformContext, ProjectContext};
 /// enters `agentic-airway` through this facade, not directly).
 pub use crate::executor::PREVIEW_AIRWAY_SAMPLE;
 pub use crate::revert::{RevertedFile, revert_builder_file_changes};
+pub use crate::run_metadata::{STARTED_BY_KEY, stamp_started_by};
 pub use agentic_airway::preview as airway_preview;
 pub use agentic_airway::{
     AirwayMigrator, DiscoveredColumn, DiscoveredTable, SOURCE_TYPE as AIRWAY_SOURCE_TYPE,

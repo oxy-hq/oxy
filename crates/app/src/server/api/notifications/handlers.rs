@@ -24,6 +24,18 @@ pub struct InboxQuery {
     /// from, which is what a single global badge wants; the org surfaces pass
     /// it so their own badge counts only their own work.
     pub org_id: Option<Uuid>,
+    /// Narrow to one custom app's notifications — the bell inside that app.
+    /// Platform notices have no app, so they never match.
+    pub app_id: Option<Uuid>,
+}
+
+impl InboxQuery {
+    fn scope(&self) -> Scope {
+        Scope {
+            org_id: self.org_id,
+            app_id: self.app_id,
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -40,6 +52,50 @@ pub struct ReadAllQuery {
     /// failure mode here: a malformed query is a 400, and it matches `inbox`,
     /// which already takes `org_id` this way.
     pub org_id: Option<Uuid>,
+    /// One app's notifications only, as on the inbox.
+    pub app_id: Option<Uuid>,
+}
+
+impl ReadAllQuery {
+    pub(super) fn scope(&self) -> Scope {
+        Scope {
+            org_id: self.org_id,
+            app_id: self.app_id,
+        }
+    }
+}
+
+/// The narrowing every inbox route shares: the person's own signals, in the
+/// orgs the request's token reaches, optionally one org and one app.
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct Scope {
+    pub org_id: Option<Uuid>,
+    pub app_id: Option<Uuid>,
+}
+
+impl Scope {
+    /// `find` narrowed to `user`'s signals within this scope. An org that
+    /// ended the request's token's reach (API-tokens design §5) is left out,
+    /// including when `org_id` names it. Nothing is excluded for a session or
+    /// a legacy key.
+    pub(super) fn apply<Q: QueryFilter>(
+        self,
+        find: Q,
+        user: &oxy_auth::types::AuthenticatedUser,
+    ) -> Q {
+        let mut find = find.filter(notifications::Column::UserId.eq(user.id));
+        if let Some(org) = self.org_id {
+            find = find.filter(notifications::Column::OrgId.eq(org));
+        }
+        if let Some(app) = self.app_id {
+            find = find.filter(notifications::Column::AppId.eq(app));
+        }
+        let blocked = user.blocked_orgs();
+        if !blocked.is_empty() {
+            find = find.filter(notifications::Column::OrgId.is_not_in(blocked.iter().copied()));
+        }
+        find
+    }
 }
 
 fn yes() -> bool {
@@ -89,36 +145,22 @@ const MAX_DEVICES_PER_USER: u64 = 20;
 pub async fn inbox(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Query(q): Query<InboxQuery>,
+    headers: axum::http::HeaderMap,
 ) -> Result<Json<InboxResponse>, StatusCode> {
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let scope = q.scope();
 
-    // An org that ended the request's token's reach (API-tokens design §5) is
-    // left out of the count and the page alike — including when `org_id` asks
-    // for it by name. Nothing is excluded for a session or a legacy key.
-    let blocked = user.blocked_orgs();
-    let scope = |f: sea_orm::Select<notifications::Entity>| {
-        let f = match q.org_id {
-            Some(org) => f.filter(notifications::Column::OrgId.eq(org)),
-            None => f,
-        };
-        if blocked.is_empty() {
-            f
-        } else {
-            f.filter(notifications::Column::OrgId.is_not_in(blocked.iter().copied()))
-        }
-    };
-
-    let unread = scope(notifications::Entity::find())
-        .filter(notifications::Column::UserId.eq(user.id))
+    let unread = scope
+        .apply(notifications::Entity::find(), &user)
         .filter(notifications::Column::ReadAt.is_null())
         .count(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let mut find = scope(notifications::Entity::find())
-        .filter(notifications::Column::UserId.eq(user.id))
+    let mut find = scope
+        .apply(notifications::Entity::find(), &user)
         .order_by_desc(notifications::Column::CreatedAt)
         .limit(q.limit.unwrap_or(50).clamp(1, MAX_PAGE));
     if q.unread_only {
@@ -131,9 +173,18 @@ pub async fn inbox(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     // What each one says is in its org's own store; the badge count above
     // never reads it.
-    let items = super::inbox_view::items(&db, page)
+    let mut items = super::inbox_view::items(&db, page)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // On a custom-app host a relative path would be rewritten into that app.
+    let host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok());
+    let base = super::inbox_view::href_base(
+        host,
+        oxy_app_core::custom_apps_host_dispatch::admin_base_url(),
+    );
+    super::inbox_view::absolutize(&mut items, &base);
     Ok(Json(InboxResponse { unread, items }))
 }
 
@@ -181,26 +232,20 @@ pub async fn mark_all_read(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Query(q): Query<ReadAllQuery>,
 ) -> Result<StatusCode, StatusCode> {
-    let scope = q.org_id;
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let mut update = notifications::Entity::update_many()
+    // "All" is all the request's token reaches, within the stated org and
+    // app: an org that blocked the token keeps its unread, as the inbox keeps
+    // it out of the count.
+    let update = q
+        .scope()
+        .apply(notifications::Entity::update_many(), &user)
         .col_expr(
             notifications::Column::ReadAt,
             sea_orm::sea_query::Expr::value(Utc::now().fixed_offset()),
         )
-        .filter(notifications::Column::UserId.eq(user.id))
         .filter(notifications::Column::ReadAt.is_null());
-    if let Some(org) = scope {
-        update = update.filter(notifications::Column::OrgId.eq(org));
-    }
-    // "All" is all the request's token reaches: an org that blocked it keeps
-    // its unread, as the inbox keeps it out of the count.
-    let blocked = user.blocked_orgs();
-    if !blocked.is_empty() {
-        update = update.filter(notifications::Column::OrgId.is_not_in(blocked.iter().copied()));
-    }
     update
         .exec(&db)
         .await

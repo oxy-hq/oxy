@@ -275,6 +275,11 @@ async fn notifications_send_keeps_content_in_the_orgs_store() {
             Some(format!("/customer-apps/{org_slug}/store-ops/lists/42").as_str())
         );
         assert_eq!(
+            items[0].link.as_deref(),
+            Some("/lists/42"),
+            "the app's own link, as it gave it, for the bell inside the app"
+        );
+        assert_eq!(
             items[0].app.as_ref().map(|a| a.name.as_str()),
             Some("Store Ops")
         );

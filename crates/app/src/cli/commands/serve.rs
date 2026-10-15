@@ -71,6 +71,9 @@ pub async fn start_server_and_web_app(
              (set OXY_VAPID_PRIVATE_KEY, OXY_VAPID_PUBLIC_KEY and OXY_VAPID_SUBJECT)"
         );
     }
+    // A run this process drives to a terminal failure is announced to whoever
+    // started it (`oxy.run_failed`).
+    crate::server::api::notifications::platform::run_failed::install();
 
     // In local mode, autodetect a running local Airhouse stack
     // (docker-compose.airhouse.yml) and inject the well-known AIRHOUSE_*

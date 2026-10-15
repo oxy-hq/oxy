@@ -45,6 +45,10 @@ const SOURCES: &[(&str, &str)] = &[
     ("host/tx_ops.rs", include_str!("host/tx_ops.rs")),
     ("host/notify_op.rs", include_str!("host/notify_op.rs")),
     (
+        "notifications/input.rs",
+        include_str!("../notifications/input.rs"),
+    ),
+    (
         "host/platform_facts/serve.rs",
         include_str!("host/platform_facts/serve.rs"),
     ),

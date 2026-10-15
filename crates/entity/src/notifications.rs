@@ -38,6 +38,12 @@ pub struct Model {
     pub title: String,
     pub body: Option<String>,
     pub link: Option<String>,
+    /// What a platform notice (`oxy.*` kind) is about: `workspace`,
+    /// `automation_run`, `airway_run`, `anomaly` or `org`, and that record's
+    /// id. A platform notice stores no text — its title, body and link are
+    /// rendered from the record when it is read or delivered — and it is sent
+    /// at most once per (recipient, kind, subject). `NULL` on an app's
+    /// notification. Live columns, unlike the three above.
     pub subject_kind: Option<String>,
     pub subject_id: Option<String>,
     pub created_at: DateTimeWithTimeZone,

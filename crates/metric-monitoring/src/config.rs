@@ -380,6 +380,8 @@ pub enum LoadError {
          (it looks like C0123ABCDEF; copy it from the channel's details in Slack)"
     )]
     InvalidNotifyChannel { path: PathBuf, value: String },
+    #[error("invalid notify block in monitor config at {path}: {reason}")]
+    InvalidNotify { path: PathBuf, reason: String },
     #[error("invalid monitor config: {0}")]
     Definition(#[source] serde_json::Error),
 }
@@ -445,11 +447,17 @@ fn finish(mut cfg: MonitorConfig, path: &Path) -> Result<MonitorConfig, LoadErro
         }
     }
 
-    if let Some(notify) = cfg.notify.as_ref().filter(|n| !n.has_channel_id()) {
-        return Err(LoadError::InvalidNotifyChannel {
+    if let Some(notify) = cfg.notify.as_ref() {
+        if !notify.has_channel_id() {
+            return Err(LoadError::InvalidNotifyChannel {
+                path: path.to_path_buf(),
+                value: notify.slack_channel.clone().unwrap_or_default(),
+            });
+        }
+        notify.people().map_err(|reason| LoadError::InvalidNotify {
             path: path.to_path_buf(),
-            value: notify.slack_channel.clone(),
-        });
+            reason,
+        })?;
     }
 
     cfg.apply_defaults();

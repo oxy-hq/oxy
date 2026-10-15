@@ -332,6 +332,13 @@ pub async fn setup_github(
             match oxy::database::client::establish_connection().await {
                 Ok(db) => {
                     oxy_app::surface::enqueue_lazy_compile(&db, workspace_id).await;
+                    // Tell whoever is waiting on it. Best-effort: the workspace
+                    // is ready either way, and the list polls while it clones.
+                    if let Err(e) =
+                        oxy_app::surface::notices::notify_workspace_ready(&db, workspace_id).await
+                    {
+                        tracing::warn!(?e, %workspace_id, "workspace-ready notice not sent");
+                    }
                 }
                 Err(e) => tracing::warn!(
                     ?e, %workspace_id,

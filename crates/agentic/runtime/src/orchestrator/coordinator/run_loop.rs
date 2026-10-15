@@ -386,9 +386,12 @@ impl Coordinator {
                         .await;
                 } else {
                     // Root task timed out — single write.
-                    crud::transition_run(&self.db, &run_id, "timed_out", None, None, Some(&msg))
+                    if crud::transition_run(&self.db, &run_id, "timed_out", None, None, Some(&msg))
                         .await
-                        .ok();
+                        .is_ok()
+                    {
+                        crate::lifecycle::failure_hook::root_run_failed(&run_id).await;
+                    }
                     self.state
                         .statuses
                         .insert(run_id.clone(), RunStatus::Failed(msg));

@@ -21,7 +21,7 @@ import {
 import { cn } from "@/libs/shadcn/utils";
 import type { MonitorCoverage, MonitorEntry, MonitorNotify } from "@/types/metricAnomalies";
 import { MonitorPreviewPanel } from "./components/MonitorPreviewPanel";
-import { announcedSeverity } from "./monitorNotify";
+import { announcedSeverity, notifiedPeople } from "./monitorNotify";
 import {
   coverageFor,
   filterKey,
@@ -57,18 +57,32 @@ function Band({
 /** Where new insights go besides this inbox. Said either way: an inbox nobody
  *  is told about and one that posts to a channel look identical otherwise. */
 function DeliveryNote({ notify }: { notify: MonitorNotify | null }) {
+  const channel = notify?.slack_channel || null;
+  const people = notify ? notifiedPeople(notify) : null;
   return (
     <Band label='Delivery' testId='monitors-delivery-note'>
-      {notify ? (
+      {notify && (channel || people) ? (
         <>
-          New insights <span className='font-medium'>{announcedSeverity(notify)}</span> are posted
-          to Slack channel <code className={inlineCode}>{notify.slack_channel}</code>, once each.
+          New insights <span className='font-medium'>{announcedSeverity(notify)}</span> are{" "}
+          {channel && (
+            <>
+              posted to Slack channel <code className={inlineCode}>{channel}</code>
+            </>
+          )}
+          {channel && people && " and "}
+          {people && (
+            <>
+              sent to <span className='font-medium'>{people}</span> in Oxygen
+            </>
+          )}
+          {", once each."}
         </>
       ) : (
         <>
           New insights appear <span className='font-medium'>only in this inbox</span>. Add a{" "}
           <code className={inlineCode}>notify:</code> block to{" "}
-          <code className={inlineCode}>.monitor.yml</code> to post them to a Slack channel.
+          <code className={inlineCode}>.monitor.yml</code> to post them to Slack or tell people in
+          Oxygen.
         </>
       )}
     </Band>

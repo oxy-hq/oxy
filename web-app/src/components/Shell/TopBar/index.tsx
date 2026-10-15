@@ -46,7 +46,7 @@ export function TopBar() {
       className='flex h-12 shrink-0 items-center gap-3 border-b bg-sidebar-background px-3'
     >
       <Breadcrumb />
-      <div className='ml-auto flex items-center gap-3'>
+      <div className='ml-auto flex shrink-0 items-center gap-3'>
         <SystemIndicator />
         <WorkspaceClock />
         <NotificationsBell />

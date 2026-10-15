@@ -213,6 +213,29 @@ describe("ctx.notify", () => {
     ).toBe(`ctx.notify: ${REFUSALS.notifyKindUndeclared.refusal.split("{kind}").join("digest")}`);
   });
 
+  it("refuses a kind in Oxygen's reserved namespace, even one the manifest declares", async () => {
+    const t = createTestContext(
+      { slug: "s", functions: { f: { notify: { kinds: { "oxy.anomaly": {}, late: {} } } } } },
+      { function: "f" }
+    );
+    const err = await refusal(() =>
+      t.ctx.notify({ to: { userId: "u" }, kind: "oxy.anomaly", title: "t" })
+    );
+    expect(err.message).toBe(
+      "ctx.notify: NotifyKindReserved: kind `oxy.anomaly` starts with `oxy.`, which is " +
+        "reserved for Oxygen's own notices; rename it"
+    );
+    expect(t.state.notifications).toEqual([]);
+    // Only the prefix is reserved, not the word.
+    const ok = createTestContext(
+      { slug: "s", functions: { f: { notify: { kinds: { "oxygen.tank_low": {} } } } } },
+      { function: "f" }
+    );
+    await expect(
+      ok.ctx.notify({ to: { userId: "u" }, kind: "oxygen.tank_low", title: "t" })
+    ).resolves.toMatchObject({ deduplicated: false });
+  });
+
   it("resolves people, roles at a place and teams within the audience", async () => {
     const t = notifier();
     const r = await t.ctx.notify({
