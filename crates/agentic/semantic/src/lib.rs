@@ -11,6 +11,7 @@ pub mod preagg;
 #[cfg(test)]
 mod preagg_equivalence_tests;
 pub mod refresh_key_cache;
+mod rollup_value;
 
 pub use compile::{
     BlobConfig, CompiledQuery, PreaggContext, PreaggSource, compile_with_engine,

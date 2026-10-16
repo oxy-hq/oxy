@@ -220,6 +220,11 @@ pub(super) fn duckdb_to_cell_opt(v: Value) -> Option<CellValue> {
         Value::Text(s) => Some(CellValue::Text(s)),
         Value::Enum(s) => Some(CellValue::Text(s)),
         Value::Blob(_) => None,
+        // Schema sample values reach the LLM: a DATE column's samples were
+        // `Date32(20148)` until these went through `duckdb_to_cell`.
+        v @ (Value::Date32(_) | Value::Timestamp(..) | Value::Time64(..)) => {
+            Some(duckdb_to_cell(v))
+        }
         other => Some(CellValue::Text(format!("{other:?}"))),
     }
 }
@@ -305,5 +310,33 @@ mod tests {
             epoch_ts_to_iso(&TimeUnit::Millisecond, 1_704_067_200_050),
             "2024-01-01 00:00:00.050"
         );
+    }
+
+    /// Schema sample values render time types the way query results do, not
+    /// as the driver's `Debug` (`Date32(20627)`, `Timestamp(Microsecond, …)`).
+    #[test]
+    fn schema_samples_render_time_types_like_query_cells() {
+        let text = |s: &str| Some(CellValue::Text(s.to_string()));
+        assert_eq!(
+            duckdb_to_cell_opt(Value::Date32(20_627)),
+            text("2026-06-23")
+        );
+        for (unit, per_second) in [
+            (TimeUnit::Second, 1),
+            (TimeUnit::Millisecond, 1_000),
+            (TimeUnit::Microsecond, 1_000_000),
+            (TimeUnit::Nanosecond, 1_000_000_000),
+        ] {
+            assert_eq!(
+                duckdb_to_cell_opt(Value::Timestamp(unit, 1_782_172_800 * per_second)),
+                text("2026-06-23"),
+                "{unit:?}"
+            );
+        }
+        assert_eq!(
+            duckdb_to_cell_opt(Value::Time64(TimeUnit::Microsecond, 47_109_000_000)),
+            text("13:05:09")
+        );
+        assert_eq!(duckdb_to_cell_opt(Value::Null), None);
     }
 }
