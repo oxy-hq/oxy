@@ -111,7 +111,10 @@ export interface PredictImpact {
   estimated_delta: number;
   confidence: string;
   path: string[];
-  form: DriverForm;
+  /** The last hop's driver `form` when that hop is a driver edge, or `linear`
+   *  for a composite linear in its inputs. Absent for a non-linear composite:
+   *  airlayer recomputes it from its expression, so it has no driver shape. */
+  form?: DriverForm;
   lag?: number | null;
 }
 

@@ -180,7 +180,7 @@ export function WorldModelWhatIf({
             <span className='truncate text-muted-foreground'>{shortMeasureName(target)}</span>
             <span className='flex shrink-0 items-center gap-1.5'>
               <span className='text-info'>{formatDelta(impact.estimated_delta)}</span>
-              <MetaBadge tooltip={FORM_HELP[impact.form]}>{impact.form}</MetaBadge>
+              {impact.form && <MetaBadge tooltip={FORM_HELP[impact.form]}>{impact.form}</MetaBadge>}
               <MetaBadge tooltip={CONFIDENCE_HELP}>{impact.confidence}</MetaBadge>
             </span>
           </Row>

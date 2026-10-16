@@ -140,4 +140,36 @@ describe("WorldModelWhatIf", () => {
       vi.useRealTimers();
     }
   });
+
+  // airlayer recomputes a non-linear composite from its expression, so its
+  // impact has no driver shape and omits `form`. The row must not render an
+  // empty form badge beside the confidence one.
+  it("renders no form badge for an impact that carries no form", () => {
+    vi.useFakeTimers();
+    try {
+      renderWhatIf();
+      fireEvent.change(screen.getByTestId("wm-whatif-delta"), { target: { value: "2" } });
+      vi.advanceTimersByTime(300);
+      const request = mockPredictMutate.mock.calls[0];
+
+      act(() => {
+        request[1].onSuccess({
+          inputs: [],
+          impacts: [
+            {
+              measure: "orders.revenue",
+              estimated_delta: 42,
+              confidence: "estimated",
+              path: ["orders.aov", "orders.revenue"]
+            }
+          ]
+        });
+      });
+
+      const badges = screen.getByText("+42.0").parentElement?.querySelectorAll("span.uppercase");
+      expect([...(badges ?? [])].map((b) => b.textContent)).toEqual(["estimated"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
