@@ -66,6 +66,7 @@ jobs:
           destination_repo: oxy-hq/oxygen
           push_exclude: >-
             internal-docs/**
+            mobile/**
             scripts/airhouse/**
             .env.airhouse
             .env.clickhouse
