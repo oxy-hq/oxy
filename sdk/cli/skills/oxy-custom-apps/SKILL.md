@@ -213,7 +213,10 @@ await ctx.notify({
 `oxy-app.json`: `"notify": { "kinds": { "list_overdue": {} } }` on the function
 (`{ "critical": true }` for a kind people must not mute). Everyone lands in
 their Oxygen inbox — frontline crew too, who have no email — and is pushed,
-emailed or Slacked where they can be. Needs the org's OLTP store. Use
+emailed or Slacked where they can be. `slack: true` DMs each person's own Slack
+account (found by their email once the org has connected Slack), so an app
+never holds a Slack token or maps users to Slack ids. Needs the org's OLTP
+store. Use
 `ctx.email.send` only for addresses **outside** the org (a vendor, an
 accountant), and give it an `idempotencyKey` in a scheduled function.
 

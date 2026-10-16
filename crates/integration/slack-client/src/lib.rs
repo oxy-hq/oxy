@@ -5,6 +5,9 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
 
+mod users;
+pub use users::{EmailLookup, LookupUser};
+
 const DEFAULT_BASE_URL: &str = "https://slack.com/api";
 
 /// Process-wide reqwest client shared across all Slack events. `Client::new()`

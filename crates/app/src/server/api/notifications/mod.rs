@@ -37,7 +37,7 @@
 //! the platform does not hold and carrier registration no code can do.
 
 pub mod badge;
-mod channels;
+pub mod channels;
 pub mod compose;
 pub mod deliver;
 pub mod delivery;
@@ -49,5 +49,6 @@ pub mod platform;
 pub mod preferences;
 pub mod recipients;
 pub mod send;
+pub mod slack_dm;
 pub mod task;
 pub mod web_push;

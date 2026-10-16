@@ -31,18 +31,21 @@ pub fn is_critical(kind: &str) -> bool {
 }
 
 /// The channels a platform kind is delivered on, so the only ones its settings
-/// switches can change. Push always; never Slack (a monitor posts to Slack
-/// through its own `slack_channel`).
+/// switches can change. Push always.
 ///
 /// Email only for a failed run: someone has to act, possibly away from
 /// Oxygen. Billing already sends the owner its own past-due email
-/// (`billing/notify.rs`), so asking for another would tell them twice. A
-/// ready workspace and an anomaly are news to see in the product.
+/// (`billing/notify.rs`), so asking for another would tell them twice.
+///
+/// A Slack DM, where the org connected Slack, for the three a person has to
+/// act on: a failed run, a past-due bill, and an anomaly someone was named
+/// for (a monitor's own `slack_channel` post is the broadcast; this is the
+/// named person). A ready workspace is news its creator is looking at.
 pub fn channels(kind: &str) -> &'static [&'static str] {
-    if kind == RUN_FAILED {
-        &["push", "email"]
-    } else {
-        &["push"]
+    match kind {
+        RUN_FAILED => &["push", "email", "slack"],
+        BILLING_PAST_DUE | ANOMALY => &["push", "slack"],
+        _ => &["push"],
     }
 }
 
@@ -177,6 +180,11 @@ impl PlatformNotice {
     pub fn emailed(&self) -> bool {
         channels(self.kind()).contains(&"email")
     }
+
+    /// Whether it is also DMed in the org's Slack; see [`channels`].
+    pub fn slacked(&self) -> bool {
+        channels(self.kind()).contains(&"slack")
+    }
 }
 
 #[cfg(test)]
@@ -195,12 +203,12 @@ mod tests {
     }
 
     #[test]
-    fn only_a_failed_run_is_emailed_and_nothing_goes_to_slack() {
+    fn only_a_failed_run_is_emailed_and_only_a_ready_workspace_skips_slack() {
         for kind in KINDS {
             let ch = channels(kind);
             assert_eq!(ch[0], "push", "{kind}");
-            assert!(!ch.contains(&"slack"), "{kind}");
             assert_eq!(ch.contains(&"email"), kind == RUN_FAILED, "{kind}");
+            assert_eq!(ch.contains(&"slack"), kind != WORKSPACE_READY, "{kind}");
         }
         let run = PlatformNotice::AirwayRunFailed {
             org_id: Uuid::new_v4(),
@@ -208,6 +216,7 @@ mod tests {
             run_id: "r-1".into(),
         };
         assert!(run.emailed());
+        assert!(run.slacked());
     }
 
     #[test]

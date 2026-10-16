@@ -1,7 +1,8 @@
-import { Fragment, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Fragment, type ReactNode, useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/shadcn/card";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/shadcn/table";
+import { cn } from "@/libs/shadcn/utils";
 import { ADMIN_HEADER_ROW_CLASS, AdminTh } from "@/pages/admin/components/AdminTable";
 import type { UsageOrg } from "@/types/usageReport";
 import { type UsageColumn, usageColumns } from "../usageColumns";
@@ -21,9 +22,22 @@ const figure = (value: string | null, column: UsageColumn): ReactNode =>
  * No colour on the change column. On this surface colour means something is wrong, and
  * the highlights above have already said what is; a fall of two people at a three-person
  * shop is not an alarm.
+ *
+ * `#org-<id>` lands on one organization: scrolled to and marked. Accounts Insight links an
+ * account here that way. The report loads after the page, so the browser's own anchor jump
+ * would find nothing to jump to.
  */
 export function UsageByOrganization({ orgs }: { orgs: readonly UsageOrg[] }) {
   const { shown, hidden } = usageColumns(orgs);
+  const { hash } = useLocation();
+  // Compared raw: an org id is a UUID, which needs no decoding, and decoding a hand-edited
+  // `#org-%E0` would throw during render.
+  const target = hash.startsWith("#org-") ? hash.slice("#org-".length) : null;
+
+  useEffect(() => {
+    if (!target || !orgs.some((o) => o.org_id === target)) return;
+    document.getElementById(`org-${target}`)?.scrollIntoView?.({ block: "center" });
+  }, [target, orgs]);
 
   return (
     <section className='space-y-2' data-testid='admin-usage-report-orgs'>
@@ -57,7 +71,13 @@ export function UsageByOrganization({ orgs }: { orgs: readonly UsageOrg[] }) {
                 {orgs.map((org) => (
                   <Fragment key={org.org_id}>
                     <TableRow
-                      className='border-border/60 bg-muted/30 hover:bg-muted/30'
+                      id={`org-${org.org_id}`}
+                      aria-current={org.org_id === target ? "location" : undefined}
+                      className={cn(
+                        "border-border/60 bg-muted/30 hover:bg-muted/30",
+                        org.org_id === target &&
+                          "outline outline-1 outline-primary -outline-offset-1"
+                      )}
                       data-testid={`admin-usage-report-org-${org.org_id}`}
                     >
                       <TableCell className='font-medium text-xs'>{org.name}</TableCell>

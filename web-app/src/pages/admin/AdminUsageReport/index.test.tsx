@@ -15,21 +15,21 @@ import AdminUsageReport from "./index";
 
 // Routed at the real path: `AdminPage` takes its `<h1>` from the admin route map, which
 // is keyed off `useLocation()`.
-const mount = () =>
+const mount = (hash = "") =>
   render(
-    <MemoryRouter initialEntries={["/admin/usage-report"]}>
+    <MemoryRouter initialEntries={[`/admin/usage-report${hash}`]}>
       <AdminUsageReport />
     </MemoryRouter>
   );
 
-const loaded = (latest: UsageReport | null) => {
+const loaded = (latest: UsageReport | null, hash = "") => {
   useUsageReport.mockReturnValue({
     data: { report: latest },
     isPending: false,
     isError: false,
     error: null
   });
-  return mount();
+  return mount(hash);
 };
 
 const hrefOf = (el: HTMLElement) => within(el).getByRole("link").getAttribute("href");
@@ -307,6 +307,42 @@ describe("AdminUsageReport — by organization", () => {
       "admin-usage-report-app-app-ops",
       "admin-usage-report-app-app-check"
     ]);
+  });
+
+  it("lands on the organization an #org-<id> link names, and marks only that one", () => {
+    const scrolled = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrolled;
+    try {
+      loaded(
+        report({ orgs: [rivermark, org({ org_id: "org-b", name: "Bayside" })] }),
+        "#org-org-r"
+      );
+      const row = screen.getByTestId("admin-usage-report-org-org-r");
+      expect(row.id).toBe("org-org-r");
+      expect(row.getAttribute("aria-current")).toBe("location");
+      expect(
+        screen.getByTestId("admin-usage-report-org-org-b").getAttribute("aria-current")
+      ).toBeNull();
+      expect(scrolled).toHaveBeenCalledTimes(1);
+      expect(scrolled.mock.contexts[0]).toBe(row);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it("marks nothing when the link names an organization the report does not have", () => {
+    loaded(report({ orgs: [rivermark] }), "#org-missing");
+    expect(
+      screen.getByTestId("admin-usage-report-org-org-r").getAttribute("aria-current")
+    ).toBeNull();
+  });
+
+  it("still renders the report for a malformed #org- link", () => {
+    loaded(report({ orgs: [rivermark] }), "#org-%E0");
+    expect(
+      screen.getByTestId("admin-usage-report-org-org-r").getAttribute("aria-current")
+    ).toBeNull();
   });
 
   it("links an app row to its console under its organization", () => {

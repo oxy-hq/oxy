@@ -18,7 +18,11 @@ pub struct CreateLink {
 
 #[derive(Copy, Clone, Debug)]
 pub enum LinkMethod {
+    /// A Slack user who messaged the bot, matched by the email Slack holds.
     EmailAuto,
+    /// An Oxygen member a notification had to reach, found by the email
+    /// Oxygen holds (`linking::by_email`).
+    EmailLookup,
     MagicLink,
 }
 
@@ -26,6 +30,7 @@ impl LinkMethod {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::EmailAuto => "email_auto",
+            Self::EmailLookup => "email_lookup",
             Self::MagicLink => "magic_link",
         }
     }

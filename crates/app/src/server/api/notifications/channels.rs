@@ -2,15 +2,15 @@
 //!
 //! [`Channels::load`] reads everything a run needs in a handful of queries —
 //! device tokens, addresses, Slack links, the content — so the per-recipient
-//! loop in [`super::delivery`] does no lookups of its own. Content is read from
-//! the org's store only when email or Slack needs it: a push carries none.
+//! loop in [`super::delivery`] does no lookups of its own, except Slack's
+//! first-time lookup of an unlinked member by email ([`super::slack_dm`]).
+//! Content is read from the org's store only when email or Slack needs it: a
+//! push carries none.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use entity::{
-    device_tokens, notification_sends, notifications, organizations, slack_user_links, users,
-};
+use entity::{device_tokens, notification_sends, notifications, organizations, users};
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use oxy_oltp::inbox::{self, InboxMessage};
 use oxy_slack_client::SlackClient;
@@ -20,8 +20,8 @@ use uuid::Uuid;
 use super::deliver::{Push, PushSignal, push};
 use super::delivery::Channel;
 use super::platform::render;
+use super::slack_dm::{SlackDm, SlackMessage};
 use crate::emails::app_emailer::{AppEmailer, EmailSendInput};
-use crate::integrations::slack::services::installations::InstallationsService;
 
 /// How one channel went for one person. Reasons are fixed codes, stored as-is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,13 +29,6 @@ pub enum ChannelOutcome {
     Sent,
     Skipped(&'static str),
     Failed(&'static str),
-}
-
-struct SlackDm {
-    client: SlackClient,
-    bot_token: String,
-    /// Oxy user → Slack user id, for the people linked in this org's Slack.
-    links: HashMap<Uuid, String>,
 }
 
 pub struct Channels {
@@ -48,6 +41,8 @@ pub struct Channels {
     slack: Option<SlackDm>,
     content: Option<InboxMessage>,
     url: Option<String>,
+    /// Who the notification is from: the app's name, or "Oxygen".
+    sender: String,
 }
 
 impl Channels {
@@ -61,12 +56,15 @@ impl Channels {
         let content = content(db, send, signals).await?;
         let (app_name, url) = names_and_url(db, send, content.as_ref()).await?;
         let email = if send.email {
-            Some((AppEmailer::from_env(app_name), addresses(db, &users).await?))
+            Some((
+                AppEmailer::from_env(app_name.clone()),
+                addresses(db, &users).await?,
+            ))
         } else {
             None
         };
         let slack = if send.slack {
-            slack_dm(send.org_id, &users).await?
+            SlackDm::load(db, send.org_id, &users, SlackClient::new()).await?
         } else {
             None
         };
@@ -78,6 +76,7 @@ impl Channels {
             slack,
             content,
             url,
+            sender: app_name,
         })
     }
 
@@ -144,24 +143,15 @@ impl Channels {
         let Some(dm) = &self.slack else {
             return ChannelOutcome::Skipped("not_configured");
         };
-        let Some(slack_user) = dm.links.get(&user) else {
-            return ChannelOutcome::Skipped("not_linked");
-        };
         let Some(content) = &self.content else {
             return ChannelOutcome::Failed("content_unavailable");
         };
-        let text = slack_text(content, self.url.as_deref());
-        match dm
-            .client
-            .chat_post_message(&dm.bot_token, slack_user, &text, None)
-            .await
-        {
-            Ok(_) => ChannelOutcome::Sent,
-            Err(e) => {
-                tracing::warn!(%user, error = %e, "notification Slack DM failed");
-                ChannelOutcome::Failed("provider_error")
-            }
-        }
+        let message = SlackMessage {
+            content,
+            url: self.url.as_deref(),
+            sender: &self.sender,
+        };
+        dm.send(user, &message).await
     }
 }
 
@@ -253,86 +243,4 @@ async fn names_and_url(
     });
     let name = app.map(|a| a.name).unwrap_or_else(|| "Oxygen".to_string());
     Ok((name, url))
-}
-
-/// The org's Slack, and which recipients are linked in it. `None` when the org
-/// has not connected Slack — every Slack delivery is then `not_configured`.
-async fn slack_dm(org_id: Uuid, users: &[Uuid]) -> Result<Option<SlackDm>, String> {
-    let Some(installation) = InstallationsService::find_active_by_org(org_id)
-        .await
-        .map_err(|e| format!("load the Slack installation: {e}"))?
-    else {
-        return Ok(None);
-    };
-    let bot_token = InstallationsService::decrypt_bot_token(&installation)
-        .await
-        .map_err(|e| format!("open the Slack bot token: {e}"))?;
-    let db = oxy::database::client::establish_connection()
-        .await
-        .map_err(|e| format!("database: {e}"))?;
-    let links = slack_user_links::Entity::find()
-        .filter(slack_user_links::Column::InstallationId.eq(installation.id))
-        .filter(slack_user_links::Column::OxyUserId.is_in(users.iter().copied()))
-        .all(&db)
-        .await
-        .map_err(|e| format!("load Slack links: {e}"))?
-        .into_iter()
-        .map(|l| (l.oxy_user_id, l.slack_user_id))
-        .collect();
-    Ok(Some(SlackDm {
-        client: SlackClient::new(),
-        bot_token,
-        links,
-    }))
-}
-
-/// Slack's three reserved characters, escaped as Slack documents.
-fn slack_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-fn slack_text(content: &InboxMessage, url: Option<&str>) -> String {
-    let mut text = format!("*{}*", slack_escape(&content.title));
-    if let Some(body) = &content.body {
-        text.push('\n');
-        text.push_str(&slack_escape(body));
-    }
-    if let Some(url) = url {
-        // `<url|label>` has no escape for `|`.
-        text.push_str(&format!("\n<{}|Open>", url.replace('|', "%7C")));
-    }
-    text
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn message(title: &str, body: Option<&str>) -> InboxMessage {
-        InboxMessage {
-            id: Uuid::nil(),
-            app_id: None,
-            kind: "k".into(),
-            title: title.into(),
-            body: body.map(str::to_string),
-            link: None,
-            email_subject: None,
-            email_html: None,
-            email_text: None,
-        }
-    }
-
-    #[test]
-    fn slack_text_cannot_be_turned_into_a_mention_or_a_link() {
-        let text = slack_text(&message("<!channel> & co", Some("<https://x|y>")), None);
-        assert_eq!(text, "*&lt;!channel&gt; &amp; co*\n&lt;https://x|y&gt;");
-    }
-
-    #[test]
-    fn slack_text_links_once_with_a_safe_url() {
-        let text = slack_text(&message("Done", None), Some("https://a.example/x|y"));
-        assert_eq!(text, "*Done*\n<https://a.example/x%7Cy|Open>");
-    }
 }

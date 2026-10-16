@@ -660,7 +660,11 @@ export interface NotifyInput {
    * `render` from `@oxy-hq/sdk/email`). Omit for no email.
    */
   email?: true | { subject?: string; html?: string; text?: string };
-  /** Also DM the people linked to the org's Slack. */
+  /**
+   * Also DM each person in the org's Slack, when the org connected it: the
+   * account they linked, or else the one with their Oxygen email (looked up
+   * once). Frontline crew are reached only through a link they made.
+   */
   slack?: boolean;
   /**
    * Make the call safe to retry: a second call with the same key, in the same

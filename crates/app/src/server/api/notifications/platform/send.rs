@@ -164,7 +164,7 @@ async fn record(
         kind: Set(notice.kind().to_string()),
         critical: Set(notice.critical()),
         email: Set(notice.emailed()),
-        slack: Set(false),
+        slack: Set(notice.slacked()),
         idempotency_key_sha256: Set(None),
         recipients: Set(i32::try_from(people.len()).unwrap_or(i32::MAX)),
         run_id: Set(run_id),
