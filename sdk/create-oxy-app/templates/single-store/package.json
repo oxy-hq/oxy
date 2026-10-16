@@ -23,7 +23,7 @@
     "vite": "^8.2.1"
   },
   "engines": {
-    "node": ">=20",
+    "node": ">=22.13",
     "pnpm": ">=11"
   },
   "packageManager": "pnpm@11.22.0"

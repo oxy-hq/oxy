@@ -468,13 +468,24 @@ should.
 
 ## Node and pnpm
 
-Node **20** (`.nvmrc`), matching the working app monorepo this build config is
-derived from. Use **pnpm**, never npm or yarn — there is no `package-lock.json`
-here and there should not be one.
+Node **26** (`.nvmrc`), matching the customer-apps monorepo this build config
+is derived from. Anything from **22.13** up works (`engines.node`): that is the
+floor pnpm 11 itself requires, so a Node below it cannot run pnpm here at all.
+Use **pnpm**, never npm or yarn — there is no `package-lock.json` here and
+there should not be one.
 
-pnpm is floored at **>= 10**, one major above that monorepo's `>= 9`, and the
-difference is deliberate: pnpm 9 reads no settings at all from
-`pnpm-workspace.yaml`, so on pnpm 9 the `onlyBuiltDependencies` block there is
-silently inert and an app's `esbuild` / `sharp` postinstall is blocked with no
-diagnostic. A floor that admits a version where the config does nothing is
-worse than no floor.
+pnpm is **pinned**, not just floored: `packageManager` in `package.json` names
+pnpm 11.22.0, and that one line decides the pnpm everywhere. `corepack enable
+pnpm` installs exactly it; a pnpm 10 already on your PATH switches itself to
+it; CI's `pnpm/action-setup` installs it — which is why the workflow carries
+no `version:` of its own: the action refuses to run with two. To move to
+another pnpm, change that line (`corepack use pnpm@<version>`).
+
+Dependencies' install scripts are approved in `pnpm-workspace.yaml`, in the
+`allowBuilds` map. pnpm 11 **fails the install** (`ERR_PNPM_IGNORED_BUILDS`)
+on a dependency with a build script the map does not decide, so the first
+install after adding such a dependency stops until somebody sets it to `true`
+(run the script) or `false` (skip it) there and commits that. A repo that
+still carries the older `onlyBuiltDependencies` list gets that failure even
+for the dependencies it lists: pnpm 11 removed the key and ignores it without
+a word.

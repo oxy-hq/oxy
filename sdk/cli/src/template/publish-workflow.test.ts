@@ -24,6 +24,7 @@ interface Step {
   name?: string;
   uses?: string;
   run?: string;
+  with?: Record<string, unknown>;
   env?: Record<string, string>;
 }
 interface Job {
@@ -105,6 +106,36 @@ describe("the scaffold's publish workflow", () => {
     expect(script).not.toContain("no OXY_TOKEN reached this job");
   });
 
+  /**
+   * ONE SOURCE FOR THE PNPM VERSION. pnpm/action-setup v6 installs what
+   * package.json's `packageManager` pins and throws "Multiple versions of pnpm
+   * specified" on a `version:` input that differs from it, so the workflow
+   * carries none and the template's package.json carries the pin — the same
+   * one this repo builds with. v4 does not support pnpm 11.
+   */
+  it("installs the pnpm package.json pins, and names no version of its own", () => {
+    const pnpm = build.steps.filter((s) => s.uses?.startsWith("pnpm/action-setup@"));
+    expect(pnpm.map((s) => s.uses)).toEqual(["pnpm/action-setup@v6"]);
+    expect(pnpm[0]?.with?.version).toBeUndefined();
+
+    const readPackage = (path: string) =>
+      JSON.parse(readFileSync(path, "utf8")) as {
+        packageManager?: string;
+        engines?: Record<string, string>;
+      };
+    const template = readPackage(resolve(PACKAGE_ROOT, "template", "package.json"));
+    const repo = readPackage(resolve(PACKAGE_ROOT, "..", "..", "package.json"));
+    expect(template.packageManager).toMatch(/^pnpm@11\.\d+\.\d+\+sha512\.[0-9a-f]+$/);
+    expect(
+      template.packageManager,
+      "bump template/package.json's packageManager along with the repo root's"
+    ).toBe(repo.packageManager);
+    // pnpm 11 needs Node >= 22.13, and .nvmrc is what both jobs install.
+    expect(template.engines).toEqual({ node: ">=22.13", pnpm: ">=11" });
+    const nvmrc = readFileSync(resolve(PACKAGE_ROOT, "template", ".nvmrc"), "utf8").trim();
+    expect(Number(nvmrc)).toBeGreaterThanOrEqual(22);
+  });
+
   it("writes no secret and no untrusted value into a run line", () => {
     for (const step of [...build.steps, ...publish.steps]) {
       expect(step.run ?? "", step.name).not.toContain(["$", "{{"].join(""));
@@ -146,5 +177,28 @@ describe("the scaffold's publish workflow", () => {
         `@oxy-hq/cli is now ${packageVersion}; raise OXYC_VERSION in the template (still ${pin}) to it`
       ).toBe(true);
     }
+  });
+});
+
+/**
+ * The build job's `pnpm install` reads `pnpm-workspace.yaml`, and pnpm 11 fails
+ * it (`ERR_PNPM_IGNORED_BUILDS`) on any build script the file does not decide.
+ */
+describe("the scaffold's pnpm workspace", () => {
+  const settings = parse(
+    readFileSync(resolve(PACKAGE_ROOT, "template", "pnpm-workspace.yaml"), "utf8")
+  ) as Record<string, unknown>;
+
+  it("approves build scripts in the key pnpm 11 reads", () => {
+    // pnpm 11 removed `onlyBuiltDependencies` and ignores it without a word.
+    expect(settings).not.toHaveProperty("onlyBuiltDependencies");
+    expect(settings.allowBuilds).toEqual({ esbuild: true, sharp: true, "unrs-resolver": true });
+  });
+
+  it("recreates a pnpm 10 node_modules without a terminal to ask on", () => {
+    // Otherwise a `pnpm install` with no terminal — an agent's, or the one
+    // `oxyc publish` runs for it — aborts with
+    // ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY over a node_modules pnpm 10 wrote.
+    expect(settings.confirmModulesPurge).toBe(false);
   });
 });

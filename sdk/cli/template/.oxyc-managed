@@ -239,11 +239,11 @@ mixed     package.json
 # which is `mixed`, not a judgement call between the two.
 mixed     .gitignore
 
-# Same shape, and the file says so itself: the `onlyBuiltDependencies` block
-# carries the three entries the shipped app bundles need, with an instruction
-# to ADD to the list rather than replace it. The `packages:` globs are the
-# tool's; a fourth dependency that needs its install script run is the
-# customer's.
+# Same shape, and the file says so itself: the `allowBuilds` map carries the
+# three entries the shipped app bundles need, with an instruction to ADD to
+# the map rather than replace it. The `packages:` globs and
+# `confirmModulesPurge` are the tool's; a fourth dependency whose install
+# script somebody decided on is the customer's.
 mixed     pnpm-workspace.yaml
 
 # --- scope: which tree each file describes ----------------------------------

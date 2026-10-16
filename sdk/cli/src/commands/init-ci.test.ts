@@ -22,6 +22,12 @@ import {
   type WorkflowOptions,
   workflowYaml
 } from "./init-ci.js";
+import {
+  DEFAULT_NODE_VERSION,
+  DEFAULT_PNPM_MAJOR,
+  packageJsonPinsPnpm,
+  pnpmWarnings
+} from "./init-ci-pnpm.js";
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "dist", "main.mjs");
 const APP_ID = "0b0e5a10-1111-4222-8333-944455556666";
@@ -260,13 +266,161 @@ describe("workflowYaml", () => {
     expect(publish.steps.at(-1)?.run).toContain("--env https://acme.oxygen-hq.com");
   });
 
-  /** pnpm/action-setup refuses two pnpm versions; package.json's pin is the one. */
+  const setupNode = (job: Job) => job.steps.find((s) => s.uses === "actions/setup-node@v4");
+
+  /**
+   * v4 does not support pnpm 11. With nothing in the repo to defer to, the
+   * workflow says pnpm 11 and a Node that runs it (pnpm 11 needs >= 22.13).
+   */
+  it("installs pnpm 11 with action-setup v6, on Node 26, when the repo pins neither", () => {
+    for (const base of [OPTIONS, INLINE]) {
+      const { build, publish } = jobs(base);
+      const pnpm = build.steps.filter((s) => s.uses?.startsWith("pnpm/action-setup@"));
+      expect(pnpm.map((s) => s.uses)).toEqual(["pnpm/action-setup@v6"]);
+      expect(pnpm[0]?.with).toEqual({ version: 11 });
+      // pnpm before setup-node, as in the template: setup-node may shell out to it.
+      expect(build.steps.indexOf(pnpm[0] as Step)).toBeLessThan(
+        build.steps.indexOf(setupNode(build) as Step)
+      );
+      for (const job of [build, publish]) {
+        expect(setupNode(job)?.with).toEqual({ "node-version": 26 });
+      }
+    }
+  });
+
+  /**
+   * pnpm/action-setup v6 installs package.json's pin and THROWS "Multiple
+   * versions of pnpm specified" on a `version:` that differs from it — `11`
+   * against `pnpm@11.22.0` included — so a pinned repo gets no `version:` at
+   * all. The repo's `.nvmrc` likewise wins over the default Node, in both jobs.
+   */
   it("defers to package.json's pnpm and the repo's .nvmrc when present", () => {
-    const { build } = jobs({ ...OPTIONS, pnpmFromPackageJson: true, nodeVersionFile: true });
-    expect(build.steps.find((s) => s.uses === "pnpm/action-setup@v4")?.with).toBeUndefined();
-    expect(build.steps.find((s) => s.uses === "actions/setup-node@v4")?.with).toEqual({
-      "node-version-file": ".nvmrc"
+    const { build, publish } = jobs({
+      ...OPTIONS,
+      pnpmFromPackageJson: true,
+      nodeVersionFile: true
     });
+    const pnpm = build.steps.find((s) => s.uses === "pnpm/action-setup@v6");
+    expect(pnpm).toBeDefined();
+    expect(pnpm?.with).toBeUndefined();
+    for (const job of [build, publish]) {
+      expect(setupNode(job)?.with).toEqual({ "node-version-file": ".nvmrc" });
+    }
+    // The two rules are independent: a pin with no .nvmrc, and the reverse.
+    expect(setupNode(jobs({ ...OPTIONS, pnpmFromPackageJson: true }).build)?.with).toEqual({
+      "node-version": 26
+    });
+    const unpinned = jobs({ ...OPTIONS, nodeVersionFile: true }).build;
+    expect(unpinned.steps.find((s) => s.uses === "pnpm/action-setup@v6")?.with).toEqual({
+      version: 11
+    });
+  });
+
+  /**
+   * The defaults are the workspace template's own pins, so a repo oxyc wrote
+   * CI for and a repo it scaffolded install the same pnpm on the same Node.
+   */
+  it("defaults to the pnpm and Node the workspace template pins", () => {
+    const template = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "template");
+    const pkg = JSON.parse(readFileSync(join(template, "package.json"), "utf8")) as {
+      packageManager: string;
+      engines: { node: string };
+    };
+    expect(pkg.packageManager.split("@")[1]?.split(".")[0]).toBe(DEFAULT_PNPM_MAJOR);
+    expect(readFileSync(join(template, ".nvmrc"), "utf8").trim()).toBe(DEFAULT_NODE_VERSION);
+    // pnpm 11.22.0 declares `engines.node: >=22.13`; the template says the same.
+    expect(pkg.engines.node).toBe(">=22.13");
+    // setup-node resolves a bare major to its newest release, and every 22.x
+    // from 22.13 on runs pnpm 11; Node 20 does not.
+    expect(Number(DEFAULT_NODE_VERSION)).toBeGreaterThanOrEqual(22);
+  });
+});
+
+describe("packageJsonPinsPnpm", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "oxyc-pins-pnpm-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const pins = (pkg: unknown) => {
+    writeFileSync(join(dir, "package.json"), JSON.stringify(pkg));
+    return packageJsonPinsPnpm(dir);
+  };
+
+  /** Both are places pnpm/action-setup v6 reads a version from. */
+  it("counts a packageManager or a devEngines.packageManager naming pnpm", () => {
+    expect(pins({ packageManager: "pnpm@11.22.0+sha512.abc" })).toBe(true);
+    expect(pins({ packageManager: "pnpm@10.33.0" })).toBe(true);
+    expect(pins({ devEngines: { packageManager: { name: "pnpm", version: "11.22.0" } } })).toBe(
+      true
+    );
+  });
+
+  it("does not count another package manager, a nameless pin, or no package.json", () => {
+    expect(pins({ packageManager: "yarn@4.5.0" })).toBe(false);
+    expect(pins({ devEngines: { packageManager: { name: "pnpm" } } })).toBe(false);
+    expect(pins({ engines: { pnpm: ">=11" } })).toBe(false);
+    expect(pins({ devEngines: null })).toBe(false);
+    writeFileSync(join(dir, "package.json"), "{ not json");
+    expect(packageJsonPinsPnpm(dir)).toBe(false);
+    rmSync(join(dir, "package.json"));
+    expect(packageJsonPinsPnpm(dir)).toBe(false);
+  });
+});
+
+/**
+ * init-ci runs in repos it did not scaffold. One still on pnpm 10 conventions
+ * — no pin, `onlyBuiltDependencies` — gets a workflow running pnpm 11, which
+ * ignores that key and fails the install: said when the file is written.
+ */
+describe("pnpmWarnings", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "oxyc-pnpm-warnings-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const repoWith = (pkg: unknown, workspace?: string) => {
+    writeFileSync(join(dir, "package.json"), JSON.stringify(pkg));
+    if (workspace !== undefined) writeFileSync(join(dir, "pnpm-workspace.yaml"), workspace);
+    return pnpmWarnings(dir).map((w) => w.warning);
+  };
+  const OLD_WAY = "onlyBuiltDependencies:\n  - esbuild\n";
+  const NEW_WAY = "allowBuilds:\n  esbuild: true\n";
+
+  it("says nothing for a repo shaped like the template", () => {
+    expect(repoWith({ packageManager: "pnpm@11.22.0+sha512.abc" }, NEW_WAY)).toEqual([]);
+    expect(repoWith({ packageManager: "pnpm@11.22.0" })).toEqual([]);
+  });
+
+  it("names the pnpm an unpinned repo gets, and how to pin its own", () => {
+    repoWith({ private: true }, NEW_WAY);
+    const [only, ...rest] = pnpmWarnings(dir);
+    expect(rest).toEqual([]);
+    expect(only?.warning).toBe("package.json pins no pnpm, so the workflow installs pnpm 11");
+    expect(only?.hint).toContain("corepack use pnpm@<version>");
+  });
+
+  it("warns about onlyBuiltDependencies wherever the build runs pnpm 11", () => {
+    const ignored = /onlyBuiltDependencies`, which pnpm 11 ignores/;
+    // Unpinned (pnpm 11 by default), pinned to 11, or a pin too loose to rule 11 out.
+    expect(repoWith({}, OLD_WAY)).toEqual([expect.any(String), expect.stringMatching(ignored)]);
+    for (const pin of [
+      { packageManager: "pnpm@11.22.0" },
+      { devEngines: { packageManager: { name: "pnpm", version: "^11" } } },
+      { devEngines: { packageManager: { name: "pnpm", version: "latest" } } }
+    ]) {
+      expect(repoWith(pin, OLD_WAY), JSON.stringify(pin)).toEqual([expect.stringMatching(ignored)]);
+    }
+  });
+
+  it("leaves a repo pinned to pnpm 10, or already on allowBuilds, alone", () => {
+    expect(repoWith({ packageManager: "pnpm@10.33.0" }, OLD_WAY)).toEqual([]);
+    // Both keys: allowBuilds is the one pnpm 11 reads, so the repo has moved.
+    expect(repoWith({ packageManager: "pnpm@11.22.0" }, `${OLD_WAY}${NEW_WAY}`)).toEqual([]);
+    // An unreadable workspace file is not evidence of the old key.
+    expect(repoWith({ packageManager: "pnpm@11.22.0" }, "{ not: [yaml")).toEqual([]);
   });
 });
 
@@ -386,6 +540,45 @@ describe("oxyc init-ci, through the binary", () => {
     expect(result.stdout).toContain("-f repo_owner=acme-co");
     expect(result.stdout).toContain("-f repo_name=acme-apps");
     expect(result.stdout).toContain(`-f workflow_ref=${WORKFLOW_PATH}`);
+  });
+
+  /** What the repo root pins is read from the repo root, not from where it ran. */
+  it("reads the pnpm pin and .nvmrc from the repo root", () => {
+    const appDir = join(repo, "apps", "acme", "sales");
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(join(appDir, "oxy-app.json"), JSON.stringify({ slug: "sales", orgSlug: "acme" }));
+    const build = () =>
+      (parse(readFileSync(join(repo, WORKFLOW_PATH), "utf8")) as { jobs: { build: Job } }).jobs
+        .build;
+    const pnpmStep = (job: Job) => job.steps.find((s) => s.uses === "pnpm/action-setup@v6");
+    const nodeStep = (job: Job) => job.steps.find((s) => s.uses === "actions/setup-node@v4");
+
+    // Nothing pinned, and build scripts approved the pnpm 10 way: pnpm 11 and
+    // the default Node — and the command says what that will do to the build.
+    writeFileSync(join(repo, "pnpm-workspace.yaml"), "onlyBuiltDependencies:\n  - esbuild\n");
+    const unpinned = run(appDir, ["--no-register"]);
+    expect(unpinned.status, unpinned.stderr).toBe(0);
+    expect(pnpmStep(build())?.with).toEqual({ version: 11 });
+    expect(nodeStep(build())?.with).toEqual({ "node-version": 26 });
+    expect(unpinned.stderr).toContain(
+      "package.json pins no pnpm, so the workflow installs pnpm 11"
+    );
+    expect(unpinned.stderr).toContain("which pnpm 11 ignores");
+
+    // Pinned at the root, as the template pins it: no `version:`, and .nvmrc.
+    writeFileSync(
+      join(repo, "package.json"),
+      JSON.stringify({ private: true, packageManager: "pnpm@11.22.0+sha512.abc" })
+    );
+    writeFileSync(join(repo, "pnpm-workspace.yaml"), "allowBuilds:\n  esbuild: true\n");
+    writeFileSync(join(repo, ".nvmrc"), "26\n");
+    const result = run(appDir, ["--no-register", "--force"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(pnpmStep(build())).toBeDefined();
+    expect(pnpmStep(build())?.with).toBeUndefined();
+    expect(nodeStep(build())?.with).toEqual({ "node-version-file": ".nvmrc" });
+    expect(result.stderr).not.toContain("pins no pnpm");
+    expect(result.stderr).not.toContain("onlyBuiltDependencies");
   });
 
   it("names the service account from --service-account", () => {

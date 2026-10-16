@@ -12,21 +12,32 @@ packages:
   - "apps/*"
   - "apps/*/*"
 
-# pnpm 10 does not run a dependency's install/postinstall script unless the
-# package is named here. These three are what the real app bundles need
-# (esbuild and unrs-resolver fetch a platform binary, sharp builds one), so
-# without this block the first app added here fails to build. Add to the list
-# rather than replacing it.
+# Which dependencies may run their install/postinstall scripts. pnpm 11 runs
+# none it has not been told about, and FAILS the install
+# (`ERR_PNPM_IGNORED_BUILDS`) on any dependency with a build script this map
+# does not decide. These three are what the real app bundles need: esbuild and
+# unrs-resolver check for, or fetch, a platform binary, sharp builds one when
+# no prebuilt fits. esbuild is in every app that has Oxy Functions — `oxyc
+# publish` bundles them with `pnpm exec esbuild`. Add to the map rather than
+# replacing it: a new dependency with a build script stops the install until
+# somebody writes `true` (run it) or `false` (skip it) for it here.
 #
-# The key is `onlyBuiltDependencies`, NOT the `allowBuilds` that customer-apps
-# carries. Verified against pnpm 10.8.0: a wrong-typed `onlyBuiltDependencies`
-# crashes inside `createAllowBuildFunction`, proving pnpm reads it, while a
-# wrong-typed `allowBuilds` installs cleanly — pnpm never looks at that key at
-# all, with no warning. customer-apps' block is therefore inert; ours is not.
-#
-# pnpm 9 ignores this file's settings entirely (same probe, pnpm 9.15.9:
-# no crash), which is why package.json floors pnpm at >=10 rather than >=9.
-onlyBuiltDependencies:
-  - esbuild
-  - sharp
-  - unrs-resolver
+# The key is `allowBuilds`. pnpm 11 removed `onlyBuiltDependencies`, the list
+# this file used to carry, and ignores it without a word: with esbuild listed
+# there, pnpm 11.22.0 still fails an app's install on `Ignored build scripts:
+# esbuild@0.28.2`. pnpm 10.33 reads `allowBuilds` too, though it rarely gets
+# the chance: package.json pins pnpm 11.22.0 (`packageManager`), and a pnpm 10
+# switches itself to that version before installing anything.
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
+
+# pnpm 11 lays `node_modules` out for a new store version, so its first install
+# over a tree pnpm 10 wrote has to delete the tree and recreate it — and it
+# asks first. With no terminal to ask on — an agent or a script running
+# `pnpm install`, or `oxyc publish`, which runs one — it aborts instead, with
+# `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`. Nothing is lost by not asking:
+# the tree is rebuilt from the lockfile. CI never hits it — a runner starts
+# with no `node_modules`.
+confirmModulesPurge: false

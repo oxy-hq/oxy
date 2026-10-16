@@ -281,25 +281,27 @@ jobs:
 
       # pnpm BEFORE setup-node: setup-node's `cache: pnpm` shells out to
       # `pnpm store path`, so it fails if pnpm is not already installed.
+      #
+      # v6, the first major that supports pnpm 11; v4 does not. And NO
+      # `version:` input, on purpose: the action installs the pnpm that
+      # package.json's `packageManager` pins, and it fails this step
+      # ("Multiple versions of pnpm specified") when a `version:` differs from
+      # that pin — `11` against `11.22.0` included. A package.json with no pin
+      # fails here too ("No pnpm version is specified"); the fix is the
+      # template's `packageManager` line, which `oxyc update` shows in its
+      # package.json diff, not a `version:` in this managed file.
       - name: Install pnpm
         if: steps.discover.outputs.count != '0'
-        uses: pnpm/action-setup@v4
-        with:
-          # package.json floors pnpm at >=10 and there is no `packageManager`
-          # field for the action to read, so the major goes here. 10 is not
-          # cosmetic: pnpm 9 reads no settings at all from
-          # pnpm-workspace.yaml, which silently makes its
-          # `onlyBuiltDependencies` block inert and blocks an app's
-          # esbuild/sharp postinstall with no diagnostic.
-          version: 10
+        uses: pnpm/action-setup@v6
 
       - name: Install Node
         if: steps.discover.outputs.count != '0'
         uses: actions/setup-node@v4
         with:
-          # .nvmrc is the single source of truth (20). This org's CI examples
-          # disagree — one says 26 — and 20 is what the real working monorepo
-          # pins, so read the file rather than restating a number here.
+          # .nvmrc is the single source of truth (26, what the customer-apps
+          # monorepo pins), so read the file rather than restating a number
+          # here. Whatever it says must be >= 22.13: that is the Node pnpm 11
+          # requires, and package.json's `engines.node` says so too.
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml

@@ -596,7 +596,15 @@ lets it publish.
 *The workflow* is `.github/workflows/oxy-publish.yml` at the repo root: a
 `build` job (no id-token) that runs `publish --build-only`, and a `publish` job
 bound to a GitHub `environment:` (`--environment`, default `oxy-publish`) whose
-only work is `publish --prebuilt`. That job uses no third-party action: each
+only work is `publish --prebuilt`. `build` installs pnpm with
+`pnpm/action-setup@v6` — the pnpm the repo root's package.json pins
+(`packageManager` or `devEngines.packageManager`), with no `version:` of its
+own, since the action refuses a second, different one; pnpm 11 when nothing
+pins it — and both jobs run the Node in `.nvmrc`, else 26 (pnpm 11 needs
+Node 22.13 or later). It warns when nothing pins pnpm, and when
+`pnpm-workspace.yaml` approves build scripts only with `onlyBuiltDependencies`,
+which pnpm 11 ignores (the build's install would fail with
+`ERR_PNPM_IGNORED_BUILDS`; move the entries to `allowBuilds`). The publish job uses no third-party action: each
 step runs `npx @oxy-hq/cli@<this version>` and `oxyc` exchanges the job's OIDC
 token for itself, acting as the service account `--service-account <org>/<name>`
 names — by default `<app's org>/deployer`. **Here, and only here, the account is
