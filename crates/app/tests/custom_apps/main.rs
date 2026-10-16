@@ -5,7 +5,7 @@
 //! case as a `mod` here rather than a new `tests/*.rs`.
 //!
 //! Oxy Functions are tested in layers; the isolate's own unit tests (over a
-//! `MockHost`) live in `custom_apps_functions/runtime.rs`. Here:
+//! `MockHost`) live in `custom_apps_functions/runtime/tests.rs`. Here:
 //!
 //! | Module | Proves |
 //! | ------ | ------ |

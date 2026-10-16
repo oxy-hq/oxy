@@ -1141,7 +1141,7 @@ mod tests {
 
     #[test]
     fn host_ops_is_every_name_host_call_span_returns_and_nothing_else() {
-        let body = fn_body(include_str!("runtime.rs"), "host_call_span");
+        let body = fn_body(include_str!("runtime/host_call.rs"), "host_call_span");
         let literals = host_call_span_literals(&body);
         assert!(
             literals.len() >= 5,

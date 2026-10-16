@@ -850,11 +850,11 @@ rayon = "1"
 reqwest = { version = "0.13", features = ["rustls", "multipart"] }
 # V8-isolate runtime for Oxy Functions (custom-app `functions/*.ts`).
 # See internal-docs/customer-apps-functions.md.
-deno_core = "0.410"
+deno_core = "0.412"
 # deno_core's `op2` macro requires fallible ops to return an error type
 # implementing `deno_error::JsErrorClass` (plain `anyhow::Error` does not
 # qualify); `JsErrorBox` is that type. Kept on the line deno_core pins — 0.7.x
-# for deno_core 0.410.
+# for deno_core 0.412.
 deno_error = "0.7"
 rkyv = "0.8.18"
 # Held at 0.10 — DELIBERATE, not lag. rmcp 1.0 deleted the SSE *server*
