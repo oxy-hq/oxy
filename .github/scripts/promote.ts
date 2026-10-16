@@ -87,7 +87,11 @@ interface Candidate {
 
 interface Serving {
   sha: string | null;
-  version: string | null;
+  /**
+   * The Sentry release the process reports (`build_info.sentry_release`), or the
+   * same id composed from the `version` an older binary still reports.
+   */
+  sentryRelease: string | null;
   /** Only resolved for the environments a compare range is built from. */
   internal?: string | null;
 }
@@ -253,6 +257,35 @@ const CI_FAILED = new Set(["failure", "cancelled", "timed_out", "startup_failure
 // ── Pure decisions ──────────────────────────────────────────────────────────
 // Everything below this line is a function of its arguments, so `--self-test`
 // can pin it. Anything that reaches the network lives further down.
+
+/**
+ * The Sentry release a served `/api/version` body names: `build_info.sentry_release`,
+ * verbatim. A binary from before that field reports its semver as `version`, and
+ * `crates/core/src/sentry_config.rs` composes `oxy@<version>+<sha>` from it.
+ */
+export function servedRelease(body: {
+  version?: string;
+  build_info?: { git_commit_short?: string; sentry_release?: string };
+}): string | null {
+  const reported = body.build_info?.sentry_release;
+  if (reported) return reported;
+  const sha = body.build_info?.git_commit_short;
+  return body.version && sha ? `oxy@${body.version}+${sha}` : null;
+}
+
+/**
+ * The candidate's Sentry release: staging's own id with its build sha swapped for
+ * the candidate's. What the gate measures, before and after staging serves the
+ * candidate. The id up to `+` is whatever the deployed binary says. It is never
+ * composed here from a version, because `/api/version` no longer reports one.
+ */
+export function candidateRelease(
+  stagingRelease: string | null,
+  candidateSha: string | null
+): string | null {
+  if (!stagingRelease || !candidateSha) return null;
+  return `${stagingRelease.replace(/\+[0-9a-f]{7,40}$/, "")}+${candidateSha}`;
+}
 
 /**
  * Whether `at` falls inside the promote window.
@@ -496,7 +529,8 @@ export function parsePin(tag: string): { sha: string; digest: string | null } | 
  */
 export function assertPinnable(tag: string | undefined): string {
   const pin = tag ? parsePin(tag) : null;
-  if (!pin?.digest) throw new Error(`refusing to pin '${tag ?? ""}': not main-<sha>@sha256:<digest>`);
+  if (!pin?.digest)
+    throw new Error(`refusing to pin '${tag ?? ""}': not main-<sha>@sha256:<digest>`);
   return tag as string;
 }
 
@@ -527,7 +561,8 @@ export function pinDrift({
 }): string | null {
   const staged = stagingPin ? parsePin(stagingPin) : null;
   const fresh = candidatePin ? parsePin(candidatePin) : null;
-  if (!candidateSha || !staged?.digest || !fresh?.digest || staged.sha !== candidateSha) return null;
+  if (!candidateSha || !staged?.digest || !fresh?.digest || staged.sha !== candidateSha)
+    return null;
   if (staged.digest === fresh.digest) return null;
   return (
     `main-${candidateSha} moved on ghcr after staging was pinned (staging ran ` +
@@ -654,14 +689,12 @@ async function servedSha(baseUrl: string): Promise<Serving | null> {
   try {
     const res = await fetch(`${baseUrl}/api/version`, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return null;
-    // `git_commit_short` is nested under `build_info`; only `version` is at the
-    // top level. Read flat it is always undefined, and undefined reads as "not
-    // serving the candidate" — which holds every gate here, silently, forever.
-    const body = (await res.json()) as {
-      version?: string;
-      build_info?: { git_commit_short?: string };
-    };
-    return { sha: body.build_info?.git_commit_short ?? null, version: body.version ?? null };
+    // `git_commit_short` is nested under `build_info`; only `image_tag` is at
+    // the top level. Read flat it is always undefined, and undefined reads as
+    // "not serving the candidate" — which holds every gate here, silently,
+    // forever.
+    const body = (await res.json()) as Parameters<typeof servedRelease>[0];
+    return { sha: body.build_info?.git_commit_short ?? null, sentryRelease: servedRelease(body) };
   } catch {
     return null;
   }
@@ -752,13 +785,19 @@ async function dispatchedCandidate(sha: string, token: Token): Promise<Candidate
  * The `imageTag` a values file in the infra repo pins at `ref`: the tag, null
  * when the file has none, `undefined` when it could not be read at all.
  */
-async function pinnedAt(path: string, ref: string, token: Token): Promise<string | null | undefined> {
+async function pinnedAt(
+  path: string,
+  ref: string,
+  token: Token
+): Promise<string | null | undefined> {
   try {
     const file = await gh<{ content?: string }>(
       `/repos/${INFRA}/contents/${path}?ref=${encodeURIComponent(ref)}`,
       { token }
     );
-    return file.content ? readImageTag(Buffer.from(file.content, "base64").toString("utf8")) : undefined;
+    return file.content
+      ? readImageTag(Buffer.from(file.content, "base64").toString("utf8"))
+      : undefined;
   } catch {
     return undefined;
   }
@@ -828,7 +867,9 @@ export function mainReleaseRuns(listing: { workflow_runs?: ApiRun[] }): ReleaseR
  */
 async function latestReleaseRuns(token: Token): Promise<ReleaseRun[] | null> {
   try {
-    const runs = mainReleaseRuns(await gh<{ workflow_runs?: ApiRun[] }>(RELEASE_RUNS_PATH, { token }));
+    const runs = mainReleaseRuns(
+      await gh<{ workflow_runs?: ApiRun[] }>(RELEASE_RUNS_PATH, { token })
+    );
     // Newest first, stopping at the first that built: one question on a healthy main.
     for (const run of greensOverAFailure(runs)) {
       run.built = (await imageDigest(run.sha, token)) !== null;
@@ -866,7 +907,9 @@ const buildFailed = (run: ReleaseRun): boolean => BUILD_FAILED.has(run.conclusio
  * such runs each made the newest run on main read "success".
  */
 export function greensOverAFailure(runs: ReleaseRun[]): ReleaseRun[] {
-  return runs.slice(0, runs.findLastIndex(buildFailed) + 1).filter((r) => r.conclusion === "success");
+  return runs
+    .slice(0, runs.findLastIndex(buildFailed) + 1)
+    .filter((r) => r.conclusion === "success");
 }
 
 /**
@@ -931,7 +974,9 @@ export function buildAlert(
     const last = runs[0];
     return {
       alert: false,
-      why: last ? `last release run: ${last.conclusion ?? "unknown"}` : "no completed release run to judge",
+      why: last
+        ? `last release run: ${last.conclusion ?? "unknown"}`
+        : "no completed release run to judge",
       broken: null
     };
   }
@@ -939,7 +984,12 @@ export function buildAlert(
   // re-run of that one moves its finish time, and would begin the streak again.
   const finished = streak.flatMap((r) => (r.at ? [new Date(r.at).getTime()] : []));
   const age = finished.length ? (now.getTime() - Math.min(...finished)) / 60000 : Infinity;
-  const broken = { sha: newest.sha, url: newest.url, since: first.from ?? first.at, failures: streak.length };
+  const broken = {
+    sha: newest.sha,
+    url: newest.url,
+    since: first.from ?? first.at,
+    failures: streak.length
+  };
   const failing = `${streak.length} release run(s) in a row failed on main, newest ${newest.sha}`;
   if (age <= BUILD_ALERT_MINUTES)
     return {
@@ -948,7 +998,11 @@ export function buildAlert(
       broken: { ...broken, stale: false }
     };
   if (age < BUILD_STALE_MINUTES)
-    return { alert: false, why: `${failing}; said when it began, ${Math.floor(age)}m ago`, broken: null };
+    return {
+      alert: false,
+      why: `${failing}; said when it began, ${Math.floor(age)}m ago`,
+      broken: null
+    };
   const opened = minutesIntoWindow(now, TALK_WINDOW);
   if (opened === null || opened >= BUILD_ALERT_MINUTES)
     return {
@@ -970,10 +1024,7 @@ async function bumpPr(
 ): Promise<BumpPr | null> {
   const prs = await gh<
     { number: number; title: string; labels: { name: string }[]; head: { ref: string } }[]
-  >(
-    `/repos/${repo}/pulls?head=${repo.split("/")[0]}:${branch}&state=open`,
-    { token }
-  );
+  >(`/repos/${repo}/pulls?head=${repo.split("/")[0]}:${branch}&state=open`, { token });
   const pr = prs[0];
   if (!pr) return null;
   const labels: string[] = pr.labels.map((l: { name: string }) => l.name);
@@ -1048,11 +1099,17 @@ export function stuckAlert(
     if (!soakStartedAt) return { alert: false, why: "not on staging yet; nothing to time" };
     const waited = (now.getTime() - soakStartedAt.getTime()) / 60000;
     if (waited < STUCK_MINUTES)
-      return { alert: false, why: `waiting ${Math.floor(waited)}m, under the ${STUCK_MINUTES}m alarm` };
+      return {
+        alert: false,
+        why: `waiting ${Math.floor(waited)}m, under the ${STUCK_MINUTES}m alarm`
+      };
     said = `waiting ${Math.floor(waited)}m without reaching prod`;
   }
   if (!inWindow(now, TALK_WINDOW))
-    return { alert: false, why: "outside working hours (Mon–Fri 09:00–18:00 Asia/Ho_Chi_Minh); said at the next opening" };
+    return {
+      alert: false,
+      why: "outside working hours (Mon–Fri 09:00–18:00 Asia/Ho_Chi_Minh); said at the next opening"
+    };
   // Every reason said today, not only the latest: at most one post per reason
   // per day, however often the gate flips between them.
   const today = localDay(now);
@@ -1350,6 +1407,8 @@ async function plan({
     at: now.toISOString(),
     candidate,
     serving: { dev, staging, prod },
+    // What the Sentry gate and the post-merge watch query (`first-release:`).
+    candidateRelease: candidateRelease(staging?.sentryRelease ?? null, candidate?.sha ?? null),
     bumpPr: pr,
     // What `--set-image-tag` writes. Null when there is no candidate or no digest,
     // and the workflow refuses to pin rather than fall back to a bare tag.
@@ -1411,6 +1470,34 @@ function selfTest(): void {
     if (g !== w) fails.push(`${what}\n    got  ${g}\n    want ${w}`);
   };
 
+  // The Sentry release is read off the process, not composed from a semver.
+  is(
+    "the reported release is used verbatim",
+    servedRelease({ build_info: { git_commit_short: "1bcefe3", sentry_release: "oxy@x+1bcefe3" } }),
+    "oxy@x+1bcefe3"
+  );
+  is(
+    "a binary from before the field composes it from its version",
+    servedRelease({ version: "0.5.155", build_info: { git_commit_short: "1bcefe3" } }),
+    "oxy@0.5.155+1bcefe3"
+  );
+  is(
+    "a binary reporting neither has no release",
+    servedRelease({ build_info: { git_commit_short: "1bcefe3" } }),
+    null
+  );
+  is(
+    "the candidate's release swaps staging's sha for the candidate's",
+    candidateRelease("oxy@0.5.155+1bcefe3", "774e8bc"),
+    "oxy@0.5.155+774e8bc"
+  );
+  is(
+    "a bare release (no sha) gains the candidate's",
+    candidateRelease("oxy@0.5.155", "774e8bc"),
+    "oxy@0.5.155+774e8bc"
+  );
+  is("no staging release, no candidate release", candidateRelease(null, "774e8bc"), null);
+
   // The window. A Wednesday 10:00 in Ho Chi Minh is 03:00Z.
   is("Wed 10:00 local is in the window", inWindow(new Date("2026-09-23T03:00:00Z")), true);
   is("Wed 08:00 local is too early", inWindow(new Date("2026-09-23T01:00:00Z")), false);
@@ -1424,7 +1511,11 @@ function selfTest(): void {
   is("red CI warns", red.startsWith("> [!WARNING]"), true);
   is("...naming the conclusion", red.includes("(`failure`)"), true);
   is("...and linking the run", red.includes(`](${ciPage})`), true);
-  is("a cancelled run is not a pass either", ciWarning({ ci: "cancelled", ciUrl: ciPage }) !== null, true);
+  is(
+    "a cancelled run is not a pass either",
+    ciWarning({ ci: "cancelled", ciUrl: ciPage }) !== null,
+    true
+  );
   is(
     "a run still going warns, since the body is not rewritten when it ends",
     ciWarning({ ci: "pending", ciUrl: ciPage })?.includes("had not finished"),
@@ -1635,10 +1726,15 @@ function selfTest(): void {
   const blocked: StuckState = { ...stuckBase, kind: "blocked", why: sentryWhy };
   const earlierToday = new Date("2026-09-23T02:10:00Z"); // 09:10 local, same day
   is("an ordinary wait says nothing", stuckAlert(stuckBase, { now }).alert, false);
-  is("blocked is said at once in working hours — a person has to act", stuckAlert(blocked, { now }).alert, true);
+  is(
+    "blocked is said at once in working hours — a person has to act",
+    stuckAlert(blocked, { now }).alert,
+    true
+  );
   is(
     "waiting past the alarm is said",
-    stuckAlert({ ...stuckBase, soakStartedAt: new Date(now.getTime() - 400 * 60000) }, { now }).alert,
+    stuckAlert({ ...stuckBase, soakStartedAt: new Date(now.getTime() - 400 * 60000) }, { now })
+      .alert,
     true
   );
   // The three posts in eleven hours on 2026-09-28/29, one case each.
@@ -1650,7 +1746,11 @@ function selfTest(): void {
   is(
     "...nor is the same reason with a different count",
     stuckAlert(
-      { ...blocked, why: "2 new unresolved Sentry issue(s) in this release on staging", alerts: [{ at: earlierToday, why: sentryWhy }] },
+      {
+        ...blocked,
+        why: "2 new unresolved Sentry issue(s) in this release on staging",
+        alerts: [{ at: earlierToday, why: sentryWhy }]
+      },
       { now }
     ).alert,
     false
@@ -1660,7 +1760,11 @@ function selfTest(): void {
     stuckAlert(blocked, { now: new Date("2026-09-22T22:49:00Z") }).alert,
     false
   );
-  is("...or on a Saturday", stuckAlert(blocked, { now: new Date("2026-09-26T03:00:00Z") }).alert, false);
+  is(
+    "...or on a Saturday",
+    stuckAlert(blocked, { now: new Date("2026-09-26T03:00:00Z") }).alert,
+    false
+  );
   is(
     "...and a long wait outside hours waits for the morning too",
     stuckAlert(
@@ -1671,12 +1775,18 @@ function selfTest(): void {
   );
   is(
     "a different reason is news the same day",
-    stuckAlert({ ...blocked, alerts: [{ at: earlierToday, why: "staging checks are pending" }] }, { now }).alert,
+    stuckAlert(
+      { ...blocked, alerts: [{ at: earlierToday, why: "staging checks are pending" }] },
+      { now }
+    ).alert,
     true
   );
   is(
     "a situation that persists is said again the next working day",
-    stuckAlert({ ...blocked, alerts: [{ at: new Date("2026-09-22T09:00:00Z"), why: sentryWhy }] }, { now }).alert,
+    stuckAlert(
+      { ...blocked, alerts: [{ at: new Date("2026-09-22T09:00:00Z"), why: sentryWhy }] },
+      { now }
+    ).alert,
     true
   );
   is(
@@ -1695,12 +1805,17 @@ function selfTest(): void {
   ];
   is(
     "reasons that alternate are each said once a day, not on every flip",
-    [stuckAlert({ ...blocked, why: sentryWhy, alerts: flipped }, { now }).alert, stuckAlert({ ...blocked, why: unmeasured, alerts: flipped }, { now }).alert],
+    [
+      stuckAlert({ ...blocked, why: sentryWhy, alerts: flipped }, { now }).alert,
+      stuckAlert({ ...blocked, why: unmeasured, alerts: flipped }, { now }).alert
+    ],
     [false, false]
   );
   is(
     "a stuck-alert comment's reason line is read",
-    stuckCommentWhy(`stuck-alert: main-1a8c22d\n\nreason: ${sentryWhy}\n\nblocked; a person has to clear it.`),
+    stuckCommentWhy(
+      `stuck-alert: main-1a8c22d\n\nreason: ${sentryWhy}\n\nblocked; a person has to clear it.`
+    ),
     sentryWhy
   );
   is(
@@ -1712,8 +1827,12 @@ function selfTest(): void {
   );
   is(
     "one digest's drift and the next's are one reason",
-    reasonKey("main-abc1234 moved on ghcr after staging was pinned (staging ran 111111111111, ghcr now 222222222222); not proposing"),
-    reasonKey("main-def5678 moved on ghcr after staging was pinned (staging ran 333333333333, ghcr now 444444444444); not proposing")
+    reasonKey(
+      "main-abc1234 moved on ghcr after staging was pinned (staging ran 111111111111, ghcr now 222222222222); not proposing"
+    ),
+    reasonKey(
+      "main-def5678 moved on ghcr after staging was pinned (staging ran 333333333333, ghcr now 444444444444); not proposing"
+    )
   );
   is(
     "a digest that never reached staging is not called stuck",
@@ -1790,9 +1909,19 @@ function selfTest(): void {
 
   // The digest pin.
   const d = `sha256:${"a".repeat(64)}`;
-  is("a pin carries the readable tag and the immutable digest", pinRef("abc1234", d), `main-abc1234@${d}`);
-  is("a pin parses back into its parts", parsePin(`main-abc1234@${d}`), { sha: "abc1234", digest: d });
-  is("a bare main- tag still parses, with no digest", parsePin("main-abc1234"), { sha: "abc1234", digest: null });
+  is(
+    "a pin carries the readable tag and the immutable digest",
+    pinRef("abc1234", d),
+    `main-abc1234@${d}`
+  );
+  is("a pin parses back into its parts", parsePin(`main-abc1234@${d}`), {
+    sha: "abc1234",
+    digest: d
+  });
+  is("a bare main- tag still parses, with no digest", parsePin("main-abc1234"), {
+    sha: "abc1234",
+    digest: null
+  });
   is("a semver pin is not a main- pin", parsePin("0.5.151"), null);
   is("an edge- tag is not a main- pin", parsePin("edge-abc1234"), null);
   for (const [what, sha, dig] of [
@@ -1830,39 +1959,81 @@ function selfTest(): void {
   }
 
   // Reading a pin back out of a values file.
-  is("the pinned tag is read, quotes stripped", readImageTag(`app:\n  imageTag: "main-abc1234@${d}"\n`), `main-abc1234@${d}`);
+  is(
+    "the pinned tag is read, quotes stripped",
+    readImageTag(`app:\n  imageTag: "main-abc1234@${d}"\n`),
+    `main-abc1234@${d}`
+  );
   is("an unquoted tag reads too", readImageTag("app:\n  imageTag: 0.5.151 # pinned\n"), "0.5.151");
-  is("a commented-out imageTag is not the pin", readImageTag('# imageTag: "main-000aaaa"\napp:\n  image: x\n'), null);
-  is("a title carrying a digest still names the bare sha", proposedSha(`chore(oxy-prod): bump oxy image main-999aaaa → main-abc1234@${d}`), "abc1234");
-  is("an elided digest in a title still names the sha", proposedSha("… → main-abc1234@sha256:…"), "abc1234");
-  is("a title naming main-<not a sha> proposes nothing", proposedSha("chore(oxy-prod): bump oxy image main-999aaaa → main-latest"), null);
+  is(
+    "a commented-out imageTag is not the pin",
+    readImageTag('# imageTag: "main-000aaaa"\napp:\n  image: x\n'),
+    null
+  );
+  is(
+    "a title carrying a digest still names the bare sha",
+    proposedSha(`chore(oxy-prod): bump oxy image main-999aaaa → main-abc1234@${d}`),
+    "abc1234"
+  );
+  is(
+    "an elided digest in a title still names the sha",
+    proposedSha("… → main-abc1234@sha256:…"),
+    "abc1234"
+  );
+  is(
+    "a title naming main-<not a sha> proposes nothing",
+    proposedSha("chore(oxy-prod): bump oxy image main-999aaaa → main-latest"),
+    null
+  );
 
   // The digest prod gets is the digest staging ran.
   const d2 = `sha256:${"b".repeat(64)}`;
   is(
     "staging ran the digest ghcr still has: no drift",
-    pinDrift({ candidateSha: "abc1234", candidatePin: `main-abc1234@${d}`, stagingPin: `main-abc1234@${d}` }),
+    pinDrift({
+      candidateSha: "abc1234",
+      candidatePin: `main-abc1234@${d}`,
+      stagingPin: `main-abc1234@${d}`
+    }),
     null
   );
   is(
     "the tag moved after staging was pinned: drift, and it says so",
-    typeof pinDrift({ candidateSha: "abc1234", candidatePin: `main-abc1234@${d2}`, stagingPin: `main-abc1234@${d}` }),
+    typeof pinDrift({
+      candidateSha: "abc1234",
+      candidatePin: `main-abc1234@${d2}`,
+      stagingPin: `main-abc1234@${d}`
+    }),
     "string"
   );
   is(
     "staging pinned by bare tag (before digest pins): nothing to compare, no drift",
-    pinDrift({ candidateSha: "abc1234", candidatePin: `main-abc1234@${d2}`, stagingPin: "main-abc1234" }),
+    pinDrift({
+      candidateSha: "abc1234",
+      candidatePin: `main-abc1234@${d2}`,
+      stagingPin: "main-abc1234"
+    }),
     null
   );
   is(
     "staging pins another sha: not this candidate's drift",
-    pinDrift({ candidateSha: "abc1234", candidatePin: `main-abc1234@${d2}`, stagingPin: `main-999aaaa@${d}` }),
+    pinDrift({
+      candidateSha: "abc1234",
+      candidatePin: `main-abc1234@${d2}`,
+      stagingPin: `main-999aaaa@${d}`
+    }),
     null
   );
   is(
     "drift blocks prod — it is not a wait that clears itself",
     prodGate(
-      { candidate: "abc1234", prodSha: "999aaaa", stagingSha: "abc1234", checks: "passed", drift: "moved" },
+      {
+        candidate: "abc1234",
+        prodSha: "999aaaa",
+        stagingSha: "abc1234",
+        checks: "passed",
+        drift: "moved"
+      },
       { now: new Date("2026-09-24T03:00:00Z") }
     ).kind,
     "blocked"
@@ -1870,7 +2041,11 @@ function selfTest(): void {
 
   // The PR proposes the candidate only if its branch pins the candidate's bytes.
   const pin = `main-abc1234@${d}`;
-  is("title and branch pin both match", proposesCandidate({ proposes: "abc1234", proposesPin: pin }, "abc1234", pin), true);
+  is(
+    "title and branch pin both match",
+    proposesCandidate({ proposes: "abc1234", proposesPin: pin }, "abc1234", pin),
+    true
+  );
   is(
     "a pre-digest PR (bare tag on the branch) is re-proposed, not merged as-is",
     proposesCandidate({ proposes: "abc1234", proposesPin: "main-abc1234" }, "abc1234", pin),
@@ -1886,7 +2061,11 @@ function selfTest(): void {
     proposesCandidate({ proposes: "abc1234", proposesPin: undefined }, "abc1234", pin),
     true
   );
-  is("a title for another sha is not the candidate", proposesCandidate({ proposes: "999aaaa", proposesPin: pin }, "abc1234", pin), false);
+  is(
+    "a title for another sha is not the candidate",
+    proposesCandidate({ proposes: "999aaaa", proposesPin: pin }, "abc1234", pin),
+    false
+  );
   is("no PR proposes nothing", proposesCandidate(null, "abc1234", pin), false);
 
   // A broken mirror build is said out loud, a bounded number of times.
@@ -1898,11 +2077,27 @@ function selfTest(): void {
     at: new Date(from.getTime() - minutesAgo * 60000).toISOString(),
     sha
   });
-  is("a release run that just failed is said", buildAlert([run("failure", 10)], { now: t0 }).alert, true);
-  is("...and not again once the window has passed", buildAlert([run("failure", 45)], { now: t0 }).alert, false);
+  is(
+    "a release run that just failed is said",
+    buildAlert([run("failure", 10)], { now: t0 }).alert,
+    true
+  );
+  is(
+    "...and not again once the window has passed",
+    buildAlert([run("failure", 45)], { now: t0 }).alert,
+    false
+  );
   is("a green release run is quiet", buildAlert([run("success", 5)], { now: t0 }).alert, false);
-  is("a cancelled run is not a broken build", buildAlert([run("cancelled", 5)], { now: t0 }).alert, false);
-  is("a build that timed out built nothing either", buildAlert([run("timed_out", 10)], { now: t0 }).alert, true);
+  is(
+    "a cancelled run is not a broken build",
+    buildAlert([run("cancelled", 5)], { now: t0 }).alert,
+    false
+  );
+  is(
+    "a build that timed out built nothing either",
+    buildAlert([run("timed_out", 10)], { now: t0 }).alert,
+    true
+  );
   is("no run at all is not an alarm", buildAlert([], { now: t0 }).alert, false);
   is("...nor is a listing that could not be read", buildAlert(null, { now: t0 }).alert, false);
   is(
@@ -1917,7 +2112,10 @@ function selfTest(): void {
   );
   is(
     "...nor is the first failure of a streak, re-run and failing again",
-    buildAlert([run("failure", 300, "bbb2222"), run("failure", 5, "aaa1111"), run("success", 400)], { now: t0 }).alert,
+    buildAlert(
+      [run("failure", 300, "bbb2222"), run("failure", 5, "aaa1111"), run("success", 400)],
+      { now: t0 }
+    ).alert,
     false
   );
 
@@ -1926,7 +2124,12 @@ function selfTest(): void {
   // plain listing with main's real newest runs — one still building, and under
   // it one that had just failed. Put `branch=main` or `status=completed` back in
   // RELEASE_RUNS_PATH and the first of these fails.
-  const listed = (conclusion: string | null, minutesAgo: number, sha: string, head_branch = "main") => ({
+  const listed = (
+    conclusion: string | null,
+    minutesAgo: number,
+    sha: string,
+    head_branch = "main"
+  ) => ({
     status: conclusion ? "completed" : "in_progress",
     conclusion,
     html_url: runUrl(sha),
@@ -1939,10 +2142,18 @@ function selfTest(): void {
   const mirror = (path: string) => ({
     workflow_runs: /[?&](actor|branch|check_suite_id|created|event|head_sha|status)=/.test(path)
       ? [listed("success", 30 * 1440, "9e32349")]
-      : [listed(null, 2, "5d7a02b"), listed("failure", 10, "710ce4d"), listed("success", 200, "21b945b")]
+      : [
+          listed(null, 2, "5d7a02b"),
+          listed("failure", 10, "710ce4d"),
+          listed("success", 200, "21b945b")
+        ]
   });
   const seen = buildAlert(mainReleaseRuns(mirror(RELEASE_RUNS_PATH)), { now: t0 });
-  is("the listing this script asks for shows the failed build", [seen.alert, seen.broken?.sha], [true, "710ce4d"]);
+  is(
+    "the listing this script asks for shows the failed build",
+    [seen.alert, seen.broken?.sha],
+    [true, "710ce4d"]
+  );
   is(
     "...broken since its commit landed, not since the build gave up 40 minutes later",
     seen.broken?.since,
@@ -1957,7 +2168,9 @@ function selfTest(): void {
   is(
     "main is picked out of the page here: a failed release tag is not a broken main",
     buildAlert(
-      mainReleaseRuns({ workflow_runs: [listed("failure", 5, "7fdfa24", "0.6.0"), listed("success", 60, "21b945b")] }),
+      mainReleaseRuns({
+        workflow_runs: [listed("failure", 5, "7fdfa24", "0.6.0"), listed("success", 60, "21b945b")]
+      }),
       { now: t0 }
     ).alert,
     false
@@ -1986,18 +2199,39 @@ function selfTest(): void {
     failures: 3,
     stale: true
   });
-  is("...as a reason of its own", still.why.startsWith("3 release run(s) in a row failed on main, newest ccc3333 — no image since"), true);
-  is("...on the opening passes, not all day", buildAlert(failing, { now: new Date("2026-09-24T03:10:00Z") }).alert, false);
-  is("...and again the next working day", buildAlert(failing, { now: new Date("2026-09-25T02:10:00Z") }).alert, true);
-  is("...but not on a Saturday", buildAlert(failing, { now: new Date("2026-09-26T02:10:00Z") }).alert, false);
+  is(
+    "...as a reason of its own",
+    still.why.startsWith(
+      "3 release run(s) in a row failed on main, newest ccc3333 — no image since"
+    ),
+    true
+  );
+  is(
+    "...on the opening passes, not all day",
+    buildAlert(failing, { now: new Date("2026-09-24T03:10:00Z") }).alert,
+    false
+  );
+  is(
+    "...and again the next working day",
+    buildAlert(failing, { now: new Date("2026-09-25T02:10:00Z") }).alert,
+    true
+  );
+  is(
+    "...but not on a Saturday",
+    buildAlert(failing, { now: new Date("2026-09-26T02:10:00Z") }).alert,
+    false
+  );
   is(
     "a cancelled run on top does not hide it",
-    buildAlert([run("cancelled", 5, "ddd4444", morning), ...failing], { now: morning }).broken?.failures,
+    buildAlert([run("cancelled", 5, "ddd4444", morning), ...failing], { now: morning }).broken
+      ?.failures,
     3
   );
   is(
     "one that began an hour ago is not yet staying broken",
-    buildAlert([run("failure", 60, "ccc3333", morning), run("success", 300, "0000000", morning)], { now: morning }).alert,
+    buildAlert([run("failure", 60, "ccc3333", morning), run("success", 300, "0000000", morning)], {
+      now: morning
+    }).alert,
     false
   );
   // A green run ends it only if it built an image; the registry is asked which.
@@ -2007,13 +2241,21 @@ function selfTest(): void {
     buildAlert([builtNothing, ...failing], { now: morning }).broken,
     still.broken
   );
-  is("...one that built an image does", buildAlert([{ ...builtNothing, built: true }, ...failing], { now: morning }).alert, false);
+  is(
+    "...one that built an image does",
+    buildAlert([{ ...builtNothing, built: true }, ...failing], { now: morning }).alert,
+    false
+  );
   is(
     "the registry is asked about the greens over a failure, and no others",
     greensOverAFailure([builtNothing, ...failing]).map((r) => r.sha),
     ["eee5555"]
   );
-  is("...so a main with no failure asks nothing", greensOverAFailure([run("success", 5), run("cancelled", 9)]), []);
+  is(
+    "...so a main with no failure asks nothing",
+    greensOverAFailure([run("success", 5), run("cancelled", 9)]),
+    []
+  );
   // A healthy build says nothing, at the opening or any other time.
   const healthy = [run("success", 60, "ccc3333", morning), ...failing.slice(1)];
   is("a build that has succeeded since is healthy", buildAlert(healthy, { now: morning }), {
@@ -2133,7 +2375,10 @@ function selfTest(): void {
   // ever set, so every gate after it read empty and nothing was ever pinned. Two
   // such groups shipped, behind `|| true`. Each read has to open the file itself.
   const drained = steps
-    .filter(({ chunk }) => /\}\s*<\s*plan2?\.json/.test(chunk) || /plan2?\.json[^\n]*\|\|\s*true/.test(chunk))
+    .filter(
+      ({ chunk }) =>
+        /\}\s*<\s*plan2?\.json/.test(chunk) || /plan2?\.json[^\n]*\|\|\s*true/.test(chunk)
+    )
     .map(({ name }) => name);
   is(
     `no step feeds the plan to several jq processes through one stdin, or hides a failed read (${drained.join(", ") || "none"})`,
@@ -2159,7 +2404,11 @@ function selfTest(): void {
   // after the branch was pushed and before the PR existed — and every pass
   // after it would have died the same way. Markdown list lines start with `-`.
   const dashFormats = [...workflow.matchAll(/printf '-/g)].length;
-  is(`no printf format in promote.yaml starts with '-' without a '--' first (${dashFormats})`, dashFormats, 0);
+  is(
+    `no printf format in promote.yaml starts with '-' without a '--' first (${dashFormats})`,
+    dashFormats,
+    0
+  );
   // The plan reads the values files the workflow writes. Two spellings of one
   // path drift apart silently: the drift check would read a file nobody pins.
   is(
@@ -2212,8 +2461,7 @@ function arg(name: string, fallback: string | null = null): string | null {
 // Compared through realpath: invoked via a symlinked path (macOS `/tmp` is
 // `/private/tmp`), the URLs differ and `--self-test` exited 0 having run nothing.
 const invokedDirectly =
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 
 if (!invokedDirectly) {
   // imported: exports only

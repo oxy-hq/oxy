@@ -7,6 +7,7 @@ mod app_function_agent;
 pub mod app_function_executor;
 pub mod audit_anchor;
 pub mod authz;
+pub mod build_identity;
 pub mod builder_test_runner;
 pub mod compile_config_gate;
 pub mod compile_git;

@@ -72,7 +72,9 @@ jobs:
           BASE=$(jq -r '.prod.baseUrl' .github/custom-app-checks.json)
           BODY=$(curl -fsS -m 15 "${BASE}/api/version")
           SHA=$(jq -r '.build_info.git_commit_short // empty' <<<"$BODY")
-          VERSION=$(jq -r '.version // empty' <<<"$BODY")
+          # The image tag the process says it runs as. Absent on an image built
+          # before OXY_IMAGE_TAG was baked in; never a semver.
+          IMAGE_TAG=$(jq -r '.image_tag // empty' <<<"$BODY")
           if [[ -z "$SHA" ]]; then
             echo "::error::${BASE}/api/version reported no commit; nothing to publish"
             exit 1
@@ -84,8 +86,8 @@ jobs:
             | sed -n 's/^GitOrigin-RevId:[[:space:]]*\([0-9a-f]\{7,40\}\).*$/\1/p' | head -1)
           echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
           echo "internal=${INTERNAL}" >> "$GITHUB_OUTPUT"
-          echo "running_version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "::notice::prod serves main-${SHA} (internal ${INTERNAL:-unknown}), reporting ${VERSION}"
+          echo "running_image=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "::notice::prod serves main-${SHA} (internal ${INTERNAL:-unknown}), reporting image ${IMAGE_TAG:-not reported}"
 
       - name: Install git-cliff
         uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2
@@ -178,7 +180,7 @@ jobs:
           VERSION: ${{ steps.plan.outputs.version }}
           SHA: ${{ steps.prod.outputs.sha }}
           INTERNAL: ${{ steps.prod.outputs.internal }}
-          RUNNING: ${{ steps.prod.outputs.running_version }}
+          RUNNING: ${{ steps.prod.outputs.running_image }}
           AHEAD: ${{ steps.plan.outputs.ahead }}
           MIGRATIONS: ${{ steps.plan.outputs.migrations }}
           NOTHING: ${{ steps.plan.outputs.nothing }}
@@ -192,7 +194,7 @@ jobs:
             echo "| Next version | \`${VERSION:-none}\` |"
             echo "| Prod digest | \`main-${SHA:-unknown}\` |"
             echo "| Internal commit | \`${INTERNAL:-unknown}\` |"
-            echo "| Prod reports version | \`${RUNNING:-unknown}\` |"
+            echo "| Prod reports image | \`${RUNNING:-not reported}\` |"
             echo "| main ahead by | ${AHEAD:-unknown} commit(s) |"
             echo "| Migration files differing | ${MIGRATIONS:-unknown} |"
             echo "| Nothing to publish | ${NOTHING:-no} |"

@@ -3,26 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 use utoipa::ToSchema;
 
+use crate::server::build_identity::{self, BuildInfo};
+
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct HealthCheckResponse {
     pub status: String,
     pub timestamp: u64,
     pub service: String,
-    pub version: String,
+    /// The image tag this process runs as (`main-<sha>`); `null` outside an
+    /// image, where `build_info.git_commit_short` names the build.
+    pub image_tag: Option<String>,
     pub database: DatabaseStatus,
     pub build_info: BuildInfo,
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct BuildInfo {
-    pub git_commit: String,
-    pub git_commit_short: String,
-    pub build_timestamp: String,
-    pub build_profile: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub commit_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflow_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -33,7 +25,9 @@ pub struct DatabaseStatus {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct VersionResponse {
-    pub version: String,
+    /// The image tag this process runs as (`main-<sha>`); `null` outside an
+    /// image, where `build_info.git_commit_short` names the build.
+    pub image_tag: Option<String>,
     pub service: String,
     pub build_info: BuildInfo,
 }
@@ -67,8 +61,8 @@ pub struct VersionResponse {
 
 /// Health check endpoint — for humans and uptime monitors.
 ///
-/// Returns service health including database connectivity, plus version and
-/// build information. Unauthenticated. Served at `/api/health`.
+/// Returns service health including database connectivity, plus the image tag
+/// and build information. Unauthenticated. Served at `/api/health`.
 ///
 /// Intended for external uptime monitoring (the build info aids triage) and for
 /// operators asking "what is deployed, and can it reach its database?".
@@ -94,52 +88,6 @@ pub async fn health_check()
         .unwrap_or_default()
         .as_secs();
 
-    let version = env!("CARGO_PKG_VERSION").to_string();
-
-    // Build information from compile-time environment variables
-    let git_commit = env!("GIT_HASH_LONG").to_string();
-    let git_commit_short = env!("GIT_HASH").to_string();
-    let github_server = env!("GITHUB_SERVER_URL");
-    let github_repo = env!("GITHUB_REPOSITORY");
-    let github_run_id = env!("GITHUB_RUN_ID");
-
-    // Build GitHub URLs if we have the necessary info
-    // Note: build.rs sets "dev" for local builds, CI sets "unknown" when unavailable
-    let commit_url = if !github_server.is_empty()
-        && !github_repo.is_empty()
-        && git_commit != "unknown"
-        && git_commit != "dev"
-    {
-        Some(format!(
-            "{}/{}/commit/{}",
-            github_server, github_repo, git_commit
-        ))
-    } else {
-        None
-    };
-
-    let workflow_url = if !github_server.is_empty()
-        && !github_repo.is_empty()
-        && !github_run_id.is_empty()
-        && github_run_id != "unknown"
-    {
-        Some(format!(
-            "{}/{}/actions/runs/{}",
-            github_server, github_repo, github_run_id
-        ))
-    } else {
-        None
-    };
-
-    let build_info = BuildInfo {
-        git_commit,
-        git_commit_short,
-        build_timestamp: env!("BUILD_TIMESTAMP").to_string(),
-        build_profile: env!("BUILD_PROFILE").to_string(),
-        commit_url,
-        workflow_url,
-    };
-
     let db_status = check_database_connection().await;
 
     let status = if db_status.connected {
@@ -152,9 +100,9 @@ pub async fn health_check()
         status: status.to_string(),
         timestamp,
         service: "oxy".to_string(),
-        version,
+        image_tag: build_identity::image_tag().map(str::to_string),
         database: db_status,
-        build_info,
+        build_info: build_identity::build_info(),
     };
 
     if status == "healthy" {
@@ -244,7 +192,10 @@ pub async fn liveness_check() -> StatusCode {
 
 /// Version information endpoint
 ///
-/// Returns version and build information without any health checks.
+/// Returns the image tag this process runs as (`main-<sha>`, what a deploy
+/// pins) and its build information, without any health checks. There is no
+/// semver: the last published release says nothing about which image is
+/// running.
 /// This endpoint always returns 200 as long as the service is running,
 /// making it reliable for displaying diagnostics even when the service is unhealthy.
 #[utoipa::path(
@@ -256,55 +207,27 @@ pub async fn liveness_check() -> StatusCode {
     )
 )]
 pub async fn version_info() -> Json<VersionResponse> {
-    let version = env!("CARGO_PKG_VERSION").to_string();
-
-    // Build information from compile-time environment variables
-    let git_commit = env!("GIT_HASH_LONG").to_string();
-    let git_commit_short = env!("GIT_HASH").to_string();
-    let github_server = env!("GITHUB_SERVER_URL");
-    let github_repo = env!("GITHUB_REPOSITORY");
-    let github_run_id = env!("GITHUB_RUN_ID");
-
-    // Build GitHub URLs if we have the necessary info
-    // Note: build.rs sets "dev" for local builds, CI sets "unknown" when unavailable
-    let commit_url = if !github_server.is_empty()
-        && !github_repo.is_empty()
-        && git_commit != "unknown"
-        && git_commit != "dev"
-    {
-        Some(format!(
-            "{}/{}/commit/{}",
-            github_server, github_repo, git_commit
-        ))
-    } else {
-        None
-    };
-
-    let workflow_url = if !github_server.is_empty()
-        && !github_repo.is_empty()
-        && !github_run_id.is_empty()
-        && github_run_id != "unknown"
-    {
-        Some(format!(
-            "{}/{}/actions/runs/{}",
-            github_server, github_repo, github_run_id
-        ))
-    } else {
-        None
-    };
-
-    let build_info = BuildInfo {
-        git_commit,
-        git_commit_short,
-        build_timestamp: env!("BUILD_TIMESTAMP").to_string(),
-        build_profile: env!("BUILD_PROFILE").to_string(),
-        commit_url,
-        workflow_url,
-    };
-
     Json(VersionResponse {
-        version,
+        image_tag: build_identity::image_tag().map(str::to_string),
         service: "oxy".to_string(),
-        build_info,
+        build_info: build_identity::build_info(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn the_version_route_names_the_image_and_reports_no_semver() {
+        let Json(body) = version_info().await;
+        let v = serde_json::to_value(body).unwrap();
+        assert!(v.get("version").is_none(), "no semver: {v}");
+        assert!(
+            v.as_object().unwrap().contains_key("image_tag"),
+            "image_tag is always present, null outside an image: {v}"
+        );
+        assert!(v["build_info"]["git_commit_short"].is_string());
+        assert!(v["build_info"]["sentry_release"].is_string());
+    }
 }

@@ -51,9 +51,11 @@ pub struct CatalogResponse {
     pub routes: Vec<RouteDescription>,
     /// Surfaces in display order, each with the credential it expects.
     pub surfaces: Vec<CatalogSurface>,
-    /// The build this table was generated from, so a stale client cache and a
-    /// redeployed server can be told apart without guessing from timestamps.
-    pub version: &'static str,
+    /// The build this table was generated from (the image tag, or the commit
+    /// outside an image), so a stale client cache and a redeployed server can be
+    /// told apart without guessing from timestamps. Not the semver: that stays
+    /// the same across every deploy between two releases.
+    pub build: String,
 }
 
 #[derive(Serialize)]
@@ -102,6 +104,6 @@ pub async fn get_catalog(
                 credential,
             })
             .collect(),
-        version: env!("CARGO_PKG_VERSION"),
+        build: crate::server::build_identity::build_label(),
     })
 }

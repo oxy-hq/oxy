@@ -26,6 +26,12 @@ ARG BINARY_PATH=oxy
 COPY ${BINARY_PATH} /usr/local/bin/oxy
 RUN chmod +x /usr/local/bin/oxy
 
+# The tag this image is pushed as (`main-<sha>`), so `/api/version` names the image a
+# deploy pinned rather than the last published semver. Empty for a local build, which
+# then reports its commit.
+ARG OXY_IMAGE_TAG=""
+ENV OXY_IMAGE_TAG=${OXY_IMAGE_TAG}
+
 # Directory for persistent app data inside the container
 ENV OXY_STATE_DIR=/var/lib/oxy/data
 RUN mkdir -p ${OXY_STATE_DIR} && chown -R root:root /var/lib/oxy

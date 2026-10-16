@@ -68,7 +68,7 @@ pub fn init_sentry(build_sha: &str) -> Option<sentry::ClientInitGuard> {
             .unwrap_or_else(|_| "production".to_string())
     };
 
-    let release = release_id(env!("CARGO_PKG_VERSION"), build_sha);
+    let release = release_for(build_sha);
 
     // sentry 0.49 made `ClientOptions` `#[non_exhaustive]`, so it can no longer be
     // built with a struct literal — the consuming builder methods are the supported
@@ -300,6 +300,13 @@ pub fn add_breadcrumb(message: &str, category: &str, level: sentry::Level) {
         timestamp: std::time::SystemTime::now(),
         ..Default::default()
     });
+}
+
+/// The Sentry release this binary reports for `build_sha`. Public so
+/// `/api/version` can serve the exact string, and the promotion gate reads it
+/// instead of composing it from parts.
+pub fn release_for(build_sha: &str) -> String {
+    release_id(env!("CARGO_PKG_VERSION"), build_sha)
 }
 
 /// The Sentry release for a build: `oxy@<version>`, plus the build commit when

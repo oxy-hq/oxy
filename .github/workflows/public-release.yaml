@@ -697,6 +697,9 @@ jobs:
 
           if [ "$CHANNEL" = "stable" ]; then
             TAGS="${IMAGE}:${VERSION}-${ARCH},${IMAGE}:latest-${ARCH}"
+            # A stable image is built only when its commit never had a `main-`
+            # image; otherwise it is a retag, and keeps the `main-<sha>` it says.
+            IMAGE_TAG="${VERSION}"
           else
             # Two names for the main build, both saying `main`:
             #   main-<sha>   what promote.yaml pins (internal-docs/deploy-pipeline.md)
@@ -706,9 +709,13 @@ jobs:
             # nightly CLI channel, which is a different artifact.
             TAGS="${IMAGE}:main-${SHORT_SHA}-${ARCH}"
             TAGS="${TAGS},${IMAGE}:main-latest-${ARCH}"
+            IMAGE_TAG="main-${SHORT_SHA}"
           fi
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          # The multi-arch name the image is pinned by, baked in as OXY_IMAGE_TAG
+          # so `/api/version` reports it (crates/app/src/server/build_identity.rs).
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -718,7 +725,9 @@ jobs:
           target: runtime
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          build-args: BINARY_PATH=oxy
+          build-args: |
+            BINARY_PATH=oxy
+            OXY_IMAGE_TAG=${{ steps.meta.outputs.image_tag }}
           provenance: false
 
   # ============================================================================

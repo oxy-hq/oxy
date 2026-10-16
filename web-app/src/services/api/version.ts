@@ -7,23 +7,29 @@ interface BuildInfo {
   build_profile: string;
   commit_url?: string;
   workflow_url?: string;
+  sentry_release?: string;
 }
 
 export interface VersionInfo {
-  version: string;
+  /** The image tag the server runs as (`main-<sha>`); null outside an image. */
+  image_tag: string | null;
   service: string;
   build_info: BuildInfo;
 }
 
 export async function getVersion(): Promise<VersionInfo> {
-  const response = await apiClient.get<{
-    version: string;
-    service: string;
-    build_info: BuildInfo;
-  }>("/version");
+  const response = await apiClient.get<VersionInfo>("/version");
   return {
-    version: response.data.version,
+    image_tag: response.data.image_tag ?? null,
     service: response.data.service,
     build_info: response.data.build_info
   };
 }
+
+/**
+ * One word for the running build: its image tag, or its commit when the server is not an
+ * image (a local build reports `dev`). Never the semver, which stays the same for every
+ * image between two releases.
+ */
+export const buildLabel = (info: VersionInfo): string =>
+  info.image_tag ?? info.build_info.git_commit_short;

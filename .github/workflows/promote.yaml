@@ -196,14 +196,15 @@ jobs:
           jq -r '"candidate_internal=\(.candidate.internal // "")"' plan1.json >> "$GITHUB_OUTPUT"
           jq -r '"dev_sha=\(.serving.dev.sha // "")"' plan1.json >> "$GITHUB_OUTPUT"
           jq -r '"staging_sha=\(.serving.staging.sha // "")"' plan1.json >> "$GITHUB_OUTPUT"
-          jq -r '"staging_version=\(.serving.staging.version // "")"' plan1.json >> "$GITHUB_OUTPUT"
+          jq -r '"candidate_release=\(.candidateRelease // "")"' plan1.json >> "$GITHUB_OUTPUT"
           jq -r '"prod_sha=\(.serving.prod.sha // "")"' plan1.json >> "$GITHUB_OUTPUT"
           jq -r '"prod_internal=\(.serving.prod.internal // "")"' plan1.json >> "$GITHUB_OUTPUT"
 
-      # The candidate's Sentry release, as the running process spells it:
-      # `oxy@<version>+<sha>` (crates/core/src/sentry_config.rs → release_id).
-      # Composed from what STAGING reports rather than from anything in this repo,
-      # so the string can only drift if the deployed binary drifts.
+      # The candidate's Sentry release: the id STAGING's process reports
+      # (`/api/version` → `build_info.sentry_release`) with the candidate's sha
+      # (promote.ts `candidateRelease`). Read off the deployed binary rather than
+      # composed from a version, which `/api/version` no longer reports, so the
+      # string can only drift if the binary drifts.
       - name: Count new Sentry issues in the candidate's release
         id: sentry
         env:
@@ -211,18 +212,16 @@ jobs:
           # (#3319). A token without event:read fails the query, which reads as
           # "not measured" — and that blocks prod, the safe direction.
           SENTRY_READ_TOKEN: ${{ secrets.SENTRY_READ_TOKEN || secrets.SENTRY_AUTH_TOKEN }}
-          VERSION: ${{ steps.plan1.outputs.staging_version }}
-          SHA: ${{ steps.plan1.outputs.candidate }}
+          RELEASE: ${{ steps.plan1.outputs.candidate_release }}
         run: |
           # No `-e`: an unreachable Sentry reports "not measured" rather than
           # failing the run. Blocking is the gate's job, not this step's.
           set -uo pipefail
-          if [[ -z "${SENTRY_READ_TOKEN:-}" || -z "$VERSION" || -z "$SHA" ]]; then
-            echo "::warning::new-Sentry-issue count not measured (token, version or sha missing)"
+          if [[ -z "${SENTRY_READ_TOKEN:-}" || -z "$RELEASE" ]]; then
+            echo "::warning::new-Sentry-issue count not measured (token or staging's Sentry release missing)"
             echo "count=-1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          RELEASE="oxy@${VERSION}+${SHA}"
           # 14 days, not 24 hours: `statsPeriod` filters by recent EVENTS, so with
           # a one-day window an issue first seen on Friday that went quiet by
           # Sunday has left the query by Monday 09:00, when the promote window
@@ -871,7 +870,7 @@ jobs:
           SENTRY_READ_TOKEN: ${{ secrets.SENTRY_READ_TOKEN || secrets.SENTRY_AUTH_TOKEN }}
           CANDIDATE: ${{ steps.plan.outputs.candidate }}
           PREVIOUS: ${{ steps.plan1.outputs.prod_sha }}
-          VERSION: ${{ steps.plan1.outputs.staging_version }}
+          CANDIDATE_RELEASE: ${{ steps.plan1.outputs.candidate_release }}
         run: |
           set -uo pipefail
           BASE=$(jq -r '.prod.baseUrl' .github/custom-app-checks.json)
@@ -891,10 +890,13 @@ jobs:
           sleep 600
 
           REGRESSION=""
-          if [[ -n "${SENTRY_READ_TOKEN:-}" && -n "$VERSION" ]]; then
+          # The release of what merged, as candidateRelease builds it: staging's
+          # id up to `+`, then this candidate's sha.
+          RELEASE="${CANDIDATE_RELEASE%+*}+${CANDIDATE}"
+          if [[ -n "${SENTRY_READ_TOKEN:-}" && -n "$CANDIDATE_RELEASE" ]]; then
             NEW=$(curl -fsS -m 30 -G \
               -H "Authorization: Bearer ${SENTRY_READ_TOKEN}" \
-              --data-urlencode "query=is:unresolved first-release:oxy@${VERSION}+${CANDIDATE}" \
+              --data-urlencode "query=is:unresolved first-release:${RELEASE}" \
               --data-urlencode "environment=production" \
               --data-urlencode "statsPeriod=1h" \
               "${SENTRY_API}/projects/${SENTRY_ORG}/oxy/issues/" | jq 'length') || NEW=""

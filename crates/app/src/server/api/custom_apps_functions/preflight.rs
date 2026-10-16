@@ -151,12 +151,12 @@ pub fn evaluate(
 
 /// The message for the migrate Job's log and the custom-app channel.
 pub fn report(refusals: &[Refusal], unchecked: usize) -> String {
-    let version = env!("CARGO_PKG_VERSION");
+    let build = crate::server::build_identity::build_label();
     let mut out = if refusals.is_empty() {
-        format!("custom-app preflight: release {version} stops no working custom-app function.")
+        format!("custom-app preflight: build {build} stops no working custom-app function.")
     } else {
         format!(
-            ":warning: Release {version} would refuse {} call(s) that working custom-app \
+            ":warning: Build {build} would refuse {} call(s) that working custom-app \
              functions make:",
             refusals.len()
         )

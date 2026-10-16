@@ -33,10 +33,10 @@
 // Without it, or when the lookup fails, the message leaves the counts out rather
 // than guessing, and says why on stderr.
 
-import { readFile } from "node:fs/promises";
 import { readFileSync, realpathSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { prodGate, SOAK_MINUTES, type BrokenBuild, type ProdState } from "./promote.ts";
+import { type BrokenBuild, type ProdState, prodGate, SOAK_MINUTES } from "./promote.ts";
 
 const INTERNAL = "oxy-hq/oxygen-internal";
 const WINDOW_TEXT = "Mon–Thu, 09:00–17:00 Vietnam time";
@@ -117,9 +117,12 @@ export interface Explained {
  * counts in project `oxy`; its numeric id comes from the issues themselves when
  * the gate kept them, else `-1` (all projects), which still contains them.
  */
-export function sentryIssuesUrl(version: string | null, build: string, projectId?: string | number | null): string | null {
-  if (!version) return null;
-  const query = `is:unresolved first-release:oxy@${version}+${build}`;
+export function sentryIssuesUrl(
+  release: string | null,
+  projectId?: string | number | null
+): string | null {
+  if (!release) return null;
+  const query = `is:unresolved first-release:${release}`;
   return `https://oxygen-intelligence.sentry.io/issues/?project=${projectId ?? -1}&environment=staging&statsPeriod=${SENTRY_WINDOW}&query=${encodeURIComponent(query)}`;
 }
 
@@ -132,13 +135,18 @@ export function sentryIssuesUrl(version: string | null, build: string, projectId
 export const SENTRY_WINDOW = "14d";
 
 /** The gate's reason, said for people. Order does not matter: the patterns are disjoint. */
-export function explainGate(why: string, { sentryUrl = null }: { sentryUrl?: string | null } = {}): Explained {
+export function explainGate(
+  why: string,
+  { sentryUrl = null }: { sentryUrl?: string | null } = {}
+): Explained {
   const known = (reason: string, action: string): Explained => ({ reason, action, known: true });
   let m: RegExpExecArray | null;
   if (/^no promotable digest/.test(why))
-    return known("there is no new signed build to release.", "an engineer checks the latest image build.");
-  if (/^prod serves it/.test(why))
-    return known("production already runs this build.", "nothing.");
+    return known(
+      "there is no new signed build to release.",
+      "an engineer checks the latest image build."
+    );
+  if (/^prod serves it/.test(why)) return known("production already runs this build.", "nothing.");
   if (/^a rollback PR is open/.test(why))
     return known(
       "a rollback of production is open and waiting for a decision.",
@@ -156,7 +164,10 @@ export function explainGate(why: string, { sentryUrl = null }: { sentryUrl?: str
     );
   if ((m = /^staging checks are (\S+)/.exec(why))) {
     if (m[1] === "failed")
-      return known("staging's release tests failed for this build.", "an engineer opens the failed test run and decides: fix forward, or skip this build.");
+      return known(
+        "staging's release tests failed for this build.",
+        "an engineer opens the failed test run and decides: fix forward, or skip this build."
+      );
     return known(
       m[1] === "not-run"
         ? "staging's release tests did not reach a result (they timed out or were cut short)."
@@ -165,7 +176,10 @@ export function explainGate(why: string, { sentryUrl = null }: { sentryUrl?: str
     );
   }
   if ((m = /^soaked (\d+)m of (\d+)m/.exec(why)))
-    return known(`it is still being watched on staging (${m[1]} of ${m[2]} minutes).`, "nothing — it continues on its own.");
+    return known(
+      `it is still being watched on staging (${m[1]} of ${m[2]} minutes).`,
+      "nothing — it continues on its own."
+    );
   if (/^new-Sentry-issue count was not measured/.test(why))
     return known(
       "the error check on staging could not run, so the release cannot be judged safe.",
@@ -181,7 +195,10 @@ export function explainGate(why: string, { sentryUrl = null }: { sentryUrl?: str
     );
   }
   if (/^outside the promote window/.test(why))
-    return known(`releases go out ${WINDOW_TEXT}, and it is outside that window.`, "nothing — it can ship in the next window.");
+    return known(
+      `releases go out ${WINDOW_TEXT}, and it is outside that window.`,
+      "nothing — it can ship in the next window."
+    );
   if (/moved on ghcr after staging was pinned/.test(why))
     return known(
       "the build was republished after staging tested it, so what would ship is not what was tested.",
@@ -193,12 +210,11 @@ export function explainGate(why: string, { sentryUrl = null }: { sentryUrl?: str
 // ── Pure: the messages ──────────────────────────────────────────────────────
 
 export interface ReleaseFacts {
+  /** The candidate's commit; its image is `main-<build>`. */
   build: string;
-  /** The version the build reports, when staging serves it and says so. */
-  version: string | null;
-  /** What customers run now. */
-  prodVersion: string | null;
-  /** Prod's build id: the only thing that tells it apart when both report one version. */
+  /** The candidate's Sentry release (`candidateRelease` in the plan), for the issues link. */
+  release: string | null;
+  /** What customers run now: prod's commit, its image `main-<prodBuild>`. */
   prodBuild: string | null;
   prUrl: string | null;
   prNumber: number | null;
@@ -227,29 +243,42 @@ export interface SentryIssue {
  * would show as `<` — something other than the error text.
  */
 export function issueTitle(raw: string | undefined, max = 90): string {
-  const t = (raw || "untitled").replace(/[\r\n`<>|*_~[\]]+/g, " ").replace(/\s+/g, " ").trim();
+  const t = (raw || "untitled")
+    .replace(/[\r\n`<>|*_~[\]]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const cut = t.slice(0, max);
   const shown =
-    t.length <= max ? t : `${cut.slice(0, cut.lastIndexOf(" ") > max / 2 ? cut.lastIndexOf(" ") : max).trimEnd()}…`;
+    t.length <= max
+      ? t
+      : `${cut.slice(0, cut.lastIndexOf(" ") > max / 2 ? cut.lastIndexOf(" ") : max).trimEnd()}…`;
   return shown.replace(/&/g, "&amp;");
 }
 
 /** The issues as a list: Slack bullets, or markdown for a PR comment. At most 3, then a count. */
 export function issueList(issues: SentryIssue[], format: "slack" | "markdown"): string {
   const shown = issues.slice(0, 3).map((i) => {
-    const events = i.count === undefined ? "" : ` · ${i.count} ${Number(i.count) === 1 ? "event" : "events"}`;
+    const events =
+      i.count === undefined ? "" : ` · ${i.count} ${Number(i.count) === 1 ? "event" : "events"}`;
     const level = i.level ? `\`${i.level}\` ` : "";
-    if (format === "markdown") return `- ${level}${issueTitle(i.title)}${events}${i.permalink ? ` · ${i.permalink}` : ""}`;
+    if (format === "markdown")
+      return `- ${level}${issueTitle(i.title)}${events}${i.permalink ? ` · ${i.permalink}` : ""}`;
     return `• ${level}${i.permalink ? `<${i.permalink}|${issueTitle(i.title)}>` : issueTitle(i.title)}${events}`;
   });
-  const more = issues.length > 3 ? `${format === "markdown" ? "- " : "• "}…and ${issues.length - 3} more` : "";
+  const more =
+    issues.length > 3 ? `${format === "markdown" ? "- " : "• "}…and ${issues.length - 3} more` : "";
   return lines(...shown, more);
 }
 
 const blockedBySentry = (why: string) => /^\d+ new unresolved Sentry issue/.test(why);
 
-const name = (f: ReleaseFacts) =>
-  f.version ? `Oxygen ${f.version} (build \`${f.build}\`)` : `Oxygen build \`${f.build}\``;
+/**
+ * A build is named by its image tag, which is what a deploy pins. Never by the
+ * semver: every image between two releases reports the same one, so "still on
+ * 0.5.153" beside "0.5.153 is waiting" read as a contradiction.
+ */
+const image = (build: string) => `\`main-${build}\``;
+const name = (f: ReleaseFacts) => `Oxygen build ${image(f.build)}`;
 
 const details = (links: [string | null, string][]) => {
   const shown = links.filter(([url]) => url).map(([url, text]) => `<${url}|${text}>`);
@@ -275,24 +304,21 @@ export function readyMessage(f: ReleaseFacts): string {
 /** The release has not reached customers and it has been too long, or a person must act. */
 export function stuckMessage(
   f: ReleaseFacts,
-  { blocked, gateWhy, onStagingSince, now }: { blocked: boolean; gateWhy: string; onStagingSince: string | null; now: string }
+  {
+    blocked,
+    gateWhy,
+    onStagingSince,
+    now
+  }: { blocked: boolean; gateWhy: string; onStagingSince: string | null; now: string }
 ): string {
-  const e = explainGate(gateWhy, { sentryUrl: sentryIssuesUrl(f.version, f.build, f.issues?.[0]?.project?.id) });
+  const e = explainGate(gateWhy, {
+    sentryUrl: sentryIssuesUrl(f.release, f.issues?.[0]?.project?.id)
+  });
   const waited = onStagingSince ? (Date.parse(now) - Date.parse(onStagingSince)) / 60000 : null;
   const head = blocked
     ? `:octagonal_sign: *A release needs a person before it can reach customers* — ${name(f)}`
     : `:hourglass_flowing_sand: *Changes are waiting to reach customers* — ${name(f)}${waited === null ? "" : ` has been on staging for ${humanDuration(waited)}`}`;
-  // Builds between two releases report the same version, so "still on Oxygen
-  // 0.5.153" next to "Oxygen 0.5.153 is waiting" reads as a contradiction. The
-  // version names prod only when it differs; otherwise the build does.
-  const prodName =
-    f.prodVersion && f.prodVersion !== f.version
-      ? `Oxygen ${f.prodVersion}`
-      : f.prodBuild
-        ? `build \`${f.prodBuild}\``
-        : f.prodVersion
-          ? `Oxygen ${f.prodVersion}`
-          : "the previous release";
+  const prodName = f.prodBuild ? `build ${image(f.prodBuild)}` : "the previous release";
   const customers = `Customers are still on ${prodName}; production itself is fine.`;
   return lines(
     head,
@@ -309,7 +335,15 @@ export function stuckMessage(
 }
 
 /** The newest image did not build, so nothing newer than the last good one can ship. */
-export function buildBrokenMessage({ failed, lastGood, runUrl }: { failed: string; lastGood: string | null; runUrl: string | null }): string {
+export function buildBrokenMessage({
+  failed,
+  lastGood,
+  runUrl
+}: {
+  failed: string;
+  lastGood: string | null;
+  runUrl: string | null;
+}): string {
   return lines(
     `:red_circle: *The newest Oxygen build failed to package* — build \`${failed}\``,
     `${lastGood ? `Nothing newer than build \`${lastGood}\`` : "No newer build"} can be released until a build succeeds. Customers are not affected.`,
@@ -335,7 +369,9 @@ export function buildStillBrokenMessage({
   now: string;
   runUrl: string | null;
 }): string {
-  const lasted = since ? ` for ${humanDuration((Date.parse(now) - Date.parse(since)) / 60000)}` : "";
+  const lasted = since
+    ? ` for ${humanDuration((Date.parse(now) - Date.parse(since)) / 60000)}`
+    : "";
   const count = failures > 1 ? `${failures} builds in a row, the newest` : "build";
   return lines(
     `:red_circle: *Oxygen builds have been failing${lasted}* — ${count} \`${failed}\``,
@@ -350,7 +386,9 @@ export function buildStillBrokenMessage({
 interface Plan {
   at: string;
   candidate: { sha: string; internal?: string | null } | null;
-  serving: Record<string, { sha?: string | null; version?: string | null; internal?: string | null } | null>;
+  serving: Record<string, { sha?: string | null; internal?: string | null } | null>;
+  /** The candidate's Sentry release, read off staging (promote.ts `candidateRelease`). */
+  candidateRelease?: string | null;
   bumpPr: { number: number } | null;
   soakStartedAt: string | null;
   prod: { kind: string; why: string };
@@ -358,34 +396,49 @@ interface Plan {
 }
 
 /** The oxygen-internal commits between prod and the candidate, or null with a reason on stderr. */
-async function fetchChanges(from: string, to: string, token: string | undefined): Promise<Changes | null> {
+async function fetchChanges(
+  from: string,
+  to: string,
+  token: string | undefined
+): Promise<Changes | null> {
   if (!token) {
     console.error("::warning::INTERNAL_TOKEN unset; the message leaves out the change counts");
     return null;
   }
   try {
-    const res = await fetch(`https://api.github.com/repos/${INTERNAL}/compare/${from}...${to}?per_page=250`, {
-      headers: { accept: "application/vnd.github+json", authorization: `Bearer ${token}` }
-    });
+    const res = await fetch(
+      `https://api.github.com/repos/${INTERNAL}/compare/${from}...${to}?per_page=250`,
+      {
+        headers: { accept: "application/vnd.github+json", authorization: `Bearer ${token}` }
+      }
+    );
     if (!res.ok) throw new Error(`compare ${from}...${to} → ${res.status}`);
-    const body = (await res.json()) as { total_commits: number; commits: { commit: { message: string } }[] };
-    return summarize(body.commits.map((c) => c.commit.message.split("\n")[0] ?? ""), body.total_commits);
+    const body = (await res.json()) as {
+      total_commits: number;
+      commits: { commit: { message: string } }[];
+    };
+    return summarize(
+      body.commits.map((c) => c.commit.message.split("\n")[0] ?? ""),
+      body.total_commits
+    );
   } catch (e) {
     console.error(`::warning::no change counts: ${(e as Error).message}`);
     return null;
   }
 }
 
-async function factsFrom(plan: Plan, runUrl: string | null, infraRepo: string): Promise<ReleaseFacts> {
+async function factsFrom(
+  plan: Plan,
+  runUrl: string | null,
+  infraRepo: string
+): Promise<ReleaseFacts> {
   const build = plan.candidate?.sha ?? "unknown";
-  const staging = plan.serving.staging;
   const prod = plan.serving.prod;
   const from = prod?.internal;
   const to = plan.candidate?.internal;
   return {
     build,
-    version: staging?.sha === build ? (staging?.version ?? null) : null,
-    prodVersion: prod?.version ?? null,
+    release: plan.candidateRelease ?? null,
     prodBuild: prod?.sha ?? null,
     prNumber: plan.bumpPr?.number ?? null,
     prUrl: plan.bumpPr ? `https://github.com/${infraRepo}/pull/${plan.bumpPr.number}` : null,
@@ -405,7 +458,11 @@ function selfTest(): void {
     if (g !== w) fails.push(`${what}\n    got  ${g}\n    want ${w}`);
   };
   const has = (what: string, text: string, needle: string, want = true) =>
-    is(`${what} ${want ? "says" : "does not say"} ${JSON.stringify(needle)}`, text.includes(needle), want);
+    is(
+      `${what} ${want ? "says" : "does not say"} ${JSON.stringify(needle)}`,
+      text.includes(needle),
+      want
+    );
 
   // Every branch of the real gate is explained in words, never the fallback.
   const now = new Date("2026-09-23T03:00:00Z"); // Wed 10:00 in Ho Chi Minh
@@ -426,7 +483,11 @@ function selfTest(): void {
     ["held", { ...green, held: true }],
     [
       "drift",
-      { ...green, drift: "main-abc1234 moved on ghcr after staging was pinned (staging ran 111111111111, ghcr now 222222222222); not proposing" }
+      {
+        ...green,
+        drift:
+          "main-abc1234 moved on ghcr after staging was pinned (staging ran 111111111111, ghcr now 222222222222); not proposing"
+      }
     ],
     ["staging behind", { ...green, stagingSha: "0000000" }],
     ["checks pending", { ...green, checks: "pending" }],
@@ -441,38 +502,86 @@ function selfTest(): void {
   for (const [label, state, at] of branches) {
     const gate = prodGate(state, { now: at ?? now });
     if (gate.kind === "go") continue;
-    is(`the gate's "${gate.why}" (${label}) is explained, not passed through`, explainGate(gate.why).known, true);
+    is(
+      `the gate's "${gate.why}" (${label}) is explained, not passed through`,
+      explainGate(gate.why).known,
+      true
+    );
   }
   is("an unknown reason still says something", explainGate("gremlins").reason, "gremlins.");
   is("...and asks an engineer to look", explainGate("gremlins").known, false);
   has("a failed check", explainGate("staging checks are failed").reason, "failed");
-  has("a Sentry count", explainGate("3 new unresolved Sentry issue(s) in this release on staging").reason, "3 new errors");
+  has(
+    "a Sentry count",
+    explainGate("3 new unresolved Sentry issue(s) in this release on staging").reason,
+    "3 new errors"
+  );
   is(
-    "one new error is \"it\", and links the gate's own Sentry query",
-    explainGate("1 new unresolved Sentry issue(s) in this release on staging", { sentryUrl: sentryIssuesUrl("0.5.153", "1a8c22d") }).action,
+    'one new error is "it", and links the gate\'s own Sentry query',
+    explainGate("1 new unresolved Sentry issue(s) in this release on staging", {
+      sentryUrl: sentryIssuesUrl("oxy@0.5.153+1a8c22d")
+    }).action,
     "an engineer triages it <https://oxygen-intelligence.sentry.io/issues/?project=-1&environment=staging&statsPeriod=14d&query=is%3Aunresolved%20first-release%3Aoxy%400.5.153%2B1a8c22d|in Sentry>. Resolving or ignoring it lets the release continue."
   );
   // The gate and the link must look at the same window, or the link shows a
   // different list than the one that blocked. The gate's is in promote.yaml.
-  const gateStep = readFileSync(new URL("../workflows/promote.yaml", import.meta.url), "utf8").split("- name: Count new Sentry issues in the candidate's release")[1]?.split("\n      - name: ")[0] ?? "";
-  is("the gate's Sentry query is found in promote.yaml", gateStep.includes("first-release:${RELEASE}"), true);
-  is("...and looks back as far as the link does", gateStep.includes(`--data-urlencode "statsPeriod=${SENTRY_WINDOW}"`), true);
-  is("...and no further or nearer anywhere in that step", (gateStep.match(/--data-urlencode "statsPeriod=/g) ?? []).length, 1);
-  is("with no version there is no link to build", sentryIssuesUrl(null, "1a8c22d"), null);
-  has("the link names the issues' own project when it is known", sentryIssuesUrl("0.5.153", "1a8c22d", 4507123) ?? "", "?project=4507123&");
-  is("an entity in an error message shows as written, not decoded", issueTitle("a &lt; b & c"), "a &amp;lt; b &amp; c");
+  const gateStep =
+    readFileSync(new URL("../workflows/promote.yaml", import.meta.url), "utf8")
+      .split("- name: Count new Sentry issues in the candidate's release")[1]
+      ?.split("\n      - name: ")[0] ?? "";
+  is(
+    "the gate's Sentry query is found in promote.yaml",
+    gateStep.includes("first-release:${RELEASE}"),
+    true
+  );
+  is(
+    "...and looks back as far as the link does",
+    gateStep.includes(`--data-urlencode "statsPeriod=${SENTRY_WINDOW}"`),
+    true
+  );
+  is(
+    "...and no further or nearer anywhere in that step",
+    (gateStep.match(/--data-urlencode "statsPeriod=/g) ?? []).length,
+    1
+  );
+  is("with no release there is no link to build", sentryIssuesUrl(null), null);
+  has(
+    "the link names the issues' own project when it is known",
+    sentryIssuesUrl("oxy@0.5.153+1a8c22d", 4507123) ?? "",
+    "?project=4507123&"
+  );
+  is(
+    "an entity in an error message shows as written, not decoded",
+    issueTitle("a &lt; b & c"),
+    "a &amp;lt; b &amp; c"
+  );
   is(
     "...and a cut never splits one",
-    issueTitle(`${"word ".repeat(17)}a&b`, 90).includes("&amp;") || !issueTitle(`${"word ".repeat(17)}a&b`, 90).includes("&"),
+    issueTitle(`${"word ".repeat(17)}a&b`, 90).includes("&amp;") ||
+      !issueTitle(`${"word ".repeat(17)}a&b`, 90).includes("&"),
     true
   );
 
   // Counting a release.
   const c = summarize(
-    ["feat: a", "fix(web-app): b", "fix!: c", "perf: d", "refactor: e", "chore: f", "Merge branch 'x'"],
+    [
+      "feat: a",
+      "fix(web-app): b",
+      "fix!: c",
+      "perf: d",
+      "refactor: e",
+      "chore: f",
+      "Merge branch 'x'"
+    ],
     9
   );
-  is("types are counted, and the unlisted rest are internal", c, { total: 9, features: 1, fixes: 2, speedups: 1, internal: 5 });
+  is("types are counted, and the unlisted rest are internal", c, {
+    total: 9,
+    features: 1,
+    fixes: 2,
+    speedups: 1,
+    internal: 5
+  });
   is("said in words", changesText(c), "9 changes (1 new feature, 2 fixes, 1 speed-up, 5 internal)");
   is("one change is singular", changesText(summarize(["fix: a"])), "1 change (1 fix)");
 
@@ -490,8 +599,7 @@ function selfTest(): void {
   // The messages.
   const facts: ReleaseFacts = {
     build: "b7f49d7",
-    version: "0.5.153",
-    prodVersion: "0.5.152",
+    release: "oxy@0.5.153+b7f49d7",
     prodBuild: "2ef5e38",
     prUrl: "https://github.com/oxy-hq/infrastructure/pull/2139",
     prNumber: 2139,
@@ -505,28 +613,93 @@ function selfTest(): void {
     onStagingSince: "2026-09-26T11:50:14.000Z",
     now: "2026-09-28T01:36:00.000Z"
   });
-  has("the stuck message", stuck, "*Changes are waiting to reach customers* — Oxygen 0.5.153 (build `b7f49d7`) has been on staging for 38 hours");
-  has("the stuck message", stuck, "Customers are still on Oxygen 0.5.152; production itself is fine. Waiting to ship: 37 changes (1 new feature, 1 fix, 35 internal).");
-  has("the stuck message", stuck, "*Why:* staging's release tests have not reported a result for this build.");
-  has("the stuck message", stuck, "Details: <https://github.com/oxy-hq/infrastructure/pull/2139|release PR #2139>");
+  has(
+    "the stuck message",
+    stuck,
+    "*Changes are waiting to reach customers* — Oxygen build `main-b7f49d7` has been on staging for 38 hours"
+  );
+  has(
+    "the stuck message",
+    stuck,
+    "Customers are still on build `main-2ef5e38`; production itself is fine. Waiting to ship: 37 changes (1 new feature, 1 fix, 35 internal)."
+  );
+  has(
+    "...and names no semver, which every image between two releases shares",
+    stuck,
+    "0.5.",
+    false
+  );
+  has(
+    "the stuck message",
+    stuck,
+    "*Why:* staging's release tests have not reported a result for this build."
+  );
+  has(
+    "the stuck message",
+    stuck,
+    "Details: <https://github.com/oxy-hq/infrastructure/pull/2139|release PR #2139>"
+  );
   for (const jargon of ["2266m", "gate", "bump", "digest", "train"])
     has("the stuck message", stuck.split("Details:")[0] ?? "", jargon, false);
-  const blocked = stuckMessage(facts, { blocked: true, gateWhy: "the bump PR carries release-hold; a person clears it", onStagingSince: null, now: "2026-09-28T01:36:00.000Z" });
-  has("a blocked release", blocked, ":octagonal_sign: *A release needs a person before it can reach customers*");
+  const blocked = stuckMessage(facts, {
+    blocked: true,
+    gateWhy: "the bump PR carries release-hold; a person clears it",
+    onStagingSince: null,
+    now: "2026-09-28T01:36:00.000Z"
+  });
+  has(
+    "a blocked release",
+    blocked,
+    ":octagonal_sign: *A release needs a person before it can reach customers*"
+  );
   has("a blocked release", blocked, "*Why:* someone put this release on hold.");
-  const sameVersion = stuckMessage({ ...facts, version: "0.5.153", prodVersion: "0.5.153", prodBuild: "b7f49d7", build: "c3bed2e" }, { blocked: false, gateWhy: "staging checks are pending", onStagingSince: null, now: "2026-09-28T01:36:00.000Z" });
-  has("when both report one version, prod is named by its build", sameVersion, "Customers are still on build `b7f49d7`; production itself is fine.");
-  has("...never by a version that reads as the one waiting", sameVersion, "still on Oxygen 0.5.153", false);
-  const bare = stuckMessage({ ...facts, version: null, prodVersion: null, prodBuild: null, changes: null, compareUrl: null, prUrl: null, prNumber: null, runUrl: null }, { blocked: false, gateWhy: "staging checks are pending", onStagingSince: null, now: "2026-09-28T01:36:00.000Z" });
-  has("...and with nothing known it says so plainly", bare, "Customers are still on the previous release");
-  has("with nothing known it still names the build", bare, "Oxygen build `b7f49d7`");
+  const bare = stuckMessage(
+    {
+      ...facts,
+      release: null,
+      prodBuild: null,
+      changes: null,
+      compareUrl: null,
+      prUrl: null,
+      prNumber: null,
+      runUrl: null
+    },
+    {
+      blocked: false,
+      gateWhy: "staging checks are pending",
+      onStagingSince: null,
+      now: "2026-09-28T01:36:00.000Z"
+    }
+  );
+  has(
+    "...and with nothing known it says so plainly",
+    bare,
+    "Customers are still on the previous release"
+  );
+  has("with nothing known it still names the build", bare, "Oxygen build `main-b7f49d7`");
   has("...and has no empty Details line", bare, "Details:", false);
   const ready = readyMessage(facts);
-  has("the ready message", ready, ":large_green_circle: *Oxygen 0.5.153 (build `b7f49d7`) is ready to go live*");
+  has(
+    "the ready message",
+    ready,
+    ":large_green_circle: *Oxygen build `main-b7f49d7` is ready to go live*"
+  );
   has("the ready message", ready, `${SOAK_MINUTES} minutes running there`);
-  has("the ready message", ready, "*What to do:* an engineer merges <https://github.com/oxy-hq/infrastructure/pull/2139|release PR #2139>");
-  const broken = buildBrokenMessage({ failed: "abc1234", lastGood: "b7f49d7", runUrl: "https://x/run" });
-  has("a broken build", broken, "Nothing newer than build `b7f49d7` can be released until a build succeeds. Customers are not affected.");
+  has(
+    "the ready message",
+    ready,
+    "*What to do:* an engineer merges <https://github.com/oxy-hq/infrastructure/pull/2139|release PR #2139>"
+  );
+  const broken = buildBrokenMessage({
+    failed: "abc1234",
+    lastGood: "b7f49d7",
+    runUrl: "https://x/run"
+  });
+  has(
+    "a broken build",
+    broken,
+    "Nothing newer than build `b7f49d7` can be released until a build succeeds. Customers are not affected."
+  );
   const stillBroken = buildStillBrokenMessage({
     failed: "710ce4d",
     failures: 6,
@@ -534,15 +707,38 @@ function selfTest(): void {
     now: "2026-10-05T02:06:00Z",
     runUrl: "https://x/run"
   });
-  has("a build that stays broken", stillBroken, ":red_circle: *Oxygen builds have been failing for 34 hours* — 6 builds in a row, the newest `710ce4d`");
-  has("a build that stays broken", stillBroken, "Customers keep the release they have: nothing merged since <!date^1791044364^");
+  has(
+    "a build that stays broken",
+    stillBroken,
+    ":red_circle: *Oxygen builds have been failing for 34 hours* — 6 builds in a row, the newest `710ce4d`"
+  );
+  has(
+    "a build that stays broken",
+    stillBroken,
+    "Customers keep the release they have: nothing merged since <!date^1791044364^"
+  );
   has("a build that stays broken", stillBroken, "*What to do:* an engineer fixes the build.");
   has("a build that stays broken", stillBroken, "Details: <https://x/run|the newest failed build>");
-  for (const jargon of ["2026m", "mirror", "Public Release", "gate", "bump", "digest", "train", "main-"])
+  for (const jargon of [
+    "2026m",
+    "mirror",
+    "Public Release",
+    "gate",
+    "bump",
+    "digest",
+    "train",
+    "main-"
+  ])
     has("a build that stays broken", stillBroken.split("Details:")[0] ?? "", jargon, false);
   has(
     "...and one failure is not called a row",
-    buildStillBrokenMessage({ failed: "710ce4d", failures: 1, since: null, now: "2026-10-05T02:06:00Z", runUrl: null }),
+    buildStillBrokenMessage({
+      failed: "710ce4d",
+      failures: 1,
+      since: null,
+      now: "2026-10-05T02:06:00Z",
+      runUrl: null
+    }),
     "*Oxygen builds have been failing* — build `710ce4d`"
   );
 
@@ -554,7 +750,12 @@ function selfTest(): void {
   is("...at a word, so a fragment never reads as a label", /\bLow…$/.test(cutTitle), false);
   is("markup characters are flattened", issueTitle("a `b` <c>|d\ne"), "a b c d e");
   const blocking: SentryIssue[] = [
-    { title: "executor failed to start task", level: "error", count: "2", permalink: "https://oxygen-intelligence.sentry.io/issues/7759589828/" }
+    {
+      title: "executor failed to start task",
+      level: "error",
+      count: "2",
+      permalink: "https://oxygen-intelligence.sentry.io/issues/7759589828/"
+    }
   ];
   is(
     "a Slack line links the issue by its title",
@@ -566,25 +767,60 @@ function selfTest(): void {
     issueList(blocking, "markdown"),
     "- `error` executor failed to start task · 2 events · https://oxygen-intelligence.sentry.io/issues/7759589828/"
   );
-  has("more than three are counted, not listed", issueList([...blocking, ...blocking, ...blocking, ...blocking, ...blocking], "slack"), "…and 2 more");
-  const sentryBlocked = stuckMessage(
-    { ...facts, build: "1a8c22d", version: "0.5.153", prodVersion: "0.5.153", prodBuild: "b7f49d7", issues: blocking },
-    { blocked: true, gateWhy: "1 new unresolved Sentry issue(s) in this release on staging", onStagingSince: null, now: "2026-09-29T02:05:00.000Z" }
+  has(
+    "more than three are counted, not listed",
+    issueList([...blocking, ...blocking, ...blocking, ...blocking, ...blocking], "slack"),
+    "…and 2 more"
   );
-  has("a Sentry block names the issue", sentryBlocked, "|executor failed to start task> · 2 events");
-  has("...and says \"it\" for one", sentryBlocked, "an engineer triages it <https://oxygen-intelligence.sentry.io/issues/");
+  const sentryBlocked = stuckMessage(
+    {
+      ...facts,
+      build: "1a8c22d",
+      release: "oxy@0.5.153+1a8c22d",
+      prodBuild: "b7f49d7",
+      issues: blocking
+    },
+    {
+      blocked: true,
+      gateWhy: "1 new unresolved Sentry issue(s) in this release on staging",
+      onStagingSince: null,
+      now: "2026-09-29T02:05:00.000Z"
+    }
+  );
+  has(
+    "a Sentry block names the issue",
+    sentryBlocked,
+    "|executor failed to start task> · 2 events"
+  );
+  has(
+    '...and says "it" for one',
+    sentryBlocked,
+    "an engineer triages it <https://oxygen-intelligence.sentry.io/issues/"
+  );
   has(
     "a block for another reason lists no issues",
-    stuckMessage({ ...facts, issues: blocking }, { blocked: true, gateWhy: "the bump PR carries release-hold; a person clears it", onStagingSince: null, now: "2026-09-29T02:05:00.000Z" }),
+    stuckMessage(
+      { ...facts, issues: blocking },
+      {
+        blocked: true,
+        gateWhy: "the bump PR carries release-hold; a person clears it",
+        onStagingSince: null,
+        now: "2026-09-29T02:05:00.000Z"
+      }
+    ),
     "executor failed",
     false
   );
 
   if (fails.length) {
-    console.error(`deploy-messages.ts self-test: ${fails.length} failure(s)\n  ${fails.join("\n  ")}`);
+    console.error(
+      `deploy-messages.ts self-test: ${fails.length} failure(s)\n  ${fails.join("\n  ")}`
+    );
     process.exit(1);
   }
-  console.log("deploy-messages.ts self-test: every gate reason is explained and every message reads right");
+  console.log(
+    "deploy-messages.ts self-test: every gate reason is explained and every message reads right"
+  );
 }
 
 // ── Entry ───────────────────────────────────────────────────────────────────
@@ -624,20 +860,39 @@ if (!invokedDirectly) {
     : null;
   if (kind === "sentry-list") {
     // For the PR comment: the list, only when Sentry is the reason.
-    if (issues?.length && blockedBySentry(plan.prod.why)) console.log(issueList(issues, "markdown"));
+    if (issues?.length && blockedBySentry(plan.prod.why))
+      console.log(issueList(issues, "markdown"));
   } else if (kind === "build-broken") {
     const run = plan.buildRun;
     console.log(
       run?.stale
-        ? buildStillBrokenMessage({ failed: run.sha, failures: run.failures, since: run.since, now: plan.at, runUrl: run.url })
-        : buildBrokenMessage({ failed: run?.sha ?? "unknown", lastGood: plan.candidate?.sha ?? null, runUrl: run?.url ?? runUrl })
+        ? buildStillBrokenMessage({
+            failed: run.sha,
+            failures: run.failures,
+            since: run.since,
+            now: plan.at,
+            runUrl: run.url
+          })
+        : buildBrokenMessage({
+            failed: run?.sha ?? "unknown",
+            lastGood: plan.candidate?.sha ?? null,
+            runUrl: run?.url ?? runUrl
+          })
     );
   } else {
-    const facts = { ...(await factsFrom(plan, runUrl, process.env.INFRA_REPO || "oxy-hq/infrastructure")), issues };
+    const facts = {
+      ...(await factsFrom(plan, runUrl, process.env.INFRA_REPO || "oxy-hq/infrastructure")),
+      issues
+    };
     console.log(
       kind === "ready"
         ? readyMessage(facts)
-        : stuckMessage(facts, { blocked: plan.prod.kind === "blocked", gateWhy: plan.prod.why, onStagingSince: plan.soakStartedAt, now: plan.at })
+        : stuckMessage(facts, {
+            blocked: plan.prod.kind === "blocked",
+            gateWhy: plan.prod.why,
+            onStagingSince: plan.soakStartedAt,
+            now: plan.at
+          })
     );
   }
 }

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
-import { getVersion, type VersionInfo } from "@/services/api/version";
+import { buildLabel, getVersion, type VersionInfo } from "@/services/api/version";
 
+/** The running build, named by its image tag; the popover has the commit behind it. */
 export const VersionBadge = () => {
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
 
@@ -41,9 +42,10 @@ export const VersionBadge = () => {
       <PopoverTrigger asChild>
         <button
           type='button'
-          className='select-none text-muted-foreground text-xs transition-opacity hover:opacity-80'
+          className='select-none font-mono text-muted-foreground text-xs transition-opacity hover:opacity-80'
+          data-testid='version-badge'
         >
-          v{versionInfo.version}
+          {buildLabel(versionInfo)}
         </button>
       </PopoverTrigger>
       <PopoverContent className='w-80' align='start'>
@@ -51,8 +53,10 @@ export const VersionBadge = () => {
           <div className='font-semibold text-sm'>Build Information</div>
           <div className='space-y-1 text-xs'>
             <div className='flex justify-between'>
-              <span className='text-muted-foreground'>Version:</span>
-              <span className='font-mono'>{versionInfo.version}</span>
+              <span className='text-muted-foreground'>Image:</span>
+              <span className='font-mono' data-testid='version-badge-image'>
+                {versionInfo.image_tag ?? "not an image"}
+              </span>
             </div>
             <div className='flex justify-between'>
               <span className='text-muted-foreground'>Commit:</span>

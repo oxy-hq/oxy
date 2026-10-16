@@ -26,7 +26,8 @@ name: Custom app checks
 #     `expect_sha` before it will promote that digest to prod: the run confirms
 #     staging serves the sha, then records the result as labels on the prod bump
 #     PR in oxy-hq/infrastructure (see the last step). `expect_version` is the
-#     same contract for a semver (Train B, or a manual check) and still works.
+#     same contract for a release (Train B, or a manual check). It is judged by
+#     commit: the release tag's commit in oxy-hq/oxygen, up to the next release.
 #
 # Targets: `.github/custom-app-checks.json`. That file also carries a `dev`
 # entry with no apps — it is there for `promote.yaml`, which reads every
@@ -145,7 +146,8 @@ on:
       expect_version:
         description: >-
           Release version (X.Y.Z) the environment must be serving before the
-          checks run. On staging, the result is recorded on the prod bump PR.
+          checks run: any build from that release tag's commit up to the next
+          release's. On staging, the result is recorded on the prod bump PR.
           Train B / manual use; the deploy train passes expect_sha instead.
         type: string
         required: false
@@ -403,6 +405,7 @@ jobs:
           ENVIRONMENT: ${{ matrix.environment }}
           BASE_URL: ${{ steps.targets.outputs.base_url }}
           EXPECT_VERSION: ${{ inputs.expect_version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           semver='^[0-9]+\.[0-9]+\.[0-9]+$'
@@ -410,26 +413,87 @@ jobs:
             echo "::error::expect_version '${EXPECT_VERSION}' is not an X.Y.Z release version"
             exit 1
           fi
+          # Judged by commit, not by semver: `/api/version` reports the image tag
+          # and commit, never a version. A release's image is `main-<sha>` of the
+          # mirror commit its tag points at (retagged, or built from it when that
+          # commit never had a `main-` image), so that commit is what a binary of
+          # the release reports as `build_info.git_commit_short`.
+          want=$(gh api "repos/oxy-hq/oxygen/commits/${EXPECT_VERSION}" --jq '.sha') || want=""
+          if [[ ! "$want" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::no commit in oxy-hq/oxygen for release tag ${EXPECT_VERSION}"
+            exit 1
+          fi
+          # A build serves the release from its commit up to the next release:
+          # the range a binary used to report X.Y.Z over, since staging is moved
+          # onto every new main and rarely sits on the release commit itself.
+          # "Next" is by ancestry, not by number: the mirror carries stray tags
+          # (0.6.0, 0.7.0) that sort above 0.5.x but sit behind it. The number
+          # only narrows which tags are worth a compare call.
+          # Fails closed. A tag list or compare call that fails is never read as
+          # "no later release", which would pass a build past one as serving
+          # this release: building the list aborts the step, and in the loop a
+          # failed compare is "not there yet", so it keeps waiting.
+          gh_api() {
+            local n
+            for n in 1 2 3; do
+              gh api "$@" && return 0
+              (( n < 3 )) && command sleep 10
+            done
+            return 1
+          }
+          later=()
+          major=${EXPECT_VERSION%%.*}
+          for prefix in "${major}." "$((major + 1))."; do
+            refs=$(gh_api --paginate "repos/oxy-hq/oxygen/git/matching-refs/tags/${prefix}" --jq '.[].ref') || {
+              echo "::error::could not list oxy-hq/oxygen release tags ${prefix}*"
+              exit 1
+            }
+            while read -r ref; do
+              tag=${ref#refs/tags/}
+              [[ "$tag" =~ $semver && "$tag" != "$EXPECT_VERSION" ]] || continue
+              [[ "$(printf '%s\n%s\n' "$tag" "$EXPECT_VERSION" | sort -V | tail -1)" == "$tag" ]] || continue
+              status=$(gh_api "repos/oxy-hq/oxygen/compare/${want}...${tag}" --jq '.status') || {
+                echo "::error::could not compare ${EXPECT_VERSION} with ${tag} in oxy-hq/oxygen"
+                exit 1
+              }
+              [[ "$status" == "ahead" ]] && later+=("$tag")
+            done <<< "$refs"
+          done
+          echo "later releases: ${later[*]:-none}"
+          # 0: serves the release · 1: past a later release · 2: not there yet
+          # (behind, diverged, a commit the mirror does not know like `dev`, or
+          # a compare that failed: never a guess in either direction).
+          release_of() {
+            local s tag
+            s=$(gh api "repos/oxy-hq/oxygen/compare/${want}...$1" --jq '.status') || return 2
+            [[ "$s" == "ahead" || "$s" == "identical" ]] || return 2
+            for tag in "${later[@]}"; do
+              s=$(gh api "repos/oxy-hq/oxygen/compare/${tag}...$1" --jq '.status') || return 2
+              [[ "$s" == "ahead" || "$s" == "identical" ]] && return 1
+            done
+            return 0
+          }
           deadline=$((SECONDS + 30 * 60))
           while :; do
-            served=$(curl -fsS -m 10 "${BASE_URL}/api/version" | jq -r '.version // empty') || served=""
-            if [[ "$served" == "$EXPECT_VERSION" ]]; then
-              echo "${BASE_URL} is serving ${EXPECT_VERSION}"
-              exit 0
-            fi
-            # Only an X.Y.Z compares: `sort -V` would rank a string like `dev`
-            # above every release and call it newer.
-            if [[ "$served" =~ $semver ]] &&
-              [[ "$(printf '%s\n%s\n' "$served" "$EXPECT_VERSION" | sort -V | tail -1)" == "$served" ]]; then
-              echo "::notice::${ENVIRONMENT} moved past ${EXPECT_VERSION}; checks for this version were superseded"
-              echo "superseded=true" >> "$GITHUB_OUTPUT"
-              exit 0
+            served=$(curl -fsS -m 10 "${BASE_URL}/api/version" | jq -r '.build_info.git_commit_short // empty') || served=""
+            if [[ "$served" =~ ^[0-9a-f]{7,40}$ ]]; then
+              verdict=0
+              release_of "$served" || verdict=$?
+              if (( verdict == 0 )); then
+                echo "${BASE_URL} is serving ${EXPECT_VERSION} (main-${served})"
+                exit 0
+              fi
+              if (( verdict == 1 )); then
+                echo "::notice::${ENVIRONMENT} moved past ${EXPECT_VERSION} to a later release (now main-${served}); checks for this version were superseded"
+                echo "superseded=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
             fi
             if (( SECONDS >= deadline )); then
-              echo "::error::${BASE_URL} was serving '${served:-unreachable}', not ${EXPECT_VERSION}, after 30 minutes"
+              echo "::error::${BASE_URL} was serving '${served:-unreachable}', not ${EXPECT_VERSION} (${want:0:7}), after 30 minutes"
               exit 1
             fi
-            echo "serving '${served:-unreachable}', waiting for ${EXPECT_VERSION}; retrying in 30s"
+            echo "serving '${served:-unreachable}', waiting for ${EXPECT_VERSION} (${want:0:7}); retrying in 30s"
             sleep 30
           done
 
@@ -449,9 +513,11 @@ jobs:
             echo "superseded=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # The release id the RUNNING BINARY reports — `oxy@<version>+<sha>`, as
-      # crates/core/src/sentry_config.rs `release_id` composes it. Read off the
-      # environment rather than built from the dispatch input, because the input
+      # The release id the RUNNING BINARY reports — `build_info.sentry_release`
+      # on `/api/version`, verbatim; for a binary from before that field,
+      # `oxy@<version>+<sha>` as crates/core/src/sentry_config.rs `release_id`
+      # composes it. Read off the environment rather than built from the
+      # dispatch input, because the input
       # is only ever half of it: `expect_version` has no sha and `expect_sha` has
       # no version, and a marker or a query built from half attaches to a release
       # that holds no events — which degrades the new-issues comment below to a
@@ -466,14 +532,18 @@ jobs:
         run: |
           set -uo pipefail
           BODY=$(curl -fsS -m 10 "${BASE_URL}/api/version") || BODY=""
-          VERSION=$(jq -r '.version // empty' <<<"${BODY:-null}" 2>/dev/null) || VERSION=""
-          SHA=$(jq -r '.build_info.git_commit_short // empty' <<<"${BODY:-null}" 2>/dev/null) || SHA=""
-          if [[ -z "$VERSION" || -z "$SHA" ]]; then
-            echo "::warning::${BASE_URL}/api/version did not report a version and a commit; Sentry steps will say so rather than guess"
+          RELEASE=$(jq -r '.build_info.sentry_release // empty' <<<"${BODY:-null}" 2>/dev/null) || RELEASE=""
+          if [[ -z "$RELEASE" ]]; then
+            VERSION=$(jq -r '.version // empty' <<<"${BODY:-null}" 2>/dev/null) || VERSION=""
+            SHA=$(jq -r '.build_info.git_commit_short // empty' <<<"${BODY:-null}" 2>/dev/null) || SHA=""
+            [[ -n "$VERSION" && -n "$SHA" ]] && RELEASE="oxy@${VERSION}+${SHA}"
+          fi
+          if [[ -z "$RELEASE" ]]; then
+            echo "::warning::${BASE_URL}/api/version reported no Sentry release; Sentry steps will say so rather than guess"
             exit 0
           fi
-          echo "release=oxy@${VERSION}+${SHA}" >> "$GITHUB_OUTPUT"
-          echo "resolved oxy@${VERSION}+${SHA}"
+          echo "release=${RELEASE}" >> "$GITHUB_OUTPUT"
+          echo "resolved ${RELEASE}"
 
       # Sentry's release signal, not a check: a `staging` deploy of
       # `oxy@<expect_version>` in projects `oxy` (the backend) and `oxy-web` (the
