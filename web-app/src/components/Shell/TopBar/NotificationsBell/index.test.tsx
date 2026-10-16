@@ -51,6 +51,18 @@ const platformItem = item({
   read_at: "2026-10-14T11:00:00Z"
 });
 
+const criticalItem = item({
+  id: "n-critical",
+  kind: "temp_alarm",
+  title: "Walk-in cooler is at 9°C",
+  body: null,
+  level: "critical",
+  kind_label: "Temperature alarm",
+  category: { path: "operations/food-safety", labels: ["Store operations", "Food safety"] },
+  thread: "t-cooler",
+  actions: [{ id: "ack", label: "Acknowledge", destructive: false, runs_function: true }]
+});
+
 const unreadableItem = item({
   id: "n-unreadable",
   title: null,
@@ -217,6 +229,32 @@ describe("NotificationsBell inbox", () => {
     await waitFor(() => expect(button).toBeEnabled());
     await userEvent.click(button);
     await waitFor(() => expect(service.markAllRead).toHaveBeenCalledTimes(1));
+    // The bell's "Mark all read" is the whole inbox: no filter.
+    expect(service.markAllRead).toHaveBeenCalledWith({});
+  });
+
+  it("names the category beside the source, and marks a critical one", async () => {
+    service.inbox.mockResolvedValue({ unread: 1, items: [criticalItem, item()] });
+    renderBell();
+    const panel = await openInbox();
+    const row = await within(panel).findByTestId("notifications-item-n-critical");
+    expect(row).toHaveTextContent("Store Ops · Food safety");
+    expect(row).toHaveAttribute("data-level", "critical");
+    expect(row).toHaveTextContent("Critical");
+    // From a server with no categories: the source alone, no accent.
+    const plain = within(panel).getByTestId("notifications-item-n-app");
+    expect(within(plain).getByTestId("notifications-item-source")).toHaveTextContent(/^Store Ops$/);
+    expect(plain).not.toHaveAttribute("data-level");
+  });
+
+  it("has See all, which opens the notifications page and closes the popover", async () => {
+    renderBell();
+    const panel = await openInbox();
+    const seeAll = within(panel).getByTestId("notifications-see-all");
+    expect(seeAll).toHaveAttribute("href", "/notifications");
+    await userEvent.click(seeAll);
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/notifications$/);
+    await waitFor(() => expect(screen.queryByTestId("notifications-popover")).toBeNull());
   });
 
   it("has nothing to mark when everything is read", async () => {
@@ -304,6 +342,14 @@ describe("NotificationsBell on a phone", () => {
     expect(screen.getByTestId("notifications-sheet")).toBeInTheDocument();
     await userEvent.click(await within(panel).findByTestId("notifications-item-n-platform"));
     expect(screen.getByTestId("where")).toHaveTextContent("/acme/workspaces/ws-1/threads");
+    await waitFor(() => expect(screen.queryByTestId("notifications-sheet")).toBeNull());
+  });
+
+  it("has See all at the bottom of the sheet, which closes it", async () => {
+    renderBell();
+    const panel = await openInbox();
+    await userEvent.click(within(panel).getByTestId("notifications-see-all"));
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/notifications$/);
     await waitFor(() => expect(screen.queryByTestId("notifications-sheet")).toBeNull());
   });
 

@@ -7,15 +7,23 @@
 
 use std::sync::{Arc, OnceLock};
 
-use entity::device_tokens;
+use entity::{device_tokens, notifications};
+use serde_json::{Value, json};
 use tracing::info;
 use uuid::Uuid;
 
-/// What a push carries: who it is for, what kind it is, and which inbox row.
+use super::catalog::model::Level;
+use super::catalog::source::{KindInfo, Source};
+
+/// What a push carries: ids and config, never what the notification says.
 ///
-/// A push is a wake signal, not the message (`web_push` explains why it is
-/// bodiless), so the transport is never handed the content.
-#[derive(Debug, Clone)]
+/// A push is a wake signal, not the message. Web Push is bodiless (`web_push`
+/// explains why) and uses only who it is for. APNs and FCM must show a banner,
+/// so they map the rest ([`super::apns::payload`], [`super::fcm::message`]):
+/// the inbox row the phone fetches the words from, and the kind's place in
+/// its catalogue — label, category, level — and the thread's hash, which are
+/// the app's config, not its content.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PushSignal {
     pub user_id: Uuid,
     pub kind: String,
@@ -24,6 +32,81 @@ pub struct PushSignal {
     /// than "the newest unread", which two close pushes would share. An
     /// opaque id, not content. Web Push stays bodiless and ignores it.
     pub notification_id: Uuid,
+    pub org_id: Uuid,
+    /// The app that sent it; `None` for Oxygen's own notices.
+    pub app_id: Option<Uuid>,
+    /// The kind's label from its catalogue (`Temperature alarm`), or its
+    /// name humanized: the banner until the phone has fetched the item.
+    pub label: String,
+    /// Its category path; `general` when it names none.
+    pub category: String,
+    pub level: Level,
+    /// The thread's hash (`notifications.thread_key`), when the app gave one.
+    pub thread: Option<String>,
+}
+
+impl PushSignal {
+    /// The version of [`Self::envelope`]. A client that does not know it
+    /// fetches the item and shows it plainly.
+    pub const ENVELOPE_VERSION: u8 = 1;
+
+    /// The push for `signal`, a recipient's row, whose kind is `info`.
+    pub fn new(signal: &notifications::Model, info: &KindInfo) -> Self {
+        Self {
+            user_id: signal.user_id,
+            kind: signal.kind.clone(),
+            notification_id: signal.id,
+            org_id: signal.org_id,
+            app_id: signal.app_id,
+            label: info.label.clone(),
+            category: info.category.clone(),
+            level: info.level,
+            thread: signal.thread_key.clone(),
+        }
+    }
+
+    pub fn source(&self) -> Source {
+        match self.app_id {
+            Some(_) => Source::App,
+            None => Source::Oxygen,
+        }
+    }
+
+    /// `oxygen`, or the app's id (two apps may share a kind name): the
+    /// Android channel group, and the prefix of [`Self::channel_id`].
+    pub fn group_id(&self) -> String {
+        self.app_id
+            .map_or_else(|| "oxygen".to_string(), |app| app.to_string())
+    }
+
+    /// `<group>.<kind>`: the iOS notification category (which registers the
+    /// kind's actions) and the Android notification channel.
+    pub fn channel_id(&self) -> String {
+        format!("{}.{}", self.group_id(), self.kind)
+    }
+
+    /// What iOS groups by and Android replaces on: the thread, or else the
+    /// kind within its source.
+    pub fn thread_or_kind(&self) -> String {
+        self.thread.clone().unwrap_or_else(|| self.channel_id())
+    }
+
+    /// The envelope a native payload carries (`oxy` on iOS, flattened into
+    /// `data` on Android), version [`Self::ENVELOPE_VERSION`]: ids and
+    /// config only.
+    pub fn envelope(&self) -> Value {
+        json!({
+            "v": Self::ENVELOPE_VERSION,
+            "id": self.notification_id.to_string(),
+            "kind": self.kind,
+            "org_id": self.org_id.to_string(),
+            "source": self.source().as_str(),
+            "app_id": self.app_id.map(|a| a.to_string()),
+            "category": self.category,
+            "level": self.level.as_str(),
+            "thread": self.thread,
+        })
+    }
 }
 
 /// What one fan-out to a person's devices achieved.
@@ -82,6 +165,8 @@ impl Push for LoggingPush {
         info!(
             user = %signal.user_id,
             kind = %signal.kind,
+            category = %signal.category,
+            level = signal.level.as_str(),
             devices = tokens.len(),
             "push not configured — notification is in the inbox only"
         );

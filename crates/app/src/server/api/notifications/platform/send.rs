@@ -223,6 +223,7 @@ async fn record(
         // The send, so delivery finds its signals the way it finds an app's.
         message_id: Set(Some(id)),
         app_id: Set(None),
+        thread_key: Set(None),
     }))
     .exec(txn)
     .await?;

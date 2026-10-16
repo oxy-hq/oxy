@@ -7,7 +7,7 @@ import queryKeys from "../queryKey";
 
 /**
  * Subscribe this browser to push and register it. Takes the deployment's VAPID
- * public key. The device count in the preferences is re-read after.
+ * public key. The device count in the catalogue is re-read after.
  */
 export const useEnablePushOnThisDevice = () => {
   const qc = useQueryClient();
@@ -23,7 +23,7 @@ export const useEnablePushOnThisDevice = () => {
       toast.error(errMessage(err, "Couldn't turn on push"));
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.notifications.preferences() });
+      qc.invalidateQueries({ queryKey: queryKeys.notifications.catalog() });
     }
   });
 };

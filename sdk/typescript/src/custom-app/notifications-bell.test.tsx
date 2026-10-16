@@ -200,3 +200,102 @@ describe("NotificationsBell — a staging or dev host", () => {
     expect(inbox.items[0].read_at).toBeNull();
   });
 });
+
+describe("NotificationsBell — categories, levels and threads", () => {
+  const MANIFEST = {
+    functions: { f: { notify: { kinds: { temp_alarm: {}, list_overdue: {}, note: {} } } } },
+    notifications: {
+      categories: {
+        operations: { label: "Store operations" },
+        "operations/food-safety": { label: "Food safety" }
+      },
+      kinds: {
+        temp_alarm: { category: "operations/food-safety", level: "critical" },
+        list_overdue: { category: "operations", level: "time_sensitive" }
+      }
+    }
+  };
+  const row = (id: string) => $(`oxy-notifications-item-${id}`) as HTMLButtonElement | null;
+
+  it("names the category under the title, the whole path on hover, and nothing for general", async () => {
+    const inbox = createTestInbox({ appId: APP_ID, manifest: MANIFEST });
+    const alarm = inbox.receive({ kind: "temp_alarm", title: "Walk-in at 9°C" });
+    const note = inbox.receive({ kind: "note", title: "Hello" });
+    await render(inbox);
+    await openPanel();
+    const label = $(`oxy-notifications-category-${alarm.id}`);
+    expect(label?.textContent).toBe("Food safety");
+    expect(label?.getAttribute("title")).toBe("Store operations › Food safety");
+    // Under the title, not above it.
+    const text = row(alarm.id)?.textContent ?? "";
+    expect(text.indexOf("Walk-in at 9°C")).toBeLessThan(text.indexOf("Food safety"));
+    expect($(`oxy-notifications-category-${note.id}`)).toBeNull();
+  });
+
+  it("marks critical and time-sensitive with an edge and words, and nothing else", async () => {
+    const inbox = createTestInbox({ appId: APP_ID, manifest: MANIFEST });
+    const alarm = inbox.receive({ kind: "temp_alarm", title: "alarm" });
+    const late = inbox.receive({ kind: "list_overdue", title: "late" });
+    const note = inbox.receive({ kind: "note", title: "note" });
+    await render(inbox);
+    await openPanel();
+    expect(row(alarm.id)?.dataset.level).toBe("critical");
+    expect(row(alarm.id)?.style.boxShadow).toContain("--oxy-notifications-critical");
+    expect(row(alarm.id)?.textContent).toContain("Critical");
+    expect(row(late.id)?.style.boxShadow).toContain("--oxy-notifications-time-sensitive");
+    expect(row(late.id)?.textContent).toContain("Time-sensitive");
+    expect(row(note.id)?.dataset.level).toBe("active");
+    expect(row(note.id)?.style.boxShadow).toBe("");
+  });
+
+  it("folds a run of one thread into its newest, with +N more", async () => {
+    const inbox = createTestInbox({ appId: APP_ID, manifest: MANIFEST });
+    const first = inbox.receive({ kind: "temp_alarm", title: "9°C", thread: "store:clovis" });
+    const second = inbox.receive({ kind: "temp_alarm", title: "10°C", thread: "store:clovis" });
+    const newest = inbox.receive({ kind: "temp_alarm", title: "11°C", thread: "store:clovis" });
+    const other = inbox.receive({ kind: "temp_alarm", title: "Fresno", thread: "store:fresno" });
+    await render(inbox);
+    await openPanel();
+    expect(row(other.id)).not.toBeNull();
+    expect(row(newest.id)?.textContent).toContain("11°C");
+    expect(row(second.id)).toBeNull();
+    expect(row(first.id)).toBeNull();
+    expect($(`oxy-notifications-more-${newest.id}`)?.textContent).toBe("+2 more");
+    expect($(`oxy-notifications-more-${other.id}`)).toBeNull();
+  });
+
+  it("reads the whole thread when its row is opened", async () => {
+    const inbox = createTestInbox({ appId: APP_ID, manifest: MANIFEST });
+    inbox.receive({ kind: "temp_alarm", title: "9°C", thread: "store:clovis", link: "/t/1" });
+    const newest = inbox.receive({
+      kind: "temp_alarm",
+      title: "10°C",
+      thread: "store:clovis",
+      link: "/t/2"
+    });
+    const onNavigate = vi.fn();
+    await render(inbox, { onNavigate });
+    await openPanel();
+    await click(row(newest.id));
+    expect(onNavigate).toHaveBeenCalledWith("/t/2", expect.objectContaining({ id: newest.id }));
+    expect(inbox.unread(APP_ID)).toBe(0);
+  });
+
+  it("draws an older server's item, which has none of these fields, as before", async () => {
+    const inbox = createTestInbox({ appId: APP_ID });
+    const old = inbox.push({
+      title: "Old",
+      category: undefined,
+      kind_label: undefined,
+      level: undefined,
+      thread: undefined,
+      actions: undefined,
+      url: undefined
+    });
+    await render(inbox);
+    await openPanel();
+    expect(row(old.id)?.textContent).toContain("Old");
+    expect(row(old.id)?.style.boxShadow).toBe("");
+    expect($(`oxy-notifications-category-${old.id}`)).toBeNull();
+  });
+});

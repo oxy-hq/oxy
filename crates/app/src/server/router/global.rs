@@ -103,9 +103,26 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
         //
         // `route_fleet`: Postgres only. A badge that stops updating during a
         // deploy is a badge nobody trusts afterwards.
-        .route_fleet("/notifications", get(notifications::handlers::inbox))
+        .route_fleet("/notifications", get(notifications::inbox::list))
         // The badge: Oxy's database only, never an org's store.
         .route_fleet("/notifications/unread", get(notifications::badge::unread))
+        // Sources → categories → kinds, with my mutes and unread counts. The
+        // catalogues are config in Postgres (a build's manifest row, or code).
+        .route_fleet(
+            "/notifications/catalog",
+            get(notifications::catalog::handler::catalog),
+        )
+        // One item, for a phone a push named it to: what its notification
+        // service extension fetches. Postgres and the org's store, like the
+        // inbox it is one entry of.
+        .route_fleet("/notifications/{id}", get(notifications::inbox::one))
+        // A notification's button. A function action runs through the app's
+        // own function route, which places the invocation itself
+        // (`invocation_placement`): any replica takes this.
+        .route_fleet(
+            "/notifications/{id}/actions/{action_id}",
+            post(notifications::actions::run),
+        )
         .route_fleet(
             "/notifications/preferences",
             get(notifications::preferences::get_preferences)
@@ -132,12 +149,6 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
         .route_fleet(
             "/notifications/vapid-public-key",
             get(notifications::handlers::vapid_public_key),
-        )
-        // One item, for a phone a push named it to. Postgres and the org's
-        // store, like the inbox it is one entry of.
-        .route_fleet(
-            "/notifications/{id}",
-            get(notifications::handlers::get_notification),
         )
         .route_fleet(
             "/notifications/{id}/read",

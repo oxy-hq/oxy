@@ -221,6 +221,16 @@ pub const WHEN_BLOCKED: &[(&str, Blocked, &str)] = &[
         "404 for a blocked org's notification",
     ),
     (
+        "/notifications/{id}/actions/{action_id}",
+        Blocked::LeftOut,
+        "404 for a blocked org's notification",
+    ),
+    (
+        "/notifications/catalog",
+        Blocked::LeftOut,
+        "lists no app of a blocked org and counts none of its notifications",
+    ),
+    (
         // A push carries no content — a Web Push nothing, a native one only
         // its kind and row id — and the device reads the item through the
         // filtered inbox. A push that carried content would have to refuse.

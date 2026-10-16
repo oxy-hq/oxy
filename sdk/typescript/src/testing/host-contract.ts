@@ -146,6 +146,20 @@ export const REFUSALS = {
     refusal:
       "NotifyKindReserved: kind `{kind}` starts with `{prefix}`, which is reserved for Oxygen's own notices; rename it"
   },
+  // `bad()` in the same parser: every other payload refusal is this label and
+  // a reason, rendered into `{why}` from the two templates after it.
+  notifyInvalidPayload: {
+    source: "notifications/input.rs",
+    refusal: "InvalidNotifyPayload: {why}"
+  },
+  notifyFieldType: {
+    source: "notifications/input.rs",
+    refusal: "`{name}` must be a string"
+  },
+  notifyThreadLength: {
+    source: "notifications/input.rs",
+    refusal: "`thread` must be 1–128 characters"
+  },
   orgPeople: {
     source: "host.rs",
     refusal:
@@ -414,6 +428,9 @@ export const MAX_OPEN_TRANSACTIONS = 4;
  * may not declare or send, kept for Oxygen's own notices.
  */
 export const RESERVED_NOTIFY_KIND_PREFIX = "oxy.";
+
+/** `MAX_THREAD_CHARS` in `notifications/input.rs`: the longest `ctx.notify` `thread`. */
+export const MAX_NOTIFY_THREAD_CHARS = 128;
 
 /**
  * How each dialect names itself in a refusal — `SqlDialect::as_str` in the

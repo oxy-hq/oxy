@@ -7,10 +7,11 @@
 //! A native push cannot be bodiless the way a Web Push wake is: iOS shows
 //! nothing for an alert without text, and Android only draws a backgrounded
 //! app's notification from a `notification` block. So it carries what the
-//! transport already holds — the kind, humanized, and the inbox row's id — and
-//! nothing the notification *says*. The phone fetches the rest from
-//! `GET /api/notifications/{id}`, over an authenticated session, and the push
-//! services never see an org's words.
+//! transport already holds — the kind's label from its catalogue (or its
+//! name, humanized), the inbox row's id, and the kind's category, level and
+//! thread hash ([`PushSignal`]) — and nothing the notification *says*. The
+//! phone fetches the rest from `GET /api/notifications/{id}`, over an
+//! authenticated session, and the push services never see an org's words.
 
 use std::future::Future;
 
@@ -21,7 +22,6 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use super::deliver::{PushReport, PushSignal};
-use super::input::RESERVED_KIND_PREFIX;
 
 /// The banner title. The product, not the app: which app it came from is
 /// content, read from the inbox.
@@ -46,26 +46,6 @@ pub(super) enum Outcome {
     /// Anything else, with why. Never deletes the row: a refused or failed
     /// send is evidence, and a misconfiguration must not erase every device.
     Failed(String),
-}
-
-/// `list_overdue` → `List overdue`, `delivery.received` → `Delivery received`,
-/// `oxy.run_failed` → `Run failed`.
-///
-/// The platform prefix is dropped because the title already says Oxygen. A
-/// kind is 1–64 of `[a-z0-9_.-]` (`input::valid_kind`), so this is bounded.
-pub fn humanize(kind: &str) -> String {
-    let kind = kind.strip_prefix(RESERVED_KIND_PREFIX).unwrap_or(kind);
-    let words: Vec<String> = kind
-        .split(|c: char| matches!(c, '_' | '.' | '-') || c.is_whitespace())
-        .filter(|w| !w.is_empty())
-        .map(str::to_lowercase)
-        .collect();
-    let text = words.join(" ");
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => "New notification".to_string(),
-    }
 }
 
 /// Send to every row, at most [`MAX_CONCURRENT`] at a time. Returns the report
@@ -184,6 +164,7 @@ pub(super) fn now_secs() -> u64 {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    use crate::server::api::notifications::catalog::model::humanize;
 
     pub fn row(platform: &str, token: &str) -> device_tokens::Model {
         let now = chrono::Utc::now().fixed_offset();
@@ -232,11 +213,19 @@ pub(super) mod tests {
         (pem(der.as_ref()), pair.public_key().as_ref().to_vec())
     }
 
+    /// An Oxygen-less, catalogue-less signal: an app's kind in `general`,
+    /// active, no thread — what an undescribed kind resolves to.
     pub fn signal(kind: &str) -> PushSignal {
         PushSignal {
             user_id: Uuid::new_v4(),
             kind: kind.into(),
             notification_id: Uuid::new_v4(),
+            org_id: Uuid::new_v4(),
+            app_id: None,
+            label: humanize(kind),
+            category: "general".into(),
+            level: crate::server::api::notifications::catalog::model::Level::Active,
+            thread: None,
         }
     }
 

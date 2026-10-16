@@ -24,6 +24,7 @@ import type {
   OxyPlatformFacts,
   OxyTransaction
 } from "../custom-app/function-context";
+import { checkNotifications } from "../custom-app/notification-catalog";
 import { isSafeOutbound } from "./fetch-rules";
 import { type FunctionGates, MAX_SCHEMA_NAME_LEN, type ManifestLike, readGates } from "./gates";
 import {
@@ -31,12 +32,13 @@ import {
   type Dialect,
   FETCH_MAX_BYTES,
   type HostOp,
+  MAX_NOTIFY_THREAD_CHARS,
   MAX_OPEN_TRANSACTIONS,
   REFUSALS,
   RESERVED_NOTIFY_KIND_PREFIX,
   SURFACES
 } from "./host-contract";
-import { contextError, hostError, isHostError, refuse } from "./host-error";
+import { contextError, hostError, isHostError, refuse, render } from "./host-error";
 import { runWithoutIsolateGlobals } from "./run";
 import { FetchStore, type StoredObject, TableStore, ZooRefusalError } from "./stores";
 import type { RowSource } from "./zoo";
@@ -183,11 +185,45 @@ const DEFAULT_USER: OxyFunctionUser = {
   reach: { everywhere: true, via: "org-member", locations: [] }
 };
 
+/**
+ * A manifest whose `notifications` catalogue publish would refuse is no app's:
+ * say so before any test runs, with every problem. A function-level `oxy.` kind
+ * is left to `ctx.notify`, which refuses it at the call as the host does.
+ */
+function assertCatalogue(manifest: ManifestLike): void {
+  const problems = checkNotifications(manifest).filter(
+    (f) => f.level === "error" && f.path.startsWith("notifications")
+  );
+  if (problems.length === 0) return;
+  throw contextError(
+    `oxy-app.json's notifications catalogue would not publish:\n${problems
+      .map((f) => `  - ${f.path}: ${f.message}`)
+      .join("\n")}`
+  );
+}
+
+/**
+ * `thread` as `notifications/input.rs` parses it, after the kind: absent, or a
+ * string that is not blank and at most 128 characters. Its refusals carry the
+ * parser's label.
+ */
+function notifyThreadRefusal(thread: unknown): Error | null {
+  if (thread === undefined || thread === null) return null;
+  const why =
+    typeof thread !== "string"
+      ? render(REFUSALS.notifyFieldType, { name: "thread" })
+      : !thread.trim() || Array.from(thread).length > MAX_NOTIFY_THREAD_CHARS
+        ? render(REFUSALS.notifyThreadLength, {})
+        : null;
+  return why === null ? null : refuse(SURFACES.notify, REFUSALS.notifyInvalidPayload, { why });
+}
+
 export function createTestContext(
   manifest: ManifestLike,
   options: TestContextOptions
 ): TestContext {
   const gates = readGates(manifest, options.function);
+  assertCatalogue(manifest);
   const manifestSlug = typeof manifest.slug === "string" ? manifest.slug : "";
   const databases = options.databases ?? {};
   const calls: HostCall[] = [];
@@ -617,6 +653,8 @@ export function createTestContext(
             prefix: RESERVED_NOTIFY_KIND_PREFIX
           });
         }
+        const badThread = notifyThreadRefusal(a.thread);
+        if (badThread) throw badThread;
         // `Object.keys`, not `in` (which also finds "constructor") and not
         // `Object.hasOwn`, which this package's ES2020 lib does not declare.
         if (!Object.keys(gates.notifyKinds).includes(kind)) {

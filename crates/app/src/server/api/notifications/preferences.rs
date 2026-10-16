@@ -49,7 +49,7 @@ pub struct AppPreferences {
 
 /// Whether each channel can reach this person at all, so the settings page
 /// can say "add a device" rather than show a switch that does nothing.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Reachability {
     pub push_devices: u64,
     pub email: bool,
@@ -65,9 +65,13 @@ pub struct PreferencesResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct SetPreference {
-    /// The app whose kind this is; `null` for a platform notice (`oxy.*`).
+    /// The app whose kind or category this is; `null` for Oxygen's notices.
     pub app_id: Option<Uuid>,
-    pub kind: String,
+    /// One kind. Exactly one of `kind` and `scope`.
+    pub kind: Option<String>,
+    /// Everything above a kind: `""` for the whole source, or a category
+    /// path, which covers its subtree (`scope_mutes`).
+    pub scope: Option<String>,
     /// `push` | `email` | `slack`.
     pub channel: String,
     pub muted: bool,
@@ -99,50 +103,78 @@ pub async fn get_preferences(
 }
 
 /// `PUT /api/notifications/preferences` — mute or unmute one channel for one
-/// kind from one app, or (`app_id: null`) for one kind of platform notice.
+/// kind from one app, or (`app_id: null`) for one kind of platform notice; or,
+/// with `scope` instead of `kind`, for a whole source or a category subtree.
 #[instrument(skip_all, fields(channel = %body.channel))]
 pub async fn set_preference(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(body): Json<SetPreference>,
 ) -> Result<StatusCode, StatusCode> {
     let channel = Channel::parse(&body.channel).ok_or(StatusCode::BAD_REQUEST)?;
-    if !valid_kind(&body.kind) {
-        return Err(StatusCode::BAD_REQUEST);
-    }
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let Some(app_id) = body.app_id else {
-        return super::platform::preferences::set(&db, user.id, &body.kind, channel, body.muted)
-            .await;
+    let kind = match (body.kind.as_deref(), body.scope.as_deref()) {
+        (Some(kind), None) => kind,
+        (None, Some(scope)) => {
+            return super::scope_mutes::set(&db, &user, body.app_id, scope, channel, body.muted)
+                .await;
+        }
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
+    set_kind(&db, &user, body.app_id, kind, channel, body.muted).await
+}
+
+/// The kind form of [`set_preference`].
+async fn set_kind(
+    db: &DatabaseConnection,
+    user: &oxy_auth::types::AuthenticatedUser,
+    app_id: Option<Uuid>,
+    kind: &str,
+    channel: Channel,
+    muted: bool,
+) -> Result<StatusCode, StatusCode> {
+    if !valid_kind(kind) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let Some(app_id) = app_id else {
+        return super::platform::preferences::set(db, user.id, kind, channel, muted).await;
     };
     // An app's kind never wears the platform's prefix (publish and
     // `ctx.notify` both refuse one), so a mute naming one is a mistake.
-    if is_reserved_kind(&body.kind) {
+    if is_reserved_kind(kind) {
         return Err(StatusCode::BAD_REQUEST);
     }
     // 404 for an app this person cannot be told by, as for one that does not
     // exist: a mute is not a way to probe the app registry.
     let app = apps::Entity::find_by_id(app_id)
-        .one(&db)
+        .one(db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .filter(|a| user.reaches_org(a.org_id))
         .ok_or(StatusCode::NOT_FOUND)?;
-    if !may_be_told_by(&db, user.id, &app)
+    if !may_be_told_by(db, user.id, &app)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     {
         return Err(StatusCode::NOT_FOUND);
     }
-    write_mute(&db, user.id, app.id, &body.kind, channel, body.muted)
+    write_mute(db, user.id, app.id, kind, channel, muted)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Whether `app` can notify this person: they already hold a notification
-/// from it, or they are in its audience (the rule `ctx.notify` resolves with).
+/// Whether an app can notify a person: they already hold a notification from
+/// it, or they are in its audience. The one decision [`may_be_told_by`] takes
+/// for one app and `catalog::audience::told_by_many` for many.
+pub fn may_be_told(received: bool, in_audience: bool) -> bool {
+    received || in_audience
+}
+
+/// Whether `app` can notify this person ([`may_be_told`]), with the audience
+/// the rule `ctx.notify` resolves with (`app_audience`). For one app; a list
+/// of them is `catalog::audience::told_by_many`, which reads no org's roster.
 /// `reaches_org` alone is true for every session, so it bounds nothing here.
 pub async fn may_be_told_by(
     db: &DatabaseConnection,
@@ -155,14 +187,16 @@ pub async fn may_be_told_by(
         .one(db)
         .await?
         .is_some();
-    if received {
-        return Ok(true);
-    }
-    let audience =
-        crate::server::api::custom_apps_functions::audience::app_audience(db, app.org_id, app.id)
-            .await
-            .map_err(DbErr::Custom)?;
-    Ok(audience.ids.contains(&user_id))
+    // Asked only when it can change the answer.
+    let in_audience = !received
+        && crate::server::api::custom_apps_functions::audience::app_audience(
+            db, app.org_id, app.id,
+        )
+        .await
+        .map_err(DbErr::Custom)?
+        .ids
+        .contains(&user_id);
+    Ok(may_be_told(received, in_audience))
 }
 
 async fn write_mute(
@@ -294,7 +328,7 @@ async fn critical_kinds(
         .collect())
 }
 
-async fn reachability(db: &DatabaseConnection, user_id: Uuid) -> Result<Reachability, DbErr> {
+pub async fn reachability(db: &DatabaseConnection, user_id: Uuid) -> Result<Reachability, DbErr> {
     let push_devices = device_tokens::Entity::find()
         .filter(device_tokens::Column::UserId.eq(user_id))
         .filter(device_tokens::Column::Platform.eq("web"))

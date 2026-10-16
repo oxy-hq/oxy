@@ -672,6 +672,14 @@ export interface NotifyInput {
    * result with `deduplicated: true`. Name the event (`overdue:${occurrenceId}`).
    */
   idempotencyKey?: string;
+  /**
+   * Group notifications about one thing — `store:${storeId}`, `order:${id}`.
+   * Inboxes collapse a thread into its newest notification, and a phone
+   * stacks it (iOS `thread-id`, Android `tag`). ≤128 characters. Stored only
+   * as a hash, so it may name your own records; items carry the hash as
+   * `thread`.
+   */
+  thread?: string;
 }
 
 /** What `ctx.notify` did. */

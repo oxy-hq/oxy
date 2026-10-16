@@ -14,6 +14,8 @@ pub const MAX_TITLE_CHARS: usize = 200;
 pub const MAX_BODY_CHARS: usize = 2_000;
 pub const MAX_TARGETS: usize = 50;
 pub const MAX_KEY_LEN: usize = 256;
+/// Longest `thread` an app may name. It is stored only as a hash.
+pub const MAX_THREAD_CHARS: usize = 128;
 pub const MAX_EMAIL_HTML_BYTES: usize = 512 * 1024;
 
 /// Who a notification is for, as the app named them.
@@ -57,6 +59,10 @@ pub struct NotifyInput {
     pub email: EmailRequest,
     pub slack: bool,
     pub idempotency_key: Option<String>,
+    /// The thread it belongs to (`store:clovis`), for clients to collapse and
+    /// phones to group. The app's text: stored only as
+    /// [`super::send::thread_key`].
+    pub thread: Option<String>,
 }
 
 fn bad(why: impl std::fmt::Display) -> String {
@@ -139,6 +145,13 @@ pub fn parse(v: &Value) -> Result<NotifyInput, String> {
     {
         return Err(bad("`idempotencyKey` must be 1–256 characters"));
     }
+    let thread = str_field(obj, "thread")?;
+    if thread
+        .as_ref()
+        .is_some_and(|t| t.trim().is_empty() || t.chars().count() > MAX_THREAD_CHARS)
+    {
+        return Err(bad("`thread` must be 1–128 characters"));
+    }
     Ok(NotifyInput {
         targets: targets(obj.get("to"))?,
         kind,
@@ -152,6 +165,7 @@ pub fn parse(v: &Value) -> Result<NotifyInput, String> {
             Some(_) => return Err(bad("`slack` must be a boolean")),
         },
         idempotency_key,
+        thread,
     })
 }
 
@@ -330,6 +344,29 @@ mod tests {
         let mut v = minimal();
         v["email"] = json!({ "to": "x@y.com" });
         assert!(parse(&v).unwrap_err().contains("`email.to` is not a field"));
+    }
+
+    #[test]
+    fn a_thread_is_optional_and_bounded() {
+        assert_eq!(parse(&minimal()).unwrap().thread, None);
+        let mut v = minimal();
+        v["thread"] = json!("store:clovis");
+        assert_eq!(parse(&v).unwrap().thread.as_deref(), Some("store:clovis"));
+        v["thread"] = json!("x".repeat(MAX_THREAD_CHARS));
+        assert!(parse(&v).is_ok());
+        for bad in [
+            json!("x".repeat(MAX_THREAD_CHARS + 1)),
+            json!(""),
+            json!(" "),
+            json!(7),
+        ] {
+            v["thread"] = bad.clone();
+            let err = parse(&v).unwrap_err();
+            assert!(
+                err.starts_with("InvalidNotifyPayload: `thread`"),
+                "{bad}: {err}"
+            );
+        }
     }
 
     #[test]

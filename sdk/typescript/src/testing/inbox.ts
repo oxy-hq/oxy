@@ -8,10 +8,17 @@
 //   render(<OxyAppProvider fetcher={inbox.fetcher}><NotificationsBell /></OxyAppProvider>);
 //
 // `receive` takes the same payload a function hands `ctx.notify`, so what a
-// function test sent (`state.notifications[i].input`) is what the bell shows.
+// function test sent (`state.notifications[i].input`) is what the bell shows —
+// labelled, grouped and ranked by the app's catalogue when `manifest` is given.
 // Pure TypeScript, no React, like the rest of this entry.
 
+import { createHash } from "node:crypto";
 import type { NotifyInput } from "../custom-app/function-context";
+import {
+  GENERAL_CATEGORY,
+  humanizeNotificationName,
+  resolveNotificationKind
+} from "../custom-app/notification-catalog";
 import type { NotificationApp, NotificationItem } from "../custom-app/notifications";
 
 export interface TestInboxOptions {
@@ -20,6 +27,12 @@ export interface TestInboxOptions {
   /** The default app's slug, and the org slug in its `href`. */
   appSlug?: string;
   orgSlug?: string;
+  /**
+   * The app's `oxy-app.json`: `receive` gives an item the category, label,
+   * level and actions its kind has in the `notifications` catalogue, as the
+   * server does. Without it, every kind gets the defaults.
+   */
+  manifest?: unknown;
   /** Items to start with; each is completed as `push` completes it. */
   items?: Partial<NotificationItem>[];
   /**
@@ -34,8 +47,9 @@ export interface TestInboxOptions {
    */
   writeStatus?: number;
   /**
-   * Behave as a server older than the `app_id` filter: ignore it, and send
-   * items without `link`.
+   * Behave as a server older than the `app_id` filter: ignore it and every
+   * other filter, and send items without `link` or any catalogue field
+   * (`category`, `kind_label`, `level`, `thread`, `actions`, `url`).
    */
   legacy?: boolean;
   /** Answers every request outside `/api/notifications`. Default: a 404. */
@@ -70,12 +84,23 @@ export interface TestInbox {
 
 /** The part of a `ctx.notify` payload the inbox shows. */
 export type NotifyPayload =
-  | Pick<NotifyInput, "kind" | "title" | "body" | "link">
+  | Pick<NotifyInput, "kind" | "title" | "body" | "link" | "thread">
   | Readonly<Record<string, unknown>>;
 
 const MAX_PAGE = 100;
 
+/** The fields a server older than categories does not send. */
+const CATALOGUE_FIELDS = ["category", "kind_label", "level", "thread", "actions", "url"] as const;
+
 const text = (v: unknown): string | null => (typeof v === "string" ? v : null);
+
+/**
+ * What an item carries for a `thread`: the server stores and sends only a hash
+ * of the app's text — SHA-256, hex, its first 32 characters.
+ */
+export function threadKey(thread: string): string {
+  return createHash("sha256").update(thread).digest("hex").slice(0, 32);
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -107,10 +132,11 @@ export function createTestInbox(options: TestInboxOptions = {}): TestInbox {
     const itemApp = over.app === undefined ? app : over.app;
     const link = over.link === undefined ? null : over.link;
     const href = itemApp ? `/customer-apps/${orgSlug}/${itemApp.slug}${link ?? "/"}` : null;
+    const kind = over.kind ?? "test";
     const item: NotificationItem = {
       id: `notification-${seq}`,
       org_id: "org-test",
-      kind: "test",
+      kind,
       created_at: new Date(Date.UTC(2026, 0, 1, 0, 0, seq)).toISOString(),
       read_at: null,
       title: `Notification ${seq}`,
@@ -118,6 +144,12 @@ export function createTestInbox(options: TestInboxOptions = {}): TestInbox {
       href,
       link,
       app: itemApp,
+      category: { path: GENERAL_CATEGORY, labels: ["General"] },
+      kind_label: humanizeNotificationName(kind),
+      level: "active",
+      thread: null,
+      actions: [],
+      url: href ? `https://oxy.test${href}` : null,
       ...over
     };
     items.push(item);
@@ -125,16 +157,44 @@ export function createTestInbox(options: TestInboxOptions = {}): TestInbox {
     return item;
   }
 
-  const inScope = (q: Record<string, string>) => (i: NotificationItem) =>
-    options.legacy || !q.app_id || i.app?.id === q.app_id;
+  /** The server's filters: `app_id` and `source` narrow by app, then category, kind, thread. */
+  const inScope = (q: Record<string, string>) => (i: NotificationItem) => {
+    if (options.legacy) return true;
+    if (q.app_id && i.app?.id !== q.app_id) return false;
+    if (q.source && (q.source === "oxygen" ? i.app !== null : i.app?.id !== q.source)) {
+      return false;
+    }
+    if (q.kind && i.kind !== q.kind) return false;
+    if (q.thread && i.thread !== q.thread) return false;
+    const path = i.category?.path ?? GENERAL_CATEGORY;
+    return !q.category || path === q.category || path.startsWith(`${q.category}/`);
+  };
   const unreadIn = (q: Record<string, string>) =>
     items.filter(inScope(q)).filter((i) => i.read_at === null).length;
   const wire = (i: NotificationItem): NotificationItem => {
     if (!options.legacy) return i;
     const old = { ...i };
     delete old.link;
+    for (const field of CATALOGUE_FIELDS) delete old[field];
     return old;
   };
+
+  /** One page of the list, newest first: after the item `before` names, at most `limit`. */
+  function list(q: Record<string, string>): Response {
+    if (q.category && !q.source && !options.legacy) {
+      return json({ message: "category needs source" }, 400);
+    }
+    const limit = Math.min(MAX_PAGE, Math.max(1, Number(q.limit) || 50));
+    const unreadOnly = q.unread_only !== "false";
+    let matching = items.filter(inScope(q)).filter((i) => !unreadOnly || i.read_at === null);
+    if (q.before) matching = matching.slice(matching.findIndex((i) => i.id === q.before) + 1);
+    const page = matching.slice(0, limit);
+    const last = page[page.length - 1];
+    // Unread within the filter, `before` aside — as the server counts it.
+    const body: Record<string, unknown> = { unread: unreadIn(q), items: page.map(wire) };
+    if (!options.legacy) body.next_before = matching.length > limit && last ? last.id : null;
+    return json(body);
+  }
 
   function answer(method: string, path: string, q: Record<string, string>): Response {
     if (options.status) return json({ message: `HTTP ${options.status}` }, options.status);
@@ -144,15 +204,7 @@ export function createTestInbox(options: TestInboxOptions = {}): TestInbox {
     if (method === "GET" && path === "/api/notifications/unread") {
       return json({ unread: unreadIn(q) });
     }
-    if (method === "GET" && path === "/api/notifications") {
-      const limit = Math.min(MAX_PAGE, Math.max(1, Number(q.limit) || 50));
-      const unreadOnly = q.unread_only !== "false";
-      const page = items
-        .filter(inScope(q))
-        .filter((i) => !unreadOnly || i.read_at === null)
-        .slice(0, limit);
-      return json({ unread: unreadIn(q), items: page.map(wire) });
-    }
+    if (method === "GET" && path === "/api/notifications") return list(q);
     if (method === "POST" && path === "/api/notifications/read-all") {
       const now = new Date().toISOString();
       for (const i of items.filter(inScope(q))) if (i.read_at === null) i.read_at = now;
@@ -185,13 +237,18 @@ export function createTestInbox(options: TestInboxOptions = {}): TestInbox {
     items,
     requests,
     push,
-    receive: (input) =>
-      push({
-        kind: String(input.kind),
+    receive: (input) => {
+      const kind = String(input.kind);
+      const thread = text(input.thread);
+      return push({
+        kind,
         title: String(input.title),
         body: text(input.body),
-        link: text(input.link)
-      }),
+        link: text(input.link),
+        thread: thread === null ? null : threadKey(thread),
+        ...resolveNotificationKind(options.manifest, kind)
+      });
+    },
     unread: (id) => unreadIn(id ? { app_id: id } : {})
   };
 }

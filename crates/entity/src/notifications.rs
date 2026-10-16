@@ -54,6 +54,10 @@ pub struct Model {
     /// The custom app that sent it, when one did. Loose (no foreign key), like
     /// `org_id` on most signal tables.
     pub app_id: Option<Uuid>,
+    /// The thread the app put it in (`ctx.notify({ thread })`), as a hash —
+    /// SHA-256 hex, first 32 characters — never the app's text. Clients
+    /// collapse a thread; a phone groups by it. `NULL` when none was given.
+    pub thread_key: Option<String>,
 }
 
 impl Model {

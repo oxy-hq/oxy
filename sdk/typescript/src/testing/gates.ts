@@ -14,6 +14,8 @@ import { contextError } from "./host-error";
 export interface ManifestLike {
   slug?: string;
   functions?: Record<string, Record<string, unknown> | undefined>;
+  /** The notification catalogue; `createTestContext` refuses one publish would. */
+  notifications?: unknown;
 }
 
 /** `FunctionCapabilities` for one function, plus its write allowlist. */

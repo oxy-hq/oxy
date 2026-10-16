@@ -67,18 +67,28 @@ fn the_provider_token_is_cached_for_50_minutes_then_re_signed() {
 
 #[test]
 fn the_headers_are_the_alert_set_with_the_row_as_collapse_id() {
-    let id = Uuid::new_v4();
-    let headers = headers("tech.oxy.oxygen", "JWT", id, 1_000);
+    let s = signal("list_overdue");
+    let sent = headers("tech.oxy.oxygen", "JWT", &s, 1_000);
     assert_eq!(
-        headers,
+        sent,
         vec![
             ("apns-topic", "tech.oxy.oxygen".to_string()),
             ("apns-push-type", "alert".to_string()),
             ("apns-priority", "10".to_string()),
             ("apns-expiration", (1_000 + TTL_SECONDS).to_string()),
-            ("apns-collapse-id", id.to_string()),
+            ("apns-collapse-id", s.notification_id.to_string()),
             ("authorization", "bearer JWT".to_string()),
         ]
+    );
+    let passive = PushSignal {
+        level: Level::Passive,
+        ..s
+    };
+    let priority = headers("t", "JWT", &passive, 1_000)[2].clone();
+    assert_eq!(
+        priority,
+        ("apns-priority", "5".to_string()),
+        "passive waits for power"
     );
 }
 
@@ -92,10 +102,62 @@ fn the_payload_names_the_kind_and_row_and_carries_no_content() {
                 "alert": { "title": "Oxygen", "body": "List overdue" },
                 "sound": "default",
                 "mutable-content": 1,
-                "thread-id": "list_overdue",
+                "thread-id": "oxygen.list_overdue",
+                "category": "oxygen.list_overdue",
+                "interruption-level": "active",
             },
-            "oxy": { "kind": "list_overdue", "id": s.notification_id.to_string() },
+            "oxy": {
+                "v": 1,
+                "id": s.notification_id.to_string(),
+                "kind": "list_overdue",
+                "org_id": s.org_id.to_string(),
+                "source": "oxygen",
+                "app_id": null,
+                "category": "general",
+                "level": "active",
+                "thread": null,
+            },
         })
+    );
+}
+
+/// The catalogue's place for the kind: its label as the banner, the app's
+/// category id, the thread, and the level as the interruption level.
+#[test]
+fn the_payload_carries_the_kinds_label_category_thread_and_level() {
+    let app = uuid::Uuid::from_u128(7);
+    let s = PushSignal {
+        app_id: Some(app),
+        label: "Temperature alarm".into(),
+        category: "operations/food-safety".into(),
+        level: Level::TimeSensitive,
+        thread: Some("ab12".into()),
+        ..signal("temp_alarm")
+    };
+    let p = payload(&s);
+    let aps = &p["aps"];
+    assert_eq!(aps["alert"]["body"], "Temperature alarm");
+    assert_eq!(aps["category"], format!("{app}.temp_alarm"));
+    assert_eq!(aps["thread-id"], "ab12");
+    assert_eq!(aps["interruption-level"], "time-sensitive");
+    assert_eq!(p["oxy"]["source"], "app");
+    assert_eq!(p["oxy"]["app_id"], app.to_string());
+    assert_eq!(p["oxy"]["category"], "operations/food-safety");
+
+    // Critical needs Apple's entitlement, which the app does not hold.
+    let critical = payload(&PushSignal {
+        level: Level::Critical,
+        ..s.clone()
+    });
+    assert_eq!(critical["aps"]["interruption-level"], "time-sensitive");
+    let passive = payload(&PushSignal {
+        level: Level::Passive,
+        ..s
+    });
+    assert_eq!(passive["aps"]["interruption-level"], "passive");
+    assert!(
+        passive["aps"].get("sound").is_none(),
+        "a passive kind is silent"
     );
 }
 

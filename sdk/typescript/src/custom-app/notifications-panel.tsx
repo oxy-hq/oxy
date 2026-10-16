@@ -1,12 +1,20 @@
 // The open inbox under `<NotificationsBell />`: a header with "Mark all read",
-// then the list, newest first. Same words as Oxygen's own bell.
+// then the list, newest first, each thread folded into its newest item. Same
+// words as Oxygen's own bell.
 //
 // Positioned `fixed` from the bell's box, so a header with `overflow: hidden`
 // cannot clip it. Up to 480px wide the panel spans the screen less an 8px
 // gutter; above that it is 360px, lined up with the bell.
 
 import * as React from "react";
-import { formatAge, type NotificationItem } from "./notifications";
+import type { NotificationLevel } from "./notification-catalog";
+import {
+  categoryLabel,
+  collapseThreads,
+  formatAge,
+  groupUnread,
+  type NotificationGroup
+} from "./notifications";
 import type { UseNotificationsResult } from "./notifications-hooks";
 
 const NARROW_MAX = 480;
@@ -23,7 +31,16 @@ const T = {
   border: "var(--oxy-notifications-border, var(--oxy-shell-border, var(--color-border, #e4e4e7)))",
   hover: "var(--oxy-notifications-hover, var(--oxy-shell-accent, var(--color-muted, #f4f4f5)))",
   accent: "var(--oxy-notifications-accent, var(--oxy-shell-link, var(--color-info, #2563eb)))",
+  critical:
+    "var(--oxy-notifications-critical, var(--oxy-shell-destructive, var(--color-status-error, #dc2626)))",
+  timeSensitive: "var(--oxy-notifications-time-sensitive, var(--color-warning, #d97706))",
   z: "var(--oxy-notifications-z, 50)"
+};
+
+/** The levels a row marks, with the word a screen reader hears. The rest look alike. */
+const LEVEL_ACCENT: Partial<Record<NotificationLevel, { color: string; words: string }>> = {
+  critical: { color: T.critical, words: "Critical" },
+  time_sensitive: { color: T.timeSensitive, words: "Time-sensitive" }
 };
 
 export interface BellPanelProps {
@@ -34,7 +51,8 @@ export interface BellPanelProps {
   /** Name the app on each row (the whole inbox, not just this app's). */
   showApp: boolean;
   className?: string;
-  onItem: (item: NotificationItem) => void;
+  /** A row was tapped: its newest item, and the thread folded under it. */
+  onItem: (group: NotificationGroup) => void;
   /** `refocus`: hand focus back to the bell (Escape), not on a click elsewhere. */
   onClose: (refocus: boolean) => void;
 }
@@ -100,9 +118,9 @@ function PanelBody({ inbox, showApp, onItem }: BellPanelProps): React.JSX.Elemen
   const now = Date.now();
   return (
     <ul style={styles.ul}>
-      {items.map((item) => (
-        <li key={item.id} style={styles.li}>
-          <Row item={item} now={now} showApp={showApp} onClick={() => onItem(item)} />
+      {collapseThreads(items).map((group) => (
+        <li key={group.item.id} style={styles.li}>
+          <Row group={group} now={now} showApp={showApp} onClick={() => onItem(group)} />
         </li>
       ))}
     </ul>
@@ -110,13 +128,16 @@ function PanelBody({ inbox, showApp, onItem }: BellPanelProps): React.JSX.Elemen
 }
 
 function Row(props: {
-  item: NotificationItem;
+  group: NotificationGroup;
   now: number;
   showApp: boolean;
   onClick: () => void;
 }): React.JSX.Element {
-  const { item, now, showApp } = props;
-  const unread = item.read_at === null;
+  const { group, now, showApp } = props;
+  const { item, more } = group;
+  const unread = groupUnread(group);
+  const accent = item.level ? LEVEL_ACCENT[item.level] : undefined;
+  const category = categoryLabel(item);
   const [hover, setHover] = React.useState(false);
   const time = (
     <time dateTime={item.created_at} title={new Date(item.created_at).toLocaleString()}>
@@ -131,7 +152,13 @@ function Row(props: {
       onMouseLeave={() => setHover(false)}
       data-testid={`oxy-notifications-item-${item.id}`}
       data-unread={unread}
-      style={{ ...styles.row, background: hover ? T.hover : "transparent" }}
+      data-level={item.level}
+      style={{
+        ...styles.row,
+        background: hover ? T.hover : "transparent",
+        // A bar on the leading edge: inset, so the row does not move.
+        boxShadow: accent ? `inset 3px 0 0 ${accent.color}` : undefined
+      }}
     >
       <span
         aria-hidden='true'
@@ -155,7 +182,22 @@ function Row(props: {
           )}
           {showApp ? null : <span style={styles.meta}>{time}</span>}
         </span>
+        {category ? (
+          <span
+            style={{ ...styles.category, ...styles.ellipsis }}
+            title={category.full}
+            data-testid={`oxy-notifications-category-${item.id}`}
+          >
+            {category.leaf}
+          </span>
+        ) : null}
         {item.title !== null && item.body ? <span style={styles.body}>{item.body}</span> : null}
+        {more.length > 0 ? (
+          <span style={styles.category} data-testid={`oxy-notifications-more-${item.id}`}>
+            +{more.length} more
+          </span>
+        ) : null}
+        {accent ? <span style={styles.srOnly}>{accent.words}</span> : null}
         {unread ? <span style={styles.srOnly}>Unread</span> : null}
       </span>
     </button>
@@ -314,6 +356,7 @@ const styles: Record<string, React.CSSProperties> = {
   ellipsis: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   titleLine: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 },
   title: { fontSize: 13, overflowWrap: "anywhere", minWidth: 0 },
+  category: { fontSize: 11, color: T.muted },
   body: {
     fontSize: 12,
     color: T.muted,

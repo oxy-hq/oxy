@@ -3,7 +3,8 @@
 //! The signals (who, when, read or not) are in Oxy's database; what each one
 //! says is in its org's own store. This reads a page of signals, then the
 //! content for that page — one query per org on the page, never per row — and
-//! the app each came from, so the reader sees one list.
+//! the app each came from, so the reader sees one list. Each item is placed
+//! in its source's catalogue (`catalog`): category, labels, level, actions.
 //!
 //! An org whose store cannot be read right now still lists its notifications,
 //! with `title: null`: the person learns something is there, and the badge
@@ -20,8 +21,11 @@ use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use serde::Serialize;
 use uuid::Uuid;
 
+use super::catalog::model::{ActionView, Level};
+use super::catalog::platform::oxygen;
+use super::catalog::source::{KindInfo, SourceCatalogue};
 use super::links::inbox_href;
-use super::platform::render::{self, About};
+use super::platform::render::{self, About, Rendered};
 
 /// The app a notification came from, as the inbox names it.
 #[derive(Debug, Clone, Serialize)]
@@ -29,6 +33,15 @@ pub struct InboxApp {
     pub id: Uuid,
     pub slug: String,
     pub name: String,
+}
+
+/// Where an item sits in its source's tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CategoryRef {
+    /// `operations/food-safety`; `general` for a kind with none.
+    pub path: String,
+    /// From the top category down: `["Store operations", "Food safety"]`.
+    pub labels: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -49,6 +62,16 @@ pub struct InboxItem {
     /// `None` for a platform notice and for a notification without a link.
     pub link: Option<String>,
     pub app: Option<InboxApp>,
+    pub category: CategoryRef,
+    pub kind_label: String,
+    pub level: Level,
+    /// The thread's opaque key; items sharing one collapse into the newest.
+    pub thread: Option<String>,
+    pub actions: Vec<ActionView>,
+    /// `href` on the admin host, absolute, for a phone or a shared link.
+    /// `None` without a link, or when the deployment has no admin host
+    /// configured (`OXY_API_URL`).
+    pub url: Option<String>,
 }
 
 /// Turn a page of signals into inbox items, in the page's order.
@@ -58,27 +81,23 @@ pub async fn items(
 ) -> Result<Vec<InboxItem>, DbErr> {
     let content = content_for(db, &page).await;
     let org_slugs = org_slugs(db, &page).await?;
-    let apps = apps_for(db, &page).await?;
+    let (apps, catalogues) = apps_for(db, &page).await?;
     let notices = platform_words(db, &page).await?;
+    let platform = oxygen();
+    let empty = super::catalog::live::from_manifest(None);
     Ok(page
         .into_iter()
         .map(|n| {
+            let catalogue = match n.app_id {
+                None => &platform,
+                Some(app) => catalogues.get(&app).unwrap_or(&empty),
+            };
+            let info = catalogue.describe(&n.kind);
             if render::is_platform(&n) {
                 let words = About::of(&n)
                     .and_then(|a| notices.get(&a).cloned())
                     .unwrap_or_else(|| render::fallback(&n.kind));
-                return InboxItem {
-                    id: n.id,
-                    org_id: n.org_id,
-                    kind: n.kind,
-                    created_at: n.created_at,
-                    read_at: n.read_at,
-                    title: Some(words.title),
-                    body: words.body,
-                    href: words.href,
-                    link: None,
-                    app: None,
-                };
+                return platform_item(n, words, info);
             }
             let msg = n.message_id.and_then(|id| content.get(&id));
             let app = n.app_id.and_then(|id| apps.get(&id)).cloned();
@@ -90,20 +109,87 @@ pub async fn items(
                     m.link.as_deref(),
                 )
             });
-            InboxItem {
-                id: n.id,
-                org_id: n.org_id,
-                kind: n.kind,
-                created_at: n.created_at,
-                read_at: n.read_at,
-                title: msg.map(|m| m.title.clone()),
-                body: msg.and_then(|m| m.body.clone()),
-                href,
-                link: msg.and_then(|m| m.link.clone()),
-                app,
-            }
+            let mut item = base(n, info);
+            item.title = msg.map(|m| m.title.clone());
+            item.body = msg.and_then(|m| m.body.clone());
+            item.href = href;
+            item.link = msg.and_then(|m| m.link.clone());
+            item.app = app;
+            item
         })
         .collect())
+}
+
+/// An item with its place in the tree and no words yet.
+fn base(n: notifications::Model, info: KindInfo) -> InboxItem {
+    InboxItem {
+        id: n.id,
+        org_id: n.org_id,
+        kind: n.kind,
+        created_at: n.created_at,
+        read_at: n.read_at,
+        title: None,
+        body: None,
+        href: None,
+        link: None,
+        app: None,
+        category: CategoryRef {
+            path: info.category,
+            labels: info.category_labels,
+        },
+        kind_label: info.label,
+        level: info.level,
+        thread: n.thread_key,
+        actions: info.actions.iter().map(ActionView::from).collect(),
+        url: None,
+    }
+}
+
+fn platform_item(n: notifications::Model, words: Rendered, info: KindInfo) -> InboxItem {
+    let mut item = base(n, info);
+    item.title = Some(words.title);
+    item.body = words.body;
+    item.href = words.href;
+    item
+}
+
+/// How a request's items link out: `href` relative to its host (absolute on
+/// a custom-app host), `url` absolute on the admin host.
+#[derive(Debug, Clone, Default)]
+pub struct Links {
+    pub href_base: String,
+    pub admin_base: Option<String>,
+}
+
+impl Links {
+    pub fn for_request(headers: &axum::http::HeaderMap) -> Self {
+        let host = headers
+            .get(axum::http::header::HOST)
+            .and_then(|v| v.to_str().ok());
+        let admin_base = oxy_app_core::custom_apps_host_dispatch::admin_base_url();
+        Self {
+            href_base: href_base(host, admin_base.clone()),
+            admin_base,
+        }
+    }
+
+    /// Fill each item's `url`, then make its `href` absolute where the host
+    /// needs it.
+    pub fn apply(&self, items: &mut [InboxItem]) {
+        for item in items.iter_mut() {
+            item.url = absolute(item.href.as_deref(), self.admin_base.as_deref());
+        }
+        absolutize(items, &self.href_base);
+    }
+}
+
+/// `href` on `admin_base`; an already absolute `href` as it is.
+pub fn absolute(href: Option<&str>, admin_base: Option<&str>) -> Option<String> {
+    let href = href?;
+    if !href.starts_with('/') {
+        return Some(href.to_string());
+    }
+    admin_base.map(|base| format!("{base}{href}"))
 }
 
 /// What to put before every `href` for a reader on `host`: the admin host's
@@ -143,7 +229,7 @@ pub fn absolutize(items: &mut [InboxItem], base: &str) {
 async fn platform_words(
     db: &DatabaseConnection,
     page: &[notifications::Model],
-) -> Result<HashMap<About, render::Rendered>, DbErr> {
+) -> Result<HashMap<About, Rendered>, DbErr> {
     let abouts: HashSet<About> = page.iter().filter_map(About::of).collect();
     if abouts.is_empty() {
         return Ok(HashMap::new());
@@ -189,18 +275,21 @@ async fn org_slugs(
         .collect())
 }
 
+/// The apps on the page, and each one's live catalogue.
 async fn apps_for(
     db: &DatabaseConnection,
     page: &[notifications::Model],
-) -> Result<HashMap<Uuid, InboxApp>, DbErr> {
+) -> Result<(HashMap<Uuid, InboxApp>, HashMap<Uuid, SourceCatalogue>), DbErr> {
     let ids: HashSet<Uuid> = page.iter().filter_map(|n| n.app_id).collect();
     if ids.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(Default::default());
     }
-    Ok(apps::Entity::find()
+    let rows = apps::Entity::find()
         .filter(apps::Column::Id.is_in(ids))
         .all(db)
-        .await?
+        .await?;
+    let catalogues = super::catalog::live::load_many(db, &rows).await?;
+    let apps = rows
         .into_iter()
         .map(|a| {
             (
@@ -212,80 +301,10 @@ async fn apps_for(
                 },
             )
         })
-        .collect())
+        .collect();
+    Ok((apps, catalogues))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn item(href: Option<&str>, link: Option<&str>) -> InboxItem {
-        InboxItem {
-            id: Uuid::nil(),
-            org_id: Uuid::nil(),
-            kind: "k".into(),
-            created_at: chrono::Utc::now().fixed_offset(),
-            read_at: None,
-            title: Some("t".into()),
-            body: None,
-            href: href.map(str::to_string),
-            link: link.map(str::to_string),
-            app: None,
-        }
-    }
-
-    #[test]
-    fn hrefs_go_absolute_on_a_custom_app_host_and_stay_relative_elsewhere() {
-        let admin = || Some("https://app.oxygen-hq.com".to_string());
-        for host in [
-            "acme--store.customer-apps.oxygen-hq.com",
-            "staging--acme--store.customer-apps-dev.oxygen-hq.com:443",
-        ] {
-            assert_eq!(
-                href_base(Some(host), admin()),
-                "https://app.oxygen-hq.com",
-                "{host}"
-            );
-        }
-        assert_eq!(href_base(Some("app.oxygen-hq.com"), admin()), "");
-        assert_eq!(
-            href_base(Some("acme.oxygen-hq.com"), admin()),
-            "",
-            "an org subdomain serves the SPA"
-        );
-        assert_eq!(href_base(None, admin()), "");
-        assert_eq!(
-            href_base(Some("acme--store.customer-apps.oxygen-hq.com"), None),
-            "",
-            "no admin host configured: relative, not invented"
-        );
-
-        let mut items = vec![
-            item(Some("/customer-apps/acme/store/lists/1"), Some("/lists/1")),
-            item(Some("/acme/workspaces/w"), None),
-            item(None, None),
-        ];
-        absolutize(&mut items, "https://app.oxygen-hq.com");
-        assert_eq!(
-            items[0].href.as_deref(),
-            Some("https://app.oxygen-hq.com/customer-apps/acme/store/lists/1")
-        );
-        assert_eq!(
-            items[0].link.as_deref(),
-            Some("/lists/1"),
-            "the app's own link is untouched"
-        );
-        assert_eq!(
-            items[1].href.as_deref(),
-            Some("https://app.oxygen-hq.com/acme/workspaces/w")
-        );
-        assert_eq!(items[2].href, None);
-    }
-
-    #[test]
-    fn link_is_always_in_the_json_null_when_absent() {
-        // The SDK reads a missing key as a server that predates `app_id`.
-        let v = serde_json::to_value(item(None, None)).unwrap();
-        assert_eq!(v.get("link"), Some(&serde_json::Value::Null));
-    }
-}
+#[path = "inbox_view_tests.rs"]
+mod tests;

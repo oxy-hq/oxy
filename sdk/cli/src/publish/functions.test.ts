@@ -16,7 +16,7 @@ import {
   functionsDirConflicts,
   requirePrebuiltFunctions,
   validateFunctionNames,
-  validateNotifyKinds
+  validateNotifications
 } from "./functions.js";
 
 let root: string;
@@ -207,32 +207,68 @@ describe("validateFunctionNames", () => {
   });
 });
 
-describe("validateNotifyKinds", () => {
-  it("refuses a kind in Oxygen's reserved namespace, naming each one", () => {
-    let error: CliError | undefined;
+describe("validateNotifications", () => {
+  /** A manifest as a file holds it — wrong values included, so typed loosely. */
+  function refusal(manifest: unknown): CliError | undefined {
     try {
-      validateNotifyKinds({
-        functions: {
-          watch: { notify: { kinds: { "oxy.anomaly": {}, late: {} } } },
-          ping: { notify: { kinds: { "oxy.run_failed": { critical: true } } } }
-        }
-      });
+      validateNotifications(manifest as Parameters<typeof validateNotifications>[0]);
     } catch (e) {
-      error = e as CliError;
+      return e as CliError;
     }
+    return undefined;
+  }
+
+  it("refuses a kind in Oxygen's reserved namespace, naming each one", () => {
+    const error = refusal({
+      functions: {
+        watch: { notify: { kinds: { "oxy.anomaly": {}, late: {} } } },
+        ping: { notify: { kinds: { "oxy.run_failed": { critical: true } } } }
+      }
+    });
     expect(error).toBeInstanceOf(CliError);
     expect(error?.code).toBe(ExitCode.USAGE);
-    expect(error?.message).toContain('start with "oxy."');
-    expect(error?.detail).toBe("  watch: oxy.anomaly\n  ping: oxy.run_failed");
+    expect(error?.message).toBe("oxy-app.json has 2 notification problem(s)");
+    expect(error?.detail?.split("\n")).toEqual([
+      expect.stringMatching(/^ {2}functions\.watch\.notify\.kinds\.oxy\.anomaly: .*"oxy\."/),
+      expect.stringMatching(/^ {2}functions\.ping\.notify\.kinds\.oxy\.run_failed: /)
+    ]);
   });
 
-  it("allows every other kind, and a manifest with none", () => {
-    expect(() =>
-      validateNotifyKinds({
-        functions: { f: { notify: { kinds: { "oxygen.tank_low": {}, "store.oxy.x": {} } } } }
+  /** Every finding at once — the server stops at the first. */
+  it("lists every catalogue problem in one refusal, before any build", () => {
+    const error = refusal({
+      functions: { lists: { notify: { kinds: { late: {} } } } },
+      notifications: {
+        categories: { "Ops/x": {}, "a/b/c/d": {} },
+        kinds: {
+          late: {
+            category: "finance",
+            level: "urgent",
+            actions: [{ id: "ack", label: "Ack", function: "ack-it" }]
+          }
+        }
+      }
+    });
+    expect(error?.code).toBe(ExitCode.USAGE);
+    expect(error?.detail?.split("\n").map((l) => l.trim().split(":")[0])).toEqual([
+      "notifications.categories.Ops/x",
+      "notifications.categories.a/b/c/d",
+      "notifications.kinds.late.category",
+      "notifications.kinds.late.level",
+      "notifications.kinds.late.actions[0].function"
+    ]);
+  });
+
+  it("returns warnings without refusing, and nothing for a clean manifest", () => {
+    expect(
+      validateNotifications({
+        functions: { f: { notify: { kinds: { late: {} } } } },
+        notifications: { kinds: { late: {}, unsent: {} } }
       })
-    ).not.toThrow();
-    expect(() => validateNotifyKinds({ functions: { f: {} } })).not.toThrow();
-    expect(() => validateNotifyKinds(undefined)).not.toThrow();
+    ).toEqual([
+      "oxy-app.json (notifications.kinds.unsent): no function declares it under notify.kinds, so nothing can send it yet"
+    ]);
+    expect(validateNotifications({ functions: { f: {} } })).toEqual([]);
+    expect(validateNotifications(undefined)).toEqual([]);
   });
 });

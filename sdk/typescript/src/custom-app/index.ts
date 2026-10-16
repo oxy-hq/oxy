@@ -81,8 +81,13 @@ export type { OxyAppLogger, OxyAppLogLevel } from "./logger";
 export { getOxyAppLogger, setOxyAppLogger } from "./logger";
 export type {
   LoadManifestOptions,
+  NotificationLevel,
   OxyAppFunctionManifest,
   OxyAppManifest,
+  OxyAppNotificationAction,
+  OxyAppNotificationCategory,
+  OxyAppNotificationKind,
+  OxyAppNotificationsManifest,
   OxyAppPerformanceManifest,
   ResolvedCustomAppManifest
 } from "./manifest";
@@ -110,11 +115,16 @@ export {
 } from "./metric-tree-hooks";
 // The in-app inbox: the person's notifications, read from inside the app
 export type {
+  NotificationAction,
   NotificationApp,
+  NotificationCategoryRef,
+  NotificationGroup,
   NotificationItem,
+  NotificationsFilter,
   NotificationsPage,
   NotificationsScope
 } from "./notifications";
+export { collapseThreads } from "./notifications";
 export type { NotificationsBellProps } from "./notifications-bell";
 export { NotificationsBell } from "./notifications-bell";
 export type { UseNotificationsOptions, UseNotificationsResult } from "./notifications-hooks";

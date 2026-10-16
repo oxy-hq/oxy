@@ -402,6 +402,41 @@ describe("oxyc publish", () => {
     expect(uploads()).toHaveLength(0);
   });
 
+  /** The server stops at the first problem, after an upload; this lists them all before a build. */
+  it("refuses a notification catalogue before building, listing every problem", async () => {
+    const dir = app({
+      slug: "sales",
+      orgSlug: "acme",
+      build: { install: "touch installed", command: "true" },
+      functions: { lists: { notify: { kinds: { late: {} } } } },
+      notifications: {
+        categories: { "a/b/c/d": {} },
+        kinds: {
+          late: { level: "urgent", actions: [{ id: "ack", label: "Ack", function: "ack-it" }] }
+        }
+      }
+    });
+    const result = await publish(dir, [], { OXY_TOKEN: "good-token" });
+    expect(result.status).toBe(ExitCode.USAGE);
+    expect(result.stderr).toContain("oxy-app.json has 3 notification problem(s)");
+    expect(result.stderr).toContain("notifications.categories.a/b/c/d");
+    expect(result.stderr).toContain("notifications.kinds.late.level");
+    expect(result.stderr).toContain("notifications.kinds.late.actions[0].function");
+    expect(existsSync(join(dir, "installed"))).toBe(false);
+    expect(uploads()).toHaveLength(0);
+  });
+
+  it("publishes past a catalogue warning, and prints it", async () => {
+    const dir = app({
+      slug: "sales",
+      orgSlug: "acme",
+      notifications: { kinds: { unsent: { level: "passive" } } }
+    });
+    const result = await publish(dir, ["--dir", "out"], { OXY_TOKEN: "good-token" });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain("oxy-app.json (notifications.kinds.unsent): no function");
+  });
+
   it("maps a 403 to the auth exit code with the server's body", async () => {
     const dir = app();
     const result = await publish(dir, ["--dir", "out"], { OXY_TOKEN: "wrong-token" });

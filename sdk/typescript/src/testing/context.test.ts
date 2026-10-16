@@ -266,6 +266,73 @@ describe("ctx.notify", () => {
     expect(again).toEqual({ ...first, deduplicated: true });
     expect(t.state.notifications).toHaveLength(1);
   });
+
+  it("refuses a thread over 128 characters, blank, or not a string, in the parser's words", async () => {
+    const t = notifier();
+    const send = (thread: unknown) =>
+      t.ctx.notify({ to: { userId: "u-mgr" }, kind: "list_overdue", title: "t", thread } as never);
+    const tooLong = `ctx.notify: InvalidNotifyPayload: ${REFUSALS.notifyThreadLength.refusal}`;
+    expect((await refusal(() => send("x".repeat(129)))).message).toBe(tooLong);
+    expect((await refusal(() => send(""))).message).toBe(tooLong);
+    expect((await refusal(() => send("  "))).message).toBe(tooLong);
+    const notText = await refusal(() => send(42));
+    expect(notText.name).toBe(HOST_ERROR_NAME);
+    expect(notText.message).toBe("ctx.notify: InvalidNotifyPayload: `thread` must be a string");
+    expect(t.state.notifications).toEqual([]);
+    // 128 characters — counted as characters, not UTF-16 units — is fine.
+    await expect(send("🔥".repeat(128))).resolves.toMatchObject({ deduplicated: false });
+    await send("store:clovis");
+    expect(t.state.notifications[1]?.input.thread).toBe("store:clovis");
+  });
+
+  it("checks the thread as the payload is parsed: after the kind's namespace, before its declaration", async () => {
+    const t = notifier();
+    const long = "x".repeat(129);
+    const undeclared = await refusal(() =>
+      t.ctx.notify({ to: { userId: "u-mgr" }, kind: "digest", title: "t", thread: long })
+    );
+    expect(undeclared.message).toContain("InvalidNotifyPayload");
+    const reserved = await refusal(() =>
+      t.ctx.notify({ to: { userId: "u-mgr" }, kind: "oxy.x", title: "t", thread: long })
+    );
+    expect(reserved.message).toContain("NotifyKindReserved");
+  });
+
+  it("refuses to build a context for a catalogue publish would refuse, listing every problem", () => {
+    const build = () =>
+      createTestContext(
+        {
+          slug: "s",
+          functions: { f: { notify: { kinds: { late: {} } } } },
+          notifications: {
+            categories: { "a/b/c/d": {} },
+            kinds: { late: { category: "finance", level: "urgent" } }
+          }
+        },
+        { function: "f" }
+      );
+    expect(build).toThrow(/notifications catalogue would not publish/);
+    expect(build).toThrow(/notifications\.categories\.a\/b\/c\/d: .*4 levels deep/);
+    expect(build).toThrow(/notifications\.kinds\.late\.category: .*"finance"/);
+    expect(build).toThrow(/notifications\.kinds\.late\.level: .*"urgent"/);
+    try {
+      build();
+    } catch (e) {
+      expect((e as Error).name).toBe("TestContextError");
+    }
+  });
+
+  it("builds one for a valid catalogue, and for one that only warns", () => {
+    const manifest = {
+      slug: "s",
+      functions: { f: { notify: { kinds: { late: {} } } } },
+      notifications: {
+        categories: { operations: { label: "Store operations" } },
+        kinds: { late: { category: "operations" }, unsent: {} }
+      }
+    };
+    expect(() => createTestContext(manifest, { function: "f" })).not.toThrow();
+  });
 });
 
 describe("writes to a named database, in the host's order", () => {

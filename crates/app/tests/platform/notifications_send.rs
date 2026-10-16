@@ -160,6 +160,7 @@ fn outgoing(org: Uuid, w: &World, recipients: Vec<Uuid>) -> Outgoing {
         email: None,
         slack: false,
         idempotency_key: None,
+        thread_key: None,
         recipients,
     }
 }

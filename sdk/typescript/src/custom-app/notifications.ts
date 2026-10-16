@@ -9,6 +9,15 @@
 // (`crates/app/src/server/api/notifications/`). Design:
 // internal-docs/custom-app-notifications.md.
 
+import {
+  GENERAL_CATEGORY,
+  type NotificationAction,
+  type NotificationCategoryRef,
+  type NotificationLevel
+} from "./notification-catalog";
+
+export type { NotificationAction, NotificationCategoryRef, NotificationLevel };
+
 /** The custom app a notification came from. */
 export interface NotificationApp {
   id: string;
@@ -40,12 +49,40 @@ export interface NotificationItem {
   link?: string | null;
   /** `null` for a platform notice. */
   app: NotificationApp | null;
+  // The fields below come from the app's notification catalogue (`oxy-app.json`
+  // `notifications`). Absent on a server older than categories: read a missing
+  // one as "nothing to add", never as an error.
+  /** Where it sits in its source's tree; `general` for a kind with no category. */
+  category?: NotificationCategoryRef;
+  /** The kind's label (`"Temperature alarm"`). */
+  kind_label?: string;
+  level?: NotificationLevel;
+  /**
+   * Opaque: the hash of the `thread` the app passed to `ctx.notify`, `null`
+   * when it passed none. Items sharing one collapse into the newest.
+   */
+  thread?: string | null;
+  actions?: NotificationAction[];
+  /** An absolute deep link, for sharing and phones. The bell follows `href` / `link`. */
+  url?: string | null;
 }
 
 /** `GET /api/notifications`. */
 export interface NotificationsPage {
   unread: number;
   items: NotificationItem[];
+  /** The cursor for the next, older page; absent or `null` when there is none. */
+  next_before?: string | null;
+}
+
+/**
+ * What the list is narrowed to, beside the app scope. `category` is a path in
+ * this app's catalogue and covers its subtree; `thread` is an item's `thread`.
+ */
+export interface NotificationsFilter {
+  category?: string;
+  kind?: string;
+  thread?: string;
 }
 
 /** `"app"`: this app's notifications. `"all"`: the person's whole inbox. */
@@ -132,17 +169,46 @@ function unreadOf(body: unknown): number {
 function pageOf(body: unknown): NotificationsPage {
   const items = (body as { items?: unknown } | null)?.items;
   if (!Array.isArray(items)) throw new Error("no items");
-  return { unread: unreadOf(body), items: items as NotificationItem[] };
+  const next = (body as { next_before?: unknown }).next_before;
+  return {
+    unread: unreadOf(body),
+    items: items as NotificationItem[],
+    ...(typeof next === "string" || next === null ? { next_before: next } : {})
+  };
+}
+
+/**
+ * A filter as the client sends it: `source` (an app id, or `"oxygen"`) is the
+ * tree a `category` is a path in, which the server needs beside it.
+ */
+export interface InboxFilter extends NotificationsFilter {
+  source?: string;
 }
 
 /** The four inbox requests, narrowed to one app when `appId` is set. */
 export interface InboxClient {
   /** The badge: Oxy's own database only, so polling never wakes an org's store. */
-  unread(): Promise<InboxOutcome<number>>;
-  /** Newest first, read and unread. */
-  list(limit: number): Promise<InboxOutcome<NotificationsPage>>;
+  unread(filter?: InboxFilter): Promise<InboxOutcome<number>>;
+  /** Newest first, read and unread, narrowed by `filter`. */
+  list(limit: number, filter?: InboxFilter): Promise<InboxOutcome<NotificationsPage>>;
   markRead(id: string): Promise<InboxOutcome<void>>;
-  markAllRead(): Promise<InboxOutcome<void>>;
+  /** Everything in scope read, or everything `filter` covers. */
+  markAllRead(filter?: InboxFilter): Promise<InboxOutcome<void>>;
+}
+
+/** The filter as query parameters: only the keys that are set. */
+function filterParams(filter: InboxFilter): Record<string, string> {
+  const params: Record<string, string> = {};
+  if (filter.source) params.source = filter.source;
+  if (filter.category) params.category = filter.category;
+  if (filter.kind) params.kind = filter.kind;
+  if (filter.thread) params.thread = filter.thread;
+  return params;
+}
+
+/** Whether `filter` narrows anything. */
+export function isFiltered(filter: NotificationsFilter): boolean {
+  return Boolean(filter.category || filter.kind || filter.thread);
 }
 
 /**
@@ -164,15 +230,76 @@ export function createInboxClient(
   const get = { method: "GET" };
   const post = { method: "POST" };
   return {
-    unread: () => request(fetcher, scoped("/unread"), get, async (r) => unreadOf(await json(r))),
-    list: (limit) =>
-      request(fetcher, scoped("", { unread_only: "false", limit: String(limit) }), get, async (r) =>
-        pageOf(await json(r))
+    unread: (filter = {}) =>
+      request(fetcher, scoped("/unread", filterParams(filter)), get, async (r) =>
+        unreadOf(await json(r))
       ),
+    list: (limit, filter = {}) => {
+      const query = { unread_only: "false", limit: String(limit), ...filterParams(filter) };
+      return request(fetcher, scoped("", query), get, async (r) => pageOf(await json(r)));
+    },
     markRead: (id) =>
       request(fetcher, `${root}/${encodeURIComponent(id)}/read`, post, async () => undefined),
-    markAllRead: () => request(fetcher, scoped("/read-all"), post, async () => undefined)
+    markAllRead: (filter = {}) =>
+      request(fetcher, scoped("/read-all", filterParams(filter)), post, async () => undefined)
   };
+}
+
+/**
+ * Did this page come from a server that knows categories, and so filters by
+ * them (`category`, `kind`, `thread` — on the list, the count and "mark all
+ * read")? An older one ignores the filter. `null` when there is nothing to
+ * judge by.
+ */
+export function serverKnowsCategories(items: NotificationItem[]): boolean | null {
+  if (items.length === 0) return null;
+  return items.every((item) => item.category !== undefined);
+}
+
+/** An item's category path; `general` from a server older than categories. */
+export function categoryPathOf(item: NotificationItem): string {
+  return item.category?.path ?? GENERAL_CATEGORY;
+}
+
+/**
+ * Whether `item` is inside `filter`: the server's rule, applied again so an
+ * older server that ignored the filter cannot widen the list.
+ */
+export function matchesFilter(item: NotificationItem, filter: NotificationsFilter): boolean {
+  if (filter.kind && item.kind !== filter.kind) return false;
+  if (filter.thread && item.thread !== filter.thread) return false;
+  if (filter.category) {
+    const path = categoryPathOf(item);
+    if (path !== filter.category && !path.startsWith(`${filter.category}/`)) return false;
+  }
+  return true;
+}
+
+/** One row of a list: the newest item of a thread run, and the older ones folded under it. */
+export interface NotificationGroup {
+  /** The newest — the one a row shows and a tap opens. */
+  item: NotificationItem;
+  /** The older items of the same thread right after it, newest first. */
+  more: NotificationItem[];
+}
+
+/**
+ * Fold each run of consecutive items sharing a `thread` into its newest, as a
+ * phone stacks them. Items with no thread stand alone. Order is kept.
+ */
+export function collapseThreads(items: NotificationItem[]): NotificationGroup[] {
+  const groups: NotificationGroup[] = [];
+  for (const item of items) {
+    const last = groups[groups.length - 1];
+    if (last && item.thread && last.item.thread === item.thread) last.more.push(item);
+    else groups.push({ item, more: [] });
+  }
+  return groups;
+}
+
+/** True while any item of the group is unread. */
+export function groupUnread(group: NotificationGroup): boolean {
+  return group.item.read_at === null || group.more.some((i) => i.read_at === null);
 }
 
 /**
@@ -282,6 +409,17 @@ export function notificationTarget(item: NotificationItem, ctx: TargetContext): 
 }
 
 // ── Display ─────────────────────────────────────────────────────────────────
+
+/**
+ * The category a row names: the leaf's label and the whole path's. `null` for
+ * the implicit `general` category (it says nothing) and from an older server.
+ */
+export function categoryLabel(item: NotificationItem): { leaf: string; full: string } | null {
+  const category = item.category;
+  if (!category || category.path === GENERAL_CATEGORY) return null;
+  const leaf = category.labels[category.labels.length - 1];
+  return leaf ? { leaf, full: category.labels.join(" › ") } : null;
+}
 
 /** The badge text: nothing at zero, capped at "99+". */
 export function badgeLabel(count: number): string | null {

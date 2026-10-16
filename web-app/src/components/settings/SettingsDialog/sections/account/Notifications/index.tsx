@@ -1,36 +1,36 @@
 import { Bell } from "lucide-react";
 import type { ReactNode } from "react";
+import { oxygenFirst } from "@/components/Notifications/utils";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
-import { useNotificationPreferences } from "@/hooks/api/notifications";
+import { useNotificationCatalog } from "@/hooks/api/notifications";
 import SectionHeader from "../../../components/SectionHeader";
-import { KindGroup } from "./components/KindGroup";
 import { PushOnThisDevice } from "./components/PushOnThisDevice";
+import { SourceGroup } from "./components/SourceGroup";
 
 const NOTE = "text-muted-foreground text-sm";
 
 /**
  * Account → Notifications: what Oxygen and each app may send the signed-in
- * person, and where. The inbox always gets everything; these switches only mute
- * the other channels. Needs no org or workspace — every preference is the
- * caller's own.
+ * person, and where — a switch per channel at every level of each source's
+ * tree. The inbox always gets everything; these switches only mute the other
+ * channels. Needs no org or workspace — every preference is the caller's own.
  */
 export default function AccountNotifications() {
-  const prefs = useNotificationPreferences();
-  const reach = prefs.data?.reach;
+  const catalog = useNotificationCatalog();
+  const reach = catalog.data?.reach;
 
   let body: ReactNode;
-  if (prefs.isPending) {
+  if (catalog.isPending) {
     body = <Skeleton className='h-24 w-full' />;
-  } else if (prefs.isError || !reach) {
+  } else if (catalog.isError || !reach) {
     body = <p className={NOTE}>Couldn't load your notification settings</p>;
-  } else if (prefs.data.apps.length === 0 && prefs.data.platform.length === 0) {
+  } else if (catalog.data.sources.length === 0) {
     body = (
       <p className={NOTE} data-testid='notifications-prefs-empty'>
         Nothing sends you notifications yet
       </p>
     );
   } else {
-    const { apps, platform } = prefs.data;
     body = (
       <div className='flex flex-col gap-3'>
         {!reach.email && (
@@ -38,18 +38,8 @@ export default function AccountNotifications() {
             No email on this account
           </p>
         )}
-        {platform.length > 0 && (
-          <KindGroup title='Oxygen' appId={null} testKey='oxygen' kinds={platform} reach={reach} />
-        )}
-        {apps.map(({ app, kinds }) => (
-          <KindGroup
-            key={app.id}
-            title={app.name}
-            appId={app.id}
-            testKey={app.slug}
-            kinds={kinds}
-            reach={reach}
-          />
+        {oxygenFirst(catalog.data.sources).map((source) => (
+          <SourceGroup key={source.app?.id ?? "oxygen"} source={source} reach={reach} />
         ))}
       </div>
     );

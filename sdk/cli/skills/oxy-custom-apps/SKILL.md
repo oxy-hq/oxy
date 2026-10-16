@@ -220,6 +220,42 @@ store. Use
 `ctx.email.send` only for addresses **outside** the org (a vendor, an
 accountant), and give it an `idempotencyKey` in a scheduled function.
 
+### Categories, levels, threads and actions
+
+Describe your kinds once, at the top level of `oxy-app.json`. It is the tree
+people mute in (a whole app, a category, or one kind) and the one a phone groups
+by, so declare it with the first `ctx.notify`, not later:
+
+```json
+"notifications": {
+  "categories": {
+    "operations": { "label": "Store operations" },
+    "operations/food-safety": { "label": "Food safety" }
+  },
+  "kinds": {
+    "list_overdue": { "category": "operations", "label": "Overdue lists", "level": "time_sensitive" },
+    "temp_alarm": { "category": "operations/food-safety", "label": "Temperature alarm", "level": "critical",
+                    "actions": [{ "id": "ack", "label": "Acknowledge", "function": "ack-alarm" }] }
+  }
+}
+```
+
+- **Category**: a path of up to 3 segments (`a-z0-9`, `_`, `-`); a declared
+  path's parents need no entry. A kind with none is in `general`.
+- **Level**: `passive`, `active` (default), `time_sensitive`, `critical`. Only
+  `critical` ignores mutes; a function's `"critical": true` still makes it so.
+- **Actions**: at most 3, label ≤ 24 characters. With `function` (one this app
+  declares), a tap calls it as the person with `{ notificationId, action, link }`
+  and marks it read; without, it opens the link.
+- **Thread**: ``ctx.notify({ …, thread: `store:${storeId}` })`` (≤ 128
+  characters) folds a run of notifications about one thing into the newest.
+- The function's `notify.kinds` still decides what it may send; a kind it sends
+  that the catalogue leaves out gets the defaults. `oxyc validate`, the Vite
+  plugin (`pnpm dev` / `pnpm build`) and `oxyc publish` refuse a malformed or
+  unknown category, a bad level, more than 3 actions, an action naming an
+  undeclared function, a misspelt field and any `oxy.` kind — every problem at
+  once; a catalogue kind no function sends is a warning.
+
 The app opens in its own tab, so show the inbox **in the app** — people who
 live in it (crew on a kiosk) never see Oxygen's bell:
 
@@ -229,14 +265,17 @@ import { NotificationsBell } from "@oxy-hq/sdk";
 <NotificationsBell onNavigate={(link) => navigate(link)} /> // in the header
 ```
 
-It lists this app's notifications (`scope="all"` for the whole inbox); a tap
+It lists this app's notifications (`scope="all"` for the whole inbox), each
+with its category under the title, `critical` and `time_sensitive` ones marked,
+and threads folded; a tap
 hands the `link` you passed to `ctx.notify` to `onNavigate` (without it, the
 page loads that path under the app's base). It renders nothing where there is
 no inbox (signed out, an older server, `pnpm dev`). `useNotifications()` gives
-`{ items, unread, markRead, markAllRead, refresh, … }` to draw your own. Theme
+`{ items, unread, markRead, markAllRead, refresh, … }` to draw your own, and
+takes `{ category, kind, thread }` to narrow it. Theme
 it with `--oxy-notifications-*` CSS variables. Push sign-up and mutes stay in
 Oxygen's Settings → Notifications — don't build them. In tests,
-`createTestInbox()` from `@oxy-hq/sdk/testing` is a fake inbox to pass as
+`createTestInbox({ manifest })` from `@oxy-hq/sdk/testing` is a fake inbox to pass as
 `<OxyAppProvider fetcher={inbox.fetcher}>`.
 
 ## Four pitfalls

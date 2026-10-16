@@ -29,8 +29,8 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::warn;
-use uuid::Uuid;
 
+use super::catalog::model::Level;
 use super::deliver::{Push, PushReport, PushSignal};
 use super::native_push::{self, Outcome, TITLE, TTL_SECONDS};
 
@@ -209,7 +209,7 @@ impl Apns {
             return Outcome::Failed("not a hex APNs device token".into());
         }
         let mut req = self.http.post(format!("{}/3/device/{token}", self.host));
-        for (name, value) in headers(&self.topic, bearer, signal.notification_id, now) {
+        for (name, value) in headers(&self.topic, bearer, signal, now) {
             req = req.header(name, value);
         }
         let res = match req.json(&payload(signal)).send().await {
@@ -247,34 +247,57 @@ fn provider_token(
 
 /// The request headers. `apns-collapse-id` is the inbox row, so a re-delivery
 /// of the same notification replaces its banner rather than stacking a second.
+/// A passive kind goes at priority 5, which Apple delivers when the phone's
+/// power allows; everything else at 10.
 pub(super) fn headers(
     topic: &str,
     bearer: &str,
-    notification_id: Uuid,
+    signal: &PushSignal,
     now: u64,
 ) -> Vec<(&'static str, String)> {
+    let priority = if signal.level == Level::Passive {
+        "5"
+    } else {
+        "10"
+    };
     vec![
         ("apns-topic", topic.to_string()),
         ("apns-push-type", "alert".to_string()),
-        ("apns-priority", "10".to_string()),
+        ("apns-priority", priority.to_string()),
         ("apns-expiration", (now + TTL_SECONDS).to_string()),
-        ("apns-collapse-id", notification_id.to_string()),
+        ("apns-collapse-id", signal.notification_id.to_string()),
         ("authorization", format!("bearer {bearer}")),
     ]
 }
 
+/// iOS `interruption-level` for a kind's level. `critical` needs Apple's
+/// critical-alerts entitlement, which the app does not hold, so a critical
+/// kind is `time-sensitive`: it breaks through a Focus, not the mute switch.
+pub(super) fn interruption_level(level: Level) -> &'static str {
+    match level {
+        Level::Passive => "passive",
+        Level::Active => "active",
+        Level::TimeSensitive | Level::Critical => "time-sensitive",
+    }
+}
+
 /// The body. `mutable-content` lets a Notification Service Extension fetch the
-/// item and rewrite the banner on the phone, where the content may be.
+/// item and rewrite the banner on the phone, where the content may be. The
+/// `category` (`<app id|oxygen>.<kind>`) is the `UNNotificationCategory` that
+/// registers the kind's actions from the catalogue; `thread-id` groups a
+/// thread, or else the kind. A passive kind makes no sound.
 pub(super) fn payload(signal: &PushSignal) -> Value {
-    json!({
-        "aps": {
-            "alert": { "title": TITLE, "body": native_push::humanize(&signal.kind) },
-            "sound": "default",
-            "mutable-content": 1,
-            "thread-id": signal.kind,
-        },
-        "oxy": { "kind": signal.kind, "id": signal.notification_id.to_string() },
-    })
+    let mut aps = json!({
+        "alert": { "title": TITLE, "body": signal.label },
+        "mutable-content": 1,
+        "thread-id": signal.thread_or_kind(),
+        "category": signal.channel_id(),
+        "interruption-level": interruption_level(signal.level),
+    });
+    if signal.level != Level::Passive {
+        aps["sound"] = json!("default");
+    }
+    json!({ "aps": aps, "oxy": signal.envelope() })
 }
 
 fn reason_of(body: &str) -> Option<String> {

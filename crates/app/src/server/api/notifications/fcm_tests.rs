@@ -56,15 +56,79 @@ fn the_message_names_the_kind_and_row_and_carries_no_content() {
             "message": {
                 "token": "fcm-token",
                 "notification": { "title": "Oxygen", "body": "Delivery received" },
-                "data": { "kind": "delivery.received", "id": id },
+                "data": {
+                    "v": "1",
+                    "id": id,
+                    "kind": "delivery.received",
+                    "org_id": s.org_id.to_string(),
+                    "source": "oxygen",
+                    "category": "general",
+                    "level": "active",
+                },
                 "android": {
                     "priority": "high",
                     "ttl": "14400s",
                     "collapse_key": id,
-                    "notification": { "channel_id": "default" },
+                    "notification": {
+                        "channel_id": "oxygen.delivery.received",
+                        "notification_priority": "PRIORITY_DEFAULT",
+                    },
                 },
             }
         })
+    );
+}
+
+/// One channel per kind under the app's group, the thread as the tag, the
+/// level as the priority, and `data` values all strings.
+#[test]
+fn the_message_carries_the_kinds_channel_thread_and_level() {
+    let app = uuid::Uuid::from_u128(7);
+    let s = PushSignal {
+        app_id: Some(app),
+        label: "Temperature alarm".into(),
+        level: Level::Critical,
+        thread: Some("ab12".into()),
+        ..signal("temp_alarm")
+    };
+    let m = message("t", &s);
+    let android = &m["message"]["android"];
+    assert_eq!(
+        android["notification"]["channel_id"],
+        format!("{app}.temp_alarm")
+    );
+    assert_eq!(android["notification"]["tag"], "ab12");
+    assert_eq!(
+        android["notification"]["notification_priority"],
+        "PRIORITY_HIGH"
+    );
+    assert_eq!(android["priority"], "high");
+    assert_eq!(m["message"]["notification"]["body"], "Temperature alarm");
+    let data = m["message"]["data"].as_object().unwrap();
+    assert!(
+        data.values().all(Value::is_string),
+        "FCM data values are strings"
+    );
+    assert_eq!(data["app_id"], app.to_string());
+    assert_eq!(data["thread"], "ab12");
+
+    let quiet = message(
+        "t",
+        &PushSignal {
+            level: Level::Passive,
+            thread: None,
+            ..s
+        },
+    );
+    let android = &quiet["message"]["android"];
+    assert_eq!(android["priority"], "normal");
+    assert_eq!(
+        android["notification"]["notification_priority"],
+        "PRIORITY_LOW"
+    );
+    assert!(
+        android["notification"].get("tag").is_none(),
+        "no thread, no tag"
     );
 }
 

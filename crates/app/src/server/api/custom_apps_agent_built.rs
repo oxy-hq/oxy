@@ -80,6 +80,40 @@ pub(crate) async fn is_agent_built<C: ConnectionTrait>(
     Ok(marked)
 }
 
+/// Read the mark of every build in `builds` not already cached, in one query,
+/// into the cache [`is_agent_built`] answers from. For a reader resolving many
+/// apps' production build at once (the notification catalogue), so it pays one
+/// read rather than one per never-promoted app. The answer is the same: a
+/// build with no row is unmarked, as there.
+pub(crate) async fn prime_marks<C: ConnectionTrait>(
+    db: &C,
+    builds: impl IntoIterator<Item = Uuid>,
+) -> Result<(), DbErr> {
+    let unknown: Vec<Uuid> = builds
+        .into_iter()
+        .filter(|b| get_fresh(mark_cache(), b).is_none())
+        .collect();
+    if unknown.is_empty() {
+        return Ok(());
+    }
+    let marked: HashMap<Uuid, bool> = app_builds::Entity::find()
+        .select_only()
+        .column(app_builds::Column::Id)
+        .column(app_builds::Column::PublishedTokenId)
+        .filter(app_builds::Column::Id.is_in(unknown.iter().copied()))
+        .into_tuple::<(Uuid, Option<Uuid>)>()
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|(build, token)| (build, token.is_some()))
+        .collect();
+    for build in unknown {
+        let mark = marked.get(&build).copied().unwrap_or(false);
+        insert_with_sweep(mark_cache(), build, mark);
+    }
+    Ok(())
+}
+
 /// Make a build's mark known, as a first request would have left it: for a
 /// test that resolves with no database behind it.
 #[cfg(test)]

@@ -8,6 +8,7 @@
  */
 
 import { readAppManifest } from "../context/target.js";
+import type { OxyAppNotificationsManifest } from "./notification-catalog.js";
 
 export interface FunctionSpec {
   entry?: string;
@@ -46,6 +47,8 @@ export interface PublishManifest {
    * name like the one the call names.
    */
   nonProduction?: { destinations?: Record<string, string> };
+  /** The notification catalogue, checked by `notification-catalog.ts` before a build. */
+  notifications?: OxyAppNotificationsManifest;
 }
 
 /**

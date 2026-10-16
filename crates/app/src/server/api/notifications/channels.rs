@@ -17,6 +17,7 @@ use oxy_slack_client::SlackClient;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
+use super::catalog::source::KindInfo;
 use super::deliver::{Push, PushSignal, push};
 use super::delivery::Channel;
 use super::platform::render;
@@ -32,7 +33,8 @@ pub enum ChannelOutcome {
 }
 
 pub struct Channels {
-    kind: String,
+    /// The kind and where it sits, which a native push carries.
+    info: KindInfo,
     push: Arc<dyn Push>,
     tokens: HashMap<Uuid, Vec<device_tokens::Model>>,
     /// Present only when the send asked for email.
@@ -50,6 +52,7 @@ impl Channels {
         db: &DatabaseConnection,
         send: &notification_sends::Model,
         signals: &[notifications::Model],
+        info: &KindInfo,
     ) -> Result<Self, String> {
         let users: Vec<Uuid> = signals.iter().map(|s| s.user_id).collect();
         let tokens = tokens(db, &users).await?;
@@ -69,7 +72,7 @@ impl Channels {
             None
         };
         Ok(Self {
-            kind: send.kind.clone(),
+            info: info.clone(),
             push: push(),
             tokens,
             email,
@@ -80,31 +83,28 @@ impl Channels {
         })
     }
 
-    /// `notification` is `user`'s inbox row for this send, which a native
-    /// push names so the phone opens that item.
-    pub async fn send(&self, channel: Channel, user: Uuid, notification: Uuid) -> ChannelOutcome {
+    /// `signal` is the recipient's inbox row for this send: a native push
+    /// names it so the phone opens that item, and carries its thread.
+    pub async fn send(&self, channel: Channel, signal: &notifications::Model) -> ChannelOutcome {
         match channel {
-            Channel::Push => self.push(user, notification).await,
-            Channel::Email => self.email(user).await,
-            Channel::Slack => self.slack(user).await,
+            Channel::Push => self.push(signal).await,
+            Channel::Email => self.email(signal.user_id).await,
+            Channel::Slack => self.slack(signal.user_id).await,
         }
     }
 
-    async fn push(&self, user: Uuid, notification: Uuid) -> ChannelOutcome {
+    async fn push(&self, signal: &notifications::Model) -> ChannelOutcome {
         if !self.push.configured() {
             return ChannelOutcome::Skipped("not_configured");
         }
+        let user = signal.user_id;
         let Some(tokens) = self.tokens.get(&user).filter(|t| !t.is_empty()) else {
             return ChannelOutcome::Skipped("no_devices");
         };
         if !tokens.iter().any(|t| self.push.handles(&t.platform)) {
             return ChannelOutcome::Skipped("not_configured");
         }
-        let signal = PushSignal {
-            user_id: user,
-            kind: self.kind.clone(),
-            notification_id: notification,
-        };
+        let signal = PushSignal::new(signal, &self.info);
         let report = self.push.send(tokens, &signal).await;
         match (report.delivered, report.failed) {
             (0, 0) => ChannelOutcome::Skipped("no_devices"),

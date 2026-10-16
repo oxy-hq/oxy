@@ -59,6 +59,8 @@ const RESERVED_ORG_SLUGS: &[&str] = &[
     "kiosk",
     "login",
     "logout",
+    // `/notifications` — the person's notifications page.
+    "notifications",
     "onboarding",
     "orgs",
     "settings",
@@ -340,5 +342,7 @@ mod reserved_slug_tests {
         assert!(is_reserved_slug("admin"));
         // The web app's `/kiosk` page would shadow an org named "kiosk".
         assert!(is_reserved_slug("kiosk"));
+        // The web app's `/notifications` page would shadow one too.
+        assert!(is_reserved_slug("notifications"));
     }
 }

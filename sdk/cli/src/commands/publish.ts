@@ -44,7 +44,7 @@ import {
   enforceReservedFunctionsDir,
   requirePrebuiltFunctions,
   validateFunctionNames,
-  validateNotifyKinds
+  validateNotifications
 } from "../publish/functions.js";
 import {
   buildSteps,
@@ -195,7 +195,7 @@ function prepareBundle(
 ): string {
   const declared = declaredFunctions(manifest);
   validateFunctionNames(declared);
-  validateNotifyKinds(manifest);
+  for (const warning of validateNotifications(manifest)) log.warn(warning);
 
   let bundleDir: string;
   if (flags.dir) {

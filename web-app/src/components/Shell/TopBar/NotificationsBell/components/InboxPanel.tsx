@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { InboxRow } from "@/components/Notifications/InboxRow";
 import { SheetTitle } from "@/components/ui/shadcn/sheet";
 import { useMarkAllNotificationsRead, useNotificationInbox } from "@/hooks/api/notifications";
 import { cn } from "@/libs/shadcn/utils";
-import { InboxRow } from "./InboxRow";
+import ROUTES from "@/libs/utils/routes";
 
 const NOTE = "px-3 py-6 text-center text-muted-foreground text-sm";
 
@@ -15,7 +17,10 @@ interface InboxPanelProps {
   fullScreen?: boolean;
 }
 
-/** The open inbox: a header with "Mark all read", then the list, newest first. */
+/**
+ * The open inbox: a header with "Mark all read", the list, newest first, and
+ * "See all" — the notifications page, with its categories and history.
+ */
 export function InboxPanel({ onFollow, fullScreen = false }: InboxPanelProps) {
   const inbox = useNotificationInbox();
   const markAll = useMarkAllNotificationsRead();
@@ -64,7 +69,7 @@ export function InboxPanel({ onFollow, fullScreen = false }: InboxPanelProps) {
           type='button'
           data-testid='notifications-mark-all-read'
           disabled={unread === 0 || markAll.isPending}
-          onClick={() => markAll.mutate()}
+          onClick={() => markAll.mutate({})}
           className={cn(
             "text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-50",
             fullScreen ? "px-2 py-1.5 text-sm" : "text-xs"
@@ -79,6 +84,17 @@ export function InboxPanel({ onFollow, fullScreen = false }: InboxPanelProps) {
       >
         {list}
       </div>
+      <Link
+        to={ROUTES.NOTIFICATIONS}
+        onClick={onFollow}
+        data-testid='notifications-see-all'
+        className={cn(
+          "shrink-0 border-t text-center text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+          fullScreen ? "px-3 py-3 text-sm" : "px-3 py-2 text-xs"
+        )}
+      >
+        See all
+      </Link>
     </div>
   );
 }

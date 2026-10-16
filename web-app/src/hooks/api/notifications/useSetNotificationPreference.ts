@@ -2,54 +2,77 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { NotificationsService } from "@/services/api/notifications";
 import type {
-  KindPreference,
-  NotificationPreferences,
+  CategoryNode,
+  NotificationCatalog,
+  NotificationChannel,
   SetNotificationPreference
 } from "@/types/notifications";
 import queryKeys from "../queryKey";
 
-function withMuted(
-  kinds: KindPreference[],
-  { kind, channel, muted }: SetNotificationPreference
-): KindPreference[] {
-  return kinds.map((k) => {
-    if (k.kind !== kind) return k;
-    const others = k.muted.filter((c) => c !== channel);
-    return { ...k, muted: muted ? [...others, channel] : others };
+function toggled(
+  muted: NotificationChannel[],
+  { channel, muted: on }: SetNotificationPreference
+): NotificationChannel[] {
+  const others = muted.filter((c) => c !== channel);
+  return on ? [...others, channel] : others;
+}
+
+function inCategories(
+  categories: CategoryNode[],
+  input: SetNotificationPreference
+): CategoryNode[] {
+  return categories.map((node) => {
+    const own =
+      "scope" in input && input.scope === node.path
+        ? { ...node, muted: toggled(node.muted, input) }
+        : node;
+    return {
+      ...own,
+      kinds:
+        "kind" in input
+          ? own.kinds.map((k) =>
+              k.kind === input.kind ? { ...k, muted: toggled(k.muted, input) } : k
+            )
+          : own.kinds,
+      categories: inCategories(own.categories, input)
+    };
   });
 }
 
 /**
- * `prefs` with one channel of one kind muted or unmuted — an app's kind, or an
- * Oxygen kind when `app_id` is `null`. Everything else is untouched.
+ * `catalog` with one channel muted or unmuted at one node: a whole source
+ * (`scope: ""`), a category (`scope: "<path>"`), or a kind. The source is an
+ * app by id, or Oxygen when `app_id` is `null`. Everything else is untouched.
  */
 export function withPreference(
-  prefs: NotificationPreferences,
+  catalog: NotificationCatalog,
   input: SetNotificationPreference
-): NotificationPreferences {
-  if (input.app_id === null) {
-    return { ...prefs, platform: withMuted(prefs.platform, input) };
-  }
+): NotificationCatalog {
   return {
-    ...prefs,
-    apps: prefs.apps.map((entry) =>
-      entry.app.id === input.app_id ? { ...entry, kinds: withMuted(entry.kinds, input) } : entry
-    )
+    ...catalog,
+    sources: catalog.sources.map((source) => {
+      if ((source.app?.id ?? null) !== input.app_id) return source;
+      if ("scope" in input && input.scope === "") {
+        return { ...source, muted: toggled(source.muted, input) };
+      }
+      return { ...source, categories: inCategories(source.categories, input) };
+    })
   };
 }
 
 /**
- * Mute or unmute one channel of one kind. Optimistic, so the switch moves when it
- * is pressed, and put back if the server refuses.
+ * Mute or unmute one channel at one node of the catalogue. Optimistic, so the
+ * switch — and every switch it covers — moves when it is pressed, and is put
+ * back if the server refuses.
  */
 export const useSetNotificationPreference = () => {
   const qc = useQueryClient();
-  const key = queryKeys.notifications.preferences();
+  const key = queryKeys.notifications.catalog();
   return useMutation({
     mutationFn: (input: SetNotificationPreference) => NotificationsService.setPreference(input),
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: key });
-      const previous = qc.getQueryData<NotificationPreferences>(key);
+      const previous = qc.getQueryData<NotificationCatalog>(key);
       if (previous) qc.setQueryData(key, withPreference(previous, input));
       return { previous };
     },

@@ -23,6 +23,7 @@ import { Ajv, type ErrorObject } from "ajv";
 import addFormats from "ajv-formats";
 import { parse as parseYaml } from "yaml";
 import { lintAppFunctions } from "../publish/function-lint.js";
+import { checkNotifications } from "../publish/notification-catalog.js";
 import { checkAppPlacement } from "../publish/placement.js";
 import { REINSTALL_REMEDY } from "../template/embedded.js";
 import { schemasDir } from "../template/locate.js";
@@ -878,8 +879,8 @@ export function runValidate(flags: ValidateFlags, cwd = process.cwd()): void {
 }
 
 /**
- * An `oxy-app.json`: where its data goes, and what its functions call — not
- * its schema.
+ * An `oxy-app.json`: where its data goes, what its functions call, and its
+ * notification catalogue — not its schema.
  *
  * Errors come back as findings and fail the run like a schema violation;
  * warnings are collected for `reportWarnings` and do not. Unparsable JSON is a
@@ -920,6 +921,17 @@ function validateAppManifest(
   for (const issue of checkAppPlacement(appDir, manifest, slug)) {
     const finding = { file: `${prefix}${issue.file}`, path: issue.path, message: issue.message };
     (issue.level === "error" ? findings : warnings).push(finding);
+  }
+
+  // The notification catalogue and reserved kinds: publish's own check, the
+  // same file `oxyc publish` runs before its build.
+  for (const finding of checkNotifications(manifest)) {
+    const entry = {
+      file: `${prefix}${APP_MANIFEST}`,
+      path: finding.path,
+      message: finding.message
+    };
+    (finding.level === "error" ? findings : warnings).push(entry);
   }
 
   const lint = lintAppFunctions(appDir, manifest);

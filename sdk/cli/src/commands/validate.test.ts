@@ -603,6 +603,45 @@ describe("oxyc validate on an oxy-app.json", () => {
     expect(r.stderr).not.toContain("warning:");
   });
 
+  it("fails the run on a notification catalogue publish would refuse, listing every problem", () => {
+    const root = app({
+      slug: "store-ops",
+      notifications: {
+        categories: { "a/b/c/d": {} },
+        kinds: { late: { category: "finance", level: "urgent" } }
+      }
+    });
+    const r = oxycValidate(root, ["--json"]);
+    expect(r.status).toBe(ExitCode.FAILURE);
+    const report = JSON.parse(r.stdout);
+    expect(report.findings).toEqual([
+      {
+        file: "oxy-app.json",
+        path: "notifications.categories.a/b/c/d",
+        message: 'Category "a/b/c/d" is 4 levels deep; at most 3 are allowed.'
+      },
+      expect.objectContaining({ path: "notifications.kinds.late.category" }),
+      expect.objectContaining({ path: "notifications.kinds.late.level" })
+    ]);
+    expect(r.stderr).toMatch(
+      /warning: oxy-app\.json \(notifications\.kinds\.late\): no function declares it under notify\.kinds/
+    );
+  });
+
+  it("passes a valid catalogue, warning about a kind nothing sends", () => {
+    const root = app({
+      slug: "store-ops",
+      notifications: {
+        categories: { operations: { label: "Store operations" } },
+        kinds: { unsent: { category: "operations", level: "passive" } }
+      }
+    });
+    const r = oxycValidate(root, []);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toContain("1 file(s) valid");
+    expect(r.stderr).toContain("notifications.kinds.unsent");
+  });
+
   it("reports unparsable JSON as a finding rather than ending the walk", () => {
     const root = workspace({ "oxy-app.json": "{", "config.yml": MINIMAL_CONFIG });
     const r = oxycValidate(root, ["--json"]);

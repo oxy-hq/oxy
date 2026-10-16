@@ -214,12 +214,17 @@ fn a_param_stands_for_exactly_one_segment() {
     assert!(!is_route("/work/{id}", "/work"));
     assert!(!is_route("/work/{id}", "/work/a/b"));
     assert!(!is_route("/work", "/works"));
+    // `/notifications/{id}` is listed too: the literal sibling still wins.
     assert_eq!(
         when_blocked("/notifications/devices"),
         Some(Blocked::NoOrgData)
     );
     assert_eq!(
         when_blocked(&format!("/notifications/{ID}/read")),
+        Some(Blocked::LeftOut)
+    );
+    assert_eq!(
+        when_blocked(&format!("/notifications/{ID}")),
         Some(Blocked::LeftOut)
     );
 }

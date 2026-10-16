@@ -23,6 +23,15 @@
 //! failed, and "we told them" would become unfalsifiable at exactly the moment
 //! somebody asks whether the store was warned.
 //!
+//! # Where each one sits
+//!
+//! Every notification is a leaf of a tree — source (Oxygen, or one app) →
+//! category path → kind — declared by the app's live build or, for Oxygen,
+//! in code ([`catalog`]). It gives the inbox its labels and levels, lets a
+//! person mute a whole source or a category subtree ([`scope_mutes`]), gives
+//! a kind its buttons ([`actions`]), and is the shape a phone's categories
+//! and channels need ([`deliver::PushSignal`]).
+//!
 //! # Where the data lives
 //!
 //! The inbox *signal* — who, which org, read or not — is Oxy's, in Oxy's
@@ -35,21 +44,28 @@
 //! Web Push ([`web_push`]), APNs ([`apns`]) and FCM ([`fcm`]) sit behind the
 //! [`deliver::Push`] seam, each configured on its own, and [`push_routing`]
 //! hands each its platform's device rows. None is handed what a notification
-//! says — only its kind and inbox row id.
+//! says — only ids and config ([`deliver::PushSignal`]): its inbox row, its
+//! kind and that kind's label, category and level from the catalogue, and its
+//! thread's hash. [`apns`] and [`fcm`] map those to their payloads.
 //!
 //! # Not here
 //!
 //! SMS needs phone numbers the platform does not hold and carrier registration
 //! no code can do.
 
+pub mod action_call;
+pub mod actions;
 pub mod apns;
 pub mod badge;
+pub mod catalog;
 pub mod channels;
 pub mod compose;
 pub mod deliver;
 pub mod delivery;
 pub mod fcm;
+pub mod filter;
 pub mod handlers;
+pub mod inbox;
 pub mod inbox_view;
 pub mod input;
 pub mod links;
@@ -58,6 +74,7 @@ pub mod platform;
 pub mod preferences;
 pub mod push_routing;
 pub mod recipients;
+pub mod scope_mutes;
 pub mod send;
 pub mod slack_dm;
 pub mod task;

@@ -1309,6 +1309,23 @@ fn refuse_reserved_notify_kinds(specs: &[(String, serde_json::Value)]) -> Result
     Ok(())
 }
 
+/// The manifest's `notifications` block, checked
+/// (`notifications::catalog::validate`): the first problem refuses the
+/// publish as a 422 naming it; otherwise its warnings join the publish's.
+fn check_notification_catalogue(
+    manifest: Option<&serde_json::Value>,
+) -> Result<Vec<String>, PublishError> {
+    crate::server::api::notifications::catalog::validate::check(manifest).map_err(|p| {
+        PublishError::Invalid(
+            crate::server::api::custom_apps_validate::BundleValidation::new(
+                p.check,
+                p.message,
+                p.remediation,
+            ),
+        )
+    })
+}
+
 /// Record one `app_functions` row per declared function, keyed to this build,
 /// so the `/fn/<name>` route can resolve them. Without this the bundled JS
 /// ships in the build store but the runtime can never find it (→ 404).
@@ -1804,6 +1821,9 @@ async fn store_and_point(
     // without them used to go live with a 200 and every function missing.
     let fn_specs = function_specs(manifest_json.as_ref());
     check_declared_functions(&files, &fn_specs)?;
+    // The app's notification catalogue: refused when malformed, warned about
+    // when it names a kind no function may send.
+    let catalogue_warnings = check_notification_catalogue(manifest_json.as_ref())?;
     // A `shared` env key falls back to production's value outside production,
     // so it may not be one an environment must hold its own of — in this
     // bundle, or in the build production serves.
@@ -2056,6 +2076,7 @@ async fn store_and_point(
     // On drafts too: the author should hear about it before promoting.
     warnings.extend(art_warning);
     warnings.extend(mapping_warning);
+    warnings.extend(catalogue_warnings);
     gc_builds(&db, app_id, &[build_pk]).await;
 
     // The serve path caches the `apps` row — including the channel pointers
@@ -2697,6 +2718,23 @@ mod tests {
             "expected notify_kind_reserved, got {err:?}"
         );
         assert_eq!(err.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[test]
+    fn a_malformed_notification_catalogue_is_a_422_naming_the_check() {
+        let manifest = serde_json::json!({
+            "functions": { "lists": { "notify": { "kinds": { "late": {} } } } },
+            "notifications": { "kinds": { "late": { "level": "loud" } } }
+        });
+        let err = check_notification_catalogue(Some(&manifest)).unwrap_err();
+        assert!(
+            matches!(&err, PublishError::Invalid(v) if v.check == "notify_level_invalid"),
+            "{err:?}"
+        );
+        assert_eq!(err.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let manifest = serde_json::json!({ "notifications": { "kinds": { "late": {} } } });
+        let warnings = check_notification_catalogue(Some(&manifest)).expect("a warning only");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
     }
 
     #[test]

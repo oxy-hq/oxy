@@ -16,6 +16,8 @@
 //   --oxy-notifications-hover     row and button hover
 //   --oxy-notifications-accent    unread dot
 //   --oxy-notifications-badge     badge background
+//   --oxy-notifications-critical  the edge of a `critical` notification
+//   --oxy-notifications-time-sensitive  the edge of a `time_sensitive` one
 //   --oxy-notifications-z         panel z-index (default 50)
 
 import * as React from "react";
@@ -23,6 +25,7 @@ import {
   appBasePath,
   badgeLabel,
   joinAppPath,
+  type NotificationGroup,
   type NotificationItem,
   type NotificationsScope,
   notificationTarget,
@@ -93,9 +96,12 @@ export function NotificationsBell(props: NotificationsBellProps): React.JSX.Elem
     if (!open) void inbox.refresh();
     setOpen(!open);
   };
-  const onItem = (item: NotificationItem) => {
-    // Read-only on a staging or dev host: the tap still opens it.
-    if (item.read_at === null && !inbox.readOnly) void inbox.markRead(item.id);
+  const onItem = ({ item, more }: NotificationGroup) => {
+    // Opening a thread reads all of it. Read-only on a staging or dev host:
+    // the tap still opens it.
+    if (!inbox.readOnly) {
+      for (const one of [item, ...more]) if (one.read_at === null) void inbox.markRead(one.id);
+    }
     if (follow(item)) close(false);
   };
 

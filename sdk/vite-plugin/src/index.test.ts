@@ -1,5 +1,9 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { resolveBase, validateManifest } from "./index.js";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { ConfigEnv, UserConfig } from "vite";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import oxyApp, { manifestWarnings, resolveBase, validateManifest } from "./index.js";
 
 describe("validateManifest", () => {
   test("accepts a v2 identity-only manifest", () => {
@@ -168,5 +172,86 @@ describe("resolveBase", () => {
     expect(
       resolveBase({ schemaVersion: 2, slug: "x", orgSlug: "" })
     ).toBe("/");
+  });
+});
+
+describe("the notification catalogue", () => {
+  const CATALOGUE = {
+    schemaVersion: 2,
+    slug: "store-ops",
+    functions: { temps: { notify: { kinds: { temp_alarm: {} } } } },
+    notifications: {
+      categories: { "operations/food-safety": { label: "Food safety" } },
+      kinds: { temp_alarm: { category: "operations/food-safety", level: "critical" } }
+    }
+  };
+
+  test("accepts a valid one", () => {
+    expect(validateManifest(CATALOGUE)).toEqual([]);
+    expect(manifestWarnings(CATALOGUE)).toEqual([]);
+  });
+
+  test("rejects what oxyc publish refuses, naming where", () => {
+    const errs = validateManifest({
+      ...CATALOGUE,
+      notifications: {
+        kinds: { temp_alarm: { category: "finance", level: "urgent" } }
+      }
+    });
+    expect(errs).toEqual([
+      expect.stringMatching(/^notifications\.kinds\.temp_alarm\.category: .*"finance"/),
+      expect.stringMatching(/^notifications\.kinds\.temp_alarm\.level: .*"urgent"/)
+    ]);
+  });
+
+  test("warns, without rejecting, about a kind no function sends", () => {
+    const m = {
+      ...CATALOGUE,
+      notifications: { kinds: { temp_alarm: {}, unsent: {} } }
+    };
+    expect(validateManifest(m)).toEqual([]);
+    expect(manifestWarnings(m)).toEqual([
+      "notifications.kinds.unsent: no function declares it under notify.kinds, so nothing can send it yet"
+    ]);
+  });
+
+  describe("fails `pnpm dev` and `pnpm build` early", () => {
+    let dir = "";
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), "oxy-vite-plugin-"));
+    });
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+      vi.restoreAllMocks();
+    });
+
+    const configure = (manifest: unknown, command: ConfigEnv["command"]) => {
+      writeFileSync(join(dir, "oxy-app.json"), JSON.stringify(manifest));
+      const plugin = oxyApp();
+      const hook = plugin.config as (c: UserConfig, e: ConfigEnv) => UserConfig;
+      return () => hook({ root: dir }, { command, mode: "development" });
+    };
+    const bad = { ...CATALOGUE, notifications: { kinds: { temp_alarm: { level: "urgent" } } } };
+
+    for (const command of ["serve", "build"] as const) {
+      test(`throws on ${command}, with no v1 migration link for a catalogue error`, () => {
+        const run = configure(bad, command);
+        expect(run).toThrow(/notifications\.kinds\.temp_alarm\.level/);
+        expect(run).not.toThrow(/Migration guide/);
+      });
+    }
+
+    test("prints warnings and carries on", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const run = configure({ ...CATALOGUE, notifications: { kinds: { unsent: {} } } }, "serve");
+      expect(run).not.toThrow();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("notifications.kinds.unsent: no function declares it")
+      );
+    });
+
+    test("still links the migration guide for a v1 manifest", () => {
+      expect(configure({ schemaVersion: 1, slug: "x" }, "build")).toThrow(/Migration guide/);
+    });
   });
 });

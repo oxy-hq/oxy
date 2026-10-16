@@ -124,6 +124,7 @@ pub mod metric_monitor_coverage;
 pub mod notification_deliveries;
 pub mod notification_mutes;
 pub mod notification_platform_mutes;
+pub mod notification_scope_mutes;
 pub mod notification_sends;
 pub mod notifications;
 pub mod org_billing;

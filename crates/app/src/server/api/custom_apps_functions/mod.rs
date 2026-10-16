@@ -671,10 +671,21 @@ fn manifest_capabilities(
     app: &entity::apps::Model,
     build: &entity::app_builds::Model,
 ) -> host::FunctionCapabilities {
+    // A kind is critical when the function says so, or when the build's
+    // notification catalogue gives it the critical level.
+    let catalogue =
+        crate::server::api::notifications::catalog::parse::catalogue(build.manifest_json.as_ref());
+    let notify_kinds = entry.notify_kinds().map(|mut kinds| {
+        for (kind, critical) in kinds.iter_mut() {
+            *critical |= catalogue.kinds.get(kind).and_then(|k| k.level)
+                == Some(crate::server::api::notifications::catalog::model::Level::Critical);
+        }
+        kinds
+    });
     host::FunctionCapabilities {
         secrets_write: entry.secrets_write(),
         email_send: entry.email_send(),
-        notify_kinds: entry.notify_kinds(),
+        notify_kinds,
         org_read: entry.org_read(),
         platform_facts: entry.platform_facts(),
         storage_read: entry.storage_read(),

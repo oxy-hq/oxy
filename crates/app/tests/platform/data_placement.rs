@@ -381,6 +381,10 @@ const TABLES: &[(&str, Placement)] = &[
         Control("which channels a person turned off, per platform notice kind"),
     ),
     (
+        "notification_scope_mutes",
+        Control("which channels a person turned off for a whole source or a category subtree"),
+    ),
+    (
         "notification_sends",
         Control("one row per notify call: ids, kind, counts, the idempotency key's hash"),
     ),

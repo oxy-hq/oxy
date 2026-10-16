@@ -21,9 +21,11 @@
  *        OXY_APP_BASE_PATH > "/customer-apps/<orgSlug>/<slug>/" > "/"
  *      The middle form is derived from oxy-app.json's identity
  *      fields; missing fields cleanly fall through to "/".
- *   3. Validates oxy-app.json at build start. Fails hard on
- *      schemaVersion != 2, on v1 leakage (products/writers), and on
- *      missing/malformed slug. Error messages link the migration doc.
+ *   3. Validates oxy-app.json at dev and build start. Fails hard on
+ *      schemaVersion != 2, on v1 leakage (products/writers), on a
+ *      missing/malformed slug or function name, and on a `notifications`
+ *      catalogue `oxyc publish` would refuse (`notification-catalog.ts`, a
+ *      byte copy of the SDK's). v1 errors link the migration doc.
  *   4. Copies oxy-app.json into out/ at build close. The probe reads
  *      from the served bundle; this stops being a per-app "did you
  *      remember to put it in public/" foot-gun.
@@ -45,6 +47,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { loadEnv } from "vite";
 import type { Plugin, ProxyOptions, ResolvedConfig, UserConfig } from "vite";
+import { checkNotifications } from "./notification-catalog";
 
 const PLUGIN_NAME = "oxy-app";
 const DEFAULT_MANIFEST = "oxy-app.json";
@@ -69,19 +72,6 @@ const SLUG_MAX_LEN = 63;
 // esbuild. Checked here so a bad name fails at `oxy build` too, not only at
 // publish.
 const FUNCTION_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
-
-/** Notification kinds an app may not declare: kept for Oxygen's own notices. */
-const RESERVED_NOTIFY_KIND_PREFIX = "oxy.";
-
-/** The `notify.kinds` of one function entry that are in the reserved namespace. */
-function reservedNotifyKinds(spec: unknown): string[] {
-  if (!spec || typeof spec !== "object") return [];
-  const notify = (spec as { notify?: unknown }).notify;
-  if (!notify || typeof notify !== "object") return [];
-  const kinds = (notify as { kinds?: unknown }).kinds;
-  if (!kinds || typeof kinds !== "object") return [];
-  return Object.keys(kinds).filter((k) => k.startsWith(RESERVED_NOTIFY_KIND_PREFIX));
-}
 
 export interface OxyAppPluginOptions {
   /**
@@ -127,6 +117,7 @@ interface OxyManifest {
   products?: unknown;
   writers?: unknown;
   functions?: unknown;
+  notifications?: unknown;
 }
 
 export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
@@ -165,17 +156,26 @@ export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
       const root = userConfig.root ?? process.cwd();
       manifestAbs = path.resolve(root, manifestPath);
       manifest = readManifest(manifestAbs);
-      if (env.command === "build" && manifest) {
+      if (manifest) {
+        // `pnpm dev` as well as `pnpm build`: the SDK refuses the same manifest
+        // at app boot, and a notification catalogue publish would refuse is
+        // cheaper to learn about before the first page load than at `oxyc publish`.
         const errors = validateManifest(manifest);
         if (errors.length > 0) {
-          // Fail the build with a single grouped error message —
-          // throwing here aborts Vite cleanly with a stack trace
-          // that points at the plugin, not a 200-line YAML dump.
+          // Fail with a single grouped error message — throwing here aborts
+          // Vite cleanly with a stack trace that points at the plugin, not a
+          // 200-line YAML dump.
+          const v1 =
+            manifest.schemaVersion !== 2 ||
+            manifest.products !== undefined ||
+            manifest.writers !== undefined;
           throw new Error(
-            `[${PLUGIN_NAME}] oxy-app.json validation failed:\n  - ${errors.join(
-              "\n  - "
-            )}\n\nMigration guide: ${MIGRATION_DOC_URL}`
+            `[${PLUGIN_NAME}] oxy-app.json validation failed:\n  - ${errors.join("\n  - ")}` +
+              (v1 ? `\n\nMigration guide: ${MIGRATION_DOC_URL}` : "")
           );
+        }
+        for (const warning of manifestWarnings(manifest)) {
+          console.warn(`[${PLUGIN_NAME}] oxy-app.json: ${warning}`);
         }
       }
 
@@ -411,23 +411,31 @@ export function validateManifest(m: OxyManifest): string[] {
     ) {
       errors.push("functions must be an object keyed by function name.");
     } else {
-      for (const [name, spec] of Object.entries(m.functions as Record<string, unknown>)) {
+      for (const name of Object.keys(m.functions)) {
         if (!FUNCTION_NAME_PATTERN.test(name)) {
           errors.push(
             `function name "${name}" is malformed; must match ${FUNCTION_NAME_PATTERN.source}.`
           );
         }
-        for (const kind of reservedNotifyKinds(spec)) {
-          errors.push(
-            `function "${name}" declares notify kind "${kind}", which starts with ` +
-              `"${RESERVED_NOTIFY_KIND_PREFIX}" — reserved for Oxygen's own notices; rename it. ` +
-              `oxyc publish and the server refuse it otherwise.`
-          );
-        }
       }
     }
   }
+  // The notification catalogue and reserved kinds: `oxyc publish`'s check,
+  // from the same file, so `pnpm dev` and `pnpm build` refuse what it refuses.
+  for (const finding of checkNotifications(m)) {
+    if (finding.level === "error") errors.push(`${finding.path}: ${finding.message}`);
+  }
   return errors;
+}
+
+/**
+ * The manifest's warnings: what publishes, but is probably a mistake — a
+ * catalogue kind no function sends, a level a `critical: true` overrides.
+ */
+export function manifestWarnings(m: OxyManifest): string[] {
+  return checkNotifications(m)
+    .filter((f) => f.level === "warning")
+    .map((f) => `${f.path}: ${f.message}`);
 }
 
 /**

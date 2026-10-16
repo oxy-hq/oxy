@@ -3,6 +3,8 @@ const ROUTES = {
   ONBOARDING: "/onboarding",
   /** Managing the store tablet this browser is — or saying it is not one. */
   KIOSK: "/kiosk",
+  /** The signed-in person's notifications, across every org: one inbox per person. */
+  NOTIFICATIONS: "/notifications",
   /** Partner console — a partner's home. Mirrors the ADMIN surface. */
   PARTNERS: {
     ROOT: "/partners",

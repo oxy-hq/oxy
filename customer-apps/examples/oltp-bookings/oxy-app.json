@@ -10,5 +10,18 @@
       "oltp": { "enabled": true },
       "notify": { "kinds": { "booking_created": {} } }
     }
+  },
+  "notifications": {
+    "categories": {
+      "bookings": { "label": "Bookings", "description": "New and changed bookings" }
+    },
+    "kinds": {
+      "booking_created": {
+        "category": "bookings",
+        "label": "New booking",
+        "level": "active",
+        "actions": [{ "id": "open", "label": "Open booking" }]
+      }
+    }
   }
 }

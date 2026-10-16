@@ -13,6 +13,15 @@
 
 import { type OxyInjectedAppConfig, readInjectedAppConfig } from "./inject";
 import { getOxyAppLogger } from "./logger";
+import type { OxyAppNotificationsManifest } from "./notification-catalog";
+
+export type {
+  NotificationLevel,
+  OxyAppNotificationAction,
+  OxyAppNotificationCategory,
+  OxyAppNotificationKind,
+  OxyAppNotificationsManifest
+} from "./notification-catalog";
 
 // ── Manifest types ──────────────────────────────────────────────────────────
 
@@ -125,7 +134,8 @@ export interface OxyAppFunctionManifest {
    * role at a location, or team (fail-closed: omit → every call rejected).
    * Declare each `kind` the function sends: a kind is what a person mutes, and
    * one marked `critical: true` (a safety alert) ignores their mutes. A call
-   * with an undeclared kind is refused.
+   * with an undeclared kind is refused. How a kind is labelled, grouped and
+   * ranked is the app-level {@link OxyAppManifest.notifications} catalogue.
    *
    * ```json
    * "notify": { "kinds": { "list_overdue": {}, "safety_alert": { "critical": true } } }
@@ -369,6 +379,25 @@ export interface OxyAppManifest {
    * round-tripped here). Default: `true`.
    */
   analytics?: boolean;
+  /**
+   * The notification catalogue: how each kind the app's functions send
+   * (`functions.<name>.notify.kinds`) is labelled, grouped and ranked — the tree
+   * a phone groups notifications by, and the one people mute in. Each kind sits
+   * in a category path of up to 3 segments (`operations/food-safety`; none →
+   * `general`), has a `level` (`passive` | `active` | `time_sensitive` |
+   * `critical`) and up to 3 `actions`.
+   *
+   * Which kinds a function may send is still its own `notify.kinds`; a kind it
+   * sends that is missing here gets the defaults (category `general`, the kind
+   * humanized, `critical` when marked so). Publish refuses a malformed or
+   * unknown category, a bad level, more than 3 actions, an action naming a
+   * function the app does not declare, and an `oxy.` kind; `oxyc validate` and
+   * the Vite plugin say so first.
+   *
+   * Read by the platform at **publish time**, so it is documented here but not
+   * round-tripped through the dev-time manifest fetch.
+   */
+  notifications?: OxyAppNotificationsManifest;
 }
 
 /** The `nonProduction` block of `oxy-app.json`. */

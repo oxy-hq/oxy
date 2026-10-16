@@ -15,6 +15,15 @@
 // so `<NotificationsBell />` renders under `<OxyAppProvider fetcher={…}>` with
 // no server (`inbox.ts`). It is not part of the host contract.
 
+// The notification catalogue's publish checks and the inbox's read of it, for
+// an app test that asserts its own `oxy-app.json` (`createTestContext` already
+// refuses a catalogue publish would).
+export {
+  type CatalogFinding,
+  checkNotifications,
+  type ResolvedNotificationKind,
+  resolveNotificationKind
+} from "../custom-app/notification-catalog";
 export {
   createTestContext,
   type HostCall,
@@ -37,6 +46,7 @@ export {
   type Gate,
   HOST_OPS,
   type HostOp,
+  MAX_NOTIFY_THREAD_CHARS,
   MAX_OPEN_TRANSACTIONS,
   REFUSALS,
   RESERVED_NOTIFY_KIND_PREFIX,
@@ -56,7 +66,8 @@ export {
   type NotifyPayload,
   type TestInbox,
   type TestInboxOptions,
-  type TestInboxRequest
+  type TestInboxRequest,
+  threadKey
 } from "./inbox";
 export { isolateAtob, isolateBtoa, runWithoutIsolateGlobals } from "./run";
 export { ZOO_SHA256 } from "./shape-zoo-sha256";

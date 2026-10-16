@@ -22,7 +22,9 @@ use super::ProjectFunctionHost;
 use crate::server::api::notifications::compose;
 use crate::server::api::notifications::input::{self, EmailRequest, NotifyInput};
 use crate::server::api::notifications::recipients::{self, Skipped};
-use crate::server::api::notifications::send::{AppRef, EmailContent, Outgoing, SendError, send};
+use crate::server::api::notifications::send::{
+    AppRef, EmailContent, Outgoing, SendError, send, thread_key,
+};
 
 /// `ctx.notify` calls one invocation may make — the same bound as email: a
 /// loop over rows belongs in one call naming many people, not many calls.
@@ -161,6 +163,10 @@ impl ProjectFunctionHost {
             email,
             slack: parsed.slack,
             idempotency_key: parsed.idempotency_key,
+            thread_key: parsed
+                .thread
+                .as_deref()
+                .map(|t| thread_key(Some(self.app_id), t)),
             recipients: users,
         };
         send(&self.db, out).await.map_err(|e| match e {

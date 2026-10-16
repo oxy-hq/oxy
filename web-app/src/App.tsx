@@ -65,6 +65,7 @@ import GitHubCallback from "./pages/github/callback";
 import InvitePage from "./pages/Invite";
 import KioskManagePage from "./pages/KioskManage";
 import LoginPage from "./pages/login";
+import NotificationsPage from "./pages/Notifications";
 import OrgDispatcher from "./pages/OrgDispatcher";
 import OnboardingPage from "./pages/onboarding";
 import PostLoginDispatcher from "./pages/PostLoginDispatcher";
@@ -717,6 +718,12 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
               bounced to the billing queue, and a static path so it wins over
               `:orgSlug` (hence "kiosk" is a reserved org slug). */}
           <Route path='kiosk' element={<KioskManagePage />} />
+
+          {/* ROUTES.NOTIFICATIONS — the person's notifications from every org they
+              are in, so it sits outside any org or workspace (and outside
+              `OwnerRedirect`: a Global Owner has an inbox too). A static path, so
+              it wins over `:orgSlug` — "notifications" is a reserved org slug. */}
+          <Route path='notifications' element={<NotificationsPage />} />
 
           {/* Partner console — anyone holding a partner role (the server enforces
               scope on every call). Same shell as AdminLayout, deliberately: both

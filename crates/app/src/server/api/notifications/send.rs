@@ -60,6 +60,8 @@ pub struct Outgoing {
     pub email: Option<EmailContent>,
     pub slack: bool,
     pub idempotency_key: Option<String>,
+    /// The thread's hash ([`thread_key`]), never the app's text.
+    pub thread_key: Option<String>,
     /// Distinct user ids.
     pub recipients: Vec<Uuid>,
 }
@@ -106,6 +108,23 @@ impl From<InboxError> for SendError {
 /// embed a customer's data; a dedupe needs only this.
 pub fn key_hash(key: &str) -> String {
     hex::encode(Sha256::digest(key.as_bytes()))
+}
+
+/// How long a stored [`thread_key`] is: half a SHA-256 in hex. Enough that two
+/// threads of one app never collide, and short enough to index.
+pub const THREAD_KEY_LEN: usize = 32;
+
+/// What `notifications.thread_key` holds for `thread` from `app` (`None`:
+/// Oxygen): SHA-256 of the source and the text, hex, the first
+/// [`THREAD_KEY_LEN`] characters. The app's text may name a customer, and a
+/// client collapsing a thread needs only equality. Per source, so two apps
+/// that both say `store:clovis` are two threads, and the key does not tell
+/// anyone that they used the same words.
+pub fn thread_key(app: Option<Uuid>, thread: &str) -> String {
+    let source = app.map_or_else(|| "oxygen".to_string(), |a| a.to_string());
+    let mut hex = key_hash(&format!("{source}\n{thread}"));
+    hex.truncate(THREAD_KEY_LEN);
+    hex
 }
 
 /// Send one notification. See the module docs for the order of writes.
@@ -236,6 +255,7 @@ async fn record(
                 read_at: Set(None),
                 message_id: Set(Some(id)),
                 app_id: Set(out.app_id()),
+                thread_key: Set(out.thread_key.clone()),
             }
         }))
         .exec(&txn)
@@ -245,4 +265,37 @@ async fn record(
         super::task::enqueue(&txn, run_id, id, workspace_id).await?;
     }
     txn.commit().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_thread_is_stored_as_half_a_sha256_per_source_never_as_text() {
+        let app = Uuid::from_u128(1);
+        let key = thread_key(Some(app), "store:clovis");
+        assert_eq!(key.len(), THREAD_KEY_LEN);
+        assert!(
+            key.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
+        assert_eq!(
+            key,
+            key_hash(&format!("{app}\nstore:clovis"))[..THREAD_KEY_LEN]
+        );
+        assert!(!key.contains("clovis"));
+        assert_eq!(
+            key,
+            thread_key(Some(app), "store:clovis"),
+            "stable, so a thread collapses"
+        );
+        assert_ne!(key, thread_key(Some(app), "store:fresno"));
+        assert_ne!(
+            key,
+            thread_key(Some(Uuid::from_u128(2)), "store:clovis"),
+            "another app's words are another thread"
+        );
+        assert_ne!(key, thread_key(None, "store:clovis"));
+    }
 }

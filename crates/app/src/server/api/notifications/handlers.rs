@@ -6,107 +6,13 @@ use entity::{device_tokens, notifications};
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{info, instrument};
 use uuid::Uuid;
 
-#[derive(Debug, Deserialize)]
-pub struct InboxQuery {
-    /// Unread only. The default, because that is what a badge and a dropdown
-    /// both want, and the read tail is unbounded.
-    #[serde(default = "yes")]
-    pub unread_only: bool,
-    pub limit: Option<u64>,
-    /// Narrow to one org. Absent means every org the user has notifications
-    /// from, which is what a single global badge wants; the org surfaces pass
-    /// it so their own badge counts only their own work.
-    pub org_id: Option<Uuid>,
-    /// Narrow to one custom app's notifications — the bell inside that app.
-    /// Platform notices have no app, so they never match.
-    pub app_id: Option<Uuid>,
-}
-
-impl InboxQuery {
-    fn scope(&self) -> Scope {
-        Scope {
-            org_id: self.org_id,
-            app_id: self.app_id,
-        }
-    }
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub struct ReadAllQuery {
-    /// Same meaning as on the inbox, and the reason it is stated at all:
-    /// `read-all` is a WRITE, so "all" has to be a deliberate scope. Clearing
-    /// another org's unread as a side effect of clearing this one's is not
-    /// something a user can undo.
-    ///
-    /// A QUERY parameter, not a body. `Option<Json<T>>` resolves to `None` when
-    /// extraction fails for ANY reason — a wrong `Content-Type`, malformed
-    /// JSON — so a caller who meant to scope this write to one org and got the
-    /// header wrong would silently clear every org instead. There is no such
-    /// failure mode here: a malformed query is a 400, and it matches `inbox`,
-    /// which already takes `org_id` this way.
-    pub org_id: Option<Uuid>,
-    /// One app's notifications only, as on the inbox.
-    pub app_id: Option<Uuid>,
-}
-
-impl ReadAllQuery {
-    pub(super) fn scope(&self) -> Scope {
-        Scope {
-            org_id: self.org_id,
-            app_id: self.app_id,
-        }
-    }
-}
-
-/// The narrowing every inbox route shares: the person's own signals, in the
-/// orgs the request's token reaches, optionally one org and one app.
-#[derive(Debug, Clone, Copy, Default)]
-pub(super) struct Scope {
-    pub org_id: Option<Uuid>,
-    pub app_id: Option<Uuid>,
-}
-
-impl Scope {
-    /// `find` narrowed to `user`'s signals within this scope. An org that
-    /// ended the request's token's reach (API-tokens design §5) is left out,
-    /// including when `org_id` names it. Nothing is excluded for a session or
-    /// a legacy key.
-    pub(super) fn apply<Q: QueryFilter>(
-        self,
-        find: Q,
-        user: &oxy_auth::types::AuthenticatedUser,
-    ) -> Q {
-        let mut find = find.filter(notifications::Column::UserId.eq(user.id));
-        if let Some(org) = self.org_id {
-            find = find.filter(notifications::Column::OrgId.eq(org));
-        }
-        if let Some(app) = self.app_id {
-            find = find.filter(notifications::Column::AppId.eq(app));
-        }
-        let blocked = user.blocked_orgs();
-        if !blocked.is_empty() {
-            find = find.filter(notifications::Column::OrgId.is_not_in(blocked.iter().copied()));
-        }
-        find
-    }
-}
-
-fn yes() -> bool {
-    true
-}
-
-#[derive(Debug, Serialize)]
-pub struct InboxResponse {
-    pub unread: u64,
-    pub items: Vec<super::inbox_view::InboxItem>,
-}
+use super::filter::FilterParams;
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterDevice {
@@ -115,8 +21,6 @@ pub struct RegisterDevice {
     pub token: String,
     pub device_name: Option<String>,
 }
-
-const MAX_PAGE: u64 = 100;
 
 /// Longest token accepted. A Web Push endpoint URL is the longest of the three
 /// by a wide margin and fits comfortably; APNs and FCM tokens are far shorter.
@@ -136,95 +40,14 @@ const MAX_DEVICE_NAME_LEN: usize = 120;
 /// the real shape; anything past it is a client that never stops registering.
 const MAX_DEVICES_PER_USER: u64 = 20;
 
-/// `GET /api/notifications` — my inbox.
-///
-/// Self-scoped: the filter is `user_id = me`, which is the authorization. There
-/// is no org gate, deliberately — a frontline worker holds no org membership by
-/// design and is precisely who overdue-work notifications are for.
-#[instrument(skip_all)]
-pub async fn inbox(
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Query(q): Query<InboxQuery>,
-    headers: axum::http::HeaderMap,
-) -> Result<Json<InboxResponse>, StatusCode> {
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let scope = q.scope();
-
-    let unread = scope
-        .apply(notifications::Entity::find(), &user)
-        .filter(notifications::Column::ReadAt.is_null())
-        .count(&db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let mut find = scope
-        .apply(notifications::Entity::find(), &user)
-        .order_by_desc(notifications::Column::CreatedAt)
-        .limit(q.limit.unwrap_or(50).clamp(1, MAX_PAGE));
-    if q.unread_only {
-        find = find.filter(notifications::Column::ReadAt.is_null());
-    }
-
-    let page = find
-        .all(&db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    // What each one says is in its org's own store; the badge count above
-    // never reads it.
-    let mut items = super::inbox_view::items(&db, page)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    super::inbox_view::absolutize(&mut items, &href_base(&headers));
-    Ok(Json(InboxResponse { unread, items }))
-}
-
-/// What to put before every `href` for this request's host. On a custom-app
-/// host a relative path would be rewritten into that app.
-fn href_base(headers: &axum::http::HeaderMap) -> String {
-    let host = headers
-        .get(axum::http::header::HOST)
-        .and_then(|v| v.to_str().ok());
-    super::inbox_view::href_base(
-        host,
-        oxy_app_core::custom_apps_host_dispatch::admin_base_url(),
-    )
-}
-
 /// Whether `user` may see `row`: their own, in an org the request's token
 /// reaches. Anything else answers 404, never 403 — somebody else's
 /// notification must not be confirmed to exist by the shape of the refusal.
-fn visible_to(row: &notifications::Model, user: &oxy_auth::types::AuthenticatedUser) -> bool {
+pub(super) fn visible_to(
+    row: &notifications::Model,
+    user: &oxy_auth::types::AuthenticatedUser,
+) -> bool {
     row.user_id == user.id && user.reaches_org(row.org_id)
-}
-
-/// `GET /api/notifications/{id}` — one item of my inbox.
-///
-/// What a phone fetches when a push names this row, so it shows and opens the
-/// item it was told about rather than "the newest unread", which two close
-/// pushes would share. The same shape as one entry of the inbox's `items`, and
-/// the same self-scoping: 404 unless it is the caller's.
-#[instrument(skip_all, fields(id = %id))]
-pub async fn get_notification(
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Path(id): Path<Uuid>,
-    headers: axum::http::HeaderMap,
-) -> Result<Json<super::inbox_view::InboxItem>, StatusCode> {
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let row = notifications::Entity::find_by_id(id)
-        .one(&db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .filter(|row| visible_to(row, &user))
-        .ok_or(StatusCode::NOT_FOUND)?;
-    let mut items = super::inbox_view::items(&db, vec![row])
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    super::inbox_view::absolutize(&mut items, &href_base(&headers));
-    items.pop().map(Json).ok_or(StatusCode::NOT_FOUND)
 }
 
 /// `POST /api/notifications/{id}/read`
@@ -236,60 +59,75 @@ pub async fn mark_read(
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-
-    let Some(row) = notifications::Entity::find_by_id(id)
-        .one(&db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    else {
-        return Err(StatusCode::NOT_FOUND);
-    };
     // 404 rather than 403: somebody else's notification must not be confirmed
     // to exist by the shape of the refusal. Nor one of an org the request's
     // token does not reach, which the inbox does not list either.
-    if !visible_to(&row, &user) {
-        return Err(StatusCode::NOT_FOUND);
-    }
-    // Already read is a no-op rather than an error — a double tap on a phone is
-    // the normal case, not a mistake worth surfacing.
-    if row.read_at.is_some() {
-        return Ok(StatusCode::NO_CONTENT);
-    }
-
-    let mut update: notifications::ActiveModel = row.into();
-    update.read_at = Set(Some(Utc::now().fixed_offset()));
-    update
-        .update(&db)
+    let row = super::inbox::mine(&db, &user, id).await?;
+    set_read(&db, row)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Mark `row` read. Already read is a no-op rather than an error — a double
+/// tap on a phone is the normal case, not a mistake worth surfacing.
+pub async fn set_read(
+    db: &sea_orm::DatabaseConnection,
+    row: notifications::Model,
+) -> Result<(), sea_orm::DbErr> {
+    if row.read_at.is_some() {
+        return Ok(());
+    }
+    let mut update: notifications::ActiveModel = row.into();
+    update.read_at = Set(Some(Utc::now().fixed_offset()));
+    update.update(db).await.map(|_| ())
+}
+
 /// `POST /api/notifications/read-all`
+///
+/// "All" has to be a deliberate scope, because this is a WRITE: clearing
+/// another org's unread as a side effect of clearing this one's is not
+/// something a user can undo. So it takes the inbox's own filter — org, app,
+/// source, category, kind, thread — as QUERY parameters, not a body.
+/// `Option<Json<T>>` resolves to `None` when extraction fails for ANY reason,
+/// so a caller who meant to scope this write and got the header wrong would
+/// silently clear everything instead; a malformed query is a 400.
 #[instrument(skip_all)]
 pub async fn mark_all_read(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Query(q): Query<ReadAllQuery>,
+    Query(q): Query<FilterParams>,
 ) -> Result<StatusCode, StatusCode> {
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    // "All" is all the request's token reaches, within the stated org and
-    // app: an org that blocked the token keeps its unread, as the inbox keeps
-    // it out of the count.
-    let update = q
-        .scope()
-        .apply(notifications::Entity::update_many(), &user)
+    read_all(&db, &user, &q)
+        .await
+        .map(|_| StatusCode::NO_CONTENT)
+}
+
+/// Mark read every unread notification of `user`'s within `filter`; how many.
+/// "All" is all the request's token reaches, within the stated filter: an org
+/// that blocked the token keeps its unread, as the inbox keeps it out of the
+/// count.
+pub async fn read_all(
+    db: &sea_orm::DatabaseConnection,
+    user: &oxy_auth::types::AuthenticatedUser,
+    filter: &FilterParams,
+) -> Result<u64, StatusCode> {
+    let update = filter
+        .resolve(db)
+        .await?
+        .apply(notifications::Entity::update_many(), user)
         .col_expr(
             notifications::Column::ReadAt,
             sea_orm::sea_query::Expr::value(Utc::now().fixed_offset()),
         )
         .filter(notifications::Column::ReadAt.is_null());
     update
-        .exec(&db)
+        .exec(db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(StatusCode::NO_CONTENT)
+        .map(|r| r.rows_affected)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 /// `POST /api/notifications/devices` — register this device for push.

@@ -76,6 +76,7 @@ async fn signal(
         read_at: ActiveValue::Set(None),
         message_id: ActiveValue::Set(None),
         app_id: ActiveValue::Set(app),
+        thread_key: ActiveValue::Set(None),
     }
     .insert(db)
     .await

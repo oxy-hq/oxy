@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::warn;
 
+use super::catalog::model::Level;
 use super::deliver::{Push, PushReport, PushSignal};
 use super::native_push::{self, Outcome, TITLE, TTL_SECONDS};
 
@@ -236,21 +237,55 @@ impl Fcm {
 
 /// The `messages:send` body. `collapse_key` is the inbox row, so a
 /// re-delivery of one notification replaces rather than stacks.
+///
+/// `channel_id` is `<app id|oxygen>.<kind>`: one channel per kind, under a
+/// group per source, created by the app from the catalogue. Until it has
+/// created one, Android falls back to the app's default channel. `tag` is the
+/// thread, so a thread's newest replaces its older one in the drawer; with no
+/// thread each notification stands alone. A passive kind goes at normal
+/// priority; the rest high.
 pub(super) fn message(token: &str, signal: &PushSignal) -> Value {
     let id = signal.notification_id.to_string();
+    let (priority, notification_priority) = match signal.level {
+        Level::Passive => ("normal", "PRIORITY_LOW"),
+        Level::Active => ("high", "PRIORITY_DEFAULT"),
+        Level::TimeSensitive | Level::Critical => ("high", "PRIORITY_HIGH"),
+    };
+    let mut notification = json!({
+        "channel_id": signal.channel_id(),
+        "notification_priority": notification_priority,
+    });
+    if let Some(thread) = &signal.thread {
+        notification["tag"] = json!(thread);
+    }
     json!({
         "message": {
             "token": token,
-            "notification": { "title": TITLE, "body": native_push::humanize(&signal.kind) },
-            "data": { "kind": signal.kind, "id": id },
+            "notification": { "title": TITLE, "body": signal.label },
+            "data": data(signal),
             "android": {
-                "priority": "high",
+                "priority": priority,
                 "ttl": format!("{TTL_SECONDS}s"),
                 "collapse_key": id,
-                "notification": { "channel_id": "default" },
+                "notification": notification,
             },
         }
     })
+}
+
+/// The envelope as FCM `data`: every value a string, an absent one left out.
+fn data(signal: &PushSignal) -> Value {
+    let Value::Object(envelope) = signal.envelope() else {
+        return json!({});
+    };
+    envelope
+        .into_iter()
+        .filter_map(|(k, v)| match v {
+            Value::Null => None,
+            Value::String(s) => Some((k, Value::String(s))),
+            other => Some((k, Value::String(other.to_string()))),
+        })
+        .collect()
 }
 
 /// Map Google's answer. Gone is `UNREGISTERED`, or `INVALID_ARGUMENT` that

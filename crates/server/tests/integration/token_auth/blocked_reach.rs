@@ -72,6 +72,7 @@ async fn seed(fx: &Fixture, org: Uuid, label: &str) -> Seeded {
         read_at: ActiveValue::Set(None),
         message_id: ActiveValue::Set(None),
         app_id: ActiveValue::Set(None),
+        thread_key: ActiveValue::Set(None),
     }
     .insert(&fx.db)
     .await

@@ -28,6 +28,7 @@ fn notification(user_id: Uuid) -> notifications::Model {
         read_at: None,
         message_id: None,
         app_id: None,
+        thread_key: None,
     }
 }
 

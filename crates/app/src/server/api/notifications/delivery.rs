@@ -11,8 +11,9 @@
 //! - **Skips are recorded, with a code.** "Muted", "no devices", "no address",
 //!   "not linked to Slack" and "push not configured" are answers someone will
 //!   ask for; an absent row could mean any of them, or that nothing ran.
-//! - **Mutes apply per (app, kind, channel)**, or per (kind, channel) for a
-//!   platform notice, except to a critical kind.
+//! - **Mutes apply at the kind or any ancestor** — per (app, kind, channel),
+//!   or (kind, channel) for a platform notice, and per category subtree or
+//!   whole source (`scope_mutes`) — except to a critical kind.
 
 use std::collections::HashSet;
 
@@ -23,6 +24,7 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
+use super::catalog::source::KindInfo;
 use super::channels::{ChannelOutcome, Channels};
 
 /// The out-of-band channels, as stored.
@@ -112,10 +114,15 @@ async fn deliver(db: &DatabaseConnection, send_id: Uuid) -> Result<DeliveryRepor
         return Ok(report);
     }
     let users: Vec<Uuid> = signals.iter().map(|s| s.user_id).collect();
-    let muted = mutes(db, &send, &users)
+    // Where the kind sits today: its category decides which category and
+    // source mutes reach it, and the push envelope carries it.
+    let info = super::catalog::live::describe_send(db, &send)
+        .await
+        .map_err(|e| format!("load the catalogue: {e}"))?;
+    let muted = mutes(db, &send, &info, &users)
         .await
         .map_err(|e| format!("load mutes: {e}"))?;
-    let channels = Channels::load(db, &send, &signals).await?;
+    let channels = Channels::load(db, &send, &signals, &info).await?;
     for signal in &signals {
         for channel in requested(&send) {
             let outcome = deliver_one(db, &channels, signal, channel, &muted)
@@ -153,34 +160,42 @@ async fn deliver_one(
     let outcome = if muted.contains(&(signal.user_id, channel)) {
         ChannelOutcome::Skipped("muted")
     } else {
-        channels.send(channel, signal.user_id, signal.id).await
+        channels.send(channel, signal).await
     };
     finish(db, signal.id, channel, &outcome).await?;
     Ok(outcome)
 }
 
-/// Who muted which channel for this send's app and kind — or, for a
-/// platform notice, for its kind alone. Empty for a critical kind.
+/// Who muted which channel for this send: at its kind (per app and kind, or
+/// for a platform notice per kind), at its category or one above it, or on
+/// its whole source. Empty for a kind no mute applies to: a critical one —
+/// critical when the send said so, or when its catalogue says so today — and
+/// a platform kind that is never muted (`kinds::is_mutable`: a test notice).
 async fn mutes(
     db: &DatabaseConnection,
     send: &notification_sends::Model,
+    info: &KindInfo,
     users: &[Uuid],
 ) -> Result<HashSet<(Uuid, Channel)>, DbErr> {
-    if send.critical {
+    if send.critical || !info.mutable {
         return Ok(HashSet::new());
     }
+    let mut muted = super::scope_mutes::muted(db, send.app_id, &info.category, users).await?;
     let Some(app_id) = send.app_id else {
-        return super::platform::preferences::muted(db, &send.kind, users).await;
+        muted.extend(super::platform::preferences::muted(db, &send.kind, users).await?);
+        return Ok(muted);
     };
-    Ok(notification_mutes::Entity::find()
-        .filter(notification_mutes::Column::AppId.eq(app_id))
-        .filter(notification_mutes::Column::Kind.eq(&send.kind))
-        .filter(notification_mutes::Column::UserId.is_in(users.iter().copied()))
-        .all(db)
-        .await?
-        .into_iter()
-        .filter_map(|m| Channel::parse(&m.channel).map(|c| (m.user_id, c)))
-        .collect())
+    muted.extend(
+        notification_mutes::Entity::find()
+            .filter(notification_mutes::Column::AppId.eq(app_id))
+            .filter(notification_mutes::Column::Kind.eq(&send.kind))
+            .filter(notification_mutes::Column::UserId.is_in(users.iter().copied()))
+            .all(db)
+            .await?
+            .into_iter()
+            .filter_map(|m| Channel::parse(&m.channel).map(|c| (m.user_id, c))),
+    );
+    Ok(muted)
 }
 
 /// Take (signal, channel) for this attempt. `true` when it is ours to send: a

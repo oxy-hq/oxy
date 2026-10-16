@@ -5,6 +5,58 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.0] - 2026-10-16
+
+### Added
+
+- **A notification catalogue in `oxy-app.json`.** The app-level
+  `notifications` block labels, groups and ranks the kinds an app's functions
+  send — the tree people mute in (a whole app, a category, one kind) and the
+  one a phone groups by. `categories` are paths of up to 3 segments
+  (`operations/food-safety`; a declared path's parents are implied); each kind
+  in `kinds` has a `category` (default `general`), a `label`, a `level`
+  (`passive` | `active` | `time_sensitive` | `critical`; a function's
+  `"critical": true` still makes it critical) and up to 3 `actions`
+  (`{ id, label ≤ 24, function?, destructive? }` — with `function`, a tap calls
+  that function as the person, then marks it read). Which kinds a function may
+  send is still its own `notify.kinds`. Types: `OxyAppNotificationsManifest`,
+  `OxyAppNotificationCategory`, `OxyAppNotificationKind`,
+  `OxyAppNotificationAction`, `NotificationLevel`, and
+  `OxyAppManifest.notifications`.
+- **`ctx.notify({ …, thread })`** — group notifications about one thing
+  (`store:${id}`, ≤ 128 characters). Inboxes fold a run of one thread into its
+  newest; only a hash is stored, and items carry it as `thread`. The test
+  context refuses a blank, over-long or non-string `thread` with the server's
+  `InvalidNotifyPayload` wording.
+- **`NotificationItem` gains `category` (`{ path, labels }`), `kind_label`,
+  `level`, `thread`, `actions` and `url`**, all optional — a server older than
+  the catalogue sends none of them and everything renders as before.
+  `NotificationsPage.next_before` is the cursor for the next page.
+- **`useNotifications({ category, kind, thread })`** narrows the list, the
+  polled count and "Mark all read". `category` covers its subtree and names
+  this app, so it needs the app id oxy injects. On a server older than the
+  catalogue the hook filters the page itself and marks the listed items one
+  by one rather than send a `read-all` that server would not narrow.
+- **`<NotificationsBell />` shows the catalogue.** Each row names its category
+  under the title (nothing for `general`), marks `critical` and
+  `time_sensitive` notifications with a leading edge — themeable with
+  `--oxy-notifications-critical` and `--oxy-notifications-time-sensitive` — and
+  folds a run of one thread into its newest with "+N more"; opening it reads
+  the whole run. `collapseThreads(items)` is the same folding for an app that
+  draws its own.
+- **`@oxy-hq/sdk/testing`:** `createTestContext` refuses a manifest whose
+  catalogue publish would refuse, listing every problem;
+  `createTestInbox({ manifest })` gives received items the category, label,
+  level and actions the catalogue gives them, hashes `thread` as the server
+  does (`threadKey`), and answers the `source`, `category`, `kind`, `thread`
+  and `before` filters. `checkNotifications(manifest)` and
+  `resolveNotificationKind(manifest, kind)` are exported for an app's own
+  tests.
+
+`oxyc validate`, `oxyc publish` (before the build) and `@oxy-hq/vite-plugin`
+(`pnpm dev` and `pnpm build`) check the catalogue with the same rules as the
+server and list every problem at once.
+
 ## [2.18.0] - 2026-10-14
 
 ### Added

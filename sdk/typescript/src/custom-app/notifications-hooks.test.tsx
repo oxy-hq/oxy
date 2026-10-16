@@ -278,3 +278,135 @@ describe("useNotifications — staging and dev hosts", () => {
     expect(last.available).toBe(true);
   });
 });
+
+describe("useNotifications — category, kind and thread", () => {
+  const MANIFEST = {
+    functions: { f: { notify: { kinds: { temp_alarm: {}, list_overdue: {} } } } },
+    notifications: {
+      categories: { "operations/food-safety": { label: "Food safety" } },
+      kinds: { temp_alarm: { category: "operations/food-safety" } }
+    }
+  };
+
+  function stocked(): { inbox: TestInbox; alarm: { id: string }; list: { id: string } } {
+    const inbox = createTestInbox({ appId: APP_ID, manifest: MANIFEST });
+    const alarm = inbox.receive({ kind: "temp_alarm", title: "alarm", thread: "store:1" });
+    const list = inbox.receive({ kind: "list_overdue", title: "list" });
+    return { inbox, alarm, list };
+  }
+
+  /**
+   * A server with `app_id` but older than categories: it ignores the new
+   * filters and sends no catalogue field.
+   */
+  function olderServer(inbox: TestInbox): typeof fetch {
+    return (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url = new URL(raw, "http://inbox.test");
+      for (const key of ["source", "category", "kind", "thread"]) url.searchParams.delete(key);
+      const resp = await inbox.fetcher(`${url.pathname}${url.search}`, init);
+      if (url.pathname !== "/api/notifications") return resp;
+      const body = (await resp.json()) as { unread: number; items: Record<string, unknown>[] };
+      const items = body.items.map(
+        ({ category, kind_label, level, thread, actions, url: u, ...rest }) => rest
+      );
+      return new Response(JSON.stringify({ unread: body.unread, items }), { status: 200 });
+    }) as typeof fetch;
+  }
+
+  const listRequests = (inbox: TestInbox) =>
+    inbox.requests.filter((r) => r.method === "GET" && r.path === "/api/notifications");
+
+  it("asks for a category of this app (naming it as the source), a kind, a thread", async () => {
+    const { inbox } = stocked();
+    await render(inbox, { category: "operations", kind: "temp_alarm" });
+    await last.refresh();
+    await settle();
+    expect(listRequests(inbox)[0]?.query).toMatchObject({
+      app_id: APP_ID,
+      source: APP_ID,
+      category: "operations",
+      kind: "temp_alarm"
+    });
+    expect(last.items.map((i) => i.title)).toEqual(["alarm"]);
+    // The count narrows with the list, polled with the same filter.
+    expect(last.unread).toBe(1);
+    expect(unreadPolls(inbox)[0]?.query).toMatchObject({
+      category: "operations",
+      kind: "temp_alarm"
+    });
+  });
+
+  it("filters by an item's thread", async () => {
+    const { inbox, alarm } = stocked();
+    const thread = inbox.items.find((i) => i.id === alarm.id)?.thread ?? "";
+    await render(inbox, { thread });
+    await last.refresh();
+    await settle();
+    expect(listRequests(inbox)[0]?.query.thread).toBe(thread);
+    expect(last.items.map((i) => i.title)).toEqual(["alarm"]);
+  });
+
+  it("needs the app id for a category, even under scope all, and asks nothing without it", async () => {
+    servePage(null);
+    const { inbox } = stocked();
+    await render(inbox, { scope: "all", category: "operations" });
+    await settle(60_000);
+    expect(inbox.requests).toEqual([]);
+    expect(last.available).toBe(false);
+    expect(last.error?.message).toContain("category");
+  });
+
+  it("filters by kind under scope all with no app id", async () => {
+    servePage(null);
+    const { inbox } = stocked();
+    await render(inbox, { scope: "all", kind: "list_overdue" });
+    await last.refresh();
+    await settle();
+    expect(listRequests(inbox)[0]?.query).toEqual({
+      unread_only: "false",
+      limit: "20",
+      kind: "list_overdue"
+    });
+    expect(last.items.map((i) => i.title)).toEqual(["list"]);
+  });
+
+  it("marks all read with one filtered read-all, on a server that filters", async () => {
+    const { inbox, list } = stocked();
+    await render(inbox, { kind: "temp_alarm" });
+    await last.refresh();
+    await settle();
+    await last.markAllRead();
+    await settle();
+    const writes = inbox.requests.filter((r) => r.method === "POST");
+    expect(writes).toEqual([
+      {
+        method: "POST",
+        path: "/api/notifications/read-all",
+        query: { app_id: APP_ID, kind: "temp_alarm" }
+      }
+    ]);
+    expect(inbox.items.find((i) => i.id === list.id)?.read_at).toBeNull();
+    expect(last.unread).toBe(0);
+    expect(inbox.unread(APP_ID)).toBe(1);
+  });
+
+  it("keeps an older server's other items out of the list", async () => {
+    const { inbox } = stocked();
+    page = await mount(<Probe opts={{ kind: "temp_alarm" }} />, olderServer(inbox));
+    await last.refresh();
+    await settle();
+    expect(last.items.map((i) => i.title)).toEqual(["alarm"]);
+  });
+
+  it("marks each listed item on an older server, never a read-all that would clear the app", async () => {
+    const { inbox, alarm, list } = stocked();
+    page = await mount(<Probe opts={{ kind: "temp_alarm" }} />, olderServer(inbox));
+    await last.markAllRead();
+    await settle();
+    const writes = inbox.requests.filter((r) => r.method === "POST").map((r) => r.path);
+    expect(writes).toEqual([`/api/notifications/${alarm.id}/read`]);
+    expect(inbox.items.find((i) => i.id === list.id)?.read_at).toBeNull();
+    expect(inbox.items.find((i) => i.id === alarm.id)?.read_at).not.toBeNull();
+  });
+});

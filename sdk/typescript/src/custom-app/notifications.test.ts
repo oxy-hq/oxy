@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   appBasePath,
   badgeLabel,
+  categoryLabel,
+  collapseThreads,
   createInboxClient,
   formatAge,
   joinAppPath,
+  matchesFilter,
   type NotificationItem,
   notificationTarget,
+  serverKnowsCategories,
   serverScopesToApp
 } from "./notifications";
 
@@ -213,5 +217,118 @@ describe("display", () => {
     expect(formatAge("2026-10-12T12:00:00Z", now)).toBe("2d");
     expect(formatAge("2026-09-01T12:00:00Z", now)).not.toBe("");
     expect(formatAge("not a date", now)).toBe("");
+  });
+});
+
+describe("the inbox client's filters", () => {
+  it("sends category with its source, kind and thread, on the list and on read-all", async () => {
+    const { fetcher, calls } = recorder(() => ok({ unread: 0, items: [] }));
+    const client = createInboxClient(fetcher, "", "app-1");
+    const filter = { source: "app-1", category: "operations", kind: "temp_alarm", thread: "abc" };
+    await client.list(5, filter);
+    await client.markAllRead(filter);
+    expect(calls.map((c) => c.url)).toEqual([
+      "/api/notifications?unread_only=false&limit=5&source=app-1&category=operations&kind=temp_alarm&thread=abc&app_id=app-1",
+      "/api/notifications/read-all?source=app-1&category=operations&kind=temp_alarm&thread=abc&app_id=app-1"
+    ]);
+  });
+
+  it("keeps next_before when the server sends it, and leaves it out when it does not", async () => {
+    const page = (body: unknown) =>
+      createInboxClient(recorder(() => ok(body)).fetcher, "", undefined).list(5);
+    expect(await page({ unread: 0, items: [], next_before: "n9" })).toEqual({
+      ok: true,
+      value: { unread: 0, items: [], next_before: "n9" }
+    });
+    expect(await page({ unread: 0, items: [] })).toEqual({
+      ok: true,
+      value: { unread: 0, items: [] }
+    });
+  });
+});
+
+describe("matchesFilter", () => {
+  const placed = item({
+    kind: "temp_alarm",
+    thread: "t1",
+    category: { path: "operations/food-safety", labels: ["Store operations", "Food safety"] }
+  });
+
+  it("matches a category's subtree, never a sibling that shares its prefix", () => {
+    expect(matchesFilter(placed, { category: "operations" })).toBe(true);
+    expect(matchesFilter(placed, { category: "operations/food-safety" })).toBe(true);
+    expect(matchesFilter(placed, { category: "operations/food" })).toBe(false);
+    expect(matchesFilter(placed, { category: "ops" })).toBe(false);
+  });
+
+  it("matches kind and thread exactly, and every filter at once", () => {
+    expect(matchesFilter(placed, { kind: "temp_alarm", thread: "t1" })).toBe(true);
+    expect(matchesFilter(placed, { kind: "list_overdue" })).toBe(false);
+    expect(matchesFilter(placed, { thread: "t2" })).toBe(false);
+    expect(matchesFilter(placed, {})).toBe(true);
+  });
+
+  it("reads an item from a server older than categories as general, with no thread", () => {
+    expect(matchesFilter(item(), { category: "general" })).toBe(true);
+    expect(matchesFilter(item(), { category: "operations" })).toBe(false);
+    expect(matchesFilter(item(), { thread: "t1" })).toBe(false);
+  });
+});
+
+describe("serverKnowsCategories", () => {
+  it("is true when every item carries a category, false when one does not, null on none", () => {
+    const placed = item({ category: { path: "general", labels: ["General"] } });
+    expect(serverKnowsCategories([placed])).toBe(true);
+    expect(serverKnowsCategories([placed, item()])).toBe(false);
+    expect(serverKnowsCategories([])).toBeNull();
+  });
+});
+
+describe("collapseThreads", () => {
+  const n = (id: string, thread: string | null | undefined) => item({ id, thread });
+
+  it("folds each run of one thread into its newest, keeping order", () => {
+    const groups = collapseThreads([
+      n("a", "t1"),
+      n("b", "t1"),
+      n("c", null),
+      n("d", "t1"),
+      n("e", "t2"),
+      n("f", "t2"),
+      n("g", "t2")
+    ]);
+    expect(groups.map((g) => [g.item.id, g.more.map((i) => i.id)])).toEqual([
+      ["a", ["b"]],
+      ["c", []],
+      ["d", []],
+      ["e", ["f", "g"]]
+    ]);
+  });
+
+  it("never folds items without a thread, nor an older server's", () => {
+    const groups = collapseThreads([
+      n("a", null),
+      n("b", null),
+      n("c", undefined),
+      n("d", undefined)
+    ]);
+    expect(groups.map((g) => g.more.length)).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe("categoryLabel", () => {
+  it("names the leaf, with the whole path beside it", () => {
+    const placed = item({
+      category: { path: "operations/food-safety", labels: ["Store operations", "Food safety"] }
+    });
+    expect(categoryLabel(placed)).toEqual({
+      leaf: "Food safety",
+      full: "Store operations › Food safety"
+    });
+  });
+
+  it("says nothing for general, or for an older server's item", () => {
+    expect(categoryLabel(item({ category: { path: "general", labels: ["General"] } }))).toBeNull();
+    expect(categoryLabel(item())).toBeNull();
   });
 });

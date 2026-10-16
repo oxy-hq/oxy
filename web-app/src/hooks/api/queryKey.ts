@@ -1,4 +1,5 @@
 import type { PaginationState } from "@tanstack/react-table";
+import type { InboxFilter } from "@/types/notifications";
 
 const agentKeys = {
   all: ["agent"] as const,
@@ -704,8 +705,12 @@ const usageReportKeys = {
 const notificationKeys = {
   all: ["notifications"] as const,
   inbox: () => [...notificationKeys.all, "inbox"] as const,
+  // Under `inbox()`, so whatever re-reads the bell's list re-reads the page's too.
+  feed: (filter: InboxFilter, unreadOnly: boolean) =>
+    [...notificationKeys.inbox(), "feed", filter, unreadOnly] as const,
+  item: (id: string) => [...notificationKeys.all, "item", id] as const,
+  catalog: () => [...notificationKeys.all, "catalog"] as const,
   unread: () => [...notificationKeys.all, "unread"] as const,
-  preferences: () => [...notificationKeys.all, "preferences"] as const,
   vapidPublicKey: () => [...notificationKeys.all, "vapid-public-key"] as const
 };
 

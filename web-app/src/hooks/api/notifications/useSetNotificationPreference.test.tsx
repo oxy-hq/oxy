@@ -4,90 +4,169 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotificationsService } from "@/services/api/notifications";
-import type { NotificationPreferences } from "@/types/notifications";
+import type { KindNode, NotificationCatalog } from "@/types/notifications";
 import queryKeys from "../queryKey";
 
 vi.mock("@/services/api/notifications", () => ({
-  NotificationsService: { setPreference: vi.fn(), preferences: vi.fn() }
+  NotificationsService: { setPreference: vi.fn(), catalog: vi.fn() }
 }));
 
 import { useSetNotificationPreference, withPreference } from "./useSetNotificationPreference";
 
-const KEY = queryKeys.notifications.preferences();
+const KEY = queryKeys.notifications.catalog();
 
-const prefs = (): NotificationPreferences => ({
-  apps: [
+const kind = (name: string, muted: KindNode["muted"] = []): KindNode => ({
+  kind: name,
+  label: name,
+  description: null,
+  level: "active",
+  critical: false,
+  channels: ["push", "email", "slack"],
+  muted,
+  actions: [],
+  unread: 0
+});
+
+const catalog = (): NotificationCatalog => ({
+  reach: { push_devices: 1, email: true },
+  sources: [
     {
-      app: { id: "app-1", slug: "ops", name: "Ops" },
-      kinds: [
-        { kind: "list_overdue", muted: ["email"], critical: false },
-        { kind: "shift_swap", muted: [], critical: false }
+      source: "oxygen",
+      app: null,
+      label: "Oxygen",
+      muted: [],
+      unread: 0,
+      categories: [
+        {
+          path: "runs",
+          label: "Automations and pipelines",
+          description: null,
+          muted: [],
+          unread: 0,
+          categories: [],
+          kinds: [kind("oxy.run_failed")]
+        }
       ]
     },
     {
-      app: { id: "app-2", slug: "books", name: "Books" },
-      kinds: [{ kind: "list_overdue", muted: [], critical: false }]
+      source: "app",
+      app: { id: "app-1", slug: "ops", name: "Ops", org_slug: "acme" },
+      label: "Ops",
+      muted: [],
+      unread: 0,
+      categories: [
+        {
+          path: "operations",
+          label: "Store operations",
+          description: null,
+          muted: ["email"],
+          unread: 0,
+          kinds: [kind("list_overdue", ["email"]), kind("shift_swap")],
+          categories: [
+            {
+              path: "operations/food-safety",
+              label: "Food safety",
+              description: null,
+              muted: [],
+              unread: 0,
+              categories: [],
+              kinds: [kind("list_overdue")]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      source: "app",
+      app: { id: "app-2", slug: "books", name: "Books", org_slug: "acme" },
+      label: "Books",
+      muted: [],
+      unread: 0,
+      categories: [
+        {
+          path: "general",
+          label: "General",
+          description: null,
+          muted: [],
+          unread: 0,
+          categories: [],
+          kinds: [kind("list_overdue")]
+        }
+      ]
     }
-  ],
-  platform: [{ kind: "oxy.run_failed", muted: [], critical: false }],
-  reach: { push_devices: 1, email: true }
+  ]
 });
+
+const ops = (c: NotificationCatalog) => c.sources[1];
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
 describe("withPreference", () => {
-  it("mutes one channel of one kind of one app", () => {
-    const next = withPreference(prefs(), {
+  it("mutes one channel of one kind of one app, wherever the kind sits", () => {
+    const next = withPreference(catalog(), {
       app_id: "app-1",
       kind: "list_overdue",
       channel: "push",
       muted: true
     });
-    expect(next.apps[0].kinds[0].muted).toEqual(["email", "push"]);
+    expect(ops(next).categories[0].kinds[0].muted).toEqual(["email", "push"]);
+    expect(ops(next).categories[0].categories[0].kinds[0].muted).toEqual(["push"]);
     // The same kind in another app, and another kind in this one, stay as they were.
-    expect(next.apps[1]).toEqual(prefs().apps[1]);
-    expect(next.apps[0].kinds[1]).toEqual(prefs().apps[0].kinds[1]);
+    expect(next.sources[2]).toEqual(catalog().sources[2]);
+    expect(ops(next).categories[0].kinds[1]).toEqual(ops(catalog()).categories[0].kinds[1]);
+  });
+
+  it("mutes a whole source with scope ''", () => {
+    const next = withPreference(catalog(), {
+      app_id: "app-1",
+      scope: "",
+      channel: "slack",
+      muted: true
+    });
+    expect(ops(next).muted).toEqual(["slack"]);
+    expect(ops(next).categories).toEqual(ops(catalog()).categories);
+  });
+
+  it("mutes a category by its path, and only that category", () => {
+    const next = withPreference(catalog(), {
+      app_id: "app-1",
+      scope: "operations/food-safety",
+      channel: "push",
+      muted: true
+    });
+    expect(ops(next).categories[0].categories[0].muted).toEqual(["push"]);
+    expect(ops(next).categories[0].muted).toEqual(["email"]);
+    expect(ops(next).muted).toEqual([]);
   });
 
   it("unmutes, and muting twice does not list a channel twice", () => {
-    const base = prefs();
-    const unmuted = withPreference(base, {
+    const off = withPreference(catalog(), {
       app_id: "app-1",
-      kind: "list_overdue",
+      scope: "operations",
       channel: "email",
       muted: false
     });
-    expect(unmuted.apps[0].kinds[0].muted).toEqual([]);
-    const again = withPreference(base, {
+    expect(ops(off).categories[0].muted).toEqual([]);
+    const again = withPreference(catalog(), {
       app_id: "app-1",
-      kind: "list_overdue",
+      scope: "operations",
       channel: "email",
       muted: true
     });
-    expect(again.apps[0].kinds[0].muted).toEqual(["email"]);
+    expect(ops(again).categories[0].muted).toEqual(["email"]);
   });
 
-  it("mutes an Oxygen kind when app_id is null, and leaves every app alone", () => {
-    const next = withPreference(prefs(), {
+  it("moves Oxygen's tree when app_id is null, and leaves every app alone", () => {
+    const next = withPreference(catalog(), {
       app_id: null,
-      kind: "oxy.run_failed",
+      scope: "runs",
       channel: "email",
       muted: true
     });
-    expect(next.platform[0].muted).toEqual(["email"]);
-    expect(next.apps).toEqual(prefs().apps);
-  });
-
-  it("leaves Oxygen's kinds alone when an app's kind moves", () => {
-    const next = withPreference(prefs(), {
-      app_id: "app-1",
-      kind: "oxy.run_failed",
-      channel: "email",
-      muted: true
-    });
-    expect(next.platform).toEqual(prefs().platform);
+    expect(next.sources[0].categories[0].muted).toEqual(["email"]);
+    expect(next.sources.slice(1)).toEqual(catalog().sources.slice(1));
   });
 });
 
@@ -96,16 +175,16 @@ describe("useSetNotificationPreference", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
     });
-    queryClient.setQueryData(KEY, prefs());
+    queryClient.setQueryData(KEY, catalog());
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     );
     const { result } = renderHook(() => useSetNotificationPreference(), { wrapper });
-    const cached = () => queryClient.getQueryData<NotificationPreferences>(KEY);
+    const cached = () => queryClient.getQueryData<NotificationCatalog>(KEY);
     return { result, cached };
   };
 
-  it("moves the switch before the server answers", async () => {
+  it("sends the scope form as given, and moves the switch before the server answers", async () => {
     let answer!: () => void;
     vi.mocked(NotificationsService.setPreference).mockReturnValue(
       new Promise<void>((resolve) => {
@@ -114,9 +193,17 @@ describe("useSetNotificationPreference", () => {
     );
     const { result, cached } = mount();
     act(() => {
-      result.current.mutate({ app_id: "app-1", kind: "shift_swap", channel: "slack", muted: true });
+      result.current.mutate({ app_id: "app-1", scope: "", channel: "slack", muted: true });
     });
-    await waitFor(() => expect(cached()?.apps[0].kinds[1].muted).toEqual(["slack"]));
+    await waitFor(() =>
+      expect(NotificationsService.setPreference).toHaveBeenCalledWith({
+        app_id: "app-1",
+        scope: "",
+        channel: "slack",
+        muted: true
+      })
+    );
+    expect(cached()?.sources[1].muted).toEqual(["slack"]);
     await act(async () => answer());
   });
 
@@ -127,6 +214,6 @@ describe("useSetNotificationPreference", () => {
       result.current.mutate({ app_id: "app-1", kind: "shift_swap", channel: "slack", muted: true });
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(cached()?.apps[0].kinds[1].muted).toEqual([]);
+    expect(cached()?.sources[1].categories[0].kinds[1].muted).toEqual([]);
   });
 });
