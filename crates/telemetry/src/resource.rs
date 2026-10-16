@@ -91,9 +91,28 @@ fn deployment_environment() -> Option<String> {
     .filter(|v| !v.is_empty())
 }
 
+/// `service.version`: the image tag (`main-<sha>`, what a deploy pins), else
+/// the commit CI built from, else `dev`. The same name `/api/version` gives the
+/// build. Not the Cargo semver: every image between two releases reports the
+/// same one, so a trace could not say which image produced it.
+pub fn service_version() -> String {
+    oxy_shared::image_tag::image_tag()
+        .map(str::to_string)
+        .unwrap_or_else(|| commit_or_dev(option_env!("GITHUB_SHA")))
+}
+
+/// The short commit CI built from (`GITHUB_SHA`), or `dev` for a local build.
+fn commit_or_dev(github_sha: Option<&str>) -> String {
+    match github_sha.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(sha) => sha.chars().take(7).collect(),
+        None => "dev".to_string(),
+    }
+}
+
 /// Build the process resource: SDK + env detectors, then the derived
-/// `service.name` (only when the operator did not set one), the crate version,
-/// the fleet role, the environment, and the pod / host name.
+/// `service.name` (only when the operator did not set one), the build
+/// ([`service_version`]), the fleet role, the environment, and the pod / host
+/// name.
 pub fn build(role: Option<&str>) -> Resource {
     let mut builder = Resource::builder();
 
@@ -105,7 +124,7 @@ pub fn build(role: Option<&str>) -> Resource {
         builder = builder.with_service_name(service_name_for_role(role));
     }
 
-    let mut attrs = vec![KeyValue::new("service.version", env!("CARGO_PKG_VERSION"))];
+    let mut attrs = vec![KeyValue::new("service.version", service_version())];
     if let Some(role) = role {
         attrs.push(KeyValue::new(ROLE_ATTR, role.to_string()));
     }
@@ -199,12 +218,23 @@ mod tests {
     }
 
     #[test]
+    fn outside_an_image_the_build_is_named_by_commit_never_by_semver() {
+        assert_eq!(
+            commit_or_dev(Some("1bcefe3fb22711b41a378e31338e7352120f61f5")),
+            "1bcefe3"
+        );
+        assert_eq!(commit_or_dev(Some("  ")), "dev");
+        assert_eq!(commit_or_dev(None), "dev");
+        assert_ne!(service_version(), env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
     fn resource_carries_version_and_role() {
         let resource = build(Some("serve"));
         let get = |k: &'static str| resource.get(&opentelemetry::Key::from_static_str(k));
         assert_eq!(
             get("service.version").map(|v| v.to_string()),
-            Some(env!("CARGO_PKG_VERSION").to_string())
+            Some(service_version())
         );
         assert_eq!(get(ROLE_ATTR).map(|v| v.to_string()), Some("serve".into()));
         // Without an operator override the derived name lands (the test

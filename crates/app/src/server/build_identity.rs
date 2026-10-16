@@ -7,18 +7,13 @@
 //! release, the same string for every image between two releases, so prod
 //! answered `0.5.155` while it ran code that shipped in 0.5.156.
 //!
-//! The tag comes from `OXY_IMAGE_TAG`, which the image build bakes in
-//! (`Dockerfile.prebuilt`); a deployment may also set it. A binary that is not an
-//! image (a laptop build, `oxy start`, a CLI download) has none, and is named by
-//! its commit instead.
-
-use std::sync::OnceLock;
+//! The tag comes from `OXY_IMAGE_TAG` (`oxy_shared::image_tag`, shared with
+//! telemetry's `service.version`). A binary that is not an image (a laptop
+//! build, `oxy start`, a CLI download) has none, and is named by its commit
+//! instead.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-
-/// The variable the image build sets to the tag it pushes.
-const IMAGE_TAG_VAR: &str = "OXY_IMAGE_TAG";
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct BuildInfo {
@@ -37,31 +32,13 @@ pub struct BuildInfo {
 
 /// The image tag this process runs as, `None` outside an image.
 pub fn image_tag() -> Option<&'static str> {
-    static TAG: OnceLock<Option<String>> = OnceLock::new();
-    TAG.get_or_init(|| {
-        std::env::var(IMAGE_TAG_VAR)
-            .ok()
-            .and_then(|v| parse_image_tag(&v))
-    })
-    .as_deref()
+    oxy_shared::image_tag::image_tag()
 }
 
 /// One word for this build: the image tag, or the short commit outside an image
 /// (`dev` for a local build).
 pub fn build_label() -> String {
     image_tag().map_or_else(|| env!("GIT_HASH").to_string(), str::to_string)
-}
-
-/// The tag in whatever form a deployment hands over: bare (`main-1bcefe3`),
-/// pinned (`main-1bcefe3@sha256:…`) or a full reference
-/// (`ghcr.io/oxy-hq/oxygen:main-1bcefe3`).
-fn parse_image_tag(raw: &str) -> Option<String> {
-    let reference = raw.trim().split('@').next().unwrap_or_default();
-    // A `:` after the last `/` separates the tag from the repository; one
-    // before it is a registry port.
-    let name = reference.rsplit('/').next().unwrap_or_default();
-    let tag = name.rsplit_once(':').map_or(name, |(_, tag)| tag);
-    (!tag.is_empty()).then(|| tag.to_string())
 }
 
 /// What `/api/version` and `/api/health` say about the build.
@@ -93,34 +70,6 @@ pub fn build_info() -> BuildInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_tag_is_read_from_every_form_a_deployment_hands_over() {
-        assert_eq!(
-            parse_image_tag("main-1bcefe3").as_deref(),
-            Some("main-1bcefe3")
-        );
-        assert_eq!(
-            parse_image_tag(" main-1bcefe3@sha256:96efcc34 ").as_deref(),
-            Some("main-1bcefe3")
-        );
-        assert_eq!(
-            parse_image_tag("ghcr.io/oxy-hq/oxygen:main-1bcefe3@sha256:96ef").as_deref(),
-            Some("main-1bcefe3")
-        );
-        assert_eq!(
-            parse_image_tag("localhost:5000/oxygen:main-1bcefe3").as_deref(),
-            Some("main-1bcefe3"),
-            "a registry port is not the tag"
-        );
-    }
-
-    #[test]
-    fn an_empty_variable_is_no_tag() {
-        assert_eq!(parse_image_tag(""), None);
-        assert_eq!(parse_image_tag("   "), None);
-        assert_eq!(parse_image_tag("@sha256:96ef"), None);
-    }
 
     #[test]
     fn build_info_reports_the_sentry_release_the_process_uses() {
