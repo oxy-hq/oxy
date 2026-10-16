@@ -84,6 +84,7 @@ pub mod github_oidc_keys;
 pub mod healthcheck;
 pub mod integration;
 pub mod local_setup;
+pub mod me_apps;
 pub mod metric_anomalies;
 pub mod metric_tree;
 pub mod metric_tree_baseline;

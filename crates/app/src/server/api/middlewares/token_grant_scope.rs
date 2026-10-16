@@ -114,6 +114,8 @@ pub fn treatment(path: &str) -> Treatment {
         ["orgs", ..] => Treatment::Honoured,
         // Filtered to the orgs a grant touches.
         ["apps", "mine"] => Treatment::Honoured,
+        // Each app is decided by `AppAccess` against the token's reach.
+        ["me", "apps"] => Treatment::Honoured,
         // Staff standing, which the credential bounds to its grants' orgs —
         // and drops entirely without `platform`.
         ["admin", ..] | ["customer-apps", ..] | ["assume", ..] => Treatment::Honoured,

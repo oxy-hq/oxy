@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 // ── Seeding ─────────────────────────────────────────────────────────────────
 
-async fn seed_user(conn: &DatabaseConnection) -> (Uuid, String) {
+pub(super) async fn seed_user(conn: &DatabaseConnection) -> (Uuid, String) {
     let id = Uuid::new_v4();
     let email = format!("vis-{id}@example.com");
     users::ActiveModel {
@@ -38,7 +38,7 @@ async fn seed_user(conn: &DatabaseConnection) -> (Uuid, String) {
     (id, email)
 }
 
-async fn seed_org(conn: &DatabaseConnection) -> Uuid {
+pub(super) async fn seed_org(conn: &DatabaseConnection) -> Uuid {
     let id = Uuid::new_v4();
     organizations::ActiveModel {
         id: ActiveValue::Set(id),
@@ -52,7 +52,7 @@ async fn seed_org(conn: &DatabaseConnection) -> Uuid {
     id
 }
 
-async fn seed_workspace(conn: &DatabaseConnection, org_id: Uuid) -> Uuid {
+pub(super) async fn seed_workspace(conn: &DatabaseConnection, org_id: Uuid) -> Uuid {
     let id = Uuid::new_v4();
     workspaces::ActiveModel {
         id: ActiveValue::Set(id),
@@ -66,7 +66,12 @@ async fn seed_workspace(conn: &DatabaseConnection, org_id: Uuid) -> Uuid {
     id
 }
 
-async fn seed_member(conn: &DatabaseConnection, org_id: Uuid, user_id: Uuid, role: OrgRole) {
+pub(super) async fn seed_member(
+    conn: &DatabaseConnection,
+    org_id: Uuid,
+    user_id: Uuid,
+    role: OrgRole,
+) {
     org_members::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         org_id: ActiveValue::Set(org_id),
@@ -81,7 +86,7 @@ async fn seed_member(conn: &DatabaseConnection, org_id: Uuid, user_id: Uuid, rol
 
 /// A PUBLISHED app — the launcher only ever lists published ones, so an unpublished
 /// app would pass these tests for the wrong reason.
-async fn seed_app(
+pub(super) async fn seed_app(
     conn: &DatabaseConnection,
     org_id: Uuid,
     workspace_id: Uuid,
@@ -110,7 +115,12 @@ async fn seed_app(
     id
 }
 
-async fn seed_app_member(conn: &DatabaseConnection, app_id: Uuid, user_id: Uuid, role: &str) {
+pub(super) async fn seed_app_member(
+    conn: &DatabaseConnection,
+    app_id: Uuid,
+    user_id: Uuid,
+    role: &str,
+) {
     app_members::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         app_id: ActiveValue::Set(app_id),

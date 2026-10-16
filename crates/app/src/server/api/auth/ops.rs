@@ -81,21 +81,60 @@ pub fn build_session_cookie(jwt: &str, secure: bool) -> String {
 /// there is a session. That is the whole difference between a kiosk showing the
 /// name picker the next morning and one showing 401s.
 pub fn build_session_cookie_with_max_age(jwt: &str, secure: bool, max_age_secs: i64) -> String {
+    render_session_cookie(&session_cookie_attributes(secure), jwt, max_age_secs)
+}
+
+/// The attributes of every `oxy_session` cookie this server sets. One value,
+/// read by [`build_session_cookie_with_max_age`] and by the mobile sign-in,
+/// which hands them to a native app to set the same cookie in its WebView —
+/// so the two cookies cannot drift apart.
+pub(super) struct SessionCookieAttributes {
+    pub(super) name: &'static str,
+    /// `None`: host-only (no `OXY_SESSION_COOKIE_DOMAIN`).
+    pub(super) domain: Option<String>,
+    pub(super) path: &'static str,
+    pub(super) secure: bool,
+    pub(super) http_only: bool,
+    pub(super) same_site: &'static str,
+}
+
+/// The session cookie's attributes, with `Domain` from
+/// `OXY_SESSION_COOKIE_DOMAIN`. `secure` is [`is_request_secure`]'s answer.
+pub(super) fn session_cookie_attributes(secure: bool) -> SessionCookieAttributes {
+    let domain = std::env::var("OXY_SESSION_COOKIE_DOMAIN")
+        .ok()
+        .map(|domain| domain.trim().to_string())
+        .filter(|domain| !domain.is_empty());
+    SessionCookieAttributes {
+        name: SESSION_COOKIE_NAME,
+        domain,
+        path: "/",
+        secure,
+        http_only: true,
+        same_site: "Lax",
+    }
+}
+
+/// The `Set-Cookie` value carrying `jwt` with `attrs`.
+pub(super) fn render_session_cookie(
+    attrs: &SessionCookieAttributes,
+    jwt: &str,
+    max_age_secs: i64,
+) -> String {
     let mut parts = vec![
-        format!("{SESSION_COOKIE_NAME}={jwt}"),
-        "Path=/".to_string(),
+        format!("{}={jwt}", attrs.name),
+        format!("Path={}", attrs.path),
         format!("Max-Age={max_age_secs}"),
-        "HttpOnly".to_string(),
-        "SameSite=Lax".to_string(),
     ];
-    if secure {
+    if attrs.http_only {
+        parts.push("HttpOnly".to_string());
+    }
+    parts.push(format!("SameSite={}", attrs.same_site));
+    if attrs.secure {
         parts.push("Secure".to_string());
     }
-    if let Ok(domain) = std::env::var("OXY_SESSION_COOKIE_DOMAIN") {
-        let domain = domain.trim();
-        if !domain.is_empty() {
-            parts.push(format!("Domain={domain}"));
-        }
+    if let Some(domain) = &attrs.domain {
+        parts.push(format!("Domain={domain}"));
     }
     parts.join("; ")
 }

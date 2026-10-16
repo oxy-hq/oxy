@@ -57,6 +57,8 @@ const publicAPIPaths = [
   // resumes the CLI login. This interceptor's bare `/login` would drop that
   // and strand the terminal. (As with `/logout`, the token is still attached.)
   "/auth/cli/authorize",
+  // The Oxygen mobile app's sign-in approval: the same reason as oxyc's above.
+  "/auth/mobile/authorize",
   "/health",
   "/ready",
   "/live"

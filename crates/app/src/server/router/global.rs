@@ -42,6 +42,11 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
             "/apps/mine",
             get(crate::server::api::admin::apps::handlers::list_my_apps),
         )
+        // The mobile home screen. `route_fleet`: Postgres only.
+        .route_fleet(
+            "/me/apps",
+            get(crate::server::api::me_apps::list_openable_apps),
+        )
         // Personal access tokens and the calling-token pair. Merged HERE, not in
         // `build_protected_routes`: this builder is the route catalog's seed for
         // the global tree, so a merge beside it would serve the routes and leave

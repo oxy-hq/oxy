@@ -14,6 +14,9 @@ mod cookie_session;
 mod dev_login;
 mod dto;
 mod handlers;
+// The Oxygen mobile app's sign-in and session refresh, mounted from
+// `router/tokens.rs` beside `oxyc login`'s pair.
+pub mod mobile;
 mod ops;
 mod token_session;
 

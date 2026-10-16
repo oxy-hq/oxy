@@ -30,6 +30,8 @@
 //! - [`cli_login`] — the `oxyc login` PKCE code store;
 //! - [`browser_session`] — the ticket a token trades for a browser session,
 //!   and the session, which authenticates as that token;
+//! - [`mobile_login`] — the Oxygen mobile app's PKCE code, bound to its
+//!   `oxygen://` redirect URI;
 //! - [`leak`] — what a leak report revokes; [`hygiene`] — the expiry notice
 //!   and the unused-token sweep;
 //! - [`sandbox`] — the sandbox agent token (`oxy_sbx_`): what a mint asks
@@ -54,6 +56,7 @@ pub mod grant_plan;
 mod grant_row;
 pub mod hygiene;
 pub mod leak;
+pub mod mobile_login;
 pub mod org_grants;
 pub mod personal;
 pub mod policy;

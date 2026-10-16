@@ -57,6 +57,7 @@ import CliAuth from "./pages/auth/CliAuth";
 import DevLogin from "./pages/auth/DevLogin";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
+import MobileAuth from "./pages/auth/MobileAuth";
 import OktaCallback from "./pages/auth/OktaCallback";
 import TokenLogin from "./pages/auth/TokenLogin";
 import DashboardsPage from "./pages/dashboards";
@@ -600,6 +601,11 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             oxyc: the session token), bouncing through /login first when not
             yet signed in. */}
         <Route path='/cli-auth' element={<CliAuth />} />
+
+        {/* Oxygen mobile app sign-in — public for the same reason: asks the
+            signed-in person, then hands the app's `oxygen://` redirect a
+            one-time code, bouncing through /login first when not signed in. */}
+        <Route path='/mobile-auth' element={<MobileAuth />} />
 
         {/* Auth-gated routes. `ActingShell` wraps EVERY authenticated page so the
             assume-role banner — and its one-click exit — follows an operator

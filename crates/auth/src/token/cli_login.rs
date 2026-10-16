@@ -43,8 +43,8 @@ pub const CODE_TTL_SECS: i64 = 5 * 60;
 const SWEEP_AFTER_SECS: i64 = 60 * 60;
 /// An S256 challenge is 32 bytes, base64url without padding.
 const CHALLENGE_LEN: usize = 43;
-/// RFC 7636 bounds on a verifier.
-const VERIFIER_LEN: std::ops::RangeInclusive<usize> = 43..=128;
+/// RFC 7636 bounds on a verifier. Shared with `mobile_login`.
+pub(super) const VERIFIER_LEN: std::ops::RangeInclusive<usize> = 43..=128;
 const MAX_HOSTNAME_CHARS: usize = 255;
 /// What a mint code is prefixed with before it is hashed. See the module docs.
 const MINT_DOMAIN: &str = "oxy-cli-mint:";

@@ -287,48 +287,81 @@ pub async fn published_app_summaries(
                 return true;
             }
             facts.as_ref().is_some_and(|f| {
-                oxy_authz::allows(
-                    f,
-                    oxy_authz::Action::AppAccess,
-                    &oxy_authz::Resource::app_with_visibility(app.id, app.org_id, true),
-                )
+                oxy_authz::allows(f, oxy_authz::Action::AppAccess, &app_access_resource(app))
             })
         })
         .collect();
 
+    Ok(launcher_apps(db, rows)
+        .await?
+        .into_iter()
+        .map(|app| app.summary)
+        .collect())
+}
+
+/// The `AppAccess` resource for an app row: its id, org and visibility. One
+/// builder for every list that asks "may this person open this app?", so none
+/// of them can hand the ring a workspace id or a stale visibility.
+pub(crate) fn app_access_resource(app: &apps::Model) -> oxy_authz::Resource {
+    oxy_authz::Resource::app_with_visibility(app.id, app.org_id, app.is_restricted())
+}
+
+/// A published app as a launcher card, plus the org and workspace a list that
+/// spans several of them needs to label and group it (`GET /api/me/apps`).
+pub(crate) struct LauncherApp {
+    pub org_id: Uuid,
+    pub org_name: String,
+    pub workspace_id: Uuid,
+    pub summary: CustomAppSummary,
+}
+
+/// Cards for apps the caller has ALREADY been authorized to see — this filters
+/// nothing for access. Two queries whatever the count: the orgs (slug + name,
+/// not the logo blob) and the batched manifest read (see the
+/// `oxy-app-visual-identity` skill). Input order is kept; a row whose org is
+/// gone or that was never published is dropped.
+pub(crate) async fn launcher_apps(
+    db: &sea_orm::DatabaseConnection,
+    rows: Vec<apps::Model>,
+) -> Result<Vec<LauncherApp>, sea_orm::DbErr> {
+    use sea_orm::QuerySelect;
+    use std::collections::{HashMap, HashSet};
     if rows.is_empty() {
         return Ok(vec![]);
     }
-
-    // Bulk-resolve org slugs in one query (apps for a workspace will
-    // usually share one org, but the field is denormalised so we don't
-    // assume).
-    use std::collections::{HashMap, HashSet};
+    // The org is denormalised onto each app, so don't assume one org per page.
     let org_ids: HashSet<Uuid> = rows.iter().map(|a| a.org_id).collect();
-    let orgs = Organizations::find()
-        .filter(organizations::Column::Id.is_in(org_ids.iter().copied()))
+    let orgs: HashMap<Uuid, (String, String)> = Organizations::find()
+        .select_only()
+        .column(organizations::Column::Id)
+        .column(organizations::Column::Slug)
+        .column(organizations::Column::Name)
+        .filter(organizations::Column::Id.is_in(org_ids))
+        .into_tuple::<(Uuid, String, String)>()
         .all(db)
-        .await?;
-    let slugs: HashMap<Uuid, String> = orgs.into_iter().map(|o| (o.id, o.slug)).collect();
+        .await?
+        .into_iter()
+        .map(|(id, slug, name)| (id, (slug, name)))
+        .collect();
 
-    // Card metadata for the whole page in ONE batched `app_builds` query (no
-    // N+1) — the same resolver the admin list uses. See the
-    // `oxy-app-visual-identity` skill.
     let manifests =
         crate::server::api::custom_apps_manifest::resolve_manifests_batch(db, &rows).await;
     let mut out = Vec::with_capacity(rows.len());
     for app in rows {
-        let Some(slug) = slugs.get(&app.org_id).cloned() else {
+        let Some((org_slug, org_name)) = orgs.get(&app.org_id) else {
             continue;
         };
-        // SAFETY-ish: we filtered on PublishedAt.is_not_null above.
         let Some(published) = app.published_at.map(|d| d.to_rfc3339()) else {
             continue;
         };
+        let (org_id, workspace_id) = (app.org_id, app.project_id);
         let manifest = manifests.get(&app.id);
-        out.push(CustomAppSummary::from_model_with_manifest(
-            app, &slug, published, manifest,
-        ));
+        out.push(LauncherApp {
+            org_id,
+            org_name: org_name.clone(),
+            workspace_id,
+            summary: CustomAppSummary::from_model_with_manifest(app, org_slug, published, manifest),
+        });
     }
     Ok(out)
 }

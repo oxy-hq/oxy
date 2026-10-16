@@ -18,6 +18,7 @@
 
 use axum::routing::{delete, get, patch, post};
 
+use crate::server::api::auth::mobile;
 use crate::server::api::org_api_access::handlers as org_handlers;
 use crate::server::api::user_tokens::{
     browser_session, cli_login, handlers, introspect, leak, options,
@@ -52,6 +53,9 @@ pub(super) fn build_token_routes(app_state: &AppState) -> RoleRouter {
         // `oxyc login`, step one. Session-only like the rest: it is the first
         // half of minting a token.
         .route_fleet("/auth/cli/authorize", post(cli_login::authorize))
+        // The Oxygen mobile app's sign-in, step one: the same session-only
+        // approval, for a code bound to an `oxygen://` redirect URI.
+        .route_fleet("/auth/mobile/authorize", post(mobile::authorize))
         // Any credential: the calling token, about itself. A session gets 404.
         .route_fleet(
             "/auth/token",
@@ -138,6 +142,11 @@ pub(super) fn build_org_api_access_routes(app_state: &AppState) -> RoleRouter {
 pub(super) fn build_public_token_routes(app_state: &AppState) -> RoleRouter {
     RoleRouter::new(app_state.clone())
         .route_fleet("/auth/cli/exchange", post(cli_login::exchange))
+        // The mobile app's half of its sign-in, and renewing the session it
+        // gets. No credential yet, or one only these check: Postgres only
+        // (`cli_auth_codes`, `users`).
+        .route_fleet("/auth/mobile/exchange", post(mobile::exchange))
+        .route_fleet("/auth/mobile/refresh", post(mobile::refresh))
         // The browser's half of a token's sign-in link: it holds no credential
         // yet, and the ticket it redeems is the only thing that names one.
         // Postgres only (`cli_auth_codes`, `api_tokens`, `audit_events`).

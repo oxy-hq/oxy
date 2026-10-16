@@ -135,6 +135,7 @@ mod draft_publish_retention;
 mod environment_scoped_keys;
 mod example_app_serving;
 mod function_failure_alerts;
+mod me_apps;
 mod nonprod_function_uploads;
 mod platform_facts;
 mod preview_read_only_session;
