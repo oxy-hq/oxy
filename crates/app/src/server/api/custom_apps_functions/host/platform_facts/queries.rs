@@ -8,7 +8,8 @@
 //! Snapshot reads (orgs, billing, partners, sign-ins, apps, first thread) are
 //! one pass over their table. "Latest" reads are one index probe per app
 //! (`ORDER BY … DESC LIMIT 1` in a `LATERAL`), never a `MAX` over every row an
-//! app ever wrote. The customer-activity probes are also **floored** at
+//! app ever wrote; the per-app ones are in [`super::app_use`], the LLM cost in
+//! [`super::llm_cost`]. The customer-activity probes are also **floored** at
 //! [`super::LAST_ACTIVITY_HORIZON_DAYS`]: they skip staff's and unattended
 //! rows, so a probe with no floor walks every row since the customer last
 //! acted, and for a churned customer whose webhooks keep arriving that only
@@ -34,6 +35,8 @@ use sea_orm::{
 use uuid::Uuid;
 
 use super::Windows;
+use super::app_use::{self, AppAtRow, AppCountRow};
+use super::llm_cost::{self, LlmCostRow};
 use crate::server::api::admin::workspace_health::queries::exclude_daemon_runs;
 
 const ORGS_SQL: &str = "\
@@ -55,34 +58,19 @@ GROUP BY m.org_id";
 
 const APPS_SQL: &str = "SELECT id, org_id, slug, name, published_at FROM apps";
 
-// Each app's last production open, staff's included — the app's "last active"
-// as the admin apps list shows it. One probe of `(app_id, viewed_at DESC)` per
-// app (`custom_apps_activity::last_active_at_by_app` answers the same with a
-// `MAX` over every view, which the admin list's page of apps can afford).
-const LAST_VIEWED_SQL: &str = "\
-SELECT a.id AS app_id, last.viewed_at AS at \
-FROM apps a \
-CROSS JOIN LATERAL (SELECT v.viewed_at FROM custom_app_view_event v \
-                    WHERE v.app_id = a.id AND v.environment = 'production' \
-                    ORDER BY v.viewed_at DESC LIMIT 1) last";
-
 // $1 the internal orgs, $2 the horizon's start (`LAST_ACTIVITY_HORIZON_DAYS`
-// before now). Each org's latest CUSTOMER activity since $2: a production
-// view by a non-staff person, a thread a non-staff person started, or a
-// production invocation a non-staff person made. Staff opening a quiet
-// customer's app, an unattended run (a schedule, a webhook: no user) and a
-// thread nobody is attributed to never make the customer look active. Every
-// branch stops at $2, so each probe reads at most the horizon's rows.
+// before now). Each org's latest CUSTOMER activity since $2 apart from app
+// views: a thread a non-staff person started, or a production invocation a
+// non-staff person made. The views half is each app's customer last view
+// (`app_use::CUSTOMER_LAST_VIEWED_SQL`), which `assemble` folds in, so an
+// org's last activity and its apps' `customerLastActiveAt` are one probe and
+// cannot disagree. Staff opening a quiet customer's app, an unattended run (a
+// schedule, a webhook: no user) and a thread nobody is attributed to never
+// make the customer look active. Every branch stops at $2, so each probe
+// reads at most the horizon's rows.
 const LAST_ACTIVITY_SQL: &str = "\
 WITH staff AS (SELECT DISTINCT user_id FROM org_members WHERE org_id = ANY($1::uuid[])) \
 SELECT x.org_id, MAX(x.at) AS at FROM ( \
-    SELECT a.org_id, lv.at FROM apps a \
-    CROSS JOIN LATERAL (SELECT v.viewed_at AS at FROM custom_app_view_event v \
-                        WHERE v.app_id = a.id AND v.environment = 'production' \
-                          AND v.viewed_at >= $2 \
-                          AND NOT EXISTS (SELECT 1 FROM staff s WHERE s.user_id = v.user_id) \
-                        ORDER BY v.viewed_at DESC LIMIT 1) lv \
-    UNION ALL \
     SELECT a.org_id, li.at FROM apps a \
     CROSS JOIN LATERAL (SELECT i.created_at AS at FROM app_function_invocations i \
                         WHERE i.app_id = a.id AND i.environment = 'production' \
@@ -111,13 +99,13 @@ FROM threads t JOIN workspaces w ON w.id = t.project_id \
 WHERE w.org_id IS NOT NULL \
 GROUP BY w.org_id";
 
-/// The CTEs every windowed read starts with: the windows, numbered from 0, and
-/// the staff (members of an internal org).
-const WITH_WINDOWS: &str = "\
-WITH win AS (SELECT w.starts_at, w.ends_at, w.idx - 1 AS idx \
-             FROM unnest($1::timestamptz[], $2::timestamptz[]) \
-                  WITH ORDINALITY AS w(starts_at, ends_at, idx)), \
-     staff AS (SELECT DISTINCT user_id FROM org_members WHERE org_id = ANY($3::uuid[]))";
+/// The CTEs every windowed read starts with, after its `WITH`: the windows,
+/// numbered from 0, and the staff (members of an internal org).
+pub(super) const WINDOW_CTES: &str = "\
+win AS (SELECT w.starts_at, w.ends_at, w.idx - 1 AS idx \
+        FROM unnest($1::timestamptz[], $2::timestamptz[]) \
+             WITH ORDINALITY AS w(starts_at, ends_at, idx)), \
+staff AS (SELECT DISTINCT user_id FROM org_members WHERE org_id = ANY($3::uuid[]))";
 
 const VIEWS_SQL: &str = "\
 SELECT a.org_id, win.idx, COUNT(*)::bigint AS events, 0::bigint AS failures, \
@@ -233,12 +221,6 @@ pub(super) struct AppRow {
     pub published_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug, FromQueryResult)]
-pub(super) struct AppAtRow {
-    pub app_id: Uuid,
-    pub at: DateTime<Utc>,
-}
-
 /// One org's count in one window. Each read fills the columns it has and
 /// selects 0 for the rest.
 #[derive(Clone, Debug, Default, FromQueryResult)]
@@ -260,7 +242,12 @@ pub(super) struct Sources {
     pub apps: Vec<AppRow>,
     /// Each app's newest production view, staff's included.
     pub last_viewed: Vec<AppAtRow>,
-    /// Each org's newest customer activity.
+    /// Each app's newest production view by a non-staff person, inside the
+    /// horizon.
+    pub customer_last_viewed: Vec<AppAtRow>,
+    /// Each app's distinct non-staff production viewers in `last7d`.
+    pub people7d: Vec<AppCountRow>,
+    /// Each org's newest customer activity other than an app view.
     pub last_activity: Vec<OrgAtRow>,
     pub first_publishes: Vec<OrgAtRow>,
     pub first_threads: Vec<OrgAtRow>,
@@ -270,6 +257,8 @@ pub(super) struct Sources {
     pub runs: Vec<WindowRow>,
     pub calls: Vec<WindowRow>,
     pub releases: Vec<WindowRow>,
+    /// Each org's LLM tokens per window and model, not yet priced.
+    pub llm: Vec<LlmCostRow>,
 }
 
 /// Every source, read fresh from one snapshot. `staff_orgs` is the internal orgs.
@@ -299,6 +288,42 @@ async fn read_sources(
 ) -> Result<Sources, DbErr> {
     let apps: Vec<AppRow> = rows(db, APPS_SQL, vec![]).await?;
     let app_ids: Vec<Uuid> = apps.iter().map(|a| a.id).collect();
+    let staff = || -> Value { staff_orgs.to_vec().into() };
+    let (week_start, week_end) = windows.last7d();
+    let windowed = read_windowed(db, staff_orgs, windows, &app_ids).await?;
+    Ok(Sources {
+        orgs: rows(db, ORGS_SQL, vec![]).await?,
+        billing: rows(db, BILLING_SQL, vec![]).await?,
+        partners: rows(db, PARTNERS_SQL, vec![]).await?,
+        sign_ins: rows(db, SIGN_INS_SQL, vec![]).await?,
+        last_viewed: rows(db, app_use::LAST_VIEWED_SQL, vec![]).await?,
+        customer_last_viewed: rows(
+            db,
+            app_use::CUSTOMER_LAST_VIEWED_SQL,
+            vec![staff(), activity_since.into()],
+        )
+        .await?,
+        people7d: rows(
+            db,
+            app_use::PEOPLE_7D_SQL,
+            vec![staff(), app_ids.into(), week_start.into(), week_end.into()],
+        )
+        .await?,
+        last_activity: rows(db, LAST_ACTIVITY_SQL, vec![staff(), activity_since.into()]).await?,
+        first_publishes: rows(db, FIRST_PUBLISH_SQL, vec![]).await?,
+        first_threads: rows(db, FIRST_THREAD_SQL, vec![]).await?,
+        apps,
+        ..windowed
+    })
+}
+
+/// The windowed reads alone: every other field of the result is empty.
+async fn read_windowed(
+    db: &DatabaseTransaction,
+    staff_orgs: &[Uuid],
+    windows: &Windows,
+    app_ids: &[Uuid],
+) -> Result<Sources, DbErr> {
     let windowed = || -> Vec<Value> {
         vec![
             windows.starts.clone().into(),
@@ -306,35 +331,23 @@ async fn read_sources(
             staff_orgs.to_vec().into(),
             windows.lo().into(),
             windows.hi().into(),
-            app_ids.clone().into(),
+            app_ids.to_vec().into(),
         ]
     };
     Ok(Sources {
-        orgs: rows(db, ORGS_SQL, vec![]).await?,
-        billing: rows(db, BILLING_SQL, vec![]).await?,
-        partners: rows(db, PARTNERS_SQL, vec![]).await?,
-        sign_ins: rows(db, SIGN_INS_SQL, vec![]).await?,
-        last_viewed: rows(db, LAST_VIEWED_SQL, vec![]).await?,
-        last_activity: rows(
-            db,
-            LAST_ACTIVITY_SQL,
-            vec![staff_orgs.to_vec().into(), activity_since.into()],
-        )
-        .await?,
-        first_publishes: rows(db, FIRST_PUBLISH_SQL, vec![]).await?,
-        first_threads: rows(db, FIRST_THREAD_SQL, vec![]).await?,
         views: rows(db, &with_windows(VIEWS_SQL), windowed()).await?,
         threads: rows(db, &with_windows(THREADS_SQL), windowed()).await?,
-        active: rows(db, &format!("{WITH_WINDOWS} {ACTIVE_SQL}"), windowed()).await?,
+        active: rows(db, &with_windows(ACTIVE_SQL), windowed()).await?,
         runs: rows(db, &with_windows(&runs_sql()), windowed()).await?,
         calls: rows(db, &with_windows(CALLS_SQL), windowed()).await?,
         releases: rows(db, &with_windows(RELEASES_SQL), windowed()).await?,
-        apps,
+        llm: rows(db, &llm_cost::sql(), windowed()).await?,
+        ..Sources::default()
     })
 }
 
 fn with_windows(body: &str) -> String {
-    format!("{WITH_WINDOWS} {body}")
+    format!("WITH {WINDOW_CTES} {body}")
 }
 
 /// [`RUNS_SQL`] with the customer-run predicate workspace health counts by: no

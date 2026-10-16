@@ -5,6 +5,25 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.20.0] - 2026-10-17
+
+### Added
+
+- **`ctx.platform.facts()` tells a customer's own use from ours, and prices
+  each account's LLM usage.** For an internal app (the accounts view staff
+  read); all four fields are optional, since a server older than this release
+  sends none of them.
+  - Per app, `customerLastActiveAt`: the latest production view by a non-staff
+    person in the last 180 days. `lastActiveAt` is unchanged and still counts
+    staff's opens, so a customer's app we keep opening no longer looks used.
+  - Per app, `people7d`: distinct non-staff people with a production view in
+    the rolling seven days `last7d` covers.
+  - Per window (`weekly[]` and `last7d`, `OxyPlatformWeek`), `llmCostUsd`: the
+    dollar cost of the window's `agentRuns` and every run they delegated to,
+    priced exactly as Admin → Metrics prices it. Platform runs and staff
+    previews and dry runs are left out, as they are from `agentRuns`.
+    `llmUnpricedRuns` counts the runs on a model with no price, which add 0.
+
 ## [2.19.0] - 2026-10-16
 
 ### Added

@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+use super::app_use::{AppAtRow, AppCountRow};
+use super::llm_cost::{self, LlmCostRow};
 use super::queries::{AppRow, BillingRow, OrgAtRow, OrgRow, Sources, WindowRow};
 use super::{
     OxyPlatformApp, OxyPlatformBilling, OxyPlatformMilestones, OxyPlatformOrg, OxyPlatformWeek,
@@ -18,20 +20,44 @@ fn n(count: i64) -> u64 {
 /// Each org's windows: `windows` entries, the last of them `last7d`.
 type Tallies = HashMap<Uuid, Vec<OxyPlatformWeek>>;
 
+/// A row about one org in one window.
+trait InWindow {
+    fn org_id(&self) -> Uuid;
+    fn idx(&self) -> i64;
+}
+
+impl InWindow for WindowRow {
+    fn org_id(&self) -> Uuid {
+        self.org_id
+    }
+    fn idx(&self) -> i64 {
+        self.idx
+    }
+}
+
+impl InWindow for LlmCostRow {
+    fn org_id(&self) -> Uuid {
+        self.org_id
+    }
+    fn idx(&self) -> i64 {
+        self.idx
+    }
+}
+
 /// Adds one source's rows to `tallies` through `put`. A row whose window is
 /// out of range is dropped rather than trusted.
-fn tally(
+fn tally<R: InWindow>(
     tallies: &mut Tallies,
     windows: usize,
-    rows: &[WindowRow],
-    put: impl Fn(&mut OxyPlatformWeek, &WindowRow),
+    rows: &[R],
+    put: impl Fn(&mut OxyPlatformWeek, &R),
 ) {
     for row in rows {
-        let Some(idx) = usize::try_from(row.idx).ok().filter(|i| *i < windows) else {
+        let Some(idx) = usize::try_from(row.idx()).ok().filter(|i| *i < windows) else {
             continue;
         };
         let slots = tallies
-            .entry(row.org_id)
+            .entry(row.org_id())
             .or_insert_with(|| vec![OxyPlatformWeek::default(); windows]);
         put(&mut slots[idx], row);
     }
@@ -61,6 +87,8 @@ fn tallies(src: &Sources, windows: usize) -> Tallies {
     tally(&mut t, windows, &src.releases, |w, r| {
         w.releases = n(r.events)
     });
+    // One row per model: each adds to the window.
+    tally(&mut t, windows, &src.llm, llm_cost::add);
     t
 }
 
@@ -72,7 +100,7 @@ struct Lookup {
     first_publishes: HashMap<Uuid, DateTime<Utc>>,
     first_threads: HashMap<Uuid, DateTime<Utc>>,
     apps: HashMap<Uuid, Vec<OxyPlatformApp>>,
-    /// The latest customer activity (the query decides what counts).
+    /// The latest customer activity (the queries decide what counts).
     last_activity: HashMap<Uuid, DateTime<Utc>>,
 }
 
@@ -83,13 +111,51 @@ fn instants(rows: Vec<OrgAtRow>) -> HashMap<Uuid, DateTime<Utc>> {
         .collect()
 }
 
+/// What the per-app reads said, keyed by app.
+struct AppUse {
+    last_viewed: HashMap<Uuid, DateTime<Utc>>,
+    customer_last_viewed: HashMap<Uuid, DateTime<Utc>>,
+    people7d: HashMap<Uuid, u64>,
+}
+
+impl AppUse {
+    fn new(last: Vec<AppAtRow>, customer: Vec<AppAtRow>, people: Vec<AppCountRow>) -> Self {
+        let by_app = |rows: Vec<AppAtRow>| -> HashMap<Uuid, DateTime<Utc>> {
+            rows.into_iter().map(|r| (r.app_id, r.at)).collect()
+        };
+        Self {
+            last_viewed: by_app(last),
+            customer_last_viewed: by_app(customer),
+            people7d: people
+                .into_iter()
+                .map(|r| (r.app_id, n(r.people)))
+                .collect(),
+        }
+    }
+}
+
+/// Each org's latest customer activity: the newer of its non-view activity
+/// (`rows`) and the customer's last view of any of its apps.
+fn last_activity(
+    rows: Vec<OrgAtRow>,
+    apps: &HashMap<Uuid, Vec<OxyPlatformApp>>,
+) -> HashMap<Uuid, DateTime<Utc>> {
+    let mut latest = instants(rows);
+    for (org, list) in apps {
+        for at in list.iter().filter_map(|a| a.customer_last_active_at) {
+            latest
+                .entry(*org)
+                .and_modify(|seen| *seen = (*seen).max(at))
+                .or_insert(at);
+        }
+    }
+    latest
+}
+
 impl Lookup {
     fn new(src: Sources) -> Self {
-        let last_viewed: HashMap<Uuid, DateTime<Utc>> = src
-            .last_viewed
-            .into_iter()
-            .map(|r| (r.app_id, r.at))
-            .collect();
+        let app_use = AppUse::new(src.last_viewed, src.customer_last_viewed, src.people7d);
+        let apps = apps_by_org(src.apps, &app_use);
         Self {
             billing: src.billing.into_iter().map(|b| (b.org_id, b)).collect(),
             partners: src
@@ -100,8 +166,8 @@ impl Lookup {
             sign_ins: instants(src.sign_ins),
             first_publishes: instants(src.first_publishes),
             first_threads: instants(src.first_threads),
-            apps: apps_by_org(src.apps, &last_viewed),
-            last_activity: instants(src.last_activity),
+            last_activity: last_activity(src.last_activity, &apps),
+            apps,
         }
     }
 
@@ -116,16 +182,15 @@ impl Lookup {
     }
 }
 
-/// Each org's apps, by name, with their last production view.
-fn apps_by_org(
-    apps: Vec<AppRow>,
-    last_viewed: &HashMap<Uuid, DateTime<Utc>>,
-) -> HashMap<Uuid, Vec<OxyPlatformApp>> {
+/// Each org's apps, by name, with their production use.
+fn apps_by_org(apps: Vec<AppRow>, used: &AppUse) -> HashMap<Uuid, Vec<OxyPlatformApp>> {
     let mut by_org: HashMap<Uuid, Vec<OxyPlatformApp>> = HashMap::new();
     for app in apps {
         by_org.entry(app.org_id).or_default().push(OxyPlatformApp {
             id: app.id,
-            last_active_at: last_viewed.get(&app.id).copied(),
+            last_active_at: used.last_viewed.get(&app.id).copied(),
+            customer_last_active_at: used.customer_last_viewed.get(&app.id).copied(),
+            people7d: used.people7d.get(&app.id).copied().unwrap_or(0),
             slug: app.slug,
             name: app.name,
             published_at: app.published_at,

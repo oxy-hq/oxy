@@ -13,7 +13,17 @@ use super::metrics_rollup::{DayModelRow, OrgModelRow};
 
 /// Price a single model bucket. `None` model or an unknown model yields
 /// `None` cost (tokens still count toward usage, just not dollars).
-fn price(model: &Option<String>, input: i64, output: i64, cc: i64, cr: i64) -> Option<f64> {
+///
+/// The one place a token rollup becomes dollars: `ctx.platform.facts()` prices
+/// its per-window LLM cost with it too (over `metrics_rollup::RUN_TOKENS`), so
+/// an account's cost there and on this page come from one rate table.
+pub(crate) fn price(
+    model: &Option<String>,
+    input: i64,
+    output: i64,
+    cc: i64,
+    cr: i64,
+) -> Option<f64> {
     let model = model.as_deref()?;
     cost_for_call(
         model,

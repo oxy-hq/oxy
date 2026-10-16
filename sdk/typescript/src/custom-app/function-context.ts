@@ -960,8 +960,26 @@ export interface OxyPlatformWeek {
   /** Distinct non-staff users who started a thread. */
   chatPeople: number;
   threads: number;
+  /** Top-level customer agent runs: no platform daemon, no staff preview or dry run. */
   agentRuns: number;
   agentRunFailures: number;
+  /**
+   * US dollars of LLM usage by this window's `agentRuns` and every run they
+   * delegated to, priced exactly as Admin → Metrics prices it (same token
+   * sums, same rate table). The platform's own runs and staff previews and dry
+   * runs are left out, as from `agentRuns`, so Admin → Metrics' per-org cost,
+   * which prices every run, can read higher. A model with no price adds 0; see
+   * `llmUnpricedRuns`. Absent on a server older than the field.
+   */
+  llmCostUsd?: number;
+  /**
+   * Runs among those that made LLM calls on a model with no price, so their
+   * tokens are not in `llmCostUsd`; non-zero means the cost reads low. A
+   * delegated run counts as a run of its own here (as Admin → Metrics counts
+   * runs), so this is not a share of `agentRuns`. Absent on a server older
+   * than the field.
+   */
+  llmUnpricedRuns?: number;
   /** Production function invocations. */
   functionCalls: number;
   functionFailures: number;
@@ -1002,7 +1020,21 @@ export interface OxyPlatformOrg {
     slug: string;
     name: string;
     publishedAt: string | null;
+    /** The app's latest production view by anyone, staff included: its last open. */
     lastActiveAt: string | null;
+    /**
+     * The latest production view by a non-staff person in the last 180 days:
+     * the customer's own last use, which staff opening the app never moves.
+     * `null` when no customer opened it in that time. Absent on a server older
+     * than the field.
+     */
+    customerLastActiveAt?: string | null;
+    /**
+     * Distinct non-staff people with a production view of the app in the
+     * rolling seven days `last7d` covers. Absent on a server older than the
+     * field.
+     */
+    people7d?: number;
   }[];
   milestones: {
     firstWorkspaceAt: string | null;

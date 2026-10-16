@@ -184,6 +184,23 @@ const ALLOWED_SEAMS: &[Seam] = &[
                no state; it leaves with the facts builder at a Functions-crate cut.",
     },
     Seam {
+        prefix: "crate::server::api::admin::metrics_pricing::price",
+        why: "Admin → Metrics' `price` alone, the one function that turns a model's token \
+               sums into dollars over `agentic_llm`'s rate table. `ctx.platform.facts()` \
+               (`host/platform_facts/llm_cost.rs`) prices each org's LLM cost per window \
+               with it, so an account's cost to serve in the internal accounts app and on \
+               Admin → Metrics come from one rate table rather than two. A pure function; \
+               it leaves with the facts builder at a Functions-crate cut.",
+    },
+    Seam {
+        prefix: "crate::server::api::admin::metrics_rollup::RUN_TOKENS",
+        why: "`RUN_TOKENS` alone (not the rest of `metrics_rollup`), the SQL columns that \
+               read one run's model and token sums from its `llm_start`/`llm_end` events. \
+               The facts' LLM cost sums the same columns `price` is fed on Admin → Metrics, \
+               so the two cannot read a run's tokens differently. A SQL fragment, no state; \
+               it leaves with the facts builder at a Functions-crate cut.",
+    },
+    Seam {
         prefix: "crate::server::api::user_tokens::sandboxes_queued",
         why: "the one writer of `token.expired_sandboxes_queued` and its input type. The sandbox \
                sweep (`custom_apps_sandboxes/token_ended.rs`) tears down the sandboxes an ended \
@@ -417,6 +434,11 @@ fn a_symbol_seam_admits_its_symbol_and_nothing_beside_it() {
     assert!(seam_index(&format!("{period}::Period")).is_some());
     assert!(seam_index(&format!("{period}::PeriodKind")).is_none());
     assert!(seam_index("crate::server::api::admin::usage_report::collect").is_none());
+    let metrics = "crate::server::api::admin";
+    assert!(seam_index(&format!("{metrics}::metrics_pricing::price")).is_some());
+    assert!(seam_index(&format!("{metrics}::metrics_pricing::build_overview")).is_none());
+    assert!(seam_index(&format!("{metrics}::metrics_rollup::RUN_TOKENS")).is_some());
+    assert!(seam_index(&format!("{metrics}::metrics_rollup::fetch_day_model_rows")).is_none());
 }
 
 #[test]

@@ -10,9 +10,10 @@
 //! UUIDs, unset meaning off everywhere. Only an app whose org (taken from the
 //! host, never from the function) is internal may read the facts; the host op
 //! adds the manifest capability on top. The same list defines **staff**: anyone
-//! who is a member of an internal org. Staff are left out of every `*People` count,
-//! so our own opens of a customer's app never read as the customer's use, and
-//! out of `lastActivityAt`, which is the customer's own activity only. They
+//! who is a member of an internal org. Staff are left out of every `*People` count
+//! (an app's `people7d` included), so our own opens of a customer's app never
+//! read as the customer's use, and out of `lastActivityAt` and an app's
+//! `customerLastActiveAt`, which are the customer's own activity only. They
 //! still count in the event totals (`appViews`, `threads`, …), which say how
 //! much happened, not who did it, and in an app's `lastActiveAt`, its last open.
 //!
@@ -23,9 +24,15 @@
 //! **Weeks are completed ISO weeks**, Monday 00:00 UTC to the next, oldest
 //! first; the week in progress is never one of them. `last7d` is the rolling
 //! window `now - 7 days .. now` beside them.
+//!
+//! **LLM cost is `agentRuns`' cost** (`llm_cost`): the runs a window counts in
+//! `agentRuns`, each with every run it delegated to, priced the way Admin →
+//! Metrics prices them. Dollars, not text: no prompt or answer is read.
 
+mod app_use;
 mod assemble;
 mod cache;
+mod llm_cost;
 mod queries;
 mod serve;
 
@@ -48,8 +55,9 @@ pub const DEFAULT_WEEKS: u32 = 8;
 /// scan below.
 pub const MAX_WEEKS: u32 = 26;
 
-/// How far back `lastActivityAt` looks, in days. Customer activity older than
-/// this reads as none (`null`). It is what bounds the probes behind it: each
+/// How far back `lastActivityAt` and an app's `customerLastActiveAt` look, in
+/// days. Customer activity older than this reads as none (`null`). It is what
+/// bounds the probes behind them: each
 /// skips staff's and unattended rows, so without a floor a churned customer
 /// whose webhooks keep arriving would have every build walk every invocation
 /// since their last attributed one, a count that only grows.
@@ -140,8 +148,18 @@ pub struct OxyPlatformApp {
     pub slug: String,
     pub name: String,
     pub published_at: Option<DateTime<Utc>>,
-    /// The latest production view, as the admin apps list reports it.
+    /// The latest production view, staff's included, as the admin apps list
+    /// reports it: the app's last open, by anyone.
     pub last_active_at: Option<DateTime<Utc>>,
+    /// The latest production view by a non-staff person within
+    /// [`LAST_ACTIVITY_HORIZON_DAYS`]: the customer's own last use. Staff
+    /// opening the app never move it; `None` when no customer opened it inside
+    /// the horizon. The org's `last_activity_at` is at least this.
+    pub customer_last_active_at: Option<DateTime<Utc>>,
+    /// Distinct non-staff people with a production view in `last7d`'s window
+    /// (`now - 7 days .. now`).
+    #[serde(rename = "people7d")]
+    pub people7d: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -153,7 +171,7 @@ pub struct OxyPlatformMilestones {
 }
 
 /// One window's counts: a completed week, or the last seven days.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OxyPlatformWeek {
     /// Distinct non-staff people with a production app view or a thread.
@@ -168,6 +186,18 @@ pub struct OxyPlatformWeek {
     /// Top-level customer agent runs (no platform daemon, no staff preview).
     pub agent_runs: u64,
     pub agent_run_failures: u64,
+    /// US dollars of LLM usage by this window's `agent_runs` and every run they
+    /// delegated to, priced as Admin → Metrics prices it. So the platform's
+    /// own runs and staff's previews and dry runs are left out, as they are
+    /// from `agent_runs`, while a staff member's ordinary run in a customer's
+    /// workspace counts, as it does there. A model the price table lacks adds
+    /// nothing; see `llm_unpriced_runs`.
+    pub llm_cost_usd: f64,
+    /// Runs among those that made LLM calls on a model the price table lacks,
+    /// so their tokens are not in `llm_cost_usd`. A delegated run is a run of
+    /// its own here, as Admin → Metrics counts runs, so this is not a share of
+    /// `agent_runs`; non-zero means the cost reads low.
+    pub llm_unpriced_runs: u64,
     /// Production function invocations.
     pub function_calls: u64,
     pub function_failures: u64,
@@ -207,6 +237,12 @@ impl Windows {
     fn hi(&self) -> DateTime<Utc> {
         self.ends.iter().max().copied().unwrap_or_default()
     }
+
+    /// `last7d`'s window, the last one: its start and end.
+    fn last7d(&self) -> (DateTime<Utc>, DateTime<Utc>) {
+        let start = self.starts.last().copied().unwrap_or_default();
+        (start, self.ends.last().copied().unwrap_or_default())
+    }
 }
 
 /// The facts for `weeks` completed weeks (held to `1..=MAX_WEEKS`) as of `now`.
@@ -231,6 +267,8 @@ pub async fn build_platform_facts(
     })
 }
 
+#[cfg(test)]
+mod assemble_tests;
 #[cfg(test)]
 mod serve_tests;
 #[cfg(test)]

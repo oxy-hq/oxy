@@ -89,12 +89,19 @@ async fn last_activity_older_than_the_horizon_is_null_and_newer_is_returned() {
     }
     let facts = w.facts().await;
     for (kind, id, expected) in cases {
+        let quiet = org(&facts, id);
         assert_eq!(
-            org(&facts, id).last_activity_at,
+            quiet.last_activity_at,
             expected,
             "a customer whose only activity is a {kind:?} at {}",
             expected.unwrap_or(outside)
         );
+        if let Kind::View = kind {
+            assert_eq!(
+                quiet.apps[0].customer_last_active_at, expected,
+                "the app's customer last use is floored the same"
+            );
+        }
     }
     assert_eq!(
         org(&facts, w.acme).last_activity_at,

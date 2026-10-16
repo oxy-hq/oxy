@@ -80,6 +80,8 @@ fn the_json_carries_the_contract_names() {
             name: "Ops".into(),
             published_at: None,
             last_active_at: None,
+            customer_last_active_at: None,
+            people7d: 0,
         }],
         milestones: OxyPlatformMilestones::default(),
         weekly: vec![OxyPlatformWeek::default()],
@@ -127,7 +129,15 @@ fn the_json_carries_the_contract_names() {
     );
     assert_eq!(
         keys(&org["apps"][0]),
-        ["id", "lastActiveAt", "name", "publishedAt", "slug"]
+        [
+            "customerLastActiveAt",
+            "id",
+            "lastActiveAt",
+            "name",
+            "people7d",
+            "publishedAt",
+            "slug",
+        ]
     );
     assert_eq!(
         keys(&org["milestones"]),
@@ -144,8 +154,18 @@ fn the_json_carries_the_contract_names() {
             "chatPeople",
             "functionCalls",
             "functionFailures",
+            "llmCostUsd",
+            "llmUnpricedRuns",
             "releases",
             "threads",
         ]
+    );
+    assert!(
+        org["last7d"]["llmCostUsd"].is_number(),
+        "a number, never null"
+    );
+    assert!(
+        org["apps"][0]["customerLastActiveAt"].is_null(),
+        "null, not absent"
     );
 }

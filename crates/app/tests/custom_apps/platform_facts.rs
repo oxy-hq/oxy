@@ -16,10 +16,14 @@
 //! * **`lastActivityAt` is the customer's own.** Sam's production view, an
 //!   unattended run and a thread nobody owns are all newer than bob's call,
 //!   and none of them moves it. It looks back 180 days and no further
-//!   (`horizon`).
+//!   (`horizon`). Per app, `customerLastActiveAt` and `people7d` leave sam
+//!   out the same way, while `lastActiveAt` is his.
+//!
+//! `llmCostUsd` has an org of its own (`llm_cost`).
 
 mod horizon;
 mod host_op;
+mod llm_cost;
 mod world;
 
 use oxy_app::server::api::custom_apps_functions::host::platform_facts::OxyPlatformWeek;
@@ -57,6 +61,34 @@ async fn only_production_counts() {
         Some(at(10, 14, 2)),
         "the app's last production open, staff's included; not the 04:00 staging view"
     );
+}
+
+#[tokio::test]
+async fn each_app_carries_the_customers_own_use() {
+    let w = World::new().await;
+    let facts = w.facts().await;
+    let acme = org(&facts, w.acme);
+    let ops = acme.apps.iter().find(|a| a.id == w.ops).expect("ops");
+    assert_eq!(
+        ops.last_active_at,
+        Some(at(10, 14, 2)),
+        "sam's open, staff's included"
+    );
+    assert_eq!(
+        ops.customer_last_active_at,
+        Some(at(10, 13, 9)),
+        "alice's 10-13 open: not sam's newer one, not the 04:00 staging view"
+    );
+    assert_eq!(
+        ops.people7d, 2,
+        "bob's 10-08 and alice's 10-13; sam is staff, alice's 10-06 is before the window"
+    );
+    let board = acme.apps.iter().find(|a| a.id == w.board).expect("board");
+    assert_eq!(
+        (board.last_active_at, board.customer_last_active_at),
+        (None, None)
+    );
+    assert_eq!(board.people7d, 0);
 }
 
 #[tokio::test]

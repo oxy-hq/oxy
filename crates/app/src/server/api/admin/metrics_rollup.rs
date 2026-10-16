@@ -11,10 +11,30 @@ use super::scope::org_scope_clause;
 
 // Shared CTE
 
-/// Per-run token rollup over the window. Each run collapses to ONE model (the
-/// max `llm_end.model` — runs are effectively single-model), so downstream
-/// GROUP BYs can attribute the run's tokens to a priced model bucket. Token
-/// casts mirror `agentic_runtime`'s per-run usage query.
+/// One run's model and token sums, the columns every rollup here prices. Each
+/// run collapses to ONE model (the max `llm_end.model` — runs are effectively
+/// single-model), so downstream GROUP BYs can attribute the run's tokens to a
+/// priced model bucket. Token casts mirror `agentic_runtime`'s per-run usage
+/// query.
+///
+/// Reads the run's `agentic_run_events` aliased `e`, joined with
+/// `e.event_type IN ('llm_start', 'llm_end')` (so a run that made no LLM call
+/// is no row at all, rather than an unpriced one) and grouped by run. Shared
+/// with `ctx.platform.facts()`'s LLM cost, which prices with
+/// `metrics_pricing::price`, so the facts and this page cannot price a run
+/// differently.
+pub(crate) const RUN_TOKENS: &str = "\
+    max(e.payload->>'model') FILTER (WHERE e.event_type = 'llm_end') AS model, \
+    COALESCE(SUM((e.payload->>'prompt_tokens')::bigint) \
+        FILTER (WHERE e.event_type = 'llm_start'), 0) AS input_tokens, \
+    COALESCE(SUM((e.payload->>'output_tokens')::bigint) \
+        FILTER (WHERE e.event_type = 'llm_end'), 0) AS output_tokens, \
+    COALESCE(SUM((e.payload->>'cache_creation_input_tokens')::bigint) \
+        FILTER (WHERE e.event_type = 'llm_end'), 0) AS cache_creation, \
+    COALESCE(SUM((e.payload->>'cache_read_input_tokens')::bigint) \
+        FILTER (WHERE e.event_type = 'llm_end'), 0) AS cache_read";
+
+/// Per-run token rollup over the window ([`RUN_TOKENS`] per run).
 ///
 /// `$1` is the window in days. A bounded grant's org set is bound next (see
 /// [`org_scope_clause`]) and narrows the rollup to runs in those orgs'
@@ -33,15 +53,7 @@ fn run_usage_cte(scope: Option<&[Uuid]>, values: &mut Vec<sea_orm::Value>) -> St
             ar.id AS run_id, \
             ar.workspace_id AS workspace_id, \
             ar.created_at AS created_at, \
-            max(e.payload->>'model') FILTER (WHERE e.event_type = 'llm_end') AS model, \
-            COALESCE(SUM((e.payload->>'prompt_tokens')::bigint) \
-                FILTER (WHERE e.event_type = 'llm_start'), 0) AS input_tokens, \
-            COALESCE(SUM((e.payload->>'output_tokens')::bigint) \
-                FILTER (WHERE e.event_type = 'llm_end'), 0) AS output_tokens, \
-            COALESCE(SUM((e.payload->>'cache_creation_input_tokens')::bigint) \
-                FILTER (WHERE e.event_type = 'llm_end'), 0) AS cache_creation, \
-            COALESCE(SUM((e.payload->>'cache_read_input_tokens')::bigint) \
-                FILTER (WHERE e.event_type = 'llm_end'), 0) AS cache_read \
+            {RUN_TOKENS} \
         FROM agentic_runs ar \
         JOIN agentic_run_events e \
             ON e.run_id = ar.id AND e.event_type IN ('llm_start', 'llm_end') \
@@ -141,18 +153,9 @@ pub(super) async fn fetch_org_usage_day_rows(
     days: i32,
     org_id: Uuid,
 ) -> Result<Vec<DayModelRow>, DbErr> {
-    let sql = "\
-        WITH run_usage AS ( \
-            SELECT ar.id AS run_id, ar.created_at AS created_at, \
-                max(e.payload->>'model') FILTER (WHERE e.event_type = 'llm_end') AS model, \
-                COALESCE(SUM((e.payload->>'prompt_tokens')::bigint) \
-                    FILTER (WHERE e.event_type = 'llm_start'), 0) AS input_tokens, \
-                COALESCE(SUM((e.payload->>'output_tokens')::bigint) \
-                    FILTER (WHERE e.event_type = 'llm_end'), 0) AS output_tokens, \
-                COALESCE(SUM((e.payload->>'cache_creation_input_tokens')::bigint) \
-                    FILTER (WHERE e.event_type = 'llm_end'), 0) AS cache_creation, \
-                COALESCE(SUM((e.payload->>'cache_read_input_tokens')::bigint) \
-                    FILTER (WHERE e.event_type = 'llm_end'), 0) AS cache_read \
+    let sql = format!(
+        "WITH run_usage AS ( \
+            SELECT ar.id AS run_id, ar.created_at AS created_at, {RUN_TOKENS} \
             FROM agentic_runs ar \
             JOIN agentic_run_events e \
                 ON e.run_id = ar.id AND e.event_type IN ('llm_start', 'llm_end') \
@@ -167,7 +170,8 @@ pub(super) async fn fetch_org_usage_day_rows(
                SUM(cache_creation)::bigint AS cache_creation, \
                SUM(cache_read)::bigint AS cache_read, \
                COUNT(*)::bigint AS run_count \
-        FROM run_usage GROUP BY 1, 2 ORDER BY 1";
+        FROM run_usage GROUP BY 1, 2 ORDER BY 1"
+    );
     DayModelRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         sql,
