@@ -112,7 +112,14 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
         )
         .route_fleet(
             "/notifications/devices",
-            post(notifications::handlers::register_device),
+            post(notifications::handlers::register_device)
+                .delete(notifications::handlers::unregister_device),
+        )
+        // Send yourself a test. Postgres only, rate-limited by reading the
+        // caller's notification rows, so any replica can take it.
+        .route_fleet(
+            "/notifications/test",
+            post(notifications::test_notice::send_test_notification),
         )
         // The key a browser needs before it can register one. Reads three env
         // vars and no node-local disk, so it belongs on the fleet with its
@@ -120,6 +127,12 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
         .route_fleet(
             "/notifications/vapid-public-key",
             get(notifications::handlers::vapid_public_key),
+        )
+        // One item, for a phone a push named it to. Postgres and the org's
+        // store, like the inbox it is one entry of.
+        .route_fleet(
+            "/notifications/{id}",
+            get(notifications::handlers::get_notification),
         )
         .route_fleet(
             "/notifications/{id}/read",

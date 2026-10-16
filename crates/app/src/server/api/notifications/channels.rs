@@ -80,24 +80,30 @@ impl Channels {
         })
     }
 
-    pub async fn send(&self, channel: Channel, user: Uuid) -> ChannelOutcome {
+    /// `notification` is `user`'s inbox row for this send, which a native
+    /// push names so the phone opens that item.
+    pub async fn send(&self, channel: Channel, user: Uuid, notification: Uuid) -> ChannelOutcome {
         match channel {
-            Channel::Push => self.push(user).await,
+            Channel::Push => self.push(user, notification).await,
             Channel::Email => self.email(user).await,
             Channel::Slack => self.slack(user).await,
         }
     }
 
-    async fn push(&self, user: Uuid) -> ChannelOutcome {
+    async fn push(&self, user: Uuid, notification: Uuid) -> ChannelOutcome {
         if !self.push.configured() {
             return ChannelOutcome::Skipped("not_configured");
         }
         let Some(tokens) = self.tokens.get(&user).filter(|t| !t.is_empty()) else {
             return ChannelOutcome::Skipped("no_devices");
         };
+        if !tokens.iter().any(|t| self.push.handles(&t.platform)) {
+            return ChannelOutcome::Skipped("not_configured");
+        }
         let signal = PushSignal {
             user_id: user,
             kind: self.kind.clone(),
+            notification_id: notification,
         };
         let report = self.push.send(tokens, &signal).await;
         match (report.delivered, report.failed) {

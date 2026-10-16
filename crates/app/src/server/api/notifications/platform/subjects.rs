@@ -2,7 +2,8 @@
 //!
 //! One query per subject kind on a page: workspaces by id, runs by id,
 //! anomaly buckets by event. A billing episode needs no query — its id is the
-//! end of the grace period, which is the one fact the notice states.
+//! end of the grace period, which is the one fact the notice states — and a
+//! test notice needs one only to name the token that sent it.
 
 use std::collections::{HashMap, HashSet};
 
@@ -14,7 +15,8 @@ use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
 use super::kinds::{
-    SUBJECT_AIRWAY_RUN, SUBJECT_ANOMALY, SUBJECT_AUTOMATION_RUN, SUBJECT_BILLING, SUBJECT_WORKSPACE,
+    SUBJECT_AIRWAY_RUN, SUBJECT_ANOMALY, SUBJECT_AUTOMATION_RUN, SUBJECT_BILLING, SUBJECT_TEST,
+    SUBJECT_WORKSPACE,
 };
 use super::render::About;
 
@@ -25,6 +27,7 @@ pub enum Record {
     Workspace { id: Uuid, name: String },
     Run(RunRecord),
     Anomaly(AnomalyRecord),
+    Test(super::self_test::TestRecord),
 }
 
 /// A failed automation or Airway run.
@@ -134,6 +137,9 @@ pub async fn load(
     }
     for (id, record) in anomalies_by_event(db, ids(SUBJECT_ANOMALY)).await? {
         out.insert((SUBJECT_ANOMALY, id), Record::Anomaly(record));
+    }
+    for (id, record) in super::self_test::load(db, ids(SUBJECT_TEST)).await? {
+        out.insert((SUBJECT_TEST, id), Record::Test(record));
     }
     Ok(out)
 }

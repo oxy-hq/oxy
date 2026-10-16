@@ -10,17 +10,20 @@
 //!   inbox is read or a channel delivers. Nothing is stored that says what
 //!   happened, so a platform notice needs no org OLTP store, unlike an app's.
 //! - [`people`] — who, by standing in the org or a workspace.
-//! - [`preferences`] — mutes per (kind, channel); billing cannot be muted.
+//! - [`preferences`] — mutes per (kind, channel); billing and a test notice
+//!   cannot be muted.
 //! - the sources: [`run_failed`] (installed into `agentic-runtime`),
 //!   [`workspace_ready`] (called by onboarding's clone), billing's
-//!   `billing/notify.rs`, and the anomaly delivery task's people
-//!   (`anomaly_notify/people.rs`).
+//!   `billing/notify.rs`, the anomaly delivery task's people
+//!   (`anomaly_notify/people.rs`), and [`self_test`] (a person testing their
+//!   own push, `POST /api/notifications/test`).
 
 pub mod kinds;
 pub mod people;
 pub mod preferences;
 pub mod render;
 pub mod run_failed;
+pub mod self_test;
 pub mod send;
 pub mod subjects;
 pub mod workspace_ready;

@@ -30,25 +30,36 @@
 //! store (`oxy_oltp::inbox`). Design and the rest of the reasoning:
 //! `internal-docs/custom-app-notifications.md`.
 //!
+//! # Push transports
+//!
+//! Web Push ([`web_push`]), APNs ([`apns`]) and FCM ([`fcm`]) sit behind the
+//! [`deliver::Push`] seam, each configured on its own, and [`push_routing`]
+//! hands each its platform's device rows. None is handed what a notification
+//! says — only its kind and inbox row id.
+//!
 //! # Not here
 //!
-//! APNs and FCM need Apple and Google accounts this cannot be tested against;
-//! [`deliver::Push`] is the seam an adapter plugs into. SMS needs phone numbers
-//! the platform does not hold and carrier registration no code can do.
+//! SMS needs phone numbers the platform does not hold and carrier registration
+//! no code can do.
 
+pub mod apns;
 pub mod badge;
 pub mod channels;
 pub mod compose;
 pub mod deliver;
 pub mod delivery;
+pub mod fcm;
 pub mod handlers;
 pub mod inbox_view;
 pub mod input;
 pub mod links;
+mod native_push;
 pub mod platform;
 pub mod preferences;
+pub mod push_routing;
 pub mod recipients;
 pub mod send;
 pub mod slack_dm;
 pub mod task;
+pub mod test_notice;
 pub mod web_push;

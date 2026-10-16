@@ -7,6 +7,7 @@
 //! guessed at.
 
 use chrono::{DateTime, SecondsFormat, Utc};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::server::api::notifications::input::RESERVED_KIND_PREFIX;
@@ -15,9 +16,11 @@ pub const BILLING_PAST_DUE: &str = "oxy.billing_past_due";
 pub const WORKSPACE_READY: &str = "oxy.workspace_ready";
 pub const RUN_FAILED: &str = "oxy.run_failed";
 pub const ANOMALY: &str = "oxy.anomaly";
+/// A notice a person sent themselves (`POST /api/notifications/test`).
+pub const TEST: &str = "oxy.test";
 
 /// Every kind the platform sends.
-pub const KINDS: [&str; 4] = [BILLING_PAST_DUE, WORKSPACE_READY, RUN_FAILED, ANOMALY];
+pub const KINDS: [&str; 5] = [BILLING_PAST_DUE, WORKSPACE_READY, RUN_FAILED, ANOMALY, TEST];
 
 /// Whether `kind` is one the platform sends.
 pub fn is_platform_kind(kind: &str) -> bool {
@@ -30,6 +33,15 @@ pub fn is_critical(kind: &str) -> bool {
     kind == BILLING_PAST_DUE
 }
 
+/// Whether a person's mutes apply to `kind`. Not to a critical kind, and not
+/// to a test notice: it exists to show whether push reaches this device, so a
+/// mute that silenced it would make the button report success and deliver
+/// nothing. Unlike billing it is not critical — it asks for nothing urgent.
+/// It has no settings switch either ([`super::preferences::kinds`]).
+pub fn is_mutable(kind: &str) -> bool {
+    !is_critical(kind) && kind != TEST
+}
+
 /// The channels a platform kind is delivered on, so the only ones its settings
 /// switches can change. Push always.
 ///
@@ -40,7 +52,8 @@ pub fn is_critical(kind: &str) -> bool {
 /// A Slack DM, where the org connected Slack, for the three a person has to
 /// act on: a failed run, a past-due bill, and an anomaly someone was named
 /// for (a monitor's own `slack_channel` post is the broadcast; this is the
-/// named person). A ready workspace is news its creator is looking at.
+/// named person). A ready workspace is news its creator is looking at. A test
+/// notice tests push and the inbox, nothing else.
 pub fn channels(kind: &str) -> &'static [&'static str] {
     match kind {
         RUN_FAILED => &["push", "email", "slack"],
@@ -63,6 +76,8 @@ pub const SUBJECT_WORKSPACE: &str = "workspace";
 pub const SUBJECT_AUTOMATION_RUN: &str = "automation_run";
 pub const SUBJECT_AIRWAY_RUN: &str = "airway_run";
 pub const SUBJECT_ANOMALY: &str = "anomaly";
+/// A test notice: its id is a [`TestSubject`].
+pub const SUBJECT_TEST: &str = "test";
 
 /// The subject kind as stored, mapped back to its `'static` name. `None` for
 /// a name this binary does not know.
@@ -73,9 +88,36 @@ pub fn subject_kind(stored: &str) -> Option<&'static str> {
         SUBJECT_AUTOMATION_RUN,
         SUBJECT_AIRWAY_RUN,
         SUBJECT_ANOMALY,
+        SUBJECT_TEST,
     ]
     .into_iter()
     .find(|k| *k == stored)
+}
+
+/// What a test notice is about: the test itself. Stored as the subject id
+/// (JSON), so the notice renders with no record to look up, as billing's
+/// episode does. A moment and an id, never text: like every platform notice,
+/// a test stores nothing it says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestSubject {
+    /// When it was sent. Unique per person (the route allows one per 10
+    /// seconds), which makes the subject unique and the dedupe a no-op.
+    pub at: DateTime<Utc>,
+    /// The API token that sent it (`api_tokens.id`), named when rendered;
+    /// `None` for a login session (the web app, the mobile app).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via: Option<Uuid>,
+}
+
+impl TestSubject {
+    pub fn id(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+
+    /// `None` for an id this binary cannot read.
+    pub fn parse(id: &str) -> Option<Self> {
+        serde_json::from_str(id).ok()
+    }
 }
 
 /// One thing the platform tells people. Each variant carries the ids of the
@@ -111,6 +153,8 @@ pub enum PlatformNotice {
         workspace_id: Uuid,
         event_id: Uuid,
     },
+    /// A person sent themselves a test, filed under one of their orgs.
+    Test { org_id: Uuid, subject: TestSubject },
 }
 
 impl PlatformNotice {
@@ -120,6 +164,7 @@ impl PlatformNotice {
             Self::WorkspaceReady { .. } => WORKSPACE_READY,
             Self::AutomationRunFailed { .. } | Self::AirwayRunFailed { .. } => RUN_FAILED,
             Self::Anomaly { .. } => ANOMALY,
+            Self::Test { .. } => TEST,
         }
     }
 
@@ -129,7 +174,8 @@ impl PlatformNotice {
             | Self::WorkspaceReady { org_id, .. }
             | Self::AutomationRunFailed { org_id, .. }
             | Self::AirwayRunFailed { org_id, .. }
-            | Self::Anomaly { org_id, .. } => *org_id,
+            | Self::Anomaly { org_id, .. }
+            | Self::Test { org_id, .. } => *org_id,
         }
     }
 
@@ -137,7 +183,7 @@ impl PlatformNotice {
     /// org-level notice, which records it under the org's oldest workspace.
     pub fn workspace_id(&self) -> Option<Uuid> {
         match self {
-            Self::BillingPastDue { .. } => None,
+            Self::BillingPastDue { .. } | Self::Test { .. } => None,
             Self::WorkspaceReady { workspace_id, .. }
             | Self::AutomationRunFailed { workspace_id, .. }
             | Self::AirwayRunFailed { workspace_id, .. }
@@ -168,6 +214,10 @@ impl PlatformNotice {
             Self::Anomaly { event_id, .. } => Subject {
                 kind: SUBJECT_ANOMALY,
                 id: event_id.to_string(),
+            },
+            Self::Test { subject, .. } => Subject {
+                kind: SUBJECT_TEST,
+                id: subject.id(),
             },
         }
     }
@@ -203,12 +253,15 @@ mod tests {
     }
 
     #[test]
-    fn only_a_failed_run_is_emailed_and_only_a_ready_workspace_skips_slack() {
+    fn only_a_failed_run_is_emailed_and_only_news_and_the_test_skip_slack() {
         for kind in KINDS {
             let ch = channels(kind);
             assert_eq!(ch[0], "push", "{kind}");
             assert_eq!(ch.contains(&"email"), kind == RUN_FAILED, "{kind}");
-            assert_eq!(ch.contains(&"slack"), kind != WORKSPACE_READY, "{kind}");
+            // A ready workspace is news in the product; a test notice tests push
+            // and the inbox, nothing else.
+            let push_only = kind == WORKSPACE_READY || kind == TEST;
+            assert_eq!(ch.contains(&"slack"), !push_only, "{kind}");
         }
         let run = PlatformNotice::AirwayRunFailed {
             org_id: Uuid::new_v4(),
@@ -239,5 +292,40 @@ mod tests {
             "billing keeps its own email; the notice must not repeat it"
         );
         assert_eq!(a.workspace_id(), None);
+    }
+
+    #[test]
+    fn test_notice_is_push_only_and_no_mute_applies_though_it_is_not_critical() {
+        assert_eq!(channels(TEST), &["push"]);
+        assert!(!is_critical(TEST));
+        assert!(!is_mutable(TEST) && !is_mutable(BILLING_PAST_DUE));
+        assert!(is_mutable(WORKSPACE_READY) && is_mutable(RUN_FAILED) && is_mutable(ANOMALY));
+    }
+
+    #[test]
+    fn test_notice_subject_round_trips_and_is_unique_per_moment() {
+        let at = DateTime::parse_from_rfc3339("2026-10-16T14:03:21.123Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let via = Uuid::new_v4();
+        let subject = TestSubject { at, via: Some(via) };
+        let notice = PlatformNotice::Test {
+            org_id: Uuid::new_v4(),
+            subject: subject.clone(),
+        };
+        let stored = notice.subject();
+        assert_eq!(stored.kind, SUBJECT_TEST);
+        assert_eq!(subject_kind(stored.kind), Some(SUBJECT_TEST));
+        assert_eq!(TestSubject::parse(&stored.id), Some(subject));
+        assert_eq!(
+            stored.id,
+            format!(r#"{{"at":"2026-10-16T14:03:21.123Z","via":"{via}"}}"#),
+            "a moment and an id, no text"
+        );
+        let bare = TestSubject { at, via: None };
+        assert_eq!(bare.id(), r#"{"at":"2026-10-16T14:03:21.123Z"}"#);
+        assert_eq!(TestSubject::parse("2026-10-16"), None);
+        assert_eq!(notice.workspace_id(), None);
+        assert!(!notice.emailed() && !notice.critical());
     }
 }

@@ -1,12 +1,13 @@
 //! A real Web Push sender, behind the [`Push`](super::deliver::Push) seam.
 //!
-//! # Why Web Push first, and why it is the only adapter here
+//! # Why Web Push first
 //!
 //! APNs and FCM both need a vendor account before a single line can be tested —
 //! an Apple developer membership, a Firebase project. Web Push needs a keypair
 //! you generate yourself, and it covers Android Chrome and every desktop
-//! browser, which is the whole audience an installed PWA has today. It is the
-//! adapter that can actually be exercised.
+//! browser, which is the whole audience an installed PWA has. The native apps'
+//! transports ([`super::apns`], [`super::fcm`]) sit beside it, and
+//! [`super::push_routing`] hands each one only its own platform's rows.
 //!
 //! # The message carries NO payload, deliberately
 //!
@@ -41,7 +42,6 @@
 //!   services use it to reach an operator when a sender misbehaves.
 
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
@@ -55,10 +55,10 @@ use tracing::{info, warn};
 
 use super::deliver::{Push, PushReport, PushSignal};
 
-/// The `web` platform value in `device_tokens`. APNs and FCM rows are for
-/// adapters that do not exist yet, and sending an APNs token to a Web Push
-/// endpoint would be a POST to a URL that is not one.
-const PLATFORM_WEB: &str = "web";
+/// The `web` platform value in `device_tokens`. APNs and FCM rows go to their
+/// own transports: an APNs token sent to a Web Push endpoint would be a POST to
+/// a URL that is not one.
+pub(super) const PLATFORM_WEB: &str = "web";
 
 /// How long the push service should hold the message for a device that is
 /// offline. Four hours: a wake signal that arrives a day later tells a shift
@@ -442,19 +442,14 @@ impl Push for WebPush {
     }
 }
 
-/// Register the Web Push sender if the environment configures one.
+/// Register every configured push transport — Web Push, APNs, FCM — behind
+/// one [`RoutingPush`](super::push_routing::RoutingPush).
 ///
-/// Called once at startup. Returns whether it registered, so the caller can say
-/// so in a log line rather than leaving an operator to infer it.
+/// Kept at this path because `serve` and `worker` call it at startup. Returns
+/// whether anything registered, so the caller can say so in a log line rather
+/// than leaving an operator to infer it.
 pub fn register_if_configured() -> bool {
-    match WebPush::from_env() {
-        Some(w) => {
-            super::deliver::set_push(Arc::new(w));
-            info!("web push registered");
-            true
-        }
-        None => false,
-    }
+    super::push_routing::register_if_configured()
 }
 
 #[cfg(test)]

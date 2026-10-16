@@ -136,23 +136,75 @@ fn a_route_that_honours_a_grant_honours_a_block() {
 
 #[test]
 fn every_blocked_decision_names_one_membership_keyed_route_once() {
-    for (i, (route, _, how)) in WHEN_BLOCKED.iter().enumerate() {
+    for (i, (route, blocked, how)) in WHEN_BLOCKED.iter().enumerate() {
         assert!(
             refused_family(route).is_some(),
             "{route} is in no refused family, so it needs no entry"
         );
         assert!(!how.is_empty(), "{route} does not say how");
-        // No other entry answers for this route, by name or by `{param}`.
-        let claimed = WHEN_BLOCKED
+        // No other entry answers for this route, by name or by `{param}`. Two
+        // entries may share a path only where `when_blocked` picks one by rule:
+        // a route with no `{param}` beside a sibling that has one in its place.
+        // Two that both carry a `{param}` would leave it to the list's order.
+        let rivals: Vec<&str> = WHEN_BLOCKED
             .iter()
-            .filter(|(other, ..)| is_route(other, route) || is_route(route, other))
-            .count();
-        assert_eq!(claimed, 1, "{route} is decided {claimed} times");
+            .map(|(other, ..)| *other)
+            .filter(|other| other != route && share_a_path(route, other))
+            .filter(|other| route.contains('{') && other.contains('{'))
+            .collect();
+        assert!(
+            rivals.is_empty(),
+            "{route} is decided {} times: {rivals:?}",
+            rivals.len() + 1
+        );
+        assert_eq!(
+            when_blocked(route),
+            Some(*blocked),
+            "{route} is answered by another entry"
+        );
         assert!(
             WHEN_BLOCKED[..i].iter().all(|(other, ..)| other != route),
             "{route} is listed twice"
         );
     }
+}
+
+/// Whether some request path is an instance of both catalog routes.
+fn share_a_path(a: &str, b: &str) -> bool {
+    let a: Vec<&str> = a.split('/').filter(|s| !s.is_empty()).collect();
+    let b: Vec<&str> = b.split('/').filter(|s| !s.is_empty()).collect();
+    a.len() == b.len()
+        && a.iter()
+            .zip(&b)
+            .all(|(x, y)| x == y || x.starts_with('{') || y.starts_with('{'))
+}
+
+#[test]
+fn a_literal_route_is_decided_before_a_param_sibling() {
+    assert!(share_a_path(
+        "/notifications/{id}",
+        "/notifications/devices"
+    ));
+    assert!(share_a_path("/a/{x}/b", "/a/c/{y}"), "both match /a/c/b");
+    assert!(!share_a_path(
+        "/notifications/{id}",
+        "/notifications/{id}/read"
+    ));
+    // `/notifications/{id}` is listed before `devices`; the literal still wins,
+    // spelled exactly or not.
+    for path in ["/notifications/devices", "/notifications/devices/"] {
+        assert_eq!(when_blocked(path), Some(Blocked::NoOrgData), "{path}");
+    }
+    assert_eq!(
+        when_blocked("/notifications/vapid-public-key"),
+        Some(Blocked::NoOrgData)
+    );
+    assert_eq!(when_blocked("/notifications/test"), Some(Blocked::LeftOut));
+    assert_eq!(
+        when_blocked(&format!("/notifications/{ID}")),
+        Some(Blocked::LeftOut),
+        "one notification is left out like the inbox"
+    );
 }
 
 #[test]

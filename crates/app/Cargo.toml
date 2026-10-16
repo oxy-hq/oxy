@@ -278,6 +278,10 @@ testcontainers-modules = { workspace = true, features = ["postgres", "clickhouse
 # attachment wire format is asserted against the real SDK serializer.
 aws-smithy-http-client = { workspace = true, features = ["test-util"] }
 aws-credential-types = { workspace = true, features = ["test-util"] }
+# Mints throwaway EC/RSA keys for the APNs and FCM JWT tests, so no private
+# key is committed (the secret scanner rightly rejects one). Already in the
+# tree via jsonwebtoken's `aws_lc_rs` backend.
+aws-lc-rs = { workspace = true }
 
 [lints]
 workspace = true

@@ -214,11 +214,22 @@ pub const WHEN_BLOCKED: &[(&str, Blocked, &str)] = &[
         "404 for a blocked org's notification",
     ),
     (
-        // A push carries no payload: the device is woken and reads the inbox,
-        // which is filtered. A push that carried content would have to refuse.
+        "/notifications/{id}",
+        Blocked::LeftOut,
+        "404 for a blocked org's notification",
+    ),
+    (
+        // A push carries no content — a Web Push nothing, a native one only
+        // its kind and row id — and the device reads the item through the
+        // filtered inbox. A push that carried content would have to refuse.
         "/notifications/devices",
         Blocked::NoOrgData,
-        "registers the user's own device",
+        "registers or removes the user's own device",
+    ),
+    (
+        "/notifications/test",
+        Blocked::LeftOut,
+        "files the test under an org the token reaches; naming a blocked one is 404",
     ),
     (
         "/notifications/vapid-public-key",
@@ -319,16 +330,27 @@ fn is_route(route: &str, path: &str) -> bool {
 /// What [`WHEN_BLOCKED`] says of `path` (relative to `/api`): a concrete
 /// request path, or a catalog route. `None` = nobody has decided.
 ///
-/// A route listed as written is tried first, so one with a literal segment is
-/// never read as a sibling that has a `{param}` in the same place.
+/// A route listed as written is tried first, then every route with no
+/// `{param}`, then the rest — so one with a literal segment is never read as a
+/// sibling that has a `{param}` in the same place (`/notifications/devices`
+/// beside `/notifications/{id}`), whatever the order of the list and however
+/// the path is spelled (a trailing `/`). Two routes that both carry a
+/// `{param}` must never share a path; the tests hold the list to that.
 pub fn when_blocked(path: &str) -> Option<Blocked> {
     let exact = WHEN_BLOCKED.iter().find(|(route, ..)| *route == path);
+    let literal = || {
+        WHEN_BLOCKED
+            .iter()
+            .find(|(route, ..)| !route.contains('{') && is_route(route, path))
+    };
+    let param = || {
+        WHEN_BLOCKED
+            .iter()
+            .find(|(route, ..)| is_route(route, path))
+    };
     exact
-        .or_else(|| {
-            WHEN_BLOCKED
-                .iter()
-                .find(|(route, ..)| is_route(route, path))
-        })
+        .or_else(literal)
+        .or_else(param)
         .map(|(_, blocked, _)| *blocked)
 }
 

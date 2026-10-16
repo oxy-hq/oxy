@@ -98,6 +98,7 @@ mod run_routes_workspace_scope;
 mod simulation_lifecycle;
 mod simulation_router;
 mod simulation_routes;
+mod test_notices;
 mod toast_webhook_compile_boundary;
 mod usage_report;
 mod walker_storage_divergence;

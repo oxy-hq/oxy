@@ -68,7 +68,9 @@ pub async fn start_server_and_web_app(
     if !crate::server::api::notifications::web_push::register_if_configured() {
         tracing::info!(
             "no push transport configured — notifications are inbox-only \
-             (set OXY_VAPID_PRIVATE_KEY, OXY_VAPID_PUBLIC_KEY and OXY_VAPID_SUBJECT)"
+             (web: OXY_VAPID_PRIVATE_KEY, OXY_VAPID_PUBLIC_KEY, OXY_VAPID_SUBJECT; \
+             iOS: OXY_APNS_KEY_P8, OXY_APNS_KEY_ID, OXY_APNS_TEAM_ID; \
+             Android: OXY_FCM_SERVICE_ACCOUNT_JSON)"
         );
     }
     // A run this process drives to a terminal failure is announced to whoever

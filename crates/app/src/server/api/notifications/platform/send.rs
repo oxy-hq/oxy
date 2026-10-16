@@ -61,20 +61,45 @@ pub async fn notify(
             already_told: 0,
         });
     }
-    let workspace = match notice.workspace_id() {
-        Some(w) => Some(w),
-        None => oldest_workspace(db, notice.org_id()).await?,
-    };
+    let workspace = delivery_workspace(db, notice).await?;
     let txn = db.begin().await?;
-    lock_subject(&txn, notice).await?;
-    let told = already_told(&txn, notice, &people).await?;
+    let sent = write(&txn, notice, &people, workspace).await?;
+    txn.commit().await?;
+    after_commit(db, notice, &sent, workspace).await;
+    Ok(sent)
+}
+
+/// The workspace a notice's delivery run is recorded under: its own, or the
+/// org's oldest for an org-level notice. `None` when the org has none.
+pub(crate) async fn delivery_workspace(
+    db: &impl ConnectionTrait,
+    notice: &PlatformNotice,
+) -> Result<Option<Uuid>, DbErr> {
+    match notice.workspace_id() {
+        Some(w) => Ok(Some(w)),
+        None => oldest_workspace(db, notice.org_id()).await,
+    }
+}
+
+/// The send inside the caller's transaction: lock the subject, skip anyone
+/// already told, record the rest and queue their delivery. [`notify`] for a
+/// source that decides something under the same transaction first (the test
+/// notice's rate limit). `people` must be distinct. Call [`after_commit`]
+/// once the transaction commits.
+pub(crate) async fn write(
+    txn: &DatabaseTransaction,
+    notice: &PlatformNotice,
+    people: &[Uuid],
+    workspace: Option<Uuid>,
+) -> Result<PlatformSent, DbErr> {
+    lock_subject(txn, notice).await?;
+    let told = already_told(txn, notice, people).await?;
     let fresh: Vec<Uuid> = people
         .iter()
         .copied()
         .filter(|u| !told.contains(u))
         .collect();
     if fresh.is_empty() {
-        txn.commit().await?;
         return Ok(PlatformSent {
             id: None,
             recipients: 0,
@@ -83,11 +108,26 @@ pub async fn notify(
     }
     let id = Uuid::new_v4();
     let run_id = workspace.map(|_| Uuid::new_v4().to_string());
-    record(&txn, id, notice, &fresh, run_id.clone()).await?;
+    record(txn, id, notice, &fresh, run_id.clone()).await?;
     if let (Some(workspace_id), Some(run_id)) = (workspace, run_id.as_deref()) {
-        task::enqueue(&txn, run_id, id, workspace_id).await?;
+        task::enqueue(txn, run_id, id, workspace_id).await?;
     }
-    txn.commit().await?;
+    Ok(PlatformSent {
+        id: Some(id),
+        recipients: fresh.len(),
+        already_told: told.len(),
+    })
+}
+
+/// After [`write`]'s transaction commits: deliver inline when there was no
+/// workspace to queue the delivery under, and log the send.
+pub(crate) async fn after_commit(
+    db: &DatabaseConnection,
+    notice: &PlatformNotice,
+    sent: &PlatformSent,
+    workspace: Option<Uuid>,
+) {
+    let Some(id) = sent.id else { return };
     if workspace.is_none() {
         let report = crate::server::api::notifications::delivery::deliver_send(db, id).await;
         tracing::info!(send = %id, ?report, "platform notice delivered inline: the org has no workspace");
@@ -95,15 +135,10 @@ pub async fn notify(
     tracing::info!(
         kind = notice.kind(),
         send = %id,
-        recipients = fresh.len(),
-        already_told = told.len(),
+        recipients = sent.recipients,
+        already_told = sent.already_told,
         "platform notice sent"
     );
-    Ok(PlatformSent {
-        id: Some(id),
-        recipients: fresh.len(),
-        already_told: told.len(),
-    })
 }
 
 /// Serialize every send about this (org, kind, subject) until the
@@ -196,7 +231,7 @@ async fn record(
 
 /// The org's oldest workspace, to record an org-level notice's delivery run
 /// under: the run table needs a workspace and an org-level notice has none.
-async fn oldest_workspace(db: &DatabaseConnection, org_id: Uuid) -> Result<Option<Uuid>, DbErr> {
+async fn oldest_workspace(db: &impl ConnectionTrait, org_id: Uuid) -> Result<Option<Uuid>, DbErr> {
     workspaces::Entity::find()
         .select_only()
         .column(workspaces::Column::Id)

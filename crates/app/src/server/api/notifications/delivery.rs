@@ -153,7 +153,7 @@ async fn deliver_one(
     let outcome = if muted.contains(&(signal.user_id, channel)) {
         ChannelOutcome::Skipped("muted")
     } else {
-        channels.send(channel, signal.user_id).await
+        channels.send(channel, signal.user_id, signal.id).await
     };
     finish(db, signal.id, channel, &outcome).await?;
     Ok(outcome)

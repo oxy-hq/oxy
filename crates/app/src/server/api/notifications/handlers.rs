@@ -176,16 +176,55 @@ pub async fn inbox(
     let mut items = super::inbox_view::items(&db, page)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    // On a custom-app host a relative path would be rewritten into that app.
+    super::inbox_view::absolutize(&mut items, &href_base(&headers));
+    Ok(Json(InboxResponse { unread, items }))
+}
+
+/// What to put before every `href` for this request's host. On a custom-app
+/// host a relative path would be rewritten into that app.
+fn href_base(headers: &axum::http::HeaderMap) -> String {
     let host = headers
         .get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok());
-    let base = super::inbox_view::href_base(
+    super::inbox_view::href_base(
         host,
         oxy_app_core::custom_apps_host_dispatch::admin_base_url(),
-    );
-    super::inbox_view::absolutize(&mut items, &base);
-    Ok(Json(InboxResponse { unread, items }))
+    )
+}
+
+/// Whether `user` may see `row`: their own, in an org the request's token
+/// reaches. Anything else answers 404, never 403 — somebody else's
+/// notification must not be confirmed to exist by the shape of the refusal.
+fn visible_to(row: &notifications::Model, user: &oxy_auth::types::AuthenticatedUser) -> bool {
+    row.user_id == user.id && user.reaches_org(row.org_id)
+}
+
+/// `GET /api/notifications/{id}` — one item of my inbox.
+///
+/// What a phone fetches when a push names this row, so it shows and opens the
+/// item it was told about rather than "the newest unread", which two close
+/// pushes would share. The same shape as one entry of the inbox's `items`, and
+/// the same self-scoping: 404 unless it is the caller's.
+#[instrument(skip_all, fields(id = %id))]
+pub async fn get_notification(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Path(id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<super::inbox_view::InboxItem>, StatusCode> {
+    let db = establish_connection()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let row = notifications::Entity::find_by_id(id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .filter(|row| visible_to(row, &user))
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let mut items = super::inbox_view::items(&db, vec![row])
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    super::inbox_view::absolutize(&mut items, &href_base(&headers));
+    items.pop().map(Json).ok_or(StatusCode::NOT_FOUND)
 }
 
 /// `POST /api/notifications/{id}/read`
@@ -208,7 +247,7 @@ pub async fn mark_read(
     // 404 rather than 403: somebody else's notification must not be confirmed
     // to exist by the shape of the refusal. Nor one of an org the request's
     // token does not reach, which the inbox does not list either.
-    if row.user_id != user.id || !user.reaches_org(row.org_id) {
+    if !visible_to(&row, &user) {
         return Err(StatusCode::NOT_FOUND);
     }
     // Already read is a no-op rather than an error — a double tap on a phone is
@@ -389,6 +428,49 @@ pub async fn prune_devices(db: &sea_orm::DatabaseConnection, user_id: Uuid) {
     info!(user = %user_id, dropped = ids.len(), "pruned stale device tokens");
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UnregisterDevice {
+    pub token: String,
+}
+
+/// `DELETE /api/notifications/devices` — stop pushing to this device.
+///
+/// What a phone calls on sign-out, so the next person to sign in on it is not
+/// woken by the last one's work. Self-scoped: only the caller's own row for
+/// the token is deleted, so a token cannot be used to deregister somebody
+/// else's device. 204 whether or not a row existed — sign-out retries, and
+/// "was it registered" is not something to answer about a token.
+#[instrument(skip_all)]
+pub async fn unregister_device(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    Json(body): Json<UnregisterDevice>,
+) -> Result<StatusCode, StatusCode> {
+    // Normalised as registration normalises it, or a token registered with
+    // stray whitespace could never be removed.
+    let token = body.token.trim();
+    if token.is_empty() || token.len() > MAX_TOKEN_LEN {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let db = establish_connection()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let removed = delete_device(user.id, token)
+        .exec(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .rows_affected;
+    info!(user = %user.id, removed, "device unregistered from push");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// The delete [`unregister_device`] runs: `user_id`'s rows for `token`, on any
+/// platform, and nobody else's.
+pub fn delete_device(user_id: Uuid, token: &str) -> sea_orm::DeleteMany<device_tokens::Entity> {
+    device_tokens::Entity::delete_many()
+        .filter(device_tokens::Column::UserId.eq(user_id))
+        .filter(device_tokens::Column::Token.eq(token))
+}
+
 /// `GET /api/notifications/vapid-public-key` — the key a browser subscribes with.
 ///
 /// # Why this route has to exist
@@ -442,3 +524,7 @@ pub async fn vapid_public_key(
         public_key: configured.map(|w| w.public_key().to_string()),
     })
 }
+
+#[cfg(test)]
+#[path = "handlers_tests.rs"]
+mod tests;

@@ -11,7 +11,7 @@ use entity::device_tokens;
 use tracing::info;
 use uuid::Uuid;
 
-/// What a push carries: nothing but who it is for and what kind it is.
+/// What a push carries: who it is for, what kind it is, and which inbox row.
 ///
 /// A push is a wake signal, not the message (`web_push` explains why it is
 /// bodiless), so the transport is never handed the content.
@@ -19,6 +19,11 @@ use uuid::Uuid;
 pub struct PushSignal {
     pub user_id: Uuid,
     pub kind: String,
+    /// The recipient's `notifications` row, so a phone opens (and fetches,
+    /// via `GET /api/notifications/{id}`) the item it was told about rather
+    /// than "the newest unread", which two close pushes would share. An
+    /// opaque id, not content. Web Push stays bodiless and ignores it.
+    pub notification_id: Uuid,
 }
 
 /// What one fan-out to a person's devices achieved.
@@ -54,6 +59,13 @@ pub trait Push: Send + Sync {
     /// records an unconfigured one as `not_configured`, never as `sent`.
     fn configured(&self) -> bool {
         true
+    }
+
+    /// Whether a device row on `platform` would reach a configured sender. A
+    /// person whose every device is on an unconfigured platform is recorded
+    /// `not_configured`, not `no_devices`: they do have a phone.
+    fn handles(&self, _platform: &str) -> bool {
+        self.configured()
     }
 }
 

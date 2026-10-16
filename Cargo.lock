@@ -9470,6 +9470,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-credential-types",
+ "aws-lc-rs",
  "aws-sdk-s3",
  "aws-sdk-sesv2",
  "aws-smithy-http-client",

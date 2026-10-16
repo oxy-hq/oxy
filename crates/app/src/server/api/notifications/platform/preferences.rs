@@ -5,7 +5,9 @@
 //! The catalogue works the same way: the kinds a person has received, plus any
 //! they muted. A critical kind cannot be muted at all; the app side stores
 //! such a mute and ignores it, but a platform kind is critical in code, not in
-//! a manifest that might change, so a mute of one could never apply.
+//! a manifest that might change, so a mute of one could never apply. Nor
+//! can a test notice's (`kinds::is_mutable`), which is left out of the list:
+//! a switch that does nothing is noise.
 
 use std::collections::BTreeMap;
 
@@ -15,7 +17,7 @@ use entity::{notification_platform_mutes as m, notifications};
 use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect, Set};
 use uuid::Uuid;
 
-use super::kinds::{channels, is_critical, is_platform_kind};
+use super::kinds::{TEST, channels, is_critical, is_mutable, is_platform_kind};
 use crate::server::api::notifications::delivery::Channel;
 use crate::server::api::notifications::preferences::KindPreference;
 
@@ -46,6 +48,8 @@ pub async fn kinds(db: &DatabaseConnection, user_id: Uuid) -> Result<Vec<KindPre
     }
     Ok(by_kind
         .into_iter()
+        // No switch for a test notice: nothing would honour it.
+        .filter(|(kind, _)| kind != TEST)
         .map(|(kind, muted)| KindPreference {
             critical: is_critical(&kind),
             channels: channels(&kind).to_vec(),
@@ -57,7 +61,7 @@ pub async fn kinds(db: &DatabaseConnection, user_id: Uuid) -> Result<Vec<KindPre
 
 /// Mute or unmute `channel` for platform `kind`. `400` for a kind the
 /// platform does not send, a channel it is never delivered on, or for muting
-/// a critical one.
+/// one no mute applies to (critical, or a test notice).
 pub async fn set(
     db: &DatabaseConnection,
     user_id: Uuid,
@@ -66,7 +70,7 @@ pub async fn set(
     muted: bool,
 ) -> Result<StatusCode, StatusCode> {
     if !is_platform_kind(kind)
-        || (muted && is_critical(kind))
+        || (muted && !is_mutable(kind))
         || !channels(kind).contains(&channel.as_str())
     {
         return Err(StatusCode::BAD_REQUEST);
@@ -113,14 +117,14 @@ async fn write(
     Ok(())
 }
 
-/// Who muted which channel for a platform send of `kind`. Empty for a
-/// critical kind.
+/// Who muted which channel for a platform send of `kind`. Empty for a kind
+/// no mute applies to.
 pub async fn muted(
     db: &DatabaseConnection,
     kind: &str,
     users: &[Uuid],
 ) -> Result<std::collections::HashSet<(Uuid, Channel)>, DbErr> {
-    if is_critical(kind) {
+    if !is_mutable(kind) {
         return Ok(Default::default());
     }
     Ok(m::Entity::find()

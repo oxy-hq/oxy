@@ -19,7 +19,8 @@ use uuid::Uuid;
 
 use super::kinds::{
     self, ANOMALY, BILLING_PAST_DUE, RUN_FAILED, SUBJECT_AIRWAY_RUN, SUBJECT_ANOMALY,
-    SUBJECT_AUTOMATION_RUN, SUBJECT_BILLING, SUBJECT_WORKSPACE, WORKSPACE_READY,
+    SUBJECT_AUTOMATION_RUN, SUBJECT_BILLING, SUBJECT_TEST, SUBJECT_WORKSPACE, TEST,
+    WORKSPACE_READY,
 };
 use super::subjects;
 
@@ -129,6 +130,7 @@ pub fn fallback(kind: &str) -> Rendered {
         WORKSPACE_READY => "A workspace is ready",
         RUN_FAILED => "A run failed",
         ANOMALY => "A monitor found an anomaly",
+        TEST => super::self_test::TITLE,
         _ => "Oxygen notice",
     };
     Rendered {
@@ -208,6 +210,7 @@ fn words(about: &About, org: Option<&OrgNames>, record: &subjects::Record) -> Op
                 )
             }),
         }),
+        (SUBJECT_TEST, Record::Test(t)) => Some(t.words(slug)),
         _ => None,
     }
 }
