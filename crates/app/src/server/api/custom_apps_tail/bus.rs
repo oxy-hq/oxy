@@ -1,6 +1,6 @@
 //! This process's subscribers, by `(app, environment)`.
 //!
-//! The listener (not written yet — see the module docs) is the only caller of
+//! The listener (`super::listener`) is the only caller of
 //! [`deliver_local`]: every envelope reaches a process through `LISTEN`, the
 //! producing process's own included, so a subscriber on the producer's
 //! replica is not delivered each event twice (chat's lesson,

@@ -53,6 +53,11 @@ fn stack_of(row: &str) -> Vec<Decision> {
         "E1" | "E2" => console((Action::AppNonProduction, On::NewSandbox)),
         "E3" | "C1" | "C2" | "C3" | "R1" | "R2" | "R3" | "S1" | "S2" | "S3" => console(own),
         "P1" => vec![own],
+        // The tail: the console's doors, then what L1's handler decides.
+        "T1" => CONSOLE
+            .into_iter()
+            .chain([own, (Action::AppAdmin, On::OwnSandbox)])
+            .collect(),
         "F1" | "L1" => vec![own, (Action::AppAdmin, On::OwnSandbox)],
         other => panic!(
             "{other} is a row of the sandbox agent token's allow-list with no stated stack: \

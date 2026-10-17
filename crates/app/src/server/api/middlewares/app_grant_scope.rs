@@ -64,6 +64,9 @@ pub const SANDBOX_ALLOWED: &[Allowed] = &[
     row("E2", "POST", "/customer-apps/{id}/environments"),
     row("E3", "GET", "/customer-apps/{id}/environments/{name}"),
     row("E3", "DELETE", "/customer-apps/{id}/environments/{name}"),
+    // The live tail of a sandbox it created: what L1 reads, as it happens.
+    // The handler asks what `/logs` asks (`custom_apps_tail::admission`).
+    row("T1", "GET", "/customer-apps/{id}/environments/{name}/tail"),
     row("P1", "POST", "/customer-apps/publish"),
     row("C1", "GET", "/customer-apps/{id}/functions"),
     row("C2", "POST", "/customer-apps/{id}/functions/{name}/runs"),

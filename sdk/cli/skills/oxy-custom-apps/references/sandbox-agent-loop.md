@@ -130,6 +130,12 @@ it, do not edit `nonProduction` in the manifest to make the write land:
 staging and every other sandbox share that map. Schedules and webhooks do not
 fire in a sandbox: call the function. The `fn call` result carries the
 function's `logs`; `oxyc logs` shows the same lines about 30 seconds later.
+To watch a run you do not call yourself — a check on the worker fleet, a slow
+function — start `oxyc logs <org>/<app> --app-env dev-x --follow --timeout 300
+--env <deployment> --token-env OXY_TOKEN --json` in the background first. It
+prints one JSON event per line (`open`, then `start` / `log` / `finish`),
+needs no observability capture, and exits `0` on `done`. A `dropped` event
+means lines were lost, not that the function failed.
 
 ## When a command fails
 

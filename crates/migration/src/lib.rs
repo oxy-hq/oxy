@@ -213,6 +213,7 @@ mod m20261014_000001_app_notifications;
 mod m20261014_000002_platform_notification_mutes;
 mod m20261015_000001_app_builds_published_to;
 mod m20261016_000001_notification_categories;
+mod m20261017_000001_app_environment_tails;
 mod m20261017_000001_notification_settings;
 
 pub use m20260922_000001_app_environments::BACKFILL_SQL as APP_ENVIRONMENTS_BACKFILL_SQL;
@@ -445,6 +446,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261015_000001_app_builds_published_to::Migration),
             Box::new(m20261016_000001_notification_categories::Migration),
             Box::new(m20261017_000001_notification_settings::Migration),
+            Box::new(m20261017_000001_app_environment_tails::Migration),
         ]
     }
 

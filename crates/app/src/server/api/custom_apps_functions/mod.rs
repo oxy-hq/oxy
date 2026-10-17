@@ -59,6 +59,9 @@ mod host_call_attrs;
 /// thread and heap count the per-isolate ceiling cannot.
 #[cfg(feature = "custom-app-functions")]
 pub mod limits;
+/// This run's lines to a live tail of its environment (`custom_apps_tail`).
+#[cfg(feature = "custom-app-functions")]
+mod live_tail;
 /// `oxy migrate`'s check that a release does not stop a working live function.
 #[cfg(feature = "custom-app-functions")]
 pub mod preflight;
@@ -2236,17 +2239,22 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
     if let Some(id) = args.request_id {
         span.record("request_id", tracing::field::display(id));
     }
+    // Wherever this run executes — a replica's `/fn`, a worker's check or
+    // schedule — its lines reach a tail of its environment from here.
+    let follower = live_tail::follow(&args).await;
 
     let outcome = run_with_runtime_inner(args).await;
 
     span.record("status", outcome.0);
     span.record("duration_ms", started.elapsed().as_millis() as i64);
-    if let Some(failure) = failure_signal::Failure::of(
+    let failure = failure_signal::Failure::of(
         outcome.0,
         outcome.3,
         outcome.1.as_deref(),
         outcome.4.as_ref(),
-    ) {
+    );
+    live_tail::finish(follower, &outcome, failure.is_some(), started.elapsed());
+    if let Some(failure) = failure {
         failure.report();
     }
     outcome

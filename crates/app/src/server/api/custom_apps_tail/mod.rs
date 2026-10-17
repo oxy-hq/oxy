@@ -1,12 +1,19 @@
 //! A live tail of one app environment's function invocations:
-//! `GET /api/customer-apps/{id}/environments/{env}/tail` (SSE), for the
-//! sandbox loop (`internal-docs/custom-app-sandboxes.md` §4 "No log tail").
+//! `GET /api/customer-apps/{id}/environments/{name}/tail` (SSE), for the
+//! sandbox loop (`internal-docs/custom-app-sandboxes.md` §4 "Read-back", §5.4)
+//! and `oxyc logs --follow`.
 //!
-//! **Status: half-built.** What is here is the core the route stands on —
-//! the event model and its NOTIFY wire form ([`event`]) and the bounded
-//! in-process subscriber registry ([`bus`]). The listener, the watcher table,
-//! the per-invocation follower, the handler and its mount, and `oxyc logs
-//! --follow` are not written yet; the plan below is what they must do.
+//! | Module | Owns |
+//! | --- | --- |
+//! | [`event`] | the events (`start` / `log` / `finish`) and their `NOTIFY` wire form |
+//! | [`producer`] | one follower per invocation, wherever the isolate runs |
+//! | [`gate`] | "is this pair watched?", read at most once a second per process |
+//! | [`watchers`] | the `app_environment_tails` leases a stream holds |
+//! | [`listener`] | this process's `LISTEN` connection, opened on the first tail |
+//! | [`bus`] | this process's subscribers, a bounded ring per pair |
+//! | [`stream`] | one stream's events and their SSE framing |
+//! | [`resume`] | what a `Last-Event-ID` resume replays |
+//! | [`admission`], [`recheck`], [`handler`] | who may tail what, asked again while it streams; the route |
 //!
 //! ## Fan-out: Postgres `LISTEN`/`NOTIFY`, gated by a watcher table
 //!
@@ -31,7 +38,8 @@
 //!   plane, no content); each producing process reads the set of watched
 //!   pairs at most once a second and checks it locally. Without the gate every
 //!   production invocation would `NOTIFY`, and each `NOTIFY` serialises its
-//!   transaction's commit on a database-wide lock.
+//!   transaction's commit on a database-wide lock. A stream says `open` only
+//!   after [`gate::SETTLE`], so every call started after `open` is tailed.
 //! - **Not guaranteed:** `NOTIFY` is fire-and-forget. A listener reconnect
 //!   loses what was sent meanwhile (the stream says so with a `dropped`
 //!   marker), and a resume replays invocation **outcomes** from
@@ -43,7 +51,18 @@
 //! One broadcast ring of [`bus::SUBSCRIBER_BUFFER`] events per watched
 //! `(app, environment)` in each process. A subscriber that falls further
 //! behind loses the oldest events and is told how many, as a
-//! [`bus::Frame::Dropped`] marker — the buffer never grows.
+//! [`bus::Frame::Dropped`] marker — the buffer never grows. A producer sends
+//! at most the isolate's own capped log buffer, every
+//! [`producer::FOLLOW_EVERY`], and only while its pair is watched.
 
+pub mod admission;
 pub mod bus;
 pub mod event;
+pub mod gate;
+pub mod handler;
+pub mod listener;
+pub mod producer;
+pub mod recheck;
+pub mod resume;
+pub mod stream;
+pub mod watchers;

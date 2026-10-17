@@ -8,6 +8,7 @@ pub use super::api_tokens::Entity as ApiTokens;
 pub use super::app_admins::Entity as AppAdmins;
 pub use super::app_builds::Entity as AppBuilds;
 pub use super::app_environment_events::Entity as AppEnvironmentEvents;
+pub use super::app_environment_tails::Entity as AppEnvironmentTails;
 pub use super::app_environments::Entity as AppEnvironments;
 pub use super::app_function_invocations::Entity as AppFunctionInvocations;
 pub use super::app_functions::Entity as AppFunctions;

@@ -44,6 +44,7 @@ import { runInvocationsHeld, runInvocationsList } from "./commands/invocations.j
 import { runLaunch } from "./commands/launch.js";
 import { runLoginLink } from "./commands/login-link.js";
 import { runLogs } from "./commands/logs.js";
+import { followTimeout, runLogsFollow } from "./commands/logs-follow.js";
 import { runOltpProvision, runOltpStatus } from "./commands/oltp.js";
 import { runOltpReset } from "./commands/oltp-branch.js";
 import {
@@ -850,9 +851,24 @@ function buildProgram(): Command {
       .option("--request <id>", "narrow to one request")
       .option("--hours <n>", "window size in hours (default 24, max 168)")
       .option("--limit <n>", "max rows (default 100, max 500)")
-      .option("--json", "emit {logs} as JSON")
+      .option(
+        "--follow",
+        "stream lines live as functions print them (no observability capture needed)"
+      )
+      .option("--timeout <seconds>", "with --follow: stop after this many seconds (max 86400)")
+      .option("--json", "emit {logs} as JSON; with --follow, one JSON event per line")
   ).action(async (app: string, opts: Record<string, unknown>) => {
-    await runLogs(createContext(globals(opts)), app, {
+    const ctx = createContext(globals(opts));
+    if (opts.follow) {
+      await runLogsFollow(ctx, app, {
+        appEnv: opts.appEnv as string | undefined,
+        timeoutSeconds: followTimeout(opts),
+        json: Boolean(opts.json)
+      });
+      return;
+    }
+    if (opts.timeout !== undefined) throw usageError("--timeout needs --follow");
+    await runLogs(ctx, app, {
       appEnv: opts.appEnv as string | undefined,
       invocation: opts.invocation as string | undefined,
       request: opts.request as string | undefined,

@@ -860,11 +860,21 @@ oxyc checks run <app> --app-env <name>       # see "Checks" above
 oxyc invocations list <app> [--app-env] [--build] [--function] [--limit]
 oxyc invocations held <app> <invocation-id>
 oxyc logs <app> [--app-env] [--invocation] [--request] [--hours] [--limit]
+oxyc logs <app> [--app-env <name>] --follow [--timeout <seconds>] [--json]
 
 oxyc env secret list <app> --app-env <name>      # keys and flags, never a value
 oxyc env secret set <app> <key> --app-env <name> (--value <text> | --value-env <VAR>)
 oxyc env secret delete <app> <key> --app-env <name>
 ```
+
+`logs --follow` is the live tail: each line as a function prints it,
+wherever the function runs, with no observability capture needed (the polled
+`logs` reads ClickHouse and answers `501` without it). `--json` prints one
+event per line — `open`, then `start` / `log` / `finish` per invocation,
+`dropped` when lines were lost, and `done` last, on which it exits `0`. A
+dropped connection is reopened with `Last-Event-ID`, and the server replays
+the outcomes of what finished meanwhile, never the lines. Production without
+`--app-env`; staging and sandboxes need staff with non-production reach.
 
 A **sandbox** is a named, short-lived `dev-<handle>` environment of one custom
 app: its own build pointer, storage silo, secrets, Airhouse sibling and — in

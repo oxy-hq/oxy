@@ -54,7 +54,23 @@ pub enum TailEvent {
         http_status: u16,
         duration_ms: u64,
         error: Option<String>,
+        /// Read back from the invocation's row by a resume
+        /// (`Last-Event-ID`), not sent live: lines between the two streams
+        /// are not replayed, and a reader may have seen this one already.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        replayed: bool,
     },
+}
+
+/// How an invocation ended, as its `finish` event reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Outcome {
+    pub status: String,
+    /// The pager's rule (`failure_signal::Failure::of`).
+    pub failed: bool,
+    pub http_status: u16,
+    pub duration_ms: u64,
+    pub error: Option<String>,
 }
 
 impl TailEvent {
@@ -64,6 +80,24 @@ impl TailEvent {
             Self::Start { .. } => "start",
             Self::Log { .. } => "log",
             Self::Finish { .. } => "finish",
+        }
+    }
+
+    /// An invocation's end, its error cut to [`MAX_MESSAGE_BYTES`].
+    pub fn finish(invocation_id: Uuid, function: &str, mode: &str, outcome: &Outcome) -> Self {
+        Self::Finish {
+            invocation_id,
+            function: function.to_string(),
+            mode: mode.to_string(),
+            status: outcome.status.clone(),
+            failed: outcome.failed,
+            http_status: outcome.http_status,
+            duration_ms: outcome.duration_ms,
+            error: outcome
+                .error
+                .as_deref()
+                .map(|error| cut(error, MAX_MESSAGE_BYTES).0),
+            replayed: false,
         }
     }
 
@@ -262,11 +296,35 @@ mod tests {
             http_status: 200,
             duration_ms: 12,
             error: None,
+            replayed: false,
         };
         assert_eq!(finish.name(), "finish");
         assert_eq!(serde_json::to_value(&finish).unwrap()["event"], "finish");
         assert_eq!(line(1, "a").name(), "log");
         let json = serde_json::to_value(line(1, "a")).unwrap();
         assert!(json.get("truncated").is_none(), "absent unless cut: {json}");
+        let json = serde_json::to_value(&finish).unwrap();
+        assert!(
+            json.get("replayed").is_none(),
+            "absent unless replayed: {json}"
+        );
+    }
+
+    /// A finish's error is cut like a line's message.
+    #[test]
+    fn a_long_error_is_cut() {
+        let outcome = Outcome {
+            status: "error".into(),
+            failed: true,
+            http_status: 0,
+            duration_ms: 1,
+            error: Some("x".repeat(MAX_MESSAGE_BYTES * 2)),
+        };
+        let TailEvent::Finish { error, .. } =
+            TailEvent::finish(Uuid::nil(), "probe", "route", &outcome)
+        else {
+            unreachable!()
+        };
+        assert_eq!(error.map(|e| e.len()), Some(MAX_MESSAGE_BYTES));
     }
 }

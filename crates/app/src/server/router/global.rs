@@ -447,6 +447,17 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
                     get(crate::server::api::custom_apps_sandboxes::handlers::show)
                         .delete(crate::server::api::custom_apps_sandboxes::handlers::delete),
                 )
+                // Live tail of one environment's function invocations (SSE) —
+                // see `custom_apps_tail`. FleetOk with the nest: producers
+                // `NOTIFY` and every replica `LISTEN`s, so any replica holds
+                // the stream whichever process runs the function. Under the
+                // four layers below, like the routes above; the handler then
+                // asks production for an app admin and every other
+                // environment for `Action::AppNonProduction`.
+                .route(
+                    "/{id}/environments/{name}/tail",
+                    get(crate::server::api::custom_apps_tail::handler::tail),
+                )
                 // Trusted-publishing config: register / list / remove the GitHub
                 // workflows allowed to OIDC-publish this app. See
                 // `custom_apps_publish_oidc`.

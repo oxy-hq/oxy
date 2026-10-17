@@ -391,6 +391,7 @@ oxyc checks run acme/store --app-env dev-x --env dev --json # run its checks
 oxyc invocations list acme/store --app-env dev-x --env dev --json  # what ran; a row's id is `id`
 oxyc invocations held acme/store <invocation-id> --env dev --json  # what it held, not wrote
 oxyc logs acme/store --app-env dev-x --env dev --json       # its function logs
+oxyc logs acme/store --app-env dev-x --env dev --follow --timeout 300 --json  # live, as printed
 oxyc env delete acme/store dev-x --env dev --yes --wait --json     # done; tears its homes down
 ```
 

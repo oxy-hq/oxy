@@ -570,6 +570,14 @@ async fn new_agentic_state(
         tls_verification,
         shutdown_token.clone(),
     );
+    // The custom-app log tail's listener rides the same settings, for the
+    // same reason. Installed, not started: the connection opens on this
+    // process's first tail, and most processes never hold one.
+    crate::server::api::custom_apps_tail::listener::install(
+        factory.clone(),
+        tls_verification,
+        shutdown_token.clone(),
+    );
 
     let (router_handle, router_cancel) =
         agentic_runtime::router::PostgresTaskRouter::start_with_options(

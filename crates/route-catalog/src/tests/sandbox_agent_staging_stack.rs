@@ -26,9 +26,11 @@ const TOKEN: Uuid = Uuid::from_u128(0x70);
 
 /// Rows a token granted staging also uses on staging: show the environment,
 /// publish a draft, list and run checks, read runs, invocations, held writes
-/// and logs, and call a function. F1 and L1 are the serve tree's and the
-/// public router's rows, which the allow-list table does not carry.
-const ON_STAGING: [&str; 10] = ["C1", "C2", "C3", "E3", "F1", "L1", "P1", "R1", "R2", "R3"];
+/// and logs, tail them, and call a function. F1 and L1 are the serve tree's
+/// and the public router's rows, which the allow-list table does not carry.
+const ON_STAGING: [&str; 11] = [
+    "C1", "C2", "C3", "E3", "F1", "L1", "P1", "R1", "R2", "R3", "T1",
+];
 /// Rows that stay a sandbox's alone for every token, by their handler and not
 /// by the model: an environment's secrets.
 const SANDBOX_ONLY: [&str; 3] = ["S1", "S2", "S3"];
@@ -40,7 +42,7 @@ const NO_ENVIRONMENT: [&str; 4] = ["A1", "A2", "E1", "E2"];
 /// request names (`sandbox_agent_stack::stack_of`).
 fn decisions_of(row: &str) -> Vec<Action> {
     match row {
-        "F1" | "L1" => vec![Action::AppNonProduction, Action::AppAdmin],
+        "F1" | "L1" | "T1" => vec![Action::AppNonProduction, Action::AppAdmin],
         _ => vec![Action::AppNonProduction],
     }
 }

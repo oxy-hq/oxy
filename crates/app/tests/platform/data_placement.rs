@@ -151,6 +151,10 @@ const TABLES: &[(&str, Placement)] = &[
         Control("custom-app environment pointer history; ids only"),
     ),
     (
+        "app_environment_tails",
+        Control("who is live-tailing a custom-app environment, as a lease; no content"),
+    ),
+    (
         "app_environments",
         Control("custom-app environment build pointers"),
     ),

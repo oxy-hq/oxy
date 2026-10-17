@@ -30,6 +30,9 @@
 //!   ships that build (`409 draft_published_by_agent`) while a person's draft
 //!   promotes as before; production never falls back to it after an
 //!   unpublish; the draft's guards are asked again under the app's row lock.
+//! - `tail`: the token tails a sandbox it created (row T1), and is answered
+//!   `404 environment_not_found` for production, staging without the grant
+//!   and a colleague's sandbox, as on the other environment routes.
 //! - `sandbox_promote`: a token's **sandbox** build is marked too, and
 //!   neither *promote latest* nor a rollback ships it, while a person's
 //!   sandbox build ships on both as before; the sandbox still serves its own
@@ -49,5 +52,6 @@ mod second_refusal_writes;
 mod staging_draft;
 mod staging_promote;
 mod staging_reach;
+mod tail;
 mod the_loop;
 mod token_ended;
