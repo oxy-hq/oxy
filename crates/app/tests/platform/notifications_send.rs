@@ -11,15 +11,17 @@
 //! `cargo nextest run -p oxy-app --test platform -E 'test(notifications_send)'`
 
 use entity::{
-    apps, notification_deliveries, notification_mutes, notifications, org_members,
-    org_team_members, org_teams, users, workspaces,
+    apps, notification_deliveries, notifications, org_members, org_team_members, org_teams, users,
+    workspaces,
 };
-use oxy_app::server::api::notifications::delivery::deliver_send;
+use oxy_app::server::api::notifications::delivery::{Channel, deliver_send};
 use oxy_app::server::api::notifications::inbox_view;
 use oxy_app::server::api::notifications::input::Target;
 use oxy_app::server::api::notifications::preferences::may_be_told_by;
 use oxy_app::server::api::notifications::recipients::resolve;
 use oxy_app::server::api::notifications::send::{AppRef, Outgoing, SendError, send};
+use oxy_app::server::api::notifications::settings::model::Node;
+use oxy_app::server::api::notifications::settings::store;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
     QueryFilter,
@@ -326,14 +328,15 @@ async fn notifications_send_delivers_each_channel_once_and_honours_mutes() {
             .await
             .expect("provision");
         let w = seed_world(&fx.db, fx.org_id).await;
-        notification_mutes::ActiveModel {
-            user_id: ActiveValue::Set(w.member),
-            app_id: ActiveValue::Set(w.app.id),
-            kind: ActiveValue::Set("list_overdue".into()),
-            channel: ActiveValue::Set("push".into()),
-            created_at: ActiveValue::Set(chrono::Utc::now().fixed_offset()),
-        }
-        .insert(&fx.db)
+        let kind = Node::Kind("list_overdue".into());
+        store::set_channel(
+            &fx.db,
+            w.member,
+            Some(w.app.id),
+            &kind,
+            Channel::Push,
+            Some(false),
+        )
         .await
         .expect("mute");
 

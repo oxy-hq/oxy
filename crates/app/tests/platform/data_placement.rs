@@ -377,6 +377,12 @@ const TABLES: &[(&str, Placement)] = &[
         Control("which channels a person turned off, per app and kind"),
     ),
     (
+        "notification_node_settings",
+        Control(
+            "what a person set at each node of a notification source: channels on or off, a floor",
+        ),
+    ),
+    (
         "notification_platform_mutes",
         Control("which channels a person turned off, per platform notice kind"),
     ),
@@ -387,6 +393,10 @@ const TABLES: &[(&str, Placement)] = &[
     (
         "notification_sends",
         Control("one row per notify call: ids, kind, counts, the idempotency key's hash"),
+    ),
+    (
+        "notification_user_settings",
+        Control("a person's notification pause, quiet hours, timezone and settings version"),
     ),
     (
         "notifications",

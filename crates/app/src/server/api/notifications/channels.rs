@@ -21,6 +21,8 @@ use super::catalog::source::KindInfo;
 use super::deliver::{Push, PushSignal, push};
 use super::delivery::Channel;
 use super::platform::render;
+use super::settings::decide::Reason;
+use super::settings::model::DeviceSettings;
 use super::slack_dm::{SlackDm, SlackMessage};
 use crate::emails::app_emailer::{AppEmailer, EmailSendInput};
 
@@ -84,16 +86,31 @@ impl Channels {
     }
 
     /// `signal` is the recipient's inbox row for this send: a native push
-    /// names it so the phone opens that item, and carries its thread.
+    /// names it so the phone opens that item, and carries its thread. Email
+    /// and Slack; push goes through [`Self::push_where`].
     pub async fn send(&self, channel: Channel, signal: &notifications::Model) -> ChannelOutcome {
         match channel {
-            Channel::Push => self.push(signal).await,
+            Channel::Push => self.push_where(signal, |_| None).await,
             Channel::Email => self.email(signal.user_id).await,
             Channel::Slack => self.slack(signal.user_id).await,
         }
     }
 
-    async fn push(&self, signal: &notifications::Model) -> ChannelOutcome {
+    /// The `<group>.<kind>` id a push for `signal` carries: the iOS category
+    /// and Android channel a device's OS can switch off.
+    pub fn channel_id(&self, signal: &notifications::Model) -> String {
+        PushSignal::new(signal, &self.info).channel_id()
+    }
+
+    /// Push `signal` to the recipient's devices that `refuses` lets through
+    /// (it answers why a device does not get it). With every device refused,
+    /// the skip carries the reason of the one seen most recently: the device
+    /// the person is most likely holding.
+    pub async fn push_where(
+        &self,
+        signal: &notifications::Model,
+        refuses: impl Fn(&DeviceSettings) -> Option<Reason>,
+    ) -> ChannelOutcome {
         if !self.push.configured() {
             return ChannelOutcome::Skipped("not_configured");
         }
@@ -101,11 +118,24 @@ impl Channels {
         let Some(tokens) = self.tokens.get(&user).filter(|t| !t.is_empty()) else {
             return ChannelOutcome::Skipped("no_devices");
         };
+        let (allowed, refused): (Vec<_>, Vec<_>) = tokens
+            .iter()
+            .map(|t| (t, refuses(&DeviceSettings::of(t))))
+            .partition(|(_, reason)| reason.is_none());
+        if allowed.is_empty() {
+            let latest = refused.iter().max_by_key(|(t, _)| t.last_seen_at);
+            let reason = latest
+                .and_then(|(_, r)| *r)
+                .map_or("no_devices", Reason::as_str);
+            return ChannelOutcome::Skipped(reason);
+        }
+        let tokens: Vec<device_tokens::Model> =
+            allowed.into_iter().map(|(t, _)| t.clone()).collect();
         if !tokens.iter().any(|t| self.push.handles(&t.platform)) {
             return ChannelOutcome::Skipped("not_configured");
         }
         let signal = PushSignal::new(signal, &self.info);
-        let report = self.push.send(tokens, &signal).await;
+        let report = self.push.send(&tokens, &signal).await;
         match (report.delivered, report.failed) {
             (0, 0) => ChannelOutcome::Skipped("no_devices"),
             (0, _) => ChannelOutcome::Failed("provider_error"),

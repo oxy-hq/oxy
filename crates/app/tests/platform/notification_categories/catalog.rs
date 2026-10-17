@@ -1,12 +1,11 @@
 //! `GET /api/notifications/catalog`: which sources a person sees, the tree
 //! under each, and the mutes and unread counts at every node.
 
-use chrono::Utc;
-use entity::notification_mutes;
 use oxy_app::server::api::notifications::catalog::handler::catalog_for;
 use oxy_app::server::api::notifications::delivery::Channel;
 use oxy_app::server::api::notifications::scope_mutes;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+use oxy_app::server::api::notifications::settings::model::Node;
+use oxy_app::server::api::notifications::settings::store;
 use serde_json::{Value, json};
 
 use super::fixture::{Signal, manifest, seed, seed_app, signal};
@@ -36,14 +35,15 @@ async fn notification_categories_the_catalogue_lists_each_source_as_a_tree() {
         signal(db, unread("temp_alarm", Some(w.app.id))).await;
         signal(db, unread("old_kind", Some(w.app.id))).await;
         signal(db, unread("oxy.run_failed", None)).await;
-        notification_mutes::ActiveModel {
-            user_id: Set(me.id),
-            app_id: Set(w.app.id),
-            kind: Set("list_overdue".into()),
-            channel: Set("email".into()),
-            created_at: Set(Utc::now().fixed_offset()),
-        }
-        .insert(db)
+        let overdue = Node::Kind("list_overdue".into());
+        store::set_channel(
+            db,
+            me.id,
+            Some(w.app.id),
+            &overdue,
+            Channel::Email,
+            Some(false),
+        )
         .await
         .expect("kind mute");
         let mute = scope_mutes::set(db, me, Some(w.app.id), "operations", Channel::Slack, true);

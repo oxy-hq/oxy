@@ -236,7 +236,18 @@ pub const WHEN_BLOCKED: &[(&str, Blocked, &str)] = &[
         // filtered inbox. A push that carried content would have to refuse.
         "/notifications/devices",
         Blocked::NoOrgData,
-        "registers or removes the user's own device",
+        "lists, registers or removes the user's own devices",
+    ),
+    (
+        "/notifications/devices/{id}",
+        Blocked::NoOrgData,
+        "changes or removes one of the user's own devices",
+    ),
+    (
+        "/notifications/settings",
+        Blocked::LeftOut,
+        "lists no app of a blocked org and counts none of its notifications; \
+         setting one of its apps is 400",
     ),
     (
         "/notifications/test",
@@ -342,28 +353,33 @@ fn is_route(route: &str, path: &str) -> bool {
 /// What [`WHEN_BLOCKED`] says of `path` (relative to `/api`): a concrete
 /// request path, or a catalog route. `None` = nobody has decided.
 ///
-/// A route listed as written is tried first, then every route with no
-/// `{param}`, then the rest — so one with a literal segment is never read as a
-/// sibling that has a `{param}` in the same place (`/notifications/devices`
-/// beside `/notifications/{id}`), whatever the order of the list and however
-/// the path is spelled (a trailing `/`). Two routes that both carry a
-/// `{param}` must never share a path; the tests hold the list to that.
+/// A route listed as written is tried first. Otherwise, of the routes `path`
+/// is an instance of, the one the router itself would pick: at the first
+/// segment where two differ, the literal beats the `{param}`. So
+/// `/notifications/devices` is never read as `/notifications/{id}`, nor
+/// `/notifications/devices/read` as `/notifications/{id}/read` beside
+/// `/notifications/devices/{id}` — whatever the order of the list and however
+/// the path is spelled (a trailing `/`). Two routes of the same shape must
+/// never share a path; the tests hold the list to that.
 pub fn when_blocked(path: &str) -> Option<Blocked> {
     let exact = WHEN_BLOCKED.iter().find(|(route, ..)| *route == path);
-    let literal = || {
+    let routed = || {
         WHEN_BLOCKED
             .iter()
-            .find(|(route, ..)| !route.contains('{') && is_route(route, path))
+            .filter(|(route, ..)| is_route(route, path))
+            .min_by_key(|(route, ..)| shape(route))
     };
-    let param = || {
-        WHEN_BLOCKED
-            .iter()
-            .find(|(route, ..)| is_route(route, path))
-    };
-    exact
-        .or_else(literal)
-        .or_else(param)
-        .map(|(_, blocked, _)| *blocked)
+    exact.or_else(routed).map(|(_, blocked, _)| *blocked)
+}
+
+/// Which segments of `route` are a `{param}`, in order: the router prefers a
+/// literal, so the smaller shape is the more specific route.
+pub fn shape(route: &str) -> Vec<bool> {
+    route
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.starts_with('{'))
+        .collect()
 }
 
 /// The treatment of `path` (relative to `/api`) for an all-access token an

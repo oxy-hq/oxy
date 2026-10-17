@@ -711,7 +711,9 @@ const notificationKeys = {
   item: (id: string) => [...notificationKeys.all, "item", id] as const,
   catalog: () => [...notificationKeys.all, "catalog"] as const,
   unread: () => [...notificationKeys.all, "unread"] as const,
-  vapidPublicKey: () => [...notificationKeys.all, "vapid-public-key"] as const
+  vapidPublicKey: () => [...notificationKeys.all, "vapid-public-key"] as const,
+  settings: () => [...notificationKeys.all, "settings"] as const,
+  devices: () => [...notificationKeys.all, "devices"] as const
 };
 
 const internalJobsKeys = {

@@ -12,6 +12,8 @@
  * page, and a push subscription belongs to one registration.
  */
 
+import type { OsPermission } from "@/types/notifications";
+
 /** Served as-is from `web-app/public`. */
 export const PUSH_WORKER_URL = "/oxy-push-sw.js";
 
@@ -114,4 +116,82 @@ export async function subscribeThisDevice(publicKey: string): Promise<string> {
     applicationServerKey: key
   });
   return subscription.endpoint;
+}
+
+/**
+ * Where this browser keeps the id of the device row it registered, so
+ * Settings can say "This device". The device list does not carry the
+ * subscription endpoint, so the id the server answered with is the match.
+ */
+const THIS_DEVICE_KEY = "oxy:push-device-id";
+
+/** The device row this browser registered, if it remembers one. */
+export function thisDeviceId(): string | null {
+  try {
+    return localStorage.getItem(THIS_DEVICE_KEY);
+  } catch (err) {
+    console.error("Couldn't read this browser's push device", err);
+    return null;
+  }
+}
+
+export function rememberThisDevice(id: string): void {
+  try {
+    localStorage.setItem(THIS_DEVICE_KEY, id);
+  } catch (err) {
+    console.error("Couldn't remember this browser's push device", err);
+  }
+}
+
+/** Forget the remembered device, if it is `id`: it was removed. */
+export function forgetThisDevice(id: string): void {
+  if (thisDeviceId() !== id) return;
+  try {
+    localStorage.removeItem(THIS_DEVICE_KEY);
+  } catch (err) {
+    console.error("Couldn't forget this browser's push device", err);
+  }
+}
+
+/** What this browser allows, as a device reports it; `null` without the Notification API. */
+export function browserPermission(): OsPermission | null {
+  if (typeof window === "undefined" || !("Notification" in window)) return null;
+  switch (Notification.permission) {
+    case "granted":
+      return "granted";
+    case "denied":
+      return "denied";
+    default:
+      return "unknown";
+  }
+}
+
+/** First match wins, so Edge (which also says Chrome) comes before Chrome, Chrome before Safari. */
+const BROWSERS: [RegExp, string][] = [
+  [/Edg\//, "Edge"],
+  [/OPR\//, "Opera"],
+  [/Firefox\/|FxiOS\//, "Firefox"],
+  [/Chrome\/|CriOS\//, "Chrome"],
+  [/Safari\//, "Safari"]
+];
+
+/** Android says Linux too, and an iPhone says Mac OS X. */
+const SYSTEMS: [RegExp, string][] = [
+  [/iPhone/, "iPhone"],
+  [/iPad/, "iPad"],
+  [/Android/, "Android"],
+  [/CrOS/, "ChromeOS"],
+  [/Mac OS X|Macintosh/, "macOS"],
+  [/Windows/, "Windows"],
+  [/Linux/, "Linux"]
+];
+
+const firstMatch = (table: [RegExp, string][], userAgent: string) =>
+  table.find(([pattern]) => pattern.test(userAgent))?.[1] ?? null;
+
+/** "Chrome on macOS": a name for this browser's device row, from its user agent. */
+export function browserDeviceName(userAgent: string): string {
+  const browser = firstMatch(BROWSERS, userAgent) ?? "Browser";
+  const system = firstMatch(SYSTEMS, userAgent);
+  return system ? `${browser} on ${system}` : browser;
 }

@@ -38,7 +38,7 @@ export const LEVEL_ACCENT: Partial<
 };
 
 /** Oxygen above the apps, the apps in the order the server sent them. */
-export function oxygenFirst(sources: SourceNode[]): SourceNode[] {
+export function oxygenFirst<T extends Pick<SourceNode, "source">>(sources: T[]): T[] {
   return [
     ...sources.filter((s) => s.source === "oxygen"),
     ...sources.filter((s) => s.source !== "oxygen")

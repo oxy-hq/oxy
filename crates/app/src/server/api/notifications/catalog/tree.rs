@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use super::model::{ActionView, GENERAL, Level, ancestors, parent};
 use super::source::{KindInfo, SourceCatalogue};
-use crate::server::api::notifications::delivery::Channel;
+use crate::server::api::notifications::settings::model::{Node, NodeSettings};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CategoryNode {
@@ -42,37 +42,37 @@ pub struct KindNode {
 /// What one person has from one source.
 #[derive(Debug, Default)]
 pub struct Facts {
-    /// Kinds received or muted, beyond what the catalogue names.
+    /// Kinds received or set, beyond what the catalogue names.
     pub kinds: BTreeSet<String>,
     pub unread: HashMap<String, u64>,
-    pub kind_mutes: HashMap<String, Vec<&'static str>>,
-    /// By scope; `""` is the whole source.
-    pub scope_mutes: HashMap<String, Vec<&'static str>>,
+    /// What the person set at each node of this source
+    /// (`notification_node_settings`).
+    pub nodes: HashMap<Node, NodeSettings>,
 }
 
 impl Facts {
-    /// The channels muted at `scope` (`""`: the whole source), in order.
+    /// What is set at `node`; nothing when unset.
+    pub fn at(&self, node: &Node) -> NodeSettings {
+        self.nodes.get(node).cloned().unwrap_or_default()
+    }
+
+    /// The channels turned off at `scope` (`""`: the whole source), in
+    /// order. The catalogue's `muted`.
     pub fn scope_muted(&self, scope: &str) -> Vec<&'static str> {
-        ordered(self.scope_mutes.get(scope))
+        self.at(&Node::Scope(scope.to_string())).off()
+    }
+
+    fn kind_muted(&self, kind: &str) -> Vec<&'static str> {
+        self.at(&Node::Kind(kind.to_string())).off()
     }
 }
 
-/// Channels in their fixed order, whatever order the rows came in.
-fn ordered(muted: Option<&Vec<&'static str>>) -> Vec<&'static str> {
-    let Some(muted) = muted else {
-        return Vec::new();
-    };
-    Channel::ALL
-        .iter()
-        .map(|c| c.as_str())
-        .filter(|c| muted.contains(c))
-        .collect()
-}
-
-/// The top-level categories of `catalogue` for `facts`, and the source's
-/// unread total.
-pub fn build(catalogue: &SourceCatalogue, facts: &Facts) -> (Vec<CategoryNode>, u64) {
-    // Only kinds with a switch: a test notice has none (`has_switch`).
+/// The kinds a tree draws — those with a switch; a test notice has none
+/// (`has_switch`) — and every category path it draws.
+pub(crate) fn shape(
+    catalogue: &SourceCatalogue,
+    facts: &Facts,
+) -> (Vec<KindInfo>, BTreeSet<String>) {
     let kinds: Vec<KindInfo> = catalogue
         .kinds_with(&facts.kinds)
         .iter()
@@ -83,6 +83,13 @@ pub fn build(catalogue: &SourceCatalogue, facts: &Facts) -> (Vec<CategoryNode>, 
     for k in &kinds {
         paths.extend(ancestors(&k.category));
     }
+    (kinds, paths)
+}
+
+/// The top-level categories of `catalogue` for `facts`, and the source's
+/// unread total.
+pub fn build(catalogue: &SourceCatalogue, facts: &Facts) -> (Vec<CategoryNode>, u64) {
+    let (kinds, paths) = shape(catalogue, facts);
     let roots: Vec<CategoryNode> = children(&paths, None)
         .into_iter()
         .map(|p| node(catalogue, facts, &paths, &kinds, &p))
@@ -93,7 +100,7 @@ pub fn build(catalogue: &SourceCatalogue, facts: &Facts) -> (Vec<CategoryNode>, 
 }
 
 /// The paths directly under `parent_path` (`None`: the top), `general` last.
-fn children(paths: &BTreeSet<String>, parent_path: Option<&str>) -> Vec<String> {
+pub(crate) fn children(paths: &BTreeSet<String>, parent_path: Option<&str>) -> Vec<String> {
     let mut out: Vec<String> = paths
         .iter()
         .filter(|p| parent(p) == parent_path)
@@ -141,7 +148,7 @@ fn kind_node(facts: &Facts, k: &KindInfo) -> KindNode {
         level: k.level,
         critical: k.critical(),
         channels: k.channels.clone(),
-        muted: ordered(facts.kind_mutes.get(&k.kind)),
+        muted: facts.kind_muted(&k.kind),
         actions: k.actions.iter().map(ActionView::from).collect(),
         unread: facts.unread.get(&k.kind).copied().unwrap_or(0),
     }
@@ -151,6 +158,7 @@ fn kind_node(facts: &Facts, k: &KindInfo) -> KindNode {
 mod tests {
     use super::*;
     use crate::server::api::notifications::catalog::live::from_manifest;
+    use crate::server::api::notifications::delivery::Channel;
     use serde_json::json;
 
     fn store_ops() -> SourceCatalogue {
@@ -173,13 +181,25 @@ mod tests {
 
     #[test]
     fn the_tree_nests_categories_counts_unread_and_keeps_mutes_where_they_were_set() {
+        let off = |channels: &[Channel]| {
+            let mut s = NodeSettings::default();
+            for c in channels {
+                s.set_channel(*c, Some(false));
+            }
+            s
+        };
+        let mut on_push = off(&[Channel::Email]);
+        on_push.set_channel(Channel::Push, Some(true));
         let facts = Facts {
             kinds: ["old_kind".to_string()].into(),
             unread: [("temp_alarm".into(), 2), ("old_kind".into(), 1)].into(),
-            kind_mutes: [("list_overdue".into(), vec!["slack", "push"])].into(),
-            scope_mutes: [
-                ("operations".into(), vec!["email"]),
-                ("".into(), vec!["slack"]),
+            nodes: [
+                (
+                    Node::Kind("list_overdue".into()),
+                    off(&[Channel::Slack, Channel::Push]),
+                ),
+                (Node::Scope("operations".into()), on_push),
+                (Node::source(), off(&[Channel::Slack])),
             ]
             .into(),
         };
@@ -190,7 +210,7 @@ mod tests {
 
         let ops = &roots[0];
         assert_eq!((ops.label.as_str(), ops.unread), ("Store operations", 2));
-        assert_eq!(ops.muted, vec!["email"]);
+        assert_eq!(ops.muted, vec!["email"], "an explicit on is not a mute");
         assert_eq!(ops.kinds[0].muted, vec!["push", "slack"], "channel order");
         let safety = &ops.categories[0];
         assert_eq!(safety.path, "operations/food-safety");

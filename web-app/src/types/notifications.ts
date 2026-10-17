@@ -149,27 +149,6 @@ export interface NotificationReach {
   email: boolean;
 }
 
-/** Mute or unmute one channel of one kind. */
-export interface SetKindPreference {
-  /** `null` for a platform kind. */
-  app_id: string | null;
-  kind: string;
-  channel: NotificationChannel;
-  muted: boolean;
-}
-
-/** Mute or unmute one channel of a whole source (`scope: ""`) or a category subtree. */
-export interface SetScopePreference {
-  /** `null` for Oxygen. */
-  app_id: string | null;
-  scope: string;
-  channel: NotificationChannel;
-  muted: boolean;
-}
-
-/** `PUT /notifications/preferences` takes exactly one of `kind` / `scope`. */
-export type SetNotificationPreference = SetKindPreference | SetScopePreference;
-
 export interface VapidKeyResponse {
   configured: boolean;
   /** base64url, uncompressed P-256 point. */
@@ -181,4 +160,156 @@ export interface RegisterDeviceInput {
   /** For web, the `PushSubscription` endpoint URL. */
   token: string;
   device_name?: string;
+}
+
+// ── Settings (`GET/PATCH /notifications/settings`) ────────────────────────────
+//
+// Four levels: the person (pause, quiet hours), each node of a source's tree,
+// each device, and `critical`, which overrides the first two. The nearest
+// explicit setting wins, so a child can turn a channel back on under a parent
+// that turned it off.
+
+/** Why a kind is, or is not, delivered on a channel (the server's `decide`). */
+export type NotificationReason =
+  | null
+  | "paused"
+  | "quiet_hours"
+  | "muted"
+  | "below_level"
+  | "device_off"
+  | "os_disabled"
+  | "os_denied"
+  | "not_sent";
+
+export interface QuietHours {
+  /** `HH:MM`, in the person's `timezone`. A window may wrap past midnight. */
+  start: string;
+  end: string;
+  /** 0 = Sunday. */
+  days: number[];
+  /** The lowest level that still comes through. */
+  allow: "critical" | "time_sensitive";
+}
+
+export interface GlobalNotificationSettings {
+  /** ISO instant; push, email and Slack hold everything but critical until then. */
+  paused_until: string | null;
+  quiet_hours: QuietHours | null;
+  /** IANA; required once quiet hours are set. */
+  timezone: string | null;
+}
+
+/** What is set at one node itself; anything absent inherits. */
+export interface NodeSettings {
+  channels: Partial<Record<NotificationChannel, boolean>>;
+  /** Kinds below this go to the inbox only. */
+  min_level: NotificationLevel | null;
+}
+
+export interface EffectiveChannel {
+  on: boolean;
+  reason: NotificationReason;
+  /** The label of the node that decided it. */
+  from: string | null;
+}
+
+export interface SettingsKind {
+  kind: string;
+  label: string;
+  description: string | null;
+  level: NotificationLevel;
+  critical: boolean;
+  /** The channels this kind can ever use. */
+  channels: NotificationChannel[];
+  settings: NodeSettings;
+  effective: Record<NotificationChannel, EffectiveChannel>;
+  unread: number;
+}
+
+export interface SettingsCategory {
+  path: string;
+  label: string;
+  description: string | null;
+  settings: NodeSettings;
+  categories: SettingsCategory[];
+  kinds: SettingsKind[];
+  unread: number;
+}
+
+export interface SettingsSource {
+  source: "oxygen" | "app";
+  app: (NotificationApp & { org_slug: string }) | null;
+  label: string;
+  settings: NodeSettings;
+  categories: SettingsCategory[];
+  unread: number;
+}
+
+export type DevicePlatform = "web" | "ios" | "android";
+
+export type OsPermission = "granted" | "denied" | "provisional" | "ephemeral" | "unknown";
+
+/** One registered push target: a browser, a phone, a watch. */
+export interface NotificationDevice {
+  id: string;
+  platform: DevicePlatform;
+  name: string | null;
+  app_version: string | null;
+  created_at: string;
+  last_seen_at: string;
+  /** Off stops push here without unregistering it. */
+  enabled: boolean;
+  /** Push here only at this level and above; `null` for everything. */
+  min_level: NotificationLevel | null;
+  /** As the device last reported it; `null` before it has. */
+  os_permission: OsPermission | null;
+  /** `<app id|oxygen>.<kind>` ids the OS has switched off. */
+  os_disabled: string[];
+}
+
+export interface SettingsReach {
+  push_devices: number;
+  email: boolean;
+  slack: boolean;
+}
+
+/** `GET /notifications/settings`. Served with `ETag: <version>`. */
+export interface NotificationSettings {
+  /** Opaque; changes on every write. Sent back as `If-Match`. */
+  version: string;
+  global: GlobalNotificationSettings;
+  /** The same sources as the catalogue. */
+  sources: SettingsSource[];
+  devices: NotificationDevice[];
+  reach: SettingsReach;
+}
+
+/**
+ * One node to change: a whole source (`scope: ""`), a category (`scope:
+ * "<path>"`) or a kind — exactly one of `scope` / `kind`. A channel set to
+ * `null`, or `min_level: null`, goes back to inheriting.
+ */
+export interface NodePatch {
+  /** `null` for Oxygen. */
+  app_id: string | null;
+  scope?: string;
+  kind?: string;
+  channels?: Partial<Record<NotificationChannel, boolean | null>>;
+  min_level?: NotificationLevel | null;
+}
+
+/** `PATCH /notifications/settings`: one transaction. */
+export interface NotificationSettingsPatch {
+  global?: Partial<GlobalNotificationSettings>;
+  nodes?: NodePatch[];
+}
+
+/** `PATCH /notifications/devices/{id}`. */
+export interface DevicePatch {
+  name?: string;
+  enabled?: boolean;
+  min_level?: NotificationLevel | null;
+  os_permission?: OsPermission;
+  os_disabled?: string[];
+  app_version?: string;
 }

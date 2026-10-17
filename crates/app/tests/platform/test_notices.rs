@@ -9,14 +9,16 @@ use chrono::{Duration, Utc};
 use entity::org_members::OrgRole;
 use entity::workspaces::WorkspaceStatus;
 use entity::{
-    notification_deliveries, notification_platform_mutes, notification_sends, notifications,
-    org_frontline_members, org_members, organizations, users, workspaces,
+    notification_deliveries, notification_sends, notifications, org_frontline_members, org_members,
+    organizations, users, workspaces,
 };
 use oxy_app::server::api::notifications::delivery::Channel;
 use oxy_app::server::api::notifications::inbox_view;
 use oxy_app::server::api::notifications::platform::kinds::TEST;
 use oxy_app::server::api::notifications::platform::preferences;
 use oxy_app::server::api::notifications::platform::self_test::{TestSent, send_test};
+use oxy_app::server::api::notifications::settings::model::Node;
+use oxy_app::server::api::notifications::settings::store;
 use oxy_app::server::api::notifications::test_notice::org_for;
 use oxy_auth::types::AuthenticatedUser;
 use sea_orm::ActiveValue::Set;
@@ -237,15 +239,10 @@ async fn test_notices_ignore_mutes_and_deliver_without_a_workspace() {
         preferences::set(&db, caller.id, TEST, Channel::Push, true).await,
         Err(axum::http::StatusCode::BAD_REQUEST)
     );
-    notification_platform_mutes::ActiveModel {
-        user_id: Set(caller.id),
-        kind: Set(TEST.into()),
-        channel: Set("push".into()),
-        created_at: Set(Utc::now().fixed_offset()),
-    }
-    .insert(&db)
-    .await
-    .expect("seed a mute");
+    let test = Node::Kind(TEST.into());
+    store::set_channel(&db, caller.id, None, &test, Channel::Push, Some(false))
+        .await
+        .expect("seed a mute");
 
     let id = sent_id(send_test(&db, caller.id, org, None).await.unwrap());
     let row = signal(&db, id).await;

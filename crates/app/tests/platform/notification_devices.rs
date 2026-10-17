@@ -18,7 +18,10 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use oxy_app::server::api::notifications::handlers::{prune_devices, upsert_device};
+use oxy_app::server::api::notifications::devices::register::{
+    Registration, prune_devices, upsert_device,
+};
+use oxy_app::server::api::notifications::devices::{self, DeviceError, DevicePatch};
 
 use crate::common::{Schema, fresh_db};
 
@@ -40,6 +43,25 @@ async fn seed_user(db: &DatabaseConnection) -> Uuid {
     id
 }
 
+/// Register `token` for `user` the way `POST /api/notifications/devices`
+/// does; the device's id.
+async fn register(
+    db: &DatabaseConnection,
+    user: Uuid,
+    platform: &str,
+    token: &str,
+    name: Option<&str>,
+    at: chrono::DateTime<chrono::FixedOffset>,
+) -> Result<Uuid, sea_orm::DbErr> {
+    let device = Registration {
+        platform,
+        token,
+        name,
+        app_version: None,
+    };
+    upsert_device(db, user, &device, at).await
+}
+
 async fn rows_for(db: &DatabaseConnection, user: Uuid) -> Vec<device_tokens::Model> {
     device_tokens::Entity::find()
         .filter(device_tokens::Column::UserId.eq(user))
@@ -58,11 +80,11 @@ async fn re_registering_the_same_token_is_idempotent() {
     let user = seed_user(&db).await;
     let t0 = Utc::now().fixed_offset();
 
-    upsert_device(&db, user, "web", "tok-a", Some("Pixel"), t0)
+    register(&db, user, "web", "tok-a", Some("Pixel"), t0)
         .await
         .expect("first registration");
     let later = t0 + Duration::minutes(5);
-    upsert_device(&db, user, "web", "tok-a", Some("Pixel"), later)
+    register(&db, user, "web", "tok-a", Some("Pixel"), later)
         .await
         .expect("second registration must not violate the unique index");
 
@@ -102,10 +124,10 @@ async fn a_token_moves_to_whoever_registered_last() {
     let second = seed_user(&db).await;
     let t0 = Utc::now().fixed_offset();
 
-    upsert_device(&db, first, "apns", "shared-token", None, t0)
+    register(&db, first, "apns", "shared-token", None, t0)
         .await
         .expect("first owner");
-    upsert_device(&db, second, "apns", "shared-token", None, t0)
+    register(&db, second, "apns", "shared-token", None, t0)
         .await
         .expect("second owner");
 
@@ -126,12 +148,8 @@ async fn platform_is_part_of_the_identity() {
     let user = seed_user(&db).await;
     let t0 = Utc::now().fixed_offset();
 
-    upsert_device(&db, user, "web", "same", None, t0)
-        .await
-        .unwrap();
-    upsert_device(&db, user, "fcm", "same", None, t0)
-        .await
-        .unwrap();
+    register(&db, user, "web", "same", None, t0).await.unwrap();
+    register(&db, user, "fcm", "same", None, t0).await.unwrap();
 
     assert_eq!(rows_for(&db, user).await.len(), 2);
 }
@@ -146,7 +164,7 @@ async fn pruning_keeps_the_most_recently_seen_and_bounds_the_set() {
 
     // 25 devices, oldest first, so the newest are unambiguous.
     for i in 0..25i64 {
-        upsert_device(
+        register(
             &db,
             user,
             "web",
@@ -187,7 +205,7 @@ async fn pruning_is_scoped_to_one_user() {
     let base = Utc::now().fixed_offset();
 
     for i in 0..25i64 {
-        upsert_device(
+        register(
             &db,
             noisy,
             "web",
@@ -198,11 +216,123 @@ async fn pruning_is_scoped_to_one_user() {
         .await
         .unwrap();
     }
-    upsert_device(&db, quiet, "web", "quiet-1", None, base)
+    register(&db, quiet, "web", "quiet-1", None, base)
         .await
         .unwrap();
 
     prune_devices(&db, noisy).await;
 
     assert_eq!(rows_for(&db, quiet).await.len(), 1);
+}
+
+fn device_patch(v: serde_json::Value) -> DevicePatch {
+    serde_json::from_value(v).expect("a device patch")
+}
+
+/// A phone passed to someone else keeps its id, and nothing of the previous
+/// owner's: switched off, floored or OS-blocked for them is not for the new
+/// owner.
+#[tokio::test]
+async fn a_device_that_changes_hands_starts_over() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let (first, second) = (seed_user(&db).await, seed_user(&db).await);
+    let t0 = Utc::now().fixed_offset();
+    let id = register(&db, first, "apns", "handed-on", Some("Ana's iPhone"), t0)
+        .await
+        .unwrap();
+    let patch = device_patch(
+        serde_json::json!({ "enabled": false, "min_level": "critical",
+        "os_permission": "denied", "os_disabled": ["oxygen"], "app_version": "1.0" }),
+    );
+    devices::update(&db, first, id, patch).await.expect("patch");
+
+    let again = register(&db, second, "apns", "handed-on", Some("iPhone"), t0)
+        .await
+        .unwrap();
+    assert_eq!(again, id, "the same install is the same device");
+    let row = &rows_for(&db, second).await[0];
+    assert!(row.enabled);
+    assert_eq!(
+        (row.min_level.as_deref(), row.os_permission.as_deref()),
+        (None, None)
+    );
+    assert_eq!(
+        (row.os_disabled.as_ref(), row.app_version.as_deref()),
+        (None, None)
+    );
+    assert_eq!(row.device_name.as_deref(), Some("iPhone"));
+}
+
+/// The owner re-registering (every launch) keeps the name they gave the
+/// device and its settings; a newer app version replaces the old one.
+#[tokio::test]
+async fn re_registering_keeps_what_the_owner_set() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let user = seed_user(&db).await;
+    let t0 = Utc::now().fixed_offset();
+    let id = register(&db, user, "fcm", "pixel", Some("Pixel 9"), t0)
+        .await
+        .unwrap();
+    let patch =
+        device_patch(serde_json::json!({ "name": "Work phone", "min_level": "time_sensitive" }));
+    devices::update(&db, user, id, patch).await.expect("rename");
+    let device = Registration {
+        platform: "fcm",
+        token: "pixel",
+        name: Some("Pixel 9"),
+        app_version: Some("2.0.1"),
+    };
+    upsert_device(&db, user, &device, t0 + Duration::minutes(1))
+        .await
+        .unwrap();
+    let row = &rows_for(&db, user).await[0];
+    assert_eq!(row.device_name.as_deref(), Some("Work phone"));
+    assert_eq!(row.min_level.as_deref(), Some("time_sensitive"));
+    assert_eq!(row.app_version.as_deref(), Some("2.0.1"));
+}
+
+/// `PATCH` and `DELETE /api/notifications/devices/{id}` touch only the
+/// caller's own devices: anyone else's is 404, as is one that does not exist.
+#[tokio::test]
+async fn a_device_is_changed_or_removed_only_by_its_owner() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let (owner, other) = (seed_user(&db).await, seed_user(&db).await);
+    // An hour ago, so "seen again" is past it at any clock resolution.
+    let t0 = Utc::now().fixed_offset() - Duration::hours(1);
+    let id = register(&db, owner, "web", "https://push.example/a", None, t0)
+        .await
+        .unwrap();
+    let patch = || device_patch(serde_json::json!({ "enabled": false }));
+    assert_eq!(
+        devices::update(&db, other, id, patch()).await,
+        Err(DeviceError::NotFound)
+    );
+    assert_eq!(
+        devices::remove(&db, other, id).await,
+        Err(DeviceError::NotFound)
+    );
+    assert_eq!(
+        devices::update(&db, owner, Uuid::new_v4(), patch()).await,
+        Err(DeviceError::NotFound)
+    );
+    assert!(devices::list_for(&db, other).await.unwrap().is_empty());
+    assert!(
+        rows_for(&db, owner).await[0].enabled,
+        "untouched by the outsider"
+    );
+
+    let updated = devices::update(&db, owner, id, patch())
+        .await
+        .expect("mine");
+    assert!(!updated.enabled);
+    let seen = chrono::DateTime::parse_from_rfc3339(&updated.last_seen_at).unwrap();
+    assert!(seen > t0, "a patch is the device saying it is here");
+    let listed = devices::list_for(&db, owner).await.unwrap();
+    assert_eq!((listed.len(), listed[0].platform), (1, "web"));
+    devices::remove(&db, owner, id).await.expect("removed");
+    assert!(rows_for(&db, owner).await.is_empty());
+    assert_eq!(
+        devices::remove(&db, owner, id).await,
+        Err(DeviceError::NotFound)
+    );
 }

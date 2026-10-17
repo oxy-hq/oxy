@@ -7,6 +7,8 @@ use entity::{notification_deliveries, notifications};
 use oxy_app::server::api::notifications::delivery::{Channel, deliver_send};
 use oxy_app::server::api::notifications::scope_mutes;
 use oxy_app::server::api::notifications::send::{AppRef, Outgoing, send};
+use oxy_app::server::api::notifications::settings::model::Node;
+use oxy_app::server::api::notifications::settings::store;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
@@ -153,17 +155,19 @@ async fn notification_categories_a_scope_mute_is_checked_against_the_live_catalo
             mute(&w.member, None, "runs").await,
             Ok(StatusCode::NO_CONTENT)
         );
-        let muted = scope_mutes::muted(db, None, "runs", &[w.member.id, w.other.id])
-            .await
-            .expect("query");
-        assert!(muted.contains(&(w.member.id, Channel::Push)));
-        assert_eq!(muted.len(), 1, "the other member muted nothing");
+        let runs = Node::Scope("runs".into());
+        let set = |user| store::node(db, user, None, &runs);
+        assert_eq!(set(w.member.id).await.expect("query").off(), vec!["push"]);
+        assert!(
+            set(w.other.id).await.expect("query").is_empty(),
+            "the other member muted nothing"
+        );
         // A second app's scope mute is that app's alone.
         let other_app = seed_app(db, fx.org_id, w.workspace, "other-app", None).await;
-        let muted = scope_mutes::muted(db, Some(other_app.id), "", &[w.member.id])
+        let theirs = store::node(db, w.member.id, Some(other_app.id), &Node::source())
             .await
             .expect("query");
-        assert!(muted.is_empty());
+        assert!(theirs.is_empty());
     })
     .await;
 }

@@ -213,10 +213,12 @@ mod m20261014_000001_app_notifications;
 mod m20261014_000002_platform_notification_mutes;
 mod m20261015_000001_app_builds_published_to;
 mod m20261016_000001_notification_categories;
+mod m20261017_000001_notification_settings;
 
 pub use m20260922_000001_app_environments::BACKFILL_SQL as APP_ENVIRONMENTS_BACKFILL_SQL;
 pub use m20261001_000001_api_tokens::BACKFILL_SQL as API_TOKENS_BACKFILL_SQL;
 pub use m20261006_000003_workspace_health_transitions::BACKFILL_SQL as WORKSPACE_HEALTH_TRANSITIONS_BACKFILL_SQL;
+pub use m20261017_000001_notification_settings::BACKFILL_SQL as NOTIFICATION_SETTINGS_BACKFILL_SQL;
 
 pub struct Migrator;
 
@@ -442,6 +444,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261014_000002_platform_notification_mutes::Migration),
             Box::new(m20261015_000001_app_builds_published_to::Migration),
             Box::new(m20261016_000001_notification_categories::Migration),
+            Box::new(m20261017_000001_notification_settings::Migration),
         ]
     }
 

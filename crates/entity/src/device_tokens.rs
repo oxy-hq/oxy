@@ -26,6 +26,20 @@ pub struct Model {
     pub device_name: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub last_seen_at: DateTimeWithTimeZone,
+    /// `false` stops push to this device without unregistering it.
+    pub enabled: bool,
+    /// Push here only at this level and above (`passive` | `active` |
+    /// `time_sensitive` | `critical`); `None` for everything.
+    pub min_level: Option<String>,
+    /// What the device last reported of its OS permission: `granted` |
+    /// `denied` | `provisional` | `ephemeral` | `unknown`. `None` before it
+    /// has reported.
+    pub os_permission: Option<String>,
+    /// The `<app id|oxygen>.<kind>` channel or category ids (or a whole
+    /// `<app id|oxygen>` group) the OS has switched off, as a JSON array of
+    /// strings. `None` for none.
+    pub os_disabled: Option<Json>,
+    pub app_version: Option<String>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

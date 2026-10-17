@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useEnablePushOnThisDevice, useVapidPublicKey } from "@/hooks/api/notifications";
 import { pushNeedsHomeScreenHere, pushSupported } from "@/libs/webPush";
-import { deviceCount } from "../utils";
 
 /**
  * Turn push on for the browser in front of you. Needs both a deployment with a
@@ -11,7 +10,7 @@ import { deviceCount } from "../utils";
  * less reads "Not available here" — except an iPhone or iPad in a browser tab,
  * where push needs Oxygen on the Home Screen first, so it says how.
  */
-export function PushOnThisDevice({ devices }: { devices: number | undefined }) {
+export function PushOnThisDevice() {
   const vapid = useVapidPublicKey();
   const enable = useEnablePushOnThisDevice();
   const publicKey = vapid.data?.configured ? vapid.data.public_key : null;
@@ -47,14 +46,9 @@ export function PushOnThisDevice({ devices }: { devices: number | undefined }) {
   }
 
   return (
-    <div className='flex items-center justify-between gap-4 rounded-lg border px-4 py-3'>
+    <div className='flex items-center justify-between gap-4 px-4 py-3'>
       <div className='flex min-w-0 flex-col gap-0.5'>
         <span className='font-medium text-sm'>Push on this device</span>
-        {devices !== undefined && (
-          <span className='text-muted-foreground text-xs' data-testid='notifications-push-devices'>
-            {deviceCount(devices)}
-          </span>
-        )}
         {hint}
       </div>
       {action}

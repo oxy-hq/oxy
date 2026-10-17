@@ -1,11 +1,14 @@
 import type {
+  DevicePatch,
   InboxFilter,
   InboxItem,
   InboxResponse,
   NotificationActionResult,
   NotificationCatalog,
+  NotificationDevice,
+  NotificationSettings,
+  NotificationSettingsPatch,
   RegisterDeviceInput,
-  SetNotificationPreference,
   UnreadResponse,
   VapidKeyResponse
 } from "@/types/notifications";
@@ -33,7 +36,7 @@ function filterParams(filter: InboxFilter): Record<string, string> {
 }
 
 /**
- * The signed-in person's notifications: the inbox, what they have muted, and the
+ * The signed-in person's notifications: the inbox, their settings, and the
  * devices push reaches. Every route is the caller's own; none takes a workspace.
  */
 export class NotificationsService {
@@ -86,9 +89,37 @@ export class NotificationsService {
     return response.data;
   }
 
-  /** A kind (`kind`), a category subtree (`scope: "<path>"`) or a whole source (`scope: ""`). */
-  static async setPreference(input: SetNotificationPreference): Promise<void> {
-    await apiClient.put("/notifications/preferences", input);
+  /** Pause, quiet hours, every node's own settings, devices and reach, as one document. */
+  static async settings(): Promise<NotificationSettings> {
+    const response = await apiClient.get<NotificationSettings>("/notifications/settings");
+    return response.data;
+  }
+
+  /**
+   * One transaction; answers with the whole new document. With `version`, a
+   * document changed since then is refused with 412 and the current one.
+   */
+  static async updateSettings(
+    patch: NotificationSettingsPatch,
+    version?: string
+  ): Promise<NotificationSettings> {
+    const response = await apiClient.patch<NotificationSettings>("/notifications/settings", patch, {
+      headers: version ? { "If-Match": version } : undefined
+    });
+    return response.data;
+  }
+
+  static async devices(): Promise<NotificationDevice[]> {
+    const response = await apiClient.get<NotificationDevice[]>("/notifications/devices");
+    return response.data;
+  }
+
+  static async updateDevice(id: string, patch: DevicePatch): Promise<void> {
+    await apiClient.patch(`/notifications/devices/${encodeURIComponent(id)}`, patch);
+  }
+
+  static async removeDevice(id: string): Promise<void> {
+    await apiClient.delete(`/notifications/devices/${encodeURIComponent(id)}`);
   }
 
   static async vapidPublicKey(): Promise<VapidKeyResponse> {
@@ -96,7 +127,10 @@ export class NotificationsService {
     return response.data;
   }
 
-  static async registerDevice(input: RegisterDeviceInput): Promise<void> {
-    await apiClient.post("/notifications/devices", input);
+  /** The registered device's id, or `null` from a server that does not answer with one. */
+  static async registerDevice(input: RegisterDeviceInput): Promise<string | null> {
+    const response = await apiClient.post<{ id?: unknown } | "">("/notifications/devices", input);
+    const id = typeof response.data === "object" ? response.data?.id : undefined;
+    return typeof id === "string" ? id : null;
   }
 }

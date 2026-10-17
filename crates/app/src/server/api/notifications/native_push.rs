@@ -176,6 +176,11 @@ pub(super) mod tests {
             device_name: None,
             created_at: now,
             last_seen_at: now,
+            enabled: true,
+            min_level: None,
+            os_permission: None,
+            os_disabled: None,
+            app_version: None,
         }
     }
 

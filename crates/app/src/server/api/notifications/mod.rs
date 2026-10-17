@@ -27,10 +27,15 @@
 //!
 //! Every notification is a leaf of a tree — source (Oxygen, or one app) →
 //! category path → kind — declared by the app's live build or, for Oxygen,
-//! in code ([`catalog`]). It gives the inbox its labels and levels, lets a
-//! person mute a whole source or a category subtree ([`scope_mutes`]), gives
-//! a kind its buttons ([`actions`]), and is the shape a phone's categories
+//! in code ([`catalog`]). It gives the inbox its labels and levels, gives a
+//! kind its buttons ([`actions`]), and is the shape a phone's categories
 //! and channels need ([`deliver::PushSignal`]).
+//!
+//! # What a person chose
+//!
+//! Pause, quiet hours, per-node channels and floors, and per-device settings
+//! and OS state ([`settings`], [`devices`]), turned into "does this go out"
+//! by one function, `settings::decide::decide`, which delivery records.
 //!
 //! # Where the data lives
 //!
@@ -62,6 +67,7 @@ pub mod channels;
 pub mod compose;
 pub mod deliver;
 pub mod delivery;
+pub mod devices;
 pub mod fcm;
 pub mod filter;
 pub mod handlers;
@@ -76,6 +82,7 @@ pub mod push_routing;
 pub mod recipients;
 pub mod scope_mutes;
 pub mod send;
+pub mod settings;
 pub mod slack_dm;
 pub mod task;
 pub mod test_notice;

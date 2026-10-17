@@ -120,6 +120,9 @@ pub async fn start_server_and_web_app(
         println!("serve: running database migrations");
         run_database_migrations(args.enterprise).await?;
     }
+    // Mutes made on a previous release while it was rolled back to reach the
+    // settings table (`notifications::settings::reconcile`). Best-effort.
+    crate::server::api::notifications::settings::reconcile::at_boot().await;
     println!("serve: migrations done, initializing feature flags");
     init_feature_flags().await?;
     println!("serve: feature flags initialized, seeding app admins from env");

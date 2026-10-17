@@ -258,6 +258,8 @@ pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
         serve::run_database_migrations(args.enterprise).await?;
         tracing::info!("worker: migrations complete");
     }
+    // As at `oxy serve` boot: a rollback's mutes, into the settings table.
+    crate::server::api::notifications::settings::reconcile::at_boot().await;
 
     // airway's process-wide `GlobalConfig`, from the singleton
     // `airway_deployment_config` row — installed once here rather than at the

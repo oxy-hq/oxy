@@ -2,47 +2,60 @@ import { Bell } from "lucide-react";
 import type { ReactNode } from "react";
 import { oxygenFirst } from "@/components/Notifications/utils";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
-import { useNotificationCatalog } from "@/hooks/api/notifications";
+import { useNotificationSettings, useUpdateNotificationSettings } from "@/hooks/api/notifications";
 import SectionHeader from "../../../components/SectionHeader";
-import { PushOnThisDevice } from "./components/PushOnThisDevice";
+import { Devices } from "./components/Devices";
+import { PauseRow } from "./components/PauseRow";
+import { QuietHoursRow } from "./components/QuietHoursRow";
 import { SourceGroup } from "./components/SourceGroup";
 
 const NOTE = "text-muted-foreground text-sm";
 
 /**
- * Account → Notifications: what Oxygen and each app may send the signed-in
- * person, and where — a switch per channel at every level of each source's
- * tree. The inbox always gets everything; these switches only mute the other
- * channels. Needs no org or workspace — every preference is the caller's own.
+ * Account → Notifications: everything the signed-in person decides about what
+ * reaches them, top down — pause and quiet hours for everything, each device
+ * push reaches, then a switch per channel at every level of each source's
+ * tree. The inbox always gets everything. Needs no org or workspace: every
+ * setting is the caller's own.
  */
 export default function AccountNotifications() {
-  const catalog = useNotificationCatalog();
-  const reach = catalog.data?.reach;
+  const settings = useNotificationSettings();
+  const update = useUpdateNotificationSettings();
+  const doc = settings.data;
 
-  let body: ReactNode;
-  if (catalog.isPending) {
-    body = <Skeleton className='h-24 w-full' />;
-  } else if (catalog.isError || !reach) {
-    body = <p className={NOTE}>Couldn't load your notification settings</p>;
-  } else if (catalog.data.sources.length === 0) {
-    body = (
-      <p className={NOTE} data-testid='notifications-prefs-empty'>
-        Nothing sends you notifications yet
-      </p>
-    );
+  let schedule: ReactNode = null;
+  let tree: ReactNode = null;
+  if (settings.isPending) {
+    schedule = <Skeleton className='h-24 w-full' />;
+  } else if (settings.isError || !doc) {
+    schedule = <p className={NOTE}>Couldn't load your notification settings</p>;
   } else {
-    body = (
-      <div className='flex flex-col gap-3'>
-        {!reach.email && (
-          <p className='text-muted-foreground text-xs' data-testid='notifications-no-email'>
-            No email on this account
-          </p>
-        )}
-        {oxygenFirst(catalog.data.sources).map((source) => (
-          <SourceGroup key={source.app?.id ?? "oxygen"} source={source} reach={reach} />
-        ))}
+    schedule = (
+      <div className='divide-y rounded-lg border'>
+        <PauseRow
+          global={doc.global}
+          onChange={(paused_until) => update.mutate({ global: { paused_until } })}
+        />
+        <QuietHoursRow global={doc.global} onChange={(global) => update.mutate({ global })} />
       </div>
     );
+    tree =
+      doc.sources.length === 0 ? (
+        <p className={NOTE} data-testid='notifications-prefs-empty'>
+          Nothing sends you notifications yet
+        </p>
+      ) : (
+        <div className='flex flex-col gap-3'>
+          {!doc.reach.email && (
+            <p className='text-muted-foreground text-xs' data-testid='notifications-no-email'>
+              No email on this account
+            </p>
+          )}
+          {oxygenFirst(doc.sources).map((source) => (
+            <SourceGroup key={source.app?.id ?? "oxygen"} source={source} reach={doc.reach} />
+          ))}
+        </div>
+      );
   }
 
   return (
@@ -52,8 +65,9 @@ export default function AccountNotifications() {
         title='Notifications'
         description='Your inbox gets everything. Choose what else reaches you.'
       />
-      <PushOnThisDevice devices={reach?.push_devices} />
-      {body}
+      {schedule}
+      <Devices />
+      {tree}
     </div>
   );
 }

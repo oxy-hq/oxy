@@ -46,6 +46,61 @@ pub async fn enqueue_task(
     scope: TaskScope,
 ) -> Result<(), DbErr> {
     let now = now();
+    enqueue_task_inner(
+        db,
+        task_id,
+        run_id,
+        parent_task_id,
+        spec,
+        policy,
+        scope,
+        now,
+        now,
+    )
+    .await
+}
+
+/// Like [`enqueue_task`], but not claimable before `available_at`: a run
+/// that is due later, spelled as *"not yet"* the way [`defer_task`] spells a
+/// deferral. Nothing bounds the wait — no `first_deferred_at` streak is
+/// started — so the caller owns how far ahead it schedules.
+#[allow(clippy::too_many_arguments)]
+pub async fn enqueue_task_at(
+    db: &impl ConnectionTrait,
+    task_id: &str,
+    run_id: &str,
+    parent_task_id: Option<&str>,
+    spec: &agentic_core::delegation::TaskSpec,
+    policy: Option<&agentic_core::delegation::TaskPolicy>,
+    scope: TaskScope,
+    available_at: sea_orm::prelude::DateTimeWithTimeZone,
+) -> Result<(), DbErr> {
+    enqueue_task_inner(
+        db,
+        task_id,
+        run_id,
+        parent_task_id,
+        spec,
+        policy,
+        scope,
+        now(),
+        available_at,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn enqueue_task_inner(
+    db: &impl ConnectionTrait,
+    task_id: &str,
+    run_id: &str,
+    parent_task_id: Option<&str>,
+    spec: &agentic_core::delegation::TaskSpec,
+    policy: Option<&agentic_core::delegation::TaskPolicy>,
+    scope: TaskScope,
+    now: sea_orm::prelude::DateTimeWithTimeZone,
+    available_at: sea_orm::prelude::DateTimeWithTimeZone,
+) -> Result<(), DbErr> {
     let model = task_queue::ActiveModel {
         task_id: Set(task_id.to_string()),
         run_id: Set(run_id.to_string()),
@@ -94,7 +149,7 @@ pub async fn enqueue_task(
         // `claim_task`'s `ORDER BY` key, so multi-instance skew also perturbs
         // claim *order*. Fairness rather than correctness, and equally
         // invisible.
-        available_at: Set(now),
+        available_at: Set(available_at),
         // Fresh work is not waiting on anything — clear any prior streak, on
         // the upsert path too (same reasoning as `available_at`).
         first_deferred_at: Set(None),

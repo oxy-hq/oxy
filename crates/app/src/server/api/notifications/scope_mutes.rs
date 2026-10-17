@@ -1,71 +1,25 @@
-//! Mutes above a kind: a whole source (`scope = ""`) or a category subtree.
+//! Mutes above a kind: a whole source (`scope = ""`) or a category subtree,
+//! through the old `PUT /api/notifications/preferences` scope form.
 //!
-//! A notification is muted on a channel when its kind or ANY ancestor — a
-//! category above it, or the source — is muted on that channel. A critical
-//! kind ignores every mute. Kind-level mutes keep their own tables
-//! (`notification_mutes`, `notification_platform_mutes`); these are the rest,
-//! in `notification_scope_mutes`, with `app_id = NULL` for Oxygen.
+//! A mute is now a channel set off at a scope node of
+//! `notification_node_settings` (`settings::store`), which delivery reads;
+//! unmuting sets it back to inherit. [`check`] is the rule both this route
+//! and `PATCH /api/notifications/settings` apply before writing one.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::BTreeSet;
 
 use axum::http::StatusCode;
-use entity::{apps, notification_scope_mutes as m, notifications};
+use entity::{apps, notifications};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter, QuerySelect, Statement,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect,
 };
 use uuid::Uuid;
 
-use super::catalog::model::{ancestors, is_within, valid_path};
+use super::catalog::model::{is_within, valid_path};
 use super::catalog::platform::oxygen;
 use super::catalog::source::SourceCatalogue;
 use super::delivery::Channel;
-
-/// One person's scope mutes: source (`None` = Oxygen) → scope → channels.
-pub type ScopeMutes = HashMap<Option<Uuid>, HashMap<String, Vec<&'static str>>>;
-
-pub async fn for_user(db: &DatabaseConnection, user_id: Uuid) -> Result<ScopeMutes, DbErr> {
-    let mut out: ScopeMutes = HashMap::new();
-    for row in m::Entity::find()
-        .filter(m::Column::UserId.eq(user_id))
-        .all(db)
-        .await?
-    {
-        if let Some(c) = Channel::parse(&row.channel) {
-            out.entry(row.app_id)
-                .or_default()
-                .entry(row.scope)
-                .or_default()
-                .push(c.as_str());
-        }
-    }
-    Ok(out)
-}
-
-/// Who muted which channel at `category`, above it, or on the whole source
-/// (`app`, `None` for Oxygen), among `users`.
-pub async fn muted(
-    db: &DatabaseConnection,
-    app: Option<Uuid>,
-    category: &str,
-    users: &[Uuid],
-) -> Result<HashSet<(Uuid, Channel)>, DbErr> {
-    let mut scopes = ancestors(category);
-    scopes.push(String::new());
-    let find = m::Entity::find()
-        .filter(m::Column::UserId.is_in(users.iter().copied()))
-        .filter(m::Column::Scope.is_in(scopes));
-    let find = match app {
-        Some(app) => find.filter(m::Column::AppId.eq(app)),
-        None => find.filter(m::Column::AppId.is_null()),
-    };
-    Ok(find
-        .all(db)
-        .await?
-        .into_iter()
-        .filter_map(|row| Channel::parse(&row.channel).map(|c| (row.user_id, c)))
-        .collect())
-}
+use super::settings::model::Node;
 
 /// Whether muting `channel` at `scope` is a mute that can mean something.
 ///
@@ -147,15 +101,17 @@ pub async fn set(
         channel,
         muted,
     )?;
-    write(db, user.id, app_id, scope, channel, muted)
+    let value = muted.then_some(false);
+    let node = Node::Scope(scope.to_string());
+    super::settings::store::set_channel(db, user.id, app_id, &node, channel, value)
         .await
         .map_err(internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 /// The kinds `user_id` has received from `app` (`None`: Oxygen).
-async fn received_kinds(
-    db: &DatabaseConnection,
+pub(crate) async fn received_kinds(
+    db: &impl ConnectionTrait,
     user_id: Uuid,
     app: Option<Uuid>,
 ) -> Result<Vec<String>, DbErr> {
@@ -169,44 +125,6 @@ async fn received_kinds(
         None => find.filter(notifications::Column::AppId.is_null()),
     };
     find.into_tuple::<String>().all(db).await
-}
-
-async fn write(
-    db: &DatabaseConnection,
-    user_id: Uuid,
-    app_id: Option<Uuid>,
-    scope: &str,
-    channel: Channel,
-    muted: bool,
-) -> Result<(), DbErr> {
-    if muted {
-        // No conflict target: either partial unique index makes a repeat a
-        // no-op, and only one of them applies to a given row.
-        db.execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "INSERT INTO notification_scope_mutes (id, user_id, app_id, scope, channel) \
-             VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
-            [
-                Uuid::new_v4().into(),
-                user_id.into(),
-                app_id.into(),
-                scope.into(),
-                channel.as_str().into(),
-            ],
-        ))
-        .await?;
-        return Ok(());
-    }
-    let find = m::Entity::delete_many()
-        .filter(m::Column::UserId.eq(user_id))
-        .filter(m::Column::Scope.eq(scope))
-        .filter(m::Column::Channel.eq(channel.as_str()));
-    let find = match app_id {
-        Some(app) => find.filter(m::Column::AppId.eq(app)),
-        None => find.filter(m::Column::AppId.is_null()),
-    };
-    find.exec(db).await?;
-    Ok(())
 }
 
 #[cfg(test)]

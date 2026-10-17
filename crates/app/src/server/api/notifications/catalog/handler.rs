@@ -3,15 +3,20 @@
 //! every node and unread counts per subtree.
 //!
 //! Self-scoped like the inbox. Oxygen is listed once the person has received
-//! or muted one of its notices; an app once it has notified them, or when its
-//! live build declares a catalogue and they are in its audience. Catalogues
-//! are config read from Oxy's database; no org store is touched.
+//! one of its notices or set something on it; an app once it has notified
+//! them, when they set something on it, or when its live build declares a
+//! catalogue and they are in its audience. Catalogues are config read from
+//! Oxy's database; no org store is touched.
+//!
+//! The settings document (`GET /api/notifications/settings`) lists the same
+//! sources ([`listed_sources`]), and both read what was set from
+//! `notification_node_settings`: a mute here is a channel set off there.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use axum::Json;
 use axum::http::StatusCode;
-use entity::{apps, notification_mutes, notification_platform_mutes, notifications, organizations};
+use entity::{apps, notifications, organizations};
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_auth::types::AuthenticatedUser;
@@ -25,9 +30,9 @@ use super::platform::oxygen;
 use super::source::SourceCatalogue;
 use super::tree::{self, CategoryNode, Facts};
 use crate::server::api::custom_apps_functions::audience::PersonReach;
-use crate::server::api::notifications::delivery::Channel;
 use crate::server::api::notifications::preferences::{Reachability, reachability};
-use crate::server::api::notifications::scope_mutes::{self, ScopeMutes};
+use crate::server::api::notifications::settings::model::Node;
+use crate::server::api::notifications::settings::store::{self, UserNodes};
 
 #[derive(Debug, Serialize)]
 pub struct SourceApp {
@@ -73,7 +78,15 @@ pub async fn catalog(
 /// Everything `user` has, per source (`None` = Oxygen).
 struct Had {
     kinds: HashMap<Option<Uuid>, Facts>,
-    scope: ScopeMutes,
+}
+
+/// One source as both the catalogue and the settings document list it.
+pub struct Listed {
+    /// `None` for Oxygen.
+    pub app: Option<SourceApp>,
+    pub label: String,
+    pub catalogue: SourceCatalogue,
+    pub facts: Facts,
 }
 
 /// The catalogue as `user` sees it. Separate from the route so it can be
@@ -82,64 +95,75 @@ pub async fn catalog_for(
     db: &DatabaseConnection,
     user: &AuthenticatedUser,
 ) -> Result<CatalogResponse, DbErr> {
-    let blocked: HashSet<Uuid> = user.blocked_orgs().iter().copied().collect();
-    let mut had = had(db, user.id, &blocked).await?;
-    let mut sources = Vec::new();
-    let oxygen_facts = had.facts(None);
-    if !oxygen_facts.kinds.is_empty() || !oxygen_facts.scope_mutes.is_empty() {
-        sources.push(source_node(&oxygen(), None, "Oxygen".into(), &oxygen_facts));
-    }
-    for (app, org_slug, catalogue) in apps_for(db, user, &blocked, &had).await? {
-        let facts = had.facts(Some(app.id));
-        let source = SourceApp {
-            id: app.id,
-            slug: app.slug,
-            name: app.name.clone(),
-            org_slug,
-        };
-        sources.push(source_node(&catalogue, Some(source), app.name, &facts));
-    }
+    let sources = listed_sources(db, user)
+        .await?
+        .into_iter()
+        .map(source_node)
+        .collect();
     Ok(CatalogResponse {
         sources,
         reach: reachability(db, user.id).await?,
     })
 }
 
-fn source_node(
-    catalogue: &SourceCatalogue,
-    app: Option<SourceApp>,
-    label: String,
-    facts: &Facts,
-) -> SourceNode {
-    let (categories, unread) = tree::build(catalogue, facts);
+/// Every source `user` is listed, in order: Oxygen first, then apps by name.
+pub async fn listed_sources(
+    db: &DatabaseConnection,
+    user: &AuthenticatedUser,
+) -> Result<Vec<Listed>, DbErr> {
+    let blocked: HashSet<Uuid> = user.blocked_orgs().iter().copied().collect();
+    let mut had = had(db, user.id, &blocked).await?;
+    let mut sources = Vec::new();
+    let oxygen_facts = had.facts(None);
+    if !oxygen_facts.kinds.is_empty() || !oxygen_facts.nodes.is_empty() {
+        sources.push(Listed {
+            app: None,
+            label: "Oxygen".into(),
+            catalogue: oxygen(),
+            facts: oxygen_facts,
+        });
+    }
+    for (app, org_slug, catalogue) in apps_for(db, user, &blocked, &had).await? {
+        let facts = had.facts(Some(app.id));
+        sources.push(Listed {
+            label: app.name.clone(),
+            app: Some(SourceApp {
+                id: app.id,
+                slug: app.slug,
+                name: app.name,
+                org_slug,
+            }),
+            catalogue,
+            facts,
+        });
+    }
+    Ok(sources)
+}
+
+fn source_node(listed: Listed) -> SourceNode {
+    let (categories, unread) = tree::build(&listed.catalogue, &listed.facts);
     SourceNode {
-        source: catalogue.source.as_str(),
-        app,
-        label,
-        muted: facts.scope_muted(""),
+        source: listed.catalogue.source.as_str(),
+        app: listed.app,
+        label: listed.label,
+        muted: listed.facts.scope_muted(""),
         unread,
         categories,
     }
 }
 
 impl Had {
-    /// This source's facts, scope mutes included.
+    /// This source's facts.
     fn facts(&mut self, source: Option<Uuid>) -> Facts {
-        let mut facts = self.kinds.remove(&source).unwrap_or_default();
-        facts.scope_mutes = self.scope.remove(&source).unwrap_or_default();
-        facts
+        self.kinds.remove(&source).unwrap_or_default()
     }
 
     fn sources(&self) -> BTreeSet<Uuid> {
-        self.kinds
-            .keys()
-            .chain(self.scope.keys())
-            .filter_map(|s| *s)
-            .collect()
+        self.kinds.keys().filter_map(|s| *s).collect()
     }
 }
 
-/// What `user_id` received (with unread counts) and muted, per source.
+/// What `user_id` received (with unread counts) and set, per source.
 async fn had(
     db: &DatabaseConnection,
     user_id: Uuid,
@@ -168,32 +192,20 @@ async fn had(
             .insert(kind.clone(), u64::try_from(unread).unwrap_or(0));
         facts.kinds.insert(kind);
     }
-    for m in notification_mutes::Entity::find()
-        .filter(notification_mutes::Column::UserId.eq(user_id))
-        .all(db)
-        .await?
-    {
-        add_mute(kinds.entry(Some(m.app_id)).or_default(), m.kind, &m.channel);
-    }
-    for m in notification_platform_mutes::Entity::find()
-        .filter(notification_platform_mutes::Column::UserId.eq(user_id))
-        .all(db)
-        .await?
-    {
-        add_mute(kinds.entry(None).or_default(), m.kind, &m.channel);
-    }
-    let scope = scope_mutes::for_user(db, user_id).await?;
-    Ok(Had { kinds, scope })
+    add_settings(&mut kinds, store::nodes_for_user(db, user_id).await?);
+    Ok(Had { kinds })
 }
 
-fn add_mute(facts: &mut Facts, kind: String, channel: &str) {
-    if let Some(c) = Channel::parse(channel) {
-        facts
-            .kind_mutes
-            .entry(kind.clone())
-            .or_default()
-            .push(c.as_str());
-        facts.kinds.insert(kind);
+/// Each source's settings into its facts; a kind set is a kind listed.
+fn add_settings(kinds: &mut HashMap<Option<Uuid>, Facts>, set: UserNodes) {
+    for (source, nodes) in set {
+        let facts = kinds.entry(source).or_default();
+        for node in nodes.keys() {
+            if let Node::Kind(kind) = node {
+                facts.kinds.insert(kind.clone());
+            }
+        }
+        facts.nodes = nodes;
     }
 }
 
@@ -221,7 +233,7 @@ async fn apps_for(
     let told = super::audience::told_by_many(db, user.id, &reach, &rows).await?;
     let rows: Vec<apps::Model> = rows.into_iter().filter(|a| told.contains(&a.id)).collect();
     let mut catalogues = super::live::load_many(db, &rows).await?;
-    // Received from or muted: listed. Otherwise only for a catalogue to show.
+    // Received from or set: listed. Otherwise only for a catalogue to show.
     let kept: Vec<(apps::Model, SourceCatalogue)> = rows
         .into_iter()
         .filter_map(|app| {

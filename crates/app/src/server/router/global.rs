@@ -132,10 +132,24 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
             "/notifications/read-all",
             post(notifications::handlers::mark_all_read),
         )
+        // Pause, quiet hours, every node's channels and floor, devices: one
+        // document, `ETag`/`If-Match` versioned. Postgres only.
+        .route_fleet(
+            "/notifications/settings",
+            get(notifications::settings::handlers::get_settings)
+                .patch(notifications::settings::handlers::patch_settings),
+        )
         .route_fleet(
             "/notifications/devices",
-            post(notifications::handlers::register_device)
-                .delete(notifications::handlers::unregister_device),
+            get(notifications::devices::list)
+                .post(notifications::devices::register::register_device)
+                .delete(notifications::devices::register::unregister_device),
+        )
+        // One device's settings and the OS state its app reports on launch.
+        .route_fleet(
+            "/notifications/devices/{id}",
+            axum::routing::patch(notifications::devices::patch)
+                .delete(notifications::devices::delete),
         )
         // Send yourself a test. Postgres only, rate-limited by reading the
         // caller's notification rows, so any replica can take it.

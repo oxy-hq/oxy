@@ -1,10 +1,15 @@
-//! What a person has turned off, and the routes to change it.
+//! What a person has turned off, and the routes to change it — the shape
+//! from before the settings document (`settings`), kept working.
 //!
 //! One switch per (app, kind, channel), listed for the kinds the person has
-//! actually been sent or has muted — the inbox is the catalogue, so a kind
+//! actually been sent or has set — the inbox is the catalogue, so a kind
 //! appears the first time an app uses it. Push, email and Slack can be muted;
 //! the inbox cannot, because it is the record that the person was told. A kind
 //! the app declared critical ignores mutes, and says so here.
+//!
+//! A mute is a channel set off at a node of `notification_node_settings`
+//! and an unmute sets it back to inherit (`settings::store`); `muted` lists
+//! the channels set off at the kind itself.
 //!
 //! Self-scoped like the inbox: every query filters `user_id = me`.
 
@@ -12,13 +17,11 @@ use std::collections::{BTreeMap, HashSet};
 
 use axum::Json;
 use axum::http::StatusCode;
-use chrono::Utc;
-use entity::{apps, device_tokens, notification_mutes, notification_sends, notifications, users};
+use entity::{apps, device_tokens, notification_sends, notifications, users};
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
-    Set,
 };
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
@@ -27,6 +30,8 @@ use uuid::Uuid;
 use super::delivery::Channel;
 use super::inbox_view::InboxApp;
 use super::input::{is_reserved_kind, valid_kind};
+use super::settings::model::Node;
+use super::settings::store;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct KindPreference {
@@ -85,21 +90,24 @@ pub async fn get_preferences(
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    preferences_for(&db, &user)
+        .await
+        .map(Json)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+/// The preferences `user` sees. Separate from the route so it can be driven
+/// against a test database.
+pub async fn preferences_for(
+    db: &DatabaseConnection,
+    user: &oxy_auth::types::AuthenticatedUser,
+) -> Result<PreferencesResponse, DbErr> {
     let blocked: HashSet<Uuid> = user.blocked_orgs().iter().copied().collect();
-    let apps = app_preferences(&db, user.id, &blocked)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let platform = super::platform::preferences::kinds(&db, user.id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let reach = reachability(&db, user.id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(PreferencesResponse {
-        apps,
-        platform,
-        reach,
-    }))
+    Ok(PreferencesResponse {
+        apps: app_preferences(db, user.id, &blocked).await?,
+        platform: super::platform::preferences::kinds(db, user.id).await?,
+        reach: reachability(db, user.id).await?,
+    })
 }
 
 /// `PUT /api/notifications/preferences` — mute or unmute one channel for one
@@ -159,9 +167,17 @@ async fn set_kind(
     {
         return Err(StatusCode::NOT_FOUND);
     }
-    write_mute(db, user.id, app.id, kind, channel, muted)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let node = Node::Kind(kind.to_string());
+    store::set_channel(
+        db,
+        user.id,
+        Some(app.id),
+        &node,
+        channel,
+        muted.then_some(false),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -199,48 +215,7 @@ pub async fn may_be_told_by(
     Ok(may_be_told(received, in_audience))
 }
 
-async fn write_mute(
-    db: &DatabaseConnection,
-    user_id: Uuid,
-    app_id: Uuid,
-    kind: &str,
-    channel: Channel,
-    muted: bool,
-) -> Result<(), DbErr> {
-    use notification_mutes as m;
-    if muted {
-        m::Entity::insert(m::ActiveModel {
-            user_id: Set(user_id),
-            app_id: Set(app_id),
-            kind: Set(kind.to_string()),
-            channel: Set(channel.as_str().to_string()),
-            created_at: Set(Utc::now().fixed_offset()),
-        })
-        .on_conflict(
-            sea_orm::sea_query::OnConflict::columns([
-                m::Column::UserId,
-                m::Column::AppId,
-                m::Column::Kind,
-                m::Column::Channel,
-            ])
-            .do_nothing()
-            .to_owned(),
-        )
-        .exec_without_returning(db)
-        .await?;
-    } else {
-        m::Entity::delete_many()
-            .filter(m::Column::UserId.eq(user_id))
-            .filter(m::Column::AppId.eq(app_id))
-            .filter(m::Column::Kind.eq(kind))
-            .filter(m::Column::Channel.eq(channel.as_str()))
-            .exec(db)
-            .await?;
-    }
-    Ok(())
-}
-
-/// Every (app, kind) this person was sent or muted, with its mutes.
+/// Every (app, kind) this person was sent or set, with its mutes.
 async fn app_preferences(
     db: &DatabaseConnection,
     user_id: Uuid,
@@ -259,18 +234,16 @@ async fn app_preferences(
         .into_iter()
         .filter_map(|(app, kind)| app.map(|a| (a, kind)))
         .collect();
-    let mutes = notification_mutes::Entity::find()
-        .filter(notification_mutes::Column::UserId.eq(user_id))
-        .all(db)
-        .await?;
     let mut by_app: BTreeMap<Uuid, BTreeMap<String, Vec<&'static str>>> = BTreeMap::new();
     for (app, kind) in received {
         by_app.entry(app).or_default().entry(kind).or_default();
     }
-    for m in &mutes {
-        if let Some(c) = Channel::parse(&m.channel) {
-            let kinds = by_app.entry(m.app_id).or_default();
-            kinds.entry(m.kind.clone()).or_default().push(c.as_str());
+    for (source, nodes) in store::nodes_for_user(db, user_id).await? {
+        let Some(app) = source else { continue };
+        for (node, settings) in nodes {
+            if let Node::Kind(kind) = node {
+                by_app.entry(app).or_default().insert(kind, settings.off());
+            }
         }
     }
     let critical = critical_kinds(db, by_app.keys().copied().collect()).await?;

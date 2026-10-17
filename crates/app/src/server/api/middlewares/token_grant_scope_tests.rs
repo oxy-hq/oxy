@@ -143,14 +143,14 @@ fn every_blocked_decision_names_one_membership_keyed_route_once() {
         );
         assert!(!how.is_empty(), "{route} does not say how");
         // No other entry answers for this route, by name or by `{param}`. Two
-        // entries may share a path only where `when_blocked` picks one by rule:
-        // a route with no `{param}` beside a sibling that has one in its place.
-        // Two that both carry a `{param}` would leave it to the list's order.
+        // entries may share a path only where `when_blocked` picks one by rule,
+        // the router's: at the first segment where they differ, the literal
+        // wins. Two of the same shape would leave it to the list's order.
         let rivals: Vec<&str> = WHEN_BLOCKED
             .iter()
             .map(|(other, ..)| *other)
             .filter(|other| other != route && share_a_path(route, other))
-            .filter(|other| route.contains('{') && other.contains('{'))
+            .filter(|other| shape(route) == shape(other))
             .collect();
         assert!(
             rivals.is_empty(),
@@ -198,6 +198,24 @@ fn a_literal_route_is_decided_before_a_param_sibling() {
     assert_eq!(
         when_blocked("/notifications/vapid-public-key"),
         Some(Blocked::NoOrgData)
+    );
+    // Both carry a `{param}`, and `/notifications/devices/read` is an instance
+    // of each: the one literal first is the router's pick.
+    assert!(share_a_path(
+        "/notifications/devices/{id}",
+        "/notifications/{id}/read"
+    ));
+    assert_eq!(
+        when_blocked("/notifications/devices/read"),
+        Some(Blocked::NoOrgData)
+    );
+    assert_eq!(
+        when_blocked(&format!("/notifications/devices/{ID}")),
+        Some(Blocked::NoOrgData)
+    );
+    assert_eq!(
+        when_blocked(&format!("/notifications/{ID}/read")),
+        Some(Blocked::LeftOut)
     );
     assert_eq!(when_blocked("/notifications/test"), Some(Blocked::LeftOut));
     assert_eq!(

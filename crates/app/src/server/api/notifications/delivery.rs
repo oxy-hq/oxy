@@ -11,13 +11,18 @@
 //! - **Skips are recorded, with a code.** "Muted", "no devices", "no address",
 //!   "not linked to Slack" and "push not configured" are answers someone will
 //!   ask for; an absent row could mean any of them, or that nothing ran.
-//! - **Mutes apply at the kind or any ancestor** — per (app, kind, channel),
-//!   or (kind, channel) for a platform notice, and per category subtree or
-//!   whole source (`scope_mutes`) — except to a critical kind.
+//! - **What the person set decides first**, through the one decision
+//!   (`settings::decide`): the nearest explicit node setting, its floor,
+//!   pause and quiet hours, then each device's own settings and OS state. Its
+//!   reason is what the row records. A critical kind overrides the person's
+//!   settings, never a device that is off or blocked by its OS.
+//! - **A push held by quiet hours** is summarized when the window ends, once
+//!   per person (`settings::summary`).
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
-use entity::{notification_mutes, notification_sends, notifications};
+use chrono::{DateTime, Utc};
+use entity::{notification_sends, notifications};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, EntityTrait,
     QueryFilter, Statement,
@@ -26,6 +31,9 @@ use uuid::Uuid;
 
 use super::catalog::source::KindInfo;
 use super::channels::{ChannelOutcome, Channels};
+use super::settings::decide::{Device, KindFacts, Settings, decide};
+use super::settings::model::{DeviceSettings, GlobalSettings};
+use super::settings::store::{self, SourceNodes};
 
 /// The out-of-band channels, as stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -115,22 +123,37 @@ async fn deliver(db: &DatabaseConnection, send_id: Uuid) -> Result<DeliveryRepor
     }
     let users: Vec<Uuid> = signals.iter().map(|s| s.user_id).collect();
     // Where the kind sits today: its category decides which category and
-    // source mutes reach it, and the push envelope carries it.
+    // source settings reach it, and the push envelope carries it.
     let info = super::catalog::live::describe_send(db, &send)
         .await
         .map_err(|e| format!("load the catalogue: {e}"))?;
-    let muted = mutes(db, &send, &info, &users)
+    let people = People::load(db, &send, &info, &users)
         .await
-        .map_err(|e| format!("load mutes: {e}"))?;
+        .map_err(|e| format!("load settings: {e}"))?;
     let channels = Channels::load(db, &send, &signals, &info).await?;
+    let kind = KindFacts::of(&info, send.critical);
+    let now = Utc::now();
+    let mut held = Vec::new();
     for signal in &signals {
+        let settings = people.settings(signal.user_id, &info);
         for channel in requested(&send) {
-            let outcome = deliver_one(db, &channels, signal, channel, &muted)
+            let one = One {
+                signal,
+                channel,
+                settings: &settings,
+                kind: &kind,
+                now,
+            };
+            let outcome = deliver_one(db, &channels, &one)
                 .await
                 .map_err(|e| format!("record a delivery: {e}"))?;
+            if channel == Channel::Push && outcome == ChannelOutcome::Skipped("quiet_hours") {
+                held.push(signal.user_id);
+            }
             report.add(&outcome);
         }
     }
+    super::settings::summary::schedule_for(db, &send, &people.global, &held, now).await;
     Ok(report)
 }
 
@@ -146,56 +169,77 @@ fn requested(send: &notification_sends::Model) -> Vec<Channel> {
     out
 }
 
+/// What every recipient of one send set: person-level, and on the way from
+/// the send's kind up to its source.
+struct People {
+    global: HashMap<Uuid, GlobalSettings>,
+    nodes: HashMap<Uuid, SourceNodes>,
+}
+
+impl People {
+    async fn load(
+        db: &DatabaseConnection,
+        send: &notification_sends::Model,
+        info: &KindInfo,
+        users: &[Uuid],
+    ) -> Result<Self, DbErr> {
+        Ok(Self {
+            global: store::people_settings(db, users).await?,
+            nodes: store::nodes_for_kind(db, users, send.app_id, &info.kind, &info.category)
+                .await?,
+        })
+    }
+
+    fn settings<'a>(&'a self, user: Uuid, info: &'a KindInfo) -> Settings<'a> {
+        static NOTHING_SET: GlobalSettings = GlobalSettings {
+            paused_until: None,
+            quiet_hours: None,
+            timezone: None,
+        };
+        let global = self.global.get(&user).unwrap_or(&NOTHING_SET);
+        // Labels only name a deciding node in the settings document; the
+        // ledger records the reason alone.
+        Settings::for_kind(global, self.nodes.get(&user), info, "")
+    }
+}
+
+/// One (recipient, channel) to deliver.
+struct One<'a> {
+    signal: &'a notifications::Model,
+    channel: Channel,
+    settings: &'a Settings<'a>,
+    kind: &'a KindFacts,
+    now: DateTime<Utc>,
+}
+
 async fn deliver_one(
     db: &DatabaseConnection,
     channels: &Channels,
-    signal: &notifications::Model,
-    channel: Channel,
-    muted: &HashSet<(Uuid, Channel)>,
+    one: &One<'_>,
 ) -> Result<ChannelOutcome, DbErr> {
+    let (signal, channel) = (one.signal, one.channel);
     if !claim(db, signal.id, channel).await? {
         // Already sent, skipped, or claimed by a run that may have sent it.
         return Ok(ChannelOutcome::Skipped("already_attempted"));
     }
-    let outcome = if muted.contains(&(signal.user_id, channel)) {
-        ChannelOutcome::Skipped("muted")
-    } else {
-        channels.send(channel, signal).await
+    let decision = decide(one.settings, one.kind, channel, None, one.now);
+    let outcome = match decision.reason {
+        Some(reason) => ChannelOutcome::Skipped(reason.as_str()),
+        None if channel == Channel::Push => {
+            let channel_id = channels.channel_id(signal);
+            let refuses = |device: &DeviceSettings| {
+                let target = Device {
+                    settings: device,
+                    channel_id: &channel_id,
+                };
+                decide(one.settings, one.kind, channel, Some(&target), one.now).reason
+            };
+            channels.push_where(signal, refuses).await
+        }
+        None => channels.send(channel, signal).await,
     };
     finish(db, signal.id, channel, &outcome).await?;
     Ok(outcome)
-}
-
-/// Who muted which channel for this send: at its kind (per app and kind, or
-/// for a platform notice per kind), at its category or one above it, or on
-/// its whole source. Empty for a kind no mute applies to: a critical one —
-/// critical when the send said so, or when its catalogue says so today — and
-/// a platform kind that is never muted (`kinds::is_mutable`: a test notice).
-async fn mutes(
-    db: &DatabaseConnection,
-    send: &notification_sends::Model,
-    info: &KindInfo,
-    users: &[Uuid],
-) -> Result<HashSet<(Uuid, Channel)>, DbErr> {
-    if send.critical || !info.mutable {
-        return Ok(HashSet::new());
-    }
-    let mut muted = super::scope_mutes::muted(db, send.app_id, &info.category, users).await?;
-    let Some(app_id) = send.app_id else {
-        muted.extend(super::platform::preferences::muted(db, &send.kind, users).await?);
-        return Ok(muted);
-    };
-    muted.extend(
-        notification_mutes::Entity::find()
-            .filter(notification_mutes::Column::AppId.eq(app_id))
-            .filter(notification_mutes::Column::Kind.eq(&send.kind))
-            .filter(notification_mutes::Column::UserId.is_in(users.iter().copied()))
-            .all(db)
-            .await?
-            .into_iter()
-            .filter_map(|m| Channel::parse(&m.channel).map(|c| (m.user_id, c))),
-    );
-    Ok(muted)
 }
 
 /// Take (signal, channel) for this attempt. `true` when it is ours to send: a

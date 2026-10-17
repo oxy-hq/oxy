@@ -10,8 +10,8 @@ use chrono::{TimeZone, Utc};
 use entity::org_members::OrgRole;
 use entity::workspaces::WorkspaceStatus;
 use entity::{
-    notification_deliveries, notification_platform_mutes, notification_sends, notifications,
-    org_members, organizations, users, workspaces,
+    notification_deliveries, notification_sends, notifications, org_members, organizations, users,
+    workspaces,
 };
 use oxy_app::server::api::billing::notify::past_due_notice;
 use oxy_app::server::api::notifications::delivery::{Channel, deliver_send};
@@ -22,6 +22,8 @@ use oxy_app::server::api::notifications::platform::kinds::{
 use oxy_app::server::api::notifications::platform::preferences;
 use oxy_app::server::api::notifications::platform::run_failed::notify_run_failed;
 use oxy_app::server::api::notifications::platform::workspace_ready::notify_workspace_ready;
+use oxy_app::server::api::notifications::settings::model::Node;
+use oxy_app::server::api::notifications::settings::store;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
@@ -199,15 +201,10 @@ async fn platform_notices_billing_reaches_every_owner_once_and_cannot_be_muted()
         preferences::set(&db, org.owner, BILLING_PAST_DUE, Channel::Push, true).await,
         Err(axum::http::StatusCode::BAD_REQUEST)
     );
-    notification_platform_mutes::ActiveModel {
-        user_id: Set(org.owner),
-        kind: Set(BILLING_PAST_DUE.into()),
-        channel: Set("push".into()),
-        created_at: Set(Utc::now().fixed_offset()),
-    }
-    .insert(&db)
-    .await
-    .expect("seed a mute");
+    let billing = Node::Kind(BILLING_PAST_DUE.into());
+    store::set_channel(&db, org.owner, None, &billing, Channel::Push, Some(false))
+        .await
+        .expect("seed a mute");
     deliver_send(&db, sent.id.unwrap()).await;
     let owners_signal = rows.iter().find(|r| r.user_id == org.owner).unwrap();
     assert_ne!(

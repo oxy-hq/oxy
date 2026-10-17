@@ -1357,6 +1357,18 @@ fn build_custom_task_registry(
             Arc::new(NotificationDeliverExecutor { db: db.clone() }),
         );
     }
+    // The pushes quiet hours held, told as one when the window ends. Queued
+    // by a delivery run, due hours later (`available_at`); a pod without the
+    // kind fails it and the holds stay in the inbox.
+    {
+        use crate::server::api::notifications::settings::summary_task::{
+            QUIET_SUMMARY_KIND, QuietSummaryExecutor,
+        };
+        reg.register(
+            QUIET_SUMMARY_KIND,
+            Arc::new(QuietSummaryExecutor { db: db.clone() }),
+        );
+    }
     // A custom app's procedure run, queued by `POST …/procedures/{id}/runs`.
     // It builds its own context from the caller the request authenticated —
     // never from this driver's platform, which has no subject. A pod without

@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
+const api = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  patch: vi.fn(),
+  delete: vi.fn()
+}));
 vi.mock("./axios", () => ({ apiClient: api }));
 
 import { NotificationsService } from "./notifications";
@@ -9,6 +15,8 @@ beforeEach(() => {
   api.get.mockReset().mockResolvedValue({ data: {} });
   api.post.mockReset().mockResolvedValue({ data: {} });
   api.put.mockReset().mockResolvedValue({ data: {} });
+  api.patch.mockReset().mockResolvedValue({ data: {} });
+  api.delete.mockReset().mockResolvedValue({ data: "" });
 });
 
 describe("NotificationsService.inbox", () => {
@@ -65,19 +73,32 @@ describe("NotificationsService writes", () => {
     expect(api.post).toHaveBeenCalledWith("/notifications/read-all", undefined, { params: {} });
   });
 
-  it("puts the scope form as given", async () => {
-    await NotificationsService.setPreference({
-      app_id: null,
-      scope: "",
-      channel: "email",
-      muted: true
+  it("patches settings against a version with If-Match, and without one when it has none", async () => {
+    const patch = { global: { paused_until: null } };
+    await NotificationsService.updateSettings(patch, "v7");
+    await NotificationsService.updateSettings(patch);
+    expect(api.patch).toHaveBeenNthCalledWith(1, "/notifications/settings", patch, {
+      headers: { "If-Match": "v7" }
     });
-    expect(api.put).toHaveBeenCalledWith("/notifications/preferences", {
-      app_id: null,
-      scope: "",
-      channel: "email",
-      muted: true
+    expect(api.patch).toHaveBeenNthCalledWith(2, "/notifications/settings", patch, {
+      headers: undefined
     });
+  });
+
+  it("patches and removes a device by its escaped id", async () => {
+    await NotificationsService.updateDevice("d/1", { enabled: false });
+    await NotificationsService.removeDevice("d/1");
+    expect(api.patch).toHaveBeenCalledWith("/notifications/devices/d%2F1", { enabled: false });
+    expect(api.delete).toHaveBeenCalledWith("/notifications/devices/d%2F1");
+  });
+
+  it("answers a registration with the device's id, or null from a server that sends none", async () => {
+    const input = { platform: "web" as const, token: "https://push.example/sub/abc" };
+    api.post.mockResolvedValueOnce({ data: { id: "d-9" } });
+    await expect(NotificationsService.registerDevice(input)).resolves.toBe("d-9");
+    api.post.mockResolvedValueOnce({ data: "" });
+    await expect(NotificationsService.registerDevice(input)).resolves.toBeNull();
+    expect(api.post).toHaveBeenCalledWith("/notifications/devices", input);
   });
 
   it("runs an action by id, escaping both ids", async () => {
@@ -96,5 +117,12 @@ describe("NotificationsService reads", () => {
     await NotificationsService.item("n-1");
     expect(api.get).toHaveBeenNthCalledWith(1, "/notifications/catalog");
     expect(api.get).toHaveBeenNthCalledWith(2, "/notifications/n-1");
+  });
+
+  it("reads the settings document and the devices", async () => {
+    await NotificationsService.settings();
+    await NotificationsService.devices();
+    expect(api.get).toHaveBeenNthCalledWith(1, "/notifications/settings");
+    expect(api.get).toHaveBeenNthCalledWith(2, "/notifications/devices");
   });
 });
