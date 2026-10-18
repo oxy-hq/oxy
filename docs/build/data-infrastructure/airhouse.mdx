@@ -32,6 +32,53 @@ query it. It speaks the Postgres wire protocol, runs queries on
 - **Works with existing tools.** Any Postgres-compatible client or BI tool can
   connect without a new driver.
 
+## Performance
+
+We measured Airhouse with [ClickBench](https://github.com/ClickHouse/ClickBench),
+an open analytics benchmark: 43 queries over a 100-million-row table, run with
+ClickBench's own harness on its reference machine, an AWS c6a.4xlarge (16 vCPU,
+32 GB). Airhouse ran on that single machine, with its tables as Parquet in S3
+and the DuckLake catalog in Postgres on the same machine. This is a benchmark
+setup, not the managed service your workspace runs on. All 43 queries
+completed, and a warm run of the full suite took 34.3 seconds.
+
+ClickBench scores each system by dividing its time on every query by the
+fastest system's time on that query and taking the geometric mean, so **1.0
+would be fastest on every query and lower is better**.
+
+| System | Warm-run score | Warm total |
+|---|---|---|
+| MotherDuck Jumbo | 1.31× | 14.4 s |
+| ClickHouse, local disk | 1.37× | 16.6 s |
+| DuckDB, local file | 2.56× | 26.2 s |
+| **Airhouse, data in S3** | **3.50×** | **34.3 s** |
+| BigQuery | 6.04× | 27.3 s |
+| Databricks SQL Medium | 6.37× | 32.2 s |
+| Snowflake Medium (Gen2) | 6.99× | 60.3 s |
+
+With its data in object storage, Airhouse scores ahead of BigQuery, Databricks,
+and Snowflake, and behind MotherDuck and the engines that read from local disk.
+A score is an average of per-query ratios, so the ratio of two scores is not a
+speed-up.
+
+<Note>
+How to read these numbers:
+
+- **Single run.** This is one run by the Airhouse team on 12 October 2026, not
+  yet submitted to or reviewed by ClickBench.
+- **One setting changed.** The run used a larger Parquet row-group size than
+  the default. Databases provisioned today still use the smaller default until
+  the new one ships.
+- **Recomputed scores.** The other systems' scores are recomputed from their
+  published ClickBench timings, against only the systems in this table, so
+  they differ from the ClickBench website.
+- **Warm runs.** The scores use warm runs, the common case for a database in
+  active use. The first query after a restart reads everything from S3 and is
+  Airhouse's weakest result.
+- **One table, no joins.** ClickBench doesn't measure join-heavy or
+  star-schema workloads.
+</Note>
+
 ## Where it fits
 
 [Airway](/guide/build/data-infrastructure/airway) pipelines land extracted data
