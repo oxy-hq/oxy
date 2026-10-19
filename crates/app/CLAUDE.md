@@ -1,7 +1,8 @@
 # `oxy-app` — CLI + HTTP Server (`crates/app`)
 
-The CLI + server **library** lives here (crate name **`oxy-app`**, path `crates/app`, ~111k
-LOC — the largest crate; lib-only). The `oxy` **binary** is the thin `oxy-server` crate
+The CLI + server **library** lives here (crate name **`oxy-app`**, path `crates/app`, ~311k
+LOC under `src/` as of 2026-10 — the largest crate, a quarter of it the custom-apps
+vertical; lib-only). The `oxy` **binary** is the thin `oxy-server` crate
 (`crates/server`, the workspace default member), which mounts the API surfaces and calls into
 this library. It wires everything together: the CLI
 command surface, the Axum HTTP server (`server/`, ~80k LOC), the fleet/role machinery, the
@@ -38,7 +39,7 @@ nearly everything (`oxy`, agentic-http/pipeline, integrations). Keep it thin:
 | ---- | ---- |
 | `server/api/**` | One file (or dir) per resource: `threads`, `apps`, `automation`, `projects/`, `admin/`, `billing/`, `custom_apps_*` (the serve + data hot path), `world_model_graph.rs` (4.8k — the single biggest file, a decomposition target), `workspaces.rs`, `onboarding.rs`, `auth.rs`. |
 | `server/router/` | Route mounting: `public.rs`, `protected.rs`, `workspace.rs`, `global.rs`, `entry.rs`, `openapi.rs`. `ROUTES.md` documents the surface. |
-| `server/role_manifest.rs` (~2k) | **Routing authority** for the split fleet — classifies every route `IdeOnly` vs `FleetOk`. FS/`.git`/state-dir routes MUST be `IdeOnly`; persisted-data reads MUST stay `FleetOk`. Invoke `oxy-route-classification` before touching routes. |
+| `server/role_manifest.rs` (~230 lines; roles travel as `RouteRoleDecl` next to each route) | **Routing authority** for the split fleet — classifies every route `IdeOnly` vs `FleetOk`. FS/`.git`/state-dir routes MUST be `IdeOnly`; persisted-data reads MUST stay `FleetOk`. Invoke `oxy-route-classification` before touching routes. |
 | `server/{worker_runtime,worker_health,worker_metrics}.rs`, `preagg_*`, `compile_*` | Durable-task worker fleet + pre-aggregation + compile-boundary workers. |
 | `server/{serve_safety,admission,ide_proxy,role_middleware}.rs` | Serve-mode gating, self-routing reverse proxy (`IdeOnly` → ide upstream), admission control. `ServeMode` itself now lives in `oxy-app-core` — see below. |
 | `server/service/` | Server-side services (api keys, app, eval, project, formatters). |
