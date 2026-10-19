@@ -80,6 +80,11 @@ pub async fn register_device(
     if token.is_empty() || token.len() > MAX_TOKEN_LEN {
         return Err(StatusCode::BAD_REQUEST);
     }
+    // An iOS Simulator's stand-in token: a debug server delivers it through
+    // `simctl`; a release server refuses to store it.
+    if !super::super::push_routing::simulator_token_allowed(&body.platform, &token) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
     let name = body.name.as_deref().or(body.device_name.as_deref());
     if name.is_some_and(|n| n.len() > MAX_DEVICE_NAME_LEN)
         || body

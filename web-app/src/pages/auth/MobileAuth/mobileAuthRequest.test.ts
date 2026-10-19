@@ -50,8 +50,19 @@ describe("parseMobileAuthRequest", () => {
       kind: "ok",
       codeChallenge: CHALLENGE,
       redirectUri: "oxygen://auth",
-      state: "s1"
+      state: "s1",
+      provider: null
     });
+  });
+
+  it("reads the provider the person picked, and nothing it doesn't know", () => {
+    const base = `code_challenge=${CHALLENGE}&redirect_uri=oxygen://auth`;
+    expect(ok(`${base}&provider=google`).provider).toBe("google");
+    expect(ok(`${base}&provider=GitHub`).provider).toBe("github");
+    expect(ok(`${base}&provider=okta`).provider).toBe("okta");
+    expect(ok(`${base}&provider=email`).provider).toBe("email");
+    expect(ok(`${base}&provider=myspace`).provider).toBeNull();
+    expect(ok(base).provider).toBeNull();
   });
 
   it("drops a challenge's padding and keeps a missing state missing", () => {
@@ -89,5 +100,15 @@ describe("the URLs the page navigates to", () => {
     expect(back.pathname).toBe("/mobile-auth");
     expect(parseMobileAuthRequest(back.searchParams)).toEqual(request);
     expect(loginUrl(returnTo)).toBe(`/login?return_to=${encodeURIComponent(returnTo)}`);
+    expect(loginUrl(returnTo, "email")).toBe(
+      `/login?return_to=${encodeURIComponent(returnTo)}&focus=email`
+    );
+  });
+
+  it("comes back without the provider, so a failed sign-in stops at the login page", () => {
+    const picked = ok(`code_challenge=${CHALLENGE}&redirect_uri=oxygen://auth&provider=google`);
+    const back = new URL(returnToUrl("https://oxygen-hq.com", picked));
+    expect(back.searchParams.has("provider")).toBe(false);
+    expect(parseMobileAuthRequest(back.searchParams)).toEqual({ ...picked, provider: null });
   });
 });

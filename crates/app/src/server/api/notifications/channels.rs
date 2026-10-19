@@ -131,7 +131,7 @@ impl Channels {
         }
         let tokens: Vec<device_tokens::Model> =
             allowed.into_iter().map(|(t, _)| t.clone()).collect();
-        if !tokens.iter().any(|t| self.push.handles(&t.platform)) {
+        if !tokens.iter().any(|t| self.push.handles(t)) {
             return ChannelOutcome::Skipped("not_configured");
         }
         let signal = PushSignal::new(signal, &self.info);

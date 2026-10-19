@@ -39,7 +39,7 @@ pub(super) const PLATFORM_APNS: &str = "apns";
 const TRANSPORT: &str = "apns";
 const PRODUCTION_HOST: &str = "https://api.push.apple.com";
 const SANDBOX_HOST: &str = "https://api.sandbox.push.apple.com";
-const DEFAULT_TOPIC: &str = "tech.oxy.oxygen";
+pub(super) const DEFAULT_TOPIC: &str = "tech.oxy.oxygen";
 
 /// Provider-token lifetime before it is re-signed. Apple rejects one older than
 /// an hour (`ExpiredProviderToken`) and throttles one re-signed more often than

@@ -5,6 +5,9 @@ import userEvent from "@testing-library/user-event";
 import { AxiosError, type AxiosResponse } from "axios";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { initiateGoogleAuth } from "@/hooks/auth/useGoogleAuth";
+import { initiateOktaAuth } from "@/hooks/auth/useOktaAuth";
+import type { AuthConfigResponse } from "@/types/auth";
 import MobileAuth from ".";
 import type { MobileSession } from "./mobileSession";
 
@@ -23,6 +26,22 @@ vi.mock("./mobileSession", () => ({
   returnToApp: (url: string) => returnToApp(url),
   readMobileSession: () => Promise.resolve(session)
 }));
+
+// Each provider's own start is the seam: it builds the provider URL and carries the return URL.
+vi.mock("@/hooks/auth/useGoogleAuth", () => ({ initiateGoogleAuth: vi.fn(async () => {}) }));
+vi.mock("@/hooks/auth/useOktaAuth", () => ({ initiateOktaAuth: vi.fn(async () => {}) }));
+
+const ALL_PROVIDERS = {
+  auth_enabled: true,
+  mode: "cloud",
+  magic_link: true,
+  google: { client_id: "google-client" },
+  okta: { client_id: "okta-client", domain: "acme.okta.com" },
+  github: { client_id: "github-client" },
+  observability_enabled: false
+} as AuthConfigResponse;
+let authConfig: AuthConfigResponse = ALL_PROVIDERS;
+vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ authConfig }) }));
 
 type MutateOptions = { onSuccess?: (data: { code: string }) => void; onError?: (e: Error) => void };
 const mutate = vi.fn();
@@ -46,6 +65,9 @@ afterEach(() => {
   leaveTo.mockReset();
   returnToApp.mockReset();
   mutate.mockReset();
+  vi.mocked(initiateGoogleAuth).mockReset();
+  vi.mocked(initiateOktaAuth).mockReset();
+  authConfig = ALL_PROVIDERS;
   session = { name: "Ada Lovelace", email: "ada@example.com" };
   mutation = { isPending: false, isError: false, error: null };
 });
@@ -112,6 +134,83 @@ describe("/mobile-auth", () => {
     expect(back.searchParams.get("code_challenge")).toBe(CHALLENGE);
     expect(back.searchParams.get("redirect_uri")).toBe(REDIRECT);
     expect(back.searchParams.get("state")).toBe("nonce");
+  });
+
+  it("goes straight to Google's sign-in when the app says the person picked Google", async () => {
+    session = null;
+    open(`${URL_OK}&provider=google`);
+    await waitFor(() => expect(initiateGoogleAuth).toHaveBeenCalledTimes(1));
+    const [clientId, returnTo] = vi.mocked(initiateGoogleAuth).mock.calls[0];
+    expect(clientId).toBe("google-client");
+    const back = new URL(returnTo ?? "");
+    expect(back.origin).toBe(window.location.origin);
+    expect(back.pathname).toBe("/mobile-auth");
+    expect(back.searchParams.get("code_challenge")).toBe(CHALLENGE);
+    expect(back.searchParams.get("redirect_uri")).toBe(REDIRECT);
+    expect(back.searchParams.get("state")).toBe("nonce");
+    // Back here still signed out, it stops at the login page rather than looping through Google.
+    expect(back.searchParams.has("provider")).toBe(false);
+    expect(leaveTo).not.toHaveBeenCalled();
+  });
+
+  it("goes straight to Okta's sign-in with the deployment's Okta domain", async () => {
+    session = null;
+    open(`${URL_OK}&provider=okta`);
+    await waitFor(() => expect(initiateOktaAuth).toHaveBeenCalledTimes(1));
+    const [clientId, domain, returnTo] = vi.mocked(initiateOktaAuth).mock.calls[0];
+    expect([clientId, domain]).toEqual(["okta-client", "acme.okta.com"]);
+    expect(new URL(returnTo ?? "").pathname).toBe("/mobile-auth");
+    expect(leaveTo).not.toHaveBeenCalled();
+  });
+
+  it("opens the login page on its email field when the person picked email", async () => {
+    session = null;
+    open(`${URL_OK}&provider=email`);
+    await waitFor(() => expect(leaveTo).toHaveBeenCalledTimes(1));
+    const target = new URL(leaveTo.mock.calls[0][0], "http://localhost");
+    expect(target.pathname).toBe("/login");
+    expect(target.searchParams.get("focus")).toBe("email");
+    expect(new URL(target.searchParams.get("return_to") ?? "").pathname).toBe("/mobile-auth");
+  });
+
+  it.each([
+    ["an unknown provider", "&provider=myspace", ALL_PROVIDERS],
+    // A popup no tap opened is blocked: the login page's GitHub button is the tap.
+    ["GitHub", "&provider=github", ALL_PROVIDERS],
+    [
+      "Google on a deployment without it",
+      "&provider=google",
+      { ...ALL_PROVIDERS, google: undefined }
+    ],
+    ["email on a deployment without it", "&provider=email", { ...ALL_PROVIDERS, magic_link: false }]
+  ])("sends %s to the login page, as before", async (_what, query, config) => {
+    session = null;
+    authConfig = config;
+    open(`${URL_OK}${query}`);
+    await waitFor(() => expect(leaveTo).toHaveBeenCalledTimes(1));
+    const target = new URL(leaveTo.mock.calls[0][0], "http://localhost");
+    expect(target.pathname).toBe("/login");
+    expect(target.searchParams.has("focus")).toBe(false);
+    expect(new URL(target.searchParams.get("return_to") ?? "").pathname).toBe("/mobile-auth");
+    expect(initiateGoogleAuth).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the login page when the provider's sign-in can't start", async () => {
+    session = null;
+    vi.mocked(initiateGoogleAuth).mockRejectedValueOnce(new Error("state endpoint down"));
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    open(`${URL_OK}&provider=google`);
+    await waitFor(() => expect(leaveTo).toHaveBeenCalledTimes(1));
+    expect(leaveTo.mock.calls[0][0]).toMatch(/^\/login\?return_to=/);
+    quiet.mockRestore();
+  });
+
+  it("ignores the provider when already signed in, and asks as always", async () => {
+    open(`${URL_OK}&provider=google`);
+    expect(await screen.findByTestId("mobile-auth-account")).toHaveTextContent("Ada Lovelace");
+    expect(initiateGoogleAuth).not.toHaveBeenCalled();
+    expect(leaveTo).not.toHaveBeenCalled();
+    expect(mutate).not.toHaveBeenCalled();
   });
 
   it("signs in again when the session lapsed while the page sat open", async () => {

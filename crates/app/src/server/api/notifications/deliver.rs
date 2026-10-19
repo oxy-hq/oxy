@@ -144,10 +144,10 @@ pub trait Push: Send + Sync {
         true
     }
 
-    /// Whether a device row on `platform` would reach a configured sender. A
-    /// person whose every device is on an unconfigured platform is recorded
-    /// `not_configured`, not `no_devices`: they do have a phone.
-    fn handles(&self, _platform: &str) -> bool {
+    /// Whether `device` would reach a configured sender. A person whose every
+    /// device is on an unconfigured platform is recorded `not_configured`, not
+    /// `no_devices`: they do have a phone.
+    fn handles(&self, _device: &device_tokens::Model) -> bool {
         self.configured()
     }
 }

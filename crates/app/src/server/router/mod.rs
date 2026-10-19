@@ -427,7 +427,7 @@ fn is_local_dev_pair(origin: &str, headers: &HeaderMap) -> bool {
 
 /// `true` for a `host[:port]` naming this machine: `localhost`, an RFC 6761
 /// `*.localhost` subdomain, or any loopback IP literal (`127.0.0.0/8`, `::1`).
-fn is_loopback_host(host: &str) -> bool {
+pub(crate) fn is_loopback_host(host: &str) -> bool {
     let host = host.trim();
     if host.is_empty() {
         return false;

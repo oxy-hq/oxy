@@ -1,6 +1,7 @@
 /**
  * What the Oxygen mobile app asked for when it opened `/mobile-auth`, read from the query string:
- * an S256 `code_challenge`, the `redirect_uri` to return the code to, and an opaque `state`.
+ * an S256 `code_challenge`, the `redirect_uri` to return the code to, an opaque `state`, and the
+ * `provider` the person picked in the app (`null` when absent or not one this page knows).
  *
  * The redirect URI is checked here as the server checks it (`oxygen://`, no query, fragment or
  * user info) because Cancel redirects without asking the server: a link that names any other
@@ -8,7 +9,21 @@
  */
 export type MobileAuthRequest =
   | { kind: "invalid"; reason: string }
-  | { kind: "ok"; codeChallenge: string; redirectUri: string; state: string | null };
+  | {
+      kind: "ok";
+      codeChallenge: string;
+      redirectUri: string;
+      state: string | null;
+      provider: SignInProvider | null;
+    };
+
+/** The ways in the app offers; a signed-out browser goes straight to the one picked. */
+export type SignInProvider = "google" | "github" | "okta" | "email";
+
+const PROVIDERS: readonly SignInProvider[] = ["google", "github", "okta", "email"];
+
+const parseProvider = (raw: string | null): SignInProvider | null =>
+  PROVIDERS.find((provider) => provider === raw?.trim().toLowerCase()) ?? null;
 
 /** The one scheme the iOS and Android apps register. */
 const REDIRECT_SCHEME = "oxygen";
@@ -43,7 +58,13 @@ export const parseMobileAuthRequest = (params: URLSearchParams): MobileAuthReque
   if (!CHALLENGE.test(codeChallenge)) {
     return { kind: "invalid", reason: `This sign-in link is incomplete. ${RESTART}` };
   }
-  return { kind: "ok", codeChallenge, redirectUri, state: params.get("state") };
+  return {
+    kind: "ok",
+    codeChallenge,
+    redirectUri,
+    state: params.get("state"),
+    provider: parseProvider(params.get("provider"))
+  };
 };
 
 const back = (request: Extract<MobileAuthRequest, { kind: "ok" }>, query: string): string => {
@@ -61,7 +82,11 @@ export const codeRedirectUrl = (
 export const declinedRedirectUrl = (request: Extract<MobileAuthRequest, { kind: "ok" }>): string =>
   back(request, "error=access_denied");
 
-/** This page again, with exactly what the app sent, so login can bring the person back. */
+/**
+ * This page again, with what the app sent, so login can bring the person back. All but `provider`:
+ * coming back still signed out then lands on the login page instead of looping through the
+ * provider, and signed in, the page ignores it anyway.
+ */
 export const returnToUrl = (
   origin: string,
   request: Extract<MobileAuthRequest, { kind: "ok" }>
@@ -74,5 +99,6 @@ export const returnToUrl = (
   return `${origin}/mobile-auth?${params.toString()}`;
 };
 
-export const loginUrl = (returnTo: string): string =>
-  `/login?return_to=${encodeURIComponent(returnTo)}`;
+/** The login page, coming back to `returnTo`; `focus: "email"` puts the cursor in its email field. */
+export const loginUrl = (returnTo: string, focus?: "email"): string =>
+  `/login?return_to=${encodeURIComponent(returnTo)}${focus ? `&focus=${focus}` : ""}`;

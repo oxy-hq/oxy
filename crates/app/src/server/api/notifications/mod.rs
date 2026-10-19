@@ -83,6 +83,8 @@ pub mod recipients;
 pub mod scope_mutes;
 pub mod send;
 pub mod settings;
+#[cfg(debug_assertions)]
+mod simulator_push;
 pub mod slack_dm;
 pub mod task;
 pub mod test_notice;

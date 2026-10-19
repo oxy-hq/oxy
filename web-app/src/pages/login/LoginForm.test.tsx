@@ -149,6 +149,15 @@ describe("Sign in as an admin, on a kiosk", () => {
 });
 
 describe("The ordinary login page", () => {
+  it("sends dev sign-in to a same-origin return_to too, as the mobile app's sheet needs", async () => {
+    const mobileAuth = `${window.location.origin}/mobile-auth?code_challenge=abc&redirect_uri=oxygen%3A%2F%2Fauth&state=s`;
+    window.history.replaceState(null, "", `/login?return_to=${encodeURIComponent(mobileAuth)}`);
+    render(providers(<LoginForm />));
+    expect(screen.getByTestId("login-dev-signin").getAttribute("href")).toBe(
+      `/dev-login?next=${encodeURIComponent("/mobile-auth?code_challenge=abc&redirect_uri=oxygen%3A%2F%2Fauth&state=s")}`
+    );
+  });
+
   it("still sends every provider to the login URL's return_to", async () => {
     const got = await destinations(false);
     expect(got).toEqual({
@@ -186,6 +195,22 @@ describe("the sign-in card, for whoever is driving the browser", () => {
     const email = within(card).getByTestId("login-email");
     expect(email).toHaveAttribute("type", "email");
     expect(email).toHaveAttribute("autocomplete", "email");
+  });
+
+  it("starts in the email field only when sent here having picked email (`focus=email`)", async () => {
+    render(providers(<LoginForm />));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId("login-email")).not.toHaveFocus();
+    cleanup();
+
+    window.history.replaceState(
+      null,
+      "",
+      `/login?return_to=${encodeURIComponent(APP_URL)}&focus=email`
+    );
+    render(providers(<LoginForm />));
+    // react-hook-form focuses on the next tick.
+    await waitFor(() => expect(screen.getByTestId("login-email")).toHaveFocus());
   });
 
   it("answers a submitted email in place, with a way to resend and a way back", async () => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -40,7 +40,14 @@ const getRateLimitMessage = (error: unknown) =>
 
 type View = "form" | "sent";
 
-const MagicLinkSection = ({ returnTo: destination }: { returnTo?: string }) => {
+const MagicLinkSection = ({
+  returnTo: destination,
+  focusEmail = false
+}: {
+  returnTo?: string;
+  /** Put the cursor in the email field on arrival: the person already chose email elsewhere. */
+  focusEmail?: boolean;
+}) => {
   const [view, setView] = useState<View>("form");
   const [submittedEmail, setSubmittedEmail] = useState("");
   const [searchParams] = useSearchParams();
@@ -53,8 +60,13 @@ const MagicLinkSection = ({ returnTo: destination }: { returnTo?: string }) => {
   const {
     register,
     handleSubmit,
+    setFocus,
     formState: { errors }
   } = useForm<MagicLinkFormData>();
+
+  useEffect(() => {
+    if (focusEmail) setFocus("email");
+  }, [focusEmail, setFocus]);
 
   const onSubmit = async (data: MagicLinkFormData) => {
     try {
@@ -181,14 +193,19 @@ const DevSignInSection = ({ next }: { next?: string }) => (
  * bypass. `returnTo` is where every one of them lands; absent, each follows the
  * login URL's own `return_to`, as the ordinary login page always has.
  */
-const AccountSignIn = ({ returnTo }: { returnTo?: string }) => {
+const AccountSignIn = ({ returnTo, focusEmail }: { returnTo?: string; focusEmail?: boolean }) => {
   const { authConfig } = useAuth();
+  const [searchParams] = useSearchParams();
+  // The providers fall back to the login URL's own `return_to` by themselves;
+  // the dev link is built here, so it takes the same fallback explicitly
+  // (e.g. the mobile app's `/mobile-auth` sheet, which lands on `/login?return_to=…`).
+  const devReturnTo = returnTo ?? searchParams.get("return_to") ?? undefined;
   const hasOAuth = Boolean(authConfig.google || authConfig.okta || authConfig.github);
   const hasMagicLink = Boolean(authConfig.magic_link);
 
   return (
     <>
-      {hasMagicLink && <MagicLinkSection returnTo={returnTo} />}
+      {hasMagicLink && <MagicLinkSection returnTo={returnTo} focusEmail={focusEmail} />}
 
       {hasOAuth && hasMagicLink && <Divider label='or' />}
 
@@ -218,7 +235,7 @@ const AccountSignIn = ({ returnTo }: { returnTo?: string }) => {
       {authConfig.dev_login && (
         <>
           <Divider label='dev only' />
-          <DevSignInSection next={devLoginNext(returnTo)} />
+          <DevSignInSection next={devLoginNext(devReturnTo)} />
         </>
       )}
     </>
@@ -303,11 +320,13 @@ const LoginForm = () => {
   const [searchParams] = useSearchParams();
   // The magic-link section reads the same param on its own.
   const returnTo = searchParams.get("return_to") ?? undefined;
+  // `/mobile-auth` sends `focus=email` when the person picked email in the Oxygen app.
+  const focusEmail = searchParams.get("focus") === "email";
 
   return (
     <AuthCard title='Sign in' testId='login-card'>
       <div className='flex flex-col gap-4'>
-        <AccountSignIn />
+        <AccountSignIn focusEmail={focusEmail} />
         {returnToPointsAtCustomApp(returnTo) && <CrewSignInHint />}
       </div>
       <p className='text-muted-foreground text-xs'>No password. Access is by invitation.</p>

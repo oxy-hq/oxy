@@ -598,13 +598,28 @@ fn extract_base_url_raw(headers: &HeaderMap) -> String {
 /// anonymous request, so the magic-link path must not use this: a forged
 /// `Host` would mail someone else's sign-in link to the forger's server. Here
 /// the only person who can forge it is the one sending their own invitation.
+///
+/// A loopback `X-Forwarded-Host` wins over `Host`, and no other does. The Vite
+/// dev proxy rewrites `Host` to its upstream (`changeOrigin`) and says in that
+/// header where the caller really addressed; without it, a native app talking
+/// to a local stack through Vite gets links on the backend's port, which its
+/// cookie and bearer don't cover. Any other value is ignored: these links are
+/// mailed to someone else (the invitee), and production's load balancer passes
+/// a client's `X-Forwarded-Host` through untouched, so believing it would let
+/// an Owner have Oxy mail a real invitation pointing at any host they named.
+/// A loopback link reaches only the recipient's own machine.
 pub fn extract_link_base_for_authenticated_request(headers: &HeaderMap) -> String {
     let browser_told_us = headers.contains_key("origin") || headers.contains_key("referer");
-    let host = headers
-        .get("host")
-        .and_then(|h| h.to_str().ok())
-        .map(str::trim)
-        .filter(|h| !h.is_empty());
+    let named = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|h| h.to_str().ok())
+            .map(|h| h.split(',').next().unwrap_or(h).trim())
+            .filter(|h| !h.is_empty())
+    };
+    let host = named("x-forwarded-host")
+        .filter(|h| is_bare_loopback_authority(h))
+        .or_else(|| named("host"));
     let (false, Some(host)) = (browser_told_us, host) else {
         return extract_base_url_from_headers(headers);
     };
@@ -619,6 +634,29 @@ pub fn extract_link_base_for_authenticated_request(headers: &HeaderMap) -> Strin
         None => "https",
     };
     pin_org_subdomain_to_app_host(format!("{scheme}://{host}"))
+}
+
+/// A loopback `host[:port]` and nothing else. The value is pasted into a link
+/// verbatim, so it must parse to the same host for a browser as for the
+/// loopback check: `evil.com?.localhost` ends in `.localhost`, and
+/// `localhost:@evil.com` starts with `localhost`, yet a browser takes both to
+/// `evil.com`. Only hostname/IP characters, a bracketed IPv6 literal and a
+/// numeric port are accepted.
+fn is_bare_loopback_authority(value: &str) -> bool {
+    let plain = value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':' | b'[' | b']'));
+    // What follows the host: nothing, or `:` and a port. An IPv6 literal's
+    // colons sit inside its brackets.
+    let after_host = value.rfind(']').map_or(value, |close| &value[close + 1..]);
+    let port_ok = match after_host.split_once(':') {
+        None => true,
+        Some((_, port)) => !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()),
+    };
+    let Ok(authority) = value.parse::<axum::http::uri::Authority>() else {
+        return false;
+    };
+    plain && port_ok && crate::server::router::is_loopback_host(authority.host())
 }
 
 #[cfg(test)]
@@ -644,6 +682,85 @@ mod base_url_tests {
             extract_link_base_for_authenticated_request(&h),
             "https://aip.staging.oxy.tech"
         );
+    }
+
+    #[test]
+    fn a_proxy_that_rewrote_host_is_believed_about_the_original() {
+        // Vite's dev proxy: `changeOrigin` sets Host to the backend, `xfwd`
+        // says what the caller addressed.
+        let h = headers(&[
+            ("host", "localhost:3100"),
+            ("x-forwarded-host", "127.0.0.1:5273"),
+            ("x-forwarded-proto", "http"),
+        ]);
+        assert_eq!(
+            extract_link_base_for_authenticated_request(&h),
+            "http://127.0.0.1:5273"
+        );
+    }
+
+    #[test]
+    fn a_forwarded_host_that_is_not_loopback_never_reaches_an_invitation_link() {
+        // An Owner's `oxyc api -X POST …/invitations -H 'X-Forwarded-Host: …'`:
+        // the load balancer passes the header through, and the link is mailed
+        // to the invitee.
+        let h = headers(&[
+            ("host", "aip.staging.oxy.tech"),
+            ("x-forwarded-host", "oxygen-login.evil.example"),
+            ("x-forwarded-proto", "https"),
+        ]);
+        assert_eq!(
+            extract_link_base_for_authenticated_request(&h),
+            "https://aip.staging.oxy.tech"
+        );
+    }
+
+    #[test]
+    fn a_forwarded_host_that_only_looks_loopback_is_ignored() {
+        // Each passes a naive prefix or suffix check, and a browser reads each
+        // as another host (or a broken URL).
+        for forged in [
+            "evil.example?.localhost",
+            "evil.example#.localhost",
+            "localhost:@evil.example",
+            "localhost@evil.example",
+            "127.0.0.1:5273/evil.example",
+            "localhost:evil.example",
+            "localhost:",
+            "::1",
+        ] {
+            let h = headers(&[
+                ("host", "aip.staging.oxy.tech"),
+                ("x-forwarded-host", forged),
+                ("x-forwarded-proto", "https"),
+            ]);
+            assert_eq!(
+                extract_link_base_for_authenticated_request(&h),
+                "https://aip.staging.oxy.tech",
+                "{forged}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bare_loopback_forwarded_host_is_believed() {
+        for local in [
+            "127.0.0.1:5273",
+            "localhost:5173",
+            "localhost",
+            "[::1]:3000",
+        ] {
+            let h = headers(&[
+                ("host", "localhost:3100"),
+                ("x-forwarded-host", local),
+                ("x-forwarded-proto", "http"),
+            ]);
+            assert_eq!(
+                extract_link_base_for_authenticated_request(&h),
+                format!("http://{local}"),
+                "{local}"
+            );
+        }
     }
 
     #[test]

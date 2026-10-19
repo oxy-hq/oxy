@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 import useAuthorizeMobile from "@/hooks/api/mobileAuth/useAuthorizeMobile";
 import { apiErrorCode, apiStatus } from "@/libs/apiError";
 import MobileAuthCard from "./MobileAuthCard";
@@ -15,6 +16,7 @@ import {
   returnToUrl
 } from "./mobileAuthRequest";
 import { leaveTo, type MobileSession, readMobileSession, returnToApp } from "./mobileSession";
+import { startSignIn } from "./startSignIn";
 
 type OkRequest = Extract<MobileAuthRequest, { kind: "ok" }>;
 type Step = "checking" | "confirm" | "returning" | "declined" | "refused" | "crew";
@@ -34,13 +36,16 @@ const isFramed = (): boolean => {
  * `/mobile-auth` — the browser side of signing in the Oxygen mobile app.
  *
  * The app opens this page in the phone's sign-in sheet with `?code_challenge&redirect_uri&state`
- * (PKCE). Nothing is authorized, and nothing leaves the page, until the person reads which account
- * the app will act as and taps Continue. Then the session is traded for a single-use code, and
- * only that code goes back to the app, at its `oxygen://` redirect URI; the app exchanges it, with
- * a verifier only it holds, for its own session.
+ * (PKCE), and optionally `&provider=google|github|okta|email`. Nothing is authorized, and nothing
+ * leaves the page, until the person reads which account the app will act as and taps Continue.
+ * Then the session is traded for a single-use code, and only that code goes back to the app, at
+ * its `oxygen://` redirect URI; the app exchanges it, with a verifier only it holds, for its own
+ * session.
  *
- * Not signed in: through login first, coming back to this exact request. Framed: refused, since a
- * frame lets the outer page cover the card and steer a tap onto Continue.
+ * Not signed in: through login first, coming back to this exact request; straight to the
+ * provider's own sign-in when the app passed the one the person picked (`provider`), so they don't
+ * pick it a second time on the login page. Framed: refused, since a frame lets the outer page cover
+ * the card and steer a tap onto Continue.
  */
 const MobileAuth: React.FC = () => {
   const [params] = useSearchParams();
@@ -71,14 +76,17 @@ const MobileApproval: React.FC<{ request: OkRequest }> = ({ request }) => {
   const [step, setStep] = useState<Step>("checking");
   const [session, setSession] = useState<MobileSession | null>(null);
   const authorize = useAuthorizeMobile();
-  const loginHref = loginUrl(returnToUrl(window.location.origin, request));
+  const { authConfig } = useAuth();
+  const returnTo = returnToUrl(window.location.origin, request);
+  const loginHref = loginUrl(returnTo);
 
   useEffect(() => {
     let cancelled = false;
     readMobileSession()
+      .catch(() => null)
       .then((found) => {
         if (cancelled) return;
-        if (!found) return leaveTo(loginHref);
+        if (!found) return startSignIn(request.provider, authConfig, returnTo);
         setSession(found);
         setStep("confirm");
       })
@@ -88,7 +96,7 @@ const MobileApproval: React.FC<{ request: OkRequest }> = ({ request }) => {
     return () => {
       cancelled = true;
     };
-  }, [loginHref]);
+  }, [request.provider, authConfig, returnTo, loginHref]);
 
   const confirm = () =>
     authorize.mutate(
