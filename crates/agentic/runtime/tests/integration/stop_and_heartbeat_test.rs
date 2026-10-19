@@ -1,15 +1,20 @@
-//! Stop must always fire its in-memory tokens, and a heartbeat ticker must
-//! survive a failed write but stop the task when the claim is lost.
+//! Stop must always fire its in-memory tokens, a heartbeat ticker must survive
+//! a failed write but stop the task when its claim is lost, and every owned
+//! write must be fenced on the claim it belongs to: `worker_id` is
+//! process-stable, so only `claim_epoch` tells a stale execution of a task
+//! from this process's later re-claim of the same row.
 //!
 //! Run:
 //!   cargo nextest run -p agentic-runtime --test integration -E 'test(stop_and_heartbeat_test)'
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use agentic_core::delegation::TaskOutcome;
+use agentic_core::delegation::{ClaimEpoch, NO_CLAIM, TaskOutcome};
 use agentic_core::transport::{CoordinatorTransport, WorkerMessage, WorkerTransport};
+use agentic_runtime::crud;
 use agentic_runtime::crud::queue::TaskScope;
-use agentic_runtime::orchestrator::transport::{DurableTransport, process_worker_id};
+use agentic_runtime::orchestrator::transport::DurableTransport;
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
 
 use super::eviction_safety_test::{seed_task, test_db};
@@ -26,24 +31,126 @@ async fn closed_db() -> DatabaseConnection {
     db
 }
 
+/// Seed one queued task and a transport scoped to exactly it (the tests share
+/// one table, so an unscoped claim could take another test's row).
+async fn seeded() -> (Arc<DurableTransport>, DatabaseConnection, String) {
+    let db = test_db().await.expect("test db");
+    let (_run, task_id) = seed_task(&db, "test", TaskScope::Global).await;
+    let transport = DurableTransport::new_scoped(db.clone(), task_id.clone());
+    (transport, db, task_id)
+}
+
+/// Claim the task the way a worker does, returning the claim's identity.
+async fn claim(transport: &DurableTransport) -> ClaimEpoch {
+    let assignment = tokio::time::timeout(Duration::from_secs(10), transport.recv_assignment())
+        .await
+        .expect("the claim must land")
+        .expect("an assignment");
+    assert_ne!(assignment.claim_epoch, NO_CLAIM, "a claim has an identity");
+    assignment.claim_epoch
+}
+
+async fn exec(db: &DatabaseConnection, sql: &str, task_id: &str) {
+    db.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        [task_id.into()],
+    ))
+    .await
+    .unwrap();
+}
+
+/// A peer takes the row: still `claimed`, same epoch, different worker.
+async fn take_by_peer(db: &DatabaseConnection, task_id: &str) {
+    exec(
+        db,
+        "UPDATE agentic_task_queue SET worker_id = 'someone-else' WHERE task_id = $1",
+        task_id,
+    )
+    .await;
+}
+
+/// The reaper hands the row back: `queued`, no owner.
+async fn requeue(db: &DatabaseConnection, task_id: &str) {
+    exec(
+        db,
+        "UPDATE agentic_task_queue SET queue_status = 'queued', worker_id = NULL, \
+         claimed_at = NULL, last_heartbeat = NULL WHERE task_id = $1",
+        task_id,
+    )
+    .await;
+}
+
+/// Lose the claim to a peer, then have this process re-claim the row: a new
+/// claim under the identical, process-stable `worker_id`.
+async fn lose_then_reclaim(
+    transport: &DurableTransport,
+    db: &DatabaseConnection,
+    task_id: &str,
+) -> ClaimEpoch {
+    take_by_peer(db, task_id).await;
+    requeue(db, task_id).await;
+    claim(transport).await
+}
+
+async fn queue_status(db: &DatabaseConnection, task_id: &str) -> String {
+    crud::get_queue_entry(db, task_id)
+        .await
+        .unwrap()
+        .expect("queue row")
+        .queue_status
+}
+
+async fn forwarded(transport: &DurableTransport) -> Option<WorkerMessage> {
+    tokio::time::timeout(Duration::from_secs(2), transport.recv())
+        .await
+        .ok()
+        .flatten()
+}
+
+fn outcome(task_id: &str, outcome: TaskOutcome, claim_epoch: ClaimEpoch) -> WorkerMessage {
+    WorkerMessage::Outcome {
+        task_id: task_id.to_string(),
+        outcome,
+        claim_epoch,
+    }
+}
+
+fn done() -> TaskOutcome {
+    TaskOutcome::Done {
+        answer: "ok".into(),
+        metadata: None,
+    }
+}
+
+async fn cancelled_within(token: &tokio_util::sync::CancellationToken, why: &str) {
+    tokio::time::timeout(Duration::from_secs(30), token.cancelled())
+        .await
+        .unwrap_or_else(|_| panic!("{why}"));
+}
+
+// ── Stop ─────────────────────────────────────────────────────────────────────
+
 #[tokio::test]
 async fn cancel_fires_token_even_when_db_write_fails() {
     let transport = DurableTransport::new(closed_db().await);
-    let token = transport.cancellation_token("t-1");
+    let unclaimed = transport.cancellation_token("t-1", NO_CLAIM);
+    let claimed = transport.cancellation_token("t-1", 7);
 
     let res = transport.cancel("t-1").await;
 
     assert!(res.is_err(), "the DB write must still surface its error");
-    assert!(token.is_cancelled(), "Stop must reach the running task");
+    assert!(unclaimed.is_cancelled(), "Stop must reach the running task");
+    assert!(claimed.is_cancelled(), "and whichever claim is running it");
 }
 
 #[tokio::test]
 async fn cancel_subtree_fires_root_and_descendants_even_when_db_write_fails() {
     let transport = DurableTransport::new(closed_db().await);
-    let root = transport.cancellation_token("r-1");
-    let child = transport.cancellation_token("r-1.1");
-    let grandchild = transport.cancellation_token("r-1.1.2");
-    let other = transport.cancellation_token("r-10.1");
+    let root = transport.cancellation_token("r-1", NO_CLAIM);
+    let child = transport.cancellation_token("r-1.1", 3);
+    let grandchild = transport.cancellation_token("r-1.1.2", NO_CLAIM);
+    let other = transport.cancellation_token("r-10.1", 3);
 
     let res = transport.cancel_subtree("r-1").await;
 
@@ -55,11 +162,26 @@ async fn cancel_subtree_fires_root_and_descendants_even_when_db_write_fails() {
 }
 
 #[tokio::test]
+async fn a_stop_that_beat_the_claim_is_honoured_by_the_claim() {
+    let transport = DurableTransport::new(closed_db().await);
+    // The task is known (assigned) but nothing has claimed it yet.
+    let _ = transport.cancellation_token("t-early", NO_CLAIM);
+    let _ = transport.cancel("t-early").await;
+
+    assert!(
+        transport.cancellation_token("t-early", 4).is_cancelled(),
+        "a Stop whose queue write failed must still stop the claim that follows"
+    );
+}
+
+// ── Heartbeat ────────────────────────────────────────────────────────────────
+
+#[tokio::test]
 async fn heartbeat_ticker_survives_failed_writes() {
     let transport = DurableTransport::new(closed_db().await);
-    let task_token = transport.cancellation_token("hb-1");
+    let task_token = transport.cancellation_token("hb-1", 1);
 
-    let ticker = transport.spawn_heartbeat("hb-1", Duration::from_millis(20));
+    let ticker = transport.spawn_heartbeat("hb-1", 1, Duration::from_millis(20));
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     assert!(
@@ -75,25 +197,14 @@ async fn heartbeat_ticker_survives_failed_writes() {
 
 #[tokio::test]
 async fn heartbeat_lost_claim_stops_ticker_and_cancels_task() {
-    let db = test_db().await.expect("test db");
-    let (_run, task_id) = seed_task(&db, "test", TaskScope::Global).await;
-    // Claimed by a different worker than the transport below.
-    db.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "UPDATE agentic_task_queue SET queue_status = 'claimed', worker_id = 'someone-else' \
-         WHERE task_id = $1",
-        [task_id.clone().into()],
-    ))
-    .await
-    .unwrap();
+    let (transport, db, task_id) = seeded().await;
+    let c1 = claim(&transport).await;
+    take_by_peer(&db, &task_id).await;
 
-    let transport = DurableTransport::new(db);
-    let task_token = transport.cancellation_token(&task_id);
-    let ticker = transport.spawn_heartbeat(&task_id, DB_TICK);
+    let task_token = transport.cancellation_token(&task_id, c1);
+    let ticker = transport.spawn_heartbeat(&task_id, c1, DB_TICK);
 
-    tokio::time::timeout(Duration::from_secs(5), task_token.cancelled())
-        .await
-        .expect("a lost claim must cancel the executing task");
+    cancelled_within(&task_token, "a lost claim must cancel the executing task").await;
     assert!(ticker.is_cancelled(), "and the ticker must stop");
 }
 
@@ -106,8 +217,8 @@ async fn heartbeat_with_no_queue_row_does_not_cancel_the_task() {
     let task_id = format!("never-enqueued-{}", uuid::Uuid::new_v4());
 
     let transport = DurableTransport::new(db);
-    let task_token = transport.cancellation_token(&task_id);
-    let ticker = transport.spawn_heartbeat(&task_id, DB_TICK);
+    let task_token = transport.cancellation_token(&task_id, NO_CLAIM);
+    let ticker = transport.spawn_heartbeat(&task_id, NO_CLAIM, DB_TICK);
 
     tokio::time::timeout(Duration::from_secs(5), ticker.cancelled())
         .await
@@ -119,82 +230,119 @@ async fn heartbeat_with_no_queue_row_does_not_cancel_the_task() {
 }
 
 /// The reaper requeues a row whose claim was lost, and this same transport
-/// re-claims it through `recv_assignment`, which installs no token of its own.
-/// The lost claim's cancel must stop *that* execution only: the next claim of
-/// the same task_id has to start with a live token, or it runs `Cancelled`.
+/// re-claims it. The lost claim's cancel must stop *that* execution only: the
+/// next claim of the same task_id has its own token and starts live.
 #[tokio::test]
 async fn heartbeat_lost_claim_leaves_a_live_token_for_the_next_claim() {
-    let db = test_db().await.expect("test db");
-    let (_run, task_id) = seed_task(&db, "test", TaskScope::Global).await;
-    db.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "UPDATE agentic_task_queue SET queue_status = 'claimed', worker_id = 'someone-else' \
-         WHERE task_id = $1",
-        [task_id.clone().into()],
-    ))
-    .await
-    .unwrap();
+    let (transport, db, task_id) = seeded().await;
+    let c1 = claim(&transport).await;
+    let old_claim = transport.cancellation_token(&task_id, c1);
+    let _ticker = transport.spawn_heartbeat(&task_id, c1, DB_TICK);
+    take_by_peer(&db, &task_id).await;
 
-    let transport = DurableTransport::new(db);
-    let old_claim = transport.cancellation_token(&task_id);
-    let _ticker = transport.spawn_heartbeat(&task_id, DB_TICK);
+    cancelled_within(&old_claim, "a lost claim must cancel the executing task").await;
 
-    tokio::time::timeout(Duration::from_secs(30), old_claim.cancelled())
-        .await
-        .expect("a lost claim must cancel the executing task");
+    requeue(&db, &task_id).await;
+    let c2 = claim(&transport).await;
+    assert_ne!(c1, c2, "a re-claim is a new claim");
     assert!(
-        !transport.cancellation_token(&task_id).is_cancelled(),
+        !transport.cancellation_token(&task_id, c2).is_cancelled(),
         "the next claim of this task must not inherit the lost claim's cancel"
     );
 }
 
-/// Seed a row, set its queue state, and let this transport's ticker read
-/// `Lost` and cancel the task. Returns the transport, its database and the task id.
-async fn lose_claim(
-    row_update: &str,
-) -> (std::sync::Arc<DurableTransport>, DatabaseConnection, String) {
-    let db = test_db().await.expect("test db");
-    let (_run, task_id) = seed_task(&db, "test", TaskScope::Global).await;
-    db.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        row_update,
-        [task_id.clone().into()],
-    ))
-    .await
-    .unwrap();
+/// Gap 3. This process re-claims the row before the old ticker beats again. The
+/// old ticker used to read `Beat` (same `worker_id`), keep the old copy
+/// running, and then be retired by the new claim. Fenced, it reads `Lost`.
+#[tokio::test]
+async fn old_ticker_is_fenced_out_by_this_process_reclaim() {
+    let (transport, db, task_id) = seeded().await;
+    let c1 = claim(&transport).await;
+    let old_token = transport.cancellation_token(&task_id, c1);
+    let c2 = lose_then_reclaim(&transport, &db, &task_id).await;
+    let new_token = transport.cancellation_token(&task_id, c2);
 
-    let transport = DurableTransport::new(db.clone());
-    let task_token = transport.cancellation_token(&task_id);
-    let _ticker = transport.spawn_heartbeat(&task_id, DB_TICK);
-    tokio::time::timeout(Duration::from_secs(30), task_token.cancelled())
-        .await
-        .expect("a lost claim must cancel the executing task");
-    (transport, db, task_id)
+    // Only the OLD claim has a ticker: nothing supersedes it, so it must be the
+    // epoch in its predicate that ends it.
+    let old_ticker = transport.spawn_heartbeat(&task_id, c1, DB_TICK);
+
+    cancelled_within(&old_token, "the old copy must be stopped, not kept alive").await;
+    assert!(old_ticker.is_cancelled());
+    assert!(!new_token.is_cancelled(), "the re-claim keeps running");
+    assert_eq!(queue_status(&db, &task_id).await, "claimed");
 }
 
-async fn forwarded(transport: &DurableTransport) -> Option<WorkerMessage> {
-    tokio::time::timeout(Duration::from_secs(2), transport.recv())
-        .await
-        .ok()
-        .flatten()
+/// A newer claim's ticker supersedes the older one and stops the older
+/// execution at once, without waiting for its next beat.
+#[tokio::test]
+async fn a_newer_claims_ticker_stops_the_older_execution() {
+    let (transport, db, task_id) = seeded().await;
+    let c1 = claim(&transport).await;
+    let old_token = transport.cancellation_token(&task_id, c1);
+    let old_ticker = transport.spawn_heartbeat(&task_id, c1, Duration::from_secs(3600));
+
+    let c2 = lose_then_reclaim(&transport, &db, &task_id).await;
+    let new_ticker = transport.spawn_heartbeat(&task_id, c2, DB_TICK);
+
+    assert!(old_ticker.is_cancelled(), "the older ticker is retired");
+    assert!(
+        old_token.is_cancelled(),
+        "and so is the execution behind it"
+    );
+    assert!(!new_ticker.is_cancelled());
+    assert!(
+        !transport.cancellation_token(&task_id, c2).is_cancelled(),
+        "the newer claim's own token is untouched"
+    );
+    new_ticker.cancel();
 }
+
+/// `claim_count` is a retry budget — a release refunds it — so it cannot be the
+/// fence. `claim_epoch` goes up on every claim regardless.
+#[tokio::test]
+async fn claim_epoch_survives_a_release_that_refunds_claim_count() {
+    let (transport, db, task_id) = seeded().await;
+    let c1 = claim(&transport).await;
+    let count1 = crud::get_queue_entry(&db, &task_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .claim_count;
+
+    assert!(
+        crud::release_claim(
+            &db,
+            &task_id,
+            agentic_runtime::transport::process_worker_id(),
+            Some(c1)
+        )
+        .await
+        .unwrap()
+    );
+    let c2 = claim(&transport).await;
+    let count2 = crud::get_queue_entry(&db, &task_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .claim_count;
+
+    assert_eq!(count1, count2, "the budget was refunded and re-charged");
+    assert!(c2 > c1, "the identity must not repeat: {c1} then {c2}");
+}
+
+// ── Terminal stamps ──────────────────────────────────────────────────────────
 
 /// The reaper requeued the row (or a peer holds it): the task was cancelled
 /// only because its claim was lost, so its `Cancelled` must not reach the
 /// coordinator — that would mark the run cancelled while a peer re-runs it.
 #[tokio::test]
 async fn lost_claim_cancel_is_not_forwarded_as_an_outcome() {
-    let (transport, _db, task_id) = lose_claim(
-        "UPDATE agentic_task_queue SET queue_status = 'claimed', worker_id = 'someone-else' \
-         WHERE task_id = $1",
-    )
-    .await;
+    let (transport, db, task_id) = seeded().await;
+    let c1 = claim(&transport).await;
+    take_by_peer(&db, &task_id).await;
 
     transport
-        .send(WorkerMessage::Outcome {
-            task_id,
-            outcome: TaskOutcome::Cancelled,
-        })
+        .send(outcome(&task_id, TaskOutcome::Cancelled, c1))
         .await
         .unwrap();
 
@@ -202,23 +350,26 @@ async fn lost_claim_cancel_is_not_forwarded_as_an_outcome() {
         forwarded(&transport).await.is_none(),
         "a lost-claim cancel must not reach the coordinator"
     );
+    assert_eq!(queue_status(&db, &task_id).await, "claimed");
 }
 
 /// A Stop reaches this task through the queue when it was issued from another
 /// process, or after the reaper took the row: the row goes `cancelled` and the
 /// beat reads `Lost`. Nobody else will report that run, so its `Cancelled`
-/// must still reach the coordinator, even though the write reads `NotOwned`.
+/// must still reach the coordinator.
 #[tokio::test]
 async fn peer_stop_seen_as_lost_claim_is_still_forwarded() {
-    let (transport, _db, task_id) =
-        lose_claim("UPDATE agentic_task_queue SET queue_status = 'cancelled' WHERE task_id = $1")
-            .await;
+    let (transport, db, task_id) = seeded().await;
+    let c1 = claim(&transport).await;
+    exec(
+        &db,
+        "UPDATE agentic_task_queue SET queue_status = 'cancelled' WHERE task_id = $1",
+        &task_id,
+    )
+    .await;
 
     transport
-        .send(WorkerMessage::Outcome {
-            task_id: task_id.clone(),
-            outcome: TaskOutcome::Cancelled,
-        })
+        .send(outcome(&task_id, TaskOutcome::Cancelled, c1))
         .await
         .unwrap();
 
@@ -226,50 +377,24 @@ async fn peer_stop_seen_as_lost_claim_is_still_forwarded() {
         Some(WorkerMessage::Outcome {
             task_id: id,
             outcome: TaskOutcome::Cancelled,
+            ..
         }) => assert_eq!(id, task_id),
         other => panic!("a peer's Stop must reach the coordinator, got {other:?}"),
     }
 }
-
-/// Put the row back under this process's own claim, as `recv_assignment` does
-/// when the reaper requeued it: `worker_id` is process-stable, so the new
-/// claim looks exactly like the lost one to every owned write.
-async fn reclaim_as_this_process(db: &DatabaseConnection, task_id: &str) {
-    db.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "UPDATE agentic_task_queue SET queue_status = 'claimed', worker_id = $2 \
-         WHERE task_id = $1",
-        [task_id.into(), process_worker_id().into()],
-    ))
-    .await
-    .unwrap();
-}
-
-async fn queue_status(db: &DatabaseConnection, task_id: &str) -> String {
-    agentic_runtime::crud::get_queue_entry(db, task_id)
-        .await
-        .unwrap()
-        .expect("queue row")
-        .queue_status
-}
-
-const CLAIMED_BY_PEER: &str = "UPDATE agentic_task_queue \
-     SET queue_status = 'claimed', worker_id = 'someone-else' WHERE task_id = $1";
 
 /// The lost execution's `Cancelled` lands after this process re-claimed the
 /// row as a new execution. It must not stamp the new execution's row, retire
 /// its ticker, or reach the coordinator.
 #[tokio::test]
 async fn lost_claim_cancel_leaves_this_process_reclaim_alone() {
-    let (transport, db, task_id) = lose_claim(CLAIMED_BY_PEER).await;
-    reclaim_as_this_process(&db, &task_id).await;
-    let new_ticker = transport.spawn_heartbeat(&task_id, DB_TICK);
+    let (transport, db, task_id) = seeded().await;
+    let c1 = claim(&transport).await;
+    let c2 = lose_then_reclaim(&transport, &db, &task_id).await;
+    let new_ticker = transport.spawn_heartbeat(&task_id, c2, DB_TICK);
 
     transport
-        .send(WorkerMessage::Outcome {
-            task_id: task_id.clone(),
-            outcome: TaskOutcome::Cancelled,
-        })
+        .send(outcome(&task_id, TaskOutcome::Cancelled, c1))
         .await
         .unwrap();
 
@@ -285,24 +410,44 @@ async fn lost_claim_cancel_leaves_this_process_reclaim_alone() {
     new_ticker.cancel();
 }
 
-/// The re-claim finishes first. Its `Done` is not the lost execution's
-/// cancel, so it must stamp its own row and be reported as usual.
+/// Gap 1. A lost execution races to `Done` after this process re-claimed the
+/// row. It used to match the re-claim's row (same `worker_id`) and stamp it
+/// `completed`, stranding the re-claim's live work.
+#[tokio::test]
+async fn lost_execution_done_does_not_stamp_the_reclaim() {
+    let (transport, db, task_id) = seeded().await;
+    let c1 = claim(&transport).await;
+    let c2 = lose_then_reclaim(&transport, &db, &task_id).await;
+    let new_ticker = transport.spawn_heartbeat(&task_id, c2, DB_TICK);
+
+    transport.send(outcome(&task_id, done(), c1)).await.unwrap();
+
+    assert_eq!(
+        queue_status(&db, &task_id).await,
+        "claimed",
+        "the stale Done must not stamp the re-claim's row"
+    );
+    assert!(
+        forwarded(&transport).await.is_none(),
+        "nor settle the task under the execution that now owns it"
+    );
+    assert!(
+        !new_ticker.is_cancelled(),
+        "nor retire the re-claim's ticker"
+    );
+    new_ticker.cancel();
+}
+
+/// The re-claim finishes. Its `Done` carries the live epoch, so it stamps its
+/// own row and is reported as usual.
 #[tokio::test]
 async fn reclaim_done_still_stamps_after_a_lost_claim() {
-    let (transport, db, task_id) = lose_claim(CLAIMED_BY_PEER).await;
-    reclaim_as_this_process(&db, &task_id).await;
-    let _new_ticker = transport.spawn_heartbeat(&task_id, DB_TICK);
+    let (transport, db, task_id) = seeded().await;
+    let _c1 = claim(&transport).await;
+    let c2 = lose_then_reclaim(&transport, &db, &task_id).await;
+    let _new_ticker = transport.spawn_heartbeat(&task_id, c2, DB_TICK);
 
-    transport
-        .send(WorkerMessage::Outcome {
-            task_id: task_id.clone(),
-            outcome: TaskOutcome::Done {
-                answer: "ok".into(),
-                metadata: None,
-            },
-        })
-        .await
-        .unwrap();
+    transport.send(outcome(&task_id, done(), c2)).await.unwrap();
 
     assert_eq!(queue_status(&db, &task_id).await, "completed");
     assert!(matches!(
@@ -312,4 +457,75 @@ async fn reclaim_done_still_stamps_after_a_lost_claim() {
             ..
         })
     ));
+}
+
+/// Gap 2 (review finding F4). Lose the claim; the old execution ends `Done`;
+/// this process re-claims; the user presses Stop. The re-claim's `Cancelled`
+/// must be stamped and forwarded — a leftover task_id-keyed marker from the
+/// old execution used to swallow it and leave the run `running`.
+#[tokio::test]
+async fn stop_after_a_lost_claim_and_reclaim_is_stamped_and_forwarded() {
+    let (transport, db, task_id) = seeded().await;
+    let c1 = claim(&transport).await;
+    take_by_peer(&db, &task_id).await;
+    let old_token = transport.cancellation_token(&task_id, c1);
+    let _old_ticker = transport.spawn_heartbeat(&task_id, c1, DB_TICK);
+    cancelled_within(&old_token, "the lost claim must be noticed").await;
+
+    transport.send(outcome(&task_id, done(), c1)).await.unwrap();
+    assert!(
+        forwarded(&transport).await.is_none(),
+        "row is held by a peer"
+    );
+
+    let c2 = lose_then_reclaim(&transport, &db, &task_id).await;
+    let new_token = transport.cancellation_token(&task_id, c2);
+    let new_ticker = transport.spawn_heartbeat(&task_id, c2, DB_TICK);
+    assert!(!new_token.is_cancelled());
+
+    transport.cancel(&task_id).await.unwrap();
+    assert!(new_token.is_cancelled(), "Stop reaches the re-claim");
+    transport
+        .send(outcome(&task_id, TaskOutcome::Cancelled, c2))
+        .await
+        .unwrap();
+
+    assert_eq!(queue_status(&db, &task_id).await, "cancelled");
+    assert!(
+        matches!(
+            forwarded(&transport).await,
+            Some(WorkerMessage::Outcome {
+                outcome: TaskOutcome::Cancelled,
+                ..
+            })
+        ),
+        "the re-claim's Cancelled must reach the coordinator"
+    );
+    assert!(new_ticker.is_cancelled(), "and retire its own ticker");
+}
+
+/// Crud-level: an `adopt` is a claim too, and fences the previous holder.
+#[tokio::test]
+async fn adopting_a_queued_row_bumps_the_claim_epoch() {
+    let (transport, db, task_id) = seeded().await;
+    let c1 = claim(&transport).await;
+    requeue(&db, &task_id).await;
+
+    let c2 = crud::adopt_queued_task(&db, &task_id, "driver-a")
+        .await
+        .unwrap()
+        .expect("a queued row can be adopted");
+
+    assert!(c2 > c1);
+    assert!(
+        !crud::update_queue_heartbeat(&db, &task_id, "driver-a", Some(c1))
+            .await
+            .unwrap(),
+        "the previous claim's heartbeat must match nothing"
+    );
+    assert!(
+        crud::update_queue_heartbeat(&db, &task_id, "driver-a", Some(c2))
+            .await
+            .unwrap()
+    );
 }

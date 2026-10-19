@@ -207,9 +207,9 @@ impl Coordinator {
                     event_type,
                     payload,
                 },
-                Some(WorkerMessage::Outcome { task_id, outcome }) => {
-                    LoopAction::WorkerOutcome { task_id, outcome }
-                }
+                Some(WorkerMessage::Outcome {
+                    task_id, outcome, ..
+                }) => LoopAction::WorkerOutcome { task_id, outcome },
                 Some(WorkerMessage::Defer {
                     task_id,
                     delay_secs,
@@ -246,7 +246,7 @@ impl Coordinator {
                     match msg {
                         Some(WorkerMessage::Event { task_id, event_type, payload }) =>
                             LoopAction::WorkerEvent { task_id, event_type, payload },
-                        Some(WorkerMessage::Outcome { task_id, outcome }) =>
+                        Some(WorkerMessage::Outcome { task_id, outcome, .. }) =>
                             LoopAction::WorkerOutcome { task_id, outcome },
                         Some(WorkerMessage::Defer { task_id, delay_secs, reason, .. }) =>
                             LoopAction::TaskDeferred { task_id, delay_secs, reason },
@@ -278,7 +278,7 @@ impl Coordinator {
                                 match msg {
                                     Some(WorkerMessage::Event { task_id, event_type, payload }) =>
                                         LoopAction::WorkerEvent { task_id, event_type, payload },
-                                    Some(WorkerMessage::Outcome { task_id, outcome }) =>
+                                    Some(WorkerMessage::Outcome { task_id, outcome, .. }) =>
                                         LoopAction::WorkerOutcome { task_id, outcome },
                                     Some(WorkerMessage::Defer { task_id, delay_secs, reason, .. }) =>
                                         LoopAction::TaskDeferred { task_id, delay_secs, reason },
@@ -300,7 +300,7 @@ impl Coordinator {
                 return match msg {
                     Some(WorkerMessage::Event { task_id, event_type, payload }) =>
                         LoopAction::WorkerEvent { task_id, event_type, payload },
-                    Some(WorkerMessage::Outcome { task_id, outcome }) =>
+                    Some(WorkerMessage::Outcome { task_id, outcome, .. }) =>
                         LoopAction::WorkerOutcome { task_id, outcome },
                     Some(WorkerMessage::Defer { task_id, delay_secs, reason, .. }) =>
                         LoopAction::TaskDeferred { task_id, delay_secs, reason },

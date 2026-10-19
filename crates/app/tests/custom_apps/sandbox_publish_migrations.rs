@@ -168,6 +168,7 @@ async fn run_migrations(
             run_id: run_id.to_string(),
             spec: task.spec().expect("a spec"),
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .expect("the executor takes a sandbox migrations task");

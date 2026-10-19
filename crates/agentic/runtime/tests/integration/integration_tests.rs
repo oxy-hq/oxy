@@ -4853,7 +4853,7 @@ async fn test_complete_and_fail_task() {
     let (task_id_1, _) = enqueue_test_task(&db).await;
     crud::claim_task(&db, "w1").await.unwrap().unwrap();
     assert_eq!(
-        crud::complete_queue_task(&db, &task_id_1, "w1")
+        crud::complete_queue_task(&db, &task_id_1, "w1", None)
             .await
             .expect("complete_queue_task failed"),
         crud::TerminalWrite::Stamped,
@@ -4869,7 +4869,7 @@ async fn test_complete_and_fail_task() {
     let (task_id_2, _) = enqueue_test_task(&db).await;
     crud::claim_task(&db, "w1").await.unwrap().unwrap();
     assert_eq!(
-        crud::fail_queue_task(&db, &task_id_2, "w1")
+        crud::fail_queue_task(&db, &task_id_2, "w1", None)
             .await
             .expect("fail_queue_task failed"),
         crud::TerminalWrite::Stamped,
@@ -4912,13 +4912,13 @@ async fn test_heartbeat_and_reap() {
 
     // Heartbeat should update last_heartbeat. Keyed on the claiming worker —
     // a heartbeat may only stamp a row its own worker still holds.
-    let stamped = crud::update_queue_heartbeat(&db, &task_id, "w1")
+    let stamped = crud::update_queue_heartbeat(&db, &task_id, "w1", None)
         .await
         .expect("update_queue_heartbeat failed");
     assert!(stamped, "the claim holder's heartbeat must stamp the row");
 
     // A heartbeat from anyone else must not touch it.
-    let stolen = crud::update_queue_heartbeat(&db, &task_id, "someone-else")
+    let stolen = crud::update_queue_heartbeat(&db, &task_id, "someone-else", None)
         .await
         .expect("update_queue_heartbeat failed");
     assert!(
@@ -5026,6 +5026,7 @@ fn test_assignment(task_id: &str, run_id: &str) -> TaskAssignment {
             extra: None,
         },
         policy: None,
+        claim_epoch: agentic_core::NO_CLAIM,
     }
 }
 
@@ -5110,6 +5111,7 @@ async fn test_durable_transport_worker_outcome_updates_queue() {
                 answer: "42".into(),
                 metadata: None,
             },
+            claim_epoch: agentic_core::NO_CLAIM,
         },
     )
     .await
@@ -5189,7 +5191,7 @@ async fn test_durable_transport_heartbeat() {
     CoordinatorTransport::assign(transport.as_ref(), assignment)
         .await
         .unwrap();
-    let _received = tokio::time::timeout(
+    let received = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         WorkerTransport::recv_assignment(transport.as_ref()),
     )
@@ -5202,7 +5204,7 @@ async fn test_durable_transport_heartbeat() {
 
     // Wait a moment then heartbeat via the WorkerTransport trait method.
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    WorkerTransport::heartbeat(transport.as_ref(), &task_id)
+    WorkerTransport::heartbeat(transport.as_ref(), &task_id, received.claim_epoch)
         .await
         .unwrap();
 

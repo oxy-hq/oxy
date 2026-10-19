@@ -178,6 +178,7 @@ impl Fx {
                 run_id: run_id.into(),
                 spec,
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             })
             .await
             .expect("the executor accepts its own kind");

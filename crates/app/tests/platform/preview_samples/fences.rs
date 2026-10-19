@@ -89,6 +89,7 @@ async fn an_app_scoped_rotator_registered_behind_the_save_never_runs() {
                 payload: json!({ "preview_run_id": run_id }),
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await;
     let why = match started {

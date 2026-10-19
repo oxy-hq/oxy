@@ -151,6 +151,7 @@ pub(crate) async fn run_oltp_tasks(db: &DatabaseConnection, app_id: Uuid) -> Vec
                 run_id: task_id.clone(),
                 spec,
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             })
             .await
             .expect("the executor takes a sandbox OLTP task");

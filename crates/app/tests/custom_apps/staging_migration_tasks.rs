@@ -45,6 +45,7 @@ pub(crate) async fn run_one(db: &DatabaseConnection, task_id: &str, spec: TaskSp
             run_id: task_id.to_string(),
             spec,
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .expect("the executor takes a staging task");

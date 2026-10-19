@@ -240,6 +240,7 @@ async fn a_parent_whose_resume_is_already_assigned_is_running() {
                 answer: "child answer".into(),
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .unwrap();

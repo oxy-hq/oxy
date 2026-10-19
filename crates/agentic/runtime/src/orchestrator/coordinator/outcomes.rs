@@ -175,6 +175,7 @@ impl Coordinator {
                     run_id: run_id.clone(),
                     spec,
                     policy: None,
+                    claim_epoch: agentic_core::NO_CLAIM,
                 };
                 if let Err(e) = self.transport.assign(assignment).await {
                     self.fail_parent_on_assign_error(task_id, &run_id, chain_label, e)
@@ -353,7 +354,8 @@ impl Coordinator {
                         parent_task_id: parent_task_id.clone(),
                         run_id: run_id.clone(),
                         spec,
-                        policy: None, // Policy stays on the TaskNode, not the assignment.
+                        policy: None, // Policy stays on the TaskNode, not the assignment.,
+                        claim_epoch: agentic_core::NO_CLAIM,
                     };
                     if let Err(e) = self.transport.assign(assignment).await {
                         tracing::error!(
@@ -416,6 +418,7 @@ impl Coordinator {
                         run_id,
                         spec: new_spec,
                         policy: None,
+                        claim_epoch: agentic_core::NO_CLAIM,
                     };
                     if let Err(e) = self.transport.assign(assignment).await {
                         tracing::error!(

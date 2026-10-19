@@ -297,6 +297,7 @@ impl Coordinator {
                     run_id: child_run_id,
                     spec: child_spec,
                     policy: None,
+                    claim_epoch: agentic_core::NO_CLAIM,
                 };
 
                 tracing::info!(target: "coordinator", task_id, child_task_id = %assignment.task_id, "assigning child task to worker");
@@ -481,6 +482,7 @@ impl Coordinator {
                         run_id: child_id.clone(),
                         spec: child_specs[i].clone(),
                         policy: None,
+                        claim_epoch: agentic_core::NO_CLAIM,
                     };
 
                     if let Err(e) = self.transport.assign(assignment).await {

@@ -144,6 +144,7 @@ mod tests {
             claimed_at: None,
             visibility_timeout_secs: 60,
             claim_count: 1,
+            claim_epoch: 1,
             max_claims: 3,
             scope_owned: false,
             available_at: now,

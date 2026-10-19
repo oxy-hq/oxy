@@ -265,6 +265,7 @@ impl Coordinator {
             run_id,
             spec,
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         };
 
         self.transport.assign(assignment).await.map_err(|e| {

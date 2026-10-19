@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use crate::delegation::{TaskAssignment, TaskOutcome};
+use crate::delegation::{ClaimEpoch, TaskAssignment, TaskOutcome};
 
 // ── WorkerMessage ────────────────────────────────────────────────────────────
 
@@ -24,9 +24,14 @@ pub enum WorkerMessage {
         payload: Value,
     },
     /// The task produced a final outcome.
+    ///
+    /// `claim_epoch` is the claim of the execution that produced it, so a
+    /// durable transport only ever writes to the row that execution held.
     Outcome {
         task_id: String,
         outcome: TaskOutcome,
+        #[serde(default)]
+        claim_epoch: ClaimEpoch,
     },
     /// The task could not run yet — return it to the queue, invisible for
     /// `delay_secs`.
@@ -40,6 +45,9 @@ pub enum WorkerMessage {
         delay_secs: u64,
         max_wait_secs: u64,
         reason: String,
+        /// The deferring execution's claim; see `Outcome::claim_epoch`.
+        #[serde(default)]
+        claim_epoch: ClaimEpoch,
     },
 }
 
@@ -135,14 +143,22 @@ pub trait WorkerTransport: Send + Sync + 'static {
     /// Get a cancellation token for a specific task.
     ///
     /// The token is cancelled when the coordinator calls `cancel(task_id)`.
-    fn cancellation_token(&self, task_id: &str) -> CancellationToken;
+    ///
+    /// `claim_epoch` is the executing claim ([`crate::delegation::NO_CLAIM`]
+    /// for work with no queue row). A durable transport keys tokens by it, so
+    /// cancelling one claim never cancels its re-claim.
+    fn cancellation_token(&self, task_id: &str, claim_epoch: ClaimEpoch) -> CancellationToken;
 
     /// Send a heartbeat for a running task.
     ///
     /// Durable transports update a heartbeat timestamp in the database;
     /// in-memory transports no-op. Workers call this periodically to prevent
     /// the reaper from reclaiming their tasks.
-    async fn heartbeat(&self, _task_id: &str) -> Result<(), TransportError> {
+    async fn heartbeat(
+        &self,
+        _task_id: &str,
+        _claim_epoch: ClaimEpoch,
+    ) -> Result<(), TransportError> {
         Ok(())
     }
 
@@ -151,7 +167,12 @@ pub trait WorkerTransport: Send + Sync + 'static {
     /// Returns a [`CancellationToken`] — cancel it when the task completes.
     /// Durable transports periodically update the heartbeat timestamp;
     /// in-memory transports return a no-op token.
-    fn spawn_heartbeat(&self, _task_id: &str, _interval: std::time::Duration) -> CancellationToken {
+    fn spawn_heartbeat(
+        &self,
+        _task_id: &str,
+        _claim_epoch: ClaimEpoch,
+        _interval: std::time::Duration,
+    ) -> CancellationToken {
         CancellationToken::new()
     }
 }

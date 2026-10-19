@@ -199,9 +199,9 @@ async fn terminal_write(
     kind: &str,
 ) -> crud::TerminalWrite {
     match kind {
-        "complete" => crud::complete_queue_task(db, task_id, worker).await,
-        "fail" => crud::fail_queue_task(db, task_id, worker).await,
-        "cancel" => crud::cancel_queued_task_owned(db, task_id, worker).await,
+        "complete" => crud::complete_queue_task(db, task_id, worker, None).await,
+        "fail" => crud::fail_queue_task(db, task_id, worker, None).await,
+        "cancel" => crud::cancel_queued_task_owned(db, task_id, worker, None).await,
         other => panic!("unknown terminal write kind: {other}"),
     }
     .unwrap()
@@ -725,7 +725,9 @@ async fn a_claim_taken_during_shutdown_can_be_handed_straight_back() {
     claim_or_fail(&db, "w-late", &mine).await;
     claim_or_fail(&db, "w-late", &sibling).await;
 
-    let handed_back = crud::release_claim(&db, &mine, "w-late").await.unwrap();
+    let handed_back = crud::release_claim(&db, &mine, "w-late", None)
+        .await
+        .unwrap();
 
     assert!(handed_back, "the straggler claim must be handed back");
     let r = row(&db, &mine).await;
@@ -751,7 +753,9 @@ async fn a_claim_taken_during_shutdown_can_be_handed_straight_back() {
     // Idempotent, same as the bulk release: the row is no longer `claimed` and
     // no longer carries a worker_id.
     assert!(
-        !crud::release_claim(&db, &mine, "w-late").await.unwrap(),
+        !crud::release_claim(&db, &mine, "w-late", None)
+            .await
+            .unwrap(),
         "a second hand-back must match nothing"
     );
     assert_eq!(row(&db, &mine).await.claim_count, 0);
@@ -771,7 +775,7 @@ async fn release_claim_never_touches_a_peers_row() {
     claim_or_fail(&db, "peer", &task_id).await;
 
     assert!(
-        !crud::release_claim(&db, &task_id, "not-the-holder")
+        !crud::release_claim(&db, &task_id, "not-the-holder", None)
             .await
             .unwrap(),
         "releasing a row this worker does not hold must match nothing"
@@ -1208,7 +1212,7 @@ async fn deferred_task_is_invisible_until_its_window_opens() {
     assert!(claimed.is_some(), "precondition: task must be claimable");
 
     assert_eq!(
-        crud::defer_task(&db, &task_id, "w1", 3600, 86_400)
+        crud::defer_task(&db, &task_id, "w1", None, 3600, 86_400)
             .await
             .unwrap(),
         crud::DeferOutcome::Deferred,
@@ -1263,7 +1267,7 @@ async fn defer_refunds_the_claim_it_returns() {
     claim_or_fail(&db, "w1", &task_id).await;
     assert_eq!(row(&db, &task_id).await.claim_count, 1);
 
-    crud::defer_task(&db, &task_id, "w1", 60, 86_400)
+    crud::defer_task(&db, &task_id, "w1", None, 60, 86_400)
         .await
         .unwrap();
     assert_eq!(
@@ -1297,7 +1301,7 @@ async fn defer_refunds_the_claim_it_returns() {
          ownership rather than about status"
     );
     assert_eq!(
-        crud::defer_task(&db, &task_id, "someone-else", 60, 86_400)
+        crud::defer_task(&db, &task_id, "someone-else", None, 60, 86_400)
             .await
             .unwrap(),
         crud::DeferOutcome::NotHeld,
@@ -1319,7 +1323,7 @@ async fn reenqueue_clears_a_pending_deferral() {
     let (run_id, task_id) = seed_task(&db, "agent", TaskScope::Global).await;
 
     claim_or_fail(&db, "w1", &task_id).await;
-    crud::defer_task(&db, &task_id, "w1", 3600, 86_400)
+    crud::defer_task(&db, &task_id, "w1", None, 3600, 86_400)
         .await
         .unwrap();
     assert!(
@@ -1373,7 +1377,7 @@ async fn a_task_that_waits_past_its_ceiling_is_dead_lettered() {
     // First defer starts the streak and stays queued.
     claim_or_fail(&db, "w1", &task_id).await;
     assert_eq!(
-        crud::defer_task(&db, &task_id, "w1", 1, 3600)
+        crud::defer_task(&db, &task_id, "w1", None, 1, 3600)
             .await
             .unwrap(),
         crud::DeferOutcome::Deferred,
@@ -1396,7 +1400,7 @@ async fn a_task_that_waits_past_its_ceiling_is_dead_lettered() {
 
     claim_or_fail(&db, "w2", &task_id).await;
     assert_eq!(
-        crud::defer_task(&db, &task_id, "w2", 1, 3600)
+        crud::defer_task(&db, &task_id, "w2", None, 1, 3600)
             .await
             .unwrap(),
         crud::DeferOutcome::DeadLettered,
@@ -1419,7 +1423,7 @@ async fn the_wait_streak_is_not_reset_by_later_deferrals() {
     let (_run_id, task_id) = seed_task(&db, "agent", TaskScope::Global).await;
 
     claim_or_fail(&db, "w1", &task_id).await;
-    crud::defer_task(&db, &task_id, "w1", 0, 3600)
+    crud::defer_task(&db, &task_id, "w1", None, 0, 3600)
         .await
         .unwrap();
     let first = row(&db, &task_id).await.first_deferred_at.unwrap();
@@ -1437,7 +1441,7 @@ async fn the_wait_streak_is_not_reset_by_later_deferrals() {
     // the row re-claimable at all, and it is globally claimable — see this
     // test's own cleanup note below.
     assert_eq!(
-        crud::defer_task(&db, &task_id, "w2", 0, 3600)
+        crud::defer_task(&db, &task_id, "w2", None, 0, 3600)
             .await
             .unwrap(),
         crud::DeferOutcome::Deferred,
@@ -1510,6 +1514,7 @@ async fn a_dead_lettered_task_fails_its_run() {
             delay_secs: 30,
             max_wait_secs: 3600,
             reason: "pipeline yaml not resolvable on this node".to_string(),
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .expect("a deferral is never an error to the caller");
@@ -1604,6 +1609,7 @@ async fn a_dead_lettered_child_task_fails_its_root_run() {
             delay_secs: 30,
             max_wait_secs: 3600,
             reason: "pipeline yaml not resolvable on this node".to_string(),
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .expect("a deferral is never an error to the caller");

@@ -561,6 +561,7 @@ impl Coordinator {
                     pending_child_answer,
                 },
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             };
             if let Err(e) = self.transport.assign(assignment).await {
                 self.fail_parent_on_assign_error(parent_id, &run_id, "AutomationDecision", e)
@@ -583,6 +584,7 @@ impl Coordinator {
                 answer,
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         };
 
         if let Err(e) = self.transport.assign(assignment).await {

@@ -123,6 +123,7 @@ async fn airway_step_in_a_preview_run_holds_instead_of_leasing() {
                 environment: None,
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .expect("a held step is not an error");

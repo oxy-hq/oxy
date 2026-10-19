@@ -113,6 +113,7 @@ async fn enqueue_task_inner(
         claimed_at: Set(None),
         visibility_timeout_secs: Set(60),
         claim_count: Set(0),
+        claim_epoch: Set(0),
         max_claims: Set(3),
         scope_owned: Set(scope.is_owned()),
         // Explicitly `now()`, not `NotSet`. An enqueue MEANS "claimable now",
@@ -211,6 +212,7 @@ pub async fn claim_task(
             claimed_at = now(), \
             last_heartbeat = now(), \
             claim_count = claim_count + 1, \
+            claim_epoch = claim_epoch + 1, \
             updated_at = now() \
         WHERE task_id = ( \
             SELECT task_id FROM agentic_task_queue \
@@ -258,6 +260,7 @@ pub async fn claim_task_under_root(
             claimed_at = now(), \
             last_heartbeat = now(), \
             claim_count = claim_count + 1, \
+            claim_epoch = claim_epoch + 1, \
             updated_at = now() \
         WHERE task_id = ( \
             SELECT task_id FROM agentic_task_queue \
@@ -311,6 +314,7 @@ pub async fn update_queue_heartbeat(
     db: &DatabaseConnection,
     task_id: &str,
     worker_id: &str,
+    claim_epoch: Option<i64>,
 ) -> Result<bool, DbErr> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
     let res = db
@@ -318,8 +322,9 @@ pub async fn update_queue_heartbeat(
             DatabaseBackend::Postgres,
             "UPDATE agentic_task_queue \
              SET last_heartbeat = now(), updated_at = now() \
-             WHERE task_id = $1 AND worker_id = $2 AND queue_status = 'claimed'",
-            [task_id.into(), worker_id.into()],
+             WHERE task_id = $1 AND worker_id = $2 AND queue_status = 'claimed' \
+               AND ($3::bigint IS NULL OR claim_epoch = $3)",
+            [task_id.into(), worker_id.into(), claim_epoch.into()],
         ))
         .await?;
     Ok(res.rows_affected() > 0)
@@ -347,9 +352,10 @@ pub async fn heartbeat_queue_task(
     db: &DatabaseConnection,
     task_id: &str,
     worker_id: &str,
+    claim_epoch: Option<i64>,
 ) -> Result<HeartbeatOutcome, DbErr> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
-    if update_queue_heartbeat(db, task_id, worker_id).await? {
+    if update_queue_heartbeat(db, task_id, worker_id, claim_epoch).await? {
         return Ok(HeartbeatOutcome::Beat);
     }
     let row = db
@@ -430,6 +436,7 @@ pub async fn set_terminal_status_owned<C: ConnectionTrait>(
     conn: &C,
     task_id: &str,
     worker_id: &str,
+    claim_epoch: Option<i64>,
     status: &str,
 ) -> Result<TerminalWrite, DbErr> {
     use sea_orm::{DatabaseBackend, Statement};
@@ -438,14 +445,20 @@ pub async fn set_terminal_status_owned<C: ConnectionTrait>(
             DatabaseBackend::Postgres,
             "UPDATE agentic_task_queue SET queue_status = $3, updated_at = now() \
              WHERE task_id = $1 AND worker_id = $2 \
+               AND ($4::bigint IS NULL OR claim_epoch = $4) \
                AND queue_status IN ('queued', 'claimed')",
-            [task_id.into(), worker_id.into(), status.into()],
+            [
+                task_id.into(),
+                worker_id.into(),
+                status.into(),
+                claim_epoch.into(),
+            ],
         ))
         .await?;
     if res.rows_affected() > 0 {
         return Ok(TerminalWrite::Stamped);
     }
-    classify_terminal_miss(conn, task_id, worker_id).await
+    classify_terminal_miss(conn, task_id, worker_id, claim_epoch).await
 }
 
 /// Work out *why* a terminal write matched nothing. Only ever runs on the miss
@@ -454,12 +467,13 @@ async fn classify_terminal_miss<C: ConnectionTrait>(
     conn: &C,
     task_id: &str,
     worker_id: &str,
+    claim_epoch: Option<i64>,
 ) -> Result<TerminalWrite, DbErr> {
     use sea_orm::{DatabaseBackend, Statement};
     let row = conn
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "SELECT worker_id FROM agentic_task_queue WHERE task_id = $1",
+            "SELECT worker_id, claim_epoch FROM agentic_task_queue WHERE task_id = $1",
             [task_id.into()],
         ))
         .await?;
@@ -467,9 +481,11 @@ async fn classify_terminal_miss<C: ConnectionTrait>(
         return Ok(TerminalWrite::NoRow);
     };
     let owner: Option<String> = row.try_get("", "worker_id")?;
+    let epoch: i64 = row.try_get("", "claim_epoch")?;
     // We still own it, so the UPDATE can only have been blocked by the status
-    // guard — the row is already terminal.
-    if owner.as_deref() == Some(worker_id) {
+    // guard — the row is already terminal. A different claim by the same
+    // (process-stable) worker is not ours: that is a re-claim.
+    if owner.as_deref() == Some(worker_id) && claim_epoch.is_none_or(|c| c == epoch) {
         Ok(TerminalWrite::AlreadyTerminal)
     } else {
         Ok(TerminalWrite::NotOwned)
@@ -483,8 +499,9 @@ pub async fn complete_queue_task(
     db: &DatabaseConnection,
     task_id: &str,
     worker_id: &str,
+    claim_epoch: Option<i64>,
 ) -> Result<TerminalWrite, DbErr> {
-    set_terminal_status_owned(db, task_id, worker_id, "completed").await
+    set_terminal_status_owned(db, task_id, worker_id, claim_epoch, "completed").await
 }
 
 /// Mark a task **this worker holds** as failed. See
@@ -494,8 +511,9 @@ pub async fn fail_queue_task(
     db: &DatabaseConnection,
     task_id: &str,
     worker_id: &str,
+    claim_epoch: Option<i64>,
 ) -> Result<TerminalWrite, DbErr> {
-    set_terminal_status_owned(db, task_id, worker_id, "failed").await
+    set_terminal_status_owned(db, task_id, worker_id, claim_epoch, "failed").await
 }
 
 /// Re-enqueue a task that was previously claimed or failed. Resets queue_status
@@ -750,8 +768,9 @@ pub async fn cancel_queued_task_owned(
     db: &DatabaseConnection,
     task_id: &str,
     worker_id: &str,
+    claim_epoch: Option<i64>,
 ) -> Result<TerminalWrite, DbErr> {
-    set_terminal_status_owned(db, task_id, worker_id, "cancelled").await
+    set_terminal_status_owned(db, task_id, worker_id, claim_epoch, "cancelled").await
 }
 
 /// A task this reaper cycle moved to `dead`, captured **as it was while still
@@ -1021,6 +1040,7 @@ pub async fn defer_task(
     db: &DatabaseConnection,
     task_id: &str,
     worker_id: &str,
+    claim_epoch: Option<i64>,
     delay_secs: i64,
     max_wait_secs: i64,
 ) -> Result<DeferOutcome, DbErr> {
@@ -1039,6 +1059,7 @@ pub async fn defer_task(
             available_at = now() + make_interval(secs => $3), \
             updated_at = now() \
         WHERE task_id = $1 AND worker_id = $2 AND queue_status = 'claimed' \
+          AND ($5::bigint IS NULL OR claim_epoch = $5) \
         RETURNING queue_status";
 
     use sea_orm::FromQueryResult;
@@ -1058,6 +1079,7 @@ pub async fn defer_task(
             // `pipeline_lease::try_acquire`).
             (delay_secs as f64).into(),
             (max_wait_secs as f64).into(),
+            claim_epoch.into(),
         ],
     ))
     .one(db)
@@ -1109,6 +1131,7 @@ pub async fn release_claim(
     db: &DatabaseConnection,
     task_id: &str,
     worker_id: &str,
+    claim_epoch: Option<i64>,
 ) -> Result<bool, DbErr> {
     use sea_orm::{DatabaseBackend, Statement};
     let res = db
@@ -1116,9 +1139,10 @@ pub async fn release_claim(
             DatabaseBackend::Postgres,
             format!(
                 "UPDATE agentic_task_queue {RELEASE_SET_CLAUSE} \
-                 WHERE task_id = $1 AND worker_id = $2 AND queue_status = 'claimed'"
+                 WHERE task_id = $1 AND worker_id = $2 AND queue_status = 'claimed' \
+                   AND ($3::bigint IS NULL OR claim_epoch = $3)"
             ),
-            [task_id.into(), worker_id.into()],
+            [task_id.into(), worker_id.into(), claim_epoch.into()],
         ))
         .await?;
     Ok(res.rows_affected() > 0)

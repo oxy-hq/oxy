@@ -20,6 +20,7 @@
 //! `dbRecordVersion`, so a workflow task is either fully applied or fully
 //! rolled back.
 
+use agentic_core::delegation::{ClaimEpoch, NO_CLAIM};
 use sea_orm::{
     ConnectionTrait, DatabaseConnection, DatabaseTransaction, DbErr, FromQueryResult, Statement,
     TransactionTrait,
@@ -102,7 +103,15 @@ pub enum DecisionClaim {
     /// scoped to it. The id is the process worker identity
     /// (`agentic_runtime::transport::process_worker_id`) — the same value the
     /// claiming UPDATE wrote into `worker_id`.
-    HeldBy(String),
+    ///
+    /// `claim_epoch` is the claim's identity (`TaskAssignment::claim_epoch`).
+    /// `worker_id` is process-stable, so on its own it cannot tell this
+    /// execution from this process's re-claim of the same row after a reap;
+    /// the epoch can. [`NO_CLAIM`] fences on `worker_id` only.
+    HeldBy {
+        worker_id: String,
+        claim_epoch: ClaimEpoch,
+    },
     /// This commit is not driven by a durable-queue claim, so there is no
     /// ownership to check: the caller reached `commit_decision` without going
     /// through `recv_assignment` (tests that drive the decider directly), or
@@ -238,11 +247,15 @@ async fn stamp_decision_queue_row(
     use agentic_runtime::crud::TerminalWrite;
 
     match row.claim {
-        DecisionClaim::HeldBy(worker_id) => {
+        DecisionClaim::HeldBy {
+            worker_id,
+            claim_epoch,
+        } => {
             let write = agentic_runtime::crud::set_terminal_status_owned(
                 txn,
                 row.task_id,
                 worker_id,
+                (*claim_epoch != NO_CLAIM).then_some(*claim_epoch),
                 status,
             )
             .await?;

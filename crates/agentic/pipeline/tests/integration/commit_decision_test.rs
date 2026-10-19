@@ -675,7 +675,8 @@ async fn claim_as(db: &DatabaseConnection, task_id: &str, worker_id: &str) {
         sea_orm::DatabaseBackend::Postgres,
         "UPDATE agentic_task_queue \
          SET queue_status = 'claimed', worker_id = $2, claimed_at = now(), \
-             last_heartbeat = now(), claim_count = claim_count + 1 \
+             last_heartbeat = now(), claim_count = claim_count + 1, \
+             claim_epoch = claim_epoch + 1 \
          WHERE task_id = $1",
         [task_id.into(), worker_id.into()],
     ))
@@ -711,7 +712,10 @@ async fn commit_rolls_back_rather_than_stamp_a_peers_reclaimed_row() {
         DecisionCommit {
             run_id: run_id.clone(),
             decision_task_id: decision_task_id.clone(),
-            claim: DecisionClaim::HeldBy("dying".into()),
+            claim: DecisionClaim::HeldBy {
+                worker_id: "dying".into(),
+                claim_epoch: 0,
+            },
             expected_version: 0,
             new_state: state,
             result_delta: json!({"step_fmt": {"text": "late"}}),
@@ -764,6 +768,66 @@ async fn commit_rolls_back_rather_than_stamp_a_peers_reclaimed_row() {
     assert!(!final_state.results.contains_key("step_fmt"));
 }
 
+/// `worker_id` is process-stable, so after a reap this process can hold a NEW
+/// claim of the row under the very same id. A commit from the old execution
+/// must still roll back: only the claim's epoch tells the two apart.
+#[tokio::test(flavor = "multi_thread")]
+async fn commit_from_a_stale_claim_of_the_same_worker_rolls_back() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let (run_id, mut state) = seed_run(&db).await;
+    let decision_task_id = run_id.clone();
+    seed_queue_row(&db, &decision_task_id, &run_id).await;
+    claim_as(&db, &decision_task_id, "holder").await;
+    let stale = crud::get_queue_entry(&db, &decision_task_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .claim_epoch;
+    // The reaper requeued it and the same worker took it again.
+    claim_as(&db, &decision_task_id, "holder").await;
+
+    state.current_step = state.workflow.tasks.len();
+    let outcome = commit_decision(
+        &db,
+        DecisionCommit {
+            run_id: run_id.clone(),
+            decision_task_id: decision_task_id.clone(),
+            claim: DecisionClaim::HeldBy {
+                worker_id: "holder".into(),
+                claim_epoch: stale,
+            },
+            expected_version: 0,
+            new_state: state,
+            result_delta: json!({"step_fmt": {"text": "late"}}),
+            step_hash_delta: json!({}),
+            events: vec![("subrun_completed".into(), json!({"success": true}))],
+            attempt: 0,
+            terminal: DecisionTerminal::CompleteAutomation {
+                final_answer: "late".into(),
+            },
+        },
+    )
+    .await
+    .expect("commit_decision");
+
+    assert!(
+        matches!(outcome, CommitOutcome::ClaimLost),
+        "got {outcome:?}"
+    );
+    assert_eq!(
+        queue_status(&db, &decision_task_id).await.as_deref(),
+        Some("claimed"),
+        "the re-claim's live row must not be stamped terminal"
+    );
+    assert_eq!(
+        run_task_status(&db, &run_id).await.as_deref(),
+        Some("running")
+    );
+}
+
 /// The other half: an ownership-scoped commit from the *actual* holder must
 /// still work. Without this, "always roll back" would satisfy the test above
 /// while breaking every automation in production.
@@ -784,7 +848,10 @@ async fn commit_lands_for_the_worker_that_holds_the_claim() {
         DecisionCommit {
             run_id: run_id.clone(),
             decision_task_id: decision_task_id.clone(),
-            claim: DecisionClaim::HeldBy("holder".into()),
+            claim: DecisionClaim::HeldBy {
+                worker_id: "holder".into(),
+                claim_epoch: 0,
+            },
             expected_version: 0,
             new_state: state,
             result_delta: json!({"step_fmt": {"text": "ok"}}),

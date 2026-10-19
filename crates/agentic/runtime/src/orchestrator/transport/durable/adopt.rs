@@ -26,9 +26,9 @@ impl DurableTransport {
         let adopted = crud::adopt_queued_task(&self.db, task_id, &self.worker_id)
             .await
             .map_err(|e| TransportError::Other(format!("adopting a queued claim failed: {e}")))?;
-        if adopted {
-            self.spawn_heartbeat(task_id, HEARTBEAT_INTERVAL);
+        if let Some(claim_epoch) = adopted {
+            self.spawn_heartbeat(task_id, claim_epoch, HEARTBEAT_INTERVAL);
         }
-        Ok(adopted)
+        Ok(adopted.is_some())
     }
 }

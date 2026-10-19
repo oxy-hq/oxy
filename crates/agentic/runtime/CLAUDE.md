@@ -22,6 +22,7 @@ The legacy flat paths (`agentic_runtime::coordinator`, `agentic_runtime::state`,
   - `serialize_fn: Fn(&Event<Ev>) -> (String, Value)` for bridge task serialization
   - `RowProcessor` closures registered in `EventRegistry` for deserialization
   - `OnResumeFn` callback for domain-specific resume logic
+- **Owned queue writes are fenced on the claim, not the worker.** `worker_id` is process-stable, so a stale execution and this process's re-claim of the same row look identical to it. `agentic_task_queue.claim_epoch` (bumped by every claim/adopt, never decremented — unlike the `claim_count` retry budget) rides `TaskAssignment.claim_epoch` → `WorkerMessage::Outcome`/`Defer`, and every heartbeat/terminal/defer/release predicate carries it. Cancel tokens and heartbeat tickers are keyed by `(task_id, claim)`. `NO_CLAIM` (0) means unfenced: in-memory transports and virtual root workers. Don't add a task_id-keyed marker to paper over a missing epoch.
 - The `agentic_runs` table has no domain-specific columns — only `source_type` and `metadata` (JSONB).
 - `PipelineHandle<Ev>` requires `Ev: DomainEvents` — domains provide the concrete type, runtime handles it generically.
 

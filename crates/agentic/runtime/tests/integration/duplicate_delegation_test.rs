@@ -244,18 +244,14 @@ async fn re_delegation_while_waiting_on_children_spawns_no_second_child() {
     assert_eq!(root.task_status.as_deref(), Some("done"));
 }
 
-/// At most one heartbeat ticker per `task_id`.
+/// At most one heartbeat ticker per `task_id`, and it is the newest claim's.
 ///
 /// Keeping the ticker alive across a suspension means the resume path can hand
-/// the same `task_id` to a second driver while the first driver's ticker is
-/// still running. Nothing about the heartbeat write stops the first one:
-/// `worker_id` is process-stable and `update_queue_heartbeat` has no fencing
-/// token, so once this same process re-claims the row the stale ticker's
-/// predicate matches again and it beats on for the rest of the run. Left
-/// unchecked that is one ticker per suspension writing the same row, and — the
-/// part that actually matters — a claim that keeps looking alive after the
-/// driver behind it is gone, which is the exact liveness signal the reaper
-/// reads.
+/// the same `task_id` to a second driver — a new claim — while the first
+/// driver's ticker is still running. The heartbeat predicate is fenced on the
+/// claim's epoch so the stale ticker could no longer keep the new claim
+/// looking alive; this registry is what ends it promptly instead of leaving
+/// one ticker per suspension beating (and failing) for the rest of the run.
 #[tokio::test]
 async fn spawning_a_heartbeat_retires_the_previous_one_for_that_task() {
     let Some(db) = test_db().await else {
@@ -264,27 +260,34 @@ async fn spawning_a_heartbeat_retires_the_previous_one_for_that_task() {
     let transport = agentic_runtime::transport::DurableTransport::new(db);
     let interval = agentic_runtime::orchestrator::worker::HEARTBEAT_INTERVAL;
 
-    let first = WorkerTransport::spawn_heartbeat(transport.as_ref(), "hb-task", interval);
+    let first = WorkerTransport::spawn_heartbeat(transport.as_ref(), "hb-task", 1, interval);
     assert!(
         !first.is_cancelled(),
         "a freshly spawned ticker must be live"
     );
 
     // The resume path re-claims the same task_id — this is the second driver.
-    let second = WorkerTransport::spawn_heartbeat(transport.as_ref(), "hb-task", interval);
+    let second = WorkerTransport::spawn_heartbeat(transport.as_ref(), "hb-task", 2, interval);
     assert!(
         first.is_cancelled(),
-        "spawning a ticker for a task_id that already has one must retire the \
-         old one; otherwise stale tickers accumulate and keep a heartbeat fresh \
-         for a claim they no longer represent"
+        "spawning a ticker for a newer claim of a task_id that already has one \
+         must retire the old one"
     );
     assert!(
         !second.is_cancelled(),
         "the current driver's ticker must survive"
     );
 
+    // A late registration of an OLDER claim must not displace the newer one.
+    let late = WorkerTransport::spawn_heartbeat(transport.as_ref(), "hb-task", 1, interval);
+    assert!(
+        late.is_cancelled(),
+        "an older claim's ticker is born retired"
+    );
+    assert!(!second.is_cancelled(), "the newer claim's ticker stays");
+
     // A different task is unaffected — the retirement is keyed, not global.
-    let other = WorkerTransport::spawn_heartbeat(transport.as_ref(), "hb-other", interval);
+    let other = WorkerTransport::spawn_heartbeat(transport.as_ref(), "hb-other", 1, interval);
     assert!(!second.is_cancelled(), "sibling task must not be retired");
     assert!(!other.is_cancelled());
 }

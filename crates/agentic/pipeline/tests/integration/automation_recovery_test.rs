@@ -186,6 +186,7 @@ async fn test_automation_decision_executor_arm_returns_done() {
             pending_child_answer: None,
         },
         policy: None,
+        claim_epoch: agentic_core::NO_CLAIM,
     };
 
     let result = executor.execute(assignment).await;
@@ -254,6 +255,7 @@ async fn custom_kind_delegates_to_registry() {
             payload: json!({}),
         },
         policy: None,
+        claim_epoch: agentic_core::NO_CLAIM,
     };
 
     // Delegation reached Echo (sentinel error), proving the registry path.
@@ -274,6 +276,7 @@ async fn custom_kind_delegates_to_registry() {
             payload: json!({}),
         },
         policy: None,
+        claim_epoch: agentic_core::NO_CLAIM,
     };
     let err = match executor.execute(unknown).await {
         Ok(_) => panic!("expected unregistered Custom kind to error"),
@@ -669,6 +672,7 @@ impl TaskExecutor for AutomationDecisionStubExecutor {
                     pending_child_answer: None,
                 },
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             })
             .await
         } else {
@@ -682,6 +686,7 @@ impl TaskExecutor for AutomationDecisionStubExecutor {
                     workflow_context: json!({}),
                 },
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             })
             .await
         }
@@ -796,6 +801,7 @@ fn spawn_virtual_worker(
                 .send(WorkerMessage::Outcome {
                     task_id: task_id.clone(),
                     outcome,
+                    claim_epoch: agentic_core::NO_CLAIM,
                 })
                 .await;
             if terminal {

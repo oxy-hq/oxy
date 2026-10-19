@@ -259,6 +259,7 @@ async fn no_scoped_writer_refuses_the_sample_and_writes_nothing() {
                 payload: json!({ "preview_run_id": run_id }),
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await;
     let why = match started {

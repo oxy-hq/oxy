@@ -45,6 +45,7 @@ async fn run_custom(db: &DatabaseConnection, exec: &dyn TaskExecutor, kind: &str
                 payload: json!({ "preview_run_id": run_id }),
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .expect("the executor accepts its own kind");

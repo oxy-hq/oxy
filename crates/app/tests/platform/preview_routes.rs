@@ -51,6 +51,7 @@ async fn run_the_check(db: &DatabaseConnection, run_id: &str) {
                 payload: json!({ "preview_run_id": run_id }),
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .expect("the executor accepts its own kind");

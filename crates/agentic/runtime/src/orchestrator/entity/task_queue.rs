@@ -29,6 +29,10 @@ pub struct Model {
     pub visibility_timeout_secs: i32,
     /// How many times this task has been claimed (incremented on each claim).
     pub claim_count: i32,
+    /// Identity of the current claim: bumped by every claim and adopt, never
+    /// decremented or reset (unlike `claim_count`, a retry budget). Owned
+    /// writes predicate on it so a stale execution matches no row.
+    pub claim_epoch: i64,
     /// Maximum number of claims before the task is dead-lettered.
     pub max_claims: i32,
     /// `true` when a co-located scoped coordinator owns this task's tree

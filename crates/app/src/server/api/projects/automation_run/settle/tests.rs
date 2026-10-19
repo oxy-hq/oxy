@@ -247,7 +247,7 @@ async fn a_run_failed_under_a_driver_that_holds_it_is_left_running() {
     assert_eq!(polled.error_code, None);
 
     assert!(
-        agentic_runtime::crud::release_claim(&db, &task_id, WORKER)
+        agentic_runtime::crud::release_claim(&db, &task_id, WORKER, None)
             .await
             .expect("release"),
         "the claim goes back to the queue"
@@ -275,7 +275,7 @@ async fn a_failed_run_nothing_holds_is_closed_as_orphaned() {
         .await
         .expect("claim")
         .expect("the run's entry is claimable");
-    agentic_runtime::crud::fail_queue_task(&db, &task_id, WORKER)
+    agentic_runtime::crud::fail_queue_task(&db, &task_id, WORKER, None)
         .await
         .expect("the driver gives the task up");
     fail_as_the_boot_sweep_does(&db, id).await;

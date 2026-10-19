@@ -237,6 +237,7 @@ impl PipelineTaskExecutor {
         &self,
         run_id: &str,
         pending_child_answer: Option<agentic_core::delegation::ChildCompletion>,
+        claim_epoch: agentic_core::delegation::ClaimEpoch,
     ) -> Result<ExecutingTask, String> {
         let state = agentic_automation::extension::load_automation_state(&self.db, run_id)
             .await
@@ -389,9 +390,10 @@ impl PipelineTaskExecutor {
         // `DurableTransport` and so holds no claims at all, and minting an id
         // here would fabricate an owner that matches nothing.
         let claim = match agentic_runtime::transport::process_worker_id_if_initialized() {
-            Some(worker_id) => {
-                agentic_automation::extension::DecisionClaim::HeldBy(worker_id.to_string())
-            }
+            Some(worker_id) => agentic_automation::extension::DecisionClaim::HeldBy {
+                worker_id: worker_id.to_string(),
+                claim_epoch,
+            },
             None => agentic_automation::extension::DecisionClaim::Unclaimed,
         };
         let outcome = agentic_automation::extension::commit_decision(

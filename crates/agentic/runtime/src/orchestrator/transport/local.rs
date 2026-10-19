@@ -6,9 +6,9 @@
 
 use std::sync::Arc;
 
-use agentic_core::delegation::TaskAssignment;
 #[cfg(test)]
 use agentic_core::delegation::TaskOutcome;
+use agentic_core::delegation::{ClaimEpoch, TaskAssignment};
 use agentic_core::transport::{
     CoordinatorTransport, TransportError, WorkerMessage, WorkerTransport,
 };
@@ -99,7 +99,8 @@ impl WorkerTransport for LocalTransport {
             .map_err(|_| TransportError::ChannelClosed)
     }
 
-    fn cancellation_token(&self, task_id: &str) -> CancellationToken {
+    /// In-memory work has no claim identity, so one token per task id.
+    fn cancellation_token(&self, task_id: &str, _claim_epoch: ClaimEpoch) -> CancellationToken {
         self.cancel_tokens
             .entry(task_id.to_string())
             .or_default()
@@ -135,6 +136,7 @@ mod tests {
                 extra: None,
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         };
 
         coord(&transport).assign(assignment).await.unwrap();
@@ -178,12 +180,15 @@ mod tests {
                 answer: "42".into(),
                 metadata: None,
             },
+            claim_epoch: agentic_core::NO_CLAIM,
         };
         work(&transport).send(msg).await.unwrap();
 
         let received = coord(&transport).recv().await.unwrap();
         match received {
-            WorkerMessage::Outcome { task_id, outcome } => {
+            WorkerMessage::Outcome {
+                task_id, outcome, ..
+            } => {
                 assert_eq!(task_id, "t1");
                 assert!(matches!(outcome, TaskOutcome::Done { .. }));
             }
@@ -206,10 +211,11 @@ mod tests {
                 extra: None,
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         };
         coord(&transport).assign(assignment).await.unwrap();
 
-        let token = work(&transport).cancellation_token("t1");
+        let token = work(&transport).cancellation_token("t1", 0);
         assert!(!token.is_cancelled());
 
         // Coordinator cancels.
@@ -232,6 +238,7 @@ mod tests {
                     extra: None,
                 },
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             };
             coord(&transport).assign(assignment).await.unwrap();
         }
@@ -250,6 +257,7 @@ mod tests {
                     answer: format!("a{i}"),
                     metadata: None,
                 },
+                claim_epoch: agentic_core::NO_CLAIM,
             };
             work(&transport).send(msg).await.unwrap();
         }
@@ -268,14 +276,14 @@ mod tests {
     async fn test_heartbeat_noop() {
         let transport = LocalTransport::with_defaults();
         // LocalTransport heartbeat is a no-op that returns Ok.
-        work(&transport).heartbeat("t1").await.unwrap();
+        work(&transport).heartbeat("t1", 0).await.unwrap();
     }
 
     #[tokio::test]
     async fn test_spawn_heartbeat_noop() {
         let transport = LocalTransport::with_defaults();
         // LocalTransport spawn_heartbeat returns a non-cancelled token (no-op loop).
-        let token = work(&transport).spawn_heartbeat("t1", std::time::Duration::from_secs(10));
+        let token = work(&transport).spawn_heartbeat("t1", 0, std::time::Duration::from_secs(10));
         assert!(!token.is_cancelled());
     }
 }

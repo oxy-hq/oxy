@@ -565,6 +565,7 @@ async fn airway_dispatch_failure_releases_the_lease() {
             environment: None,
         },
         policy: None,
+        claim_epoch: agentic_core::NO_CLAIM,
     };
 
     // `ExecutingTask` is not `Debug`, so match rather than `expect_err`.

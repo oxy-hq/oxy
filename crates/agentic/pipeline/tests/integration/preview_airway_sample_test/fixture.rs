@@ -217,6 +217,7 @@ pub(super) async fn run_production(db: &DatabaseConnection, ws: Uuid, yaml: &str
                 environment: None,
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .unwrap_or_else(|e| panic!("production dispatch: {e}"));

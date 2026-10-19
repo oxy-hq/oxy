@@ -34,6 +34,7 @@ impl MigratorTrait for RuntimeMigrator {
             Box::new(AddScheduleQuestion),
             Box::new(AddTaskQueueAvailableAt),
             Box::new(AddTaskQueueFirstDeferredAt),
+            Box::new(AddTaskQueueClaimEpoch),
             Box::new(AddPendingGlobalRunsIndex),
             Box::new(AddCompileTaskBackoffIndex),
         ]
@@ -1887,6 +1888,49 @@ impl MigrationTrait for AddTaskQueueFirstDeferredAt {
             manager
                 .get_connection()
                 .execute_unprepared("ALTER TABLE agentic_task_queue DROP COLUMN first_deferred_at")
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+/// **A claim identity that only ever goes up.**
+///
+/// `claim_count` is a retry budget, not an identity: graceful release, a
+/// deferral and `reset_task_to_queued` all decrement or zero it, so two
+/// different claims of one row can carry the same count. `claim_epoch` is
+/// bumped by every claim (and every adopt) and never decremented or reset, so
+/// `claim_epoch = $n` in a predicate matches exactly one claim — which is what
+/// lets a stale execution's heartbeat or terminal write match no row once this
+/// process (whose `worker_id` is stable) has re-claimed the task.
+struct AddTaskQueueClaimEpoch;
+
+impl MigrationName for AddTaskQueueClaimEpoch {
+    fn name(&self) -> &str {
+        "m20261019_000001_add_task_queue_claim_epoch"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddTaskQueueClaimEpoch {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if !column_exists(manager, "agentic_task_queue", "claim_epoch").await? {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE agentic_task_queue \
+                     ADD COLUMN claim_epoch BIGINT NOT NULL DEFAULT 0",
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if column_exists(manager, "agentic_task_queue", "claim_epoch").await? {
+            manager
+                .get_connection()
+                .execute_unprepared("ALTER TABLE agentic_task_queue DROP COLUMN claim_epoch")
                 .await?;
         }
         Ok(())

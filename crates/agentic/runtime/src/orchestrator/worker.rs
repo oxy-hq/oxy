@@ -287,7 +287,10 @@ impl Worker {
             })
             .await;
 
-        let cancel_token = transport.cancellation_token(&task_id);
+        // The claim this execution runs under: every owned write it causes is
+        // fenced on it, so a stale copy can never touch a re-claim's row.
+        let claim_epoch = assignment.claim_epoch;
+        let cancel_token = transport.cancellation_token(&task_id, claim_epoch);
 
         let executing = match executor.execute(assignment).await {
             Ok(e) => e,
@@ -297,6 +300,7 @@ impl Worker {
                     .send(WorkerMessage::Outcome {
                         task_id,
                         outcome: TaskOutcome::Failed(msg),
+                        claim_epoch,
                     })
                     .await;
                 return;
@@ -304,7 +308,7 @@ impl Worker {
         };
 
         // Spawn heartbeat loop — DurableTransport updates DB, LocalTransport no-ops.
-        let heartbeat_cancel = transport.spawn_heartbeat(&task_id, HEARTBEAT_INTERVAL);
+        let heartbeat_cancel = transport.spawn_heartbeat(&task_id, claim_epoch, HEARTBEAT_INTERVAL);
 
         // Forward cancellation from transport to the executing task.
         let task_cancel = executing.cancel.clone();
@@ -388,6 +392,7 @@ impl Worker {
                         delay_secs,
                         max_wait_secs,
                         reason,
+                        claim_epoch,
                     })
                     .await;
                 break;
@@ -421,6 +426,7 @@ impl Worker {
                 .send(WorkerMessage::Outcome {
                     task_id: task_id.clone(),
                     outcome,
+                    claim_epoch,
                 })
                 .await
             {
@@ -457,6 +463,7 @@ impl Worker {
                     outcome: TaskOutcome::Failed(
                         "driver terminated without an outcome (panic or early drop)".to_string(),
                     ),
+                    claim_epoch,
                 })
                 .await;
         }
@@ -478,14 +485,11 @@ impl Worker {
         //
         // What retires the ticker is `DurableTransport::retire_heartbeat`, at
         // the points where this process stops owning the claim (terminal
-        // outcome, deferral, or a re-claim of the same `task_id`) — NOT the
-        // heartbeat predicate going unsatisfied. Do not weaken that to "it
-        // stops itself once the row is no longer ours": `worker_id` is
-        // process-stable and `update_queue_heartbeat` carries no fencing
-        // token, so after the resume path re-enqueues this `task_id` and this
-        // same process re-claims it — typically within milliseconds, far
-        // inside one tick — a stale ticker's predicate matches all over again
-        // and it never stops.
+        // outcome, deferral, or a newer claim of the same `task_id`). A
+        // ticker that outlives its claim anyway fences itself out: the
+        // heartbeat predicate carries the claim's epoch, which this
+        // process's re-claim of the same `task_id` (the resume path does it
+        // within milliseconds) does not share.
         //
         // Process death still stops every ticker, so a genuinely abandoned
         // suspension goes stale, gets reaped, and reaches `find_stuck_runs`
@@ -584,6 +588,7 @@ mod tests {
                     extra: None,
                 },
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             })
             .await
             .unwrap();
@@ -731,6 +736,7 @@ mod tests {
                     extra: None,
                 },
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             })
             .await
             .unwrap();
@@ -791,6 +797,7 @@ mod tests {
                     extra: None,
                 },
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             })
             .await
             .unwrap();
@@ -899,6 +906,7 @@ mod tests {
                     extra: None,
                 },
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             })
             .await
             .unwrap();
@@ -942,6 +950,7 @@ mod tests {
                     answer: "the answer".into(),
                 },
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             })
             .await
             .unwrap();
@@ -1018,6 +1027,7 @@ mod tests {
                     extra: None,
                 },
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             })
             .await
             .unwrap();
@@ -1129,6 +1139,7 @@ mod tests {
                         extra: None,
                     },
                     policy: None,
+                    claim_epoch: agentic_core::NO_CLAIM,
                 })
                 .await
                 .unwrap();
@@ -1190,7 +1201,7 @@ mod tests {
 mod heartbeat_lifetime_tests {
     use super::*;
     use crate::orchestrator::transport::LocalTransport;
-    use agentic_core::delegation::{SuspendReason, TaskSpec};
+    use agentic_core::delegation::{ClaimEpoch, SuspendReason, TaskSpec};
     use agentic_core::human_input::SuspendedRunData;
     use agentic_core::transport::{CoordinatorTransport, TransportError, WorkerTransport};
     use std::collections::HashMap;
@@ -1213,10 +1224,15 @@ mod heartbeat_lifetime_tests {
         async fn send(&self, msg: WorkerMessage) -> Result<(), TransportError> {
             self.inner.send(msg).await
         }
-        fn cancellation_token(&self, task_id: &str) -> CancellationToken {
-            self.inner.cancellation_token(task_id)
+        fn cancellation_token(&self, task_id: &str, claim_epoch: ClaimEpoch) -> CancellationToken {
+            self.inner.cancellation_token(task_id, claim_epoch)
         }
-        fn spawn_heartbeat(&self, task_id: &str, _interval: Duration) -> CancellationToken {
+        fn spawn_heartbeat(
+            &self,
+            task_id: &str,
+            _claim_epoch: ClaimEpoch,
+            _interval: Duration,
+        ) -> CancellationToken {
             let token = CancellationToken::new();
             self.tokens
                 .lock()
@@ -1312,6 +1328,7 @@ mod heartbeat_lifetime_tests {
                     extra: None,
                 },
                 policy: None,
+                claim_epoch: agentic_core::NO_CLAIM,
             })
             .await
             .unwrap();

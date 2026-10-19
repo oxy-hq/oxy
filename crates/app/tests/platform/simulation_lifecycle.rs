@@ -275,6 +275,7 @@ async fn run_executor(db: &DatabaseConnection, run_id: Uuid) -> TaskOutcome {
                 payload: serde_json::to_value(&payload).expect("payload to json"),
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .expect("executor accepted the assignment");

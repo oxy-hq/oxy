@@ -195,6 +195,7 @@ pub(crate) async fn run_queued(db: &DatabaseConnection, run_id: &str) -> TaskOut
             run_id: run_id.to_string(),
             spec,
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .expect("the executor takes a teardown task");

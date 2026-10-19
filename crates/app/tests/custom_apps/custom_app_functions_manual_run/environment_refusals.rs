@@ -217,6 +217,7 @@ async fn a_queued_task_naming_staging_for_a_function_that_is_not_a_check_is_refu
                 }),
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         };
         let mut task = executor
             .execute(assignment)

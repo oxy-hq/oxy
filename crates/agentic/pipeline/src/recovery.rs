@@ -1348,6 +1348,7 @@ fn spawn_virtual_worker(
     // Spawn heartbeat loop for the recovered task.
     let heartbeat_cancel = transport.spawn_heartbeat(
         &task_id,
+        agentic_core::NO_CLAIM,
         agentic_runtime::orchestrator::worker::HEARTBEAT_INTERVAL,
     );
 
@@ -1424,6 +1425,7 @@ fn spawn_virtual_worker(
                 .send(WorkerMessage::Outcome {
                     task_id: task_id_for_outcomes.clone(),
                     outcome,
+                    claim_epoch: agentic_core::NO_CLAIM,
                 })
                 .await
             {

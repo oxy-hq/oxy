@@ -1506,7 +1506,7 @@ pub async fn drive_with_coordinator(
 
             // Forward cancellation from transport to the executing task,
             // mirroring what Worker::handle_task does for child tasks.
-            let cancel_token = transport_clone.cancellation_token(&task_id);
+            let cancel_token = transport_clone.cancellation_token(&task_id, agentic_core::NO_CLAIM);
             let task_cancel = executing_task.cancel.clone();
             let _cancel_fwd = spawn_with_hub({
                 let task_id = task_id.clone();
@@ -1521,6 +1521,8 @@ pub async fn drive_with_coordinator(
             let heartbeat_cancel = WorkerTransport::spawn_heartbeat(
                 transport_clone.as_ref(),
                 &task_id,
+                // A virtual worker drives a root with no queue claim of its own.
+                agentic_core::NO_CLAIM,
                 agentic_runtime::orchestrator::worker::HEARTBEAT_INTERVAL,
             );
 
@@ -1568,6 +1570,7 @@ pub async fn drive_with_coordinator(
                                         .send(agentic_core::transport::WorkerMessage::Outcome {
                                             task_id: task_id.clone(),
                                             outcome,
+                                            claim_epoch: agentic_core::NO_CLAIM,
                                         })
                                         .await;
                                     if is_terminal {
@@ -1607,6 +1610,7 @@ pub async fn drive_with_coordinator(
                                             delay_secs,
                                             max_wait_secs,
                                             reason,
+                                            claim_epoch: agentic_core::NO_CLAIM,
                                         })
                                         .await;
                                     // Cancel like every other exit from this
@@ -1642,6 +1646,7 @@ pub async fn drive_with_coordinator(
                                     .send(agentic_core::transport::WorkerMessage::Outcome {
                                         task_id: task_id.clone(),
                                         outcome,
+                                        claim_epoch: agentic_core::NO_CLAIM,
                                     })
                                     .await
                                 {

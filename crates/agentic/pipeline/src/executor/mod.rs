@@ -340,8 +340,12 @@ impl TaskExecutor for PipelineTaskExecutor {
                 run_id,
                 pending_child_answer,
             } => {
-                self.execute_automation_decision(run_id, pending_child_answer.clone())
-                    .await
+                self.execute_automation_decision(
+                    run_id,
+                    pending_child_answer.clone(),
+                    assignment.claim_epoch,
+                )
+                .await
             }
 
             TaskSpec::Custom { kind, .. } => {
@@ -460,7 +464,9 @@ impl TaskExecutor for PipelineTaskExecutor {
         if source_type == "workflow" {
             match agentic_automation::extension::load_automation_state(&self.db, &run.id).await {
                 Ok(Some(_)) => {
-                    return self.execute_automation_decision(&run.id, None).await;
+                    return self
+                        .execute_automation_decision(&run.id, None, agentic_core::NO_CLAIM)
+                        .await;
                 }
                 Ok(None) => {
                     // No durable state (run started before the Temporal refactor).
@@ -2396,6 +2402,7 @@ mod tests {
                 environment: None,
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         };
         let platform = |scope| {
             Arc::new(PreviewAirwayPlatform {
@@ -2465,6 +2472,7 @@ mod tests {
                 environment: None,
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         };
         let err = match executor(platform.clone()).execute(assignment).await {
             Err(e) => e,

@@ -44,8 +44,9 @@ pub mod storage;
 
 pub use back_target::{BackTarget, RetryContext};
 pub use delegation::{
-    BackoffStrategy, DelegationItem, DelegationTarget, FanoutFailurePolicy, ResolvedAdmission,
-    RetryPolicy, SuspendReason, TaskAssignment, TaskOutcome, TaskPolicy, TaskSpec,
+    BackoffStrategy, ClaimEpoch, DelegationItem, DelegationTarget, FanoutFailurePolicy, NO_CLAIM,
+    ResolvedAdmission, RetryPolicy, SuspendReason, TaskAssignment, TaskOutcome, TaskPolicy,
+    TaskSpec,
 };
 pub use domain::Domain;
 pub use events::{CoreEvent, DomainEvents, Event, EventStream, HumanInputQuestion, Outcome};

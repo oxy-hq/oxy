@@ -79,6 +79,7 @@ async fn a_queued_row_is_held_without_spending_retry_budget() {
         crud::adopt_queued_task(&db, &task_id, "driver-a")
             .await
             .unwrap()
+            .is_some()
     );
 
     let row = entry(&db, &task_id).await;
@@ -90,7 +91,7 @@ async fn a_queued_row_is_held_without_spending_retry_budget() {
         "nothing ran, so the claim is not charged"
     );
     assert!(
-        crud::update_queue_heartbeat(&db, &task_id, "driver-a")
+        crud::update_queue_heartbeat(&db, &task_id, "driver-a", None)
             .await
             .unwrap(),
         "the holder's heartbeat matches the row"
@@ -117,7 +118,8 @@ async fn only_a_queued_row_is_taken() {
         assert!(
             !crud::adopt_queued_task(&db, &task_id, "driver-a")
                 .await
-                .unwrap(),
+                .unwrap()
+                .is_some(),
             "{status}"
         );
         let row = entry(&db, &task_id).await;
@@ -128,6 +130,7 @@ async fn only_a_queued_row_is_taken() {
         !crud::adopt_queued_task(&db, "no-such-task", "driver-a")
             .await
             .unwrap()
+            .is_some()
     );
 }
 
@@ -153,6 +156,7 @@ async fn a_deferred_row_is_held_before_its_delay_passes() {
         crud::adopt_queued_task(&db, &task_id, "driver-a")
             .await
             .unwrap()
+            .is_some()
     );
 }
 

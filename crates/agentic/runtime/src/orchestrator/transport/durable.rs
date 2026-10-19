@@ -10,13 +10,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::Duration;
 
-use agentic_core::delegation::{TaskAssignment, TaskOutcome, TaskSpec};
-use agentic_core::hub_task::spawn_with_hub;
+use agentic_core::delegation::{ClaimEpoch, TaskAssignment, TaskOutcome, TaskSpec};
 use agentic_core::transport::{
     CoordinatorTransport, TransportError, WorkerMessage, WorkerTransport,
 };
 use async_trait::async_trait;
-use dashmap::{DashMap, DashSet};
 use sea_orm::DatabaseConnection;
 use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
@@ -25,6 +23,10 @@ use crate::crud;
 use crate::orchestrator::router::{NoopTaskRouter, TaskRouter};
 
 mod adopt;
+mod beat;
+mod claims;
+
+use claims::{ClaimTokens, Heartbeats, fence};
 
 /// Default interval for polling the queue when no notification arrives.
 ///
@@ -54,53 +56,30 @@ pub struct DurableTransport {
     /// Wake signal: coordinator notifies when a new task is enqueued.
     new_task_notify: Notify,
 
-    /// Per-task cancellation tokens, keyed by task_id. Shared with heartbeat
-    /// tickers, which swap in a fresh token when they cancel a lost claim.
-    cancel_tokens: Arc<DashMap<String, CancellationToken>>,
+    /// Cancel tokens, keyed by task id and claim. A Stop fires every claim of
+    /// the task; a heartbeat that loses its claim fires only its own, so a
+    /// later re-claim of the row never starts cancelled.
+    cancel_tokens: ClaimTokens,
 
-    /// Tasks whose ticker cancelled them because the claim was lost, not
-    /// because anyone pressed Stop. [`Self::send`] reads it to keep that
-    /// `Cancelled` from reaching the coordinator while a peer re-runs the row.
-    lost_claims: Arc<DashSet<String>>,
-
-    /// The live heartbeat ticker for each claimed task, keyed by task_id.
+    /// The live heartbeat ticker of each claimed task: at most one per
+    /// `task_id`, and always the newest claim's.
     ///
-    /// **At most one ticker per `task_id`, and this map is what enforces it.**
     /// A suspended task keeps its ticker running (see `Worker::handle_task`),
-    /// so the resume path can hand the same `task_id` to a *second* driver
-    /// while the first driver's ticker is still alive. Nothing else would stop
-    /// the first one: [`Self::worker_id`] is process-stable, and
-    /// `update_queue_heartbeat` authorizes on `worker_id` alone with no
-    /// fencing token — so once the same process re-claims the row (typically
-    /// within milliseconds, far inside one tick), the stale ticker's predicate
-    /// matches again and it beats on forever.
-    ///
-    /// Left unbounded that accumulates one ticker per suspension for the life
-    /// of the run, all writing `last_heartbeat` to the same row every tick —
-    /// and worse, a ticker outliving the driver it belonged to keeps a claim
-    /// looking alive that nobody is working, which is precisely the liveness
-    /// signal the reaper depends on.
-    ///
-    /// **Scope: per transport instance, while the authority it writes with
-    /// (`worker_id`) is per process.** A second transport in this process would
-    /// not see — and so could not retire — this one's tickers. That gap is not
-    /// reachable today: the delegating-step resume re-claims through the *same*
-    /// transport (`claim_task_under_root` matches the root itself), and recovery
-    /// only selects runs with no active queue entry, which already implies the
-    /// old ticker broke on `Ok(false)`. If it ever does bite, the class-killing
-    /// fix is a fencing token rather than a wider map — `claim_task` already
-    /// returns `claim_count`, so `update_queue_heartbeat` could carry
-    /// `AND claim_count = $3` and stale tickers would fence themselves out.
+    /// so the resume path hands the same `task_id` to a *second* driver — a new
+    /// claim — while the first driver's ticker is still alive. The heartbeat
+    /// predicate carries `claim_epoch`, so the first ticker can no longer keep
+    /// the new claim looking alive: its next beat matches no row. This registry
+    /// is what ends it promptly, and cancels the stale execution it belonged to
+    /// (see [`claims::Heartbeats::register`]), rather than leaving that to the
+    /// next beat.
     ///
     /// Entries are removed at every point this process hands the claim back, so
     /// the map tracks live claims rather than history — with one exception: a
     /// driver that dies without any terminal write through [`Self::send`] (the
-    /// `agentic-pipeline` virtual workers can only cancel their own token, since
-    /// `retire_heartbeat` is private here) leaves a cancelled token behind until
-    /// that `task_id` is claimed again. Bounded by run lifetime for the per-run
-    /// transports, and inert either way — a cancelled token holds nothing but
-    /// its own key.
-    heartbeats: DashMap<String, CancellationToken>,
+    /// `agentic-pipeline` virtual workers can only cancel their own token)
+    /// leaves an entry until that `task_id` is claimed again. Bounded by run
+    /// lifetime for the per-run transports, and inert either way.
+    heartbeats: Heartbeats,
 
     /// Poll interval when no notification arrives.
     poll_interval: Duration,
@@ -381,9 +360,8 @@ impl DurableTransport {
             message_tx,
             message_rx: Mutex::new(message_rx),
             new_task_notify: Notify::new(),
-            cancel_tokens: Arc::new(DashMap::new()),
-            lost_claims: Arc::new(DashSet::new()),
-            heartbeats: DashMap::new(),
+            cancel_tokens: ClaimTokens::default(),
+            heartbeats: Heartbeats::default(),
             poll_interval,
             task_id_root,
             router,
@@ -416,21 +394,17 @@ impl DurableTransport {
         self.new_task_notify.notify_waiters();
     }
 
-    /// Stop the heartbeat ticker registered for `task_id`, if any.
+    /// Stop the heartbeat ticker of exactly `claim` of `task_id`, if it is still
+    /// the registered one, and forget that claim's cancel token.
     ///
     /// Called from exactly the points where this process stops owning the
-    /// claim — a terminal outcome, a deferral that hands the row back, and the
-    /// re-spawn path in [`WorkerTransport::spawn_heartbeat`]. A *suspension*
-    /// is deliberately not one of them: the row stays `claimed` and the ticker
-    /// is what says so.
-    ///
-    /// Removing the entry here is also what bounds [`Self::heartbeats`] — it
-    /// holds live claims, not history.
-    fn retire_heartbeat(&self, task_id: &str, why: &'static str) {
-        if let Some((_, token)) = self.heartbeats.remove(task_id) {
-            tracing::debug!(task_id, why, "retiring heartbeat ticker");
-            token.cancel();
-        }
+    /// claim — a terminal outcome and a deferral that hands the row back. A
+    /// *suspension* is deliberately not one of them: the row stays `claimed`
+    /// and the ticker is what says so. Keyed by claim, so a stale execution
+    /// ending can never retire the ticker of this process's re-claim.
+    fn retire_heartbeat(&self, task_id: &str, claim: ClaimEpoch, why: &'static str) {
+        self.heartbeats.retire(task_id, claim, why);
+        self.cancel_tokens.release(task_id, claim);
     }
 
     /// Stamp a terminal status, retrying a failed write, and only then retire
@@ -443,6 +417,7 @@ impl DurableTransport {
     async fn stamp_terminal<F, Fut>(
         &self,
         task_id: &str,
+        claim: ClaimEpoch,
         why: &'static str,
         op: F,
     ) -> Result<crud::TerminalWrite, sea_orm::DbErr>
@@ -453,53 +428,15 @@ impl DurableTransport {
         let result =
             retry_terminal_write(task_id, TERMINAL_WRITE_ATTEMPTS, TERMINAL_WRITE_BACKOFF, op)
                 .await;
-        self.retire_heartbeat(task_id, why);
+        self.retire_heartbeat(task_id, claim, why);
         result
     }
 
-    /// Stamp a terminal outcome on the queue row this execution holds.
+    /// Stamp a terminal outcome on the queue row this execution's claim holds.
     /// Returns whether the outcome should reach the coordinator.
-    async fn stamp_outcome(&self, task_id: &str, outcome: &TaskOutcome) -> bool {
-        // Every terminal write is scoped to `self.worker_id`. This
-        // outcome can arrive after graceful release handed our claims
-        // back and a peer re-claimed the row — stamping it terminal
-        // then would strand the peer's live work. See
-        // `crud::queue::set_terminal_status_owned`.
-        let result = match outcome {
-            // Intercepted by the worker before it reaches a transport;
-            // if it gets here the worker's translation was bypassed.
-            TaskOutcome::Deferred { .. } => {
-                tracing::error!(
-                    target: "transport",
-                    %task_id,
-                    "Deferred arrived as an Outcome; worker translation bypassed. \
-                     Leaving the claim alone rather than stamping it terminal."
-                );
-                return false;
-            }
-            TaskOutcome::Done { .. } => {
-                self.stamp_terminal(task_id, "task done", || {
-                    crud::complete_queue_task(&self.db, task_id, &self.worker_id)
-                })
-                .await
-            }
-            TaskOutcome::Failed(_) => {
-                self.stamp_terminal(task_id, "task failed", || {
-                    crud::fail_queue_task(&self.db, task_id, &self.worker_id)
-                })
-                .await
-            }
-            TaskOutcome::Cancelled => {
-                self.stamp_terminal(task_id, "task cancelled", || {
-                    crud::cancel_queued_task_owned(&self.db, task_id, &self.worker_id)
-                })
-                .await
-            }
-            // Suspended is not terminal — the row stays `claimed` so it
-            // can resume, and the heartbeat ticker stays running to say
-            // so. Retiring it here is exactly the bug this arm's
-            // silence used to cause; see `Worker::handle_task`.
-            TaskOutcome::Suspended { .. } => Ok(crud::TerminalWrite::Stamped),
+    async fn stamp_outcome(&self, task_id: &str, claim: ClaimEpoch, outcome: &TaskOutcome) -> bool {
+        let Some(result) = self.write_outcome(task_id, claim, outcome).await else {
+            return false;
         };
         match result {
             Ok(crud::TerminalWrite::Stamped) => {}
@@ -523,15 +460,19 @@ impl DurableTransport {
             Ok(crud::TerminalWrite::NoRow) => {
                 tracing::trace!(task_id, "no queue row for this task; nothing to stamp")
             }
-            // The one case worth a warning: a *different* worker holds
-            // the row, so this process just finished work the queue is
-            // discarding.
-            Ok(crud::TerminalWrite::NotOwned) => tracing::warn!(
-                task_id,
-                worker_id = %self.worker_id,
-                "outcome dropped: another worker now holds this claim \
-                 (released on shutdown and re-claimed by a peer, or reaped)"
-            ),
+            // The one case worth a warning: a different claim holds the row —
+            // a peer, or this process's own re-claim — so this execution's
+            // work is being discarded by the queue. Nothing was written.
+            Ok(crud::TerminalWrite::NotOwned) => {
+                tracing::warn!(
+                    task_id,
+                    claim,
+                    worker_id = %self.worker_id,
+                    "outcome not recorded: this claim was lost (released on shutdown, \
+                     reaped, or re-claimed)"
+                );
+                return self.stale_outcome_should_forward(task_id).await;
+            }
             Err(e) => tracing::warn!(
                 task_id,
                 "failed to update queue status after {TERMINAL_WRITE_ATTEMPTS} attempts \
@@ -541,19 +482,70 @@ impl DurableTransport {
         true
     }
 
-    /// Whether a `Cancelled` from an execution whose heartbeat lost the claim
+    /// The terminal write for `outcome`, or `None` when it must not be stamped.
+    ///
+    /// Every terminal write is scoped to `self.worker_id` AND this execution's
+    /// claim. The outcome can arrive after the claim was lost and a peer — or
+    /// this very process, whose `worker_id` is stable — re-claimed the row;
+    /// stamping it terminal then would strand the re-claim's live work. See
+    /// `crud::queue::set_terminal_status_owned`.
+    async fn write_outcome(
+        &self,
+        task_id: &str,
+        claim: ClaimEpoch,
+        outcome: &TaskOutcome,
+    ) -> Option<Result<crud::TerminalWrite, sea_orm::DbErr>> {
+        let fence = fence(claim);
+        let db = &self.db;
+        let w = self.worker_id.as_str();
+        let result = match outcome {
+            // Intercepted by the worker before it reaches a transport;
+            // if it gets here the worker's translation was bypassed.
+            TaskOutcome::Deferred { .. } => {
+                tracing::error!(
+                    target: "transport",
+                    %task_id,
+                    "Deferred arrived as an Outcome; worker translation bypassed. \
+                     Leaving the claim alone rather than stamping it terminal."
+                );
+                return None;
+            }
+            TaskOutcome::Done { .. } => {
+                self.stamp_terminal(task_id, claim, "task done", || {
+                    crud::complete_queue_task(db, task_id, w, fence)
+                })
+                .await
+            }
+            TaskOutcome::Failed(_) => {
+                self.stamp_terminal(task_id, claim, "task failed", || {
+                    crud::fail_queue_task(db, task_id, w, fence)
+                })
+                .await
+            }
+            TaskOutcome::Cancelled => {
+                self.stamp_terminal(task_id, claim, "task cancelled", || {
+                    crud::cancel_queued_task_owned(db, task_id, w, fence)
+                })
+                .await
+            }
+            // Suspended is not terminal — the row stays `claimed` so it
+            // can resume, and the heartbeat ticker stays running to say
+            // so. Retiring it here is exactly the bug this arm's
+            // silence used to cause; see `Worker::handle_task`.
+            TaskOutcome::Suspended { .. } => Ok(crud::TerminalWrite::Stamped),
+        };
+        Some(result)
+    }
+
+    /// Whether an outcome from an execution that no longer holds its claim
     /// should reach the coordinator.
     ///
-    /// No queue write and no ticker retirement: `worker_id` is process-stable,
-    /// so if this process re-claimed the row, an owned write would stamp the
-    /// new execution's live row and `retire_heartbeat` would stop its ticker.
-    ///
-    /// While the row is `queued`/`claimed`, whoever runs it reports the run;
-    /// forwarding would mark it cancelled under them. A terminal row is
-    /// forwarded: a Stop from another process reaches this task as a lost
-    /// claim, and a reaped row that was then stopped has no other reporter.
-    /// A failed status read forwards too.
-    async fn forward_lost_claim_cancel(&self, task_id: &str) -> bool {
+    /// While the row is `queued`/`claimed`, whoever runs it now reports the
+    /// run; forwarding the stale outcome would settle the task under them. A
+    /// terminal or absent row is forwarded: a Stop from another process reaches
+    /// this task as a lost claim, and a reaped row that was then stopped has no
+    /// other reporter. A failed status read forwards too.
+    async fn stale_outcome_should_forward(&self, task_id: &str) -> bool {
         let live = matches!(
             crud::get_queue_entry(&self.db, task_id).await,
             Ok(Some(row)) if matches!(row.queue_status.as_str(), "queued" | "claimed")
@@ -562,8 +554,7 @@ impl DurableTransport {
             tracing::info!(
                 target: "transport",
                 %task_id,
-                "cancelled only because the claim was lost; not reporting it, \
-                 the row's current holder owns the outcome"
+                "stale execution's outcome not reported; the row's current holder owns it"
             );
         }
         !live
@@ -784,8 +775,7 @@ impl DurableTransport {
 #[async_trait]
 impl CoordinatorTransport for DurableTransport {
     async fn assign(&self, assignment: TaskAssignment) -> Result<(), TransportError> {
-        self.cancel_tokens
-            .insert(assignment.task_id.clone(), CancellationToken::new());
+        self.cancel_tokens.arm(&assignment.task_id);
 
         // Persist the assignment in the queue. A scoped transport
         // (`task_id_root` set — every per-run interactive coordinator)
@@ -823,9 +813,7 @@ impl CoordinatorTransport for DurableTransport {
         // Fire the in-memory token FIRST. A Stop must reach a running task
         // even when the queue write below fails: the callers' forwarders are
         // one-shot, so a Stop lost here is lost for good.
-        if let Some(token) = self.cancel_tokens.get(task_id) {
-            token.cancel();
-        }
+        self.cancel_tokens.stop(task_id);
 
         crud::cancel_queued_task(&self.db, task_id)
             .await
@@ -837,111 +825,11 @@ impl CoordinatorTransport for DurableTransport {
         // DB. Child ids are formatted as `{parent_id}.{counter}` by
         // `Coordinator::handle_suspended`, so every descendant's task_id
         // starts with `"{root_task_id}."`.
-        let prefix = format!("{root_task_id}.");
-        for entry in self.cancel_tokens.iter() {
-            if entry.key() == root_task_id || entry.key().starts_with(&prefix) {
-                entry.value().cancel();
-            }
-        }
+        self.cancel_tokens.stop_subtree(root_task_id);
 
         // Then the root's queue entry; its error is returned only after every
         // token has fired.
         self.cancel(root_task_id).await
-    }
-}
-
-/// What one heartbeat ticker needs to act on the result of a beat.
-struct BeatCtx {
-    task_id: String,
-    /// The token `spawn_heartbeat` returned; cancelled = this ticker retired.
-    ticker: CancellationToken,
-    /// The executing task's cancel token.
-    task_token: CancellationToken,
-    cancel_tokens: Arc<DashMap<String, CancellationToken>>,
-    lost_claims: Arc<DashSet<String>>,
-    beat_timeout: Duration,
-}
-
-impl BeatCtx {
-    /// Act on one beat's result. `true` means stop ticking.
-    fn should_stop(
-        &self,
-        beat: Result<Result<crud::HeartbeatOutcome, sea_orm::DbErr>, tokio::time::error::Elapsed>,
-    ) -> bool {
-        let task_id = &self.task_id;
-        match beat {
-            Ok(Ok(crud::HeartbeatOutcome::Beat)) => false,
-            // No queue row at all: an interactive root registered without
-            // one. Nothing to keep alive and nothing lost.
-            Ok(Ok(crud::HeartbeatOutcome::NoRow)) => {
-                tracing::debug!(%task_id, "heartbeat: no queue row for this task; stopping ticker");
-                true
-            }
-            Ok(Ok(crud::HeartbeatOutcome::Lost)) => {
-                self.on_lost_claim();
-                true
-            }
-            // A failed beat is not a lost claim. Keep ticking: the next one
-            // may land inside the visibility window, and a dead ticker
-            // guarantees it won't. Expected once the co-located DB goes down
-            // on shutdown; a real failure otherwise.
-            Ok(Err(e)) if is_shutting_down() => {
-                tracing::debug!(%task_id, "heartbeat failed during shutdown: {e}");
-                false
-            }
-            Ok(Err(e)) => {
-                tracing::warn!(%task_id, "heartbeat failed, will retry next tick: {e}");
-                false
-            }
-            Err(_elapsed) => {
-                tracing::warn!(
-                    %task_id,
-                    "heartbeat timed out after {:?}, will retry next tick",
-                    self.beat_timeout
-                );
-                false
-            }
-        }
-    }
-
-    /// This ticker outlives `handle_task` only by the width of one tick, but
-    /// that is enough to land after graceful release: if the ticker was
-    /// retired, just stop. Otherwise the claim was lost under a running task
-    /// (reaped, taken by a peer, or cancelled by a Stop from another process):
-    /// stop that task too, or it runs twice.
-    fn on_lost_claim(&self) {
-        let task_id = &self.task_id;
-        if self.ticker.is_cancelled() {
-            tracing::debug!(%task_id, "heartbeat: claim no longer held; stopping ticker");
-            return;
-        }
-        tracing::warn!(%task_id, "heartbeat: claim lost under a running task; cancelling it");
-        // Marked before the cancel, so the `Cancelled` it produces is
-        // recognised in `send` however fast the task stops.
-        self.lost_claims.insert(task_id.clone());
-        // The token is keyed by task_id, not by claim, and a re-claim through
-        // `recv_assignment` installs none of its own. Swap a fresh one in first
-        // so the next claim does not start cancelled.
-        renew_token_if_current(&self.cancel_tokens, task_id, &self.task_token);
-        self.task_token.cancel();
-    }
-}
-
-/// Replace `task_id`'s cancel token with a fresh one, but only while the entry
-/// is still `token` (identity, not value) and no Stop has fired it.
-///
-/// A newer claim's token is left alone, and so is a cancelled one: that is a
-/// Stop, which a re-claim must still honour if its queue write failed.
-fn renew_token_if_current(
-    tokens: &DashMap<String, CancellationToken>,
-    task_id: &str,
-    token: &CancellationToken,
-) {
-    if let Some(mut entry) = tokens.get_mut(task_id)
-        && *entry == *token
-        && !token.is_cancelled()
-    {
-        *entry = CancellationToken::new();
     }
 }
 
@@ -1094,7 +982,14 @@ impl WorkerTransport for DurableTransport {
                     // which is the likeliest shape of the race, since an idle
                     // poller is precisely the worker sitting in `claim_task`.
                     if is_shutting_down() {
-                        match crud::release_claim(&self.db, &entry.task_id, &self.worker_id).await {
+                        match crud::release_claim(
+                            &self.db,
+                            &entry.task_id,
+                            &self.worker_id,
+                            Some(entry.claim_epoch),
+                        )
+                        .await
+                        {
                             Ok(_) => tracing::info!(
                                 task_id = %entry.task_id,
                                 "claim landed during shutdown; handed straight back to the queue"
@@ -1116,9 +1011,13 @@ impl WorkerTransport for DurableTransport {
                             // Mark as failed and try the next task. We hold the
                             // claim — the UPDATE above just granted it — so the
                             // ownership predicate matches.
-                            let _ =
-                                crud::fail_queue_task(&self.db, &entry.task_id, &self.worker_id)
-                                    .await;
+                            let _ = crud::fail_queue_task(
+                                &self.db,
+                                &entry.task_id,
+                                &self.worker_id,
+                                Some(entry.claim_epoch),
+                            )
+                            .await;
                             continue;
                         }
                     };
@@ -1136,6 +1035,7 @@ impl WorkerTransport for DurableTransport {
                         run_id: entry.run_id,
                         spec,
                         policy,
+                        claim_epoch: entry.claim_epoch,
                     });
                 }
                 Ok(None) => {
@@ -1218,15 +1118,17 @@ impl WorkerTransport for DurableTransport {
                 delay_secs,
                 max_wait_secs,
                 reason,
+                claim_epoch,
             } => {
                 use crud::DeferOutcome;
                 // The row goes back to the queue unrun, so this process stops
                 // owning the claim — stop proving otherwise.
-                self.retire_heartbeat(task_id, "task deferred");
+                self.retire_heartbeat(task_id, *claim_epoch, "task deferred");
                 match crud::defer_task(
                     &self.db,
                     task_id,
                     &self.worker_id,
+                    fence(*claim_epoch),
                     *delay_secs as i64,
                     *max_wait_secs as i64,
                 )
@@ -1286,21 +1188,15 @@ impl WorkerTransport for DurableTransport {
                 }
                 return Ok(());
             }
-            WorkerMessage::Outcome { task_id, outcome } => {
-                // An execution whose claim was lost owns neither the row nor
-                // the ticker keyed by its task_id: this process may already
-                // have re-claimed the row as a new execution. The marker is
-                // keyed by task_id, not by execution, so only a `Cancelled` —
-                // what the lost-claim cancel produces — consumes it; a
-                // re-claim's own `Done`/`Failed` always stamps its row.
-                let lost_claim = matches!(outcome, TaskOutcome::Cancelled)
-                    && self.lost_claims.remove(task_id).is_some();
-                let forward = if lost_claim {
-                    self.forward_lost_claim_cancel(task_id).await
-                } else {
-                    self.stamp_outcome(task_id, outcome).await
-                };
-                if !forward {
+            WorkerMessage::Outcome {
+                task_id,
+                outcome,
+                claim_epoch,
+            } => {
+                // The write is fenced on the execution's own claim, so an
+                // execution that lost it matches no row — whether a peer or
+                // this very process holds the row now.
+                if !self.stamp_outcome(task_id, *claim_epoch, outcome).await {
                     return Ok(());
                 }
             }
@@ -1316,80 +1212,58 @@ impl WorkerTransport for DurableTransport {
             .map_err(|_| TransportError::ChannelClosed)
     }
 
-    fn cancellation_token(&self, task_id: &str) -> CancellationToken {
-        self.cancel_tokens
-            .entry(task_id.to_string())
-            .or_default()
-            .clone()
+    fn cancellation_token(&self, task_id: &str, claim_epoch: ClaimEpoch) -> CancellationToken {
+        self.cancel_tokens.token(task_id, claim_epoch)
     }
 
-    async fn heartbeat(&self, task_id: &str) -> Result<(), TransportError> {
+    async fn heartbeat(
+        &self,
+        task_id: &str,
+        claim_epoch: ClaimEpoch,
+    ) -> Result<(), TransportError> {
         // The trait signature can't carry "you no longer own this"; a lost
         // claim is a legitimate shutdown race, not a transport failure, so it
         // maps to `Ok`. The ticker below is what actually needs to react.
-        crud::update_queue_heartbeat(&self.db, task_id, &self.worker_id)
+        crud::update_queue_heartbeat(&self.db, task_id, &self.worker_id, fence(claim_epoch))
             .await
             .map(|_| ())
             .map_err(|e| TransportError::Other(format!("heartbeat failed: {e}")))
     }
 
-    fn spawn_heartbeat(&self, task_id: &str, interval: Duration) -> CancellationToken {
-        let cancel = CancellationToken::new();
-        // Retire any ticker still beating for this task_id before registering
-        // the new one. See [`Self::heartbeats`]: a process-stable `worker_id`
-        // plus an unfenced heartbeat predicate means the previous driver's
-        // ticker would otherwise keep matching this row after the resume path
-        // re-enqueued it and this process re-claimed it.
-        self.retire_heartbeat(task_id, "superseded by a new claim");
-        self.heartbeats.insert(task_id.to_string(), cancel.clone());
-
-        let db = self.db.clone();
-        let worker_id = self.worker_id.clone();
-        let ctx = BeatCtx {
+    fn spawn_heartbeat(
+        &self,
+        task_id: &str,
+        claim_epoch: ClaimEpoch,
+        interval: Duration,
+    ) -> CancellationToken {
+        let ticker = CancellationToken::new();
+        // A newer claim of this task makes the older execution stale by
+        // definition: stop its ticker and the execution itself. Its next beat
+        // would have read `Lost` anyway (the predicate carries the epoch); this
+        // just does not wait for it.
+        if let Some(stale) = self.heartbeats.register(task_id, claim_epoch, &ticker) {
+            tracing::info!(
+                task_id,
+                stale,
+                claim_epoch,
+                "superseded by a newer claim; cancelling the older execution"
+            );
+            self.cancel_tokens.cancel_claim(task_id, stale);
+            self.cancel_tokens.release(task_id, stale);
+        }
+        let ctx = beat::BeatCtx {
             task_id: task_id.to_string(),
-            ticker: cancel.clone(),
+            claim: claim_epoch,
+            ticker: ticker.clone(),
             // The same token `Worker::handle_task` forwards into the executing
             // task, so firing it stops the task itself.
-            task_token: self.cancellation_token(task_id),
-            cancel_tokens: Arc::clone(&self.cancel_tokens),
-            lost_claims: Arc::clone(&self.lost_claims),
+            task_token: self.cancel_tokens.token(task_id, claim_epoch),
             // Strictly under the interval: one hung acquire must not eat the
             // visibility window.
             beat_timeout: interval.mul_f32(0.6),
         };
-        spawn_with_hub(async move {
-            let mut ticker = tokio::time::interval(interval);
-            loop {
-                tokio::select! {
-                    _ = ticker.tick() => {
-                        // Race the heartbeat write against shutdown too: an
-                        // in-flight write when the co-located DB dies would
-                        // otherwise block the full pool acquire timeout. On
-                        // shutdown, stop the ticker — there is nothing left to
-                        // keep alive.
-                        let beat = tokio::select! {
-                            _ = shutdown_signal().cancelled() => break,
-                            r = tokio::time::timeout(
-                                ctx.beat_timeout,
-                                crud::heartbeat_queue_task(&db, &ctx.task_id, &worker_id),
-                            ) => r,
-                        };
-                        if ctx.should_stop(beat) {
-                            break;
-                        }
-                    }
-                    _ = ctx.ticker.cancelled() => break,
-                    // Idle between ticks: abandon at once rather than waiting a
-                    // full interval to notice shutdown.
-                    _ = shutdown_signal().cancelled() => break,
-                }
-            }
-            // Whatever ended the loop, the ticker is no longer proving the
-            // claim. Say so on the token this method returned, so a caller (or
-            // a test) can tell a live ticker from a dead one.
-            ctx.ticker.cancel();
-        });
-        cancel
+        beat::spawn_ticker(self.db.clone(), self.worker_id.clone(), ctx, interval);
+        ticker
     }
 }
 

@@ -2,8 +2,10 @@
 
 use sea_orm::{ConnectionTrait, DatabaseBackend, DbErr, Statement};
 
-/// Claim the `queued` task `task_id` for `worker_id`. `Ok(false)` when the row
-/// is not `queued` (absent, already claimed, or terminal) — nothing is written.
+/// Claim the `queued` task `task_id` for `worker_id`, returning the new claim's
+/// `claim_epoch`. `Ok(None)` when the row is not `queued` (absent, already
+/// claimed, or terminal) — nothing is written. The epoch is bumped like any
+/// claim's, so an earlier holder's fenced writes match nothing.
 ///
 /// For a task whose work is **already under way and parked**: a run that
 /// reached a suspension keeps its claim so the same `task_id` can resume in
@@ -18,7 +20,7 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, DbErr, Statement};
 ///
 /// - **`available_at` is not consulted.** The row is not being handed out to
 ///   run; a deferral's delay has nothing to say about who holds it.
-/// - **`claim_count` is not charged.** That budget bounds how often a task may
+/// - **`claim_count` is not charged** (`claim_epoch` is: it is an identity, not a budget). That budget bounds how often a task may
 ///   be *run* and fail (`max_claims`, after which the reaper dead-letters it).
 ///   Nothing runs here, and a run parked on a person across three restarts has
 ///   not failed at anything.
@@ -29,19 +31,21 @@ pub async fn adopt_queued_task<C: ConnectionTrait>(
     db: &C,
     task_id: &str,
     worker_id: &str,
-) -> Result<bool, DbErr> {
-    let res = db
-        .execute_raw(Statement::from_sql_and_values(
+) -> Result<Option<i64>, DbErr> {
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE agentic_task_queue \
              SET queue_status = 'claimed', \
                  worker_id = $2, \
                  claimed_at = now(), \
                  last_heartbeat = now(), \
+                 claim_epoch = claim_epoch + 1, \
                  updated_at = now() \
-             WHERE task_id = $1 AND queue_status = 'queued'",
+             WHERE task_id = $1 AND queue_status = 'queued' \
+             RETURNING claim_epoch",
             [task_id.into(), worker_id.into()],
         ))
         .await?;
-    Ok(res.rows_affected() > 0)
+    row.map(|r| r.try_get("", "claim_epoch")).transpose()
 }

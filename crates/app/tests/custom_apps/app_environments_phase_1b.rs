@@ -548,6 +548,7 @@ async fn a_queued_task_for_staging_is_refused_not_run() {
             }),
         },
         policy: None,
+        claim_epoch: agentic_core::NO_CLAIM,
     };
     let mut task = executor
         .execute(assignment)

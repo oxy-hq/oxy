@@ -369,6 +369,18 @@ pub struct ChildCompletion {
 
 // ── TaskAssignment ───────────────────────────────────────────────────────────
 
+/// Identity of one claim of a task: the queue's monotonic per-row claim
+/// counter, stamped when a worker takes the row. `NO_CLAIM` (0) means "no
+/// claim identity" — every non-durable transport, and a task not yet claimed.
+///
+/// `worker_id` is process-stable, so it cannot tell a stale execution of a
+/// task from this process's later re-claim of it; this can. Every owned write
+/// a durable transport makes on a task's behalf is predicated on it.
+pub type ClaimEpoch = i64;
+
+/// The [`ClaimEpoch`] of a task with no claim identity.
+pub const NO_CLAIM: ClaimEpoch = 0;
+
 /// A task assigned by the coordinator to a worker.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskAssignment {
@@ -381,6 +393,10 @@ pub struct TaskAssignment {
     pub spec: TaskSpec,
     /// Optional retry/fallback policy enforced by the coordinator.
     pub policy: Option<TaskPolicy>,
+    /// Which claim of the task this assignment is. Set by the transport when a
+    /// worker claims the row; the coordinator leaves it [`NO_CLAIM`].
+    #[serde(default)]
+    pub claim_epoch: ClaimEpoch,
 }
 
 // ── TaskOutcome ──────────────────────────────────────────────────────────────

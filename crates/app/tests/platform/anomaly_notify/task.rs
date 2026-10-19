@@ -199,6 +199,7 @@ fn assignment(kind: &str, payload: Value) -> TaskAssignment {
             payload,
         },
         policy: None,
+        claim_epoch: agentic_core::NO_CLAIM,
     }
 }
 

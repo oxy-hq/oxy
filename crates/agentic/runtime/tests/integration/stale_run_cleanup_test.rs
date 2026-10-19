@@ -204,12 +204,14 @@ async fn a_root_with_no_events_and_a_terminal_entry_is_failed() {
         let run_id = seed_claimed(&db, KIND, crud::TaskScope::Global).await;
         match terminal {
             "completed" => {
-                crud::complete_queue_task(&db, &run_id, WORKER)
+                crud::complete_queue_task(&db, &run_id, WORKER, None)
                     .await
                     .unwrap();
             }
             "failed" => {
-                crud::fail_queue_task(&db, &run_id, WORKER).await.unwrap();
+                crud::fail_queue_task(&db, &run_id, WORKER, None)
+                    .await
+                    .unwrap();
             }
             "cancelled" => crud::cancel_queued_task(&db, &run_id).await.unwrap(),
             _ => {

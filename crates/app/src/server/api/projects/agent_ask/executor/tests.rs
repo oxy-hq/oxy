@@ -74,6 +74,7 @@ async fn a_spec_of_another_kind_is_refused_before_any_read() {
                 payload: serde_json::json!({}),
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await;
     assert!(refused.is_err_and(|e| e.contains("unknown agent-ask kind")));

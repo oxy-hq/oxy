@@ -131,6 +131,7 @@ mod tests {
             run_id: "r".into(),
             spec,
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         }
     }
 

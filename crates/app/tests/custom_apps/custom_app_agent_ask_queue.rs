@@ -125,6 +125,7 @@ async fn claim(db: &DatabaseConnection, run_id: &str) -> ExecutingTask {
             run_id: run_id.to_string(),
             spec: task::spec(),
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await
         .expect("the executor accepts its own kind")
@@ -441,6 +442,7 @@ async fn a_spec_of_another_kind_is_refused() {
                 payload: json!({}),
             },
             policy: None,
+            claim_epoch: agentic_core::NO_CLAIM,
         })
         .await;
 
