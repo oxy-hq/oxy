@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AxiosError, type AxiosResponse } from "axios";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
@@ -16,11 +16,16 @@ vi.mock("@/services/api/notifications", () => ({
     inbox: vi.fn(),
     markRead: vi.fn(),
     markAllRead: vi.fn(),
-    runAction: vi.fn()
+    runAction: vi.fn(),
+    vapidPublicKey: vi.fn()
   }
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+import {
+  fakePushBrowser,
+  noPushBrowser
+} from "@/components/Notifications/PushPrompt/__tests__/fakePushBrowser";
 import NotificationsPage from ".";
 import { WIDE_MEDIA_QUERY } from "./constants";
 
@@ -227,6 +232,7 @@ beforeEach(() => {
   service.markRead.mockResolvedValue();
   service.markAllRead.mockResolvedValue();
   service.runAction.mockResolvedValue({ ok: true, result: null });
+  service.vapidPublicKey.mockResolvedValue({ configured: false, public_key: null });
 });
 
 afterEach(() => {
@@ -540,5 +546,41 @@ describe("Notifications page on a phone", () => {
     expect(screen.getByTestId("notifications-page-mark-all-read")).toHaveAccessibleName(
       "Mark all read"
     );
+  });
+});
+
+describe("Notifications page and push", () => {
+  afterEach(noPushBrowser);
+  const PUBLIC_KEY = `B${"A".repeat(86)}`;
+
+  it("offers push on this device above the list", async () => {
+    fakePushBrowser();
+    service.vapidPublicKey.mockResolvedValue({ configured: true, public_key: PUBLIC_KEY });
+    renderPage();
+    expect(await screen.findByTestId("push-prompt")).toHaveTextContent(
+      "Get notifications on this device"
+    );
+  });
+
+  it("offers it on a phone too", async () => {
+    onAPhone();
+    fakePushBrowser();
+    service.vapidPublicKey.mockResolvedValue({ configured: true, public_key: PUBLIC_KEY });
+    renderPage();
+    expect(await screen.findByTestId("push-prompt-turn-on")).toBeInTheDocument();
+  });
+
+  it("goes where a clicked push says: the page has no bell to do it", async () => {
+    const worker = new EventTarget();
+    Object.defineProperty(navigator, "serviceWorker", { value: worker, configurable: true });
+    renderPage();
+    await screen.findByTestId("notifications-page");
+    const href = "/notifications?source=app-1&kind=temp_alarm";
+    act(() => {
+      worker.dispatchEvent(
+        new MessageEvent("message", { data: { type: "oxy:open-notifications", href } })
+      );
+    });
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(href));
   });
 });

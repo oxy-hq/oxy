@@ -1,3 +1,4 @@
+import { PushPrompt } from "@/components/Notifications/PushPrompt";
 import {
   useMarkAllNotificationsRead,
   useNotificationCatalog,
@@ -12,6 +13,7 @@ import { NotificationList } from "./components/NotificationList";
 import { PageHeader } from "./components/PageHeader";
 import { WIDE_MEDIA_QUERY } from "./constants";
 import { useNotificationsFilter } from "./useNotificationsFilter";
+import { usePushClicks } from "./usePushClicks";
 import { scopeLabel } from "./utils";
 
 /**
@@ -30,6 +32,7 @@ export default function NotificationsPage() {
   const feed = useNotificationFeed(filter, unreadOnly);
   const markAll = useMarkAllNotificationsRead();
   const label = scopeLabel(catalog.data, filter);
+  usePushClicks();
 
   const pages = feed.data?.pages ?? [];
   const canMarkAll =
@@ -93,6 +96,7 @@ export default function NotificationsPage() {
                 {thread}
                 {toolbar}
               </div>
+              <PushPrompt />
               {list}
             </div>
           </main>
@@ -104,6 +108,7 @@ export default function NotificationsPage() {
             {toolbar}
           </div>
           {thread && <div className='flex shrink-0 border-b px-3 py-2'>{thread}</div>}
+          <PushPrompt fullScreen />
           <div className='min-h-0 flex-1 overflow-y-auto'>{list}</div>
         </main>
       )}

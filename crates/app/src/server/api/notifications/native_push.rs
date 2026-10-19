@@ -23,8 +23,10 @@ use uuid::Uuid;
 
 use super::deliver::{PushReport, PushSignal};
 
-/// The banner title. The product, not the app: which app it came from is
-/// content, read from the inbox.
+/// The banner title. The product, not the app: Apple and Google can read a
+/// native payload, so which app it came from is read from the inbox. (Web
+/// Push names the app, because its payload is encrypted to the device —
+/// `web_push_payload`.)
 pub(super) const TITLE: &str = "Oxygen";
 
 /// How long a push service should hold a message for an offline device —
@@ -181,6 +183,8 @@ pub(super) mod tests {
             os_permission: None,
             os_disabled: None,
             app_version: None,
+            web_push_p256dh: None,
+            web_push_auth: None,
         }
     }
 
@@ -231,6 +235,7 @@ pub(super) mod tests {
             category: "general".into(),
             level: crate::server::api::notifications::catalog::model::Level::Active,
             thread: None,
+            app_name: "Oxygen".into(),
         }
     }
 

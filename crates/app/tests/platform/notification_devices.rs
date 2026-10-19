@@ -22,6 +22,7 @@ use oxy_app::server::api::notifications::devices::register::{
     Registration, prune_devices, upsert_device,
 };
 use oxy_app::server::api::notifications::devices::{self, DeviceError, DevicePatch};
+use oxy_app::server::api::notifications::web_push_payload::{SubscriptionKeys, WebPushKeys};
 
 use crate::common::{Schema, fresh_db};
 
@@ -58,6 +59,7 @@ async fn register(
         token,
         name,
         app_version: None,
+        keys: None,
     };
     upsert_device(db, user, &device, at).await
 }
@@ -281,6 +283,7 @@ async fn re_registering_keeps_what_the_owner_set() {
         token: "pixel",
         name: Some("Pixel 9"),
         app_version: Some("2.0.1"),
+        keys: None,
     };
     upsert_device(&db, user, &device, t0 + Duration::minutes(1))
         .await
@@ -335,4 +338,80 @@ async fn a_device_is_changed_or_removed_only_by_its_owner() {
         devices::remove(&db, owner, id).await,
         Err(DeviceError::NotFound)
     );
+}
+
+/// Keys shaped as a browser's — a 0x04 point and a 16-byte secret — distinct
+/// per `seed`, so a replacement is observable.
+fn web_keys(seed: u8) -> SubscriptionKeys {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let mut point = vec![0x04u8];
+    point.extend(std::iter::repeat_n(seed, 64));
+    SubscriptionKeys::parse(&WebPushKeys {
+        p256dh: URL_SAFE_NO_PAD.encode(point),
+        auth: URL_SAFE_NO_PAD.encode([seed; 16]),
+    })
+    .expect("browser-shaped keys")
+}
+
+/// The keys a row holds, as stored.
+async fn keys_of(db: &DatabaseConnection, id: Uuid) -> (Option<String>, Option<String>) {
+    let row = device_tokens::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .expect("query")
+        .expect("the device");
+    (row.web_push_p256dh, row.web_push_auth)
+}
+
+/// A browser's subscription keys are what let a push carry a payload, so a
+/// registration stores them; a re-registration that sends none (an older tab)
+/// keeps them rather than downgrading the device to a bodiless wake; new ones
+/// replace them; and they stay with the subscription when its endpoint moves
+/// to another account, whose settings start over.
+#[tokio::test]
+async fn a_web_registration_stores_its_keys_and_a_keyless_one_keeps_them() {
+    let (db, _url) = fresh_db(Schema::Central).await;
+    let user = seed_user(&db).await;
+    let t0 = Utc::now().fixed_offset();
+    let endpoint = "https://push.example/sub";
+    let stored = |k: &SubscriptionKeys| {
+        let (p, a) = k.to_stored();
+        (Some(p), Some(a))
+    };
+    let with = |keys| Registration {
+        platform: "web",
+        token: endpoint,
+        name: Some("Chrome on Mac"),
+        app_version: None,
+        keys,
+    };
+
+    let first = web_keys(1);
+    let id = upsert_device(&db, user, &with(Some(&first)), t0)
+        .await
+        .expect("register with keys");
+    assert_eq!(keys_of(&db, id).await, stored(&first));
+
+    let again = register(&db, user, "web", endpoint, None, t0 + Duration::minutes(1))
+        .await
+        .expect("re-register without keys");
+    assert_eq!(again, id, "the same device");
+    assert_eq!(
+        keys_of(&db, id).await,
+        stored(&first),
+        "a keyless re-registration erased the keys"
+    );
+
+    let second = web_keys(2);
+    upsert_device(&db, user, &with(Some(&second)), t0 + Duration::minutes(2))
+        .await
+        .expect("re-register with new keys");
+    assert_eq!(keys_of(&db, id).await, stored(&second));
+
+    let other = seed_user(&db).await;
+    register(&db, other, "web", endpoint, None, t0 + Duration::minutes(3))
+        .await
+        .expect("the endpoint moves to another account");
+    assert_eq!(keys_of(&db, id).await, stored(&second));
 }

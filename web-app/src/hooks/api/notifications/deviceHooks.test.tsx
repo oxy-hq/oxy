@@ -22,7 +22,11 @@ vi.mock("@/services/api/notifications", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/libs/webPush", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/libs/webPush")>()),
-  subscribeThisDevice: vi.fn().mockResolvedValue("https://push.example/sub/abc")
+  requestPushPermission: vi.fn().mockResolvedValue("granted"),
+  subscribeThisDevice: vi.fn().mockResolvedValue({
+    endpoint: "https://push.example/sub/abc",
+    keys: { p256dh: "BPub", auth: "c2VjcmV0" }
+  })
 }));
 
 import { rememberThisDevice, thisDeviceId } from "@/libs/webPush";
@@ -119,16 +123,17 @@ describe("useRemoveNotificationDevice", () => {
 });
 
 describe("useEnablePushOnThisDevice", () => {
-  it("registers this browser by name and remembers the id the server answers with", async () => {
+  it("registers this browser by name, with its keys, and remembers the id the server answers with", async () => {
     service.registerDevice.mockResolvedValue("d-9");
     const { result } = setup(() => useEnablePushOnThisDevice(), []);
 
-    act(() => result.current.mutate("BKEY"));
+    act(() => result.current.turnOn("BKEY"));
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(service.registerDevice).toHaveBeenCalledWith({
       platform: "web",
       token: "https://push.example/sub/abc",
-      device_name: expect.any(String)
+      device_name: expect.any(String),
+      keys: { p256dh: "BPub", auth: "c2VjcmV0" }
     });
     expect(thisDeviceId()).toBe("d-9");
   });
@@ -138,7 +143,7 @@ describe("useEnablePushOnThisDevice", () => {
     service.registerDevice.mockResolvedValue("d-1");
     const { result } = setup(() => useEnablePushOnThisDevice());
 
-    act(() => result.current.mutate("BKEY"));
+    act(() => result.current.turnOn("BKEY"));
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(service.registerDevice).toHaveBeenCalledWith(
       expect.objectContaining({ device_name: "Work laptop" })
@@ -149,7 +154,7 @@ describe("useEnablePushOnThisDevice", () => {
     service.registerDevice.mockResolvedValue(null);
     const { result } = setup(() => useEnablePushOnThisDevice(), []);
 
-    act(() => result.current.mutate("BKEY"));
+    act(() => result.current.turnOn("BKEY"));
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(thisDeviceId()).toBeNull();
   });

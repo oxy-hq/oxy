@@ -212,6 +212,8 @@ human-panic = { workspace = true }
 humantime = { workspace = true }
 indoc = { workspace = true }
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
+# Web Push payload encryption (RFC 8291 aes128gcm): web_push_payload.rs.
+ece = { workspace = true }
 lazy_static = { workspace = true }
 email_address = { workspace = true }
 serde_urlencoded = { workspace = true }

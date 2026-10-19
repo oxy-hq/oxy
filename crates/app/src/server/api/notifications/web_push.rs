@@ -9,23 +9,35 @@
 //! transports ([`super::apns`], [`super::fcm`]) sit beside it, and
 //! [`super::push_routing`] hands each one only its own platform's rows.
 //!
-//! # The message carries NO payload, deliberately
+//! # What the message carries: ids and config, encrypted to the device
 //!
-//! RFC 8291 payload encryption (ECDH P-256 → HKDF → AES-128-GCM) is real
-//! cryptography, and hand-rolling it to move text that is *already* in the inbox
-//! would be a bad trade twice over: once for the crypto risk, once for the copy.
+//! The first version sent a bodiless push (permitted by RFC 8030), and the
+//! service worker showed "You have a new notification" for every one. That
+//! kept the push service from seeing anything and kept crypto out of this
+//! adapter — and it made a push nobody could act on, so a push people turn
+//! off.
 //!
-//! So this sends a bodiless push — permitted by RFC 8030 — and the service
-//! worker's `push` handler re-reads `/api/notifications`. That is the same shape
-//! chat's `LISTEN/NOTIFY` already uses, for the same reason stated there: the
-//! notification is a **wake signal, not the message**. The durable row written
-//! by [`send`](super::send::send) is the source of truth, a client that
-//! misses a wake is repaired by the next one or by a navigation, and the push
-//! service is never handed the content of a notification it has no business
-//! seeing.
+//! A browser that registered its subscription keys now gets a payload
+//! ([`super::web_push_payload`]): the inbox row's id, the app's name (or
+//! "Oxygen"), the kind's label, where a tap lands, and the thread's hash.
+//! Still ids and config, never the title, body or link an app wrote, which
+//! stay in the org's store behind sign-in. What changed is what the push
+//! service could see, and it did not grow: the payload is encrypted to the
+//! subscription (RFC 8291 `aes128gcm`, the `ece` crate), so the service relays
+//! ciphertext and learns what it learned before — that a device got a push,
+//! roughly how big, and when. That is also why the app's name rides here and
+//! not in a native banner ([`super::native_push`]): APNs and FCM payloads are
+//! readable by Apple and Google.
 //!
-//! It also means this adapter needs no crypto dependency at all: VAPID is an
-//! ES256 JWT, which `jsonwebtoken` already signs.
+//! The notification is still a **wake signal, not the message**, the same
+//! shape chat's `LISTEN/NOTIFY` uses: the durable row written by
+//! [`send`](super::send::send) is the source of truth, a client that misses a
+//! wake is repaired by the next one or by a navigation, and the open tab is
+//! told to re-read `/api/notifications`. A row with no keys — registered
+//! before they were stored — or with keys that cannot be used still gets the
+//! bodiless wake and today's generic line.
+//!
+//! VAPID is unchanged: an ES256 JWT, which `jsonwebtoken` signs.
 //!
 //! # Configuration
 //!
@@ -34,12 +46,16 @@
 //! is precisely what [`Push::name`](super::deliver::Push::name) exists to make
 //! impossible.
 //!
-//! * `OXY_VAPID_PRIVATE_KEY` — the EC private key, PEM (PKCS#8).
+//! * `OXY_VAPID_PRIVATE_KEY` — the EC private key, PEM (PKCS#8); `\n`
+//!   escapes are read as newlines, as APNs' key is.
 //! * `OXY_VAPID_PUBLIC_KEY`  — the uncompressed P-256 point, base64url, no pad.
 //!   This is what the browser passes to `pushManager.subscribe`, so it has to
 //!   match the private key or every send is rejected.
 //! * `OXY_VAPID_SUBJECT`     — `mailto:` or `https:`, per RFC 8292. Push
 //!   services use it to reach an operator when a sender misbehaves.
+//!
+//! Generating the pair is an operator runbook in
+//! `internal-docs/custom-app-notifications.md` → Rollout.
 
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -54,6 +70,8 @@ use serde::Serialize;
 use tracing::{info, warn};
 
 use super::deliver::{Push, PushReport, PushSignal};
+use super::native_push::unescape_pem;
+use super::web_push_payload::{Payload, SubscriptionKeys, encrypt};
 
 /// The `web` platform value in `device_tokens`. APNs and FCM rows go to their
 /// own transports: an APNs token sent to a Web Push endpoint would be a POST to
@@ -173,9 +191,12 @@ impl WebPush {
     /// All-or-nothing on purpose: two of three vars set is a deployment mistake,
     /// and registering a sender that fails every send would report as
     /// "configured" while behaving worse than the logging default.
-    /// Build from the environment, or `None` if it is not fully configured.
     pub fn from_env() -> Option<Self> {
-        let private = std::env::var("OXY_VAPID_PRIVATE_KEY").ok();
+        // A multi-line PEM usually reaches the environment with its newlines
+        // escaped (a secret store, an `.env` file), as APNs' key does.
+        let private = std::env::var("OXY_VAPID_PRIVATE_KEY")
+            .ok()
+            .map(|pem| unescape_pem(&pem));
         let public = std::env::var("OXY_VAPID_PUBLIC_KEY").ok();
         let subject = std::env::var("OXY_VAPID_SUBJECT").ok();
         match Self::configure(private.as_deref(), public.as_deref(), subject.as_deref()) {
@@ -324,9 +345,14 @@ impl WebPush {
         Ok(())
     }
 
-    /// Deliver one wake signal. `Ok(true)` means the subscription is gone and
-    /// the row should be dropped.
-    async fn send_one(&self, endpoint: &str) -> Result<bool, String> {
+    /// Deliver one push. `Ok(true)` means the subscription is gone and the row
+    /// should be dropped.
+    async fn send_one(
+        &self,
+        row: &device_tokens::Model,
+        signal: &PushSignal,
+    ) -> Result<bool, String> {
+        let endpoint = row.token.as_str();
         // `Err`, never `Ok(true)`. A refused endpoint is not the push service
         // telling us the subscription is gone — treating it as such would delete
         // the row and erase the evidence, which is the opposite of what should
@@ -337,17 +363,21 @@ impl WebPush {
             .authorization(endpoint)
             .ok_or_else(|| "could not build a VAPID assertion".to_string())?;
 
-        let res = self
+        let req = self
             .http
             .post(endpoint)
             .header("Authorization", auth)
-            .header("TTL", TTL_SECONDS.to_string())
+            .header("TTL", TTL_SECONDS.to_string());
+        let req = match body_for(row, signal) {
+            Some(body) => req
+                .header("Content-Encoding", "aes128gcm")
+                .header("Content-Type", "application/octet-stream")
+                .body(body),
             // No body, so no `Content-Encoding`: an `aes128gcm` header with an
             // empty payload is what a push service rejects as malformed.
-            .header("Content-Length", "0")
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
+            None => req.header("Content-Length", "0"),
+        };
+        let res = req.send().await.map_err(|e| e.to_string())?;
 
         let status = res.status();
         if status.is_success() {
@@ -362,6 +392,21 @@ impl WebPush {
             return Ok(true);
         }
         Err(format!("push service answered {status}"))
+    }
+}
+
+/// The encrypted payload for `row`, or `None` for a bodiless wake: a row with
+/// no keys, or keys that cannot be used. Never an error — a wake that says
+/// less still wakes — but never silent either.
+fn body_for(row: &device_tokens::Model, signal: &PushSignal) -> Option<Vec<u8>> {
+    let encrypted =
+        SubscriptionKeys::of_row(row)?.and_then(|keys| encrypt(&keys, &Payload::new(signal)));
+    match encrypted {
+        Ok(body) => Some(body),
+        Err(why) => {
+            warn!(user = %signal.user_id, error = %why, "web push sent without a payload");
+            None
+        }
     }
 }
 
@@ -384,7 +429,7 @@ impl Push for WebPush {
             let results = futures::future::join_all(
                 chunk
                     .iter()
-                    .map(|t| async move { (t.id, self.send_one(&t.token).await) }),
+                    .map(|t| async move { (t.id, self.send_one(t, signal).await) }),
             )
             .await;
             for (id, r) in results {
@@ -454,6 +499,7 @@ pub fn register_if_configured() -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::super::native_push::tests::{row, signal};
     use super::*;
 
     /// A well-formed public key: 65 bytes, 0x04 then 64 of payload, base64url.
@@ -619,12 +665,48 @@ mod tests {
             http: reqwest::Client::new(),
         };
         let err = w
-            .send_one("https://169.254.169.254/latest/meta-data/")
+            .send_one(
+                &row("web", "https://169.254.169.254/latest/meta-data/"),
+                &signal("k"),
+            )
             .await
             .expect_err("the send path POSTed to cloud metadata");
         assert!(
             err.contains("blocked range"),
             "refused for the wrong reason, so the guard may not be on this path: {err}"
+        );
+    }
+
+    /// A row with keys gets the encrypted payload; one without, the bodiless
+    /// wake — as does one whose keys cannot be used, rather than no push.
+    #[test]
+    fn a_row_with_keys_gets_a_payload_and_one_without_a_bodiless_wake() {
+        let (pair, auth) = ece::generate_keypair_and_auth_secret().expect("keygen");
+        let bare = row("web", "https://push.example/a");
+        let keyed = device_tokens::Model {
+            web_push_p256dh: Some(URL_SAFE_NO_PAD.encode(pair.pub_as_raw().expect("pub"))),
+            web_push_auth: Some(URL_SAFE_NO_PAD.encode(auth)),
+            ..bare.clone()
+        };
+        let s = PushSignal {
+            label: "Run failed".into(),
+            ..signal("oxy.run_failed")
+        };
+
+        let body = body_for(&keyed, &s).expect("a keyed row gets a payload");
+        let plaintext = ece::decrypt(&pair.raw_components().expect("components"), &auth, &body)
+            .expect("the browser can read it");
+        let payload: Payload = serde_json::from_slice(&plaintext).expect("a v1 payload");
+        assert_eq!(payload, Payload::new(&s));
+
+        assert!(body_for(&bare, &s).is_none(), "no keys: a bodiless wake");
+        let broken = device_tokens::Model {
+            web_push_auth: Some("not a key".into()),
+            ..keyed
+        };
+        assert!(
+            body_for(&broken, &s).is_none(),
+            "unusable keys fall back to the wake"
         );
     }
 

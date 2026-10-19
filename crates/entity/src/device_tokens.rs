@@ -40,6 +40,13 @@ pub struct Model {
     /// strings. `None` for none.
     pub os_disabled: Option<Json>,
     pub app_version: Option<String>,
+    /// A `web` row's subscription keys (`PushSubscription.toJSON().keys`),
+    /// base64url: the browser's P-256 public key and its 16-byte auth secret.
+    /// With both, a Web Push carries an encrypted payload (RFC 8291); without
+    /// them — a native row, or a browser registered before keys were stored —
+    /// it is a bodiless wake.
+    pub web_push_p256dh: Option<String>,
+    pub web_push_auth: Option<String>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

@@ -14,11 +14,16 @@ vi.mock("@/services/api/notifications", () => ({
     unread: vi.fn(),
     inbox: vi.fn(),
     markRead: vi.fn(),
-    markAllRead: vi.fn()
+    markAllRead: vi.fn(),
+    vapidPublicKey: vi.fn()
   }
 }));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ isLocalMode: false }) }));
 
+import {
+  fakePushBrowser,
+  noPushBrowser
+} from "@/components/Notifications/PushPrompt/__tests__/fakePushBrowser";
 import { NotificationsBell } from ".";
 import { POPOVER_MEDIA_QUERY } from "./constants";
 
@@ -135,6 +140,7 @@ beforeEach(() => {
   service.inbox.mockResolvedValue({ unread: 2, items: [item(), platformItem, unreadableItem] });
   service.markRead.mockResolvedValue();
   service.markAllRead.mockResolvedValue();
+  service.vapidPublicKey.mockResolvedValue({ configured: false, public_key: null });
 });
 
 afterEach(() => {
@@ -306,6 +312,71 @@ describe("NotificationsBell opened from outside", () => {
     } finally {
       Reflect.deleteProperty(navigator, "serviceWorker");
     }
+  });
+
+  it("goes where a clicked push says, instead of opening the inbox", async () => {
+    const worker = new EventTarget();
+    Object.defineProperty(navigator, "serviceWorker", { value: worker, configurable: true });
+    try {
+      renderBell();
+      const href = "/notifications?source=app-1&kind=temp_alarm";
+      act(() => {
+        worker.dispatchEvent(
+          new MessageEvent("message", { data: { type: "oxy:open-notifications", href } })
+        );
+      });
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(href));
+      expect(screen.queryByTestId("notifications-panel")).toBeNull();
+      // Off-site is never followed: the inbox opens instead.
+      act(() => {
+        worker.dispatchEvent(
+          new MessageEvent("message", {
+            data: { type: "oxy:open-notifications", href: "//evil.example/x" }
+          })
+        );
+      });
+      expect(await screen.findByTestId("notifications-panel")).toBeInTheDocument();
+      expect(screen.getByTestId("where")).toHaveTextContent(href);
+    } finally {
+      Reflect.deleteProperty(navigator, "serviceWorker");
+    }
+  });
+});
+
+describe("NotificationsBell push prompt", () => {
+  afterEach(noPushBrowser);
+  const PUBLIC_KEY = `B${"A".repeat(86)}`;
+
+  it("offers push on this device between the header and the list", async () => {
+    fakePushBrowser();
+    service.vapidPublicKey.mockResolvedValue({ configured: true, public_key: PUBLIC_KEY });
+    renderBell();
+    const panel = await openInbox();
+    const prompt = await within(panel).findByTestId("push-prompt");
+    expect(prompt).toHaveTextContent("Get notifications on this device");
+    expect(within(panel).getByTestId("push-prompt-turn-on")).toBeInTheDocument();
+    // After the header, before the list.
+    const list = within(panel).getByTestId("notifications-list");
+    expect(prompt.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("is in the phone's sheet too", async () => {
+    onAPhone();
+    fakePushBrowser();
+    service.vapidPublicKey.mockResolvedValue({ configured: true, public_key: PUBLIC_KEY });
+    renderBell();
+    await userEvent.click(screen.getByTestId("notifications-bell"));
+    const sheet = await screen.findByTestId("notifications-sheet");
+    expect(await within(sheet).findByTestId("push-prompt")).toBeInTheDocument();
+  });
+
+  it("is not there where the deployment has no push key", async () => {
+    fakePushBrowser();
+    renderBell();
+    const panel = await openInbox();
+    await waitFor(() => expect(service.vapidPublicKey).toHaveBeenCalled());
+    await within(panel).findByTestId("notifications-mark-all-read");
+    expect(within(panel).queryByTestId("push-prompt")).toBeNull();
   });
 });
 

@@ -26,7 +26,9 @@
 //! The push is Oxygen's, kind `oxy.quiet_hours_summary` (channel id
 //! `oxygen.oxy.quiet_hours_summary`), level `active`, and names the newest
 //! held item, so a tap opens something real. It is not an inbox row of its
-//! own. Each device's settings apply as to any push.
+//! own. Each device's settings apply as to any push. A Web Push of it reads
+//! "Oxygen" / the count and opens the notifications page
+//! ([`crate::server::api::notifications::web_push_payload::href`]).
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -225,6 +227,7 @@ async fn tell(
         category: crate::server::api::notifications::catalog::model::GENERAL.to_string(),
         level: Level::Active,
         thread: None,
+        app_name: "Oxygen".to_string(),
     };
     let channel_id = signal.channel_id();
     let devices: Vec<device_tokens::Model> = device_tokens::Entity::find()

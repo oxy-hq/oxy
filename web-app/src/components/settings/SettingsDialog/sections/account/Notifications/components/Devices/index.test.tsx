@@ -25,7 +25,11 @@ vi.mock("@/libs/webPush", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/libs/webPush")>()),
   pushSupported: () => browser.supported,
   pushNeedsHomeScreenHere: () => browser.homeScreen,
-  subscribeThisDevice: vi.fn().mockResolvedValue("https://push.example/sub/abc")
+  requestPushPermission: vi.fn().mockResolvedValue("granted"),
+  subscribeThisDevice: vi.fn().mockResolvedValue({
+    endpoint: "https://push.example/sub/abc",
+    keys: { p256dh: "BPub", auth: "c2VjcmV0" }
+  })
 }));
 
 import { rememberThisDevice } from "@/libs/webPush";
@@ -264,13 +268,17 @@ describe("Push on this device", () => {
     expect(screen.queryByTestId("notifications-push-home-screen")).toBeNull();
   });
 
-  it("registers this browser, then lists it as this device", async () => {
+  it("registers this browser with its keys, then lists it as this device", async () => {
     browser.supported = true;
     renderDevices();
     await userEvent.click(await screen.findByTestId("notifications-push-enable"));
     await waitFor(() =>
       expect(service.registerDevice).toHaveBeenCalledWith(
-        expect.objectContaining({ platform: "web", token: "https://push.example/sub/abc" })
+        expect.objectContaining({
+          platform: "web",
+          token: "https://push.example/sub/abc",
+          keys: { p256dh: "BPub", auth: "c2VjcmV0" }
+        })
       )
     );
     expect(await screen.findByTestId("notifications-push-enable")).toHaveTextContent("On");

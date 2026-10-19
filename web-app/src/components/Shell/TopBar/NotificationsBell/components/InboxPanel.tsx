@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { InboxRow } from "@/components/Notifications/InboxRow";
+import { PushPrompt } from "@/components/Notifications/PushPrompt";
 import { SheetTitle } from "@/components/ui/shadcn/sheet";
 import { useMarkAllNotificationsRead, useNotificationInbox } from "@/hooks/api/notifications";
 import { cn } from "@/libs/shadcn/utils";
@@ -18,8 +19,9 @@ interface InboxPanelProps {
 }
 
 /**
- * The open inbox: a header with "Mark all read", the list, newest first, and
- * "See all" — the notifications page, with its categories and history.
+ * The open inbox: a header with "Mark all read", the offer to turn on push here
+ * (when it applies), the list, newest first, and "See all" — the notifications
+ * page, with its categories and history.
  */
 export function InboxPanel({ onFollow, fullScreen = false }: InboxPanelProps) {
   const inbox = useNotificationInbox();
@@ -78,6 +80,7 @@ export function InboxPanel({ onFollow, fullScreen = false }: InboxPanelProps) {
           Mark all read
         </button>
       </div>
+      <PushPrompt fullScreen={fullScreen} />
       <div
         className={cn("overflow-y-auto", fullScreen ? "min-h-0 flex-1" : "max-h-96")}
         data-testid='notifications-list'

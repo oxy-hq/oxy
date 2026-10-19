@@ -777,6 +777,9 @@ deser-incomplete = "0.1.2"
 df-interchange = "0.3.3"
 dirs = "6.0.0"
 dotenv = "0.15.0"
+# RFC 8291 Web Push payload encryption (Mozilla's, MPL-2.0). Only its OpenSSL
+# backend exists, and openssl is already in the graph via connectorx.
+ece = { version = "2.4.2", default-features = false, features = ["backend-openssl"] }
 email_address = "0.2.9"
 enum_dispatch = "0.3.13"
 fehler = "1.0.0"

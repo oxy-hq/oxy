@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useEnablePushOnThisDevice, useVapidPublicKey } from "@/hooks/api/notifications";
-import { pushNeedsHomeScreenHere, pushSupported } from "@/libs/webPush";
+import { HOME_SCREEN_HINT, pushNeedsHomeScreenHere, pushSupported } from "@/libs/webPush";
 
 /**
  * Turn push on for the browser in front of you. Needs both a deployment with a
@@ -25,7 +25,7 @@ export function PushOnThisDevice() {
         size='sm'
         variant='outline'
         disabled={enable.isPending || enable.isSuccess}
-        onClick={() => enable.mutate(publicKey)}
+        onClick={() => enable.turnOn(publicKey)}
         data-testid='notifications-push-enable'
       >
         {enable.isSuccess ? "On" : "Turn on"}
@@ -34,7 +34,7 @@ export function PushOnThisDevice() {
   } else if (publicKey && pushNeedsHomeScreenHere()) {
     hint = (
       <span className='text-muted-foreground text-xs' data-testid='notifications-push-home-screen'>
-        Add Oxygen to your Home Screen (Share → Add to Home Screen) to get notifications here.
+        {HOME_SCREEN_HINT}
       </span>
     );
   } else {

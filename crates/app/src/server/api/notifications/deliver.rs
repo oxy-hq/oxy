@@ -17,12 +17,13 @@ use super::catalog::source::{KindInfo, Source};
 
 /// What a push carries: ids and config, never what the notification says.
 ///
-/// A push is a wake signal, not the message. Web Push is bodiless (`web_push`
-/// explains why) and uses only who it is for. APNs and FCM must show a banner,
-/// so they map the rest ([`super::apns::payload`], [`super::fcm::message`]):
-/// the inbox row the phone fetches the words from, and the kind's place in
-/// its catalogue — label, category, level — and the thread's hash, which are
-/// the app's config, not its content.
+/// A push is a wake signal, not the message. Each transport maps what it
+/// needs: APNs and FCM ([`super::apns::payload`], [`super::fcm::message`]) the
+/// inbox row the phone fetches the words from, and the kind's place in its
+/// catalogue — label, category, level — and the thread's hash, which are the
+/// app's config, not its content. Web Push
+/// ([`super::web_push_payload::Payload`]) the row, the sender's name, the
+/// label and the thread, encrypted to the device.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PushSignal {
     pub user_id: Uuid,
@@ -43,6 +44,11 @@ pub struct PushSignal {
     pub level: Level,
     /// The thread's hash (`notifications.thread_key`), when the app gave one.
     pub thread: Option<String>,
+    /// Who it is from: the app's name, or "Oxygen" for a platform notice.
+    /// Config, like the label. Only Web Push carries it, because only Web Push
+    /// is encrypted to the device: an APNs or FCM payload is readable by Apple
+    /// or Google, so the native banner's title stays "Oxygen".
+    pub app_name: String,
 }
 
 impl PushSignal {
@@ -50,8 +56,9 @@ impl PushSignal {
     /// fetches the item and shows it plainly.
     pub const ENVELOPE_VERSION: u8 = 1;
 
-    /// The push for `signal`, a recipient's row, whose kind is `info`.
-    pub fn new(signal: &notifications::Model, info: &KindInfo) -> Self {
+    /// The push for `signal`, a recipient's row, whose kind is `info`, sent
+    /// by `app_name` (the app's, or "Oxygen").
+    pub fn new(signal: &notifications::Model, info: &KindInfo, app_name: &str) -> Self {
         Self {
             user_id: signal.user_id,
             kind: signal.kind.clone(),
@@ -62,6 +69,7 @@ impl PushSignal {
             category: info.category.clone(),
             level: info.level,
             thread: signal.thread_key.clone(),
+            app_name: app_name.to_string(),
         }
     }
 

@@ -51,7 +51,8 @@
 //! hands each its platform's device rows. None is handed what a notification
 //! says — only ids and config ([`deliver::PushSignal`]): its inbox row, its
 //! kind and that kind's label, category and level from the catalogue, and its
-//! thread's hash. [`apns`] and [`fcm`] map those to their payloads.
+//! thread's hash, and who sent it. [`apns`] and [`fcm`] map those to their
+//! payloads; [`web_push_payload`] to Web Push's, encrypted to the device.
 //!
 //! # Not here
 //!
@@ -89,3 +90,4 @@ pub mod slack_dm;
 pub mod task;
 pub mod test_notice;
 pub mod web_push;
+pub mod web_push_payload;

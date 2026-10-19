@@ -160,6 +160,12 @@ export interface RegisterDeviceInput {
   /** For web, the `PushSubscription` endpoint URL. */
   token: string;
   device_name?: string;
+  /**
+   * The subscription's encryption keys (`PushSubscription.toJSON().keys`). With
+   * them a push names its app and kind; without, it reads "You have a new
+   * notification".
+   */
+  keys?: { p256dh: string; auth: string };
 }
 
 // ── Settings (`GET/PATCH /notifications/settings`) ────────────────────────────

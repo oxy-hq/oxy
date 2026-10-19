@@ -129,6 +129,7 @@ async fn device(db: &DatabaseConnection, user: Uuid, token: &str) -> Uuid {
         token,
         name: None,
         app_version: None,
+        keys: None,
     };
     upsert_device(db, user, &registration, Utc::now().fixed_offset())
         .await

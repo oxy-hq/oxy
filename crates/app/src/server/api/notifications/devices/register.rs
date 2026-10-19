@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use super::{MAX_APP_VERSION_LEN, MAX_DEVICE_NAME_LEN};
 use crate::server::api::notifications::settings::store;
+use crate::server::api::notifications::web_push_payload::{SubscriptionKeys, WebPushKeys};
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterDevice {
@@ -26,6 +27,10 @@ pub struct RegisterDevice {
     pub device_name: Option<String>,
     pub name: Option<String>,
     pub app_version: Option<String>,
+    /// A `web` subscription's keys (`PushSubscription.toJSON().keys`). With
+    /// them a push carries an encrypted payload naming its app and kind;
+    /// without, it is a bodiless wake. Refused on any other platform.
+    pub keys: Option<WebPushKeys>,
 }
 
 #[derive(Debug, Serialize)]
@@ -55,6 +60,8 @@ pub struct Registration<'a> {
     pub token: &'a str,
     pub name: Option<&'a str>,
     pub app_version: Option<&'a str>,
+    /// A `web` subscription's keys, already checked.
+    pub keys: Option<&'a SubscriptionKeys>,
 }
 
 /// `POST /api/notifications/devices` — register this device for push, and
@@ -94,6 +101,13 @@ pub async fn register_device(
     {
         return Err(StatusCode::BAD_REQUEST);
     }
+    let keys = match &body.keys {
+        None => None,
+        Some(keys) if body.platform == "web" => {
+            Some(SubscriptionKeys::parse(keys).map_err(|_| StatusCode::BAD_REQUEST)?)
+        }
+        Some(_) => return Err(StatusCode::BAD_REQUEST),
+    };
     let db = establish_connection()
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
@@ -102,6 +116,7 @@ pub async fn register_device(
         token: &token,
         name,
         app_version: body.app_version.as_deref(),
+        keys: keys.as_ref(),
     };
     let id = upsert_device(&db, user.id, &registration, Utc::now().fixed_offset())
         .await
@@ -136,19 +151,29 @@ pub async fn register_device(
 /// A re-registration by the same owner bumps `last_seen_at`, keeps a name
 /// the person gave the device (the registration's is only a default), and
 /// takes the newer `app_version`.
+///
+/// A `web` subscription's keys are written when given and kept when not,
+/// whoever registers: they belong to the subscription the endpoint names, not
+/// to its owner, and never change for it — so a re-registration that does not
+/// send them (an older tab) must not turn the device's pushes back into
+/// bodiless wakes.
 pub async fn upsert_device(
     db: &impl ConnectionTrait,
     user_id: Uuid,
     device: &Registration<'_>,
     now: chrono::DateTime<chrono::FixedOffset>,
 ) -> Result<Uuid, DbErr> {
+    let (p256dh, auth) = device.keys.map(SubscriptionKeys::to_stored).unzip();
     let row = db
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO device_tokens \
-               (id, user_id, platform, token, device_name, app_version, created_at, last_seen_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $7) \
+               (id, user_id, platform, token, device_name, app_version, created_at, last_seen_at, \
+                web_push_p256dh, web_push_auth) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9) \
              ON CONFLICT (platform, token) DO UPDATE SET \
+               web_push_p256dh = COALESCE(EXCLUDED.web_push_p256dh, device_tokens.web_push_p256dh), \
+               web_push_auth = COALESCE(EXCLUDED.web_push_auth, device_tokens.web_push_auth), \
                device_name = CASE WHEN device_tokens.user_id = EXCLUDED.user_id \
                  THEN COALESCE(device_tokens.device_name, EXCLUDED.device_name) \
                  ELSE EXCLUDED.device_name END, \
@@ -174,6 +199,8 @@ pub async fn upsert_device(
                 device.name.map(str::to_string).into(),
                 device.app_version.map(str::to_string).into(),
                 now.into(),
+                p256dh.into(),
+                auth.into(),
             ],
         ))
         .await?

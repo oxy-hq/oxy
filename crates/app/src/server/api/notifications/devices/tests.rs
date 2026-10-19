@@ -18,6 +18,8 @@ fn row() -> device_tokens::Model {
         os_permission: None,
         os_disabled: None,
         app_version: None,
+        web_push_p256dh: None,
+        web_push_auth: None,
     }
 }
 

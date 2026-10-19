@@ -1,10 +1,13 @@
 /**
  * Web Push for the inbox, browser side.
  *
- * The server sends a **bodiless** push — no payload, so no encryption keys — to a
- * subscription's endpoint, and `public/oxy-push-sw.js` turns it into a generic
- * "You have a new notification". What it says stays in the inbox, behind sign-in:
- * the worker cannot read the app's token, so it could not fetch it anyway.
+ * A subscription is registered with its endpoint and its encryption keys, so the
+ * server can send a small payload encrypted to this browser (RFC 8291): the app's
+ * name, the kind's label, where a tap lands — ids and config, never what the
+ * notification says. `public/oxy-push-sw.js` shows it as "<app> — <label>". What
+ * the notification says stays in the inbox, behind sign-in. A push without a
+ * payload (a server from before keys were stored) still reads "You have a new
+ * notification".
  *
  * The worker sits at the origin root with scope `/`. A custom app's own worker
  * (`/customer-apps/<org>/<app>/__oxy/sw.js`) has a narrower scope and its own
@@ -22,6 +25,13 @@ export const OPEN_INBOX_MESSAGE = "oxy:open-notifications";
 
 /** Worker → page: a push arrived, so the badge is stale. Mirrored in the worker. */
 export const INBOX_CHANGED_MESSAGE = "oxy:inbox-changed";
+
+/** Where a push with no `href` of its own lands. Mirrored in the worker. */
+export const NOTIFICATIONS_PATH = "/notifications";
+
+/** What Settings and the inbox say on an iPhone or iPad in a browser tab. */
+export const HOME_SCREEN_HINT =
+  "Add Oxygen to your Home Screen (Share → Add to Home Screen) to get notifications here.";
 
 /** Whether this browser can take a push at all. */
 export function pushSupported(): boolean {
@@ -90,17 +100,56 @@ function sameKey(current: ArrayBuffer | null, wanted: Uint8Array): boolean {
   return have.every((byte, i) => byte === wanted[i]);
 }
 
+/** This browser's permission for notifications, or `unsupported` without the API. */
+export function pushPermission(): NotificationPermission | "unsupported" {
+  if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+  return Notification.permission;
+}
+
 /**
- * Register the worker, ask for permission, and subscribe this browser. Returns the
- * subscription's endpoint, which is the whole device token for a bodiless push.
+ * Ask for permission. Call it from the click handler itself, before any `await`:
+ * browsers (Safari most strictly) only show the prompt inside the user gesture,
+ * and a request that has already crossed an `await` may be refused unseen.
+ */
+export function requestPushPermission(): Promise<NotificationPermission> {
+  return Notification.requestPermission();
+}
+
+/** Whether this browser already holds a push subscription from Oxygen's worker. */
+export async function isThisDeviceSubscribed(): Promise<boolean> {
+  const registration = await navigator.serviceWorker.getRegistration("/");
+  if (!registration) return false;
+  return (await registration.pushManager.getSubscription()) !== null;
+}
+
+/** What the server is told about a subscription: where to push, and how to encrypt. */
+export interface ThisDeviceSubscription {
+  endpoint: string;
+  /** base64url, as `PushSubscription.toJSON()` gives them. */
+  keys?: { p256dh: string; auth: string };
+}
+
+function describe(subscription: PushSubscription): ThisDeviceSubscription {
+  const keys = subscription.toJSON().keys;
+  return keys?.p256dh && keys.auth
+    ? { endpoint: subscription.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } }
+    : { endpoint: subscription.endpoint };
+}
+
+/**
+ * Register the worker and subscribe this browser, once `permission` — the promise
+ * `requestPushPermission` returned inside the click — says yes. Returns the
+ * endpoint and the keys a payload is encrypted with.
  *
  * A subscription made under a different key (the deployment rotated its VAPID
  * pair) is dropped first: `subscribe` refuses to change keys in place, and a push
  * signed with the new key would be rejected for the old subscription.
  */
-export async function subscribeThisDevice(publicKey: string): Promise<string> {
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") {
+export async function subscribeThisDevice(
+  publicKey: string,
+  permission: Promise<NotificationPermission>
+): Promise<ThisDeviceSubscription> {
+  if ((await permission) !== "granted") {
     throw new Error("Notifications are blocked for this site in your browser settings.");
   }
   await navigator.serviceWorker.register(PUSH_WORKER_URL, { scope: "/" });
@@ -109,13 +158,23 @@ export async function subscribeThisDevice(publicKey: string): Promise<string> {
   const registration = await navigator.serviceWorker.ready;
   const key = urlBase64ToUint8Array(publicKey);
   const existing = await registration.pushManager.getSubscription();
-  if (existing && sameKey(existing.options.applicationServerKey, key)) return existing.endpoint;
+  if (existing && sameKey(existing.options.applicationServerKey, key)) return describe(existing);
   if (existing) await existing.unsubscribe();
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: key
   });
-  return subscription.endpoint;
+  return describe(subscription);
+}
+
+/**
+ * A push's `href` if it is a path on this site, else `null` — what a page will
+ * navigate to when the worker says a notification was clicked.
+ */
+export function pushHref(href: unknown): string | null {
+  if (typeof href !== "string" || !href.startsWith("/") || href.startsWith("//")) return null;
+  if (href.includes("\\")) return null;
+  return href;
 }
 
 /**

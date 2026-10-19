@@ -45,7 +45,8 @@ pub struct Channels {
     slack: Option<SlackDm>,
     content: Option<InboxMessage>,
     url: Option<String>,
-    /// Who the notification is from: the app's name, or "Oxygen".
+    /// Who the notification is from: the app's name, or "Oxygen". Email and
+    /// Slack say it; a Web Push names it, encrypted to the device.
     sender: String,
 }
 
@@ -99,7 +100,7 @@ impl Channels {
     /// The `<group>.<kind>` id a push for `signal` carries: the iOS category
     /// and Android channel a device's OS can switch off.
     pub fn channel_id(&self, signal: &notifications::Model) -> String {
-        PushSignal::new(signal, &self.info).channel_id()
+        PushSignal::new(signal, &self.info, &self.sender).channel_id()
     }
 
     /// Push `signal` to the recipient's devices that `refuses` lets through
@@ -134,7 +135,7 @@ impl Channels {
         if !tokens.iter().any(|t| self.push.handles(t)) {
             return ChannelOutcome::Skipped("not_configured");
         }
-        let signal = PushSignal::new(signal, &self.info);
+        let signal = PushSignal::new(signal, &self.info, &self.sender);
         let report = self.push.send(&tokens, &signal).await;
         match (report.delivered, report.failed) {
             (0, 0) => ChannelOutcome::Skipped("no_devices"),
