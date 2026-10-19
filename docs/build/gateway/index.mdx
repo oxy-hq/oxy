@@ -1,0 +1,87 @@
+---
+title: "Gateway"
+sidebarTitle: "Overview"
+description: "The software factory: custom apps, agents, and automations assembled from SDK primitives on top of the World Model"
+---
+
+**Gateway** is Oxygen's software factory, the top layer of Oxygen Nexus.
+[Pylon](/guide/build/data-infrastructure) lands and shapes the data, and
+[Matrix](/guide/build/world-model), the World Model, defines what it means.
+Gateway is where the operating software a business runs on is built over
+that model: [custom apps](/guide/build/custom-apps),
+[agents](/guide/build/agents), and [automations](/guide/build/automations).
+
+Every product built in Gateway is assembled from the same small set of SDK
+primitives, over the same World Model, on the same hosted runtime. A new app
+for a new customer is a new composition of those primitives rather than a new
+stack: no backend to stand up, no authentication to implement, and no metric
+definitions to rewrite.
+
+| Layer | Name | Role |
+| --- | --- | --- |
+| 03 | **Gateway** · Software Factory | Build the software: apps, agents, automations |
+| 02 | **Matrix** · World Model | Model the business: physics, calibration, control |
+| 01 | **Pylon** · Data Infrastructure | Land and shape the data: Airway, Airhouse, Airform, Airconductor |
+
+## The primitives
+
+An app is a React + Vite bundle built with the [Oxygen SDK](/guide/build/sdk)
+(`@oxy-hq/sdk`), plus any server-side functions it ships with. The SDK
+exposes a fixed set of primitives:
+
+| Primitive | What it does | Reference |
+| --- | --- | --- |
+| **Data hooks** | `useQuery` runs SQL; `useSemanticQuery` queries measures and dimensions from the semantic model. | [Hooks](/guide/build/sdk/hooks#reading-data) |
+| **World Model interface** | `useWorldModel` navigates a metric into its components and drivers, explains a move, sizes an opportunity, and drills into a segment. `useBaseline`, `usePredict`, and `useProjection` run scenario forecasts over the metric tree. | [World Model interface](/guide/build/sdk/world-model), [Scenario forecasting](/guide/build/sdk/hooks#scenario-forecasting) |
+| **Agent hooks and components** | `useAgentRun` runs an agent; `<OxyChat>` and `<OxyAnswer>` embed chat and answers. | [Hooks](/guide/build/sdk/hooks#running-agents) |
+| **Automation runs** | `useProcedureRun` runs a multi-step automation. | [Hooks](/guide/build/sdk/hooks#running-agents) |
+| **Oxygen Functions** | Server-side TypeScript on a managed V8 runtime, invoked by a user, a schedule, an Airway step, or a verified webhook. Writes facts to Airhouse (`ctx.airhouse`), records to the org's Postgres (`ctx.oltp`), and files to app storage (`ctx.storage`). | [Functions](/guide/build/sdk/functions) |
+| **Identity and publish** | `oxy-app.json` names the app; `oxyc publish` versions and deploys the interface and its functions together. | [SDK](/guide/build/sdk#deploy) |
+
+## Why primitives scale
+
+Building operating software per customer usually means rebuilding the same
+infrastructure each time: a backend, authentication, a data pipeline, metric
+definitions, and hosting. Gateway moves each of those into the platform, so
+the per-customer work is the part that is actually specific to the customer.
+
+- **The model is shared.** An app does not define its metrics. It reads
+  them from the World Model, so every app, agent, and dashboard uses the same
+  definitions, and a second app for another team or customer starts with
+  them already in place.
+- **Cross-cutting concerns are platform features.** Access rides on the
+  viewer's Oxygen session and is scoped to project membership, so a bundle
+  carries no API key. Webhooks are verified before a function runs, every
+  route invocation is rate-limited and audited, and publishing is one
+  versioned step.
+- **The surface is constrained.** An app reaches data only through the SDK
+  hooks and the function context. Each function declares its
+  [capabilities](/guide/build/sdk/functions#capabilities) in `oxy-app.json`,
+  every capability fails closed, and `oxyc publish` refuses a function that
+  calls one it did not declare. A bounded surface is what makes apps written
+  quickly, including by coding agents, reviewable and safe to ship.
+- **Data written by apps feeds the model.** Facts an app records land in
+  Airhouse in the app's own schema, where they can be modeled as measures.
+  The work done in an app becomes part of what the World Model can explain
+  and control.
+
+The result is that the marginal cost of an app falls with each one built.
+The infrastructure under the second app is the same as under the first, and
+only the composition and the customer-specific logic change.
+
+## What's in Gateway
+
+<CardGroup cols={2}>
+  <Card title="Custom Apps" icon="window-maximize" href="/guide/build/custom-apps">
+    Operating software built on the World Model, hosted by Oxygen
+  </Card>
+  <Card title="Build with the SDK" icon="js" href="/guide/build/sdk">
+    Scaffold, query, and publish a React app
+  </Card>
+  <Card title="Agents" icon="robot" href="/guide/build/agents">
+    Multi-step agents grounded in the World Model
+  </Card>
+  <Card title="Automations" icon="gears" href="/guide/build/automations">
+    Multi-step workflows that load data, call APIs, and run agents
+  </Card>
+</CardGroup>

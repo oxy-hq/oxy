@@ -26,8 +26,7 @@ into the platform. An app has three parts:
 
 - **Built on the World Model.** Apps inherit the business model rather than
   rebuilding it: the same metric definitions, the drivers behind each metric,
-  and the agents that explain them. The World Model interface for apps is in
-  preview.
+  and the agents that explain them.
 - **Real applications, not just dashboards.** Apps record what happens in the
   business, from completed checklists to bookings and uploaded files, and that
   data becomes part of what the World Model can measure.
@@ -39,9 +38,11 @@ into the platform. An app has three parts:
 
 ## Where it fits
 
-Custom apps are the top layer of Oxygen. [Data Infrastructure](/guide/build/data-infrastructure)
-gets data in, the [World Model](/guide/build/world-model) defines what it
-means, and apps and [agents](/guide/build/agents) put it to work. Because apps
+Custom apps are part of [Gateway](/guide/build/gateway), the top layer of
+Oxygen, alongside [agents](/guide/build/agents) and
+[automations](/guide/build/automations). [Pylon](/guide/build/data-infrastructure)
+gets data in, [Matrix](/guide/build/world-model), the World Model, defines
+what it means, and Gateway is where apps are built on it. Because apps
 write their facts into Airhouse, the work done in an app feeds the same
 metrics that measure it.
 

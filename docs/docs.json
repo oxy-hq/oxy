@@ -72,7 +72,7 @@
             ]
           },
           {
-            "group": "Data Infrastructure",
+            "group": "Pylon · Data Infrastructure",
             "pages": [
               "build/data-infrastructure/index",
               "build/data-infrastructure/airhouse",
@@ -88,7 +88,7 @@
             ]
           },
           {
-            "group": "World Model",
+            "group": "Matrix · World Model",
             "pages": [
               "build/world-model/index",
               {
@@ -128,32 +128,38 @@
             ]
           },
           {
-            "group": "Agentic Intelligence",
+            "group": "Gateway · Software Factory",
             "pages": [
-              "build/agents/index",
-              "build/agents/pipeline",
-              "build/agents/provide-context",
-              "build/test-evaluate/index",
-              "build/test-evaluate/testing"
-            ]
-          },
-          {
-            "group": "Custom Apps",
-            "pages": [
-              "build/custom-apps/index",
-              "build/sdk/index",
-              "build/sdk/hooks",
-              "build/sdk/world-model",
-              "build/sdk/functions"
-            ]
-          },
-          {
-            "group": "Automations",
-            "pages": [
-              "build/automations/index",
-              "build/automations/task-types",
-              "build/automations/loops",
-              "build/automations/variables"
+              "build/gateway/index",
+              {
+                "group": "Custom Apps",
+                "pages": [
+                  "build/custom-apps/index",
+                  "build/sdk/index",
+                  "build/sdk/hooks",
+                  "build/sdk/world-model",
+                  "build/sdk/functions"
+                ]
+              },
+              {
+                "group": "Agents",
+                "pages": [
+                  "build/agents/index",
+                  "build/agents/pipeline",
+                  "build/agents/provide-context",
+                  "build/test-evaluate/index",
+                  "build/test-evaluate/testing"
+                ]
+              },
+              {
+                "group": "Automations",
+                "pages": [
+                  "build/automations/index",
+                  "build/automations/task-types",
+                  "build/automations/loops",
+                  "build/automations/variables"
+                ]
+              }
             ]
           },
           {
