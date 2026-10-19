@@ -121,9 +121,16 @@ const MINIMAL_CONFIG = "databases: []\nmodels: []\n";
 
 // ── data placement in oxy-app.json ──────────────────────────────────────────
 
-/** An app directory: `oxy-app.json` from `manifest`, plus any other files. */
-function app(manifest: unknown, files: Record<string, string> = {}): string {
-  return workspace({ "oxy-app.json": JSON.stringify(manifest), ...files });
+/**
+ * An app directory: `oxy-app.json` from `manifest`, plus any other files.
+ * `schemaVersion: 2` is filled in — the schema requires it, and these cases
+ * are about what sits beside it.
+ */
+function app(manifest: Record<string, unknown>, files: Record<string, string> = {}): string {
+  return workspace({
+    "oxy-app.json": JSON.stringify({ schemaVersion: 2, ...manifest }),
+    ...files
+  });
 }
 
 const errorsOf = (issues: PlacementIssue[]) => issues.filter((i) => i.level === "error");
@@ -530,6 +537,7 @@ describe("ctx.secrets.set used as state", () => {
 describe("oxyc validate on an oxy-app.json", () => {
   const BAD_MIGRATION = {
     "oxy-app.json": JSON.stringify({
+      schemaVersion: 2,
       slug: "store-ops",
       airhouseMigrations: { dir: "airhouse-migrations" }
     }),
@@ -762,6 +770,13 @@ describe("schemaFor", () => {
   it("ignores YAML it has no schema for", () => {
     expect(schemaFor("docker-compose.yml")).toBeUndefined();
     expect(schemaFor("semantics/views/orders.view.yml")).toBeUndefined();
+  });
+
+  /** The manifest's schema is the SDK's, compiled in — named so the walk and `--file` treat it like the rest. */
+  it("names the SDK's schema for oxy-app.json, in any directory", () => {
+    expect(schemaFor("oxy-app.json")).toBe("oxy-app.schema.json");
+    expect(schemaFor("apps/acme/sales/oxy-app.json")).toBe("oxy-app.schema.json");
+    expect(schemaFor("not-oxy-app.json")).toBeUndefined();
   });
 
   /** `config.yml` is matched as a whole name, in any directory. */

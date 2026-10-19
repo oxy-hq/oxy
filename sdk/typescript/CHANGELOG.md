@@ -5,6 +5,38 @@ All notable changes to the Oxy TypeScript SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.21.0] - 2026-10-17
+
+### Added
+
+- **`oxy-app.json` has one definition, and it is this package's.** The
+  `OxyAppManifest` type now carries every field the server honours —
+  `rateLimitPerMinute`, `fetch.maxResponseBytes`, the per-function `storage`
+  capability, `description`, `icon`, `art`, `status`, `build`, `environments`
+  and `$schema` — each documented with what the platform does with it, and a
+  JSON Schema is generated from it: `schema/oxy-app.schema.json`, shipped in
+  the package (`https://unpkg.com/@oxy-hq/sdk/schema/oxy-app.schema.json` for
+  a manifest's `$schema`) and pinned by a test that regenerates it.
+- **`@oxy-hq/sdk/manifest`** — a pure-TypeScript entry (no React, no DOM)
+  with the manifest types, the schema (`OXY_APP_SCHEMA`), the two server name
+  rules (`isValidSlug`, `isValidFunctionName`, their patterns and sentences),
+  `validateOxyAppManifest(raw)` — a dependency-free validator over the schema
+  plus the rules it cannot say, returning `{ level, path, message }` issues in
+  one wording — and the notification catalogue's checks. `oxyc validate`,
+  `oxyc publish`, `@oxy-hq/vite-plugin` and this SDK's own loader all run it;
+  the two packages that carried byte copies of `notification-catalog.ts` now
+  import it.
+
+### Changed
+
+- The loader (`loadCustomAppManifest`) validates against the schema instead of
+  its own hand-written checks. The same manifests are refused, in the same
+  sentences (`schemaVersion must be 2 …`, `` `slug` is required … ``,
+  `function "x" must enable at least one of route/schedule/airwayStep/webhook`);
+  a field the schema does not know is now logged as a warning rather than
+  silently dropped, and the resolved `manifest` keeps every field the file
+  holds.
+
 ## [2.20.0] - 2026-10-17
 
 ### Added

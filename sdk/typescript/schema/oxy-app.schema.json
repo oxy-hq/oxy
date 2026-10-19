@@ -1,0 +1,639 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://unpkg.com/@oxy-hq/sdk/schema/oxy-app.schema.json",
+  "title": "oxy-app.json",
+  "description": "The manifest of an Oxy custom app. Generated from @oxy-hq/sdk's OxyAppManifest type by scripts/gen-manifest-schema.mjs — edit the type, not this file.",
+  "$ref": "#/definitions/OxyAppManifest",
+  "definitions": {
+    "OxyAppManifest": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string",
+          "description": "The schema this file is written against, for editor completion and validation — `https://unpkg.com/@oxy-hq/sdk/schema/oxy-app.schema.json`, or the installed copy at `./node_modules/@oxy-hq/sdk/schema/oxy-app.schema.json`. Ignored by the platform."
+        },
+        "schemaVersion": {
+          "type": "number",
+          "const": 2,
+          "description": "Must be 2. v1 manifests are no longer supported."
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional display name. Informational: the name an app shows is its registry row's, set when the row is created (the admin **New app** dialog, or `oxyc publish --name` on a first publish)."
+        },
+        "slug": {
+          "type": "string",
+          "description": "URL slug. **Required.** The canonical source of truth — the dialog locks the slug field to this value, and `OXY_APP_BASE_PATH=/customer-apps/<org>/<slug>/` baked into the build must match.\n\n1–63 lowercase letters, digits and single hyphens, with no leading, trailing or double hyphen and no underscore (`SLUG_PATTERN` in `manifest-rules.ts`, the server's `is_valid_slug`): it becomes the app's served path, a repo path segment and its OLTP schema name.",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "description": {
+          "type": "string",
+          "description": "One-line purpose, shown on the launcher card under the name."
+        },
+        "icon": {
+          "type": "string",
+          "description": "Shell-rail icon — a path relative to the bundle root (`icon.svg`), served through the app's own public URL. A small square mark; the rail falls back to a name-initial tile when absent. The Vite plugin copies a file named here into the build output when it sits beside the manifest."
+        },
+        "art": {
+          "type": "string",
+          "description": "Card art for the launcher — a path relative to the bundle root (`card.svg`), served through the app's own public URL. Copied into the build output like `icon`."
+        },
+        "status": {
+          "type": "string",
+          "description": "Status line shown on the launcher card (`\"23 stores · live\"`). A plain display string, static for now."
+        },
+        "orgSlug": {
+          "type": "string",
+          "description": "Optional org slug. Prefills the dialog's org picker; operator can still override. Carries no security weight — the actual access check is on the linked row.\n\nIt is also what lets `pnpm dev` and `oxyc publish` find the app without `--org` / `OXY_ORG`: `create-oxy-app --org <slug>` writes it."
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Optional project (workspace) uuid the bundle expects to read from. Used by `useQuery` to construct the `/api/projects/:id/query` URL."
+        },
+        "build": {
+          "$ref": "#/definitions/OxyAppBuildManifest",
+          "description": "How `oxyc publish` builds the bundle. Each defaults when absent or blank: `install` to `pnpm install`, `command` to `pnpm build`, `outDir` to `out` — the directory the Vite plugin builds into. The plugin reads `outDir` too, so one setting here moves both."
+        },
+        "environments": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/OxyAppEnvironmentManifest"
+          },
+          "description": "Per-environment targets for `oxyc --env <name>`: the deployment URL a named environment publishes to, when it is not one of the built-in `dev` / `staging` / `production`. Read by `oxyc` only."
+        },
+        "functions": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/OxyAppFunctionManifest"
+          },
+          "description": "Optional map of Oxy Functions (server-side handlers) shipped in the bundle's `functions/` dir, keyed by function name — `^[a-z][a-z0-9-]{0,63}$` (`FUNCTION_NAME_PATTERN`, the server's `is_valid_function_name`), because a key becomes `functions/<name>.js`. Omit for a pure static bundle.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          }
+        },
+        "migrations": {
+          "$ref": "#/definitions/OxyAppMigrationsManifest",
+          "description": "Schema migrations for the app's OLTP store (`ctx.oltp`) that ship WITH this bundle and run on promote.\n\n`dir` is a directory inside the built bundle holding numbered `.sql` files. The platform runs them in lexical order, **once each, ever**, inside a transaction, as the app's own writer role, and records each one.\n\nWhat changes for the author: you no longer write defensive `IF NOT EXISTS` / idempotent upserts, because re-running is a no-op by construction rather than by your care. And you **may not edit, rename or copy a migration that has already run** — all three fail the promote by name, and the fix is always a new file.\n\nThe `.sql` files are ordinary bundle files, fetchable over the app's own host: put no secrets in them."
+        },
+        "airhouseMigrations": {
+          "$ref": "#/definitions/OxyAppMigrationsManifest",
+          "description": "Tables for the app's FACTS, in its Airhouse schema `app_<writer>`: a directory of numbered `.sql` files run once each, at promote, with the same ledger rules as `migrations` (never edit, rename or copy one that ran).\n\nEvery object must be named `app_<writer>.<name>`. Airhouse is DuckLake, so a file declaring a PRIMARY KEY, UNIQUE, an index or a foreign key is refused at publish — a table carrying one fails and leaves the writer inert."
+        },
+        "nonProduction": {
+          "$ref": "#/definitions/OxyAppNonProductionManifest",
+          "description": "What the app's non-production environments (staging) write instead of production. Read by the platform at publish and on every staging call.\n\n`destinations` maps a database a function writes in production to the one staging writes instead. In staging, `ctx.warehouse.insert` / `exec` / `upsert` and `ctx.tx` naming `clickhouse` run against `clickhouse_staging`; reads (`ctx.warehouse.query`) stay on production. The mapped database must pass the same checks production's does: listed in the function's `destinations` and, unless it is Airhouse, named in its `customerWarehouseWrites` with a reason. A staging write to a database with no mapping is **held** — not performed, and listed in the invocation's `app.staging.held` audit row.\n\nPublish refuses a mapping onto the same database, onto the workspace's own Airhouse (`airhouse_managed` is production's tenant), DuckDB to DuckDB, a chain (a target that is itself a key here), or a target whose database resolves to the same host and user as any production database mapped here — a heuristic, not proof; the credential behind the staging entry is yours to keep separate, with no write grant on production. The platform repeats the check on every staging write, refusing it when a secret does not resolve, and holds a statement that names production's database, or writes through another database than the mapped one's.\n\n`ctx.airhouse` needs no mapping: staging's appends land in the app's sibling schema, `app_<writer>__staging`, whose tables come from the same `airhouseMigrations`.\n\n```jsonc \"nonProduction\": { \"destinations\": { \"clickhouse\": \"clickhouse_staging\" } } ```"
+        },
+        "ask": {
+          "$ref": "#/definitions/OxyAppAskManifest",
+          "description": "Optional Ask Oxygen binding (agent ref + composer chips). The platform's registered copy is authoritative (surfaced by shell-context); this local copy is the dev-time fallback so the shell's Ask dock works before the app is registered."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/OxyAppEnvDeclaration"
+          },
+          "description": "The secrets this app expects, keyed by env-var name — the app's `.env.example`, declared rather than written in a README.\n\nThese are the keys your functions read as `ctx.env.KEY`. Declaring one puts it in the app's Secrets surface (staff console → app → Secrets, and the workspace's own settings) as a row to fill in, so a fresh deploy says what is still missing instead of failing at the first invocation. Every function's `webhook.secretVar` is folded in automatically — no need to repeat it here.\n\n**Names only, never values.** A manifest ships inside the bundle and is fetchable over the app's own host; putting a secret in one publishes it. Values are set out-of-band on the Secrets surface, or by `ctx.secrets.set` from a function holding the `secrets.write` capability.\n\nApp-level rather than per-function, because a secret is app-scoped by construction: two functions sharing `STRIPE_API_KEY` read the same value, so it can only be described once.\n\n```jsonc \"env\": {   \"STRIPE_API_KEY\":    { \"required\": true, \"description\": \"Restricted key, Dashboard → Developers\" },   \"SLACK_WEBHOOK_URL\": { \"description\": \"Optional ops channel\" },   \"POKEHOUSE_API_KEY\": { \"shared\": true }  // staging reads production's value } ```\n\nRead by the platform at **publish time** (like  {@link  OxyAppStorageManifest } ), so the block is documented here but not round-tripped through the dev-time manifest fetch."
+        },
+        "storage": {
+          "$ref": "#/definitions/OxyAppStorageManifest",
+          "description": "Optional app-level storage policy. Distinct from the per-function `storage: { read, write }` capability: those gate what one function may call, while this governs the app's whole asset silo, which every function shares."
+        },
+        "performance": {
+          "$ref": "#/definitions/OxyAppPerformanceManifest",
+          "description": "Browser-runtime performance opt-outs. Both features below are **on by default** — an app that says nothing gets them — so this block exists only to turn one off.\n\nRead by the platform at **publish time** (like  {@link  OxyAppStorageManifest } ) rather than by this loader, so the field is documented here but not round-tripped through the dev-time manifest fetch."
+        },
+        "analytics": {
+          "type": "boolean",
+          "description": "Opt out of the platform's automatic, zero-config usage instrumentation: SPA pageviews, Core Web Vitals, engagement time, and uncaught-error counts, posted to `<base>/__oxy/beacon` by the runtime Oxy injects into every served page. `false` silences the **client** runtime only — the server still records one view row per HTML navigation (that floor is not opt-out-able), so the Activity tab never goes dark, it just loses the in-page detail.\n\nDistinct from `useTrackEvent` (your own named events): those are additive and always on. This governs only the events the platform sends on your behalf.\n\nHonored at publish time (see  {@link  performance }  for why it is not round-tripped here). Default: `true`."
+        },
+        "notifications": {
+          "$ref": "#/definitions/OxyAppNotificationsManifest",
+          "description": "The notification catalogue: how each kind the app's functions send (`functions.<name>.notify.kinds`) is labelled, grouped and ranked — the tree a phone groups notifications by, and the one people mute in. Each kind sits in a category path of up to 3 segments (`operations/food-safety`; none → `general`), has a `level` (`passive` | `active` | `time_sensitive` | `critical`) and up to 3 `actions`.\n\nWhich kinds a function may send is still its own `notify.kinds`; a kind it sends that is missing here gets the defaults (category `general`, the kind humanized, `critical` when marked so). Publish refuses a malformed or unknown category, a bad level, more than 3 actions, an action naming a function the app does not declare, and an `oxy.` kind; `oxyc validate` and the Vite plugin say so first.\n\nRead by the platform at **publish time**, so it is documented here but not round-tripped through the dev-time manifest fetch."
+        }
+      },
+      "required": ["schemaVersion", "slug"],
+      "additionalProperties": false,
+      "description": "Wire shape of `oxy-app.json` (v2 only)."
+    },
+    "OxyAppBuildManifest": {
+      "type": "object",
+      "properties": {
+        "install": {
+          "type": "string",
+          "description": "The install step. Default `pnpm install`."
+        },
+        "command": {
+          "type": "string",
+          "description": "The build step, run with `OXY_APP_BASE_PATH` set. Default `pnpm build`."
+        },
+        "outDir": {
+          "type": "string",
+          "description": "The directory the build writes, relative to the app. Default `out`."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The `build` block of `oxy-app.json`: what `oxyc publish` runs."
+    },
+    "OxyAppEnvironmentManifest": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "The deployment URL, e.g. `https://acme.oxygen-hq.com`."
+        }
+      },
+      "additionalProperties": false,
+      "description": "One entry of the `environments` block: where a named `--env` publishes."
+    },
+    "OxyAppFunctionManifest": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "type": "string",
+          "description": "Source entry, relative to the app dir. Default: `functions/<name>.ts`.",
+          "minLength": 1
+        },
+        "schedule": {
+          "type": "string",
+          "description": "Cron expression. When set, the function fires on this schedule.",
+          "minLength": 1
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IANA timezone for `schedule`. Default: `UTC`."
+        },
+        "route": {
+          "type": "boolean",
+          "description": "Expose `POST .../fn/<name>` (called via `useFunction`). Default: true."
+        },
+        "airwayStep": {
+          "$ref": "#/definitions/OxyAppAirwayStepManifest",
+          "description": "Wire the function in as an Airway pipeline transform step."
+        },
+        "webhook": {
+          "$ref": "#/definitions/OxyAppWebhookManifest",
+          "description": "Receive an unauthenticated POST from a third party at `POST /api/webhooks/apps/<org>/<app>/<name>`.\n\nThe PLATFORM verifies every request — HMAC-SHA256 over the raw body, in constant time — before the function is enqueued, so app code never sees an unverified request. Omit the block and that endpoint answers 404, as if it did not exist."
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "description": "Wall-clock timeout in seconds. Default 30, max 300.",
+          "minimum": 1,
+          "maximum": 300
+        },
+        "rateLimitPerMinute": {
+          "type": "integer",
+          "description": "Route invocations per minute the host admits for this function before answering 429, per (build, function, caller). Default 60 — the server's `rate_limit::DEFAULT_RATE_PER_MIN`. Raise it for a function a busy UI polls; lower it for one that fans out to a paid API.",
+          "minimum": 1
+        },
+        "fetch": {
+          "$ref": "#/definitions/OxyAppFetchManifest",
+          "description": "`ctx.fetch` limits for this function.\n\nThe host reads a response fully into memory before handing it to the isolate (×1.33 when base64), on a process shared by every app on the instance — so the 10 MiB default ceiling is raised per function, here, never globally."
+        },
+        "check": {
+          "type": "boolean",
+          "description": "Mark this function as a check. `oxyc checks run` runs it; with a `schedule` the platform runs it continuously and a failure pages. A check fails when it throws, times out, or returns `{ ok: false }`. Checks must not have customer-visible side effects. Outside production only a function its build marks `check: true` may run at all."
+        },
+        "cache": {
+          "$ref": "#/definitions/OxyAppCacheManifest",
+          "description": "Opt-in result caching for route invocations. Omit (the default) to never cache — the safe choice for a side-effectful function (writes, external POSTs, ELT). Set `ttlSeconds` ONLY for read-only / idempotent functions: results are then cached per (build, function, user, request body) for that window, and a repeat `useFunction().invoke(sameBody)` returns the cached result without re-running. A `?refresh` query bypasses it."
+        },
+        "destinations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Databases this function's `ctx.warehouse.*` writes may target. Omit (or leave empty) and the function may NOT write to any database — writes are fail-closed and rejected before any connection is opened. Declare a destination here ONLY for a function that legitimately writes to it; a read-only function omits it. This scopes writes away from the project's source warehouse.\n\nA customer warehouse (anything but `airhouse` / `airhouse_managed`) is read-only: listing it here is not enough, it must also appear in `customerWarehouseWrites` with a reason."
+        },
+        "customerWarehouseWrites": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Customer warehouses this function writes to anyway, each with the reason — the exception to \"customer warehouses are read-only\". Every key must also be in `destinations`; a write to a customer warehouse not named here is refused. Prefer moving the data: facts to `airhouse`, records to `oltp`.\n\n```json \"customerWarehouseWrites\": {   \"clickhouse\": \"Journal entries stay beside the legacy ClickHouse facts until QuickBooks lands in Airhouse\" } ```"
+        },
+        "secrets": {
+          "$ref": "#/definitions/OxyAppSecretsCapability",
+          "description": "Capability to write app-scoped secrets via `ctx.secrets.set` (fail-closed: omit → writes rejected). Only the app's own `apps/<app-id>/` namespace is writable. Declare for a function that rotates a credential — e.g. a scheduled token-refresher that writes the rotated token back to Oxy Secrets. Secrets are not a state store: a cursor or counter is a record for `oltp`."
+        },
+        "email": {
+          "$ref": "#/definitions/OxyAppEmailCapability",
+          "description": "Capability to send email via `ctx.email.send` (fail-closed: omit → the host rejects `ctx.email.send` before any provider call). Declare for a function that emails the app's users — e.g. a `notify` route that sends a welcome message, or a scheduled digest. The sender mailbox is platform-controlled; a function may set `replyTo` but never `from`."
+        },
+        "notify": {
+          "$ref": "#/definitions/OxyAppNotifyCapability",
+          "description": "Capability for `ctx.notify` — tell people in this org something, by user, role at a location, or team (fail-closed: omit → every call rejected). Declare each `kind` the function sends: a kind is what a person mutes, and one marked `critical: true` (a safety alert) ignores their mutes. A call with an undeclared kind is refused. How a kind is labelled, grouped and ranked is the app-level  {@link  OxyAppManifest.notifications }  catalogue.\n\n```json \"notify\": { \"kinds\": { \"list_overdue\": {}, \"safety_alert\": { \"critical\": true } } } ```"
+        },
+        "storage": {
+          "$ref": "#/definitions/OxyAppStorageCapability",
+          "description": "Capability for `ctx.storage` (fail-closed: omit → every storage op rejected). `read` permits `getDownloadUrl` / `list` / `get`; `write` permits `getUploadUrl` / `put`. Scoped to the app's own `customer-app-storage/<app-id>/` silo. Declare for a function that accepts uploads or serves stored files. The silo's retention is the app-level  {@link  OxyAppManifest.storage }  block."
+        },
+        "org": {
+          "$ref": "#/definitions/OxyAppOrgCapability",
+          "description": "Capability for `ctx.org.people()` — the org's people directory, READ-ONLY (fail-closed: omit → the call is rejected before any query).\n\nDeclare it for a function that has to name a person: an assignee, a roster entry, who submitted something. It answers with a display name and a role.\n\nThree things it deliberately is not, so nobody plans around them: it returns **no email and no phone** — naming a colleague is a different need from contacting them off-platform (to reach someone, `ctx.notify` them by id); and it returns **no location**, which the platform does not hold for a member. It does include frontline workers granted to this app, tagged `kind: \"frontline\"`.\n\nOne flag, not `read`/`write`: there is no write. Editing the directory would put tenant membership behind an app's manifest."
+        },
+        "platform": {
+          "$ref": "#/definitions/OxyAppPlatformCapability",
+          "description": "Capability for `ctx.platform.facts()` — ids and counts about every org on the deployment, for an internal app (fail-closed: omit → the call is rejected). Necessary, not sufficient: the host also requires the app's org to be one of the deployment's internal orgs (`OXY_INTERNAL_ORGS`), so declaring it in any other org's app opens nothing."
+        },
+        "oltp": {
+          "$ref": "#/definitions/OxyAppEnabledCapability",
+          "description": "Capability for `ctx.oltp` — read/write the app's OWN per-org OLTP schema on the managed Postgres tenant (fail-closed: omit → every `ctx.oltp` call rejected). A pure GATE: the target schema is derived from the app's own slug host-side (`oltp-bookings` → `app_oltp_bookings`), never named here, so a manifest cannot point `ctx.oltp` at another app's schema. The resolved role has DML rights on that one schema and nothing else — reaching neither another app's data nor the analyst-visible `raw_*` schemas. The store must be provisioned first (ask whoever operates the org).\n\nNOTE: this shape is `{ enabled }`, not the earlier `{ writer }` — an app had no business naming its own writer (that was the cross-app hole). A manifest still carrying `\"oltp\": { \"writer\": \"…\" }` deserializes to `enabled: undefined` → **disabled**, and `ctx.oltp` then reports the capability as missing. Switch it to `{ \"enabled\": true }`."
+        },
+        "airhouse": {
+          "$ref": "#/definitions/OxyAppEnabledCapability",
+          "description": "Capability for `ctx.airhouse` — append the app's own FACTS (what happened, never edited) to its schema in the workspace's Airhouse (fail-closed: omit → every `ctx.airhouse` call rejected). A pure GATE like `oltp`: the schema is derived from the app's slug (`store-ops` → `app_store_ops`), never named here. Writes run as the app, whoever invoked the function, so a scheduled run can write. Tables come from `airhouseMigrations`."
+        },
+        "retries": {
+          "$ref": "#/definitions/OxyAppRetriesManifest",
+          "description": "Retry policy for **background** runs (a `schedule` fire or a manual job trigger). Omit → a job run is attempted once. Route (HTTP) invocations are request-scoped and never retried. `maxAttempts` counts the first try (`maxAttempts: 3` = up to 2 retries); backoff is exponential (doubling) between `minTimeoutMs` and `maxTimeoutMs`. Maps to the durable queue's retry policy — a transient failure re-runs the whole isolate."
+        },
+        "inputExample": {
+          "description": "Example input params for the function — a sample JSON body the admin \"Run now\" surface prefills so an operator knows what to pass (the function reads it as its `req` body, same as a route invocation). Advisory only; not enforced at runtime."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Declaration of a single Oxy Function shipped in the bundle's `functions/` dir. See `internal-docs/customer-apps-functions.md`.\n\nAll fields optional except that at least one invocation surface (`route`, `schedule`, `airwayStep` or `webhook`) must be active. Absent = `route: true` (HTTP-invocable via `useFunction`)."
+    },
+    "OxyAppAirwayStepManifest": {
+      "type": "object",
+      "properties": {
+        "pipeline": {
+          "type": "string",
+          "description": "The `.airway.yml` pipeline name."
+        },
+        "resource": {
+          "type": "string",
+          "description": "The resource (source table) within it."
+        }
+      },
+      "required": ["pipeline", "resource"],
+      "additionalProperties": false,
+      "description": "`functions.<name>.airwayStep`: the pipeline and resource the step transforms."
+    },
+    "OxyAppWebhookManifest": {
+      "type": "object",
+      "properties": {
+        "secretVar": {
+          "type": "string",
+          "description": "App-secret key holding the signing key(s) — the same `apps/<app-id>/` namespace `ctx.env` reads. The manifest names the secret, never holds it.\n\n**Comma-separated for rotation.** Providers that keep two live signing keys (Uber's `BASIC_HMAC` does) sign with either during a rotation; any match passes, so adopting a new key does not drop the events still signed with the old one.",
+          "pattern": "\\S"
+        },
+        "signatureHeader": {
+          "type": "string",
+          "description": "Header carrying the signature, e.g. `x-uber-signature`.",
+          "pattern": "\\S"
+        },
+        "encoding": {
+          "type": "string",
+          "enum": ["hex", "base64"],
+          "description": "How the digest is encoded. Default `hex`."
+        }
+      },
+      "required": ["secretVar", "signatureHeader"],
+      "additionalProperties": false,
+      "description": "`functions.<name>.webhook`: how the platform verifies a third party's POST."
+    },
+    "OxyAppFetchManifest": {
+      "type": "object",
+      "properties": {
+        "maxResponseBytes": {
+          "type": "integer",
+          "description": "Raise this function's `ctx.fetch` response ceiling above the 10 MiB default, in bytes. Opt-in per function rather than a global setting, because the cap protects a SHARED process: one app needing a large document should not raise the ceiling for every app beside it.",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "`functions.<name>.fetch`: per-function `ctx.fetch` limits."
+    },
+    "OxyAppCacheManifest": {
+      "type": "object",
+      "properties": {
+        "ttlSeconds": {
+          "type": "integer",
+          "description": "How long a route invocation's result is served from cache, in seconds. Only for read-only / idempotent functions.",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "`functions.<name>.cache`: result caching for route invocations."
+    },
+    "OxyAppSecretsCapability": {
+      "type": "object",
+      "properties": {
+        "write": {
+          "type": "boolean",
+          "description": "Allow `ctx.secrets.set` on the app's own namespace."
+        }
+      },
+      "additionalProperties": false,
+      "description": "`functions.<name>.secrets`."
+    },
+    "OxyAppEmailCapability": {
+      "type": "object",
+      "properties": {
+        "send": {
+          "type": "boolean",
+          "description": "Allow `ctx.email.send`."
+        }
+      },
+      "additionalProperties": false,
+      "description": "`functions.<name>.email`."
+    },
+    "OxyAppNotifyCapability": {
+      "type": "object",
+      "properties": {
+        "kinds": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/OxyAppNotifyKindCapability"
+          },
+          "description": "Each kind the function may send, mapped to whether it ignores mutes."
+        }
+      },
+      "additionalProperties": false,
+      "description": "`functions.<name>.notify`."
+    },
+    "OxyAppNotifyKindCapability": {
+      "type": "object",
+      "properties": {
+        "critical": {
+          "type": "boolean",
+          "description": "A safety alert: delivered past a person's mutes."
+        }
+      },
+      "additionalProperties": false,
+      "description": "One declared `notify.kinds` entry."
+    },
+    "OxyAppStorageCapability": {
+      "type": "object",
+      "properties": {
+        "read": {
+          "type": "boolean",
+          "description": "Allow `getDownloadUrl`, `list` and `get`."
+        },
+        "write": {
+          "type": "boolean",
+          "description": "Allow `getUploadUrl` and `put`."
+        }
+      },
+      "additionalProperties": false,
+      "description": "`functions.<name>.storage`."
+    },
+    "OxyAppOrgCapability": {
+      "type": "object",
+      "properties": {
+        "read": {
+          "type": "boolean",
+          "description": "Allow `ctx.org.people()`."
+        }
+      },
+      "additionalProperties": false,
+      "description": "`functions.<name>.org`."
+    },
+    "OxyAppPlatformCapability": {
+      "type": "object",
+      "properties": {
+        "facts": {
+          "type": "boolean",
+          "description": "Allow `ctx.platform.facts()` (internal orgs only)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "`functions.<name>.platform`."
+    },
+    "OxyAppEnabledCapability": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Open the capability. The target schema is derived from the app's slug."
+        }
+      },
+      "additionalProperties": false,
+      "description": "`functions.<name>.oltp` and `functions.<name>.airhouse`: a pure gate."
+    },
+    "OxyAppRetriesManifest": {
+      "type": "object",
+      "properties": {
+        "maxAttempts": {
+          "type": "integer",
+          "description": "Attempts in total, the first try included.",
+          "minimum": 1
+        },
+        "minTimeoutMs": {
+          "type": "integer",
+          "description": "The first backoff, in milliseconds.",
+          "minimum": 1
+        },
+        "maxTimeoutMs": {
+          "type": "integer",
+          "description": "The backoff ceiling, in milliseconds.",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "`functions.<name>.retries`: the durable queue's retry policy for background runs."
+    },
+    "OxyAppMigrationsManifest": {
+      "type": "object",
+      "properties": {
+        "dir": {
+          "type": "string",
+          "description": "Directory inside the built bundle, relative to its root.",
+          "minLength": 1
+        }
+      },
+      "required": ["dir"],
+      "additionalProperties": false,
+      "description": "The `migrations` / `airhouseMigrations` block: a directory of numbered `.sql` files."
+    },
+    "OxyAppNonProductionManifest": {
+      "type": "object",
+      "properties": {
+        "destinations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Production database → the database staging writes instead."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The `nonProduction` block of `oxy-app.json`."
+    },
+    "OxyAppAskManifest": {
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "string",
+          "description": "The agent the Ask dock routes to, as a workspace ref."
+        },
+        "suggestedQuestions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Composer chips."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The `ask` block of `oxy-app.json`."
+    },
+    "OxyAppEnvDeclaration": {
+      "type": "object",
+      "properties": {
+        "required": {
+          "type": "boolean",
+          "description": "Flag the key as **Missing** (rather than merely absent) while nothing is stored for it, and count it in the app's missing-secrets badge.\n\nAdvisory, not a gate: a publish is never blocked on an unset key, because the first publish is exactly when nobody could have set one yet.\n\nDefault: `false` — a declaration is documentation first."
+        },
+        "description": {
+          "type": "string",
+          "description": "Shown beside the key on the Secrets surface. Say what it is and where to get one — this is the text that saves someone a Slack message."
+        },
+        "shared": {
+          "type": "boolean",
+          "description": "Outside production (staging), fall back to production's value for this key while the environment holds none of its own. Each environment reads its own secrets (`apps/<id>/<env>/<KEY>`, set on the Secrets surface with the staging option); an unshared key with no staging value reads as\n**unset**, so staging never holds a production credential nobody chose to give it.\n\nFor read-only keys only (an API key staging may use as-is). A publish is refused when a shared key is written by a function (`ctx.secrets.set`) or is a `webhook.secretVar` — those must be set per environment — and `ctx.secrets.set` in staging refuses a key the run read through this fallback.\n\nDefault: `false`."
+        }
+      },
+      "additionalProperties": false,
+      "description": "One declared secret — an entry in the `env` block of `oxy-app.json`."
+    },
+    "OxyAppStorageManifest": {
+      "type": "object",
+      "properties": {
+        "retention": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OxyAppRetentionRule"
+          },
+          "description": "Retention rules for the asset silo. **Longest matching prefix wins**; a key matching no rule is kept forever.\n\nExpiry is enforced by S3 lifecycle rules on an object tag, so it is approximate (evaluated daily, not on the hour) and applies from the time an object was written. Editing a rule does not retag assets already stored — new writes pick up the new class.\n\n```jsonc \"storage\": {   \"retention\": [     { \"prefix\": \"tmp/\",       \"expireAfter\": \"1d\"  },     { \"prefix\": \"generated/\", \"expireAfter\": \"90d\" },     { \"prefix\": \"uploads/\",   \"expireAfter\": null  }  // keep forever   ] } ```"
+        }
+      },
+      "additionalProperties": false,
+      "description": "App-level `storage` block in `oxy-app.json`."
+    },
+    "OxyAppRetentionRule": {
+      "type": "object",
+      "properties": {
+        "prefix": {
+          "type": "string",
+          "description": "Key prefix inside your silo, as you write it — `\"tmp/\"`, `\"generated/\"`. The `customer-app-storage/<app_id>/` part is implicit."
+        },
+        "expireAfter": {
+          "type": ["string", "null"],
+          "enum": ["1d", "7d", "30d", "90d", "365d", null],
+          "description": "One of the five supported classes. `null` (or omitted) pins the prefix to \"keep forever\", which is how you protect it from a broader sibling rule.\n\nThe set is closed on purpose — each class is one bucket-wide S3 lifecycle rule, so an arbitrary duration can't be honoured. An unrecognized value drops this rule with a warning: a broader sibling rule then applies to the prefix, else it simply doesn't expire. `validateOxyAppManifest` says so as a warning, never a refusal."
+        }
+      },
+      "required": ["prefix"],
+      "additionalProperties": false,
+      "description": "How long assets under a given prefix are kept."
+    },
+    "OxyAppPerformanceManifest": {
+      "type": "object",
+      "properties": {
+        "serviceWorker": {
+          "type": "boolean",
+          "description": "Opt out of the platform service worker Oxy registers at `<base>/__oxy/sw.js`. It precaches your build's entry assets and serves content-hashed files cache-first, so a repeat load of a published app is near-instant.\n\nSet `false` only if your app ships its own service worker (two workers cannot both control the same scope) or genuinely must never be cached. There is nothing to configure to opt *in* — a normal build is precached automatically, and a bundle that inlines everything into one HTML file simply has nothing to precache, which is fine. Default: `true`."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Browser-runtime performance opt-outs — the `performance` block in `oxy-app.json`."
+    },
+    "OxyAppNotificationsManifest": {
+      "type": "object",
+      "properties": {
+        "categories": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/OxyAppNotificationCategory"
+          }
+        },
+        "kinds": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/OxyAppNotificationKind"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "The app-level `notifications` block: the catalogue that labels, groups and ranks the kinds this app's functions send. Which kinds a function may send is still its own `notify.kinds`; this block only describes them.\n\n```json \"notifications\": {   \"categories\": { \"operations/food-safety\": { \"label\": \"Food safety\" } },   \"kinds\": {     \"temp_alarm\": {       \"category\": \"operations/food-safety\",       \"label\": \"Temperature alarm\",       \"level\": \"critical\",       \"actions\": [{ \"id\": \"ack\", \"label\": \"Acknowledge\", \"function\": \"ack-alarm\" }]     }   } } ```"
+    },
+    "OxyAppNotificationCategory": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "What people see, ≤ 64 characters. Default: the last segment, humanized."
+        },
+        "description": {
+          "type": "string",
+          "description": "≤ 200 characters."
+        }
+      },
+      "additionalProperties": false,
+      "description": "One category, keyed by its path (`\"operations/food-safety\"`)."
+    },
+    "OxyAppNotificationKind": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "description": "A declared category path, a parent of one, or `general` (the default)."
+        },
+        "label": {
+          "type": "string",
+          "description": "What people see, and mute by, ≤ 64 characters. Default: the kind, humanized."
+        },
+        "description": {
+          "type": "string",
+          "description": "≤ 200 characters."
+        },
+        "level": {
+          "$ref": "#/definitions/NotificationLevel",
+          "description": "Default `active`. A function declaring the kind `critical: true` makes it `critical` whatever this says."
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OxyAppNotificationAction"
+          },
+          "description": "At most 3."
+        }
+      },
+      "additionalProperties": false,
+      "description": "One kind in the catalogue, keyed by the kind a function sends."
+    },
+    "NotificationLevel": {
+      "type": "string",
+      "enum": ["passive", "active", "time_sensitive", "critical"],
+      "description": "How hard a notification asks for attention. Only `critical` ignores mutes."
+    },
+    "OxyAppNotificationAction": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique within the kind: 1–32 lowercase letters, digits, `_` or `-` (`ack`, `open`)."
+        },
+        "label": {
+          "type": "string",
+          "description": "The button's text, ≤ 24 characters."
+        },
+        "function": {
+          "type": "string",
+          "description": "A function this app declares. Tapping calls it as the signed-in person with `{ notificationId, action, link }`, then marks the notification read. Absent: the button opens the notification's link."
+        },
+        "destructive": {
+          "type": "boolean",
+          "description": "Shown as a destructive action (red on a phone)."
+        }
+      },
+      "required": ["id", "label"],
+      "additionalProperties": false,
+      "description": "A button on a notification."
+    }
+  }
+}

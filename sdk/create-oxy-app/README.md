@@ -3,11 +3,17 @@
 Scaffold a new Oxy custom app from a curated template:
 
 ```bash
-pnpm create @oxy-hq/oxy-app my-app            # frontend-only (default: vite)
-pnpm create @oxy-hq/oxy-app my-app -t functions   # + Oxy Functions and emails
+pnpm create @oxy-hq/oxy-app my-app --org acme             # frontend-only (default: vite)
+pnpm create @oxy-hq/oxy-app my-app -t functions --org acme   # + Oxy Functions and emails
 ```
 
 Templates: `vite`, `functions`, `dashboard`, `single-store`.
+
+`--org <slug>` writes `orgSlug` into the scaffolded `oxy-app.json`, so
+`pnpm dev` resolves the app's project and `oxyc publish` finds the org without
+`--org` / `OXY_ORG`. Every template manifest carries `$schema` pointing at the
+SDK's generated `oxy-app.schema.json`; the `functions` template also ships a
+`pnpm test` (vitest + `@oxy-hq/sdk/testing`) for its function.
 
 ## Two things to know before changing `templates/`
 

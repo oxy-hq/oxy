@@ -7,7 +7,15 @@
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    // The sdk/ directory, not `./src`: `@oxy-hq/sdk/manifest` is read FROM
+    // SOURCE through `paths` below (CI typechecks every sdk package in
+    // parallel before anything is built, so a resolution through the SDK's
+    // `dist` would race its own producer), and TypeScript refuses an input
+    // outside the root (TS6059) even with `noEmit`. Nothing is emitted by
+    // `tsc` here; tsdown builds `dist/`. The same mapping is in
+    // `tsdown.config.ts` (bundled in — the published plugin carries no SDK
+    // dependency) and `vitest.config.ts`.
+    "rootDir": "..",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -18,7 +26,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@oxy-hq/sdk/manifest": ["../typescript/src/manifest.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

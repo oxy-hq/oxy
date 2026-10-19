@@ -3,18 +3,21 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// `oxyApp()` handles everything Oxy-specific: it validates `oxy-app.json`,
-// copies it into the build output, proxies `/api` to your local oxy server in
-// dev, and resolves the base path the bundle is served under.
+// `oxyApp()` handles everything Oxy-specific: it validates `oxy-app.json`
+// against the SDK's schema, copies it (and the icon / art it names) into the
+// build output, proxies `/api` to your local oxy server in dev, and resolves
+// the base path and output directory the bundle is served from.
+//
+// The output directory is `oxy-app.json`'s `build.outDir` (default `out`,
+// which is also what `oxyc publish` ships) — set it there, not here, so the
+// two cannot disagree.
 //
 // The base path resolves from (in order):
 //   1. `OXY_APP_BASE_PATH` — `oxyc publish` sets this from the org it resolves
 //      for the target environment, so the org is never hardcoded here.
-//   2. `/` — the dev fallback, fine for `pnpm dev` and a standalone build.
-//
-// For a standalone build against a specific org:
-//   OXY_APP_BASE_PATH=/customer-apps/<org>/{{APP_SLUG}}/ pnpm build
+//   2. `/customer-apps/<orgSlug>/<slug>/` from `oxy-app.json`, when it names
+//      an `orgSlug`.
+//   3. `/` — the dev fallback, fine for `pnpm dev` and a standalone build.
 export default defineConfig({
-  plugins: [react(), tailwindcss(), oxyApp()],
-  build: { outDir: "out", emptyOutDir: true }
+  plugins: [react(), tailwindcss(), oxyApp()]
 });

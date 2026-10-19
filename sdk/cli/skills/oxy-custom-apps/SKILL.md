@@ -50,6 +50,7 @@ works), but hand-rolling means owning the base-path + dev-proxy wiring yourself.
 
    ```json
    {
+     "$schema": "https://unpkg.com/@oxy-hq/sdk/schema/oxy-app.schema.json",
      "schemaVersion": 2,
      "slug": "url-slug",
      "orgSlug": "your-org",
@@ -57,18 +58,38 @@ works), but hand-rolling means owning the base-path + dev-proxy wiring yourself.
    }
    ```
 
-   Required: `schemaVersion` (must be `2`), `slug` (non-empty).
+   Required: `schemaVersion` (must be `2`), `slug` (1–63 lowercase
+   letters, digits and single hyphens — it becomes the served path and
+   the OLTP schema name).
    Strongly recommended: `orgSlug` (lets `@oxy-hq/vite-plugin` derive
    the asset base path automatically, so plain `pnpm build` produces
-   a bundle ready to drop into the linked org with no env var).
-   Optional: `name` (display), `projectId` (dev-time hint).
+   a bundle ready to drop into the linked org with no env var, and lets
+   `pnpm dev` and `oxyc publish` find the app without `--org` / `OXY_ORG`;
+   `create-oxy-app --org <slug>` writes it).
+   Optional: `name` (display), `description`, `icon`, `art`, `status`
+   (launcher card), `projectId` (dev-time hint), `build` (what `oxyc
+   publish` runs — `install`, `command`, `outDir`; the plugin reads
+   `outDir` too), `functions`, `env`, `storage`, `notifications`, …
+
+   **One contract.** The file is validated against the JSON Schema
+   `@oxy-hq/sdk` ships (`schema/oxy-app.schema.json`, generated from the
+   SDK's `OxyAppManifest` type; `$schema` gives your editor completion)
+   by `oxyc validate`, `oxyc publish`, the Vite plugin and the SDK's own
+   loader — the same check, the same words. A wrong type, a bad name or
+   a missing required field is refused; a field the schema does not know
+   is a **warning** (the platform ignores what it does not read — so a
+   typo'd `timeoutSecond` is said, not silently dropped). Every field and
+   what the server does with it: `OxyAppManifest` in
+   `@oxy-hq/sdk/manifest`, which also exports the schema, `isValidSlug`
+   / `isValidFunctionName` and `validateOxyAppManifest` for a tool of
+   your own.
 
    At serve time, oxy injects the authoritative org + project from
    the admin row via `window.__OXY_APP__` — the manifest's `orgSlug`
    and `projectId` are advisory hints only, never enforcement.
 
    Do not invent `products`, `writers`, or `from:`-blocks. Those
-   don't exist in v2 and the probe rejects them.
+   don't exist in v2 and the schema rejects them.
 
    File location: **`<root>/oxy-app.json`**, sibling to
    `vite.config.ts`. The vite-plugin reads it from there, and so does
@@ -318,7 +339,7 @@ no folder picker**. From the app directory:
 ```bash
 oxyc login --env production    # once; browser flow, caches a token,
                                # and prints whether you're an app-admin
-oxyc validate                           # data-placement and manifest checks first
+oxyc validate                           # schema, data-placement and function checks first
 oxyc publish --env production           # build → bundle functions → tar → upload (draft channel)
 oxyc publish --env production --promote # …straight to live
 ```
@@ -329,13 +350,22 @@ oxyc publish --env production --promote # …straight to live
   the slug whenever `oxyc` runs the build, because the asset base path is
   baked from what you pass. With no org from any of those, the build stops
   with `missing org: the app's base path needs it` (exit `2`): add
-  `--org <org-slug>`, and `--app <slug>` when the directory has no manifest.
-  The server upserts the app row — there is no separate create step.
-- **First publish of a new app** needs `--project <workspace-uuid>` (unless
-  the app was registered in the admin UI): the build-config lookup can't
-  resolve a project until the app exists. A pinned workspace also supplies
-  the org. Drop the flag after the first publish — it's auto-resolved from
-  then on.
+  `"orgSlug"` to `oxy-app.json` (`create-oxy-app --org <slug>` writes it)
+  or `--org <org-slug>`, and `--app <slug>` when the directory has no
+  manifest. The server upserts the app row — there is no separate create
+  step.
+- **First publish of a new app is one step.** The app is not registered
+  yet, so the build-config lookup 404s; with your login `oxyc publish` then
+  lists the org's workspaces, and when there is exactly one (a freshly
+  provisioned org) publishes into it and says which. With several it prints
+  them with their uuids beside the flag to pass — `--project
+  <workspace-uuid>` (or `OXY_PROJECT`), which also supplies the org. Drop
+  the flag after the first publish — it's auto-resolved from then on.
+  Trusted publishing (CI) only ever publishes a registered app.
+- **Old kit.** Before the build, an app whose `@oxy-hq/sdk` or
+  `@oxy-hq/vite-plugin` is more than one minor behind the versions this
+  `oxyc` was built with gets one warning naming the `pnpm add` — the
+  manifest contract and the function runtime move with them.
 - **`--env` targets:** `local` → a local Oxy web-app Vite dev server `:5173`
   (it serves `/cli-auth` and proxies `/api` to oxy on `:3000`), `dev` →
   `aip.dev.oxy.tech`, `staging` → `aip.staging.oxy.tech`, `production` (the

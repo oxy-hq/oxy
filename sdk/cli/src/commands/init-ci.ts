@@ -28,9 +28,10 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
+import { isValidSlug } from "@oxy-hq/sdk/manifest";
 import type { Context } from "../context/resolve.js";
 import { VERSION } from "../generated/version.js";
-import { buildSteps, isValidSlug, loadPublishManifest } from "../publish/manifest.js";
+import { buildSteps, loadPublishManifest } from "../publish/manifest.js";
 import * as log from "../ui/log.js";
 import { out } from "../ui/tty.js";
 import { refusal, usageError } from "../util/errors.js";

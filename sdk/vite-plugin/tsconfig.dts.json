@@ -1,0 +1,22 @@
+{
+  // The config tsdown's DECLARATION pass reads (`dts.tsconfig` in
+  // tsdown.config.ts). `tsconfig.json` maps `@oxy-hq/sdk/manifest` to the
+  // SDK's SOURCE so `typecheck` needs no build; the declaration emitter,
+  // given a source file outside this package, wrote its `.d.ts` beside the
+  // SDK's sources. This maps the same specifier to the SDK's built `.d.mts`
+  // instead — a declaration file, which is read and never emitted — and the
+  // plugin's `.d.mts` carries no SDK type anyway (`OxyManifest` is local).
+  // `pnpm build` runs after the SDK's in a workspace build, so the file is
+  // there; the JS bundle still takes the source through `alias`.
+  //
+  // `include` is the entry alone: a test in `src/` imports the SDK's source
+  // directly, and in the program it would be emitted beside it too.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "paths": {
+      "@oxy-hq/sdk/manifest": ["../typescript/dist/manifest.d.mts"]
+    }
+  },
+  "include": ["src/index.ts"]
+}

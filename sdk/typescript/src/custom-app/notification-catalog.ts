@@ -2,12 +2,12 @@
 // `notifications` block): its types, the checks publish makes on it, and how a
 // kind resolves to what the inbox shows (category, label, level, actions).
 //
-// ONE SOURCE, THREE PACKAGES. This file lives in `sdk/typescript`; byte copies
-// sit in `sdk/cli/src/publish/` (`oxyc validate`, `oxyc publish`) and
-// `sdk/vite-plugin/src/` (`pnpm dev`, `pnpm build`), because neither of those
-// packages depends on another. Edit this one, then run
-// `node sdk/typescript/scripts/sync-notification-catalog.mjs`; a test in each
-// copy's package fails while the bytes differ.
+// ONE SOURCE, THREE PACKAGES. This file is the only copy: `oxyc validate`,
+// `oxyc publish` and `@oxy-hq/vite-plugin` import it through
+// `@oxy-hq/sdk/manifest` (bundled from this source, so neither package
+// depends on the SDK at run time), and `validateOxyAppManifest` runs
+// `checkNotifications` as its last step. A `notification-catalog-sync.test.ts`
+// in each of those packages pins that the function they run is this export.
 //
 // THE SERVER IS THE AUTHORITY. Every rule repeats the publish check in
 // `notifications/catalog/validate.rs`, and `resolveNotificationKind` repeats

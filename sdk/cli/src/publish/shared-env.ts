@@ -18,7 +18,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { functionEntry, type PublishManifest } from "./manifest.js";
+import { functionEntry } from "./manifest.js";
 import type { PlacementIssue } from "./placement.js";
 import { lineAt, literalString, maskJs, splitArgs } from "./placement-scan.js";
 
@@ -118,7 +118,7 @@ export function checkSharedEnv(
     }
     let source: string;
     try {
-      source = readFileSync(join(appDir, functionEntry(manifest as PublishManifest, name)), "utf8");
+      source = readFileSync(join(appDir, functionEntry(manifest, name)), "utf8");
     } catch {
       continue; // the placement check already warns that it could not read it
     }

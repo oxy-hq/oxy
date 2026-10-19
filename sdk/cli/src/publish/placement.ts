@@ -15,12 +15,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  appWriterName,
-  functionEntry,
-  type PublishManifest,
-  WRITER_NAME_RULE
-} from "./manifest.js";
+import { appWriterName, functionEntry, WRITER_NAME_RULE } from "./manifest.js";
 import { scanAirhouseMigration, secretsUsedAsState } from "./placement-scan.js";
 import { checkSharedEnv } from "./shared-env.js";
 
@@ -209,7 +204,7 @@ function checkSecretsAsState(
     issues.push(error(MANIFEST, `functions.${fn}.entry`, "must be a string"));
     return;
   }
-  const entry = functionEntry(manifest as PublishManifest, fn);
+  const entry = functionEntry(manifest, fn);
   let source: string;
   try {
     source = readFileSync(join(appDir, entry), "utf8");

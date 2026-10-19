@@ -1,24 +1,29 @@
 /**
- * `notification-catalog.ts` beside this is a byte copy of the SDK's
- * `src/custom-app/notification-catalog.ts`: the one source of the notification
- * catalogue's rules, which `oxyc validate`, `oxyc publish`, the Vite plugin and
- * `@oxy-hq/sdk/testing` all run. The rules' own cases live with the source;
- * this pins the copy to it. Only this test reads outside the package — the
- * published bundle carries the copy.
+ * The notification catalogue's checks are the SDK's, taken through
+ * `@oxy-hq/sdk/manifest` — ONE module, not a byte copy. This package used to
+ * carry `notification-catalog.ts` beside this test, kept in step by a sync
+ * script; what this pins now is that the function `pnpm dev` and `pnpm build`
+ * run IS the SDK's export, so an edit to the rules reaches every tool through
+ * one import rather than three files.
  */
 
-import { readFileSync } from "node:fs";
+import { checkNotifications } from "@oxy-hq/sdk/manifest";
 import { describe, expect, it } from "vitest";
-
-const SOURCE = new URL(
-  "../../typescript/src/custom-app/notification-catalog.ts",
-  import.meta.url
-);
-const COPY = new URL("./notification-catalog.ts", import.meta.url);
-const SYNC = "run `node sdk/typescript/scripts/sync-notification-catalog.mjs` from the repo root";
+import { checkNotifications as sdkSource } from "../../typescript/src/custom-app/notification-catalog";
+import { validateManifest } from "./index.js";
 
 describe("the notification catalogue's checks", () => {
-  it("are a byte copy of the SDK's", () => {
-    expect(readFileSync(COPY).equals(readFileSync(SOURCE)), `stale copy: ${SYNC}`).toBe(true);
+  it("are the SDK's own export, not a copy", () => {
+    expect(checkNotifications).toBe(sdkSource);
+  });
+
+  it("run inside the plugin's manifest validation", () => {
+    expect(
+      validateManifest({
+        schemaVersion: 2,
+        slug: "x",
+        functions: { f: { notify: { kinds: { "oxy.anomaly": {} } } } }
+      })
+    ).toEqual([expect.stringMatching(/^functions\.f\.notify\.kinds\.oxy\.anomaly: /)]);
   });
 });

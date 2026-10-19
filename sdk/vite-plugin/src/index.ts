@@ -16,24 +16,30 @@
  *
  * What it does, in priority order:
  *
- *   1. Forces build.outDir = "out" if unset (warns on override).
+ *   1. Sets build.outDir — the plugin option, else the manifest's
+ *      `build.outDir`, else "out" — when vite.config does not, and warns
+ *      when the two disagree, because `oxyc publish` reads the manifest's.
  *   2. Resolves Vite `base` automatically:
  *        OXY_APP_BASE_PATH > "/customer-apps/<orgSlug>/<slug>/" > "/"
  *      The middle form is derived from oxy-app.json's identity
  *      fields; missing fields cleanly fall through to "/".
- *   3. Validates oxy-app.json at dev and build start. Fails hard on
- *      schemaVersion != 2, on v1 leakage (products/writers), on a
- *      missing/malformed slug or function name, and on a `notifications`
- *      catalogue `oxyc publish` would refuse (`notification-catalog.ts`, a
- *      byte copy of the SDK's). v1 errors link the migration doc.
- *   4. Copies oxy-app.json into out/ at build close. The probe reads
- *      from the served bundle; this stops being a per-app "did you
- *      remember to put it in public/" foot-gun.
+ *   3. Validates oxy-app.json at dev and build start against the SDK's
+ *      JSON Schema (`@oxy-hq/sdk/manifest` — the one check `oxyc validate`
+ *      and `oxyc publish` make). Fails hard on every error: schemaVersion
+ *      != 2, v1 leakage (products/writers), a missing/malformed slug or
+ *      function name, a wrong type, a `notifications` catalogue publish
+ *      would refuse. Warns on a field the schema does not know. v1 errors
+ *      link the migration doc.
+ *   4. Copies oxy-app.json into out/ at build close, and the `icon` / `art`
+ *      files it names when they sit beside it. The probe reads from the
+ *      served bundle; this stops being a per-app "did you remember to put
+ *      it in public/" foot-gun.
  *   5. In dev (buildStart) resolves the app's projectId from oxy's public
  *      build-config endpoint using the manifest's org/app, then injects
  *      `window.__OXY_APP__` into served HTML (transformIndexHtml) so the
  *      SDK has identity in `pnpm dev` with no config file. OXY_* env vars
- *      still override any field for advanced setups.
+ *      still override any field for advanced setups. A manifest with no
+ *      `orgSlug` is told exactly which flag fills the gap.
  *   6. Defaults `server.proxy["/api"]` to OXY_TARGET (or OXY_BASE_URL,
  *      default http://localhost:3000) and, when OXY_TOKEN is set,
  *      attaches it as a bearer on proxied calls (node-side only).
@@ -42,12 +48,12 @@
  * options) coexists — we mergeConfig rather than overwrite.
  */
 
+import { isV1Manifest, validateOxyAppManifest } from "@oxy-hq/sdk/manifest";
 import { promises as fs } from "node:fs";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { loadEnv } from "vite";
 import type { Plugin, ProxyOptions, ResolvedConfig, UserConfig } from "vite";
-import { checkNotifications } from "./notification-catalog";
 
 const PLUGIN_NAME = "oxy-app";
 const DEFAULT_MANIFEST = "oxy-app.json";
@@ -58,20 +64,6 @@ const DEFAULT_DEV_PROXY_TARGET = "http://localhost:3000";
 // a v1-rejection warning find current SDK + manifest guidance under §5.
 const MIGRATION_DOC_URL =
   "https://github.com/oxy-hq/oxygen-internal/blob/main/internal-docs/customer-apps.md";
-// Mirrors the server's `is_valid_slug` (admin/apps/ops.rs) and the SDK loader's
-// SLUG_RE: lowercase alphanumerics and SINGLE hyphens, no leading/trailing/double
-// hyphen, no underscore. The old pattern allowed a trailing/double hyphen and had
-// no length bound, so `app-`, `a--b` and a 100-char slug built cleanly and then
-// 422'd at `oxy publish` — the "author learns it in CI" gap this gate closes. The
-// slug becomes the app's OLTP schema/role name, a repo path segment and the
-// served base path.
-const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const SLUG_MAX_LEN = 63;
-// Mirrors `is_valid_function_name` (server/api/custom_apps_publish.rs) — a function key is
-// interpolated into `functions/<name>.js`, so `../../x` must be rejected before
-// esbuild. Checked here so a bad name fails at `oxy build` too, not only at
-// publish.
-const FUNCTION_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 
 export interface OxyAppPluginOptions {
   /**
@@ -82,9 +74,10 @@ export interface OxyAppPluginOptions {
   manifest?: string;
 
   /**
-   * Build output directory. Default: "out". Aligned with the admin
-   * probe and customer-apps repo conventions. Override only if you
-   * have a strong reason; the plugin will warn loudly on mismatch.
+   * Build output directory. Default: the manifest's `build.outDir`, else
+   * "out" — aligned with the admin probe, `oxyc publish` and the
+   * customer-apps repo conventions. Override only if you have a strong
+   * reason; the plugin will warn loudly on mismatch.
    */
   outDir?: string;
 
@@ -104,25 +97,26 @@ export interface OxyAppPluginOptions {
 }
 
 /**
- * Parsed manifest. We only consume the v2 identity-only shape; any
- * extra fields are ignored at parse time but flagged in
- * `validateManifest`.
+ * The fields this plugin READS off `oxy-app.json` — a view, not the contract.
+ * Every field optional, because the file is read before `validateManifest`
+ * has had its say. The contract is the SDK's `OxyAppManifest`
+ * (`@oxy-hq/sdk/manifest`), whose schema `validateManifest` runs; this type
+ * names only what `base`, `outDir`, the dev shim and the asset copy need, and
+ * is kept local so the plugin's own `.d.mts` carries no SDK import.
  */
-interface OxyManifest {
+export interface OxyManifest {
   schemaVersion?: number;
   slug?: string;
   name?: string;
   orgSlug?: string;
   projectId?: string;
-  products?: unknown;
-  writers?: unknown;
-  functions?: unknown;
-  notifications?: unknown;
+  icon?: string;
+  art?: string;
+  build?: { outDir?: string };
 }
 
 export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
   const manifestPath = opts.manifest ?? DEFAULT_MANIFEST;
-  const outDir = opts.outDir ?? DEFAULT_OUT_DIR;
   const injectDevShim = opts.injectDevShim ?? true;
 
   // State carried between hooks. `manifest` is populated in `config`
@@ -158,20 +152,16 @@ export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
       manifest = readManifest(manifestAbs);
       if (manifest) {
         // `pnpm dev` as well as `pnpm build`: the SDK refuses the same manifest
-        // at app boot, and a notification catalogue publish would refuse is
-        // cheaper to learn about before the first page load than at `oxyc publish`.
+        // at app boot, and a manifest `oxyc publish` would refuse is cheaper to
+        // learn about before the first page load than after the build.
         const errors = validateManifest(manifest);
         if (errors.length > 0) {
           // Fail with a single grouped error message — throwing here aborts
           // Vite cleanly with a stack trace that points at the plugin, not a
           // 200-line YAML dump.
-          const v1 =
-            manifest.schemaVersion !== 2 ||
-            manifest.products !== undefined ||
-            manifest.writers !== undefined;
           throw new Error(
             `[${PLUGIN_NAME}] oxy-app.json validation failed:\n  - ${errors.join("\n  - ")}` +
-              (v1 ? `\n\nMigration guide: ${MIGRATION_DOC_URL}` : "")
+              (isV1Manifest(manifest) ? `\n\nMigration guide: ${MIGRATION_DOC_URL}` : "")
           );
         }
         for (const warning of manifestWarnings(manifest)) {
@@ -206,6 +196,18 @@ export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
       const branch = envVar("OXY_BRANCH") ?? "main";
       devIdentity = appSlug ? { orgSlug, appSlug, projectId, branch } : null;
 
+      // Said once, with the fix, rather than as a 404 from `buildStart` that
+      // names the wrong cause: without an org the dev shim has nothing to
+      // look the project up by, and `oxyc publish` stops on the same gap.
+      if (env.command === "serve" && injectDevShim && appSlug && !orgSlug && !projectId) {
+        console.warn(
+          `[${PLUGIN_NAME}] oxy-app.json has no "orgSlug" and OXY_ORG is unset, so dev cannot ` +
+            "resolve the app's project and the SDK will have no identity. Add " +
+            '"orgSlug": "<org>" to oxy-app.json (create-oxy-app --org <slug> writes it), ' +
+            "or export OXY_ORG=<org>."
+        );
+      }
+
       // `/api` dev proxy. When OXY_TOKEN is set, attach it as a bearer on
       // proxied requests so a remote dev oxy authenticates them (local dev
       // is cross-origin, so the session cookie isn't sent). The token lives
@@ -222,14 +224,18 @@ export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
         };
       }
 
-      // outDir guard: warn (don't error) if the user set their own
-      // and it's not what we want. They might have a reason; we just
-      // want them to know they've stepped off the paved road.
+      // outDir: the plugin option, else the manifest's `build.outDir` (what
+      // `oxyc publish` tars up), else the default. A vite.config that sets its
+      // own gets a warning naming both, not an error — they might have a
+      // reason; they just need to know the two have to agree for a publish
+      // to find the bundle.
+      const { outDir, from } = resolveOutDir(opts.outDir, manifest);
       const userOutDir = userConfig.build?.outDir;
       if (userOutDir && userOutDir !== outDir) {
         console.warn(
-          `[${PLUGIN_NAME}] build.outDir is set to "${userOutDir}" but the admin probe expects "${outDir}". ` +
-            `Bundles built into a non-standard dir need the operator to navigate the picker into that dir manually.`
+          `[${PLUGIN_NAME}] vite.config sets build.outDir "${userOutDir}" but ${from} says "${outDir}". ` +
+            "`oxyc publish` tars up the manifest's build.outDir, so set it in one place: " +
+            "drop build.outDir from vite.config, or put the same value in oxy-app.json `build.outDir`."
         );
       }
 
@@ -277,6 +283,8 @@ export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
     async buildStart() {
       if (resolvedConfig?.command !== "serve" || !injectDevShim) return;
       if (!devIdentity || devIdentity.projectId || !devIdentity.appSlug) return;
+      // No org, no lookup: `config` has already said which flag fills it.
+      if (!devIdentity.orgSlug) return;
       const url =
         `${devTarget.replace(/\/$/, "")}/api/apps/` +
         `${encodeURIComponent(devIdentity.orgSlug)}/${encodeURIComponent(devIdentity.appSlug)}/build-config`;
@@ -297,7 +305,8 @@ export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
         } else {
           console.warn(
             `[${PLUGIN_NAME}] couldn't resolve project for ${devIdentity.orgSlug}/${devIdentity.appSlug} ` +
-              `from ${devTarget} (${res.status}). Register the app in oxy (or set OXY_PROJECT) so dev can query.`
+              `from ${devTarget} (${res.status}). Register the app in oxy (its first \`oxyc publish\` does), ` +
+              "or set OXY_PROJECT=<workspace-uuid> so dev can query."
           );
         }
       } catch (err) {
@@ -341,12 +350,13 @@ export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
     },
 
     // After Vite finishes writing out/, copy oxy-app.json next to
-    // index.html. The admin probe reads from the served bundle, not
-    // from the source tree.
+    // index.html, and the icon / art it names. The admin probe and the
+    // launcher read from the served bundle, not from the source tree.
     async closeBundle() {
       if (!resolvedConfig || resolvedConfig.command !== "build") return;
       if (!existsSync(manifestAbs)) return;
-      const dest = path.resolve(resolvedConfig.root, resolvedConfig.build.outDir, DEFAULT_MANIFEST);
+      const outAbs = path.resolve(resolvedConfig.root, resolvedConfig.build.outDir);
+      const dest = path.join(outAbs, DEFAULT_MANIFEST);
       try {
         await fs.copyFile(manifestAbs, dest);
       } catch (err) {
@@ -354,8 +364,53 @@ export default function oxyApp(opts: OxyAppPluginOptions = {}): Plugin {
         // manifest in out/ produces a soft probe warning, not a 500.
         console.warn(`[${PLUGIN_NAME}] failed to copy ${manifestPath} into ${dest}: ${String(err)}`);
       }
+      await copyManifestAssets(manifest, path.dirname(manifestAbs), outAbs);
     }
   };
+}
+
+/**
+ * The `icon` and `art` files the manifest names, into the build output when
+ * they are not already there.
+ *
+ * Both are paths relative to the bundle root, served through the app's own
+ * URL. A file under `public/` is already in `out/` — Vite copies that
+ * directory — so the copy is only for one that sits beside the manifest,
+ * which is where `create-oxy-app` puts them when the manifest is at the
+ * root. A name that resolves to neither place is a launcher with no icon,
+ * said here rather than discovered on the card.
+ */
+async function copyManifestAssets(
+  manifest: OxyManifest | null,
+  manifestDir: string,
+  outAbs: string
+): Promise<void> {
+  for (const key of ["icon", "art"] as const) {
+    const rel = manifest?.[key];
+    if (typeof rel !== "string" || rel.trim() === "") continue;
+    // An absolute URL or a data URI names nothing in the bundle to copy.
+    if (/^(?:[a-z]+:)?\/\//i.test(rel) || rel.startsWith("data:")) continue;
+    const dest = path.resolve(outAbs, rel);
+    if (!dest.startsWith(outAbs + path.sep)) {
+      console.warn(`[${PLUGIN_NAME}] oxy-app.json ${key} "${rel}" points outside the bundle; not copied.`);
+      continue;
+    }
+    if (existsSync(dest)) continue;
+    const src = path.resolve(manifestDir, rel);
+    if (!existsSync(src)) {
+      console.warn(
+        `[${PLUGIN_NAME}] oxy-app.json names ${key} "${rel}" but neither the build output nor the ` +
+          `directory beside the manifest has it — the launcher will show no ${key}.`
+      );
+      continue;
+    }
+    try {
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.copyFile(src, dest);
+    } catch (err) {
+      console.warn(`[${PLUGIN_NAME}] failed to copy ${key} ${rel} into ${dest}: ${String(err)}`);
+    }
+  }
 }
 
 /**
@@ -371,71 +426,39 @@ function readManifest(absPath: string): OxyManifest | null {
   }
 }
 
+/** Where the build goes, and which setting said so. */
+export function resolveOutDir(
+  option: string | undefined,
+  manifest: OxyManifest | null
+): { outDir: string; from: string } {
+  if (option?.trim()) return { outDir: option, from: "the oxyApp() outDir option" };
+  const declared = manifest?.build?.outDir;
+  if (typeof declared === "string" && declared.trim()) {
+    return { outDir: declared, from: "oxy-app.json build.outDir" };
+  }
+  return { outDir: DEFAULT_OUT_DIR, from: "the default the admin probe and oxyc publish expect" };
+}
+
 /**
- * Validate a parsed manifest against the v2 identity-only contract.
- * Returns a list of human-readable error strings; empty list means
- * the manifest is valid.
+ * Validate a parsed manifest: the SDK's schema and rules, as `oxyc validate`
+ * and `oxyc publish` apply them. Returns a list of human-readable error
+ * strings (`<path>: <message>`); empty list means the manifest is valid.
  */
-export function validateManifest(m: OxyManifest): string[] {
-  const errors: string[] = [];
-  if (m.schemaVersion !== 2) {
-    errors.push(
-      `schemaVersion is ${m.schemaVersion ?? "(missing)"}; v2 is required. ` +
-        `Set "schemaVersion": 2.`
-    );
-  }
-  if (m.products !== undefined || m.writers !== undefined) {
-    errors.push(
-      "manifest contains v1 fields (products and/or writers). " +
-        "The MVP refactor requires identity-only manifests."
-    );
-  }
-  if (!m.slug || typeof m.slug !== "string") {
-    errors.push("slug is required.");
-  } else if (m.slug.length > SLUG_MAX_LEN || !SLUG_PATTERN.test(m.slug)) {
-    errors.push(
-      `slug "${m.slug}" is malformed; must be 1–${SLUG_MAX_LEN} lowercase letters, ` +
-        `digits and single hyphens (no leading/trailing/double hyphen, no underscore). ` +
-        `It becomes the app's OLTP schema name and served path, which oxyc publish rejects otherwise.`
-    );
-  }
-  // Function keys become `functions/<name>.js`, so a name like `../../x` is a
-  // path traversal — reject at build, the same shape `oxyc publish` enforces.
-  if (m.functions !== undefined) {
-    // `typeof [] === "object"`, so an array would otherwise slip through with no
-    // keys to check — reject it explicitly (a manifest `functions` is a map).
-    if (
-      typeof m.functions !== "object" ||
-      m.functions === null ||
-      Array.isArray(m.functions)
-    ) {
-      errors.push("functions must be an object keyed by function name.");
-    } else {
-      for (const name of Object.keys(m.functions)) {
-        if (!FUNCTION_NAME_PATTERN.test(name)) {
-          errors.push(
-            `function name "${name}" is malformed; must match ${FUNCTION_NAME_PATTERN.source}.`
-          );
-        }
-      }
-    }
-  }
-  // The notification catalogue and reserved kinds: `oxyc publish`'s check,
-  // from the same file, so `pnpm dev` and `pnpm build` refuse what it refuses.
-  for (const finding of checkNotifications(m)) {
-    if (finding.level === "error") errors.push(`${finding.path}: ${finding.message}`);
-  }
-  return errors;
+export function validateManifest(m: unknown): string[] {
+  return validateOxyAppManifest(m)
+    .filter((issue) => issue.level === "error")
+    .map((issue) => `${issue.path}: ${issue.message}`);
 }
 
 /**
  * The manifest's warnings: what publishes, but is probably a mistake — a
- * catalogue kind no function sends, a level a `critical: true` overrides.
+ * field the schema does not know, a catalogue kind no function sends, a
+ * level a `critical: true` overrides.
  */
-export function manifestWarnings(m: OxyManifest): string[] {
-  return checkNotifications(m)
-    .filter((f) => f.level === "warning")
-    .map((f) => `${f.path}: ${f.message}`);
+export function manifestWarnings(m: unknown): string[] {
+  return validateOxyAppManifest(m)
+    .filter((issue) => issue.level === "warning")
+    .map((issue) => `${issue.path}: ${issue.message}`);
 }
 
 /**

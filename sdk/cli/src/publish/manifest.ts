@@ -1,55 +1,34 @@
 /**
- * The half of `oxy-app.json` that publishing reads, and the two name rules the
- * server enforces on it.
+ * `oxy-app.json` as publishing reads it.
  *
- * `context/target.ts` owns identity and `environments`; this adds `build` and
- * `functions`. Both read the same file and ignore what they do not know, so an
- * SDK field added tomorrow cannot break a publish today.
+ * ONE CONTRACT. The shape is `OxyAppManifest` from `@oxy-hq/sdk/manifest` —
+ * the type the JSON Schema is generated from — and `loadPublishManifest` runs
+ * the SDK's validator over the file before anything is built, so a publish
+ * refuses exactly what `oxyc validate` and the Vite plugin refuse, in the same
+ * words. The name rules (`isValidSlug`, `isValidFunctionName`) come from the
+ * same module; this file used to carry its own copies of both.
+ *
+ * `context/target.ts` owns identity and `environments` and reads the file
+ * leniently, because a command told `--target` must not fail on a manifest it
+ * does not need. This is the strict read.
  */
 
+import { join } from "node:path";
+import {
+  type ManifestIssue,
+  type OxyAppFunctionManifest,
+  type OxyAppManifest,
+  validateOxyAppManifest
+} from "@oxy-hq/sdk/manifest";
 import { readAppManifest } from "../context/target.js";
-import type { OxyAppNotificationsManifest } from "./notification-catalog.js";
+import * as log from "../ui/log.js";
+import { CliError, ExitCode } from "../util/errors.js";
 
-export interface FunctionSpec {
-  entry?: string;
-  /** Databases `ctx.warehouse.*` writes may target. Absent → no writes. */
-  destinations?: string[];
-  /** Gate for `ctx.airhouse`, which writes the app's own `app_<writer>` schema. */
-  airhouse?: { enabled?: boolean };
-  /**
-   * `<database>: <reason>` — the explicit exception that lets this function
-   * write a CUSTOMER warehouse named in `destinations`. Read-only otherwise.
-   */
-  customerWarehouseWrites?: Record<string, string>;
-  secrets?: { write?: boolean };
-  /** `ctx.notify`'s kinds, each mapped to `{ critical? }`. */
-  notify?: { kinds?: Record<string, unknown> };
-  /**
-   * A function a release gate may run to verify what it just shipped.
-   * `oxyc checks run` runs exactly these, and it is the only function a
-   * machine credential is allowed to trigger.
-   */
-  check?: boolean;
-}
+/** The manifest a publish reads: the SDK's type, after validation. */
+export type PublishManifest = OxyAppManifest;
 
-export interface PublishManifest {
-  slug?: string;
-  orgSlug?: string;
-  build?: { install?: string; command?: string; outDir?: string };
-  functions?: Record<string, FunctionSpec>;
-  /** OLTP (Postgres) migrations, run on promote. A directory inside the bundle. */
-  migrations?: { dir?: string };
-  /** Airhouse (DuckLake) migrations for `app_<writer>`, run once each on promote. */
-  airhouseMigrations?: { dir?: string };
-  /**
-   * What staging writes instead of production: `destinations` maps a database
-   * a function writes to the one staging writes. The lint checks the mapped
-   * name like the one the call names.
-   */
-  nonProduction?: { destinations?: Record<string, string> };
-  /** The notification catalogue, checked by `notification-catalog.ts` before a build. */
-  notifications?: OxyAppNotificationsManifest;
-}
+/** One `functions.<name>` entry. */
+export type FunctionSpec = OxyAppFunctionManifest;
 
 /**
  * Longest writer name: Postgres caps identifiers at 63 bytes, and the longest
@@ -82,12 +61,39 @@ export function appWriterName(slug: string): string | undefined {
 }
 
 /**
- * `<dir>/oxy-app.json`, or `undefined` when there is none. A broken one throws:
- * publishing past it used to ship a bundle with no functions and an identity
- * taken from flags or the directory.
+ * `<dir>/oxy-app.json`, validated, or `undefined` when there is none.
+ *
+ * A broken one throws: publishing past it used to ship a bundle with no
+ * functions and an identity taken from flags or the directory. An ERROR from
+ * the schema — a wrong type, a bad name, a missing required field, a
+ * notification catalogue the server refuses — throws too, listing every one,
+ * because the server would refuse the upload and a build is minutes.
+ * WARNINGS (a field the schema does not know, a catalogue kind nothing sends)
+ * are printed and the publish goes on: the platform ignores what it does not
+ * read, and refusing a field a newer SDK added would break every app on a
+ * slightly older `oxyc`.
  */
-export function loadPublishManifest(dir: string): PublishManifest | undefined {
-  return readAppManifest(dir) as PublishManifest | undefined;
+export function loadPublishManifest(
+  dir: string,
+  warn: (line: string) => void = log.warn
+): PublishManifest | undefined {
+  const raw = readAppManifest(dir);
+  if (raw === undefined) return undefined;
+  const issues = validateOxyAppManifest(raw);
+  const errors = issues.filter((issue) => issue.level === "error");
+  if (errors.length > 0) throw invalidManifest(join(dir, "oxy-app.json"), errors);
+  for (const issue of issues) {
+    if (issue.level === "warning") warn(`oxy-app.json (${issue.path}): ${issue.message}`);
+  }
+  return raw as unknown as PublishManifest;
+}
+
+function invalidManifest(path: string, errors: ManifestIssue[]): CliError {
+  return new CliError(`${path} is not a valid oxy-app.json: ${errors.length} problem(s)`, {
+    code: ExitCode.USAGE,
+    detail: errors.map((issue) => `  ${issue.path}: ${issue.message}`).join("\n"),
+    remedy: "fix each in oxy-app.json — `oxyc validate` lists them without building"
+  });
 }
 
 /** A blank manifest value is no value: `"install": ""` falls back to the default. */
@@ -119,35 +125,21 @@ export function declaredFunctions(manifest: PublishManifest | undefined): string
   return functions && typeof functions === "object" ? Object.keys(functions) : [];
 }
 
-/** Source entry relative to the app directory. Default `functions/<name>.ts`. */
-export function functionEntry(manifest: PublishManifest | undefined, name: string): string {
-  return orDefault(manifest?.functions?.[name]?.entry, `functions/${name}.ts`);
-}
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
- * `^[a-z][a-z0-9-]{0,63}$` — the server's `is_valid_function_name`.
+ * Source entry relative to the app directory. Default `functions/<name>.ts`.
  *
- * A manifest key becomes `functions/<name>.js`, so `../../x` has to be refused
- * before esbuild is told to write there.
+ * Takes the manifest as a file holds it too: the lints read one before it is
+ * validated, and a wrong `entry` is theirs to report, not a reason to crash.
  */
-export function isValidFunctionName(name: string): boolean {
-  return /^[a-z][a-z0-9-]{0,63}$/.test(name);
-}
-
-/**
- * The server's `is_valid_slug`: 1–63 lowercase letters, digits and single
- * hyphens, no leading or trailing hyphen.
- *
- * Checked before anything is built, so an author whose bundle never went
- * through the Vite plugin learns about it before uploading rather than after.
- */
-export function isValidSlug(slug: string): boolean {
-  return (
-    slug.length > 0 &&
-    slug.length <= 63 &&
-    /^[a-z0-9-]+$/.test(slug) &&
-    !slug.startsWith("-") &&
-    !slug.endsWith("-") &&
-    !slug.includes("--")
-  );
+export function functionEntry(
+  manifest: PublishManifest | Record<string, unknown> | undefined,
+  name: string
+): string {
+  const functions = manifest?.functions;
+  const spec = isObject(functions) ? functions[name] : undefined;
+  const entry = isObject(spec) && typeof spec.entry === "string" ? spec.entry : undefined;
+  return orDefault(entry, `functions/${name}.ts`);
 }

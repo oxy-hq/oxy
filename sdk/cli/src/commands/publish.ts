@@ -21,6 +21,7 @@
 
 import { spawnSync } from "node:child_process";
 import { join, resolve, sep } from "node:path";
+import { isValidSlug } from "@oxy-hq/sdk/manifest";
 
 import { APP_ENV_HEADER, requireSandboxName } from "../apps/environment.js";
 import { UUID_RE } from "../apps/resolve.js";
@@ -43,14 +44,12 @@ import {
   bundleFunctions,
   enforceReservedFunctionsDir,
   requirePrebuiltFunctions,
-  validateFunctionNames,
-  validateNotifications
+  validateFunctionNames
 } from "../publish/functions.js";
 import {
   buildSteps,
   declaredFunctions,
   functionEntry,
-  isValidSlug,
   loadPublishManifest,
   type PublishManifest
 } from "../publish/manifest.js";
@@ -73,6 +72,7 @@ import {
   uploadBundle
 } from "../publish/server.js";
 import { tarGzDir } from "../publish/tarball.js";
+import { staleKitWarnings } from "../publish/versions.js";
 import * as log from "../ui/log.js";
 import { out } from "../ui/tty.js";
 import { CliError, ExitCode, usageError } from "../util/errors.js";
@@ -195,7 +195,6 @@ function prepareBundle(
 ): string {
   const declared = declaredFunctions(manifest);
   validateFunctionNames(declared);
-  for (const warning of validateNotifications(manifest)) log.warn(warning);
 
   let bundleDir: string;
   if (flags.dir) {
@@ -204,7 +203,7 @@ function prepareBundle(
     if (!identity.org) {
       throw usageError(
         "missing org: the app's base path needs it",
-        "set oxy-app.json `orgSlug`, --org, OXY_ORG, or --project (a workspace determines its org), or publish a pre-built bundle with --dir"
+        'add `"orgSlug": "<org>"` to oxy-app.json (create-oxy-app --org <slug> writes it), or pass --org <slug>, OXY_ORG=<slug>, or --project <uuid> (a workspace determines its org); a pre-built bundle publishes with --dir'
       );
     }
     const steps = buildSteps(manifest);
@@ -271,7 +270,11 @@ async function lintEngines(
     );
     return;
   }
-  const issues = checkEngines(lint.writes, manifest as Record<string, unknown>, engines.databases);
+  const issues = checkEngines(
+    lint.writes,
+    manifest as unknown as Record<string, unknown>,
+    engines.databases
+  );
   reportFunctionLint(issues, [], allow);
 }
 
@@ -465,6 +468,9 @@ export async function publish(ctx: Context, flags: PublishFlags): Promise<Publis
   for (const path of loadDotenv(ctx.cwd)) log.info(`loaded ${path}`);
   const manifest = loadPublishManifest(ctx.cwd);
   const identity = resolveIdentity(ctx, flags, manifest);
+  // Before the build: an app pinned to a kit this oxyc has outgrown is told so
+  // once, where the fix is one `pnpm add` away rather than a production call.
+  for (const warning of staleKitWarnings(ctx.cwd)) log.warn(warning);
   const projectPin = ctx.flags.project ?? envValue("OXY_PROJECT");
 
   // Decided before the build, so a missing login fails in a second rather
@@ -498,7 +504,7 @@ export async function publish(ctx: Context, flags: PublishFlags): Promise<Publis
   // a one-line fix, and learning about it after a two-minute install is how
   // it used to be learned — in production, at the first call.
   const lint = manifest
-    ? lintAppFunctions(ctx.cwd, manifest as Record<string, unknown>)
+    ? lintAppFunctions(ctx.cwd, manifest as unknown as Record<string, unknown>)
     : undefined;
   if (lint) reportFunctionLint(lint.issues, lint.skipped, flags.allowFunctionLint);
 
@@ -519,10 +525,15 @@ export async function publish(ctx: Context, flags: PublishFlags): Promise<Publis
     if (!identity.org) {
       throw usageError(
         "missing org: needed to look up the project",
-        "set oxy-app.json `orgSlug`, --org or OXY_ORG, or pass --project <uuid>"
+        'add `"orgSlug": "<org>"` to oxy-app.json (create-oxy-app --org <slug> writes it), or pass --org <slug>, OXY_ORG=<slug>, or --project <uuid>'
       );
     }
-    project = await fetchProject(target, identity.org, identity.app);
+    // A stored token can list the org's workspaces, which is what settles a
+    // first publish without a second command; the OIDC credential is minted
+    // after the build and only ever publishes a registered app.
+    project = await fetchProject(target, identity.org, identity.app, {
+      token: credential.kind === "token" ? credential.token : undefined
+    });
   }
 
   const buildId = resolveBuildId(flags.buildId);

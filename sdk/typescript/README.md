@@ -64,8 +64,24 @@ Every bundle ships an identity-only manifest at its project root (next to
 `vite.config.ts`, **not** under `public/`):
 
 ```json
-{ "schemaVersion": 2, "slug": "store-pulse", "orgSlug": "acme", "name": "Store Pulse" }
+{
+  "$schema": "https://unpkg.com/@oxy-hq/sdk/schema/oxy-app.schema.json",
+  "schemaVersion": 2,
+  "slug": "store-pulse",
+  "orgSlug": "acme",
+  "name": "Store Pulse"
+}
 ```
+
+The contract is one type, `OxyAppManifest`, and everything else derives from
+it: `schema/oxy-app.schema.json` (generated — `pnpm gen:manifest-schema`,
+pinned by a test; `$schema` gives your editor completion, and
+`./node_modules/@oxy-hq/sdk/schema/oxy-app.schema.json` is the installed
+copy), and `@oxy-hq/sdk/manifest` — a pure-TS entry with the types, the
+schema, the two server name rules (`isValidSlug`, `isValidFunctionName`) and
+`validateOxyAppManifest(raw)`, which `oxyc validate`, `oxyc publish`,
+`@oxy-hq/vite-plugin` and this SDK's own loader all run. An unknown field is
+a warning from it, never a refusal.
 
 When oxy serves the bundle it injects the authoritative identity as
 `window.__OXY_APP__`; `OxyAppProvider` reads injection first and the manifest

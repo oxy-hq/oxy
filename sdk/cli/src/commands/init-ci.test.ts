@@ -508,7 +508,10 @@ describe("oxyc init-ci, through the binary", () => {
   it("writes the workflow at the repo root from an app directory, and prints the registration", () => {
     const appDir = join(repo, "apps", "acme", "sales");
     mkdirSync(appDir, { recursive: true });
-    writeFileSync(join(appDir, "oxy-app.json"), JSON.stringify({ slug: "sales", orgSlug: "acme" }));
+    writeFileSync(
+      join(appDir, "oxy-app.json"),
+      JSON.stringify({ schemaVersion: 2, slug: "sales", orgSlug: "acme" })
+    );
 
     const result = run(appDir, ["--env", "dev"]);
     expect(result.status, result.stderr).toBe(0);
@@ -546,7 +549,10 @@ describe("oxyc init-ci, through the binary", () => {
   it("reads the pnpm pin and .nvmrc from the repo root", () => {
     const appDir = join(repo, "apps", "acme", "sales");
     mkdirSync(appDir, { recursive: true });
-    writeFileSync(join(appDir, "oxy-app.json"), JSON.stringify({ slug: "sales", orgSlug: "acme" }));
+    writeFileSync(
+      join(appDir, "oxy-app.json"),
+      JSON.stringify({ schemaVersion: 2, slug: "sales", orgSlug: "acme" })
+    );
     const build = () =>
       (parse(readFileSync(join(repo, WORKFLOW_PATH), "utf8")) as { jobs: { build: Job } }).jobs
         .build;

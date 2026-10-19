@@ -48,7 +48,7 @@ describe("validateManifest", () => {
 
   test("rejects missing slug", () => {
     const errs = validateManifest({ schemaVersion: 2 });
-    expect(errs.some((e) => e.includes("slug is required"))).toBe(true);
+    expect(errs.some((e) => e.includes("`slug` is required"))).toBe(true);
   });
 
   test("rejects malformed slug (uppercase)", () => {

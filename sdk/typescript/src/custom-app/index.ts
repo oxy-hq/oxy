@@ -79,16 +79,39 @@ export type { OxyAppEnvironment, OxyInjectedAppConfig } from "./inject";
 export { readAppEnvironment, readInjectedAppConfig } from "./inject";
 export type { OxyAppLogger, OxyAppLogLevel } from "./logger";
 export { getOxyAppLogger, setOxyAppLogger } from "./logger";
+// The manifest's types. The rules, the generated JSON Schema and the validator
+// are `@oxy-hq/sdk/manifest` — pure TS, for Node tools — not the root entry.
 export type {
   LoadManifestOptions,
   NotificationLevel,
+  OxyAppAirwayStepManifest,
+  OxyAppAskManifest,
+  OxyAppBuildManifest,
+  OxyAppCacheManifest,
+  OxyAppEmailCapability,
+  OxyAppEnabledCapability,
+  OxyAppEnvDeclaration,
+  OxyAppEnvironmentManifest,
+  OxyAppFetchManifest,
   OxyAppFunctionManifest,
   OxyAppManifest,
+  OxyAppMigrationsManifest,
+  OxyAppNonProductionManifest,
   OxyAppNotificationAction,
   OxyAppNotificationCategory,
   OxyAppNotificationKind,
   OxyAppNotificationsManifest,
+  OxyAppNotifyCapability,
+  OxyAppNotifyKindCapability,
+  OxyAppOrgCapability,
   OxyAppPerformanceManifest,
+  OxyAppPlatformCapability,
+  OxyAppRetentionRule,
+  OxyAppRetriesManifest,
+  OxyAppSecretsCapability,
+  OxyAppStorageCapability,
+  OxyAppStorageManifest,
+  OxyAppWebhookManifest,
   ResolvedCustomAppManifest
 } from "./manifest";
 export {

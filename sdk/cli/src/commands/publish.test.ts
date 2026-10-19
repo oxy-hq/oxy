@@ -43,6 +43,16 @@ let publisherRefuses = false;
 let uploadStatus = 200;
 /** What the fake answers the project's database list with. */
 let databasesStatus = 200;
+/**
+ * The workspaces of org `acme`, for a first publish: with exactly one, `publish`
+ * picks it; with more, it lists them. Two by default, so the unregistered-app
+ * cases below keep answering NOT_FOUND.
+ */
+let workspaces: Array<{ id: string; name: string }> = [];
+const TWO_WORKSPACES = [
+  { id: "7e57a9e0-0000-4000-8000-000000000001", name: "Sales" },
+  { id: "7e57a9e0-0000-4000-8000-000000000002", name: "Ops" }
+];
 const DATABASES = [
   { name: "ch", dialect: "clickhouse", db_type: "clickhouse", datasets: null, synced: false },
   { name: "ah", dialect: "duckdb", db_type: "airhouse_managed", datasets: null, synced: false }
@@ -77,6 +87,14 @@ beforeAll(async () => {
       return databasesStatus === 200 ? reply(200, DATABASES) : reply(databasesStatus, {});
     }
     if (path === "/api/org-for-project/proj-9") return reply(200, { org_slug: "acme" });
+    // The org listing and its workspaces, for a first publish. Only a user
+    // token may list them — a publish token answers 403, as the server does.
+    if (path === "/api/orgs" || path === "/api/orgs/org-acme/workspaces") {
+      if (req.headers.authorization !== "Bearer good-token") return reply(403, {});
+      return path === "/api/orgs"
+        ? reply(200, [{ id: "org-acme", slug: "acme", name: "Acme" }])
+        : reply(200, workspaces);
+    }
     // Staging branch compile: queued on the POST, ready on the first poll.
     if (path === "/api/proj-1/compile/staging?branch=feat%2Fviews" && req.method === "POST") {
       return reply(200, { git_sha: "abc123", status: "pending", revision_id: null });
@@ -184,6 +202,7 @@ beforeEach(() => {
   publisherRefuses = false;
   uploadStatus = 200;
   databasesStatus = 200;
+  workspaces = TWO_WORKSPACES;
 });
 afterEach(() => rmSync(work, { recursive: true, force: true }));
 
@@ -191,7 +210,9 @@ afterEach(() => rmSync(work, { recursive: true, force: true }));
 function app(manifest: Record<string, unknown> = { slug: "sales", orgSlug: "acme" }): string {
   const dir = join(work, "app");
   mkdirSync(join(dir, "out"), { recursive: true });
-  writeFileSync(join(dir, "oxy-app.json"), JSON.stringify(manifest));
+  // `schemaVersion: 2` filled in: the schema requires it, and these cases are
+  // about everything beside it.
+  writeFileSync(join(dir, "oxy-app.json"), JSON.stringify({ schemaVersion: 2, ...manifest }));
   writeFileSync(join(dir, "out", "index.html"), "<html>sales</html>");
   return dir;
 }
@@ -418,7 +439,7 @@ describe("oxyc publish", () => {
     });
     const result = await publish(dir, [], { OXY_TOKEN: "good-token" });
     expect(result.status).toBe(ExitCode.USAGE);
-    expect(result.stderr).toContain("oxy-app.json has 3 notification problem(s)");
+    expect(result.stderr).toContain("is not a valid oxy-app.json: 3 problem(s)");
     expect(result.stderr).toContain("notifications.categories.a/b/c/d");
     expect(result.stderr).toContain("notifications.kinds.late.level");
     expect(result.stderr).toContain("notifications.kinds.late.actions[0].function");
@@ -452,11 +473,35 @@ describe("oxyc publish", () => {
     expect(result.status).toBe(ExitCode.REQUEST);
   });
 
-  it("names an unregistered app as not found", async () => {
+  it("names an unregistered app as not found, listing the org's workspaces beside the flag", async () => {
     const dir = app({ slug: "other", orgSlug: "acme" });
     const result = await publish(dir, ["--dir", "out"], { OXY_TOKEN: "good-token" });
     expect(result.status).toBe(ExitCode.NOT_FOUND);
-    expect(result.stderr).toContain("--project");
+    expect(result.stderr).toContain("--project <uuid>");
+    expect(result.stderr).toContain("org acme has 2 workspaces this credential can see");
+    for (const w of TWO_WORKSPACES) expect(result.stderr).toContain(`${w.id}  ${w.name}`);
+    expect(uploads()).toHaveLength(0);
+  });
+
+  /** A freshly provisioned org has one workspace, and the first publish is one step. */
+  it("publishes an unregistered app into the org's only workspace, saying so", async () => {
+    workspaces = [TWO_WORKSPACES[0] as { id: string; name: string }];
+    const dir = app({ slug: "other", orgSlug: "acme" });
+    const result = await publish(dir, ["--dir", "out"], { OXY_TOKEN: "good-token" });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain(
+      `first publish goes to workspace "Sales" (${TWO_WORKSPACES[0]?.id}), the only one in org acme this credential can see`
+    );
+    expect(uploads()[0]?.fields).toMatchObject({ app: "other", project: TWO_WORKSPACES[0]?.id });
+  });
+
+  /** A token that cannot list workspaces gets the two-step message, not a failure of its own. */
+  it("falls back to the two-step message when the org cannot be listed", async () => {
+    workspaces = [TWO_WORKSPACES[0] as { id: string; name: string }];
+    const dir = app({ slug: "other", orgSlug: "acme" });
+    const result = await publish(dir, ["--dir", "out"], { OXY_TOKEN: "oxy_ci_minted" });
+    expect(result.status).toBe(ExitCode.NOT_FOUND);
+    expect(result.stderr).toContain("register it in the oxy admin UI, or pass --project <uuid>");
   });
 
   /** A pinned workspace determines its org, so the manifest need not name one. */

@@ -19,11 +19,11 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, extname, join, parse, relative, resolve } from "node:path";
+import { OXY_APP_SCHEMA_FILE, validateOxyAppManifest } from "@oxy-hq/sdk/manifest";
 import { Ajv, type ErrorObject } from "ajv";
 import addFormats from "ajv-formats";
 import { parse as parseYaml } from "yaml";
 import { lintAppFunctions } from "../publish/function-lint.js";
-import { checkNotifications } from "../publish/notification-catalog.js";
 import { checkAppPlacement } from "../publish/placement.js";
 import { REINSTALL_REMEDY } from "../template/embedded.js";
 import { schemasDir } from "../template/locate.js";
@@ -92,16 +92,14 @@ const SKIP = new Set([
 ]);
 
 /**
- * The custom-app manifest, checked for DATA PLACEMENT rather than against a
- * schema: none is generated for it — the SDK's type is its only definition —
- * so `publish/placement.ts` checks where the app's data goes instead.
+ * The custom-app manifest. Its schema is the SDK's `oxy-app.schema.json`,
+ * generated from the `OxyAppManifest` type and run by `validateOxyAppManifest`
+ * — the same check `oxyc publish` and the Vite plugin make — and then
+ * `publish/placement.ts` checks where the app's data goes, and the function
+ * lint what its code calls. `schemaFor` names that schema for it, so the walk
+ * and `--file` treat it like any other governed file.
  */
 const APP_MANIFEST = "oxy-app.json";
-
-/** Matched on the basename, for the reason `schemaFor` gives. */
-function isAppManifest(path: string): boolean {
-  return (path.split("\\").join("/").split("/").pop() ?? path) === APP_MANIFEST;
-}
 
 export interface ValidateFlags {
   /** Validate one file instead of the whole workspace. */
@@ -120,6 +118,7 @@ interface Finding {
 export function schemaFor(path: string): string | undefined {
   const normalised = path.split("\\").join("/");
   const basename = normalised.split("/").pop() ?? normalised;
+  if (basename === APP_MANIFEST) return OXY_APP_SCHEMA_FILE;
   for (const [suffix, schema] of SCHEMA_FOR) {
     // MATCHED AGAINST THE BASENAME, not the whole path, and the distinction
     // is not cosmetic: `endsWith("config.yml")` is true for `myconfig.yml`,
@@ -622,16 +621,18 @@ function validateFile(
   notes: Set<string>
 ): Finding[] | SkipCode {
   const schema = schemaFor(rel);
-  const manifest = isAppManifest(rel);
   // `undefined`, not `[]`, and for the same reason the doc gives: a file with
   // no schema was NOT checked. Unreachable through either door today — `walk`
   // filters on `!schemaFor(rel)` before emitting, and `--file` throws USAGE on
   // the same predicate — but `[]` here is the seed of the exact defect this
   // function's contract exists to prevent, and it grows back silently the day
   // either filter moves.
-  if (!schema && !manifest) return KIND_UNKNOWN;
-  const validate = schema ? compiled.get(schema) : undefined;
-  if (schema && !validate) return SCHEMA_MISSING;
+  if (!schema) return KIND_UNKNOWN;
+  // The manifest's schema is compiled into `oxyc` with the SDK, never read from
+  // `json-schemas/`, so it cannot be missing from an installation.
+  const manifest = schema === OXY_APP_SCHEMA_FILE;
+  const validate = manifest ? undefined : compiled.get(schema);
+  if (!manifest && !validate) return SCHEMA_MISSING;
 
   // NO FILESYSTEM CONDITION MAY ARRIVE LABELLED `(parse)`. Both are settled
   // here, outside the YAML try, because reported from inside it they read as
@@ -707,9 +708,8 @@ function validateFile(
     });
   }
 
-  // The manifest arm, past the same filesystem guards: `validate` is undefined
-  // here only when `schema` was, which the guard above allows for `oxy-app.json`.
-  if (!validate) return validateAppManifest(root, rel, warnings, notes);
+  // The manifest arm, past the same filesystem guards.
+  if (manifest || !validate) return validateAppManifest(root, rel, warnings, notes);
 
   let parsed: unknown;
   try {
@@ -765,7 +765,7 @@ export function runValidate(flags: ValidateFlags, cwd = process.cwd()): void {
     : walk(root);
   const { files, broken } = walked;
 
-  if (single && !schemaFor(files[0] ?? "") && !isAppManifest(files[0] ?? "")) {
+  if (single && !schemaFor(files[0] ?? "")) {
     throw new CliError(`oxyc validate does not know how to check ${single}`, {
       code: ExitCode.USAGE,
       hint: `it checks ${[...SCHEMA_FOR.map(([s]) => s), APP_MANIFEST].join(", ")}`
@@ -879,8 +879,8 @@ export function runValidate(flags: ValidateFlags, cwd = process.cwd()): void {
 }
 
 /**
- * An `oxy-app.json`: where its data goes, what its functions call, and its
- * notification catalogue — not its schema.
+ * An `oxy-app.json`: its schema (the SDK's, via `validateOxyAppManifest`), where
+ * its data goes, what its functions call, and its notification catalogue.
  *
  * Errors come back as findings and fail the run like a schema violation;
  * warnings are collected for `reportWarnings` and do not. Unparsable JSON is a
@@ -923,15 +923,12 @@ function validateAppManifest(
     (issue.level === "error" ? findings : warnings).push(finding);
   }
 
-  // The notification catalogue and reserved kinds: publish's own check, the
-  // same file `oxyc publish` runs before its build.
-  for (const finding of checkNotifications(manifest)) {
-    const entry = {
-      file: `${prefix}${APP_MANIFEST}`,
-      path: finding.path,
-      message: finding.message
-    };
-    (finding.level === "error" ? findings : warnings).push(entry);
+  // The schema, the rules it cannot say and the notification catalogue: the
+  // one check `oxyc publish` and the Vite plugin make, in the same words. An
+  // unknown field is a warning here as there — said, never counted.
+  for (const issue of validateOxyAppManifest(manifest)) {
+    const entry = { file: `${prefix}${APP_MANIFEST}`, path: issue.path, message: issue.message };
+    (issue.level === "error" ? findings : warnings).push(entry);
   }
 
   const lint = lintAppFunctions(appDir, manifest);

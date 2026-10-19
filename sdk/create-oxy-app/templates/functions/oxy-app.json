@@ -1,4 +1,5 @@
 {
+  "$schema": "https://unpkg.com/@oxy-hq/sdk/schema/oxy-app.schema.json",
   "schemaVersion": 2,
   "slug": "{{APP_SLUG}}",
   "name": "{{APP_DISPLAY_NAME}}",

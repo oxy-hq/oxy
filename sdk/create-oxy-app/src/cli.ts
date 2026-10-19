@@ -31,11 +31,16 @@ const TEMPLATES_DIR = path.resolve(HERE, "..", "templates");
 interface ParsedArgs {
   name: string | null;
   template: string;
+  /**
+   * The org the app belongs to, written into `oxy-app.json` as `orgSlug` so
+   * `pnpm dev` and `oxyc publish` need no `--org` / `OXY_ORG` afterwards.
+   */
+  org: string | null;
   help: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
-  const out: ParsedArgs = { name: null, template: "vite", help: false };
+  const out: ParsedArgs = { name: null, template: "vite", org: null, help: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") {
@@ -47,6 +52,13 @@ function parseArgs(argv: string[]): ParsedArgs {
       i++;
     } else if (arg.startsWith("--template=")) {
       out.template = arg.slice("--template=".length);
+    } else if (arg === "--org") {
+      const next = argv[i + 1];
+      if (!next) throw new Error("--org requires a value");
+      out.org = next;
+      i++;
+    } else if (arg.startsWith("--org=")) {
+      out.org = arg.slice("--org=".length);
     } else if (!arg.startsWith("-") && !out.name) {
       out.name = arg;
     }
@@ -54,12 +66,21 @@ function parseArgs(argv: string[]): ParsedArgs {
   return out;
 }
 
+/**
+ * The server's `is_valid_slug`, as the SDK's `isValidSlug` states it: 1–63
+ * lowercase letters, digits and single hyphens. Applied to the app slug
+ * `slugify` derives and to `--org`, which is the org's slug, not its name.
+ */
+const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const SLUG_MAX_LEN = 63;
+const isValidSlug = (slug: string): boolean => slug.length <= SLUG_MAX_LEN && SLUG_PATTERN.test(slug);
+
 function printHelp(): void {
   console.log(`
 create-oxy-app — scaffold a new Oxy custom app.
 
 Usage:
-  create-oxy-app <name> [--template <id>]
+  create-oxy-app <name> [--template <id>] [--org <slug>]
 
 Options:
   -t, --template <id>   Template to use (default: vite).
@@ -68,12 +89,15 @@ Options:
                           functions     …plus a server-side Oxy Function + email
                           single-store  parameter selector + summary + activity
                           dashboard     KPI strip + chart + leaderboard
+      --org <slug>      The org the app belongs to. Written to oxy-app.json as
+                        "orgSlug", so \`pnpm dev\` and \`oxyc publish\` find the
+                        app without --org or OXY_ORG.
   -h, --help            Show this help.
 
 Examples:
-  pnpm dlx create-oxy-app store-pulse
+  pnpm dlx create-oxy-app store-pulse --org acme
   pnpm dlx create-oxy-app sales-dashboard --template dashboard
-  pnpm dlx create-oxy-app notifier --template functions
+  pnpm dlx create-oxy-app notifier --template functions --org acme
 `);
 }
 
@@ -103,6 +127,24 @@ export function templateDestName(entryName: string): string {
     return entryName.slice(0, -".example".length);
   }
   return entryName;
+}
+
+/**
+ * Write `orgSlug` into the scaffolded `oxy-app.json`, keeping `$schema` and
+ * `schemaVersion` first. A key the templates do not carry, because the admin
+ * scaffold renders the same files into an org's own repo and the CLI is the
+ * one place the org is a flag.
+ */
+export async function writeOrgSlug(manifestPath: string, org: string): Promise<void> {
+  const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8")) as Record<string, unknown>;
+  const { $schema, schemaVersion, slug, name, ...rest } = manifest;
+  const ordered: Record<string, unknown> = {};
+  if ($schema !== undefined) ordered.$schema = $schema;
+  if (schemaVersion !== undefined) ordered.schemaVersion = schemaVersion;
+  if (slug !== undefined) ordered.slug = slug;
+  if (name !== undefined) ordered.name = name;
+  ordered.orgSlug = org;
+  await fs.writeFile(manifestPath, `${JSON.stringify({ ...ordered, ...rest }, null, 2)}\n`, "utf-8");
 }
 
 async function copyTemplate(
@@ -159,10 +201,17 @@ async function main(): Promise<void> {
   // Same rule as the server's `is_valid_slug` and the vite plugin: 1–63 chars,
   // single hyphens only. `slugify` collapses `--` and trims hyphens but caps no
   // length, so a long name would otherwise scaffold an app that 422s at publish.
-  if (slug.length > 63 || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
+  if (!isValidSlug(slug)) {
     console.error(
       `error: name "${args.name}" yields slug "${slug}", which is invalid; ` +
         `pick a name that yields 1–63 lowercase letters, digits and single hyphens`
+    );
+    process.exit(1);
+  }
+  if (args.org !== null && !isValidSlug(args.org)) {
+    console.error(
+      `error: --org "${args.org}" is not an org slug; it is the lowercase, hyphenated ` +
+        "name in the org's URL (oxyc api /api/orgs lists them)"
     );
     process.exit(1);
   }
@@ -186,16 +235,28 @@ async function main(): Promise<void> {
 
   console.log(`Creating ${args.name} from template "${args.template}"...`);
   await copyTemplate(templateDir, targetDir, { name: args.name, slug });
+  if (args.org !== null) {
+    await writeOrgSlug(path.join(targetDir, "oxy-app.json"), args.org);
+  }
+  // Without an org the scaffold still works, but every `pnpm dev` and
+  // `oxyc publish` will ask for one — say so here, where adding it is one key.
+  const orgNote =
+    args.org === null
+      ? `
+oxy-app.json has no "orgSlug" yet: add "orgSlug": "<org>" to it (or re-run with
+--org <slug>) so \`pnpm dev\` and \`oxyc publish\` find the app without --org / OXY_ORG.
+`
+      : "";
   console.log(`
 Done. Next steps:
 
   cd ${args.name}
   pnpm install
   pnpm dev          # Vite dev server at http://localhost:5173
-
-Ship it with \`oxyc publish\` (\`npm install -g @oxy-hq/cli\`), or register it
-via the admin UI (Custom apps → Add new) — the Link flow picks up oxy-app.json
-automatically.
+${orgNote}
+Ship it with \`oxyc publish\` (\`npm install -g @oxy-hq/cli\`): the first publish
+registers the app in its org's workspace, or register it via the admin UI
+(Custom apps → Add new) — the Link flow picks up oxy-app.json automatically.
 `);
 }
 

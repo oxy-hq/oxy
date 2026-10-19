@@ -8,10 +8,11 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "email:dev": "node scripts/preview-email.mjs",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p functions/tsconfig.json"
   },
   "dependencies": {
-    "@oxy-hq/sdk": "^2.18.0",
+    "@oxy-hq/sdk": "^2.21.0",
     "clsx": "^2.1.1",
     "preact": "^10.29.7",
     "preact-render-to-string": "^6.7.0",
@@ -20,7 +21,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@oxy-hq/vite-plugin": "^0.3.0",
+    "@oxy-hq/vite-plugin": "^0.4.0",
     "@tailwindcss/vite": "^4.3.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -28,7 +29,8 @@
     "esbuild": "^0.28.2",
     "tailwindcss": "^4.3.2",
     "typescript": "^7.0.2",
-    "vite": "^8.2.1"
+    "vite": "^8.2.1",
+    "vitest": "^5.0.3"
   },
   "engines": {
     "node": ">=22.13",

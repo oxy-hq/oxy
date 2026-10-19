@@ -10,10 +10,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-
+import { isValidFunctionName } from "@oxy-hq/sdk/manifest";
 import { CliError, ExitCode } from "../util/errors.js";
-import { isValidFunctionName, type PublishManifest } from "./manifest.js";
-import { checkNotifications } from "./notification-catalog.js";
 
 /** What sits in `functions/` that this publish did not put there, sorted. */
 export interface FunctionsDirConflicts {
@@ -202,27 +200,4 @@ export function validateFunctionNames(declared: string[]): void {
       hint: "function names must match ^[a-z][a-z0-9-]{0,63}$"
     });
   }
-}
-
-/**
- * The manifest's notifications, checked before anything is built: the app-level
- * `notifications` catalogue (categories, kinds, levels, actions) and any
- * function declaring a kind in Oxygen's `oxy.` namespace. The server refuses
- * the publish anyway (422, first problem only); this lists every one before a
- * build is spent. Returns the warnings to print — a catalogue kind no function
- * sends, a level a `critical: true` overrides — and throws USAGE on any error.
- */
-export function validateNotifications(manifest: PublishManifest | undefined): string[] {
-  const findings = checkNotifications(manifest);
-  const errors = findings.filter((f) => f.level === "error");
-  if (errors.length > 0) {
-    throw new CliError(`oxy-app.json has ${errors.length} notification problem(s)`, {
-      code: ExitCode.USAGE,
-      detail: errors.map((f) => `  ${f.path}: ${f.message}`).join("\n"),
-      hint: "fix each in oxy-app.json — `oxyc validate` lists them without building"
-    });
-  }
-  return findings
-    .filter((f) => f.level === "warning")
-    .map((f) => `oxy-app.json (${f.path}): ${f.message}`);
 }

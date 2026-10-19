@@ -15,9 +15,17 @@ my-app/
 └── tsconfig.json
 ```
 
-`oxy-app.json`:
+`oxy-app.json` (`$schema` is optional — editor completion against the SDK's
+generated schema; `oxyc validate` and the Vite plugin check the file against it
+either way):
 ```json
-{ "schemaVersion": 2, "slug": "my-app", "orgSlug": "your-org", "name": "My App" }
+{
+  "$schema": "https://unpkg.com/@oxy-hq/sdk/schema/oxy-app.schema.json",
+  "schemaVersion": 2,
+  "slug": "my-app",
+  "orgSlug": "your-org",
+  "name": "My App"
+}
 ```
 
 `src/main.tsx`:

@@ -43,7 +43,7 @@ import { readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { capabilitiesFor, WRITE_OPS } from "./capabilities.js";
-import { functionEntry, type PublishManifest } from "./manifest.js";
+import { functionEntry } from "./manifest.js";
 import type { PlacementIssue } from "./placement.js";
 import { lineAt, literalString, maskJs, splitArgs } from "./placement-scan.js";
 import { describeWrite, stagingDestinations, stagingTwin } from "./staging-destinations.js";
@@ -475,7 +475,7 @@ export function lintAppFunctions(
   const mapping = stagingDestinations(manifest);
   for (const [fn, spec] of Object.entries(functions)) {
     if (!isObject(spec) || (spec.entry != null && typeof spec.entry !== "string")) continue;
-    const entry = functionEntry(manifest as PublishManifest, fn);
+    const entry = functionEntry(manifest, fn);
     const { files, unreadable } = loadSources(appDir, entry, cache);
     const missingEntry = unreadable.find((u) => u.rel === entry.replace(/^\.\//, ""));
     if (missingEntry) {

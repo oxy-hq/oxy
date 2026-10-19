@@ -551,9 +551,27 @@ with `pnpm exec esbuild` into `functions/<name>.js`, resolves the project from
 the target's public `build-config`, and uploads the bundle — to the **draft**
 channel unless `--promote`. `--env` defaults to **production**; name it.
 
+- **The manifest** is read strictly: `oxy-app.json` is validated against the
+  JSON Schema `@oxy-hq/sdk` generates from its `OxyAppManifest` type (the same
+  check `oxyc validate` and `@oxy-hq/vite-plugin` make, in the same words). An
+  error — a wrong type, a malformed `slug` or function name, a missing
+  required field, a notification catalogue the server refuses — stops the
+  publish before the build with exit `2`, listing every problem; a field the
+  schema does not know is a warning, since the platform ignores what it does
+  not read.
 - **Identity**: `--org` / `--app`, then `OXY_ORG` / `OXY_APP`, then the manifest's
   `orgSlug` / `slug`, then an `apps/<org>/<app>/` working directory. `--org`
   takes a slug or a UUID. `--project` pins the workspace (and implies its org).
+- **First publish**: an app the target does not know yet makes the
+  build-config lookup 404. With a stored token, `publish` lists the org's
+  workspaces: exactly one, and it publishes there, saying so on stderr;
+  several, and it exits `5` listing them with their uuids beside the
+  `--project <uuid>` to pass. Under trusted publishing (no token) it exits `5`
+  with the two-step hint, as before.
+- **Kit versions**: an app whose `@oxy-hq/sdk` or `@oxy-hq/vite-plugin` is more
+  than one minor behind the versions this `oxyc` was built beside gets one
+  warning per package before the build, naming the `pnpm add`. Read from the
+  app's `package.json` (the installed copy when there is one); no network.
 - **`--dir`** publishes a pre-built directory instead of building; functions are
   still bundled into it. **`--build-only`** stops after building and bundling —
   no credential, no network unless the org must come from `--project`.

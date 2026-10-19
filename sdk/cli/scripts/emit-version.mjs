@@ -38,6 +38,28 @@ if (typeof version !== "string" || version.length === 0) {
   process.exit(1);
 }
 
+/**
+ * The kit packages an app builds with, at the versions beside this checkout.
+ * `oxyc publish` compares an app's pins against them (`publish/versions.ts`)
+ * — no network, so the numbers have to travel with the binary. `null` when a
+ * sibling is not there (a build from a tarball), which turns the check off
+ * rather than inventing a floor.
+ */
+const KIT = {
+  "@oxy-hq/sdk": join(PKG, "..", "typescript", "package.json"),
+  "@oxy-hq/vite-plugin": join(PKG, "..", "vite-plugin", "package.json")
+};
+const kitVersions = Object.fromEntries(
+  Object.entries(KIT).map(([name, path]) => {
+    try {
+      const sibling = JSON.parse(readFileSync(path, "utf8"));
+      return [name, typeof sibling.version === "string" ? sibling.version : null];
+    } catch {
+      return [name, null];
+    }
+  })
+);
+
 const out = join(PKG, "src", "generated", "version.ts");
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(
@@ -47,7 +69,11 @@ writeFileSync(
 // The single source of truth is \`package.json\`. \`oxyc --version\` reads this,
 // so a release is one bump in the manifest and nothing else.
 export const VERSION = ${JSON.stringify(version)};
+
+/** The kit packages' versions beside this build; \`null\` when a sibling was absent. */
+export const KIT_VERSIONS: Record<string, string | null> = ${JSON.stringify(kitVersions, null, 2)};
 `
 );
 
 console.log(`version: ${version}`);
+for (const [name, v] of Object.entries(kitVersions)) console.log(`kit: ${name} ${v ?? "(absent)"}`);

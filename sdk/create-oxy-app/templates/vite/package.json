@@ -10,14 +10,14 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@oxy-hq/sdk": "^2.18.0",
+    "@oxy-hq/sdk": "^2.21.0",
     "clsx": "^2.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@oxy-hq/vite-plugin": "^0.3.0",
+    "@oxy-hq/vite-plugin": "^0.4.0",
     "@tailwindcss/vite": "^4.3.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

@@ -1,6 +1,6 @@
 {
   "name": "@oxy-hq/sdk",
-  "version": "2.20.0",
+  "version": "2.21.0",
   "description": "React SDK for building custom-app bundles on the Oxy platform",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
@@ -57,10 +57,22 @@
         "types": "./dist/testing.d.cts",
         "default": "./dist/testing.cjs"
       }
-    }
+    },
+    "./manifest": {
+      "import": {
+        "types": "./dist/manifest.d.mts",
+        "default": "./dist/manifest.mjs"
+      },
+      "require": {
+        "types": "./dist/manifest.d.cts",
+        "default": "./dist/manifest.cjs"
+      }
+    },
+    "./schema/oxy-app.schema.json": "./schema/oxy-app.schema.json"
   },
   "files": [
     "dist",
+    "schema",
     "README.md",
     "LICENSE"
   ],
@@ -79,7 +91,8 @@
     "test:watch": "vitest",
     "prepublishOnly": "pnpm build",
     "publish:beta": "npm publish --tag beta",
-    "publish:latest": "npm publish --tag latest"
+    "publish:latest": "npm publish --tag latest",
+    "gen:manifest-schema": "node scripts/gen-manifest-schema.mjs && pnpm -w exec biome format --write sdk/typescript/schema/oxy-app.schema.json"
   },
   "keywords": [
     "oxy",
@@ -137,6 +150,7 @@
     "preact-render-to-string": "^6.8.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "ts-json-schema-generator": "2.9.0",
     "tsdown": "^0.23.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"

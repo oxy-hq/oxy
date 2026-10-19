@@ -18,7 +18,11 @@ export default defineConfig({
     // `@oxy-hq/sdk/testing` — a typed test context for a function's unit
     // tests. Pure TS, no React; its own entry so a test's value import never
     // pulls in the root entry, and a function bundle never carries it.
-    testing: "src/testing/index.ts"
+    testing: "src/testing/index.ts",
+    // `@oxy-hq/sdk/manifest` — the `oxy-app.json` contract: types, the
+    // generated JSON Schema, the name rules and the validator. Pure TS, no
+    // React; its own entry so `oxyc` and the Vite plugin take it alone.
+    manifest: "src/manifest.ts"
   },
   format: ["cjs", "esm"],
   dts: true,

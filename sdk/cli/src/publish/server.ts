@@ -10,6 +10,7 @@ import { withUserAgent } from "../api/user-agent.js";
 import { readRefusal, sandboxRefusalHint, withReason } from "../apps/sandbox-token.js";
 import { requestGithubIdToken } from "../auth/oidc.js";
 import { isSandboxAgentToken } from "../auth/token-kind.js";
+import * as log from "../ui/log.js";
 import { CliError, ExitCode, exitCodeForStatus } from "../util/errors.js";
 import { printableLines } from "../util/printable.js";
 
@@ -48,12 +49,58 @@ function base(target: string): string {
   return target.replace(/\/+$/, "");
 }
 
-/** The project an app publishes into, from its `(org, app)` on the target. Public. */
-export async function fetchProject(target: string, org: string, app: string): Promise<string> {
+/** What `fetchProject` may use to settle a first publish on its own. */
+export interface FirstPublishOptions {
+  /**
+   * A credential that can list the org's workspaces. Absent (trusted
+   * publishing, whose token is minted after the build), an unregistered app is
+   * reported with the flag to pass.
+   */
+  token?: string;
+  /** Where the chosen workspace is announced. Default: stderr via `log.info`. */
+  say?: (line: string) => void;
+}
+
+/**
+ * The project an app publishes into, from its `(org, app)` on the target.
+ * Public for a registered app.
+ *
+ * AN UNREGISTERED APP IS THE FIRST PUBLISH, and the first publish used to be
+ * two steps: the lookup 404s, the author is told to find a workspace uuid and
+ * come back with `--project`. With a credential this now asks the deployment
+ * for the org's workspaces instead — and when there is exactly one, which is
+ * what a freshly provisioned org has, publishes into it and says so. With
+ * several, they are listed with their uuids beside the exact flag, so the
+ * second step is a copy rather than a search.
+ */
+export async function fetchProject(
+  target: string,
+  org: string,
+  app: string,
+  options: FirstPublishOptions = {}
+): Promise<string> {
   const url = `${base(target)}/api/apps/${encodeURIComponent(org)}/${encodeURIComponent(app)}/build-config`;
   const response = await send(url, {}, LOOKUP_TIMEOUT_MS);
   if (response.status === 404) {
-    throw new CliError(`app ${org}/${app} is not registered on ${target}`, {
+    const unregistered = `app ${org}/${app} is not registered on ${target}`;
+    const workspaces = options.token ? await listOrgWorkspaces(target, org, options.token) : [];
+    const [only] = workspaces;
+    if (only !== undefined && workspaces.length === 1) {
+      (options.say ?? log.info)(
+        `${unregistered} — its first publish goes to workspace "${only.name}" (${only.id}), the only one in org ${org} this credential can see`
+      );
+      return only.id;
+    }
+    if (workspaces.length > 1) {
+      throw new CliError(unregistered, {
+        code: ExitCode.NOT_FOUND,
+        detail: `org ${org} has ${workspaces.length} workspaces this credential can see — its first publish needs one named:\n${workspaces
+          .map((w) => `  ${w.id}  ${w.name}`)
+          .join("\n")}`,
+        hint: "re-run with --project <uuid> (or OXY_PROJECT=<uuid>); every later publish finds the app by its slug"
+      });
+    }
+    throw new CliError(unregistered, {
       code: ExitCode.NOT_FOUND,
       hint: "register it in the oxy admin UI, or pass --project <uuid> for its first publish"
     });
@@ -64,6 +111,49 @@ export async function fetchProject(target: string, org: string, app: string): Pr
     });
   }
   return (await json<{ project_id: string }>(response, "build-config")).project_id;
+}
+
+interface WorkspaceRow {
+  id: string;
+  name: string;
+}
+
+/**
+ * The org's workspaces, by slug, through `GET /api/orgs` then
+ * `GET /api/orgs/{id}/workspaces` — what `oxyc api {org}/workspaces` reads.
+ *
+ * BEST-EFFORT: an empty list for anything that is not a plain answer (a token
+ * that cannot list orgs, an org the caller is not in, a deployment without the
+ * route), so the caller falls back to the two-step message rather than failing
+ * on a request the publish itself does not make.
+ */
+async function listOrgWorkspaces(
+  target: string,
+  org: string,
+  token: string
+): Promise<WorkspaceRow[]> {
+  const headers = { authorization: `Bearer ${token}` };
+  try {
+    const orgs = await send(`${base(target)}/api/orgs`, { headers }, LOOKUP_TIMEOUT_MS);
+    if (!orgs.ok) return [];
+    const rows = await json<Array<{ id?: string; slug?: string }>>(orgs, "orgs");
+    const match = Array.isArray(rows) ? rows.find((row) => row.slug === org) : undefined;
+    if (!match?.id) return [];
+    const list = await send(
+      `${base(target)}/api/orgs/${encodeURIComponent(match.id)}/workspaces`,
+      { headers },
+      LOOKUP_TIMEOUT_MS
+    );
+    if (!list.ok) return [];
+    const workspaces = await json<Array<{ id?: string; name?: string }>>(list, "workspaces");
+    if (!Array.isArray(workspaces)) return [];
+    return workspaces
+      .filter((w): w is { id: string; name?: string } => typeof w.id === "string")
+      .map((w) => ({ id: w.id, name: w.name ?? w.id }));
+  } catch (cause) {
+    if (cause instanceof CliError) return [];
+    throw cause;
+  }
 }
 
 /** The org a pinned workspace belongs to — a workspace has exactly one. Public. */

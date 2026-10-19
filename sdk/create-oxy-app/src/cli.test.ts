@@ -1,5 +1,8 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { parseArgs, slugify, templateDestName } from "./cli.js";
+import { parseArgs, slugify, templateDestName, writeOrgSlug } from "./cli.js";
 
 describe("parseArgs", () => {
   test("captures the first positional as name, default template is vite", () => {
@@ -82,5 +85,44 @@ describe("templateDestName", () => {
   test("leaves ordinary filenames alone", () => {
     expect(templateDestName("package.json")).toBe("package.json");
     expect(templateDestName("vite.config.ts")).toBe("vite.config.ts");
+  });
+});
+
+describe("--org", () => {
+  test("is captured in both spellings, and defaults to none", () => {
+    expect(parseArgs(["my-app"]).org).toBeNull();
+    expect(parseArgs(["my-app", "--org", "acme"]).org).toBe("acme");
+    expect(parseArgs(["my-app", "--org=acme"]).org).toBe("acme");
+  });
+
+  test("writes orgSlug into the scaffolded manifest, after the identity keys", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "create-oxy-app-"));
+    try {
+      const manifest = join(dir, "oxy-app.json");
+      writeFileSync(
+        manifest,
+        JSON.stringify({
+          $schema: "https://unpkg.com/@oxy-hq/sdk/schema/oxy-app.schema.json",
+          schemaVersion: 2,
+          slug: "store-pulse",
+          name: "Store Pulse",
+          icon: "icon.svg"
+        })
+      );
+      await writeOrgSlug(manifest, "acme");
+      const written = readFileSync(manifest, "utf8");
+      expect(Object.keys(JSON.parse(written))).toEqual([
+        "$schema",
+        "schemaVersion",
+        "slug",
+        "name",
+        "orgSlug",
+        "icon"
+      ]);
+      expect(JSON.parse(written).orgSlug).toBe("acme");
+      expect(written.endsWith("\n")).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

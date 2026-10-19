@@ -6,7 +6,7 @@
     "declaration": false,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "..",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -17,7 +17,18 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noUncheckedIndexedAccess": true,
-    "types": ["node"]
+    "types": ["node"],
+    // `@oxy-hq/sdk/manifest` is read FROM SOURCE, not from the SDK's `dist`:
+    // CI typechecks every sdk package in parallel before anything is built, so
+    // a resolution through `dist` would race its own producer. The same
+    // mapping is in `tsdown.config.ts` (the bundle inlines it — a published
+    // `oxyc` carries no runtime dependency on the SDK) and `vitest.config.ts`.
+    // `rootDir` is the sdk/ directory for the same reason: the mapped file
+    // sits outside `src`, and TypeScript refuses an input outside the root
+    // (TS6059) even with `noEmit`. Nothing is emitted by `tsc` here.
+    "paths": {
+      "@oxy-hq/sdk/manifest": ["../typescript/src/manifest.ts"]
+    }
   },
   "include": ["src/**/*"],
   // `./template` is the SCAFFOLD at the package root, not `src/template`. The
