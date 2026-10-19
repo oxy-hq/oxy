@@ -39,18 +39,21 @@ use uuid::Uuid;
 
 use super::blockers::{staging_never_served, validation_not_passed};
 use super::error::PromoteError;
+use super::target::BuildRef;
+use crate::server::api::custom_apps_agent_built::AgentBuilt;
+use crate::server::api::custom_apps_build_state::{BuildState, PromoteRefusal};
 use crate::server::api::custom_apps_environments::{self, EnvAction};
 use crate::server::api::{
-    custom_apps_agent_built as agent_built, custom_apps_build_history as history,
-    custom_apps_cache, custom_apps_migrations as migrations,
+    custom_apps_build_history as history, custom_apps_cache, custom_apps_migrations as migrations,
 };
 
 /// One move of production's pointer.
 #[derive(Debug, Clone)]
 pub struct ProductionMove {
     pub app_id: Uuid,
-    /// `app_builds.id` of the build production moves to.
-    pub build: Uuid,
+    /// The build production moves to: an `app_builds.id` (`.into()`), or the
+    /// draft / newest build, resolved under the row lock (`target`).
+    pub build: BuildRef,
     /// `Promote` or `Rollback`: what the `production` event records.
     pub action: EnvAction,
     pub actor: Option<Uuid>,
@@ -77,32 +80,51 @@ pub struct Moved {
     pub applied: MigrationsApplied,
 }
 
+/// How many times a move starts over for a build its name came to mean
+/// something else while it admitted and migrated the previous one.
+const MAX_RESOLVES: usize = 3;
+
 /// Admit, migrate, then move under the row lock (module docs). Drops the
 /// serve path's resolution cache once committed.
+///
+/// A move aimed at the draft or the newest build ([`BuildRef`]) names it again
+/// under the lock. When that is not the build it admitted — a draft publish
+/// landed meanwhile — the transaction is dropped and the move starts over, so
+/// the newer build is admitted and migrated like any other and wins.
 pub async fn move_production(
     db: &DatabaseConnection,
     mv: &ProductionMove,
 ) -> Result<Moved, PromoteError> {
-    let app = apps::Entity::find_by_id(mv.app_id)
-        .one(db)
-        .await
-        .map_err(|e| PromoteError::internal("load the app", e))?
-        .ok_or(PromoteError::AppNotFound)?;
-    let build = load_build(db, mv.app_id, mv.build).await?;
-    check_pointer(&app, &build, mv)?;
-    admissible(db, &build).await?;
-    let applied = apply_migrations(db, &app, &build).await?;
-    let txn = db
-        .begin()
-        .await
-        .map_err(|e| PromoteError::internal("begin the move", e))?;
-    let row = lock_app(&txn, mv.app_id).await?;
-    let app = move_locked(&txn, row, mv).await?;
-    txn.commit()
-        .await
-        .map_err(|e| PromoteError::internal("commit the move", e))?;
-    custom_apps_cache::invalidate_app_resolution_cache();
-    Ok(Moved { app, applied })
+    let mut last = None;
+    for _ in 0..MAX_RESOLVES {
+        let app = apps::Entity::find_by_id(mv.app_id)
+            .one(db)
+            .await
+            .map_err(|e| PromoteError::internal("load the app", e))?
+            .ok_or(PromoteError::AppNotFound)?;
+        let build = mv.build.resolve(db, &app).await?;
+        check_pointer(&app, &build, mv)?;
+        admissible(db, &build).await?;
+        let applied = apply_migrations(db, &app, &build).await?;
+        let txn = db
+            .begin()
+            .await
+            .map_err(|e| PromoteError::internal("begin the move", e))?;
+        let row = lock_app(&txn, mv.app_id).await?;
+        let named = mv.build.resolve(&txn, &row).await?;
+        if named.id != build.id {
+            last = Some((build.id, named.id));
+            continue;
+        }
+        let app = move_resolved(&txn, row, mv, named).await?;
+        txn.commit()
+            .await
+            .map_err(|e| PromoteError::internal("commit the move", e))?;
+        custom_apps_cache::invalidate_app_resolution_cache();
+        return Ok(Moved { app, applied });
+    }
+    let (expected, actual) = last.unwrap_or_default();
+    Err(mv.build.moved(expected, actual))
 }
 
 /// The app's row, held `FOR UPDATE` until the caller's transaction ends.
@@ -127,12 +149,22 @@ pub async fn move_locked<C: ConnectionTrait>(
     row: apps::Model,
     mv: &ProductionMove,
 ) -> Result<apps::Model, PromoteError> {
-    let build = load_build(conn, row.id, mv.build).await?;
+    let build = mv.build.resolve(conn, &row).await?;
+    move_resolved(conn, row, mv, build).await
+}
+
+/// [`move_locked`] once the locked `row` has named its `build`.
+async fn move_resolved<C: ConnectionTrait>(
+    conn: &C,
+    row: apps::Model,
+    mv: &ProductionMove,
+    build: app_builds::Model,
+) -> Result<apps::Model, PromoteError> {
     check_pointer(&row, &build, mv)?;
     admissible(conn, &build).await?;
     let now = Utc::now().fixed_offset();
     let mut active: apps::ActiveModel = row.into();
-    active.published_build_id = ActiveValue::Set(Some(mv.build));
+    active.published_build_id = ActiveValue::Set(Some(build.id));
     active.published_at = ActiveValue::Set(Some(now));
     active.last_promoted_by = ActiveValue::Set(mv.actor);
     active.last_promoted_at = ActiveValue::Set(Some(now));
@@ -145,7 +177,7 @@ pub async fn move_locked<C: ConnectionTrait>(
         conn,
         mv.app_id,
         &AppEnvironment::Production,
-        Some(mv.build),
+        Some(build.id),
         mv.action,
         mv.actor,
     )
@@ -205,12 +237,13 @@ pub async fn admissible<C: ConnectionTrait>(
     conn: &C,
     build: &app_builds::Model,
 ) -> Result<(), PromoteError> {
-    let unapproved = agent_built::refusing_promote(conn, build)
-        .await
-        .map_err(|e| PromoteError::internal("read the build's publisher", e))?;
-    if let Some(built) = unapproved {
-        return Err(built.into());
-    }
+    let unvalidated = match BuildState::of(build).promotable() {
+        Ok(()) => None,
+        Err(PromoteRefusal::AgentBuilt { token_id }) => {
+            return Err(agent_built_refusal(conn, build, token_id).await);
+        }
+        Err(PromoteRefusal::ValidationNotPassed { status }) => Some(status),
+    };
     let mut blockers = Vec::new();
     let staging = AppEnvironment::Staging;
     let served = history::has_served(conn, build.app_id, &staging, build.id)
@@ -219,16 +252,40 @@ pub async fn admissible<C: ConnectionTrait>(
     if !served {
         blockers.push(staging_never_served(&build.build_id));
     }
-    if build.validation_status != "passed" {
-        blockers.push(validation_not_passed(
-            &build.build_id,
-            &build.validation_status,
-        ));
+    if let Some(status) = unvalidated {
+        blockers.push(validation_not_passed(&build.build_id, &status));
     }
     if blockers.is_empty() {
         Ok(())
     } else {
         Err(PromoteError::Blocked(blockers))
+    }
+}
+
+/// `409 draft_published_by_agent` when a sandbox agent token published
+/// `build` — the refusal every promote path makes before it plans or moves.
+pub async fn refuse_agent_built<C: ConnectionTrait>(
+    conn: &C,
+    build: &app_builds::Model,
+) -> Result<(), PromoteError> {
+    match BuildState::of(build).provenance.check() {
+        Err(PromoteRefusal::AgentBuilt { token_id }) => {
+            Err(agent_built_refusal(conn, build, token_id).await)
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The refusal for a build `token_id` published, with the token's name, its
+/// minter and where the build went.
+async fn agent_built_refusal<C: ConnectionTrait>(
+    conn: &C,
+    build: &app_builds::Model,
+    token_id: Uuid,
+) -> PromoteError {
+    match AgentBuilt::describe(conn, build, token_id).await {
+        Ok(built) => built.into(),
+        Err(e) => PromoteError::internal("read the build's publisher", e),
     }
 }
 

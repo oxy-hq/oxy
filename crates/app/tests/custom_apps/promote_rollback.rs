@@ -6,6 +6,7 @@
 //! | --- | --- |
 //! | `paths` | staging → production and a sandbox → staging move their pointer, write their event and audit row, and answer the plan; every other pair is `400 promote_path_refused`; `already_serving`; `target_moved`; `--build` must be a build the source served; a promoting publish records staging's event first and warns it is deprecated |
 //! | `invariant` | a build staging never served is refused on the new route, Make Live, the console's rollback and promote latest; the move re-asks under the app's row lock, so a pointer or a validation that changed while it waited refuses it |
+//! | `lock_resolved` | a move aimed at the draft or the newest build names it under the app's row lock: a draft publish (or a newer build) landing between the caller's read and the lock is the build made live |
 //! | `migrations` | a production move applies the build's pending OLTP files before the pointer moves — the new route and Make Live alike — and a failing file leaves the pointer where it was, answered with the migration's own status |
 //! | `rollback` | the default target is the previous build (twice swaps back), `--to` names one the environment served, a sandbox is `not_rollbackable`, an environment with nothing before is `nothing_to_roll_back_to` |
 //! | `blockers` | an unset `required` key blocks a promote and only warns a rollback; retiring a registered schedule needs the function named; rollback re-registers its target's schedules |
@@ -24,6 +25,7 @@ use crate::sandbox_publish::{build_pk, input, sandbox};
 mod agent_built;
 mod blockers;
 mod invariant;
+mod lock_resolved;
 mod migrations;
 mod paths;
 mod rollback;

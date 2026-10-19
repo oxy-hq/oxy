@@ -35,9 +35,11 @@ use serde::Serialize;
 use tar::Archive;
 use uuid::Uuid;
 
+use super::custom_apps_build_state::{BuildState, PromoteRefusal};
 use super::custom_apps_env_schedules::reconcile as env_schedules;
 use super::custom_apps_nonproduction::publish as staging;
 use super::custom_apps_nonproduction::staging_task;
+use super::custom_apps_publish_form::PublishForm;
 use super::custom_apps_publish_refusal::PublishRefusal;
 use super::custom_apps_sandboxes::{
     agent_draft as sandbox_agent_draft, agent_publish as sandbox_agent_publish,
@@ -49,6 +51,11 @@ use super::{
     custom_apps_migrations as migrations, custom_apps_precompress as precompress,
     workspace_org::{WorkspaceOrgMatch, workspace_in_org},
 };
+
+mod admit;
+mod inflate;
+mod orphan;
+mod pipeline;
 
 /// How many builds to retain per app **in each retention window**
 /// (`custom_apps_sandboxes::retention`). Older builds (not currently pointed
@@ -845,30 +852,6 @@ async fn discard_build_row(db: &DatabaseConnection, build_pk: Uuid, build_id: &s
     }
 }
 
-/// Undo a publish whose bytes were already stored AND whose build row was already
-/// recorded, but that failed while wiring the build up (function registration or
-/// pointer move). Runs the full teardown in the order the invariants require —
-/// drop the stored bytes (best-effort; a leaked prefix is a GC concern, not a
-/// publish failure), delete the orphan build row so a same-id retry doesn't 409,
-/// then undo the `apps`-row mutation so a live app is never left repointed.
-///
-/// Consumes `rollback` (its `apply` is single-use). Extracted so the two
-/// post-`record_build` failure sites share one sequence and cannot drift apart —
-/// they were byte-identical copies.
-async fn rollback_stored_build(
-    db: &DatabaseConnection,
-    app_id: Uuid,
-    build_id: &str,
-    build_pk: Uuid,
-    rollback: AppMutationRollback,
-) {
-    if let Err(cleanup) = store::delete_build(app_id, build_id).await {
-        tracing::warn!("publish rollback: orphan prefix left for {app_id}: {cleanup}");
-    }
-    discard_build_row(db, build_pk, build_id).await;
-    rollback.apply(db, app_id).await;
-}
-
 /// True when this app already has a build under `build_id`.
 ///
 /// There is no unique index on `(app_id, build_id)` to lean on, so this is the
@@ -1416,7 +1399,7 @@ async fn set_pointers(
     if promote {
         let mv = super::custom_apps_promote::ProductionMove {
             app_id,
-            build: build_pk,
+            build: build_pk.into(),
             action: super::custom_apps_environments::EnvAction::Promote,
             actor,
             expect_current: None,
@@ -1442,13 +1425,14 @@ async fn gate_promotion(db: &DatabaseConnection, build_pk: Uuid) -> Result<(), P
         .await
         .map_err(|e| PublishError::Db(e.to_string()))?
         .ok_or_else(|| PublishError::Db(format!("build {build_pk} vanished mid-publish")))?;
-    if build.validation_status != "passed" {
+    if let Err(PromoteRefusal::ValidationNotPassed { status }) =
+        BuildState::of(&build).validation.check()
+    {
         return Err(PublishError::Invalid(
             crate::server::api::custom_apps_validate::BundleValidation::new(
                 "validation_not_passed",
                 format!(
-                    "build validation status is '{}', not 'passed' — it cannot be promoted to live",
-                    build.validation_status
+                    "build validation status is '{status}', not 'passed' — it cannot be promoted to live"
                 ),
                 "Re-publish after the bundle passes validation.",
             ),
@@ -1602,464 +1586,11 @@ pub async fn publish_to(
     target: PublishTarget,
 ) -> Result<PublishResult, PublishError> {
     let agent = sandbox_agent_publish::AgentPublish::of(&input, &target)?;
-    let published = store_and_point(input, target).await;
+    let published = pipeline::store_and_point(input, target).await;
     match agent {
         Some(agent) => published.map_err(|refused| agent.sees(refused)),
         None => published,
     }
-}
-
-/// [`publish_to`], once the credential has been held to its target.
-async fn store_and_point(
-    mut input: PublishInput,
-    target: PublishTarget,
-) -> Result<PublishResult, PublishError> {
-    target.refuse_promote(&input)?;
-    let db = oxy::database::client::establish_connection()
-        .await
-        .map_err(|e| PublishError::Db(e.to_string()))?;
-
-    // Resolve the org. When the publisher pinned only a workspace
-    // (`--project` without `--org`), infer the org from it — a workspace
-    // belongs to exactly one org. When an org IS given, keep the cross-org
-    // guard: it must match the workspace's org.
-    let org = match &input.org_ref {
-        Some(org_ref) => {
-            let org = resolve_org(&db, org_ref).await?;
-            validate_project(&db, input.project_id, org.id, &org.slug).await?;
-            org
-        }
-        None => org_for_project(&db, input.project_id).await?,
-    };
-    authorize_publish(&db, &org, &input).await?;
-    // A semantic pin is staging-only and must name a ready revision of the
-    // workspace this publish targets (which `ensure_same_workspace` below
-    // holds to the app's own). Checked before the bundle is inflated.
-    if let Some(revision_id) = input.semantic_revision_id {
-        crate::server::api::custom_apps_staging_pin::validate_pin_for_publish(
-            &db,
-            input.project_id,
-            revision_id,
-            input.promote,
-        )
-        .await
-        .map_err(PublishError::SemanticPin)?;
-    }
-
-    // Reject a malformed or already-used id BEFORE the expensive work. The
-    // pipeline below inflates up to `MAX_DECOMPRESSED_BYTES`, validates, and
-    // brotli-compresses the whole bundle; making a duplicate pay all of that
-    // only to 409 is wasteful now that a reused id is an ordinary mistake
-    // rather than an exotic one (a copied-out `deploy.yml` that still pins
-    // `--build-id ${{ github.sha }}` hits it on every promote).
-    //
-    // Only possible when the app already exists — on a first publish there is
-    // no `app_id` yet, and no builds to collide with either. The check after
-    // `upsert_app` stays as the authoritative one; this is a fast path, not a
-    // replacement, and the two cannot disagree in a way that admits a bad id.
-    if !store::is_valid_build_id(&input.build_id) {
-        return Err(PublishError::InvalidBuildId(input.build_id.clone()));
-    }
-    // The slug is a raw multipart field on this route and had NO validation —
-    // it feeds the OLTP writer derivation (`app_writer_name`), a `repo_path`
-    // segment and the served base path. `app_writer_name` already refuses an `_`
-    // (which would alias a hyphenated sibling onto one writer) rather than pass
-    // it through, but reject the whole invalid-slug set here too, so a bad slug
-    // never reaches the row, the path or the store in the first place.
-    if !crate::server::api::admin::apps::is_valid_slug(&input.app_slug) {
-        return Err(PublishError::InvalidSlug(input.app_slug.clone()));
-    }
-    let existing_app = find_app(&db, org.id, &input.app_slug).await?;
-    let sandbox_app =
-        sandbox_publish::admit_target(&db, &input, existing_app.as_ref(), &target).await?;
-    if let Some(app) = &existing_app {
-        // Same fast-path reasoning for a publish that names another workspace:
-        // refuse it before inflating the bundle. `upsert_app` re-checks, and is
-        // the one that writes a re-home.
-        ensure_same_workspace(&db, app, &input).await?;
-        if build_id_taken(&db, app.id, &input.build_id).await? {
-            return Err(PublishError::DuplicateBuild {
-                app_slug: input.app_slug.clone(),
-                build_id: input.build_id.clone(),
-            });
-        }
-    }
-
-    // Decompress off the async runtime: even bounded at 256 MiB, the inflate +
-    // allocation is CPU-bound and would tie up a Tokio worker for the duration
-    // (a crafted body that expands to the full budget parks a worker). `take`
-    // moves the bytes into the blocking task — `tarball` isn't used afterwards.
-    let tarball = std::mem::take(&mut input.tarball);
-    // Sentry hubs are per thread, so a panic here would otherwise be captured on
-    // the blocking pool's long-lived hub — attached to whatever scope and
-    // breadcrumbs the last unrelated job on that thread left behind. Carry the
-    // request's hub across instead.
-    //
-    // That hub is NOT custom-app-tagged, and should not be: publish is only
-    // reachable through `POST /api/customer-apps/publish`, the platform's own
-    // admin + CI endpoint, which never passes `check_custom_app_gates` and is
-    // excluded from `is_custom_app_request` by name. A panic in Oxy's own
-    // tarball unpacker is a platform bug and belongs in Sentry.
-    let hub = sentry::Hub::current();
-    let files =
-        tokio::task::spawn_blocking(move || sentry::Hub::run(hub, || unpack_tar_gz(&tarball)))
-            .await
-            .map_err(|e| {
-                PublishError::BadTarball(format!("bundle decompression task failed: {e}"))
-            })??;
-    // Fast deploy validation (design doc §8, gate 1): catch the known
-    // blank-screen causes (missing head, baked-vs-registered base-path
-    // mismatch) as an actionable 422 BEFORE storing the build.
-    crate::server::api::custom_apps_validate::validate_bundle(&files, &org.slug, &input.app_slug)
-        .map_err(PublishError::Invalid)?;
-    let index_bytes = files
-        .iter()
-        .find(|(p, _)| p == "index.html")
-        .map(|(_, b)| axum::body::Bytes::from(b.clone()));
-    // Capture the bundle's oxy-app.json into the build row so the manifest
-    // resolver (debug endpoint) reads it from the DB, not a local file.
-    // Falls back to an explicit `manifest` multipart field if the bundle
-    // didn't ship one.
-    //
-    // A present-but-unparseable oxy-app.json is a hard error, NOT a silent
-    // fall-through: `oxy-app.json` is the canonical manifest `oxyc publish` ships,
-    // so swallowing its parse error strips the whole `functions` block and
-    // publishes a function-less app with a 200 — then `useFunction` 404s and the
-    // author is misdiagnosed. (The multipart `manifest` field is hardened the
-    // same way in the handler.)
-    let manifest_json = parse_embedded_manifest(&files)?.or_else(|| input.manifest.clone());
-
-    // Every declared function must be validly named and ship its bundled JS.
-    // Checked here, before the row or a single byte is written: a bundle
-    // without them used to go live with a 200 and every function missing.
-    let fn_specs = function_specs(manifest_json.as_ref());
-    check_declared_functions(&files, &fn_specs)?;
-    // The app's notification catalogue: refused when malformed, warned about
-    // when it names a kind no function may send.
-    let catalogue_warnings = check_notification_catalogue(manifest_json.as_ref())?;
-    // A `shared` env key falls back to production's value outside production,
-    // so it may not be one an environment must hold its own of — in this
-    // bundle, or in the build production serves.
-    crate::server::api::custom_apps_secrets::shared_env::check_publish(
-        &db,
-        existing_app.as_ref(),
-        manifest_json.as_ref(),
-        &fn_specs,
-        &files,
-    )
-    .await?;
-
-    // Advisory, never a gate: an oversized card image renders fine and only
-    // slows the home page. Read now, because `files` moves into `put_build`.
-    let art_warning = crate::server::api::custom_apps_validate::oversized_art_warning(
-        &files,
-        manifest_json.as_ref(),
-    );
-
-    // Lift the bundle's declared `*.sql` migrations out NOW, while `files` is
-    // still in hand and before a single byte has been stored. Three things this
-    // ordering buys, none of which survive doing it later:
-    //
-    //  - `files` is moved into `put_build` below, so the SQL has to be copied
-    //    out before then. It is kilobytes.
-    //  - A malformed `migrations` block, or one naming a directory the bundle
-    //    doesn't carry, fails the publish with no orphan build and no row to
-    //    roll back.
-    //  - A **draft** publish validates the block too. The author learns the
-    //    directory name is wrong on the publish that carries it, rather than on
-    //    a promote weeks later.
-    //
-    // Empty for the overwhelmingly common app, which declares no migrations.
-    let declared_migrations = migrations::declare(manifest_json.as_ref(), &files)?;
-    // The Airhouse half, checked the same way and just as early: every file is
-    // parsed against the app's schema and DuckLake's rules here.
-    let declared_airhouse_migrations =
-        migrations::declare_airhouse(manifest_json.as_ref(), &files, &input.app_slug)?;
-    // Where staging's warehouse writes land, checked before a byte is stored
-    // (and again by the host on every staging write). An author error refuses
-    // the publish; nothing staging does fails a promoting one.
-    let mapping_warning =
-        staging::mapping_warning(input.project_id, manifest_json.as_ref(), input.promote)
-            .await
-            .map_err(PublishError::DestinationMapping)?;
-
-    // Reserve the bundle's `__oxy/` namespace and write the platform's asset
-    // manifest into it — the document that gives the serve path its preload
-    // hints and the service worker its precache list. Before pre-compression so
-    // the manifest gets a `.br` sibling like any other JSON, and before
-    // `put_build` so it lands in the same immutable prefix as the files it
-    // describes.
-    let mut files = files;
-    let asset_manifest =
-        asset_manifest::install_into(&mut files, &input.build_id, manifest_json.as_ref());
-    // The entry bytes, kept aside so the cache can be warmed once the build is
-    // live. Cloned rather than referenced because `files` is about to be moved
-    // into the upload; it is a few hundred KiB and it buys the first visitor
-    // after a publish a warm critical path instead of one object-store
-    // round-trip per entry chunk.
-    let seed_entries: Vec<(String, axum::body::Bytes)> = asset_manifest
-        .entries
-        .iter()
-        .filter_map(|entry| {
-            files
-                .iter()
-                .find(|(path, _)| path.trim_start_matches('/') == entry.path)
-                .map(|(path, bytes)| (path.clone(), axum::body::Bytes::from(bytes.clone())))
-        })
-        .collect();
-
-    // Emit `<asset>.br` siblings so the serve path never re-compresses an
-    // immutable content-hashed asset (see `custom_apps_precompress`). Runs on
-    // the blocking pool for the same reason the tar inflate does: brotli over a
-    // multi-MB bundle is CPU-bound and would park a Tokio worker. Additive —
-    // the store simply receives more files, and a build with no siblings
-    // (published before this existed) still serves correctly.
-    //
-    // NOTE ON THE SIZE CAP: `MAX_DECOMPRESSED_BYTES` bounds what
-    // `unpack_tar_gz` produces, and these variants are appended *after* that
-    // check — so peak resident bytes for a publish is the unpacked bundle plus
-    // its compressible subset in brotli form (plus rayon's per-thread output
-    // buffers). The effective ceiling is therefore ~1.3x the stated cap, not
-    // the cap. Kept out of the cap deliberately: the cap exists to bound what
-    // an *uploader* can make us hold, and these bytes are ours, derived from
-    // already-admitted input. Count them here if that ratio ever gets tighter.
-    // Same as the unpack above: the request's hub, not the blocking pool's.
-    let hub = sentry::Hub::current();
-    let files = tokio::task::spawn_blocking(move || {
-        sentry::Hub::run(hub, || {
-            let mut files = files;
-            let mut variants = precompress::precompressed_variants(&files);
-            files.append(&mut variants);
-            files
-        })
-    })
-    .await
-    .map_err(|e| PublishError::BadTarball(format!("bundle pre-compression task failed: {e}")))?;
-
-    let (app_id, is_new_app, rollback) = app_row_for(&db, &org, &input, sandbox_app).await?;
-    // A build id must be unique per app. Everything downstream treats a build's
-    // stored bytes as immutable and addressable by id:
-    //
-    // - `put_build` writes key by key into `build_prefix(app_id, build_id)` and
-    //   never wipes the prefix first, so a re-publish under a reused id merges
-    //   into the old build rather than replacing it.
-    // - `custom_apps_bundle_cache` caches per-`build_id` *absences* on the
-    //   strength of "a build's file set is fixed once `put_build` returns". A
-    //   file the second publish adds would read as permanently missing on every
-    //   replica that already probed for it — and for a `.js` request that means
-    //   the SPA `index.html` fallback at 200, i.e. a broken app that does not
-    //   self-heal without a process restart.
-    // - `gc_builds` protects by row PK but deletes by `build_id` *prefix*, so
-    //   reaping either of two rows sharing an id deletes the bytes the other
-    //   one still points at.
-    //
-    // Rejecting is the only option that keeps those three honest; overwriting
-    // silently corrupts a build replicas have already cached. The CLI's default
-    // id is unique per run (`sdk/cli/src/publish/provenance.ts`), so in practice this
-    // fires only on an explicitly reused `--build-id`.
-    match build_id_taken(&db, app_id, &input.build_id).await {
-        Ok(false) => {}
-        Ok(true) => {
-            rollback.apply(&db, app_id).await;
-            return Err(PublishError::DuplicateBuild {
-                app_slug: input.app_slug.clone(),
-                build_id: input.build_id.clone(),
-            });
-        }
-        Err(e) => {
-            rollback.apply(&db, app_id).await;
-            return Err(e);
-        }
-    }
-    // Bytes must land before the row mutation is allowed to stand. If `put_build`
-    // fails (guaranteed on a multi-replica deploy with no bucket configured — it
-    // refuses outright), undo the app-row change so a live app is never left
-    // repointed at a different workspace while still serving the old build.
-    let s3_prefix = match store::put_build(app_id, &input.build_id, files).await {
-        Ok(prefix) => prefix,
-        Err(e) => {
-            rollback.apply(&db, app_id).await;
-            return Err(e.into());
-        }
-    };
-    // Capture the build prefix before `record_build` consumes `s3_prefix`
-    // (`fn_specs` was taken from `manifest_json` above).
-    let build_prefix = s3_prefix.clone();
-    // Bytes are now stored. If recording the row or moving the pointer fails,
-    // roll the orphaned build back out so a partial publish leaves no
-    // half-state (leaked storage prefix, or a row no channel points at).
-    let stored = (s3_prefix, target.published_to());
-    let author = sandbox_agent_publish::author(&input);
-    let build_pk = match record_build(&db, app_id, &input, stored, manifest_json, author).await {
-        Ok(pk) => pk,
-        Err(e) => {
-            if let Err(cleanup) = store::delete_build(app_id, &input.build_id).await {
-                tracing::warn!("publish rollback: orphan prefix left for {app_id}: {cleanup}");
-            }
-            rollback.apply(&db, app_id).await;
-            return Err(e);
-        }
-    };
-    // Register the bundle's functions against this build so `/fn/<name>`
-    // resolves. On failure roll the orphan build back out (the app_functions
-    // FK cascades when the build row is deleted).
-    if let Err(e) = record_functions(&db, app_id, build_pk, &build_prefix, &fn_specs).await {
-        rollback_stored_build(&db, app_id, &input.build_id, build_pk, rollback).await;
-        return Err(e);
-    }
-    // Schema ships with the code that needs it — but only on a PROMOTING
-    // publish, and only BEFORE the published pointer moves.
-    //
-    // Before, because a half-migrated app whose code already went live is worse
-    // than a promote that did not happen: the app 500s on a table that isn't
-    // there while the previous build, which worked, has already been replaced.
-    // On failure we roll the orphan build back out and return, so the live
-    // channel is untouched and the author sees the failure on the publish that
-    // caused it.
-    //
-    // Only on promote, because the draft channel and the published channel share
-    // ONE `app_<writer>` schema. Applying a draft's DDL would put unreviewed
-    // schema in front of the live build.
-    //
-    // A partial apply is not rolled back and must not be: files that succeeded
-    // are in the ledger, so the re-publish after the author fixes the broken one
-    // resumes rather than restarts. That is the whole reason the ledger exists.
-    if input.promote {
-        match migrations::apply_on_promote(
-            &db,
-            app_id,
-            &input.app_slug,
-            org.id,
-            build_pk,
-            &declared_migrations,
-        )
-        .await
-        {
-            Ok(applied) => {
-                let summary = applied.summary();
-                if !summary.is_empty() {
-                    tracing::info!("publish: {summary} for app {app_id}");
-                }
-            }
-            Err(e) => {
-                tracing::warn!("publish: schema migrations failed for app {app_id}: {e}");
-                rollback_stored_build(&db, app_id, &input.build_id, build_pk, rollback).await;
-                return Err(PublishError::Migration(e));
-            }
-        }
-        // The app's Airhouse tables, after its OLTP schema and under the same
-        // rule: before the pointer moves, so a failure keeps the old build live.
-        match migrations::apply_airhouse_on_promote(
-            &db,
-            app_id,
-            &input.app_slug,
-            input.project_id,
-            build_pk,
-            &declared_airhouse_migrations,
-        )
-        .await
-        {
-            Ok(applied) => {
-                let summary = applied.summary();
-                if !summary.is_empty() {
-                    tracing::info!("publish: Airhouse {summary} for app {app_id}");
-                }
-            }
-            Err(e) => {
-                tracing::warn!("publish: Airhouse migrations failed for app {app_id}: {e}");
-                rollback_stored_build(&db, app_id, &input.build_id, build_pk, rollback).await;
-                return Err(PublishError::Migration(e));
-            }
-        }
-    }
-    if let Err(e) = move_pointers(&db, &target, app_id, build_pk, &input).await {
-        rollback_stored_build(&db, app_id, &input.build_id, build_pk, rollback).await;
-        return Err(e);
-    }
-    // Production's schedules track the LIVE build, so (re)register + reconcile
-    // them only on a PROMOTING publish — a draft-only publish shouldn't start
-    // firing background runs in production — and after `set_pointers` so a
-    // fire resolves the just-set `published_build_id`. Only production's own
-    // two-segment rows: an environment's are never touched here. Best-effort:
-    // a schedule failure never fails the publish (functions stay
-    // route-invocable).
-    let mut warnings = if input.promote {
-        env_schedules::reconcile_production(&db, app_id, input.project_id, &fn_specs).await
-    } else {
-        Vec::new()
-    };
-    // The environment the publish moved outside production — staging, or the
-    // sandbox — reconciled to its schedules switch: off (the default), it has
-    // no rows; on, one per function its new build schedules.
-    warnings.extend(reconcile_moved_environment(&db, &target, app_id).await);
-    // On drafts too: the author should hear about it before promoting.
-    warnings.extend(art_warning);
-    warnings.extend(mapping_warning);
-    warnings.extend(catalogue_warnings);
-    // Still served, through the one production move, by every CLI that sends
-    // it (environments design §11 #4, ruled 2026-10-03) — with this warning.
-    if input.promote {
-        warnings.push(PROMOTING_PUBLISH_DEPRECATED.to_string());
-    }
-    gc_builds(&db, app_id, &[build_pk]).await;
-
-    // The serve path caches the `apps` row — including the channel pointers
-    // `set_pointers` just moved — so a publish must drop that cache or the new
-    // build stays invisible for up to the cache TTL. `oxyc publish` is
-    // interactive and the engineer reloads immediately; a stale minute reads
-    // as "my publish did nothing".
-    //
-    // Per-process, like every other cache here: on a multi-replica fleet only
-    // the replica that took the publish drops it, and the others age out
-    // within `CACHE_TTL`.
-    drop_resolution_cache(&target);
-
-    // Warm the bundle LRU for everything on the critical path — the shell, the
-    // asset manifest the serve path reads to build preload hints, and the entry
-    // chunks themselves. `oxyc publish` is interactive: the engineer reloads
-    // within seconds, and without this every one of those is a cold
-    // object-store read on the very request they are watching.
-    if let Some(bytes) = index_bytes {
-        cache::seed(app_id, &input.build_id, "index.html", bytes);
-    }
-    if let Ok(bytes) = serde_json::to_vec(&asset_manifest) {
-        cache::seed(
-            app_id,
-            &input.build_id,
-            asset_manifest::ASSET_MANIFEST_PATH,
-            axum::body::Bytes::from(bytes),
-        );
-    }
-    for (path, bytes) in seed_entries {
-        cache::seed(app_id, &input.build_id, &path, bytes);
-    }
-
-    // The last thing a publish does: every publish moves staging's pointer, so
-    // staging's homes get this build's tables — the sibling Airhouse schema
-    // (P5b) and the org's OLTP staging branch, if any (P4b), each under its
-    // own ledger target. Queued for the worker fleet once the pointers have
-    // moved and the caches are dropped, and not waited for: an apply can run
-    // for minutes, and a failure is recorded on its run — never a failed
-    // publish (`custom_apps_nonproduction::staging_task`).
-    let built = staging_task::StagingBuild {
-        app_id,
-        app_slug: &input.app_slug,
-        workspace_id: input.project_id,
-        org_id: org.id,
-        build_pk,
-    };
-    warnings.extend(
-        queue_migrations_for(
-            &db,
-            &target,
-            built,
-            &declared_migrations,
-            &declared_airhouse_migrations,
-        )
-        .await,
-    );
-
-    Ok(target.result(&org.slug, input, (app_id, is_new_app), warnings))
 }
 
 /// The app row a publish works on: `(id, created by this publish, how to undo
@@ -2191,175 +1722,15 @@ pub async fn publish_handler(
     // Present iff authenticated via an app publish token; its `app_id` is set only
     // for OIDC-minted machine tokens.
     marker: Option<axum::Extension<oxy_auth::types::AppPublishTokenAuth>>,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Result<Json<PublishResult>, PublishRefusal> {
     let user = &actor.user;
     let marker = marker.as_ref().map(|axum::Extension(m)| m);
     let publisher = Publisher::from_request(user, marker);
     let credential = sandbox_publish::PublishCredential::of(user, marker);
-    let mut org: Option<String> = None;
-    let mut org_id: Option<Uuid> = None;
-    // Tracks whether the publisher sent a non-empty `org_id` that
-    // didn't parse — we surface that as a 400 instead of silently
-    // falling back to `org`, so a typo'd UUID doesn't end up landing
-    // the publish on a different org's row that happens to match an
-    // unrelated `org=` slug.
-    let mut org_id_invalid: Option<String> = None;
-    let mut app = None;
-    let mut project_id = None;
-    let mut branch = None;
-    let mut build_id = None;
-    let mut name = None;
-    let mut promote = false;
-    let mut manifest = None;
-    let mut tarball: Option<Vec<u8>> = None;
-    let mut source_repo = None;
-    let mut commit_sha = None;
-    let mut semantic_revision_id: Option<Uuid> = None;
-    let mut semantic_revision_invalid: Option<String> = None;
-    // A sandbox to publish to (`dev-<handle>`); absent or empty is the
-    // publish this route always made.
-    let mut environment: Option<String> = None;
-
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("multipart error: {e}")))?
-    {
-        match field.name().unwrap_or_default() {
-            "bundle" => {
-                tarball = Some(
-                    field
-                        .bytes()
-                        .await
-                        .map_err(|e| (StatusCode::BAD_REQUEST, format!("bundle read: {e}")))?
-                        .to_vec(),
-                );
-            }
-            "manifest" => {
-                let raw = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, format!("manifest read: {e}")))?;
-                if !raw.trim().is_empty() {
-                    // A present-but-unparseable manifest is a hard 400, not a
-                    // silent drop. Degrading to `None` strips the bundle's whole
-                    // `functions` block and publishes a function-less app with a
-                    // 200 — then `useFunction` 404s and the author is misdiagnosed
-                    // as never having declared the function.
-                    manifest = Some(serde_json::from_str(&raw).map_err(|e| {
-                        (
-                            StatusCode::BAD_REQUEST,
-                            format!("manifest field is not valid JSON: {e}"),
-                        )
-                    })?);
-                }
-            }
-            field_name => {
-                let key = field_name.to_string();
-                // Propagate a field read error rather than silently coercing it to
-                // "" — an empty `promote` degrades a `--promote` publish to draft
-                // with no signal.
-                let val = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, format!("field '{key}' read: {e}")))?;
-                match key.as_str() {
-                    // `org` accepts either a slug or a UUID — auto-detected
-                    // by `OrgRef::from_str_auto` below. `org_id` is the
-                    // explicit alias for the UUID form; if both are present
-                    // `org_id` wins (older clients that send just `org=`
-                    // still work unchanged).
-                    "org" => org = Some(val),
-                    "org_id" => {
-                        let trimmed = val.trim();
-                        if trimmed.is_empty() {
-                            // Empty string is treated as "field omitted"
-                            // (consistent with how other multipart fields
-                            // are handled here).
-                        } else {
-                            match Uuid::parse_str(trimmed) {
-                                Ok(id) => org_id = Some(id),
-                                Err(_) => org_id_invalid = Some(trimmed.to_string()),
-                            }
-                        }
-                    }
-                    "app" => app = Some(val),
-                    "project" | "project_id" => project_id = Uuid::parse_str(val.trim()).ok(),
-                    "branch" => branch = Some(val).filter(|s| !s.is_empty()),
-                    "build_id" => build_id = Some(val).filter(|s| !s.is_empty()),
-                    "name" => name = Some(val).filter(|s| !s.is_empty()),
-                    "source_repo" => source_repo = Some(val).filter(|s| !s.is_empty()),
-                    "commit_sha" => commit_sha = Some(val).filter(|s| !s.is_empty()),
-                    "environment" => environment = Some(val),
-                    "channel" => promote = val == "published",
-                    "promote" => promote = val == "true" || val == "1",
-                    // Staging pin (`--semantic-branch`). Not `branch`, which is
-                    // the app's SOURCE branch.
-                    "semantic_revision_id" => match val.trim() {
-                        "" => {}
-                        v => match Uuid::parse_str(v) {
-                            Ok(id) => semantic_revision_id = Some(id),
-                            Err(_) => semantic_revision_invalid = Some(v.to_string()),
-                        },
-                    },
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    // Reject a bundle-supplied display name with control/JSON-breaking chars
-    // before it lands in the apps row (defense against injection via the
-    // uploaded manifest / multipart field).
-    if let Some(n) = &name {
-        crate::server::api::admin::apps::handlers::validate_display_name(n)
-            .map_err(|msg| (StatusCode::BAD_REQUEST, msg))?;
-    }
-
-    if let Some(bad) = semantic_revision_invalid {
-        return Err(PublishRefusal::text(
-            StatusCode::BAD_REQUEST,
-            format!("semantic_revision_id is not a valid UUID: {bad:?}"),
-        ));
-    }
-    if let Some(bad) = org_id_invalid {
-        return Err(PublishRefusal::text(
-            StatusCode::BAD_REQUEST,
-            format!("org_id is not a valid UUID: {bad:?}"),
-        ));
-    }
-    // No org sent — infer it from the pinned workspace server-side (a
-    // workspace belongs to exactly one org). `project_id` is validated as
-    // present below, so `publish()` always has something to infer from.
-    let org_ref = match (org_id, org) {
-        (Some(id), _) => Some(OrgRef::Id(id)),
-        (None, Some(s)) => Some(OrgRef::from_str_auto(&s)),
-        (None, None) => None,
-    };
-
-    let input = PublishInput {
-        org_ref,
-        app_slug: app.ok_or((StatusCode::BAD_REQUEST, "missing app".into()))?,
-        project_id: project_id
-            .ok_or((StatusCode::BAD_REQUEST, "missing/invalid project".into()))?,
-        branch,
-        build_id: build_id.unwrap_or_else(|| Uuid::new_v4().simple().to_string()),
-        name,
-        promote,
-        tarball: tarball.ok_or((StatusCode::BAD_REQUEST, "missing bundle".into()))?,
-        manifest,
-        source_repo,
-        commit_sha,
-        published_by: publisher.published_by,
-        published_by_email: publisher.published_by_email,
-        publisher: publisher.caller,
-        machine_app_id: publisher.machine_app_id,
-        published_via: publisher.published_via,
-        semantic_revision_id,
-    };
-
-    let target = sandbox_publish::target_of(environment.as_deref(), promote, credential)?;
+    let form = PublishForm::from_multipart(multipart).await?;
+    let target = sandbox_publish::target_of(form.environment.as_deref(), form.promote, credential)?;
+    let input = form.into_input(publisher);
     // A sandbox agent token is told a sandbox that is not its own as its
     // other routes tell it; everyone else reads the text they always did.
     let agent = credential.is_agent();

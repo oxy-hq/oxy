@@ -1264,7 +1264,7 @@ pub async fn rollback_app(
     }
     let mv = crate::server::api::custom_apps_promote::ProductionMove {
         app_id: id,
-        build: build.id,
+        build: build.id.into(),
         action: crate::server::api::custom_apps_environments::EnvAction::Rollback,
         actor: Some(actor.user.id),
         expect_current: None,

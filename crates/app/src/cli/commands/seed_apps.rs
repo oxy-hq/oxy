@@ -40,6 +40,8 @@ use uuid::Uuid;
 
 use crate::server::api::custom_apps_asset_manifest as asset_manifest;
 use crate::server::api::custom_apps_build_store as store;
+use crate::server::api::custom_apps_promote::production::lock_app;
+use crate::server::api::custom_apps_promote::{ProductionMove, move_locked};
 
 type Conn = sea_orm::DatabaseConnection;
 
@@ -568,52 +570,58 @@ async fn ensure_app(conn: &Conn, target: &AppTarget, app_id: Uuid) -> Result<(),
 /// serves on a direct URL — `resolve_channel` falls back to the draft channel —
 /// but never appears on the home grid. That half-state reads as "the launcher is
 /// broken" rather than "the app isn't published", so the seed always sets it.
+///
+/// Production moves through [`move_locked`], the locked half of the one
+/// production move (`custom_apps_promote`): the seed records staging's own
+/// `publish` event first, in the same transaction, as a promoting publish does
+/// — the evidence invariant 1 then finds — and production's pointer, its
+/// mirror and `published_at` are written by that one function rather than
+/// here. Not [`move_production`](crate::server::api::custom_apps_promote::move_production):
+/// that applies the build's declared migrations to the org's stores, which a
+/// seed must not do, and the seed's build is validated and a person's by
+/// construction, so the admission it asks again cannot refuse it.
 async fn point_app_at(conn: &Conn, app_id: Uuid, build_pk: Uuid) -> Result<(), OxyError> {
-    let now = Utc::now().fixed_offset();
-    let row = Apps::find_by_id(app_id)
-        .one(conn)
-        .await
-        .map_err(|e| OxyError::DBError(format!("query app {app_id}: {e}")))?
-        .ok_or_else(|| OxyError::RuntimeError(format!("app {app_id} vanished mid-deploy")))?;
-
+    let db_err = |what: &str, e: &dyn std::fmt::Display| {
+        OxyError::DBError(format!("{what} for app {app_id}: {e}"))
+    };
     let txn = conn
         .begin()
         .await
-        .map_err(|e| OxyError::DBError(format!("begin pointer move for app {app_id}: {e}")))?;
+        .map_err(|e| db_err("begin pointer move", &e))?;
+    let row = lock_app(&txn, app_id)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("app {app_id} vanished mid-deploy: {e}")))?;
     let mut active = row.into_active_model();
     active.draft_build_id = ActiveValue::Set(Some(build_pk));
-    active.published_build_id = ActiveValue::Set(Some(build_pk));
-    active.published_at = ActiveValue::Set(Some(now));
-    active.last_promoted_at = ActiveValue::Set(Some(now));
-    active.updated_at = ActiveValue::Set(now);
-    active
+    active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
+    let row = active
         .update(&txn)
         .await
-        .map_err(|e| OxyError::DBError(format!("point app {app_id} at build: {e}")))?;
-    for (environment, action) in [
-        (
-            oxy_app_core::custom_app_environment::AppEnvironment::Staging,
-            crate::server::api::custom_apps_environments::EnvAction::Publish,
-        ),
-        (
-            oxy_app_core::custom_app_environment::AppEnvironment::Production,
-            crate::server::api::custom_apps_environments::EnvAction::Promote,
-        ),
-    ] {
-        crate::server::api::custom_apps_environments::record_move(
-            &txn,
-            app_id,
-            &environment,
-            Some(build_pk),
-            action,
-            None,
-        )
+        .map_err(|e| db_err("point staging at the build", &e))?;
+    crate::server::api::custom_apps_environments::record_move(
+        &txn,
+        app_id,
+        &oxy_app_core::custom_app_environment::AppEnvironment::Staging,
+        Some(build_pk),
+        crate::server::api::custom_apps_environments::EnvAction::Publish,
+        None,
+    )
+    .await
+    .map_err(|e| db_err("mirror staging", &e))?;
+    let promote = ProductionMove {
+        app_id,
+        build: build_pk.into(),
+        action: crate::server::api::custom_apps_environments::EnvAction::Promote,
+        actor: None,
+        expect_current: None,
+        refuse_same: false,
+    };
+    move_locked(&txn, row, &promote)
         .await
-        .map_err(|e| OxyError::DBError(format!("mirror {environment} for app {app_id}: {e}")))?;
-    }
+        .map_err(|e| db_err("make the build live", &e))?;
     txn.commit()
         .await
-        .map_err(|e| OxyError::DBError(format!("commit pointer move for app {app_id}: {e}")))?;
+        .map_err(|e| db_err("commit pointer move", &e))?;
     Ok(())
 }
 

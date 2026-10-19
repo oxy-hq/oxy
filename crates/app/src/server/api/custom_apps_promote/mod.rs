@@ -22,6 +22,8 @@
 //! | [`blockers`] | which facts refuse the act (pure) |
 //! | [`functions_diff`], [`schedules`] | what changes for functions and production's schedules |
 //! | [`production`] | the one production-pointer function |
+//! | [`target`] | which build a production move is aimed at, named under the row lock |
+//! | [`unpublish`] | taking production's build away, under the same lock |
 //! | [`staging`] | staging's pointer moves, and their queued migrations |
 //! | [`act`] | plan → refuse → move → audit |
 //! | [`handlers`] | the two routes |
@@ -37,6 +39,9 @@ pub mod production;
 pub mod resolve;
 pub mod schedules;
 pub mod staging;
+pub mod target;
+pub mod unpublish;
 
 pub use error::{Blocker, PromoteError};
 pub use production::{MigrationsApplied, ProductionMove, move_locked, move_production};
+pub use target::BuildRef;

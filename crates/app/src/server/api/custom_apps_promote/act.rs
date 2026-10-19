@@ -29,8 +29,8 @@ use super::production::{self, ProductionMove, describe};
 use super::resolve::{self, PromoteRequest, Resolved, RollbackRequest};
 use super::schedules;
 use super::staging::{self, StagingMove};
+use crate::server::api::custom_apps_auth;
 use crate::server::api::custom_apps_environments::EnvAction;
-use crate::server::api::{custom_apps_agent_built as agent_built, custom_apps_auth};
 
 /// What the request asks of the act, beside what it names.
 struct Options<'a> {
@@ -86,12 +86,7 @@ async fn execute(
     }
     // A build a sandbox agent token published is refused before it is
     // planned, as every promote path refuses it — and again by the move.
-    let unapproved = agent_built::refusing_promote(db, &r.build)
-        .await
-        .map_err(|e| PromoteError::internal("read the build's publisher", e))?;
-    if let Some(built) = unapproved {
-        return Err(built.into());
-    }
+    production::refuse_agent_built(db, &r.build).await?;
     let mut plan = plan::build(db, &r, opts.confirmed).await?;
     if opts.dry_run {
         return Ok(plan);
@@ -142,7 +137,7 @@ async fn move_pointer(
     }
     let mv = ProductionMove {
         app_id: r.app.id,
-        build: r.build.id,
+        build: r.build.id.into(),
         action,
         actor: Some(actor.user.id),
         expect_current: Some(expected),

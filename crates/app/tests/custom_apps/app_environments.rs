@@ -714,7 +714,7 @@ async fn a_build_from_before_the_events_stays_a_rollback_target() {
     .expect("mark the sandbox's and the token's builds");
     let rollback = ProductionMove {
         app_id: app,
-        build: old,
+        build: old.into(),
         action: EnvAction::Rollback,
         actor: Some(actor),
         expect_current: None,

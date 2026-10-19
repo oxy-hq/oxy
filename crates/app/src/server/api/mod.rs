@@ -25,6 +25,7 @@ pub mod custom_apps_auth;
 pub mod custom_apps_availability;
 pub mod custom_apps_beacon;
 pub mod custom_apps_build_history;
+pub mod custom_apps_build_state;
 pub mod custom_apps_build_store;
 pub mod custom_apps_bundle_cache;
 pub mod custom_apps_cache;
@@ -50,6 +51,7 @@ pub mod custom_apps_promote;
 pub mod custom_apps_publish;
 /// The audit row of a bundle publish, and what one says of a publish token.
 pub(crate) mod custom_apps_publish_audit;
+pub mod custom_apps_publish_form;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::publish_authz as custom_apps_publish_authz;
 pub mod custom_apps_publish_oidc;

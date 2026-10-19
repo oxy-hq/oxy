@@ -18,14 +18,15 @@ use sea_orm::ModelTrait;
 use sea_orm::QueryFilter;
 use sea_orm::QueryOrder;
 use sea_orm::QuerySelect;
-use sea_orm::TransactionTrait;
 use uuid::Uuid;
 
 use crate::server::api::custom_apps_agent_built::{
     self as agent_built, AgentBuilt, PromoteRefusal,
 };
 use crate::server::api::custom_apps_environments::EnvAction;
-use crate::server::api::custom_apps_promote::{self as promote, ProductionMove, PromoteError};
+use crate::server::api::custom_apps_promote::{
+    self as promote, BuildRef, ProductionMove, PromoteError,
+};
 use crate::server::api::workspace_org::{WorkspaceOrgMatch, workspace_in_org};
 
 use super::dto::{ApiErr, AppResponse, ErrorBody};
@@ -445,12 +446,14 @@ pub async fn publish_one(
             AppOpError::internal()
         })?
         .ok_or_else(AppOpError::not_found)?;
-    let Some(draft) = row.draft_build_id else {
+    if row.draft_build_id.is_none() {
         return stamp_published(db, row, actor).await;
-    };
+    }
+    // The draft is named again under the app's row lock, so a draft publish
+    // landing after the read above is the build this makes live.
     let mv = ProductionMove {
         app_id: id,
-        build: draft,
+        build: BuildRef::Draft,
         action: EnvAction::Promote,
         actor: Some(actor),
         expect_current: None,
@@ -496,52 +499,16 @@ pub async fn unpublish_one(
     id: Uuid,
     actor: Uuid,
 ) -> Result<apps::Model, AppOpError> {
-    let row = Apps::find_by_id(id)
-        .one(db)
+    // The pointer, its `production` mirror and the event move together under
+    // the app's row lock (`custom_apps_promote::unpublish`). The global access
+    // cache is invalidated ONCE by the caller (a batch would otherwise do N
+    // full global invalidations).
+    promote::unpublish::unpublish(db, id, Some(actor))
         .await
         .map_err(|e| {
-            tracing::error!("unpublish_one {id} load failed: {e}");
-            AppOpError::internal()
-        })?
-        .ok_or_else(AppOpError::not_found)?;
-
-    let now = Utc::now().fixed_offset();
-    let mut active: apps::ActiveModel = row.into();
-    active.published_at = ActiveValue::Set(None);
-    active.published_build_id = ActiveValue::Set(None);
-    active.updated_at = ActiveValue::Set(now);
-    let txn = db.begin().await.map_err(|e| {
-        tracing::error!("unpublish_one {id} begin failed: {e}");
-        AppOpError::internal()
-    })?;
-    let updated = active.update(&txn).await.map_err(|e| {
-        tracing::error!("unpublish_one {id} update failed: {e}");
-        AppOpError::internal()
-    })?;
-    crate::server::api::custom_apps_environments::record_move(
-        &txn,
-        id,
-        &oxy_app_core::custom_app_environment::AppEnvironment::Production,
-        None,
-        crate::server::api::custom_apps_environments::EnvAction::Unpublish,
-        Some(actor),
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!("unpublish_one {id} environment mirror failed: {e}");
-        AppOpError::internal()
-    })?;
-    txn.commit().await.map_err(|e| {
-        tracing::error!("unpublish_one {id} commit failed: {e}");
-        AppOpError::internal()
-    })?;
-
-    // The serve path caches the `apps` row itself (channel pointers,
-    // `published_at`), so drop that cache here or this mutation takes up to
-    // the cache TTL to appear. The global access cache is invalidated ONCE by
-    // the caller (a batch would otherwise do N full global invalidations).
-    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
-    Ok(updated)
+            tracing::warn!("unpublish_one {id} refused: {e}");
+            AppOpError::from(e)
+        })
 }
 
 /// Core delete shared by [`delete_app`] and [`batch_delete_apps`]. Removes the
@@ -621,7 +588,9 @@ pub(super) async fn promote_latest_one(
             AppOpError::internal()
         })?
         .ok_or_else(AppOpError::not_found)?;
-    let latest = AppBuilds::find()
+    // The newest build is named under the lock too; this only reports an
+    // app with none as the per-item failure it always was.
+    AppBuilds::find()
         .filter(entity::app_builds::Column::AppId.eq(id))
         .order_by_desc(entity::app_builds::Column::CreatedAt)
         .one(db)
@@ -633,7 +602,7 @@ pub(super) async fn promote_latest_one(
         .ok_or_else(|| AppOpError::of(StatusCode::UNPROCESSABLE_ENTITY, "No builds to promote."))?;
     let mv = ProductionMove {
         app_id: id,
-        build: latest.id,
+        build: BuildRef::Newest,
         action: EnvAction::Promote,
         actor: Some(actor),
         expect_current: None,

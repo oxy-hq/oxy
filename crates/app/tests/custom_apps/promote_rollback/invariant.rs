@@ -74,7 +74,7 @@ async fn the_move_asks_again_under_the_app_row_lock() {
     let (prod, stg) = fixture_builds(&agent).await;
     let mv = ProductionMove {
         app_id: agent.app.id,
-        build: stg,
+        build: stg.into(),
         action: EnvAction::Promote,
         actor: Some(agent.t.guest_id),
         expect_current: Some(Some(prod)),
@@ -123,7 +123,7 @@ async fn the_move_asks_again_under_the_app_row_lock() {
 
 /// Lock the app's row, start `mv`, check it waits, run `meanwhile` in the
 /// locking transaction, commit, and return the move's answer.
-async fn race<F, Fut>(
+pub(super) async fn race<F, Fut>(
     db: &sea_orm::DatabaseConnection,
     app_id: Uuid,
     mv: ProductionMove,

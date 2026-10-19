@@ -14,7 +14,8 @@
 //!    the app is live is asked when the draft is published; this is what
 //!    holds once the app is unpublished afterwards. (Only a draft is ever
 //!    staging's build: nothing moves staging's pointer to a sandbox build.)
-//! 2. **No blind promote ships it** ([`refusing_promote`]). Promote, batch
+//! 2. **No blind promote ships it** ([`AgentBuilt::describe`], asked of
+//!    `custom_apps_build_state::BuildState::promotable`). Promote, batch
 //!    promote, promote latest and a rollback to it move production's pointer
 //!    to whatever build they find, with no look at whose it is — promote
 //!    latest takes an app's newest build whatever served it, and a rollback
@@ -42,6 +43,8 @@ use entity::{api_tokens, app_builds, app_environment_events, users};
 use sea_orm::QuerySelect;
 use sea_orm::{ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QueryOrder};
 use uuid::Uuid;
+
+use super::custom_apps_build_state::Provenance;
 
 /// The code a promote or a rollback refuses a token-published build with.
 pub const PROMOTE_REFUSED: &str = "draft_published_by_agent";
@@ -72,7 +75,7 @@ pub(crate) async fn is_agent_built<C: ConnectionTrait>(
         .into_tuple()
         .one(db)
         .await?;
-    let marked = token.flatten().is_some();
+    let marked = Provenance::from_token(token.flatten()).is_agent_built();
     mark_cache().insert(build_pk, marked);
     Ok(marked)
 }
@@ -102,7 +105,7 @@ pub(crate) async fn prime_marks<C: ConnectionTrait>(
         .all(db)
         .await?
         .into_iter()
-        .map(|(build, token)| (build, token.is_some()))
+        .map(|(build, token)| (build, Provenance::from_token(token).is_agent_built()))
         .collect();
     for build in unknown {
         let mark = marked.get(&build).copied().unwrap_or(false);
@@ -237,31 +240,32 @@ impl IntoResponse for PromoteRefusal {
     }
 }
 
-/// `Some` when `build` was published by a sandbox agent token, and so may not
-/// be promoted or rolled back to: who published it and where to, for the
-/// refusal. `None` for every other build, with no read.
-pub(crate) async fn refusing_promote<C: ConnectionTrait>(
-    db: &C,
-    build: &app_builds::Model,
-) -> Result<Option<AgentBuilt>, DbErr> {
-    let Some(token_id) = build.published_token_id else {
-        return Ok(None);
-    };
-    let token = api_tokens::Entity::find_by_id(token_id).one(db).await?;
-    let minter = match &token {
-        Some(token) => users::Entity::find_by_id(token.principal_user_id)
-            .one(db)
-            .await?
-            .and_then(|user| user.email),
-        None => None,
-    };
-    Ok(Some(AgentBuilt {
-        build_id: build.build_id.clone(),
-        environment: published_to(db, build.id).await?,
-        token_id,
-        token_name: token.map(|token| token.name),
-        minter,
-    }))
+impl AgentBuilt {
+    /// Hydrate the refusal for `build`, which `token_id` published: the
+    /// token's name, its minter and the environment the build went to. The
+    /// caller learned of the mark from
+    /// `custom_apps_build_state::BuildState::promotable`.
+    pub(crate) async fn describe<C: ConnectionTrait>(
+        db: &C,
+        build: &app_builds::Model,
+        token_id: Uuid,
+    ) -> Result<Self, DbErr> {
+        let token = api_tokens::Entity::find_by_id(token_id).one(db).await?;
+        let minter = match &token {
+            Some(token) => users::Entity::find_by_id(token.principal_user_id)
+                .one(db)
+                .await?
+                .and_then(|user| user.email),
+            None => None,
+        };
+        Ok(Self {
+            build_id: build.build_id.clone(),
+            environment: published_to(db, build.id).await?,
+            token_id,
+            token_name: token.map(|token| token.name),
+            minter,
+        })
+    }
 }
 
 /// The environment build `build_pk` was published to: the one its first

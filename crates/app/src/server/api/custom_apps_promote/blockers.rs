@@ -14,6 +14,8 @@ use super::error::{
     VALIDATION_NOT_PASSED,
 };
 
+use crate::server::api::custom_apps_build_state::{PromoteRefusal, Validation};
+
 /// Which verb is planned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Act {
@@ -38,7 +40,7 @@ pub struct ProductionFacts<'a> {
     /// The build's publish id, for the sentences.
     pub build_label: &'a str,
     pub staging_served: bool,
-    pub validation_status: &'a str,
+    pub validation: &'a Validation,
     pub required_unset: &'a [String],
     /// Registered schedules the move would retire, by function.
     pub schedule_removals: &'a [String],
@@ -54,11 +56,8 @@ pub fn evaluate(facts: ProductionFacts<'_>) -> (Vec<Blocker>, Vec<String>) {
     if !facts.staging_served {
         blockers.push(staging_never_served(facts.build_label));
     }
-    if facts.validation_status != "passed" {
-        blockers.push(validation_not_passed(
-            facts.build_label,
-            facts.validation_status,
-        ));
+    if let Err(PromoteRefusal::ValidationNotPassed { status }) = facts.validation.check() {
+        blockers.push(validation_not_passed(facts.build_label, &status));
     }
     if !facts.required_unset.is_empty() {
         let keys = facts.required_unset.join(", ");
@@ -125,7 +124,7 @@ mod tests {
             act,
             build_label: "b-7",
             staging_served: true,
-            validation_status: "passed",
+            validation: &Validation::Passed,
             required_unset: &[],
             schedule_removals: &[],
             confirmed_removals: &[],
@@ -147,7 +146,7 @@ mod tests {
         for act in [Act::Promote, Act::Rollback] {
             let (blockers, _) = evaluate(ProductionFacts {
                 staging_served: false,
-                validation_status: "failed",
+                validation: &Validation::of("failed"),
                 ..facts(act)
             });
             assert_eq!(

@@ -31,6 +31,7 @@ use super::production::{MigrationsApplied, load_build};
 use super::resolve::Resolved;
 use super::schedules::{self, ScheduleChanges};
 use crate::server::api::custom_apps_build_history as history;
+use crate::server::api::custom_apps_build_state::BuildState;
 use crate::server::api::custom_apps_migrations::{
     self as migrations, StoredMigrations, files_not_in,
 };
@@ -158,7 +159,7 @@ async fn production_checks(
         act: r.act,
         build_label: &r.build.build_id,
         staging_served,
-        validation_status: &r.build.validation_status,
+        validation: &BuildState::of(&r.build).validation,
         required_unset: &required_unset,
         schedule_removals: &removals,
         confirmed_removals: confirmed,

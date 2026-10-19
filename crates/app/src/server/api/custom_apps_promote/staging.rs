@@ -19,13 +19,11 @@ use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, TransactionTrai
 use uuid::Uuid;
 
 use super::error::PromoteError;
-use super::production::{describe, load_build, lock_app};
+use super::production::{describe, load_build, lock_app, refuse_agent_built};
 use crate::server::api::custom_apps_env_schedules::reconcile::reconcile_environment;
 use crate::server::api::custom_apps_environments::{self, EnvAction};
 use crate::server::api::custom_apps_nonproduction::staging_task;
-use crate::server::api::{
-    custom_apps_agent_built as agent_built, custom_apps_cache, custom_apps_migrations as migrations,
-};
+use crate::server::api::{custom_apps_cache, custom_apps_migrations as migrations};
 
 /// One move of staging's pointer.
 #[derive(Debug, Clone)]
@@ -52,12 +50,7 @@ pub async fn move_staging(
     let row = lock_app(&txn, mv.app_id).await?;
     let build = load_build(&txn, mv.app_id, mv.build).await?;
     check_pointer(row.draft_build_id, &build, mv)?;
-    let unapproved = agent_built::refusing_promote(&txn, &build)
-        .await
-        .map_err(|e| PromoteError::internal("read the build's publisher", e))?;
-    if let Some(built) = unapproved {
-        return Err(built.into());
-    }
+    refuse_agent_built(&txn, &build).await?;
     let mut active: apps::ActiveModel = row.into();
     active.draft_build_id = ActiveValue::Set(Some(mv.build));
     let updated = active
