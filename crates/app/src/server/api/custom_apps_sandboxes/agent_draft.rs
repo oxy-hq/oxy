@@ -248,7 +248,7 @@ pub async fn move_draft_pointer(
     .await
     .map_err(db_err)?;
     txn.commit().await.map_err(db_err)?;
-    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
+    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache_for_app(app_id);
     Ok(())
 }
 

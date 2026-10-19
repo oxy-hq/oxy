@@ -28,51 +28,35 @@
 //! pipeline without duplicating the logic.
 
 use axum::http::StatusCode;
-use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
-use std::time::Instant;
 
 use entity::prelude::{
     AppAdmins, AppMembers, AppTeamGrants, Apps, OrgMembers, OrgTeamMembers, OrgTeams,
-    Organizations, WorkspaceOxyLockdown,
+    WorkspaceOxyLockdown,
 };
 use entity::{
     app_admins, app_members, app_team_grants, apps, org_members, org_team_members, org_teams,
-    organizations, workspace_oxy_lockdown,
+    workspace_oxy_lockdown,
 };
 use oxy::database::client::establish_connection;
-use oxy_auth::authenticator::Authenticator;
-use oxy_auth::built_in::BuiltInAuthenticator;
-use oxy_auth::user::UserService;
 use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use tracing::error;
 use uuid::Uuid;
 
-use super::custom_apps_cache::{cached_user, get_fresh, insert_with_sweep, set_cached_user};
+use super::custom_apps_cache::{cached_access, set_cached_access};
 
 // ── Combined per-(user, app) access cache ───────────────────────────────────
-
-fn access_cache() -> &'static RwLock<HashMap<(Uuid, Uuid), (bool, Instant)>> {
-    static CACHE: OnceLock<RwLock<HashMap<(Uuid, Uuid), (bool, Instant)>>> = OnceLock::new();
-    CACHE.get_or_init(|| RwLock::new(HashMap::new()))
-}
-
-fn cached_access(user_id: Uuid, app_id: Uuid) -> Option<bool> {
-    get_fresh(access_cache(), &(user_id, app_id))
-}
-
-fn set_cached_access(user_id: Uuid, app_id: Uuid, allowed: bool) {
-    insert_with_sweep(access_cache(), (user_id, app_id), allowed);
-}
+//
+// The `(user_id, app_id) → bool` verdicts live in `custom_apps_cache` with
+// every other step of the chain; this module owns the decision and the
+// invalidation entry point the mutation sites call.
 
 /// Called by the admin / oxy-access mutation handlers so a freshly
 /// toggled state takes effect immediately instead of waiting out the
 /// cache TTL. We don't know which user_id × app_id pairs are affected,
-/// so we drop the whole cache.
+/// so we drop the whole cache — and the data-plane gate's verdicts with
+/// it, which decide the same question for the app's workspace.
 pub fn invalidate_access_cache() {
-    if let Ok(mut guard) = access_cache().write() {
-        guard.clear();
-    }
+    super::custom_apps_cache::clear_access_caches();
 }
 
 // ── Primary access check ────────────────────────────────────────────────────
@@ -549,6 +533,18 @@ pub(crate) fn user_cache_key(identity: &oxy_auth::types::Identity) -> String {
 /// (org, app). Returns the app row + user info on success; an HTTP
 /// status on any failure.
 ///
+/// One call into the shared resolver (`custom_apps_serve::resolve`), so the
+/// function, health, debug, logs and availability surfaces run the same
+/// cached chain the bundle path does: user, rows and verdict all from the
+/// 60 s caches, zero queries on a warm replica. The statuses are the
+/// resolver's refusals, unchanged: a credential naming nobody is `401`; an
+/// unknown org or app, or one outside an API token's grant, is `404`; a known
+/// app the caller may not open is `403`.
+///
+/// Access is decided by the production rule whatever environment the request
+/// addresses — a surface that serves a non-production environment asks
+/// `may_open_environment` itself afterwards, as `/fn` does.
+///
 /// `sandbox_agent` is this caller's answer to a sandbox agent token. `/fn` and
 /// `/logs` admit one; `/errors`, `/debug`, `/health` and `/availability` share
 /// this function and refuse it, which is why the answer is an argument and not
@@ -559,114 +555,24 @@ pub(crate) async fn authenticate_and_authorize(
     app_slug: &str,
     sandbox_agent: oxy_auth::token::SandboxAgent,
 ) -> Result<AuthOutcome, axum::http::StatusCode> {
-    use axum::http::StatusCode;
-
-    let (identity, credential) = BuiltInAuthenticator::new(sandbox_agent)
-        .authenticate_with_credential(headers)
-        .await
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
-
-    // A sandbox agent token: noted for the request's usage count, and its
-    // minter's row read now, past the 60 s user cache in both directions, so a
-    // change to the minter is seen by the next request (`custom_apps_agent`).
-    super::custom_apps_agent::seen(credential.as_ref());
-    let cache_key = user_cache_key(&identity);
-    let user = if super::custom_apps_agent::is_agent(credential.as_ref()) {
-        // Boxed, so the token's branch adds a pointer to this future, which the
-        // function route awaits inline.
-        Box::pin(super::custom_apps_agent::fresh_user(&identity))
-            .await
-            .map_err(|e| {
-                error!("user lookup failed: {e}");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
-            .ok_or(StatusCode::UNAUTHORIZED)?
-    } else if let Some(u) = cached_user(&cache_key) {
-        u
-    } else {
-        let u = UserService::find_user_by_identity(&identity)
-            .await
-            .map_err(|e| {
-                error!("user lookup failed: {e}");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
-            .ok_or(StatusCode::UNAUTHORIZED)?;
-        set_cached_user(cache_key, u.clone());
-        u
-    };
-    // Attached AFTER the cache: the cached row is the user, never the credential
-    // one request happened to arrive with.
-    let user = user.with_credential(credential);
-    let caller = oxy_server_authz::Caller::from_user(&user);
-
-    let db = establish_connection().await.map_err(|e| {
-        error!("DB connection failed: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let org = Organizations::find()
-        .filter(organizations::Column::Slug.eq(org_slug))
-        .one(&db)
-        .await
-        .map_err(|e| {
-            error!("org lookup failed: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    let app = Apps::find()
-        .filter(apps::Column::OrgId.eq(org.id))
-        .filter(apps::Column::Slug.eq(app_slug))
-        .one(&db)
-        .await
-        .map_err(|e| {
-            error!("app lookup failed: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    // An API token with no grant on the app's workspace answers exactly as an
-    // unknown app does, so it cannot probe which apps exist.
-    if caller
-        .workspace_ceiling(app.org_id, app.project_id)
-        .is_none()
-    {
-        return Err(StatusCode::NOT_FOUND);
-    }
-    // A sandbox agent token's workspace grant stands for the apps it names,
-    // not for every app of the workspace: any other is an unknown app.
-    if !super::custom_apps_agent::admits_app(&caller, &app) {
-        return Err(StatusCode::NOT_FOUND);
-    }
-
-    let allowed = user_can_access_app(&db, &caller, &app).await.map_err(|e| {
-        error!("access check failed: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    if !allowed {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
-    // Same definition as the access check above — otherwise an owner would pass access
-    // but be flagged a customer, and silently lose draft previews. It must stay
-    // literally the same call, capability and scope included: the two drifting apart is
-    // precisely the bug this comment was written for.
-    let is_staff = oxy_server_authz::globals::platform_reaches(
-        &db,
-        &caller,
-        oxy_authz::Cap::DevelopApps,
-        app.org_id,
+    let request = super::custom_apps_serve::resolve::resolve_app_request(
+        headers,
+        org_slug,
+        app_slug,
+        sandbox_agent,
+        &oxy_app_core::custom_app_environment::AppEnvironment::Production,
     )
-    .await;
-
+    .await
+    .map_err(|refusal| refusal.status())?;
+    let user = request.user;
     Ok(AuthOutcome {
-        app,
+        app: request.app,
         user_id: user.id,
         user_email: user.email,
         user_name: user.name,
         user_picture: user.picture,
-        is_staff,
-        caller,
+        is_staff: request.is_staff,
+        caller: request.caller,
     })
 }
 

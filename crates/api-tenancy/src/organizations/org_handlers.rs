@@ -213,8 +213,9 @@ pub async fn update_org(
     // resolving for up to the TTL and the serve-time base-path rewrite is
     // computed against a prefix that no longer exists. This is the tenant-facing
     // rename — an org admin renaming their own org — and is far more common than
-    // the staff path in `admin::orgs_admin::rename_org`.
-    oxy_app::server::api::custom_apps_cache::invalidate_app_resolution_cache();
+    // the staff path in `admin::orgs_admin::rename_org`. Keyed on the OLD slug:
+    // that is the entry that exists, and the new one was never cached.
+    oxy_app::server::api::custom_apps_cache::invalidate_app_resolution_cache_for_org(&ctx.org.slug);
 
     Ok(Json(org_response(&updated, &ctx.membership.role)))
 }
@@ -345,7 +346,7 @@ pub async fn delete_org(OrgOwner(ctx): OrgOwner) -> Result<StatusCode, StatusCod
     // resolution outlives them — and the access check that follows is computed
     // from the cached app model, so without this a global app admin can still be
     // served bundle bytes from a deleted org until the TTL expires.
-    oxy_app::server::api::custom_apps_cache::invalidate_app_resolution_cache();
+    oxy_app::server::api::custom_apps_cache::invalidate_app_resolution_cache_for_org(&ctx.org.slug);
 
     Ok(StatusCode::NO_CONTENT)
 }

@@ -45,9 +45,10 @@ use oxy::database::client::establish_connection;
 use oxy_auth::constants::SESSION_COOKIE_NAME;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Serialize;
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::sync::OnceLock;
+use std::time::Duration;
+
+use crate::ttl_lru::TtlLru;
 use uuid::Uuid;
 
 /// Resolved identity for an org-subdomain request. Cloned into the request
@@ -189,45 +190,28 @@ fn is_app_host_label(label: &str) -> bool {
 
 // ── TTL cache (label → resolved org, incl. negative entries) ─────────────
 
-struct CacheEntry {
-    at: Instant,
-    value: Option<OrgSubdomainCtx>,
-}
-
-fn cache() -> &'static Mutex<HashMap<String, CacheEntry>> {
-    static C: OnceLock<Mutex<HashMap<String, CacheEntry>>> = OnceLock::new();
-    C.get_or_init(|| Mutex::new(HashMap::new()))
+/// Label → resolved org, negatives included. One [`TtlLru`] rather than the
+/// `HashMap` that `clear()`ed itself whenever it filled: bare-apex probes can
+/// spray distinct labels at a replica, and under that map each spray dropped
+/// every live org's hot entry to make room. Now the probe's own cold labels
+/// are what the bound evicts.
+fn cache() -> &'static TtlLru<String, Option<OrgSubdomainCtx>> {
+    static C: OnceLock<TtlLru<String, Option<OrgSubdomainCtx>>> = OnceLock::new();
+    C.get_or_init(|| TtlLru::new(CACHE_MAX, CACHE_TTL))
 }
 
 const CACHE_TTL: Duration = Duration::from_secs(60);
-/// Crude bound: bare-apex probes can spray distinct labels at us. When the
-/// map crosses this, clear it wholesale (cheap, correctness-preserving).
+/// Hard bound on cached labels: the least recently read goes first.
 const CACHE_MAX: usize = 4096;
 
 /// `Some(inner)` is a hit (inner `None` = negatively cached "no such
 /// subdomain"); outer `None` is a miss / expired.
 fn cache_get(label: &str) -> Option<Option<OrgSubdomainCtx>> {
-    let map = cache().lock().ok()?;
-    let entry = map.get(label)?;
-    if entry.at.elapsed() > CACHE_TTL {
-        return None;
-    }
-    Some(entry.value.clone())
+    cache().get(&label.to_string())
 }
 
 fn cache_put(label: &str, value: Option<OrgSubdomainCtx>) {
-    if let Ok(mut map) = cache().lock() {
-        if map.len() >= CACHE_MAX {
-            map.clear();
-        }
-        map.insert(
-            label.to_string(),
-            CacheEntry {
-                at: Instant::now(),
-                value,
-            },
-        );
-    }
+    cache().insert(label.to_string(), value);
 }
 
 /// Drop **this process's** cached resolutions. Called by the admin
@@ -237,9 +221,7 @@ fn cache_put(label: &str, value: Option<OrgSubdomainCtx>) {
 /// (≤ `CACHE_TTL`, 60s)**, not instant; immediate fleet-wide effect would need
 /// a cross-process invalidation signal (follow-up).
 pub fn invalidate_cache() {
-    if let Ok(mut map) = cache().lock() {
-        map.clear();
-    }
+    cache().clear();
 }
 
 async fn resolve(label: &str) -> Option<OrgSubdomainCtx> {

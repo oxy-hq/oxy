@@ -634,6 +634,7 @@ pub async fn rename_org(
         .map_err(internal)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
+    let previous_slug = org.slug.clone();
     let mut active: organizations::ActiveModel = org.into();
     if let Some(name) = trimmed_name {
         active.name = Set(name);
@@ -652,8 +653,11 @@ pub async fn rename_org(
     // slug keeps resolving for up to the TTL, and — worse — the cached org
     // model carries the stale slug into `AppRuntimeConfig`, so the serve-time
     // base-path rewrite is computed against a prefix that no longer exists.
-    // Same reason `update_app` invalidates on an app-slug change.
-    oxy_app::server::api::custom_apps_cache::invalidate_app_resolution_cache();
+    // Same reason `update_app` invalidates on an app-slug change. Keyed on the
+    // slug the entries were cached under, which is the one being left behind.
+    oxy_app::server::api::custom_apps_cache::invalidate_app_resolution_cache_for_org(
+        &previous_slug,
+    );
 
     let member_count = org_members::Entity::find()
         .filter(org_members::Column::OrgId.eq(updated.id))

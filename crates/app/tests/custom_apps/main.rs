@@ -51,6 +51,7 @@
 //! | `custom_app_functions_manual_run_guards` | source scans: the executor registration and admin stack that test copies still match production |
 //! | `custom_app_functions_shape_zoo` | every ClickHouse, Postgres and DuckDB zoo case, read one column at a time through `ctx.warehouse.query` in a published function, against `expect.warehouse` |
 //! | `custom_app_functions_shape_zoo_oltp` | the Postgres zoo cases through `ctx.oltp` in the app's own provisioned schema, against `expect.oltp` |
+//! | `custom_app_gate_revocation` | the data-plane gate re-checks membership on every call: a revoked member is refused by the next data call on the same replica, no invalidation hook in between |
 //! | `shape_zoo` | `fixtures/data-shapes/zoo.json` is well formed, and the SQL built from it matches the shared vector the canary also tests |
 //! | `shape_zoo_coverage` | source scans: every native type `ch_type_to_typed`, `strip_type_wrappers`, `pg_typname_to_typed`, `is_decodable` and `describe_type_to_typed` name has a zoo case, or a reasoned exemption |
 //! | `canary_coverage` | source scans: every host op in `HOST_OPS` is declared by a platform-canary step (`STEP_OPS` in the canary's `steps.ts`), or exempted with a reason; a declared op the host lacks is refused |
@@ -120,6 +121,7 @@ mod custom_app_functions_manual_run_guards;
 mod custom_app_functions_semantic_revision;
 mod custom_app_functions_shape_zoo;
 mod custom_app_functions_shape_zoo_oltp;
+mod custom_app_gate_revocation;
 mod custom_app_platform_runtime;
 mod custom_app_procedure_run_attempts;
 mod custom_app_procedure_run_fixture;

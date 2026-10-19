@@ -23,6 +23,11 @@
 //! leak across tenants/viewers) and `Cache-Control: private, no-store`
 //! (a browser-cached copy would replay one viewer's identity to the next
 //! account on the same browser; see `oxy-customer-apps-perf`).
+//!
+//! What IS cached is the server side of the prelude: the gate chain
+//! (user, workspace, access — `custom_apps_gates`) and the owning org row
+//! both come from the 60 s process caches, so a boot costs the per-viewer
+//! reads only: the published-apps list the viewer may see and their reach.
 
 use axum::Json;
 use axum::extract::Path;
@@ -33,7 +38,8 @@ use sea_orm::EntityTrait;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::server::api::custom_apps_gates::check_custom_app_gates;
+use crate::server::api::custom_apps_cache::{cached_org, set_cached_org};
+use crate::server::api::custom_apps_gates::{CustomAppContext, check_custom_app_gates};
 use crate::server::api::workspace_custom_apps::published_app_summaries;
 use oxy_app_core::custom_apps_host_dispatch::{admin_base_url, parse_subdomain};
 
@@ -153,6 +159,26 @@ fn product_url_base(headers: &HeaderMap) -> String {
     }
 }
 
+/// The owning org, from the 60 s org cache the resolution cache invalidates
+/// with (`custom_apps_cache::cached_org`): the gate hands over the id, and
+/// every app boot in the workspace asks for the same row.
+async fn owning_org(ctx: &CustomAppContext) -> Result<entity::organizations::Model, Response> {
+    if let Some(org) = cached_org(ctx.org_id) {
+        return Ok(org);
+    }
+    match Organizations::find_by_id(ctx.org_id).one(&ctx.db).await {
+        Ok(Some(org)) => {
+            set_cached_org(org.clone());
+            Ok(org)
+        }
+        Ok(None) => Err((StatusCode::NOT_FOUND, "owning organization not found").into_response()),
+        Err(e) => {
+            tracing::error!("shell-context org lookup failed: {e}");
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "org lookup failed").into_response())
+        }
+    }
+}
+
 pub async fn get_shell_context(
     Path(project_id): Path<Uuid>,
     axum::extract::Query(query): axum::extract::Query<ShellContextQuery>,
@@ -165,15 +191,9 @@ pub async fn get_shell_context(
         Err(r) => return r,
     };
 
-    let org = match Organizations::find_by_id(ctx.org_id).one(&ctx.db).await {
-        Ok(Some(o)) => o,
-        Ok(None) => {
-            return (StatusCode::NOT_FOUND, "owning organization not found").into_response();
-        }
-        Err(e) => {
-            tracing::error!("shell-context org lookup failed: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "org lookup failed").into_response();
-        }
+    let org = match owning_org(&ctx).await {
+        Ok(o) => o,
+        Err(r) => return r,
     };
 
     // `ctx.user` carries the credential the request arrived with, so an API

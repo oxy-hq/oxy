@@ -39,8 +39,9 @@
 //! Errors are **not** cached — only a definitive present/absent answer is,
 //! so a transient S3 failure retries on the next request.
 
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use axum::body::Bytes;
 
@@ -348,19 +349,192 @@ pub async fn get_or_fetch(
     build_id: &str,
     rel_path: &str,
 ) -> Result<Option<Bytes>, BuildStoreError> {
+    get_or_fetch_with(app_id, build_id, rel_path, || {
+        custom_apps_build_store::get_object(app_id, build_id, rel_path)
+    })
+    .await
+}
+
+/// What a leader's fetch came to, as every follower of that fetch reads it.
+#[derive(Clone)]
+enum FlightOutcome {
+    /// The store answered — bytes, a definitive absence, or an error — and
+    /// that answer is every follower's answer too. An error is shared rather
+    /// than retried per follower: under a store outage N waiters would
+    /// otherwise wake one at a time and each take the same failed round
+    /// trip, which is worse than the parallel misses this replaces.
+    Answered(Result<Option<Bytes>, BuildStoreError>),
+    /// The leader went away before the store answered — its request was
+    /// cancelled. Followers start over, and one of them leads.
+    Abandoned,
+}
+
+/// One miss in flight. The leader publishes its outcome here and every
+/// follower reads it, so a cold asset asked for by a whole page load's worth
+/// of parallel requests costs the store ONE round trip.
+///
+/// Before this, every concurrent miss on the same key went to the store:
+/// the first viewer of a fresh publish — or of a replica that just came up —
+/// is 30-100 requests arriving together, each missing, each paying the S3
+/// round trip, each writing the same bytes into the cache.
+struct Flight {
+    outcome: tokio::sync::watch::Sender<Option<FlightOutcome>>,
+}
+
+/// The misses in flight right now, one per key. An entry lives exactly as
+/// long as its leader's [`FlightLease`].
+type InFlight = Mutex<HashMap<String, Arc<Flight>>>;
+
+fn in_flight() -> &'static InFlight {
+    static MAP: OnceLock<InFlight> = OnceLock::new();
+    MAP.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The leader's hold on its flight.
+///
+/// Dropping it — on return, on error, or on **cancellation** when the
+/// request's future is dropped mid-fetch (a client that disconnected) —
+/// removes the entry and, if no outcome was published, tells the followers
+/// to start over. Without the RAII a cancelled leader left its entry behind
+/// forever, and every later request for that key waited on a dead gate.
+struct FlightLease {
+    key: String,
+    flight: Arc<Flight>,
+    published: bool,
+}
+
+impl FlightLease {
+    /// Hand the outcome to every follower, then release the key.
+    fn publish(mut self, outcome: Result<Option<Bytes>, BuildStoreError>) {
+        self.published = true;
+        let _ = self
+            .flight
+            .outcome
+            .send(Some(FlightOutcome::Answered(outcome)));
+    }
+}
+
+impl Drop for FlightLease {
+    fn drop(&mut self) {
+        // Only OUR entry: a newcomer that arrived after an earlier release
+        // may have opened a fresh flight under the same key, and that one
+        // belongs to its own leader.
+        let mut map = in_flight().lock();
+        if map
+            .get(&self.key)
+            .is_some_and(|current| Arc::ptr_eq(current, &self.flight))
+        {
+            map.remove(&self.key);
+        }
+        drop(map);
+        if !self.published {
+            let _ = self.flight.outcome.send(Some(FlightOutcome::Abandoned));
+        }
+    }
+}
+
+enum Role {
+    Lead(FlightLease),
+    Follow(Arc<Flight>),
+}
+
+/// Join the flight already under way for `k`, or open one and lead it.
+fn join_or_lead(k: &str) -> Role {
+    let mut map = in_flight().lock();
+    if let Some(flight) = map.get(k) {
+        return Role::Follow(flight.clone());
+    }
+    let (outcome, _) = tokio::sync::watch::channel(None);
+    let flight = Arc::new(Flight { outcome });
+    map.insert(k.to_string(), flight.clone());
+    Role::Lead(FlightLease {
+        key: k.to_string(),
+        flight,
+        published: false,
+    })
+}
+
+/// Wait for the leader's word. A sender that vanishes without one is read
+/// as abandoned — unreachable while this holds the `Arc`, but the honest
+/// fallback.
+async fn follow(flight: &Flight) -> FlightOutcome {
+    let mut rx = flight.outcome.subscribe();
+    loop {
+        if let Some(outcome) = rx.borrow_and_update().clone() {
+            return outcome;
+        }
+        if rx.changed().await.is_err() {
+            return FlightOutcome::Abandoned;
+        }
+    }
+}
+
+/// [`get_or_fetch`] over any store, so the single-flight can be proven
+/// against a fake one. `fetch` runs at most once per key across every
+/// concurrent caller: followers take the leader's answer, error included,
+/// and the first request after the flight is released leads a fresh one.
+async fn get_or_fetch_with<F, Fut>(
+    app_id: Uuid,
+    build_id: &str,
+    rel_path: &str,
+    fetch: F,
+) -> Result<Option<Bytes>, BuildStoreError>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<Option<Bytes>, BuildStoreError>>,
+{
     let k = key(app_id, build_id, rel_path);
-    // Bytes first: the common case, and the more valuable answer.
-    if let Some(hit) = byte_cache().lock().get(&k) {
-        return Ok(Some(hit));
+    // Too long to ever be remembered as absent (`MAX_ABSENT_REL_LEN`), and
+    // request-controlled: the in-flight map must not grow with a scanner's
+    // URLs, so these are fetched ungated, as before.
+    if rel_path.len() > MAX_ABSENT_REL_LEN {
+        let fetched = fetch().await;
+        if let Ok(outcome) = &fetched {
+            remember(k, app_id, build_id, rel_path, outcome);
+        }
+        return fetched;
     }
-    // Then "we have asked before and it wasn't there".
-    if absent_cache().lock().get(&k).is_some() {
-        return Ok(None);
+    let mut fetch = Some(fetch);
+    loop {
+        if let Some(known) = lookup(&k) {
+            return Ok(known);
+        }
+        match join_or_lead(&k) {
+            Role::Lead(lease) => {
+                // A caller leads at most once: a leader returns, so the
+                // closure is still here for a follower that was abandoned.
+                let fetch = fetch.take().expect("a caller leads at most once");
+                let fetched = fetch().await;
+                if let Ok(outcome) = &fetched {
+                    remember(k.clone(), app_id, build_id, rel_path, outcome);
+                }
+                lease.publish(fetched.clone());
+                return fetched;
+            }
+            Role::Follow(flight) => match follow(&flight).await {
+                FlightOutcome::Answered(answer) => return answer,
+                FlightOutcome::Abandoned => continue,
+            },
+        }
     }
-    // A store error propagates WITHOUT being cached, so a transient failure
-    // doesn't pin a false absence for the life of the build.
-    let fetched = custom_apps_build_store::get_object(app_id, build_id, rel_path).await?;
-    match &fetched {
+}
+
+/// `Some(Some(bytes))` is a hit, `Some(None)` a remembered absence, `None` a
+/// miss. Bytes first: the common case, and the more valuable answer.
+fn lookup(k: &str) -> Option<Option<Bytes>> {
+    if let Some(hit) = byte_cache().lock().get(k) {
+        return Some(Some(hit));
+    }
+    if absent_cache().lock().get(k).is_some() {
+        return Some(None);
+    }
+    None
+}
+
+/// Record a definitive answer. A store error never reaches here, so a
+/// transient failure doesn't pin a false absence for the life of the build.
+fn remember(k: String, app_id: Uuid, build_id: &str, rel_path: &str, outcome: &Option<Bytes>) {
+    match outcome {
         Some(bytes) => {
             if !byte_cache().lock().put(k, bytes.clone()) {
                 // Served, not remembered. Logged at `debug` rather than
@@ -403,7 +577,6 @@ pub async fn get_or_fetch(
             );
         }
     }
-    Ok(fetched)
 }
 
 /// Warm the cache directly (used at publish time so the first viewer of a
@@ -421,6 +594,210 @@ pub fn seed(app_id: Uuid, build_id: &str, rel_path: &str, bytes: Bytes) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Eight concurrent misses on one cold key reach the store ONCE. The
+    /// fake store blocks until the test releases it, so the assertion is on
+    /// a condition and not a race: while it is held, nobody can have been
+    /// answered (the only answer is the store's), and after it is released
+    /// everyone is answered from the leader's single fetch.
+    #[tokio::test]
+    async fn concurrent_misses_on_one_key_fetch_the_store_once() {
+        let app = Uuid::new_v4();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let gate = Arc::new(tokio::sync::Notify::new());
+
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let calls = calls.clone();
+                let gate = gate.clone();
+                tokio::spawn(async move {
+                    get_or_fetch_with(app, "b1", "assets/app.js", move || async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        gate.notified().await;
+                        Ok(Some(Bytes::from_static(b"js")))
+                    })
+                    .await
+                })
+            })
+            .collect();
+
+        // Let the leader reach the store and every follower reach the gate.
+        while calls.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+        for _ in 0..64 {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            handles.iter().all(|h| !h.is_finished()),
+            "nobody can be answered while the one store call is still held"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "followers must not fetch");
+
+        // `notify_one` stores a permit if the leader is not yet parked.
+        gate.notify_one();
+        for h in handles {
+            let answer = h.await.expect("task").expect("store answered");
+            assert_eq!(answer.as_deref(), Some(&b"js"[..]));
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(
+            in_flight()
+                .lock()
+                .get(&key(app, "b1", "assets/app.js"))
+                .is_none(),
+            "the flight is released once the leader is done"
+        );
+    }
+
+    /// A leader whose request is cancelled mid-fetch must not leave the key
+    /// gated forever. The follower that was waiting on it takes over and
+    /// fetches; the entry is gone afterwards.
+    #[tokio::test]
+    async fn a_cancelled_leader_hands_the_key_to_the_next_caller() {
+        let app = Uuid::new_v4();
+        let started = Arc::new(AtomicUsize::new(0));
+        let hold = Arc::new(tokio::sync::Notify::new());
+        let leader = tokio::spawn({
+            let started = started.clone();
+            let hold = hold.clone();
+            async move {
+                get_or_fetch_with(app, "b1", "assets/x.js", move || async move {
+                    started.fetch_add(1, Ordering::SeqCst);
+                    // Never released: this request is going to be cancelled.
+                    hold.notified().await;
+                    Ok(None)
+                })
+                .await
+            }
+        });
+        while started.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+        let calls = Arc::new(AtomicUsize::new(0));
+        let follower = tokio::spawn({
+            let calls = calls.clone();
+            async move {
+                get_or_fetch_with(app, "b1", "assets/x.js", move || async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(Some(Bytes::from_static(b"js")))
+                })
+                .await
+            }
+        });
+        for _ in 0..32 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!follower.is_finished(), "the follower waits on the leader");
+
+        leader.abort();
+        let _ = leader.await;
+
+        let answer = tokio::time::timeout(std::time::Duration::from_secs(5), follower)
+            .await
+            .expect("the follower is released, not left on a dead gate")
+            .expect("task")
+            .expect("the follower's own fetch");
+        assert_eq!(answer.as_deref(), Some(&b"js"[..]));
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "the follower led the retry"
+        );
+        assert!(
+            in_flight()
+                .lock()
+                .get(&key(app, "b1", "assets/x.js"))
+                .is_none()
+        );
+    }
+
+    /// Under a store outage the leader's error is every follower's error —
+    /// one failed round trip, not one per waiter — and the next request
+    /// after the flight is released tries the store afresh.
+    #[tokio::test]
+    async fn a_leaders_error_is_shared_with_every_follower_without_more_store_calls() {
+        let app = Uuid::new_v4();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let release = Arc::new(tokio::sync::Notify::new());
+        let leader = tokio::spawn({
+            let calls = calls.clone();
+            let release = release.clone();
+            async move {
+                get_or_fetch_with(app, "b1", "assets/y.js", move || async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    release.notified().await;
+                    Err(BuildStoreError::S3("outage".into()))
+                })
+                .await
+            }
+        });
+        while calls.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+        let followers: Vec<_> = (0..4)
+            .map(|_| {
+                let calls = calls.clone();
+                tokio::spawn(async move {
+                    get_or_fetch_with(app, "b1", "assets/y.js", move || async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(Some(Bytes::from_static(b"must not run")))
+                    })
+                    .await
+                })
+            })
+            .collect();
+        for _ in 0..32 {
+            tokio::task::yield_now().await;
+        }
+        release.notify_one();
+
+        assert!(leader.await.expect("task").is_err());
+        for follower in followers {
+            assert!(
+                follower.await.expect("task").is_err(),
+                "a follower fails fast with the leader's error"
+            );
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "one store call for the whole flight"
+        );
+
+        // The error was not cached: the next caller leads a fresh flight.
+        let again = get_or_fetch_with(app, "b1", "assets/y.js", {
+            let calls = calls.clone();
+            move || async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(Some(Bytes::from_static(b"ok")))
+            }
+        })
+        .await
+        .expect("the store recovered");
+        assert_eq!(again.as_deref(), Some(&b"ok"[..]));
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    /// A store error is returned to the caller that saw it and NOT cached;
+    /// the next caller tries again — single-flight must not turn one blip
+    /// into a cached failure.
+    #[tokio::test]
+    async fn a_store_error_is_not_cached_and_the_next_caller_retries() {
+        let app = Uuid::new_v4();
+        let first = get_or_fetch_with(app, "b1", "assets/x.js", || async {
+            Err(BuildStoreError::S3("blip".into()))
+        })
+        .await;
+        assert!(first.is_err());
+        let second = get_or_fetch_with(app, "b1", "assets/x.js", || async {
+            Ok(Some(Bytes::from_static(b"ok")))
+        })
+        .await
+        .expect("second fetch runs");
+        assert_eq!(second.as_deref(), Some(&b"ok"[..]));
+    }
 
     /// The absence itself must be remembered. Proven observably: ask for a
     /// file that isn't there (caching the absence), then create it on disk

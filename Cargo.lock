@@ -9590,6 +9590,7 @@ dependencies = [
  "axum",
  "chrono",
  "entity",
+ "lru 0.18.2",
  "oxy",
  "oxy-airlayer-compat",
  "oxy-auth",

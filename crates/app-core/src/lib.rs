@@ -20,6 +20,7 @@ pub mod member_authz;
 pub mod org_host_dispatch;
 pub mod pagination;
 pub mod serve_mode;
+pub mod ttl_lru;
 pub mod workspace_cache;
 
 pub use app_state::AppState;

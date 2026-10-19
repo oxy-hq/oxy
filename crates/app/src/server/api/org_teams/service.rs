@@ -23,7 +23,7 @@ pub async fn write_access(
 ) -> Result<AppAccessDto, StatusCode> {
     oxy_tenancy::org_teams::service::write_access(db, app, actor_id, req, &|| {
         crate::server::api::custom_apps_auth::invalidate_access_cache();
-        crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
+        crate::server::api::custom_apps_cache::invalidate_app_resolution_cache_for_app(app.id);
     })
     .await
 }

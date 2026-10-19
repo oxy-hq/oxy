@@ -33,6 +33,41 @@
 //! the gates pass; without that order an unauthenticated 422 from
 //! axum's `Json<T>` extractor would leak that the route exists and
 //! what body fields are expected.
+//!
+//! ## Cost, and what is — and is not — remembered
+//!
+//! The chain is memoised where memoising cannot over-admit, and nowhere else:
+//!
+//! - the **user** for 60 s (the cache the bundle path reads);
+//! - the **ring's term** — `allows(facts, WorkspaceDataAccess, workspace)` —
+//!   per `(user_id, project_id, org_id)` for 60 s, dropped by every
+//!   `invalidate_access_cache` hook. A term is remembered only when the
+//!   facts loaded; the facts-unknown arm defers to the shipped verdict for
+//!   that one request and remembers nothing.
+//!
+//! Everything that scopes or decides the request is read **fresh on every
+//! call**: the workspace row (its `org_id` is the tenant boundary the whole
+//! decision is keyed by — a moved or deleted workspace is judged anew on
+//! every replica at once, which no replica-local cache could promise), and
+//! the shipped gate — membership, frontline grant, staff reach, lockdown,
+//! partner reach. The decision is `shipped && term`. The term can only
+//! subtract (`oxy_authz::enforce`'s contract), so what the cache can do to a
+//! viewer is over-refuse for up to a minute after a grant is added; it can
+//! never keep admitting one after a membership, a frontline grant, a partner
+//! ceiling, a lockdown or the workspace's org changed. Staff reach is read
+//! through `oxy_server_authz::globals`, which its own writers invalidate on
+//! the writing replica and which ages out in 60 s elsewhere — the bound
+//! every guard in the product already has. A token that narrows its bearer
+//! reads and writes no term.
+//!
+//! What that costs on a warm replica, before the handler's own work: an org
+//! member pays two primary-key-shaped queries (the workspace row,
+//! `is_org_member`); a non-member pays the row and the false arm (frontline
+//! standing, lockdown, partner reach). Before this the chain cost 7-8
+//! queries for a member — the user, the workspace, the membership walk and
+//! the ~4-query principal-facts load — on every data call.
+//!
+//! The staging pin is per request by design.
 
 use axum::Json;
 use axum::http::{HeaderMap, StatusCode};
@@ -54,6 +89,9 @@ use oxy_auth::types::AuthenticatedUser;
 
 use crate::agentic_wiring::OxyProjectContext;
 use crate::server::api::custom_apps_auth::{is_org_member, is_oxy_locked_down};
+use crate::server::api::custom_apps_cache::{
+    cached_model_term, cached_user, remember_model_term, set_cached_user,
+};
 use crate::server::api::middlewares::sentry_surface::mark_custom_app_surface;
 use crate::server::router::is_allowed_origin;
 use crate::server::service::secret_manager::SecretManagerService;
@@ -166,6 +204,13 @@ fn err_with_code(status: StatusCode, msg: impl Into<String>, code: &'static str)
 /// callers send a bearer token. Either way the caller must be able to
 /// access the project (org member or oxy app-admin). Auth runs first so
 /// unauthenticated callers can't probe routes via axum extractor errors.
+///
+/// Warm, an org member pays two queries here — the workspace row and
+/// `is_org_member`, both asked fresh on every request by design: the user
+/// comes from the 60 s cache, the ring's term from the `(user_id,
+/// project_id, org_id)` cache, and on a production request the staging pin is
+/// answered from the headers alone. See the module doc for what is
+/// remembered and why.
 pub async fn check_custom_app_gates(
     headers: &HeaderMap,
     project_id: Uuid,
@@ -207,188 +252,31 @@ pub async fn check_custom_app_gates(
         return Err(err(StatusCode::FORBIDDEN, "origin not allowed"));
     }
 
-    // ── 3. User lookup ────────────────────────────────────────────────
-    let user = match UserService::find_user_by_identity(&identity).await {
-        Ok(Some(u)) => u,
-        Ok(None) => return Err(err(StatusCode::UNAUTHORIZED, "user not found")),
-        Err(e) => {
-            let code = user_lookup_failure_code(&e);
-            error!(code, error = %e, "user lookup failed");
-            return Err(err_with_code(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "user lookup failed",
-                code,
-            ));
-        }
-    };
-
-    let user = user.with_credential(credential);
+    // ── 3. User lookup, through the 60 s user cache ───────────────────
+    // Attached AFTER the cache: the cached row is the user, never the
+    // credential one request happened to arrive with.
+    let user = gate_user(&identity).await?.with_credential(credential);
     let caller = authz::Caller::from_user(&user);
 
     // ── 4. DB connection ──────────────────────────────────────────────
-    let db = match establish_connection().await {
-        Ok(d) => d,
-        Err(e) => {
-            // No `DbErr` to classify — failing to build the pool at all is
-            // unreachable by construction, so state the same code the two
-            // lookups below reach by inspection.
-            error!(
-                code = DbFailure::Unreachable.code(),
-                error = %e,
-                "DB connection failed"
-            );
-            return Err(err_with_code(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "database unavailable",
-                DbFailure::Unreachable.code(),
-            ));
-        }
-    };
+    let db = connect().await?;
 
-    // ── 5. Workspace lookup ──────────────────────────────────────────
-    let workspace = match Workspaces::find_by_id(project_id).one(&db).await {
-        Ok(Some(ws)) => ws,
-        Ok(None) => return Err(err(StatusCode::NOT_FOUND, "project not found")),
-        Err(e) => {
-            let failure = DbFailure::classify(&e);
-            error!(
-                code = failure.code(),
-                error = %e,
-                workspace = %project_id,
-                "workspace lookup failed"
-            );
-            return Err(err_with_code(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "workspace lookup failed",
-                failure.code(),
-            ));
-        }
-    };
-
-    // ── 5. Project access check ──────────────────────────────────────
-    //
-    // The access boundary: the caller must be a member of the project's
-    // org, OR an oxy app-admin (so staff can use the admin-panel preview,
-    // which is served by oxy and authenticated by the same cookie). Same-
-    // origin bundles can issue XHRs at any project, so this membership
-    // check — not the Origin allowlist — is what gates cross-project data.
-    let org_id = match workspace.org_id {
-        Some(id) => id,
-        None => {
-            return Err(err(
-                StatusCode::FORBIDDEN,
-                "workspace has no owning organization",
-            ));
-        }
-    };
-    // An API token with no grant on this workspace answers exactly as an unknown
-    // workspace does (step 5 above), so it cannot probe which workspaces exist.
-    // A session and a legacy key have no grants to be outside of.
-    if caller.workspace_ceiling(org_id, project_id).is_none() {
-        return Err(err(StatusCode::NOT_FOUND, "project not found"));
-    }
-    // Access: a real org member, an Oxy operator whose grant reaches this org
-    // with `develop_apps`, a partner operator whose ceiling grants `develop_apps`
-    // over the org's managing partner — or a frontline worker holding a grant on
-    // an app published from this workspace.
-    //
-    // NOTE — this is the DATA PLANE. `develop_apps` is the read-the-app's-data
-    // capability, deliberately DISTINCT from `manage_apps` (app lifecycle:
-    // publish / unpublish). A partner that can toggle an app's visibility cannot
-    // read its data unless its ceiling ALSO grants `develop_apps`; the split is
-    // what keeps "manage the app" from silently meaning "read the client's data".
-    // Granularity is deliberately org-wide (a developing partner works across the
-    // client's workspaces) and the grant is the ceiling itself (staff-set), so the
-    // data plane is not separately consent-gated the way publishing is. See
-    // `partner_authz::partner_grants_app_access` (called below).
-    //
-    // The staff term is the SAME call `user_can_access_app` makes — reach named
-    // by capability and org, then the workspace's lockdown switch. It used to be
-    // a bare `is_staff()`, which admitted every platform role to every tenant's
-    // data plane here while the app-keyed gate refused them next door, and
-    // ignored the lockdown an org had explicitly set. An unreadable lockdown
-    // counts as locked: that only ever costs staff a request.
-    //
-    // The frontline term sits inside the non-member arm because a worker is not
-    // an org member and never will be — `enroll_worker` writes `users.email =
-    // NULL` precisely to keep them out of every email-keyed path — so for the
-    // ordinary members who are 99% of callers it costs nothing. It decides
-    // standing AND grant by itself: `enforce` below runs only when the principal
-    // facts load, and on a loader error the caller keeps this verdict as-is, so a
-    // term that admitted every active worker and trusted the ring to narrow it
-    // would have admitted every worker to every app in the org for the duration
-    // of a database blip.
-    let allowed = match is_org_member(&db, user.id, org_id).await {
-        Ok(true) => true,
-        Ok(false) => {
-            frontline_worker_with_app_grant(&db, org_id, user.id, project_id).await
-                || (authz::globals::platform_reaches(&db, &caller, authz::Cap::DevelopApps, org_id)
-                    .await
-                    && !is_oxy_locked_down(&db, project_id).await.unwrap_or(true))
-                || authz::partner_authz::partner_grants_app_access(&db, &caller, org_id).await
-        }
-        Err(e) => {
-            let failure = DbFailure::classify(&e);
-            error!(
-                code = failure.code(),
-                error = %e,
-                workspace = %project_id,
-                "org membership check failed"
-            );
-            return Err(err_with_code(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "org membership check failed",
-                failure.code(),
-            ));
-        }
-    };
-    // ENFORCE the unified ring alongside the check above: the decision is
-    // `allowed && unified`, so the model can only ever tighten it — a mis-modeled
-    // ring can't hand a partner another tenant's data. Cannot be sampled: an
-    // authorization decision has to be deterministic.
-    //
-    // The resource is the WORKSPACE, stated as one. This gate is keyed on
-    // `project_id`, and every route behind it serves workspace data shared by
-    // every app published from that workspace — there is no app id on the wire.
-    // It used to hand the ring `Resource::app(project_id, …)`, a workspace wearing
-    // an app's type: `app_restricted` could never be true, and the frontline grant
-    // (`facts.app_memberships`, app ids) could never match, so a granted worker
-    // got `true && false` on every healthy request and this gate grew an
-    // exemption that skipped the ring for them. `Ring::WorkspaceData` reads the
-    // fact the loader now derives for a worker — the workspaces their app grants
-    // were published from — so the conjunction holds and the model decides,
-    // here as everywhere. `tests/platform/frontline_app_grant.rs` holds the two
-    // sides to each other against real rows.
-    //
-    // The load is scoped (no workspace-override query, which this ring never
-    // reads), so on this hot path it costs ~one extra short-circuiting partner
-    // query over the is_org_member + app-admin lookups the gate already does.
-    // Unknown facts (a lookup errored) defer to the gate's own verdict rather
-    // than denying — the conjunction only subtracts, so deferring can't open a
-    // hole, and a blip must not 403 every legitimate app user.
-    let allowed = match authz::loader::load_principal_facts_scoped(&db, &caller, false).await {
-        Some(facts) => authz::enforce(
-            "gate.custom_app",
-            &facts,
-            authz::Action::WorkspaceDataAccess,
-            &authz::Resource::workspace(project_id, org_id),
-            allowed,
-        ),
-        None => allowed,
-    };
-
-    if !allowed {
+    // ── 5. Workspace + access: the row and the gate fresh, the term cached ─
+    let verdict = gate_verdict(&db, &caller, project_id).await?;
+    if !verdict.allowed {
         return Err(err(
             StatusCode::FORBIDDEN,
             "not a member of the owning organization",
         ));
     }
 
-    // Staging: the staging build's semantic pin, for a request on the app's
-    // staging host, decided by the same reach
-    // rule that serves that viewer the staging bundle. After the access
-    // decision, so it can only narrow WHICH revision an already authorized
-    // request reads, never whether it may read.
+    // ── 6. Staging pin, per request ───────────────────────────────────
+    // The staging build's semantic pin, for a request on the app's staging
+    // host, decided by the same reach rule that serves that viewer the
+    // staging bundle. After the access decision, so it can only narrow WHICH
+    // revision an already authorized request reads, never whether it may
+    // read. Never cached: it is a property of this request's host and
+    // headers, and a production request answers it from them alone.
     let staging_pin = crate::server::api::custom_apps_staging_pin::staging_pin_for_data_request(
         &db, headers, &caller, project_id,
     )
@@ -397,11 +285,248 @@ pub async fn check_custom_app_gates(
     Ok(CustomAppContext {
         user,
         project_id,
-        workspace,
-        org_id,
+        workspace: verdict.workspace,
+        org_id: verdict.org_id,
         db,
         staging_pin,
     })
+}
+
+/// Step 3: the user the credential names, from the cache the bundle path
+/// keeps (`custom_apps_auth::user_cache_key` — the id, or the address only
+/// for a provider identity naming nobody yet). A miss is loaded and cached;
+/// a credential naming nobody is `401`, never cached.
+async fn gate_user(identity: &oxy_auth::types::Identity) -> Result<AuthenticatedUser, Response> {
+    let cache_key = crate::server::api::custom_apps_auth::user_cache_key(identity);
+    if let Some(user) = cached_user(&cache_key) {
+        return Ok(user);
+    }
+    match UserService::find_user_by_identity(identity).await {
+        Ok(Some(user)) => {
+            set_cached_user(cache_key, user.clone());
+            Ok(user)
+        }
+        Ok(None) => Err(err(StatusCode::UNAUTHORIZED, "user not found")),
+        Err(e) => {
+            let code = user_lookup_failure_code(&e);
+            error!(code, error = %e, "user lookup failed");
+            Err(err_with_code(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "user lookup failed",
+                code,
+            ))
+        }
+    }
+}
+
+/// Step 4: the pool checkout. No `DbErr` to classify — failing to build the
+/// pool at all is unreachable by construction, so state the same code the
+/// lookups behind it reach by inspection.
+async fn connect() -> Result<DatabaseConnection, Response> {
+    establish_connection().await.map_err(|e| {
+        error!(
+            code = DbFailure::Unreachable.code(),
+            error = %e,
+            "DB connection failed"
+        );
+        err_with_code(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "database unavailable",
+            DbFailure::Unreachable.code(),
+        )
+    })
+}
+
+/// Step 5: the workspace row, then the decision — both the row and the
+/// shipped gate FRESH on every request, the ring's term from the `(user_id,
+/// project_id, org_id)` cache. See the module doc for what that bounds.
+///
+/// Failures (a workspace that does not exist, a lookup error) are answered,
+/// never remembered. A token that narrows its bearer is decided fresh in
+/// full: the term is a SESSION's, and the cache key does not carry the grant.
+async fn gate_verdict(
+    db: &DatabaseConnection,
+    caller: &authz::Caller,
+    project_id: Uuid,
+) -> Result<GateVerdict, Response> {
+    let workspace = load_workspace(db, project_id).await?;
+    // The access boundary: the caller must be a member of the project's
+    // org, OR an oxy app-admin (so staff can use the admin-panel preview,
+    // which is served by oxy and authenticated by the same cookie). Same-
+    // origin bundles can issue XHRs at any project, so this membership
+    // check — not the Origin allowlist — is what gates cross-project data.
+    let Some(org_id) = workspace.org_id else {
+        return Err(err(
+            StatusCode::FORBIDDEN,
+            "workspace has no owning organization",
+        ));
+    };
+    // An API token with no grant on this workspace answers exactly as an unknown
+    // workspace does, so it cannot probe which workspaces exist. A session and
+    // a legacy key have no grants to be outside of.
+    if caller.workspace_ceiling(org_id, project_id).is_none() {
+        return Err(err(StatusCode::NOT_FOUND, "project not found"));
+    }
+    let shipped = shipped_workspace_access(db, caller, org_id, project_id).await?;
+    // ENFORCE the unified ring alongside the shipped check: the decision is
+    // `shipped && term`, so the model can only ever tighten it — a mis-modeled
+    // ring can't hand a partner another tenant's data. Cannot be sampled: an
+    // authorization decision has to be deterministic.
+    let allowed = shipped && model_term(db, caller, org_id, project_id, shipped).await;
+    Ok(GateVerdict {
+        workspace,
+        org_id,
+        allowed,
+    })
+}
+
+/// What step 5 decided: the row the handlers run against, and whether this
+/// request may.
+struct GateVerdict {
+    workspace: entity::workspaces::Model,
+    org_id: Uuid,
+    allowed: bool,
+}
+
+/// The workspace row, read fresh: one primary-key lookup, and the tenant
+/// boundary of everything that follows. A missing workspace is `404`, a
+/// lookup error `500`.
+async fn load_workspace(
+    db: &DatabaseConnection,
+    project_id: Uuid,
+) -> Result<entity::workspaces::Model, Response> {
+    match Workspaces::find_by_id(project_id).one(db).await {
+        Ok(Some(ws)) => Ok(ws),
+        Ok(None) => Err(err(StatusCode::NOT_FOUND, "project not found")),
+        Err(e) => {
+            let failure = DbFailure::classify(&e);
+            error!(
+                code = failure.code(),
+                error = %e,
+                workspace = %project_id,
+                "workspace lookup failed"
+            );
+            Err(err_with_code(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "workspace lookup failed",
+                failure.code(),
+            ))
+        }
+    }
+}
+
+/// The shipped gate, decided fresh on every request.
+///
+/// Access: a real org member, an Oxy operator whose grant reaches this org
+/// with `develop_apps`, a partner operator whose ceiling grants `develop_apps`
+/// over the org's managing partner — or a frontline worker holding a grant on
+/// an app published from this workspace.
+///
+/// NOTE — this is the DATA PLANE. `develop_apps` is the read-the-app's-data
+/// capability, deliberately DISTINCT from `manage_apps` (app lifecycle:
+/// publish / unpublish). A partner that can toggle an app's visibility cannot
+/// read its data unless its ceiling ALSO grants `develop_apps`; the split is
+/// what keeps "manage the app" from silently meaning "read the client's data".
+/// Granularity is deliberately org-wide (a developing partner works across the
+/// client's workspaces) and the grant is the ceiling itself (staff-set), so the
+/// data plane is not separately consent-gated the way publishing is. See
+/// `partner_authz::partner_grants_app_access` (called below).
+///
+/// The staff term is the SAME call `user_can_access_app` makes — reach named
+/// by capability and org, then the workspace's lockdown switch. It used to be
+/// a bare `is_staff()`, which admitted every platform role to every tenant's
+/// data plane here while the app-keyed gate refused them next door, and
+/// ignored the lockdown an org had explicitly set. An unreadable lockdown
+/// counts as locked: that only ever costs staff a request.
+///
+/// The frontline term sits inside the non-member arm because a worker is not
+/// an org member and never will be — `enroll_worker` writes `users.email =
+/// NULL` precisely to keep them out of every email-keyed path — so for the
+/// ordinary members who are 99% of callers it costs nothing. It decides
+/// standing AND grant by itself: the ring's term runs only when the principal
+/// facts load, and on a loader error the caller keeps this verdict as-is, so a
+/// term that admitted every active worker and trusted the ring to narrow it
+/// would have admitted every worker to every app in the org for the duration
+/// of a database blip.
+async fn shipped_workspace_access(
+    db: &DatabaseConnection,
+    caller: &authz::Caller,
+    org_id: Uuid,
+    project_id: Uuid,
+) -> Result<bool, Response> {
+    match is_org_member(db, caller.user_id, org_id).await {
+        Ok(true) => Ok(true),
+        Ok(false) => Ok(
+            frontline_worker_with_app_grant(db, org_id, caller.user_id, project_id).await
+                || (authz::globals::platform_reaches(db, caller, authz::Cap::DevelopApps, org_id)
+                    .await
+                    && !is_oxy_locked_down(db, project_id).await.unwrap_or(true))
+                || authz::partner_authz::partner_grants_app_access(db, caller, org_id).await,
+        ),
+        Err(e) => {
+            let failure = DbFailure::classify(&e);
+            error!(
+                code = failure.code(),
+                error = %e,
+                workspace = %project_id,
+                "org membership check failed"
+            );
+            Err(err_with_code(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "org membership check failed",
+                failure.code(),
+            ))
+        }
+    }
+}
+
+/// The ring's term, `allows(facts, WorkspaceDataAccess, workspace)`, from the
+/// `(user_id, project_id, org_id)` cache or computed — and remembered only when the
+/// facts loaded.
+///
+/// The resource is the WORKSPACE, stated as one. This gate is keyed on
+/// `project_id`, and every route behind it serves workspace data shared by
+/// every app published from that workspace — there is no app id on the wire.
+/// It used to hand the ring `Resource::app(project_id, …)`, a workspace wearing
+/// an app's type: `app_restricted` could never be true, and the frontline grant
+/// (`facts.app_memberships`, app ids) could never match, so a granted worker
+/// got `true && false` on every healthy request and this gate grew an
+/// exemption that skipped the ring for them. `Ring::WorkspaceData` reads the
+/// fact the loader now derives for a worker — the workspaces their app grants
+/// were published from — so the conjunction holds and the model decides,
+/// here as everywhere. `tests/platform/frontline_app_grant.rs` holds the two
+/// sides to each other against real rows.
+///
+/// The load is scoped (no workspace-override query, which this ring never
+/// reads). Unknown facts (a lookup errored) defer to the shipped verdict
+/// rather than denying — the conjunction only subtracts, so deferring can't
+/// open a hole, and a blip must not 403 every legitimate app user — and that
+/// deferral is this request's alone: nothing is cached on that arm.
+async fn model_term(
+    db: &DatabaseConnection,
+    caller: &authz::Caller,
+    org_id: Uuid,
+    project_id: Uuid,
+    shipped: bool,
+) -> bool {
+    let cacheable = !caller.reach().is_some_and(oxy_authz::TokenReach::narrows);
+    if cacheable && let Some(term) = cached_model_term(caller.user_id, project_id, org_id) {
+        return term;
+    }
+    let action = authz::Action::WorkspaceDataAccess;
+    let resource = authz::Resource::workspace(project_id, org_id);
+    let term = authz::loader::load_principal_facts_scoped(db, caller, false)
+        .await
+        .map(|facts| {
+            // `enforce` is the warn-on-disagreement; its verdict is
+            // `shipped && allows`, which the caller restates with the term.
+            authz::enforce("gate.custom_app", &facts, action, &resource, shipped);
+            oxy_authz::allows(&facts, action, &resource)
+        });
+    if cacheable {
+        remember_model_term(caller.user_id, project_id, org_id, term);
+    }
+    term.unwrap_or(true)
 }
 
 /// Parse a custom-app endpoint's JSON body, enforcing the

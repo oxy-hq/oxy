@@ -23,12 +23,11 @@ use uuid::Uuid;
 /// same 30-100 asset requests as a production one, and the decision loads the
 /// principal's facts. A revoked grant stops opening staging within a minute,
 /// like a revoked membership stops opening production.
-type DecisionCache =
-    std::sync::RwLock<std::collections::HashMap<(Uuid, Uuid), (bool, std::time::Instant)>>;
+type DecisionCache = super::custom_apps_cache::TtlLru<(Uuid, Uuid), bool>;
 
 fn non_production_cache() -> &'static DecisionCache {
     static CACHE: std::sync::OnceLock<DecisionCache> = std::sync::OnceLock::new();
-    CACHE.get_or_init(Default::default)
+    CACHE.get_or_init(super::custom_apps_cache::standard_cache)
 }
 
 /// May this viewer open a **non-production** environment of `app`? Oxy staff
@@ -45,16 +44,15 @@ pub async fn may_open_non_production(
     caller: &crate::server::authz::Caller,
     app: &apps::Model,
 ) -> bool {
-    use super::custom_apps_cache::{get_fresh, insert_with_sweep};
     if caller.reach().is_some_and(oxy_authz::TokenReach::narrows) {
         return decide_non_production(db, caller, app).await;
     }
     let key = (caller.user_id, app.id);
-    if let Some(allowed) = get_fresh(non_production_cache(), &key) {
+    if let Some(allowed) = non_production_cache().get(&key) {
         return allowed;
     }
     let allowed = decide_non_production(db, caller, app).await;
-    insert_with_sweep(non_production_cache(), key, allowed);
+    non_production_cache().insert(key, allowed);
     allowed
 }
 

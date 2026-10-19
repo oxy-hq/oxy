@@ -229,6 +229,12 @@ async fn fn_in_an_environment_with_no_build_names_the_environment() {
             ))
             .await
             .expect("unset a build pointer");
+            // A raw write bypasses the publish/promote handlers, which are
+            // what drop the serve plane's cached `(org, app)` resolution —
+            // the function prelude reads the app row through it now.
+            oxy_app::server::api::custom_apps_cache::invalidate_app_resolution_cache_for_app(
+                app_id,
+            );
         }
     };
     let error = |body: &str| -> Value { serde_json::from_str(body).expect("a JSON error") };

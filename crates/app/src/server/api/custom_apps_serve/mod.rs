@@ -47,16 +47,8 @@
 use axum::extract::Path;
 use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
-use entity::prelude::Apps;
-use oxy::database::client::establish_connection;
-use oxy_auth::authenticator::Authenticator;
-use oxy_auth::built_in::BuiltInAuthenticator;
-use oxy_auth::user::UserService;
 use oxy_shared::fleet_role::{RouteRole, RouteRoleDecl};
-use sea_orm::ColumnTrait;
 use sea_orm::DatabaseConnection;
-use sea_orm::EntityTrait;
-use sea_orm::QueryFilter;
 use sentry::SentryFutureExt;
 use tracing::Instrument;
 use uuid::Uuid;
@@ -64,23 +56,19 @@ use uuid::Uuid;
 use oxy_app_core::custom_app_env_request::request_environment;
 use oxy_app_core::custom_app_environment::AppEnvironment;
 
-use super::custom_apps_auth::user_can_access_app;
-use super::custom_apps_cache::{
-    ResolvedApp, cached_app_resolution, cached_user, set_cached_app_resolution, set_cached_user,
-};
-use super::custom_apps_env_resolve::{
-    EnvironmentBuilds, load_environment_builds, may_open_non_production, resolve_environment,
-};
+use super::custom_apps_env_resolve::{EnvironmentBuilds, resolve_environment};
 use super::custom_apps_functions::seam::FunctionQueryExecutor;
 
 mod headers;
 // The admin SPA's static handler answers the same navigation-vs-subresource
 // question for its own fallback, and must answer it identically.
 pub(crate) use headers::wants_html;
+pub(crate) mod resolve;
 pub(crate) mod rewrite;
 mod sources;
 
 use headers::*;
+use resolve::{AppRequest, Refusal, resolve_app_request};
 use sources::*;
 
 pub(crate) use rewrite::first_custom_apps_prefix;
@@ -255,6 +243,12 @@ pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Re
 /// their presence in a trace is itself the diagnosis. The status code is not
 /// repeated here: the parent HTTP span carries it on every path, early exits
 /// included, which a field recorded at the bottom of this function would not.
+///
+/// The stages, each over one [`ServeContext`]: environment → principal, app
+/// and access (the shared resolver) → reserved `__oxy/` names → build → bytes
+/// → record. The order is the contract: authentication before any lookup,
+/// the reserved namespace after the gate and before the bundle, recording
+/// last so every answer is counted.
 #[allow(clippy::too_many_arguments)]
 #[tracing::instrument(
     target = "custom_apps_serve",
@@ -277,485 +271,296 @@ pub(crate) async fn serve_pretty(
     uri: Uri,
     body: axum::body::Body,
 ) -> Response {
-    // Wall clock for the wide event emitted at the bottom. Started before the
-    // auth round-trip on purpose: a login check that has gone slow IS the app
-    // being slow from the viewer's seat, and a timer that excluded it would
-    // report health the viewer does not have.
-    let started = std::time::Instant::now();
-    // 0. Which environment of the app this request addresses: the host label,
-    //    or `X-Oxy-App-Env` on a bearer request. A header that cannot be
-    //    honoured is a 400 — never a silent production serve. Pure header work,
-    //    so it reveals nothing about which apps exist.
-    let environment = match request_environment(&headers) {
-        Ok(environment) => environment,
-        Err(e) => return e.into_response(),
+    let ctx = match ServeContext::prepare(org_slug, app_slug, rest, method, headers, uri).await {
+        Ok(ctx) => ctx,
+        Err(answered) => return answered,
     };
-    // 1. Authenticate FIRST so an unauthenticated probe can't distinguish a
-    //    real registered (org, app) pair (302 redirect) from a fake one
-    //    (404). No DB work happens before we know the caller has a valid
-    //    session.
-    //    With the credential: an API token's grants decide below whether this
-    //    app exists for it at all.
-    let (identity, credential) =
-        match BuiltInAuthenticator::new(oxy_auth::token::SandboxAgent::Refuse)
-            .authenticate_with_credential(&headers)
-            .instrument(tracing::info_span!(
-                target: "custom_apps_serve",
-                "custom_app_authenticate"
-            ))
-            .await
-        {
-            Ok(authenticated) => authenticated,
-            Err(e) => {
-                // Surface auth failures so an operator can tell apart "no cookie"
-                // (browser never logged in) vs "stale JWT" vs "wrong domain
-                // scope". Without this the only symptom is a silent redirect to
-                // login and there's no way to know why from outside the server.
-                let cookie_present = headers
-                    .get(axum::http::header::COOKIE)
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.contains("oxy_session="))
-                    .unwrap_or(false);
-                let auth_header_present = headers.get(axum::http::header::AUTHORIZATION).is_some();
-                // `info`, not `warn`: an unauthenticated hit is the client doing
-                // something ordinary (a service-worker update check, a
-                // `version.json` poll, an expired session), and at `warn` it was a
-                // third of prod's warnings. The fields keep the diagnosis.
-                tracing::info!(
-                    target: "custom_apps_serve",
-                    org_slug = %org_slug,
-                    app_slug = %app_slug,
-                    cookie_present,
-                    auth_header_present,
-                    error = %e,
-                    "auth failed, redirecting to login"
-                );
-                return redirect_to_login(&headers, &uri).into_response();
-            }
-        };
+    if let Some(answered) = ctx.answer_reserved(body).await {
+        return answered;
+    }
+    let response = ctx.dispatch().await;
+    ctx.record(response)
+}
 
-    // User lookup is cached — without this, every asset request triggers a
-    // fresh `users` table query. Keyed by who the credential NAMES, not by its
-    // email claim: a frontline worker's claim is empty, and an email key put
-    // every worker in one slot. See `custom_apps_auth::user_cache_key`.
-    let cache_key = super::custom_apps_auth::user_cache_key(&identity);
-    let user = if let Some(u) = cached_user(&cache_key) {
-        u
-    } else {
-        match UserService::find_user_by_identity(&identity)
-            .instrument(tracing::info_span!(
-                target: "custom_apps_serve",
-                "custom_app_user_lookup"
-            ))
-            .await
-        {
-            Ok(Some(u)) => {
-                set_cached_user(cache_key, u.clone());
-                u
-            }
-            Ok(None) => return redirect_to_login(&headers, &uri).into_response(),
-            Err(e) => {
-                tracing::error!("Failed to load user for custom app {org_slug}/{app_slug}: {e}");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
-        }
-    };
-    // Attached AFTER the cache: the cached row is the user, never the credential
-    // one request happened to arrive with.
-    let user = user.with_credential(credential);
-    let caller = oxy_server_authz::Caller::from_user(&user);
+/// What every stage after the prelude reads: the request as it arrived, the
+/// resolved principal and app, and the runtime config the bundle is served
+/// with.
+struct ServeContext {
+    /// Wall clock for the wide event emitted at the bottom. Started before the
+    /// auth round-trip on purpose: a login check that has gone slow IS the app
+    /// being slow from the viewer's seat, and a timer that excluded it would
+    /// report health the viewer does not have.
+    started: std::time::Instant,
+    environment: AppEnvironment,
+    request: AppRequest,
+    rest: String,
+    method: axum::http::Method,
+    headers: HeaderMap,
+    uri: Uri,
+    runtime: AppRuntimeConfig,
+}
 
-    // 2. Now that the caller is known, look up the org + app and check
-    // membership. Joining by (org_slug, app_slug) is the only DB hit other
-    // than the membership cache miss path; both indexed.
-    let db = match establish_connection().await {
-        Ok(db) => db,
-        Err(e) => {
-            tracing::error!("DB connection failed serving custom app {org_slug}/{app_slug}: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-
-    // Turning the URL's two slugs into rows costs two indexed queries, and
-    // every asset in the page repeats them for the same pair. Cached together
-    // for 60s and dropped wholesale by `invalidate_app_resolution_cache` on
-    // any app mutation, so a publish or a visibility change still lands
-    // immediately. A miss is not cached — a newly-created app is reachable at
-    // once.
-    let resolved = match cached_app_resolution(org_slug, app_slug) {
-        Some(r) => r,
-        None => {
-            let org = match entity::prelude::Organizations::find()
-                .filter(entity::organizations::Column::Slug.eq(org_slug))
-                .one(&db)
-                .instrument(tracing::info_span!(
-                    target: "custom_apps_serve",
-                    "custom_app_resolve_org"
-                ))
-                .await
-            {
-                Ok(Some(o)) => o,
-                Ok(None) => return no_store_404(),
-                Err(e) => {
-                    tracing::error!("Failed to look up org {org_slug}: {e}");
-                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                }
-            };
-
-            let app = match Apps::find()
-                .filter(entity::apps::Column::OrgId.eq(org.id))
-                .filter(entity::apps::Column::Slug.eq(app_slug))
-                .one(&db)
-                .instrument(tracing::info_span!(
-                    target: "custom_apps_serve",
-                    "custom_app_resolve_app"
-                ))
-                .await
-            {
-                Ok(Some(a)) => a,
-                Ok(None) => return no_store_404(),
-                Err(e) => {
-                    tracing::error!("Failed to look up custom app {org_slug}/{app_slug}: {e}");
-                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                }
-            };
-
-            let environments = match load_environment_builds(&db, &app)
-                .instrument(tracing::info_span!(
-                    target: "custom_apps_serve",
-                    "custom_app_resolve_environments"
-                ))
-                .await
-            {
-                Ok(e) => e,
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to read the environments of custom app {org_slug}/{app_slug}: {e}"
-                    );
-                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                }
-            };
-
-            let resolved = ResolvedApp {
-                org,
-                app,
-                environments,
-            };
-            set_cached_app_resolution(org_slug, app_slug, resolved.clone());
-            resolved
-        }
-    };
-    let ResolvedApp {
-        org,
-        app,
-        environments,
-    } = resolved;
-    let id = app.id;
-
-    // Who may open this environment. Production: the combined access check
-    // (org member | workspace grant | global app admin), cached per (user_id,
-    // app_id) for 60s — see `custom_apps_auth::user_can_access_app`; critical
-    // for the Next.js asset storm (30-100 requests per page load). Any other
-    // environment: Oxy staff reaching the org, decided by oxy-authz — an
-    // unreleased build is never a customer's to open.
-    let access = async {
-        if environment == AppEnvironment::Production {
-            user_can_access_app(&db, &caller, &app).await
-        } else {
-            Ok(may_open_non_production(&db, &caller, &app).await)
-        }
-    };
-    let allowed = match access
-        .instrument(tracing::info_span!(
-            target: "custom_apps_serve",
-            "custom_app_authorize"
-        ))
-        .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("Access check failed for custom app {id}: {e}");
-            record_early_exit(
-                &app,
-                user.id,
-                &headers,
-                &rest,
-                is_html_navigation(&rest),
-                StatusCode::INTERNAL_SERVER_ERROR,
-                started,
-            );
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-    if !allowed {
-        // A 403 is not an app fault and does not dent the SLI (see
-        // `is_app_fault`), but it is still traffic this app served and an
-        // operator asking "who is being turned away" has nowhere else to look.
-        record_early_exit(
-            &app,
-            user.id,
+impl ServeContext {
+    /// Stages 0-3: environment, principal, app, access, source. Every refusal
+    /// is answered here in the bundle path's own voice ([`refuse`]), and a
+    /// platform 500 against a known app is recorded for the SLI.
+    async fn prepare(
+        org_slug: &str,
+        app_slug: &str,
+        rest: String,
+        method: axum::http::Method,
+        headers: HeaderMap,
+        uri: Uri,
+    ) -> Result<Self, Response> {
+        let started = std::time::Instant::now();
+        // 0. Which environment of the app this request addresses: the host
+        //    label, or `X-Oxy-App-Env` on a bearer request. A header that
+        //    cannot be honoured is a 400 — never a silent production serve.
+        //    Pure header work, so it reveals nothing about which apps exist.
+        let environment = request_environment(&headers).map_err(|e| e.into_response())?;
+        // 1-2. Authenticate FIRST, then user → rows → access, every step from
+        //    the 60 s caches (`resolve`). No DB work happens before we know
+        //    the caller has a valid session, so an unauthenticated probe can't
+        //    distinguish a real registered (org, app) pair (302 redirect) from
+        //    a fake one (404).
+        let request = resolve_app_request(
             &headers,
-            &rest,
-            is_html_navigation(&rest),
-            StatusCode::FORBIDDEN,
-            started,
-        );
-        return (
-            StatusCode::FORBIDDEN,
-            "You don't have access to this custom app.",
+            org_slug,
+            app_slug,
+            oxy_auth::token::SandboxAgent::Refuse,
+            &environment,
         )
-            .into_response();
+        .await
+        .map_err(|refusal| refuse(refusal, org_slug, app_slug, &rest, &headers, &uri, started))?;
+        // 3. The source facade. The per-app source is recorded at register
+        //    time; a row still carrying a removed type (`v0`, `local`) fails to
+        //    parse here and answers a recorded 500 — see `custom_apps_source`
+        //    for why those rows are not migrated.
+        if let Err(e) = super::custom_apps_source::AppSource::from_model(&request.app) {
+            tracing::error!("Bad source config for custom app {}: {e}", request.app.id);
+            EarlyExit::new(&request.app, request.user.id, &headers, &rest, started)
+                .record(StatusCode::INTERNAL_SERVER_ERROR);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR.into_response());
+        }
+        let runtime = AppRuntimeConfig::from_app(&request.app, &request.org.slug, &environment);
+        Ok(Self {
+            started,
+            environment,
+            request,
+            rest,
+            method,
+            headers,
+            uri,
+            runtime,
+        })
     }
 
-    // 3. Dispatch through the source facade. The per-app source is recorded at
-    //    register time. A row still carrying a removed type (`v0`, `local`)
-    //    fails to parse here and answers a recorded 500 — see
-    //    `custom_apps_source` for why those rows are not migrated.
-    let source = match super::custom_apps_source::AppSource::from_model(&app) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("Bad source config for custom app {id}: {e}");
-            // A 500 the PLATFORM produced. Returning here skipped the recorder
-            // at the bottom, so the SLI built to catch platform failure was
-            // blind to exactly that.
-            record_early_exit(
-                &app,
-                user.id,
-                &headers,
-                &rest,
-                is_html_navigation(&rest),
-                StatusCode::INTERNAL_SERVER_ERROR,
-                started,
-            );
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-
-    let runtime = AppRuntimeConfig::from_app(&app, &org.slug, &environment);
-
-    // 3a. The platform-reserved `__oxy/` namespace, answered by us rather than
-    //     by the bundle. Deliberately placed HERE — after authentication and
-    //     the access check, before the source dispatch — so it inherits the
-    //     app's exact gate: the same viewers who can load the bundle can
-    //     register its worker and post its telemetry, and nobody else can. It
-    //     also means these paths work identically on the subpath and subdomain
-    //     surfaces with no CORS involved, because they *are* the app's origin.
-    //
-    //     Not everything under the prefix is answered here — the asset manifest
-    //     is a real object inside the build — but everything under it is
-    //     *classified* here, so a name nobody claims 404s rather than reaching
-    //     the bundle. That is what makes the namespace reserved rather than
-    //     merely conventional.
-    if let Some(name) = reserved_platform_path(&rest) {
-        match classify_reserved(name, &method) {
-            Reserved::ServiceWorker => return service_worker_for(&runtime, &headers),
+    /// Stage 3a: the platform-reserved `__oxy/` namespace, answered by us
+    /// rather than by the bundle. Deliberately HERE — after authentication and
+    /// the access check, before the source dispatch — so it inherits the app's
+    /// exact gate: the same viewers who can load the bundle can register its
+    /// worker and post its telemetry, and nobody else can. It also means these
+    /// paths work identically on the subpath and subdomain surfaces with no
+    /// CORS involved, because they *are* the app's origin.
+    ///
+    /// Not everything under the prefix is answered here — the asset manifest
+    /// is a real object inside the build — but everything under it is
+    /// *classified* here, so a name nobody claims 404s rather than reaching
+    /// the bundle. That is what makes the namespace reserved rather than
+    /// merely conventional. `None` means "not reserved, serve the bundle".
+    async fn answer_reserved(&self, body: axum::body::Body) -> Option<Response> {
+        let name = reserved_platform_path(&self.rest)?;
+        let app = &self.request.app;
+        let user = &self.request.user;
+        Some(match classify_reserved(name, &self.method) {
+            Reserved::ServiceWorker => service_worker_for(&self.runtime, &self.headers),
             Reserved::WebManifest => {
-                return web_manifest_for(&db, &runtime, &app, &headers).await;
+                web_manifest_for(&self.request.db, &self.runtime, app, &self.headers).await
             }
-            Reserved::MonogramIcon => return monogram_icon_for(&app),
+            Reserved::MonogramIcon => monogram_icon_for(app),
             Reserved::Beacon => {
-                return ingest_beacon(
+                ingest_beacon(
                     body,
-                    &headers,
-                    &db,
+                    &self.headers,
+                    &self.request.db,
                     app.id,
                     app.org_id,
                     user.id,
                     user.email.as_deref().unwrap_or(""),
-                    &environment,
+                    &self.environment,
                 )
-                .await;
+                .await
             }
-            // A real object inside the build, written at publish — fall through
-            // to the ordinary dispatch so it rides the same LRU,
+            // A real object inside the build, written at publish — fall
+            // through to the ordinary dispatch so it rides the same LRU,
             // pre-compression, and absence caching as every other asset.
-            Reserved::BuildObject => {}
-            Reserved::Unknown => return super::custom_apps_client::reserved_not_found(),
-        }
+            Reserved::BuildObject => return None,
+            Reserved::Unknown => super::custom_apps_client::reserved_not_found(),
+        })
     }
 
-    // Detect the "user-navigation" requests (root path, trailing-slash
-    // directory, or `.html`) so we record at most one view event per
-    // user-visible page load — not once per asset / API fetch which
-    // would 100× the volume with zero extra signal.
-    //
-    // Computed BEFORE the dispatch so the per-source-type response
-    // build doesn't need to know about tracking. Tracking + cookie
-    // injection happen in the post-dispatch wrapper at the bottom.
-    let is_html_request = is_html_navigation(&rest);
-    let source_label = if on_custom_app_subdomain(&headers) {
-        "subdomain"
-    } else {
-        "subpath"
-    };
-
-    use super::custom_apps_source::AppSource;
-    // The app id and the backend that answered belong on the parent span:
-    // "which app, served from where" is how an operator slices a latency or
-    // error question before looking at any single request.
-    {
+    /// Stages 4-5: the build this request serves, then its bytes. The app id
+    /// and the backend that answered go on the parent span: "which app, served
+    /// from where" is how an operator slices a latency or error question before
+    /// looking at any single request.
+    async fn dispatch(&self) -> Response {
+        let app = &self.request.app;
         let span = tracing::Span::current();
-        span.record("app_id", tracing::field::display(id));
-        span.record(
-            "source",
-            match &source {
-                AppSource::S3 => "s3",
-            },
+        span.record("app_id", tracing::field::display(app.id));
+        span.record("source", "s3");
+        let dispatch_span = tracing::info_span!(
+            target: "custom_apps_serve",
+            "custom_app_dispatch"
         );
-    }
-    let dispatch_span = tracing::info_span!(
-        target: "custom_apps_serve",
-        "custom_app_dispatch"
-    );
-    let response = async {
-        match source {
-            AppSource::S3 => {
-                let (build_pk, label) =
-                    build_to_serve(&db, &app, &environment, &environments).await;
-                match build_pk {
-                    Some(build_pk) => {
-                        // The runtime config was built ~100 lines above, before the
-                        // channel was known, so its `buildId` defaulted to the
-                        // PUBLISHED build. A staff draft preview of a published app
-                        // would then serve draft bytes and inject the published id:
-                        // an error thrown by draft code gets attributed to the wrong
-                        // build, `resolve_stack` fetches that build's maps, and the
-                        // lookups return plausible-but-wrong files and lines —
-                        // reported as `stack_resolved: true`, which is the one case
-                        // that flag exists to prevent. Draft preview is exactly when
-                        // someone is reading a stack.
-                        let mut runtime = runtime;
-                        runtime.build_id = build_pk.to_string();
-                        // `?v=` enters the cache decision here. The query never
-                        // reaches `rest` (a path capture), so it is read off the
-                        // URI and compared downstream against the build row
-                        // actually loaded for this request.
-                        serve_from_s3_build(
-                            &db,
-                            id,
-                            build_pk,
-                            &rest,
-                            requested_build_version(uri.query()),
-                            &runtime,
-                            &headers,
-                        )
-                        .await
-                    }
-                    None => {
-                        // Post-retirement: the legacy state-dir serve is gone.
-                        // An s3-source app with no build pointer hasn't been
-                        // published through the new pipeline yet (`oxyc publish`).
-                        tracing::warn!(
-                            "app {id}: no build for {label} — not yet published via `oxyc publish`"
-                        );
-                        no_store_404()
-                    }
+        async {
+            let (build_pk, label) = build_to_serve(
+                &self.request.db,
+                app,
+                &self.environment,
+                &self.request.environments,
+            )
+            .await;
+            match build_pk {
+                Some(build_pk) => self.serve_build(build_pk).await,
+                None => {
+                    // Post-retirement: the legacy state-dir serve is gone. An
+                    // s3-source app with no build pointer hasn't been published
+                    // through the new pipeline yet (`oxyc publish`).
+                    tracing::warn!(
+                        "app {}: no build for {label} — not yet published via `oxyc publish`",
+                        app.id
+                    );
+                    no_store_404()
                 }
             }
         }
+        .instrument(dispatch_span)
+        .await
     }
-    .instrument(dispatch_span)
-    .await;
 
-    // Post-dispatch: for browser-navigation requests only (root /
-    // trailing-slash / `.html`), stamp the session cookie on the
-    // response and spawn the view-event recording. Asset / API
-    // fetches are storm-volume — exclude them so the Activity tab
-    // counts user-visible page loads, not request volume.
-    //
-    // The invariant: a non-2xx is not a view, whoever produced it. The
-    // dispatch spans three backends (build store, local dir, upstream
-    // proxy) and each has its own ladder of 404s, 500s and 403s; the gate
-    // deliberately does not care which one answered.
-    //
-    // `304` is the one exception — the browser re-rendered the page from
-    // its cache, which is a view. `html_response`'s `if_none_match` and an
-    // upstream conditional response both produce one.
-    //
-    // What that buys: an app that is registered but has nothing to serve —
-    // no `oxyc publish` yet — stops recording a view for every hit on its
-    // 404. That is a state customers sit in, so it was real inflation.
-    //
-    // It used to cost something too. The removed `v0` source proxied an app
-    // hosted elsewhere and passed its status through verbatim, so that app's
-    // own rendered 404 or maintenance 503, and a redirect off its front door,
-    // stopped counting as views. A build-store bundle is static: it neither
-    // chooses its own error status nor issues server redirects, so those cases
-    // no longer arise here.
-    //
-    // This gates the `Set-Cookie` too, so a visitor whose first hit is a
-    // non-2xx starts a fresh session on their next navigation. Harmless —
-    // the tracking cookie is analytics-only and separate from
-    // `oxy_session`.
-    let rendered = {
-        let s = response.status();
-        s.is_success() || s == StatusCode::NOT_MODIFIED
-    };
+    /// Stage 5: the bytes of one build.
+    async fn serve_build(&self, build_pk: Uuid) -> Response {
+        // The runtime config was built in `prepare`, before the channel was
+        // known, so its `buildId` defaulted to the PUBLISHED build. A staff
+        // draft preview of a published app would then serve draft bytes and
+        // inject the published id: an error thrown by draft code gets
+        // attributed to the wrong build, `resolve_stack` fetches that build's
+        // maps, and the lookups return plausible-but-wrong files and lines —
+        // reported as `stack_resolved: true`, which is the one case that flag
+        // exists to prevent. Draft preview is exactly when someone is reading
+        // a stack.
+        let mut runtime = self.runtime.clone();
+        runtime.build_id = build_pk.to_string();
+        // `?v=` enters the cache decision here. The query never reaches
+        // `rest` (a path capture), so it is read off the URI and compared
+        // downstream against the build row actually loaded for this request.
+        serve_from_s3_build(
+            &self.request.db,
+            self.request.app.id,
+            build_pk,
+            &self.rest,
+            requested_build_version(self.uri.query()),
+            &runtime,
+            &self.headers,
+        )
+        .await
+    }
 
-    // One wide event per served request — every request, not just the HTML
-    // ones the view recorder below counts. This is the denominator the
-    // availability SLI is computed from, and an SLI that only saw successful
-    // page loads would be a tautology. Assets are recorded and then excluded
-    // from the ratio at query time (see `availability_sql`), so an asset
-    // failure is diagnosable without being able to drown out a shell failure.
-    //
-    // Speculative prefetches are excluded for the same reason they are not
-    // views: the HQ launcher warms an app on card hover, and counting those
-    // would make hover traffic indistinguishable from real load.
-    if !is_speculative_request(&headers) {
+    /// Stage 6: one wide event per served request, and for a rendered
+    /// browser navigation the view event and its session cookie.
+    ///
+    /// The invariant: a non-2xx is not a view, whoever produced it. `304` is
+    /// the one exception — the browser re-rendered the page from its cache,
+    /// which is a view (`html_response`'s `if_none_match` produces one). What
+    /// that buys: an app that is registered but has nothing to serve — no
+    /// `oxyc publish` yet — stops recording a view for every hit on its 404,
+    /// a state customers sit in. This gates the `Set-Cookie` too, so a visitor
+    /// whose first hit is a non-2xx starts a fresh session on their next
+    /// navigation — harmless, the tracking cookie is analytics-only and
+    /// separate from `oxy_session`.
+    ///
+    /// Speculative prefetches are excluded from both: the HQ launcher warms an
+    /// app on card hover (`prefetchApp`), and counting those would make hover
+    /// traffic indistinguishable from real load — and mint a session id at
+    /// hover time that the real navigation would then inherit.
+    fn record(self, mut response: Response) -> Response {
+        if is_speculative_request(&self.headers) {
+            return response;
+        }
+        let status = response.status();
+        let is_html_request = is_html_navigation(&self.rest);
+        self.record_serve_event(status, is_html_request);
+        let rendered = status.is_success() || status == StatusCode::NOT_MODIFIED;
+        if is_html_request && rendered {
+            let set_cookie = self.record_view();
+            if let Ok(hv) = axum::http::HeaderValue::from_str(&set_cookie) {
+                response.headers_mut().append(header::SET_COOKIE, hv);
+            }
+        }
+        response
+    }
+
+    /// Every request, not just the HTML ones the view recorder counts. This
+    /// is the denominator the availability SLI is computed from, and an SLI
+    /// that only saw successful page loads would be a tautology. Assets are
+    /// recorded and then excluded from the ratio at query time (see
+    /// `availability_sql`), so an asset failure is diagnosable without being
+    /// able to drown out a shell failure.
+    fn record_serve_event(&self, status: StatusCode, is_html: bool) {
         super::custom_apps_telemetry::record_serve(super::custom_apps_telemetry::ServeEvent {
-            org_id: app.org_id,
-            app_id: app.id,
+            org_id: self.request.app.org_id,
+            app_id: self.request.app.id,
             build_id: None,
             request_id: crate::server::api::middlewares::request_id::request_id_from_headers(
-                &headers,
+                &self.headers,
             ),
             session_id: None,
-            user_id: user.id,
-            is_html: is_html_request,
-            route: &rest,
-            status: response.status().as_u16(),
-            duration_ms: started.elapsed().as_millis().min(u32::MAX as u128) as u32,
-            environment: &environment.name(),
+            user_id: self.request.user.id,
+            is_html,
+            route: &self.rest,
+            status: status.as_u16(),
+            duration_ms: self.started.elapsed().as_millis().min(u32::MAX as u128) as u32,
+            environment: &self.environment.name(),
         });
     }
-    // A browser-initiated speculation is not a view. The HQ launcher warms an
-    // app on card hover so the click is instant (`prefetchApp`), and without
-    // this every hover would record an open — and mint a session id at hover
-    // time that the real navigation would then inherit. See
-    // `is_speculative_request`.
-    if is_html_request && rendered && !is_speculative_request(&headers) {
+
+    /// Spawn the view-event insert for a rendered navigation and return the
+    /// `Set-Cookie` that names its session. Fire-and-forget; a slow DB insert
+    /// must not stall the HTML response, and losing a row on crash is the
+    /// documented acceptable failure mode for tracking-grade data.
+    fn record_view(&self) -> String {
+        let headers = &self.headers;
         let host = headers
-            .get(axum::http::header::HOST)
+            .get(header::HOST)
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .split(':')
             .next()
             .unwrap_or("");
-        let secure = uri.scheme_str() == Some("https")
+        let secure = self.uri.scheme_str() == Some("https")
             || headers
                 .get("x-forwarded-proto")
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.eq_ignore_ascii_case("https"))
                 .unwrap_or(false);
         let (session_id, set_cookie) =
-            super::custom_apps_tracking::session_id_for_serve(&headers, secure);
-        let referrer = headers
-            .get(axum::http::header::REFERER)
-            .and_then(|v| v.to_str().ok());
+            super::custom_apps_tracking::session_id_for_serve(headers, secure);
+        let referrer = headers.get(header::REFERER).and_then(|v| v.to_str().ok());
         let sanitized_referrer = super::custom_apps_tracking::sanitize_referrer(referrer, host);
-        let user_agent_class = classify_user_agent(headers.get(axum::http::header::USER_AGENT));
+        let user_agent_class = classify_user_agent(headers.get(header::USER_AGENT));
         // The recorder needs the app row to resolve the viewer's role snapshot.
-        // Hand it the one already resolved (and process-cached) above rather than
+        // Hand it the one already resolved (and process-cached) rather than
         // making it refetch by id — the read is free here and isn't there.
-        let recorded_app = app.clone();
-        let user_id = user.id;
-        let user_email = user.email.clone();
-        let source_label = source_label.to_string();
-        let view_environment = environment.name();
-        // Fire-and-forget; a slow DB insert must not stall the HTML
-        // response. Losing a row on crash is the documented acceptable
-        // failure mode for tracking-grade data.
+        let recorded_app = self.request.app.clone();
+        let user_id = self.request.user.id;
+        let user_email = self.request.user.email.clone();
+        let source_label = if on_custom_app_subdomain(headers) {
+            "subdomain"
+        } else {
+            "subpath"
+        }
+        .to_string();
+        let view_environment = self.environment.name();
         tokio::spawn(
             async move {
                 super::custom_apps_tracking::record_view(
@@ -770,22 +575,84 @@ pub(crate) async fn serve_pretty(
                 )
                 .await;
             }
-            // Outlives the request, so it needs the request's hub carried over
-            // explicitly (`middlewares::sentry_surface`): barrier 1 drops this
-            // module's own tracing by target, but an ERROR from a callee such as
-            // `sea_orm`, or a panic in here, would otherwise reach Sentry
-            // untagged — carrying the viewer's email and referrer.
+            // Outlives the request, so it needs the request's hub carried
+            // over explicitly (`middlewares::sentry_surface`): barrier 1 drops
+            // this module's own tracing by target, but an ERROR from a callee
+            // such as `sea_orm`, or a panic in here, would otherwise reach
+            // Sentry untagged — carrying the viewer's email and referrer.
             .bind_hub(sentry::Hub::current()),
         );
-
-        let mut resp = response;
-        if let Ok(hv) = axum::http::HeaderValue::from_str(&set_cookie) {
-            resp.headers_mut().append(header::SET_COOKIE, hv);
-        }
-        return resp;
+        set_cookie
     }
+}
 
-    response
+/// Answer a refusal from the shared resolver in the bundle path's own voice:
+/// an unauthenticated browser is sent to login (never a 401 — the magic-link
+/// flow picks it up), a credential naming nobody likewise, an unknown app is a
+/// `no_store_404`, and a 403 or a platform 500 against a known app is recorded
+/// for the SLI before it is answered.
+fn refuse(
+    refusal: Refusal,
+    org_slug: &str,
+    app_slug: &str,
+    rest: &str,
+    headers: &HeaderMap,
+    uri: &Uri,
+    started: std::time::Instant,
+) -> Response {
+    match refusal {
+        Refusal::Unauthenticated(error) => {
+            // Surface auth failures so an operator can tell apart "no cookie"
+            // (browser never logged in) vs "stale JWT" vs "wrong domain
+            // scope". Without this the only symptom is a silent redirect to
+            // login and there's no way to know why from outside the server.
+            // `info`, not `warn`: an unauthenticated hit is the client doing
+            // something ordinary (a service-worker update check, a
+            // `version.json` poll, an expired session), and at `warn` it was a
+            // third of prod's warnings. The fields keep the diagnosis.
+            let cookie_present = headers
+                .get(header::COOKIE)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.contains("oxy_session="))
+                .unwrap_or(false);
+            let auth_header_present = headers.get(header::AUTHORIZATION).is_some();
+            tracing::info!(
+                target: "custom_apps_serve",
+                org_slug = %org_slug,
+                app_slug = %app_slug,
+                cookie_present,
+                auth_header_present,
+                error = %error,
+                "auth failed, redirecting to login"
+            );
+            redirect_to_login(headers, uri).into_response()
+        }
+        Refusal::UnknownUser => redirect_to_login(headers, uri).into_response(),
+        Refusal::NotFound => no_store_404(),
+        Refusal::Forbidden(denied) => {
+            // A 403 is not an app fault and does not dent the SLI (see
+            // `is_app_fault`), but it is still traffic this app served and an
+            // operator asking "who is being turned away" has nowhere else to
+            // look.
+            let exit = EarlyExit::new(&denied.app, denied.user_id, headers, rest, started);
+            exit.record(StatusCode::FORBIDDEN);
+            (
+                StatusCode::FORBIDDEN,
+                "You don't have access to this custom app.",
+            )
+                .into_response()
+        }
+        Refusal::Internal(failure) => {
+            // A 500 the PLATFORM produced, against the app when the chain had
+            // already resolved one: the SLI built to catch platform failure
+            // must see the platform's own failures.
+            if let (Some(app), Some(user_id)) = (failure.app.as_ref(), failure.user_id) {
+                EarlyExit::new(app, user_id, headers, rest, started)
+                    .record(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 /// The build this request serves, and a label for the log when there is none.
@@ -870,40 +737,60 @@ async fn sandbox_build(
     }
 }
 
-/// Emit a serve event for a request that fails BEFORE reaching the normal
+/// A serve event for a request that fails BEFORE reaching the normal
 /// recording point at the bottom of `serve_pretty`.
 ///
 /// The two 500s the platform itself produces — an access-check DB failure and a
 /// bad source config — returned early, so the SLI that exists to catch platform
-/// failure never saw the platform's own failures. Split out rather than inlined
-/// three times so the `kind`/`outcome` classification stays in one place.
-fn record_early_exit(
-    app: &entity::apps::Model,
+/// failure never saw the platform's own failures. One struct rather than a
+/// seven-argument function so the `kind`/`outcome` classification stays in one
+/// place and a call site reads as what it records.
+struct EarlyExit<'a> {
+    app: &'a entity::apps::Model,
     user_id: Uuid,
-    headers: &HeaderMap,
-    rest: &str,
-    is_html: bool,
-    status: StatusCode,
+    headers: &'a HeaderMap,
+    rest: &'a str,
     started: std::time::Instant,
-) {
-    // The same header read `serve_pretty` made; an unhonourable header never
-    // gets this far, so the fallback is unreachable rather than a guess.
-    let environment = request_environment(headers)
-        .unwrap_or(AppEnvironment::Production)
-        .name();
-    super::custom_apps_telemetry::record_serve(super::custom_apps_telemetry::ServeEvent {
-        org_id: app.org_id,
-        app_id: app.id,
-        build_id: None,
-        request_id: oxy_shared::utils::request_id::from_headers(headers),
-        session_id: None,
-        user_id,
-        is_html,
-        route: rest,
-        status: status.as_u16(),
-        duration_ms: started.elapsed().as_millis().min(u32::MAX as u128) as u32,
-        environment: &environment,
-    });
+}
+
+impl<'a> EarlyExit<'a> {
+    fn new(
+        app: &'a entity::apps::Model,
+        user_id: Uuid,
+        headers: &'a HeaderMap,
+        rest: &'a str,
+        started: std::time::Instant,
+    ) -> Self {
+        Self {
+            app,
+            user_id,
+            headers,
+            rest,
+            started,
+        }
+    }
+
+    fn record(self, status: StatusCode) {
+        // The same header read `serve_pretty` made; an unhonourable header
+        // never gets this far, so the fallback is unreachable rather than a
+        // guess.
+        let environment = request_environment(self.headers)
+            .unwrap_or(AppEnvironment::Production)
+            .name();
+        super::custom_apps_telemetry::record_serve(super::custom_apps_telemetry::ServeEvent {
+            org_id: self.app.org_id,
+            app_id: self.app.id,
+            build_id: None,
+            request_id: oxy_shared::utils::request_id::from_headers(self.headers),
+            session_id: None,
+            user_id: self.user_id,
+            is_html: is_html_navigation(self.rest),
+            route: self.rest,
+            status: status.as_u16(),
+            duration_ms: self.started.elapsed().as_millis().min(u32::MAX as u128) as u32,
+            environment: &environment,
+        });
+    }
 }
 
 /// The tail of a request path inside the platform-reserved namespace, or `None`

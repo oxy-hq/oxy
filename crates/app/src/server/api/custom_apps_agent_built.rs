@@ -33,8 +33,7 @@
 //! sandbox serves what its row names.
 
 use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
-use std::time::Instant;
+use std::sync::OnceLock;
 
 use axum::Json;
 use axum::http::StatusCode;
@@ -44,19 +43,17 @@ use sea_orm::QuerySelect;
 use sea_orm::{ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QueryOrder};
 use uuid::Uuid;
 
-use super::custom_apps_cache::{get_fresh, insert_with_sweep};
-
 /// The code a promote or a rollback refuses a token-published build with.
 pub const PROMOTE_REFUSED: &str = "draft_published_by_agent";
 
 /// Whether a build is marked, per build id, for the 60 s every other step of
 /// the serve chain is cached. The mark is written with the row and never
 /// changed, so an entry can only ever be refreshed with the same answer.
-type MarkCache = RwLock<HashMap<Uuid, (bool, Instant)>>;
+type MarkCache = super::custom_apps_cache::TtlLru<Uuid, bool>;
 
 fn mark_cache() -> &'static MarkCache {
     static CACHE: OnceLock<MarkCache> = OnceLock::new();
-    CACHE.get_or_init(Default::default)
+    CACHE.get_or_init(super::custom_apps_cache::standard_cache)
 }
 
 /// Whether a sandbox agent token published build `build_pk`. One primary-key
@@ -66,7 +63,7 @@ pub(crate) async fn is_agent_built<C: ConnectionTrait>(
     db: &C,
     build_pk: Uuid,
 ) -> Result<bool, DbErr> {
-    if let Some(known) = get_fresh(mark_cache(), &build_pk) {
+    if let Some(known) = mark_cache().get(&build_pk) {
         return Ok(known);
     }
     let token: Option<Option<Uuid>> = app_builds::Entity::find_by_id(build_pk)
@@ -76,7 +73,7 @@ pub(crate) async fn is_agent_built<C: ConnectionTrait>(
         .one(db)
         .await?;
     let marked = token.flatten().is_some();
-    insert_with_sweep(mark_cache(), build_pk, marked);
+    mark_cache().insert(build_pk, marked);
     Ok(marked)
 }
 
@@ -91,7 +88,7 @@ pub(crate) async fn prime_marks<C: ConnectionTrait>(
 ) -> Result<(), DbErr> {
     let unknown: Vec<Uuid> = builds
         .into_iter()
-        .filter(|b| get_fresh(mark_cache(), b).is_none())
+        .filter(|b| mark_cache().get(b).is_none())
         .collect();
     if unknown.is_empty() {
         return Ok(());
@@ -109,7 +106,7 @@ pub(crate) async fn prime_marks<C: ConnectionTrait>(
         .collect();
     for build in unknown {
         let mark = marked.get(&build).copied().unwrap_or(false);
-        insert_with_sweep(mark_cache(), build, mark);
+        mark_cache().insert(build, mark);
     }
     Ok(())
 }
@@ -118,7 +115,7 @@ pub(crate) async fn prime_marks<C: ConnectionTrait>(
 /// test that resolves with no database behind it.
 #[cfg(test)]
 pub(crate) fn remember(build_pk: Uuid, marked: bool) {
-    insert_with_sweep(mark_cache(), build_pk, marked);
+    mark_cache().insert(build_pk, marked);
 }
 
 /// What production serves when it has no build of its own: `staging`'s build,
@@ -360,10 +357,10 @@ mod tests {
     #[test]
     fn a_known_mark_is_answered_from_the_cache() {
         let (marked, plain) = (Uuid::new_v4(), Uuid::new_v4());
-        assert_eq!(get_fresh(mark_cache(), &marked), None);
-        insert_with_sweep(mark_cache(), marked, true);
-        insert_with_sweep(mark_cache(), plain, false);
-        assert_eq!(get_fresh(mark_cache(), &marked), Some(true));
-        assert_eq!(get_fresh(mark_cache(), &plain), Some(false));
+        assert_eq!(mark_cache().get(&marked), None);
+        mark_cache().insert(marked, true);
+        mark_cache().insert(plain, false);
+        assert_eq!(mark_cache().get(&marked), Some(true));
+        assert_eq!(mark_cache().get(&plain), Some(false));
     }
 }
