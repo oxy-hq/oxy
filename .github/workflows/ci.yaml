@@ -950,7 +950,12 @@ jobs:
           POSTGRES_DB: default
         ports:
           - 5432:5432
+        # Docker gives a container 64 MB of /dev/shm. Under nextest parallel load
+        # Postgres's parallel workers exhaust it and a migration fails with
+        # 53100 "could not resize shared memory segment ... No space left on
+        # device" (seen in oxy-cameras smoke_e2e on main, 2026-10-19).
         options: >-
+          --shm-size=1g
           --health-cmd "pg_isready -U admin -d default" --health-interval 10s
           --health-timeout 5s --health-retries 5
       # A SECOND, throwaway cluster for the OLTP integration suite, and it is
@@ -1032,6 +1037,7 @@ jobs:
           # `oxy start`'s :15432 so the two clusters never collide locally.
           - 15433:5432
         options: >-
+          --shm-size=1g
           --health-cmd "pg_isready -U postgres" --health-interval 10s
           --health-timeout 5s --health-retries 5
       # The ClickHouse the engine-backed suites write to: agentic-connector's
