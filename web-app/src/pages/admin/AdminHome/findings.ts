@@ -1,4 +1,5 @@
 import ROUTES from "@/libs/utils/routes";
+import { lifecycleVerdict } from "@/pages/admin/AdminCustomApps/appStatus";
 import { groupByCause } from "@/pages/admin/AdminWorkspaceHealth/groupByCause";
 import type { AdminTone } from "@/pages/admin/components/adminTone";
 import { workerLiveness } from "@/pages/admin/components/workerLiveness";
@@ -227,8 +228,15 @@ export function appsReport(query: SourceInput<FleetHealthResponse>): SourceRepor
   const data = query.data;
 
   const findings: Finding[] = [];
-  const down = data.apps.filter((a) => a.health === "down");
-  const degraded = data.apps.filter((a) => a.health === "degraded");
+  // Through the one verdict mapping every app surface reads (`lifecycleVerdict`), so a
+  // row the console calls "Down" is the row this page counts as down. The fleet endpoint
+  // lists only published apps, hence `published: true` for every row.
+  const verdicts = data.apps.map((a) => ({
+    row: a,
+    verdict: lifecycleVerdict({ published: true, health: a.health })
+  }));
+  const down = verdicts.filter((v) => v.verdict.status === "down").map((v) => v.row);
+  const degraded = verdicts.filter((v) => v.verdict.status === "degraded").map((v) => v.row);
 
   if (down.length > 0) {
     findings.push({

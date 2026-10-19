@@ -72,7 +72,7 @@
     # in runner/cli-modes.ts), so a repo-root prefix works.
     - "examples/customer_apps/oxy-starter/"
   flows:
-    - admin-custom-apps-tabs
+    - admin-custom-apps-lifecycle
     - customer-apps-oxy-starter-fleet
 
 - surface: partners-console

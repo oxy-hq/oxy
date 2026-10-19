@@ -135,28 +135,38 @@ export default function PartnerActivity() {
                 onChange={(e) => setQ(e.target.value)}
                 placeholder='Search action, person, target…'
                 className='h-8 w-64 pl-7 text-xs'
+                data-testid='partner-activity-search'
               />
             </div>
             <Facet
+              id='client'
               value={client}
               onChange={setClient}
               placeholder='All clients'
               options={(clients ?? []).map((c) => ({ value: c.org_id, label: c.name }))}
             />
             <Facet
+              id='actor'
               value={actor}
               onChange={setActor}
               placeholder='Anyone'
               options={actors.map((a) => ({ value: a, label: a }))}
             />
             <Facet
+              id='kind'
               value={kind}
               onChange={setKind}
               placeholder='Any action'
               options={kinds.map((k) => ({ value: k, label: k }))}
             />
             {filtering && (
-              <Button variant='ghost' size='sm' className='h-8 gap-1 text-xs' onClick={clearAll}>
+              <Button
+                variant='ghost'
+                size='sm'
+                className='h-8 gap-1 text-xs'
+                onClick={clearAll}
+                data-testid='partner-activity-clear'
+              >
                 <X className='size-3.5' />
                 Clear
               </Button>
@@ -252,11 +262,14 @@ function ShortId({ id }: { id: string }) {
 }
 
 function Facet({
+  id,
   value,
   onChange,
   placeholder,
   options
 }: {
+  /** Stable name for the testid — the placeholder is copy. */
+  id: string;
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
@@ -265,13 +278,19 @@ function Facet({
   if (options.length === 0) return null;
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className='h-8 w-40 text-xs'>
+      <SelectTrigger className='h-8 w-40 text-xs' data-testid={`partner-activity-facet-${id}`}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={ALL}>{placeholder}</SelectItem>
+        <SelectItem value={ALL} data-testid={`partner-activity-facet-${id}-all`}>
+          {placeholder}
+        </SelectItem>
         {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
+          <SelectItem
+            key={o.value}
+            value={o.value}
+            data-testid={`partner-activity-facet-${id}-${o.value}`}
+          >
             {o.label}
           </SelectItem>
         ))}
@@ -298,6 +317,7 @@ function SortTh({
     >
       <button
         type='button'
+        data-testid={`partner-activity-sort-${sortKey}`}
         className='flex h-full w-full items-center gap-1 px-2 py-2 hover:text-foreground'
         // Re-clicking the active column flips it; a fresh column starts newest /
         // A-first, which is what you want the first time you click it.

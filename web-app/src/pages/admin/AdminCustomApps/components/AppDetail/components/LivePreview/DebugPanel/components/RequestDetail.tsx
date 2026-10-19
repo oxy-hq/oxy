@@ -25,7 +25,10 @@ export const RequestDetail = ({
   const resType = getHeader(entry.resHeaders, "content-type");
 
   return (
-    <div className={cn("flex min-w-0 flex-col bg-background", className)}>
+    <div
+      className={cn("flex min-w-0 flex-col bg-background", className)}
+      data-testid='admin-app-debug-detail'
+    >
       <div className='flex items-center gap-2 border-border/60 border-b px-3 py-1.5'>
         <span className='font-medium font-mono text-muted-foreground text-xs'>{entry.method}</span>
         <span className={cn("font-mono text-xs tabular-nums", statusTone(entry))}>
@@ -40,6 +43,7 @@ export const RequestDetail = ({
           className='ml-auto h-6 w-6 shrink-0 text-muted-foreground'
           onClick={onClose}
           aria-label='Close request detail'
+          data-testid='admin-app-debug-detail-close'
         >
           <X className='h-3.5 w-3.5' />
         </Button>

@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../../json-schemas/flow-test.json
+#
+# The custom-apps console's lifecycle card: open an app from the fleet, read
+# what is live and whether it is OK, then move the publish pointer and back —
+# Unpublish, confirm, Publish, confirm — through the one confirm every
+# lifecycle verb shares. Replaces `admin-custom-apps-tabs`, which asserted the
+# three-tab shell (`admin-apps-tab-{apps,access,tokens}`) the 2026-10-15
+# rewrite of ACA/index.tsx removed.
+#
+# WHAT THE FIXTURE CAN AND CANNOT EXERCISE. `oxy seed` deploys `oxy-starter`
+# into the `local` org with ONE build pointed at by both channels and
+# `published_at` set (crates/app/src/cli/commands/seed_apps.rs). So on this
+# fixture the card offers Unpublish (published) and then Publish (a pointer
+# move of the draft onto the live channel — the same `POST
+# /customer-apps/{id}/publish` the Promote draft verb calls), and never
+# "Promote draft" (nothing is ahead of live) nor "Roll back to…" (no retained
+# build that is not live). Those two verbs are covered by
+# `AppLifecycle/LifecycleCard.test.tsx`; do not loosen this flow to "a
+# promote-ish button exists" to pretend otherwise. If a second build is ever
+# seeded, add a case here that promotes it and rolls back.
+#
+# UNRECORDED — authored on a branch whose worktree had no built `oxy`
+# binary, so no action-cache recording exists yet; the first run is cold.
+#
+# Backend: `--enterprise` (cloud) with OXY_OWNER set, same as
+# admin-tenants-cockpit — the admin surface requires the enterprise code path
+# + server-side staff gating; `scripts/verify-all.sh` phase 4 hands in the
+# staff session. Do NOT use `--local`.
+#
+# Leaves the fixture as it found it: the app ends the case published again,
+# so a flow run after this one (customer-apps-oxy-starter-fleet reads the
+# launcher) sees the same state.
+
+name: admin custom apps lifecycle card
+target: ide
+
+settings:
+  runs: 1
+  trace: on-failure
+  cache_actions: true
+  backend_mode: cloud
+  # navigate, open the app, unpublish + confirm, publish + confirm, waits + judge
+  max_steps: 20
+
+setup:
+  - "goto:/admin/apps"
+
+cases:
+  - name: unpublish and publish again from the lifecycle card
+    tags: [admin, customer-apps, lifecycle, regression]
+    steps:
+      - wait_for: "selector:[data-testid=admin-customer-apps]"
+
+      - act: |
+          Open the oxy-starter app's console: click its fleet row
+          [data-testid=admin-apps-fleet-row-local-oxy-starter].
+
+      - wait_for: "selector:[data-testid=apps-console]"
+      # The card renders once the build history has landed; Unpublish is only
+      # offered to a published app, so its presence is the state gate.
+      - wait_for: "selector:[data-testid=app-lifecycle-unpublish]"
+
+      - act: |
+          In the lifecycle card [data-testid=app-lifecycle], click Unpublish
+          [data-testid=app-lifecycle-unpublish], then confirm in the dialog by
+          clicking [data-testid=app-lifecycle-confirm-ok].
+
+      # Published → draft: the card swaps Unpublish for Publish.
+      - wait_for: "selector:[data-testid=app-lifecycle-publish]"
+
+      - act: |
+          Click Publish [data-testid=app-lifecycle-publish] in the lifecycle
+          card, then confirm by clicking [data-testid=app-lifecycle-confirm-ok].
+
+      # Draft → published again: Unpublish is back.
+      - wait_for: "selector:[data-testid=app-lifecycle-unpublish]"
+
+    expect:
+      - assert: selector [data-testid=apps-console] is visible
+      - assert: selector [data-testid=app-lifecycle] is visible
+      - assert: selector [data-testid=app-lifecycle-verdict] is visible
+      - assert: selector [data-testid=app-lifecycle-live] is visible
+      - assert: selector [data-testid=app-lifecycle-unpublish] is visible
+      - assert: selector [data-testid=app-lifecycle-publish] is not visible
+      - judge: |
+          The page is the oxy-starter app's console under /admin/apps. One
+          lifecycle card is visible with a status pill (any of Published,
+          Operational, Quiet, Not measured, Serving, No data — but NOT Draft),
+          a "Live" line naming a short build id, and an Unpublish control. No
+          confirmation dialog is open, and no Publish control is visible. No
+          error banner or blank screen.
+
+          Fail if: the card still reads Draft or shows Publish at the end;
+          a confirm dialog is left open; the console shows an error instead
+          of the card.

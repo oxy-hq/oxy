@@ -649,6 +649,12 @@ const customAppKeys = {
   /** The caller's own held-write rows for this app's staging, newest first —
    *  polled while the console actually frames staging. */
   stagingHeld: (id: string) => ["customApps", "stagingHeld", id] as const,
+  /** The app's environments: production, staging and every dev sandbox. */
+  environments: (id: string) => ["customApps", "environments", id] as const,
+  /** The GitHub workflows allowed to OIDC-publish this app. */
+  publishers: (id: string) => ["customApps", "publishers", id] as const,
+  /** The curated scaffold templates the create dialog offers. Deployment-wide. */
+  templates: () => ["customApps", "templates"] as const,
   // Storage: fleet rollup vs per-app live S3 listing (two sources, two keys).
   storageFleet: (sort: string) => ["customApps", "storage", "fleet", sort] as const,
   storageObjects: (id: string, prefix: string) =>

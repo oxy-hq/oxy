@@ -197,7 +197,7 @@ export default function AdminCustomApps() {
                 }
               />
             ) : selected ? (
-              <AppConsole app={selected} health={health} />
+              <AppConsole app={selected} />
             ) : (
               // Bare `/admin/apps`: the fleet. It used to redirect to whichever app most
               // needed a person — same ordering, but it decided *for* the operator and

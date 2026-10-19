@@ -1,5 +1,4 @@
 import { cn } from "@/libs/shadcn/utils";
-import type { AppStatus } from "../appStatus";
 
 /**
  * Two small pieces the apps console and the admin palette share: the button that opens
@@ -16,25 +15,10 @@ import type { AppStatus } from "../appStatus";
  * unmounting behind it. The fleet is for looking at everything; the palette is for going
  * somewhere.
  */
-/**
- * A status's tone. `draft` and `quiet` are deliberately `muted` rather than `ok`: neither
- * is a verdict that the app is working, and a green pill beside an app nobody has
- * measured or visited is the kind of false comfort this whole surface is being rebuilt
- * to stop giving.
- */
-export function statusTone(s: AppStatus) {
-  switch (s) {
-    case "down":
-      return "danger" as const;
-    case "degraded":
-    case "not_measured":
-      return "warn" as const;
-    case "operational":
-      return "ok" as const;
-    default:
-      return "muted" as const;
-  }
-}
+// The status → tone mapping lives beside the status model in `appStatus.ts` now, where
+// the lifecycle verdict also reads it; re-exported here because every console surface
+// already imports it from this module.
+export { statusTone } from "../appStatus";
 
 /**
  * The trigger.

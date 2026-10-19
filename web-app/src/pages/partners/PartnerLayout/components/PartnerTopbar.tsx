@@ -47,7 +47,7 @@ export function PartnerTopbar({ title }: { title: string }) {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button asChild variant='ghost' size='icon' className='size-7 text-muted-foreground'>
-            <Link to={ROUTES.ROOT} aria-label='Back to home'>
+            <Link to={ROUTES.ROOT} aria-label='Back to home' data-testid='partner-topbar-home'>
               <House className='size-4' />
             </Link>
           </Button>
@@ -61,7 +61,10 @@ export function PartnerTopbar({ title }: { title: string }) {
           <BreadcrumbItem className='text-muted-foreground text-xs'>
             {partners.length > 1 ? (
               <DropdownMenu>
-                <DropdownMenuTrigger className='flex items-center gap-0.5 hover:text-foreground'>
+                <DropdownMenuTrigger
+                  className='flex items-center gap-0.5 hover:text-foreground'
+                  data-testid='partner-topbar-switch'
+                >
                   {active.name}
                   <ChevronDown className='size-3' />
                 </DropdownMenuTrigger>
@@ -89,7 +92,7 @@ export function PartnerTopbar({ title }: { title: string }) {
         <RoleBadge kind='partner_operator' />
         <Separator orientation='vertical' className='h-4' />
         <Button asChild variant='outline' size='sm' className='h-7 gap-1 text-xs'>
-          <Link to={`/${active.slug}`}>
+          <Link to={`/${active.slug}`} data-testid='partner-topbar-go-to-org'>
             Go to {active.name}
             <ArrowUpRight className='size-3.5' />
           </Link>

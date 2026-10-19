@@ -4,6 +4,8 @@ import { useState } from "react";
 import { AppAccessBadge, AppAccessDialog } from "@/components/appAccess";
 import { Button } from "@/components/ui/shadcn/button";
 import { usePartnerOwnApps } from "@/hooks/api/appAccess";
+import { lifecycleVerdict } from "@/pages/admin/AdminCustomApps/appStatus";
+import { LifecycleVerdictPill } from "@/pages/admin/AdminCustomApps/components/AppLifecycle";
 import type { AppAccessSummary } from "@/types/appAccess";
 
 /**
@@ -57,25 +59,41 @@ export default function OwnAppsPanel({
       ) : (
         <ul className='divide-y'>
           {(apps ?? []).map((app) => (
-            <li key={app.id} className='flex items-center gap-2 px-3 py-1.5'>
+            <li
+              key={app.id}
+              className='flex items-center gap-2 px-3 py-1.5'
+              data-testid={`partner-own-app-${app.slug}`}
+            >
               <div className='min-w-0 flex-1'>
                 <p className='truncate font-medium text-xs'>{app.name}</p>
-                <p className='truncate text-[11px] text-muted-foreground'>
-                  {app.published ? app.slug : `${app.slug} · unpublished`}
-                </p>
+                <p className='truncate text-[11px] text-muted-foreground'>{app.slug}</p>
               </div>
+              {/* The same verdict word every other app list uses. Read-only here: the
+                  own-apps routes carry no publish verb, so no card. */}
+              <LifecycleVerdictPill
+                verdict={lifecycleVerdict({ published: app.published })}
+                compact
+                className='text-[11px]'
+                data-testid={`partner-own-app-verdict-${app.slug}`}
+              />
               <AppAccessBadge visibility={app.visibility} grantCount={app.grant_count} />
               <Button
                 variant='ghost'
                 size='sm'
                 className='h-6 gap-1 px-1.5 text-[11px]'
                 onClick={() => setManaging(app)}
+                data-testid={`partner-own-app-access-${app.slug}`}
               >
                 <ShieldCheck className='size-3' aria-hidden />
                 Access
               </Button>
               <Button asChild variant='ghost' size='sm' className='h-6 gap-1 px-1.5 text-[11px]'>
-                <a href={`/customer-apps/${orgSlug}/${app.slug}/`} target='_blank' rel='noreferrer'>
+                <a
+                  href={`/customer-apps/${orgSlug}/${app.slug}/`}
+                  target='_blank'
+                  rel='noreferrer'
+                  data-testid={`partner-own-app-open-${app.slug}`}
+                >
                   <ExternalLink className='size-3' aria-hidden />
                   Open
                 </a>

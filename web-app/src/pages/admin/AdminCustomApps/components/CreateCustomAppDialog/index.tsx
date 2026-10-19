@@ -15,9 +15,18 @@ import {
 import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
+import { useAppTemplates } from "@/hooks/api/customApps/useAppTemplates";
 import { useCreateApp } from "@/hooks/api/customApps/useCreateApp";
 import { useOrgs } from "@/hooks/api/organizations";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
+import { isUuid } from "@/libs/utils/uuid";
 import type { CustomApp } from "@/types/apps";
 import { resolveBundleUrl } from "../../resolveBundleUrl";
 import { QUICK_INSTALL } from "../AgentSkills/installMethods";
@@ -32,7 +41,12 @@ type FormValues = {
   org_id: string;
   project_id: string;
   branch: string;
+  /** A curated template id, or `NO_TEMPLATE` to register the row only. */
+  template_id: string;
 };
+
+/** The Select's "register only" choice — Radix refuses an empty-string item value. */
+const NO_TEMPLATE = "__none__";
 
 /**
  * Register a custom app. That is all it does: the row is created in the build
@@ -60,19 +74,23 @@ export const CreateCustomAppDialog = ({ open, onOpenChange }: Props) => {
     control,
     watch,
     formState: { errors }
-  } = useForm<FormValues>({ defaultValues: { branch: "main" } });
+  } = useForm<FormValues>({ defaultValues: { branch: "main", template_id: NO_TEMPLATE } });
 
   const selectedOrgId = watch("org_id");
 
   const onSubmit = async (data: FormValues) => {
     setSubmitError(null);
+    // A template means a scaffold PR on the customer-apps repo; without one the row is
+    // registered and bytes arrive with `oxyc publish`.
+    const scaffold = data.template_id !== NO_TEMPLATE;
     try {
       const created = await mutateAsync({
         name: data.name,
         org_id: data.org_id,
         project_id: data.project_id,
         branch: data.branch || undefined,
-        source: { type: "s3" }
+        source: { type: "s3" },
+        ...(scaffold ? { scaffold_pr: true, template_id: data.template_id } : {})
       });
       setResult(created);
       reset();
@@ -136,6 +154,8 @@ export const CreateCustomAppDialog = ({ open, onOpenChange }: Props) => {
 
               <ProjectPicker control={control} orgId={selectedOrgId} error={errors.project_id} />
 
+              <TemplatePicker control={control} enabled={open} />
+
               {submitError && (
                 <div
                   role='alert'
@@ -161,8 +181,7 @@ export const CreateCustomAppDialog = ({ open, onOpenChange }: Props) => {
 };
 
 /** RFC 4122 shape check for the manual-UUID escape hatches below. */
-const isUuidShape = (s: string | undefined): boolean =>
-  !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.trim());
+const isUuidShape = (s: string | undefined): boolean => isUuid(s);
 
 /** Pull the human message out of an axios error response. The server
  *  returns `{ message: "..." }` for 4xx/5xx on the admin apps surface
@@ -321,6 +340,60 @@ const ProjectPicker = ({ control, orgId, error }: ProjectPickerProps) => {
         {manual ? "Pick from the list instead" : "Paste a UUID instead"}
       </button>
       {error && <FieldError>{error.message}</FieldError>}
+    </div>
+  );
+};
+
+/**
+ * The curated scaffold templates (`GET /customer-apps/templates`), which this dialog
+ * never called before: `template_id` was accepted by the create request and chosen by
+ * nobody. "Register only" is the default, so the existing path is unchanged; picking a
+ * template opens the scaffold PR the response then links to.
+ */
+const TemplatePicker = ({
+  control,
+  enabled
+}: {
+  control: import("react-hook-form").Control<FormValues>;
+  enabled: boolean;
+}) => {
+  const { data: templates, isLoading, isError } = useAppTemplates(enabled);
+  return (
+    <div className='flex flex-col gap-1.5'>
+      <Label htmlFor='app-template'>Scaffold template</Label>
+      <Controller
+        name='template_id'
+        control={control}
+        render={({ field }) => (
+          <Select value={field.value} onValueChange={field.onChange} disabled={isLoading}>
+            <SelectTrigger id='app-template' data-testid='admin-apps-create-template'>
+              <SelectValue placeholder={isLoading ? "Loading templates…" : "Register only"} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_TEMPLATE} data-testid='admin-apps-create-template-none'>
+                Register only — ship with oxyc publish
+              </SelectItem>
+              {(templates ?? []).map((t) => (
+                <SelectItem
+                  key={t.id}
+                  value={t.id}
+                  data-testid={`admin-apps-create-template-${t.id}`}
+                >
+                  <span className='flex flex-col'>
+                    <span>{t.name}</span>
+                    <span className='text-muted-foreground text-xs'>{t.description}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      />
+      {isError && (
+        <p className='text-muted-foreground text-xs'>
+          Couldn't load templates — you can still register the app.
+        </p>
+      )}
     </div>
   );
 };

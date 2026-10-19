@@ -135,12 +135,14 @@ export const AccessPane = () => {
             onClick={() => setView("list")}
             icon={<List className='size-3.5' />}
             label='List'
+            data-testid='admin-access-view-list'
           />
           <ViewButton
             active={view === "gallery"}
             onClick={() => setView("gallery")}
             icon={<LayoutGrid className='size-3.5' />}
             label='Gallery'
+            data-testid='admin-access-view-gallery'
           />
         </div>
       </div>
@@ -171,13 +173,20 @@ export const AccessPane = () => {
                   <SelectTrigger
                     className='h-7 w-auto gap-1 px-2 text-xs'
                     aria-label='Access filter'
+                    data-testid='admin-access-filter'
                   >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent align='start'>
-                    <SelectItem value='all'>All orgs</SelectItem>
-                    <SelectItem value='locked'>Locked out</SelectItem>
-                    <SelectItem value='open'>Open to Oxy</SelectItem>
+                    <SelectItem value='all' data-testid='admin-access-filter-all'>
+                      All orgs
+                    </SelectItem>
+                    <SelectItem value='locked' data-testid='admin-access-filter-locked'>
+                      Locked out
+                    </SelectItem>
+                    <SelectItem value='open' data-testid='admin-access-filter-open'>
+                      Open to Oxy
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 <span className='font-mono text-[11px] text-muted-foreground tabular-nums'>
@@ -195,6 +204,7 @@ export const AccessPane = () => {
                       key={o.orgId}
                       active={o.orgId === selected?.orgId}
                       onClick={() => setSelectedId(o.orgId)}
+                      data-testid={`admin-access-org-${o.orgSlug}`}
                       title={o.orgName}
                       subtitle={o.orgSlug}
                       trailing={
@@ -234,16 +244,20 @@ const ViewButton = ({
   active,
   onClick,
   icon,
-  label
+  label,
+  "data-testid": dataTestId
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  "data-testid"?: string;
 }) => (
   <button
     type='button'
     onClick={onClick}
+    aria-pressed={active}
+    data-testid={dataTestId}
     className={cn(
       "flex items-center gap-1.5 rounded px-2 py-1 font-medium text-xs transition-colors",
       active
@@ -283,13 +297,23 @@ const OrgGallery = ({
         <PaneSearch value={search} onChange={onSearchChange} placeholder='Search orgs…' />
       </div>
       <Select value={filter} onValueChange={(v) => onFilterChange(v as AccessFilter)}>
-        <SelectTrigger className='h-7 w-auto gap-1 px-2 text-xs' aria-label='Access filter'>
+        <SelectTrigger
+          className='h-7 w-auto gap-1 px-2 text-xs'
+          aria-label='Access filter'
+          data-testid='admin-access-gallery-filter'
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent align='start'>
-          <SelectItem value='all'>All orgs</SelectItem>
-          <SelectItem value='locked'>Locked out</SelectItem>
-          <SelectItem value='open'>Open to Oxy</SelectItem>
+          <SelectItem value='all' data-testid='admin-access-gallery-filter-all'>
+            All orgs
+          </SelectItem>
+          <SelectItem value='locked' data-testid='admin-access-gallery-filter-locked'>
+            Locked out
+          </SelectItem>
+          <SelectItem value='open' data-testid='admin-access-gallery-filter-open'>
+            Open to Oxy
+          </SelectItem>
         </SelectContent>
       </Select>
       <span className='ml-auto font-mono text-[11px] text-muted-foreground tabular-nums'>
@@ -309,6 +333,7 @@ const OrgGallery = ({
               key={o.orgId}
               type='button'
               onClick={() => onOpen(o.orgId)}
+              data-testid={`admin-access-gallery-org-${o.orgSlug}`}
               className={cn(
                 "flex flex-col gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-muted/40",
                 o.hasLockdown ? "border-destructive/40 bg-destructive/5" : "border-border/60"

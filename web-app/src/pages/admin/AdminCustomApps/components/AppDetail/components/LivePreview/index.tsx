@@ -3,7 +3,12 @@ import { cn } from "@/libs/shadcn/utils";
 import type { CustomApp } from "@/types/apps";
 import { resolveBundleUrl } from "../../../../resolveBundleUrl";
 import { fromPreviewPath, PREVIEW_NONCE_PARAM, toPreviewPath } from "../../appViewState";
-import { type DraftTarget, draftTarget, liveView, STAGING_FRAME_NOTE } from "../../draftTarget";
+import {
+  type DraftTarget,
+  draftTarget,
+  productionView,
+  STAGING_FRAME_NOTE
+} from "../../draftTarget";
 import { StagingBanner } from "../../StagingBanner";
 import type { ChannelView, Device } from "../DetailToolbar";
 import { DebugPanel } from "./DebugPanel";
@@ -137,7 +142,11 @@ export const LivePreview = ({
   })();
   // Under the frame: why the console can't follow a staging frame, or that an
   // unpromoted app's live URL takes real writes.
-  const frameNote = onStaging ? STAGING_FRAME_NOTE : target === null ? liveView(app).note : null;
+  const frameNote = onStaging
+    ? STAGING_FRAME_NOTE
+    : target === null
+      ? productionView(app).note
+      : null;
 
   // Same-origin preview → instrument the iframe to capture its calls to oxy.
   const { entries, clear, handleLoad, available } = useOxyRequestLog();

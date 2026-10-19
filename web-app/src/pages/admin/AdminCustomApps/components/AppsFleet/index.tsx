@@ -1,6 +1,10 @@
-import { AppWindow, Search } from "lucide-react";
+import { AppWindow, ArrowUpCircle, Search } from "lucide-react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
+import { useBatchPromoteLatestApps } from "@/hooks/api/customApps/useBatchAppMutations";
+import { errMessage } from "@/hooks/api/errMessage";
 import { cn } from "@/libs/shadcn/utils";
 import { AdminEmptyState } from "@/pages/admin/components/AdminEmptyState";
 import { ADMIN_TONE } from "@/pages/admin/components/adminTone";
@@ -20,6 +24,7 @@ import {
 } from "../../appStatus";
 import { fleetColumns } from "../../fleetColumns";
 import { discriminatingFilters } from "../../fleetFilters";
+import { LIFECYCLE_COPY, LifecycleConfirm } from "../AppLifecycle";
 import { statusTone } from "../AppSwitcher";
 import { FleetRow, gridTemplate } from "./FleetRow";
 import { FleetSummary } from "./FleetSummary";
@@ -93,6 +98,29 @@ export const AppsFleet = ({
     );
   }, [apps, health, query, status]);
 
+  // The fleet's one verb: promote the newest build on every published app in view.
+  // The batch endpoint and its hook existed with no consumer; this is the consumer.
+  // Published apps only — on a draft the same call would be a first publish, which is
+  // the per-app card's decision, not a fleet-wide one.
+  const promoteLatest = useBatchPromoteLatestApps();
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const promotable = useMemo(() => rows.filter((a) => a.published_at), [rows]);
+  const runPromoteLatest = async () => {
+    try {
+      const result = await promoteLatest.mutateAsync(promotable.map((a) => a.id));
+      if (result.failed > 0) {
+        toast.warning(`Promoted ${result.succeeded}, ${result.failed} failed.`);
+      } else {
+        toast.success(
+          `Promoted the latest build on ${result.succeeded} app${result.succeeded === 1 ? "" : "s"}.`
+        );
+      }
+      setPromoteOpen(false);
+    } catch (err) {
+      toast.error(errMessage(err, "Couldn't promote the latest builds"));
+    }
+  };
+
   return (
     <div className='flex min-h-0 flex-col' data-testid='admin-apps-fleet'>
       <div className='flex items-center gap-2 px-4 py-2'>
@@ -131,7 +159,26 @@ export const AppsFleet = ({
             ? `${apps.length} app${apps.length === 1 ? "" : "s"}`
             : `${rows.length} of ${apps.length}`}
         </span>
+        <Button
+          variant='outline'
+          size='sm'
+          className='h-7 shrink-0 gap-1.5 text-xs'
+          disabled={promotable.length === 0 || promoteLatest.isPending}
+          onClick={() => setPromoteOpen(true)}
+          data-testid='admin-apps-fleet-promote-latest'
+        >
+          <ArrowUpCircle className='size-3.5' />
+          Promote latest
+          <span className='text-muted-foreground tabular-nums'>{promotable.length}</span>
+        </Button>
       </div>
+
+      <LifecycleConfirm
+        copy={promoteOpen ? LIFECYCLE_COPY.promoteLatest(promotable.length) : null}
+        pending={promoteLatest.isPending}
+        onConfirm={runPromoteLatest}
+        onCancel={() => setPromoteOpen(false)}
+      />
 
       <div className='min-h-0 flex-1 overflow-auto'>
         {/* The one grid container. Tracks are declared here and inherited by the header
@@ -167,7 +214,6 @@ export const AppsFleet = ({
             <FleetRow
               key={app.id}
               app={app}
-              status={statusOf(app, health)}
               columns={shown}
               health={healthRows?.get(app.id)}
               storage={storage?.get(app.id)}

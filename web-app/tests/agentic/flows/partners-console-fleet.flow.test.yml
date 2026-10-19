@@ -56,7 +56,7 @@
 # BLAST RADIUS ON A SHARED FLEET: starting the assume session below makes
 # `e2e@oxy.tech` "act as" Acme for up to 60 minutes — during that window ANY
 # other flow signed in as `e2e@oxy.tech` that expects `/admin/*` (e.g.
-# `admin-tenants-cockpit`, `admin-custom-apps-tabs`) gets client-side
+# `admin-tenants-cockpit`, `admin-custom-apps-lifecycle`) gets client-side
 # redirected to `/partners` instead (`AdminLayout`'s `acting.isActing` guard)
 # and fails looking like an unrelated broken page. The final case here stops
 # the session again so the fleet is left clean, but do not run this

@@ -162,12 +162,11 @@
   cold_usd: 0.25
   warm_usd: 0.005
 
-- flow: admin-custom-apps-tabs
-  # Navigate to /admin/apps, confirm the three-tab shell, switch to
-  # Organizations then Publish tokens, assert each resolves. No streaming LLM
-  # run — REST fetches + DOM assertions + one judge call. Same profile as
-  # admin-tenants-cockpit.
-  cold_usd: 0.25
+- flow: admin-custom-apps-lifecycle
+  # Navigate to /admin/apps, open the seeded app's console, Unpublish +
+  # confirm, Publish + confirm, then DOM assertions + one judge call. Three
+  # act steps, no streaming LLM run. Replaces admin-custom-apps-tabs.
+  cold_usd: 0.30
   warm_usd: 0.005
 
 - flow: ide-yaml-diagnostics

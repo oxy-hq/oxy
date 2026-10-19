@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/
 import { cn } from "@/libs/shadcn/utils";
 import type { CustomApp } from "@/types/apps";
 import { resolveBundleUrl } from "../../../../resolveBundleUrl";
-import { type DraftTarget, liveView, NOT_PROMOTED_YET } from "../../draftTarget";
+import { type DraftTarget, NOT_PROMOTED_YET, productionView } from "../../draftTarget";
 import { ActAsOrgButton } from "./ActAsOrgButton";
 import { OpenStagingButton } from "./OpenStagingButton";
 import { OrgHomeButton } from "./OrgHomeButton";
@@ -67,25 +67,31 @@ const DEVICE_LABELS: Record<Device, { icon: typeof Smartphone; label: string; si
   desktop: { icon: Monitor, label: "Desktop", size: "Fill" }
 };
 
+/**
+ * The view switch's words. Deliberately none of the lifecycle card's — this chooses
+ * what the frame shows and moves no pointer, so it must not read like Promote,
+ * Publish or Unpublish do. `?channel=` keeps its `published` / `draft` values: that is
+ * URL state operators have bookmarked, not copy.
+ */
 const CHANNEL_COPY: Record<ChannelView, { title: string; description: string; confirm: string }> = {
   draft: {
-    title: "Switch to the staging build?",
+    title: "View the staging build?",
     description:
-      "Loads the app's staging host: the latest unpromoted build on real data, with its writes held or sent to staging copies. Customers still see the published bundle.",
-    confirm: "Show staging"
+      "Frames the app's staging host: the latest unpromoted build on real data, with its writes held or sent to staging copies. Customers still see production.",
+    confirm: "View staging"
   },
   published: {
-    title: "Switch back to published?",
-    description: "Shows the bundle the customer currently sees.",
-    confirm: "Show published"
+    title: "View production?",
+    description: "Frames what customers currently see.",
+    confirm: "View production"
   }
 };
 
-/** The Published entry for an app never promoted, which `liveView` relabels Live. */
-const LIVE_COPY = {
-  title: "Switch to the live URL?",
+/** The Production entry for an app never promoted (`productionView` carries the note). */
+const UNPROMOTED_COPY = {
+  title: "View the production URL?",
   description: NOT_PROMOTED_YET,
-  confirm: "Show live"
+  confirm: "View production"
 };
 
 /**
@@ -127,10 +133,10 @@ export const DetailToolbar = ({
   const [pendingChannel, setPendingChannel] = useState<ChannelView | null>(null);
 
   const ActiveDeviceIcon = DEVICE_LABELS[device].icon;
-  const live = liveView(app);
+  const production = productionView(app);
   const pendingCopy =
-    pendingChannel === "published" && live.note
-      ? LIVE_COPY
+    pendingChannel === "published" && production.note
+      ? UNPROMOTED_COPY
       : pendingChannel
         ? CHANNEL_COPY[pendingChannel]
         : null;
@@ -245,31 +251,35 @@ export const DetailToolbar = ({
             literal class for Tailwind to emit it; it cannot be composed
             from the constant at runtime.
 
-            Published is always enabled: for an app never promoted it reads
-            Live and says its writes are real (`liveView`). Draft is disabled
-            when there is no staging host to frame (`draftTarget`), and never
-            falls back to the production URL. */}
+            Production is always enabled: for an app never promoted it says its
+            writes are real (`productionView`). Staging is disabled when there is
+            no staging host to frame (`draftTarget`), and never falls back to the
+            production URL. The testids keep their `channel-published` /
+            `channel-draft` names: they match the `?channel=` values, which are
+            URL state, not copy. */}
         <ToggleGroup
           type='single'
           value={channel}
           onValueChange={(v) => v && handleChannelClick(v as ChannelView)}
           size='sm'
           variant='outline'
-          aria-label='Bundle channel'
+          aria-label='Preview target'
         >
           <Tooltip>
             <TooltipTrigger asChild>
               <ToggleGroupItem
                 value='published'
-                aria-label={live.note ? "Show the live URL" : "Show published bundle"}
+                aria-label={production.note ? "View the production URL" : "View what customers see"}
                 data-testid='admin-app-channel-published'
                 className='h-7 gap-1.5 px-2 data-[state=on]:bg-status-success-bg data-[state=on]:text-status-success-text'
               >
                 <Eye className='size-3.5' />
-                <span className='text-xs'>{live.label}</span>
+                <span className='text-xs'>{production.label}</span>
               </ToggleGroupItem>
             </TooltipTrigger>
-            {live.note && <TooltipContent className='max-w-xs'>{live.note}</TooltipContent>}
+            {production.note && (
+              <TooltipContent className='max-w-xs'>{production.note}</TooltipContent>
+            )}
           </Tooltip>
           <Tooltip>
             {/* The span carries the tooltip: a disabled button fires no
@@ -278,13 +288,13 @@ export const DetailToolbar = ({
               <span>
                 <ToggleGroupItem
                   value='draft'
-                  aria-label='Preview the staging build'
+                  aria-label='View the staging build'
                   disabled={draft.kind !== "staging"}
                   data-testid='admin-app-channel-draft'
                   className='h-7 gap-1.5 px-2 data-[state=on]:bg-status-warning-bg data-[state=on]:text-status-warning-text'
                 >
                   <EyeOff className='size-3.5' />
-                  <span className='text-xs'>Draft</span>
+                  <span className='text-xs'>Staging</span>
                 </ToggleGroupItem>
               </span>
             </TooltipTrigger>

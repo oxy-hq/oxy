@@ -49,6 +49,7 @@ export default function ClientRail({
             onChange={(e) => setQ(e.target.value)}
             placeholder='Search clients…'
             className='h-8 pl-7 text-sm'
+            data-testid='partner-clients-search'
           />
         </div>
       </div>
@@ -69,6 +70,8 @@ export default function ClientRail({
               key={o.org_id}
               type='button'
               onClick={() => onSelect(o.org_id)}
+              aria-pressed={o.org_id === selectedId}
+              data-testid={`partner-client-${o.slug}`}
               className={cn(
                 "w-full rounded-md px-2.5 py-2 text-left transition-colors",
                 o.org_id === selectedId ? "bg-muted" : "hover:bg-muted/50"

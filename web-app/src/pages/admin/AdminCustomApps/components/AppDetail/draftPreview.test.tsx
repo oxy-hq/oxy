@@ -12,9 +12,9 @@ import {
   type DraftTarget,
   defaultChannel,
   draftTarget,
-  liveView,
   NO_STAGING_HOST,
   NOT_PROMOTED_YET,
+  productionView,
   STAGING_FRAME_NOTE,
   STAGING_NOT_CONFIGURED
 } from "./draftTarget";
@@ -122,13 +122,22 @@ describe("draftTarget", () => {
   });
 });
 
-describe("the live view of an app never promoted", () => {
-  it("is Live with the real-writes copy, and promoted apps stay Published", () => {
-    expect(liveView({ published_at: null })).toEqual({ label: "Live", note: NOT_PROMOTED_YET });
-    expect(liveView({ published_at: "2026-09-01T00:00:00Z" })).toEqual({
-      label: "Published",
+describe("the production view of an app never promoted", () => {
+  it("carries the real-writes note, which a promoted app does not", () => {
+    expect(productionView({ published_at: null })).toEqual({
+      label: "Production",
+      note: NOT_PROMOTED_YET
+    });
+    expect(productionView({ published_at: "2026-09-01T00:00:00Z" })).toEqual({
+      label: "Production",
       note: null
     });
+  });
+
+  it("shares no words with the lifecycle verbs — it is a view switch, not a pointer move", () => {
+    for (const label of ["Production", "Staging"]) {
+      expect(label).not.toMatch(/publish|promote|draft|live|roll/i);
+    }
   });
 
   it("never calls that build draft, staging or held", () => {
@@ -246,20 +255,21 @@ describe("the Draft control", () => {
   });
 });
 
-describe("the Published control", () => {
-  it("is enabled as Live for an app never promoted with no staging host, and says why", async () => {
+describe("the Production control", () => {
+  it("is enabled for an app never promoted with no staging host, and says why", async () => {
     renderToolbar(draftTarget({ staging_url: null, url_subdomain: null }), NEVER_PUBLISHED);
     const control = screen.getByTestId("admin-app-channel-published");
     expect(control).toBeEnabled();
-    expect(control.textContent).toBe("Live");
+    expect(control.textContent).toBe("Production");
     expect(screen.getByTestId("admin-app-channel-draft")).toBeDisabled();
 
     await userEvent.hover(control);
     expect((await screen.findByRole("tooltip")).textContent).toContain(NOT_PROMOTED_YET);
   });
 
-  it("reads Published for a promoted app", () => {
+  it("reads Production for a promoted app, and the other control reads Staging", () => {
     renderToolbar({ kind: "staging", url: STAGING });
-    expect(screen.getByTestId("admin-app-channel-published").textContent).toBe("Published");
+    expect(screen.getByTestId("admin-app-channel-published").textContent).toBe("Production");
+    expect(screen.getByTestId("admin-app-channel-draft").textContent).toBe("Staging");
   });
 });

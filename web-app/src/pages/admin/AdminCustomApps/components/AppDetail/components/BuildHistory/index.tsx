@@ -1,19 +1,10 @@
 import { AlertTriangle, GitBranch } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogTitle
-} from "@/components/ui/shadcn/alert-dialog";
 import { Badge } from "@/components/ui/shadcn/badge";
-import { Button } from "@/components/ui/shadcn/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
-import { useAppBuilds, useRollbackApp } from "@/hooks/api/customApps/useAppBuilds";
+import { useAppBuilds } from "@/hooks/api/customApps/useAppBuilds";
 import { cn } from "@/libs/shadcn/utils";
 import { ADMIN_TONE } from "@/pages/admin/components/adminTone";
-import type { AppBuild } from "@/types/apps";
+import { shortBuildId } from "../../../AppLifecycle/lifecycleCopy";
 
 /** Normalize a git remote URL (`git@host:org/repo.git`, `https://…`, `ssh://…`)
  *  to an https browse URL, or null when unrecognized. */
@@ -133,20 +124,18 @@ function timeAgo(iso: string): string {
   return "";
 }
 
-/** Git-sha-style short id; leaves already-short ids untouched. */
-const shortId = (s: string) => (s.length > 10 ? s.slice(0, 7) : s);
-
 /**
- * Deployment console for a custom app: the live + draft channel pointers
- * at a glance, the full versioned build history (who published each, when),
- * and one-click "Make Live" of any retained build (a pure pointer move
- * server-side). Empty for legacy s3/local/v0 apps never published via
- * `oxyc publish`.
+ * The versioned build history of a custom app — every retained build, newest
+ * first, with who published it, when, and where its code is.
+ *
+ * A list and nothing more. It used to carry the live/draft channel cards and a
+ * "Make live" button per row, which made it one of four places a pointer move could
+ * be made under three different names; the `AppLifecycle` card above it owns those
+ * verbs now ("Promote draft", "Roll back to…"), and this is the ledger they choose
+ * from. Empty for legacy rows never published via `oxyc publish`.
  */
 export const BuildHistory = ({ appId }: { appId: string }) => {
   const { data, isLoading, error } = useAppBuilds(appId);
-  const rollback = useRollbackApp();
-  const [confirm, setConfirm] = useState<AppBuild | null>(null);
   const builds = data?.builds;
 
   if (isLoading) {
@@ -157,166 +146,50 @@ export const BuildHistory = ({ appId }: { appId: string }) => {
   }
   if (!builds || builds.length === 0) {
     return (
-      <p className='text-muted-foreground text-xs'>
+      <p className='text-muted-foreground text-xs' data-testid='admin-app-builds-empty'>
         No deployments yet — this app hasn't been published via the pipeline (oxyc publish).
       </p>
     );
   }
 
-  const live = builds.find((b) => b.is_published);
-  const draft = builds.find((b) => b.is_draft);
-  const draftAhead = draft && (!live || draft.id !== live.id);
-
-  const makeLive = (b: AppBuild) => {
-    rollback.mutate(
-      { id: appId, buildId: b.id },
-      {
-        onSuccess: () => {
-          toast.success(`Build ${shortId(b.build_id)} is now live.`);
-          setConfirm(null);
-        },
-        onError: (e) =>
-          toast.error(e instanceof Error ? e.message : "Couldn't change the live build")
-      }
-    );
-  };
-
   return (
-    <div className='flex flex-col gap-4'>
-      {/* Channel pointers at a glance */}
-      <div className='grid @lg:grid-cols-2 grid-cols-1 gap-2'>
-        <ChannelCard
-          label='Live'
-          build={live}
-          tone='live'
-          promotedByEmail={data?.promoted_by_email}
-          promotedAt={data?.promoted_at}
-        />
-        <ChannelCard label='Draft' build={draftAhead ? draft : undefined} tone='draft' />
-      </div>
-
-      {/* Full history */}
-      <div className='flex flex-col gap-2'>
-        <h3 className='font-medium text-xs'>Build history</h3>
-        <ul className='flex flex-col gap-1'>
-          {builds.map((b) => (
-            <li
-              key={b.id}
-              className='flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2'
-            >
-              <div className='flex min-w-0 flex-col'>
-                <div className='flex items-center gap-2'>
-                  <span className='font-mono text-xs' title={b.build_id}>
-                    {shortId(b.build_id)}
-                  </span>
-                  {b.is_published && <Badge className='h-5'>Live</Badge>}
-                  {b.is_draft && !b.is_published && (
-                    <Badge variant='secondary' className='h-5'>
-                      Draft
-                    </Badge>
-                  )}
-                </div>
-                <span
-                  className='truncate text-muted-foreground text-xs'
-                  title={new Date(b.created_at).toLocaleString()}
-                >
-                  {timeAgo(b.created_at)}
-                  {b.published_by_email ? ` · ${b.published_by_email}` : ""}
+    <div className='flex flex-col gap-2' data-testid='admin-app-builds'>
+      <h3 className='font-medium text-xs'>Build history</h3>
+      <ul className='flex flex-col gap-1'>
+        {builds.map((b) => (
+          <li
+            key={b.id}
+            data-testid={`admin-app-build-${shortBuildId(b.build_id)}`}
+            className='flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2'
+          >
+            <div className='flex min-w-0 flex-col'>
+              <div className='flex items-center gap-2'>
+                <span className='font-mono text-xs' title={b.build_id}>
+                  {shortBuildId(b.build_id)}
                 </span>
-                {b.source_repo?.trim() && b.commit_sha?.trim() ? (
-                  <SourceLink repo={b.source_repo} sha={b.commit_sha} branch={b.source_branch} />
-                ) : (
-                  <IncompleteSource repo={b.source_repo} sha={b.commit_sha} />
+                {b.is_published && <Badge className='h-5'>Live</Badge>}
+                {b.is_draft && !b.is_published && (
+                  <Badge variant='secondary' className='h-5'>
+                    Draft
+                  </Badge>
                 )}
               </div>
-              {!b.is_published && (
-                <Button
-                  size='sm'
-                  variant='outline'
-                  disabled={rollback.isPending}
-                  onClick={() => setConfirm(b)}
-                >
-                  Make live
-                </Button>
+              <span
+                className='truncate text-muted-foreground text-xs'
+                title={new Date(b.created_at).toLocaleString()}
+              >
+                {timeAgo(b.created_at)}
+                {b.published_by_email ? ` · ${b.published_by_email}` : ""}
+              </span>
+              {b.source_repo?.trim() && b.commit_sha?.trim() ? (
+                <SourceLink repo={b.source_repo} sha={b.commit_sha} branch={b.source_branch} />
+              ) : (
+                <IncompleteSource repo={b.source_repo} sha={b.commit_sha} />
               )}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <AlertDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
-        <AlertDialogContent className='gap-6 sm:max-w-md'>
-          <div className='flex flex-col gap-2'>
-            <AlertDialogTitle>Make this build live?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Customers will immediately see build{" "}
-              <span className='font-mono'>{confirm ? shortId(confirm.build_id) : ""}</span>
-              {live ? (
-                <>
-                  {" "}
-                  instead of the current live build{" "}
-                  <span className='font-mono'>{shortId(live.build_id)}</span>
-                </>
-              ) : null}
-              . You can switch back here at any time.
-            </AlertDialogDescription>
-          </div>
-          <div className='flex justify-end gap-2'>
-            <Button variant='ghost' disabled={rollback.isPending} onClick={() => setConfirm(null)}>
-              Cancel
-            </Button>
-            <Button disabled={rollback.isPending} onClick={() => confirm && makeLive(confirm)}>
-              {rollback.isPending ? "Switching…" : "Make live"}
-            </Button>
-          </div>
-        </AlertDialogContent>
-      </AlertDialog>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 };
-
-/** Compact summary of which build a channel currently points at. */
-const ChannelCard = ({
-  label,
-  build,
-  tone,
-  promotedByEmail,
-  promotedAt
-}: {
-  label: string;
-  build: AppBuild | undefined;
-  tone: "live" | "draft";
-  promotedByEmail?: string | null;
-  promotedAt?: string | null;
-}) => (
-  <div className='flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-2'>
-    <div className='flex items-center gap-2'>
-      <span
-        className={`size-2 rounded-full ${tone === "live" ? "bg-primary" : "bg-muted-foreground/50"}`}
-        aria-hidden
-      />
-      <span className='font-medium text-foreground text-xs'>{label}</span>
-    </div>
-    {build ? (
-      <>
-        <span className='font-mono text-xs' title={build.build_id}>
-          {shortId(build.build_id)}
-        </span>
-        <span className='text-muted-foreground text-xs'>
-          built {timeAgo(build.created_at)}
-          {build.published_by_email ? ` · ${build.published_by_email}` : ""}
-        </span>
-        {tone === "live" && promotedAt && (
-          <span className='text-muted-foreground text-xs'>
-            promoted {timeAgo(promotedAt)}
-            {promotedByEmail ? ` · ${promotedByEmail}` : ""}
-          </span>
-        )}
-      </>
-    ) : (
-      <span className='text-muted-foreground text-xs'>
-        {tone === "live" ? "Not live yet" : "Same as live"}
-      </span>
-    )}
-  </div>
-);

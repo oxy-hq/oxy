@@ -246,14 +246,22 @@ export const useAppActivityEventOccurrences = (
  * `retry: false` for the same reason as `useAppAvailability`: a 404 (the
  * caller may not open this app's staging) is a state the banner renders,
  * not a transient failure to retry behind a spinner.
+ *
+ * `poll: false` is for a reader that wants the count once — the lifecycle
+ * card states "N writes held" beside the draft build and nobody is watching
+ * it tick. Same key, so it shares the banner's cache entry when both mount.
  */
-export const useStagingHeld = (appId: string, enabled: boolean) =>
+export const useStagingHeld = (
+  appId: string,
+  enabled: boolean,
+  { poll = true }: { poll?: boolean } = {}
+) =>
   useQuery({
     queryKey: queryKeys.customApps.stagingHeld(appId),
     queryFn: () => CustomAppsService.listStagingHeld(appId, STAGING_HELD_LIMIT),
     enabled,
     refetchInterval: (query) =>
-      enabled && !isNotFound(query.state.error) ? STAGING_HELD_POLL_MS : false,
+      poll && enabled && !isNotFound(query.state.error) ? STAGING_HELD_POLL_MS : false,
     retry: false
   });
 

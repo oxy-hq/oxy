@@ -70,7 +70,9 @@ export default function CreateClientDialog({ partnerId }: { partnerId: string })
       }}
     >
       <DialogTrigger asChild>
-        <Button size='sm'>New client</Button>
+        <Button size='sm' data-testid='partner-new-client'>
+          New client
+        </Button>
       </DialogTrigger>
       <DialogContent className='max-w-md'>
         <DialogHeader>
@@ -85,6 +87,7 @@ export default function CreateClientDialog({ partnerId }: { partnerId: string })
             <Label htmlFor='client-name'>Organization name</Label>
             <Input
               id='client-name'
+              data-testid='partner-new-client-name'
               value={name}
               placeholder='Northwind Traders'
               onChange={(e) => {
@@ -97,6 +100,7 @@ export default function CreateClientDialog({ partnerId }: { partnerId: string })
             <Label htmlFor='client-slug'>Slug</Label>
             <Input
               id='client-slug'
+              data-testid='partner-new-client-slug'
               value={slug}
               placeholder='northwind'
               onChange={(e) => {
@@ -109,6 +113,7 @@ export default function CreateClientDialog({ partnerId }: { partnerId: string })
             <Label htmlFor='client-owner'>First owner (optional)</Label>
             <Input
               id='client-owner'
+              data-testid='partner-new-client-owner'
               type='email'
               value={ownerEmail}
               placeholder='owner@northwind.com'
@@ -123,7 +128,11 @@ export default function CreateClientDialog({ partnerId }: { partnerId: string })
         </div>
 
         <DialogFooter>
-          <Button variant='ghost' onClick={() => setOpen(false)}>
+          <Button
+            variant='ghost'
+            onClick={() => setOpen(false)}
+            data-testid='partner-new-client-cancel'
+          >
             Cancel
           </Button>
           <Button
@@ -134,6 +143,7 @@ export default function CreateClientDialog({ partnerId }: { partnerId: string })
               create.isPending
             }
             onClick={submit}
+            data-testid='partner-new-client-submit'
           >
             Create client
           </Button>

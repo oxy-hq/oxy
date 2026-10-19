@@ -51,14 +51,23 @@ export function GrantPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant='outline' size='sm' className='w-fit' disabled={nothingLeft}>
+        <Button
+          variant='outline'
+          size='sm'
+          className='w-fit'
+          disabled={nothingLeft}
+          data-testid='app-access-add'
+        >
           <Plus className='size-4' aria-hidden />
           Add team or person
         </Button>
       </PopoverTrigger>
       <PopoverContent className='w-[--radix-popover-trigger-width] min-w-80 p-0' align='start'>
         <Command>
-          <CommandInput placeholder='Search teams and people…' />
+          <CommandInput
+            placeholder='Search teams and people…'
+            data-testid='app-access-add-search'
+          />
           <CommandList>
             <CommandEmpty>No match.</CommandEmpty>
 
@@ -70,6 +79,7 @@ export function GrantPicker({
                     value={`team ${team.name}`}
                     onSelect={() => handleAdd("team", team.id)}
                     className='gap-2'
+                    data-testid={`app-access-add-team-${team.id}`}
                   >
                     <Users className='size-4 shrink-0 text-muted-foreground' aria-hidden />
                     <span className='truncate'>{team.name}</span>
@@ -97,6 +107,7 @@ export function GrantPicker({
                     value={`person ${person.name} ${person.email}`}
                     onSelect={() => handleAdd("user", person.user_id)}
                     className='gap-2'
+                    data-testid={`app-access-add-user-${person.user_id}`}
                   >
                     <User className='size-4 shrink-0 text-muted-foreground' aria-hidden />
                     <span className='truncate'>{person.name}</span>

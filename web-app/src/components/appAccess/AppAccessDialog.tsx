@@ -268,10 +268,18 @@ export function AppAccessDialog({
         </div>
 
         <div className='flex items-center justify-end gap-2 border-t px-6 py-4'>
-          <Button variant='ghost' onClick={() => onOpenChange(false)}>
+          <Button
+            variant='ghost'
+            onClick={() => onOpenChange(false)}
+            data-testid='app-access-cancel'
+          >
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={!seeded || isError || setAccess.isPending}>
+          <Button
+            onClick={handleSave}
+            disabled={!seeded || isError || setAccess.isPending}
+            data-testid='app-access-save'
+          >
             {setAccess.isPending && <Loader2 className='size-4 animate-spin' aria-hidden />}
             Save access
           </Button>

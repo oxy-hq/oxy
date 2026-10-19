@@ -4,11 +4,102 @@ import {
   ATTENTION,
   byAttention,
   type HealthIndex,
+  lifecycleVerdict,
   matchesQuery,
   needsAttention,
+  STATUS_TONE,
   statusOf,
   statusRank
 } from "./appStatus";
+
+describe("lifecycleVerdict", () => {
+  // Every row of the table in the doc comment, so the comment and the code cannot
+  // drift. A reader checking a verdict on screen should find its row here.
+  it("calls an unpublished app a draft whatever was measured", () => {
+    const v = lifecycleVerdict({
+      published: false,
+      health: "operational",
+      availability: { verdict: "healthy" }
+    });
+    expect(v).toEqual({ status: "draft", tone: "muted", label: "Draft", source: "draft" });
+  });
+
+  it.each(["down", "degraded", "not_measured", "quiet", "operational"] as const)(
+    "reports the fleet's %s verdict in its own tone when availability does not escalate",
+    (health) => {
+      for (const availability of [
+        null,
+        { verdict: "healthy" as const },
+        { verdict: "no_opinion" as const }
+      ]) {
+        const v = lifecycleVerdict({ published: true, health, availability });
+        expect(v.status).toBe(health);
+        expect(v.tone).toBe(STATUS_TONE[health]);
+        expect(v.source).toBe("fleet");
+      }
+    }
+  );
+
+  it("lets a burn escalate not_measured, quiet and operational — worse wins", () => {
+    for (const health of ["not_measured", "quiet", "operational"] as const) {
+      expect(
+        lifecycleVerdict({
+          published: true,
+          health,
+          availability: { verdict: "burning", severity: "page" }
+        })
+      ).toEqual({ status: "down", tone: "danger", label: "Burning", source: "availability" });
+      expect(
+        lifecycleVerdict({
+          published: true,
+          health,
+          availability: { verdict: "burning", severity: "ticket" }
+        })
+      ).toEqual({ status: "degraded", tone: "warn", label: "Degraded", source: "availability" });
+    }
+  });
+
+  it("never softens down or degraded, whatever the last hour's ratio says", () => {
+    for (const health of ["down", "degraded"] as const) {
+      const v = lifecycleVerdict({
+        published: true,
+        health,
+        availability: { verdict: "healthy" }
+      });
+      expect(v.status).toBe(health);
+      expect(v.source).toBe("fleet");
+    }
+  });
+
+  it("answers from availability alone when the fleet has not", () => {
+    expect(lifecycleVerdict({ published: true, availability: { verdict: "healthy" } })).toEqual({
+      status: "operational",
+      tone: "ok",
+      label: "Serving",
+      source: "availability"
+    });
+    // `no_opinion` survives: it is "no data", which is not a flavour of healthy.
+    expect(lifecycleVerdict({ published: true, availability: { verdict: "no_opinion" } })).toEqual({
+      status: "quiet",
+      tone: "muted",
+      label: "No data",
+      source: "availability"
+    });
+    expect(
+      lifecycleVerdict({
+        published: true,
+        availability: { verdict: "burning", severity: "ticket" }
+      })
+    ).toMatchObject({ status: "degraded", tone: "warn" });
+  });
+
+  it("states only the publish fact when nothing measured the app", () => {
+    const v = lifecycleVerdict({ published: true });
+    expect(v).toEqual({ status: null, tone: "muted", label: "Published", source: "none" });
+    // `null` keeps the unknown where `statusOf` already ranks it.
+    expect(statusRank(v.status)).toBe(statusRank(null));
+  });
+});
 
 /**
  * The judgement salvaged from the deleted registry table. Two things matter more than

@@ -118,7 +118,7 @@ export const AppDetail = ({ app: listed }: { app: CustomApp }) => {
   }, [setDock]);
   const focusDossierWindow = useDossierWindow({
     active: poppedOut,
-    url: dossierWindowPath(app.org_slug, app.slug),
+    url: dossierWindowPath(app.org_slug, app.slug, app.id),
     name: "oxy-app-dossier",
     onDismiss: fallBackToSideColumn
   });

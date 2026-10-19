@@ -90,6 +90,7 @@ function PersonRow({
           disabled={disabled}
           onCheckedChange={onToggle}
           aria-label={`Partner access for ${person.email}`}
+          data-testid={`partner-team-access-${person.user_id}`}
         />
       </TableCell>
     </TableRow>

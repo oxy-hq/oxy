@@ -62,7 +62,11 @@ export function GrantList({
       {rows.map((row) => {
         const Icon = row.kind === "team" ? Users : User;
         return (
-          <li key={`${row.kind}:${row.id}`} className='flex items-center gap-3 px-3 py-2.5'>
+          <li
+            key={`${row.kind}:${row.id}`}
+            className='flex items-center gap-3 px-3 py-2.5'
+            data-testid={`app-access-grant-${row.kind}-${row.id}`}
+          >
             <Icon className='size-4 shrink-0 text-muted-foreground' aria-hidden />
             <div className='min-w-0 flex-1'>
               <p className='truncate font-medium text-sm'>{row.name}</p>
@@ -73,12 +77,20 @@ export function GrantList({
               value={row.role}
               onValueChange={(v) => onRoleChange(row.kind, row.id, v as GrantRole)}
             >
-              <SelectTrigger className='h-8 w-32 shrink-0' aria-label={`Role for ${row.name}`}>
+              <SelectTrigger
+                className='h-8 w-32 shrink-0'
+                aria-label={`Role for ${row.name}`}
+                data-testid={`app-access-role-${row.kind}-${row.id}`}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value='member'>Can open</SelectItem>
-                <SelectItem value='admin'>Can administer</SelectItem>
+                <SelectItem value='member' data-testid='app-access-role-member'>
+                  Can open
+                </SelectItem>
+                <SelectItem value='admin' data-testid='app-access-role-admin'>
+                  Can administer
+                </SelectItem>
               </SelectContent>
             </Select>
 
@@ -88,6 +100,7 @@ export function GrantList({
               className='size-8 shrink-0 text-muted-foreground hover:text-destructive'
               onClick={() => onRemove(row.kind, row.id)}
               aria-label={`Remove ${row.name}`}
+              data-testid={`app-access-remove-${row.kind}-${row.id}`}
             >
               <X className='size-4' aria-hidden />
             </Button>

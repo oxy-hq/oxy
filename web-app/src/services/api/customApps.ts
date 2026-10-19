@@ -31,6 +31,14 @@ const appSecretWrite = (status: number): AppSecretWrite => (status === 201 ? "cr
  * `<org_slug>/<app_slug>` path because CI calls it without ever seeing the
  * uuid.
  */
+/**
+ * The one place an app id becomes a URL segment. Every id-addressed call below goes
+ * through it so a value that arrived as text — the dossier window's `?app=`, a pasted
+ * id — is encoded before it can reshape the path; `../` encodes to `..%2F..`, which
+ * names nothing.
+ */
+const appPath = (id: string) => `/customer-apps/${encodeURIComponent(id)}`;
+
 export const CustomAppsService = {
   /**
    * Fleet health — every published app the caller can see, worst first.
@@ -79,7 +87,7 @@ export const CustomAppsService = {
    * from here.
    */
   async get(id: string): Promise<CustomApp> {
-    const response = await apiClient.get(`/customer-apps/${id}`);
+    const response = await apiClient.get(`${appPath(id)}`);
     return response.data;
   },
 
@@ -108,7 +116,7 @@ export const CustomAppsService = {
   },
 
   async delete(id: string): Promise<void> {
-    await apiClient.delete(`/customer-apps/${id}`);
+    await apiClient.delete(`${appPath(id)}`);
   },
 
   /**
@@ -121,39 +129,25 @@ export const CustomAppsService = {
    * Oxy-engineer automation.
    */
   async publish(id: string): Promise<CustomApp> {
-    const response = await apiClient.post(`/customer-apps/${id}/publish`);
+    const response = await apiClient.post(`${appPath(id)}/publish`);
     return response.data;
   },
 
   async unpublish(id: string): Promise<CustomApp> {
-    const response = await apiClient.delete(`/customer-apps/${id}/publish`);
+    const response = await apiClient.delete(`${appPath(id)}/publish`);
     return response.data;
   },
 
   /**
-   * Batch publish / unpublish / delete for the admin apps table. Each is
-   * best-effort per-id server-side: one app failing never aborts the rest,
-   * and the response carries a per-app outcome so the UI can report
-   * "published 4, 1 failed" from a single call. `delete` is a POST (not
-   * DELETE) because the id set travels in the request body.
+   * Promote the newest build on each of `ids` — the fleet's batch action.
+   * Best-effort per id server-side: one app failing never aborts the rest, and
+   * the response carries a per-app outcome so the UI can report "promoted 4,
+   * 1 failed" from a single call. The sibling batch publish / unpublish /
+   * delete endpoints still exist on the server; nothing in the web-app calls
+   * them since the selectable apps table went, so they have no client here.
    */
-  async batchPublish(ids: string[]): Promise<BatchAppResult> {
-    const response = await apiClient.post("/customer-apps/batch/publish", { ids });
-    return response.data;
-  },
-
   async batchPromoteLatest(ids: string[]): Promise<BatchAppResult> {
     const response = await apiClient.post("/customer-apps/batch/promote-latest", { ids });
-    return response.data;
-  },
-
-  async batchUnpublish(ids: string[]): Promise<BatchAppResult> {
-    const response = await apiClient.post("/customer-apps/batch/unpublish", { ids });
-    return response.data;
-  },
-
-  async batchDelete(ids: string[]): Promise<BatchAppResult> {
-    const response = await apiClient.post("/customer-apps/batch/delete", { ids });
     return response.data;
   },
 
@@ -162,7 +156,7 @@ export const CustomAppsService = {
    * Empty for legacy s3/local/v0 rows never published via `oxyc publish`.
    */
   async listBuilds(id: string): Promise<AppBuildHistory> {
-    const response = await apiClient.get(`/customer-apps/${id}/builds`);
+    const response = await apiClient.get(`${appPath(id)}/builds`);
     return response.data;
   },
 
@@ -171,7 +165,7 @@ export const CustomAppsService = {
    * move server-side — the build's bytes already live in S3.
    */
   async rollback(id: string, buildId: string): Promise<CustomApp> {
-    const response = await apiClient.post(`/customer-apps/${id}/rollback`, {
+    const response = await apiClient.post(`${appPath(id)}/rollback`, {
       build_id: buildId
     });
     return response.data;
@@ -181,21 +175,23 @@ export const CustomAppsService = {
 
   /** The app's Oxy Functions in its active build, with their manifest config. */
   async listFunctions(id: string): Promise<AppFunctionSummary[]> {
-    const response = await apiClient.get(`/customer-apps/${id}/functions`);
+    const response = await apiClient.get(`${appPath(id)}/functions`);
     return response.data;
   },
 
   /** Recent invocations of one function (newest first), for the debug history. */
   async listFunctionInvocations(id: string, name: string): Promise<FunctionInvocation[]> {
     const response = await apiClient.get(
-      `/customer-apps/${id}/functions/${encodeURIComponent(name)}/invocations`
+      `${appPath(id)}/functions/${encodeURIComponent(name)}/invocations`
     );
     return response.data;
   },
 
   /** A single function-job run's status + persisted logs (trigger-and-watch). */
   async getFunctionRun(id: string, runId: string): Promise<FunctionRunDetail> {
-    const response = await apiClient.get(`/customer-apps/${id}/function-runs/${runId}`);
+    const response = await apiClient.get(
+      `${appPath(id)}/function-runs/${encodeURIComponent(runId)}`
+    );
     return response.data;
   },
 
@@ -204,7 +200,7 @@ export const CustomAppsService = {
    *  run id to watch via `getFunctionRun`. */
   async runFunction(id: string, name: string, input?: unknown): Promise<{ run_id: string }> {
     const response = await apiClient.post(
-      `/customer-apps/${id}/functions/${encodeURIComponent(name)}/runs`,
+      `${appPath(id)}/functions/${encodeURIComponent(name)}/runs`,
       // `undefined` → axios sends no body → the function runs with no params.
       input ?? undefined
     );
@@ -216,19 +212,19 @@ export const CustomAppsService = {
   /** The app's secrets: what its active build declares, unioned with what is
    *  actually stored. Values are never included. */
   async listSecrets(id: string): Promise<AppSecrets> {
-    const response = await apiClient.get(`/customer-apps/${id}/secrets`);
+    const response = await apiClient.get(`${appPath(id)}/secrets`);
     return response.data;
   },
 
   /** Create or rotate one key. The only write path there is — the project
    *  secrets API rejects the `/` in an app-scoped name. */
   async setSecret(id: string, key: string, value: string): Promise<AppSecretWrite> {
-    const response = await apiClient.post(`/customer-apps/${id}/secrets`, { key, value });
+    const response = await apiClient.post(`${appPath(id)}/secrets`, { key, value });
     return appSecretWrite(response.status);
   },
 
   async deleteSecret(id: string, key: string): Promise<void> {
-    await apiClient.delete(`/customer-apps/${id}/secrets/${encodeURIComponent(key)}`);
+    await apiClient.delete(`${appPath(id)}/secrets/${encodeURIComponent(key)}`);
   },
 
   /** Tenant-side create/rotate, on the workspace's own route. Same handler as
@@ -254,7 +250,7 @@ export const CustomAppsService = {
    *  result held only as long as the row is expanded. */
   async revealSecret(id: string, key: string): Promise<string> {
     const response = await apiClient.get<{ key: string; value: string }>(
-      `/customer-apps/${id}/secrets/${encodeURIComponent(key)}/value`
+      `${appPath(id)}/secrets/${encodeURIComponent(key)}/value`
     );
     return response.data.value;
   },
@@ -317,19 +313,17 @@ export const CustomAppsService = {
   // ── Activity (usage tracking) ──────────────────────────────────────────
 
   async activitySummary(id: string): Promise<ActivitySummary> {
-    const r = await apiClient.get(`/customer-apps/${id}/activity/summary`);
+    const r = await apiClient.get(`${appPath(id)}/activity/summary`);
     return r.data as ActivitySummary;
   },
 
   async activityVisitors(id: string, days = 7, limit = 50): Promise<VisitorRow[]> {
-    const r = await apiClient.get(
-      `/customer-apps/${id}/activity/visitors?days=${days}&limit=${limit}`
-    );
+    const r = await apiClient.get(`${appPath(id)}/activity/visitors?days=${days}&limit=${limit}`);
     return (r.data?.rows ?? []) as VisitorRow[];
   },
 
   async activityEventGroups(id: string, days = 7): Promise<EventGroupRow[]> {
-    const r = await apiClient.get(`/customer-apps/${id}/activity/events?days=${days}`);
+    const r = await apiClient.get(`${appPath(id)}/activity/events?days=${days}`);
     return (r.data?.groups ?? []) as EventGroupRow[];
   },
 
@@ -340,7 +334,7 @@ export const CustomAppsService = {
     limit = 50
   ): Promise<EventOccurrenceRow[]> {
     const r = await apiClient.get(
-      `/customer-apps/${id}/activity/events?days=${days}&limit=${limit}&event_name=${encodeURIComponent(eventName)}`
+      `${appPath(id)}/activity/events?days=${days}&limit=${limit}&event_name=${encodeURIComponent(eventName)}`
     );
     return (r.data?.rows ?? []) as EventOccurrenceRow[];
   },
@@ -355,10 +349,129 @@ export const CustomAppsService = {
    */
   async listStagingHeld(id: string, limit?: number): Promise<StagingHeldEntry[]> {
     const suffix = limit != null ? `?limit=${limit}` : "";
-    const response = await apiClient.get(`/customer-apps/${id}/staging/held${suffix}`);
+    const response = await apiClient.get(`${appPath(id)}/staging/held${suffix}`);
+    return response.data;
+  },
+
+  // ── Environments (production, staging, dev sandboxes) ───────────────────
+
+  /** Every environment of the app (`GET /customer-apps/{id}/environments`). */
+  async listEnvironments(id: string): Promise<AppEnvironment[]> {
+    const response = await apiClient.get<{ environments: AppEnvironment[] }>(
+      `${appPath(id)}/environments`
+    );
+    return response.data.environments;
+  },
+
+  /** Create a dev sandbox. 409 when the name is taken or reserved. */
+  async createEnvironment(id: string, name: string): Promise<AppEnvironment> {
+    const response = await apiClient.post(`${appPath(id)}/environments`, { name });
+    return response.data;
+  },
+
+  /**
+   * Tear a sandbox down. 202: the teardown is queued, the row reads `deleting`
+   * until it lands. Production and staging answer 400 (`NotASandbox`).
+   */
+  async deleteEnvironment(id: string, name: string): Promise<EnvironmentDeleteAccepted> {
+    const response = await apiClient.delete(
+      `${appPath(id)}/environments/${encodeURIComponent(name)}`
+    );
+    return response.data;
+  },
+
+  // ── Trusted publishers (GitHub OIDC) ─────────────────────────────────────
+
+  /** The workflows allowed to OIDC-publish this app (`GET /customer-apps/{id}/publishers`). */
+  async listPublishers(id: string): Promise<AppPublisher[]> {
+    const response = await apiClient.get(`${appPath(id)}/publishers`);
+    return response.data;
+  },
+
+  /** Register a workflow. 409 when that exact (owner, repo, workflow, environment) exists. */
+  async registerPublisher(id: string, body: RegisterPublisherRequest): Promise<AppPublisher> {
+    const response = await apiClient.post(`${appPath(id)}/publishers`, body);
+    return response.data;
+  },
+
+  async deletePublisher(id: string, publisherId: string): Promise<void> {
+    await apiClient.delete(`${appPath(id)}/publishers/${encodeURIComponent(publisherId)}`);
+  },
+
+  // ── Templates ────────────────────────────────────────────────────────────
+
+  /** The curated scaffold templates (`GET /customer-apps/templates`). */
+  async listTemplates(): Promise<AppTemplate[]> {
+    const response = await apiClient.get("/customer-apps/templates");
     return response.data;
   }
 };
+
+/**
+ * One environment of an app, as `custom_apps_sandboxes::EnvironmentDto` serializes
+ * it. Every field is always present; one that does not apply is `null`.
+ */
+export interface AppEnvironment {
+  name: string;
+  /** `production` | `staging` | `dev`. */
+  kind: string;
+  /** `active` | `deleting`. */
+  status: string;
+  /** The publish's build id; `null` when the environment serves nothing. */
+  build_id: string | null;
+  build_uuid: string | null;
+  semantic_revision_id: string | null;
+  /** `null` for production and staging. */
+  owner: { user_id: string; email: string | null } | null;
+  created_at: string;
+  updated_at: string;
+  last_activity_at: string | null;
+  /** When an idle sandbox is deleted; `null` otherwise. */
+  expires_at: string | null;
+  /** The environment's host; `null` without a custom-apps zone. */
+  url: string | null;
+  oltp_schema: unknown | null;
+}
+
+/** `DELETE …/environments/{name}` answers 202 with the queued teardown. */
+export interface EnvironmentDeleteAccepted {
+  name: string;
+  status: string;
+  teardown_run_id: string;
+}
+
+/** A GitHub workflow trusted to OIDC-publish an app (`PublisherDto`). */
+export interface AppPublisher {
+  id: string;
+  app_id: string;
+  repo_owner: string;
+  repo_owner_id: number;
+  repo_name: string;
+  workflow_ref: string;
+  environment: string;
+  created_at: string;
+}
+
+export interface RegisterPublisherRequest {
+  repo_owner: string;
+  /** GitHub's numeric owner id — the stable identity a renamed org keeps. */
+  repo_owner_id: number;
+  repo_name: string;
+  /** The bare workflow path, e.g. `.github/workflows/oxy-publish.yml` — what
+   *  `oxyc init-ci` writes. No `@ref`: the verifier strips the ref from the token's
+   *  `job_workflow_ref` before comparing, so a stored `@…` can never match. */
+  workflow_ref: string;
+  /** The GitHub environment the job must run in. Required: the verifier rejects a
+   *  token with no `environment` claim, so an empty value matches nothing. */
+  environment: string;
+}
+
+/** One curated scaffold template (`TemplateListItem`). */
+export interface AppTemplate {
+  id: string;
+  name: string;
+  description: string;
+}
 
 export interface ActivitySummary {
   total_views_7d: number;

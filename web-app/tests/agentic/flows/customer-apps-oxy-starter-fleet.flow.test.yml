@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../../../json-schemas/flow-test.json
 #
 # Open a PUBLISHED custom app and confirm it actually serves and works. No
-# existing flow drives `/customer-apps/...` — `admin-custom-apps-tabs` only
+# existing flow drives `/customer-apps/...` — `admin-custom-apps-lifecycle` only
 # covers the ADMIN console's Apps tab (the publish/promote UI), never the
 # served app itself. `oxy seed` publishes `oxy-starter` into org `local`
 # (internal-docs/customer-apps.md §1); this drives that exact URL.

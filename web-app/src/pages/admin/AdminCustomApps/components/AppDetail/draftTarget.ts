@@ -56,17 +56,26 @@ export function draftTarget(
   return { kind: "unavailable", reason: NO_STAGING_HOST };
 }
 
-/** The Published control: always enabled, relabelled for an unpromoted app. */
-export interface LiveView {
-  label: "Published" | "Live";
+/**
+ * The Production control of the preview's view switch: always enabled, with a note for
+ * an unpromoted app.
+ *
+ * The switch used to read Published / Draft / Live — the same words the lifecycle
+ * card uses for *actions* (Promote draft, Unpublish, Roll back). It is a view switch:
+ * it chooses what the iframe frames and flips nothing server-side. So its controls now
+ * say where they look — Production or Staging — and the lifecycle words stay with the
+ * verbs that move pointers.
+ */
+export interface ProductionView {
+  label: "Production";
   /** Shown on the control and under the frame; `null` for a promoted app. */
   note: string | null;
 }
 
-export function liveView(app: Pick<CustomApp, "published_at">): LiveView {
+export function productionView(app: Pick<CustomApp, "published_at">): ProductionView {
   return app.published_at
-    ? { label: "Published", note: null }
-    : { label: "Live", note: NOT_PROMOTED_YET };
+    ? { label: "Production", note: null }
+    : { label: "Production", note: NOT_PROMOTED_YET };
 }
 
 /**

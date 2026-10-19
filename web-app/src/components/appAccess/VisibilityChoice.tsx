@@ -62,6 +62,7 @@ export function VisibilityChoice({
                 checked={selected}
                 onChange={() => onChange(option.value)}
                 className='sr-only'
+                data-testid={`app-access-visibility-${option.value}`}
               />
               <div className='flex items-center gap-2'>
                 <Icon

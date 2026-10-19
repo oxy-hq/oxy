@@ -15,6 +15,9 @@ vi.mock("../AppLogs", () => ({ AppLogs: () => null }));
 vi.mock("../AppSettings", () => ({ AppSettings: () => null }));
 vi.mock("../Availability", () => ({ Availability: () => null }));
 vi.mock("../BuildHistory", () => ({ BuildHistory: () => null }));
+vi.mock("../../../AppLifecycle", () => ({ AppLifecycle: () => null }));
+vi.mock("../Environments", () => ({ Environments: () => null }));
+vi.mock("../Publishers", () => ({ Publishers: () => null }));
 vi.mock("../Secrets", () => ({ Secrets: () => null, SecretsBadge: () => null }));
 vi.mock("../Functions", () => ({
   Functions: ({ selected }: { selected: string | null }) => (

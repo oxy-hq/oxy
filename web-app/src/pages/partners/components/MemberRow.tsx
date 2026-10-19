@@ -42,7 +42,7 @@ export default function MemberRow({
   const isOwner = member.role === "owner";
 
   return (
-    <TableRow>
+    <TableRow data-testid={`partner-member-${member.user_id}`}>
       <TableCell className='font-medium'>{member.email}</TableCell>
       <TableCell className='text-muted-foreground'>{member.name ?? "—"}</TableCell>
       <TableCell>
@@ -61,12 +61,16 @@ export default function MemberRow({
               )
             }
           >
-            <SelectTrigger className='w-28'>
+            <SelectTrigger className='w-28' data-testid={`partner-member-role-${member.user_id}`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value='member'>Member</SelectItem>
-              <SelectItem value='admin'>Admin</SelectItem>
+              <SelectItem value='member' data-testid='partner-member-role-member'>
+                Member
+              </SelectItem>
+              <SelectItem value='admin' data-testid='partner-member-role-admin'>
+                Admin
+              </SelectItem>
             </SelectContent>
           </Select>
         )}
@@ -75,7 +79,11 @@ export default function MemberRow({
         {!isOwner && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant='ghost' size='sm'>
+              <Button
+                variant='ghost'
+                size='sm'
+                data-testid={`partner-member-remove-${member.user_id}`}
+              >
                 Remove
               </Button>
             </AlertDialogTrigger>
@@ -87,8 +95,11 @@ export default function MemberRow({
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel data-testid='partner-member-remove-cancel'>
+                  Cancel
+                </AlertDialogCancel>
                 <AlertDialogDestructiveAction
+                  data-testid='partner-member-remove-confirm'
                   onClick={() =>
                     remove.mutate(
                       { orgId, userId: member.user_id },

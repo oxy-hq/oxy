@@ -1,29 +1,27 @@
-import { CheckCircle2, ExternalLink, EyeOff, Send, Trash2, Triangle } from "lucide-react";
+import { ExternalLink, Trash2, Triangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
-import { usePublishApp, useUnpublishApp } from "@/hooks/api/customApps/useCustomApps";
 import { useDeleteApp } from "@/hooks/api/customApps/useDeleteApp";
 import { ADMIN_TONE } from "@/pages/admin/components/adminTone";
 import type { CustomApp } from "@/types/apps";
-
-function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString();
-}
+import { AppLifecycle } from "../../../AppLifecycle";
 
 /**
- * Read-then-act surface for one app. Three rows: re-sync (S3 only),
- * delete, and a pointer to the bootstrap PR if one exists.
+ * Read-then-act surface for one app: the lifecycle card, a pointer to the bootstrap
+ * PR if one exists, and delete.
  *
- * v1 is intentionally minimal — manifest_override editing, branch
- * changes, role grants etc. land in follow-ups. Today this just
- * surfaces what the existing API already supports.
+ * The Published/Draft row this used to open with — Publish / Re-publish / Unpublish
+ * against `POST|DELETE /customer-apps/{id}/publish` — is the lifecycle card now, the
+ * same one the console and the build history show, so promoting and unpublishing
+ * read and confirm the same way here as everywhere else.
+ *
+ * `lifecycle={false}` is for a host that already shows the card above this panel —
+ * the dossier does, in its "Live build & history" section — so one app never has two
+ * cards, two confirms and two copies of every `app-lifecycle-*` testid on one screen.
  */
-export const AppSettings = ({ app }: { app: CustomApp }) => {
+export const AppSettings = ({ app, lifecycle = true }: { app: CustomApp; lifecycle?: boolean }) => {
   const navigate = useNavigate();
   const { mutate: del, isPending: isDeleting } = useDeleteApp();
-  const { mutate: publish, isPending: isPublishing } = usePublishApp();
-  const { mutate: unpublish, isPending: isUnpublishing } = useUnpublishApp();
-  const isPublished = !!app.published_at;
 
   const handleDelete = () => {
     if (
@@ -41,46 +39,8 @@ export const AppSettings = ({ app }: { app: CustomApp }) => {
   };
 
   return (
-    <div className='space-y-3 p-4 pt-0'>
-      <SettingRow
-        title={isPublished ? "Published" : "Draft"}
-        description={
-          isPublished
-            ? `Live for members of org ${app.org_slug}.`
-            : "Only Oxy staff can reach this app. Publish to show it in the customer sidebar."
-        }
-        meta={app.published_at ? `Last published ${formatTimestamp(app.published_at)}` : undefined}
-        tone={isPublished ? "success" : undefined}
-        action={
-          isPublished ? (
-            <>
-              <Button
-                variant='outline'
-                size='sm'
-                disabled={isPublishing}
-                onClick={() => publish(app.id)}
-              >
-                <Send className='size-3.5' />
-                {isPublishing ? "Re-publishing…" : "Re-publish"}
-              </Button>
-              <Button
-                variant='ghost'
-                size='sm'
-                disabled={isUnpublishing}
-                onClick={() => unpublish(app.id)}
-              >
-                <EyeOff className='size-3.5' />
-                {isUnpublishing ? "Unpublishing…" : "Unpublish"}
-              </Button>
-            </>
-          ) : (
-            <Button size='sm' disabled={isPublishing} onClick={() => publish(app.id)}>
-              <CheckCircle2 className='size-3.5' />
-              {isPublishing ? "Publishing…" : "Publish"}
-            </Button>
-          )
-        }
-      />
+    <div className='space-y-3 p-4 pt-0' data-testid='admin-app-settings'>
+      {lifecycle && <AppLifecycle app={app} />}
 
       {app.bootstrap_pr_url && (
         <SettingRow
@@ -88,7 +48,12 @@ export const AppSettings = ({ app }: { app: CustomApp }) => {
           description='Merge to seed the customer-apps repo.'
           action={
             <Button variant='outline' size='sm' asChild>
-              <a href={app.bootstrap_pr_url} target='_blank' rel='noopener noreferrer'>
+              <a
+                href={app.bootstrap_pr_url}
+                target='_blank'
+                rel='noopener noreferrer'
+                data-testid='admin-app-settings-bootstrap-pr'
+              >
                 <Triangle className='size-3.5' />
                 Open PR
                 <ExternalLink className='size-3.5' />
@@ -103,7 +68,13 @@ export const AppSettings = ({ app }: { app: CustomApp }) => {
         description='Removes the app row. The bundle source stays — clean that up separately.'
         tone='destructive'
         action={
-          <Button variant='destructive' size='sm' disabled={isDeleting} onClick={handleDelete}>
+          <Button
+            variant='destructive'
+            size='sm'
+            disabled={isDeleting}
+            onClick={handleDelete}
+            data-testid='admin-app-settings-delete'
+          >
             <Trash2 className='size-3.5' />
             {isDeleting ? "Deleting…" : "Delete"}
           </Button>
@@ -117,16 +88,12 @@ const SettingRow = ({
   title,
   description,
   action,
-  tone,
-  disabledNote,
-  meta
+  tone
 }: {
   title: string;
   description: string;
   action: React.ReactNode;
   tone?: "destructive" | "success";
-  disabledNote?: string;
-  meta?: string;
 }) => {
   const toneClass =
     tone === "destructive"
@@ -145,12 +112,6 @@ const SettingRow = ({
       <div className='min-w-0'>
         <div className={`font-medium text-xs ${titleToneClass}`}>{title}</div>
         <p className='mt-1 text-muted-foreground text-xs leading-relaxed'>{description}</p>
-        {meta && (
-          <p className='mt-2 font-mono text-muted-foreground text-xs tabular-nums'>{meta}</p>
-        )}
-        {disabledNote && (
-          <p className='mt-2 font-mono text-muted-foreground text-xs'>{disabledNote}</p>
-        )}
       </div>
       <div className='mt-3 flex flex-wrap items-center gap-2'>{action}</div>
     </div>

@@ -1,15 +1,10 @@
 import { AppMark } from "@/components/apps/AppMark";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
-import { Switch } from "@/components/ui/shadcn/switch";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/shadcn/table";
-import {
-  type PartnerAppWithOrg,
-  usePartnerApps,
-  usePartnerOrgs,
-  useSetAppPublished
-} from "@/hooks/api/partners";
+import { type PartnerAppWithOrg, usePartnerApps, usePartnerOrgs } from "@/hooks/api/partners";
 import { cn } from "@/libs/shadcn/utils";
 import { AgentSkillsButton } from "@/pages/admin/AdminCustomApps/components/AgentSkills";
+import { PartnerAppLifecycle } from "@/pages/admin/AdminCustomApps/components/AppLifecycle";
 import CiInstructions from "@/pages/admin/AdminPublishTokens/components/CiInstructions";
 import {
   ADMIN_HEADER_ROW_CLASS,
@@ -66,7 +61,6 @@ export default function PartnerCustomApps() {
 function AppsSection({ partnerId }: { partnerId: string }) {
   const { data: orgs } = usePartnerOrgs(partnerId);
   const { apps, isLoading } = usePartnerApps(partnerId, orgs);
-  const setPublished = useSetAppPublished(partnerId);
 
   if (isLoading) return <Skeleton className='h-40 w-full rounded-lg' />;
 
@@ -85,13 +79,16 @@ function AppsSection({ partnerId }: { partnerId: string }) {
           <TableRow className={ADMIN_HEADER_ROW_CLASS}>
             <AdminTh>App</AdminTh>
             <AdminTh>Client</AdminTh>
-            <AdminTh>Status</AdminTh>
-            <AdminTh align='right'>Published</AdminTh>
+            <AdminTh>Lifecycle</AdminTh>
           </TableRow>
         </TableHeader>
         <TableBody>
           {apps.map((a) => (
-            <TableRow key={a.id} className={ADMIN_ROW_CLASS}>
+            <TableRow
+              key={a.id}
+              className={ADMIN_ROW_CLASS}
+              data-testid={`partner-apps-row-${a.orgSlug}-${a.slug}`}
+            >
               <TableCell>
                 <div className='flex items-center gap-2'>
                   <AppMark name={a.name} size='sm' />
@@ -107,16 +104,16 @@ function AppsSection({ partnerId }: { partnerId: string }) {
                 {a.orgName}
               </TableCell>
               <TableCell>
-                <StatusPill isLive={a.published} />
-              </TableCell>
-              <TableCell className='text-right'>
-                <Switch
-                  checked={a.published}
-                  disabled={setPublished.isPending}
-                  onCheckedChange={(v) =>
-                    setPublished.mutate({ appId: a.id, orgId: a.orgId, published: v })
-                  }
-                  aria-label={a.published ? `Unpublish ${a.name}` : `Publish ${a.name}`}
+                {/* The same lifecycle card the staff console shows, in its row form:
+                    the verdict and the one verb that applies (Publish / Unpublish),
+                    behind the same confirm. The Switch it replaces flipped the live
+                    pointer with no confirmation and no shared words. */}
+                <PartnerAppLifecycle
+                  app={a}
+                  partnerId={partnerId}
+                  orgId={a.orgId}
+                  orgSlug={a.orgSlug}
+                  variant='row'
                 />
               </TableCell>
             </TableRow>
@@ -154,16 +151,6 @@ function FleetStat({
       {led ? <StatusDot isLive={led === "live"} /> : null}
       <span className='font-semibold text-foreground text-sm tabular-nums'>{value}</span>
       <span className='text-muted-foreground'>{label}</span>
-    </span>
-  );
-}
-
-/** Status LED + word, matching the admin registry (emerald stays reserved). */
-function StatusPill({ isLive }: { isLive: boolean }) {
-  return (
-    <span className='flex items-center gap-1.5 text-xs'>
-      <StatusDot isLive={isLive} />
-      {isLive ? "Live" : "Draft"}
     </span>
   );
 }

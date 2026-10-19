@@ -37,6 +37,8 @@ describe("readAppViewState", () => {
       "issues",
       "logs",
       "activity",
+      "environments",
+      "publishers",
       "settings"
     ]) {
       expect(readAppViewState(params(`section=${section}`), published).section).toBe(section);

@@ -2,11 +2,11 @@ import { Link } from "react-router-dom";
 import { cn } from "@/libs/shadcn/utils";
 import { ADMIN_TONE } from "@/pages/admin/components/adminTone";
 import type { AppHealthRow, AppStorageUsageRow, CustomApp } from "@/types/apps";
-import { type AppStatus, STATUS_LABEL } from "../../appStatus";
+import { lifecycleVerdict } from "../../appStatus";
 import type { FleetColumn } from "../../fleetColumns";
 import { relativeTime } from "../AppDetail/components/Activity/relativeTime";
 import { AppIdentity } from "../AppIdentity";
-import { statusTone } from "../AppSwitcher";
+import { LifecycleVerdictPill } from "../AppLifecycle";
 import { formatBytes } from "../StorageTab/utils";
 import { NotFromCiBadge } from "./NotFromCiBadge";
 
@@ -26,30 +26,30 @@ import { NotFromCiBadge } from "./NotFromCiBadge";
  */
 export const FleetRow = ({
   app,
-  status,
   columns,
   health,
   storage
 }: {
   app: CustomApp;
-  status: AppStatus | null;
   columns: readonly FleetColumn[];
   health: AppHealthRow | undefined;
   storage: AppStorageUsageRow | undefined;
 }) => {
-  const tone = status === null ? "muted" : statusTone(status);
+  // The compact form of the same verdict the console header and the lifecycle card
+  // state, from the same mapping. The fleet has no per-app availability read, so this
+  // is the fleet-health answer; `null` health is "not known yet" and reads as the
+  // publish fact alone, never a borrowed verdict.
+  const verdict = lifecycleVerdict({ published: !!app.published_at, health: health?.health });
 
   const cell = (column: FleetColumn) => {
     switch (column.id) {
       case "status":
         return (
-          <span className='flex items-center gap-1.5'>
-            <span className={cn("size-1.5 shrink-0 rounded-full", ADMIN_TONE[tone].dot)} />
-            <span className={cn("truncate", ADMIN_TONE[tone].text)}>
-              {/* `null` is "not known yet" and must not borrow a verdict. */}
-              {status === null ? "Unknown" : STATUS_LABEL[status]}
-            </span>
-          </span>
+          <LifecycleVerdictPill
+            verdict={verdict}
+            compact
+            data-testid={`admin-apps-fleet-verdict-${app.org_slug}-${app.slug}`}
+          />
         );
       case "app":
         return <AppIdentity app={app} />;

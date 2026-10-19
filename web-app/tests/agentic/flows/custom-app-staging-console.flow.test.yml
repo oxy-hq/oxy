@@ -19,7 +19,7 @@
 # pass.
 #
 # Backend: `--enterprise` (cloud) with OXY_OWNER set, same as
-# admin-custom-apps-tabs — the admin console requires the enterprise code
+# admin-custom-apps-lifecycle — the admin console requires the enterprise code
 # path + server-side OXY_OWNER gating. Do NOT use `--local`.
 
 name: custom-app staging console banner

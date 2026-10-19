@@ -48,6 +48,7 @@ export const DebugPanel = ({
       <button
         type='button'
         onClick={onToggle}
+        data-testid='admin-app-debug-expand'
         className='flex items-center gap-2 border-border border-t bg-card px-3 py-1.5 text-left text-muted-foreground text-xs transition-colors hover:text-foreground'
       >
         <Activity className='h-3.5 w-3.5' />
@@ -59,7 +60,10 @@ export const DebugPanel = ({
   }
 
   return (
-    <div className='flex h-80 flex-col border-border border-t bg-card'>
+    <div
+      className='flex h-80 flex-col border-border border-t bg-card'
+      data-testid='admin-app-debug'
+    >
       <div className='flex items-center gap-2 border-border/60 border-b px-3 py-1.5'>
         <Activity className='h-3.5 w-3.5 text-muted-foreground' />
         <span className='font-medium text-xs'>Network</span>
@@ -73,6 +77,7 @@ export const DebugPanel = ({
             className='h-6 gap-1 px-2 text-muted-foreground text-xs'
             disabled={entries.length === 0}
             onClick={handleClear}
+            data-testid='admin-app-debug-clear'
           >
             <Trash2 className='h-3.5 w-3.5' />
             Clear
@@ -83,6 +88,7 @@ export const DebugPanel = ({
             className='h-6 w-6 text-muted-foreground'
             onClick={onToggle}
             aria-label='Collapse network panel'
+            data-testid='admin-app-debug-collapse'
           >
             <ChevronDown className='h-3.5 w-3.5' />
           </Button>

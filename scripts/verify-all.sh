@@ -339,7 +339,7 @@ if [ "$CLOUD_UP" = 1 ]; then
   # The admin surfaces are staff-only. Without this the pages redirect and the
   # flows time out on their first locator — indistinguishable from a real bug.
   if OXY_SESSION_TOKEN="$STOK" OXY_SESSION_USER="$SUSR" \
-     flow_run admin-airway-config admin-custom-apps-tabs \
+     flow_run admin-airway-config admin-custom-apps-lifecycle \
        admin-tenants-cockpit admin-workspace-health airway-pipeline-run \
        > "$LOG_DIR/b-cloud.log" 2>&1; then
     record "B: cloud admin flows" PASS "$(grep -oE '[0-9]+/[0-9]+ cases passed' "$LOG_DIR/b-cloud.log" | tail -1)"

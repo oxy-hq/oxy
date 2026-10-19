@@ -1,11 +1,10 @@
 import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { AppAccessBadge, AppAccessDialog } from "@/components/appAccess";
-import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
-import { Switch } from "@/components/ui/shadcn/switch";
-import { usePartnerOrgApps, useSetAppPublished } from "@/hooks/api/partners";
+import { usePartnerOrgApps } from "@/hooks/api/partners";
+import { PartnerAppLifecycle } from "@/pages/admin/AdminCustomApps/components/AppLifecycle";
 
 /**
  * The custom apps in one managed org, each with a publish toggle and an access
@@ -19,7 +18,6 @@ import { usePartnerOrgApps, useSetAppPublished } from "@/hooks/api/partners";
  */
 export default function OrgAppsPanel({ partnerId, orgId }: { partnerId: string; orgId: string }) {
   const { data: apps, isLoading, error } = usePartnerOrgApps(partnerId, orgId);
-  const setPublished = useSetAppPublished(partnerId);
   const [managing, setManaging] = useState<{ id: string; name: string } | null>(null);
 
   if (isLoading)
@@ -37,7 +35,11 @@ export default function OrgAppsPanel({ partnerId, orgId }: { partnerId: string; 
   return (
     <div className='divide-y'>
       {apps.map((a) => (
-        <div key={a.id} className='flex items-center justify-between gap-3 px-4 py-2.5'>
+        <div
+          key={a.id}
+          className='flex items-center justify-between gap-3 px-4 py-2.5'
+          data-testid={`partner-org-app-${a.slug}`}
+        >
           <div className='min-w-0'>
             <div className='truncate font-medium text-sm'>{a.name}</div>
             <div className='truncate text-muted-foreground text-xs'>{a.slug}</div>
@@ -53,19 +55,15 @@ export default function OrgAppsPanel({ partnerId, orgId }: { partnerId: string; 
               size='sm'
               className='h-6 gap-1 px-1.5 text-[11px]'
               onClick={() => setManaging({ id: a.id, name: a.name })}
+              data-testid={`partner-org-app-access-${a.slug}`}
             >
               <ShieldCheck className='size-3' aria-hidden />
               Access
             </Button>
-            <Badge variant={a.published ? "secondary" : "outline"}>
-              {a.published ? "Published" : "Unpublished"}
-            </Badge>
-            <Switch
-              checked={a.published}
-              disabled={setPublished.isPending}
-              onCheckedChange={(v) => setPublished.mutate({ appId: a.id, orgId, published: v })}
-              aria-label={a.published ? `Unpublish ${a.name}` : `Publish ${a.name}`}
-            />
+            {/* The lifecycle card in row form — the same verdict and the same
+                Publish / Unpublish confirm as the staff console and the partner
+                fleet, in place of a badge plus an unconfirmed Switch. */}
+            <PartnerAppLifecycle app={a} partnerId={partnerId} orgId={orgId} variant='row' />
           </div>
         </div>
       ))}

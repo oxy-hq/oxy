@@ -27,7 +27,7 @@ const PUBLISHED: FleetColumn[] = [{ id: "published", label: "Published" }];
 const renderRow = (a: CustomApp) =>
   render(
     <MemoryRouter>
-      <FleetRow app={a} status={null} columns={PUBLISHED} health={undefined} storage={undefined} />
+      <FleetRow app={a} columns={PUBLISHED} health={undefined} storage={undefined} />
     </MemoryRouter>
   );
 

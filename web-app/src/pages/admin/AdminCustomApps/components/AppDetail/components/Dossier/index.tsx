@@ -7,6 +7,11 @@ import {
   CollapsibleTrigger
 } from "@/components/ui/shadcn/collapsible";
 import type { CustomApp } from "@/types/apps";
+// `AppLogs`, not `Logs`: web-app/.gitignore has a bare `logs` pattern, which
+// git matches case-insensitively on macOS — a directory named `Logs/` is
+// silently untracked, `git add -A` reports nothing, and the branch builds
+// locally while CI fails on the missing import.
+import { AppLifecycle } from "../../../AppLifecycle";
 // One declaration of the section ids, in the module that also validates them
 // off the query string. Two structurally-identical copies type-check happily,
 // which is exactly how they drift.
@@ -16,16 +21,14 @@ import { usePersistentState } from "../../usePersistentState";
 import { Activity } from "../Activity";
 import { AppAccessPane } from "../AppAccessPane";
 import { AppInfo } from "../AppInfo";
-// `AppLogs`, not `Logs`: web-app/.gitignore has a bare `logs` pattern, which
-// git matches case-insensitively on macOS — a directory named `Logs/` is
-// silently untracked, `git add -A` reports nothing, and the branch builds
-// locally while CI fails on the missing import.
 import { AppLogs } from "../AppLogs";
 import { AppSettings } from "../AppSettings";
 import { Availability } from "../Availability";
 import { BuildHistory } from "../BuildHistory";
+import { Environments } from "../Environments";
 import { Functions } from "../Functions";
 import { Issues, IssuesBadge } from "../Issues";
+import { Publishers } from "../Publishers";
 import { Secrets, SecretsBadge } from "../Secrets";
 import { DockControls } from "./DockControls";
 import { isSectionOpen } from "./sectionOpen";
@@ -64,6 +67,10 @@ const DEFAULT_OPEN: Record<SectionId, boolean> = {
   // which is the second question, and it is a long panel.
   logs: false,
   activity: false,
+  // Collapsed: both are setup surfaces an operator opens on purpose, not during an
+  // incident.
+  environments: false,
+  publishers: false,
   settings: false
 };
 
@@ -201,8 +208,9 @@ export const DossierBody = ({
         <DossierSection {...section("status")} title='Status & manifest'>
           <AppInfo app={app} />
         </DossierSection>
-        <DossierSection {...section("builds")} title='Build history'>
-          <div className='p-4 pt-0'>
+        <DossierSection {...section("builds")} title='Live build & history'>
+          <div className='flex flex-col gap-3 p-4 pt-0'>
+            <AppLifecycle app={app} />
             <BuildHistory appId={app.id} />
           </div>
         </DossierSection>
@@ -239,8 +247,20 @@ export const DossierBody = ({
         <DossierSection {...section("activity")} title='Activity'>
           <Activity appId={app.id} />
         </DossierSection>
+        <DossierSection {...section("environments")} title='Environments'>
+          <div className='p-4 pt-0'>
+            <Environments appId={app.id} />
+          </div>
+        </DossierSection>
+        <DossierSection {...section("publishers")} title='Trusted publishers'>
+          <div className='p-4 pt-0'>
+            <Publishers appId={app.id} />
+          </div>
+        </DossierSection>
         <DossierSection {...section("settings")} title='Settings'>
-          <AppSettings app={app} />
+          {/* The card is in "Live build & history" above; a second copy here would
+              double every app-lifecycle-* testid on the page. */}
+          <AppSettings app={app} lifecycle={false} />
         </DossierSection>
       </div>
     </div>

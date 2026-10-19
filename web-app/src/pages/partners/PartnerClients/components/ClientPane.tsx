@@ -60,7 +60,12 @@ export default function ClientPane({
         actions={
           <>
             {caps.manage_org_settings && (
-              <Button variant='outline' size='sm' onClick={() => setRenameOpen(true)}>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => setRenameOpen(true)}
+                data-testid='partner-client-rename'
+              >
                 <Pencil className='mr-1.5 size-3.5' />
                 Rename
               </Button>
@@ -71,6 +76,7 @@ export default function ClientPane({
                 variant='outline'
                 className='border-amber-500/40 text-amber-700 dark:text-amber-400'
                 onClick={() => setAssumeOpen(true)}
+                data-testid='partner-client-act-as'
               >
                 <ShieldAlert className='mr-1.5 size-4' />
                 Act as
@@ -284,13 +290,23 @@ function RenameDialog({
         <DialogHeader>
           <DialogTitle>Rename client</DialogTitle>
         </DialogHeader>
-        <Input value={value} autoFocus onChange={(e) => setValue(e.target.value)} />
+        <Input
+          value={value}
+          autoFocus
+          onChange={(e) => setValue(e.target.value)}
+          data-testid='partner-client-rename-name'
+        />
         <p className='text-muted-foreground text-xs'>The slug stays fixed — it backs live URLs.</p>
         <DialogFooter>
-          <Button variant='ghost' onClick={() => onOpenChange(false)}>
+          <Button
+            variant='ghost'
+            onClick={() => onOpenChange(false)}
+            data-testid='partner-client-rename-cancel'
+          >
             Cancel
           </Button>
           <Button
+            data-testid='partner-client-rename-save'
             disabled={!value.trim() || update.isPending}
             onClick={() =>
               update.mutate(

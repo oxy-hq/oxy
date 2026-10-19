@@ -60,12 +60,16 @@ export default function AppTokenManager({ partnerId }: { partnerId: string }) {
               setAppId(undefined);
             }}
           >
-            <SelectTrigger className='w-52'>
+            <SelectTrigger className='w-52' data-testid='partner-tokens-client'>
               <SelectValue placeholder='Select a client…' />
             </SelectTrigger>
             <SelectContent>
               {(clients ?? []).map((c) => (
-                <SelectItem key={c.org_id} value={c.org_id}>
+                <SelectItem
+                  key={c.org_id}
+                  value={c.org_id}
+                  data-testid={`partner-tokens-client-${c.slug}`}
+                >
                   {c.name}
                 </SelectItem>
               ))}
@@ -74,7 +78,7 @@ export default function AppTokenManager({ partnerId }: { partnerId: string }) {
 
           {clientId && (
             <Select value={appId} onValueChange={setAppId}>
-              <SelectTrigger className='w-52'>
+              <SelectTrigger className='w-52' data-testid='partner-tokens-app'>
                 <SelectValue placeholder='Select an app…' />
               </SelectTrigger>
               <SelectContent>
@@ -84,7 +88,11 @@ export default function AppTokenManager({ partnerId }: { partnerId: string }) {
                   </div>
                 ) : (
                   (apps ?? []).map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
+                    <SelectItem
+                      key={a.id}
+                      value={a.id}
+                      data-testid={`partner-tokens-app-${a.slug}`}
+                    >
                       {a.name}
                     </SelectItem>
                   ))
@@ -118,6 +126,7 @@ function TokenPanel({ partnerId, appId }: { partnerId: string; appId: string }) 
         size='sm'
         disabled={create.isPending}
         onClick={() => create.mutate(undefined, { onSuccess: setCreated })}
+        data-testid='partner-tokens-create'
       >
         <Plus className='size-4' />
         Create token
@@ -142,7 +151,11 @@ function TokenPanel({ partnerId, appId }: { partnerId: string; appId: string }) 
           </TableHeader>
           <TableBody>
             {tokens.map((t) => (
-              <TableRow key={t.id} className='border-border/60'>
+              <TableRow
+                key={t.id}
+                className='border-border/60'
+                data-testid={`partner-tokens-row-${t.id}`}
+              >
                 <TableCell className='font-medium text-sm'>{t.name}</TableCell>
                 <TableCell className='font-mono text-muted-foreground text-xs'>
                   {t.token_prefix}…
@@ -156,6 +169,7 @@ function TokenPanel({ partnerId, appId }: { partnerId: string; appId: string }) 
                     size='sm'
                     disabled={revoke.isPending}
                     onClick={() => revoke.mutate(t.id)}
+                    data-testid={`partner-tokens-revoke-${t.id}`}
                   >
                     Revoke
                   </Button>
@@ -207,7 +221,13 @@ function CreatedTokenDialog({
           <code className='flex-1 overflow-x-auto rounded-md border border-border/60 bg-muted/40 px-2 py-1.5 font-mono text-xs'>
             {token?.token}
           </code>
-          <Button variant='outline' size='icon' onClick={copy} aria-label='Copy token'>
+          <Button
+            variant='outline'
+            size='icon'
+            onClick={copy}
+            aria-label='Copy token'
+            data-testid='partner-tokens-copy'
+          >
             {copied ? <Check className='size-4' /> : <Copy className='size-4' />}
           </Button>
         </div>

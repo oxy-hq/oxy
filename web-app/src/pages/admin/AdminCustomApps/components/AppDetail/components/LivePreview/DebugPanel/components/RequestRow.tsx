@@ -21,6 +21,8 @@ export const RequestRow = ({
   <button
     type='button'
     onClick={onSelect}
+    aria-pressed={selected}
+    data-testid='admin-app-debug-request'
     className={cn(
       "grid w-full items-center gap-3 px-3 py-1 text-left font-mono text-xs",
       compact ? "grid-cols-[3rem_1fr_auto]" : "grid-cols-[3.5rem_3rem_1fr_auto_auto]",

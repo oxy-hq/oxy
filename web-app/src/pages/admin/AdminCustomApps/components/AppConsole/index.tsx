@@ -1,21 +1,22 @@
 import { ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
+import { useAppLifecycle } from "@/hooks/api/customApps/useAppLifecycle";
 import { timeAgo } from "@/libs/utils/date";
-import { AdminStatusPill } from "@/pages/admin/components/AdminStatusPill";
 import type { CustomApp } from "@/types/apps";
-import { type HealthIndex, STATUS_LABEL, statusOf } from "../../appStatus";
 import { resolveBundleUrl } from "../../resolveBundleUrl";
 import { Activity } from "../AppDetail/components/Activity";
 import { AppAccessPane } from "../AppDetail/components/AppAccessPane";
 import { AppInfo } from "../AppDetail/components/AppInfo";
 import { Availability } from "../AppDetail/components/Availability";
 import { BuildHistory } from "../AppDetail/components/BuildHistory";
+import { Environments } from "../AppDetail/components/Environments";
 import { Functions } from "../AppDetail/components/Functions";
+import { Publishers } from "../AppDetail/components/Publishers";
 import { Secrets } from "../AppDetail/components/Secrets";
 import { useAppViewState } from "../AppDetail/useAppViewState";
 import { AppIdentity } from "../AppIdentity";
-import { statusTone } from "../AppSwitcher";
+import { AppLifecycle, LifecycleVerdictPill } from "../AppLifecycle";
 import { ConsolePanel } from "../ConsolePanel";
 import { AppStoragePanel } from "./AppStoragePanel";
 import { PreviewCard } from "./PreviewCard";
@@ -46,14 +47,10 @@ import { PublishCiPanel } from "./PublishCiPanel";
  * variant of nothing. They are one panel now, and the *reason* they are empty is stated
  * once by `FleetStrip` at the top of the surface rather than three more times here.
  */
-export const AppConsole = ({
-  app,
-  health
-}: {
-  app: CustomApp;
-  health: HealthIndex | undefined;
-}) => {
-  const status = statusOf(app, health);
+export const AppConsole = ({ app }: { app: CustomApp }) => {
+  // The header's verdict and the lifecycle card's are one read: same hook, same cache
+  // entries, so the pill beside the name can never disagree with the card below it.
+  const { verdict } = useAppLifecycle(app);
   // Same URL-backed binding the dossier window and the preview stage use, so `?fn=`
   // and `?section=` name the same things across all three surfaces.
   const { view, patch } = useAppViewState(app.published_at ? "published" : "draft");
@@ -69,13 +66,7 @@ export const AppConsole = ({
           <div className='flex min-w-0 flex-col gap-1.5'>
             <AppIdentity app={app} size='lg' data-testid='apps-console-identity' />
             <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-xs'>
-              {status ? (
-                <AdminStatusPill
-                  tone={statusTone(status)}
-                  label={STATUS_LABEL[status]}
-                  data-testid='apps-console-status'
-                />
-              ) : null}
+              <LifecycleVerdictPill verdict={verdict} data-testid='apps-console-status' />
               <span>
                 Published{" "}
                 {app.published_at ? (
@@ -148,7 +139,13 @@ export const AppConsole = ({
               title='Live build & history'
               question='Q2 / Q3 — what is deployed, ship or roll back'
             >
-              <BuildHistory appId={app.id} />
+              {/* The card answers both questions and owns every verb — promote, roll
+                  back, unpublish. The history below it is the list those verbs choose
+                  from, and nothing on it acts. */}
+              <div className='flex flex-col gap-3'>
+                <AppLifecycle app={app} />
+                <BuildHistory appId={app.id} />
+              </div>
             </ConsolePanel>
 
             <ConsolePanel id='access' title='Access' question='Q4 — who can open this app'>
@@ -178,6 +175,26 @@ export const AppConsole = ({
             <AppStoragePanel app={app} />
 
             <PublishCiPanel app={app} />
+
+            {/* Two backends that had no UI: the OIDC workflows allowed to publish
+                (the other half of Q6, beside the CI how-to above it), and the app's
+                environments — the dev sandboxes `oxyc` creates, which until now could
+                be seen and torn down only from the CLI. */}
+            <ConsolePanel
+              id='publishers'
+              title='Trusted publishers'
+              question='Q6 — who may publish'
+            >
+              <Publishers appId={app.id} />
+            </ConsolePanel>
+
+            <ConsolePanel
+              id='environments'
+              title='Environments'
+              question='Q2 — production, staging, sandboxes'
+            >
+              <Environments appId={app.id} />
+            </ConsolePanel>
 
             <ConsolePanel id='identity' title='Identity & manifest'>
               <AppInfo app={app} />

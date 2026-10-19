@@ -1,4 +1,5 @@
-import type { AppHealth, CustomApp } from "@/types/apps";
+import type { AdminTone } from "@/pages/admin/components/adminTone";
+import type { AppAvailability, AppHealth, CustomApp } from "@/types/apps";
 
 /**
  * What one custom app's state *is*, for every surface that has to say it.
@@ -82,6 +83,131 @@ export const STATUS_LABEL: Record<AppStatus, string> = {
   operational: "Operational",
   draft: "Draft"
 };
+
+/**
+ * A status's tone. `draft` and `quiet` are deliberately `muted` rather than `ok`: neither
+ * is a verdict that the app is working, and a green pill beside an app nobody has
+ * measured or visited is the kind of false comfort this whole surface is being rebuilt
+ * to stop giving.
+ */
+export const STATUS_TONE: Record<AppStatus, AdminTone> = {
+  down: "danger",
+  degraded: "warn",
+  not_measured: "warn",
+  quiet: "muted",
+  operational: "ok",
+  draft: "muted"
+};
+
+export const statusTone = (s: AppStatus): AdminTone => STATUS_TONE[s];
+
+// ── One verdict, four sources ───────────────────────────────────────────────
+
+/**
+ * The one answer to "is this app OK?", for every surface that states it: the console
+ * header, the lifecycle card, the fleet row, the partner rows and the admin home's
+ * findings.
+ *
+ * Four sources feed it and they do not share a vocabulary — which is why, before this,
+ * the product had five: `AppHealth` (down / degraded / not_measured / quiet /
+ * operational), `AvailabilityVerdict` (no_opinion / healthy / burning), the partner's
+ * live/draft, `AppStatus`'s `draft`, and the admin home's healthy/degraded/down/stale.
+ * None of the wire types change here; the mapping below is purely client-side, and
+ * `status` keeps the `AppStatus` vocabulary so `byAttention` / `statusRank` keep
+ * ordering the fleet on it.
+ *
+ * ## The mapping
+ *
+ * | published | fleet health | availability     | verdict                        |
+ * | --------- | ------------ | ---------------- | ------------------------------ |
+ * | no        | (ignored)    | (ignored)        | `draft` · muted · "Draft"      |
+ * | yes       | down         | any              | `down` · danger · "Down"       |
+ * | yes       | degraded     | any              | `degraded` · warn · "Degraded" |
+ * | yes       | not_measured | burning (page)   | `down` · danger · "Burning"    |
+ * | yes       | not_measured | burning (ticket) | `degraded` · warn · "Degraded" |
+ * | yes       | not_measured | else / unknown   | `not_measured` · warn          |
+ * | yes       | quiet        | burning          | as burning above               |
+ * | yes       | quiet        | else / unknown   | `quiet` · muted · "Quiet"      |
+ * | yes       | operational  | burning          | as burning above               |
+ * | yes       | operational  | else / unknown   | `operational` · ok             |
+ * | yes       | unknown      | burning (page)   | `down` · danger · "Burning"    |
+ * | yes       | unknown      | burning (ticket) | `degraded` · warn · "Degraded" |
+ * | yes       | unknown      | healthy          | `operational` · ok · "Serving" |
+ * | yes       | unknown      | no_opinion       | `quiet` · muted · "No data"    |
+ * | yes       | unknown      | unknown          | `null` · muted · "Published"   |
+ *
+ * Three rules make the table, and each is one of this surface's standing commitments:
+ *
+ * - **Worse wins.** Availability can only *escalate* a fleet verdict (`burning` over
+ *   anything), never soften one — a healthy success ratio over the last hour does not
+ *   cancel a fleet row saying the build is missing.
+ * - **No reading is never healthy.** `no_opinion` survives as "No data", `quiet` stays
+ *   muted, and an app with neither source answering reads as what it is — published —
+ *   not as operational. `null` status keeps it between the verdicts and the drafts in
+ *   `statusRank`, exactly where `statusOf` already put the unknown.
+ * - **A draft serves nobody**, so nothing measured about it is a verdict on it.
+ *
+ * `source` names which input decided, so a surface can say "fleet health" or "last
+ * hour's traffic" beside the label when that matters.
+ */
+export interface LifecycleVerdict {
+  /** In the `AppStatus` vocabulary the fleet ranks on; `null` when nothing answered. */
+  status: AppStatus | null;
+  tone: AdminTone;
+  label: string;
+  source: "draft" | "fleet" | "availability" | "none";
+}
+
+export interface LifecycleVerdictInput {
+  published: boolean;
+  /** The fleet-health row's verdict; `undefined`/`null` when the fleet has not answered. */
+  health?: AppHealth | null;
+  /** The per-app availability read; `undefined`/`null` when unconfigured (501) or failed. */
+  availability?: Pick<AppAvailability, "verdict" | "severity"> | null;
+}
+
+function burningVerdict(
+  availability: Pick<AppAvailability, "verdict" | "severity">
+): LifecycleVerdict | null {
+  if (availability.verdict !== "burning") return null;
+  return availability.severity === "page"
+    ? { status: "down", tone: "danger", label: "Burning", source: "availability" }
+    : { status: "degraded", tone: "warn", label: "Degraded", source: "availability" };
+}
+
+export function lifecycleVerdict({
+  published,
+  health,
+  availability
+}: LifecycleVerdictInput): LifecycleVerdict {
+  if (!published) return { status: "draft", tone: "muted", label: "Draft", source: "draft" };
+
+  const burning = availability ? burningVerdict(availability) : null;
+
+  if (health) {
+    // `down` and `degraded` are already the worst the fleet can say; a burn verdict on
+    // top changes nothing an operator would do differently.
+    if (health === "down" || health === "degraded" || !burning) {
+      return {
+        status: health,
+        tone: STATUS_TONE[health],
+        label: STATUS_LABEL[health],
+        source: "fleet"
+      };
+    }
+    return burning;
+  }
+
+  if (availability) {
+    if (burning) return burning;
+    if (availability.verdict === "healthy") {
+      return { status: "operational", tone: "ok", label: "Serving", source: "availability" };
+    }
+    return { status: "quiet", tone: "muted", label: "No data", source: "availability" };
+  }
+
+  return { status: null, tone: "muted", label: "Published", source: "none" };
+}
 
 /**
  * Worst-first ordering over a fleet. This is what lets `/admin/apps` open on the app

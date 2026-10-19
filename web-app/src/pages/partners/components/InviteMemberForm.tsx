@@ -46,17 +46,26 @@ export default function InviteMemberForm({
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         className='max-w-xs'
+        data-testid='partner-invite-email'
       />
       <Select value={role} onValueChange={setRole}>
-        <SelectTrigger className='w-32'>
+        <SelectTrigger className='w-32' data-testid='partner-invite-role'>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value='member'>Member</SelectItem>
-          <SelectItem value='admin'>Admin</SelectItem>
+          <SelectItem value='member' data-testid='partner-invite-role-member'>
+            Member
+          </SelectItem>
+          <SelectItem value='admin' data-testid='partner-invite-role-admin'>
+            Admin
+          </SelectItem>
         </SelectContent>
       </Select>
-      <Button onClick={submit} disabled={invite.isPending || !email.trim()}>
+      <Button
+        onClick={submit}
+        disabled={invite.isPending || !email.trim()}
+        data-testid='partner-invite-submit'
+      >
         Invite
       </Button>
     </div>

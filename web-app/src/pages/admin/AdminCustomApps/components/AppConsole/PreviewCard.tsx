@@ -79,7 +79,7 @@ export const PreviewCard = ({ app, servedAt }: { app: CustomApp; servedAt: strin
       <ul className='flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-xs'>
         {[
           ["Device sizes", Smartphone],
-          ["Draft channel", GitBranch],
+          ["Staging view", GitBranch],
           ["Request log", Activity]
         ].map(([label, Icon]) => (
           <li key={label as string} className='flex items-center gap-1.5'>

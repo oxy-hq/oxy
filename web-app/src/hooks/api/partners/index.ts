@@ -103,6 +103,7 @@ export const usePartnerOrgApps = (
 export type PartnerAppWithOrg = Awaited<ReturnType<typeof PartnersService.orgApps>>[number] & {
   orgId: string;
   orgName: string;
+  orgSlug: string;
 };
 
 /**
@@ -121,7 +122,12 @@ export const usePartnerApps = (partnerId: string | undefined, orgs: ChildOrg[] |
     }))
   });
   const apps: PartnerAppWithOrg[] = results.flatMap((r, i) =>
-    (r.data ?? []).map((a) => ({ ...a, orgId: list[i].org_id, orgName: list[i].name }))
+    (r.data ?? []).map((a) => ({
+      ...a,
+      orgId: list[i].org_id,
+      orgName: list[i].name,
+      orgSlug: list[i].slug
+    }))
   );
   return {
     apps,
