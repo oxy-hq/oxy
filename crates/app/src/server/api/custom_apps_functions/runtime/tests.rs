@@ -191,6 +191,14 @@ struct MockHost {
     /// When set, `ctx.platform.facts` fails with this message instead of
     /// echoing its options back.
     platform_facts_error: Option<String>,
+    /// What the manifest grants; `None` grants everything, so the ops
+    /// above are reached. A test of the broker's gate sets a narrower one.
+    caps: Option<FunctionCapabilities>,
+    /// The environment policy; `None` is production.
+    policy: Option<EnvPolicy>,
+    /// Every `(op, "plane namespace verb table")` the broker held before
+    /// dispatch, in order.
+    held: std::sync::Mutex<Vec<(HostOp, String)>>,
 }
 
 impl MockHost {
@@ -240,6 +248,25 @@ impl MockHost {
 
 #[async_trait::async_trait]
 impl FunctionHost for MockHost {
+    fn capabilities(&self) -> &FunctionCapabilities {
+        static EVERYTHING: std::sync::LazyLock<FunctionCapabilities> =
+            std::sync::LazyLock::new(FunctionCapabilities::granting_everything);
+        self.caps.as_ref().unwrap_or(&EVERYTHING)
+    }
+    fn env_policy(&self) -> &EnvPolicy {
+        static PRODUCTION: std::sync::LazyLock<EnvPolicy> =
+            std::sync::LazyLock::new(EnvPolicy::production);
+        self.policy.as_ref().unwrap_or(&PRODUCTION)
+    }
+    fn decides_by_environment(&self) -> bool {
+        self.policy.as_ref().is_some_and(|p| !p.is_production())
+    }
+    async fn record_held(&self, op: HostOp, (plane, namespace, verb, table): HeldTarget<'_>) {
+        self.held
+            .lock()
+            .unwrap()
+            .push((op, format!("{plane} {namespace} {verb} {table}")));
+    }
     async fn query(&self, _sql: String) -> Result<serde_json::Value, String> {
         let calls_before = self
             .query_calls
@@ -563,6 +590,108 @@ async fn isolate_sees_camel_case_identity_and_the_legacy_org_id_alias() {
     assert_eq!(parsed["orgRole"], "member");
     assert_eq!(parsed["team"], "Finance");
     assert_eq!(parsed["kind"], "user");
+}
+
+// ── The broker's gates: capability, environment, registry ───────────────
+
+/// A handler that makes one call and answers what it threw, or what it got.
+fn attempt(call: &str) -> String {
+    format!(
+        "export default async (req, ctx) => {{
+            try {{ return Response.json({{ ok: await {call} }}); }}
+            catch (e) {{ return Response.json({{ error: String(e.message || e) }}); }}
+        }};"
+    )
+}
+
+/// A manifest that grants nothing refuses a gated op with the host's own
+/// words before the call is dispatched: the mock's `send_email` records
+/// nothing, and the refusal is noted as a failure the way any other
+/// `not_allowed` is.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_broker_refuses_an_ungranted_capability_before_the_host() {
+    let host = Arc::new(MockHost {
+        caps: Some(FunctionCapabilities::default()),
+        ..Default::default()
+    });
+    let resp = run_on(
+        &attempt(r#"ctx.email.send({ to: "a@b.com", subject: "s", text: "t" })"#),
+        test_ctx(),
+        host.clone(),
+    )
+    .await
+    .unwrap();
+    let body: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+    let error = body["error"].as_str().unwrap_or_default();
+    assert!(
+        error.starts_with("ctx.email.send: EmailCapabilityMissing: this function has not declared"),
+        "{error}"
+    );
+    assert!(
+        host.last_email.lock().unwrap().is_none(),
+        "never dispatched"
+    );
+    assert_eq!(host.host_call_failures(), [("email.send", "not_allowed")]);
+}
+
+/// Outside production the broker decides every op that holds by not running:
+/// a refused one is answered in the policy's words and noted in the held
+/// log under its plane and the identifiers it named; an isolated one goes
+/// on to the host, which routes it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_broker_holds_and_refuses_by_the_environment_before_the_host() {
+    use oxy_app_core::custom_app_environment::AppEnvironment;
+    let host = Arc::new(MockHost {
+        policy: Some(EnvPolicy::for_environment(AppEnvironment::Staging)),
+        ..Default::default()
+    });
+    let resp = run_on(
+        &attempt(r#"ctx.airway.run("orders_sync")"#),
+        test_ctx(),
+        host.clone(),
+    )
+    .await
+    .unwrap();
+    let body: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+    let error = body["error"].as_str().unwrap_or_default();
+    assert!(
+        error.contains("EnvironmentRefused: ctx.airway.run is refused in the staging environment"),
+        "{error}"
+    );
+    assert_eq!(
+        host.held.lock().unwrap().clone(),
+        [(HostOp::AirwayRun, "airway orders_sync RUN ".to_string())]
+    );
+    // Refused by the policy, not failed: nothing to page.
+    assert!(host.host_call_failures().is_empty());
+
+    // An isolated op is the host's to route: `secrets.set` reaches the mock,
+    // whose answer is its own.
+    let resp = run_on(
+        &attempt(r#"ctx.secrets.set("K", "v")"#),
+        test_ctx(),
+        host.clone(),
+    )
+    .await
+    .unwrap();
+    let body: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+    assert_eq!(body["error"], "ctx.secrets.set: unused");
+    assert_eq!(host.held.lock().unwrap().len(), 1, "nothing more held");
+}
+
+/// A sub-op with no registry row never reaches the host: the mock's
+/// `storage` answers `unused`, and this is not that.
+#[tokio::test]
+async fn an_op_missing_from_the_registry_is_refused_by_the_broker() {
+    let host: Arc<dyn FunctionHost> = Arc::new(MockHost::default());
+    let (reply, _rx) = tokio::sync::oneshot::channel();
+    let call = HostCall::Storage {
+        op: "rename".into(),
+        payload: serde_json::json!({ "key": "a" }),
+        reply,
+    };
+    let (_reply, result) = dispatch_host_call(call, host).await;
+    assert_eq!(result, Err("ctx.storage: unknown op 'rename'".to_string()));
 }
 
 /// Run `artifact` against a fresh `MockHost` and hand back both, so a test

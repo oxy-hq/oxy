@@ -97,44 +97,14 @@ pub(super) fn host_capability_fields(host: &str) -> Vec<String> {
     fields
 }
 
-/// The `check_storage_capability` arms: which `ctx.storage` op needs
-/// `storage.read`, which `storage.write`. Parsed from lines shaped
-/// `"a" | "b" => (needs_read, needs_write),`.
-pub(super) fn host_storage_arms(host: &str) -> (BTreeSet<String>, BTreeSet<String>) {
-    let mut read = BTreeSet::new();
-    let mut write = BTreeSet::new();
-    let mut in_fn = false;
-    for line in host.lines() {
-        if line.starts_with("fn check_storage_capability(") {
-            in_fn = true;
-            continue;
-        }
-        if !in_fn {
-            continue;
-        }
-        if line.starts_with("other =>") {
-            break;
-        }
-        let Some((ops, needs)) = line.split_once("=> (") else {
-            continue;
-        };
-        let needs: Vec<&str> = needs
-            .trim_end_matches([')', ','])
-            .split(',')
-            .map(str::trim)
-            .collect();
-        let needs_read = needs.first() == Some(&"true");
-        let needs_write = needs.get(1) == Some(&"true");
-        for op in quoted(ops) {
-            if needs_read {
-                read.insert(format!("storage.{op}"));
-            }
-            if needs_write {
-                write.insert(format!("storage.{op}"));
-            }
-        }
-    }
-    (read, write)
+/// The ops the host refuses while the `FunctionCapabilities` field `field`
+/// is not granted — read off the host-op registry, which is what the broker
+/// enforces (`env_policy::HostOp::gated_by`).
+pub(super) fn host_ops_gated_by(field: &str) -> BTreeSet<String> {
+    super::env_policy::HostOp::gated_by(field)
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 /// One entry of `GATED_CAPABILITIES` as the text scan sees it.
@@ -223,14 +193,15 @@ fn the_cli_map_names_exactly_the_gates_host_rs_has() {
 }
 
 #[test]
-fn the_cli_storage_ops_match_check_storage_capability() {
-    let host = strip_comments(HOST_RS);
+fn the_cli_storage_ops_match_the_registry() {
     let ts = strip_comments(CLI_CAPABILITIES_TS);
-    let (read, write) = host_storage_arms(&host);
+    let (read, write) = (
+        host_ops_gated_by("storage_read"),
+        host_ops_gated_by("storage_write"),
+    );
     assert!(
         read.len() >= 4 && write.len() >= 3,
-        "parsed too few arms from `check_storage_capability` (read {read:?}, write {write:?}) — \
-         the text scan likely broke; fix it rather than weakening the guard"
+        "the registry gates too few storage ops (read {read:?}, write {write:?})"
     );
 
     let entries = cli_entries(&ts);
@@ -244,15 +215,38 @@ fn the_cli_storage_ops_match_check_storage_capability() {
     assert_eq!(
         ops_of("storage_read"),
         read,
-        "the `ctx.storage` ops `oxyc` gates on `storage.read` differ from \
-         `check_storage_capability`'s read arms"
+        "the `ctx.storage` ops `oxyc` gates on `storage.read` differ from the registry's"
     );
     assert_eq!(
         ops_of("storage_write"),
         write,
-        "the `ctx.storage` ops `oxyc` gates on `storage.write` differ from \
-         `check_storage_capability`'s write arms"
+        "the `ctx.storage` ops `oxyc` gates on `storage.write` differ from the registry's"
     );
+}
+
+/// The registry's gate fields are the struct's gate fields: a `Capability`
+/// naming a field the struct lacks, or a struct gate no row reads, fails.
+#[test]
+fn the_registry_gates_are_the_struct_fields() {
+    use super::env_policy::{Capability, HostOp};
+    let host = strip_comments(HOST_RS);
+    let gates: BTreeSet<String> = host_capability_fields(&host)
+        .into_iter()
+        .filter(|f| !NOT_GATES.contains(&f.as_str()))
+        .collect();
+    let registry: BTreeSet<String> = HostOp::ALL
+        .iter()
+        .filter_map(|op| op.spec().capability.host_field())
+        .map(str::to_string)
+        .collect();
+    assert_eq!(
+        registry, gates,
+        "registry capabilities vs `FunctionCapabilities` gates"
+    );
+    // `storage.copy` answers to both storage fields and names neither.
+    assert_eq!(Capability::StorageReadAndWrite.host_field(), None);
+    assert!(HostOp::gated_by("storage_read").contains(&"storage.copy"));
+    assert!(HostOp::gated_by("storage_write").contains(&"storage.copy"));
 }
 
 #[test]

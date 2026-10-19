@@ -28,12 +28,25 @@ pub const UNAVAILABLE: &str = "PlatformFactsUnavailable: could not read platform
 /// (`host_call_attrs::CALLER_ERROR_LABELS`) and it never pages.
 pub const BAD_WEEKS: &str = "PlatformFactsBadRequest: `weeks` must be a number";
 
+/// What a function without the `platform.facts` capability sees: the first
+/// of the two gates, asked by the broker from the op's registry row
+/// (`FunctionCapabilities::refuse`).
+pub const CAPABILITY_MISSING: &str = "PlatformCapabilityMissing: this function has not declared the `platform.facts` \
+     capability (add \"platform\": { \"facts\": true } to its oxy-app.json entry)";
+
 /// The gates against this deployment's internal orgs ([`platform_facts_gate`]),
 /// and on a pass the list itself, which the build takes as its staff.
 pub fn admit(granted: bool, org_id: Uuid) -> Result<&'static [Uuid], String> {
     let internal = internal_orgs::internal_orgs();
     platform_facts_gate(granted, org_id, internal)?;
     Ok(internal)
+}
+
+/// The second gate alone — the host's op asks it once the broker has asked
+/// the first: `org_id` among the deployment's internal orgs, and on a pass
+/// the list itself.
+pub fn admit_org(org_id: Uuid) -> Result<&'static [Uuid], String> {
+    admit(true, org_id)
 }
 
 /// The two fail-closed gates in front of `ctx.platform.facts()`, in order:
@@ -45,11 +58,7 @@ pub fn admit(granted: bool, org_id: Uuid) -> Result<&'static [Uuid], String> {
 /// "not enabled here" by them.
 pub fn platform_facts_gate(granted: bool, org_id: Uuid, internal: &[Uuid]) -> Result<(), String> {
     if !granted {
-        return Err(
-            "PlatformCapabilityMissing: this function has not declared the `platform.facts` \
-             capability (add \"platform\": { \"facts\": true } to its oxy-app.json entry)"
-                .to_string(),
-        );
+        return Err(CAPABILITY_MISSING.to_string());
     }
     if !facts_enabled_for(org_id, internal) {
         return Err(format!(

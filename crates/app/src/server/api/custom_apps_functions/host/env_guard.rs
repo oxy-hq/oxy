@@ -10,7 +10,10 @@
 //!
 //! How each kind of op holds:
 //!
-//! - a pure write is not sent ([`ProjectFunctionHost::admit_op`]);
+//! - an op that holds by not running (`HoldBy::Broker`) is refused by the
+//!   broker before it is dispatched (`runtime::host_call`), which notes it
+//!   here through `FunctionHost::record_held`; a host-decided op with the
+//!   same mechanism asks [`ProjectFunctionHost::admit_op`];
 //! - `ctx.fetch` sends a read method with no body, and a PUT to an upload URL
 //!   this invocation minted into its environment's silo (`uploads`); it
 //!   answers anything else 409, like `oxyc proxy`;
@@ -31,9 +34,7 @@ use std::sync::atomic::Ordering;
 use super::super::env_policy::{self, Decision, HostOp, Target};
 use super::*;
 
-/// The identifiers a held call is logged under — never values, like every
-/// write audit row: `(plane, namespace, verb, table)`.
-pub(super) type HeldTarget<'a> = (&'static str, &'a str, &'a str, &'a str);
+pub(super) use super::super::env_policy::HeldTarget;
 
 impl ProjectFunctionHost {
     /// `Ok` when `op` may run as asked. Otherwise the call is noted in the
@@ -81,12 +82,10 @@ impl ProjectFunctionHost {
     }
 
     /// What a held `op` throws: the environment's hold, or a preview's when a
-    /// production run reads a branch.
+    /// production run reads a branch — the policy's words, the same the
+    /// broker uses for an op it holds itself.
     pub(super) fn held_error(&self, op: HostOp) -> String {
-        match self.policy.branch_reason() {
-            Some(reason) => env_policy::branch_held_message(op, &reason),
-            None => env_policy::held_message(op, self.policy.environment()),
-        }
+        self.policy.held_error(op)
     }
 
     /// [`Self::admit_op`] for a run found reading a branch; `reason` says how

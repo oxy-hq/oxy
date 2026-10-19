@@ -27,8 +27,10 @@
 
 use std::collections::BTreeSet;
 
+use super::env_policy::HostOp;
+
 use super::cli_capabilities_drift::{
-    NOT_GATES, cli_entries, host_capability_fields, host_storage_arms, quoted, strip_comments,
+    NOT_GATES, cli_entries, host_capability_fields, host_ops_gated_by, quoted, strip_comments,
 };
 
 const CONTRACT_TS: &str =
@@ -301,17 +303,15 @@ fn fn_body(raw: &str, start: &str) -> String {
 #[test]
 fn the_sdk_host_op_union_is_the_hosts_closed_list() {
     let ts = strip_comments(CONTRACT_TS);
-    let rs = strip_comments(source("host_call_attrs.rs"));
     let sdk: BTreeSet<String> = quoted(&block(&ts, "export const HOST_OPS", "] as const;"))
         .into_iter()
         .collect();
-    let host: BTreeSet<String> = quoted(&block(&rs, "pub const HOST_OPS", "];"))
-        .into_iter()
-        .collect();
+    // The registry is the host's list; no scan of a Rust source for it.
+    let host: BTreeSet<String> = HostOp::ALL.iter().map(|op| op.name().to_string()).collect();
     assert!(
-        host.len() >= 30,
-        "parsed only {} names from HOST_OPS — the scan broke",
-        host.len()
+        sdk.len() >= 30,
+        "parsed only {} names from the SDK's HOST_OPS — the scan broke",
+        sdk.len()
     );
     let missing: Vec<_> = host.difference(&sdk).collect();
     let extra: Vec<_> = sdk.difference(&host).collect();
@@ -437,26 +437,17 @@ fn the_sdk_gates_name_exactly_the_gates_host_rs_has() {
         );
     }
 
-    let (read, write) = host_storage_arms(&host);
-    let ops_of = |field: &str| -> BTreeSet<String> {
-        entries
-            .iter()
-            .find(|e| e.host_field == field)
-            .map(|e| e.ops.iter().cloned().collect())
-            .unwrap_or_default()
-    };
-    assert_eq!(
-        ops_of("storage_read"),
-        read,
-        "the `storage.*` ops the SDK gates on `storage.read` differ from \
-         `check_storage_capability`'s read arms"
-    );
-    assert_eq!(
-        ops_of("storage_write"),
-        write,
-        "the `storage.*` ops the SDK gates on `storage.write` differ from \
-         `check_storage_capability`'s write arms"
-    );
+    // Every gate's ops, not only storage's: the SDK context refuses exactly
+    // the ops the broker refuses for that field, by the registry.
+    for entry in &entries {
+        let sdk: BTreeSet<String> = entry.ops.iter().cloned().collect();
+        assert_eq!(
+            sdk,
+            host_ops_gated_by(&entry.host_field),
+            "the ops the SDK gates on `{}` differ from the registry's",
+            entry.host_field
+        );
+    }
 }
 
 #[test]

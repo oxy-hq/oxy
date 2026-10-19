@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use entity::organizations;
 use oxy_app::server::api::custom_apps_functions::InvocationIdentity;
+use oxy_app::server::api::custom_apps_functions::env_policy::HostOp;
 use oxy_app::server::api::custom_apps_functions::host::platform_facts::{
     UNAVAILABLE, admit, build_platform_facts, cached_reply, load_reply,
 };
@@ -135,7 +136,13 @@ async fn in_staging_the_host_refuses_by_its_gates_and_serves_the_staff_org() {
         refused.starts_with("PlatformFactsNotEnabled: "),
         "{refused}"
     );
-    let undeclared = call(w.staff_org, false).await.unwrap_err();
+    // The capability gate is the broker's, asked before the op is
+    // dispatched (`runtime::host_call`); a direct call on the host bypasses
+    // it, so it is asked the way the broker asks it.
+    let undeclared = staging_host(&w.db, ws.ctx(), w.staff_org, false)
+        .capabilities()
+        .refuse(HostOp::PlatformFacts)
+        .unwrap_err();
     assert!(
         undeclared.starts_with("PlatformCapabilityMissing: "),
         "{undeclared}"

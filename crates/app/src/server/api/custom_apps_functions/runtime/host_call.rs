@@ -2,89 +2,195 @@
 //! channel ([`HostCall`]), the span it runs under, and how it is dispatched to
 //! the [`FunctionHost`] and recorded. Engine-neutral — nothing here knows
 //! which JS engine sent the call.
+//!
+//! Every call resolves to a row of the host-op registry
+//! (`env_policy::HostOp::spec`) before anything runs: its family is the
+//! `HostCall` variant, its sub-op the string the isolate named. A call with
+//! no row is refused as unknown and never reaches the host, so a host method
+//! only ever sees an op the registry knows.
 
-use tokio::sync::oneshot;
-
+use super::super::env_policy::{Decision, Family, HeldTarget, HoldBy, HostOp, Verb};
 use super::FunctionHost;
+use super::ops::HostReply;
 
 /// A request the isolate sends to the broker loop.
 pub(super) enum HostCall {
     Query {
         sql: String,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     QueryStream {
         sql: String,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     Fetch {
         url: String,
         init: serde_json::Value,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     SemanticQuery {
         spec: serde_json::Value,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     AirwayRun {
         pipeline_ref: String,
         variables: serde_json::Value,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     WarehouseWrite {
         op: String,
         payload: serde_json::Value,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     SecretsSet {
         key: String,
         value: String,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     SendEmail {
         input: serde_json::Value,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     Notify {
         input: serde_json::Value,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     Storage {
         op: String,
         payload: serde_json::Value,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     /// `ctx.org.people()` — no arguments; the org is the host's, never the
     /// function's.
     OrgPeople {
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     OrgPlaces {
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     OrgAssignments {
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     /// `ctx.platform.facts(opts)` — `opts` names a span, never an org.
     PlatformFacts {
         opts: serde_json::Value,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     Tx {
         op: String,
         payload: serde_json::Value,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     Oltp {
         op: String,
         payload: serde_json::Value,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
     Airhouse {
         op: String,
         payload: serde_json::Value,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: HostReply,
     },
+}
+
+impl HostCall {
+    /// The registry family this call arrives on: one per variant.
+    pub(super) fn family(&self) -> Family {
+        match self {
+            HostCall::Query { .. } => Family::Query,
+            HostCall::QueryStream { .. } => Family::QueryStream,
+            HostCall::Fetch { .. } => Family::Fetch,
+            HostCall::SemanticQuery { .. } => Family::Semantic,
+            HostCall::AirwayRun { .. } => Family::Airway,
+            HostCall::WarehouseWrite { .. } => Family::Warehouse,
+            HostCall::SecretsSet { .. } => Family::Secrets,
+            HostCall::SendEmail { .. } => Family::Email,
+            HostCall::Notify { .. } => Family::Notify,
+            HostCall::Storage { .. } => Family::Storage,
+            HostCall::OrgPeople { .. }
+            | HostCall::OrgPlaces { .. }
+            | HostCall::OrgAssignments { .. } => Family::Org,
+            HostCall::PlatformFacts { .. } => Family::Platform,
+            HostCall::Tx { .. } => Family::Tx,
+            HostCall::Oltp { .. } => Family::Oltp,
+            HostCall::Airhouse { .. } => Family::Airhouse,
+        }
+    }
+
+    /// The member after the family in the op's name: the isolate's string
+    /// for a family with sub-ops, the fixed member for a dotted single op
+    /// (`semantic.query`, `org.people`), `None` for a bare name (`query`,
+    /// `fetch`, `notify`).
+    pub(super) fn sub_op(&self) -> Option<&str> {
+        match self {
+            HostCall::WarehouseWrite { op, .. }
+            | HostCall::Storage { op, .. }
+            | HostCall::Tx { op, .. }
+            | HostCall::Oltp { op, .. }
+            | HostCall::Airhouse { op, .. } => Some(op),
+            HostCall::SemanticQuery { .. } => Some("query"),
+            HostCall::AirwayRun { .. } => Some("run"),
+            HostCall::SecretsSet { .. } => Some("set"),
+            HostCall::SendEmail { .. } => Some("send"),
+            HostCall::OrgPeople { .. } => Some("people"),
+            HostCall::OrgPlaces { .. } => Some("places"),
+            HostCall::OrgAssignments { .. } => Some("assignments"),
+            HostCall::PlatformFacts { .. } => Some("facts"),
+            HostCall::Query { .. }
+            | HostCall::QueryStream { .. }
+            | HostCall::Fetch { .. }
+            | HostCall::Notify { .. } => None,
+        }
+    }
+
+    /// The registry op this call is, or `None` for a sub-op off the list.
+    pub(super) fn op(&self) -> Option<HostOp> {
+        HostOp::of(self.family(), self.sub_op())
+    }
+
+    /// What a broker-held call is logged under beside its op's plane and
+    /// verb (`HoldBy::Broker`): the namespace and table the call names, as
+    /// identifiers only — a pipeline, a database, a secret's name when it is
+    /// one. Never a value.
+    fn held_subject(&self) -> (&str, &str) {
+        use super::super::host_call_attrs::identifier_like;
+        match self {
+            HostCall::AirwayRun { pipeline_ref, .. } => (pipeline_ref, ""),
+            HostCall::WarehouseWrite { payload, .. } => (
+                payload
+                    .get("database")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default(),
+                "",
+            ),
+            HostCall::SecretsSet { key, .. } if identifier_like(key) => ("", key),
+            HostCall::PlatformFacts { .. } => ("facts", ""),
+            _ => ("", ""),
+        }
+    }
+
+    /// The call's reply channel, for answering without dispatching it.
+    fn into_reply(self) -> HostReply {
+        match self {
+            HostCall::Query { reply, .. }
+            | HostCall::QueryStream { reply, .. }
+            | HostCall::Fetch { reply, .. }
+            | HostCall::SemanticQuery { reply, .. }
+            | HostCall::AirwayRun { reply, .. }
+            | HostCall::WarehouseWrite { reply, .. }
+            | HostCall::SecretsSet { reply, .. }
+            | HostCall::SendEmail { reply, .. }
+            | HostCall::Notify { reply, .. }
+            | HostCall::Storage { reply, .. }
+            | HostCall::OrgPeople { reply }
+            | HostCall::OrgPlaces { reply }
+            | HostCall::OrgAssignments { reply }
+            | HostCall::PlatformFacts { reply, .. }
+            | HostCall::Tx { reply, .. }
+            | HostCall::Oltp { reply, .. }
+            | HostCall::Airhouse { reply, .. } => reply,
+        }
+    }
 }
 
 /// Which reply shape [`record_host_call_outcome`] should read.
@@ -135,233 +241,48 @@ pub(super) fn host_call_target(call: &HostCall) -> Option<String> {
     }
 }
 
-/// The span one host op runs under. Named and attributed on the OpenTelemetry
-/// semantic conventions where one exists (`db.query`,
-/// `http.client.request`), `oxy.*` otherwise — see `host_call_attrs` for
-/// what is deliberately *not* recorded. Also the fixed op name a failure of
-/// this call pages under (`host_call_attrs::host_op_name`).
+/// The span one host op runs under (`host_call_span::span_for`), the reply
+/// shape to read, and the fixed op name a failure of this call pages under:
+/// the registry's name, or `<family>.other` for a sub-op off the list
+/// (`Family::other_name`).
 pub(super) fn host_call_span(call: &HostCall) -> (tracing::Span, HostCallKind, &'static str) {
-    use super::super::host_call_attrs::{
-        HOST_CALL_TARGET, db_query_summary, fetch_target, host_op_name,
+    let family = call.family();
+    let kind = match family {
+        Family::Query | Family::QueryStream => HostCallKind::Query,
+        Family::Fetch => HostCallKind::Fetch,
+        _ => HostCallKind::Other,
     };
-    use tracing::field::Empty;
-    match call {
-        HostCall::Query { sql, .. } | HostCall::QueryStream { sql, .. } => {
-            let s = db_query_summary(sql);
-            let streaming = matches!(call, HostCall::QueryStream { .. });
-            let op = if streaming { "query_stream" } else { "query" };
-            let span = tracing::info_span!(target: HOST_CALL_TARGET,
-                "db.query",
-                db.operation.name = %s.verb,
-                db.collection.name = %s.table,
-                oxy.op = op,
-                db.response.returned_rows = Empty,
-                oxy.truncated = Empty,
-                otel.status_code = Empty,
-                error.type = Empty,
-            );
-            (span, HostCallKind::Query, op)
-        }
-        HostCall::Fetch { url, init, .. } => {
-            let t = fetch_target(url);
-            let method = init
-                .get("method")
-                .and_then(|m| m.as_str())
-                .map(str::to_ascii_uppercase)
-                .unwrap_or_else(|| "GET".to_string());
-            let span = tracing::info_span!(target: HOST_CALL_TARGET,
-                "http.client.request",
-                otel.kind = "client",
-                http.request.method = %method,
-                url.scheme = %t.scheme,
-                server.address = %t.host,
-                server.port = t.port,
-                http.response.status_code = Empty,
-                otel.status_code = Empty,
-                error.type = Empty,
-            );
-            (span, HostCallKind::Fetch, "fetch")
-        }
-        HostCall::SemanticQuery { spec, .. } => {
-            let measures = spec
-                .get("measures")
-                .and_then(|m| m.as_array())
-                .map(|m| m.len());
-            let span = tracing::info_span!(target: HOST_CALL_TARGET,
-                "oxy.semantic.query",
-                oxy.semantic.measures = measures,
-                otel.status_code = Empty,
-                error.type = Empty,
-            );
-            (span, HostCallKind::Other, "semantic.query")
-        }
-        HostCall::AirwayRun { pipeline_ref, .. } => (
-            tracing::info_span!(target: HOST_CALL_TARGET,
-                "oxy.airway.run",
-                oxy.airway.pipeline = %pipeline_ref,
-                otel.status_code = Empty,
-                error.type = Empty,
-            ),
-            HostCallKind::Other,
-            "airway.run",
-        ),
-        HostCall::WarehouseWrite { op, .. } => {
-            let span = tracing::info_span!(target: HOST_CALL_TARGET,
-                "db.query",
-                db.system = "airhouse",
-                db.operation.name = %op,
-                db.namespace = Empty,
-                db.query.summary = Empty,
-                db.collection.name = Empty,
-                otel.status_code = Empty,
-                error.type = Empty,
-            );
-            (span, HostCallKind::Other, host_op_name("warehouse", op))
-        }
-        HostCall::Tx { op, .. } => {
-            let span = tracing::info_span!(target: HOST_CALL_TARGET,
-                "db.transaction",
-                db.operation.name = %op,
-                db.namespace = Empty,
-                db.query.summary = Empty,
-                db.collection.name = Empty,
-                otel.status_code = Empty,
-                error.type = Empty,
-            );
-            (span, HostCallKind::Other, host_op_name("tx", op))
-        }
-        HostCall::Airhouse { op, .. } => {
-            let span = tracing::info_span!(target: HOST_CALL_TARGET,
-                "db.query",
-                db.system = "airhouse",
-                db.operation.name = %op,
-                db.namespace = Empty,
-                db.query.summary = Empty,
-                db.collection.name = Empty,
-                otel.status_code = Empty,
-                error.type = Empty,
-            );
-            (span, HostCallKind::Other, host_op_name("airhouse", op))
-        }
-        HostCall::Oltp { op, .. } => {
-            let span = tracing::info_span!(target: HOST_CALL_TARGET,
-                "db.query",
-                db.system = "postgres",
-                db.operation.name = %op,
-                // `db.namespace` / `db.query.summary` / `db.collection.name`
-                // are recorded by the host once it has resolved the schema
-                // and summarised the SQL (`host::record_db_span`), so the
-                // statement is not summarised twice.
-                db.namespace = Empty,
-                db.query.summary = Empty,
-                db.collection.name = Empty,
-                otel.status_code = Empty,
-                error.type = Empty,
-            );
-            (span, HostCallKind::Other, host_op_name("oltp", op))
-        }
-        HostCall::SecretsSet { key, .. } => (
-            tracing::info_span!(target: HOST_CALL_TARGET,
-                "oxy.secrets.set",
-                oxy.secret.name = %key,
-                otel.status_code = Empty,
-                error.type = Empty,
-            ),
-            HostCallKind::Other,
-            "secrets.set",
-        ),
-        HostCall::SendEmail { input, .. } => {
-            let recipients = match input.get("to") {
-                Some(serde_json::Value::Array(a)) => a.len(),
-                Some(serde_json::Value::String(_)) => 1,
-                _ => 0,
-            };
-            (
-                tracing::info_span!(target: HOST_CALL_TARGET,
-                    "oxy.email.send",
-                    oxy.email.recipients = recipients,
-                    otel.status_code = Empty,
-                    error.type = Empty,
-                ),
-                HostCallKind::Other,
-                "email.send",
-            )
-        }
-        HostCall::Notify { input, .. } => {
-            let targets = match input.get("to") {
-                Some(serde_json::Value::Array(a)) => a.len(),
-                Some(serde_json::Value::Object(_)) => 1,
-                _ => 0,
-            };
-            (
-                tracing::info_span!(target: HOST_CALL_TARGET,
-                    "oxy.notify",
-                    oxy.notify.targets = targets,
-                    otel.status_code = Empty,
-                    error.type = Empty,
-                ),
-                HostCallKind::Other,
-                "notify",
-            )
-        }
-        HostCall::Storage { op, .. } => (
-            tracing::info_span!(target: HOST_CALL_TARGET,
-                "oxy.storage",
-                oxy.storage.op = %op,
-                otel.status_code = Empty,
-                error.type = Empty,
-            ),
-            HostCallKind::Other,
-            host_op_name("storage", op),
-        ),
-        HostCall::OrgPeople { .. } => (
-            tracing::info_span!(target: HOST_CALL_TARGET,
-                "oxy.org.people",
-                otel.status_code = Empty,
-                error.type = Empty,
-            ),
-            HostCallKind::Other,
-            "org.people",
-        ),
-        HostCall::OrgPlaces { .. } => (
-            tracing::info_span!(target: HOST_CALL_TARGET,
-                "oxy.org.places",
-                otel.status_code = Empty,
-                error.type = Empty,
-            ),
-            HostCallKind::Other,
-            "org.places",
-        ),
-        HostCall::OrgAssignments { .. } => (
-            tracing::info_span!(target: HOST_CALL_TARGET,
-                "oxy.org.assignments",
-                otel.status_code = Empty,
-                error.type = Empty,
-            ),
-            HostCallKind::Other,
-            "org.assignments",
-        ),
-        HostCall::PlatformFacts { .. } => (
-            tracing::info_span!(target: HOST_CALL_TARGET,
-                "oxy.platform.facts",
-                otel.status_code = Empty,
-                error.type = Empty,
-            ),
-            HostCallKind::Other,
-            "platform.facts",
-        ),
-    }
+    let name = match call.op() {
+        Some(op) => op.name(),
+        None => family.other_name(),
+    };
+    (super::host_call_span::span_for(call), kind, name)
 }
 
 /// Run one host op and hand back the reply channel with its result, so the
 /// caller can record the outcome on the current span before answering.
+///
+/// The registry's gates run here, before any implementation, in the order
+/// production refuses: a call whose sub-op has no row is unknown; one whose
+/// capability the manifest lacks is refused in the host's words; one the
+/// environment holds or refuses by not running is answered held or refused
+/// and noted in the held-write log. None of these reaches the host.
 pub(super) async fn dispatch_host_call(
     call: HostCall,
     host: std::sync::Arc<dyn FunctionHost>,
-) -> (
-    oneshot::Sender<Result<serde_json::Value, String>>,
-    Result<serde_json::Value, String>,
-) {
+) -> (HostReply, Result<serde_json::Value, String>) {
+    let Some(op) = call.op() else {
+        let message = call
+            .family()
+            .unknown_op_message(call.sub_op().unwrap_or_default());
+        return (call.into_reply(), Err(message));
+    };
+    if let Err(refusal) = host.capabilities().refuse(op) {
+        return (call.into_reply(), Err(refusal));
+    }
+    if let Err(refusal) = admit_by_environment(&call, op, host.as_ref()).await {
+        return (call.into_reply(), Err(refusal));
+    }
     match call {
         HostCall::Query { sql, reply } => (reply, host.query(sql).await),
         HostCall::QueryStream { sql, reply } => (reply, host.query_stream(sql).await),
@@ -372,26 +293,74 @@ pub(super) async fn dispatch_host_call(
             variables,
             reply,
         } => (reply, host.airway_run(pipeline_ref, variables).await),
-        HostCall::WarehouseWrite { op, payload, reply } => {
-            let result = if op == "query" {
+        HostCall::WarehouseWrite {
+            op: _,
+            payload,
+            reply,
+        } => {
+            let result = if op == HostOp::WarehouseQuery {
                 host.warehouse_query(payload).await
             } else {
-                host.warehouse_write(op, payload).await
+                host.warehouse_write(sub_op_name(op), payload).await
             };
             (reply, result)
         }
-        HostCall::Tx { op, payload, reply } => (reply, host.tx(op, payload).await),
-        HostCall::Oltp { op, payload, reply } => (reply, host.oltp(op, payload).await),
-        HostCall::Airhouse { op, payload, reply } => (reply, host.airhouse(op, payload).await),
+        HostCall::Tx { payload, reply, .. } => (reply, host.tx(sub_op_name(op), payload).await),
+        HostCall::Oltp { payload, reply, .. } => (reply, host.oltp(sub_op_name(op), payload).await),
+        HostCall::Airhouse { payload, reply, .. } => {
+            (reply, host.airhouse(sub_op_name(op), payload).await)
+        }
         HostCall::SecretsSet { key, value, reply } => (reply, host.secrets_set(key, value).await),
         HostCall::SendEmail { input, reply } => (reply, host.send_email(input).await),
         HostCall::Notify { input, reply } => (reply, host.notify(input).await),
-        HostCall::Storage { op, payload, reply } => (reply, host.storage(op, payload).await),
+        HostCall::Storage { payload, reply, .. } => {
+            (reply, host.storage(sub_op_name(op), payload).await)
+        }
         HostCall::OrgPeople { reply } => (reply, host.org_people().await),
         HostCall::OrgPlaces { reply } => (reply, host.org_places().await),
         HostCall::OrgAssignments { reply } => (reply, host.org_assignments().await),
         HostCall::PlatformFacts { opts, reply } => (reply, host.platform_facts(opts).await),
     }
+}
+
+/// The sub-op a family's host method takes, as the registry spells it —
+/// the isolate's string, now known to be on the list.
+fn sub_op_name(op: HostOp) -> String {
+    op.sub_name().unwrap_or_default().to_string()
+}
+
+/// The environment's decision for an op that holds by not running
+/// (`HoldBy::Broker`): `Allow` and `Isolate` go on to the host, which routes
+/// an isolated op to its home; `Hold` and `Refuse` are noted in the
+/// held-write log under the row's plane and verb and answered with the
+/// policy's own words — a preview's where a production run reads a branch.
+/// An op that holds by a mechanism of its own (`HoldBy::Host`) is the
+/// host's to decide, and passes.
+async fn admit_by_environment(
+    call: &HostCall,
+    op: HostOp,
+    host: &dyn FunctionHost,
+) -> Result<(), String> {
+    let HoldBy::Broker { plane, verb } = op.spec().holds else {
+        return Ok(());
+    };
+    let policy = host.env_policy();
+    let fix = match policy.decide(op) {
+        Decision::Allow | Decision::Isolate(_) => return Ok(()),
+        Decision::Hold => None,
+        Decision::Refuse { fix } => Some(fix),
+    };
+    let (namespace, table) = call.held_subject();
+    let verb = match verb {
+        Verb::Fixed(verb) => verb,
+        Verb::SubOp => call.sub_op().unwrap_or_default(),
+    };
+    let target: HeldTarget<'_> = (plane, namespace, verb, table);
+    host.record_held(op, target).await;
+    Err(match fix {
+        Some(fix) => policy.refusal(op, fix),
+        None => policy.held_error(op),
+    })
 }
 
 /// Record how a host op ended on the current span: an `error.type` facet on
@@ -434,5 +403,114 @@ pub(super) fn record_host_call_outcome(
             }
             HostCallKind::Other => {}
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::oneshot;
+
+    use super::*;
+
+    /// A call of each op, with the arguments its span reads.
+    fn sample(op: HostOp) -> HostCall {
+        let (reply, _rx) = oneshot::channel();
+        let sub = op.sub_name().unwrap_or_default().to_string();
+        let payload = serde_json::json!({});
+        match op.family() {
+            Family::Query => HostCall::Query {
+                sql: "select 1".into(),
+                reply,
+            },
+            Family::QueryStream => HostCall::QueryStream {
+                sql: "select 1".into(),
+                reply,
+            },
+            Family::Fetch => HostCall::Fetch {
+                url: "https://x.example".into(),
+                init: payload,
+                reply,
+            },
+            Family::Semantic => HostCall::SemanticQuery {
+                spec: payload,
+                reply,
+            },
+            Family::Airway => HostCall::AirwayRun {
+                pipeline_ref: "p".into(),
+                variables: payload,
+                reply,
+            },
+            Family::Warehouse => HostCall::WarehouseWrite {
+                op: sub,
+                payload,
+                reply,
+            },
+            Family::Tx => HostCall::Tx {
+                op: sub,
+                payload,
+                reply,
+            },
+            Family::Oltp => HostCall::Oltp {
+                op: sub,
+                payload,
+                reply,
+            },
+            Family::Airhouse => HostCall::Airhouse {
+                op: sub,
+                payload,
+                reply,
+            },
+            Family::Storage => HostCall::Storage {
+                op: sub,
+                payload,
+                reply,
+            },
+            Family::Secrets => HostCall::SecretsSet {
+                key: "K".into(),
+                value: "v".into(),
+                reply,
+            },
+            Family::Email => HostCall::SendEmail {
+                input: payload,
+                reply,
+            },
+            Family::Notify => HostCall::Notify {
+                input: payload,
+                reply,
+            },
+            Family::Org => match op {
+                HostOp::OrgPeople => HostCall::OrgPeople { reply },
+                HostOp::OrgPlaces => HostCall::OrgPlaces { reply },
+                _ => HostCall::OrgAssignments { reply },
+            },
+            Family::Platform => HostCall::PlatformFacts {
+                opts: payload,
+                reply,
+            },
+        }
+    }
+
+    /// Every registry op arrives as one call, and the broker names it by the
+    /// registry — so `HOST_OPS` is what `host_call_span` returns, and nothing
+    /// is named by a literal here.
+    #[test]
+    fn every_registry_op_is_one_call_named_by_the_registry() {
+        for op in HostOp::ALL {
+            let call = sample(*op);
+            assert_eq!(call.op(), Some(*op), "{op:?}");
+            assert_eq!(host_call_span(&call).2, op.name());
+        }
+    }
+
+    #[test]
+    fn a_sub_op_off_the_list_pages_under_other_and_never_reaches_the_host() {
+        let (reply, _rx) = oneshot::channel();
+        let call = HostCall::Storage {
+            op: "rename".into(),
+            payload: serde_json::json!({}),
+            reply,
+        };
+        assert_eq!(call.op(), None);
+        assert_eq!(host_call_span(&call).2, "storage.other");
     }
 }

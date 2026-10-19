@@ -96,7 +96,7 @@ impl ProjectFunctionHost {
     /// connection is the policy's OLTP home: production's, or the org's
     /// staging branch, which the handle then records it opened into.
     async fn begin_oltp_tx(&self) -> Result<serde_json::Value, String> {
-        let writer_name = self.oltp_writer()?;
+        let writer_name = self.oltp_writer(HostOp::TxBeginOltp)?;
         let schema = self.caps.oltp.schema().unwrap_or_default();
         self.refuse_unready_sandbox(HostOp::TxBeginOltp, &schema, "BEGIN")
             .await?;

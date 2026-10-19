@@ -418,92 +418,18 @@ pub(super) fn counts_toward_paging(kind: &str) -> bool {
     )
 }
 
-/// Every fixed name a host op pages under: what [`host_op_name`] returns for
-/// the families with sub-ops, and the literal `runtime::host_call_span` hands
-/// back for each op with one. The unit tests below pin the list to both
-/// sources, so a new host op cannot be named without appearing here.
+/// Every fixed name a host op pages under: the `name` column of the host-op
+/// registry (`env_policy::HostOp`), in registry order, and so the one list
+/// `runtime::host_call_span` names an op from — a family's sub-op resolved
+/// by `HostOp::of`, one off the list paged as `<family>.other`
+/// (`Family::other_name`), never as the string the isolate sent. A new op
+/// cannot be named without a row.
 ///
 /// This is the list `tests/custom_apps/canary_coverage.rs` reads: every name
 /// on it is exercised by a step of the platform canary
 /// (`customer-apps/examples/platform-canary`) or exempted there with a reason.
 /// A name added here without either fails that test.
-pub const HOST_OPS: &[&str] = &[
-    "query",
-    "query_stream",
-    "fetch",
-    "semantic.query",
-    "airway.run",
-    "warehouse.insert",
-    "warehouse.exec",
-    "warehouse.upsert",
-    "warehouse.query",
-    "tx.begin",
-    "tx.begin_oltp",
-    "tx.query",
-    "tx.exec",
-    "tx.commit",
-    "tx.rollback",
-    "oltp.query",
-    "oltp.exec",
-    "airhouse.query",
-    "airhouse.exec",
-    "airhouse.append",
-    "storage.getUploadUrl",
-    "storage.getDownloadUrl",
-    "storage.put",
-    "storage.get",
-    "storage.head",
-    "storage.list",
-    "storage.delete",
-    "storage.copy",
-    "secrets.set",
-    "email.send",
-    "notify",
-    "org.people",
-    "org.places",
-    "org.assignments",
-    "platform.facts",
-];
-
-/// The fixed name a host op pages under: its family and sub-op from a closed
-/// list, e.g. `warehouse.insert`. The sub-op string arrives from the isolate,
-/// so one off the list is `<family>.other`, never the string itself — a page
-/// fingerprint is shared across apps and carries nothing an app chose.
-/// Every name returned here other than `other` / `<family>.other` is in
-/// [`HOST_OPS`].
-pub(super) fn host_op_name(family: &str, op: &str) -> &'static str {
-    match (family, op) {
-        ("warehouse", "insert") => "warehouse.insert",
-        ("warehouse", "exec") => "warehouse.exec",
-        ("warehouse", "upsert") => "warehouse.upsert",
-        ("warehouse", "query") => "warehouse.query",
-        ("warehouse", _) => "warehouse.other",
-        ("tx", "begin") => "tx.begin",
-        ("tx", "begin_oltp") => "tx.begin_oltp",
-        ("tx", "query") => "tx.query",
-        ("tx", "exec") => "tx.exec",
-        ("tx", "commit") => "tx.commit",
-        ("tx", "rollback") => "tx.rollback",
-        ("tx", _) => "tx.other",
-        ("oltp", "query") => "oltp.query",
-        ("oltp", "exec") => "oltp.exec",
-        ("oltp", _) => "oltp.other",
-        ("airhouse", "query") => "airhouse.query",
-        ("airhouse", "exec") => "airhouse.exec",
-        ("airhouse", "append") => "airhouse.append",
-        ("airhouse", _) => "airhouse.other",
-        ("storage", "getUploadUrl") => "storage.getUploadUrl",
-        ("storage", "getDownloadUrl") => "storage.getDownloadUrl",
-        ("storage", "put") => "storage.put",
-        ("storage", "get") => "storage.get",
-        ("storage", "head") => "storage.head",
-        ("storage", "list") => "storage.list",
-        ("storage", "delete") => "storage.delete",
-        ("storage", "copy") => "storage.copy",
-        ("storage", _) => "storage.other",
-        _ => "other",
-    }
-}
+pub const HOST_OPS: &[&str] = super::env_policy::HostOp::NAMES;
 
 /// Row count and truncation flag from a `ctx.query` reply, when the reply
 /// has the `{ rows: [...], truncated: bool }` shape.
@@ -741,33 +667,6 @@ mod tests {
     }
 
     #[test]
-    fn a_host_op_name_comes_from_a_closed_list() {
-        assert_eq!(host_op_name("warehouse", "insert"), "warehouse.insert");
-        assert_eq!(host_op_name("storage", "head"), "storage.head");
-        // The sub-op comes from the isolate: off the list, it is not echoed.
-        assert_eq!(
-            host_op_name("warehouse", "select * from secrets"),
-            "warehouse.other"
-        );
-        assert_eq!(host_op_name("nope", "insert"), "other");
-    }
-
-    #[test]
-    fn the_airhouse_and_oltp_tx_ops_page_under_their_own_names() {
-        for (family, op, name) in [
-            ("airhouse", "query", "airhouse.query"),
-            ("airhouse", "exec", "airhouse.exec"),
-            ("airhouse", "append", "airhouse.append"),
-            // `ctx.oltp.tx` opens through the `ctx.tx` op; its later verbs
-            // share the `tx.*` names with `ctx.tx(database, fn)`.
-            ("tx", "begin_oltp", "tx.begin_oltp"),
-        ] {
-            assert_eq!(host_op_name(family, op), name, "{family} {op}");
-        }
-        assert_eq!(host_op_name("airhouse", "drop"), "airhouse.other");
-    }
-
-    #[test]
     fn reply_shapes_are_read_defensively() {
         let v = serde_json::json!({ "rows": [1, 2, 3], "truncated": true });
         assert_eq!(rows_and_truncated(&v), (Some(3), Some(true)));
@@ -987,185 +886,6 @@ mod tests {
             && label.chars().filter(|c| c.is_ascii_uppercase()).count() >= 2
             && label.chars().any(|c| c.is_ascii_lowercase());
         camel.then_some(label)
-    }
-
-    // ── HOST_OPS is pinned to its two sources ──────────────────────────────
-    //
-    // `host_op_name` (this file) names the ops of the families with sub-ops;
-    // `runtime::host_call_span` names the rest with one literal each. Both are
-    // read from source here, so a name added to either without `HOST_OPS`, or
-    // to `HOST_OPS` without a source, fails.
-    //
-    // The scanning helpers below are a smaller copy of
-    // `tests/common/source_scan.rs`: a `src` unit test cannot reach an
-    // integration binary's `common` module.
-
-    /// The `{ … }` body of `fn <name>(` in `src`, braces counted outside
-    /// string literals, `//` comment lines dropped. Enough for the two
-    /// functions read here.
-    fn fn_body(src: &str, name: &str) -> String {
-        let at = src
-            .find(&format!("fn {name}("))
-            .unwrap_or_else(|| panic!("`fn {name}` not found"));
-        let code: String = src[at..]
-            .lines()
-            .filter(|line| !line.trim_start().starts_with("//"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let open = code.find('{').expect("a function body");
-        let (mut depth, mut in_str, mut prev) = (0usize, false, '\0');
-        for (i, c) in code[open..].char_indices() {
-            match c {
-                '"' if prev != '\\' => in_str = !in_str,
-                '{' if !in_str => depth += 1,
-                '}' if !in_str => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return code[open..open + i + 1].to_string();
-                    }
-                }
-                _ => {}
-            }
-            prev = c;
-        }
-        panic!("unbalanced braces in `fn {name}`")
-    }
-
-    /// The contents of the string literal `s` opens with, if it opens with one.
-    fn quoted(s: &str) -> Option<String> {
-        s.strip_prefix('"')?
-            .split_once('"')
-            .map(|(inner, _)| inner.to_string())
-    }
-
-    /// Every `"…"` in `s`, in order (no escapes expected).
-    fn string_literals(s: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        let mut rest = s;
-        while let Some(at) = rest.find('"') {
-            match quoted(&rest[at..]) {
-                Some(inner) => {
-                    rest = &rest[at + inner.len() + 2..];
-                    out.push(inner);
-                }
-                None => break,
-            }
-        }
-        out
-    }
-
-    /// Each arm of `host_op_name` as `(family, op, name)`; `op` is `None` for a
-    /// family's `_` arm. The bare `_ => "other"` arm is not an op and is skipped.
-    fn host_op_name_arms() -> Vec<(String, Option<String>, String)> {
-        fn_body(include_str!("host_call_attrs.rs"), "host_op_name")
-            .lines()
-            .filter_map(|line| {
-                let (lhs, rhs) = line.trim().split_once("=>")?;
-                let name = quoted(rhs.trim())?;
-                let (family, op) = lhs
-                    .trim()
-                    .trim_start_matches('(')
-                    .trim_end_matches(')')
-                    .split_once(',')?;
-                Some((quoted(family.trim())?, quoted(op.trim()), name))
-            })
-            .collect()
-    }
-
-    /// The families `host_op_name` owns: those with a `(family, _)` arm.
-    fn host_op_name_families() -> BTreeSet<String> {
-        host_op_name_arms()
-            .into_iter()
-            .filter(|(_, op, _)| op.is_none())
-            .map(|(family, _, _)| family)
-            .collect()
-    }
-
-    /// The names `host_call_span` hands back itself: the literal after
-    /// `HostCallKind::<kind>,` in an arm, and both in the query arm's
-    /// `let op = if streaming { … } else { … };`.
-    fn host_call_span_literals(body: &str) -> BTreeSet<String> {
-        let mut names = BTreeSet::new();
-        for (at, marker) in body.match_indices("HostCallKind::") {
-            let rest = &body[at + marker.len()..];
-            let rest = rest.trim_start_matches(|c: char| c.is_alphanumeric());
-            if let Some(name) = rest.strip_prefix(',').and_then(|r| quoted(r.trim_start())) {
-                names.insert(name);
-            }
-        }
-        let at = body
-            .find("let op = ")
-            .expect("the query arm's `let op = …;`");
-        let end = body[at..].find(';').map_or(body.len(), |e| at + e);
-        names.extend(string_literals(&body[at..end]));
-        names
-    }
-
-    #[test]
-    fn host_ops_is_every_name_host_op_name_returns_and_nothing_else() {
-        let arms = host_op_name_arms();
-        assert!(
-            arms.len() > 20,
-            "the arm scan found only {} arms",
-            arms.len()
-        );
-        let families = host_op_name_families();
-        let mut named = BTreeSet::new();
-        for (family, op, name) in &arms {
-            match op {
-                Some(op) => {
-                    assert_eq!(host_op_name(family, op), name, "arm ({family}, {op})");
-                    assert!(
-                        HOST_OPS.contains(&name.as_str()),
-                        "`host_op_name` returns `{name}`, which HOST_OPS lacks"
-                    );
-                    named.insert(name.clone());
-                }
-                None => assert!(
-                    name.ends_with("other"),
-                    "the `_` arm of `{family}` names `{name}`, not `{family}.other`"
-                ),
-            }
-        }
-        for name in HOST_OPS {
-            if let Some((family, _)) = name.split_once('.') {
-                if families.contains(family) {
-                    assert!(
-                        named.contains(*name),
-                        "HOST_OPS names `{name}`, which no `host_op_name` arm returns"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn host_ops_is_every_name_host_call_span_returns_and_nothing_else() {
-        let body = fn_body(include_str!("runtime/host_call.rs"), "host_call_span");
-        let literals = host_call_span_literals(&body);
-        assert!(
-            literals.len() >= 5,
-            "the literal scan found only {literals:?}"
-        );
-        for name in &literals {
-            assert!(
-                HOST_OPS.contains(&name.as_str()),
-                "`host_call_span` names `{name}`, which HOST_OPS lacks"
-            );
-        }
-        let families = host_op_name_families();
-        for name in HOST_OPS {
-            match name.split_once('.') {
-                Some((family, _)) if families.contains(family) => assert!(
-                    body.contains(&format!("host_op_name(\"{family}\"")),
-                    "`host_call_span` no longer names the `{family}` family through `host_op_name`"
-                ),
-                _ => assert!(
-                    literals.contains(*name),
-                    "HOST_OPS names `{name}`, which `host_call_span` never returns"
-                ),
-            }
-        }
     }
 
     /// `HostOp` (the enum `EnvPolicy::decide` matches on) and `HOST_OPS` (the

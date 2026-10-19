@@ -37,7 +37,8 @@ mod queries;
 mod serve;
 
 pub use serve::{
-    BAD_WEEKS, UNAVAILABLE, admit, cached_reply, load_reply, platform_facts_gate, requested_weeks,
+    BAD_WEEKS, CAPABILITY_MISSING, UNAVAILABLE, admit, admit_org, cached_reply, load_reply,
+    platform_facts_gate, requested_weeks,
 };
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Utc};

@@ -1,10 +1,13 @@
 //! **What a function may do in the environment it runs in** — one decision per
 //! host op (`internal-docs/2026-09-10-custom-app-environments-design.md` §4.1).
 //!
-//! [`EnvPolicy::decide`] is one exhaustive `match` over [`HostOp`], and every
-//! sub-op is its own variant. So a host op added later does not compile until
-//! someone decides what it does outside production — the posture Tay's hold
-//! layer had at runtime (an unclassified op was held), moved to compile time.
+//! [`EnvPolicy::decide`] reads one row per [`HostOp`] from the host-op
+//! registry (`registry`), and every sub-op is its own row. So a host op added
+//! later does not compile until its row states what it does outside
+//! production — the posture Tay's hold layer had at runtime (an unclassified
+//! op was held), moved to compile time. The broker enforces the row's
+//! capability, and the decision of every op that holds by not running,
+//! before the op's implementation runs (`runtime::host_call`).
 //!
 //! **Production is `Allow` for everything**, and a production host behaves
 //! exactly as it did before this module existed: every host op asks, and the
@@ -115,82 +118,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use uuid::Uuid;
 
-/// Declares [`HostOp`], its closed list [`HostOp::ALL`] and its wire name in
-/// one place, so the list cannot miss a variant.
-macro_rules! host_ops {
-    ($( $(#[$doc:meta])* $variant:ident = $name:literal, )*) => {
-        /// Every operation a function can ask the host for, one variant per
-        /// entry of `host_call_attrs::HOST_OPS` (a unit test pins the two
-        /// together, in order), sub-ops included.
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-        pub enum HostOp {
-            $( $(#[$doc])* $variant, )*
-        }
+/// The registry — one row per op, read by the policy below and by the broker
+/// (`runtime::host_call`), which enforces each row's capability and, for an
+/// op that holds by not running, its environment decision.
+mod op_kinds;
+mod registry;
+pub use op_kinds::{Capability, Family, HoldBy, HostOpSpec, Staged, Verb};
+pub use registry::{AIRWAY_FIX, HostOp};
 
-        impl HostOp {
-            /// Every variant, in `HOST_OPS` order.
-            pub const ALL: &'static [HostOp] = &[ $( HostOp::$variant, )* ];
-
-            /// The fixed name the op pages under (`HOST_OPS`).
-            pub const fn name(self) -> &'static str {
-                match self {
-                    $( HostOp::$variant => $name, )*
-                }
-            }
-        }
-    };
-}
-
-host_ops! {
-    Query = "query",
-    QueryStream = "query_stream",
-    Fetch = "fetch",
-    SemanticQuery = "semantic.query",
-    AirwayRun = "airway.run",
-    WarehouseInsert = "warehouse.insert",
-    WarehouseExec = "warehouse.exec",
-    WarehouseUpsert = "warehouse.upsert",
-    WarehouseQuery = "warehouse.query",
-    TxBegin = "tx.begin",
-    TxBeginOltp = "tx.begin_oltp",
-    TxQuery = "tx.query",
-    TxExec = "tx.exec",
-    TxCommit = "tx.commit",
-    TxRollback = "tx.rollback",
-    OltpQuery = "oltp.query",
-    OltpExec = "oltp.exec",
-    AirhouseQuery = "airhouse.query",
-    AirhouseExec = "airhouse.exec",
-    AirhouseAppend = "airhouse.append",
-    StorageGetUploadUrl = "storage.getUploadUrl",
-    StorageGetDownloadUrl = "storage.getDownloadUrl",
-    StoragePut = "storage.put",
-    StorageGet = "storage.get",
-    StorageHead = "storage.head",
-    StorageList = "storage.list",
-    StorageDelete = "storage.delete",
-    StorageCopy = "storage.copy",
-    SecretsSet = "secrets.set",
-    EmailSend = "email.send",
-    Notify = "notify",
-    OrgPeople = "org.people",
-    OrgPlaces = "org.places",
-    OrgAssignments = "org.assignments",
-    PlatformFacts = "platform.facts",
-}
-
-impl HostOp {
-    /// The op named `name`, or `None` for a name off the list.
-    pub fn from_name(name: &str) -> Option<HostOp> {
-        HostOp::ALL.iter().copied().find(|op| op.name() == name)
-    }
-
-    /// The sub-op `op` of `family` (`"warehouse"`, `"insert"`), or `None` for
-    /// one off the list — which the host then refuses as an unknown op.
-    pub fn sub_op(family: &str, op: &str) -> Option<HostOp> {
-        HostOp::from_name(&format!("{family}.{op}"))
-    }
-}
+/// The identifiers a held call is logged under — never values, like every
+/// write audit row: `(plane, namespace, verb, table)`.
+pub type HeldTarget<'a> = (&'static str, &'a str, &'a str, &'a str);
 
 /// Where an isolated non-production op lands instead of production. A
 /// variant exists only once its home does. Phase 4 adds the OLTP staging
@@ -273,10 +211,6 @@ pub struct EnvPolicy {
     /// a staging admission finds the org's branch.
     oltp: OltpHome,
 }
-
-/// `Refuse` fix for `ctx.airway.run` outside production.
-const AIRWAY_FIX: &str = "an Airway run belongs to the project, not to an app environment, so \
-     any run writes production. Trigger the pipeline from production instead";
 
 /// `Refuse` fix for `ctx.airway.run` in a production-admitted run that reads a
 /// branch (previews S9, I9).
@@ -400,52 +334,36 @@ fn production_on_branch(op: HostOp) -> Decision {
 }
 
 /// Staging and every sandbox — one table for every non-production
-/// environment: production data read, a write with an isolated home performed
-/// there (the app's OLTP store on the org's staging branch when it has one),
-/// every other write held, Airway refused. The table names *which kind* of
-/// home; *whose* is the environment's (`homes`: its own silo, secret path and
-/// Airhouse sibling). A new [`HostOp`] fails to compile here until it is
-/// placed.
+/// environment, read from the registry (`registry::HostOp::spec`):
+/// production data read, a write with an isolated home performed there (the
+/// app's OLTP store on the org's staging branch when it has one), every
+/// other write held, Airway refused. The table names *which kind* of home;
+/// *whose* is the environment's (`homes`: its own silo, secret path and
+/// Airhouse sibling). A new [`HostOp`] fails to compile until its row states
+/// what it does here.
 fn non_production(op: HostOp, oltp: &OltpHome) -> Decision {
-    use HostOp::*;
-    match op {
-        // Reads of production data (§4.2). `tx.rollback` writes nothing.
-        // `platform.facts` reads ids and counts the platform holds, the same in
-        // every environment.
-        Query | QueryStream | SemanticQuery | WarehouseQuery | AirhouseQuery | OrgPeople
-        | OrgPlaces | OrgAssignments | PlatformFacts | TxRollback => Decision::Allow,
-        // The environment's own storage silo (P5a). Reads look there first,
-        // then at production's same key, read-only; `list` is the silo alone.
-        StorageGetUploadUrl | StoragePut | StorageDelete | StorageCopy => {
-            Decision::Isolate(Target::StorageSilo)
+    match op.spec().staging {
+        Staged::Decided(decided) => decided,
+        Staged::ByOltpHome => oltp.decision(),
+    }
+}
+
+impl EnvPolicy {
+    /// What a held `op` throws here: the environment's hold, or a preview's
+    /// when a production run reads a branch.
+    pub fn held_error(&self, op: HostOp) -> String {
+        match self.branch_reason() {
+            Some(reason) => branch_held_message(op, &reason),
+            None => held_message(op, &self.environment),
         }
-        StorageGetDownloadUrl | StorageGet | StorageHead | StorageList => {
-            Decision::Isolate(Target::StorageSilo)
+    }
+
+    /// What a refused `op` throws here, with `fix`: the environment's
+    /// refusal, or a preview's.
+    pub fn refusal(&self, op: HostOp, fix: &str) -> String {
+        match self.branch_reason() {
+            Some(reason) => branch_refused_message(op, &reason, fix),
+            None => refused_message(op, &self.environment, fix),
         }
-        // The environment's secret path; invoker-only email (P5a).
-        SecretsSet => Decision::Isolate(Target::EnvSecrets),
-        EmailSend => Decision::Isolate(Target::InvokerEmail),
-        Notify => Decision::Isolate(Target::InvokerNotify),
-        // `fetch`: a read method is still sent; a mutating one is held —
-        // unless it is this invocation's own upload into the environment's
-        // silo, which `decide_on_fetch` isolates there (`upload`).
-        Fetch => Decision::Hold,
-        // A customer's warehouse: the database `nonProduction.destinations`
-        // maps it to (P5b). Unmapped, it holds (`decide_on_database`).
-        WarehouseInsert | WarehouseExec | WarehouseUpsert | TxBegin => {
-            Decision::Isolate(Target::MappedDestination)
-        }
-        // The app's OLTP store (P4b): on the org's staging branch when it has
-        // one. Without one, a single read is sent, in a READ ONLY transaction
-        // on production, and every other statement is held unsent. A
-        // statement or commit on a `ctx.oltp.tx` handle follows where its
-        // `begin` went (`EnvPolicy::decide_on_handle`); a held commit rolls
-        // back.
-        TxBeginOltp | OltpQuery | OltpExec => oltp.decision(),
-        TxQuery | TxExec | TxCommit => Decision::Hold,
-        // The app schema's sibling, `app_<writer>__<env>` (P5b). Reads stay on
-        // production's schema (`AirhouseQuery` above).
-        AirhouseExec | AirhouseAppend => Decision::Isolate(Target::SiblingSchema),
-        AirwayRun => Decision::Refuse { fix: AIRWAY_FIX },
     }
 }

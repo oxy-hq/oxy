@@ -1,8 +1,9 @@
 //! `ctx.airhouse` on the host: an app's own facts in its workspace's Airhouse.
 //!
 //! Split out of `host.rs` by surface. What SQL may be sent is decided by
-//! `airhouse::sql_rules`; this module owns the connection, the capability gate
-//! and the audit record.
+//! `airhouse::sql_rules`; this module owns the connection and the audit
+//! record. The capability gate is the broker's, from each op's registry row;
+//! [`AIRHOUSE_CAPABILITY_MISSING`] is its words.
 //!
 //! Outside production a write lands in the app schema's sibling,
 //! `app_<writer>__<env>` (`env_policy::homes::airhouse_write`): checked as
@@ -17,6 +18,13 @@ use super::super::env_policy::homes::{self, AirhouseWrite, Routed};
 use super::env_guard::HeldTarget;
 use super::*;
 
+/// What a function without the `airhouse` capability sees
+/// (`FunctionCapabilities::refuse`).
+pub(super) const AIRHOUSE_CAPABILITY_MISSING: &str = "AirhouseCapabilityMissing: this function has not declared the `airhouse` \
+     capability (add \"airhouse\": { \"enabled\": true } to its oxy-app.json entry). \
+     The schema it writes is derived from the app's own slug — the manifest only \
+     enables access.";
+
 impl ProjectFunctionHost {
     /// Dispatch one `ctx.airhouse` op — see `FunctionHost::airhouse`.
     pub(super) async fn airhouse_op(
@@ -24,11 +32,11 @@ impl ProjectFunctionHost {
         op: &str,
         payload: &serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        let schema = self.airhouse_schema()?;
+        let host_op = HostOp::sub_op("airhouse", op).ok_or_else(|| format!("unknown op '{op}'"))?;
+        let schema = self.airhouse_schema(host_op)?;
         // Each op asks the environment policy after the statement is checked,
         // so a held write is refused for exactly what production refuses.
         let plane = data_audit::PLANE_APP_AIRHOUSE;
-        let host_op = HostOp::sub_op("airhouse", op).ok_or_else(|| format!("unknown op '{op}'"))?;
         match host_op {
             HostOp::AirhouseQuery => {
                 self.admit_op(HostOp::AirhouseQuery, (plane, &schema, "QUERY", ""))
@@ -65,22 +73,15 @@ impl ProjectFunctionHost {
         }
     }
 
-    /// The app's own Airhouse schema, or why `ctx.airhouse` is closed.
-    fn airhouse_schema(&self) -> Result<String, String> {
+    /// The app's own Airhouse schema. The `airhouse` gate — a manifest that
+    /// did not ask, a slug that backs no schema — is the broker's
+    /// (`FunctionCapabilities::refuse`); `op` reaches here granted.
+    fn airhouse_schema(&self, op: HostOp) -> Result<String, String> {
         match &self.caps.airhouse {
-            WriterCapability::Disabled => Err(
-                "AirhouseCapabilityMissing: this function has not declared the `airhouse` \
-                 capability (add \"airhouse\": { \"enabled\": true } to its oxy-app.json entry). \
-                 The schema it writes is derived from the app's own slug — the manifest only \
-                 enables access."
-                    .to_string(),
-            ),
-            WriterCapability::SlugNotDerivable { slug } => {
-                Err(slug_cannot_back_a_schema("Airhouse", slug))
-            }
-            enabled => enabled
+            enabled @ WriterCapability::Enabled { .. } => enabled
                 .schema()
                 .ok_or_else(|| "this app's writer cannot name an Airhouse schema".to_string()),
+            _ => Err(super::gate_bypassed(op)),
         }
     }
 

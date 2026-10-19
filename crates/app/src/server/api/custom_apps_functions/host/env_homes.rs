@@ -43,30 +43,22 @@ fn invoker_email(identity: &super::super::data_audit::InvocationIdentity) -> Opt
 impl ProjectFunctionHost {
     /// Where `op` runs here: `None` as asked (production, or a read of
     /// production data), `Some(target)` for its environment's isolated home.
-    /// A held or refused op is noted and its error returned, as `admit_op`
-    /// does.
-    pub(super) async fn route_op(
-        &self,
-        op: HostOp,
-        target: HeldTarget<'_>,
-    ) -> Result<Option<Target>, String> {
+    /// Only for an op the policy has already admitted — by the broker for
+    /// one that holds by not running, or by the op's own mechanism — so a
+    /// held or refused decision is never seen here.
+    pub(super) fn isolated_home(&self, op: HostOp) -> Option<Target> {
         match self.policy.decide(op) {
-            Decision::Isolate(home) => Ok(Some(home)),
-            _ => self.admit_op(op, target).await.map(|()| None),
+            Decision::Isolate(home) => Some(home),
+            _ => None,
         }
     }
 
     /// The silo a `ctx.storage` op works in: production's, or — when the
-    /// policy isolates it — the environment's sibling.
-    pub(super) async fn storage_silo(
-        &self,
-        op: HostOp,
-        target: HeldTarget<'_>,
-    ) -> Result<Silo, String> {
-        // Notes a held or refused op and returns its error; the silo itself is
-        // the policy's answer (`EnvPolicy::silo_for`), the one the
-        // differential test resolves too.
-        self.route_op(op, target).await?;
+    /// policy isolates it — the environment's sibling. The silo is the
+    /// policy's answer (`EnvPolicy::silo_for`), the one the differential
+    /// test resolves too; a held or refused op was answered by the broker,
+    /// so `None` here is a misroute.
+    pub(super) fn storage_silo(&self, op: HostOp) -> Result<Silo, String> {
         self.policy
             .silo_for(op, self.app_id)
             .ok_or_else(|| self.misrouted(op))
@@ -105,7 +97,7 @@ impl ProjectFunctionHost {
     ) -> Result<serde_json::Value, String> {
         let emailer = AppEmailer::from_env(self.app_name.clone());
         let target = ("email", "", "SEND", "");
-        match self.route_op(HostOp::EmailSend, target).await? {
+        match self.isolated_home(HostOp::EmailSend) {
             None => emailer.send(parsed).await,
             Some(Target::InvokerEmail) if !self.policy.is_production() => {
                 let environment = self.policy.environment().name();
@@ -150,7 +142,7 @@ impl ProjectFunctionHost {
         value: &str,
         target: HeldTarget<'_>,
     ) -> Result<(), String> {
-        let environment = match self.route_op(HostOp::SecretsSet, target).await? {
+        let environment = match self.isolated_home(HostOp::SecretsSet) {
             None => None,
             Some(Target::EnvSecrets) => {
                 if self.policy.read_through_fallback(key) {

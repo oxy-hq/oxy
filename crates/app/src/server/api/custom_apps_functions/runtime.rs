@@ -54,11 +54,14 @@ use tracing::Instrument;
 
 mod engine;
 mod host_call;
+mod host_call_span;
 mod ops;
 #[cfg(test)]
 mod tests;
 
 use super::LogLine;
+use super::env_policy::{EnvPolicy, HeldTarget, HostOp};
+use super::host::FunctionCapabilities;
 use crate::server::api::custom_apps_telemetry::InvocationMeters;
 use engine::{ActiveEngine, IsolateConfig, IsolateEngine, TerminateHandle};
 use host_call::{
@@ -290,6 +293,33 @@ pub trait FunctionHost: Send + Sync {
     /// per invocation rather than once per host call.
     async fn end_of_invocation(&self) {}
 
+    /// What this function's manifest grants. The broker reads it before every
+    /// op (`host_call::dispatch_host_call`): an op whose registry row names a
+    /// capability the manifest lacks is refused with the host's own words
+    /// (`FunctionCapabilities::refuse`) and never dispatched, so a method
+    /// below runs only for an op its manifest allows. Fail-closed by default:
+    /// a host that does not say grants nothing.
+    fn capabilities(&self) -> &FunctionCapabilities {
+        static NOTHING: std::sync::LazyLock<FunctionCapabilities> =
+            std::sync::LazyLock::new(FunctionCapabilities::default);
+        &NOTHING
+    }
+    /// What each op may do in the environment this run was admitted to. The
+    /// broker decides every op that holds by not running (`HoldBy::Broker`)
+    /// before it is dispatched; an op that holds by a mechanism of its own
+    /// asks this policy inside its method. Production by default — what
+    /// every run was before environments — so a test double is never held.
+    fn env_policy(&self) -> &EnvPolicy {
+        static PRODUCTION: std::sync::LazyLock<EnvPolicy> =
+            std::sync::LazyLock::new(EnvPolicy::production);
+        &PRODUCTION
+    }
+    /// Called by the broker when the environment held or refused an op
+    /// before dispatch, with the identifiers the held-write log records it
+    /// under (never values). The real host writes the `app.staging.held`
+    /// row from these.
+    async fn record_held(&self, _op: HostOp, _target: HeldTarget<'_>) {}
+
     /// Whether this host's environment policy decides — outside production,
     /// or a production run refused for reading a branch. Only then is a
     /// `HeldInStaging` / `EnvironmentRefused` label on its errors the
@@ -378,17 +408,17 @@ pub trait FunctionHost: Send + Sync {
         pipeline_ref: String,
         variables: serde_json::Value,
     ) -> Result<serde_json::Value, String>;
-    /// `ctx.warehouse.{insert,exec,upsert}` — write to one of the app's
-    /// configured destination databases. `op` is `"insert"`, `"exec"`, or
-    /// `"upsert"`; `payload` carries `{ database, table?, rows?, sql? }`
-    /// depending on `op`. Validated against the project's configured
-    /// databases (§11.3) before execution.
     /// `ctx.warehouse.query(database, sql)` — a read against a named database.
     async fn warehouse_query(
         &self,
         payload: serde_json::Value,
     ) -> Result<serde_json::Value, String>;
-
+    /// `ctx.warehouse.{insert,exec,upsert}` — write to one of the app's
+    /// configured destination databases. `op` is `"insert"`, `"exec"`, or
+    /// `"upsert"` — a registry sub-op, the broker having refused one off the
+    /// list (`env_policy::HostOp`); `payload` carries
+    /// `{ database, table?, rows?, sql? }` depending on `op`. Validated
+    /// against the project's configured databases (§11.3) before execution.
     async fn warehouse_write(
         &self,
         op: String,
@@ -410,9 +440,9 @@ pub trait FunctionHost: Send + Sync {
     async fn notify(&self, input: serde_json::Value) -> Result<serde_json::Value, String>;
     /// `ctx.storage.{getUploadUrl,getDownloadUrl,put,get,head,list,delete,copy}`
     /// — presigned S3 file storage scoped to the app's silo. `op` selects the
-    /// operation; `payload` carries its args. Gated by the fail-closed
-    /// `storage.{read,write}` manifest capabilities, per op in
-    /// `host::check_storage_capability`. Mirrors `warehouse_write`'s
+    /// operation (a `storage.*` registry sub-op); `payload` carries its args.
+    /// Gated by the fail-closed `storage.{read,write}` manifest capabilities,
+    /// per op in the registry. Mirrors `warehouse_write`'s
     /// single-op-dispatcher shape.
     async fn storage(
         &self,

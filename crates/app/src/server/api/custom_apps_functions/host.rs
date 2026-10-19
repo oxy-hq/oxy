@@ -30,6 +30,7 @@ use agentic_connector::{SqlDialect, StringLiteral};
 
 mod airhouse_ops;
 mod config_source;
+mod connector_cache;
 mod destinations;
 mod email_idempotency;
 mod env_guard;
@@ -46,7 +47,7 @@ mod uploads;
 mod warehouse_home;
 
 pub use super::audience::{Audience, app_audience};
-use super::env_policy::HostOp;
+use super::env_policy::{Capability, EnvPolicy, HeldTarget, HostOp};
 pub use oltp_home::writer_connection;
 
 // Visible to the rest of custom_apps_functions so the preflight judges live
@@ -111,6 +112,14 @@ pub struct ProjectFunctionHost {
     /// Where the caller may act — the same `Reach` `ctx.user.reach` carries,
     /// so `ctx.semantic.query({ scope: "reach" })` pins to it server-side.
     reach: crate::server::api::operating_graph::reach::Reach,
+    /// The warehouse connectors `connect` has built this invocation, by
+    /// database name: N `ctx.query` / `ctx.warehouse.*` / `ctx.semantic`
+    /// calls on one database cost one build — config lookup, secret
+    /// decrypt, credential mint — rather than N. Per host, so per invocation
+    /// and per principal: a connector is never shared across invocations.
+    /// Built once per database (`connector_cache`), so a slow handshake on
+    /// one database never stalls a call on another.
+    connectors: connector_cache::BuildOnce<Arc<dyn DatabaseConnector>>,
     /// Resolved `ctx.oltp` writer connection, cached for this invocation so N
     /// calls cost one control-plane resolve (a query + decrypt) rather than N.
     /// The per-call TCP+TLS connect to the tenant still happens (each call is a
@@ -240,6 +249,124 @@ pub struct FunctionCapabilities {
     pub fetch_max_bytes: Option<u64>,
 }
 
+impl FunctionCapabilities {
+    /// Whether the manifest grants `capability` — the gate the broker asks
+    /// for every host op before its implementation runs
+    /// (`runtime::host_call`), read off the op's registry row. Fail-closed:
+    /// an ungranted field refuses, and a `WriterCapability` grants only when
+    /// its schema can be derived.
+    pub fn allows(&self, capability: Capability) -> bool {
+        match capability {
+            Capability::None => true,
+            Capability::SecretsWrite => self.secrets_write,
+            Capability::EmailSend => self.email_send,
+            Capability::Notify => self.notify_kinds.is_some(),
+            Capability::OrgRead => self.org_read,
+            Capability::PlatformFacts => self.platform_facts,
+            Capability::StorageRead => self.storage_read,
+            Capability::StorageWrite => self.storage_write,
+            Capability::StorageReadAndWrite => self.storage_read && self.storage_write,
+            Capability::Oltp => matches!(self.oltp, WriterCapability::Enabled { .. }),
+            Capability::Airhouse => matches!(self.airhouse, WriterCapability::Enabled { .. }),
+            // Decided per database the call names (`check_write_destination`),
+            // after the op is admitted; the op itself is open to every function.
+            Capability::WarehouseWrite => true,
+        }
+    }
+
+    /// `Ok` when the manifest grants what `op`'s registry row asks for;
+    /// otherwise the refusal the function sees — the host's own words, which
+    /// `oxyc`'s lint and `@oxy-hq/sdk/testing` repeat verbatim
+    /// (`sdk_testing_drift`), so each literal stays where those cite it.
+    /// Every `<Area>CapabilityMissing` is written here and nowhere else.
+    pub fn refuse(&self, op: HostOp) -> Result<(), String> {
+        let capability = op.spec().capability;
+        if self.allows(capability) {
+            return Ok(());
+        }
+        Err(match capability {
+            Capability::None | Capability::WarehouseWrite => return Ok(()),
+            Capability::SecretsWrite => {
+                "ctx.secrets.set: this function has not declared the `secrets.write` \
+                 capability (add it to oxy-app.json to permit writes)"
+                    .to_string()
+            }
+            Capability::EmailSend => {
+                "EmailCapabilityMissing: this function has not declared the `email.send` \
+                 capability (add \"email\": { \"send\": true } to its oxy-app.json entry)"
+                    .to_string()
+            }
+            Capability::Notify => notify_op::NOTIFY_CAPABILITY_MISSING.to_string(),
+            Capability::OrgRead => match op {
+                HostOp::OrgPeople => {
+                    "OrgCapabilityMissing: this function has not declared the `org.read` \
+                     capability (add \"org\": { \"read\": true } to its oxy-app.json entry)"
+                        .to_string()
+                }
+                other => org_capability_missing(other.sub_name().unwrap_or_default()),
+            },
+            Capability::PlatformFacts => platform_facts::CAPABILITY_MISSING.to_string(),
+            // `copy` asks for write first, then read, as the two gates did.
+            Capability::StorageWrite | Capability::StorageReadAndWrite if !self.storage_write => {
+                "StorageCapabilityMissing: this function has not declared the `storage.write` \
+                 capability (add \"storage\": { \"write\": true } to its oxy-app.json entry)"
+                    .to_string()
+            }
+            Capability::StorageRead
+            | Capability::StorageReadAndWrite
+            | Capability::StorageWrite => {
+                "StorageCapabilityMissing: this function has not declared the `storage.read` \
+                 capability (add \"storage\": { \"read\": true } to its oxy-app.json entry)"
+                    .to_string()
+            }
+            Capability::Oltp => match &self.oltp {
+                WriterCapability::SlugNotDerivable { slug } => {
+                    slug_cannot_back_a_schema("OLTP", slug)
+                }
+                _ => "OltpCapabilityMissing: this function has not declared the `oltp` capability \
+                      (add \"oltp\": { \"enabled\": true } to its oxy-app.json entry). The schema \
+                      it writes is derived from the app's own slug — the manifest only enables \
+                      access."
+                    .to_string(),
+            },
+            Capability::Airhouse => match &self.airhouse {
+                WriterCapability::SlugNotDerivable { slug } => {
+                    slug_cannot_back_a_schema("Airhouse", slug)
+                }
+                _ => airhouse_ops::AIRHOUSE_CAPABILITY_MISSING.to_string(),
+            },
+        })
+    }
+
+    /// Every gate open, for a test double that stands in for a manifest
+    /// declaring everything.
+    #[cfg(test)]
+    pub fn granting_everything() -> Self {
+        Self {
+            secrets_write: true,
+            email_send: true,
+            notify_kinds: Some(BTreeMap::from([("ping".to_string(), false)])),
+            org_read: true,
+            platform_facts: true,
+            storage_read: true,
+            storage_write: true,
+            oltp: WriterCapability::resolve(true, "test-app"),
+            airhouse: WriterCapability::resolve(true, "test-app"),
+            ..Default::default()
+        }
+    }
+}
+
+/// What an op's method says when it runs without the capability the broker
+/// was to refuse it for — a platform bug, never the function's: the broker
+/// admits every op (`runtime::host_call::dispatch_host_call`).
+fn gate_bypassed(op: HostOp) -> String {
+    format!(
+        "internal runtime error: ctx.{} reached the host without its capability",
+        op.name()
+    )
+}
+
 /// Whether a store keyed on the app's writer — `ctx.oltp` or `ctx.airhouse` —
 /// is available, and, when it is not, which of the two fail-closed reasons
 /// applies, so the host can tell them apart in the error.
@@ -340,6 +467,7 @@ impl ProjectFunctionHost {
             email_send_count: std::sync::atomic::AtomicUsize::new(0),
             notify_count: std::sync::atomic::AtomicUsize::new(0),
             transactions: super::tx::TxRegistry::default(),
+            connectors: Default::default(),
             oltp_conn: tokio::sync::Mutex::new(None),
             airhouse_conn: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             host_call_failure: std::sync::Mutex::new(None),
@@ -364,22 +492,28 @@ impl ProjectFunctionHost {
         }
     }
 
-    /// Build a connector for `db_name`, bounded by the host DB-op timeout so a
-    /// slow TLS/auth handshake during connector construction can't keep a
-    /// detached isolate thread alive past the backstop.
+    /// The connector for `db_name`: built once per invocation and reused
+    /// (`connectors`), bounded by the host DB-op timeout so a slow TLS/auth
+    /// handshake during construction can't keep a detached isolate thread
+    /// alive past the backstop. Two concurrent calls on one database share
+    /// one build; a call on another database never waits for it; a failed
+    /// build caches nothing (`connector_cache::BuildOnce`).
     async fn connect(&self, db_name: &str) -> Result<Arc<dyn DatabaseConnector>, String> {
         // A config this node could not read names no database at all, so the
         // lookup below would report a configured one as missing.
         if let Some(why) = self.databases_unknown_here() {
             return Err(why);
         }
-        with_db_timeout("connect", async {
-            self.proj_ctx
-                .build_connector_for(db_name)
-                .await
-                .map_err(|e| format!("failed to connect to database '{db_name}': {e}"))
-        })
-        .await
+        self.connectors
+            .get_or_build(db_name, || {
+                with_db_timeout("connect", async {
+                    self.proj_ctx
+                        .build_connector_for(db_name)
+                        .await
+                        .map_err(|e| format!("failed to connect to database '{db_name}': {e}"))
+                })
+            })
+            .await
     }
 
     /// `(trace id, traceparent)` of the host-op span this call runs under.
@@ -598,23 +732,13 @@ impl ProjectFunctionHost {
         Ok((sql, params))
     }
 
-    /// The app's OLTP writer, or why `ctx.oltp` is closed to this function.
-    fn oltp_writer(&self) -> Result<&str, String> {
+    /// The app's OLTP writer. The `oltp` gate — and its two refusals, a
+    /// manifest that did not ask and a slug that backs no schema — is the
+    /// broker's (`FunctionCapabilities::refuse`); `op` reaches here granted.
+    fn oltp_writer(&self, op: HostOp) -> Result<&str, String> {
         match &self.caps.oltp {
             WriterCapability::Enabled { writer } => Ok(writer.as_str()),
-            WriterCapability::Disabled => Err(
-                "OltpCapabilityMissing: this function has not declared the `oltp` capability \
-                 (add \"oltp\": { \"enabled\": true } to its oxy-app.json entry). The schema \
-                 it writes is derived from the app's own slug — the manifest only enables \
-                 access."
-                    .to_string(),
-            ),
-            // Enabled, but the slug can't back a schema — say THAT, not
-            // "capability missing", which would send the author to a manifest
-            // that already declares it.
-            WriterCapability::SlugNotDerivable { slug } => {
-                Err(slug_cannot_back_a_schema("OLTP", slug))
-            }
+            _ => Err(gate_bypassed(op)),
         }
     }
 
@@ -711,6 +835,18 @@ impl FunctionHost for ProjectFunctionHost {
         self.policy_decides()
     }
 
+    fn capabilities(&self) -> &FunctionCapabilities {
+        &self.caps
+    }
+
+    fn env_policy(&self) -> &EnvPolicy {
+        &self.policy
+    }
+
+    async fn record_held(&self, op: HostOp, target: HeldTarget<'_>) {
+        self.note_held(op, target).await;
+    }
+
     fn host_call_failure(&self) -> Option<super::failure_signal::HostCallFailure> {
         self.host_call_failure
             .lock()
@@ -719,8 +855,6 @@ impl FunctionHost for ProjectFunctionHost {
     }
 
     async fn query(&self, sql: String) -> Result<serde_json::Value, String> {
-        self.admit_op(HostOp::Query, ("warehouse", "", "QUERY", ""))
-            .await?;
         let db_name = self.default_database()?;
         let connector = self.connect(&db_name).await?;
         let (rows, truncated) =
@@ -731,8 +865,6 @@ impl FunctionHost for ProjectFunctionHost {
     }
 
     async fn query_stream(&self, sql: String) -> Result<serde_json::Value, String> {
-        self.admit_op(HostOp::QueryStream, ("warehouse", "", "QUERY", ""))
-            .await?;
         let db_name = self.default_database()?;
         let connector = self.connect(&db_name).await?;
         let rows = with_db_timeout(
@@ -854,8 +986,6 @@ impl FunctionHost for ProjectFunctionHost {
     }
 
     async fn semantic_query(&self, spec: serde_json::Value) -> Result<serde_json::Value, String> {
-        self.admit_op(HostOp::SemanticQuery, ("semantic", "", "QUERY", ""))
-            .await?;
         // A staging build's semantic pin (#3370), re-scoped here: a host call
         // runs on a task of its own, which does not inherit the invocation's
         // task-locals, and the pin is what makes the rollup short-circuit
@@ -872,10 +1002,9 @@ impl FunctionHost for ProjectFunctionHost {
         pipeline_ref: String,
         variables: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        // Refused outside production: a run has no environment, so any run is
-        // a production write (`env_policy`).
+        // Refused outside production by the broker: a run has no environment,
+        // so any run is a production write (`env_policy`).
         let target = ("airway", pipeline_ref.as_str(), "RUN", "");
-        self.admit_op(HostOp::AirwayRun, target).await?;
         // A production-admitted invocation can still read a branch — a pin in
         // scope where the host was built, or a context at a `staging`
         // revision — and must not start production ELT (previews S9, I9).
@@ -944,8 +1073,6 @@ impl FunctionHost for ProjectFunctionHost {
             .get("sql")
             .and_then(|v| v.as_str())
             .ok_or_else(|| "warehouse.query: `sql` is required".to_string())?;
-        self.admit_op(HostOp::WarehouseQuery, ("warehouse", database, "QUERY", ""))
-            .await?;
 
         data_audit::record_db_span(&db_query_summary(sql), Some(database), None);
         let connector = self.connect(database).await?;
@@ -967,8 +1094,9 @@ impl FunctionHost for ProjectFunctionHost {
             .ok_or_else(|| "`database` is required".to_string())?;
 
         self.check_write_destination(database, WriteSurface::Warehouse)?;
-        // Resolved before anything else is decided: an op off the list is
-        // refused as unknown, never let past the policy.
+        // Resolved against the registry before anything else is decided: the
+        // broker refused an op off the list, and a direct caller gets the
+        // same answer.
         let host_op =
             HostOp::sub_op("warehouse", &op).ok_or_else(|| format!("unknown op '{op}'"))?;
         // After the destination gate, never instead of it (design §4.2).
@@ -1096,18 +1224,10 @@ impl FunctionHost for ProjectFunctionHost {
     }
 
     async fn secrets_set(&self, key: String, value: String) -> Result<serde_json::Value, String> {
-        // §11.x fail-closed: the function must declare the `secrets.write`
-        // capability. Scoped to the app's own `apps/<app_id>/` namespace, so it
-        // can never touch another app's or the project's secrets.
-        if !self.caps.secrets_write {
-            return Err(
-                "ctx.secrets.set: this function has not declared the `secrets.write` \
-                 capability (add it to oxy-app.json to permit writes)"
-                    .to_string(),
-            );
-        }
-        // After the capability gate, like production would refuse first. The
-        // key's name is logged when it is an identifier; never its value.
+        // §11.x fail-closed: the `secrets.write` capability is the broker's
+        // gate. Scoped to the app's own `apps/<app_id>/` namespace, so it can
+        // never touch another app's or the project's secrets. The key's name
+        // is logged when it is an identifier; never its value.
         let name = if super::host_call_attrs::identifier_like(&key) {
             key.as_str()
         } else {
@@ -1164,16 +1284,7 @@ impl FunctionHost for ProjectFunctionHost {
     /// Scoped to `self.org_id`, which the host resolved — never taken from the
     /// function, so a manifest cannot point this at another tenant.
     async fn org_people(&self) -> Result<serde_json::Value, String> {
-        // Fail-closed, like every other capability here.
-        if !self.caps.org_read {
-            return Err(
-                "OrgCapabilityMissing: this function has not declared the `org.read` \
-                 capability (add \"org\": { \"read\": true } to its oxy-app.json entry)"
-                    .to_string(),
-            );
-        }
-        self.admit_op(HostOp::OrgPeople, ("org", "", "READ", ""))
-            .await?;
+        // The `org.read` gate is the broker's (`FunctionCapabilities::refuse`).
         org_directory(&self.db, self.org_id, self.app_id).await
     }
 
@@ -1182,11 +1293,6 @@ impl FunctionHost for ProjectFunctionHost {
     /// that shows "Clovis" needs the row before it knows whether the caller
     /// reaches it. The whole registry, not a reach-scoped slice.
     async fn org_places(&self) -> Result<serde_json::Value, String> {
-        if !self.caps.org_read {
-            return Err(org_capability_missing("places"));
-        }
-        self.admit_op(HostOp::OrgPlaces, ("org", "", "READ", ""))
-            .await?;
         org_places_directory(&self.db, self.org_id).await
     }
 
@@ -1194,36 +1300,23 @@ impl FunctionHost for ProjectFunctionHost {
     /// `people()`: the assignments of people who can reach this app, which is
     /// what makes it not a widening of the directory.
     async fn org_assignments(&self) -> Result<serde_json::Value, String> {
-        if !self.caps.org_read {
-            return Err(org_capability_missing("assignments"));
-        }
-        self.admit_op(HostOp::OrgAssignments, ("org", "", "READ", ""))
-            .await?;
         org_assignments_directory(&self.db, self.org_id, self.app_id).await
     }
 
     /// `ctx.platform.facts(opts)` — ids and counts about every org on the
-    /// deployment, for an internal app (`host/platform_facts`). Both gates
-    /// come first and fail closed (`platform_facts::admit`), then the
-    /// environment policy, then the build. The org is the host's, never the
-    /// function's.
+    /// deployment, for an internal app (`host/platform_facts`). The
+    /// capability gate is the broker's; the second gate, the app's org among
+    /// the deployment's internal orgs, is this op's and fails closed
+    /// (`platform_facts::admit_org`), then the build. The org is the host's,
+    /// never the function's.
     async fn platform_facts(&self, opts: serde_json::Value) -> Result<serde_json::Value, String> {
-        let internal = platform_facts::admit(self.caps.platform_facts, self.org_id)?;
-        self.admit_op(HostOp::PlatformFacts, ("platform", "facts", "READ", ""))
-            .await?;
+        let internal = platform_facts::admit_org(self.org_id)?;
         let weeks = platform_facts::requested_weeks(&opts)?;
         platform_facts::cached_reply(&self.db, internal, weeks).await
     }
 
     async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
-        // Fail-closed: the function must declare the `email.send` capability.
-        if !self.caps.email_send {
-            return Err(
-                "EmailCapabilityMissing: this function has not declared the `email.send` \
-                 capability (add \"email\": { \"send\": true } to its oxy-app.json entry)"
-                    .to_string(),
-            );
-        }
+        // The `email.send` gate is the broker's (`FunctionCapabilities::refuse`).
         // Per-invocation fan-out cap (this host serves exactly one invocation).
         let n = self
             .email_send_count
@@ -1283,15 +1376,15 @@ impl FunctionHost for ProjectFunctionHost {
     ) -> Result<serde_json::Value, String> {
         use crate::server::api::custom_apps_storage as st;
 
-        check_storage_capability(&op, &self.caps)?;
-        // Resolved before anything else is decided, so an op off the list is
-        // refused as unknown and never let past the policy; asked after the
-        // capability gate, like production refuses first. Outside production
-        // the op works in the environment's silo, reading production's same
-        // key as a fallback (`env_homes`).
+        // Resolved against the registry, as the broker resolved it: one off
+        // the list is refused as unknown, and a direct caller gets the same
+        // answer. The manifest's `storage.{read,write}` gate and the
+        // environment's hold were the broker's, before anything here ran.
+        // Outside production the op works in the environment's silo, reading
+        // production's same key as a fallback (`env_homes`).
         let host_op = HostOp::sub_op("storage", &op)
             .ok_or_else(|| format!("ctx.storage: unknown op '{op}'"))?;
-        let silo = self.storage_silo(host_op, ("storage", "", &op, "")).await?;
+        let silo = self.storage_silo(host_op)?;
 
         let str_field = |key: &str| payload.get(key).and_then(|v| v.as_str());
         let bool_field = |key: &str| payload.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
@@ -1458,43 +1551,6 @@ impl FunctionHost for ProjectFunctionHost {
             _ => Err(format!("ctx.storage: unknown op '{op}'")),
         }
     }
-}
-
-/// Fail-closed capability gate for one `ctx.storage` op.
-///
-/// - `getUploadUrl` / `put` / `delete` change the silo → `storage.write`.
-/// - `copy` reads its source and writes its destination → both.
-/// - `getDownloadUrl` / `get` / `head` / `list` → `storage.read`.
-/// - Any other op is refused by name with the dispatch's own unknown-op error,
-///   whatever the function declared.
-///
-/// `delete` and `copy` used to fall through to the read branch, so a function
-/// that declared only `storage.read` could destroy or overwrite objects in its
-/// app's silo. There is no catch-all arm for the same reason: an op added to the
-/// dispatch without an arm here is refused, rather than shipping gated on
-/// `storage.read` alone.
-fn check_storage_capability(op: &str, caps: &FunctionCapabilities) -> Result<(), String> {
-    let (needs_read, needs_write) = match op {
-        "getUploadUrl" | "put" | "delete" => (false, true),
-        "copy" => (true, true),
-        "getDownloadUrl" | "get" | "head" | "list" => (true, false),
-        other => return Err(format!("ctx.storage: unknown op '{other}'")),
-    };
-    if needs_write && !caps.storage_write {
-        return Err(
-            "StorageCapabilityMissing: this function has not declared the `storage.write` \
-             capability (add \"storage\": { \"write\": true } to its oxy-app.json entry)"
-                .to_string(),
-        );
-    }
-    if needs_read && !caps.storage_read {
-        return Err(
-            "StorageCapabilityMissing: this function has not declared the `storage.read` \
-             capability (add \"storage\": { \"read\": true } to its oxy-app.json entry)"
-                .to_string(),
-        );
-    }
-    Ok(())
 }
 
 /// Normalize an author-supplied `encoding` field. Absent, empty, and
@@ -2100,11 +2156,12 @@ mod tests {
         // A read-only function must not be able to destroy or overwrite what
         // is in its app's silo. Both ops used to pass on `storage.read` alone.
         let read_only = storage_caps(true, false);
-        for op in ["delete", "copy"] {
-            let err = check_storage_capability(op, &read_only)
-                .expect_err(&format!("`{op}` must be refused without storage.write"));
-            assert!(err.starts_with("StorageCapabilityMissing"), "{op}: {err}");
-            assert!(err.contains("`storage.write`"), "{op}: {err}");
+        for op in [HostOp::StorageDelete, HostOp::StorageCopy] {
+            let err = read_only
+                .refuse(op)
+                .expect_err(&format!("`{op:?}` must be refused without storage.write"));
+            assert!(err.starts_with("StorageCapabilityMissing"), "{op:?}: {err}");
+            assert!(err.contains("`storage.write`"), "{op:?}: {err}");
         }
     }
 
@@ -2113,65 +2170,88 @@ mod tests {
         // `copy` reads its source as well as writing its destination, so write
         // alone is not enough. `delete` reads nothing, so write alone is.
         let write_only = storage_caps(false, true);
-        let err = check_storage_capability("copy", &write_only)
+        let err = write_only
+            .refuse(HostOp::StorageCopy)
             .expect_err("`copy` must be refused without storage.read");
         assert!(err.contains("`storage.read`"), "{err}");
-        for op in ["delete", "put", "getUploadUrl"] {
-            check_storage_capability(op, &write_only)
-                .unwrap_or_else(|e| panic!("`{op}` needs only storage.write: {e}"));
+        for op in [
+            HostOp::StorageDelete,
+            HostOp::StoragePut,
+            HostOp::StorageGetUploadUrl,
+        ] {
+            write_only
+                .refuse(op)
+                .unwrap_or_else(|e| panic!("`{op:?}` needs only storage.write: {e}"));
         }
         // Holding both is what a copy needs.
-        check_storage_capability("copy", &storage_caps(true, true)).expect("read+write copies");
+        storage_caps(true, true)
+            .refuse(HostOp::StorageCopy)
+            .expect("read+write copies");
     }
 
     #[test]
     fn storage_reads_work_with_read_only_and_writes_do_not() {
         let read_only = storage_caps(true, false);
-        for op in ["get", "list", "head", "getDownloadUrl"] {
-            check_storage_capability(op, &read_only)
-                .unwrap_or_else(|e| panic!("`{op}` needs only storage.read: {e}"));
-        }
-        for op in ["put", "getUploadUrl"] {
-            assert!(
-                check_storage_capability(op, &read_only).is_err(),
-                "`{op}` must be refused without storage.write"
-            );
-        }
-    }
-
-    #[test]
-    fn storage_gate_is_closed_when_nothing_is_declared() {
-        let none = FunctionCapabilities::default();
         for op in [
-            "getUploadUrl",
-            "getDownloadUrl",
-            "put",
-            "get",
-            "head",
-            "list",
-            "delete",
-            "copy",
+            HostOp::StorageGet,
+            HostOp::StorageList,
+            HostOp::StorageHead,
+            HostOp::StorageGetDownloadUrl,
         ] {
+            read_only
+                .refuse(op)
+                .unwrap_or_else(|e| panic!("`{op:?}` needs only storage.read: {e}"));
+        }
+        for op in [HostOp::StoragePut, HostOp::StorageGetUploadUrl] {
             assert!(
-                check_storage_capability(op, &none).is_err(),
-                "`{op}` must be refused with no storage capability"
+                read_only.refuse(op).is_err(),
+                "`{op:?}` must be refused without storage.write"
             );
         }
     }
 
+    /// Nothing declared refuses every gated op, in the host's words — and
+    /// the registry row, not an arm per op, is what gates it: an op added
+    /// with a capability is refused here without any check of its own.
     #[test]
-    fn storage_unknown_op_is_refused_by_name_whatever_is_declared() {
-        // An op the gate does not name must not inherit the read gate: a future
-        // write op (`move`) would ship gated on `storage.read` alone, and a typo
-        // (`heads`) would be reported as a missing capability instead of by name.
+    fn every_gated_op_is_refused_when_nothing_is_declared() {
         let none = FunctionCapabilities::default();
-        let read_write = storage_caps(true, true);
-        for op in ["move", "heads", ""] {
-            for (label, caps) in [("no capabilities", &none), ("read+write", &read_write)] {
-                let err = check_storage_capability(op, caps)
-                    .expect_err(&format!("unknown op `{op}` must be refused ({label})"));
-                assert_eq!(err, format!("ctx.storage: unknown op '{op}'"), "{label}");
+        for op in HostOp::ALL {
+            let gated = !matches!(
+                op.spec().capability,
+                Capability::None | Capability::WarehouseWrite
+            );
+            match none.refuse(*op) {
+                Err(refusal) => {
+                    assert!(gated, "{op:?} is ungated yet refused: {refusal}");
+                    assert!(
+                        refusal.contains("has not declared the"),
+                        "{op:?}: {refusal}"
+                    );
+                }
+                Ok(()) => assert!(!gated, "{op:?} must be refused with nothing declared"),
             }
+        }
+        let everything = FunctionCapabilities::granting_everything();
+        for op in HostOp::ALL {
+            everything
+                .refuse(*op)
+                .unwrap_or_else(|e| panic!("{op:?}: {e}"));
+        }
+    }
+
+    /// A writer the slug cannot back says so, not "capability missing".
+    #[test]
+    fn a_slug_that_backs_no_schema_is_refused_as_that() {
+        let caps = FunctionCapabilities {
+            oltp: WriterCapability::resolve(true, "9lives"),
+            airhouse: WriterCapability::resolve(true, "9lives"),
+            ..Default::default()
+        };
+        for op in [HostOp::OltpExec, HostOp::AirhouseAppend] {
+            let err = caps.refuse(op).unwrap_err();
+            assert!(err.contains("cannot back an"), "{op:?}: {err}");
+            assert!(!err.contains("CapabilityMissing"), "{op:?}: {err}");
         }
     }
 

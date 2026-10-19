@@ -5,9 +5,10 @@
 //! kept and the inbox row written ([`send`]), and push, email and Slack per
 //! person on the queue. The function never handles an address.
 //!
-//! Gates, in order: the `notify` capability, the per-invocation cap, the
-//! payload, the kind (declared in the manifest — it is what a person mutes),
-//! the org's content store, then the environment. Outside production a
+//! Gates, in order: the `notify` capability (the broker's, from the op's
+//! registry row; [`NOTIFY_CAPABILITY_MISSING`] is its words), the
+//! per-invocation cap, the payload, the kind (declared in the manifest — it
+//! is what a person mutes), the org's content store, then the environment. Outside production a
 //! notification reaches the invoking user alone, title prefixed `[<env>]`, the way `ctx.email.send`
 //! does; a run with no invoking user (a schedule) is refused there rather than
 //! told to somebody nobody asked.
@@ -30,18 +31,20 @@ use crate::server::api::notifications::send::{
 /// loop over rows belongs in one call naming many people, not many calls.
 pub(super) const MAX_NOTIFY_PER_INVOCATION: usize = 20;
 
+/// What a function without the `notify` capability sees
+/// (`FunctionCapabilities::refuse`).
+pub(super) const NOTIFY_CAPABILITY_MISSING: &str = "NotifyCapabilityMissing: this function has not declared the `notify` capability \
+     (add \"notify\": { \"kinds\": { \"<kind>\": {} } } to its oxy-app.json entry)";
+
 const NO_INVOKER_FIX: &str = "a notification outside production goes only to the invoking \
      user, and this run has none (a schedule, an Airway step or a manual run); call the \
      function from the app to try it";
 
 impl ProjectFunctionHost {
     pub(super) async fn notify_op(&self, payload: Value) -> Result<Value, String> {
+        // The gate is the broker's; the kinds are what it granted.
         let Some(kinds) = &self.caps.notify_kinds else {
-            return Err(
-                "NotifyCapabilityMissing: this function has not declared the `notify` capability \
-                 (add \"notify\": { \"kinds\": { \"<kind>\": {} } } to its oxy-app.json entry)"
-                    .to_string(),
-            );
+            return Err(super::gate_bypassed(HostOp::Notify));
         };
         let n = self
             .notify_count
@@ -81,7 +84,7 @@ impl ProjectFunctionHost {
                 false => format!("NotifyFailed: {e}"),
             })?;
         let target = ("notify", "", "SEND", "");
-        match self.route_op(HostOp::Notify, target).await? {
+        match self.isolated_home(HostOp::Notify) {
             None => self.notify_as_asked(parsed, critical).await,
             Some(Target::InvokerNotify) if !self.policy.is_production() => {
                 let Some(invoker) = self.identity.user_id else {

@@ -31,9 +31,9 @@ impl ProjectFunctionHost {
         op: &str,
         payload: &serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        let writer_name = self.oltp_writer()?;
-        let (sql, params) = Self::oltp_statement(payload)?;
         let host_op = HostOp::sub_op("oltp", op).ok_or_else(|| format!("unknown op '{op}'"))?;
+        let writer_name = self.oltp_writer(host_op)?;
+        let (sql, params) = Self::oltp_statement(payload)?;
         let schema = self.caps.oltp.schema().unwrap_or_default();
         self.admit_statement(host_op, None, &sql, &schema).await?;
         let summary = db_query_summary(&sql);
