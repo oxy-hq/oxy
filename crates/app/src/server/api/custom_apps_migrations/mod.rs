@@ -56,14 +56,16 @@
 //! A migration must therefore carry no credential and no data the app's own
 //! viewers may not see; it is DDL and seed rows, not a secret.
 //!
-//! Only the **publish** path applies migrations, because that is where the
-//! bundle is in hand. The admin console's *Make Live* and *roll back* repoint
-//! the channel at a build already in the object store and run nothing. Rolling
-//! back is unaffected (those files are in the ledger already); the live hole is
-//! `--no-promote` followed by a console Make Live, which puts new code in front
-//! of tables that were never created. Closing it needs the build store to list
-//! and fetch a build's `<dir>/*.sql` — `custom_apps_build_store` has `get_object`
-//! but no list — and then this module's [`apply_on_promote`] unchanged.
+//! **Every move of production's pointer applies them, not only a publish.**
+//! The console's *Make Live* and rollback, *promote latest*, `oxyc promote`
+//! and `oxyc rollback` move production to a build already in the object store;
+//! each re-reads that build's `<dir>/*.sql` from the store ([`stored`]) and
+//! runs [`apply_on_promote`] unchanged before the pointer moves
+//! (`custom_apps_promote`; environments design §5.5a, ruling 4). That closed
+//! the hole a draft followed by a console Make Live used to leave — new code in
+//! front of tables that were never created. A rollback applies its target's
+//! pending files too, which for a build whose files all ran is a no-op;
+//! nothing is ever reversed.
 //!
 //! `CREATE INDEX CONCURRENTLY` cannot run inside a transaction and is **not**
 //! special-cased here (`oxy_oltp::migrator` is, via `mentions_concurrently`).
@@ -95,6 +97,9 @@
 //! * [`sandbox_schema`] — a sandbox's own schema on that branch: created and
 //!   seeded from staging's with staging's ledger, migrated under
 //!   `schema:<sandbox schema>`, and dropped with its ledger rows.
+//! * [`stored`] — a build's declared files read back from the build store,
+//!   and which of them production's ledger has not recorded: what a promote
+//!   or a rollback plans and applies.
 
 mod airhouse;
 mod airhouse_drop;
@@ -103,6 +108,7 @@ mod apply;
 mod branch;
 mod plan;
 mod sandbox_schema;
+mod stored;
 mod types;
 
 pub(super) use airhouse::{AirhouseRun, apply_airhouse_on_promote, apply_airhouse_to_environment};
@@ -123,4 +129,5 @@ pub use sandbox_schema::{
     SandboxOltp, SandboxOltpDrop, apply as apply_to_sandbox_schema,
     create_and_seed as create_and_seed_sandbox_schema, drop_schema as drop_sandbox_schema,
 };
+pub use stored::{StoredMigrations, declared_in_build, files_not_in, pending_in_production};
 pub use types::{Applied, DeclaredMigration, MigrationError, MigrationTarget};

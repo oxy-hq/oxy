@@ -49,16 +49,16 @@ pub struct DeleteAccepted {
 /// A request the three checks let through: the app, its org's slug (an
 /// environment's URL is built from it), and the sandbox agent token the
 /// request used, when that is its credential.
-struct Admitted {
-    db: DatabaseConnection,
-    app: apps::Model,
-    org_slug: String,
+pub(crate) struct Admitted {
+    pub(crate) db: DatabaseConnection,
+    pub(crate) app: apps::Model,
+    pub(crate) org_slug: String,
     /// `Some` narrows what is shown to the sandboxes that token created.
-    own: Option<Uuid>,
+    pub(crate) own: Option<Uuid>,
 }
 
 /// Which environment a request is about, as far as its route says.
-enum Door<'a> {
+pub(crate) enum Door<'a> {
     /// List and create: no one sandbox yet.
     New,
     /// Show: the name in the path, before it is parsed.
@@ -67,7 +67,7 @@ enum Door<'a> {
     Sandbox(&'a str),
 }
 
-async fn admit(
+pub(crate) async fn admit(
     user: &AuthenticatedUser,
     marker: Option<Extension<AppPublishTokenAuth>>,
     app_id: Uuid,
@@ -157,7 +157,7 @@ fn refusal(caller: &crate::server::authz::Caller, door: &Door<'_>) -> SandboxErr
 
 /// The environment `name` names; anything `AppEnvironment::parse` rejects is
 /// `InvalidName`.
-fn parse(name: &str) -> Result<AppEnvironment, SandboxError> {
+pub(crate) fn parse(name: &str) -> Result<AppEnvironment, SandboxError> {
     AppEnvironment::parse(name).ok_or_else(|| SandboxError::InvalidName(name.to_string()))
 }
 

@@ -57,6 +57,7 @@ mod agent;
 pub(crate) mod declared;
 pub mod environment;
 mod ops;
+pub(crate) mod required;
 pub(crate) mod scope;
 pub(crate) mod shared_env;
 

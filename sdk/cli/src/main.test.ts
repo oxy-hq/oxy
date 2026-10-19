@@ -372,8 +372,10 @@ describe("help", () => {
       ["env", "--help"],
       ["env", "create", "--help"],
       ["env", "delete", "--help"],
+      ["env", "schedules", "--help"],
       ["fn", "--help"],
       ["fn", "call", "--help"],
+      ["fn", "run", "--help"],
       ["invocations", "--help"],
       ["logs", "--help"],
       ["login-link", "--help"]

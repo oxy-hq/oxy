@@ -36,8 +36,10 @@ import { runChecks } from "./commands/checks.js";
 import { runList, runPath } from "./commands/customers.js";
 import { runOpenApi, runRoutes, runSchema } from "./commands/discover.js";
 import { runEnvCreate, runEnvDelete, runEnvList, runEnvShow } from "./commands/env.js";
+import { runEnvSchedules } from "./commands/env-schedules.js";
 import { runEnvSecretDelete, runEnvSecretList, runEnvSecretSet } from "./commands/env-secrets.js";
 import { runFnCall } from "./commands/fn.js";
+import { runFnRun } from "./commands/fn-run.js";
 import { runGuide } from "./commands/guide.js";
 import { runInitCi } from "./commands/init-ci.js";
 import { runInvocationsHeld, runInvocationsList } from "./commands/invocations.js";
@@ -55,6 +57,7 @@ import {
   runPreviewShow
 } from "./commands/preview.js";
 import { runPreviewRun, runPreviewRunShow, runPreviewRunsList } from "./commands/preview-runs.js";
+import { runPromote, runRollback } from "./commands/promote.js";
 import { runProxy } from "./commands/proxy.js";
 import { runPublish } from "./commands/publish.js";
 import { runImport, runNew, runRemove } from "./commands/registry.js";
@@ -651,6 +654,23 @@ function buildProgram(): Command {
     });
   });
 
+  withGlobals(
+    env
+      .command("schedules <app> <name>")
+      .description(
+        "staging's or a sandbox's schedules switch (off by default) and its schedule rows; production's always run"
+      )
+      .option("--on", "fire the functions' schedules in this environment")
+      .option("--off", "stop firing them: the environment keeps no schedule rows")
+      .option("--json", "emit {environment, enabled, schedules, warnings} as JSON")
+  ).action(async (app: string, name: string, opts: Record<string, unknown>) => {
+    await runEnvSchedules(createContext(globals(opts)), app, name, {
+      on: opts.on as boolean | undefined,
+      off: opts.off as boolean | undefined,
+      json: Boolean(opts.json)
+    });
+  });
+
   const envSecret = env
     .command("secret")
     .description("a sandbox's own secrets — keys and flags, set, delete; never a value");
@@ -698,7 +718,85 @@ function buildProgram(): Command {
     });
   });
 
-  const fn = program.command("fn").description("call a custom app's Oxy Function directly");
+  withGlobals(
+    program
+      .command("promote <app>")
+      .description("move a build up — staging's to production, or a sandbox's to staging")
+      .option(
+        "--from <environment>",
+        "the source: staging (the default, to production) or dev-<handle> (to staging)"
+      )
+      .option(
+        "--build <id>",
+        "a build the source served — publish id or UUID (default: its current)"
+      )
+      .option(
+        "--remove-schedule <function>",
+        "confirm retiring this function's production schedule (repeatable)",
+        collect,
+        []
+      )
+      .option("--dry-run", "print the plan and stop")
+      .option("--yes", "act without asking — needed off a terminal")
+      .option("--json", "emit the server's plan as JSON")
+      .addHelpText(
+        "after",
+        "\nThe plan comes first: the build, what the target serves now, functions and\n" +
+          "schedules that change, the migrations production applies before it moves, and\n" +
+          "required secrets production has no value for. A blocker refuses the promote\n" +
+          "(exit 6). Without --yes it asks on a terminal; off one it exits 8. The act sends\n" +
+          "the plan's build back, and is refused (target_moved) if the target moved since.\n" +
+          "A sandbox build reaches production only through staging.\n"
+      )
+  ).action(async (app: string, opts: Record<string, unknown>) => {
+    await runPromote(createContext(globals(opts)), app, {
+      from: opts.from as string | undefined,
+      build: opts.build as string | undefined,
+      removeSchedules: opts.removeSchedule as string[] | undefined,
+      dryRun: Boolean(opts.dryRun),
+      yes: Boolean(opts.yes),
+      json: Boolean(opts.json)
+    });
+  });
+  withGlobals(
+    program
+      .command("rollback <app>")
+      .description("move staging or production back to a build it served before")
+      .option("--app-env <environment>", "the environment to roll back: staging or production")
+      .option(
+        "--to <build>",
+        "a build it served before — publish id or UUID (default: the one before its current)"
+      )
+      .option(
+        "--remove-schedule <function>",
+        "confirm retiring this function's production schedule (repeatable)",
+        collect,
+        []
+      )
+      .option("--dry-run", "print the plan and stop")
+      .option("--yes", "act without asking — needed off a terminal")
+      .option("--json", "emit the server's plan as JSON")
+      .addHelpText(
+        "after",
+        "\nRollback never reverses a migration: the target's pending files are applied like\n" +
+          "any production move, and the plan warns when the target predates files already\n" +
+          "applied. Rolling back twice swaps back. A sandbox is never rolled back — publish\n" +
+          "to it again.\n"
+      )
+  ).action(async (app: string, opts: Record<string, unknown>) => {
+    await runRollback(createContext(globals(opts)), app, {
+      appEnv: opts.appEnv as string | undefined,
+      build: opts.to as string | undefined,
+      removeSchedules: opts.removeSchedule as string[] | undefined,
+      dryRun: Boolean(opts.dryRun),
+      yes: Boolean(opts.yes),
+      json: Boolean(opts.json)
+    });
+  });
+
+  const fn = program
+    .command("fn")
+    .description("call a custom app's Oxy Function directly, or queue it as a background run");
   withGlobals(
     fn
       .command("call <app> <function>")
@@ -710,6 +808,28 @@ function buildProgram(): Command {
   ).action(async (app: string, fnName: string, opts: Record<string, unknown>) => {
     await runFnCall(createContext(globals(opts)), app, fnName, {
       appEnv: opts.appEnv as string | undefined,
+      data: opts.data as string | undefined,
+      json: Boolean(opts.json),
+      timeoutSeconds: Number(opts.timeout)
+    });
+  });
+
+  withGlobals(
+    fn
+      .command("run <app> <function>")
+      .description("queue the function as a background run (Run now) and wait for its verdict")
+      .option("--app-env <environment>", "run it in this environment instead of production")
+      .option(
+        "--as-schedule",
+        "run a scheduled function once as its schedule would: no input, whether or not the environment's schedules are on"
+      )
+      .option("--data <json|@file|->", "the function's input (not with --as-schedule)")
+      .option("--timeout <seconds>", "how long to wait for the run", "300")
+      .option("--json", "emit the result as JSON")
+  ).action(async (app: string, fnName: string, opts: Record<string, unknown>) => {
+    await runFnRun(createContext(globals(opts)), app, fnName, {
+      appEnv: opts.appEnv as string | undefined,
+      asSchedule: Boolean(opts.asSchedule),
       data: opts.data as string | undefined,
       json: Boolean(opts.json),
       timeoutSeconds: Number(opts.timeout)
@@ -1186,7 +1306,10 @@ function buildProgram(): Command {
       )
       .option("--build-id <id>", "unique per publish (default: the CI run, else random)")
       .option("--dir <path>", "publish this pre-built directory instead of running the build")
-      .option("--promote", "publish straight to the live channel")
+      .option(
+        "--promote",
+        "deprecated: publish to staging and production at once — publish, then `oxyc promote`"
+      )
       .option("--name <name>", "display name override for the app")
       .option("--repo <url>", "git remote to record (default: the checkout's origin)")
       .option("--commit <sha>", "commit to record (default: HEAD, or GITHUB_SHA)")

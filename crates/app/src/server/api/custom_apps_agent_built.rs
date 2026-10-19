@@ -193,12 +193,19 @@ impl AgentBuilt {
 
 /// What a promote or a rollback route refuses with: the bare status it has
 /// always answered, or — for a build a sandbox agent token published — the
-/// coded `409`. One type, so a route gains the second without its other
-/// answers changing by a byte.
+/// coded `409`, or a refusal the one production move added
+/// (`custom_apps_promote`: `staging_never_served`, `migration_failed`) as
+/// `{"code","error","message"}`. One type, so a route gains a coded answer
+/// without its other answers changing by a byte.
 #[derive(Debug)]
 pub enum PromoteRefusal {
     Status(StatusCode),
     AgentBuilt(Box<AgentBuilt>),
+    Coded {
+        status: StatusCode,
+        code: &'static str,
+        message: String,
+    },
 }
 
 impl From<StatusCode> for PromoteRefusal {
@@ -218,6 +225,14 @@ impl IntoResponse for PromoteRefusal {
         match self {
             Self::Status(status) => status.into_response(),
             Self::AgentBuilt(built) => built.into_response(),
+            Self::Coded {
+                status,
+                code,
+                message,
+            } => {
+                let body = serde_json::json!({ "code": code, "error": code, "message": message });
+                (status, Json(body)).into_response()
+            }
         }
     }
 }

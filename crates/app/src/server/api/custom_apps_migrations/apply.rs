@@ -71,7 +71,8 @@ pub(super) fn pg_detail(e: &tokio_postgres::Error) -> String {
 
 /// Apply this bundle's declared migrations to the app's own OLTP schema.
 ///
-/// Called from `publish` **before** the published pointer moves, so a failure
+/// Called before production's pointer moves — by a promoting publish, and by
+/// every other production move (`custom_apps_promote::production`) — so a failure
 /// leaves the app serving its previous build. A half-migrated app whose code
 /// already shipped is worse than a promote that did not happen.
 ///

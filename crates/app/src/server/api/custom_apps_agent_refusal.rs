@@ -55,6 +55,8 @@ pub const REFUSED_WRITES: &[(&str, &str)] = &[
     ("POST", "/customer-apps/{id}/publish"),
     ("DELETE", "/customer-apps/{id}/publish"),
     ("POST", "/customer-apps/{id}/rollback"),
+    ("POST", "/customer-apps/{id}/environments/{name}/promote"),
+    ("POST", "/customer-apps/{id}/environments/{name}/rollback"),
     ("POST", "/customer-apps/batch/publish"),
     ("POST", "/customer-apps/batch/promote-latest"),
     ("POST", "/customer-apps/batch/unpublish"),
@@ -63,6 +65,10 @@ pub const REFUSED_WRITES: &[(&str, &str)] = &[
     ("POST", "/customer-apps/{id}/storage/delete"),
     ("POST", "/customer-apps/{id}/publishers"),
     ("DELETE", "/customer-apps/{id}/publishers/{publisher_id}"),
+    // An environment's schedules switch — a sandbox's included. Turning
+    // schedules on costs warehouse reads and third-party calls on a timer;
+    // staff flip it, never a token (environments design §4.5, ruling 1).
+    ("PUT", "/customer-apps/{id}/environments/{name}/schedules"),
     ("POST", "/admin/apps"),
     ("PATCH", "/admin/apps/{id}"),
     ("DELETE", "/admin/apps/{id}"),

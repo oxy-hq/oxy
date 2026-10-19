@@ -12,6 +12,8 @@ use agentic_runtime::worker::{ExecutingTask, TaskExecutor};
 use async_trait::async_trait;
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use sea_orm::DatabaseConnection;
+
+use crate::server::api::custom_apps_functions::queued_admission::QueuedTrigger;
 use sentry::SentryFutureExt;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -26,6 +28,8 @@ struct JobRequest {
     app_id: uuid::Uuid,
     function_name: String,
     mode: String,
+    /// What queued the run: the rule that admits it outside production.
+    trigger: QueuedTrigger,
     input: Vec<u8>,
     traceparent: Option<String>,
     environment: AppEnvironment,
@@ -41,9 +45,10 @@ struct JobRequest {
 /// (`internal-docs/2026-09-10-custom-app-environments-design.md` §3.4). An
 /// unknown name is refused here; a known one rides to
 /// `run_scheduled_function`, which resolves that environment's build and
-/// admits the run through `check_run::admit_queued` — outside production only
-/// a function that build marks `check: true` runs, under that environment's
-/// policy; everything else is refused there, in one place.
+/// admits the run through `check_run::admit_queued` by what queued it — a
+/// check, Run now `as=schedule`, a cron fire the environment turned on, a
+/// webhook its build declares — under that environment's policy; everything
+/// else is refused there, in one place.
 fn read_task(spec: &TaskSpec) -> Result<JobRequest, String> {
     let TaskSpec::Custom { kind, payload } = spec else {
         return Err(format!(
@@ -79,6 +84,7 @@ fn read_task(spec: &TaskSpec) -> Result<JobRequest, String> {
     Ok(JobRequest {
         app_id,
         mode: invocation_mode(task.trigger.as_deref()),
+        trigger: QueuedTrigger::from_label(task.trigger.as_deref()),
         function_name: task.function_name,
         input,
         traceparent: task.traceparent,
@@ -102,6 +108,7 @@ impl TaskExecutor for AppFunctionTaskExecutor {
             app_id,
             function_name,
             mode,
+            trigger,
             input,
             traceparent,
             environment,
@@ -143,6 +150,7 @@ impl TaskExecutor for AppFunctionTaskExecutor {
             credential_token_id,
             function_name,
             mode,
+            trigger,
             input,
             cancel: cancel.clone(),
             event_tx,
@@ -174,6 +182,7 @@ struct JobArgs {
     credential_token_id: Option<uuid::Uuid>,
     function_name: String,
     mode: String,
+    trigger: QueuedTrigger,
     input: Vec<u8>,
     cancel: CancellationToken,
     event_tx: mpsc::Sender<(String, serde_json::Value)>,
@@ -192,6 +201,7 @@ async fn run_job(args: JobArgs) {
         credential_token_id,
         function_name,
         mode,
+        trigger,
         input,
         cancel,
         event_tx,
@@ -228,6 +238,7 @@ async fn run_job(args: JobArgs) {
         &function_name,
         crate::server::api::custom_apps_functions::QueuedBy {
             mode: &mode,
+            trigger,
             credential_token_id,
         },
         input,
@@ -260,6 +271,7 @@ async fn run_job(args: JobArgs) {
             &environment,
             &function_name,
             &mode,
+            trigger,
             credential_token_id,
             input,
             cancel,
@@ -283,6 +295,9 @@ async fn run_job(args: JobArgs) {
 fn invocation_mode(trigger: Option<&str>) -> String {
     match trigger {
         Some("manual") => "manual",
+        // Run now `as=schedule`: a person asked, so it is a manual run — and
+        // counts as a sandbox's activity, which a cron fire does not.
+        Some("schedule_now") => "manual",
         // A verified inbound webhook. Distinct from `manual` because a function
         // may legitimately branch on it — the payload is a provider's event, not
         // an operator's click — and distinct from `route` because there is no
@@ -370,18 +385,41 @@ mod tests {
 
     /// Every label the seeding side can produce must have an arm here. Written
     /// over the enum rather than string literals so adding a variant without an
-    /// arm fails this test instead of silently reporting `schedule`.
+    /// arm fails this test instead of silently reporting `schedule` — and the
+    /// runner must read the label back as the trigger that wrote it.
     #[test]
     fn every_trigger_label_maps_to_its_own_mode() {
-        for trigger in [FunctionJobTrigger::Manual, FunctionJobTrigger::Webhook] {
+        for (trigger, mode) in [
+            (FunctionJobTrigger::Manual, "manual"),
+            (FunctionJobTrigger::Webhook, "webhook"),
+            (FunctionJobTrigger::ScheduleNow, "manual"),
+        ] {
             let label = trigger.as_str();
             assert_eq!(
                 invocation_mode(Some(label)),
-                label,
-                "trigger '{label}' does not round-trip to its own mode — it is \
-                 falling through to the legacy `schedule` default"
+                mode,
+                "trigger '{label}' is falling through to the legacy `schedule` default"
+            );
+            assert_eq!(
+                super::QueuedTrigger::from_label(Some(label)),
+                trigger.queued(),
+                "the runner reads '{label}' as another trigger"
             );
         }
+    }
+
+    /// Run now `as=schedule` in a sandbox: a `manual` invocation, read as the
+    /// trigger whose rule admits a scheduled function there.
+    #[test]
+    fn a_schedule_now_task_is_a_manual_run_admitted_as_a_schedule() {
+        let job = read_task(&spec(json!({
+            "app_id": APP, "function_name": "refresh", "trigger": "schedule_now",
+            "environment": "dev-a1",
+        })))
+        .expect("runnable");
+        assert_eq!(job.mode, "manual");
+        assert_eq!(job.trigger, super::QueuedTrigger::ScheduleNow);
+        assert_eq!(job.environment.name(), "dev-a1");
     }
 
     /// A task queued before the field existed is a cron fire, and stays one.

@@ -23,6 +23,8 @@ use oxy_app::server::api::admin::apps::access::set_app_access;
 use oxy_app::server::api::admin::apps::handlers as admin;
 use oxy_app::server::api::admin::apps::storage;
 use oxy_app::server::api::custom_apps_agent_refusal::REFUSED_WRITES;
+use oxy_app::server::api::custom_apps_env_schedules::handlers as env_schedules;
+use oxy_app::server::api::custom_apps_promote::handlers as promote;
 use oxy_app::server::api::custom_apps_publish_oidc::{delete_publisher, register_publisher};
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 use serde_json::{Value, json};
@@ -70,6 +72,16 @@ fn fixed_state_writes() -> Vec<Write> {
         ),
         write(
             "POST",
+            "/customer-apps/{id}/environments/{name}/promote",
+            post(promote::promote),
+        ),
+        write(
+            "POST",
+            "/customer-apps/{id}/environments/{name}/rollback",
+            post(promote::rollback),
+        ),
+        write(
+            "POST",
             "/customer-apps/batch/publish",
             post(admin::batch_publish_apps),
         ),
@@ -108,6 +120,11 @@ fn fixed_state_writes() -> Vec<Write> {
             "/customer-apps/{id}/publishers/{publisher_id}",
             delete(delete_publisher),
         ),
+        write(
+            "PUT",
+            "/customer-apps/{id}/environments/{name}/schedules",
+            put(env_schedules::set),
+        ),
         write("POST", "/admin/apps", post(admin::create_app)),
         write("PATCH", "/admin/apps/{id}", patch(admin::update_app)),
         write("DELETE", "/admin/apps/{id}", delete(admin::delete_app)),
@@ -142,17 +159,31 @@ fn body_for(agent: &Agent, path: &str, staging: Uuid) -> Option<Value> {
         }),
         "/customer-apps/{id}" | "/admin/apps/{id}" => json!({ "name": "Renamed By Token" }),
         "/customer-apps/{id}/rollback" => json!({ "build_id": staging }),
+        "/customer-apps/{id}/environments/{name}/promote" => json!({ "from": "staging" }),
+        "/customer-apps/{id}/environments/{name}/rollback" => json!({}),
         "/customer-apps/{id}/storage/delete" => json!({ "keys": ["uploads/x"] }),
         "/customer-apps/{id}/publishers" => json!({
             "repo_owner": "acme", "repo_owner_id": 1, "repo_name": "app",
             "workflow_ref": ".github/workflows/oxy-publish.yml", "environment": "production",
         }),
         "/admin/apps/{id}/access" => json!({ "visibility": "restricted" }),
+        "/customer-apps/{id}/environments/{name}/schedules" => json!({ "enabled": true }),
         "/admin/app-publish-tokens" => json!({ "name": "by token" }),
         batch if batch.starts_with("/customer-apps/batch/") => json!({ "ids": [app] }),
         _ => return None,
     };
     Some(body)
+}
+
+/// The environment `{name}` names: production for a promote or a rollback —
+/// the moves the token must never make — and staging for the schedules
+/// switch, which production does not have.
+fn environment_for(path: &str) -> &'static str {
+    if path.ends_with("/schedules") {
+        "staging"
+    } else {
+        "production"
+    }
 }
 
 /// The request for `write`: `{id}` is the token's app, any other id is one
@@ -166,6 +197,7 @@ fn request(
     let uri = write
         .path
         .replace("{id}", &agent.app.id.to_string())
+        .replace("{name}", environment_for(write.path))
         .replace("{publisher_id}", &Uuid::new_v4().to_string());
     let request = Request::builder()
         .method(write.method)
@@ -194,14 +226,15 @@ async fn fixed_state(agent: &Agent) -> Value {
         .map(|build| build.id)
         .collect();
     builds.sort();
-    let mut environments: Vec<(String, Option<Uuid>)> = entity::app_environments::Entity::find()
-        .filter(entity::app_environments::Column::AppId.eq(app.id))
-        .all(db)
-        .await
-        .expect("read the environments")
-        .into_iter()
-        .map(|row| (row.name, row.build_id))
-        .collect();
+    let mut environments: Vec<(String, Option<Uuid>, bool)> =
+        entity::app_environments::Entity::find()
+            .filter(entity::app_environments::Column::AppId.eq(app.id))
+            .all(db)
+            .await
+            .expect("read the environments")
+            .into_iter()
+            .map(|row| (row.name, row.build_id, row.schedules_enabled))
+            .collect();
     environments.sort();
     let apps = entity::apps::Entity::find().count(db).await.expect("apps");
     let publishers = entity::app_publishers::Entity::find()

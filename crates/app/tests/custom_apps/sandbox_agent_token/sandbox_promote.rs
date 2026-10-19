@@ -6,8 +6,9 @@
 //! a rollback names any retained build, so a token's sandbox build was as
 //! shippable as a draft. It is marked as a draft is, and both routes refuse
 //! it with the same `409 draft_published_by_agent`, naming the sandbox it was
-//! published to. A person's sandbox build is unmarked and both routes ship it
-//! as they always did; and the sandbox itself still serves its own build.
+//! published to. A person's sandbox build is unmarked, and both routes ship it
+//! once staging has served it (invariant 1; before that, `409
+//! staging_never_served`); and the sandbox itself still serves its own build.
 //!
 //! The token here was minted **without** staging: the mark is every sandbox
 //! agent token's.
@@ -119,26 +120,37 @@ async fn neither_promote_latest_nor_a_rollback_ships_a_tokens_sandbox_build() {
     assert_eq!(production_of(&agent).await, live, "production never moved");
 }
 
-/// A person's sandbox build carries no mark, and both routes do with it what
-/// they always did: *promote latest* ships the newest build whatever served
-/// it, and a rollback ships the build it names.
+/// A person's sandbox build carries no mark, but production only serves a
+/// build staging has served (invariant 1): *promote latest* and a rollback
+/// refuse it `staging_never_served` — they used to ship it — until it is
+/// promoted from the sandbox to staging. Then both ship it.
 #[tokio::test]
-async fn a_persons_sandbox_build_ships_on_both_routes_as_it_always_did() {
+async fn a_persons_sandbox_build_ships_on_both_routes_once_staging_served_it() {
     let agent = agent().await;
+    let live = production_of(&agent).await;
     let first = persons_sandbox_build(&agent, "p1", "sbx-by-person-1", true).await;
     assert_eq!(build_row(&agent, first).await.published_token_id, None);
 
+    let body = promote_latest(&agent).await;
+    assert_eq!(body["results"][0]["ok"], false, "{body}");
+    assert_eq!(body["results"][0]["code"], "staging_never_served", "{body}");
+    assert_eq!(production_of(&agent).await, live, "production never moved");
+    let (status, body) = roll_back_to(&agent, first).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "staging_never_served", "{body}");
+
+    // Promoted from the sandbox to staging, it is a build staging served.
+    to_staging(&agent, "dev-p1").await;
     let body = promote_latest(&agent).await;
     assert_eq!(
         (&body["succeeded"], &body["failed"]),
         (&json!(1), &json!(0))
     );
-    assert_eq!(body["results"][0]["ok"], true, "{body}");
     assert!(body["results"][0].get("code").is_none(), "{body}");
     assert_eq!(production_of(&agent).await, Some(first));
 
     let second = persons_sandbox_build(&agent, "p1", "sbx-by-person-2", false).await;
-    assert_eq!(build_row(&agent, second).await.published_token_id, None);
+    to_staging(&agent, "dev-p1").await;
     let (status, body) = roll_back_to(&agent, second).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(production_of(&agent).await, Some(second));
@@ -150,6 +162,18 @@ async fn a_persons_sandbox_build_ships_on_both_routes_as_it_always_did() {
     assert_eq!(body["results"][0]["code"], REFUSED, "{body}");
     assert_eq!(production_of(&agent).await, Some(second));
     assert_ne!(Some(by_token), production_of(&agent).await);
+}
+
+/// `POST …/environments/staging/promote` from `sandbox`, in the minter's
+/// session: the sandbox's current build becomes staging's.
+async fn to_staging(agent: &Agent, sandbox: &str) {
+    let uri = format!(
+        "/customer-apps/{}/environments/staging/promote",
+        agent.app.id
+    );
+    let (status, body) = person(agent, "POST", &uri, Some(json!({ "from": sandbox }))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["moved"], true, "{body}");
 }
 
 /// The mark changes nothing a sandbox does with its own build: the sandbox

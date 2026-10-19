@@ -28,7 +28,8 @@
 //! cloud tick (`tick_cloud`), a separate `oxy worker` fleet, or the scheduler.
 //!
 //! **Children.** `environment_checks` (a check run in a named app environment)
-//! and `environment_refusals` (every refusal around one); `readback` (`/fn`'s
+//! and `environment_refusals` (every refusal around one);
+//! `environment_schedules` (Run now `as=schedule`); `readback` (`/fn`'s
 //! invocation id, and the fixture the read-backs share), `invocation_listings`,
 //! `invocation_reach`, `sandbox_build_reach`, `agent_draft_build_reach`,
 //! `held_readback`, `run_readback` and `log_reads`;
@@ -43,6 +44,7 @@ mod agent_draft_build_reach;
 mod callers;
 mod environment_checks;
 mod environment_refusals;
+mod environment_schedules;
 mod held_readback;
 mod invocation_listings;
 mod invocation_reach;

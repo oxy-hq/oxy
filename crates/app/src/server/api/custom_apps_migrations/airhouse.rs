@@ -68,7 +68,7 @@ fn fnv1a(bytes: &[u8]) -> i64 {
 
 /// Apply this bundle's Airhouse migrations to the app's own schema.
 ///
-/// Called from `publish` after the OLTP migrations and **before** the published
+/// Called after the OLTP migrations and **before** production's
 /// pointer moves, so a failure leaves the app serving its previous build.
 #[instrument(skip(db, declared), fields(app_id = %app_id, app_slug = %app_slug))]
 pub(crate) async fn apply_airhouse_on_promote(

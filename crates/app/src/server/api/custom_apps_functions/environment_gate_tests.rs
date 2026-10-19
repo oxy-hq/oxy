@@ -1,5 +1,6 @@
 use super::*;
 use crate::server::api::custom_apps_functions::env_policy::{Decision, HostOp};
+use uuid::Uuid;
 
 fn resolved(environment: AppEnvironment) -> ResolvedEnvironment {
     ResolvedEnvironment {

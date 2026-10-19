@@ -127,9 +127,15 @@ Reads hit production data. A write lands in a home of the sandbox's own, or it
 is *held*: recorded in `invocations held` and not performed. A held write is
 the expected answer outside production. Report it. Unless the task asks for
 it, do not edit `nonProduction` in the manifest to make the write land:
-staging and every other sandbox share that map. Schedules and webhooks do not
-fire in a sandbox: call the function. The `fn call` result carries the
-function's `logs`; `oxyc logs` shows the same lines about 30 seconds later.
+staging and every other sandbox share that map. A sandbox's schedules are off
+unless staff turned them on, and your token cannot turn them on: to test a
+scheduled function, run it once as its schedule would — `oxyc fn run
+<org>/<app> <function> --app-env dev-x --as-schedule --env <deployment>
+--token-env OXY_TOKEN --json` (no `--data`; `oxy_fn_run` with `asSchedule:
+true` over MCP). It runs as the system, with the function's retry policy, and
+answers `409 not_scheduled` (exit `6`) for a function with no `schedule`. The
+`fn call` result carries the function's `logs`; `oxyc logs` shows the same
+lines about 30 seconds later.
 To watch a run you do not call yourself — a check on the worker fleet, a slow
 function — start `oxyc logs <org>/<app> --app-env dev-x --follow --timeout 300
 --env <deployment> --token-env OXY_TOKEN --json` in the background first. It
@@ -166,9 +172,11 @@ Branch on the exit code and the JSON fields, not on the text:
   value shaped like one (`400 credential_shaped_value`). Set a secret with
   `oxyc env secret set` (`oxy_env_secret_set`), never a hand-built request,
   and never try to read a value back.
-- **Never pass `--promote`, and never publish without `--app-env`.** A sandbox
-  build is never promoted. When it is right, say so and leave the ship step to
-  your engineer. Never use `production` as `--app-env` to "check" something:
+- **Never pass `--promote`, never run `oxyc promote` or `oxyc rollback`, and
+  never publish without `--app-env`.** When the sandbox build is right, say so
+  and leave the ship step to your engineer: they promote that build to staging
+  (`oxyc promote <app> --from dev-<handle>`), then to production. Your token is
+  refused both verbs anyway. Never use `production` as `--app-env` to "check" something:
   reads already hit production.
 - **A held write is information to report**, not an error to engineer around.
 - **Clean up, even when a step failed.** Delete every sandbox you created,

@@ -6,8 +6,8 @@
 //! queues this task in one transaction, so the sandbox stops serving at once
 //! and the request never waits on an object store or on Airhouse. The task
 //! then removes the sandbox's homes — its storage silo, its secrets, its
-//! Airhouse sibling and its own schema on the org's OLTP staging branch —
-//! and, last, the row, which is what frees the name.
+//! function schedules, its Airhouse sibling and its own schema on the org's
+//! OLTP staging branch — and, last, the row, which is what frees the name.
 //!
 //! **Each step is idempotent**, and the row goes last: a run that fails in
 //! storage, the secret store, Airhouse or the OLTP branch leaves the row
@@ -45,6 +45,7 @@ use uuid::Uuid;
 use super::lock::SandboxLock;
 pub use super::teardown_executor::SandboxTeardownExecutor;
 use super::{oltp_home, oltp_state};
+use crate::server::api::custom_apps_env_schedules::reconcile::retire_environment;
 use crate::server::api::custom_apps_migrations::{
     AirhouseDrop, DropOutcome, MigrationError, SandboxOltpDrop, drop_environment_schema,
 };
@@ -245,6 +246,11 @@ async fn tear_down(
     let secrets = delete_environment_secrets(db, task.workspace_id, task.app_id, environment)
         .await
         .map_err(|e| not_torn_down(task, "secrets", e.to_string()))?;
+    // Its function schedules, before anything slow: a row left would fire
+    // into a sandbox that serves nothing.
+    let schedules = retire_environment(db, task.workspace_id, task.app_id, environment)
+        .await
+        .map_err(|e| not_torn_down(task, "schedules", e))?;
     let dropped = drop_sibling(db, task, environment)
         .await
         .map_err(|e| not_torn_down(task, "Airhouse", e.to_string()))?;
@@ -255,7 +261,7 @@ async fn tear_down(
         .await
         .map_err(|e| not_torn_down(task, "remove its row", e.to_string()))?;
     Ok(format!(
-        "{}, {}",
+        "{}, {schedules} schedules retired, {}",
         summary(task, secrets, &dropped, rows),
         oltp_summary(&oltp)
     ))

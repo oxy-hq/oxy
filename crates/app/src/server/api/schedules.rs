@@ -7,6 +7,14 @@
 //! standard `workspace_middleware`. All operations are scoped to
 //! `workspace_id` (extracted from the parent path); mutations require
 //! workspace-admin role.
+//!
+//! **A custom app's non-production function schedules are not the tenant's.**
+//! A `function` row whose ref names an environment (`<app_id>/<env>/<fn>`,
+//! `agentic_pipeline::function_schedule`) belongs to staff's switch on that
+//! environment (environments design §4.5): `list` leaves it out, a read,
+//! update, delete, run-now or backfill by its id answers `404` as an id in
+//! another workspace does, and create and update refuse a `function` ref
+//! naming an environment.
 
 use std::sync::Arc;
 
@@ -21,12 +29,14 @@ use uuid::Uuid;
 
 use agentic_http::AgenticState;
 use agentic_pipeline::WorkflowWorkspaceContext;
+use agentic_pipeline::function_schedule::FunctionScheduleRef;
 use agentic_pipeline::platform::PlatformContext;
 use agentic_pipeline::scheduler::{
     BackfillRequest, BackfillResult, ScheduleError, ScheduleInput, backfill_schedule,
     create_schedule, delete_schedule, get_schedule, list_schedules, record_fire_success,
     run_schedule_now, update_schedule,
 };
+use agentic_runtime::entity::schedule;
 use agentic_runtime::lifecycle::crud::runs::{
     insert_run_with_schedule, update_run_done, update_run_failed,
 };
@@ -46,13 +56,57 @@ fn map_err(e: ScheduleError) -> Response {
     }
 }
 
+/// Whether a `function` schedule's ref names a non-production environment of
+/// a custom app. A ref that names none — production's, or any other kind's —
+/// is the tenant's as before.
+fn names_environment(target_kind: &str, target_ref: &str) -> bool {
+    target_kind == "function"
+        && FunctionScheduleRef::parse(target_ref).is_some_and(|t| t.environment.is_some())
+}
+
+fn is_environment_row(row: &schedule::Model) -> bool {
+    names_environment(&row.target_kind, &row.target_ref)
+}
+
+/// The tenant's schedule `id`: an environment's row is `NotFound`, the answer
+/// an id in another workspace gets.
+async fn tenant_schedule(
+    db: &sea_orm::DatabaseConnection,
+    workspace_id: Uuid,
+    id: &str,
+) -> Result<schedule::Model, ScheduleError> {
+    let row = get_schedule(db, workspace_id, id).await?;
+    if is_environment_row(&row) {
+        return Err(ScheduleError::NotFound);
+    }
+    Ok(row)
+}
+
+/// Refuse an input whose `function` ref names an environment.
+fn tenant_input(input: &ScheduleInput) -> Result<(), ScheduleError> {
+    if names_environment(&input.target_kind, &input.target_ref) {
+        return Err(ScheduleError::Invalid(
+            "a function schedule's target_ref is '<app_id>/<function_name>': a custom app's \
+             schedules outside production are turned on per environment by Oxy staff"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 pub async fn list(
     Extension(state): Extension<Arc<AgenticState>>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path(workspace_id): Path<Uuid>,
 ) -> Response {
     match list_schedules(&state.db, workspace_id).await {
-        Ok(rows) => Json(rows).into_response(),
+        Ok(rows) => {
+            let rows: Vec<schedule::Model> = rows
+                .into_iter()
+                .filter(|row| !is_environment_row(row))
+                .collect();
+            Json(rows).into_response()
+        }
         Err(e) => map_err(e),
     }
 }
@@ -62,7 +116,7 @@ pub async fn get(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path((workspace_id, id)): Path<(Uuid, String)>,
 ) -> Response {
-    match get_schedule(&state.db, workspace_id, &id).await {
+    match tenant_schedule(&state.db, workspace_id, &id).await {
         Ok(m) => Json(m).into_response(),
         Err(e) => map_err(e),
     }
@@ -75,6 +129,9 @@ pub async fn create(
     Path(workspace_id): Path<Uuid>,
     Json(input): Json<ScheduleInput>,
 ) -> Response {
+    if let Err(e) = tenant_input(&input) {
+        return map_err(e);
+    }
     match create_schedule(&state.db, workspace_id, input).await {
         Ok(m) => (StatusCode::CREATED, Json(m)).into_response(),
         Err(e) => map_err(e),
@@ -88,6 +145,13 @@ pub async fn update(
     Path((workspace_id, id)): Path<(Uuid, String)>,
     Json(input): Json<ScheduleInput>,
 ) -> Response {
+    let guarded = match tenant_schedule(&state.db, workspace_id, &id).await {
+        Ok(_) => tenant_input(&input),
+        Err(e) => Err(e),
+    };
+    if let Err(e) = guarded {
+        return map_err(e);
+    }
     match update_schedule(&state.db, workspace_id, &id, input).await {
         Ok(m) => Json(m).into_response(),
         Err(e) => map_err(e),
@@ -100,6 +164,9 @@ pub async fn delete(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path((workspace_id, id)): Path<(Uuid, String)>,
 ) -> Response {
+    if let Err(e) = tenant_schedule(&state.db, workspace_id, &id).await {
+        return map_err(e);
+    }
     match delete_schedule(&state.db, workspace_id, &id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => map_err(e),
@@ -119,7 +186,7 @@ pub async fn run_now(
     Path((workspace_id, id)): Path<(Uuid, String)>,
 ) -> Response {
     // Fetch once to inspect target_kind before routing.
-    let schedule = match get_schedule(&state.db, workspace_id, &id).await {
+    let schedule = match tenant_schedule(&state.db, workspace_id, &id).await {
         Ok(s) => s,
         Err(e) => return map_err(e),
     };
@@ -331,9 +398,16 @@ pub async fn backfill(
     Path((workspace_id, id)): Path<(Uuid, String)>,
     Json(body): Json<BackfillRequest>,
 ) -> Response {
+    if let Err(e) = tenant_schedule(&state.db, workspace_id, &id).await {
+        return map_err(e);
+    }
     let workspace: Arc<dyn WorkflowWorkspaceContext> = platform.clone();
     match backfill_schedule(&state.db, workspace_id, workspace.as_ref(), &id, body).await {
         Ok(result) => Json(BackfillResponse::from(result)).into_response(),
         Err(e) => map_err(e),
     }
 }
+
+#[cfg(test)]
+#[path = "schedules_tests.rs"]
+mod tests;

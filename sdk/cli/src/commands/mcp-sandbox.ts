@@ -43,6 +43,7 @@ const OWN_SANDBOX = {
 /** The sandbox tools whose `appEnv` is optional for staff and required here. */
 const NEEDS_SANDBOX = new Set([
   "oxy_fn_call",
+  "oxy_fn_run",
   "oxy_checks_run",
   "oxy_invocations_list",
   "oxy_logs"
@@ -142,9 +143,18 @@ function forSandboxAgent(tool: ToolDef): ToolDef {
   };
 }
 
+/**
+ * The loop's tools a sandbox agent token is never served: an environment's
+ * schedules switch is staff's to flip (the server refuses the token there),
+ * and a tool that can only fail still costs its schema on every turn. A
+ * token runs a scheduled function once with `oxy_fn_run` instead.
+ */
+const STAFF_ONLY = new Set(["oxy_env_schedules"]);
+
 /** The list for a sandbox agent token, built from the loop's own definitions. */
 export function sandboxAgentTools(sandboxLoop: ToolDef[]): ToolDef[] {
-  return [WHOAMI, ...sandboxLoop.map(forSandboxAgent), ...SANDBOX_AGENT_TOOLS];
+  const loop = sandboxLoop.filter((tool) => !STAFF_ONLY.has(tool.name));
+  return [WHOAMI, ...loop.map(forSandboxAgent), ...SANDBOX_AGENT_TOOLS];
 }
 
 /**

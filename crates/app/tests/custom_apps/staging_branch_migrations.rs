@@ -20,7 +20,9 @@ use entity::apps;
 use oxy_app::server::api::custom_apps_functions::env_policy::OltpHome;
 use oxy_app::server::api::custom_apps_functions::host::writer_connection;
 use oxy_app::server::api::custom_apps_migrations::{MigrationTarget, read_ledger};
-use oxy_app::server::api::custom_apps_publish::{OrgRef, PublishInput, PublishResult, publish};
+use oxy_app::server::api::custom_apps_publish::{
+    OrgRef, PROMOTING_PUBLISH_DEPRECATED, PublishInput, PublishResult, publish,
+};
 use oxy_auth::user::LOCAL_GUEST_EMAIL;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::json;
@@ -110,7 +112,7 @@ async fn publish_only(
     promote: bool,
     files: &[(&str, &str)],
 ) -> PublishResult {
-    publish(PublishInput {
+    let mut published = publish(PublishInput {
         org_ref: Some(OrgRef::Id(app.t.org_id)),
         app_slug: app.slug.clone(),
         project_id: app.workspace,
@@ -133,7 +135,13 @@ async fn publish_only(
         semantic_revision_id: None,
     })
     .await
-    .unwrap_or_else(|e| panic!("publish {build_id}: {e}"))
+    .unwrap_or_else(|e| panic!("publish {build_id}: {e}"));
+    // A promoting publish also says it is deprecated; these tests read what
+    // the migrations said, so that warning is set aside.
+    published
+        .warnings
+        .retain(|w| w != PROMOTING_PUBLISH_DEPRECATED);
+    published
 }
 
 /// The files recorded for the app under `target`.

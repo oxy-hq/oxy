@@ -108,6 +108,7 @@ mod tests {
             deleting_at: None,
             oltp_schema: None,
             created_by_token_id,
+            schedules_enabled: false,
         }
     }
 

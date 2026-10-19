@@ -18,6 +18,7 @@ use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use oxy_app::server::api::admin::apps::environment_scope::EnvironmentQuery;
+use oxy_app::server::api::admin::apps::run_as_schedule::RunJobQuery;
 use oxy_app::server::api::admin::apps::{functions as admin_functions, handlers};
 use oxy_app::server::app_function_executor::{APP_FUNCTION_KIND, AppFunctionTaskExecutor};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
@@ -57,6 +58,10 @@ async fn run_as(
     function: &str,
     query: Query<EnvironmentQuery>,
 ) -> (StatusCode, Value) {
+    let query = Query(RunJobQuery {
+        environment: query.0.environment,
+        run_as: None,
+    });
     let outcome = handlers::run_function_job(
         oxy_app_core::audit::RequestActor::session(caller.0),
         token,
@@ -224,11 +229,14 @@ async fn a_queued_task_naming_staging_for_a_function_that_is_not_a_check_is_refu
             .await
             .expect("the task is read");
         match task.outcomes.recv().await.expect("an outcome") {
-            // The refusal `check_run::admit_queued` gives, not any failure
-            // that happens to name the environment (no build, a lookup error).
+            // The refusal `check_run::admit_queued` gives a manual run that
+            // is not a check, not any failure that happens to name the
+            // environment (no build, a lookup error).
             TaskOutcome::Failed(message) => assert!(
-                message.contains("only a route call runs a function in the staging environment"),
-                "{function}: refused, but not as a queued run outside production: {message}"
+                message.contains(
+                    "a manual run in the staging environment runs only a function its build marks"
+                ),
+                "{function}: refused, but not as a manual run that is not a check: {message}"
             ),
             other => panic!("{function}: a non-check staging task must not run: {other:?}"),
         }

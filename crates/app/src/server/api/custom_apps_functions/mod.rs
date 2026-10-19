@@ -31,7 +31,7 @@ pub mod audience;
 /// idempotency record, rate-limit bucket) is built from, environment included.
 mod call_scope;
 /// A queued run in a named app environment: how one is triggered, and the
-/// rule that admits it outside production only for a `check: true` function.
+/// admission [`queued_admission`] decides for it.
 pub(crate) mod check_run;
 #[cfg(test)]
 mod cli_capabilities_drift;
@@ -75,6 +75,9 @@ mod pipeline;
 /// `oxy migrate`'s check that a release does not stop a working live function.
 #[cfg(feature = "custom-app-functions")]
 pub mod preflight;
+/// What a queued run may be outside production, by what queued it: a check,
+/// Run now `as=schedule`, a cron fire with the switch on, a webhook.
+pub(crate) mod queued_admission;
 /// The rate-limit bucket per (user, app, environment, function).
 mod rate_limit;
 mod result_cache;
@@ -564,6 +567,11 @@ pub(crate) enum FunctionJobTrigger {
     Manual,
     /// A verified inbound webhook from a third party.
     Webhook,
+    /// **Run now** `as=schedule`: a scheduled function run once as its
+    /// schedule would run it — no input, the system identity, its retry
+    /// policy (environments design §4.5, ruling 3). Its invocation `mode` is
+    /// `manual`: a person asked.
+    ScheduleNow,
 }
 
 impl FunctionJobTrigger {
@@ -571,6 +579,16 @@ impl FunctionJobTrigger {
         match self {
             Self::Manual => "manual",
             Self::Webhook => "webhook",
+            Self::ScheduleNow => "schedule_now",
+        }
+    }
+
+    /// The trigger the runner reads back from the task's label.
+    pub(crate) fn queued(self) -> queued_admission::QueuedTrigger {
+        match self {
+            Self::Manual => queued_admission::QueuedTrigger::Manual,
+            Self::Webhook => queued_admission::QueuedTrigger::Webhook,
+            Self::ScheduleNow => queued_admission::QueuedTrigger::ScheduleNow,
         }
     }
 }
@@ -1634,12 +1652,14 @@ pub(crate) type RunEventSink = tokio::sync::mpsc::Sender<(String, serde_json::Va
 /// is set — drains the isolate's log buffer into `function_log` events so the
 /// run's output is persisted and observable. Returns the response body on success.
 ///
-/// `environment` is the one the task named — production for every schedule,
-/// webhook and Run now. It is resolved, and admitted by `check_run::admit_queued`:
-/// outside production only a function the resolved build marks `check: true`
-/// runs, and it runs that environment's build under that environment's policy
-/// (`run_policy`), the one a route call there gets. Every other non-production
-/// task is refused here rather than run on production's build and secrets.
+/// `environment` is the one the task named — `None` on the task is
+/// production. It is resolved, and admitted by `check_run::admit_queued` by
+/// what queued the run (`queued.trigger`; `queued_admission`): outside
+/// production a check, Run now `as=schedule`, a cron fire the environment
+/// turned on, or a webhook its build declares — each runs that environment's
+/// build under that environment's policy (`run_policy`), the one a route call
+/// there gets. Every other non-production task is refused here rather than
+/// run on production's build and secrets.
 #[cfg(feature = "custom-app-functions")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_scheduled_function(
@@ -1665,9 +1685,17 @@ pub(crate) async fn run_scheduled_function(
         .map_err(|e| format!("app lookup failed: {e}"))?
         .ok_or_else(|| format!("app {app_id} not found"))?;
     // admit → prepare → acquire → run → record, as a route call does.
-    let admitted = pipeline::admit(db, &app, environment, function_name, pipeline::Door::Queued)
-        .await
-        .map_err(|e| e.into_message(function_name))?;
+    let admitted = pipeline::admit(
+        db,
+        &app,
+        environment,
+        function_name,
+        pipeline::Door::Queued {
+            trigger: queued.trigger,
+        },
+    )
+    .await
+    .map_err(|e| e.into_message(function_name))?;
     let admission = admitted.admission.clone();
     let prepared = pipeline::prepare(db, &app, admission, admitted.build_id, function_name)
         .await

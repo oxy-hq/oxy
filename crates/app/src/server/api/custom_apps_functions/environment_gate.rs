@@ -21,12 +21,13 @@
 //! data, runs the environment's build, and sees `ctx.channel` as the
 //! environment's name.
 //!
-//! Still refused: a non-production environment from a queued path (schedules,
-//! webhooks and Run now stay production-only — their identities carry no
-//! environment yet, design §4.2). A caller that has already decided the reach
-//! for a queued run — a check run requested by staff — passes
-//! `Entrance::Route { non_production_reach: true }` and carries that decision
-//! with the task; this gate adds no entrance for it.
+//! A queued run outside production is not admitted here on its own
+//! (`Entrance::Queued` is refused). The runner first applies the rule for
+//! what queued it (`queued_admission`, design §4.5: a check, Run now
+//! `as=schedule`, a cron fire the environment turned on, a webhook its build
+//! declares) and then passes `Entrance::Route { non_production_reach: true }`
+//! — who may ask was decided when the run was queued, and the task carries
+//! that decision; this gate adds no entrance for it.
 //!
 //! What an environment's policy *does* lands in `env_policy`, not here. The
 //! one fact it needs from the database is decided here, once per admitted
@@ -38,7 +39,6 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use oxy_app_core::custom_app_environment::AppEnvironment;
-use uuid::Uuid;
 
 use super::env_policy::{EnvPolicy, OltpHome, SandboxUnready};
 use crate::server::api::custom_apps_env_resolve::{ResolvedEnvironment, may_open_non_production};
@@ -76,7 +76,7 @@ pub(crate) struct Admission {
 pub(crate) enum RefusedReason {
     /// Staging and sandboxes are Oxy staff's; this viewer is not.
     NotStaff,
-    /// A non-production environment runs only on a staff route call.
+    /// A queued run outside production that no trigger's rule admitted.
     QueuedOutsideProduction,
     /// A sandbox agent token, anywhere but a sandbox it created — or, for a
     /// token granted an app's staging, that staging.
@@ -99,8 +99,8 @@ impl EnvironmentRefused {
                  in production"
             ),
             RefusedReason::QueuedOutsideProduction => format!(
-                "only a route call runs a function in the {env} environment; schedules, \
-                 webhooks and manual runs are production-only"
+                "a queued run in the {env} environment runs only as a check, a schedule or a \
+                 webhook its build declares"
             ),
             RefusedReason::NotOwnSandbox => {
                 "a sandbox agent token runs functions only in a sandbox it created".to_string()
@@ -280,7 +280,7 @@ pub(crate) async fn route_entrance(
 pub(crate) async fn with_build_pin(
     db: &sea_orm::DatabaseConnection,
     policy: EnvPolicy,
-    build_id: Uuid,
+    build_id: uuid::Uuid,
 ) -> EnvPolicy {
     if policy.is_production() {
         return policy;

@@ -1636,66 +1636,14 @@ async fn fire_schedule(
             .map_err(|e| e.to_string())
         }
         "function" => {
-            // A scheduled custom-app Oxy Function. `target_ref` encodes
-            // "<app_id>/<function_name>"; the host-side `AppFunctionTaskExecutor`
-            // (Custom-task registry) runs it under the org-owner identity. This
-            // arm stays entity/oxy-free — it only seeds a run + a Custom task
-            // whose string payload the host resolves.
-            let (app_id, function_name) = s.target_ref.split_once('/').ok_or_else(|| {
-                format!(
-                    "function schedule target_ref must be '<app_id>/<function_name>', got {:?}",
-                    s.target_ref
-                )
-            })?;
-            let run_id = uuid::Uuid::new_v4().to_string();
-            // Stamp the trigger (`scheduled` vs `manual` run-now) into the run's
-            // metadata so the dashboard can label it, mirroring what the
-            // workflow/airway/agent arms get from their `start_*` helpers.
-            let mut metadata = serde_json::json!({});
-            stamp_trigger_metadata(&mut metadata, &Some(trigger.to_string()), &None, &None);
-            insert_run_with_schedule(
-                db,
-                &run_id,
-                &s.name,
-                None,
-                "app_function",
-                Some(metadata),
-                &s.id,
-                s.workspace_id,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-            // Carry the trigger (`scheduled` for a cron fire, `manual` for a
-            // run-now) so the executor records the invocation `mode` to match.
-            let mut task = crate::app_function_task::AppFunctionTask::new(app_id, function_name);
-            task.trigger = Some(trigger.to_string());
-            let spec = agentic_core::delegation::TaskSpec::Custom {
-                kind: crate::app_function_task::APP_FUNCTION_KIND.into(),
-                payload: task.to_payload(),
-            };
-            // The job's retry policy, if any, is stamped onto the schedule's
-            // `variables` at publish (`{"task_policy": …}`). Deserialize it here
-            // so a scheduled run inherits the durable queue's retry/backoff — this
-            // arm stays entity/oxy-free (it only reads a TaskPolicy JSON blob).
-            let policy = s
-                .variables
-                .as_ref()
-                .and_then(|v| v.get("task_policy"))
-                .and_then(|p| {
-                    serde_json::from_value::<agentic_core::delegation::TaskPolicy>(p.clone()).ok()
-                });
-            agentic_runtime::crud::enqueue_task(
-                db,
-                &run_id,
-                &run_id,
-                None,
-                &spec,
-                policy.as_ref(),
-                agentic_runtime::crud::TaskScope::Global,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-            Ok(FireOutcome::Seeded(run_id))
+            // A scheduled custom-app Oxy Function, in production or in a
+            // non-production environment the row's `target_ref` names. The
+            // host-side `AppFunctionTaskExecutor` (Custom-task registry) runs
+            // it under the org-owner identity, after admitting it there; this
+            // arm stays entity/oxy-free (`function_schedule`).
+            crate::function_schedule::fire(db, s, trigger)
+                .await
+                .map(FireOutcome::Seeded)
         }
         // The per-workspace pre-aggregation cycle. Unlike `monitor_scan` /
         // `health_eval` — which the host runs inline and therefore special-cases

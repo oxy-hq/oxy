@@ -17,6 +17,7 @@ mod context_documents;
 mod db_transient;
 pub mod drive_policy;
 pub mod executor;
+pub mod function_schedule;
 pub mod pipeline_ref;
 pub mod platform;
 pub mod recovery;

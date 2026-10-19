@@ -31,6 +31,7 @@ pub mod custom_apps_cache;
 pub mod custom_apps_client;
 pub mod custom_apps_debug;
 pub mod custom_apps_env_resolve;
+pub mod custom_apps_env_schedules;
 pub mod custom_apps_environments;
 pub mod custom_apps_functions;
 pub mod custom_apps_gates;
@@ -42,6 +43,9 @@ pub mod custom_apps_migrations;
 pub mod custom_apps_non_production;
 pub mod custom_apps_nonproduction;
 pub mod custom_apps_precompress;
+/// `oxyc promote` / `oxyc rollback`, and the one function that moves
+/// production's pointer for every writer.
+pub mod custom_apps_promote;
 pub mod custom_apps_publish;
 /// The audit row of a bundle publish, and what one says of a publish token.
 pub(crate) mod custom_apps_publish_audit;

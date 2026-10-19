@@ -232,7 +232,7 @@ describe("the tool list", () => {
   /**
    * FOUR GENERIC TOOLS, PLUS TWO NAMED EXCEPTIONS — pinned by name so a fifth
    * generic tool or a stray addition to either loop is a decision, not a
-   * drift. `SANDBOX_TOOLS` (10) and `PREVIEW_TOOLS` (8) exist because the
+   * drift. `SANDBOX_TOOLS` (12) and `PREVIEW_TOOLS` (8) exist because the
    * sandbox and workspace-previews loops are meant to run unsupervised, which
    * needs per-operation validation (the dev-<handle> grammar, a confirm gate
    * before a delete, a hard refusal of a non-sandbox publish) that the four
@@ -246,8 +246,10 @@ describe("the tool list", () => {
       "oxy_env_create",
       "oxy_env_delete",
       "oxy_env_list",
+      "oxy_env_schedules",
       "oxy_env_show",
       "oxy_fn_call",
+      "oxy_fn_run",
       "oxy_invocations_held",
       "oxy_invocations_list",
       "oxy_logs",
@@ -276,7 +278,7 @@ describe("the tool list", () => {
    * shipped — that principle is intact for the ~660 routes NOT in the
    * sandbox or previews loop.
    *
-   * The 22-tool list above costs ~14.7 KB, not a couple — raised from the
+   * The 24-tool list above costs ~16 KB, not a couple — raised from the
    * original 8 KB on purpose, because the sandbox/previews tools trade
    * minimalism for validation an agent needs to drive either loop
    * unsupervised (see the tool-list test above and `mcp.ts`'s module doc).
@@ -961,7 +963,7 @@ describe("a sandbox agent token", () => {
     }
   };
 
-  it("is served exactly these fifteen tools", async () => {
+  it("is served exactly these sixteen tools — never the schedules switch", async () => {
     const { frames, code } = await served([INIT, LIST], A1);
     expect(code).toBe(0);
     const tools = (frames.find((f) => f.id === 2)?.result?.tools ?? []) as { name: string }[];
@@ -975,6 +977,7 @@ describe("a sandbox agent token", () => {
       "oxy_env_secret_set",
       "oxy_env_show",
       "oxy_fn_call",
+      "oxy_fn_run",
       "oxy_invocations_held",
       "oxy_invocations_list",
       "oxy_logs",
@@ -999,7 +1002,13 @@ describe("a sandbox agent token", () => {
       name: string;
       inputSchema: { required?: string[] };
     }[];
-    for (const name of ["oxy_fn_call", "oxy_checks_run", "oxy_invocations_list", "oxy_logs"]) {
+    for (const name of [
+      "oxy_fn_call",
+      "oxy_fn_run",
+      "oxy_checks_run",
+      "oxy_invocations_list",
+      "oxy_logs"
+    ]) {
       expect(tools.find((t) => t.name === name)?.inputSchema.required).toContain("appEnv");
     }
   });

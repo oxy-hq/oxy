@@ -340,9 +340,21 @@ no folder picker**. From the app directory:
 oxyc login --env production    # once; browser flow, caches a token,
                                # and prints whether you're an app-admin
 oxyc validate                           # schema, data-placement and function checks first
-oxyc publish --env production           # build → bundle functions → tar → upload (draft channel)
-oxyc publish --env production --promote # …straight to live
+oxyc publish --env production           # build → bundle functions → tar → upload (draft = staging)
+oxyc promote <org>/<app> --env production --dry-run   # the plan: changes, migrations, blockers
+oxyc promote <org>/<app> --env production             # staging's build → production (asks first)
+oxyc rollback <org>/<app> --env production --app-env production   # back to the build before
 ```
+
+Production only ever serves a build staging has served, and every way of
+moving it — `oxyc promote`, `oxyc rollback`, the console's **Promote draft**
+and **Roll back to…**, a promoting publish — applies the build's pending migrations **before** it moves
+(a failure leaves the old build live). `promote` and `rollback` print the plan
+first and refuse on a blocker: `staging_never_served`, `required_secrets_unset`
+(set the key in production first), `schedule_removal_unconfirmed` (pass
+`--remove-schedule <function>`). Off a terminal pass `--yes`.
+`oxyc publish --promote` still works and warns that it is deprecated: it shows
+nobody the plan.
 
 - **Identity**, for each half, is `--app` / `--org`, then `OXY_APP` /
   `OXY_ORG`, then the manifest's `slug` + `orgSlug`, then an
@@ -407,10 +419,16 @@ own build pointer, storage silo, secrets and Airhouse sibling schema. Reads
 hit production; most writes are isolated or *held* (recorded, not performed —
 `ctx.oltp`/`ctx.warehouse` stay shared; a held write's `note` field in
 `invocations held` names the manifest key that would make it land instead).
-Schedules and webhooks do not fire in a sandbox: call the function. It starts
-with no build, costs nothing idle, and is gone after 7 idle days or an
-explicit delete — safe to use for every iteration that would otherwise touch
-staging. Limit: 20 per app, counting ones still being deleted.
+A sandbox's schedules are **off by default** (staging's too): staff turn them
+on per environment with `oxyc env schedules <app> dev-x --on`, and a scheduled
+fire is not activity. To test a scheduled function without that, run it once
+as its cron would — `oxyc fn run <app> <fn> --app-env dev-x --as-schedule` (no
+input, system identity). Webhooks reach a sandbox on their own route,
+`/api/webhooks/apps-env/dev-x/<org>/<app>/<fn>`, verified with the sandbox's
+own `secretVar` value — set it with `env secret set`; staging's does not count.
+It starts with no build, costs nothing idle, and is gone after 7 idle days or
+an explicit delete — safe to use for every iteration that would otherwise
+touch staging. Limit: 20 per app, counting ones still being deleted.
 
 ```bash
 oxyc env create acme/store dev-x --env dev --json          # starts with no build
@@ -418,6 +436,7 @@ oxyc publish --env dev --app-env dev-x --json               # build + publish to
 oxyc env secret set acme/store KEY --app-env dev-x --env dev --value-env VAR  # optional: its own secret
 oxyc fn call acme/store submit-order --app-env dev-x --env dev --data '{}' --json   # call it
 oxyc checks run acme/store --app-env dev-x --env dev --json # run its checks
+oxyc fn run acme/store nightly-sync --app-env dev-x --as-schedule --env dev --json  # a scheduled function, once
 oxyc invocations list acme/store --app-env dev-x --env dev --json  # what ran; a row's id is `id`
 oxyc invocations held acme/store <invocation-id> --env dev --json  # what it held, not wrote
 oxyc logs acme/store --app-env dev-x --env dev --json       # its function logs
@@ -428,8 +447,10 @@ oxyc env delete acme/store dev-x --env dev --yes --wait --json     # done; tears
 (`--data` has no short form — don't write `-d`.)
 
 Iterate from `publish` as the code changes — each publish is a new build, and
-the sandbox always serves the newest. A sandbox build is **never promoted**:
-ship by publishing the same tree to staging, then promoting from the console.
+the sandbox always serves the newest. A sandbox build reaches production
+only through staging: a person runs `oxyc promote <app> --from dev-<handle>`
+(the build you verified becomes staging's), checks it there, then `oxyc
+promote <app>`.
 Staff only (needs `develop_apps` + `manage_apps`) — or a sandbox agent token
 such staff approved; a publish token is refused on every sandbox operation,
 so CI cannot use one.

@@ -31,8 +31,10 @@ use uuid::Uuid;
 
 use super::super::custom_apps_env_resolve::{ResolvedEnvironment, resolve_function_environment};
 use super::super::custom_apps_telemetry::{self, FunctionEvent, InvocationMeters};
+use super::check_run::QueuedError;
 use super::env_policy::EnvPolicy;
 use super::environment_gate::{self, Admission, EnvironmentRefused};
+use super::queued_admission::{self, QueuedRefused, QueuedTrigger};
 use super::{
     FunctionManifestEntry, LogLine, RunOutcome, artifact_cache, check_run, failure_page,
     failure_signal, json_error, no_build_response, run_policy,
@@ -47,10 +49,18 @@ pub(super) enum Door<'a> {
         caller: &'a crate::server::authz::Caller,
     },
     /// A queued run has no viewer. Production runs as it always has; outside
-    /// production only a check does (`check_run`) — the flag is read from the
-    /// build resolved here, not trusted from whoever queued the task — so the
-    /// function row comes first.
-    Queued,
+    /// production what queued it decides (`queued_admission`): a check, Run
+    /// now `as=schedule`, a cron fire with the switch on, a webhook — each
+    /// read from the build resolved here, not trusted from whoever queued the
+    /// task — so the function row comes first.
+    Queued { trigger: QueuedTrigger },
+}
+
+/// What the door decided before the function lookup: a route caller is
+/// admitted (or refused) up front; a queued run waits for the function row.
+enum AtTheDoor {
+    Admitted(Admission),
+    Queued(QueuedTrigger),
 }
 
 /// A run the environment let in, with the function it names.
@@ -73,6 +83,8 @@ pub(super) struct PreparedRun {
 pub(super) enum PrepareError {
     EnvironmentLookup(String),
     Refused(EnvironmentRefused),
+    /// A queued run its trigger's rule refuses (`queued_admission::decide`).
+    QueuedRefused(QueuedRefused),
     NoBuild(AppEnvironment),
     FunctionLookup(String),
     FunctionNotFound,
@@ -86,6 +98,15 @@ pub(super) enum PrepareError {
 impl From<EnvironmentRefused> for PrepareError {
     fn from(refused: EnvironmentRefused) -> Self {
         Self::Refused(refused)
+    }
+}
+
+impl From<QueuedError> for PrepareError {
+    fn from(error: QueuedError) -> Self {
+        match error {
+            QueuedError::Refused(refused) => Self::QueuedRefused(refused),
+            QueuedError::Gate(refused) => Self::Refused(refused),
+        }
     }
 }
 
@@ -103,6 +124,10 @@ impl PrepareError {
                 )
             }
             Self::Refused(refused) => refused.into_response(),
+            // Only the queued door produces this; a route never sees it.
+            Self::QueuedRefused(refused) => {
+                json_error(S::FORBIDDEN, "QueuedRunRefused", &refused.message())
+            }
             Self::NoBuild(environment) => no_build_response(&environment),
             Self::FunctionLookup(e) => {
                 error!("app_functions lookup failed: {e}");
@@ -165,6 +190,7 @@ impl PrepareError {
         match self {
             Self::EnvironmentLookup(e) => format!("environment lookup failed: {e}"),
             Self::Refused(refused) => refused.message(),
+            Self::QueuedRefused(refused) => refused.message(),
             Self::NoBuild(AppEnvironment::Production) => "app has no build".to_string(),
             Self::NoBuild(environment) => {
                 format!("the {environment} environment of this app has no build")
@@ -198,9 +224,9 @@ pub(super) async fn admit(
     let at_the_door = match door {
         Door::Route { caller } => {
             let entrance = environment_gate::route_entrance(db, &resolved, caller, app).await;
-            Some(environment_gate::admit(&resolved, entrance)?)
+            AtTheDoor::Admitted(environment_gate::admit(&resolved, entrance)?)
         }
-        Door::Queued => None,
+        Door::Queued { trigger } => AtTheDoor::Queued(trigger),
     };
     let build_id = resolved
         .build_id
@@ -213,10 +239,16 @@ pub(super) async fn admit(
         .map_err(|e| PrepareError::FunctionLookup(e.to_string()))?
         .ok_or(PrepareError::FunctionNotFound)?;
     let admission = match at_the_door {
-        Some(admission) => admission,
-        None => {
-            let is_check = check_run::manifest_marks_check(func_row.manifest_json.as_ref());
-            check_run::admit_queued(&resolved, is_check)?
+        AtTheDoor::Admitted(admission) => admission,
+        // Refused before the invocation row, so a refusal leaves none. What
+        // the function declares and the environment's switch are read here,
+        // from the resolved build, not trusted from whoever queued the task.
+        AtTheDoor::Queued(trigger) => {
+            let declared = queued_admission::Declared::of(func_row.manifest_json.as_ref());
+            let state = queued_admission::environment_state(db, app, &resolved, trigger)
+                .await
+                .map_err(|e| PrepareError::EnvironmentLookup(e.to_string()))?;
+            check_run::admit_queued(&resolved, trigger, declared, state)?
         }
     };
     let manifest: FunctionManifestEntry = func_row

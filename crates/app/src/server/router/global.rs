@@ -447,6 +447,25 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
                     get(crate::server::api::custom_apps_sandboxes::handlers::show)
                         .delete(crate::server::api::custom_apps_sandboxes::handlers::delete),
                 )
+                // Promote and rollback (`custom_apps_promote`; environments
+                // design §5.5a): a sandbox's build to staging, staging's to
+                // production, and either of those two back. Postgres, the
+                // object store and the apps' migration connections — no working
+                // copy, so FleetOk with the nest; production's migrations run
+                // inside the request, as a promoting publish's do. Registered
+                // above the four layers below so all of them cover it; each
+                // handler also refuses a sandbox agent token and a publish
+                // token. `{name}` is the environment that moves — the
+                // contract's `{to}` for a promote — named as the route above
+                // names that segment.
+                .route(
+                    "/{id}/environments/{name}/promote",
+                    post(crate::server::api::custom_apps_promote::handlers::promote),
+                )
+                .route(
+                    "/{id}/environments/{name}/rollback",
+                    post(crate::server::api::custom_apps_promote::handlers::rollback),
+                )
                 // Live tail of one environment's function invocations (SSE) —
                 // see `custom_apps_tail`. FleetOk with the nest: producers
                 // `NOTIFY` and every replica `LISTEN`s, so any replica holds
@@ -457,6 +476,15 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
                 .route(
                     "/{id}/environments/{name}/tail",
                     get(crate::server::api::custom_apps_tail::handler::tail),
+                )
+                // A non-production environment's schedules switch (off by
+                // default) and its rows: read it back, or flip it and
+                // reconcile the rows. Postgres only — FleetOk with the nest.
+                // See `custom_apps_env_schedules`.
+                .route(
+                    "/{id}/environments/{name}/schedules",
+                    get(crate::server::api::custom_apps_env_schedules::handlers::show)
+                        .put(crate::server::api::custom_apps_env_schedules::handlers::set),
                 )
                 // Trusted-publishing config: register / list / remove the GitHub
                 // workflows allowed to OIDC-publish this app. See

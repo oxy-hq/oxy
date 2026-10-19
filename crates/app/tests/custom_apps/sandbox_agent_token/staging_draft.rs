@@ -29,7 +29,7 @@ pub(super) async fn mint_with_staging(cookie: &str, apps: &[Uuid]) -> (Uuid, Str
 
 /// The fixture's agent, holding a token granted its app's staging instead of
 /// the plain one: the same tenant, the same live app, the same minter.
-pub(super) async fn staging_agent() -> Agent {
+pub(crate) async fn staging_agent() -> Agent {
     let plain = agent().await;
     let (token_id, secret) = mint_with_staging(&plain.cookie, &[plain.app.id]).await;
     Agent {

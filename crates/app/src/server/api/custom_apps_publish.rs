@@ -35,6 +35,7 @@ use serde::Serialize;
 use tar::Archive;
 use uuid::Uuid;
 
+use super::custom_apps_env_schedules::reconcile as env_schedules;
 use super::custom_apps_nonproduction::publish as staging;
 use super::custom_apps_nonproduction::staging_task;
 use super::custom_apps_publish_refusal::PublishRefusal;
@@ -53,6 +54,15 @@ use super::{
 /// (`custom_apps_sandboxes::retention`). Older builds (not currently pointed
 /// at by either channel) are GC'd from the DB and S3 after each publish.
 const KEEP_BUILDS: usize = 10;
+
+/// The warning a promoting publish (`oxyc publish --promote`; `promote=true|1`
+/// or `channel=published` from any CLI) answers with. It still works — staging
+/// moves first, then production through the same server-side path `oxyc
+/// promote` takes — but it shows nobody what production is about to change.
+pub const PROMOTING_PUBLISH_DEPRECATED: &str = "`oxyc publish --promote` (a publish \
+    sending `promote` or `channel=published`) is deprecated: publish to staging, then run \
+    `oxyc promote <org>/<app>`, which shows what production will change — migrations, schedules, \
+    unset required secrets — before it moves. This publish was promoted through the same path";
 
 pub struct PublishInput {
     /// Org identity — accepts either a slug (`"acme"`) or a UUID
@@ -1190,7 +1200,9 @@ async fn record_build(
 /// Extract `(name, per-function manifest JSON)` pairs from the bundle
 /// manifest's `functions` block. Empty when the manifest declares none
 /// (today's static-bundle default), so this is a no-op for function-less apps.
-fn function_specs(manifest_json: Option<&serde_json::Value>) -> Vec<(String, serde_json::Value)> {
+pub(super) fn function_specs(
+    manifest_json: Option<&serde_json::Value>,
+) -> Vec<(String, serde_json::Value)> {
     manifest_json
         .and_then(|m| m.get("functions"))
         .and_then(|f| f.as_object())
@@ -1361,108 +1373,14 @@ async fn record_functions(
     Ok(())
 }
 
-/// Register/update `agentic_schedules` for functions that declare a `schedule`
-/// in their manifest, so a scheduled Oxy Function fires without a manual
-/// schedule (`target_kind="function"`, `target_ref="<app_id>/<name>"`). Idempotent
-/// per publish: upserts by `target_ref` so a re-publish updates cadence rather
-/// than duplicating, and **reconciles** — any of this app's function schedules
-/// whose function no longer declares a `schedule` (dropped, renamed, or deleted)
-/// is removed, so a stale row can't keep firing `run_scheduled_function` against
-/// a function that no longer exists. Best-effort — a schedule failure never
-/// fails the publish (the function stays route-invocable).
-async fn register_function_schedules(
-    db: &DatabaseConnection,
-    app_id: Uuid,
-    workspace_id: Uuid,
-    specs: &[(String, serde_json::Value)],
-) -> Vec<String> {
-    let mut warnings: Vec<String> = Vec::new();
-    let existing = agentic_pipeline::scheduler::list_schedules(db, workspace_id)
-        .await
-        .unwrap_or_default();
-    // The `target_ref`s that SHOULD be scheduled after this publish — every
-    // function that currently declares a `schedule`. Drives both the upsert
-    // below and the reconcile at the end.
-    let mut live: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for (name, spec) in specs {
-        let Some(cron) = spec.get("schedule").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let timezone = spec
-            .get("timezone")
-            .and_then(|v| v.as_str())
-            .unwrap_or("UTC")
-            .to_string();
-        let target_ref = format!("{app_id}/{name}");
-        live.insert(target_ref.clone());
-        // Carry the function's retry policy on the schedule so the entity-free
-        // fire arm can attach it to the queued task without reaching into the
-        // manifest. Built here (host) from the same helper the manual trigger
-        // uses, so the two paths can't drift.
-        let variables = crate::server::api::custom_apps_functions::function_task_policy(spec)
-            .and_then(|p| serde_json::to_value(&p).ok())
-            .map(|p| serde_json::json!({ "task_policy": p }));
-        let input = agentic_pipeline::scheduler::ScheduleInput {
-            name: format!("fn:{app_id}/{name}"),
-            target_kind: "function".to_string(),
-            target_ref: target_ref.clone(),
-            question: None,
-            variables,
-            cron_expr: cron.to_string(),
-            timezone,
-            enabled: true,
-        };
-        let found = existing
-            .iter()
-            .find(|s| s.target_kind == "function" && s.target_ref == target_ref);
-        let result = match found {
-            Some(s) => agentic_pipeline::scheduler::update_schedule(db, workspace_id, &s.id, input)
-                .await
-                .map(|_| ()),
-            None => agentic_pipeline::scheduler::create_schedule(db, workspace_id, input)
-                .await
-                .map(|_| ()),
-        };
-        if let Err(e) = result {
-            tracing::warn!("publish: failed to register schedule for {app_id}/{name}: {e}");
-            warnings.push(format!(
-                "function '{name}' was published but its schedule could not be registered ({e}); \
-                 it will not fire on its cron until the next successful publish"
-            ));
-        }
-    }
-    // Reconcile: retire this app's function schedules whose function no longer
-    // declares a cadence. `existing` predates the upserts above, so a
-    // just-updated schedule is also in `live` and survives; only genuinely
-    // orphaned rows (function dropped `schedule`, was renamed, or deleted) are
-    // removed — otherwise every tick would `run_scheduled_function` a missing
-    // function and log a failed run forever.
-    let prefix = format!("{app_id}/");
-    for s in &existing {
-        if s.target_kind == "function"
-            && s.target_ref.starts_with(&prefix)
-            && !live.contains(&s.target_ref)
-            && let Err(e) =
-                agentic_pipeline::scheduler::delete_schedule(db, workspace_id, &s.id).await
-        {
-            tracing::warn!(
-                "publish: failed to retire stale schedule {}: {e}",
-                s.target_ref
-            );
-            warnings.push(format!(
-                "a stale schedule for '{}' could not be retired ({e}); it may keep firing against \
-                 a function that no longer exists",
-                s.target_ref
-            ));
-        }
-    }
-    warnings
-}
-
-/// Point the channel(s) at the new build. Draft always; published +
-/// `published_at` when promoting. Each move is mirrored into `app_environments`
-/// (draft → staging, published → production) in the same transaction, so the two
-/// can never disagree.
+/// Point the channel(s) at the new build: staging always; production too when
+/// promoting. One transaction holding the app's row: staging's pointer moves
+/// and its `staging / publish` event is recorded **first**, then production's
+/// moves through the one production-pointer function
+/// (`custom_apps_promote::move_locked`), which finds that event as the
+/// evidence invariant 1 asks for. Each pointer is mirrored into
+/// `app_environments` in the same transaction, so the two can never disagree.
+/// (A promoting publish applied the build's migrations before calling this.)
 async fn set_pointers(
     db: &DatabaseConnection,
     app_id: Uuid,
@@ -1479,18 +1397,12 @@ async fn set_pointers(
     }
     let db_err = |e: sea_orm::DbErr| PublishError::Db(e.to_string());
     let txn = db.begin().await.map_err(db_err)?;
-    let row = apps::Entity::find_by_id(app_id)
-        .one(&txn)
+    let row = super::custom_apps_promote::production::lock_app(&txn, app_id)
         .await
-        .map_err(db_err)?
-        .ok_or_else(|| PublishError::Db(format!("app {app_id} vanished mid-publish")))?;
+        .map_err(|e| PublishError::Db(format!("app {app_id} could not be locked: {e}")))?;
     let mut active: apps::ActiveModel = row.into();
     active.draft_build_id = ActiveValue::Set(Some(build_pk));
-    if promote {
-        active.published_build_id = ActiveValue::Set(Some(build_pk));
-        active.published_at = ActiveValue::Set(Some(Utc::now().fixed_offset()));
-    }
-    active.update(&txn).await.map_err(db_err)?;
+    let row = active.update(&txn).await.map_err(db_err)?;
     super::custom_apps_environments::record_move(
         &txn,
         app_id,
@@ -1502,16 +1414,17 @@ async fn set_pointers(
     .await
     .map_err(db_err)?;
     if promote {
-        super::custom_apps_environments::record_move(
-            &txn,
+        let mv = super::custom_apps_promote::ProductionMove {
             app_id,
-            &AppEnvironment::Production,
-            Some(build_pk),
-            super::custom_apps_environments::EnvAction::Promote,
+            build: build_pk,
+            action: super::custom_apps_environments::EnvAction::Promote,
             actor,
-        )
-        .await
-        .map_err(db_err)?;
+            expect_current: None,
+            refuse_same: false,
+        };
+        super::custom_apps_promote::move_locked(&txn, row, &mv)
+            .await
+            .map_err(|e| PublishError::Db(format!("production's pointer could not move: {e}")))?;
     }
     txn.commit().await.map_err(db_err)?;
     Ok(())
@@ -2063,20 +1976,31 @@ async fn store_and_point(
         rollback_stored_build(&db, app_id, &input.build_id, build_pk, rollback).await;
         return Err(e);
     }
-    // Schedules track the LIVE build, so (re)register + reconcile function
-    // schedules only on a PROMOTING publish — a draft-only publish shouldn't
-    // start firing background runs — and after `set_pointers` so a fire resolves
-    // the just-set `published_build_id`. Best-effort: a schedule failure never
-    // fails the publish (functions stay route-invocable).
+    // Production's schedules track the LIVE build, so (re)register + reconcile
+    // them only on a PROMOTING publish — a draft-only publish shouldn't start
+    // firing background runs in production — and after `set_pointers` so a
+    // fire resolves the just-set `published_build_id`. Only production's own
+    // two-segment rows: an environment's are never touched here. Best-effort:
+    // a schedule failure never fails the publish (functions stay
+    // route-invocable).
     let mut warnings = if input.promote {
-        register_function_schedules(&db, app_id, input.project_id, &fn_specs).await
+        env_schedules::reconcile_production(&db, app_id, input.project_id, &fn_specs).await
     } else {
         Vec::new()
     };
+    // The environment the publish moved outside production — staging, or the
+    // sandbox — reconciled to its schedules switch: off (the default), it has
+    // no rows; on, one per function its new build schedules.
+    warnings.extend(reconcile_moved_environment(&db, &target, app_id).await);
     // On drafts too: the author should hear about it before promoting.
     warnings.extend(art_warning);
     warnings.extend(mapping_warning);
     warnings.extend(catalogue_warnings);
+    // Still served, through the one production move, by every CLI that sends
+    // it (environments design §11 #4, ruled 2026-10-03) — with this warning.
+    if input.promote {
+        warnings.push(PROMOTING_PUBLISH_DEPRECATED.to_string());
+    }
     gc_builds(&db, app_id, &[build_pk]).await;
 
     // The serve path caches the `apps` row — including the channel pointers
@@ -2184,6 +2108,34 @@ async fn move_pointers(
             sandbox_publish::move_pointer(db, app_id, environment, build_pk, mover).await
         }
     }
+}
+
+/// Reconcile the schedule rows of the non-production environment `target`'s
+/// publish moved (`custom_apps_env_schedules`): staging for the channels and
+/// an agent's draft, the sandbox for a sandbox's. A failure is the publish's
+/// warning, never its failure; the next publish or flip of the switch retries.
+async fn reconcile_moved_environment(
+    db: &DatabaseConnection,
+    target: &PublishTarget,
+    app_id: Uuid,
+) -> Vec<String> {
+    let environment = target.published_to();
+    let app = match apps::Entity::find_by_id(app_id).one(db).await {
+        Ok(Some(app)) => app,
+        Ok(None) => return Vec::new(),
+        Err(e) => return vec![environment_schedules_warning(&environment, &e)],
+    };
+    env_schedules::reconcile_environment(db, &app, &environment)
+        .await
+        .unwrap_or_else(|e| vec![environment_schedules_warning(&environment, &e)])
+}
+
+fn environment_schedules_warning(environment: &AppEnvironment, e: &sea_orm::DbErr) -> String {
+    tracing::warn!("publish: the {environment} environment's schedules were not reconciled: {e}");
+    format!(
+        "the {environment} environment's schedules could not be reconciled ({e}); publish to it \
+         again, or flip its schedules switch, to retry"
+    )
 }
 
 /// Drop the app-resolution cache after a publish that moved a pointer it

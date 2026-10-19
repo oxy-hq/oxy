@@ -91,6 +91,16 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
             "/webhooks/apps/{org_slug}/{app_slug}/{function_name}",
             post(webhooks::app_function::app_function_webhook),
         )
+        // The same, for a non-production environment (`staging`,
+        // `dev-<handle>`), named in the path so a provider that drops a query
+        // string cannot land on production — which this route never reaches.
+        // Verified with that environment's own secret and no fallback; every
+        // unknown, deleting, expired or build-less environment is the same
+        // 404. FleetOk for the reason above: Postgres and the secret store.
+        .route_fleet(
+            "/webhooks/apps-env/{environment}/{org_slug}/{app_slug}/{function_name}",
+            post(webhooks::app_function_env::app_function_env_webhook),
+        )
         // Slack-originated traffic. None of these carry a user Authorization
         // header; they're either signature-verified (webhooks) or reached
         // via a browser redirect from slack.com (OAuth callback / magic-link

@@ -286,6 +286,15 @@ impl From<TriggerError> for ScopeError {
             TriggerError::NotACheck { .. } => {
                 Self::new(StatusCode::FORBIDDEN, "not_a_check", message)
             }
+            // Run now `as=schedule` of a function its build gives no
+            // schedule, production included (design §4.5, ruling 3).
+            TriggerError::NotScheduled { .. } => {
+                Self::new(StatusCode::CONFLICT, "not_scheduled", message)
+            }
+            // No route queues a webhook through here; stated for the match.
+            TriggerError::NoWebhook { .. } => {
+                Self::new(StatusCode::CONFLICT, "no_webhook", message)
+            }
             TriggerError::Enqueue(_) | TriggerError::Db(_) => {
                 Self::internal("function job trigger failed", message)
             }

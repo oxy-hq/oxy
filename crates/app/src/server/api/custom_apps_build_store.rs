@@ -25,6 +25,9 @@ use axum::body::Bytes;
 use futures::stream::{StreamExt, TryStreamExt};
 use uuid::Uuid;
 
+mod list;
+pub use list::files_under;
+
 /// In-flight `put_object` calls during a publish. High enough that a
 /// few-hundred-file bundle stops being latency-bound, low enough not to
 /// exhaust the SDK's connection pool or trip S3 request-rate throttling.

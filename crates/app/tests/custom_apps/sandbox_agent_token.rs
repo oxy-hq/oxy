@@ -40,7 +40,7 @@
 //!
 //! **Needs** Postgres only.
 
-mod fixture;
+pub(crate) mod fixture;
 mod instance;
 mod ownership;
 mod refusal_shape;
@@ -49,7 +49,7 @@ mod revocation;
 mod sandbox_promote;
 mod second_refusal;
 mod second_refusal_writes;
-mod staging_draft;
+pub(crate) mod staging_draft;
 mod staging_promote;
 mod staging_reach;
 mod tail;

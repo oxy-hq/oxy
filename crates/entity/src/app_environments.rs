@@ -42,6 +42,10 @@ pub struct Model {
     /// `production` and `staging`. No foreign key: an id whose token row is
     /// gone matches no credential, so the sandbox has no token owner.
     pub created_by_token_id: Option<Uuid>,
+    /// Whether this environment fires its functions' `schedule`s. Staff turn
+    /// it on per environment (`custom_apps_env_schedules`); `false` by
+    /// default, and never read for `production`, whose schedules always run.
+    pub schedules_enabled: bool,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

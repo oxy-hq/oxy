@@ -45,6 +45,19 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// The one answer to every "does this endpoint exist" question.
+pub(super) fn no_such_webhook() -> (StatusCode, String) {
+    (StatusCode::NOT_FOUND, "no such webhook".to_string())
+}
+
+/// The answer to a declared secret that resolves to nothing usable.
+pub(super) fn secret_not_configured() -> (StatusCode, String) {
+    (
+        StatusCode::UNAUTHORIZED,
+        "webhook signing secret is not configured".to_string(),
+    )
+}
+
 /// `POST /api/webhooks/apps/{org_slug}/{app_slug}/{function_name}`
 #[tracing::instrument(skip_all, fields(org = %org_slug, app = %app_slug, function = %function_name))]
 pub async fn app_function_webhook(
@@ -92,11 +105,16 @@ async fn resolve_signing_keys(
                 app = %app.id, secret = %secret_var,
                 "rejecting app webhook: declared secret does not resolve",
             );
-            (
-                StatusCode::UNAUTHORIZED,
-                "webhook signing secret is not configured".to_string(),
-            )
+            secret_not_configured()
         })
+}
+
+/// The function's input: the body as JSON, or — not every provider sends
+/// JSON — as a string, rather than dropped for failing to parse something
+/// nobody promised.
+pub(super) fn payload_of(body: &[u8]) -> serde_json::Value {
+    serde_json::from_slice::<serde_json::Value>(body)
+        .unwrap_or_else(|_| serde_json::Value::String(String::from_utf8_lossy(body).into_owned()))
 }
 
 /// Hand the verified body to the function as a durable job and answer at once.
@@ -110,11 +128,7 @@ async fn enqueue(
     function_name: &str,
     body: &[u8],
 ) -> Result<StatusCode, (StatusCode, String)> {
-    // Not every provider sends JSON. A non-JSON body still reaches the function,
-    // as a string, rather than being dropped for failing to parse something
-    // nobody promised.
-    let payload = serde_json::from_slice::<serde_json::Value>(body)
-        .unwrap_or_else(|_| serde_json::Value::String(String::from_utf8_lossy(body).into_owned()));
+    let payload = payload_of(body);
 
     match crate::server::api::custom_apps_functions::trigger_function_job(
         db,
@@ -152,7 +166,7 @@ async fn resolve_webhook_target(
     app_slug: &str,
     function_name: &str,
 ) -> Result<(entity::apps::Model, (String, String, String)), (StatusCode, String)> {
-    let not_found = || (StatusCode::NOT_FOUND, "no such webhook".to_string());
+    let not_found = no_such_webhook;
 
     let app = resolve_app(db, org_slug, app_slug)
         .await
@@ -173,7 +187,7 @@ async fn resolve_webhook_target(
 ///
 /// The comparison is `Mac::verify_slice`, which is constant-time. A byte-wise
 /// `==` on a signature leaks its prefix through timing.
-fn verify_signature(
+pub(super) fn verify_signature(
     headers: &HeaderMap,
     body: &[u8],
     signature_header: &str,
@@ -222,7 +236,7 @@ fn verify_signature(
 }
 
 /// The app behind `(org_slug, app_slug)`, or `None`.
-async fn resolve_app(
+pub(super) async fn resolve_app(
     db: &DatabaseConnection,
     org_slug: &str,
     app_slug: &str,
@@ -245,8 +259,9 @@ async fn resolve_app(
 /// Production only — never staging, and no fallback to it. A staging build is
 /// unreviewed by definition, and this route is reachable by anyone on the
 /// internet: letting it declare a webhook would make "promote" stop being the
-/// thing that decides what the world can reach. Staging gets its own webhook
-/// route when its writes are isolated (design §4.2, Phase 2).
+/// thing that decides what the world can reach. Staging and sandboxes have a
+/// route of their own, verified with their own secret and running under
+/// their own policy (`webhooks::app_function_env`).
 async fn function_manifest(
     db: &DatabaseConnection,
     app: &entity::apps::Model,

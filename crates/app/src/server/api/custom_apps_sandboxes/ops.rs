@@ -162,6 +162,8 @@ async fn insert_within_limit<C: ConnectionTrait>(
         // The sandbox agent token that created it: what makes it that token's
         // own, and no other token's.
         created_by_token_id: ActiveValue::Set(creator.token_id),
+        // A new sandbox fires no schedule until staff turn it on.
+        schedules_enabled: ActiveValue::NotSet,
     }
     .insert(txn)
     .await
@@ -267,7 +269,7 @@ pub async fn get_for(
 
 /// `entry` — whose actor is the request's, or the expiry's — about the
 /// sandbox `environment` of `app`.
-pub(super) fn scoped(
+pub(crate) fn scoped(
     entry: audit::AuditEntry,
     app: &apps::Model,
     environment: &AppEnvironment,

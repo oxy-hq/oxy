@@ -398,9 +398,11 @@ pub struct BatchItemResult {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    /// The machine-readable code of a failure that has one — today only
-    /// `draft_published_by_agent`, a promote of a build a sandbox agent token
-    /// published. Absent, not `null`, on every other row.
+    /// The machine-readable code of a failure that has one:
+    /// `draft_published_by_agent` (a promote of a build a sandbox agent token
+    /// published), `staging_never_served` (a build staging never served — a
+    /// sandbox's, under *promote latest*) or `migration_failed`. Absent, not
+    /// `null`, on every other row.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<&'static str>,
 }

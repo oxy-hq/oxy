@@ -74,8 +74,10 @@ import {
 import { runChecksCore } from "./checks.js";
 import { comparablePath } from "./discover.js";
 import { envCreate, envDelete, envList, envShow } from "./env.js";
+import { envSchedules } from "./env-schedules.js";
 import { secretDelete, secretList, secretSet } from "./env-secrets.js";
 import { fnCall } from "./fn.js";
+import { fnRun } from "./fn-run.js";
 import { invocationsHeld, invocationsList } from "./invocations.js";
 import { fetchLogs } from "./logs.js";
 import {
@@ -386,6 +388,44 @@ const SANDBOX_TOOLS = [
         timeoutSeconds: { type: "number", description: "Per-check timeout (default 300)." }
       },
       required: ["app"]
+    }
+  },
+  {
+    name: "oxy_fn_run",
+    description:
+      "Queue an Oxy Function as a background run (Run now) and wait for it. asSchedule=true " +
+      "runs a SCHEDULED function once as its cron would: no input, in appEnv's build, whether " +
+      "or not that environment's schedules are on (409 not_scheduled when it declares none). " +
+      'Without it, outside production only a "check": true function runs. Returns {status, ok, ' +
+      "answer, error, invocationId}; isError when the run did not end done.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        app: { type: "string", description: '"<org-slug>/<app-slug>" or the app UUID.' },
+        function: { type: "string", description: "The Oxy Function's name." },
+        appEnv: { type: "string", description: "production (default), staging, or dev-<handle>." },
+        asSchedule: { type: "boolean", description: "Run it as its schedule would; no data." },
+        data: { type: "string", description: "JSON input (not with asSchedule)." },
+        timeoutSeconds: { type: "number", description: "How long to wait (default 300)." }
+      },
+      required: ["app", "function"]
+    }
+  },
+  {
+    name: "oxy_env_schedules",
+    description:
+      "Read staging's or a dev-<handle> sandbox's schedules switch and rows, or flip it with " +
+      "enabled. Off by default; on, the environment fires its functions' schedules on their " +
+      "cron (production's always run and have no switch). Staff only. Returns {environment, " +
+      "enabled, schedules, warnings}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        app: { type: "string", description: '"<org-slug>/<app-slug>" or the app UUID.' },
+        name: { type: "string", description: "staging or dev-<handle>." },
+        enabled: { type: "boolean", description: "Set the switch; omit to read it." }
+      },
+      required: ["app", "name"]
     }
   },
   {
@@ -915,6 +955,23 @@ async function callTool(ctx: Context, name: string, args: Record<string, unknown
       });
       const failed = report.checks.some((c) => !c.passed);
       return jsonResult(report, { isError: failed, code: ExitCode.CHECK_FAILED });
+    }
+
+    case "oxy_fn_run": {
+      requireArgs("oxy_fn_run", args, ["app", "function"]);
+      const result = await fnRun(ctx, String(args.app), String(args.function), {
+        appEnv: args.appEnv as string | undefined,
+        asSchedule: args.asSchedule === true,
+        data: args.data as string | undefined,
+        timeoutSeconds: args.timeoutSeconds === undefined ? 300 : Number(args.timeoutSeconds)
+      });
+      return jsonResult(result, { isError: !result.ok, code: ExitCode.FAILURE });
+    }
+
+    case "oxy_env_schedules": {
+      requireArgs("oxy_env_schedules", args, ["app", "name"]);
+      const enabled = typeof args.enabled === "boolean" ? args.enabled : undefined;
+      return jsonResult(await envSchedules(ctx, String(args.app), String(args.name), enabled));
     }
 
     case "oxy_invocations_list": {

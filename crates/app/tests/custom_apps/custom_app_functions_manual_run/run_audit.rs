@@ -11,8 +11,8 @@ use axum::body::Bytes;
 use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use entity::{app_publish_tokens, audit_events};
-use oxy_app::server::api::admin::apps::environment_scope::EnvironmentQuery;
 use oxy_app::server::api::admin::apps::handlers;
+use oxy_app::server::api::admin::apps::run_as_schedule::RunJobQuery;
 use oxy_auth::app_publish_token_domain::generate_token;
 use oxy_auth::types::AppPublishTokenAuth;
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
@@ -76,7 +76,7 @@ async fn run_with_token(
         oxy_app_core::audit::RequestActor::session(staff(t).0),
         Some(Extension(marker.clone())),
         Path((app_id, function.to_string())),
-        Query(EnvironmentQuery { environment: None }),
+        Query(RunJobQuery::default()),
         Bytes::new(),
     )
     .await;

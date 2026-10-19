@@ -24,6 +24,8 @@ use uuid::Uuid;
 use crate::server::api::custom_apps_agent_built::{
     self as agent_built, AgentBuilt, PromoteRefusal,
 };
+use crate::server::api::custom_apps_environments::EnvAction;
+use crate::server::api::custom_apps_promote::{self as promote, ProductionMove, PromoteError};
 use crate::server::api::workspace_org::{WorkspaceOrgMatch, workspace_in_org};
 
 use super::dto::{ApiErr, AppResponse, ErrorBody};
@@ -244,9 +246,14 @@ pub(super) fn rows_to_responses(
 pub struct AppOpError {
     pub status: StatusCode,
     pub(super) message: String,
-    /// Set for the one refusal a client branches on by code: a promote of a
-    /// build a sandbox agent token published (`custom_apps_agent_built`).
+    /// Set for a promote of a build a sandbox agent token published
+    /// (`custom_apps_agent_built`), whose body is its own.
     pub(super) agent_built: Option<Box<AgentBuilt>>,
+    /// The code of a refusal a client branches on that the production move
+    /// added (`custom_apps_promote`): `staging_never_served`,
+    /// `migration_failed`. `None` for every failure that was always a bare
+    /// status.
+    pub(super) code: Option<&'static str>,
 }
 
 impl AppOpError {
@@ -255,6 +262,14 @@ impl AppOpError {
             status,
             message: message.into(),
             agent_built: None,
+            code: None,
+        }
+    }
+
+    fn coded(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code: Some(code),
+            ..Self::of(status, message)
         }
     }
 
@@ -279,15 +294,17 @@ impl AppOpError {
             status: StatusCode::CONFLICT,
             message: built.message(),
             agent_built: Some(Box::new(built)),
+            code: None,
         }
     }
 
     /// The code of a refusal that has one; `None` for every failure that was
     /// always a status and a sentence.
     pub(super) fn code(&self) -> Option<&'static str> {
-        self.agent_built
-            .as_ref()
-            .map(|_| agent_built::PROMOTE_REFUSED)
+        match &self.agent_built {
+            Some(_) => Some(agent_built::PROMOTE_REFUSED),
+            None => self.code,
+        }
     }
 
     /// The app can't be deleted because it has a provisioned OLTP store. Deleting
@@ -304,12 +321,44 @@ impl AppOpError {
 }
 
 /// What a one-shot promote route answers: the bare status it always did — or,
-/// for the coded refusal, its JSON body.
+/// for a coded refusal, its JSON body.
 impl From<AppOpError> for PromoteRefusal {
     fn from(failure: AppOpError) -> Self {
-        match failure.agent_built {
-            Some(built) => Self::AgentBuilt(built),
-            None => Self::Status(failure.status),
+        match (failure.agent_built, failure.code) {
+            (Some(built), _) => Self::AgentBuilt(built),
+            (None, Some(code)) => Self::Coded {
+                status: failure.status,
+                code,
+                message: failure.message,
+            },
+            (None, None) => Self::Status(failure.status),
+        }
+    }
+}
+
+/// A refused production move, as the console's promote paths have always
+/// answered what they share with it — a failed validation a bare `422`, a
+/// missing app `404`, a token's build its coded `409` — and with a code for
+/// what the move added: invariant 1 (`409 staging_never_served`) and a failed
+/// migration (`migration_failed`, the migration's own status).
+impl From<PromoteError> for AppOpError {
+    fn from(refused: PromoteError) -> Self {
+        let validation = |b: &promote::Blocker| b.code == promote::error::VALIDATION_NOT_PASSED;
+        match refused {
+            PromoteError::AgentBuilt(built) => Self::agent_built(*built),
+            PromoteError::Blocked(blockers) if blockers.iter().any(validation) => {
+                let detail = blockers
+                    .iter()
+                    .find(|b| validation(b))
+                    .map(|b| b.message.clone());
+                Self::validation_failed(detail.unwrap_or_default())
+            }
+            PromoteError::AppNotFound => Self::not_found(),
+            PromoteError::BuildNotFound(_) => Self::validation_failed(
+                "build not found — cannot promote a missing build to live".to_string(),
+            ),
+            PromoteError::Internal(_) => Self::internal(),
+            other => Self::coded(other.status(), other.code(), other.to_string()),
         }
     }
 }
@@ -361,50 +410,6 @@ pub(super) fn oltp_store_blocks_message(
     )
 }
 
-/// Promotion gate (validator-can't-be-bypassed): a build may reach the live
-/// (published) channel only if its recorded validation status is `passed`.
-/// Shared by EVERY AppOpError promotion path — publish, promote-latest — so no
-/// path can quietly re-open the invariant. A missing build is refused (you can't
-/// validate what isn't there), matching `custom_apps_publish::gate_promotion`.
-/// Dormant today (every stored build is `passed`); load-bearing once gate 2 can
-/// record `failed`.
-///
-/// **And never a build a sandbox agent token published.** Each of these paths
-/// moves production's pointer to whatever build it finds — the draft, or the
-/// newest — with no look at whose it is. A build marked
-/// `published_token_id` is refused here (`409 draft_published_by_agent`,
-/// naming the token and its minter), so a person's promote, a batch and a
-/// publish token's promote all stop at the same place. Every other build's
-/// mark is `NULL`, read off the row this gate already loads.
-async fn gate_build_promotion(db: &DatabaseConnection, build_pk: Uuid) -> Result<(), AppOpError> {
-    let build = AppBuilds::find_by_id(build_pk)
-        .one(db)
-        .await
-        .map_err(|e| {
-            tracing::error!("promotion gate: build {build_pk} load failed: {e}");
-            AppOpError::internal()
-        })?
-        .ok_or_else(|| {
-            AppOpError::validation_failed(
-                "build not found — cannot promote a missing build to live".to_string(),
-            )
-        })?;
-    if build.validation_status != "passed" {
-        return Err(AppOpError::validation_failed(format!(
-            "build validation status is '{}', not 'passed' — cannot promote to live",
-            build.validation_status
-        )));
-    }
-    match agent_built::refusing_promote(db, &build).await {
-        Ok(None) => Ok(()),
-        Ok(Some(built)) => Err(AppOpError::agent_built(built)),
-        Err(e) => {
-            tracing::error!("promotion gate: build {build_pk} publisher lookup failed: {e}");
-            Err(AppOpError::internal())
-        }
-    }
-}
-
 /// Load an app's org — needed to build [`AppResponse`]. A missing org is a
 /// broken FK, surfaced as an internal error.
 pub(super) async fn load_org(
@@ -418,11 +423,15 @@ pub(super) async fn load_org(
         .ok_or_else(AppOpError::internal)
 }
 
-/// Core publish mutation shared by [`publish_app`] and [`batch_publish_apps`].
-/// Pure pointer move: stamp `published_at`/promoter, repoint the published
-/// channel at the current draft build, and drop the app-resolution cache so
-/// the serve path resolves the freshly-published channel instead of a stale
-/// entry.
+/// Core publish mutation shared by [`publish_app`] and [`batch_publish_apps`]
+/// (and the partner console's promote): production moves to the current
+/// draft build through the one production-pointer function
+/// (`custom_apps_promote::move_production`) — invariant 1 under the app's row
+/// lock, the build's pending migrations applied first — which stamps
+/// `published_at` and the promoter and drops the app-resolution cache. The
+/// draft already being live is not a refusal: the console's "Re-publish"
+/// re-stamps it. An app with no draft has no pointer to move and is only
+/// stamped published, as before.
 pub async fn publish_one(
     db: &DatabaseConnection,
     id: Uuid,
@@ -436,55 +445,45 @@ pub async fn publish_one(
             AppOpError::internal()
         })?
         .ok_or_else(AppOpError::not_found)?;
+    let Some(draft) = row.draft_build_id else {
+        return stamp_published(db, row, actor).await;
+    };
+    let mv = ProductionMove {
+        app_id: id,
+        build: draft,
+        action: EnvAction::Promote,
+        actor: Some(actor),
+        expect_current: None,
+        refuse_same: false,
+    };
+    // The global access cache is invalidated ONCE by the caller (a batch
+    // would otherwise do N full global invalidations).
+    let moved = promote::move_production(db, &mv).await.map_err(|e| {
+        tracing::warn!("publish_one {id} refused: {e}");
+        AppOpError::from(e)
+    })?;
+    Ok(moved.app)
+}
 
-    let draft_ptr = row.draft_build_id;
-    // Promotion gate (validator-can't-be-bypassed): a draft goes live only if its
-    // recorded validation status is `passed`. Gate 1 stamps that at publish; a
-    // future deploy-time probe (gate 2) may downgrade it. Held at draft otherwise.
-    if let Some(ptr) = draft_ptr {
-        gate_build_promotion(db, ptr).await?;
-    }
+/// *Make Live* of an app with no build: no pointer moves, the app is stamped
+/// published (and its promoter) so the customer-facing gate flips.
+async fn stamp_published(
+    db: &DatabaseConnection,
+    row: apps::Model,
+    actor: Uuid,
+) -> Result<apps::Model, AppOpError> {
+    let id = row.id;
     let now = Utc::now().fixed_offset();
     let mut active: apps::ActiveModel = row.into();
     active.published_at = ActiveValue::Set(Some(now));
     active.last_promoted_by = ActiveValue::Set(Some(actor));
     active.last_promoted_at = ActiveValue::Set(Some(now));
-    if let Some(ptr) = draft_ptr {
-        active.published_build_id = ActiveValue::Set(Some(ptr));
-    }
     active.updated_at = ActiveValue::Set(now);
-    let txn = db.begin().await.map_err(|e| {
-        tracing::error!("publish_one {id} begin failed: {e}");
-        AppOpError::internal()
-    })?;
-    let updated = active.update(&txn).await.map_err(|e| {
+    let updated = active.update(db).await.map_err(|e| {
         tracing::error!("publish_one {id} update failed: {e}");
         AppOpError::internal()
     })?;
-    if let Some(ptr) = draft_ptr {
-        crate::server::api::custom_apps_environments::record_move(
-            &txn,
-            id,
-            &oxy_app_core::custom_app_environment::AppEnvironment::Production,
-            Some(ptr),
-            crate::server::api::custom_apps_environments::EnvAction::Promote,
-            Some(actor),
-        )
-        .await
-        .map_err(|e| {
-            tracing::error!("publish_one {id} environment mirror failed: {e}");
-            AppOpError::internal()
-        })?;
-    }
-    txn.commit().await.map_err(|e| {
-        tracing::error!("publish_one {id} commit failed: {e}");
-        AppOpError::internal()
-    })?;
-
-    // The serve path caches the `apps` row itself (channel pointers,
-    // `published_at`), so drop that cache here or this mutation takes up to
-    // the cache TTL to appear. The global access cache is invalidated ONCE by
-    // the caller (a batch would otherwise do N full global invalidations).
+    // The serve path caches the `apps` row itself (`published_at`).
     crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
     Ok(updated)
 }
@@ -601,18 +600,20 @@ pub(super) async fn delete_one(db: &DatabaseConnection, id: Uuid) -> Result<(), 
     Ok(())
 }
 
-/// Core "promote to latest" shared by [`batch_promote_latest_apps`]: point the
-/// published channel at the app's newest build and stamp `published_at`. This
-/// is the bulk "roll everyone forward to their latest version" primitive —
-/// distinct from `publish_one` (which promotes the *draft* pointer): it always
-/// targets the most recently created build regardless of channel. An app with
-/// no builds is a per-item failure, not a fatal one.
+/// Core "promote to latest" shared by [`batch_promote_latest_apps`]: move
+/// production to the app's newest build, whatever served it — through the one
+/// production-pointer function like every other promote, so the newest build
+/// is refused `409 staging_never_served` (invariant 1) when staging never
+/// served it, as a sandbox's build is, and its pending migrations are applied
+/// first. An app with no builds is a per-item failure, not a fatal one. (The
+/// environments design rules this route out, §11 #7; until the console's
+/// Environments panel replaces it, it stays and holds to the same rule.)
 pub(super) async fn promote_latest_one(
     db: &DatabaseConnection,
     id: Uuid,
     actor: Uuid,
 ) -> Result<apps::Model, AppOpError> {
-    let row = Apps::find_by_id(id)
+    Apps::find_by_id(id)
         .one(db)
         .await
         .map_err(|e| {
@@ -620,7 +621,6 @@ pub(super) async fn promote_latest_one(
             AppOpError::internal()
         })?
         .ok_or_else(AppOpError::not_found)?;
-
     let latest = AppBuilds::find()
         .filter(entity::app_builds::Column::AppId.eq(id))
         .order_by_desc(entity::app_builds::Column::CreatedAt)
@@ -631,52 +631,19 @@ pub(super) async fn promote_latest_one(
             AppOpError::internal()
         })?
         .ok_or_else(|| AppOpError::of(StatusCode::UNPROCESSABLE_ENTITY, "No builds to promote."))?;
-
-    // Promotion gate (validator-can't-be-bypassed): the newest build goes live
-    // only if its recorded validation is `passed`. This is exactly where a
-    // freshly-uploaded-then-failed build would sit once gate 2 can downgrade a
-    // stored build, so promote-latest must not skip the check.
-    gate_build_promotion(db, latest.id).await?;
-
-    let now = Utc::now().fixed_offset();
-    let mut active: apps::ActiveModel = row.into();
-    active.published_build_id = ActiveValue::Set(Some(latest.id));
-    active.published_at = ActiveValue::Set(Some(now));
-    active.last_promoted_by = ActiveValue::Set(Some(actor));
-    active.last_promoted_at = ActiveValue::Set(Some(now));
-    active.updated_at = ActiveValue::Set(now);
-    let txn = db.begin().await.map_err(|e| {
-        tracing::error!("promote_latest_one {id} begin failed: {e}");
-        AppOpError::internal()
+    let mv = ProductionMove {
+        app_id: id,
+        build: latest.id,
+        action: EnvAction::Promote,
+        actor: Some(actor),
+        expect_current: None,
+        refuse_same: false,
+    };
+    let moved = promote::move_production(db, &mv).await.map_err(|e| {
+        tracing::warn!("promote_latest_one {id} refused: {e}");
+        AppOpError::from(e)
     })?;
-    let updated = active.update(&txn).await.map_err(|e| {
-        tracing::error!("promote_latest_one {id} update failed: {e}");
-        AppOpError::internal()
-    })?;
-    crate::server::api::custom_apps_environments::record_move(
-        &txn,
-        id,
-        &oxy_app_core::custom_app_environment::AppEnvironment::Production,
-        Some(latest.id),
-        crate::server::api::custom_apps_environments::EnvAction::Promote,
-        Some(actor),
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!("promote_latest_one {id} environment mirror failed: {e}");
-        AppOpError::internal()
-    })?;
-    txn.commit().await.map_err(|e| {
-        tracing::error!("promote_latest_one {id} commit failed: {e}");
-        AppOpError::internal()
-    })?;
-
-    // The serve path caches the `apps` row itself (channel pointers,
-    // `published_at`), so drop that cache here or this mutation takes up to
-    // the cache TTL to appear. The global access cache is invalidated ONCE by
-    // the caller (a batch would otherwise do N full global invalidations).
-    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
-    Ok(updated)
+    Ok(moved.app)
 }
 
 /// Upper bound on ids accepted by a batch endpoint. The admin surface is

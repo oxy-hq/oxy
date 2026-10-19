@@ -55,3 +55,57 @@ async fn every_other_promote_failure_is_the_bare_status_it_was() {
         assert!(bytes.is_empty(), "{expected}: no body");
     }
 }
+
+/// A production move refused by invariant 1 is answered with its code: the
+/// console's Make Live, rollback and promote latest refuse a build staging
+/// never served as `409 staging_never_served`.
+#[tokio::test]
+async fn a_build_staging_never_served_is_refused_with_its_code() {
+    let refused = AppOpError::from(PromoteError::Blocked(vec![
+        promote::blockers::staging_never_served("sbx-1"),
+    ]));
+    assert_eq!(refused.status, StatusCode::CONFLICT);
+    assert_eq!(refused.code(), Some("staging_never_served"));
+    let (status, bytes) = answered(refused).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let body: serde_json::Value = serde_json::from_slice(&bytes).expect("a JSON body");
+    assert_eq!(body["code"], "staging_never_served");
+    assert_eq!(body["error"], "staging_never_served");
+    let message = body["message"].as_str().unwrap_or_default();
+    assert!(message.contains("\"sbx-1\""), "{message}");
+}
+
+/// What the routes answered before the move was shared, they still answer:
+/// a failed validation is the bare `422`, a missing app the bare `404`.
+#[tokio::test]
+async fn a_failed_validation_is_still_the_bare_422() {
+    for (refused, expected) in [
+        (
+            PromoteError::Blocked(vec![promote::blockers::validation_not_passed(
+                "b-1", "pending",
+            )]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (PromoteError::AppNotFound, StatusCode::NOT_FOUND),
+    ] {
+        let failure = AppOpError::from(refused);
+        assert_eq!(failure.code(), None);
+        let (status, bytes) = answered(failure).await;
+        assert_eq!(status, expected);
+        assert!(bytes.is_empty(), "{expected}: no body");
+    }
+}
+
+/// A migration the move could not apply keeps its own status — retryable
+/// `409`, the author's `422` — under one code.
+#[tokio::test]
+async fn a_failed_migration_keeps_its_status_under_one_code() {
+    let busy = AppOpError::from(PromoteError::Migration(
+        crate::server::api::custom_apps_migrations::MigrationError::Busy,
+    ));
+    assert_eq!(busy.status, StatusCode::CONFLICT);
+    assert_eq!(busy.code(), Some("migration_failed"));
+    let (_, bytes) = answered(busy).await;
+    let body: serde_json::Value = serde_json::from_slice(&bytes).expect("a JSON body");
+    assert_eq!(body["code"], "migration_failed");
+}

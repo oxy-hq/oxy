@@ -17,12 +17,10 @@ use sea_orm::ModelTrait;
 use sea_orm::QueryFilter;
 use sea_orm::QueryOrder;
 use sea_orm::QuerySelect;
-use sea_orm::TransactionTrait;
 use uuid::Uuid;
 
 use super::dto::*;
 use super::ops::*;
-use crate::server::api::custom_apps_agent_built as agent_built;
 
 pub(crate) use super::dto::{CreateAppRequest, ListAppsQuery};
 pub(crate) use super::ops::validate_display_name;
@@ -979,6 +977,9 @@ pub async fn unpublish_app(
 /// build and, outside production, runs only a function that build marks
 /// `"check": true`. Without the parameter nothing changes, the bare `400`
 /// included.
+///
+/// `?as=schedule` runs a scheduled function once as its schedule would, in
+/// production or the named environment (`run_as_schedule`).
 pub async fn run_function_job(
     // The authenticated user, with the key or token the request used: what
     // the queued run is audited as, whatever the credential (`run_audit`).
@@ -988,10 +989,23 @@ pub async fn run_function_job(
     // only in production: `environment_scope` refuses it anywhere else.
     marker: Option<axum::Extension<oxy_auth::types::AppPublishTokenAuth>>,
     Path((id, name)): Path<(Uuid, String)>,
-    Query(q): Query<super::environment_scope::EnvironmentQuery>,
+    Query(q): Query<super::run_as_schedule::RunJobQuery>,
     body: axum::body::Bytes,
 ) -> Result<Json<RunFunctionJobResponse>, super::environment_scope::RouteError> {
     use super::environment_scope;
+    if let Some(run_as) = q.run_as.as_deref() {
+        let request = super::run_as_schedule::ScheduleNowRequest {
+            id,
+            name: &name,
+            environment: q.environment.as_deref(),
+            run_as,
+            body: &body,
+        };
+        let marker = marker.as_ref().map(|axum::Extension(marker)| marker);
+        return super::run_as_schedule::queue(&actor, marker, request)
+            .await
+            .map(Json);
+    }
     // Empty body → no params; a non-empty body must be valid JSON.
     let input = if body.is_empty() {
         None
@@ -1080,7 +1094,7 @@ async fn run_in_production(
 /// handler whose only protection is a middleware someone could reorder: the
 /// manifest check below cannot be moved up there, so this one stays down here
 /// beside it. A token with no `app_id` is not app-scoped at all and passes.
-fn token_names_app(marker: &oxy_auth::types::AppPublishTokenAuth, id: Uuid) -> bool {
+pub(super) fn token_names_app(marker: &oxy_auth::types::AppPublishTokenAuth, id: Uuid) -> bool {
     marker.app_id.is_none_or(|scoped| scoped == id)
 }
 
@@ -1102,7 +1116,7 @@ fn token_names_app(marker: &oxy_auth::types::AppPublishTokenAuth, id: Uuid) -> b
 ///
 /// A staff token with no `app_id` still faces condition 2: it is a machine
 /// credential either way.
-async fn machine_may_run(
+pub(super) async fn machine_may_run(
     db: &sea_orm::DatabaseConnection,
     marker: &oxy_auth::types::AppPublishTokenAuth,
     id: Uuid,
@@ -1214,12 +1228,20 @@ pub async fn list_builds(Path(id): Path<Uuid>) -> Result<Json<BuildHistoryRespon
     }))
 }
 
-/// `POST /api/customer-apps/{id}/rollback` — repoint the published channel
-/// at any retained build. Pure pointer move; the build's bytes are already
-/// in S3. Validates the build belongs to this app.
+/// `POST /api/customer-apps/{id}/rollback` — the console's "Make live" of any
+/// retained build. The build must belong to this app; production then moves
+/// to it through the one production-pointer function
+/// (`custom_apps_promote::move_production`): a build staging never served is
+/// `409 staging_never_served`, one a sandbox agent token published `409
+/// draft_published_by_agent`, a failed validation the bare `422` it always
+/// was, and the build's pending migrations are applied before the pointer
+/// moves (a failure is `migration_failed` with the migration's own status).
+/// Unlike `oxyc rollback`, the build need not be one production served: this
+/// is how the console makes an older staging build live. One `app.rolled_back`
+/// audit row.
 pub async fn rollback_app(
     _: crate::server::api::custom_apps_agent_refusal::RefuseSandboxAgent,
-    oxy_auth::extractor::AuthenticatedUserExtractor(user): oxy_auth::extractor::AuthenticatedUserExtractor,
+    actor: oxy_app_core::audit::RequestActor,
     Path(id): Path<Uuid>,
     Json(req): Json<RollbackRequest>,
 ) -> Result<Json<PromoteResponse>, PromoteRefusal> {
@@ -1240,66 +1262,35 @@ pub async fn rollback_app(
     if build.app_id != id {
         return Err(StatusCode::BAD_REQUEST.into());
     }
-    // Promotion gate (validator-can't-be-bypassed): a historical build may be
-    // rolled back to the live channel only if its recorded validation is
-    // `passed` — otherwise rollback would be a way to make a failed build live.
-    if build.validation_status != "passed" {
-        return Err(StatusCode::UNPROCESSABLE_ENTITY.into());
-    }
-    // Nor a build a sandbox agent token published: a rollback that names one
-    // would ship code nobody approved, as a promote of it would.
-    let unapproved = agent_built::refusing_promote(&db, &build)
+    let mv = crate::server::api::custom_apps_promote::ProductionMove {
+        app_id: id,
+        build: build.id,
+        action: crate::server::api::custom_apps_environments::EnvAction::Rollback,
+        actor: Some(actor.user.id),
+        expect_current: None,
+        refuse_same: false,
+    };
+    let moved = crate::server::api::custom_apps_promote::move_production(&db, &mv)
         .await
         .map_err(|e| {
-            tracing::error!("rollback_app publisher lookup failed: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
+            tracing::warn!("rollback_app {id} refused: {e}");
+            PromoteRefusal::from(AppOpError::from(e))
         })?;
-    if let Some(built) = unapproved {
-        return Err(built.into());
-    }
-
-    let org = Organizations::find_by_id(row.org_id)
-        .one(&db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let now = Utc::now().fixed_offset();
-    let txn = db.begin().await.map_err(|e| {
-        tracing::error!("rollback_app begin failed: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    let mut active: apps::ActiveModel = row.into();
-    active.published_build_id = ActiveValue::Set(Some(req.build_id));
-    active.published_at = ActiveValue::Set(Some(now));
-    active.last_promoted_by = ActiveValue::Set(Some(user.id));
-    active.last_promoted_at = ActiveValue::Set(Some(now));
-    active.updated_at = ActiveValue::Set(now);
-    let updated = active.update(&txn).await.map_err(|e| {
-        tracing::error!("rollback_app update failed: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    crate::server::api::custom_apps_environments::record_move(
-        &txn,
-        id,
-        &oxy_app_core::custom_app_environment::AppEnvironment::Production,
-        Some(req.build_id),
-        crate::server::api::custom_apps_environments::EnvAction::Rollback,
-        Some(user.id),
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!("rollback_app environment mirror failed: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    txn.commit().await.map_err(|e| {
-        tracing::error!("rollback_app commit failed: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
     crate::server::api::custom_apps_auth::invalidate_access_cache();
-    crate::server::api::custom_apps_cache::invalidate_app_resolution_cache();
-    Ok(Json(promote_response(&db, updated, &org.slug).await))
+    let org = load_org(&db, moved.app.org_id).await?;
+    crate::server::api::custom_apps_promote::act::record_move(
+        &db,
+        &actor,
+        crate::server::api::custom_apps_promote::blockers::Act::Rollback,
+        (
+            &moved.app,
+            &oxy_app_core::custom_app_environment::AppEnvironment::Production,
+        ),
+        None,
+        (build.id, row.published_build_id),
+    )
+    .await;
+    Ok(Json(promote_response(&db, moved.app, &org.slug).await))
 }
 
 pub async fn delete_app(

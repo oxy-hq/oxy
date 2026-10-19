@@ -161,8 +161,10 @@ export const CustomAppsService = {
   },
 
   /**
-   * Roll the published channel back to a retained build. Pure pointer
-   * move server-side — the build's bytes already live in S3.
+   * Make a retained build live. Server-side it goes through the one
+   * production move: refused (409 `staging_never_served`) for a build staging
+   * never served, and the build's pending migrations applied before the
+   * pointer moves.
    */
   async rollback(id: string, buildId: string): Promise<CustomApp> {
     const response = await apiClient.post(`${appPath(id)}/rollback`, {

@@ -281,9 +281,10 @@ With that token in `OXY_TOKEN`, `oxyc` behaves differently in five ways:
   `invocations held` and `checks run` — since the token never reaches `/admin`.
 - **Refused before any request, exit `2`:** an `--app-env` that is not
   `dev-<handle>`; `publish` without `--app-env`, or with `--promote`;
-  `fn call`, `logs`, `invocations list` and `checks run` without `--app-env`;
-  `env show` of production or staging; `oxyc apps`, `tokens list` and
-  `tokens revoke <id>`; and `oxyc api` against any path.
+  `fn call`, `fn run`, `logs`, `invocations list` and `checks run` without
+  `--app-env`; `env show` of production or staging; `env schedules`;
+  `oxyc apps`, `tokens list` and `tokens revoke <id>`; and `oxyc api` against
+  any path.
 - **`whoami`** prints the token's description — `kind`, `expires_at`, the
   `apps` it reaches and its `minter` — and `--json` is that document as the
   server sent it.
@@ -541,6 +542,8 @@ the current directory while granting access to the customer's repo.
 
 ```bash
 oxyc publish [--env <e>] [--dir <path>] [--promote] [--build-only | --prebuilt] [--json] [--allow-function-lint] [--app-env <dev-handle>]
+oxyc promote <app> [--from staging|dev-<handle>] [--build <id>] [--remove-schedule <fn>]… [--dry-run] [--yes] [--json]
+oxyc rollback <app> --app-env staging|production [--to <build>] [--remove-schedule <fn>]… [--dry-run] [--yes] [--json]
 oxyc init-ci [--app <org>/<app>] [--environment <name>] [--promote] [--force] [--no-register] [--setup-action]
 oxyc proxy [--port <n>] [--allow-writes] [--allow-events] [--yes]
 ```
@@ -549,7 +552,10 @@ oxyc proxy [--port <n>] [--allow-writes] [--allow-events] [--yes]
 `pnpm install`, `pnpm build`, output `out/`), bundles each declared Oxy Function
 with `pnpm exec esbuild` into `functions/<name>.js`, resolves the project from
 the target's public `build-config`, and uploads the bundle — to the **draft**
-channel unless `--promote`. `--env` defaults to **production**; name it.
+channel (staging). `--env` defaults to **production**; name it. Ship it with
+`oxyc promote`, below. `--promote` still publishes and promotes in one request,
+through the same server-side path, and the server answers it with a
+deprecation warning: it shows nobody the plan.
 
 - **The manifest** is read strictly: `oxy-app.json` is validated against the
   JSON Schema `@oxy-hq/sdk` generates from its `OxyAppManifest` type (the same
@@ -663,8 +669,36 @@ policies. Registration never fails the command.
 **`--app-env <dev-handle>`** moves one sandbox's build pointer instead of the
 draft/live channel — see [Sandboxes](#sandboxes). It needs a staff credential
 (never a publish token or OIDC) and is refused together with `--promote`: a
-sandbox build is never promoted, so the loop is publish to the sandbox,
-iterate, then publish the same tree to staging and promote that.
+sandbox build goes to production only through staging — `oxyc promote <app>
+--from dev-<handle>`, then `oxyc promote <app>`.
+
+**`promote`** moves a build up one environment: staging's to production (the
+default), or a sandbox's to staging (`--from dev-<handle>`). Nothing else —
+production is never promoted, and moving it backwards is `rollback`. It asks the
+server for the **plan** first and prints it: the build (commit, branch,
+publisher, how long the source has served it), what the target serves now,
+functions and production schedules that change, the migrations production
+applies **before** it moves, and `required` secrets production has no value for.
+Then it asks on a terminal (off one it needs `--yes`, else exit `8`) and acts,
+sending the plan's build and `expect_current` back — `409 target_moved` if the
+target moved in between. `--dry-run` stops at the plan. A plan with blockers is
+refused before any act (exit `6`): `staging_never_served` (production only
+serves a build staging has served), `validation_not_passed`,
+`required_secrets_unset`, and `schedule_removal_unconfirmed` — name each retired
+schedule with `--remove-schedule <function>`. `--build` names an older build the
+source served (publish id or UUID). Promoting the build already served is
+`409 already_serving`.
+
+**`rollback`** moves `--app-env` (staging or production; never a sandbox) back
+to the build it served before its current one — twice swaps back — or `--to`
+one it served earlier. Same plan, prompt and `--yes`. A rollback never reverses
+a migration: the target's pending files are applied like any production move,
+and the plan warns when the target predates files already applied. An unset
+`required` secret only warns here (it is the emergency path).
+
+Both need a staff credential: a publish token, a service account's and a sandbox
+agent token are refused before any request (exit `2`). `--json` prints the
+server's plan verbatim.
 
 ## Apps
 
@@ -870,9 +904,11 @@ oxyc env create <app> <name>                 # name is dev-<handle>, 1-12 chars 
 oxyc env list <app>
 oxyc env show <app> <name>
 oxyc env delete <app> <name> [--yes] [--wait [seconds]]
+oxyc env schedules <app> <name> [--on|--off] # staging's or a sandbox's switch; off by default
 
 oxyc publish --app-env <name> [--env <e>]    # see "Custom apps" above
 oxyc fn call <app> <function> [--app-env <name>] [--data <json|@file|->]
+oxyc fn run <app> <function> [--app-env <name>] [--as-schedule] [--data …] [--timeout <s>]
 oxyc checks run <app> --app-env <name>       # see "Checks" above
 
 oxyc invocations list <app> [--app-env] [--build] [--function] [--limit]
@@ -921,8 +957,8 @@ to sit in an agent's context.
 validated client-side — exit `2` on a malformed name) is a *different axis*
 from `--env`, which is the deployment: both can appear on the same command
 (`oxyc fn call acme/store f --env dev --app-env dev-a1`). It is not a global
-flag — only `publish`, `fn call`, `checks run`, `invocations list` and `logs`
-take it. A publish-token credential is refused before any request for
+flag — only `publish`, `fn call`, `fn run`, `checks run`, `invocations list`
+and `logs` take it. A publish-token credential is refused before any request for
 `--app-env` other than `production` (exit `2`); `env`, `invocations` and
 `logs` refuse one outright, for any environment, because sandbox management
 is a staff console surface.
@@ -955,6 +991,31 @@ non-2xx, is a function-level failure (exit `1`, `ok: false` in the JSON), kept
 distinct from a non-2xx on the POST itself (exit per the usual status mapping
 — e.g. `EnvironmentHasNoBuild` before the stream starts). The
 `x-oxy-invocation-id` response header becomes `invocationId` in the result.
+
+**`env schedules`** reads, or with `--on` / `--off` flips, the schedules
+switch of staging or a sandbox (`GET`/`PUT
+/api/customer-apps/{id}/environments/{name}/schedules`). Off by default: a
+schedule outside production reads production data on a timer and calls third
+parties with staging's credentials, so an environment fires its functions'
+`schedule`s only once staff turn it on. On, it has one schedule row per
+function its build schedules, kept in step by every publish to it; `--off`
+removes them. Production has no switch (exit `2`) — its schedules always run.
+Staff only: a sandbox agent token is refused before any request (exit `2`).
+A scheduled fire, and a delivery to the environment's own webhook route
+(`/api/webhooks/apps-env/{environment}/{org}/{app}/{function}`, verified with
+that environment's own secret), are not a sandbox's activity.
+
+**`fn run`** queues a function as a background run — the console's **Run
+now** — and polls it to a verdict (`--timeout`, default 300 s), unlike `fn
+call`, which is the function's own route. It runs as the system (the org
+owner, no caller), with the function's retry policy; outside production only a
+`"check": true` function runs. **`--as-schedule`** runs a function that
+declares a `schedule` once, as its cron would: no input (`--data` is exit
+`2`), the environment's build and policy, whether or not its switch is on —
+the way to test a scheduled function in a sandbox without turning schedules
+on. A function with no schedule is `409 not_scheduled` (exit `6`), production
+included. `--json` prints `{function, environment, runId, status, ok, trigger,
+answer, error?, invocationId}`; exit `1` when the run did not end `done`.
 
 **`invocations held`** is what the non-production write policy did *not* do —
 production's would-be effect, recorded rather than performed. It is `[]` for a

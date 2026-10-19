@@ -3,6 +3,7 @@
 //! a token minted without staging among them — stand unchanged.
 
 use super::*;
+use uuid::Uuid;
 
 fn resolved(environment: AppEnvironment) -> ResolvedEnvironment {
     ResolvedEnvironment {

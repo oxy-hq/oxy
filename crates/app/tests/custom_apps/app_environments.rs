@@ -602,6 +602,18 @@ async fn publish_one_and_unpublish_one_mirror_production() {
     let unpublisher = seed_user(&conn).await;
     let draft = seed_build(&conn, app, "draft").await;
     point(&conn, app, Some(draft), None).await;
+    // The draft as a publish leaves it: staging serves it, so production may
+    // (invariant 1, checked by the production move `publish_one` goes through).
+    envs::record_move(
+        &conn,
+        app,
+        &AppEnvironment::Staging,
+        Some(draft),
+        EnvAction::Publish,
+        None,
+    )
+    .await
+    .expect("staging serves the draft");
 
     assert!(
         admin_apps::publish_one(&conn, app, actor).await.is_ok(),
@@ -609,7 +621,10 @@ async fn publish_one_and_unpublish_one_mirror_production() {
     );
     assert_eq!(
         env_rows(&conn, app).await,
-        vec![("production".into(), Some(draft))]
+        vec![
+            ("production".into(), Some(draft)),
+            ("staging".into(), Some(draft)),
+        ]
     );
 
     assert!(
@@ -620,12 +635,13 @@ async fn publish_one_and_unpublish_one_mirror_production() {
     );
     assert_eq!(
         env_rows(&conn, app).await,
-        vec![("production".into(), None)]
+        vec![("production".into(), None), ("staging".into(), Some(draft))]
     );
 
     assert_eq!(
         event_rows(&conn, app).await,
         vec![
+            ("staging".into(), Some(draft), "publish".into()),
             ("production".into(), Some(draft), "promote".into()),
             ("production".into(), None, "unpublish".into()),
         ]
@@ -635,10 +651,97 @@ async fn publish_one_and_unpublish_one_mirror_production() {
     assert_eq!(
         event_actors(&conn, app).await,
         vec![
+            ("publish".into(), None),
             ("promote".into(), Some(actor)),
             ("unpublish".into(), Some(unpublisher)),
         ]
     );
+}
+
+/// The console's Make Live goes through the one production move: a draft
+/// staging never served — a pointer no publish wrote — is refused
+/// `409 staging_never_served`, and production and its history stay as they
+/// were.
+#[tokio::test]
+async fn publish_one_refuses_a_draft_staging_never_served() {
+    use axum::response::IntoResponse;
+
+    let conn = test_db().await;
+    let app = seed_app(&conn).await;
+    let actor = seed_user(&conn).await;
+    let draft = seed_build(&conn, app, "unstaged").await;
+    point(&conn, app, Some(draft), None).await;
+
+    let refused = admin_apps::publish_one(&conn, app, actor)
+        .await
+        .expect_err("staging never served the draft");
+    let response = admin_apps::PromoteRefusal::from(refused).into_response();
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("a body");
+    let body: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON");
+    assert_eq!(body["code"], "staging_never_served", "{body}");
+    assert!(env_rows(&conn, app).await.is_empty(), "nothing moved");
+    assert!(event_rows(&conn, app).await.is_empty(), "nothing recorded");
+}
+
+// ── Builds retained from before the events stay rollback targets ────────────
+
+/// A build retention kept from before the environment events has no event and
+/// no `published_to`, so invariant 1 would refuse the console's rollback to it.
+/// The retained-builds backfill gives it its `staging / backfill` event — and
+/// none to a sandbox's build or a token's — after which the rollback ships it.
+#[tokio::test]
+async fn a_build_from_before_the_events_stays_a_rollback_target() {
+    use oxy_app::server::api::custom_apps_promote::{
+        ProductionMove, PromoteError, move_production,
+    };
+
+    let conn = test_db().await;
+    let app = seed_app(&conn).await;
+    let actor = seed_user(&conn).await;
+    let old = seed_build(&conn, app, "pre-events").await;
+    let sandboxed = seed_build(&conn, app, "sandboxed").await;
+    let by_token = seed_build(&conn, app, "by-token").await;
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE app_builds SET published_to = CASE WHEN id = $1 THEN 'dev-a1' END, \
+         published_token_id = CASE WHEN id = $2 THEN $2 END WHERE id IN ($1, $2)",
+        [sandboxed.into(), by_token.into()],
+    ))
+    .await
+    .expect("mark the sandbox's and the token's builds");
+    let rollback = ProductionMove {
+        app_id: app,
+        build: old,
+        action: EnvAction::Rollback,
+        actor: Some(actor),
+        expect_current: None,
+        refuse_same: false,
+    };
+
+    let refused = move_production(&conn, &rollback)
+        .await
+        .expect_err("no event yet");
+    assert!(
+        matches!(&refused, PromoteError::Blocked(b) if b[0].code == "staging_never_served"),
+        "{refused:?}"
+    );
+    for _ in 0..2 {
+        conn.execute_unprepared(migration::RETAINED_BUILDS_STAGING_BACKFILL_SQL)
+            .await
+            .expect("run the retained-builds backfill");
+    }
+    assert_eq!(
+        event_rows(&conn, app).await,
+        vec![("staging".into(), Some(old), "backfill".into())],
+        "one event, for the channel build alone, however often it runs"
+    );
+    let moved = move_production(&conn, &rollback)
+        .await
+        .expect("a build staging served goes live");
+    assert_eq!(moved.app.published_build_id, Some(old));
 }
 
 // ── Builds an environment serves are undeletable; app deletion still cascades ─

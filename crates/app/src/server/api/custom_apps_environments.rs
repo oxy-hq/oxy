@@ -109,6 +109,9 @@ async fn upsert_fixed<C: ConnectionTrait>(
         deleting_at: ActiveValue::Set(None),
         oltp_schema: ActiveValue::NotSet,
         created_by_token_id: ActiveValue::NotSet,
+        // Never moved by a pointer write: a fixed environment's first row
+        // takes the default (off), and a later move leaves the switch alone.
+        schedules_enabled: ActiveValue::NotSet,
     })
     .on_conflict(
         OnConflict::columns([
