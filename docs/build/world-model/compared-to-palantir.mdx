@@ -7,10 +7,9 @@ Palantir Foundry's
 [Ontology](https://www.palantir.com/docs/foundry/ontology/models) and Oxygen's
 World Model both aim to represent an organization's state, explain its
 performance, forecast the effect of interventions, and execute decisions. The
-key difference between them is that they start from different primitives. We'll
-discuss what these primitives are and the ramifications for such choices in
-what follows.
-
+key difference between them is that they start from different primitives.
+This page describes both sets of primitives, the computations each supports
+natively, and the trade-offs.
 
 ## Objects first or outcomes first
 
@@ -30,22 +29,50 @@ are first-class parts of the model. Entities are still there, in the
 [entity graph](/guide/build/semantic-model/entities#the-entity-graph), but
 they are subordinate to the explanation and control of measurable outcomes.
 
+## Transaction-first and analytics-first ontologies
+
+Databases split long ago into two families. **OLTP** systems are built for
+transactions: reading and updating individual records, such as one order or
+one inventory count, quickly and correctly. **OLAP** systems are built for
+analytics: aggregating across many records, slicing by dimensions, and
+comparing over time. Graphs split the same way. A transaction-first graph
+database such as Neo4j is optimized for traversing and updating individual
+nodes and edges, while an analytics-first graph is organized around
+aggregates and how they relate.
+
+Ontologies split along the same line. Foundry's object-first Ontology is
+transaction-first, and Oxygen's outcome-first World Model is
+analytics-first:
+
+| | Transaction-first ontology (OLTP-shaped) | Analytics-first ontology (OLAP-shaped) |
+| --- | --- | --- |
+| **Example** | Palantir Foundry's Ontology | Oxygen's World Model |
+| **Unit of the model** | One object and its current state | A measure, aggregated across many entities and over time |
+| **First-class relationships** | Links between objects | The metric tree and causal graph between measures |
+| **Natural operations** | Look up an object, edit it, run an action | Aggregate, decompose, compare, forecast, propagate |
+| **Typical question** | "What is the state of this SKU, and what should change?" | "Why did margin fall, and what would move it?" |
+
+Neither replaces the other, just as a warehouse does not replace the
+database behind an order system. A transaction-first ontology is the right
+foundation for operational workflows that act on individual records, and
+the World Model keeps an object layer of its own: its controls still act on
+individual objects. The World Model is organized around measures, with
+entities bound to them.
+
 ## Object state and outcome state
 
-The shortest way to put the difference: **Palantir makes object state
-computable. Oxygen adds outcome state, and makes business outcomes
-computable.**
+**Palantir makes object state computable. Oxygen adds outcome state, and
+makes business outcomes computable.**
 
 <Frame caption="Both platforms model object state. Oxygen adds a second computational model on top of it: business outcomes, and the deterministic and causal relationships between them.">
   <img src="../../images/palantir-object-vs-outcome-state.svg" alt="Two panels. Left, Palantir object state: Supplier, Warehouse, Order, and Amazon FBA inventory linked to a SKU by supplies, stored at, contains, and inventory at relationships. Right, Oxygen outcome state: the same objects in a muted row, then a causal graph (Promotion and Price drive Demand, Demand drives Inventory and Stockout risk, Stockout risk drives Lost sales, which drives Revenue) and a metric tree (EBITDA is Revenue minus Costs, Revenue is Units times Price). Beneath, change propagates through both to compute outcomes, for example rising demand raises stockout risk and lowers revenue." />
 </Frame>
 
-An ontology makes **objects and their relationships** first-class: what
-things exist, what state they are in, and how they relate. The World Model
-keeps that layer, as the
-[entity graph](/guide/build/semantic-model/entities#the-entity-graph), and
-adds **measures and the relationships between them** as a second
-first-class layer, in two distinct structures:
+A transaction-first ontology makes **objects and their relationships**
+first-class: what things exist, what state they are in, and how they relate.
+The World Model keeps that layer, as the entity graph, and adds **measures
+and the relationships between them** as a second first-class layer, in two
+distinct structures:
 
 - The **[metric tree](/guide/build/world-model/metric-tree)** holds
   *deterministic* relationships, the definitions and identities such as
@@ -60,6 +87,31 @@ them to compute outcomes: a rise in demand raises stockout risk and lowers
 revenue, a price change moves demand and therefore EBITDA, and a policy
 change moves inventory, service level, and EBITDA in turn. Objects tell you
 what exists; outcome relationships let you compute what happens.
+
+## What comes for free
+
+Every entity is bound to measures, and every measure sits in the metric tree
+and causal graph. So each entity inherits a set of computations the moment
+it is modeled, with no application written for it:
+
+- **Roll-up and drill-down.** A measure defined once at the finest grain
+  [promotes up the entity hierarchy](/guide/build/world-model/metric-tree#promotion-up-the-hierarchy),
+  so it is available for every store, region, and market without being
+  redefined.
+- **Root-cause analysis.** A change in any measure, for any entity,
+  decomposes through the metric tree into the drivers that explain it.
+- **Benchmarking and opportunity sizing.** Any entity can be compared with
+  its peers on any measure, and the
+  [gap sized in dollars](/guide/build/world-model/opportunity-sizing).
+- **Forecasts and anomalies.** Every measure for every entity has an
+  expected value, so a break from it can be detected and traced.
+- **Simulation and counterfactuals.** A change to a driver propagates
+  through the causal graph to the outcomes downstream of it, and a past
+  change can be measured against what the model says would have happened
+  without it.
+
+A new store, SKU, or marketplace gets these computations as soon as it is
+added to the entity graph.
 
 ## Not a question of expressivity
 
@@ -78,14 +130,15 @@ compute a metric, but its existence does not tell the platform whether that
 metric is additive, how it decomposes, which dimensions are compatible with
 it, or which interventions affect it. Those semantics are either declared
 once in a shared representation, or reconstructed separately by every
-application that needs them.
+application that needs them. The table below compares three recurring
+tasks.
 
 ## Where the difference shows up
 
-| Recurring task | Object-first (Foundry) | Outcome-first (World Model) |
+| Recurring task | Transaction-first (Foundry) | Analytics-first (World Model) |
 | --- | --- | --- |
 | **Root-cause analysis** | Metrics can be modeled as objects and links, with functions that compute and explain them. A generic engine still needs standardized dependency, aggregation, and evaluation semantics that arbitrary functions do not expose. | The [metric tree](/guide/build/world-model/metric-tree) declares how each metric decomposes, so once definitions are correct, recursive decomposition is a platform operation rather than a per-metric project. |
-| **Learning driver relationships** | Deployed models and chained model evaluation in scenarios. The dependency structure and learning lifecycle live with each model. | Drivers are declared in the physics and estimated in the [calibration layer](/guide/build/world-model/calibration), so scenario propagation, drift monitoring, and refitting share one outcome-level interface. |
+| **Learning driver relationships** | Deployed models and chained model evaluation in scenarios. The dependency structure and learning lifecycle live with each model. | Drivers are declared in the causal graph and estimated in the [calibration layer](/guide/build/world-model/calibration), so scenario propagation, drift monitoring, and refitting share one outcome-level interface. |
 | **Standing decisions** | An action modifies a property, and a function or webhook dispatches the change. Valid and flexible, especially for unusual workflows. | A [control](/guide/build/world-model/controls) evaluates criteria over measures and dispatches a reusable action. Evaluation, trigger execution, versioning, backtesting, and logging come from the platform, and per-customer variation is mostly mappings, thresholds, and credentials. |
 
 The hoped-for property is that a second deployment of the same kind of
@@ -106,10 +159,12 @@ once it is implemented.
   <img src="../../images/palantir-replenishment.svg" alt="Two columns. Left, Palantir: an ontology of SKU, Warehouse, Amazon FBA inventory, and Orders feeds a replenishment application of business logic, workflow, and UI, highlighted in red as custom engineering work. Right, Oxygen: the World Model (object state plus outcome state, metric tree plus causal graph) feeds a control system configuration, the replenishment policy, with target inventory, reorder thresholds, allocation rules, and safety stock. The policy branches into impact calculation (physics plus calibration), policy simulation (physics layer), and counterfactual measurement (calibration layer). A feedback arrow returns experiments and observations to calibrate drivers and update the world model. Footer: a continuously improving system for managing replenishment, Control, Simulate, Measure, Calibrate." />
 </Frame>
 
-On an ontology, replenishment is typically an **application**: business
-logic, a workflow, and a UI that read warehouse inventory, Amazon inventory,
-and expected demand, and decide how much to send. That is a sound
-architecture, and the logic can be shared across deployments.
+On a transaction-first ontology, replenishment is typically an
+**application**: business logic, a workflow, and a UI that read warehouse
+inventory, Amazon inventory, and expected demand, and decide how much to
+send. That is a sound architecture, and the logic can be shared across
+deployments. Questions such as projected impact or a comparison of
+alternative policies become additional features of that application.
 
 On the World Model, replenishment is a **[control](/guide/build/world-model/controls)**:
 a policy of target inventory, reorder thresholds, allocation rules, and
@@ -136,7 +191,7 @@ extended for each new question.
 
 ## Trade-offs
 
-Outcome-centric primitives bring constraints as well as leverage:
+An analytics-first ontology has the following limitations:
 
 - A metric graph can be incomplete or wrong, and aggregation semantics can
   be subtle.
