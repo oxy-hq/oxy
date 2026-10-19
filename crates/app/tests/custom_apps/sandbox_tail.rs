@@ -167,11 +167,12 @@ async fn refused(user: &AuthenticatedUser, publish_token: bool, app: Uuid, env: 
 }
 
 /// Who may tail what: staff with non-production reach tail every existing
-/// environment; production needs the app's admin (an org officer is one, a
-/// plain member is not); staging and sandboxes need non-production reach,
-/// which no tenant has; a publish token is refused whoever minted it.
+/// environment; every environment needs the app's admin first, as `/logs`
+/// does (an org officer is one, a plain member is not); staging and sandboxes
+/// then need non-production reach, which no tenant has; a publish token is
+/// refused whoever minted it.
 #[tokio::test]
-async fn production_needs_an_admin_and_the_rest_non_production_reach() {
+async fn every_environment_needs_an_admin_and_the_rest_non_production_reach() {
     let t = seeded_tenant().await;
     let app = app_with_two_sandboxes(&t, fixture::APP).await.id;
     let staff = user(t.guest_id, LOCAL_GUEST_EMAIL);
@@ -202,14 +203,14 @@ async fn production_needs_an_admin_and_the_rest_non_production_reach() {
     let (member_id, member_email) = seed_user(&t.db).await;
     seed_member(&t.db, t.org_id, member_id, OrgRole::Member).await;
     let member = user(member_id, &member_email);
-    assert_eq!(
-        refused(&member, false, app, "production").await,
-        "app_admin_required"
-    );
-    for environment in ["staging", "dev-a1"] {
+    // A non-admin is turned away by the admin gate in every environment,
+    // before non-production reach is asked: `app_admin_required`, never the
+    // `non_production_refused` it used to get on staging and a sandbox.
+    for environment in ["production", "staging", "dev-a1"] {
         assert_eq!(
             refused(&member, false, app, environment).await,
-            "non_production_refused"
+            "app_admin_required",
+            "{environment}"
         );
     }
 
@@ -220,10 +221,13 @@ async fn production_needs_an_admin_and_the_rest_non_production_reach() {
         refused(&officer, false, app, "production").await,
         "admitted"
     );
-    assert_eq!(
-        refused(&officer, false, app, "dev-a1").await,
-        "non_production_refused"
-    );
+    for environment in ["staging", "dev-a1"] {
+        assert_eq!(
+            refused(&officer, false, app, environment).await,
+            "non_production_refused",
+            "{environment}"
+        );
+    }
 }
 
 /// What an open stream is asked every minute: yes while its caller may read

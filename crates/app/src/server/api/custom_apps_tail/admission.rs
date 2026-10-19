@@ -5,10 +5,11 @@
 //! grant's app scope, no active assume session). The handler adds:
 //!
 //! - **a publish token** is refused (`403 publish_token_refused`);
-//! - **production** needs the caller to administer the app
-//!   (`resolve_app_role` = admin, oxy-authz `Ring::AppAdmin`): a function's
-//!   output is the author's, not a viewer's (`custom_apps_logs`);
-//! - **staging or a sandbox** needs `may_open_non_production`
+//! - **every environment** needs the caller to administer the app
+//!   (`resolve_app_role` = admin, oxy-authz `Ring::AppAdmin`) — the gate
+//!   `/logs` puts on every environment too (`require_app_admin`): a
+//!   function's output is the author's, not a viewer's (`custom_apps_logs`);
+//! - **staging or a sandbox** then also needs `may_open_non_production`
 //!   (`Action::AppNonProduction`), and a sandbox must exist;
 //! - **a sandbox agent token** is asked exactly what `/logs` asks of one
 //!   (`custom_apps_logs::environment::agent_environment`): a sandbox it
@@ -52,7 +53,7 @@ pub enum TailError {
          environments"
     )]
     NonProductionRefused(String),
-    #[error("production's function output is open to the app's admins")]
+    #[error("an app's function output is open to the app's admins")]
     AppAdminRequired,
     #[error("timeout must be a whole number of seconds between 1 and {max}")]
     InvalidTimeout { max: u64 },
@@ -143,8 +144,8 @@ pub async fn admit(
     Ok(Admitted { db, target })
 }
 
-/// Everyone but a sandbox agent token: production for the app's admins,
-/// any other existing environment for staff with non-production reach.
+/// Everyone but a sandbox agent token: the app's admins, and for any
+/// environment but production also staff with non-production reach.
 async fn staff_environment(
     db: &DatabaseConnection,
     caller: &Caller,
@@ -153,14 +154,17 @@ async fn staff_environment(
 ) -> Result<AppEnvironment, TailError> {
     let environment =
         AppEnvironment::parse(name).ok_or_else(|| TailError::InvalidEnvironment(name.into()))?;
+    // The admin gate comes first and covers every environment, as `/logs`
+    // does: log output is the author's, so reach into staging or a sandbox
+    // narrows the admin set and never stands in for it.
+    let role = resolve_app_role(db, caller, app)
+        .await
+        .map_err(|e| TailError::db("resolve the app role", e))?;
+    if role != Some(app_members::ROLE_ADMIN) {
+        return Err(TailError::AppAdminRequired);
+    }
     if environment == AppEnvironment::Production {
-        let role = resolve_app_role(db, caller, app)
-            .await
-            .map_err(|e| TailError::db("resolve the app role", e))?;
-        return match role {
-            Some(app_members::ROLE_ADMIN) => Ok(environment),
-            _ => Err(TailError::AppAdminRequired),
-        };
+        return Ok(environment);
     }
     if !may_open_non_production(db, caller, app).await {
         return Err(TailError::NonProductionRefused(environment.name()));
