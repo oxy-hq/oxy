@@ -32,7 +32,8 @@ pub mod custom_apps_client;
 pub mod custom_apps_debug;
 pub mod custom_apps_env_resolve;
 pub mod custom_apps_env_schedules;
-pub mod custom_apps_environments;
+/// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
+pub use oxy_custom_apps::environments as custom_apps_environments;
 pub mod custom_apps_functions;
 pub mod custom_apps_gates;
 pub mod custom_apps_health;
@@ -49,7 +50,8 @@ pub mod custom_apps_promote;
 pub mod custom_apps_publish;
 /// The audit row of a bundle publish, and what one says of a publish token.
 pub(crate) mod custom_apps_publish_audit;
-pub mod custom_apps_publish_authz;
+/// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
+pub use oxy_custom_apps::publish_authz as custom_apps_publish_authz;
 pub mod custom_apps_publish_oidc;
 pub mod custom_apps_publish_refusal;
 pub(crate) mod custom_apps_sandbox_instance;

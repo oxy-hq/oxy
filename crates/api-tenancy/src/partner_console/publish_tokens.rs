@@ -26,8 +26,8 @@ use uuid::Uuid;
 
 use super::{db, internal, require_org_scope};
 use crate::partner_console::partner_context::PartnerActor;
-use oxy_app::server::api::custom_apps_publish_authz::consent_enabled;
 use oxy_app_core::audit::{self, AuditEntry};
+use oxy_custom_apps::publish_authz::consent_enabled;
 use oxy_server_authz::partner_authz::{PartnerCapability, PartnerScope};
 
 /// A token this app is allowed to have exists at most 90 days — a partner's CI

@@ -9417,6 +9417,7 @@ dependencies = [
  "oxy-auth",
  "oxy-authz",
  "oxy-cameras",
+ "oxy-custom-apps",
  "oxy-git",
  "oxy-llm",
  "oxy-oltp",
@@ -9531,6 +9532,7 @@ dependencies = [
  "oxy-billing",
  "oxy-cameras",
  "oxy-compile",
+ "oxy-custom-apps",
  "oxy-git",
  "oxy-llm",
  "oxy-looker",
@@ -9773,6 +9775,20 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+ "workspace-hack",
+]
+
+[[package]]
+name = "oxy-custom-apps"
+version = "0.5.156"
+dependencies = [
+ "chrono",
+ "entity",
+ "oxy-app-core",
+ "oxy-authz",
+ "oxy-server-authz",
+ "sea-orm",
  "uuid",
  "workspace-hack",
 ]

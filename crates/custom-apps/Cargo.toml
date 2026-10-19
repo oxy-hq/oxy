@@ -1,0 +1,23 @@
+[package]
+name = "oxy-custom-apps"
+version.workspace = true
+authors.workspace = true
+description = "Custom Apps domain crate: the seam-free modules of the custom-apps surface (publish authority, environment pointer writes). Below oxy-app and every api-* surface; no routes (internal-docs/domain-boundaries.md S3)"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+entity = { workspace = true }
+oxy-app-core = { workspace = true }
+oxy-authz = { workspace = true }
+oxy-server-authz = { workspace = true }
+
+chrono = { workspace = true }
+sea-orm = { workspace = true }
+uuid = { workspace = true }
+workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[lints]
+workspace = true

@@ -34,6 +34,8 @@ crates/app/src/server/api/custom_apps_storage/     @luong-komorebi @NTtanh
 # (custom_apps_client/, custom_apps_health/, custom_apps_migrations/ — #3103),
 # which a `custom_apps_*.rs` pattern silently stops matching.
 crates/app/src/server/api/custom_apps_*            @luong-komorebi @NTtanh
+# The domain crate the custom_apps_* modules are moving into (domain-boundaries Pending 7).
+crates/custom-apps/                                @luong-komorebi @NTtanh
 # Oxy Functions — kept BELOW the catch-all on purpose: the backup differs, and
 # last-match-wins is the only thing that makes it stick. Tay is the reliable
 # second here, not Mars — webhooks (#3137), the airhouse-managed write fix
