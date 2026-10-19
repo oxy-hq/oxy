@@ -1,6 +1,8 @@
 llm:
-  ref: claude
-  # model: claude-sonnet-4-6
+  # A model this config.yml declares. `claude` is demo_project's name for it,
+  # and this file was copied from there: here it failed at run time with
+  # "Model 'claude' not found in config".
+  ref: claude-sonnet-4-6
   # max_tokens: 8000
   thinking: disabled
   extended_thinking:

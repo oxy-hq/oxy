@@ -20,9 +20,8 @@
 #   "Which location had the highest average ticket?"
 
 llm:
-  # A model this config.yml actually declares. `analytics.agentic.yml` asks for
-  # `claude`, which is not in the models list — it loads and then fails at run
-  # time with "Model 'claude' not found in config".
+  # A model this config.yml declares (a ref missing from the models list loads,
+  # then fails at run time with "Model '…' not found in config").
   ref: openai-4o-mini
   thinking: disabled
 
