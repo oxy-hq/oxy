@@ -325,6 +325,47 @@ pub async fn update_queue_heartbeat(
     Ok(res.rows_affected() > 0)
 }
 
+/// What a heartbeat tick found, distinguishing "no such row" from "not yours".
+///
+/// A bare `bool` conflated them, and the difference is whether the executing
+/// task may be cancelled: interactive roots registered via
+/// `Coordinator::register_root` have no queue row at all but still run a
+/// heartbeat ticker, so a missing row is routine, not a lost claim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeartbeatOutcome {
+    /// The row is claimed by this worker and was stamped.
+    Beat,
+    /// No queue row exists for this task. Normal for externally-driven roots.
+    NoRow,
+    /// A row exists but this worker does not hold the claim (reaped, released,
+    /// or taken by a peer).
+    Lost,
+}
+
+/// [`update_queue_heartbeat`], classifying a miss with one follow-up lookup.
+pub async fn heartbeat_queue_task(
+    db: &DatabaseConnection,
+    task_id: &str,
+    worker_id: &str,
+) -> Result<HeartbeatOutcome, DbErr> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    if update_queue_heartbeat(db, task_id, worker_id).await? {
+        return Ok(HeartbeatOutcome::Beat);
+    }
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT 1 FROM agentic_task_queue WHERE task_id = $1",
+            [task_id.into()],
+        ))
+        .await?;
+    Ok(if row.is_some() {
+        HeartbeatOutcome::Lost
+    } else {
+        HeartbeatOutcome::NoRow
+    })
+}
+
 /// What an ownership-scoped terminal write actually did.
 ///
 /// A plain `bool` conflated four genuinely different situations, and the one

@@ -458,7 +458,13 @@ pub fn spawn_automation_run_drive(
                     run_id = %cancel_task_id,
                     "cancel signal received, cancelling task subtree"
                 );
-                let _ = transport_for_cancel.cancel_subtree(&cancel_task_id).await;
+                if let Err(e) = transport_for_cancel.cancel_subtree(&cancel_task_id).await {
+                    tracing::warn!(
+                        target: "workflow_run",
+                        run_id = %cancel_task_id,
+                        "cancel_subtree failed; task tokens were fired but the queue rows may not be marked cancelled: {e}"
+                    );
+                }
                 break;
             }
         }

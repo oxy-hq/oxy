@@ -1484,7 +1484,13 @@ pub async fn drive_with_coordinator(
                         task_id = %cancel_task_id,
                         "cancel signal received, cancelling task subtree"
                     );
-                    let _ = transport_cancel.cancel_subtree(&cancel_task_id).await;
+                    if let Err(e) = transport_cancel.cancel_subtree(&cancel_task_id).await {
+                        tracing::warn!(
+                            target: "coordinator",
+                            run_id = %cancel_task_id,
+                            "cancel_subtree failed; task tokens were fired but the queue rows may not be marked cancelled: {e}"
+                        );
+                    }
                     break;
                 }
             }

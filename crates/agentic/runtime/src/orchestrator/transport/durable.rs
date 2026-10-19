@@ -16,7 +16,7 @@ use agentic_core::transport::{
     CoordinatorTransport, TransportError, WorkerMessage, WorkerTransport,
 };
 use async_trait::async_trait;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use sea_orm::DatabaseConnection;
 use tokio::sync::{Mutex, Notify, mpsc};
 use tokio_util::sync::CancellationToken;
@@ -54,8 +54,14 @@ pub struct DurableTransport {
     /// Wake signal: coordinator notifies when a new task is enqueued.
     new_task_notify: Notify,
 
-    /// Per-task cancellation tokens, keyed by task_id.
-    cancel_tokens: DashMap<String, CancellationToken>,
+    /// Per-task cancellation tokens, keyed by task_id. Shared with heartbeat
+    /// tickers, which swap in a fresh token when they cancel a lost claim.
+    cancel_tokens: Arc<DashMap<String, CancellationToken>>,
+
+    /// Tasks whose ticker cancelled them because the claim was lost, not
+    /// because anyone pressed Stop. [`Self::send`] reads it to keep that
+    /// `Cancelled` from reaching the coordinator while a peer re-runs the row.
+    lost_claims: Arc<DashSet<String>>,
 
     /// The live heartbeat ticker for each claimed task, keyed by task_id.
     ///
@@ -375,7 +381,8 @@ impl DurableTransport {
             message_tx,
             message_rx: Mutex::new(message_rx),
             new_task_notify: Notify::new(),
-            cancel_tokens: DashMap::new(),
+            cancel_tokens: Arc::new(DashMap::new()),
+            lost_claims: Arc::new(DashSet::new()),
             heartbeats: DashMap::new(),
             poll_interval,
             task_id_root,
@@ -424,6 +431,142 @@ impl DurableTransport {
             tracing::debug!(task_id, why, "retiring heartbeat ticker");
             token.cancel();
         }
+    }
+
+    /// Stamp a terminal status, retrying a failed write, and only then retire
+    /// the heartbeat.
+    ///
+    /// The ticker must outlive the write: retiring it first leaves a window
+    /// where the row is `claimed`, un-beaten, and a failed write leaves it
+    /// there until the reaper requeues the finished task for a second run.
+    /// Retired on success and when retries are exhausted alike.
+    async fn stamp_terminal<F, Fut>(
+        &self,
+        task_id: &str,
+        why: &'static str,
+        op: F,
+    ) -> Result<crud::TerminalWrite, sea_orm::DbErr>
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = Result<crud::TerminalWrite, sea_orm::DbErr>>,
+    {
+        let result =
+            retry_terminal_write(task_id, TERMINAL_WRITE_ATTEMPTS, TERMINAL_WRITE_BACKOFF, op)
+                .await;
+        self.retire_heartbeat(task_id, why);
+        result
+    }
+
+    /// Stamp a terminal outcome on the queue row this execution holds.
+    /// Returns whether the outcome should reach the coordinator.
+    async fn stamp_outcome(&self, task_id: &str, outcome: &TaskOutcome) -> bool {
+        // Every terminal write is scoped to `self.worker_id`. This
+        // outcome can arrive after graceful release handed our claims
+        // back and a peer re-claimed the row — stamping it terminal
+        // then would strand the peer's live work. See
+        // `crud::queue::set_terminal_status_owned`.
+        let result = match outcome {
+            // Intercepted by the worker before it reaches a transport;
+            // if it gets here the worker's translation was bypassed.
+            TaskOutcome::Deferred { .. } => {
+                tracing::error!(
+                    target: "transport",
+                    %task_id,
+                    "Deferred arrived as an Outcome; worker translation bypassed. \
+                     Leaving the claim alone rather than stamping it terminal."
+                );
+                return false;
+            }
+            TaskOutcome::Done { .. } => {
+                self.stamp_terminal(task_id, "task done", || {
+                    crud::complete_queue_task(&self.db, task_id, &self.worker_id)
+                })
+                .await
+            }
+            TaskOutcome::Failed(_) => {
+                self.stamp_terminal(task_id, "task failed", || {
+                    crud::fail_queue_task(&self.db, task_id, &self.worker_id)
+                })
+                .await
+            }
+            TaskOutcome::Cancelled => {
+                self.stamp_terminal(task_id, "task cancelled", || {
+                    crud::cancel_queued_task_owned(&self.db, task_id, &self.worker_id)
+                })
+                .await
+            }
+            // Suspended is not terminal — the row stays `claimed` so it
+            // can resume, and the heartbeat ticker stays running to say
+            // so. Retiring it here is exactly the bug this arm's
+            // silence used to cause; see `Worker::handle_task`.
+            TaskOutcome::Suspended { .. } => Ok(crud::TerminalWrite::Stamped),
+        };
+        match result {
+            Ok(crud::TerminalWrite::Stamped) => {}
+            // The row is already terminal — first terminal status wins.
+            // `CoordinatorTransport::cancel` fires the in-memory token
+            // BEFORE it awaits its DB write, so on a user Stop either
+            // side can reach the row first: the worker's own
+            // `Cancelled` (this arm's `cancel_queued_task_owned`) or
+            // the requester's `cancel_queued_task`. Both write
+            // `cancelled` and each is a no-op once the other has
+            // landed, so the order is immaterial. This arm is reached
+            // when the requester wins, or when the task finished on
+            // its own a moment before. Nothing is lost.
+            Ok(crud::TerminalWrite::AlreadyTerminal) => tracing::debug!(
+                task_id,
+                "queue row was already terminal; keeping the first status"
+            ),
+            // Root tasks registered via `Coordinator::register_root`
+            // are driven by a virtual worker and never published as an
+            // assignment, so they have no queue row to stamp. Routine.
+            Ok(crud::TerminalWrite::NoRow) => {
+                tracing::trace!(task_id, "no queue row for this task; nothing to stamp")
+            }
+            // The one case worth a warning: a *different* worker holds
+            // the row, so this process just finished work the queue is
+            // discarding.
+            Ok(crud::TerminalWrite::NotOwned) => tracing::warn!(
+                task_id,
+                worker_id = %self.worker_id,
+                "outcome dropped: another worker now holds this claim \
+                 (released on shutdown and re-claimed by a peer, or reaped)"
+            ),
+            Err(e) => tracing::warn!(
+                task_id,
+                "failed to update queue status after {TERMINAL_WRITE_ATTEMPTS} attempts \
+                 (the reaper will requeue the row): {e}"
+            ),
+        }
+        true
+    }
+
+    /// Whether a `Cancelled` from an execution whose heartbeat lost the claim
+    /// should reach the coordinator.
+    ///
+    /// No queue write and no ticker retirement: `worker_id` is process-stable,
+    /// so if this process re-claimed the row, an owned write would stamp the
+    /// new execution's live row and `retire_heartbeat` would stop its ticker.
+    ///
+    /// While the row is `queued`/`claimed`, whoever runs it reports the run;
+    /// forwarding would mark it cancelled under them. A terminal row is
+    /// forwarded: a Stop from another process reaches this task as a lost
+    /// claim, and a reaped row that was then stopped has no other reporter.
+    /// A failed status read forwards too.
+    async fn forward_lost_claim_cancel(&self, task_id: &str) -> bool {
+        let live = matches!(
+            crud::get_queue_entry(&self.db, task_id).await,
+            Ok(Some(row)) if matches!(row.queue_status.as_str(), "queued" | "claimed")
+        );
+        if live {
+            tracing::info!(
+                target: "transport",
+                %task_id,
+                "cancelled only because the claim was lost; not reporting it, \
+                 the row's current holder owns the outcome"
+            );
+        }
+        !live
     }
 
     /// Mark the run owning a dead-lettered task terminal, so reaching the
@@ -677,34 +820,167 @@ impl CoordinatorTransport for DurableTransport {
     }
 
     async fn cancel(&self, task_id: &str) -> Result<(), TransportError> {
-        // Update queue status in DB.
-        crud::cancel_queued_task(&self.db, task_id)
-            .await
-            .map_err(|e| TransportError::Other(format!("cancel failed: {e}")))?;
-
-        // Also fire the in-memory cancellation token for already-running tasks.
+        // Fire the in-memory token FIRST. A Stop must reach a running task
+        // even when the queue write below fails: the callers' forwarders are
+        // one-shot, so a Stop lost here is lost for good.
         if let Some(token) = self.cancel_tokens.get(task_id) {
             token.cancel();
         }
 
-        Ok(())
+        crud::cancel_queued_task(&self.db, task_id)
+            .await
+            .map_err(|e| TransportError::Other(format!("cancel failed: {e}")))
     }
 
     async fn cancel_subtree(&self, root_task_id: &str) -> Result<(), TransportError> {
-        // Cancel the root's queue entry + token.
-        self.cancel(root_task_id).await?;
-
-        // Fire tokens for every descendant. Child ids are formatted as
-        // `{parent_id}.{counter}` by `Coordinator::handle_suspended`, so
-        // every descendant's task_id starts with `"{root_task_id}."`.
+        // Fire tokens for the root and every descendant before touching the
+        // DB. Child ids are formatted as `{parent_id}.{counter}` by
+        // `Coordinator::handle_suspended`, so every descendant's task_id
+        // starts with `"{root_task_id}."`.
         let prefix = format!("{root_task_id}.");
         for entry in self.cancel_tokens.iter() {
-            if entry.key().starts_with(&prefix) {
+            if entry.key() == root_task_id || entry.key().starts_with(&prefix) {
                 entry.value().cancel();
             }
         }
 
-        Ok(())
+        // Then the root's queue entry; its error is returned only after every
+        // token has fired.
+        self.cancel(root_task_id).await
+    }
+}
+
+/// What one heartbeat ticker needs to act on the result of a beat.
+struct BeatCtx {
+    task_id: String,
+    /// The token `spawn_heartbeat` returned; cancelled = this ticker retired.
+    ticker: CancellationToken,
+    /// The executing task's cancel token.
+    task_token: CancellationToken,
+    cancel_tokens: Arc<DashMap<String, CancellationToken>>,
+    lost_claims: Arc<DashSet<String>>,
+    beat_timeout: Duration,
+}
+
+impl BeatCtx {
+    /// Act on one beat's result. `true` means stop ticking.
+    fn should_stop(
+        &self,
+        beat: Result<Result<crud::HeartbeatOutcome, sea_orm::DbErr>, tokio::time::error::Elapsed>,
+    ) -> bool {
+        let task_id = &self.task_id;
+        match beat {
+            Ok(Ok(crud::HeartbeatOutcome::Beat)) => false,
+            // No queue row at all: an interactive root registered without
+            // one. Nothing to keep alive and nothing lost.
+            Ok(Ok(crud::HeartbeatOutcome::NoRow)) => {
+                tracing::debug!(%task_id, "heartbeat: no queue row for this task; stopping ticker");
+                true
+            }
+            Ok(Ok(crud::HeartbeatOutcome::Lost)) => {
+                self.on_lost_claim();
+                true
+            }
+            // A failed beat is not a lost claim. Keep ticking: the next one
+            // may land inside the visibility window, and a dead ticker
+            // guarantees it won't. Expected once the co-located DB goes down
+            // on shutdown; a real failure otherwise.
+            Ok(Err(e)) if is_shutting_down() => {
+                tracing::debug!(%task_id, "heartbeat failed during shutdown: {e}");
+                false
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(%task_id, "heartbeat failed, will retry next tick: {e}");
+                false
+            }
+            Err(_elapsed) => {
+                tracing::warn!(
+                    %task_id,
+                    "heartbeat timed out after {:?}, will retry next tick",
+                    self.beat_timeout
+                );
+                false
+            }
+        }
+    }
+
+    /// This ticker outlives `handle_task` only by the width of one tick, but
+    /// that is enough to land after graceful release: if the ticker was
+    /// retired, just stop. Otherwise the claim was lost under a running task
+    /// (reaped, taken by a peer, or cancelled by a Stop from another process):
+    /// stop that task too, or it runs twice.
+    fn on_lost_claim(&self) {
+        let task_id = &self.task_id;
+        if self.ticker.is_cancelled() {
+            tracing::debug!(%task_id, "heartbeat: claim no longer held; stopping ticker");
+            return;
+        }
+        tracing::warn!(%task_id, "heartbeat: claim lost under a running task; cancelling it");
+        // Marked before the cancel, so the `Cancelled` it produces is
+        // recognised in `send` however fast the task stops.
+        self.lost_claims.insert(task_id.clone());
+        // The token is keyed by task_id, not by claim, and a re-claim through
+        // `recv_assignment` installs none of its own. Swap a fresh one in first
+        // so the next claim does not start cancelled.
+        renew_token_if_current(&self.cancel_tokens, task_id, &self.task_token);
+        self.task_token.cancel();
+    }
+}
+
+/// Replace `task_id`'s cancel token with a fresh one, but only while the entry
+/// is still `token` (identity, not value) and no Stop has fired it.
+///
+/// A newer claim's token is left alone, and so is a cancelled one: that is a
+/// Stop, which a re-claim must still honour if its queue write failed.
+fn renew_token_if_current(
+    tokens: &DashMap<String, CancellationToken>,
+    task_id: &str,
+    token: &CancellationToken,
+) {
+    if let Some(mut entry) = tokens.get_mut(task_id)
+        && *entry == *token
+        && !token.is_cancelled()
+    {
+        *entry = CancellationToken::new();
+    }
+}
+
+/// Attempts at a terminal queue write before giving up. Bounded and small: a
+/// longer outage is the reaper's job, not this task's.
+const TERMINAL_WRITE_ATTEMPTS: u32 = 4;
+/// Pause between terminal-write attempts, doubled each retry.
+const TERMINAL_WRITE_BACKOFF: Duration = Duration::from_millis(250);
+
+/// Run `op` up to `attempts` times, backing off between failures. Does not
+/// retry once the process is shutting down — the co-located DB is going away
+/// and the graceful release owns the row from there.
+async fn retry_terminal_write<F, Fut>(
+    task_id: &str,
+    attempts: u32,
+    backoff: Duration,
+    mut op: F,
+) -> Result<crud::TerminalWrite, sea_orm::DbErr>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<crud::TerminalWrite, sea_orm::DbErr>>,
+{
+    let mut delay = backoff;
+    let mut attempt = 1;
+    loop {
+        match op().await {
+            Ok(w) => return Ok(w),
+            Err(e) if attempt >= attempts || is_shutting_down() => return Err(e),
+            Err(e) => {
+                tracing::warn!(
+                    task_id,
+                    attempt,
+                    "terminal queue write failed, retrying: {e}"
+                );
+                tokio::time::sleep(delay).await;
+                delay = delay.saturating_mul(2);
+                attempt += 1;
+            }
+        }
     }
 }
 
@@ -1011,69 +1287,21 @@ impl WorkerTransport for DurableTransport {
                 return Ok(());
             }
             WorkerMessage::Outcome { task_id, outcome } => {
-                // Every terminal write is scoped to `self.worker_id`. This
-                // outcome can arrive after graceful release handed our claims
-                // back and a peer re-claimed the row — stamping it terminal
-                // then would strand the peer's live work. See
-                // `crud::queue::set_terminal_status_owned`.
-                let result = match outcome {
-                    // Intercepted by the worker before it reaches a transport;
-                    // if it gets here the worker's translation was bypassed.
-                    TaskOutcome::Deferred { .. } => {
-                        tracing::error!(
-                            target: "transport",
-                            %task_id,
-                            "Deferred arrived as an Outcome; worker translation bypassed. \
-                             Leaving the claim alone rather than stamping it terminal."
-                        );
-                        return Ok(());
-                    }
-                    TaskOutcome::Done { .. } => {
-                        self.retire_heartbeat(task_id, "task done");
-                        crud::complete_queue_task(&self.db, task_id, &self.worker_id).await
-                    }
-                    TaskOutcome::Failed(_) => {
-                        self.retire_heartbeat(task_id, "task failed");
-                        crud::fail_queue_task(&self.db, task_id, &self.worker_id).await
-                    }
-                    TaskOutcome::Cancelled => {
-                        self.retire_heartbeat(task_id, "task cancelled");
-                        crud::cancel_queued_task_owned(&self.db, task_id, &self.worker_id).await
-                    }
-                    // Suspended is not terminal — the row stays `claimed` so it
-                    // can resume, and the heartbeat ticker stays running to say
-                    // so. Retiring it here is exactly the bug this arm's
-                    // silence used to cause; see `Worker::handle_task`.
-                    TaskOutcome::Suspended { .. } => Ok(crud::TerminalWrite::Stamped),
+                // An execution whose claim was lost owns neither the row nor
+                // the ticker keyed by its task_id: this process may already
+                // have re-claimed the row as a new execution. The marker is
+                // keyed by task_id, not by execution, so only a `Cancelled` —
+                // what the lost-claim cancel produces — consumes it; a
+                // re-claim's own `Done`/`Failed` always stamps its row.
+                let lost_claim = matches!(outcome, TaskOutcome::Cancelled)
+                    && self.lost_claims.remove(task_id).is_some();
+                let forward = if lost_claim {
+                    self.forward_lost_claim_cancel(task_id).await
+                } else {
+                    self.stamp_outcome(task_id, outcome).await
                 };
-                match result {
-                    Ok(crud::TerminalWrite::Stamped) => {}
-                    // The requester already stamped this row terminal — an
-                    // ordinary user-pressed Stop beats the worker's own
-                    // `Cancelled` to the row on every single cancel, because
-                    // `CoordinatorTransport::cancel` awaits the DB write before
-                    // firing the in-memory token. Nothing is lost and nobody
-                    // else is involved; first terminal status wins.
-                    Ok(crud::TerminalWrite::AlreadyTerminal) => tracing::debug!(
-                        task_id,
-                        "queue row was already terminal; keeping the first status"
-                    ),
-                    // Root tasks registered via `Coordinator::register_root`
-                    // are driven by a virtual worker and never published as an
-                    // assignment, so they have no queue row to stamp. Routine.
-                    Ok(crud::TerminalWrite::NoRow) => {
-                        tracing::trace!(task_id, "no queue row for this task; nothing to stamp")
-                    }
-                    // The one case worth a warning: a *different* worker holds
-                    // the row, so this process just finished work the queue is
-                    // discarding.
-                    Ok(crud::TerminalWrite::NotOwned) => tracing::warn!(
-                        task_id,
-                        worker_id = %self.worker_id,
-                        "outcome dropped: another worker now holds this claim \
-                         (released on shutdown and re-claimed by a peer, or reaped)"
-                    ),
-                    Err(e) => tracing::warn!(task_id, "failed to update queue status: {e}"),
+                if !forward {
+                    return Ok(());
                 }
             }
             WorkerMessage::Event { .. } => {
@@ -1117,8 +1345,18 @@ impl WorkerTransport for DurableTransport {
 
         let db = self.db.clone();
         let worker_id = self.worker_id.clone();
-        let task_id = task_id.to_string();
-        let cancel_clone = cancel.clone();
+        let ctx = BeatCtx {
+            task_id: task_id.to_string(),
+            ticker: cancel.clone(),
+            // The same token `Worker::handle_task` forwards into the executing
+            // task, so firing it stops the task itself.
+            task_token: self.cancellation_token(task_id),
+            cancel_tokens: Arc::clone(&self.cancel_tokens),
+            lost_claims: Arc::clone(&self.lost_claims),
+            // Strictly under the interval: one hung acquire must not eat the
+            // visibility window.
+            beat_timeout: interval.mul_f32(0.6),
+        };
         spawn_with_hub(async move {
             let mut ticker = tokio::time::interval(interval);
             loop {
@@ -1131,42 +1369,25 @@ impl WorkerTransport for DurableTransport {
                         // keep alive.
                         let beat = tokio::select! {
                             _ = shutdown_signal().cancelled() => break,
-                            r = crud::update_queue_heartbeat(&db, &task_id, &worker_id) => r,
+                            r = tokio::time::timeout(
+                                ctx.beat_timeout,
+                                crud::heartbeat_queue_task(&db, &ctx.task_id, &worker_id),
+                            ) => r,
                         };
-                        match beat {
-                            Ok(true) => {}
-                            // This ticker outlives `handle_task` only by the
-                            // width of one tick, but that is enough to land
-                            // after graceful release. Stop rather than stamp a
-                            // row we no longer hold.
-                            Ok(false) => {
-                                tracing::debug!(
-                                    task_id = %task_id,
-                                    "heartbeat: claim no longer held; stopping ticker"
-                                );
-                                break;
-                            }
-                            Err(e) => {
-                                // Expected once the co-located DB goes down on
-                                // shutdown; a real failure otherwise.
-                                if is_shutting_down() {
-                                    tracing::debug!(
-                                        task_id = %task_id,
-                                        "heartbeat failed during shutdown: {e}"
-                                    );
-                                } else {
-                                    tracing::warn!(task_id = %task_id, "heartbeat failed: {e}");
-                                }
-                                break;
-                            }
+                        if ctx.should_stop(beat) {
+                            break;
                         }
                     }
-                    _ = cancel_clone.cancelled() => break,
+                    _ = ctx.ticker.cancelled() => break,
                     // Idle between ticks: abandon at once rather than waiting a
                     // full interval to notice shutdown.
                     _ = shutdown_signal().cancelled() => break,
                 }
             }
+            // Whatever ended the loop, the ticker is no longer proving the
+            // claim. Say so on the token this method returned, so a caller (or
+            // a test) can tell a live ticker from a dead one.
+            ctx.ticker.cancel();
         });
         cancel
     }
@@ -1376,5 +1597,57 @@ mod pool_backoff_tests {
         );
         // …and both stay sub-second, so the backoff itself stays bounded.
         assert!(a.backoff_offset_ms < 1_000 && b.backoff_offset_ms < 1_000);
+    }
+}
+
+#[cfg(test)]
+mod terminal_retry_tests {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::Duration;
+
+    use super::retry_terminal_write;
+    use crate::crud::TerminalWrite;
+
+    fn err() -> sea_orm::DbErr {
+        sea_orm::DbErr::Custom("boom".into())
+    }
+
+    #[tokio::test]
+    async fn retries_until_the_write_lands() {
+        let calls = AtomicU32::new(0);
+        let res = retry_terminal_write("t", 4, Duration::from_millis(1), || async {
+            if calls.fetch_add(1, Ordering::SeqCst) < 2 {
+                Err(err())
+            } else {
+                Ok(TerminalWrite::Stamped)
+            }
+        })
+        .await;
+        assert_eq!(res.unwrap(), TerminalWrite::Stamped);
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn gives_up_after_the_bounded_number_of_attempts() {
+        let calls = AtomicU32::new(0);
+        let res = retry_terminal_write("t", 4, Duration::from_millis(1), || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err::<TerminalWrite, _>(err())
+        })
+        .await;
+        assert!(res.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_a_write_that_succeeds_first_time() {
+        let calls = AtomicU32::new(0);
+        let res = retry_terminal_write("t", 4, Duration::from_millis(1), || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(TerminalWrite::AlreadyTerminal)
+        })
+        .await;
+        assert_eq!(res.unwrap(), TerminalWrite::AlreadyTerminal);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }

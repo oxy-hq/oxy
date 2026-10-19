@@ -15,7 +15,7 @@ static TEST_CONTAINER: tokio::sync::OnceCell<
     std::sync::Arc<testcontainers::ContainerAsync<testcontainers_modules::postgres::Postgres>>,
 > = tokio::sync::OnceCell::const_new();
 
-async fn test_db() -> Option<DatabaseConnection> {
+pub(super) async fn test_db() -> Option<DatabaseConnection> {
     let url = TEST_DB_URL
         .get_or_init(|| async {
             if let Ok(url) = std::env::var("OXY_DATABASE_URL") {
@@ -72,7 +72,7 @@ async fn test_db() -> Option<DatabaseConnection> {
 }
 
 /// Seed a run plus one queued task, and return `(run_id, task_id)`.
-async fn seed_task(
+pub(super) async fn seed_task(
     db: &DatabaseConnection,
     source_type: &str,
     scope: TaskScope,
