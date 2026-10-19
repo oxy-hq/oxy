@@ -1175,6 +1175,45 @@ jobs:
           # wired into CI — `build-web` is the enforcer.
           pnpm --filter oxy-web exec vite build
 
+      # Swap behind the test task's memory peak. The peak is test-compile:
+      # oxy-app's lib tests in one rustc while mold links test binaries that
+      # each statically link DuckDB, DataFusion and Arrow. The arm64-4x runner
+      # has 15.3 GiB of RAM and a 4 GiB swapfile, and that peak outgrows both.
+      # PR #3632 measured it: 19.2 GB in use with RAM and the stock swap full,
+      # then 22.2 GB once this step had made room. Twice on 2026-10-16 (main's
+      # run 38898953093, then a branch) the runner was shut down at exactly that
+      # point, exit 143, with no compiler or test error. This tops swap up to
+      # 16 GiB, so the peak costs some paging instead of a lost 20-minute run
+      # (test-compile was no slower); the mem-watermark lines in "Run task" say
+      # how high it goes.
+      #
+      # The swapfile takes real blocks on the disk the build uses, so it is
+      # skipped when it would leave less than 60 GiB free, and removed if it
+      # cannot be turned on. Not on GitHub-hosted runners: "Free disk space"
+      # removes their swap to make room for the build.
+      - name: Add swap (test task)
+        if: matrix.task == 'test' && runner.environment != 'github-hosted'
+        run: |
+          swapon --show
+          have=$(free -m | awk '/^Swap:/ { print $2 }')
+          add=$((16384 - have))
+          disk_free=$(df -m --output=avail / | tail -1)
+          if ((add <= 0)); then
+            echo "swap is already ${have} MiB; leaving it"
+          elif ((disk_free - add < 61440)); then
+            echo "::warning title=No extra swap::${disk_free} MiB free on /; a ${add} MiB swapfile would leave the build under 60 GiB"
+          elif sudo fallocate -l "${add}M" /ci-swapfile \
+            && sudo chmod 600 /ci-swapfile \
+            && sudo mkswap /ci-swapfile \
+            && sudo swapon /ci-swapfile; then
+            swapon --show
+          else
+            sudo rm -f /ci-swapfile
+            echo "::warning title=No extra swap::could not enable /ci-swapfile; the test task runs with ${have} MiB of swap"
+          fi
+          free -m
+          df -h /
+
       - name: Run task
         env:
           OXY_DATABASE_URL: "postgresql://admin:password@localhost:5432/default"
@@ -1228,6 +1267,13 @@ jobs:
             # an E0433 fails it identically.
             cargo clippy --no-default-features -p oxy-app
           elif [[ "${{ matrix.task }}" == "test" ]]; then
+            # Into this step's log, so a run the runner kills still shows how
+            # close it came. See "Add swap" above. Stopped on every exit: a
+            # child still holding stdout can keep the step from finishing.
+            scripts/ci/mem-watermark.sh &
+            watermark=$!
+            trap 'kill "$watermark" 2>/dev/null || true' EXIT
+
             touch examples/bigquery-sample.key
             echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
 

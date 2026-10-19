@@ -65,6 +65,8 @@ jobs:
               # The lint-inheritance check the cargo `check` task runs; without
               # this a change to the check does not run the job it lives in.
               - "scripts/ci/verify-workspace-lints.py"
+              # Same for the memory watermark the `test` task runs.
+              - "scripts/ci/mem-watermark.sh"
               - "**/Cargo.lock"
             # web-app and the roots it shares with everything else in the pnpm
             # workspace.
