@@ -20,6 +20,7 @@ use oxy_app_core::custom_app_environment::AppEnvironment;
 use oxy_shared::errors::OxyError;
 use sea_orm::DatabaseConnection;
 
+use super::super::custom_apps_functions::env_cache;
 use super::{Failure, RevealResponse, SetSecretRequest, scope};
 
 /// Whether a submitted value would land as the empty string.
@@ -127,6 +128,7 @@ pub(super) async fn set(
         "app secret set"
     );
     audit_write(db, app, environment, "custom_app.secret.set", key, actor).await;
+    env_cache::invalidate(app.id, environment);
     // 201 for a key the app did not have, 204 for a rotation: the write is an
     // upsert, and a client that has to say which one happened ("created" or
     // "updated") cannot tell from a 204 alone.
@@ -179,6 +181,7 @@ pub(super) async fn delete(
         actor,
     )
     .await;
+    env_cache::invalidate(app.id, environment);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -261,6 +264,7 @@ pub(crate) async fn delete_environment_secrets(
         .filter(|name| name.starts_with(&prefix))
         .collect();
     let deleted = delete_named_secrets(db, project_id, &names).await?;
+    env_cache::invalidate(app_id, environment);
     tracing::info!(%app_id, %environment, deleted, "environment secrets deleted");
     Ok(deleted)
 }

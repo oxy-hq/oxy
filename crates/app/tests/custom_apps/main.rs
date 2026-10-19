@@ -27,6 +27,7 @@
 //! | `staging_destination_publish` | publish refuses a `nonProduction.destinations` mapping onto production's host and user (a heuristic), onto itself, onto the workspace's own Airhouse, or to an unconfigured database |
 //! | `staging_function_homes` | staging `ctx.storage` works in its own silo (production's read-only behind it; `delete`/`copy` never reach production; production's key exists for `allowOverwrite: false`), `ctx.email.send` reaches the invoker alone, replies included |
 //! | `staging_function_secrets` | staging `ctx.env` overlays production only for keys both the staging build and production's build mark `shared` (none for an app never promoted), `ctx.secrets.set` writes staging's path; a publish refuses `shared` on a key this build or production's writes or verifies webhooks with |
+//! | `function_env_rotation` | `ctx.env` rides a per-replica cache validated by one stamp read over the app's secret rows, so a rotation or delete by a writer that runs no invalidation hook here (another replica's secrets surface, a function's own `ctx.secrets.set`) is read by the very next call |
 //! | `nonprod_function_uploads` | a staging or sandbox function's `ctx.fetch` PUT to the upload URL its own invocation minted is sent, and is not in its held row; every other mutating fetch is still held — production's silo, another environment's, another app's, another host, a traversal, another bucket or query, another method, a URL an earlier invocation minted; production sends what it always sent. No V8: the real host, driven from Rust |
 //! | `staging_storage_limits` | a staging silo has its own cap, and its bytes never count toward the org quota that gates production's writes |
 //! | `custom_app_staging_held` | the console's held list returns a staging invoker its own `app.staging.held` rows (app and actor stamped), `[]` to another developer who may open staging, 404 to a caller who may not; production adds none; a row from before `app_id` was stamped is found by slug within the org |
@@ -135,6 +136,7 @@ mod custom_apps_publish_workspace;
 mod draft_publish_retention;
 mod environment_scoped_keys;
 mod example_app_serving;
+mod function_env_rotation;
 mod function_failure_alerts;
 mod me_apps;
 mod nonprod_function_uploads;

@@ -30,7 +30,7 @@ use uuid::Uuid;
 /// exhaust the SDK's connection pool or trip S3 request-rate throttling.
 const PUT_CONCURRENCY: usize = 12;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum BuildStoreError {
     #[error("s3 error: {0}")]
     S3(String),

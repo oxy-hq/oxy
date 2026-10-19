@@ -18,6 +18,9 @@
 
 /// A sandbox agent token at the function gate: its entrance, and its id.
 mod agent_gate;
+/// Function artifacts by `(app, build, path)`: a build is immutable, so an
+/// entry never goes stale and one S3 GET serves every later invocation.
+mod artifact_cache;
 /// Drift guard: `oxyc`'s copy of the capability gates
 /// (`sdk/cli/src/publish/capabilities.ts`) names exactly the fields of
 /// `FunctionCapabilities`. Text scans of `host.rs` and the TypeScript, so it
@@ -36,6 +39,10 @@ mod cli_capabilities_drift;
 /// tag, statement trailer, `audit_events` row).
 #[cfg(feature = "custom-app-functions")]
 pub(crate) mod data_audit;
+/// `ctx.env` per (project, app, environment, shared keys), validated by one
+/// stamp read over the app's secret rows in place of listing and fetching
+/// each secret on every run. The secrets write path invalidates it.
+pub(crate) mod env_cache;
 /// What each host op may do in the environment a function runs in: one
 /// exhaustive decision per `HostOp` (production allows all; staging holds
 /// every write).
@@ -62,6 +69,9 @@ pub mod limits;
 /// This run's lines to a live tail of its environment (`custom_apps_tail`).
 #[cfg(feature = "custom-app-functions")]
 mod live_tail;
+/// The stages every invocation walks — admit, prepare, record — shared by
+/// the route and the queue, which only differ in how they enter and answer.
+mod pipeline;
 /// `oxy migrate`'s check that a release does not stop a working live function.
 #[cfg(feature = "custom-app-functions")]
 pub mod preflight;
@@ -115,25 +125,23 @@ use std::time::{Duration, Instant};
 use axum::body::Body;
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
+use entity::app_function_invocations;
 #[cfg(feature = "custom-app-functions")]
 use entity::prelude::AppFunctionInvocations;
-use entity::prelude::{AppBuilds, AppFunctions};
-use entity::{app_function_invocations, app_functions};
 use futures::future::BoxFuture;
 use oxy::database::client::establish_connection;
 use oxy_app_core::custom_app_env_request::{check_origin, request_environment};
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use oxy_shared::utils::request_id::from_headers as request_id_from_headers;
 
-use super::custom_apps_env_resolve::resolve_function_environment;
+use super::custom_apps_env_resolve::ResolvedEnvironment;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use sentry::SentryFutureExt;
 use serde::Deserialize;
 use tracing::error;
 use uuid::Uuid;
 
-use super::custom_apps_auth::authenticate_and_authorize;
-use super::custom_apps_build_store;
+use super::custom_apps_auth::{AuthOutcome, authenticate_and_authorize};
 use crate::server::invocation_placement;
 
 // ── Manifest entry shape (subset relevant to invocation) ────────────────────
@@ -1112,17 +1120,23 @@ pub fn handle_function_request<'a>(
     // moved through two more frames, and every test that called a function
     // overflowed its stack.
     let probe = crate::server::api::custom_apps_agent::UsageProbe::of(&headers);
-    let invocation: BoxFuture<'a, Response> = Box::pin(invoke_function(
-        org_slug,
-        app_slug,
-        function_name,
-        method,
-        uri,
-        headers,
-        body,
-        query_exec,
-        preagg,
-    ));
+    // A refusal is a response like any other; `Err` only lets the stages
+    // above answer early with `?`.
+    let invocation: BoxFuture<'a, Response> = Box::pin(async move {
+        invoke_function(
+            org_slug,
+            app_slug,
+            function_name,
+            method,
+            uri,
+            headers,
+            body,
+            query_exec,
+            preagg,
+        )
+        .await
+        .unwrap_or_else(|refused| refused)
+    });
     Box::pin(probe.counted(agent_gate::FN_ROUTE, invocation))
 }
 
@@ -1141,29 +1155,8 @@ async fn invoke_function(
     // Default (both `None`) means no rollup short-circuit, so `ctx.semantic`
     // compiles to warehouse SQL.
     preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
-) -> Response {
-    // §11.10 — POST-only, before any gate/runtime work.
-    if method != Method::POST {
-        return json_error(
-            StatusCode::METHOD_NOT_ALLOWED,
-            "MethodNotAllowed",
-            "functions are invoked with POST",
-        );
-    }
-
-    // §3.2: the environment this call addresses (host label, or the header on a
-    // bearer request — 400 if it cannot be honoured), and, for a call riding the
-    // session cookie, that the page sending it lives in that same environment.
-    // Without the second, a staging page could post here with a production
-    // viewer's cookie. Both before authentication: they read headers only.
-    let environment = match request_environment(&headers) {
-        Ok(environment) => environment,
-        Err(e) => return e.into_response(),
-    };
-    if let Err(refused) = check_origin(&headers, &environment) {
-        return refused.into_response();
-    }
-
+) -> Result<Response, Response> {
+    let environment = route_preflight(&method, &headers)?;
     let outcome = match authenticate_and_authorize(
         &headers,
         org_slug,
@@ -1177,113 +1170,211 @@ async fn invoke_function(
         // an app that is not its own in the body the gate below tells it a
         // sandbox that is not its own, so the two read the same.
         Err(status) => {
-            return super::custom_apps_agent_body::status_response(&headers, status);
+            return Err(super::custom_apps_agent_body::status_response(
+                &headers, status,
+            ));
         }
     };
-    let app = outcome.app;
-
-    let db = match establish_connection().await {
-        Ok(db) => db,
-        Err(e) => {
-            error!("db connection failed: {e}");
-            return json_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "DatabaseUnavailable",
-                "could not reach the database; retry shortly",
-            );
-        }
-    };
-
-    // Any replica runs this — unless the workspace needs a working copy this
-    // pod does not hold, in which case the Factory does.
-    let arrived = invocation_placement::Arrived {
+    let app = &outcome.app;
+    let request = RouteRequest {
         method: &method,
         uri: &uri,
         headers: &headers,
         body: &body,
+        function_name,
     };
-    if let Some(response) = invocation_placement::elsewhere(&db, app.project_id, arrived).await {
-        return response;
-    }
-    // `?refresh` bypasses the opt-in function result cache (same convention as
-    // the /query endpoint).
-    let refresh = wants_refresh(&uri);
-
-    let resolved = match resolve_function_environment(&db, &app, &environment).await {
-        Ok(resolved) => resolved,
-        Err(e) => {
-            error!("app environment lookup failed: {e}");
-            return json_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "EnvironmentLookupFailed",
-                "could not read the app's environments; retry shortly",
-            );
-        }
+    let db = connect_and_place(app, &request).await?;
+    // admit → route gates → prepare → acquire → run → record → answer.
+    let door = pipeline::Door::Route {
+        caller: &outcome.caller,
     };
-    // The one environment decision (see `environment_gate`): production for
-    // everyone; staging for staff, with every write held by the policy the
-    // host is built from; dev slots refused.
-    let entrance = environment_gate::route_entrance(&db, &resolved, &outcome.caller, &app).await;
-    let admission = match environment_gate::admit(&resolved, entrance) {
-        Ok(admission) => admission,
-        Err(refused) => return refused.into_response(),
-    };
-    let Some(build_id) = resolved.build_id else {
-        return no_build_response(&resolved.environment);
-    };
-
-    let Some(func_row) = (match AppFunctions::find()
-        .filter(app_functions::Column::BuildId.eq(build_id))
-        .filter(app_functions::Column::Name.eq(function_name))
-        .one(&db)
+    let admitted = pipeline::admit(&db, app, &environment, function_name, door)
         .await
-    {
-        Ok(row) => row,
-        Err(e) => {
-            error!("app_functions lookup failed: {e}");
-            return json_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "FunctionLookupFailed",
-                "could not read the function registry; retry shortly",
-            );
-        }
-    }) else {
-        return json_error(
-            StatusCode::NOT_FOUND,
-            "FunctionNotFound",
-            &format!(
-                "no function named '{function_name}' in the live build; check the \
-                 `functions` entry in oxy-app.json and re-publish"
-            ),
-        );
+        .map_err(|e| e.into_response(function_name))?;
+    let call = admit_route_call(&db, &outcome, &admitted, &request).await?;
+    let admission = admitted.admission.clone();
+    let prepared = pipeline::prepare(&db, app, admission, admitted.build_id, function_name)
+        .await
+        .map_err(|e| e.into_response(function_name))?;
+    let invocation_id = match acquire_route_invocation(&db, &call, admitted.build_id).await {
+        Acquire::Run(id) => id,
+        Acquire::Return(response) => return Ok(*response),
     };
+    let run = RouteRun {
+        db: &db,
+        outcome: &outcome,
+        request: &request,
+        admitted: &admitted,
+        call: &call,
+        invocation_id,
+        query_exec,
+        preagg,
+    };
+    Ok(run_route(run, prepared).await)
+}
 
-    let manifest: FunctionManifestEntry = func_row
-        .manifest_json
-        .as_ref()
-        .and_then(|j| serde_json::from_value(j.clone()).ok())
-        .unwrap_or_default();
+/// The checks a route call passes before it is authenticated: they read
+/// headers only.
+fn route_preflight(method: &Method, headers: &HeaderMap) -> Result<AppEnvironment, Response> {
+    // §11.10 — POST-only, before any gate/runtime work.
+    if *method != Method::POST {
+        return Err(json_error(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "MethodNotAllowed",
+            "functions are invoked with POST",
+        ));
+    }
+    // §3.2: the environment this call addresses (host label, or the header on a
+    // bearer request — 400 if it cannot be honoured), and, for a call riding the
+    // session cookie, that the page sending it lives in that same environment.
+    // Without the second, a staging page could post here with a production
+    // viewer's cookie. Both before authentication: they read headers only.
+    let environment = request_environment(headers).map_err(|e| e.into_response())?;
+    check_origin(headers, &environment).map_err(|refused| refused.into_response())?;
+    Ok(environment)
+}
+
+/// The database, once this replica knows the call is its own to run: any
+/// replica runs it — unless the workspace needs a working copy this pod does
+/// not hold, in which case the Factory does and the answer is its reply.
+async fn connect_and_place(
+    app: &entity::apps::Model,
+    request: &RouteRequest<'_>,
+) -> Result<sea_orm::DatabaseConnection, Response> {
+    let db = establish_connection().await.map_err(|e| {
+        error!("db connection failed: {e}");
+        json_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "DatabaseUnavailable",
+            "could not reach the database; retry shortly",
+        )
+    })?;
+    let arrived = invocation_placement::Arrived {
+        method: request.method,
+        uri: request.uri,
+        headers: request.headers,
+        body: request.body,
+    };
+    match invocation_placement::elsewhere(&db, app.project_id, arrived).await {
+        Some(response) => Err(response),
+        None => Ok(db),
+    }
+}
+
+/// The request behind a route call, as the gates and the run read it.
+struct RouteRequest<'a> {
+    method: &'a Method,
+    uri: &'a axum::http::Uri,
+    headers: &'a HeaderMap,
+    body: &'a axum::body::Bytes,
+    function_name: &'a str,
+}
+
+/// What the route layer decides between admission and preparation: the
+/// call's scope, its idempotency key, and whether its result may be cached.
+struct RouteCall<'a> {
+    /// Every per-call key — result cache, rate-limit bucket, idempotency
+    /// record — is built from this scope, so each carries the environment the
+    /// gate admitted.
+    scope: call_scope::CallScope<'a>,
+    idempotency_key: Option<String>,
+    request_hash: i64,
+    cache_ttl: Option<Duration>,
+    body: &'a axum::body::Bytes,
+}
+
+/// The route-only gates between admission and preparation, in the order they
+/// always ran: the manifest's `route` flag, the idempotency key, the opt-in
+/// result cache (a hit answers here, running nothing), the rate limit.
+async fn admit_route_call<'a>(
+    db: &sea_orm::DatabaseConnection,
+    outcome: &AuthOutcome,
+    admitted: &'a pipeline::Admitted,
+    request: &RouteRequest<'a>,
+) -> Result<RouteCall<'a>, Response> {
+    let (manifest, function_name) = (&admitted.manifest, request.function_name);
     // `route` defaults to active unless schedule/airwayStep are the only
     // declared surfaces — the SDK validator already enforced "at least one
     // surface active" at publish time, so a missing/true `route` here means
     // this row is route-invocable.
     if manifest.route == Some(false) {
-        return json_error(
+        return Err(json_error(
             StatusCode::NOT_FOUND,
             "FunctionRouteDisabled",
             &format!(
                 "function '{function_name}' exists but declares `route: false` — it is \
                  only invocable as a schedule or Airway step"
             ),
-        );
+        ));
     }
+    let idempotency_key = scoped_idempotency_key(db, outcome, &admitted.resolved, request).await?;
+    let scope = call_scope::CallScope {
+        app_id: outcome.app.id,
+        environment: &admitted.resolved.environment,
+        function_name,
+        user_id: outcome.user_id,
+        credential_token_id: agent_gate::token_of(&outcome.caller),
+    };
+    // Opt-in result cache (manifest `cache.ttlSeconds`). A hit skips the isolate
+    // run entirely; `?refresh` bypasses it (same convention as the /query
+    // endpoint). Side-effectful functions don't declare a cache and never reach
+    // this. Keyed per (environment, build, function, user, body), so it can't
+    // leak across users or environments or survive a redeploy.
+    let cache_ttl = manifest.cache_ttl();
+    if cache_ttl.is_some()
+        && !wants_refresh(request.uri)
+        && let Some(cached) = result_cache::get(&scope, admitted.build_id, request.body)
+    {
+        // 200, and that is now a fact rather than a default: only a 2xx result
+        // is ever cached (see `respond_route`), and the status is not stored
+        // alongside it because a 201 or 204 body replayed as 200 is a smaller
+        // wrong than a second column that can drift from the body it describes.
+        return Err(sse_response(success_sse_body(&cached, 200)));
+    }
+    // §11.6 — rate limit per (user, app, environment, function).
+    let limit = manifest
+        .rate_limit_per_minute
+        .unwrap_or(rate_limit::DEFAULT_RATE_PER_MIN);
+    if rate_limit::would_exceed_rate(&scope, limit) {
+        return Err(rate_limited());
+    }
+    Ok(RouteCall {
+        scope,
+        idempotency_key,
+        request_hash: request_body_hash(request.body),
+        cache_ttl,
+        body: request.body,
+    })
+}
 
-    // Caller-supplied idempotency key (route mode): enables exactly-once, with
-    // retry, for side-effectful writes. Bounded length; empty → treated as
-    // absent. The body is hashed so a key reused with a different body is
-    // rejected rather than silently replaying the first result. Replay / retry /
-    // conflict are all decided by `acquire_invocation` below.
-    let idempotency_key = headers
+/// 429 as JSON, not an SSE frame: the client throws on any non-2xx *before*
+/// it starts reading the event stream and JSON-parses the body, so an
+/// `event: error\ndata: …` blob would surface as a garbled error. Every other
+/// pre-stream error here is a bare status / JSON — the 429 was the lone
+/// SSE-framed outlier.
+fn rate_limited() -> Response {
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        axum::Json(
+            serde_json::json!({ "error": "RateLimitExceeded", "message": "too many requests" }),
+        ),
+    )
+        .into_response()
+}
+
+/// Caller-supplied idempotency key (route mode): enables exactly-once, with
+/// retry, for side-effectful writes. Bounded length; empty → treated as
+/// absent. The body is hashed so a key reused with a different body is
+/// rejected rather than silently replaying the first result. Replay / retry /
+/// conflict are all decided by `acquire_invocation`.
+async fn scoped_idempotency_key(
+    db: &sea_orm::DatabaseConnection,
+    outcome: &AuthOutcome,
+    resolved: &ResolvedEnvironment,
+    request: &RouteRequest<'_>,
+) -> Result<Option<String>, Response> {
+    let key = request
+        .headers
         .get("idempotency-key")
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
@@ -1291,329 +1382,196 @@ async fn invoke_function(
         .map(str::to_string);
     // A sandbox agent token's key is spent in the sandbox it has now: one
     // spent in an earlier sandbox under the same name is not replayed here.
-    let scoped = agent_gate::instance_key(&db, &app, &resolved, &outcome.caller, idempotency_key);
-    let idempotency_key = match scoped.await {
-        Ok(key) => key,
-        Err(e) => {
+    agent_gate::instance_key(db, &outcome.app, resolved, &outcome.caller, key)
+        .await
+        .map_err(|e| {
             error!("sandbox lookup for the idempotency key failed: {e}");
-            return json_error(
+            json_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "InvocationLookupFailed",
                 "could not read the sandbox; retry shortly",
-            );
-        }
-    };
-    let request_hash = request_body_hash(&body);
+            )
+        })
+}
 
-    // Every per-call key below — result cache, rate-limit bucket, idempotency
-    // record — is built from this scope, so each carries the environment the
-    // gate above admitted.
-    let scope = call_scope::CallScope {
-        app_id: app.id,
-        environment: &resolved.environment,
-        function_name,
-        user_id: outcome.user_id,
-        credential_token_id: agent_gate::token_of(&outcome.caller),
-    };
-
-    // Opt-in result cache (manifest `cache.ttlSeconds`). A hit skips the isolate
-    // run entirely; `?refresh` bypasses it. Side-effectful functions don't
-    // declare a cache and never reach this. Keyed per (environment, build,
-    // function, user, body), so it can't leak across users or environments or
-    // survive a redeploy.
-    let cache_ttl = manifest.cache_ttl();
-    if cache_ttl.is_some()
-        && !refresh
-        && let Some(cached) = result_cache::get(&scope, build_id, &body)
-    {
-        // 200, and that is now a fact rather than a default: only a 2xx result
-        // is ever cached (see the `put` below), and the status is not stored
-        // alongside it because a 201 or 204 body replayed as 200 is a smaller
-        // wrong than a second column that can drift from the body it describes.
-        return sse_response(success_sse_body(&cached, 200));
-    }
-
-    // §11.6 — rate limit per (user, app, environment, function).
-    let limit = manifest
-        .rate_limit_per_minute
-        .unwrap_or(rate_limit::DEFAULT_RATE_PER_MIN);
-    if rate_limit::would_exceed_rate(&scope, limit) {
-        // Return JSON, not an SSE frame: the client throws on any non-2xx
-        // *before* it starts reading the event stream and JSON-parses the body,
-        // so an `event: error\ndata: …` blob would surface as a garbled error.
-        // Every other pre-stream error here is a bare status / JSON — the 429
-        // was the lone SSE-framed outlier.
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            axum::Json(
-                serde_json::json!({ "error": "RateLimitExceeded", "message": "too many requests" }),
-            ),
-        )
-            .into_response();
-    }
-
-    // Resolve the build's string `build_id` (build store key) from its uuid.
-    let Some(build) = (match AppBuilds::find_by_id(build_id).one(&db).await {
-        Ok(b) => b,
-        Err(e) => {
-            error!("app_builds lookup failed: {e}");
-            return json_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "BuildLookupFailed",
-                "could not read the app build record; retry shortly",
-            );
-        }
-    }) else {
-        return json_error(
-            StatusCode::NOT_FOUND,
-            "BuildNotFound",
-            "the build this app points at no longer exists; re-publish the app",
-        );
-    };
-
-    // What the run may do in its environment (`run_policy`), decided once for
-    // the whole invocation: outside production, where `ctx.oltp` lands, the
-    // semantic model the build pins, the `env` keys it shares with production
-    // and where its warehouse writes are mapped. Production asks nothing.
-    // Before the invocation row is written, so a failed lookup leaves none.
-    let policy = match run_policy::build(&db, admission, &app, &build).await {
-        Ok(policy) => policy,
-        Err(e) => {
-            error!("OLTP staging branch lookup failed: {e}");
-            return json_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "EnvironmentLookupFailed",
-                "could not read the org's OLTP staging branch; retry shortly",
-            );
-        }
-    };
-
-    let artifact_rel = format!("functions/{function_name}.js");
-    let artifact =
-        match custom_apps_build_store::get_object(app.id, &build.build_id, &artifact_rel).await {
-            Ok(Some(bytes)) => bytes,
-            Ok(None) => {
-                return json_error(
-                    StatusCode::NOT_FOUND,
-                    "FunctionArtifactMissing",
-                    &format!(
-                        "'{artifact_rel}' is absent from the build store for this build; \
-                         re-publish the app"
-                    ),
-                );
-            }
-            Err(e) => {
-                error!("build store fetch failed: {e}");
-                return json_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "BuildStoreUnavailable",
-                    "could not fetch the function artifact from the build store; retry shortly",
-                );
-            }
-        };
-    let artifact_js = String::from_utf8_lossy(&artifact).into_owned();
-
+/// Reap, then acquire the invocation row (written up front so cancellation
+/// has something to poll). For a keyed call this replays a prior success,
+/// rejects a concurrent duplicate (409) or body mismatch (422), or reclaims a
+/// prior failure so it can retry — see `acquire_invocation`.
+async fn acquire_route_invocation(
+    db: &sea_orm::DatabaseConnection,
+    call: &RouteCall<'_>,
+    build_id: Uuid,
+) -> Acquire {
     // Lazy crash reaper (throttled): transition rows left `running` past any
     // function's max lifetime (orphaned by an instance death / thread detach)
     // so the audit trail is truthful and they stop looking in-flight.
-    reap_stuck_invocations(&db).await;
-
-    // §11.12 / §11.14 — acquire the invocation row (written up front so
-    // cancellation has something to poll). For a keyed call this replays a prior
-    // success, rejects a concurrent duplicate (409) or body mismatch (422), or
-    // reclaims a prior failure so it can retry — see `acquire_invocation`.
-    let invocation_id = match acquire_invocation(
-        &db,
-        &scope,
+    reap_stuck_invocations(db).await;
+    // §11.12 / §11.14.
+    acquire_invocation(
+        db,
+        &call.scope,
         build_id,
-        idempotency_key.as_deref(),
-        request_hash,
+        call.idempotency_key.as_deref(),
+        call.request_hash,
     )
     .await
-    {
-        Acquire::Run(id) => id,
-        Acquire::Return(resp) => return *resp,
-    };
+}
 
-    let timeout = resolve_timeout(&manifest);
-    let started = Instant::now();
+/// A route run: who called, what they sent, what was admitted and decided.
+struct RouteRun<'a> {
+    db: &'a sea_orm::DatabaseConnection,
+    outcome: &'a AuthOutcome,
+    request: &'a RouteRequest<'a>,
+    admitted: &'a pipeline::Admitted,
+    call: &'a RouteCall<'a>,
+    invocation_id: Uuid,
+    query_exec: std::sync::Arc<dyn seam::FunctionQueryExecutor>,
+    preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
+}
 
-    // Shared log buffer: the isolate appends `console.*`/`ctx.log` during the
-    // run; we drain it after and send it back with the response so a developer
-    // never has to open the oxy server logs to see what a function printed.
-    let logs: std::sync::Arc<Mutex<Vec<LogLine>>> = std::sync::Arc::new(Mutex::new(Vec::new()));
-    // Started here, not inside the runtime: `init_ms` should cover everything
-    // between deciding to run and tenant code running, thread spawn included.
-    let meters = super::custom_apps_telemetry::InvocationMeters::start();
-
-    // A non-production build may pin the semantic model compiled from a
-    // branch (`custom_apps_staging_pin`, #3370); the run reads inside that pin.
-    // Production carries none and always reads the promoted revision.
-    #[cfg(feature = "custom-app-functions")]
-    let (status_str, error_msg, body_text, http_status, host_call) =
-        super::custom_apps_staging_pin::with_staging_pin(
-            policy.semantic_pin(),
-            run_with_runtime(RunArgs {
-                db: &db,
-                query_exec,
-                app: &app,
-                artifact_js,
-                body: body.to_vec(),
-                method: method.as_str().to_string(),
-                headers: sanitize_request_headers(&headers),
-                user_id: outcome.user_id,
-                user_email: outcome.user_email.clone(),
-                caller: outcome.caller.clone(),
-                user_name: Some(outcome.user_name.clone()),
-                user_picture: outcome.user_picture.clone(),
-                identity_kind: runtime::CtxIdentityKind::User,
-                org_id: app.org_id,
-                invocation_id,
-                function_name,
-                mode: "route",
-                credential_token_id: scope.credential_token_id,
-                build_id,
-                // The one path with a real request behind it. Read from the header the
-                // outer middleware stamped rather than minted here, so the id on this
-                // span is the same one the caller got back in the response.
-                request_id: request_id_from_headers(&headers),
-                timeout,
-                write_destinations: manifest.write_destinations(),
-                caps: manifest_capabilities(&manifest, &app, &build),
-                logs: logs.clone(),
-                meters: meters.clone(),
-                // Route path: cancellation is the `cancel_requested_at` DB flag (set on
-                // client-gone / dashboard cancel), so a never-fired token suffices here.
-                cancel: tokio_util::sync::CancellationToken::new(),
-                preagg,
-                policy,
-            }),
-        )
-        .await;
-
-    #[cfg(not(feature = "custom-app-functions"))]
-    let (status_str, error_msg, body_text, http_status, host_call) = {
-        let _ = (&artifact_js, &body, timeout, &query_exec, &policy);
-        (
-            "error",
-            Some("custom-app-functions feature not enabled".to_string()),
-            String::new(),
-            // No response, so no status — matching the error arms in
-            // `run_with_runtime`. The error framing carries this outcome, so
-            // the value is never read.
-            0u16,
-            // No isolate, so no host call to have failed.
-            None::<failure_signal::HostCallFailure>,
-        )
-    };
-
-    let duration_ms = started.elapsed().as_millis() as i64;
-    let mut update: app_function_invocations::ActiveModel = app_function_invocations::ActiveModel {
-        id: Set(invocation_id),
-        ..Default::default()
-    };
-    update.status = Set(status_str.to_string());
-    update.duration_ms = Set(Some(duration_ms));
-    update.error = Set(error_msg.clone());
-    let failure = failure_signal::Failure::of(
-        status_str,
-        http_status,
-        error_msg.as_deref(),
-        host_call.as_ref(),
-    );
-    update.failure_fingerprint = Set(failure.as_ref().map(|f| f.fingerprint.clone()));
-    // Persist the result for idempotent replay — only when a key was supplied,
-    // so the audit table isn't bloated with every function's output.
-    if idempotency_key.is_some() && status_str == "success" {
-        update.result_body = Set(Some(body_text.clone()));
-        update.result_status = Set(Some(http_status as i16));
-    }
-    if let Err(e) = update.update(&db).await {
-        error!("failed to update app_function_invocations row: {e}");
-    } else if let Some(failure) = &failure {
-        failure_page::observe(
-            &db,
-            &app,
-            &resolved.environment,
-            function_name,
-            invocation_id,
-            failure,
-        )
-        .await;
-    }
-    let request_id = request_id_from_headers(&headers);
-    super::custom_apps_telemetry::record_function(super::custom_apps_telemetry::FunctionEvent {
-        org_id: app.org_id,
-        app_id: app.id,
-        build_id,
-        request_id,
-        user_id: outcome.user_id,
-        function_name,
+/// Run the isolate, record the run, and answer.
+async fn run_route(run: RouteRun<'_>, prepared: pipeline::PreparedRun) -> Response {
+    let clock = pipeline::RunClock::start();
+    let (db, outcome, request) = (run.db, run.outcome, run.request);
+    let (admitted, call, invocation_id) = (run.admitted, run.call, run.invocation_id);
+    let run_outcome = isolate_route(run, prepared, &clock).await;
+    let finished = pipeline::Finished {
+        app: &outcome.app,
+        environment: &admitted.resolved.environment,
+        function_name: request.function_name,
         mode: "route",
-        status_label: status_str,
-        http_status,
-        duration_ms: duration_ms.clamp(0, u32::MAX as i64) as u32,
-        host_calls: meters.host_calls(),
-        init_ms: meters.init_ms(),
-        error: error_msg.as_deref(),
-        environment: &resolved.environment.name(),
-    });
+        build_id: admitted.build_id,
+        invocation_id,
+        user_id: outcome.user_id,
+        request_id: request_id_from_headers(request.headers),
+        clock,
+        // Only when a key was supplied, so the audit table isn't bloated with
+        // every function's output.
+        persist_result: call.idempotency_key.is_some(),
+    };
+    let recorded = pipeline::record(db, finished, run_outcome).await;
+    respond_route(recorded, call, admitted.build_id, invocation_id)
+}
 
+/// The isolate, under the invoking user's identity.
+#[cfg(feature = "custom-app-functions")]
+async fn isolate_route(
+    run: RouteRun<'_>,
+    prepared: pipeline::PreparedRun,
+    clock: &pipeline::RunClock,
+) -> RunOutcome {
+    let (outcome, request, manifest) = (run.outcome, run.request, &run.admitted.manifest);
+    let app = &outcome.app;
+    let args = RunArgs {
+        db: run.db,
+        query_exec: run.query_exec,
+        app,
+        artifact_js: prepared.artifact_js,
+        body: request.body.to_vec(),
+        method: request.method.as_str().to_string(),
+        headers: sanitize_request_headers(request.headers),
+        user_id: outcome.user_id,
+        user_email: outcome.user_email.clone(),
+        caller: outcome.caller.clone(),
+        user_name: Some(outcome.user_name.clone()),
+        user_picture: outcome.user_picture.clone(),
+        identity_kind: runtime::CtxIdentityKind::User,
+        org_id: app.org_id,
+        invocation_id: run.invocation_id,
+        function_name: request.function_name,
+        mode: "route",
+        credential_token_id: run.call.scope.credential_token_id,
+        build_id: run.admitted.build_id,
+        // The one path with a real request behind it. Read from the header the
+        // outer middleware stamped rather than minted here, so the id on this
+        // span is the same one the caller got back in the response.
+        request_id: request_id_from_headers(request.headers),
+        timeout: resolve_timeout(manifest),
+        write_destinations: manifest.write_destinations(),
+        caps: manifest_capabilities(manifest, app, &prepared.build),
+        logs: clock.logs.clone(),
+        meters: clock.meters.clone(),
+        // Route path: cancellation is the `cancel_requested_at` DB flag (set on
+        // client-gone / dashboard cancel), so a never-fired token suffices here.
+        cancel: tokio_util::sync::CancellationToken::new(),
+        preagg: run.preagg,
+        policy: prepared.policy,
+    };
+    run_stage(args).await
+}
+
+#[cfg(not(feature = "custom-app-functions"))]
+async fn isolate_route(
+    run: RouteRun<'_>,
+    prepared: pipeline::PreparedRun,
+    clock: &pipeline::RunClock,
+) -> RunOutcome {
+    let _ = (prepared, clock, &run.query_exec, &run.preagg);
+    (
+        "error",
+        Some("custom-app-functions feature not enabled".to_string()),
+        String::new(),
+        // No response, so no status — matching the error arms in
+        // `run_with_runtime`. The error framing carries this outcome, so
+        // the value is never read.
+        0u16,
+        // No isolate, so no host call to have failed.
+        None::<failure_signal::HostCallFailure>,
+    )
+}
+
+/// Drive the isolate inside the build's semantic pin, as every door does: a
+/// non-production build may pin the semantic model compiled from a branch
+/// (`custom_apps_staging_pin`, #3370), and the run reads inside that pin.
+/// Production carries none and always reads the promoted revision.
+#[cfg(feature = "custom-app-functions")]
+async fn run_stage(args: RunArgs<'_>) -> RunOutcome {
+    let semantic_pin = args.policy.semantic_pin();
+    // Boxed for the reason `handle_function_request` gives: this is the
+    // largest future on the path, and every door's future would otherwise
+    // reserve it inline, test stacks included.
+    let run = Box::pin(run_with_runtime(args));
+    super::custom_apps_staging_pin::with_staging_pin(semantic_pin, run).await
+}
+
+/// The route's answer: the captured log lines as `log` frames ahead of the
+/// terminal frame (collected during the run and flushed together with the
+/// response — batched, not live-tailed), so the app can show what the
+/// function printed — on success and, crucially, on error.
+fn respond_route(
+    recorded: pipeline::Recorded,
+    call: &RouteCall<'_>,
+    build_id: Uuid,
+    invocation_id: Uuid,
+) -> Response {
     // Cache the successful result for functions that opted into `cache`.
     //
-    // `status_str == "success"` only means the isolate RETURNED — a handler
+    // `status == "success"` only means the isolate RETURNED — a handler
     // answering 403 reaches here too. Caching that would replay a rejection to
     // everyone for the TTL, and the cache has no status to replay it with, so
     // the hit would report 200 for a body that says "forbidden". A non-2xx is
     // not a result worth remembering anyway: it is a statement about this
     // caller and this request.
-    if status_str == "success"
-        && (200..300).contains(&http_status)
-        && let Some(ttl) = cache_ttl
+    if recorded.status == "success"
+        && (200..300).contains(&recorded.http_status)
+        && let Some(ttl) = call.cache_ttl
     {
-        result_cache::put(&scope, build_id, &body, body_text.clone(), ttl);
+        result_cache::put(&call.scope, build_id, call.body, recorded.body.clone(), ttl);
     }
-
-    // Drain captured logs and send them as `log` frames ahead of the terminal
-    // frame (collected during the run and flushed together with the response —
-    // batched, not live-tailed), so the app can show what the function printed —
-    // on success and, crucially, on error (the console output before the throw).
-    let captured: Vec<LogLine> = logs
-        .lock()
-        .map(|mut v| std::mem::take(&mut *v))
-        .unwrap_or_default();
-    // Persist them too. Until this existed, a route call's logs lived ONLY in
-    // the SSE frames below — so a browser that had already navigated away took
-    // them with it, while a scheduled run's logs survived as
-    // `agentic_run_events`. The two modes disagreed about whether a log line
-    // outlives its run; now neither does.
-    super::custom_apps_telemetry::record_function_logs(
-        app.org_id,
-        app.id,
-        build_id,
-        invocation_id,
-        request_id,
-        function_name,
-        "route",
-        &captured
-            .iter()
-            .map(|l| (l.level.clone(), l.message.clone()))
-            .collect::<Vec<_>>(),
-        &resolved.environment.name(),
-    );
     let mut sse_body = String::new();
-    for line in &captured {
+    for line in &recorded.logs {
         sse_body.push_str(&sse_event(
             "log",
             &serde_json::json!({ "level": line.level, "message": line.message }),
         ));
     }
-    sse_body.push_str(&match error_msg {
+    sse_body.push_str(&match recorded.error {
         Some(msg) => sse_event(
             "error",
-            &serde_json::json!({ "error": status_str, "message": msg }),
+            &serde_json::json!({ "error": recorded.status, "message": msg }),
         ),
-        None => success_sse_body(&body_text, http_status),
+        None => success_sse_body(&recorded.body, recorded.http_status),
     });
     // The row this call wrote, so the caller can read it back: its held
     // writes, its log lines. A result-cache hit ran nothing and names none.
@@ -1701,85 +1659,69 @@ pub(crate) async fn run_scheduled_function(
     // `ctx.semantic` resolves rollups like its HTTP-invoked twin.
     preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
 ) -> Result<String, String> {
-    let mode = queued.mode;
     let app = entity::apps::Entity::find_by_id(app_id)
         .one(db)
         .await
         .map_err(|e| format!("app lookup failed: {e}"))?
         .ok_or_else(|| format!("app {app_id} not found"))?;
-
-    let resolved = resolve_function_environment(db, &app, environment)
+    // admit → prepare → acquire → run → record, as a route call does.
+    let admitted = pipeline::admit(db, &app, environment, function_name, pipeline::Door::Queued)
         .await
-        .map_err(|e| format!("environment lookup failed: {e}"))?;
-    let build_id = resolved.build_id.ok_or_else(|| {
-        if resolved.is_production() {
-            "app has no build".to_string()
-        } else {
-            format!("the {environment} environment of this app has no build")
-        }
-    })?;
-
-    let func_row = AppFunctions::find()
-        .filter(app_functions::Column::BuildId.eq(build_id))
-        .filter(app_functions::Column::Name.eq(function_name))
-        .one(db)
+        .map_err(|e| e.into_message(function_name))?;
+    let admission = admitted.admission.clone();
+    let prepared = pipeline::prepare(db, &app, admission, admitted.build_id, function_name)
         .await
-        .map_err(|e| format!("app_functions lookup failed: {e}"))?
-        .ok_or_else(|| format!("function '{function_name}' not found in build"))?;
+        .map_err(|e| e.into_message(function_name))?;
+    let owner_id = org_owner(db, app.org_id).await?;
+    let invocation_id = insert_queued_invocation(db, &app, &admitted, function_name, &queued).await;
+    let run = QueuedRun {
+        db,
+        app: &app,
+        admitted: &admitted,
+        function_name,
+        queued: &queued,
+        owner_id,
+        invocation_id,
+        cancel,
+        query_exec,
+        preagg,
+    };
+    run_queued(run, prepared, input, events).await
+}
 
-    // A queued run has no viewer. Production runs as it always has; outside
-    // production only a check does (`check_run`) — the flag is read from the
-    // build resolved here, not trusted from whoever queued the task — and
-    // schedules, webhooks and Run now stay production-only.
-    let is_check = check_run::manifest_marks_check(func_row.manifest_json.as_ref());
-    let admission =
-        check_run::admit_queued(&resolved, is_check).map_err(|refused| refused.message())?;
-
-    let manifest: FunctionManifestEntry = func_row
-        .manifest_json
-        .as_ref()
-        .and_then(|j| serde_json::from_value(j.clone()).ok())
-        .unwrap_or_default();
-
-    let build = AppBuilds::find_by_id(build_id)
-        .one(db)
-        .await
-        .map_err(|e| format!("app_builds lookup failed: {e}"))?
-        .ok_or_else(|| "build not found".to_string())?;
-
-    let artifact_rel = format!("functions/{function_name}.js");
-    let artifact = custom_apps_build_store::get_object(app.id, &build.build_id, &artifact_rel)
-        .await
-        .map_err(|e| format!("build store fetch failed: {e}"))?
-        .ok_or_else(|| format!("artifact '{artifact_rel}' not found"))?;
-    let artifact_js = String::from_utf8_lossy(&artifact).into_owned();
-
-    // Identity/actor: the org owner (apps have no owner; a scheduled run has no
-    // invoking user). Threads into build_project_context (Airhouse role),
-    // `ctx.user.id`, and the `set_app_secret` created_by (non-null FK).
-    let owner = entity::org_members::Entity::find()
-        .filter(entity::org_members::Column::OrgId.eq(app.org_id))
+/// Identity/actor of a queued run: the org owner (apps have no owner; a
+/// scheduled run has no invoking user). Threads into build_project_context
+/// (Airhouse role), `ctx.user.id`, and the `set_app_secret` created_by
+/// (non-null FK).
+#[cfg(feature = "custom-app-functions")]
+async fn org_owner(db: &sea_orm::DatabaseConnection, org_id: Uuid) -> Result<Uuid, String> {
+    entity::org_members::Entity::find()
+        .filter(entity::org_members::Column::OrgId.eq(org_id))
         .filter(entity::org_members::Column::Role.eq(entity::org_members::OrgRole::Owner))
         .one(db)
         .await
         .map_err(|e| format!("org owner lookup failed: {e}"))?
-        .ok_or_else(|| format!("no owner for org {}", app.org_id))?;
+        .map(|owner| owner.user_id)
+        .ok_or_else(|| format!("no owner for org {org_id}"))
+}
 
-    // The same policy a route call in this environment runs under: production
-    // asks nothing; a check outside production gets the OLTP home, the build's
-    // pin, its shared `env` keys and its mapped destinations. Before the
-    // invocation row, so a failed lookup refuses the run and leaves no row.
-    let policy = run_policy::build(db, admission, &app, &build)
-        .await
-        .map_err(|e| format!("environment policy lookup failed: {e}"))?;
-
+/// The queued run's invocation row, written up front so cancellation has
+/// something to poll. `user_id` is `None`: no caller to attribute the run to.
+#[cfg(feature = "custom-app-functions")]
+async fn insert_queued_invocation(
+    db: &sea_orm::DatabaseConnection,
+    app: &entity::apps::Model,
+    admitted: &pipeline::Admitted,
+    function_name: &str,
+    queued: &QueuedBy<'_>,
+) -> Uuid {
     let invocation_id = Uuid::new_v4();
     if let Err(e) = (app_function_invocations::ActiveModel {
         id: Set(invocation_id),
         app_id: Set(app.id),
-        build_id: Set(build_id),
+        build_id: Set(admitted.build_id),
         function_name: Set(function_name.to_string()),
-        mode: Set(mode.to_string()),
+        mode: Set(queued.mode.to_string()),
         user_id: Set(None),
         status: Set("running".to_string()),
         duration_ms: Set(None),
@@ -1791,7 +1733,7 @@ pub(crate) async fn run_scheduled_function(
         result_status: Set(None),
         request_hash: Set(None),
         failure_fingerprint: Set(None),
-        environment: Set(resolved.environment.name()),
+        environment: Set(admitted.resolved.environment.name()),
         credential_token_id: Set(queued.credential_token_id),
     })
     .insert(db)
@@ -1799,30 +1741,93 @@ pub(crate) async fn run_scheduled_function(
     {
         error!("failed to insert scheduled invocation row: {e}");
     }
+    invocation_id
+}
 
-    let timeout = resolve_timeout(&manifest);
-    let started = Instant::now();
-    let logs: std::sync::Arc<Mutex<Vec<LogLine>>> = std::sync::Arc::new(Mutex::new(Vec::new()));
-    let meters = super::custom_apps_telemetry::InvocationMeters::start();
+/// A queued run: the app, what was admitted, who queued it, and the org
+/// owner it executes as.
+#[cfg(feature = "custom-app-functions")]
+struct QueuedRun<'a> {
+    db: &'a sea_orm::DatabaseConnection,
+    app: &'a entity::apps::Model,
+    admitted: &'a pipeline::Admitted,
+    function_name: &'a str,
+    queued: &'a QueuedBy<'a>,
+    owner_id: Uuid,
+    invocation_id: Uuid,
+    cancel: tokio_util::sync::CancellationToken,
+    query_exec: std::sync::Arc<dyn seam::FunctionQueryExecutor>,
+    preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
+}
 
-    let semantic_pin = policy.semantic_pin();
-    let run = run_with_runtime(RunArgs {
-        db,
-        query_exec,
-        app: &app,
-        artifact_js,
+/// Run the isolate, record the run, hand its events to the sink, and answer
+/// with the body on success or the error otherwise.
+#[cfg(feature = "custom-app-functions")]
+async fn run_queued(
+    run: QueuedRun<'_>,
+    prepared: pipeline::PreparedRun,
+    input: Vec<u8>,
+    events: Option<RunEventSink>,
+) -> Result<String, String> {
+    let clock = pipeline::RunClock::start();
+    let (db, app, admitted) = (run.db, run.app, run.admitted);
+    let (function_name, mode) = (run.function_name, run.queued.mode);
+    let (owner_id, invocation_id) = (run.owner_id, run.invocation_id);
+    let run_outcome = run_stage(system_run_args(run, prepared, input, &clock)).await;
+    let finished = pipeline::Finished {
+        app,
+        environment: &admitted.resolved.environment,
+        function_name,
+        mode,
+        build_id: admitted.build_id,
+        invocation_id,
+        user_id: owner_id,
+        // No HTTP request behind a cron tick or an Airway step.
+        request_id: None,
+        clock,
+        persist_result: true,
+    };
+    let recorded = pipeline::record(db, finished, run_outcome).await;
+    emit_run_events(
+        events,
+        &recorded,
+        invocation_id,
+        &admitted.resolved.environment,
+    )
+    .await;
+    if recorded.status == "success" {
+        Ok(recorded.body)
+    } else {
+        Err(recorded
+            .error
+            .unwrap_or_else(|| "function failed".to_string()))
+    }
+}
+
+/// The runtime's inputs for a queued run: the org owner's id, no caller.
+#[cfg(feature = "custom-app-functions")]
+fn system_run_args<'a>(
+    run: QueuedRun<'a>,
+    prepared: pipeline::PreparedRun,
+    input: Vec<u8>,
+    clock: &pipeline::RunClock,
+) -> RunArgs<'a> {
+    let (app, manifest, function_name) = (run.app, &run.admitted.manifest, run.function_name);
+    let system_email = format!("schedule+{function_name}@system.oxy");
+    RunArgs {
+        db: run.db,
+        query_exec: run.query_exec,
+        app,
+        artifact_js: prepared.artifact_js,
         body: input,
         // No real request behind a schedule; mirrors `FnRequest::from_body`.
         method: "POST".to_string(),
         headers: std::collections::BTreeMap::new(),
-        user_id: owner.user_id,
-        user_email: Some(format!("schedule+{function_name}@system.oxy")),
+        user_id: run.owner_id,
+        user_email: Some(system_email.clone()),
         // A system run has no request, so no credential — and its synthetic
         // address matches no staff grant, exactly as before.
-        caller: crate::server::authz::Caller::without_credential(
-            owner.user_id,
-            &format!("schedule+{function_name}@system.oxy"),
-        ),
+        caller: crate::server::authz::Caller::without_credential(run.owner_id, &system_email),
         // No caller to attribute this run to — and note this path serves the
         // console's manual `Run now` as well as a cron tick, so a person may well
         // have clicked. The `user_id` above is the org owner's (the invocation row
@@ -1833,161 +1838,82 @@ pub(crate) async fn run_scheduled_function(
         user_picture: None,
         identity_kind: runtime::CtxIdentityKind::System,
         org_id: app.org_id,
-        invocation_id,
+        invocation_id: run.invocation_id,
         function_name,
-        mode,
-        credential_token_id: queued.credential_token_id,
-        build_id,
+        mode: run.queued.mode,
+        credential_token_id: run.queued.credential_token_id,
+        build_id: run.admitted.build_id,
         // No HTTP request behind a cron tick, an Airway step or a manual job
         // run. See the field docs on `RunArgs` for why this stays `None`.
         request_id: None,
-        timeout,
+        timeout: resolve_timeout(manifest),
         write_destinations: manifest.write_destinations(),
-        caps: manifest_capabilities(&manifest, &app, &build),
-        logs: logs.clone(),
-        meters: meters.clone(),
-        cancel,
-        preagg,
-        policy,
-    });
-    // Inside the build's semantic pin, as a route call runs: a check outside
-    // production reads the model its build pins. Production carries no pin.
-    let (status_str, error_msg, body_text, http_status, host_call) =
-        super::custom_apps_staging_pin::with_staging_pin(semantic_pin, run).await;
-
-    let duration_ms = started.elapsed().as_millis() as i64;
-    let mut update = app_function_invocations::ActiveModel {
-        id: Set(invocation_id),
-        ..Default::default()
-    };
-    update.status = Set(status_str.to_string());
-    update.duration_ms = Set(Some(duration_ms));
-    update.error = Set(error_msg.clone());
-    let failure = failure_signal::Failure::of(
-        status_str,
-        http_status,
-        error_msg.as_deref(),
-        host_call.as_ref(),
-    );
-    update.failure_fingerprint = Set(failure.as_ref().map(|f| f.fingerprint.clone()));
-    if status_str == "success" {
-        update.result_body = Set(Some(body_text.clone()));
-        update.result_status = Set(Some(http_status as i16));
+        caps: manifest_capabilities(manifest, app, &prepared.build),
+        logs: clock.logs.clone(),
+        meters: clock.meters.clone(),
+        cancel: run.cancel,
+        preagg: run.preagg,
+        policy: prepared.policy,
     }
-    if let Err(e) = update.update(db).await {
-        error!("failed to update scheduled invocation row: {e}");
-    } else if let Some(failure) = &failure {
-        failure_page::observe(
-            db,
-            &app,
-            &resolved.environment,
-            function_name,
-            invocation_id,
-            failure,
-        )
-        .await;
-    }
-    super::custom_apps_telemetry::record_function(super::custom_apps_telemetry::FunctionEvent {
-        org_id: app.org_id,
-        app_id: app.id,
-        build_id,
-        // No HTTP request behind a cron tick or an Airway step.
-        request_id: None,
-        user_id: owner.user_id,
-        function_name,
-        mode,
-        status_label: status_str,
-        http_status,
-        duration_ms: duration_ms.clamp(0, u32::MAX as i64) as u32,
-        host_calls: meters.host_calls(),
-        init_ms: meters.init_ms(),
-        error: error_msg.as_deref(),
-        environment: &resolved.environment.name(),
-    });
+}
 
-    // Persist the isolate's log output. The buffer was filled during the run but
-    // is otherwise dropped on the system path (route mode drains it to SSE; the
-    // schedule/manual path had no observer). Drain it — as one batch, AFTER the
-    // isolate returns (not live-tailed mid-run) — into `function_log` events the
-    // coordinator persists to `agentic_run_events`. The run's whole output then
-    // lands together and surfaces on the next dashboard poll / SSE catch-up.
-    //
-    // Drained UNCONDITIONALLY since 2026-09. It used to happen only inside the
-    // `if let Some(tx)` below, so a run with no event sink — an Airway step, a
-    // fleet worker without the coordinator channel — dropped its entire log
-    // output on the floor with nothing recording that it had. The ClickHouse
-    // sink wants those lines whether or not anyone is watching the run live.
-    //
-    // Take the lines out under the lock, then release it before awaiting the
-    // sends (never hold a std Mutex across `.await`).
-    let drained: Vec<LogLine> = {
-        let mut guard = logs.lock().unwrap_or_else(|poison| poison.into_inner());
-        std::mem::take(&mut *guard)
+/// Hand the run's log lines and its completion to the event sink, when there
+/// is one: `function_log` events the coordinator persists to
+/// `agentic_run_events` (capped at [`MAX_LOG_EVENTS`], overflow reported), then
+/// `app_function_completed`. The lines were already persisted to the log sink
+/// by `pipeline::record`, whether or not anyone is watching the run live.
+#[cfg(feature = "custom-app-functions")]
+async fn emit_run_events(
+    events: Option<RunEventSink>,
+    recorded: &pipeline::Recorded,
+    invocation_id: Uuid,
+    environment: &AppEnvironment,
+) {
+    let Some(tx) = events else {
+        return;
     };
-    super::custom_apps_telemetry::record_function_logs(
-        app.org_id,
-        app.id,
-        build_id,
-        invocation_id,
-        None,
-        function_name,
-        mode,
-        &drained
-            .iter()
-            .map(|l| (l.level.clone(), l.message.clone()))
-            .collect::<Vec<_>>(),
-        &resolved.environment.name(),
-    );
-    if let Some(tx) = events.as_ref() {
-        let total = drained.len();
-        for (idx, line) in drained.into_iter().take(MAX_LOG_EVENTS).enumerate() {
-            let _ = tx
-                .send((
-                    "function_log".to_string(),
-                    serde_json::json!({
-                        "level": line.level,
-                        "message": line.message,
-                        "idx": idx,
-                    }),
-                ))
-                .await;
-        }
-        if total > MAX_LOG_EVENTS {
-            let _ = tx
-                .send((
-                    "function_log".to_string(),
-                    serde_json::json!({
-                        "level": "warn",
-                        "message": format!(
-                            "… {} more log line(s) truncated (cap {MAX_LOG_EVENTS})",
-                            total - MAX_LOG_EVENTS
-                        ),
-                        "idx": MAX_LOG_EVENTS,
-                    }),
-                ))
-                .await;
-        }
+    let total = recorded.logs.len();
+    for (idx, line) in recorded.logs.iter().take(MAX_LOG_EVENTS).enumerate() {
         let _ = tx
             .send((
-                "app_function_completed".to_string(),
+                "function_log".to_string(),
                 serde_json::json!({
-                    "status": status_str,
-                    "duration_ms": duration_ms,
-                    "log_lines": total,
-                    // What the run detail reports (`get_function_run`): the
-                    // invocation row this run wrote, and where it ran.
-                    "invocation_id": invocation_id,
-                    "environment": resolved.environment.name(),
+                    "level": line.level,
+                    "message": line.message,
+                    "idx": idx,
                 }),
             ))
             .await;
     }
-
-    if status_str == "success" {
-        Ok(body_text)
-    } else {
-        Err(error_msg.unwrap_or_else(|| "function failed".to_string()))
+    if total > MAX_LOG_EVENTS {
+        let _ = tx
+            .send((
+                "function_log".to_string(),
+                serde_json::json!({
+                    "level": "warn",
+                    "message": format!(
+                        "… {} more log line(s) truncated (cap {MAX_LOG_EVENTS})",
+                        total - MAX_LOG_EVENTS
+                    ),
+                    "idx": MAX_LOG_EVENTS,
+                }),
+            ))
+            .await;
     }
+    let _ = tx
+        .send((
+            "app_function_completed".to_string(),
+            serde_json::json!({
+                "status": recorded.status,
+                "duration_ms": recorded.duration_ms,
+                "log_lines": total,
+                // What the run detail reports (`get_function_run`): the
+                // invocation row this run wrote, and where it ran.
+                "invocation_id": invocation_id,
+                "environment": environment.name(),
+            }),
+        ))
+        .await;
 }
 
 /// A captured `ctx.log` / `console.*` line from a function run, surfaced back to
@@ -2260,54 +2186,50 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
     outcome
 }
 
-/// Build the project context + host, spawn the cancel watchdog, and drive
-/// the isolate. Kept off the main handler body to hold it under the
-/// function-size budget.
+/// Resolve the project context (connectors) from the app's workspace, with
+/// the invoking user's workspace role when the run may need write authority.
+/// Three sequential reads (the role needs the workspace's org, the context
+/// needs the role), run beside the identity facts rather than ahead of them.
+///
+/// The role is resolved so an app function can WRITE to an airhouse-managed
+/// database when the person invoking it may. Without one every function got a
+/// Reader credential and the first real write failed with "Permission denied:
+/// Reader role cannot execute Update statements". Reads were unaffected, which
+/// is why it went unnoticed for so long: `ctx.warehouse.query` is a Reader
+/// operation, so the entire read path worked and only writes were denied.
+///
+/// ONLY on the user path (`should_resolve_role`). A system run (schedule /
+/// Airway step / manual job) carries the ORG OWNER's user id because the
+/// invocation row needs a non-null FK — not because an owner asked for
+/// anything — and resolving a role from it would mint an Admin credential for
+/// everything that fires on a timer. That is a larger grant than this is for,
+/// so those runs keep the Reader default and cannot write airhouse.
+///
+/// A SYNTHESIZED Owner is dropped. The middleware keeps that third value
+/// precisely so guards that must never accept an Oxy operator acting as the
+/// tenant can tell one from a real member — and minting a credential that
+/// WRITES the customer's warehouse is such a guard. An assume-role session is
+/// explicit, time-boxed and reason-logged, so honouring it here would be
+/// defensible; it is refused because it was never considered when this was
+/// written, and the rest fails closed: staff reading a tenant's airhouse still
+/// works, and staff needing to write it should hold real membership rather
+/// than acquire write authority as a side effect of invoking an app function.
 #[cfg(feature = "custom-app-functions")]
-async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
+async fn resolve_project_context(
+    args: &RunArgs<'_>,
+) -> Result<std::sync::Arc<dyn seam::FunctionProjectContext>, RunOutcome> {
     use crate::server::api::custom_apps_gates::build_project_context_with_role;
     use entity::prelude::Workspaces;
 
-    // Resolve the project context (connectors) from the app's workspace.
+    let failed = |message: String| ("error", Some(message), String::new(), 0, None);
     let workspace = match Workspaces::find_by_id(args.app.project_id)
         .one(args.db)
         .await
     {
         Ok(Some(ws)) => ws,
-        Ok(None) => {
-            return (
-                "error",
-                Some("workspace not found".into()),
-                String::new(),
-                0,
-                None,
-            );
-        }
-        Err(e) => {
-            return (
-                "error",
-                Some(format!("workspace lookup failed: {e}")),
-                String::new(),
-                0,
-                None,
-            );
-        }
+        Ok(None) => return Err(failed("workspace not found".into())),
+        Err(e) => return Err(failed(format!("workspace lookup failed: {e}"))),
     };
-    // Resolve the invoking user's workspace role, so an app function can WRITE
-    // to an airhouse-managed database when the person invoking it may.
-    //
-    // Without a role every function got a Reader credential and the first real
-    // write failed with "Permission denied: Reader role cannot execute Update
-    // statements". Reads were unaffected, which is why it went unnoticed for so
-    // long: `ctx.warehouse.query` is a Reader operation, so the entire read path
-    // worked and only writes were denied.
-    //
-    // ONLY on the user path. A system run (schedule / Airway step / manual job)
-    // carries the ORG OWNER's user id because the invocation row needs a
-    // non-null FK — not because an owner asked for anything — and resolving a
-    // role from it would mint an Admin credential for everything that fires on
-    // a timer. That is a larger grant than this is for, so those runs keep the
-    // Reader default and cannot write airhouse.
     let workspace_role = if should_resolve_role(
         args.identity_kind,
         workspace.org_id.is_some(),
@@ -2327,42 +2249,32 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
         )
         .await
         .ok()
-        // Drop a SYNTHESIZED Owner. The middleware keeps this third value
-        // precisely so guards that must never accept an Oxy operator acting as
-        // the tenant can tell one from a real member — and minting a credential
-        // that WRITES the customer's warehouse is such a guard.
-        //
-        // An assume-role session is explicit, time-boxed and reason-logged, so
-        // honouring it here would be defensible. It is refused because it was
-        // never considered when this was written, and the rest of this change
-        // fails closed: staff reading a tenant's airhouse still works, and staff
-        // needing to write it should hold real membership rather than acquire
-        // write authority as a side effect of invoking an app function.
+        // A synthesized Owner is dropped (see above).
         .filter(|(_, _, is_global_override)| !is_global_override)
         .map(|(_, role, _)| role)
     } else {
         None
     };
 
-    let proj_ctx = match build_project_context_with_role(
+    build_project_context_with_role(
         &workspace,
         args.user_id,
         args.app.project_id,
         workspace_role,
     )
     .await
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return (
-                "error",
-                Some("could not build workspace context".into()),
-                String::new(),
-                0,
-                None,
-            );
-        }
-    };
+    // Behind its trait from here on, so the host depends on
+    // `FunctionProjectContext`, not on `agentic_wiring`: the concrete
+    // `OxyProjectContext` is named nowhere in this module.
+    .map(|ctx| std::sync::Arc::new(ctx) as std::sync::Arc<dyn seam::FunctionProjectContext>)
+    .map_err(|_| failed("could not build workspace context".into()))
+}
+
+/// Build the project context + host, spawn the cancel watchdog, and drive
+/// the isolate. Kept off the main handler body to hold it under the
+/// function-size budget.
+#[cfg(feature = "custom-app-functions")]
+async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
     // Everything the isolate needs before it can start, resolved together.
     //
     // Identity facts for `ctx.user` are all resolved server-side so none of it can
@@ -2379,17 +2291,29 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
     //
     // Concurrent, because these are independent reads and this is **pre-isolate
     // latency a caller waits on** — not the view recorder's background spawn, where
-    // the same queries are free. `env` is in here for the same reason and is the
-    // most expensive of the three: `resolve_function_env` lists the project's
-    // secrets and then fetches each match one at a time, so leaving it sequential
-    // in front of the identity reads paid for it twice over.
+    // the same queries are free. `env` is in here for the same reason: a miss in
+    // `env_cache` lists the project's secrets and then fetches each match one at
+    // a time, so leaving it sequential in front of the identity reads paid for it
+    // twice over.
     //
     // `join!` rather than `try_join!`: each fact keeps its own fail-CLOSED posture,
     // so a blip on one can't blank the other, and an errored lookup yields no role,
     // never "admin".
+    //
+    // The project context (workspace → role → connectors) is the one chain in
+    // here: its three reads stay in their order, since the role gates write
+    // authority and the context is built from it — but the chain as a whole is
+    // independent of every fact beside it, so it runs alongside them instead
+    // of ahead of them. Its failure is the run's, as before.
+    //
+    // Boxed: `join!` holds every branch at once, and this one carries the
+    // project-context build, the largest future on the path. Inline it would
+    // add its whole size to the invocation future every frame above reserves
+    // — the overflow `handle_function_request` boxes against.
     let human = args.identity_kind == runtime::CtxIdentityKind::User;
-    let (env, app_role, org_standing, held) = tokio::join!(
-        resolve_function_env(args.db, args.app.project_id, args.app.id, &args.policy),
+    let (project, env, app_role, org_standing, held) = tokio::join!(
+        Box::pin(resolve_project_context(&args)),
+        env_cache::resolve(args.db, args.app.project_id, args.app.id, &args.policy),
         // Asked for the environment the run was admitted to: a sandbox agent
         // token is the app's admin on a sandbox it created, and nowhere else.
         // For every other caller this is `resolve_app_role`, unchanged.
@@ -2427,6 +2351,10 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
             }
         },
     );
+    let proj_ctx = match project {
+        Ok(ctx) => ctx,
+        Err(outcome) => return outcome,
+    };
 
     let app_role = app_role
         .unwrap_or_else(|e| {
@@ -2471,10 +2399,8 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
     };
 
     let host = host::into_arc(host::ProjectFunctionHost::new(
-        // Hand the runtime the project context behind its trait, so the host
-        // depends on `FunctionProjectContext`, not on `agentic_wiring`. The
-        // concrete `OxyProjectContext` is only named here (outside the runtime).
-        std::sync::Arc::new(proj_ctx) as std::sync::Arc<dyn seam::FunctionProjectContext>,
+        // The project context behind its trait (`resolve_project_context`).
+        proj_ctx,
         args.query_exec.clone(),
         args.db.clone(),
         args.write_destinations.clone(),
@@ -2647,60 +2573,6 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
         ),
         Err(e) => ("error", Some(e.to_string()), String::new(), 0, host_call),
     }
-}
-
-/// Resolve `ctx.env` for an invocation (§11.4): secrets stored under the
-/// `apps/<app_id>/<KEY>` prefix in the project's secret manager, exposed to
-/// the isolate with the prefix stripped (so the function sees plain `KEY`).
-/// Resolved fresh per invocation — never cached in the artifact.
-///
-/// Outside production the environment's own path, `apps/<app_id>/<env>/<KEY>`,
-/// is read instead, falling back to production's value only for the
-/// manifest's `shared` keys (`custom_apps_secrets::scope`); production reads
-/// its top-level keys only, never an environment's.
-#[cfg(feature = "custom-app-functions")]
-async fn resolve_function_env(
-    db: &sea_orm::DatabaseConnection,
-    project_id: Uuid,
-    app_id: Uuid,
-    policy: &env_policy::EnvPolicy,
-) -> ResolvedEnv {
-    use oxy::service::secret_manager::SecretManagerService;
-
-    let secret_manager = SecretManagerService::new(project_id);
-    let names: Vec<String> = match secret_manager.list_secrets(db).await {
-        Ok(secrets) => secrets.into_iter().map(|s| s.name).collect(),
-        Err(e) => {
-            error!("ctx.env: failed to list secrets for app {app_id}: {e}");
-            return ResolvedEnv::default();
-        }
-    };
-    let shared = policy.shared_env();
-    let plan =
-        super::custom_apps_secrets::scope::plan_env(app_id, policy.environment(), shared, &names);
-
-    let mut resolved = ResolvedEnv::default();
-    for entry in plan {
-        match secret_manager.get_secret(&entry.stored_name).await {
-            Some(value) => {
-                if entry.through_fallback {
-                    resolved.read_through_fallback.insert(entry.key.clone());
-                }
-                resolved.values.insert(entry.key, value);
-            }
-            None => error!("ctx.env: failed to resolve secret '{}'", entry.stored_name),
-        }
-    }
-    resolved
-}
-
-/// `ctx.env` for one run, and which of its keys came from production through
-/// the shared fallback.
-#[cfg(feature = "custom-app-functions")]
-#[derive(Default)]
-struct ResolvedEnv {
-    values: std::collections::BTreeMap<String, String>,
-    read_through_fallback: std::collections::BTreeSet<String>,
 }
 
 /// Resolve `cancel_tx` (which terminates the isolate) on the first of two
