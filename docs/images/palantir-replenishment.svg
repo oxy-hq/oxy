@@ -33,14 +33,14 @@
 
   <line x1="264" y1="294" x2="264" y2="336" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
 
-  <rect x="96" y="340" width="336" height="290" rx="12" fill="#0b1220" stroke="#94a3b8" stroke-width="2"/>
-  <text x="120" y="380" fill="#f1f5f9" font-size="21" font-weight="700">Replenishment</text>
-  <text x="120" y="406" fill="#f1f5f9" font-size="21" font-weight="700">application</text>
-  <text x="120" y="438" fill="#94a3b8" font-size="15">Business logic + workflow + UI</text>
-  <text x="120" y="490" fill="#7d8ea6" font-size="15" font-style="italic">“Given warehouse inventory,</text>
-  <text x="120" y="514" fill="#7d8ea6" font-size="15" font-style="italic">Amazon inventory and expected</text>
-  <text x="120" y="538" fill="#7d8ea6" font-size="15" font-style="italic">demand, determine how much</text>
-  <text x="120" y="562" fill="#7d8ea6" font-size="15" font-style="italic">inventory to send to Amazon.”</text>
+  <rect x="96" y="340" width="336" height="290" rx="12" fill="#2a1013" stroke="#ef4444" stroke-width="2"/>
+  <text x="120" y="380" fill="#fca5a5" font-size="21" font-weight="700">Replenishment</text>
+  <text x="120" y="406" fill="#fca5a5" font-size="21" font-weight="700">application</text>
+  <text x="120" y="438" fill="#f87171" font-size="15">Business logic + workflow + UI</text>
+  <text x="120" y="490" fill="#c4868a" font-size="15" font-style="italic">“Given warehouse inventory,</text>
+  <text x="120" y="514" fill="#c4868a" font-size="15" font-style="italic">Amazon inventory and expected</text>
+  <text x="120" y="538" fill="#c4868a" font-size="15" font-style="italic">demand, determine how much</text>
+  <text x="120" y="562" fill="#c4868a" font-size="15" font-style="italic">inventory to send to Amazon.”</text>
 
   <text x="96" y="680" fill="#94a3b8" font-size="16">Replenishment is an application</text>
   <text x="96" y="704" fill="#94a3b8" font-size="16">built on top of the ontology.</text>
