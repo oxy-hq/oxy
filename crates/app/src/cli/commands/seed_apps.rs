@@ -551,8 +551,6 @@ async fn ensure_app(conn: &Conn, target: &AppTarget, app_id: Uuid) -> Result<(),
         // exists. Publishing here would name a build_pk that doesn't exist yet.
         published_at: ActiveValue::Set(None),
         repo_path: ActiveValue::Set(Some(format!("examples/{APP_SLUG}"))),
-        draft_build_id: ActiveValue::Set(None),
-        published_build_id: ActiveValue::Set(None),
         last_promoted_by: ActiveValue::Set(None),
         last_promoted_at: ActiveValue::Set(None),
         created_at: ActiveValue::Set(now),
@@ -574,9 +572,8 @@ async fn ensure_app(conn: &Conn, target: &AppTarget, app_id: Uuid) -> Result<(),
 /// Production moves through [`move_locked`], the locked half of the one
 /// production move (`custom_apps_promote`): the seed records staging's own
 /// `publish` event first, in the same transaction, as a promoting publish does
-/// — the evidence invariant 1 then finds — and production's pointer, its
-/// mirror and `published_at` are written by that one function rather than
-/// here. Not [`move_production`](crate::server::api::custom_apps_promote::move_production):
+/// — the evidence invariant 1 then finds — and production's pointer and
+/// `published_at` are written by that one function rather than here. Not [`move_production`](crate::server::api::custom_apps_promote::move_production):
 /// that applies the build's declared migrations to the org's stores, which a
 /// seed must not do, and the seed's build is validated and a person's by
 /// construction, so the admission it asks again cannot refuse it.
@@ -592,12 +589,11 @@ async fn point_app_at(conn: &Conn, app_id: Uuid, build_pk: Uuid) -> Result<(), O
         .await
         .map_err(|e| OxyError::RuntimeError(format!("app {app_id} vanished mid-deploy: {e}")))?;
     let mut active = row.into_active_model();
-    active.draft_build_id = ActiveValue::Set(Some(build_pk));
     active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
     let row = active
         .update(&txn)
         .await
-        .map_err(|e| db_err("point staging at the build", &e))?;
+        .map_err(|e| db_err("stamp the app", &e))?;
     crate::server::api::custom_apps_environments::record_move(
         &txn,
         app_id,
@@ -607,7 +603,7 @@ async fn point_app_at(conn: &Conn, app_id: Uuid, build_pk: Uuid) -> Result<(), O
         None,
     )
     .await
-    .map_err(|e| db_err("mirror staging", &e))?;
+    .map_err(|e| db_err("point staging at the build", &e))?;
     let promote = ProductionMove {
         app_id,
         build: build_pk.into(),

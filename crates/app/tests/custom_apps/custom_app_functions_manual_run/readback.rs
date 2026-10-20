@@ -249,7 +249,7 @@ async fn fn_in_an_environment_with_no_build_names_the_environment() {
     // Production still serves its build.
     ran(&t, APP, "whoami", &production_host(&t, APP)).await;
 
-    unset("UPDATE apps SET published_build_id = NULL, draft_build_id = NULL WHERE id = $1").await;
+    unset("UPDATE app_environments SET build_id = NULL WHERE app_id = $1").await;
     let (status, headers, body) = call(&t, APP, "whoami", &production_host(&t, APP)).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(error(&body)["error"], "AppNotPublished", "{body}");

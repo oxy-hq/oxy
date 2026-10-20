@@ -311,14 +311,16 @@ async fn get_cache_control(uri: &str) -> (StatusCode, String) {
 /// image URLs to.
 async fn seeded_published_build(db: &DatabaseConnection) -> Uuid {
     let local = org_id(db, "local").await;
-    Apps::find()
+    let app = Apps::find()
         .filter(apps::Column::OrgId.eq(local))
         .filter(apps::Column::Slug.eq(APP_SLUG))
         .one(db)
         .await
         .expect("query app")
-        .expect("seeded app")
-        .published_build_id
+        .expect("seeded app");
+    crate::app_environments::serving(db, app.id)
+        .await
+        .production
         .expect("the seed publishes the example app")
 }
 

@@ -108,7 +108,7 @@ struct CardFields {
 /// the same picture from the one manifest source. See the
 /// `oxy-app-visual-identity` skill.
 ///
-/// ## `?v=<published_build_id>`
+/// ## `?v=<production's build id>`
 ///
 /// Icon and art are unfingerprinted bundle-root files, so a bare URL is only
 /// ever `public, max-age=300` at the origin — a longer lifetime would show a
@@ -117,7 +117,7 @@ struct CardFields {
 /// build in the URL gives each publish its own URL, which lets the serve route
 /// (`custom_apps_serve::headers::cache_control_for`) answer `immutable` for it.
 ///
-/// `v` is the `app_builds` **primary key** (`apps.published_build_id`), not the
+/// `v` is the `app_builds` **primary key** (production's `app_environments.build_id`), not the
 /// engineer-facing `app_builds.build_id` string: the pk is what a promote or
 /// rollback repoints, and it is what the serve route compares `v` against.
 ///
@@ -129,7 +129,7 @@ pub(super) fn icon_art_urls(
     manifest: Option<&OxyAppManifest>,
     org_slug: &str,
     app_slug: &str,
-    published_build_id: Option<Uuid>,
+    production_build: Option<Uuid>,
 ) -> (Option<String>, Option<String>) {
     let Some(m) = manifest else {
         return (None, None);
@@ -137,7 +137,7 @@ pub(super) fn icon_art_urls(
     // Trailing slash matches `build_pretty_url`, so the relative path appends
     // to a valid same-origin URL.
     let base = build_pretty_url(org_slug, app_slug);
-    let version = published_build_id
+    let version = production_build
         .map(|id| format!("?v={id}"))
         .unwrap_or_default();
     let to_url = |p: &str| format!("{base}{p}{version}");
@@ -175,6 +175,7 @@ impl CustomAppSummary {
         m: AppsModel,
         org_slug: &str,
         published_at: String,
+        production_build: Option<Uuid>,
         manifest: Option<&OxyAppManifest>,
     ) -> Self {
         let url = build_pretty_url(org_slug, &m.slug);
@@ -182,7 +183,7 @@ impl CustomAppSummary {
         // Through the shared builder rather than a local `format!`: this list
         // used to assemble the same URLs by hand, and a copy is exactly where
         // the `?v=` build pin would have been forgotten.
-        let (icon_url, art_url) = icon_art_urls(manifest, org_slug, &m.slug, m.published_build_id);
+        let (icon_url, art_url) = icon_art_urls(manifest, org_slug, &m.slug, production_build);
         let visibility = if m.is_restricted() { "members" } else { "org" };
         Self {
             id: m.id,
@@ -344,8 +345,14 @@ pub(crate) async fn launcher_apps(
         .map(|(id, slug, name)| (id, (slug, name)))
         .collect();
 
+    // One read of every card's environments: production's build pins the icon
+    // and art URLs, and both builds resolve the manifests.
+    let environments =
+        crate::server::api::custom_apps_env_resolve::load_environment_builds_batch(db, &rows)
+            .await?;
     let manifests =
-        crate::server::api::custom_apps_manifest::resolve_manifests_batch(db, &rows).await;
+        crate::server::api::custom_apps_manifest::resolve_manifests_batch(db, &rows, &environments)
+            .await;
     let mut out = Vec::with_capacity(rows.len());
     for app in rows {
         let Some((org_slug, org_name)) = orgs.get(&app.org_id) else {
@@ -356,11 +363,18 @@ pub(crate) async fn launcher_apps(
         };
         let (org_id, workspace_id) = (app.org_id, app.project_id);
         let manifest = manifests.get(&app.id);
+        let production_build = environments.get(&app.id).and_then(|e| e.production);
         out.push(LauncherApp {
             org_id,
             org_name: org_name.clone(),
             workspace_id,
-            summary: CustomAppSummary::from_model_with_manifest(app, org_slug, published, manifest),
+            summary: CustomAppSummary::from_model_with_manifest(
+                app,
+                org_slug,
+                published,
+                production_build,
+                manifest,
+            ),
         });
     }
     Ok(out)

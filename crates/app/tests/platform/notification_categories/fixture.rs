@@ -3,6 +3,7 @@
 
 use chrono::{Duration, Timelike, Utc};
 use entity::{app_builds, apps, notifications, org_members, users, workspaces};
+use oxy_app_core::custom_app_environment::AppEnvironment;
 use oxy_auth::types::AuthenticatedUser;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait};
 use serde_json::{Value, json};
@@ -135,9 +136,8 @@ pub(super) async fn publish(
     manifest: Option<Value>,
 ) -> apps::Model {
     let build = seed_build(db, app, manifest).await;
-    let mut live: apps::ActiveModel = app.clone().into();
-    live.published_build_id = Set(Some(build));
-    live.update(db).await.expect("make the build live")
+    point(db, app, AppEnvironment::Production, build).await;
+    app.clone()
 }
 
 /// A new build of `app` declaring `manifest`, as its draft only — what a
@@ -148,9 +148,27 @@ pub(super) async fn draft(
     manifest: Option<Value>,
 ) -> apps::Model {
     let build = seed_build(db, app, manifest).await;
-    let mut staged: apps::ActiveModel = app.clone().into();
-    staged.draft_build_id = Set(Some(build));
-    staged.update(db).await.expect("stage the build")
+    point(db, app, AppEnvironment::Staging, build).await;
+    app.clone()
+}
+
+/// Point `environment` of `app` at `build`, through the one pointer writer.
+async fn point(
+    db: &DatabaseConnection,
+    app: &apps::Model,
+    environment: AppEnvironment,
+    build: Uuid,
+) {
+    oxy_app::server::api::custom_apps_environments::record_move(
+        db,
+        app.id,
+        &environment,
+        Some(build),
+        oxy_app::server::api::custom_apps_environments::EnvAction::Publish,
+        None,
+    )
+    .await
+    .expect("move the pointer");
 }
 
 async fn seed_build(db: &DatabaseConnection, app: &apps::Model, manifest: Option<Value>) -> Uuid {

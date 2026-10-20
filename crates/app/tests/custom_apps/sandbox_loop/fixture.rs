@@ -104,10 +104,10 @@ pub(super) async fn set_secret(
         .expect("set a secret");
 }
 
-/// What production and staging point at: the two columns on the app row and
-/// the two fixed `app_environments` rows, with the time each last moved.
+/// What production and staging point at: the two fixed `app_environments`
+/// rows, as the pointers and with the time each last moved.
 pub(super) async fn fixed_pointers(t: &Tenant, app_id: Uuid) -> Value {
-    let app = app_row(&t.db, app_id).await;
+    let serving = crate::app_environments::serving(&t.db, app_id).await;
     let rows = app_environments::Entity::find()
         .filter(app_environments::Column::AppId.eq(app_id))
         .filter(app_environments::Column::Name.is_in(["production", "staging"]))
@@ -119,7 +119,7 @@ pub(super) async fn fixed_pointers(t: &Tenant, app_id: Uuid) -> Value {
         .iter()
         .map(|r| json!([r.name, r.build_id, r.updated_at.to_rfc3339()]))
         .collect();
-    json!({ "published": app.published_build_id, "draft": app.draft_build_id, "rows": rows })
+    json!({ "published": serving.production, "draft": serving.staging, "rows": rows })
 }
 
 /// `POST …/fn/<name>` in `environment`, named by `X-Oxy-App-Env` on a

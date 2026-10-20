@@ -81,7 +81,9 @@ async fn publishing_with_promote_makes_the_build_live_and_stores_its_function_ar
         .expect("query build")
         .expect("publish recorded the build");
     assert_eq!(
-        app.published_build_id,
+        crate::app_environments::serving(&t.db, app.id)
+            .await
+            .production,
         Some(build.id),
         "promote must point the live channel at the new build"
     );

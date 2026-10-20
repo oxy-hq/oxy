@@ -1,8 +1,8 @@
 //! An app's catalogue as its live build declares it.
 //!
 //! "Live" is the build production's functions run
-//! (`EnvironmentBuilds::production_runs`): the published build, or a
-//! never-promoted app's draft. That is the build whose `ctx.notify` calls are
+//! (`EnvironmentBuilds::production_runs`): production's build, or a
+//! never-promoted app's staging build. That is the build whose `ctx.notify` calls are
 //! being sent, so it is the one that describes them. Read from Oxy's database
 //! (`app_builds.manifest_json`) — config, never the bundle or a working copy.
 
@@ -17,7 +17,9 @@ use super::parse;
 use super::platform::oxygen;
 use super::source::{KindInfo, SourceCatalogue};
 use crate::server::api::custom_apps_agent_built::prime_marks;
-use crate::server::api::custom_apps_env_resolve::EnvironmentBuilds;
+use crate::server::api::custom_apps_env_resolve::{
+    EnvironmentBuilds, load_environment_builds, load_environment_builds_batch,
+};
 
 /// The catalogue a manifest declares, with the kinds its functions may send.
 pub fn from_manifest(manifest: Option<&Value>) -> SourceCatalogue {
@@ -26,12 +28,10 @@ pub fn from_manifest(manifest: Option<&Value>) -> SourceCatalogue {
 
 /// The build production runs for `app`, if any.
 pub async fn live_build(db: &DatabaseConnection, app: &apps::Model) -> Result<Option<Uuid>, DbErr> {
-    EnvironmentBuilds {
-        production: app.published_build_id,
-        staging: app.draft_build_id,
-    }
-    .production_runs(db)
-    .await
+    load_environment_builds(db, app)
+        .await?
+        .production_runs(db)
+        .await
 }
 
 /// `app`'s live catalogue. An app with no live build has an empty one.
@@ -42,19 +42,24 @@ pub async fn load(db: &DatabaseConnection, app: &apps::Model) -> Result<SourceCa
 
 /// The live catalogue of each of `apps`, reading every manifest in one query.
 /// Each app's live build is `production_runs`' answer; the one read it can
-/// make, a never-promoted app's draft mark, is made for all of them first.
+/// make, a never-promoted app's staging mark, is made for all of them first,
+/// after one read of every app's environments.
 pub async fn load_many(
     db: &DatabaseConnection,
     apps: &[apps::Model],
 ) -> Result<HashMap<Uuid, SourceCatalogue>, DbErr> {
+    let environments = load_environment_builds_batch(db, apps).await?;
+    let none = EnvironmentBuilds::default();
     let fallbacks = apps
         .iter()
-        .filter(|a| a.published_build_id.is_none())
-        .filter_map(|a| a.draft_build_id);
+        .map(|a| environments.get(&a.id).unwrap_or(&none))
+        .filter(|builds| builds.production.is_none())
+        .filter_map(|builds| builds.staging);
     prime_marks(db, fallbacks).await?;
     let mut build_of: HashMap<Uuid, Uuid> = HashMap::new();
     for app in apps {
-        if let Some(build) = live_build(db, app).await? {
+        let builds = environments.get(&app.id).unwrap_or(&none);
+        if let Some(build) = builds.production_runs(db).await? {
             build_of.insert(build, app.id);
         }
     }

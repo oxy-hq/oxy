@@ -89,6 +89,7 @@ pub(crate) struct AppRuntimeConfig {
 impl AppRuntimeConfig {
     pub(super) fn from_app(
         app: &entity::apps::Model,
+        production_build: Option<Uuid>,
         org_slug: &str,
         environment: &oxy_app_core::custom_app_environment::AppEnvironment,
     ) -> Self {
@@ -107,8 +108,7 @@ impl AppRuntimeConfig {
             // its manifest) is not known when this config is built.
             service_worker: true,
             analytics: true,
-            build_id: app
-                .published_build_id
+            build_id: production_build
                 .map(|id| id.to_string())
                 .unwrap_or_default(),
             environment: environment.name(),

@@ -208,7 +208,9 @@ async fn a_machine_publish_inserts_a_build_attributed_to_its_workflow() {
         .expect("reload app")
         .expect("app exists");
     assert_eq!(
-        app.published_build_id,
+        crate::app_environments::serving(&db, app.id)
+            .await
+            .production,
         Some(build.id),
         "the build went live"
     );

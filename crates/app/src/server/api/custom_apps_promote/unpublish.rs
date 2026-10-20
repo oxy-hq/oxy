@@ -1,8 +1,8 @@
 //! Taking production's build away: the console's *Unpublish*, single and
 //! batch, and the partner console's. The other half of the production
 //! pointer's writers, held to the same rule as [`super::production`]: the
-//! pointer, its `production` mirror and the `unpublish` event move together,
-//! in one transaction holding the app's row `FOR UPDATE`.
+//! pointer, `published_at` and the `unpublish` event move together, in one
+//! transaction holding the app's row `FOR UPDATE`.
 //!
 //! No admission applies — nothing is being made live — and no migration is
 //! touched: the bundle bytes and every schema stay as they were.
@@ -33,7 +33,6 @@ pub async fn unpublish(
     let row = lock_app(&txn, app_id).await?;
     let mut active: apps::ActiveModel = row.into();
     active.published_at = ActiveValue::Set(None);
-    active.published_build_id = ActiveValue::Set(None);
     active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
     let updated = active
         .update(&txn)

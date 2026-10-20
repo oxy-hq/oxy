@@ -194,7 +194,10 @@ async fn a_republish_missing_one_artifact_is_refused_and_leaves_the_live_app_alo
         .await
         .expect("reload app")
         .expect("app exists");
-    let build_1 = before.draft_build_id.expect("draft points at build-1");
+    let before_staging = crate::app_environments::serving(&db, before.id)
+        .await
+        .staging;
+    let build_1 = before_staging.expect("draft points at build-1");
     let fns = app_functions::Entity::find()
         .filter(app_functions::Column::BuildId.eq(build_1))
         .all(&db)
@@ -218,7 +221,12 @@ async fn a_republish_missing_one_artifact_is_refused_and_leaves_the_live_app_alo
         .await
         .expect("reload app")
         .expect("app exists");
-    assert_eq!(after.draft_build_id, before.draft_build_id);
+    assert_eq!(
+        crate::app_environments::serving(&db, after.id)
+            .await
+            .staging,
+        before_staging
+    );
     assert_eq!(after.updated_at, before.updated_at);
     let build_2 = app_builds::Entity::find()
         .filter(app_builds::Column::AppId.eq(first.app_id))

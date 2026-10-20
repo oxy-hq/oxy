@@ -42,7 +42,12 @@ async fn staging_invocation(agent: &Agent, at: chrono::DateTime<chrono::Utc>) ->
     app_function_invocations::ActiveModel {
         id: ActiveValue::Set(id),
         app_id: ActiveValue::Set(app.id),
-        build_id: ActiveValue::Set(app.draft_build_id.expect("a staging build")),
+        build_id: ActiveValue::Set(
+            crate::app_environments::serving(&agent.t.db, app.id)
+                .await
+                .staging
+                .expect("a staging build"),
+        ),
         function_name: ActiveValue::Set("whoami".into()),
         mode: ActiveValue::Set("route".into()),
         user_id: ActiveValue::Set(Some(agent.t.guest_id)),

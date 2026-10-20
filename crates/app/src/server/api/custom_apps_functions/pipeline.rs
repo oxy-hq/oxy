@@ -29,7 +29,9 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, Qu
 use tracing::error;
 use uuid::Uuid;
 
-use super::super::custom_apps_env_resolve::{ResolvedEnvironment, resolve_function_environment};
+use super::super::custom_apps_env_resolve::{
+    ResolvedEnvironment, resolve_function_environment, resolve_function_environment_cached,
+};
 use super::super::custom_apps_telemetry::{self, FunctionEvent, InvocationMeters};
 use super::check_run::QueuedError;
 use super::env_policy::EnvPolicy;
@@ -47,6 +49,8 @@ pub(super) enum Door<'a> {
     /// build holds.
     Route {
         caller: &'a crate::server::authz::Caller,
+        /// The app's builds from the resolution cache, for production's answer.
+        cached: &'a super::super::custom_apps_env_resolve::EnvironmentBuilds,
     },
     /// A queued run has no viewer. Production runs as it always has; outside
     /// production what queued it decides (`queued_admission`): a check, Run
@@ -215,14 +219,18 @@ pub(super) async fn admit(
     function_name: &str,
     door: Door<'_>,
 ) -> Result<Admitted, PrepareError> {
-    let resolved = resolve_function_environment(db, app, environment)
-        .await
-        .map_err(|e| PrepareError::EnvironmentLookup(e.to_string()))?;
+    let resolved = match &door {
+        Door::Route { cached, .. } => {
+            resolve_function_environment_cached(db, app, cached, environment).await
+        }
+        Door::Queued { .. } => resolve_function_environment(db, app, environment).await,
+    }
+    .map_err(|e| PrepareError::EnvironmentLookup(e.to_string()))?;
     // The one environment decision (see `environment_gate`): production for
     // everyone; staging for staff, with every write held by the policy the
     // host is built from; dev slots refused.
     let at_the_door = match door {
-        Door::Route { caller } => {
+        Door::Route { caller, .. } => {
             let entrance = environment_gate::route_entrance(db, &resolved, caller, app).await;
             AtTheDoor::Admitted(environment_gate::admit(&resolved, entrance)?)
         }

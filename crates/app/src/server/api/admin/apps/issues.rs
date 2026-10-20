@@ -224,17 +224,19 @@ pub async fn issues_of(
     now: DateTime<Utc>,
 ) -> Result<IssueList, ScopeError> {
     let since: DateTime<FixedOffset> = (now - Duration::days(days)).into();
+    let live_build = crate::server::api::custom_apps_environments::pointer(
+        db,
+        app.id,
+        &oxy_app_core::custom_app_environment::AppEnvironment::Production,
+    )
+    .await
+    .map_err(|e| ScopeError::internal("environment lookup failed", e))?;
     // One past the cap: the extra row is how a cut list is told from a whole one.
     let fetch = (MAX_ISSUES + 1) as i64;
     let stmt = Statement::from_sql_and_values(
         db.get_database_backend(),
         ISSUES_SQL,
-        [
-            app.id.into(),
-            since.into(),
-            app.published_build_id.into(),
-            fetch.into(),
-        ],
+        [app.id.into(), since.into(), live_build.into(), fetch.into()],
     );
     let mut rows = IssueRow::find_by_statement(stmt)
         .all(db)

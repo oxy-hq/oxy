@@ -76,9 +76,9 @@ pub(super) async fn build_row(agent: &Agent, build: Uuid) -> app_builds::Model {
 }
 
 pub(super) async fn production_of(agent: &Agent) -> Option<Uuid> {
-    app_model(&agent.t.db, agent.app.id)
+    crate::app_environments::serving(&agent.t.db, agent.app.id)
         .await
-        .published_build_id
+        .production
 }
 
 /// The `409` every promote path answers an agent's draft with: the code, and
@@ -145,7 +145,9 @@ async fn no_promote_path_ships_a_draft_a_token_published() {
     let live = production_of(&agent).await;
     let draft = agent_draft(&agent, "agent-unapproved").await;
     assert_eq!(
-        app_model(&agent.t.db, app).await.draft_build_id,
+        crate::app_environments::serving(&agent.t.db, app)
+            .await
+            .staging,
         Some(draft)
     );
 
@@ -254,7 +256,7 @@ async fn unpublish(agent: &Agent) {
     let (status, body) = person(agent, "DELETE", &uri, None).await;
     assert!(status.is_success(), "unpublish: {status} {body}");
     let app = app_model(&agent.t.db, agent.app.id).await;
-    assert!(app.published_build_id.is_none() && app.published_at.is_none());
+    assert!(production_of(agent).await.is_none() && app.published_at.is_none());
 }
 
 /// An app unpublished after a **person's** draft falls back to that draft on
@@ -305,9 +307,12 @@ async fn the_drafts_guards_are_asked_again_under_the_apps_row_lock() {
     let agent = staging_agent().await;
     let app = agent.app.id;
     let before = app_model(&agent.t.db, app).await;
+    let staging_before = crate::app_environments::serving(&agent.t.db, app)
+        .await
+        .staging;
     // Any build of the app the draft pointer does not already name.
-    let target = before.published_build_id.expect("a live app");
-    assert_ne!(before.draft_build_id, Some(target));
+    let target = production_of(&agent).await.expect("a live app");
+    assert_ne!(staging_before, Some(target));
     let draft = || input(&agent.t, &agent.app.slug, "under-lock", Vec::new());
 
     let holder = agent.t.db.begin().await.expect("begin");
@@ -324,7 +329,6 @@ async fn the_drafts_guards_are_asked_again_under_the_apps_row_lock() {
 
     // The holder unpublishes, and only then lets go.
     apps::Entity::update_many()
-        .col_expr(apps::Column::PublishedBuildId, Expr::value(None::<Uuid>))
         .col_expr(
             apps::Column::PublishedAt,
             Expr::value(None::<chrono::DateTime<chrono::FixedOffset>>),
@@ -333,6 +337,13 @@ async fn the_drafts_guards_are_asked_again_under_the_apps_row_lock() {
         .exec(&holder)
         .await
         .expect("unpublish under the lock");
+    crate::app_environments::set_pointer(
+        &holder,
+        app,
+        &oxy_app_core::custom_app_environment::AppEnvironment::Production,
+        None,
+    )
+    .await;
     holder.commit().await.expect("commit");
 
     let refused = moving.await.expect("join").expect_err("refused");
@@ -343,18 +354,26 @@ async fn the_drafts_guards_are_asked_again_under_the_apps_row_lock() {
         ),
         "{refused}"
     );
-    let after = app_model(&agent.t.db, app).await;
-    assert_eq!(after.draft_build_id, before.draft_build_id, "nothing moved");
+    let staging_after = crate::app_environments::serving(&agent.t.db, app)
+        .await
+        .staging;
+    assert_eq!(staging_after, staging_before, "nothing moved");
 
     // Live again but re-homed since it was admitted: refused the same way.
     apps::Entity::update_many()
-        .col_expr(apps::Column::PublishedBuildId, Expr::value(Some(target)))
         .col_expr(apps::Column::PublishedAt, Expr::value(before.published_at))
         .col_expr(apps::Column::ProjectId, Expr::value(Uuid::new_v4()))
         .filter(apps::Column::Id.eq(app))
         .exec(&agent.t.db)
         .await
         .expect("re-home the app");
+    crate::app_environments::set_pointer(
+        &agent.t.db,
+        app,
+        &oxy_app_core::custom_app_environment::AppEnvironment::Production,
+        Some(target),
+    )
+    .await;
     let refused = move_draft_pointer(&agent.t.db, app, target, &draft())
         .await
         .expect_err("refused");
@@ -365,6 +384,8 @@ async fn the_drafts_guards_are_asked_again_under_the_apps_row_lock() {
         ),
         "{refused}"
     );
-    let after = app_model(&agent.t.db, app).await;
-    assert_eq!(after.draft_build_id, before.draft_build_id, "nothing moved");
+    let staging_after = crate::app_environments::serving(&agent.t.db, app)
+        .await
+        .staging;
+    assert_eq!(staging_after, staging_before, "nothing moved");
 }

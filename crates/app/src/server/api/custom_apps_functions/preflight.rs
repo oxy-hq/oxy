@@ -185,9 +185,10 @@ pub fn report(refusals: &[Refusal], unchecked: usize) -> String {
     out
 }
 
-/// Every function of every app's published build. Raw SQL over columns that
-/// have been stable since functions shipped, so a release reading prod's rows
-/// does not depend on its own entity shapes matching them.
+/// Every function of every app's production build (the `production` row of
+/// `app_environments`). Raw SQL over columns that have been stable since
+/// functions shipped, so a release reading prod's rows does not depend on its
+/// own entity shapes matching them.
 pub async fn live_functions(db: &DatabaseConnection) -> Result<Vec<LiveFunction>, DbErr> {
     let rows = db
         .query_all_raw(Statement::from_string(
@@ -196,8 +197,9 @@ pub async fn live_functions(db: &DatabaseConnection) -> Result<Vec<LiveFunction>
                     f.name AS function_name, f.manifest_json \
              FROM apps a \
              JOIN organizations o ON o.id = a.org_id \
-             JOIN app_functions f ON f.build_id = a.published_build_id \
-             WHERE a.published_build_id IS NOT NULL \
+             JOIN app_environments e ON e.app_id = a.id AND e.name = 'production' \
+             JOIN app_functions f ON f.build_id = e.build_id \
+             WHERE e.build_id IS NOT NULL \
              ORDER BY o.slug, a.slug, f.name",
         ))
         .await?;

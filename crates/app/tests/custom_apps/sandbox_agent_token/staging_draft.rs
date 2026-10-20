@@ -84,8 +84,9 @@ fn assert_refused(answer: &(StatusCode, Value), status: StatusCode, code: &str, 
 async fn a_draft_moves_stagings_pointer_and_leaves_the_app_row_as_it_was() {
     let agent = staging_agent().await;
     let before = app_model(&agent.t.db, agent.app.id).await;
+    let before_pointers = crate::app_environments::serving(&agent.t.db, agent.app.id).await;
     let production = environment_build(&agent, "production").await;
-    assert!(before.published_build_id.is_some() && before.published_at.is_some());
+    assert!(before_pointers.production.is_some() && before.published_at.is_some());
 
     let fields = [("build_id", "agent-draft-1"), ("environment", "staging")];
     let (status, published) = agent.publish("draft", &fields).await;
@@ -96,26 +97,23 @@ async fn a_draft_moves_stagings_pointer_and_leaves_the_app_row_as_it_was() {
     assert_eq!(published["app_id"], json!(agent.app.id), "{published}");
     assert_eq!(published["is_new_app"], false, "{published}");
 
-    // Staging serves the draft: the pointer and its mirror, together.
+    // Staging serves the draft.
     let draft = build_pk(&agent.t.db, agent.app.id, "agent-draft-1")
         .await
         .expect("the draft's build");
     let after = app_model(&agent.t.db, agent.app.id).await;
-    assert_eq!(after.draft_build_id, Some(draft));
+    let after_pointers = crate::app_environments::serving(&agent.t.db, agent.app.id).await;
+    assert_eq!(after_pointers.staging, Some(draft));
     assert_eq!(environment_build(&agent, "staging").await, Some(draft));
-    // Production does not: its pointer and its mirror are where they were.
-    assert_eq!(after.published_build_id, before.published_build_id);
+    // Production does not: its pointer is where it was.
+    assert_eq!(after_pointers.production, before_pointers.production);
     assert_eq!(environment_build(&agent, "production").await, production);
 
     // And the row production shares is byte for byte what it was — its name,
     // its branch, its workspace, when it was synced and updated, when it was
-    // published and by whom — with the draft pointer the only column moved.
-    let but_the_pointer = apps::Model {
-        draft_build_id: before.draft_build_id,
-        ..after.clone()
-    };
-    assert_eq!(but_the_pointer, before);
-    assert_ne!(after.draft_build_id, before.draft_build_id);
+    // published and by whom.
+    assert_eq!(after, before);
+    assert_ne!(after_pointers.staging, before_pointers.staging);
 
     // The token reads its staging back by name.
     let (status, shown) = agent.app_get("environments/staging").await;
@@ -277,7 +275,8 @@ async fn a_draft_is_held_to_a_live_app_it_was_granted_in_its_own_workspace() {
     .expect("a draft-only app")
     .app_id;
     let row = app_row(&agent.t.db, never_promoted).await;
-    assert!(row.published_build_id.is_none() && row.published_at.is_none());
+    let serving = crate::app_environments::serving(&agent.t.db, never_promoted).await;
+    assert!(serving.production.is_none() && row.published_at.is_none());
     let (_, secret) = mint_with_staging(&agent.cookie, &[never_promoted]).await;
     let bearer = format!("Bearer {secret}");
     let fields = [("build_id", "g3"), ("environment", "staging")];

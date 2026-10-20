@@ -89,6 +89,17 @@ pub async fn get_debug(
         Err(_) => false,
     };
     let channel = pick_channel_for(&app, on_staging);
+    // A lookup failure reads as "serves nothing" here; the manifest read below
+    // reports a database that cannot be reached.
+    let environments = match &db {
+        Ok(db) => super::custom_apps_env_resolve::load_environment_builds(db, &app)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(app_id = %app.id, error = %e, "debug: environments unreadable");
+                Default::default()
+            }),
+        Err(_) => Default::default(),
+    };
 
     let mut snap = DebugSnapshot {
         org_slug,
@@ -102,8 +113,8 @@ pub async fn get_debug(
         },
         channel: channel.as_str(),
         build: match channel {
-            Channel::Draft => app.draft_build_id,
-            Channel::Published => app.published_build_id,
+            Channel::Draft => environments.staging,
+            Channel::Published => environments.production,
         },
         manifest_source: if app.manifest_override.is_some() {
             ManifestSource::DbOverride

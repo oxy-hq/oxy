@@ -19,7 +19,7 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::sandbox_agent_token::fixture::{Agent, app_model, send};
+use crate::sandbox_agent_token::fixture::{Agent, send};
 use crate::sandbox_publish::{build_pk, input, sandbox};
 
 mod agent_built;
@@ -55,10 +55,10 @@ pub(crate) async fn rollback(agent: &Agent, environment: &str, body: Value) -> (
     person(agent, "POST", &uri, Some(body)).await
 }
 
-/// `(production, staging)` as the app row holds them now.
+/// `(production, staging)` as the environment rows hold them now.
 pub(crate) async fn pointers(agent: &Agent) -> (Option<Uuid>, Option<Uuid>) {
-    let app = app_model(&agent.t.db, agent.app.id).await;
-    (app.published_build_id, app.draft_build_id)
+    let serving = crate::app_environments::serving(&agent.t.db, agent.app.id).await;
+    (serving.production, serving.staging)
 }
 
 /// `(environment, build, action)` of the app's events, oldest first.

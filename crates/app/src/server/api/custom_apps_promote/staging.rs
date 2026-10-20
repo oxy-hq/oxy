@@ -2,8 +2,8 @@
 //! promoted to staging (`dev-<handle>` → `staging`), or staging rolled back
 //! (environments design §5.5a, rulings 1, 4 and 6).
 //!
-//! A pointer move like a draft publish's — `apps.draft_build_id` and its
-//! `staging` mirror, in one transaction holding the app's row — whose event
+//! A pointer move like a draft publish's — staging's row, in one transaction
+//! holding the app's row — whose event
 //! is `staging / promote` or `staging / rollback`. That `promote` event is
 //! what later admits a sandbox's build to production: it is staging having
 //! served it. Staging's migrations are then **queued** exactly as a publish
@@ -15,7 +15,7 @@
 
 use entity::{app_builds, apps};
 use oxy_app_core::custom_app_environment::AppEnvironment;
-use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, TransactionTrait};
+use sea_orm::{DatabaseConnection, TransactionTrait};
 use uuid::Uuid;
 
 use super::error::PromoteError;
@@ -49,14 +49,11 @@ pub async fn move_staging(
         .map_err(|e| PromoteError::internal("begin the move", e))?;
     let row = lock_app(&txn, mv.app_id).await?;
     let build = load_build(&txn, mv.app_id, mv.build).await?;
-    check_pointer(row.draft_build_id, &build, mv)?;
-    refuse_agent_built(&txn, &build).await?;
-    let mut active: apps::ActiveModel = row.into();
-    active.draft_build_id = ActiveValue::Set(Some(mv.build));
-    let updated = active
-        .update(&txn)
+    let current = custom_apps_environments::pointer(&txn, mv.app_id, &AppEnvironment::Staging)
         .await
-        .map_err(|e| PromoteError::internal("move staging's pointer", e))?;
+        .map_err(|e| PromoteError::internal("read staging's pointer", e))?;
+    check_pointer(current, &build, mv)?;
+    refuse_agent_built(&txn, &build).await?;
     custom_apps_environments::record_move(
         &txn,
         mv.app_id,
@@ -71,7 +68,7 @@ pub async fn move_staging(
         .await
         .map_err(|e| PromoteError::internal("commit the move", e))?;
     custom_apps_cache::invalidate_app_resolution_cache();
-    Ok(updated)
+    Ok(row)
 }
 
 fn check_pointer(

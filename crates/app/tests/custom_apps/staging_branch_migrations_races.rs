@@ -25,7 +25,14 @@ use crate::staging_branch_migrations::{
 };
 use crate::staging_functions_oltp::{OltpApp, run_then_cleanup};
 
-/// The app's row: its id, and the build its staging pointer names.
+/// The build the app's staging serves.
+async fn staging_of(app: &OltpApp) -> Option<Uuid> {
+    crate::app_environments::serving(&app.t.db, app_row(app).await.id)
+        .await
+        .staging
+}
+
+/// The app's row: its id.
 async fn app_row(app: &OltpApp) -> apps::Model {
     apps::Entity::find()
         .filter(apps::Column::OrgId.eq(app.t.org_id))
@@ -72,7 +79,7 @@ async fn pointer_once_blocked(app: &OltpApp, database: &str) -> Option<Uuid> {
             .expect("read pg_stat_activity")
             .get(0);
         if waiting > 0 {
-            return app_row(app).await.draft_build_id;
+            return staging_of(app).await;
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
@@ -84,7 +91,7 @@ async fn a_locked_branch_warns_and_never_holds_the_pointer_move() {
     let app = OltpApp::provision(&[]).await;
     run_then_cleanup(&app, async {
         let (home, target) = production_then_branch(&app).await;
-        let before = app_row(&app).await.draft_build_id;
+        let before = staging_of(&app).await;
         let (holder, database) = lock_widgets_on(&app, &home).await;
 
         let (published, pointer_while_blocked) = tokio::join!(
@@ -138,7 +145,10 @@ async fn a_file_applied_across_a_reset_is_not_recorded() {
             checksum: "note-checksum".to_string(),
             sql: NOTE.1.to_string(),
         };
-        let build = row.published_build_id.expect("the promoted build");
+        let build = crate::app_environments::serving(&app.t.db, row.id)
+            .await
+            .production
+            .expect("the promoted build");
         let err = apply_to_resolved_branch(&app.t.db, row.id, build, &[note], &resolved)
             .await
             .expect_err("a file applied across a reset is not recorded");

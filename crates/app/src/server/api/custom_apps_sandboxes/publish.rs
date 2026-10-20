@@ -10,7 +10,7 @@
 //!   schema on the org's staging branch, each queued.
 //!
 //! **A sandbox publish never touches the app.** It does not create or rename
-//! the app row, move `apps.draft_build_id`, mirror staging, register a
+//! the app row, move staging's pointer, register a
 //! schedule, or apply a migration to production or to staging's schema on the
 //! org's OLTP staging branch. Two sandboxes of one app must not fight over
 //! production's label.

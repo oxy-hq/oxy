@@ -113,13 +113,17 @@ async fn publish_pinned(t: &Tenant, app: &str, workspace: Uuid, revision: Uuid) 
         .await
         .unwrap()
         .unwrap();
-    let mut build: app_builds::ActiveModel =
-        app_builds::Entity::find_by_id(row.draft_build_id.expect("a staging build"))
-            .one(&t.db)
+    let mut build: app_builds::ActiveModel = app_builds::Entity::find_by_id(
+        crate::app_environments::serving(&t.db, row.id)
             .await
-            .unwrap()
-            .unwrap()
-            .into();
+            .staging
+            .expect("a staging build"),
+    )
+    .one(&t.db)
+    .await
+    .unwrap()
+    .unwrap()
+    .into();
     build.semantic_revision_id = ActiveValue::Set(Some(revision));
     build.update(&t.db).await.expect("pin the staging build");
 }

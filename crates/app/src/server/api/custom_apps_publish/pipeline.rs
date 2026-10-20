@@ -188,7 +188,7 @@ async fn promote(ctx: &Publishing<'_>, build_pk: Uuid) -> Result<(), PublishErro
 /// move can fail the publish. Production's schedules track the LIVE build, so
 /// they are (re)registered only on a PROMOTING publish — a draft must not
 /// start firing background runs in production — and after the pointer moved,
-/// so a fire resolves the just-set `published_build_id`. The environment the
+/// so a fire resolves the just-set production build. The environment the
 /// publish moved outside production is reconciled to its schedules switch. A
 /// schedule failure is a warning: the functions stay route-invocable.
 async fn point(ctx: &Publishing<'_>, build_pk: Uuid) -> Result<Vec<String>, PublishError> {

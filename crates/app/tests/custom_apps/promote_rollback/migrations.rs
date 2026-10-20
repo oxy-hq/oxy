@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::custom_app_functions_fixture::{Tenant, seeded_tenant, throwaway_org};
 use crate::custom_app_functions_shape_zoo_oltp::AppStore;
-use crate::sandbox_publish::{app_row, build_pk, bundle, input, noop};
+use crate::sandbox_publish::{build_pk, bundle, input, noop};
 
 const ORDERS: &[u8] = b"create table orders (id int primary key);";
 const BROKEN: &[u8] = b"create table broken (;";
@@ -88,9 +88,9 @@ impl Migrating {
     }
 
     async fn production(&self) -> Option<Uuid> {
-        app_row(&self.t.db, self.app_id().await)
+        crate::app_environments::serving(&self.t.db, self.app_id().await)
             .await
-            .published_build_id
+            .production
     }
 
     async fn ledger(&self) -> Vec<String> {

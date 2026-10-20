@@ -366,7 +366,11 @@ async fn app_retention(
     app: &apps::Model,
 ) -> (storage::RetentionPolicy, Vec<RetentionRuleDto>) {
     use entity::prelude::AppBuilds;
-    let Some(build_pk) = app.published_build_id.or(app.draft_build_id) else {
+    let active = crate::server::api::custom_apps_env_resolve::load_environment_builds(db, app)
+        .await
+        .ok()
+        .and_then(|builds| builds.active());
+    let Some(build_pk) = active else {
         return (storage::RetentionPolicy::default(), Vec::new());
     };
     let manifest = AppBuilds::find_by_id(build_pk)

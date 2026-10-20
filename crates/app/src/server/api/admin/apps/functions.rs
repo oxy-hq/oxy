@@ -200,7 +200,10 @@ pub async fn list_functions(
     // absent parameter is resolved, and refused, like any other.
     let build_id = match q.environment.as_deref() {
         None if !super::agent_scope::is_agent(&user) => {
-            app.published_build_id.or(app.draft_build_id)
+            crate::server::api::custom_apps_env_resolve::load_environment_builds(&db, &app)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .active()
         }
         raw => {
             let marker = marker.as_ref().map(|axum::Extension(marker)| marker);

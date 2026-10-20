@@ -1,17 +1,27 @@
-//! Environment pointer writes: `app_environments` plus its `app_environment_events`
+//! Environment pointers: `app_environments` plus its `app_environment_events`
 //! history (`internal-docs/2026-09-10-custom-app-environments-design.md` §3).
 //!
-//! **Phase 1a contract.** Every write to `apps.draft_build_id` (staging) or
-//! `apps.published_build_id` (production) also calls [`record_move`], on the same
-//! connection or transaction, so the rows can never disagree with the columns
-//! readers still use. `tests/custom_apps/app_environment_pointer_writes.rs`
-//! enforces this mechanically. Call it by its qualified path,
-//! `custom_apps_environments::record_move(`, because that is the spelling the test
-//! looks for.
+//! **`app_environments.build_id` is the only store of which build an
+//! environment serves.** [`record_move`] is the only writer: every move of
+//! production's, staging's or a sandbox's pointer goes through it, in the
+//! transaction that holds the app's row (`lock_app`), and appends the event.
 //!
-//! **Sandboxes** (`dev-<handle>`, `internal-docs/custom-app-sandboxes.md`) have
-//! no `apps` column to mirror: their row *is* the pointer. [`record_move`] moves
+//! **A write-only mirror, for one release.** The `apps.published_build_id` /
+//! `apps.draft_build_id` columns this replaced still exist, and the previous
+//! release reads them. So for production and staging [`record_move`] also
+//! writes them, in the same transaction, and nothing reads them
+//! (`tests/custom_apps/app_environment_pointer_writes.rs` keeps it so). The
+//! mirror and the columns go in the follow-up that drops them, one promotion
+//! later (#3686): a rolling deploy or a revert then never leaves a replica of
+//! the previous release serving a build the columns no longer name. Readers ask [`fixed_pointers`] (production and staging),
+//! [`fixed_pointers_batch`] (the same for a list of apps, in one query) or
+//! [`pointer`].
+//!
+//! **Sandboxes** (`dev-<handle>`, `internal-docs/custom-app-sandboxes.md`): their
+//! row *is* the pointer and is created by the sandbox API. [`record_move`] moves
 //! it and appends the same event, but never creates the row.
+
+use std::collections::HashMap;
 
 use chrono::{DateTime, FixedOffset, Utc};
 use entity::{app_environment_events, app_environments};
@@ -19,7 +29,7 @@ use oxy_app_core::custom_app_environment::{AppEnvironment, AppEnvironmentKind};
 use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter,
-    QuerySelect,
+    QuerySelect, Statement,
 };
 use uuid::Uuid;
 
@@ -47,8 +57,9 @@ impl EnvAction {
 }
 
 /// Point `environment` of `app_id` at `build_id` (`None` means it serves nothing)
-/// and append the event. Run it inside the transaction that moves the `apps`
-/// pointer it mirrors.
+/// and append the event. Run it inside a transaction that holds the app's row
+/// (`custom_apps_promote::production::lock_app`), so two moves of one app never
+/// interleave.
 ///
 /// **A fixed environment's row is upserted; a sandbox's is only ever moved.** A
 /// `dev-<handle>` row needs an owner and is created by the sandbox API
@@ -70,7 +81,10 @@ pub async fn record_move<C: ConnectionTrait>(
         AppEnvironment::Dev { .. } => {
             move_sandbox(conn, app_id, environment, build_id, actor, now).await?
         }
-        _ => upsert_fixed(conn, app_id, environment, build_id, actor, now).await?,
+        _ => {
+            upsert_fixed(conn, app_id, environment, build_id, actor, now).await?;
+            mirror_to_apps(conn, app_id, environment, build_id).await?;
+        }
     }
 
     app_environment_events::ActiveModel {
@@ -85,6 +99,28 @@ pub async fn record_move<C: ConnectionTrait>(
     .insert(conn)
     .await?;
 
+    Ok(())
+}
+
+/// The write-only mirror (module docs): the `apps` column the previous release
+/// reads for `environment`. Removed, with the column, by #3686.
+async fn mirror_to_apps<C: ConnectionTrait>(
+    conn: &C,
+    app_id: Uuid,
+    environment: &AppEnvironment,
+    build_id: Option<Uuid>,
+) -> Result<(), DbErr> {
+    let sql = match environment {
+        AppEnvironment::Production => "UPDATE apps SET published_build_id = $1 WHERE id = $2",
+        AppEnvironment::Staging => "UPDATE apps SET draft_build_id = $1 WHERE id = $2",
+        AppEnvironment::Dev { .. } => return Ok(()),
+    };
+    conn.execute_raw(Statement::from_sql_and_values(
+        conn.get_database_backend(),
+        sql,
+        [build_id.into(), app_id.into()],
+    ))
+    .await?;
     Ok(())
 }
 
@@ -173,4 +209,82 @@ pub async fn protected_build_ids<C: ConnectionTrait>(
         .all(conn)
         .await?;
     Ok(builds.into_iter().flatten().collect())
+}
+
+/// The builds an app's fixed environments serve. `None`: the environment serves
+/// nothing (no row, or a row with no build).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FixedPointers {
+    pub production: Option<Uuid>,
+    pub staging: Option<Uuid>,
+}
+
+impl FixedPointers {
+    fn set(&mut self, name: &str, build: Option<Uuid>) {
+        match name {
+            "production" => self.production = build,
+            "staging" => self.staging = build,
+            _ => {}
+        }
+    }
+}
+
+/// The builds `production` and `staging` of `app_id` serve, from their rows.
+pub async fn fixed_pointers<C: ConnectionTrait>(
+    conn: &C,
+    app_id: Uuid,
+) -> Result<FixedPointers, DbErr> {
+    let rows = app_environments::Entity::find()
+        .filter(app_environments::Column::AppId.eq(app_id))
+        .filter(app_environments::Column::Name.is_in(["production", "staging"]))
+        .all(conn)
+        .await?;
+    let mut pointers = FixedPointers::default();
+    for row in rows {
+        pointers.set(&row.name, row.build_id);
+    }
+    Ok(pointers)
+}
+
+/// [`fixed_pointers`] for many apps in **one** query — for list endpoints,
+/// which must not pay a query per row. Every id asked for is in the map; an
+/// app with no rows maps to [`FixedPointers::default`].
+pub async fn fixed_pointers_batch<C: ConnectionTrait>(
+    conn: &C,
+    app_ids: &[Uuid],
+) -> Result<HashMap<Uuid, FixedPointers>, DbErr> {
+    let mut pointers: HashMap<Uuid, FixedPointers> = app_ids
+        .iter()
+        .map(|id| (*id, FixedPointers::default()))
+        .collect();
+    if app_ids.is_empty() {
+        return Ok(pointers);
+    }
+    let rows = app_environments::Entity::find()
+        .filter(app_environments::Column::AppId.is_in(app_ids.iter().copied()))
+        .filter(app_environments::Column::Name.is_in(["production", "staging"]))
+        .all(conn)
+        .await?;
+    for row in rows {
+        if let Some(entry) = pointers.get_mut(&row.app_id) {
+            entry.set(&row.name, row.build_id);
+        }
+    }
+    Ok(pointers)
+}
+
+/// The build one environment of `app_id` serves right now: its row's
+/// `build_id`, or `None` when there is no row or it points nowhere. A sandbox
+/// being torn down (`deleting_at` set) serves nothing.
+pub async fn pointer<C: ConnectionTrait>(
+    conn: &C,
+    app_id: Uuid,
+    environment: &AppEnvironment,
+) -> Result<Option<Uuid>, DbErr> {
+    let row = app_environments::Entity::find_by_id((app_id, environment.name()))
+        .one(conn)
+        .await?;
+    Ok(row
+        .filter(|row| row.deleting_at.is_none())
+        .and_then(|row| row.build_id))
 }

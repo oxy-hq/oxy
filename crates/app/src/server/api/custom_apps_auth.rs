@@ -489,6 +489,10 @@ pub(crate) async fn require_app_admin(outcome: &AuthOutcome) -> Result<(), Statu
 /// What the auth flow returns on success.
 pub(crate) struct AuthOutcome {
     pub app: apps::Model,
+    /// The builds the app's environments serve, from the same cached
+    /// resolution as `app`: what a hot path (`/fn`) resolves production from
+    /// without a query of its own.
+    pub environments: super::custom_apps_env_resolve::EnvironmentBuilds,
     pub user_id: Uuid,
     /// `None` for a frontline worker enrolled without a mailbox. Reaches an
     /// app as `ctx.user.email`, so an app that assumes a string gets `null`
@@ -567,6 +571,7 @@ pub(crate) async fn authenticate_and_authorize(
     let user = request.user;
     Ok(AuthOutcome {
         app: request.app,
+        environments: request.environments,
         user_id: user.id,
         user_email: user.email,
         user_name: user.name,

@@ -23,9 +23,13 @@ async fn app(db: &DatabaseConnection, s: &Seeded) -> apps::Model {
 
 /// Make `build` the one production serves.
 async fn publish(db: &DatabaseConnection, s: &Seeded, build: Uuid) {
-    let mut app: apps::ActiveModel = app(db, s).await.into();
-    app.published_build_id = Set(Some(build));
-    app.update(db).await.expect("publish");
+    crate::app_environments::set_pointer(
+        db,
+        s.app_id,
+        &oxy_app_core::custom_app_environment::AppEnvironment::Production,
+        Some(build),
+    )
+    .await;
 }
 
 /// A second build of the seeded app, labelled `b2`.

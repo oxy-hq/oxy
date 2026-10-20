@@ -2,9 +2,8 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// One row per successful publish of a custom app. The bundle's files
-/// live in S3 under `s3_prefix`; `apps.draft_build_id` /
-/// `apps.published_build_id` point at the build currently serving each
-/// channel. Keeping every build (bounded by a keep-last-N GC) is what
+/// live in S3 under `s3_prefix`; each `app_environments.build_id` points at
+/// the build currently serving that environment. Keeping every build (bounded by a keep-last-N GC) is what
 /// makes one-click rollback cheap.
 #[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]

@@ -13,7 +13,7 @@ use oxy::config::model::Database;
 use oxy_app::server::api::custom_apps_functions::preflight::{
     WORKING_WITHIN_DAYS, evaluate, live_functions, worked_recently,
 };
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, IntoActiveModel};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection};
 use uuid::Uuid;
 
 use crate::common::test_db;
@@ -86,7 +86,7 @@ async fn seed(db: &DatabaseConnection) -> Seeded {
     .await
     .expect("seed workspace");
     let app_id = Uuid::new_v4();
-    let app = apps::ActiveModel {
+    apps::ActiveModel {
         id: Set(app_id),
         slug: Set(format!("warehouse-{app_id}")),
         name: Set("Warehouse".into()),
@@ -134,9 +134,13 @@ async fn seed(db: &DatabaseConnection) -> Seeded {
     )
     .await;
 
-    let mut app = app.into_active_model();
-    app.published_build_id = Set(Some(live));
-    app.update(db).await.expect("publish b1");
+    crate::app_environments::set_pointer(
+        db,
+        app_id,
+        &oxy_app_core::custom_app_environment::AppEnvironment::Production,
+        Some(live),
+    )
+    .await;
     Seeded {
         app_id,
         workspace_id,

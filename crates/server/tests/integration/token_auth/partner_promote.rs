@@ -18,9 +18,9 @@ use entity::org_members::{self, OrgRole};
 use entity::{
     app_builds, apps, partner_capabilities, partner_grants, partner_orgs, partner_role_bindings,
 };
-use oxy_app::server::api::custom_apps_environments::{EnvAction, record_move};
+use oxy_app::server::api::custom_apps_environments::{EnvAction, fixed_pointers, record_move};
 use oxy_app_core::custom_app_environment::AppEnvironment;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -126,9 +126,6 @@ async fn draft(fx: &Fixture, app: &apps::Model, label: &str, token: Option<Uuid>
     )
     .await
     .expect("move staging's pointer");
-    let mut row = app.clone().into_active_model();
-    row.draft_build_id = Set(Some(id));
-    row.update(&fx.db).await.expect("move the draft pointer");
     id
 }
 
@@ -168,8 +165,11 @@ async fn the_partner_promote_answers_an_agents_draft_with_the_coded_refusal() {
 
     // Nothing moved, and nothing was recorded as published.
     let row = app_row(&fx, app.id).await;
-    assert_eq!(row.published_build_id, None, "production never moved");
-    assert_eq!(row.draft_build_id, Some(unapproved));
+    let serving = fixed_pointers(&fx.db, app.id)
+        .await
+        .expect("read environments");
+    assert_eq!(serving.production, None, "production never moved");
+    assert_eq!(serving.staging, Some(unapproved));
     assert!(row.last_promoted_by.is_none());
     let published = audit_rows(&fx.db, "partner.app.published").await;
     assert!(published.is_empty(), "{published:?}");
@@ -188,7 +188,10 @@ async fn the_partner_promote_ships_a_persons_draft_and_keeps_its_other_answers()
     assert_eq!(body["published"], true, "{body}");
     assert!(body.get("code").is_none(), "{body}");
     assert_eq!(
-        app_row(&fx, app.id).await.published_build_id,
+        fixed_pointers(&fx.db, app.id)
+            .await
+            .expect("read environments")
+            .production,
         Some(theirs),
         "production serves the person's draft"
     );

@@ -8,6 +8,7 @@ use chrono::Utc;
 use entity::apps;
 use entity::organizations;
 use entity::prelude::{AppBuilds, Apps, Organizations};
+use oxy_app_core::custom_app_environment::AppEnvironment;
 use oxy_shared::utils::slugify;
 use sea_orm::ActiveModelTrait;
 use sea_orm::ActiveValue;
@@ -23,7 +24,7 @@ use uuid::Uuid;
 use crate::server::api::custom_apps_agent_built::{
     self as agent_built, AgentBuilt, PromoteRefusal,
 };
-use crate::server::api::custom_apps_environments::EnvAction;
+use crate::server::api::custom_apps_environments::{self, EnvAction};
 use crate::server::api::custom_apps_promote::{
     self as promote, BuildRef, ProductionMove, PromoteError,
 };
@@ -159,13 +160,17 @@ pub(super) async fn emails_by_user_id(
 pub(super) async fn unsourced_active_build_apps(
     db: &DatabaseConnection,
     rows: &[apps::Model],
+    environments: &EnvironmentsByApp,
 ) -> Result<std::collections::HashSet<Uuid>, sea_orm::DbErr> {
     use entity::app_builds::Column as BuildCol;
 
     // app_builds.id → the app whose active pointer names it.
     let build_to_app: std::collections::HashMap<Uuid, Uuid> = rows
         .iter()
-        .filter_map(|r| r.published_build_id.or(r.draft_build_id).map(|b| (b, r.id)))
+        .filter_map(|r| {
+            let active = environments.get(&r.id)?.active()?;
+            Some((active, r.id))
+        })
         .collect();
     if build_to_app.is_empty() {
         return Ok(std::collections::HashSet::new());
@@ -199,9 +204,11 @@ pub(super) async fn icon_art_by_app(
     db: &sea_orm::DatabaseConnection,
     rows: &[apps::Model],
     org_slugs: &std::collections::HashMap<Uuid, String>,
+    environments: &EnvironmentsByApp,
 ) -> std::collections::HashMap<Uuid, (Option<String>, Option<String>)> {
     let manifests =
-        crate::server::api::custom_apps_manifest::resolve_manifests_batch(db, rows).await;
+        crate::server::api::custom_apps_manifest::resolve_manifests_batch(db, rows, environments)
+            .await;
     rows.iter()
         .filter_map(|app| {
             let slug = org_slugs.get(&app.org_id)?;
@@ -211,11 +218,30 @@ pub(super) async fn icon_art_by_app(
                     manifests.get(&app.id),
                     slug,
                     &app.slug,
-                    app.published_build_id,
+                    environments.get(&app.id).and_then(|e| e.production),
                 ),
             ))
         })
         .collect()
+}
+
+/// The builds each app of a page serves, keyed by app id: what the page's batched
+/// extras (badges, pictures, warnings) read instead of a pointer on each row.
+pub(super) type EnvironmentsByApp =
+    std::collections::HashMap<Uuid, crate::server::api::custom_apps_env_resolve::EnvironmentBuilds>;
+
+/// [`EnvironmentsByApp`] for a page of `rows`, in ONE query. An unreadable
+/// `app_environments` costs the page its extras, not its rows.
+pub(super) async fn environment_builds_for_page(
+    db: &DatabaseConnection,
+    rows: &[apps::Model],
+) -> EnvironmentsByApp {
+    crate::server::api::custom_apps_env_resolve::load_environment_builds_batch(db, rows)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("environment_builds_for_page failed (no badges or pictures): {e}");
+            Default::default()
+        })
 }
 
 pub(super) fn rows_to_responses(
@@ -446,7 +472,13 @@ pub async fn publish_one(
             AppOpError::internal()
         })?
         .ok_or_else(AppOpError::not_found)?;
-    if row.draft_build_id.is_none() {
+    let draft = custom_apps_environments::pointer(db, id, &AppEnvironment::Staging)
+        .await
+        .map_err(|e| {
+            tracing::error!("publish_one {id} staging read failed: {e}");
+            AppOpError::internal()
+        })?;
+    if draft.is_none() {
         return stamp_published(db, row, actor).await;
     }
     // The draft is named again under the app's row lock, so a draft publish

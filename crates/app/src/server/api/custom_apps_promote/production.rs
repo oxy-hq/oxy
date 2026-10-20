@@ -24,8 +24,9 @@
 //!    reversed.
 //! 3. **Move, under the app's row lock** — in one transaction holding
 //!    `apps` `FOR UPDATE`, everything in 1 is asked again of the database as
-//!    it is now, then `published_build_id` and its `production` mirror move
-//!    together (`custom_apps_environments::record_move`).
+//!    it is now, then production's pointer moves
+//!    (`custom_apps_environments::record_move`, the one writer of it) with the
+//!    app's `published_at` and promotion stamps.
 
 use chrono::Utc;
 use entity::{app_builds, apps};
@@ -103,7 +104,7 @@ pub async fn move_production(
             .map_err(|e| PromoteError::internal("load the app", e))?
             .ok_or(PromoteError::AppNotFound)?;
         let build = mv.build.resolve(db, &app).await?;
-        check_pointer(&app, &build, mv)?;
+        check_pointer(db, &app, &build, mv).await?;
         admissible(db, &build).await?;
         let applied = apply_migrations(db, &app, &build).await?;
         let txn = db
@@ -160,11 +161,10 @@ async fn move_resolved<C: ConnectionTrait>(
     mv: &ProductionMove,
     build: app_builds::Model,
 ) -> Result<apps::Model, PromoteError> {
-    check_pointer(&row, &build, mv)?;
+    check_pointer(conn, &row, &build, mv).await?;
     admissible(conn, &build).await?;
     let now = Utc::now().fixed_offset();
     let mut active: apps::ActiveModel = row.into();
-    active.published_build_id = ActiveValue::Set(Some(build.id));
     active.published_at = ActiveValue::Set(Some(now));
     active.last_promoted_by = ActiveValue::Set(mv.actor);
     active.last_promoted_at = ActiveValue::Set(Some(now));
@@ -200,13 +200,18 @@ pub async fn load_build<C: ConnectionTrait>(
         .ok_or_else(|| PromoteError::BuildNotFound(build_pk.to_string()))
 }
 
-/// `target_moved` and `already_serving`, against the pointer `row` holds.
-fn check_pointer(
+/// `target_moved` and `already_serving`, against the pointer production's row
+/// holds as `conn` sees it: for a move's final answer, `conn` is the
+/// transaction holding `row` locked.
+async fn check_pointer<C: ConnectionTrait>(
+    conn: &C,
     row: &apps::Model,
     build: &app_builds::Model,
     mv: &ProductionMove,
 ) -> Result<(), PromoteError> {
-    let current = row.published_build_id;
+    let current = custom_apps_environments::pointer(conn, row.id, &AppEnvironment::Production)
+        .await
+        .map_err(|e| PromoteError::internal("read production's pointer", e))?;
     if let Some(expected) = mv.expect_current
         && expected != current
     {

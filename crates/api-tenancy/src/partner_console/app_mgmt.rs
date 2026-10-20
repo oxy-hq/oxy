@@ -317,7 +317,7 @@ pub async fn publish_app(
     let (name, slug) = (app.name.clone(), app.slug.clone());
 
     // Reuse the canonical publish so the partner path can't drift from admin:
-    // it repoints published_build_id at the draft, stamps last_promoted_*, and
+    // it repoints production at the draft build, stamps last_promoted_*, and
     // drops the per-app canonical-dir caches. Re-stamping published_at by hand
     // would publish a channel with no live bytes behind it. Its refusal is
     // answered whole (`PromoteRefusal`), not cut down to a status.
@@ -348,7 +348,7 @@ pub async fn unpublish_app(
     let org_id = app.org_id;
     let (name, slug) = (app.name.clone(), app.slug.clone());
 
-    // Canonical unpublish: also nulls published_build_id (no dangling pointer)
+    // Canonical unpublish: also clears production's build (no dangling pointer)
     // and drops the per-app canonical-dir caches.
     let saved = admin_apps::unpublish_one(&db, app_id, actor.id)
         .await

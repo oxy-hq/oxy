@@ -30,8 +30,6 @@ fn fake_app(source_type: &str, source_config: serde_json::Value) -> apps::Model 
         manifest_override: None,
         published_at: None,
         repo_path: None,
-        draft_build_id: None,
-        published_build_id: None,
         last_promoted_by: None,
         last_promoted_at: None,
         created_at: chrono::Utc::now().fixed_offset(),

@@ -376,8 +376,6 @@ async fn create_app_unscoped(
         // A new app is a draft until its first build is promoted.
         published_at: ActiveValue::NotSet,
         repo_path: ActiveValue::Set(Some(repo_path)),
-        draft_build_id: ActiveValue::NotSet,
-        published_build_id: ActiveValue::NotSet,
         last_promoted_by: ActiveValue::NotSet,
         last_promoted_at: ActiveValue::NotSet,
         created_at: ActiveValue::Set(now),
@@ -524,23 +522,28 @@ pub async fn list_apps_scoped(
             tracing::warn!("promoter email lookup failed (no attribution): {e}");
             Default::default()
         });
+    // The builds each app's environments serve, for the page in ONE query. Fail-soft
+    // like the other batched extras: the page loses badges and pictures, not rows.
+    let environments = environment_builds_for_page(&db, &rows).await;
     // Which apps are serving a build with no traceable source. Same batched
     // shape, same fail-soft posture: an operator losing the warning is far
     // better than the list 500ing over it.
-    let unsourced = unsourced_active_build_apps(&db, &rows)
+    let unsourced = unsourced_active_build_apps(&db, &rows, &environments)
         .await
         .unwrap_or_else(|e| {
             tracing::warn!("unsourced_active_build_apps failed (no warnings shown): {e}");
             Default::default()
         });
     // Who published each live build — same batched shape, same fail-soft posture.
-    let live_publishers = live_build_publishers(&db, &rows).await.unwrap_or_else(|e| {
-        tracing::warn!("live_build_publishers failed (no CI badges shown): {e}");
-        Default::default()
-    });
+    let live_publishers = live_build_publishers(&db, &rows, &environments)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("live_build_publishers failed (no CI badges shown): {e}");
+            Default::default()
+        });
     // Manifest-derived icon/art for the whole page in ONE batched query — same
     // N+1-avoidance as the promoter/last-active lookups above.
-    let mut icon_art = icon_art_by_app(&db, &rows, &org_slugs).await;
+    let mut icon_art = icon_art_by_app(&db, &rows, &org_slugs, &environments).await;
     let mut items = rows_to_responses(rows, &org_slugs);
     for item in items.iter_mut() {
         item.source_unrecorded = unsourced.contains(&item.id);
@@ -603,20 +606,21 @@ struct LivePublisher {
 /// `app id → publisher` of its live build, for every app on the page that
 /// has one — ONE `IN` query, like `unsourced_active_build_apps`.
 ///
-/// Only the `published_build_id` pointer, not that helper's draft fallback:
+/// Only production's pointer, not that helper's staging fallback:
 /// the question is how the build in front of users got there, and a draft is
 /// in front of nobody. `select_only`, because `app_builds` carries the
 /// `manifest_json` blob.
 async fn live_build_publishers(
     db: &sea_orm::DatabaseConnection,
     rows: &[apps::Model],
+    environments: &EnvironmentsByApp,
 ) -> Result<std::collections::HashMap<Uuid, LivePublisher>, sea_orm::DbErr> {
     use entity::app_builds::Column as BuildCol;
 
     // app_builds.id → the app whose live pointer names it.
     let build_to_app: std::collections::HashMap<Uuid, Uuid> = rows
         .iter()
-        .filter_map(|r| r.published_build_id.map(|b| (b, r.id)))
+        .filter_map(|r| environments.get(&r.id)?.production.map(|b| (b, r.id)))
         .collect();
     if build_to_app.is_empty() {
         return Ok(Default::default());
@@ -686,7 +690,8 @@ pub async fn list_my_apps(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     // Manifest-derived icon/art in ONE batched query (no N+1).
-    let mut icon_art = icon_art_by_app(&db, &rows, &org_slugs).await;
+    let environments = environment_builds_for_page(&db, &rows).await;
+    let mut icon_art = icon_art_by_app(&db, &rows, &org_slugs, &environments).await;
     let mut items = rows_to_responses(rows, &org_slugs);
     for item in items.iter_mut() {
         if let Some((icon, art)) = icon_art.remove(&item.id) {
@@ -715,33 +720,36 @@ pub async fn get_app(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    // The app's `app_environments` rows, read once: production's build pins the
+    // picture URLs, the manifests come from either build, and staging's build
+    // is the `staging_url` link (`AppResponse::staging_url` / `staging_url_for`).
+    // Degrades rather than failing the whole detail page: an optional link and
+    // a picture aren't worth a 500 on an otherwise-loadable app.
+    let env_builds =
+        match crate::server::api::custom_apps_env_resolve::load_environment_builds(&db, &row).await
+        {
+            Ok(env_builds) => Some(env_builds),
+            Err(e) => {
+                tracing::warn!(app_id = %row.id, "couldn't load app_environments: {e}");
+                None
+            }
+        };
+    let by_app: EnvironmentsByApp = env_builds.iter().map(|b| (row.id, b.clone())).collect();
     let manifests = crate::server::api::custom_apps_manifest::resolve_manifests_batch(
         &db,
         std::slice::from_ref(&row),
+        &by_app,
     )
     .await;
     let (icon_url, art_url) = crate::server::api::workspace_custom_apps::icon_art_urls(
         manifests.get(&row.id),
         &org.slug,
         &row.slug,
-        row.published_build_id,
+        env_builds.as_ref().and_then(|b| b.production),
     );
-    // One extra `app_environments` read, detail-response only — see
-    // `AppResponse::staging_url` / `staging_url_for`. Degrades rather than
-    // failing the whole detail page: the manifest lookup just above does the
-    // same, and an optional link isn't worth a 500 on an otherwise-loadable
-    // app.
-    let staging_url = match crate::server::api::custom_apps_env_resolve::load_environment_builds(
-        &db, &row,
-    )
-    .await
-    {
-        Ok(env_builds) => staging_url_for(&org.slug, &row.slug, &env_builds),
-        Err(e) => {
-            tracing::warn!(app_id = %row.id, "staging_url: couldn't load app_environments: {e}");
-            None
-        }
-    };
+    let staging_url = env_builds
+        .as_ref()
+        .and_then(|b| staging_url_for(&org.slug, &row.slug, b));
     let mut resp = AppResponse::from_model_with_org(row, &org.slug);
     resp.icon_url = icon_url;
     resp.art_url = art_url;
@@ -924,7 +932,17 @@ async fn promote_response(
     app: apps::Model,
     org_slug: &str,
 ) -> PromoteResponse {
-    let semantic_pin = match app.published_build_id {
+    let live = crate::server::api::custom_apps_environments::pointer(
+        db,
+        app.id,
+        &oxy_app_core::custom_app_environment::AppEnvironment::Production,
+    )
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!(app_id = %app.id, "promote_response: production's build unreadable: {e}");
+        None
+    });
+    let semantic_pin = match live {
         Some(build) => crate::server::api::custom_apps_staging_pin::pin_drift(db, build).await,
         None => None,
     };
@@ -1136,7 +1154,11 @@ pub(super) async fn machine_may_run(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
     // The build the run will use, resolved the way `list_functions` does.
-    let Some(build_id) = app.published_build_id.or(app.draft_build_id) else {
+    let active = crate::server::api::custom_apps_env_resolve::load_environment_builds(db, &app)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .active();
+    let Some(build_id) = active else {
         return Err(StatusCode::NOT_FOUND);
     };
     let row = AppFunctions::find()
@@ -1204,11 +1226,17 @@ pub async fn list_builds(Path(id): Path<Uuid>) -> Result<Json<BuildHistoryRespon
             .map(|u| (u.id, u.label().to_string()))
             .collect()
     };
+    let serving = crate::server::api::custom_apps_environments::fixed_pointers(&db, id)
+        .await
+        .map_err(|e| {
+            tracing::error!("list_builds environment lookup failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let builds_out: Vec<BuildSummary> = builds
         .into_iter()
         .map(|b| BuildSummary {
-            is_draft: app.draft_build_id == Some(b.id),
-            is_published: app.published_build_id == Some(b.id),
+            is_draft: serving.staging == Some(b.id),
+            is_published: serving.production == Some(b.id),
             published_by_email: b.published_by.and_then(|uid| emails.get(&uid).cloned()),
             published_via: b.published_via,
             id: b.id,
@@ -1254,6 +1282,14 @@ pub async fn rollback_app(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    // The build production serves before the move: the audit row's "from".
+    let previous = crate::server::api::custom_apps_environments::pointer(
+        &db,
+        row.id,
+        &oxy_app_core::custom_app_environment::AppEnvironment::Production,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let build = AppBuilds::find_by_id(req.build_id)
         .one(&db)
         .await
@@ -1287,7 +1323,7 @@ pub async fn rollback_app(
             &oxy_app_core::custom_app_environment::AppEnvironment::Production,
         ),
         None,
-        (build.id, row.published_build_id),
+        (build.id, previous),
     )
     .await;
     Ok(Json(promote_response(&db, moved.app, &org.slug).await))

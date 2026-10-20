@@ -236,7 +236,7 @@ fn publication_check(state: PublicationState) -> Check {
         // own sentence rather than the never-promoted one.
         (false, true) => Check::fail(
             NAME,
-            "app is marked published but has no published build — `published_build_id` is unset, \
+            "app is marked published but has no published build — production's build is unset, \
              so the serve path 404s every request. Run `oxyc publish`, or promote an existing build.",
         ),
         (false, false) => Check::fail(
@@ -328,7 +328,7 @@ async fn load_build(build_pk: Uuid) -> Result<entity::app_builds::Model, String>
         // The pointer outlived the row. Rare, but exactly the state that serves
         // a 404 to every visitor while the admin list still shows the app as
         // published.
-        Ok(None) => Err("published_build_id points at a build row that no longer exists".into()),
+        Ok(None) => Err("production's build points at a build row that no longer exists".into()),
         Err(e) => Err(format!("build lookup failed: {e}")),
     }
 }

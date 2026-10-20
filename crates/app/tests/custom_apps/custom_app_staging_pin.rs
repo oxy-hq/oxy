@@ -164,10 +164,9 @@ async fn seed_world(db: &DatabaseConnection) -> World {
         .unwrap()
         .unwrap()
         .into();
-    row.published_build_id = ActiveValue::Set(Some(live_build));
-    row.draft_build_id = ActiveValue::Set(Some(draft_build));
     row.published_at = ActiveValue::Set(Some(chrono::Utc::now().into()));
-    row.update(db).await.expect("point builds");
+    row.update(db).await.expect("publish the app");
+    crate::app_environments::point(db, app, Some(draft_build), Some(live_build)).await;
 
     // Platform standing that reaches every org with `develop_apps`.
     let now = chrono::Utc::now().fixed_offset();

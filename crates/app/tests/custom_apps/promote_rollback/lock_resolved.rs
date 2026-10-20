@@ -3,7 +3,7 @@
 //! before the lock) is the build made live, not the one it replaced.
 
 use chrono::{Duration, Utc};
-use entity::{app_builds, apps};
+use entity::app_builds;
 use oxy_app::server::api::custom_apps_environments::EnvAction;
 use oxy_app::server::api::custom_apps_promote::{BuildRef, ProductionMove, move_production};
 use sea_orm::sea_query::Expr;
@@ -25,12 +25,13 @@ async fn newer_draft_not_yet_landed(agent: &Agent, stg: Uuid) -> Uuid {
 }
 
 async fn set_draft<C: sea_orm::ConnectionTrait>(db: &C, app_id: Uuid, build: Uuid) {
-    apps::Entity::update_many()
-        .col_expr(apps::Column::DraftBuildId, Expr::value(Some(build)))
-        .filter(apps::Column::Id.eq(app_id))
-        .exec(db)
-        .await
-        .expect("point the draft");
+    crate::app_environments::set_pointer(
+        db,
+        app_id,
+        &oxy_app_core::custom_app_environment::AppEnvironment::Staging,
+        Some(build),
+    )
+    .await;
 }
 
 fn move_to(agent: &Agent, build: BuildRef) -> ProductionMove {

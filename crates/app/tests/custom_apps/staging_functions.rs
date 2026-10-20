@@ -124,9 +124,10 @@ async fn a_staging_host_runs_the_staging_build_as_staging() {
         .await
         .expect("query app")
         .expect("the app");
+    let serving = crate::app_environments::serving(&t.db, row.id).await;
     let (production_pk, staging_pk) = (
-        row.published_build_id.expect("production build"),
-        row.draft_build_id.expect("staging build"),
+        serving.production.expect("production build"),
+        serving.staging.expect("staging build"),
     );
     make_guest_staff();
 

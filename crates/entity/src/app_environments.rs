@@ -4,10 +4,11 @@ use serde::{Deserialize, Serialize};
 /// One named environment of a custom app: `production`, `staging`, or a
 /// `dev-<handle>` sandbox. `build_id` names the build that environment serves.
 ///
-/// Production and staging rows mirror `apps.published_build_id` and
-/// `apps.draft_build_id`, written in the same transaction by
-/// `custom_apps_environments::record_move`. A sandbox's row is created and
-/// deleted by `custom_apps_sandboxes`; `record_move` only moves its pointer.
+/// This row is the only store of which build an environment serves; the
+/// production and staging rows are written by
+/// `custom_apps_environments::record_move`, in the transaction that holds the
+/// app's row. A sandbox's row is created and deleted by
+/// `custom_apps_sandboxes`; `record_move` only moves its pointer.
 /// Naming rules: `oxy_app_core::custom_app_environment`.
 #[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]

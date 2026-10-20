@@ -102,8 +102,6 @@ mod tests {
             manifest_override: None,
             published_at: None,
             repo_path: None,
-            draft_build_id: Some(Uuid::from_u128(2)),
-            published_build_id: Some(Uuid::from_u128(1)),
             last_promoted_by: None,
             last_promoted_at: None,
             created_at: now,

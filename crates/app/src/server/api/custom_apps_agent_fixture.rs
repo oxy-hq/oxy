@@ -80,8 +80,6 @@ pub fn app(id: Uuid, org_id: Uuid, workspace_id: Uuid) -> entity::apps::Model {
         manifest_override: None,
         published_at: None,
         repo_path: None,
-        draft_build_id: None,
-        published_build_id: None,
         last_promoted_by: None,
         last_promoted_at: None,
         created_at: now,

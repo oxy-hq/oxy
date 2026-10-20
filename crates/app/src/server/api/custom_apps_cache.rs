@@ -143,9 +143,9 @@ pub(super) fn remember_model_term(
 // resolved together and neither is useful without the other. Dropped by the
 // `invalidate_app_resolution_cache*` family on any app-row mutation
 // (publish, promote, visibility, delete, rename) — the app row carries
-// `published_at`, `draft_build_id`, `published_build_id` and `visibility`,
-// all of which steer the serve decision, so a stale row must not outlive a
-// publish.
+// `published_at` and `visibility`, and the entry carries the builds the app's
+// environments serve — all of which steer the serve decision, so a stale row
+// must not outlive a publish.
 
 /// An `(organizations, apps)` row pair resolved from a URL's slugs, and the
 /// builds the app's environments serve (`app_environments`). The environment

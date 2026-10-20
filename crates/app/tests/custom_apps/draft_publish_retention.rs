@@ -62,15 +62,9 @@ async fn drafts_after_a_promote_leave_every_rollback_target() {
     assert_eq!(kept.len(), 13, "three served and ten drafts: {kept:?}");
 
     // Production still serves the last promote, and staging the last draft.
-    let app = app_row(&t.db, app_id).await;
-    assert_eq!(
-        app.published_build_id,
-        build_pk(&t.db, app_id, "prod-3").await
-    );
-    assert_eq!(
-        app.draft_build_id,
-        build_pk(&t.db, app_id, "draft-12").await
-    );
+    let serving = crate::app_environments::serving(&t.db, app_id).await;
+    assert_eq!(serving.production, build_pk(&t.db, app_id, "prod-3").await);
+    assert_eq!(serving.staging, build_pk(&t.db, app_id, "draft-12").await);
 }
 
 /// The sandboxes' window is untouched by the new one: after a promote and ten

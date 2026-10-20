@@ -284,22 +284,26 @@ pub(super) async fn resolve_manifest(
 
 /// Resolve manifests for MANY apps with a **single** `app_builds` query — the
 /// batched counterpart to [`resolve_manifest`], for paginated list endpoints
-/// (avoids an N+1 per-page). Precedence per app mirrors `resolve_manifest`:
-/// `manifest_override` → the published build's `manifest_json` (falling back to
-/// the draft build) → local-folder disk → none. Returns a map keyed by app id;
-/// apps with no resolvable manifest are simply absent. Metadata — individual
-/// failures are skipped, never fatal. See the `oxy-app-visual-identity` skill.
+/// (avoids an N+1 per-page). `environments` is the page's builds, read by the
+/// caller with `load_environment_builds_batch` because it needs them for more
+/// than the manifests (production's build pins the picture URLs). Precedence
+/// per app mirrors `resolve_manifest`: `manifest_override` → production's
+/// build's `manifest_json` (falling back to staging's) → none. Returns a map
+/// keyed by app id; apps with no resolvable manifest are simply absent.
+/// Metadata — individual failures are skipped, never fatal. See the
+/// `oxy-app-visual-identity` skill.
 pub(super) async fn resolve_manifests_batch(
     db: &DatabaseConnection,
     apps: &[apps::Model],
+    environments: &std::collections::HashMap<
+        uuid::Uuid,
+        super::custom_apps_env_resolve::EnvironmentBuilds,
+    >,
 ) -> std::collections::HashMap<uuid::Uuid, OxyAppManifest> {
     use std::collections::{HashMap, HashSet};
     // 1. Collect the build ids we might read (production's, staging's as the
     //    fallback), skipping apps that carry an inline override (no build
-    //    lookup needed). One query for every app's environments.
-    let environments = super::custom_apps_env_resolve::load_environment_builds_batch(db, apps)
-        .await
-        .unwrap_or_default();
+    //    lookup needed).
     let mut build_ids: HashSet<uuid::Uuid> = HashSet::new();
     for app in apps {
         if app.manifest_override.is_some() {

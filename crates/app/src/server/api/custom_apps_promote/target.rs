@@ -10,18 +10,20 @@
 //! means now, and a different answer starts the move over for the newer build.
 
 use entity::{app_builds, apps};
+use oxy_app_core::custom_app_environment::AppEnvironment;
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder};
 use uuid::Uuid;
 
 use super::error::PromoteError;
 use super::production::load_build;
+use crate::server::api::custom_apps_environments;
 
 /// The build a production move goes to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildRef {
     /// `app_builds.id`, as given.
     Id(Uuid),
-    /// The build staging serves (`apps.draft_build_id`) when the row is read.
+    /// The build staging serves (its `app_environments` row) when it is read.
     Draft,
     /// The app's newest build, whatever served it.
     Newest,
@@ -44,9 +46,11 @@ impl BuildRef {
         match self {
             Self::Id(build) => load_build(conn, row.id, *build).await,
             Self::Draft => {
-                let draft = row
-                    .draft_build_id
-                    .ok_or_else(|| PromoteError::NothingToPromote("staging".to_string()))?;
+                let draft =
+                    custom_apps_environments::pointer(conn, row.id, &AppEnvironment::Staging)
+                        .await
+                        .map_err(|e| PromoteError::internal("read staging's pointer", e))?
+                        .ok_or_else(|| PromoteError::NothingToPromote("staging".to_string()))?;
                 load_build(conn, row.id, draft).await
             }
             Self::Newest => newest_build(conn, row.id).await,

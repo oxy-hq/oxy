@@ -13,7 +13,7 @@
 //! | --- | --- | --- | --- |
 //! | 1 | `environment=staging`, and not `promote` | `403 sandbox_token_refused` | the token moving production's pointer |
 //! | 2 | the app exists and its staging is the token's to open (oxy-authz, the `app_staging` grant) | `404 environment_not_found` | another app's or org's staging, and a token minted without it |
-//! | 3 | the app is live: `published_build_id` and `published_at` both set | `409 app_not_live` | production falling back to the draft build for `/fn` and schedules |
+//! | 3 | the app is live: a production build and `published_at` both set | `409 app_not_live` | production falling back to the draft build for `/fn` and schedules |
 //! | 4 | the publish's workspace is the app's | `409 project_mismatch` | a re-home of `apps.project_id` |
 //! | 5 | no `name`, `branch` or `semantic_revision_id`, and the app row is not upserted | `400 publish_field_refused` | the customers' launcher label, the source branch and the row itself changing |
 //! | 6 | builds production served keep a retention window of their own (`retention::beyond`) | — | ten drafts pruning the builds production rolls back to |
@@ -21,10 +21,9 @@
 //! Guard 5's second half is what [`admit_agent_draft`] answers: the app's id,
 //! which makes the publish take the row as it is (`AppMutationRollback::
 //! Untouched`) instead of upserting it. The one column of the row a draft
-//! still writes is the pointer it exists to move, `apps.draft_build_id`,
-//! with its `staging` mirror — the console's promote and build history read
-//! that column, so leaving it behind would make the next promote ship the
-//! previous draft.
+//! still writes is the pointer it exists to move, staging's
+//! `app_environments` row — the console's promote and build history read it,
+//! so leaving it behind would make the next promote ship the previous draft.
 //!
 //! Guard 6 is not a check: it is the retention rule every publisher prunes
 //! by. A draft's build is in the drafts' window, never production's.
@@ -54,13 +53,12 @@ use axum::http::StatusCode;
 use entity::apps;
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, DatabaseConnection, DbErr, EntityTrait, QuerySelect,
-    TransactionTrait,
+    ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, QuerySelect, TransactionTrait,
 };
 use uuid::Uuid;
 
 use crate::server::api::custom_apps_env_resolve::may_open_environment;
-use crate::server::api::custom_apps_environments::EnvAction;
+use crate::server::api::custom_apps_environments::{self, EnvAction};
 use crate::server::api::custom_apps_publish::{PublishError, PublishInput};
 
 /// Why a sandbox agent token's draft was refused, where the refusal is this
@@ -152,15 +150,28 @@ pub(crate) fn refuse_shape(input: &PublishInput) -> Result<(), PublishError> {
     }
 }
 
-/// Guard 3: production serves a build of its own. Both columns, as the serve
-/// path reads them: an unpublished app keeps neither.
-pub(crate) fn is_live(app: &apps::Model) -> bool {
-    app.published_build_id.is_some() && app.published_at.is_some()
+/// Guard 3: production serves a build of its own (`production`, the build its
+/// row names) and the app has its `published_at`, as the serve path reads
+/// them: an unpublished app keeps neither.
+pub(crate) fn is_live(app: &apps::Model, production: Option<Uuid>) -> bool {
+    production.is_some() && app.published_at.is_some()
 }
 
-/// Guards 3 and 4, on the app row in hand.
-fn refuse_app_state(app: &apps::Model, input: &PublishInput) -> Result<(), AgentDraftRefusal> {
-    if !is_live(app) {
+/// Production's pointer, for guard 3.
+async fn production_pointer<C: ConnectionTrait>(
+    conn: &C,
+    app_id: Uuid,
+) -> Result<Option<Uuid>, DbErr> {
+    custom_apps_environments::pointer(conn, app_id, &AppEnvironment::Production).await
+}
+
+/// Guards 3 and 4, on the app row in hand and the build production's row names.
+fn refuse_app_state(
+    app: &apps::Model,
+    production: Option<Uuid>,
+    input: &PublishInput,
+) -> Result<(), AgentDraftRefusal> {
+    if !is_live(app, production) {
         return Err(AgentDraftRefusal::AppNotLive {
             app_slug: app.slug.clone(),
         });
@@ -205,13 +216,16 @@ pub(crate) async fn admit_agent_draft(
         return Err(AgentDraftRefusal::NotFound.into());
     }
     // 3 and 4: a live app, in the workspace this publish names.
-    refuse_app_state(app, input)?;
+    let production = production_pointer(db, app.id)
+        .await
+        .map_err(|e| PublishError::Db(e.to_string()))?;
+    refuse_app_state(app, production, input)?;
     // 5, the other half: the id is what keeps `upsert_app` off the row.
     Ok(app.id)
 }
 
-/// Move staging's pointer to a sandbox agent token's draft: `apps.draft_build_id`
-/// and its `staging` mirror, in one transaction that **holds the app's row**.
+/// Move staging's pointer to a sandbox agent token's draft, in one transaction
+/// that **holds the app's row**.
 ///
 /// Guards 3 and 4 are asked again here, of the row as it is under the lock:
 /// an app unpublished or re-homed since [`admit_agent_draft`] read it is
@@ -233,11 +247,9 @@ pub async fn move_draft_pointer(
         .await
         .map_err(db_err)?
         .ok_or(AgentDraftRefusal::NotFound)?;
-    refuse_app_state(&row, input)?;
-    let mut active: apps::ActiveModel = row.into();
-    active.draft_build_id = ActiveValue::Set(Some(build_pk));
-    active.update(&txn).await.map_err(db_err)?;
-    crate::server::api::custom_apps_environments::record_move(
+    let production = production_pointer(&txn, app_id).await.map_err(db_err)?;
+    refuse_app_state(&row, production, input)?;
+    custom_apps_environments::record_move(
         &txn,
         app_id,
         &AppEnvironment::Staging,

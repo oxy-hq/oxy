@@ -341,7 +341,12 @@ impl ServeContext {
                 .record(StatusCode::INTERNAL_SERVER_ERROR);
             return Err(StatusCode::INTERNAL_SERVER_ERROR.into_response());
         }
-        let runtime = AppRuntimeConfig::from_app(&request.app, &request.org.slug, &environment);
+        let runtime = AppRuntimeConfig::from_app(
+            &request.app,
+            request.environments.production,
+            &request.org.slug,
+            &environment,
+        );
         Ok(Self {
             started,
             environment,

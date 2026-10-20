@@ -2,25 +2,25 @@
 //! production — the read side of `app_environments`
 //! (`internal-docs/2026-09-10-custom-app-environments-design.md` §3, Phase 1b).
 //!
-//! Phase 1a mirrored every pointer write into `app_environments`; Phase 1b
-//! switches the readers here, so every reader asks one question —
-//! [`resolve_environment`] — instead of each picking `apps.published_build_id`
-//! or `apps.draft_build_id` for itself. Phase 1c drops the columns once nothing
-//! reads them.
+//! `app_environments.build_id` is the only store of the build an environment
+//! serves (the `apps` build-id columns are retired and unread), so every
+//! reader asks one question — [`resolve_environment`] — and the answer is the
+//! environment's row.
 //!
-//! **A missing row falls back to its column.** 1a's backfill and mirrored writes
-//! should leave no app with a pointer and no row; if one exists anyway, serving
-//! what the column says keeps production exactly as it was, and the warning is
-//! the evidence to go and find the writer that skipped the mirror.
+//! **A missing row serves nothing.** `custom_apps_environments::record_move` is
+//! the only writer of a pointer and creates the row of a fixed environment on
+//! its first move, so an app with no `production` row has never been promoted
+//! and one with no `staging` row has never been published to.
 //!
-//! **Production asks no query.** [`resolve_environment`] and
-//! [`resolve_function_environment`] answer production from the `apps` row the
-//! caller already holds — `published_build_id`, exactly as every production
-//! reader did before `app_environments` existed — and read `app_environments`
-//! only for a non-production environment. Every production `/fn` call and
-//! scheduled run goes through them, so a query there was a round trip on the
-//! hottest path and turned a database blip into a 500 for production traffic
-//! that never needed the table (PR #3381 review).
+//! **Production costs one read, like staging, unless the caller holds the
+//! cache.** [`resolve_environment`] and [`resolve_function_environment`] read
+//! the app's `production` and `staging` rows together in one query
+//! (`custom_apps_environments::fixed_pointers`), a primary-key prefix lookup on
+//! `app_environments`. The serve path and the `/fn` route do not pay it per
+//! request: the app resolution cache carries the [`EnvironmentBuilds`]
+//! (`custom_apps_cache::ResolvedApp`), and [`resolve_function_environment_cached`]
+//! answers production from them. Webhooks and the scheduled runner have no
+//! cache and pay the read.
 //!
 //! **The functions fallback is today's, kept on purpose.** Every function
 //! reader resolved `published_build_id.or(draft_build_id)`: an app that has
@@ -61,12 +61,14 @@
 //! copies or re-derives it: whatever resolves the staging environment gets
 //! `staging`'s `build_id`, and the pin is read from that build
 //! (`custom_apps_staging_pin::pinned_revision_for`) exactly as the draft preview
-//! reads it — the staging row mirrors `draft_build_id`, so it is the same build.
+//! reads it — the build staging's row names.
 
 use entity::{app_environments, apps};
 use oxy_app_core::custom_app_environment::{AppEnvironment, AppEnvironmentKind};
 use sea_orm::{ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QueryOrder};
 use uuid::Uuid;
+
+use super::custom_apps_environments::{self, FixedPointers};
 
 /// One app environment and the build it serves right now.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -93,6 +95,11 @@ pub struct EnvironmentBuilds {
 }
 
 impl EnvironmentBuilds {
+    /// The build most readers call "active": production's, else staging's.
+    pub fn active(&self) -> Option<Uuid> {
+        self.production.or(self.staging)
+    }
+
     /// The build `environment` itself serves.
     pub fn resolve(&self, environment: &AppEnvironment) -> ResolvedEnvironment {
         let build_id = match environment {
@@ -152,106 +159,37 @@ impl EnvironmentBuilds {
     }
 }
 
-/// Read `app`'s environment rows. A fixed environment with no row takes its
-/// legacy column instead, with a warning (see the module docs).
+/// Read `app`'s `production` and `staging` rows.
 pub async fn load_environment_builds<C: ConnectionTrait>(
     db: &C,
     app: &apps::Model,
 ) -> Result<EnvironmentBuilds, DbErr> {
-    let rows = app_environments::Entity::find()
-        .filter(app_environments::Column::AppId.eq(app.id))
-        .filter(app_environments::Column::Name.is_in(["production", "staging"]))
-        .all(db)
-        .await?;
-    let row = |name: &str| rows.iter().find(|r| r.name == name).map(|r| r.build_id);
-    Ok(EnvironmentBuilds {
-        production: from_row_or_column(
-            app.id,
-            "production",
-            row("production"),
-            app.published_build_id,
-        ),
-        staging: from_row_or_column(app.id, "staging", row("staging"), app.draft_build_id),
-    })
+    Ok(custom_apps_environments::fixed_pointers(db, app.id)
+        .await?
+        .into())
 }
 
 /// [`load_environment_builds`] for many apps in **one** query — for list
-/// endpoints, which must not pay a query per row.
+/// endpoints, which must not pay a query per row. Every id asked for is in
+/// the map.
 pub async fn load_environment_builds_batch<C: ConnectionTrait>(
     db: &C,
     apps: &[apps::Model],
 ) -> Result<std::collections::HashMap<Uuid, EnvironmentBuilds>, DbErr> {
-    let rows = if apps.is_empty() {
-        Vec::new()
-    } else {
-        app_environments::Entity::find()
-            .filter(app_environments::Column::AppId.is_in(apps.iter().map(|a| a.id)))
-            .filter(app_environments::Column::Name.is_in(["production", "staging"]))
-            .all(db)
-            .await?
-    };
-    Ok(apps
-        .iter()
-        .map(|app| {
-            let row = |name: &str| {
-                rows.iter()
-                    .find(|r| r.app_id == app.id && r.name == name)
-                    .map(|r| r.build_id)
-            };
-            let builds = EnvironmentBuilds {
-                production: from_row_or_column(
-                    app.id,
-                    "production",
-                    row("production"),
-                    app.published_build_id,
-                ),
-                staging: from_row_or_column(app.id, "staging", row("staging"), app.draft_build_id),
-            };
-            (app.id, builds)
-        })
+    let app_ids: Vec<Uuid> = apps.iter().map(|app| app.id).collect();
+    Ok(custom_apps_environments::fixed_pointers_batch(db, &app_ids)
+        .await?
+        .into_iter()
+        .map(|(id, pointers)| (id, pointers.into()))
         .collect())
 }
 
-fn from_row_or_column(
-    app_id: Uuid,
-    environment: &str,
-    row: Option<Option<Uuid>>,
-    column: Option<Uuid>,
-) -> Option<Uuid> {
-    match row {
-        Some(build) => build,
-        None => {
-            if column.is_some() {
-                tracing::warn!(
-                    %app_id,
-                    environment,
-                    "app has a build pointer but no app_environments row; serving the pointer"
-                );
-            }
-            column
+impl From<FixedPointers> for EnvironmentBuilds {
+    fn from(pointers: FixedPointers) -> Self {
+        Self {
+            production: pointers.production,
+            staging: pointers.staging,
         }
-    }
-}
-
-/// The builds as the `apps` row in hand says — production's answer, read
-/// without a query (see the module docs).
-fn from_app_row(app: &apps::Model) -> EnvironmentBuilds {
-    EnvironmentBuilds {
-        production: app.published_build_id,
-        staging: app.draft_build_id,
-    }
-}
-
-/// The builds to resolve `environment` from: the row in hand for production,
-/// `app_environments` for anything else.
-async fn builds_for<C: ConnectionTrait>(
-    db: &C,
-    app: &apps::Model,
-    environment: &AppEnvironment,
-) -> Result<EnvironmentBuilds, DbErr> {
-    match environment {
-        AppEnvironment::Production => Ok(from_app_row(app)),
-        _ => load_environment_builds(db, app).await,
     }
 }
 
@@ -265,7 +203,24 @@ pub async fn resolve_environment<C: ConnectionTrait>(
     if matches!(environment, AppEnvironment::Dev { .. }) {
         return resolve_sandbox(db, app.id, environment).await;
     }
-    Ok(builds_for(db, app, environment).await?.resolve(environment))
+    Ok(load_environment_builds(db, app).await?.resolve(environment))
+}
+
+/// [`resolve_function_environment`] for a caller that already holds the app's
+/// builds from the serve path's resolution cache (`/fn`, through
+/// `AuthOutcome::environments`): production is answered from them without a
+/// query, as the `apps` row in hand once answered it. Staging and a sandbox are
+/// read from their rows as ever, so a publish to either is seen at once.
+pub async fn resolve_function_environment_cached<C: ConnectionTrait>(
+    db: &C,
+    app: &apps::Model,
+    cached: &EnvironmentBuilds,
+    environment: &AppEnvironment,
+) -> Result<ResolvedEnvironment, DbErr> {
+    if *environment == AppEnvironment::Production {
+        return cached.resolve_for_functions(db, environment).await;
+    }
+    resolve_function_environment(db, app, environment).await
 }
 
 /// [`resolve_environment`] for the function readers: `/fn`, the scheduled
@@ -282,7 +237,7 @@ pub async fn resolve_function_environment<C: ConnectionTrait>(
     }
     // The fallback, and only the fallback, asks whose build it is: production
     // with a build of its own never reaches that read (`production_runs`).
-    builds_for(db, app, environment)
+    load_environment_builds(db, app)
         .await?
         .resolve_for_functions(db, environment)
         .await

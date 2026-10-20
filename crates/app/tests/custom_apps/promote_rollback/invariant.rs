@@ -46,12 +46,13 @@ async fn every_production_writer_refuses_a_build_staging_never_served() {
     );
 
     // A draft pointer no publish wrote: Make Live finds no staging event.
-    apps::Entity::update_many()
-        .col_expr(apps::Column::DraftBuildId, Expr::value(Some(unstaged)))
-        .filter(apps::Column::Id.eq(agent.app.id))
-        .exec(&agent.t.db)
-        .await
-        .expect("point the draft at the sandbox build");
+    crate::app_environments::set_pointer(
+        &agent.t.db,
+        agent.app.id,
+        &oxy_app_core::custom_app_environment::AppEnvironment::Staging,
+        Some(unstaged),
+    )
+    .await;
     let uri = format!("/customer-apps/{}/publish", agent.app.id);
     let (status, refused) = person(&agent, "POST", &uri, None).await;
     assert_eq!(status, StatusCode::CONFLICT, "make live: {refused}");
@@ -83,12 +84,13 @@ async fn the_move_asks_again_under_the_app_row_lock() {
 
     // Production moves under the lock: the plan's `expect_current` is stale.
     let moved = race(&db, agent.app.id, mv.clone(), |txn| async move {
-        apps::Entity::update_many()
-            .col_expr(apps::Column::PublishedBuildId, Expr::value(None::<Uuid>))
-            .filter(apps::Column::Id.eq(agent.app.id))
-            .exec(&txn)
-            .await
-            .expect("unpublish under the lock");
+        crate::app_environments::set_pointer(
+            &txn,
+            agent.app.id,
+            &oxy_app_core::custom_app_environment::AppEnvironment::Production,
+            None,
+        )
+        .await;
         txn
     })
     .await;

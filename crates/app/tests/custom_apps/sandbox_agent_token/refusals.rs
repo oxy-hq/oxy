@@ -31,6 +31,10 @@ struct Scene {
     agent: Agent,
     other_secret: String,
     sibling: entity::apps::Model,
+    /// The builds production and staging serve before anything is tried.
+    pointers: oxy_app::server::api::custom_apps_environments::FixedPointers,
+    /// The build the sibling's staging serves.
+    sibling_staging: Option<Uuid>,
     /// A production invocation of the token's app.
     production_invocation: Uuid,
     /// The host of the token's own sandbox.
@@ -61,10 +65,16 @@ async fn scene() -> Scene {
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
     let production_invocation = production_invocation(&agent).await;
+    let pointers = crate::app_environments::serving(&agent.t.db, agent.app.id).await;
+    let sibling_staging = crate::app_environments::serving(&agent.t.db, sibling.id)
+        .await
+        .staging;
     Scene {
         agent,
         other_secret,
         sibling,
+        pointers,
+        sibling_staging,
         production_invocation,
         sandbox_host,
     }
@@ -76,7 +86,12 @@ async fn production_invocation(agent: &Agent) -> Uuid {
     app_function_invocations::ActiveModel {
         id: ActiveValue::Set(id),
         app_id: ActiveValue::Set(agent.app.id),
-        build_id: ActiveValue::Set(agent.app.published_build_id.expect("a promoted build")),
+        build_id: ActiveValue::Set(
+            crate::app_environments::serving(&agent.t.db, agent.app.id)
+                .await
+                .production
+                .expect("a promoted build"),
+        ),
         function_name: ActiveValue::Set("whoami".into()),
         mode: ActiveValue::Set("route".into()),
         user_id: ActiveValue::Set(Some(agent.t.guest_id)),
@@ -387,10 +402,9 @@ async fn everything_outside_its_own_sandbox_is_refused_and_nothing_moves() {
         before,
         "no sandbox was created, moved or marked deleting"
     );
-    let after = super::fixture::app_model(&s.agent.t.db, app.id).await;
     assert_eq!(
-        (after.published_build_id, after.draft_build_id),
-        (app.published_build_id, app.draft_build_id),
+        crate::app_environments::serving(&s.agent.t.db, app.id).await,
+        s.pointers,
         "production and staging never moved"
     );
     let colleague = app_environments::Entity::find_by_id((app.id, COLLEAGUES.to_string()))
@@ -399,6 +413,10 @@ async fn everything_outside_its_own_sandbox_is_refused_and_nothing_moves() {
         .expect("read the colleague's sandbox")
         .expect("still there");
     assert_eq!((colleague.build_id, colleague.deleting_at), (None, None));
-    let sibling = super::fixture::app_model(&s.agent.t.db, s.sibling.id).await;
-    assert_eq!(sibling.draft_build_id, s.sibling.draft_build_id);
+    assert_eq!(
+        crate::app_environments::serving(&s.agent.t.db, s.sibling.id)
+            .await
+            .staging,
+        s.sibling_staging
+    );
 }

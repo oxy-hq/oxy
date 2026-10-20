@@ -52,8 +52,11 @@ async fn seed_deploys_the_example_app_to_the_demo_workspace() {
         "the app must hang off the demo workspace, or the launcher won't list it"
     );
     assert!(
-        app.published_build_id.is_some(),
-        "published_build_id is what names the live bytes; without it the app 404s"
+        crate::app_environments::serving(&db, app.id)
+            .await
+            .production
+            .is_some(),
+        "production's build is what names the live bytes; without it the app 404s"
     );
     assert!(
         Workspaces::find_by_id(demo_workspace_id())
@@ -72,11 +75,15 @@ async fn seeded_app_bundle_is_actually_readable_from_the_build_store() {
         .expect("seed_demo");
     let app = seeded_app(&db, "local").await;
 
-    let build = AppBuilds::find_by_id(app.published_build_id.expect("published build"))
+    let published = crate::app_environments::serving(&db, app.id)
+        .await
+        .production
+        .expect("published build");
+    let build = AppBuilds::find_by_id(published)
         .one(&db)
         .await
         .expect("query build")
-        .expect("the published_build_id points at a real app_builds row");
+        .expect("production's build is a real app_builds row");
 
     // The DB naming a build proves nothing — this is the half that actually
     // 404s when it's missing, and it's the half a row-only assertion misses.
@@ -168,7 +175,11 @@ async fn clear_removes_the_app_rows_and_their_bytes() {
         .await
         .expect("seed_demo");
     let app = seeded_app(&db, "local").await;
-    let build = AppBuilds::find_by_id(app.published_build_id.expect("build"))
+    let published = crate::app_environments::serving(&db, app.id)
+        .await
+        .production
+        .expect("build");
+    let build = AppBuilds::find_by_id(published)
         .one(&db)
         .await
         .expect("query build")

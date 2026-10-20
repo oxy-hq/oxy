@@ -30,7 +30,7 @@ use oxy_auth::token::SandboxAgent;
 use serde_json::Value;
 use tower::ServiceExt;
 
-use super::fixture::{APP, Agent, BOUNDARY, agent, app_model, credential, multipart, tarball};
+use super::fixture::{APP, Agent, BOUNDARY, agent, credential, multipart, tarball};
 use crate::custom_app_functions_fixture::invocations;
 use crate::sandbox_publish::{input, queued, sandbox};
 
@@ -84,7 +84,7 @@ async fn publish_unfenced(agent: &Agent, fields: &[(&str, &str)]) -> (StatusCode
 #[tokio::test]
 async fn a_channel_publish_is_refused_with_no_allow_list_in_front() {
     let agent = agent().await;
-    let before = app_model(&agent.t.db, agent.app.id).await;
+    let before_pointers = crate::app_environments::serving(&agent.t.db, agent.app.id).await;
 
     let draft: &[(&str, &str)] = &[("build_id", "unfenced-draft")];
     let promote: &[(&str, &str)] = &[("build_id", "unfenced-live"), ("promote", "true")];
@@ -128,10 +128,9 @@ async fn a_channel_publish_is_refused_with_no_allow_list_in_front() {
         );
     }
 
-    let after = app_model(&agent.t.db, agent.app.id).await;
     assert_eq!(
-        (after.published_build_id, after.draft_build_id),
-        (before.published_build_id, before.draft_build_id),
+        crate::app_environments::serving(&agent.t.db, agent.app.id).await,
+        before_pointers,
         "neither pointer moved"
     );
 }

@@ -1205,6 +1205,7 @@ async fn invoke_function(
     // admit → route gates → prepare → acquire → run → record → answer.
     let door = pipeline::Door::Route {
         caller: &outcome.caller,
+        cached: &outcome.environments,
     };
     let admitted = pipeline::admit(&db, app, &environment, function_name, door)
         .await

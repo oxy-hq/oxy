@@ -121,7 +121,7 @@ async fn a_build_is_stagings_only_when_production_does_not_run_it() {
     );
 }
 
-fn app_row(published: Option<u128>, draft: Option<u128>) -> apps::Model {
+fn app_row() -> apps::Model {
     let now = chrono::Utc::now().fixed_offset();
     apps::Model {
         visibility: "org".to_string(),
@@ -140,62 +140,11 @@ fn app_row(published: Option<u128>, draft: Option<u128>) -> apps::Model {
         manifest_override: None,
         published_at: None,
         repo_path: None,
-        draft_build_id: draft.map(Uuid::from_u128),
-        published_build_id: published.map(Uuid::from_u128),
         last_promoted_by: None,
         last_promoted_at: None,
         created_at: now,
         updated_at: now,
     }
-}
-
-/// Production is answered from the row in hand, with no query: the
-/// connection here is disconnected, so any statement panics. Staging is
-/// the control — it does read `app_environments`, and the fake catches it.
-///
-/// The never-promoted fallback is the one place production asks anything:
-/// whether a sandbox agent token published the build it would fall back to
-/// (`custom_apps_agent_built`). It asks once and then answers from memory, so
-/// the build is made known here, as a first request would have left it.
-#[tokio::test]
-async fn production_resolves_from_the_app_row_without_a_query() {
-    use futures::FutureExt;
-    let db = sea_orm::DatabaseConnection::default();
-    let production = AppEnvironment::Production;
-    let promoted = app_row(Some(1), Some(2));
-    let resolved = resolve_function_environment(&db, &promoted, &production)
-        .await
-        .expect("no query");
-    assert_eq!(resolved.build_id, Some(Uuid::from_u128(1)));
-    let never_promoted = app_row(None, Some(2));
-    crate::server::api::custom_apps_agent_built::remember(Uuid::from_u128(2), false);
-    let resolved = resolve_function_environment(&db, &never_promoted, &production)
-        .await
-        .expect("no query");
-    assert_eq!(
-        resolved.build_id,
-        Some(Uuid::from_u128(2)),
-        "main's fallback"
-    );
-    let resolved = resolve_environment(&db, &never_promoted, &production)
-        .await
-        .expect("no query");
-    assert_eq!(
-        resolved.build_id, None,
-        "the strict resolve does not fall back"
-    );
-
-    let staging = std::panic::AssertUnwindSafe(resolve_function_environment(
-        &db,
-        &promoted,
-        &AppEnvironment::Staging,
-    ))
-    .catch_unwind()
-    .await;
-    assert!(
-        staging.is_err(),
-        "control: staging queries, and the fake refuses it"
-    );
 }
 
 /// The one exception to the fallback: a build a sandbox agent token published
@@ -206,42 +155,40 @@ async fn production_resolves_from_the_app_row_without_a_query() {
 async fn production_never_falls_back_to_a_build_a_token_published() {
     use crate::server::api::custom_apps_agent_built::remember;
     use futures::FutureExt;
-    let db = sea_orm::DatabaseConnection::default();
     let production = AppEnvironment::Production;
     let (by_token, by_person) = (Uuid::from_u128(0x7A), Uuid::from_u128(0x7B));
     remember(by_token, true);
     remember(by_person, false);
 
-    let unpublished = |draft: u128| app_row(None, Some(draft));
-    let resolved = resolve_function_environment(&db, &unpublished(0x7A), &production)
-        .await
-        .expect("no query");
-    assert_eq!(resolved.build_id, None, "no fallback to the token's draft");
-    let resolved = resolve_function_environment(&db, &unpublished(0x7B), &production)
-        .await
-        .expect("no query");
-    assert_eq!(resolved.build_id, Some(by_person), "a person's, as before");
+    let unpublished = |draft: u128| builds(None, Some(draft));
+    assert_eq!(
+        for_functions(unpublished(0x7A), production.clone()).await,
+        None,
+        "no fallback to the token's draft"
+    );
+    assert_eq!(
+        for_functions(unpublished(0x7B), production.clone()).await,
+        Some(by_person),
+        "a person's, as before"
+    );
 
     // Live: production serves its own build and asks nothing of the draft.
-    let live = app_row(Some(1), Some(0x7A));
-    let resolved = resolve_function_environment(&db, &live, &production)
-        .await
-        .expect("no query");
-    assert_eq!(resolved.build_id, Some(Uuid::from_u128(1)));
+    assert_eq!(
+        for_functions(builds(Some(1), Some(0x7A)), production.clone()).await,
+        Some(Uuid::from_u128(1))
+    );
     // Neither build: nothing to fall back to, and nothing to ask.
-    let resolved = resolve_function_environment(&db, &app_row(None, None), &production)
-        .await
-        .expect("no query");
-    assert_eq!(resolved.build_id, None);
+    assert_eq!(
+        for_functions(builds(None, None), production.clone()).await,
+        None
+    );
 
-    // Control: a draft nobody has asked about yet is asked about, once.
-    let unknown = std::panic::AssertUnwindSafe(resolve_function_environment(
-        &db,
-        &unpublished(0x7C),
-        &production,
-    ))
-    .catch_unwind()
-    .await;
+    // Control: a draft nobody has asked about yet is asked about, once — and
+    // the connection here is disconnected, so the statement panics.
+    let unknown =
+        std::panic::AssertUnwindSafe(for_functions(unpublished(0x7C), production.clone()))
+            .catch_unwind()
+            .await;
     assert!(unknown.is_err(), "the fallback reads who published it");
 }
 
@@ -252,7 +199,7 @@ async fn production_never_falls_back_to_a_build_a_token_published() {
 async fn sandbox_row_reads_only_for_a_sandbox() {
     use futures::FutureExt;
     let db = sea_orm::DatabaseConnection::default();
-    let app = app_row(Some(1), Some(2));
+    let app = app_row();
     for fixed in [AppEnvironment::Production, AppEnvironment::Staging] {
         assert_eq!(
             sandbox_row(&db, app.id, &fixed).await.expect("no query"),
@@ -268,21 +215,5 @@ async fn sandbox_row_reads_only_for_a_sandbox() {
     assert!(
         read.is_err(),
         "control: a sandbox queries, and the fake refuses it"
-    );
-}
-
-#[test]
-fn a_missing_row_takes_the_column_and_a_row_wins_over_it() {
-    let app = Uuid::from_u128(9);
-    let column = Some(Uuid::from_u128(5));
-    assert_eq!(from_row_or_column(app, "production", None, column), column);
-    assert_eq!(
-        from_row_or_column(app, "production", Some(Some(Uuid::from_u128(6))), column),
-        Some(Uuid::from_u128(6))
-    );
-    assert_eq!(
-        from_row_or_column(app, "staging", Some(None), column),
-        None,
-        "a row that serves nothing is an answer, not a gap"
     );
 }

@@ -302,10 +302,11 @@ async fn a_minted_token_runs_the_whole_loop_in_a_sandbox_it_created() {
     assert!(row.revoked_at.is_some(), "the token's row is revoked");
 }
 
-/// What production and staging serve: the app row's two pointers and the two
-/// fixed environment rows.
+/// What production and staging serve: the two fixed environment rows, read
+/// as the pointers and as raw rows.
 async fn fixed_pointers(agent: &Agent) -> Value {
     let app = super::fixture::app_model(&agent.t.db, agent.app.id).await;
+    let serving = crate::app_environments::serving(&agent.t.db, app.id).await;
     let rows = app_environments::Entity::find()
         .filter(app_environments::Column::AppId.eq(app.id))
         .filter(app_environments::Column::Name.is_in(["production", "staging"]))
@@ -315,5 +316,5 @@ async fn fixed_pointers(agent: &Agent) -> Value {
     let mut rows: Vec<(String, Option<Uuid>)> =
         rows.into_iter().map(|r| (r.name, r.build_id)).collect();
     rows.sort();
-    json!({ "published": app.published_build_id, "draft": app.draft_build_id, "rows": rows })
+    json!({ "published": serving.production, "draft": serving.staging, "rows": rows })
 }

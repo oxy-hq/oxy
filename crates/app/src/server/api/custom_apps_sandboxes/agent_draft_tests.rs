@@ -44,10 +44,12 @@ fn input() -> PublishInput {
     }
 }
 
-/// The app, live: a production build and the moment it was published.
+/// The build production's row names for the live app.
+const PRODUCTION_BUILD: Option<Uuid> = Some(Uuid::from_u128(0xB1));
+
+/// The app, live: the moment it was published (and `PRODUCTION_BUILD`).
 fn live_app() -> apps::Model {
     apps::Model {
-        published_build_id: Some(Uuid::from_u128(0xB1)),
         published_at: Some(chrono::Utc::now().fixed_offset()),
         ..fixture::app(APP, ORG, WORKSPACE)
     }
@@ -123,19 +125,19 @@ fn each_field_that_changes_the_app_is_refused_by_name() {
 /// unpublished keeps neither; a row with only one is not live either.
 #[test]
 fn an_app_is_live_only_with_a_production_build_and_its_moment() {
-    assert!(is_live(&live_app()));
-    let never_promoted = fixture::app(APP, ORG, WORKSPACE);
-    let no_moment = apps::Model {
-        published_at: None,
-        ..live_app()
-    };
-    let no_build = apps::Model {
-        published_build_id: None,
-        ..live_app()
-    };
-    for not_live in [never_promoted, no_moment, no_build] {
-        assert!(!is_live(&not_live));
-        let refused = refuse_app_state(&not_live, &input()).expect_err("refused");
+    assert!(is_live(&live_app(), PRODUCTION_BUILD));
+    let never_promoted = (fixture::app(APP, ORG, WORKSPACE), None);
+    let no_moment = (
+        apps::Model {
+            published_at: None,
+            ..live_app()
+        },
+        PRODUCTION_BUILD,
+    );
+    let no_build = (live_app(), None);
+    for (not_live, production) in [never_promoted, no_moment, no_build] {
+        assert!(!is_live(&not_live, production));
+        let refused = refuse_app_state(&not_live, production, &input()).expect_err("refused");
         assert_eq!(
             refused,
             AgentDraftRefusal::AppNotLive {
@@ -145,7 +147,10 @@ fn an_app_is_live_only_with_a_production_build_and_its_moment() {
         assert_eq!(refused.status(), StatusCode::CONFLICT);
         assert_eq!(refused.code(), "app_not_live");
     }
-    assert_eq!(refuse_app_state(&live_app(), &input()), Ok(()));
+    assert_eq!(
+        refuse_app_state(&live_app(), PRODUCTION_BUILD, &input()),
+        Ok(())
+    );
 }
 
 /// Guard 4: any other workspace is refused — there is no re-home for the
@@ -157,7 +162,7 @@ fn a_draft_names_the_apps_own_workspace() {
         project_id: elsewhere,
         ..input()
     };
-    let refused = refuse_app_state(&live_app(), &moving).expect_err("refused");
+    let refused = refuse_app_state(&live_app(), PRODUCTION_BUILD, &moving).expect_err("refused");
     assert_eq!(
         refused,
         AgentDraftRefusal::ProjectMismatch {
@@ -169,7 +174,7 @@ fn a_draft_names_the_apps_own_workspace() {
     assert_eq!(refused.status(), StatusCode::CONFLICT);
     assert_eq!(refused.code(), "project_mismatch");
     // Not live is said first: it is the state of the app, whatever was sent.
-    let refused = refuse_app_state(&fixture::app(APP, ORG, WORKSPACE), &moving);
+    let refused = refuse_app_state(&fixture::app(APP, ORG, WORKSPACE), None, &moving);
     assert!(matches!(refused, Err(AgentDraftRefusal::AppNotLive { .. })));
 }
 

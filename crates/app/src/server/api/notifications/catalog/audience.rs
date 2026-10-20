@@ -13,9 +13,10 @@
 
 use std::collections::{BTreeSet, HashSet};
 
-use entity::{apps, notifications};
+use entity::{app_environments, apps, notifications};
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect,
+    QueryTrait,
 };
 use uuid::Uuid;
 
@@ -39,9 +40,14 @@ pub async fn candidates(
     if reach.member_orgs.is_empty() && granted.is_empty() && also.is_empty() {
         return Ok(Vec::new());
     }
-    let has_build = Condition::any()
-        .add(apps::Column::PublishedBuildId.is_not_null())
-        .add(apps::Column::DraftBuildId.is_not_null());
+    // A build in production or staging: an environment row naming one.
+    let with_build = app_environments::Entity::find()
+        .select_only()
+        .column(app_environments::Column::AppId)
+        .filter(app_environments::Column::Name.is_in(["production", "staging"]))
+        .filter(app_environments::Column::BuildId.is_not_null())
+        .into_query();
+    let has_build = apps::Column::Id.in_subquery(with_build);
     let in_reach = Condition::any()
         .add(apps::Column::OrgId.is_in(reach.member_orgs.iter().copied()))
         .add(

@@ -1108,8 +1108,6 @@ async fn upsert_app(
         // Stays a draft until promoted (here or via /admin/apps).
         published_at: ActiveValue::NotSet,
         repo_path: ActiveValue::Set(Some(format!("{}/{}", org.slug, input.app_slug))),
-        draft_build_id: ActiveValue::NotSet,
-        published_build_id: ActiveValue::NotSet,
         last_promoted_by: ActiveValue::NotSet,
         last_promoted_at: ActiveValue::NotSet,
         created_at: ActiveValue::Set(now),
@@ -1361,8 +1359,8 @@ async fn record_functions(
 /// and its `staging / publish` event is recorded **first**, then production's
 /// moves through the one production-pointer function
 /// (`custom_apps_promote::move_locked`), which finds that event as the
-/// evidence invariant 1 asks for. Each pointer is mirrored into
-/// `app_environments` in the same transaction, so the two can never disagree.
+/// evidence invariant 1 asks for. The pointers are the environments' rows
+/// (`custom_apps_environments::record_move`), moved in that one transaction.
 /// (A promoting publish applied the build's migrations before calling this.)
 async fn set_pointers(
     db: &DatabaseConnection,
@@ -1383,9 +1381,6 @@ async fn set_pointers(
     let row = super::custom_apps_promote::production::lock_app(&txn, app_id)
         .await
         .map_err(|e| PublishError::Db(format!("app {app_id} could not be locked: {e}")))?;
-    let mut active: apps::ActiveModel = row.into();
-    active.draft_build_id = ActiveValue::Set(Some(build_pk));
-    let row = active.update(&txn).await.map_err(db_err)?;
     super::custom_apps_environments::record_move(
         &txn,
         app_id,
@@ -1481,17 +1476,15 @@ async fn gc_protected(
     app_id: Uuid,
     protect: &[Uuid],
 ) -> Option<Vec<Uuid>> {
-    // Always protect the builds the live channels point at, regardless of what
-    // the caller passed. GC that reaps the currently-served build is a silent
-    // outage: the app 404s (`custom_apps_serve/sources.rs`) with no publish
-    // having touched the live channel. Read the pointers here so the guarantee
-    // can't be lost by a caller forgetting to thread them through.
+    // Always protect the builds the live environments point at, regardless of
+    // what the caller passed. GC that reaps the currently-served build is a
+    // silent outage: the app 404s (`custom_apps_serve/sources.rs`) with no
+    // publish having touched the live environment. The environments' rows are
+    // read below, so the guarantee can't be lost by a caller forgetting to
+    // thread them through; the app row is read only to skip GC for a gone app.
     let mut protect: Vec<Uuid> = protect.to_vec();
     match apps::Entity::find_by_id(app_id).one(db).await {
-        Ok(Some(app)) => {
-            protect.extend(app.published_build_id);
-            protect.extend(app.draft_build_id);
-        }
+        Ok(Some(_)) => {}
         Ok(None) => {
             tracing::warn!(
                 "gc_builds: app {app_id} not found; skipping GC so a live build can't be reaped"
@@ -1499,13 +1492,11 @@ async fn gc_protected(
             return None;
         }
         Err(e) => {
-            tracing::warn!(
-                "gc_builds: could not load channel pointers for app {app_id} ({e}); skipping GC"
-            );
+            tracing::warn!("gc_builds: could not load app {app_id} ({e}); skipping GC");
             return None;
         }
     }
-    // Environment rows name builds too — staging's, production's and every
+    // Environment rows name the builds — production's, staging's and every
     // sandbox's. Same fail-safe as above: unknown means skip GC.
     match super::custom_apps_environments::protected_build_ids(db, app_id).await {
         Ok(ids) => protect.extend(ids),

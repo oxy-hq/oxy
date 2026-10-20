@@ -2,8 +2,7 @@
 //! (`internal-docs/2026-09-10-custom-app-environments-design.md` §3).
 //!
 //! Database-backed: each test gets its own database cloned from the migrated
-//! template, so the backfill is exercised by seeding pointers and running
-//! `APP_ENVIRONMENTS_BACKFILL_SQL` directly.
+//! template.
 
 use crate::common::test_db;
 use entity::{app_builds, apps, organizations, users, workspaces};
@@ -92,20 +91,53 @@ pub(crate) async fn seed_build(conn: &DatabaseConnection, app_id: Uuid, label: &
     id
 }
 
-/// Set the legacy pointer columns directly, the way pre-migration data looks.
+/// Point staging (`draft`) and production (`published`) at builds directly,
+/// with no history: the rows, as a pointer written outside the publish path
+/// would leave them. `None` clears an environment that has a row.
 pub(crate) async fn point(
     conn: &DatabaseConnection,
     app_id: Uuid,
     draft: Option<Uuid>,
     published: Option<Uuid>,
 ) {
+    set_pointer(conn, app_id, &AppEnvironment::Staging, draft).await;
+    set_pointer(conn, app_id, &AppEnvironment::Production, published).await;
+}
+
+/// Point one fixed environment at a build directly, with no history. `None`
+/// clears it if it has a row.
+pub(crate) async fn set_pointer<C: ConnectionTrait>(
+    conn: &C,
+    app_id: Uuid,
+    environment: &AppEnvironment,
+    build: Option<Uuid>,
+) {
+    let statement = match build {
+        Some(_) => {
+            "INSERT INTO app_environments (app_id, name, kind, build_id) \
+             VALUES ($1, $2, $2, $3) \
+             ON CONFLICT (app_id, name) DO UPDATE SET build_id = EXCLUDED.build_id"
+        }
+        None => "UPDATE app_environments SET build_id = $3 WHERE app_id = $1 AND name = $2",
+    };
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "UPDATE apps SET draft_build_id = $1, published_build_id = $2 WHERE id = $3",
-        [draft.into(), published.into(), app_id.into()],
+        statement,
+        [app_id.into(), environment.name().into(), build.into()],
     ))
     .await
     .expect("point app");
+}
+
+/// The builds production and staging serve, from their environment rows —
+/// what `apps.published_build_id` / `apps.draft_build_id` used to say.
+pub(crate) async fn serving<C: ConnectionTrait>(
+    conn: &C,
+    app_id: Uuid,
+) -> oxy_app::server::api::custom_apps_environments::FixedPointers {
+    oxy_app::server::api::custom_apps_environments::fixed_pointers(conn, app_id)
+        .await
+        .expect("read the environments")
 }
 
 /// `(name, build_id)` for every environment of the app, ordered by name.
@@ -177,112 +209,77 @@ async fn event_actors(conn: &DatabaseConnection, app_id: Uuid) -> Vec<(String, O
     .collect()
 }
 
-async fn run_backfill(conn: &DatabaseConnection) {
-    conn.execute_unprepared(migration::APP_ENVIRONMENTS_BACKFILL_SQL)
-        .await
-        .expect("backfill runs");
-}
-
 fn sorted<T: Ord>(mut v: Vec<T>) -> Vec<T> {
     v.sort();
     v
 }
 
-// ── Backfill ────────────────────────────────────────────────────────────────
+// ── The write-only mirror of the retired `apps` columns ─────────────────────
 
-#[tokio::test]
-async fn backfill_maps_draft_to_staging_and_published_to_production() {
-    let conn = test_db().await;
-    let app = seed_app(&conn).await;
-    let draft = seed_build(&conn, app, "draft").await;
-    let live = seed_build(&conn, app, "live").await;
-    point(&conn, app, Some(draft), Some(live)).await;
-
-    run_backfill(&conn).await;
-
-    assert_eq!(
-        env_rows(&conn, app).await,
-        vec![
-            ("production".into(), Some(live)),
-            ("staging".into(), Some(draft))
-        ]
-    );
-    // Both builds count as served by staging; the live one also by production.
-    assert_eq!(
-        sorted(event_rows(&conn, app).await),
-        sorted(vec![
-            ("production".into(), Some(live), "backfill".into()),
-            ("staging".into(), Some(draft), "backfill".into()),
-            ("staging".into(), Some(live), "backfill".into()),
-        ])
-    );
+async fn legacy_pointers(conn: &DatabaseConnection, app: Uuid) -> (Option<Uuid>, Option<Uuid>) {
+    let row = conn
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT draft_build_id, published_build_id FROM apps WHERE id = $1",
+            [app.into()],
+        ))
+        .await
+        .expect("read the legacy columns")
+        .expect("the app");
+    (
+        row.try_get("", "draft_build_id").expect("draft"),
+        row.try_get("", "published_build_id").expect("published"),
+    )
 }
 
-#[tokio::test]
-async fn backfill_gives_a_published_only_app_a_staging_row() {
-    let conn = test_db().await;
-    let app = seed_app(&conn).await;
-    let live = seed_build(&conn, app, "live").await;
-    point(&conn, app, None, Some(live)).await;
-
-    run_backfill(&conn).await;
-
-    assert_eq!(
-        env_rows(&conn, app).await,
-        vec![
-            ("production".into(), Some(live)),
-            ("staging".into(), Some(live))
-        ]
-    );
+async fn mv(
+    conn: &DatabaseConnection,
+    app: Uuid,
+    environment: AppEnvironment,
+    build: Option<Uuid>,
+) -> Result<(), sea_orm::DbErr> {
+    envs::record_move(conn, app, &environment, build, EnvAction::Publish, None).await
 }
 
+/// The previous release reads the columns, so `record_move` keeps them equal to
+/// the rows for production and staging, and leaves them alone for a sandbox.
 #[tokio::test]
-async fn backfill_gives_a_draft_only_app_no_production_row() {
+async fn record_move_keeps_the_legacy_columns_equal_to_the_rows() {
     let conn = test_db().await;
     let app = seed_app(&conn).await;
-    let draft = seed_build(&conn, app, "draft").await;
-    point(&conn, app, Some(draft), None).await;
-
-    run_backfill(&conn).await;
-
-    assert_eq!(
-        env_rows(&conn, app).await,
-        vec![("staging".into(), Some(draft))]
+    let owner = seed_user(&conn).await;
+    let (first, second) = (
+        seed_build(&conn, app, "first").await,
+        seed_build(&conn, app, "second").await,
     );
+    mv(&conn, app, AppEnvironment::Staging, Some(first))
+        .await
+        .expect("stage");
+    assert_eq!(legacy_pointers(&conn, app).await, (Some(first), None));
+    mv(&conn, app, AppEnvironment::Production, Some(first))
+        .await
+        .expect("promote");
     assert_eq!(
-        event_rows(&conn, app).await,
-        vec![("staging".into(), Some(draft), "backfill".into())]
+        legacy_pointers(&conn, app).await,
+        (Some(first), Some(first))
     );
-}
+    mv(&conn, app, AppEnvironment::Staging, Some(second))
+        .await
+        .expect("restage");
+    mv(&conn, app, AppEnvironment::Production, None)
+        .await
+        .expect("unpublish");
+    assert_eq!(legacy_pointers(&conn, app).await, (Some(second), None));
 
-#[tokio::test]
-async fn backfill_skips_a_pointer_to_a_build_that_no_longer_exists() {
-    let conn = test_db().await;
-    let app = seed_app(&conn).await;
-    // No FK on the legacy columns, so a dangling pointer is representable.
-    point(&conn, app, Some(Uuid::new_v4()), None).await;
-
-    run_backfill(&conn).await;
-
-    assert!(env_rows(&conn, app).await.is_empty());
-    assert!(event_rows(&conn, app).await.is_empty());
-}
-
-#[tokio::test]
-async fn backfill_is_idempotent() {
-    let conn = test_db().await;
-    let app = seed_app(&conn).await;
-    let draft = seed_build(&conn, app, "draft").await;
-    let live = seed_build(&conn, app, "live").await;
-    point(&conn, app, Some(draft), Some(live)).await;
-
-    run_backfill(&conn).await;
-    let rows = env_rows(&conn, app).await;
-    let events = event_rows(&conn, app).await.len();
-    run_backfill(&conn).await;
-
-    assert_eq!(env_rows(&conn, app).await, rows);
-    assert_eq!(event_rows(&conn, app).await.len(), events);
+    seed_sandbox(&conn, app, "dev-a1", owner).await;
+    mv(&conn, app, sandbox("a1"), Some(first))
+        .await
+        .expect("sandbox");
+    assert_eq!(
+        legacy_pointers(&conn, app).await,
+        (Some(second), None),
+        "a sandbox has no column"
+    );
 }
 
 // ── The name rules live in Rust and in a CHECK; they must agree ─────────────
@@ -588,12 +585,12 @@ async fn protected_build_ids_lists_every_environment_build() {
     assert_eq!(protected, sorted(vec![staging, live]));
 }
 
-// ── Pointer writes mirror into environments ─────────────────────────────────
+// ── The shared transitions move the environments ────────────────────────────
 
 use oxy_app::server::api::admin::apps::handlers as admin_apps;
 
 #[tokio::test]
-async fn publish_one_and_unpublish_one_mirror_production() {
+async fn publish_one_and_unpublish_one_move_production() {
     let conn = test_db().await;
     let app = seed_app(&conn).await;
     let actor = seed_user(&conn).await;
@@ -601,7 +598,6 @@ async fn publish_one_and_unpublish_one_mirror_production() {
     // reusing the publisher.
     let unpublisher = seed_user(&conn).await;
     let draft = seed_build(&conn, app, "draft").await;
-    point(&conn, app, Some(draft), None).await;
     // The draft as a publish leaves it: staging serves it, so production may
     // (invariant 1, checked by the production move `publish_one` goes through).
     envs::record_move(
@@ -682,7 +678,11 @@ async fn publish_one_refuses_a_draft_staging_never_served() {
         .expect("a body");
     let body: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON");
     assert_eq!(body["code"], "staging_never_served", "{body}");
-    assert!(env_rows(&conn, app).await.is_empty(), "nothing moved");
+    assert_eq!(
+        env_rows(&conn, app).await,
+        vec![("staging".into(), Some(draft))],
+        "production did not move"
+    );
     assert!(event_rows(&conn, app).await.is_empty(), "nothing recorded");
 }
 
@@ -741,7 +741,13 @@ async fn a_build_from_before_the_events_stays_a_rollback_target() {
     let moved = move_production(&conn, &rollback)
         .await
         .expect("a build staging served goes live");
-    assert_eq!(moved.app.published_build_id, Some(old));
+    assert_eq!(moved.app.id, app);
+    assert_eq!(
+        envs::pointer(&conn, app, &AppEnvironment::Production)
+            .await
+            .expect("read production"),
+        Some(old)
+    );
 }
 
 // ── Builds an environment serves are undeletable; app deletion still cascades ─

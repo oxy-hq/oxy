@@ -1,28 +1,30 @@
-//! Boundary test: a file that moves a build pointer on `apps` must mirror it into
-//! `app_environments` (spec §3.1, Phase 1a).
+//! Boundary test: the only code that names the retired `apps.draft_build_id` /
+//! `apps.published_build_id` columns is `custom_apps_environments::record_move`,
+//! which still writes them for one release (the previous release reads them).
+//! Nothing reads them, and nothing else writes them: every reader asks
+//! `app_environments` (`custom_apps_env_resolve`).
 //!
-//! Same shape and the same honesty as `custom_apps_cache_invalidation.rs`. This is
-//! file-level string matching over the mutation spelling every real write site uses
-//! today (`active.<pointer> = ActiveValue::Set(`), so a raw SQL `UPDATE`, or a file
-//! that mirrors in one function and forgets in another, is invisible to it. It
-//! catches the larger shape: a new write path that never learned environments exist.
+//! File-level string matching over production sources, comments excluded, so a
+//! raw `SELECT`/`UPDATE` or an entity field named like the column is caught
+//! wherever it creeps back. It cannot see a column built by string concatenation;
+//! it catches the shape every reader and writer has used.
+//!
+//! The follow-up that drops the columns (#3686) deletes this test with the mirror.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const POINTER_WRITES: &[&str] = &[
-    ".draft_build_id = ActiveValue::Set(",
-    ".published_build_id = ActiveValue::Set(",
-];
+const COLUMNS: &[&str] = &["draft_build_id", "published_build_id"];
 
-const MIRROR_CALL: &str = "custom_apps_environments::record_move(";
+/// The one file allowed to name them.
+const WRITER: &str = "crates/custom-apps/src/environments.rs";
 
 fn crates_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
-/// Production sources only. Test directories and `tests.rs` files seed pointers on
-/// purpose; `migration` and `entity` define the columns.
+/// Production sources only. Test directories and `tests.rs` files seed and
+/// assert on the columns on purpose; `migration` defines them.
 fn source_files(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in fs::read_dir(dir).expect("read crates dir") {
         let path = entry.expect("dir entry").path();
@@ -31,56 +33,71 @@ fn source_files(dir: &Path, out: &mut Vec<PathBuf>) {
             .and_then(|n| n.to_str())
             .unwrap_or_default();
         if path.is_dir() {
-            if matches!(
-                name,
-                "tests" | "target" | "migration" | "entity" | "node_modules"
-            ) {
+            if matches!(name, "tests" | "target" | "migration" | "node_modules") {
                 continue;
             }
             source_files(&path, out);
-        } else if name.ends_with(".rs") && name != "tests.rs" {
+        } else if name.ends_with(".rs") && name != "tests.rs" && !name.ends_with("_tests.rs") {
             out.push(path);
         }
     }
 }
 
-fn pointer_writing_files() -> Vec<(PathBuf, String)> {
+/// Files outside [`WRITER`] with a non-comment line naming a column, as
+/// `path:line`.
+fn offenders() -> Vec<String> {
     let mut files = Vec::new();
     source_files(&crates_dir(), &mut files);
-    files
-        .into_iter()
-        .filter_map(|path| {
-            let src = fs::read_to_string(&path).ok()?;
-            POINTER_WRITES
+    let mut out = Vec::new();
+    for path in files {
+        let relative = path
+            .strip_prefix(crates_dir())
+            .expect("under crates")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let relative = format!("crates/{relative}");
+        if relative == WRITER {
+            continue;
+        }
+        let Ok(src) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for (n, line) in src.lines().enumerate() {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            // Also catches `DraftBuildId` / `PublishedBuildId` (the entity column).
+            let squashed = line.replace('_', "").to_lowercase();
+            if COLUMNS
                 .iter()
-                .any(|w| src.contains(w))
-                .then_some((path, src))
-        })
-        .collect()
+                .any(|c| squashed.contains(&c.replace('_', "")))
+            {
+                out.push(format!("{relative}:{}", n + 1));
+            }
+        }
+    }
+    out
 }
 
 #[test]
-fn every_pointer_write_is_mirrored_into_app_environments() {
-    let offenders: Vec<String> = pointer_writing_files()
-        .into_iter()
-        .filter(|(_, src)| !src.contains(MIRROR_CALL))
-        .map(|(path, _)| path.display().to_string())
-        .collect();
+fn only_record_move_names_the_retired_pointer_columns() {
+    let offenders = offenders();
     assert!(
         offenders.is_empty(),
-        "these files move a build pointer on `apps` without calling `{MIRROR_CALL}`:\n{}",
+        "these lines name `apps.draft_build_id` / `apps.published_build_id`; read the \
+         `app_environments` rows instead (`custom_apps_environments::pointer` / \
+         `fixed_pointers`), and move pointers only through `record_move`:\n{}",
         offenders.join("\n")
     );
 }
 
-/// Guards the guard: if a refactor changes the write spelling, the test above
-/// passes vacuously. Four files write pointers today: custom_apps_publish.rs,
-/// admin/apps/handlers.rs, admin/apps/ops.rs and cli/commands/seed_apps.rs.
+/// Guards the guard: the writer itself must still name both columns, or a
+/// refactor that renamed them would leave the test above passing vacuously.
 #[test]
-fn the_scanner_still_sees_the_known_pointer_writers() {
-    let writers = pointer_writing_files().len();
-    assert!(
-        writers >= 4,
-        "expected at least 4 pointer-writing files, found {writers}"
-    );
+fn the_writer_still_mirrors_both_columns() {
+    let src = fs::read_to_string(crates_dir().join("custom-apps/src/environments.rs"))
+        .expect("read the writer");
+    for column in COLUMNS {
+        assert!(src.contains(column), "{WRITER} no longer writes {column}");
+    }
 }

@@ -226,6 +226,7 @@ async fn fixed_state(agent: &Agent) -> Value {
         .map(|build| build.id)
         .collect();
     builds.sort();
+    let serving = crate::app_environments::serving(db, app.id).await;
     let mut environments: Vec<(String, Option<Uuid>, bool)> =
         entity::app_environments::Entity::find()
             .filter(entity::app_environments::Column::AppId.eq(app.id))
@@ -247,7 +248,7 @@ async fn fixed_state(agent: &Agent) -> Value {
         .expect("publish tokens");
     json!({
         "name": app.name, "slug": app.slug, "visibility": app.visibility, "status": app.status,
-        "published": app.published_build_id, "draft": app.draft_build_id,
+        "published": serving.production, "draft": serving.staging,
         "published_at": app.published_at.map(|at| at.to_rfc3339()),
         "builds": builds, "environments": environments, "apps": apps,
         "publishers": publishers, "publish_tokens": publish_tokens,
@@ -275,9 +276,9 @@ fn the_cases_are_every_row_of_the_refused_writes_table() {
 async fn every_production_write_is_refused_with_no_allow_list_in_front() {
     let agent = agent().await;
     let before = fixed_state(&agent).await;
-    let staging = app_model(&agent.t.db, agent.app.id)
+    let staging = crate::app_environments::serving(&agent.t.db, agent.app.id)
         .await
-        .draft_build_id
+        .staging
         .expect("a staging build");
     let bearer = agent.bearer();
 
@@ -300,9 +301,10 @@ async fn every_production_write_is_refused_with_no_allow_list_in_front() {
     let request = request(&promote, None, &agent, ("cookie", &agent.cookie));
     let (status, body) = sent(unfenced(promote.path, promote.handler), request).await;
     assert_eq!(status, StatusCode::OK, "the minter's session: {body}");
-    let after = app_model(&agent.t.db, agent.app.id).await;
     assert_eq!(
-        after.published_build_id,
+        crate::app_environments::serving(&agent.t.db, agent.app.id)
+            .await
+            .production,
         Some(staging),
         "promoted by a person"
     );

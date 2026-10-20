@@ -56,16 +56,11 @@ pub struct Model {
     /// `apps/<org_slug>/<app_slug>/` layout — only meaningful on
     /// S3-sourced rows since v0/local sources don't read from S3.
     pub repo_path: Option<String>,
-    /// Points at the `app_builds` row currently serving the `draft`
-    /// channel (admin preview via `?channel=draft`). Set on every
-    /// `oxyc publish`. NULL until the first publish in the new pipeline;
-    /// legacy `s3` rows keep NULL and fall back to state-dir serving.
-    pub draft_build_id: Option<Uuid>,
-    /// Points at the `app_builds` row currently serving the `published`
-    /// channel (what viewers see). Promote = set this to the draft
-    /// pointer; unpublish = NULL. Visibility still keys off
-    /// `published_at`; this names *which* bytes are live.
-    pub published_build_id: Option<Uuid>,
+    // The build each environment serves is not on this row: it is the
+    // `build_id` of the `app_environments` row (`oxy_custom_apps::environments`).
+    // `draft_build_id` / `published_build_id` are retired: nothing reads them,
+    // `custom_apps_environments::record_move` still writes them for the
+    // previous release's sake, and a later migration drops them (#3686).
     /// User who last made a build live (promote draft or Make Live/rollback),
     /// and when. Unlike `app_builds.published_by` (the build's original
     /// publisher), this captures the *promotion* event. FK → `users`
@@ -140,8 +135,6 @@ mod tests {
             bootstrap_pr_url: None,
             published_at: None,
             repo_path: None,
-            draft_build_id: None,
-            published_build_id: None,
             last_promoted_by: None,
             last_promoted_at: None,
             visibility: "org".into(),
@@ -188,8 +181,6 @@ mod tests {
             "bootstrap_pr_url": null,
             "published_at": null,
             "repo_path": null,
-            "draft_build_id": null,
-            "published_build_id": null,
             "last_promoted_by": null,
             "last_promoted_at": null,
             "visibility": "org",

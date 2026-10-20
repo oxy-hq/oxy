@@ -171,6 +171,7 @@ async fn a_publish_naming_another_workspace_is_refused_and_moves_nothing() {
         .expect("first publish creates the app in workspace A");
     assert!(first.is_new_app);
     let before = reload(&db, first.app_id).await;
+    let before_pointers = crate::app_environments::serving(&db, first.app_id).await;
     assert_eq!(before.project_id, t.workspace_a);
 
     // A draft publish of the same org + slug that names workspace B. Before the
@@ -203,8 +204,11 @@ async fn a_publish_naming_another_workspace_is_refused_and_moves_nothing() {
     assert_eq!(after.name, before.name);
     assert_eq!(after.last_synced_at, before.last_synced_at);
     assert_eq!(after.updated_at, before.updated_at);
-    assert_eq!(after.draft_build_id, before.draft_build_id);
-    assert_eq!(after.published_build_id, before.published_build_id);
+    assert_eq!(
+        crate::app_environments::serving(&db, after.id).await,
+        before_pointers,
+        "neither pointer moved"
+    );
 
     // And nothing was stored: no build row, no bytes under the build prefix.
     assert!(build_row(&db, first.app_id, "build-2").await.is_none());
@@ -251,7 +255,10 @@ async fn a_publish_to_the_same_workspace_still_publishes() {
     let build = build_row(&db, first.app_id, "build-2")
         .await
         .expect("second build recorded");
-    assert_eq!(row.draft_build_id, Some(build.id));
+    assert_eq!(
+        crate::app_environments::serving(&db, row.id).await.staging,
+        Some(build.id)
+    );
 }
 
 /// `apps.project_id` has no foreign key and deleting a workspace leaves `apps`
@@ -316,7 +323,10 @@ async fn an_app_whose_workspace_was_deleted_rehomes_on_its_next_publish() {
     let build = build_row(&db, first.app_id, "build-2")
         .await
         .expect("re-homing build recorded");
-    assert_eq!(row.draft_build_id, Some(build.id));
+    assert_eq!(
+        crate::app_environments::serving(&db, row.id).await.staging,
+        Some(build.id)
+    );
 }
 
 /// Write `project_id` straight onto the app row, bypassing every handler. The
@@ -358,7 +368,10 @@ async fn an_app_whose_workspace_is_in_another_org_rehomes_on_its_next_publish() 
     let build = build_row(&db, first.app_id, "build-2")
         .await
         .expect("re-homing build recorded");
-    assert_eq!(row.draft_build_id, Some(build.id));
+    assert_eq!(
+        crate::app_environments::serving(&db, row.id).await.staging,
+        Some(build.id)
+    );
 }
 
 /// The app's row names a workspace that exists but belongs to no org
@@ -399,5 +412,8 @@ async fn an_app_whose_workspace_is_orphaned_rehomes_on_its_next_publish() {
     let build = build_row(&db, first.app_id, "build-2")
         .await
         .expect("re-homing build recorded");
-    assert_eq!(row.draft_build_id, Some(build.id));
+    assert_eq!(
+        crate::app_environments::serving(&db, row.id).await.staging,
+        Some(build.id)
+    );
 }

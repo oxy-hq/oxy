@@ -9,8 +9,8 @@
 //! `custom_apps_serve::serve_from_s3_build`).
 //!
 //! Only the [`Channel`] enum survives here: the serve path and the manifest
-//! resolver use it to pick which channel pointer (`apps.draft_build_id` vs
-//! `apps.published_build_id`) to resolve per request.
+//! resolver use it to pick which environment's build (staging's vs production's
+//! `app_environments` row) to resolve per request.
 
 /// One of the two channels a custom-app bundle is served from. `Draft`
 /// is what `oxyc publish` writes by default (admin-preview only);
