@@ -22,13 +22,14 @@ use std::time::Instant;
 
 use axum::http::StatusCode;
 use axum::response::Response;
-use entity::prelude::{AppBuilds, AppFunctions};
-use entity::{app_builds, app_function_invocations, app_functions, apps};
+use entity::prelude::AppBuilds;
+use entity::{app_builds, app_function_invocations, apps};
 use oxy_app_core::custom_app_environment::AppEnvironment;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use tracing::error;
 use uuid::Uuid;
 
+use super::super::custom_apps_cache::{cached_build, set_cached_build};
 use super::super::custom_apps_env_resolve::{
     ResolvedEnvironment, resolve_function_environment, resolve_function_environment_cached,
 };
@@ -39,7 +40,7 @@ use super::environment_gate::{self, Admission, EnvironmentRefused};
 use super::queued_admission::{self, QueuedRefused, QueuedTrigger};
 use super::{
     FunctionManifestEntry, LogLine, RunOutcome, artifact_cache, check_run, failure_page,
-    failure_signal, json_error, no_build_response, run_policy,
+    failure_signal, function_cache, json_error, no_build_response, run_policy,
 };
 
 /// Which door a run came in by, which decides when it is admitted.
@@ -239,10 +240,7 @@ pub(super) async fn admit(
     let build_id = resolved
         .build_id
         .ok_or_else(|| PrepareError::NoBuild(resolved.environment.clone()))?;
-    let func_row = AppFunctions::find()
-        .filter(app_functions::Column::BuildId.eq(build_id))
-        .filter(app_functions::Column::Name.eq(function_name))
-        .one(db)
+    let func_row = function_cache::function_row(db, app.id, build_id, function_name)
         .await
         .map_err(|e| PrepareError::FunctionLookup(e.to_string()))?
         .ok_or(PrepareError::FunctionNotFound)?;
@@ -283,11 +281,7 @@ pub(super) async fn prepare(
     function_name: &str,
 ) -> Result<PreparedRun, PrepareError> {
     // The build's string `build_id` (build store key) from its uuid.
-    let build = AppBuilds::find_by_id(build_id)
-        .one(db)
-        .await
-        .map_err(|e| PrepareError::BuildLookup(e.to_string()))?
-        .ok_or(PrepareError::BuildNotFound)?;
+    let build = load_build(db, build_id).await?;
     // What the run may do in its environment (`run_policy`), decided once for
     // the whole invocation: outside production, where `ctx.oltp` lands, the
     // semantic model the build pins, the `env` keys it shares with production
@@ -305,6 +299,26 @@ pub(super) async fn prepare(
         policy,
         artifact_js: String::from_utf8_lossy(&artifact).into_owned(),
     })
+}
+
+/// The build record, from the replica's build cache when it holds it. A build
+/// row is written once and never rewritten (a promote repoints the
+/// environment at another build id), so a hit cannot be stale; a miss is read
+/// and remembered, and a build that is not there is not.
+async fn load_build(
+    db: &DatabaseConnection,
+    build_id: Uuid,
+) -> Result<app_builds::Model, PrepareError> {
+    if let Some(build) = cached_build(build_id) {
+        return Ok(build);
+    }
+    let build = AppBuilds::find_by_id(build_id)
+        .one(db)
+        .await
+        .map_err(|e| PrepareError::BuildLookup(e.to_string()))?
+        .ok_or(PrepareError::BuildNotFound)?;
+    set_cached_build(build_id, build.clone());
+    Ok(build)
 }
 
 /// Started the moment a run is decided, before the isolate thread spawns, so

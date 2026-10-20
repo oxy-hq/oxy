@@ -56,6 +56,9 @@ pub mod failure_alert;
 mod failure_page;
 /// A failed invocation's kind and fingerprint — the failure without its payload.
 mod failure_signal;
+/// The `app_functions` row by `(app, build, function)`: written once when the
+/// build is created and never rewritten, so an entry never goes stale.
+mod function_cache;
 #[cfg(feature = "custom-app-functions")]
 pub mod host;
 /// What a host op may say about itself on the platform trace (shape, never
