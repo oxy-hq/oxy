@@ -39,6 +39,7 @@ import { runEnvCreate, runEnvDelete, runEnvList, runEnvShow } from "./commands/e
 import { runEnvSchedules } from "./commands/env-schedules.js";
 import { runEnvSecretDelete, runEnvSecretList, runEnvSecretSet } from "./commands/env-secrets.js";
 import { runFnCall } from "./commands/fn.js";
+import { LOCAL_RUN_NOTICE, runFnDev } from "./commands/fn-dev.js";
 import { runFnRun } from "./commands/fn-run.js";
 import { runGuide } from "./commands/guide.js";
 import { runInitCi } from "./commands/init-ci.js";
@@ -796,7 +797,24 @@ function buildProgram(): Command {
 
   const fn = program
     .command("fn")
-    .description("call a custom app's Oxy Function directly, or queue it as a background run");
+    .description(
+      "run a custom app's Oxy Function locally, call it directly, or queue it as a background run"
+    );
+  fn.command("dev <function>")
+    .description(
+      "run a handler from this app's source, in-process, on the testing context (no deployment)"
+    )
+    .option("--input <json|@file|->", 'the request body (default "{}")')
+    .option("--env-file <path>", "the secrets, as KEY=value lines (default: .env when present)")
+    .option("--watch", "re-run whenever a file in the app directory changes")
+    .addHelpText("after", `\n${LOCAL_RUN_NOTICE}\n`)
+    .action(async (fnName: string, opts: Record<string, unknown>) => {
+      await runFnDev(fnName, {
+        input: opts.input as string | undefined,
+        envFile: opts.envFile as string | undefined,
+        watch: Boolean(opts.watch)
+      });
+    });
   withGlobals(
     fn
       .command("call <app> <function>")

@@ -23,6 +23,22 @@ import { join, resolve } from "node:path";
 const REPO = resolve(import.meta.dirname, "../..");
 const TEMPLATES_DIR = join(REPO, "sdk/create-oxy-app/templates");
 const CLI = join(REPO, "sdk/create-oxy-app/dist/cli.mjs");
+// `oxyc`, for the run of a template's own Oxy Function below.
+const OXYC = join(REPO, "sdk/cli/dist/main.mjs");
+
+// Templates that ship an Oxy Function, and the function `oxyc fn dev` runs in
+// each: the one place a real handler is bundled by the real esbuild and run on
+// the SDK's testing context, so what the sample teaches is proven to work.
+// `ops` are the host ops the run must record, and `body` what it must answer.
+const FUNCTION_RUNS = {
+  functions: {
+    name: "notify",
+    input: '{"name":"Ada"}',
+    status: 200,
+    ops: ["email.send"],
+    body: /"sentTo":"author@example\.test"/
+  }
+};
 
 // The workspace packages a template may depend on, and where they live.
 const LOCAL_PACKAGES = {
@@ -121,6 +137,26 @@ for (const [range, version, want] of [
 
 const failures = [];
 
+/** `oxyc fn dev <name>` in the scaffolded app; throws unless the run answered as `want` says. */
+function runFunctionDev(appDir, want) {
+  const stdout = execFileSync("node", [OXYC, "fn", "dev", want.name, "--input", want.input], {
+    cwd: appDir,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "inherit"]
+  });
+  log(stdout.trimEnd());
+  const problems = [];
+  if (!stdout.includes(`${want.name} → ${want.status}`)) {
+    problems.push(`did not answer ${want.status}`);
+  }
+  // The whole line: a prefix match would let an extra op after the expected ones through.
+  if (!stdout.split("\n").includes(`host ops: ${want.ops.join(", ")}`)) {
+    problems.push(`did not record exactly the host ops ${want.ops.join(", ")}`);
+  }
+  if (!want.body.test(stdout)) problems.push(`its response did not match ${want.body}`);
+  if (problems.length) throw new Error(`oxyc fn dev ${want.name} ${problems.join("; ")}`);
+}
+
 // ---------------------------------------------------------------------------
 // 1. Static: every @oxy-hq/* range a template pins must be satisfied by the
 //    version this repo would publish. Catches templates and packages drifting
@@ -210,6 +246,13 @@ for (const template of templates()) {
 if (!existsSync(CLI)) {
   throw new Error(`create-oxy-app is not built: ${CLI} missing (run its build first)`);
 }
+// The CI job builds the packages the templates consume but not `oxyc`, which
+// only this run's `fn dev` step needs: build it here rather than widen that
+// job's filter (and its approval surface) for one consumer.
+if (!existsSync(OXYC)) {
+  log("== building @oxy-hq/cli (oxyc, for `fn dev`) ==");
+  execFileSync("pnpm", ["--filter", "@oxy-hq/cli", "build"], { cwd: REPO, stdio: "inherit" });
+}
 
 // Outside the repo on purpose: inside it, pnpm would resolve the scaffold as
 // part of this monorepo's workspace and the install would not resemble a real
@@ -259,6 +302,10 @@ for (const template of templates()) {
         stage = script;
         execFileSync("pnpm", ["run", script], { cwd: appDir, stdio: "inherit" });
       }
+    }
+    if (template in FUNCTION_RUNS) {
+      stage = "fn-dev";
+      runFunctionDev(appDir, FUNCTION_RUNS[template]);
     }
     if (template in KNOWN_BROKEN) {
       failures.push(

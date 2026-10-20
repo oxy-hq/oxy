@@ -325,6 +325,40 @@ Two more that read as bugs — `useTrackEvent("oxy-…")` is refused (`400`,
 the prefix is reserved), and a hovered-but-never-opened app records no view —
 are in [references/performance-and-usage.md](references/performance-and-usage.md).
 
+## Run a function locally
+
+`oxyc fn dev <name>` runs one handler from your source in-process, in seconds,
+with no publish. It bundles the handler with the same esbuild call `oxyc publish`
+uses, then invokes it on `createTestContext` seeded from `oxy-app.json`: the
+function's capabilities, `ctx.env` from the env file, and its destinations. It
+prints the response, then the host ops the handler made.
+
+```bash
+oxyc fn dev notify --input '{"name":"Ada"}'            # a literal, @file, or - for stdin
+oxyc fn dev notify --input @sample.json --env-file .env.dev --watch
+```
+
+- **Run it from the app directory** (the one with `oxy-app.json`). `--env-file`
+  defaults to `.env`; `ctx.env` holds that file's keys and nothing from your
+  shell. A `required` secret the file lacks is a warning.
+- **`--watch` re-runs** when a file in the app changes, reading the manifest,
+  env file and `@file` input afresh. A broken edit prints its error and waits
+  for the next save. Exit with Ctrl-C.
+- **Exit codes:** `0` for a 2xx `Response`; `1` when the handler throws or
+  answers non-2xx (as `fn call`); `2` for a function the manifest does not
+  declare, or a missing env file.
+- **A local run is not the isolate.** There is no timeout, memory or log cap;
+  `Buffer`, `TextEncoder` and `process` exist where the isolate lacks them; and
+  every warehouse, semantic, storage, fetch and email call is a stub in memory,
+  so nothing reaches a deployment. The context does refuse what the manifest
+  does not grant, in the host's words. A `ctx.warehouse` destination's engine is
+  assumed (a `customerWarehouseWrites` entry is a customer Postgres, any other
+  is Airhouse), because the workspace config is not read.
+- Before you ship, run it where it really runs: publish to your sandbox and
+  `oxyc fn call`, or `oxyc checks run`. For a committed regression test use
+  `createTestContext` from `@oxy-hq/sdk/testing` in vitest, as the functions
+  template does.
+
 ## Publishing
 
 **These commands are a person's.** `oxyc login` is the engineer's own browser

@@ -14,7 +14,13 @@ export default defineConfig({
   // and the standalone binaries carry it and a published `oxyc` depends on no
   // SDK package at run time. Same mapping as `tsconfig.json` `paths`.
   alias: {
-    "@oxy-hq/sdk/manifest": fileURLToPath(new URL("../typescript/src/manifest.ts", import.meta.url))
+    "@oxy-hq/sdk/manifest": fileURLToPath(
+      new URL("../typescript/src/manifest.ts", import.meta.url)
+    ),
+    // `oxyc fn dev` runs a handler on the SDK's testing context, bundled the same way.
+    "@oxy-hq/sdk/testing": fileURLToPath(
+      new URL("../typescript/src/testing/index.ts", import.meta.url)
+    )
   },
   // `npx @oxy-hq/cli` and a global install both exec this file directly.
   banner: {

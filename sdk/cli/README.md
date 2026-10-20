@@ -7,7 +7,7 @@ manages customer workspace repos.
 - **Customer workspaces** — `list`, `new`, `import`, `doctor`, `update`, `adopt`, `launch`
 - **Custom apps** — `publish`, `init-ci`, `proxy`, `apps`
 - **Checks** — `checks run`
-- **Sandboxes** — `env`, `fn call`, `invocations`, `logs`
+- **Sandboxes** — `env`, `fn dev`, `fn call`, `invocations`, `logs`
 - **Workspace previews** — `preview`
 - **Development** — `validate`, `mcp`, `guide`, `skills`
 
@@ -907,6 +907,7 @@ oxyc env delete <app> <name> [--yes] [--wait [seconds]]
 oxyc env schedules <app> <name> [--on|--off] # staging's or a sandbox's switch; off by default
 
 oxyc publish --app-env <name> [--env <e>]    # see "Custom apps" above
+oxyc fn dev <function> [--input <json|@file|->] [--env-file <path>] [--watch]   # local, in-process
 oxyc fn call <app> <function> [--app-env <name>] [--data <json|@file|->]
 oxyc fn run <app> <function> [--app-env <name>] [--as-schedule] [--data …] [--timeout <s>]
 oxyc checks run <app> --app-env <name>       # see "Checks" above
@@ -991,6 +992,21 @@ non-2xx, is a function-level failure (exit `1`, `ok: false` in the JSON), kept
 distinct from a non-2xx on the POST itself (exit per the usual status mapping
 — e.g. `EnvironmentHasNoBuild` before the stream starts). The
 `x-oxy-invocation-id` response header becomes `invocationId` in the result.
+
+**`fn dev`** runs a handler locally, from the app directory, with no server and
+no credentials: it bundles `functions/<name>.ts` with the esbuild call `oxyc
+publish` uses, runs it in-process on `createTestContext` from
+`@oxy-hq/sdk/testing`, and prints the response and every host op the handler
+made (`host ops: email.send`, one line per call). The context is seeded from
+`oxy-app.json` — the function's capabilities and destinations — and `ctx.env`
+from `--env-file` (default `.env`; never your shell). `--input` is the request
+body, as `fn call --data`. `--watch` re-runs on a change under the app
+directory. It exits `0` for a 2xx `Response`, `1` when the handler throws or
+answers non-2xx, `2` for a function the manifest does not declare. **A local run
+is not the isolate:** no timeout, memory or log limits, Node globals the isolate
+lacks, and every warehouse, semantic, storage, fetch and email call is stubbed
+in memory — nothing reaches a deployment. Check it where it really runs with
+`fn call` against a sandbox.
 
 **`env schedules`** reads, or with `--on` / `--off` flips, the schedules
 switch of staging or a sandbox (`GET`/`PUT

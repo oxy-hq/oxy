@@ -9,6 +9,10 @@ export default defineConfig({
       // the first of those gives.
       "@oxy-hq/sdk/manifest": fileURLToPath(
         new URL("../typescript/src/manifest.ts", import.meta.url)
+      ),
+      // `oxyc fn dev`'s testing context, from source for the same reason.
+      "@oxy-hq/sdk/testing": fileURLToPath(
+        new URL("../typescript/src/testing/index.ts", import.meta.url)
       )
     }
   }
