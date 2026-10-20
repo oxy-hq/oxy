@@ -93,8 +93,8 @@ use crate::server::api::custom_apps_cache::{
     cached_model_term, cached_user, remember_model_term, set_cached_user,
 };
 use crate::server::api::middlewares::sentry_surface::mark_custom_app_surface;
-use crate::server::router::is_allowed_origin;
-use crate::server::service::secret_manager::SecretManagerService;
+use oxy::service::secret_manager::SecretManagerService;
+use oxy_app_core::origin::is_allowed_origin;
 use oxy_server_authz as authz;
 
 /// Resolved context produced by [`check_custom_app_gates`]. The

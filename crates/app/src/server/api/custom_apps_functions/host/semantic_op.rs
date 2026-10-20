@@ -84,7 +84,7 @@ impl ProjectFunctionHost {
         .await
         .map_err(|e| format!("semantic layer task panicked: {e}"))?
         .map_err(|e| format!("semantic layer failed to load: {e}"))?;
-        crate::server::api::operating_graph::binding::apply_reach_scope(
+        oxy_app_core::operating_graph::binding::apply_reach_scope(
             &self.db,
             self.org_id,
             &layer,

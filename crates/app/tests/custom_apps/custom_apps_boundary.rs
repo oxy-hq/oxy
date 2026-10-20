@@ -90,6 +90,23 @@ const ALLOWED_SEAMS: &[Seam] = &[
     // apps browser, so it moved DOWN to `oxy_shared::utils::custom_app_url` — a lower crate both
     // depend on. Moving it *into* custom-apps would have made admin depend on custom-apps (a
     // future cross-feature-crate edge the decomposition plan bans), so a shared home is correct.
+    // REMOVED 2026-10-20 (Wave 3, the prelude gains the remaining leaves): each of these
+    // moved DOWN into `oxy-app-core`, the crate every surface and `oxy-app` depend on, and
+    // `oxy-app` re-exports it at the old path. A custom-apps file imports it from
+    // `oxy_app_core` now, which this scan does not see by design (see "Known gap" above).
+    //   - `server::router` (`is_allowed_origin`; `AppState` is imported from `oxy_app_core`)
+    //     -> `oxy_app_core::origin`
+    //   - `server::service::secret_manager` was a re-export of `oxy::service::secret_manager`
+    //   - `server::api::operating_graph` (reach, binding, the row types and the two reads)
+    //     -> `oxy_app_core::operating_graph`
+    //   - `server::api::workspace_org` -> `oxy_app_core::workspace_org`
+    //   - `server::api::notifications` (input, recipients, compose, send, task enqueue, the
+    //     catalogue's model/parse/validate) -> `oxy_app_core::notifications`
+    //   - `server::previews::sql_kind` -> `oxy_app_core::sql_kind`
+    //   - `usage_report::period::Period` -> `oxy_app_core::usage_period`
+    //   - `workspace_health::queries::exclude_daemon_runs` -> `oxy_app_core::customer_runs`
+    //   - `metrics_pricing::price`, `metrics_rollup::RUN_TOKENS` -> `oxy_app_core::llm_usage`
+    // What is left below is each a reach that is not a leaf; the reason is in its entry.
     Seam {
         prefix: "crate::server::api::admin::apps::verdict",
         why: "the one app verdict (`AppHealth` plus `draft`) the launcher list \
@@ -98,36 +115,6 @@ const ALLOWED_SEAMS: &[Seam] = &[
                reads the observability store and so cannot move down to a shared crate the way \
                `build_pretty_url` did; `verdict` is the narrow door onto it, so the launcher \
                never imports the fleet-health internals.",
-    },
-    Seam {
-        prefix: "crate::server::router",
-        why: "the router/state seam — is_allowed_origin (custom_apps_gates) and AppState \
-               (custom_apps_threads, the one handler that still takes app state).",
-    },
-    Seam {
-        prefix: "crate::server::service::secret_manager",
-        why: "the workspace secret manager (function ctx.secrets, gate authentication).",
-    },
-    Seam {
-        prefix: "crate::server::api::operating_graph",
-        why: "the operating graph — the org's places, positions and assignments, and the \
-               reach rule over them (internal-docs/operating-graph.md). The function runtime \
-               decides `ctx.user.reach` from it before the isolate starts (mod.rs), and \
-               `ctx.org.places()` / `ctx.org.assignments()` read it (host.rs). It is org \
-               data behind the app, like the secret manager: a platform fact every tenant's \
-               app consumes, never one an app writes.",
-    },
-    Seam {
-        prefix: "crate::server::api::workspace_org",
-        why: "the \"is this workspace a live workspace of this org?\" predicate. \
-               custom_apps_publish asks it twice — the cross-org guard (`validate_project`) \
-               and the re-home rule (`ensure_same_workspace`) — and the admin apps \
-               create/move endpoints ask the same question; one shared answer is what keeps \
-               publish and the admin API from disagreeing about the same row (#3175). A pure \
-               leaf — `entity::workspaces` and one `find_by_id`, no `AppState` — so at a \
-               Functions-crate cut it moves DOWN into `oxy-app-core` (already on entity + \
-               sea-orm), as `build_pretty_url` moved to `oxy_shared`, rather than into \
-               custom-apps, which would make admin depend on it.",
     },
     Seam {
         prefix: "crate::server::invocation_placement",
@@ -153,61 +140,6 @@ const ALLOWED_SEAMS: &[Seam] = &[
                before delivery, and the test-only `env_policy/differential.rs` resolves the \
                same redirect. Its only callers are custom apps, so at a Functions-crate cut it \
                moves with the function runtime.",
-    },
-    Seam {
-        prefix: "crate::server::api::notifications",
-        why: "the notification service behind `ctx.notify`: payload limits, recipient \
-               resolution against the app's audience, the inbox write and the delivery queue, \
-               and the email composition — plus the key hash `ctx.email.send`'s idempotency \
-               claim shares with it. The platform's own notices use the same service, so it \
-               stays outside the function runtime and the host reaches it through this one \
-               module.",
-    },
-    Seam {
-        prefix: "crate::server::previews::sql_kind",
-        why: "the previews statement classifier (read vs write, failing closed on anything \
-               that does not parse). A non-production run holds its writes with it — \
-               `env_policy/oltp_sql.rs` sends production's OLTP one read and nothing else, \
-               `env_policy/destination_sql.rs` gates a mapped destination — so a workspace \
-               preview and a custom-app staging run cannot disagree about what a write is. \
-               A pure leaf over sqlparser, `agentic_connector::SqlDialect` and \
-               `airhouse::sql_rules`, no `AppState`: at a Functions-crate cut it moves DOWN \
-               into a crate both sides depend on.",
-    },
-    Seam {
-        prefix: "crate::server::api::admin::usage_report::period::Period",
-        why: "the usage report's week, `Period::last_completed` — the one type, not the \
-               module. `ctx.platform.facts()` \
-               (`host/platform_facts`) counts usage by completed week, and taking the \
-               report's own boundary is what keeps the internal accounts app and the weekly \
-               usage email agreeing on where a week starts. A pure date helper. The facts \
-               builder is a platform read, not a custom-app one: at a Functions-crate cut it \
-               becomes an injected port, like `FunctionQueryExecutor`.",
-    },
-    Seam {
-        prefix: "crate::server::api::admin::workspace_health::queries::exclude_daemon_runs",
-        why: "`exclude_daemon_runs` alone (not the rest of `queries`), the one predicate for a customer's run as opposed to \
-               the platform's own (pre-aggregation cycles, health evals, previews, sandbox \
-               upkeep). `ctx.platform.facts()` counts agent runs with it, so the facts and \
-               Workspace Health cannot disagree on what a customer run is. A SQL fragment, \
-               no state; it leaves with the facts builder at a Functions-crate cut.",
-    },
-    Seam {
-        prefix: "crate::server::api::admin::metrics_pricing::price",
-        why: "Admin → Metrics' `price` alone, the one function that turns a model's token \
-               sums into dollars over `agentic_llm`'s rate table. `ctx.platform.facts()` \
-               (`host/platform_facts/llm_cost.rs`) prices each org's LLM cost per window \
-               with it, so an account's cost to serve in the internal accounts app and on \
-               Admin → Metrics come from one rate table rather than two. A pure function; \
-               it leaves with the facts builder at a Functions-crate cut.",
-    },
-    Seam {
-        prefix: "crate::server::api::admin::metrics_rollup::RUN_TOKENS",
-        why: "`RUN_TOKENS` alone (not the rest of `metrics_rollup`), the SQL columns that \
-               read one run's model and token sums from its `llm_start`/`llm_end` events. \
-               The facts' LLM cost sums the same columns `price` is fed on Admin → Metrics, \
-               so the two cannot read a run's tokens differently. A SQL fragment, no state; \
-               it leaves with the facts builder at a Functions-crate cut.",
     },
     Seam {
         prefix: "crate::server::api::user_tokens::sandboxes_queued",
@@ -426,28 +358,37 @@ fn inside_files(src: &Path) -> Vec<PathBuf> {
 /// prefix itself or anything below it, never a sibling that merely shares
 /// its leading characters.
 fn seam_index(joined: &str) -> Option<usize> {
-    ALLOWED_SEAMS
+    seam_index_in(ALLOWED_SEAMS, joined)
+}
+
+fn seam_index_in(seams: &[Seam], joined: &str) -> Option<usize> {
+    seams
         .iter()
         .position(|s| joined == s.prefix || joined.starts_with(&format!("{}::", s.prefix)))
 }
 
 /// A seam named down to one symbol admits that symbol and nothing beside it,
-/// so a second borrowing from the same module has to be argued for.
+/// so a second borrowing from the same module has to be argued for. No entry
+/// in [`ALLOWED_SEAMS`] is a symbol today (the last ones moved to `oxy-app-core`),
+/// so the rule is pinned on a list of its own.
 #[test]
 fn a_symbol_seam_admits_its_symbol_and_nothing_beside_it() {
-    let queries = "crate::server::api::admin::workspace_health::queries";
-    assert!(seam_index(&format!("{queries}::exclude_daemon_runs")).is_some());
-    assert!(seam_index(&format!("{queries}::gather_signals")).is_none());
-    assert!(seam_index(queries).is_none());
-    let period = "crate::server::api::admin::usage_report::period";
-    assert!(seam_index(&format!("{period}::Period")).is_some());
-    assert!(seam_index(&format!("{period}::PeriodKind")).is_none());
-    assert!(seam_index("crate::server::api::admin::usage_report::collect").is_none());
-    let metrics = "crate::server::api::admin";
-    assert!(seam_index(&format!("{metrics}::metrics_pricing::price")).is_some());
-    assert!(seam_index(&format!("{metrics}::metrics_pricing::build_overview")).is_none());
-    assert!(seam_index(&format!("{metrics}::metrics_rollup::RUN_TOKENS")).is_some());
-    assert!(seam_index(&format!("{metrics}::metrics_rollup::fetch_day_model_rows")).is_none());
+    let seams = [
+        Seam {
+            prefix: "crate::a::queries::one_function",
+            why: "",
+        },
+        Seam {
+            prefix: "crate::a::module",
+            why: "",
+        },
+    ];
+    let one = |path: &str| seam_index_in(&seams, path);
+    assert_eq!(one("crate::a::queries::one_function"), Some(0));
+    assert_eq!(one("crate::a::queries::another_function"), None);
+    assert_eq!(one("crate::a::queries"), None);
+    assert_eq!(one("crate::a::module::anything"), Some(1));
+    assert_eq!(one("crate::a::module_sibling"), None);
 }
 
 #[test]

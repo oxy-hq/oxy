@@ -832,6 +832,8 @@ mod tests {
             "src/server/api/custom_apps_functions/host",
             "src/server/api/custom_apps_storage",
             "src/server/api/notifications",
+            // The notification input and recipient errors moved to the prelude.
+            "../app-core/src/notifications",
         ];
         let mut labels = BTreeSet::new();
         for source in HOST_SOURCES {

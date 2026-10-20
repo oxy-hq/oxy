@@ -675,11 +675,11 @@ fn manifest_capabilities(
     // A kind is critical when the function says so, or when the build's
     // notification catalogue gives it the critical level.
     let catalogue =
-        crate::server::api::notifications::catalog::parse::catalogue(build.manifest_json.as_ref());
+        oxy_app_core::notifications::catalog::parse::catalogue(build.manifest_json.as_ref());
     let notify_kinds = entry.notify_kinds().map(|mut kinds| {
         for (kind, critical) in kinds.iter_mut() {
             *critical |= catalogue.kinds.get(kind).and_then(|k| k.level)
-                == Some(crate::server::api::notifications::catalog::model::Level::Critical);
+                == Some(oxy_app_core::notifications::catalog::model::Level::Critical);
         }
         kinds
     });
@@ -2342,12 +2342,8 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
             // The caller's positions — what reach is decided from. A schedule
             // has none to read: it reaches everywhere as the system.
             if human {
-                crate::server::api::operating_graph::reach::held_by(
-                    args.db,
-                    args.org_id,
-                    args.user_id,
-                )
-                .await
+                oxy_app_core::operating_graph::reach::held_by(args.db, args.org_id, args.user_id)
+                    .await
             } else {
                 Ok(Vec::new())
             }
@@ -2385,7 +2381,7 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
     // Reach: the rule over the facts above. Fail-closed like its siblings — a
     // positions read that errored yields nowhere, never everywhere.
     let reach = {
-        use crate::server::api::operating_graph::reach::{Caller, Reach, reach_of};
+        use oxy_app_core::operating_graph::reach::{Caller, Reach, reach_of};
         let caller = Caller {
             system: !human,
             app_admin: app_role.as_deref() == Some("admin"),

@@ -27,6 +27,24 @@ oxy-airlayer-compat = { workspace = true }
 agentic-connector = { workspace = true }
 agentic-pipeline = { workspace = true }
 
+# `sql_kind`: the workspace-preview statement classifier (airhouse's `sql-rules`
+# is_read_only and the same sqlparser version, so both read one AST).
+airhouse = { workspace = true, features = ["sql-rules"] }
+sqlparser = { workspace = true, features = ["visitor"] }
+
+# `customer_runs` and `llm_usage`: the customer-run predicate and the token rate table.
+agentic-llm = { workspace = true }
+agentic-runtime = { workspace = true }
+
+# `notifications`: the write path (inbox content in the org's OLTP store, the
+# queued delivery task) and the default notification email template.
+agentic-core = { workspace = true }
+oxy-oltp = { workspace = true }
+handlebars = { workspace = true }
+once_cell = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+
 async-trait = { workspace = true }
 axum = { workspace = true }
 sea-orm = { workspace = true }
@@ -43,6 +61,7 @@ urlencoding = { workspace = true }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]
+serde_yaml = { workspace = true }
 tempfile = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 

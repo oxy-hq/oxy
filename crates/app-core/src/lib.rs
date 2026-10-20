@@ -10,24 +10,34 @@
 //! needs a surface, the dependency is pointing the wrong way.
 
 pub mod app_state;
+pub mod audience;
 pub mod audit;
 pub mod compiled_reader;
 pub mod custom_app_env_request;
 pub mod custom_app_environment;
 pub mod custom_apps_host_dispatch;
+pub mod customer_runs;
 pub mod default_branch;
 pub mod forwarded;
 pub mod function_seam;
+pub mod http_cache;
 pub mod internal_orgs;
+pub mod llm_usage;
 pub mod member_authz;
+pub mod notifications;
+pub mod operating_graph;
 pub mod org_host_dispatch;
+pub mod origin;
 pub mod pagination;
 pub mod preagg_context;
 pub mod process_role;
 pub mod serve_mode;
+pub mod sql_kind;
 pub mod staging_pin_scope;
 pub mod ttl_lru;
+pub mod usage_period;
 pub mod workspace_cache;
+pub mod workspace_org;
 pub mod workspace_repo_facts;
 
 pub use app_state::AppState;

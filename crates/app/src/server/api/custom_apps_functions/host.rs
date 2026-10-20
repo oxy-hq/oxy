@@ -112,7 +112,7 @@ pub struct ProjectFunctionHost {
     preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
     /// Where the caller may act — the same `Reach` `ctx.user.reach` carries,
     /// so `ctx.semantic.query({ scope: "reach" })` pins to it server-side.
-    reach: crate::server::api::operating_graph::reach::Reach,
+    reach: oxy_app_core::operating_graph::reach::Reach,
     /// The warehouse connectors `connect` has built this invocation, by
     /// database name: N `ctx.query` / `ctx.warehouse.*` / `ctx.semantic`
     /// calls on one database cost one build — config lookup, secret
@@ -422,7 +422,7 @@ impl ProjectFunctionHost {
         app_name: String,
         caps: FunctionCapabilities,
         preagg: crate::server::api::middlewares::workspace_context::PreaggCacheCtx,
-        reach: crate::server::api::operating_graph::reach::Reach,
+        reach: oxy_app_core::operating_graph::reach::Reach,
         identity: InvocationIdentity,
         policy: super::env_policy::EnvPolicy,
     ) -> Self {
@@ -2885,7 +2885,7 @@ pub async fn org_places_directory(
     db: &DatabaseConnection,
     org_id: Uuid,
 ) -> Result<serde_json::Value, String> {
-    let rows = crate::server::api::operating_graph::locations::location_rows(db, org_id)
+    let rows = oxy_app_core::operating_graph::readers::location_rows(db, org_id)
         .await
         .map_err(|e| format!("ctx.org.places: {e}"))?;
     Ok(serde_json::json!({ "total": rows.len(), "places": rows }))
@@ -2898,7 +2898,8 @@ pub async fn org_assignments_directory(
     org_id: Uuid,
     app_id: Uuid,
 ) -> Result<serde_json::Value, String> {
-    use crate::server::api::operating_graph::{assignments, dto::AssignmentsQuery};
+    use oxy_app_core::operating_graph::dto::AssignmentsQuery;
+    use oxy_app_core::operating_graph::readers as assignments;
     let audience = app_audience(db, org_id, app_id).await?.ids;
     let rows: Vec<_> = assignments::rows(db, org_id, &AssignmentsQuery::default())
         .await

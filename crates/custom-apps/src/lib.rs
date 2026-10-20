@@ -21,7 +21,7 @@
 //!   resolve it for a non-production request, and the promote drift notice.
 
 pub mod agent_built;
-pub mod audience;
+pub use oxy_app_core::audience;
 pub mod auth;
 pub mod build_state;
 pub mod cache;

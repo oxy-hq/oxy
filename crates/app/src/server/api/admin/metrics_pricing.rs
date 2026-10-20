@@ -4,35 +4,13 @@
 //!
 //! Split out of `metrics.rs` by responsibility.
 
-use agentic_llm::pricing::cost_for_call;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
 use super::metrics::{DayCost, LlmUsageOverview, ModelCost, OrgCost, OrgUsageDetail, UsageTotals};
 use super::metrics_rollup::{DayModelRow, OrgModelRow};
 
-/// Price a single model bucket. `None` model or an unknown model yields
-/// `None` cost (tokens still count toward usage, just not dollars).
-///
-/// The one place a token rollup becomes dollars: `ctx.platform.facts()` prices
-/// its per-window LLM cost with it too (over `metrics_rollup::RUN_TOKENS`), so
-/// an account's cost there and on this page come from one rate table.
-pub(crate) fn price(
-    model: &Option<String>,
-    input: i64,
-    output: i64,
-    cc: i64,
-    cr: i64,
-) -> Option<f64> {
-    let model = model.as_deref()?;
-    cost_for_call(
-        model,
-        input.max(0) as u64,
-        output.max(0) as u64,
-        cc.max(0) as u64,
-        cr.max(0) as u64,
-    )
-}
+pub(crate) use oxy_app_core::llm_usage::price;
 
 /// Fold per-(day, model) rows into the window total + the day series. Shared by
 /// the cross-tenant overview and the per-org detail so both price identically.

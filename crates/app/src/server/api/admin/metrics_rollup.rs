@@ -11,28 +11,7 @@ use super::scope::org_scope_clause;
 
 // Shared CTE
 
-/// One run's model and token sums, the columns every rollup here prices. Each
-/// run collapses to ONE model (the max `llm_end.model` — runs are effectively
-/// single-model), so downstream GROUP BYs can attribute the run's tokens to a
-/// priced model bucket. Token casts mirror `agentic_runtime`'s per-run usage
-/// query.
-///
-/// Reads the run's `agentic_run_events` aliased `e`, joined with
-/// `e.event_type IN ('llm_start', 'llm_end')` (so a run that made no LLM call
-/// is no row at all, rather than an unpriced one) and grouped by run. Shared
-/// with `ctx.platform.facts()`'s LLM cost, which prices with
-/// `metrics_pricing::price`, so the facts and this page cannot price a run
-/// differently.
-pub(crate) const RUN_TOKENS: &str = "\
-    max(e.payload->>'model') FILTER (WHERE e.event_type = 'llm_end') AS model, \
-    COALESCE(SUM((e.payload->>'prompt_tokens')::bigint) \
-        FILTER (WHERE e.event_type = 'llm_start'), 0) AS input_tokens, \
-    COALESCE(SUM((e.payload->>'output_tokens')::bigint) \
-        FILTER (WHERE e.event_type = 'llm_end'), 0) AS output_tokens, \
-    COALESCE(SUM((e.payload->>'cache_creation_input_tokens')::bigint) \
-        FILTER (WHERE e.event_type = 'llm_end'), 0) AS cache_creation, \
-    COALESCE(SUM((e.payload->>'cache_read_input_tokens')::bigint) \
-        FILTER (WHERE e.event_type = 'llm_end'), 0) AS cache_read";
+pub(crate) use oxy_app_core::llm_usage::RUN_TOKENS;
 
 /// Per-run token rollup over the window ([`RUN_TOKENS`] per run).
 ///

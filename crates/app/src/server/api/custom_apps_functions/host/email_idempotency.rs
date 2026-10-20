@@ -18,7 +18,7 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use serde_json::{Value, json};
 
 use super::ProjectFunctionHost;
-use crate::server::api::notifications::send::key_hash;
+use oxy_app_core::notifications::send::key_hash;
 
 /// What a claim found.
 pub(super) enum EmailClaim {

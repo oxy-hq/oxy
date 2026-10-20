@@ -48,7 +48,7 @@ use sqlparser::parser::ParserError;
 
 use super::HeldStatement;
 use super::oltp_sql::side_effect;
-use crate::server::previews::sql_kind::{StatementKind, classify_parsed, parser_dialect};
+use oxy_app_core::sql_kind::{StatementKind, classify_parsed, parser_dialect};
 
 /// What a write on a mapped connection may name.
 #[derive(Clone, Debug, PartialEq, Eq)]

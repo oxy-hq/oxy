@@ -173,7 +173,7 @@ fn a_kind_no_function_sends_and_an_overridden_level_are_warnings() {
 #[test]
 fn the_oltp_bookings_example_declares_a_valid_catalogue() {
     let manifest: Value = serde_json::from_str(include_str!(
-        "../../../../../../../customer-apps/examples/oltp-bookings/oxy-app.json"
+        "../../../../../customer-apps/examples/oltp-bookings/oxy-app.json"
     ))
     .expect("the example manifest is JSON");
     assert!(

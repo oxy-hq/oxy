@@ -33,7 +33,7 @@ use agentic_connector::SqlDialect;
 use sqlparser::dialect::{Dialect, PostgreSqlDialect};
 use sqlparser::tokenizer::{Token, Tokenizer};
 
-use crate::server::previews::sql_kind::{StatementKind, classify};
+use oxy_app_core::sql_kind::{StatementKind, classify};
 
 /// A statement held rather than sent. `verb` and `table` go in the held row
 /// (identifiers only); `why` finishes the error the function sees.

@@ -49,8 +49,8 @@ use super::{
     custom_apps_asset_manifest as asset_manifest, custom_apps_auth,
     custom_apps_build_store as store, custom_apps_bundle_cache as cache,
     custom_apps_migrations as migrations, custom_apps_precompress as precompress,
-    workspace_org::{WorkspaceOrgMatch, workspace_in_org},
 };
+use oxy_app_core::workspace_org::{WorkspaceOrgMatch, workspace_in_org};
 
 mod admit;
 mod inflate;
@@ -1282,7 +1282,7 @@ fn check_declared_functions(
 /// A function may not declare a `notify` kind in the platform's `oxy.`
 /// namespace: `ctx.notify` refuses to send one, so the publish says so first.
 fn refuse_reserved_notify_kinds(specs: &[(String, serde_json::Value)]) -> Result<(), PublishError> {
-    use crate::server::api::notifications::input::{RESERVED_KIND_PREFIX, reserved_kinds_declared};
+    use oxy_app_core::notifications::input::{RESERVED_KIND_PREFIX, reserved_kinds_declared};
     for (name, spec) in specs {
         if let Some(kind) = reserved_kinds_declared(spec).first() {
             return Err(PublishError::Invalid(
@@ -1308,7 +1308,7 @@ fn refuse_reserved_notify_kinds(specs: &[(String, serde_json::Value)]) -> Result
 fn check_notification_catalogue(
     manifest: Option<&serde_json::Value>,
 ) -> Result<Vec<String>, PublishError> {
-    crate::server::api::notifications::catalog::validate::check(manifest).map_err(|p| {
+    oxy_app_core::notifications::catalog::validate::check(manifest).map_err(|p| {
         PublishError::Invalid(
             crate::server::api::custom_apps_validate::BundleValidation::new(
                 p.check,

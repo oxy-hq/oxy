@@ -32,7 +32,7 @@ use uuid::Uuid;
 
 use crate::server::api::custom_apps_gates::check_custom_app_gates;
 use crate::server::api::custom_apps_staging_pin::request::{environment_refused, staging_app_for};
-use crate::server::router::AppState;
+use oxy_app_core::AppState;
 use oxy_app_core::custom_app_env_request::request_environment;
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use oxy_auth::types::AuthenticatedUser;

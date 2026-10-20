@@ -413,7 +413,7 @@ pub(super) fn cache_control_for(
 
 // The ETag format and `If-None-Match` comparison are shared with the admin
 // SPA shell — see `server::http_cache` for why they have one home.
-pub(super) use crate::server::http_cache::{if_none_match, weak_etag as etag_for};
+pub(super) use oxy_app_core::http_cache::{if_none_match, weak_etag as etag_for};
 
 pub(super) fn guess_content_type(path: &StdPath) -> &'static str {
     match path.extension().and_then(|e| e.to_str()) {

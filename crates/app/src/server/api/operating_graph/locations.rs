@@ -57,52 +57,7 @@ impl LocationError {
     }
 }
 
-pub fn to_row(l: locations::Model, external_ids: BTreeMap<String, String>) -> LocationRow {
-    LocationRow {
-        id: l.id,
-        org_id: l.org_id,
-        name: l.name,
-        kind: l.kind,
-        parent_id: l.parent_id,
-        status: l.status,
-        timezone: l.timezone,
-        external_id: l.external_id,
-        external_ids,
-        created_at: l.created_at.to_rfc3339(),
-        updated_at: l.updated_at.to_rfc3339(),
-    }
-}
-
-/// Every location of the org with its external ids, name-sorted. Two bounded
-/// reads: an operator has tens to hundreds of places, not millions.
-pub async fn location_rows(
-    db: &DatabaseConnection,
-    org_id: Uuid,
-) -> Result<Vec<LocationRow>, DbErr> {
-    let rows = locations::Entity::find()
-        .filter(locations::Column::OrgId.eq(org_id))
-        .order_by_asc(locations::Column::Name)
-        .all(db)
-        .await?;
-    let ids = ext::Entity::find()
-        .filter(ext::Column::OrgId.eq(org_id))
-        .all(db)
-        .await?;
-    let mut by_location: HashMap<Uuid, BTreeMap<String, String>> = HashMap::new();
-    for e in ids {
-        by_location
-            .entry(e.location_id)
-            .or_default()
-            .insert(e.system, e.external_id);
-    }
-    Ok(rows
-        .into_iter()
-        .map(|l| {
-            let ids = by_location.remove(&l.id).unwrap_or_default();
-            to_row(l, ids)
-        })
-        .collect())
-}
+pub use oxy_app_core::operating_graph::readers::{location_rows, to_row};
 
 pub async fn one_row(
     db: &DatabaseConnection,

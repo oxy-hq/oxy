@@ -13,17 +13,17 @@
 //! does; a run with no invoking user (a schedule) is refused there rather than
 //! told to somebody nobody asked.
 //!
-//! [`recipients`]: crate::server::api::notifications::recipients
-//! [`send`]: crate::server::api::notifications::send
+//! [`recipients`]: oxy_app_core::notifications::recipients
+//! [`send`]: oxy_app_core::notifications::send
 
 use serde_json::{Value, json};
 
 use super::super::env_policy::{self, HostOp, Target};
 use super::ProjectFunctionHost;
-use crate::server::api::notifications::compose;
-use crate::server::api::notifications::input::{self, EmailRequest, NotifyInput};
-use crate::server::api::notifications::recipients::{self, Skipped};
-use crate::server::api::notifications::send::{
+use oxy_app_core::notifications::compose;
+use oxy_app_core::notifications::input::{self, EmailRequest, NotifyInput};
+use oxy_app_core::notifications::recipients::{self, Skipped};
+use oxy_app_core::notifications::send::{
     AppRef, EmailContent, Outgoing, SendError, send, thread_key,
 };
 
@@ -146,7 +146,7 @@ impl ProjectFunctionHost {
         critical: bool,
         users: Vec<uuid::Uuid>,
         prefix: &str,
-    ) -> Result<crate::server::api::notifications::send::Sent, String> {
+    ) -> Result<oxy_app_core::notifications::send::Sent, String> {
         let title = format!("{prefix}{}", parsed.title);
         let email = self.compose_email(&parsed, &title, prefix).await;
         let out = Outgoing {
@@ -214,7 +214,7 @@ impl ProjectFunctionHost {
 }
 
 fn sent_json(
-    sent: &crate::server::api::notifications::send::Sent,
+    sent: &oxy_app_core::notifications::send::Sent,
     skipped: &[Skipped],
     environment: Option<Value>,
 ) -> Value {

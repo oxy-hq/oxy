@@ -21,7 +21,7 @@ fn the_sandbox_task_kinds_are_platform_daemons_in_every_list() {
             "pub const SYSTEM_SOURCE_TYPES: &[&str] = &[",
         ),
         (
-            "src/server/api/admin/workspace_health/queries.rs",
+            "../app-core/src/customer_runs.rs",
             "const NON_WORKSPACE_RUN_SOURCES: &[&str] = &[",
         ),
         (

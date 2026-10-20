@@ -48,7 +48,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("host/notify_op.rs", include_str!("host/notify_op.rs")),
     (
         "notifications/input.rs",
-        include_str!("../notifications/input.rs"),
+        include_str!("../../../../../app-core/src/notifications/input.rs"),
     ),
     (
         "host/platform_facts/serve.rs",
