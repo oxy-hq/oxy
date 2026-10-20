@@ -655,9 +655,7 @@ pub async fn rename_org(
     // base-path rewrite is computed against a prefix that no longer exists.
     // Same reason `update_app` invalidates on an app-slug change. Keyed on the
     // slug the entries were cached under, which is the one being left behind.
-    oxy_app::server::api::custom_apps_cache::invalidate_app_resolution_cache_for_org(
-        &previous_slug,
-    );
+    oxy_custom_apps::cache::invalidate_app_resolution_cache_for_org(&previous_slug);
 
     let member_count = org_members::Entity::find()
         .filter(org_members::Column::OrgId.eq(updated.id))
@@ -719,7 +717,7 @@ pub async fn delete_org(
     }
     // Cascaded apps outlive their rows in the resolution cache — see the same
     // call in the tenant-facing `organizations::delete_org`.
-    oxy_app::server::api::custom_apps_cache::invalidate_app_resolution_cache();
+    oxy_custom_apps::cache::invalidate_app_resolution_cache();
     tracing::info!(
         admin_email = %actor.label(),
         target_id = %org_id,

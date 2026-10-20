@@ -1469,7 +1469,7 @@ pub async fn set_standing(
                 // the app shell and every function invoke; a suspension that
                 // left that entry warm would keep the kiosk working until it
                 // expired. Same call every grant-changing route makes.
-                oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
+                oxy_custom_apps::auth::invalidate_access_cache();
                 let action = if req.active {
                     "frontline.worker.reinstated"
                 } else {

@@ -24,9 +24,6 @@ const BACKLOG: &[(&str, &str)] = &[
     // custom-apps vertical
     ("api-documents", "server::api::custom_apps_gates"),
     ("api-documents", "server::api::custom_apps_storage"),
-    ("api-frontline", "server::api::custom_apps_auth"),
-    ("api-tenancy", "server::api::custom_apps_auth"),
-    ("api-tenancy", "server::api::custom_apps_cache"),
     // frontline completion: this logic belongs IN api-frontline
     ("api-frontline", "server::api::frontline_grants"),
     ("api-frontline", "server::api::frontline_admin"),

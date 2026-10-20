@@ -44,7 +44,7 @@ async fn for_functions(b: EnvironmentBuilds, environment: AppEnvironment) -> Opt
 /// it never reaches past a production build, and staging never falls back.
 #[tokio::test]
 async fn functions_fall_back_to_staging_only_for_an_app_never_promoted() {
-    crate::server::api::custom_apps_agent_built::remember(Uuid::from_u128(2), false);
+    crate::agent_built::remember(Uuid::from_u128(2), false);
     assert_eq!(
         for_functions(builds(None, Some(2)), AppEnvironment::Production).await,
         Some(Uuid::from_u128(2))
@@ -81,7 +81,7 @@ async fn names_staging(b: EnvironmentBuilds, build: Uuid) -> bool {
 /// and its one exception included.
 #[tokio::test]
 async fn a_build_is_stagings_only_when_production_does_not_run_it() {
-    use crate::server::api::custom_apps_agent_built::remember;
+    use crate::agent_built::remember;
     let (one, two, three) = (Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(3));
     let promoted = || builds(Some(1), Some(2));
     assert!(
@@ -153,7 +153,7 @@ fn app_row() -> apps::Model {
 /// its own is never asked, whoever published its draft.
 #[tokio::test]
 async fn production_never_falls_back_to_a_build_a_token_published() {
-    use crate::server::api::custom_apps_agent_built::remember;
+    use crate::agent_built::remember;
     use futures::FutureExt;
     let production = AppEnvironment::Production;
     let (by_token, by_person) = (Uuid::from_u128(0x7A), Uuid::from_u128(0x7B));

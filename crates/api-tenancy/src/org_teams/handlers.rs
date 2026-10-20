@@ -296,7 +296,7 @@ pub async fn delete_team(
         .exec(&db)
         .await
         .map_err(db_err)?;
-    oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
+    oxy_custom_apps::auth::invalidate_access_cache();
     audit::record(
         &db,
         &ctx,
@@ -350,7 +350,7 @@ pub async fn add_team_member(
         Err(e) if is_unique_violation(&e) => return Ok(StatusCode::NO_CONTENT),
         Err(e) => return Err(db_err(e)),
     }
-    oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
+    oxy_custom_apps::auth::invalidate_access_cache();
     audit::record(
         &db,
         &ctx,
@@ -378,7 +378,7 @@ pub async fn remove_team_member(
         .exec(&db)
         .await
         .map_err(db_err)?;
-    oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
+    oxy_custom_apps::auth::invalidate_access_cache();
     audit::record(
         &db,
         &ctx,

@@ -121,7 +121,7 @@ impl PromoteRefusal {
     pub fn code(&self) -> &'static str {
         match self {
             Self::ValidationNotPassed { .. } => VALIDATION_NOT_PASSED,
-            Self::AgentBuilt { .. } => crate::server::api::custom_apps_agent_built::PROMOTE_REFUSED,
+            Self::AgentBuilt { .. } => crate::agent_built::PROMOTE_REFUSED,
         }
     }
 }

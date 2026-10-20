@@ -23,11 +23,11 @@ use uuid::Uuid;
 /// same 30-100 asset requests as a production one, and the decision loads the
 /// principal's facts. A revoked grant stops opening staging within a minute,
 /// like a revoked membership stops opening production.
-type DecisionCache = super::custom_apps_cache::TtlLru<(Uuid, Uuid), bool>;
+type DecisionCache = crate::cache::TtlLru<(Uuid, Uuid), bool>;
 
 fn non_production_cache() -> &'static DecisionCache {
     static CACHE: std::sync::OnceLock<DecisionCache> = std::sync::OnceLock::new();
-    CACHE.get_or_init(super::custom_apps_cache::standard_cache)
+    CACHE.get_or_init(crate::cache::standard_cache)
 }
 
 /// May this viewer open a **non-production** environment of `app`? Oxy staff
@@ -35,13 +35,13 @@ fn non_production_cache() -> &'static DecisionCache {
 /// (`Action::AppNonProduction`) with today's staff draft-preview gate as the
 /// `existing_allow`, so the model can only narrow it. Cached 60 s.
 ///
-/// Asked of the [`Caller`](crate::server::authz::Caller): an API token opens a
+/// Asked of the [`Caller`](oxy_server_authz::Caller): an API token opens a
 /// non-production environment only with the staff standing it carries, inside
 /// the orgs it covers. The cache holds a session's verdict per (user, app), so
 /// a token that narrows its bearer neither reads it nor writes it.
 pub async fn may_open_non_production(
     db: &sea_orm::DatabaseConnection,
-    caller: &crate::server::authz::Caller,
+    caller: &oxy_server_authz::Caller,
     app: &apps::Model,
 ) -> bool {
     if caller.reach().is_some_and(oxy_authz::TokenReach::narrows) {
@@ -68,7 +68,7 @@ pub async fn may_open_non_production(
 /// are refused.
 pub async fn may_open_environment(
     db: &sea_orm::DatabaseConnection,
-    caller: &crate::server::authz::Caller,
+    caller: &oxy_server_authz::Caller,
     app: &apps::Model,
     environment: &AppEnvironment,
 ) -> bool {
@@ -88,7 +88,7 @@ pub async fn may_open_environment(
 /// listing an app's environments, and creating one.
 pub async fn may_open_new_sandbox(
     db: &sea_orm::DatabaseConnection,
-    caller: &crate::server::authz::Caller,
+    caller: &oxy_server_authz::Caller,
     app: &apps::Model,
 ) -> bool {
     if !caller.is_sandbox_agent() {
@@ -100,7 +100,7 @@ pub async fn may_open_new_sandbox(
 /// What `environment` is to the authorization model: fixed, or a sandbox with
 /// the token that created it. A sandbox with no row has no creator, so no
 /// token owns it.
-pub(crate) async fn environment_facet<C: ConnectionTrait>(
+pub async fn environment_facet<C: ConnectionTrait>(
     db: &C,
     app: &apps::Model,
     environment: &AppEnvironment,
@@ -131,7 +131,7 @@ async fn sandbox_creator<C: ConnectionTrait>(
 
 async fn decide_non_production(
     db: &sea_orm::DatabaseConnection,
-    caller: &crate::server::authz::Caller,
+    caller: &oxy_server_authz::Caller,
     app: &apps::Model,
 ) -> bool {
     decide_in(db, caller, app, None).await
@@ -141,7 +141,7 @@ async fn decide_non_production(
 /// sandbox agent token is refused.
 async fn decide_in(
     db: &sea_orm::DatabaseConnection,
-    caller: &crate::server::authz::Caller,
+    caller: &oxy_server_authz::Caller,
     app: &apps::Model,
     facet: Option<oxy_authz::EnvFacet>,
 ) -> bool {
@@ -150,14 +150,14 @@ async fn decide_in(
         Some(facet) => resource.in_environment(facet),
         None => resource,
     };
-    let existing_allow = crate::server::authz::globals::platform_reaches(
+    let existing_allow = oxy_server_authz::globals::platform_reaches(
         db,
         caller,
         oxy_authz::Cap::DevelopApps,
         app.org_id,
     )
     .await;
-    crate::server::authz::enforce_for(
+    oxy_server_authz::enforce_for(
         db,
         caller,
         "custom_app_non_production",

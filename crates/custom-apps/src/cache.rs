@@ -27,20 +27,20 @@ use std::time::Duration;
 use oxy_auth::types::AuthenticatedUser;
 use uuid::Uuid;
 
-pub(crate) use oxy_app_core::ttl_lru::TtlLru;
+pub use oxy_app_core::ttl_lru::TtlLru;
 
 /// Lifetime of cache entries before they need re-fetching. Short enough
 /// that org membership revocations propagate quickly; long enough to
 /// absorb the asset-storm a page load triggers.
-pub(super) const CACHE_TTL: Duration = Duration::from_secs(60);
+pub const CACHE_TTL: Duration = Duration::from_secs(60);
 
 /// Hard cap per cache. The entry evicted past it is the least recently read,
 /// so a scan over many identities or slugs costs the scanner's own cold
 /// entries, not the hot ones.
-pub(super) const CACHE_MAX_ENTRIES: usize = 4_096;
+pub const CACHE_MAX_ENTRIES: usize = 4_096;
 
 /// A cache of the standard shape: `CACHE_MAX_ENTRIES` slots, `CACHE_TTL`.
-pub(super) fn standard_cache<K: std::hash::Hash + Eq, V: Clone>() -> TtlLru<K, V> {
+pub fn standard_cache<K: std::hash::Hash + Eq, V: Clone>() -> TtlLru<K, V> {
     TtlLru::new(CACHE_MAX_ENTRIES, CACHE_TTL)
 }
 
@@ -59,11 +59,11 @@ fn user_cache() -> &'static TtlLru<String, AuthenticatedUser> {
     CACHE.get_or_init(standard_cache)
 }
 
-pub(super) fn cached_user(key: &str) -> Option<AuthenticatedUser> {
+pub fn cached_user(key: &str) -> Option<AuthenticatedUser> {
     user_cache().get(&key.to_string())
 }
 
-pub(super) fn set_cached_user(key: String, user: AuthenticatedUser) {
+pub fn set_cached_user(key: String, user: AuthenticatedUser) {
     user_cache().insert(key, user);
 }
 
@@ -79,11 +79,11 @@ fn access_cache() -> &'static TtlLru<(Uuid, Uuid), bool> {
     CACHE.get_or_init(standard_cache)
 }
 
-pub(super) fn cached_access(user_id: Uuid, app_id: Uuid) -> Option<bool> {
+pub fn cached_access(user_id: Uuid, app_id: Uuid) -> Option<bool> {
     access_cache().get(&(user_id, app_id))
 }
 
-pub(super) fn set_cached_access(user_id: Uuid, app_id: Uuid, allowed: bool) {
+pub fn set_cached_access(user_id: Uuid, app_id: Uuid, allowed: bool) {
     access_cache().insert((user_id, app_id), allowed);
 }
 
@@ -91,7 +91,7 @@ pub(super) fn set_cached_access(user_id: Uuid, app_id: Uuid, allowed: bool) {
 /// `custom_apps_auth::invalidate_access_cache`, which is what the mutation
 /// sites call; also drops the data-plane gate's cached ring terms, which
 /// weigh on the same question for a workspace.
-pub(super) fn clear_access_caches() {
+pub fn clear_access_caches() {
     access_cache().clear();
     model_term_cache().clear();
 }
@@ -118,7 +118,7 @@ fn model_term_cache() -> &'static TtlLru<(Uuid, Uuid, Uuid), bool> {
     CACHE.get_or_init(standard_cache)
 }
 
-pub(super) fn cached_model_term(user_id: Uuid, project_id: Uuid, org_id: Uuid) -> Option<bool> {
+pub fn cached_model_term(user_id: Uuid, project_id: Uuid, org_id: Uuid) -> Option<bool> {
     model_term_cache().get(&(user_id, project_id, org_id))
 }
 
@@ -126,12 +126,7 @@ pub(super) fn cached_model_term(user_id: Uuid, project_id: Uuid, org_id: Uuid) -
 /// is "the facts did not load": the gate then deferred to the shipped
 /// verdict for that one request, and a verdict reached without facts is
 /// never anyone else's.
-pub(super) fn remember_model_term(
-    user_id: Uuid,
-    project_id: Uuid,
-    org_id: Uuid,
-    term: Option<bool>,
-) {
+pub fn remember_model_term(user_id: Uuid, project_id: Uuid, org_id: Uuid, term: Option<bool>) {
     if let Some(term) = term {
         model_term_cache().insert((user_id, project_id, org_id), term);
     }
@@ -153,10 +148,10 @@ pub(super) fn remember_model_term(
 /// already invalidate this cache, so they ride the same entry rather than
 /// costing the asset storm a query of their own.
 #[derive(Clone)]
-pub(super) struct ResolvedApp {
+pub struct ResolvedApp {
     pub org: entity::organizations::Model,
     pub app: entity::apps::Model,
-    pub environments: super::custom_apps_env_resolve::EnvironmentBuilds,
+    pub environments: crate::env_resolve::EnvironmentBuilds,
 }
 
 type AppResolutionKey = (String, String);
@@ -166,11 +161,11 @@ fn app_resolution_cache() -> &'static TtlLru<AppResolutionKey, ResolvedApp> {
     CACHE.get_or_init(standard_cache)
 }
 
-pub(super) fn cached_app_resolution(org_slug: &str, app_slug: &str) -> Option<ResolvedApp> {
+pub fn cached_app_resolution(org_slug: &str, app_slug: &str) -> Option<ResolvedApp> {
     app_resolution_cache().get(&(org_slug.to_string(), app_slug.to_string()))
 }
 
-pub(super) fn set_cached_app_resolution(org_slug: &str, app_slug: &str, resolved: ResolvedApp) {
+pub fn set_cached_app_resolution(org_slug: &str, app_slug: &str, resolved: ResolvedApp) {
     app_resolution_cache().insert((org_slug.to_string(), app_slug.to_string()), resolved);
 }
 
@@ -227,11 +222,11 @@ fn org_cache() -> &'static TtlLru<Uuid, entity::organizations::Model> {
     CACHE.get_or_init(standard_cache)
 }
 
-pub(super) fn cached_org(org_id: Uuid) -> Option<entity::organizations::Model> {
+pub fn cached_org(org_id: Uuid) -> Option<entity::organizations::Model> {
     org_cache().get(&org_id)
 }
 
-pub(super) fn set_cached_org(org: entity::organizations::Model) {
+pub fn set_cached_org(org: entity::organizations::Model) {
     org_cache().insert(org.id, org);
 }
 
@@ -252,11 +247,11 @@ fn build_cache() -> &'static TtlLru<Uuid, entity::app_builds::Model> {
     CACHE.get_or_init(standard_cache)
 }
 
-pub(super) fn cached_build(build_pk: Uuid) -> Option<entity::app_builds::Model> {
+pub fn cached_build(build_pk: Uuid) -> Option<entity::app_builds::Model> {
     build_cache().get(&build_pk)
 }
 
-pub(super) fn set_cached_build(build_pk: Uuid, build: entity::app_builds::Model) {
+pub fn set_cached_build(build_pk: Uuid, build: entity::app_builds::Model) {
     build_cache().insert(build_pk, build);
 }
 
@@ -277,14 +272,39 @@ mod tests {
         }
     }
 
+    /// An `apps` row: app `id` of `org_id`, published from `workspace_id`. The
+    /// same row `custom_apps_agent_fixture::app` builds in `oxy-app`, whose
+    /// fixtures this crate cannot reach.
+    fn app(id: Uuid, org_id: Uuid, workspace_id: Uuid) -> entity::apps::Model {
+        let now = chrono::Utc::now().fixed_offset();
+        entity::apps::Model {
+            visibility: "org".to_string(),
+            id,
+            slug: "ops".to_string(),
+            name: "Ops".to_string(),
+            org_id,
+            project_id: workspace_id,
+            branch: "main".to_string(),
+            source_repo: String::new(),
+            status: "created".to_string(),
+            source_type: "s3".to_string(),
+            source_config: serde_json::json!({}),
+            bootstrap_pr_url: None,
+            last_synced_at: None,
+            manifest_override: None,
+            published_at: None,
+            repo_path: None,
+            last_promoted_by: None,
+            last_promoted_at: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
     fn resolved(org_slug: &str) -> ResolvedApp {
         let org = org(org_slug);
         ResolvedApp {
-            app: super::super::custom_apps_agent_fixture::app(
-                Uuid::new_v4(),
-                org.id,
-                Uuid::new_v4(),
-            ),
+            app: app(Uuid::new_v4(), org.id, Uuid::new_v4()),
             org,
             environments: Default::default(),
         }

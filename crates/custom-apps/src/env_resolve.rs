@@ -68,7 +68,7 @@ use oxy_app_core::custom_app_environment::{AppEnvironment, AppEnvironmentKind};
 use sea_orm::{ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QueryOrder};
 use uuid::Uuid;
 
-use super::custom_apps_environments::{self, FixedPointers};
+use crate::environments::{self as custom_apps_environments, FixedPointers};
 
 /// One app environment and the build it serves right now.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -125,7 +125,7 @@ impl EnvironmentBuilds {
     pub async fn production_runs<C: ConnectionTrait>(&self, db: &C) -> Result<Option<Uuid>, DbErr> {
         match self.production {
             Some(build) => Ok(Some(build)),
-            None => super::custom_apps_agent_built::production_fallback(db, self.staging).await,
+            None => crate::agent_built::production_fallback(db, self.staging).await,
         }
     }
 
@@ -326,11 +326,11 @@ async fn resolve_sandbox<C: ConnectionTrait>(
     })
 }
 
-pub(crate) use super::custom_apps_non_production::environment_facet;
-pub use super::custom_apps_non_production::{
+pub use crate::non_production::environment_facet;
+pub use crate::non_production::{
     may_open_environment, may_open_new_sandbox, may_open_non_production,
 };
 
 #[cfg(test)]
-#[path = "custom_apps_env_resolve_tests.rs"]
+#[path = "env_resolve_tests.rs"]
 mod tests;

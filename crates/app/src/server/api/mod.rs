@@ -25,13 +25,13 @@ pub mod custom_apps_auth;
 pub mod custom_apps_availability;
 pub mod custom_apps_beacon;
 pub mod custom_apps_build_history;
-pub mod custom_apps_build_state;
+pub use oxy_custom_apps::build_state as custom_apps_build_state;
 pub mod custom_apps_build_store;
 pub mod custom_apps_bundle_cache;
-pub mod custom_apps_cache;
+pub use oxy_custom_apps::cache as custom_apps_cache;
 pub mod custom_apps_client;
 pub mod custom_apps_debug;
-pub mod custom_apps_env_resolve;
+pub use oxy_custom_apps::env_resolve as custom_apps_env_resolve;
 pub mod custom_apps_env_schedules;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::environments as custom_apps_environments;
@@ -42,7 +42,7 @@ pub mod custom_apps_html_cache;
 pub mod custom_apps_logs;
 pub mod custom_apps_manifest;
 pub mod custom_apps_migrations;
-pub mod custom_apps_non_production;
+pub use oxy_custom_apps::non_production as custom_apps_non_production;
 pub mod custom_apps_nonproduction;
 pub mod custom_apps_precompress;
 /// `oxyc promote` / `oxyc rollback`, and the one function that moves

@@ -324,7 +324,7 @@ pub async fn publish_app(
     // answered whole (`PromoteRefusal`), not cut down to a status.
     let saved = admin_apps::publish_one(&db, app_id, &actor, AuditedBy::Caller).await?;
     // Viewers' cached access must drop now, not at TTL (admin does the same).
-    oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
+    oxy_custom_apps::auth::invalidate_access_cache();
 
     audit::record_best_effort(
         &db,
@@ -354,7 +354,7 @@ pub async fn unpublish_app(
     let saved = admin_apps::unpublish_one(&db, app_id, &actor, AuditedBy::Caller)
         .await
         .map_err(|e| e.status)?;
-    oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
+    oxy_custom_apps::auth::invalidate_access_cache();
 
     audit::record_best_effort(
         &db,
