@@ -284,6 +284,7 @@ impl Workspace {
             .warehouse_write(op.to_string(), payload)
             .await
             .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     /// `(a, b)` rows of `table`, read straight from the engine.

@@ -22,6 +22,7 @@ use crate::server::api::custom_apps_storage::RetentionPolicy;
 
 use super::data_audit::{self, InvocationIdentity, WriteRecord};
 use super::host_call_attrs::db_query_summary;
+use super::host_error::{CapabilityArea, HostError};
 use super::runtime::{FUNCTION_MAX_ROWS, FUNCTION_STREAM_MAX_ROWS, FunctionHost};
 use super::seam::{FunctionProjectContext, FunctionQueryExecutor};
 use super::upsert_support;
@@ -279,63 +280,54 @@ impl FunctionCapabilities {
     /// `oxyc`'s lint and `@oxy-hq/sdk/testing` repeat verbatim
     /// (`sdk_testing_drift`), so each literal stays where those cite it.
     /// Every `<Area>CapabilityMissing` is written here and nowhere else.
-    pub fn refuse(&self, op: HostOp) -> Result<(), String> {
+    pub fn refuse(&self, op: HostOp) -> Result<(), HostError> {
         let capability = op.spec().capability;
         if self.allows(capability) {
             return Ok(());
         }
         Err(match capability {
             Capability::None | Capability::WarehouseWrite => return Ok(()),
-            Capability::SecretsWrite => {
+            Capability::SecretsWrite => HostError::capability_missing(
+                CapabilityArea::Secrets,
                 "ctx.secrets.set: this function has not declared the `secrets.write` \
-                 capability (add it to oxy-app.json to permit writes)"
-                    .to_string()
-            }
-            Capability::EmailSend => {
+                 capability (add it to oxy-app.json to permit writes)",
+            ),
+            Capability::EmailSend => HostError::capability_missing(
+                CapabilityArea::Email,
                 "EmailCapabilityMissing: this function has not declared the `email.send` \
-                 capability (add \"email\": { \"send\": true } to its oxy-app.json entry)"
-                    .to_string()
-            }
-            Capability::Notify => notify_op::NOTIFY_CAPABILITY_MISSING.to_string(),
-            Capability::OrgRead => match op {
-                HostOp::OrgPeople => {
-                    "OrgCapabilityMissing: this function has not declared the `org.read` \
-                     capability (add \"org\": { \"read\": true } to its oxy-app.json entry)"
-                        .to_string()
-                }
-                other => org_capability_missing(other.sub_name().unwrap_or_default()),
-            },
-            Capability::PlatformFacts => platform_facts::CAPABILITY_MISSING.to_string(),
-            // `copy` asks for write first, then read, as the two gates did.
-            Capability::StorageWrite | Capability::StorageReadAndWrite if !self.storage_write => {
-                "StorageCapabilityMissing: this function has not declared the `storage.write` \
-                 capability (add \"storage\": { \"write\": true } to its oxy-app.json entry)"
-                    .to_string()
-            }
+                 capability (add \"email\": { \"send\": true } to its oxy-app.json entry)",
+            ),
+            Capability::Notify => HostError::capability_missing(
+                CapabilityArea::Notify,
+                notify_op::NOTIFY_CAPABILITY_MISSING,
+            ),
+            Capability::OrgRead => refuse_org(op),
+            Capability::PlatformFacts => HostError::capability_missing(
+                CapabilityArea::Platform,
+                platform_facts::CAPABILITY_MISSING,
+            ),
             Capability::StorageRead
-            | Capability::StorageReadAndWrite
-            | Capability::StorageWrite => {
-                "StorageCapabilityMissing: this function has not declared the `storage.read` \
-                 capability (add \"storage\": { \"read\": true } to its oxy-app.json entry)"
-                    .to_string()
-            }
-            Capability::Oltp => match &self.oltp {
-                WriterCapability::SlugNotDerivable { slug } => {
-                    slug_cannot_back_a_schema("OLTP", slug)
-                }
-                _ => "OltpCapabilityMissing: this function has not declared the `oltp` capability \
-                      (add \"oltp\": { \"enabled\": true } to its oxy-app.json entry). The schema \
-                      it writes is derived from the app's own slug — the manifest only enables \
-                      access."
-                    .to_string(),
-            },
-            Capability::Airhouse => match &self.airhouse {
-                WriterCapability::SlugNotDerivable { slug } => {
-                    slug_cannot_back_a_schema("Airhouse", slug)
-                }
-                _ => airhouse_ops::AIRHOUSE_CAPABILITY_MISSING.to_string(),
-            },
+            | Capability::StorageWrite
+            | Capability::StorageReadAndWrite => self.refuse_storage(capability),
+            Capability::Oltp => refuse_oltp(&self.oltp),
+            Capability::Airhouse => refuse_airhouse(&self.airhouse),
         })
+    }
+
+    /// `copy` asks for write first, then read, as the two gates did.
+    fn refuse_storage(&self, capability: Capability) -> HostError {
+        let asks_write = matches!(
+            capability,
+            Capability::StorageWrite | Capability::StorageReadAndWrite
+        );
+        let text = if asks_write && !self.storage_write {
+            "StorageCapabilityMissing: this function has not declared the `storage.write` \
+             capability (add \"storage\": { \"write\": true } to its oxy-app.json entry)"
+        } else {
+            "StorageCapabilityMissing: this function has not declared the `storage.read` \
+             capability (add \"storage\": { \"read\": true } to its oxy-app.json entry)"
+        };
+        HostError::capability_missing(CapabilityArea::Storage, text)
     }
 
     /// Every gate open, for a test double that stands in for a manifest
@@ -854,7 +846,7 @@ impl FunctionHost for ProjectFunctionHost {
             .clone()
     }
 
-    async fn query(&self, sql: String) -> Result<serde_json::Value, String> {
+    async fn query(&self, sql: String) -> Result<serde_json::Value, HostError> {
         let db_name = self.default_database()?;
         let connector = self.connect(&db_name).await?;
         let (rows, truncated) =
@@ -864,7 +856,7 @@ impl FunctionHost for ProjectFunctionHost {
         Ok(result)
     }
 
-    async fn query_stream(&self, sql: String) -> Result<serde_json::Value, String> {
+    async fn query_stream(&self, sql: String) -> Result<serde_json::Value, HostError> {
         let db_name = self.default_database()?;
         let connector = self.connect(&db_name).await?;
         let rows = with_db_timeout(
@@ -880,10 +872,10 @@ impl FunctionHost for ProjectFunctionHost {
         &self,
         url: String,
         init: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         let parsed = reqwest::Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
         if !is_safe_outbound(&parsed) {
-            return Err(format!("fetch to '{url}' blocked by SSRF allowlist"));
+            return Err(format!("fetch to '{url}' blocked by SSRF allowlist").into());
         }
 
         let method = init
@@ -937,9 +929,7 @@ impl FunctionHost for ProjectFunctionHost {
         if let Some(len) = resp.content_length()
             && len > max_bytes
         {
-            return Err(format!(
-                "response too large ({len} bytes > {max_bytes} cap)"
-            ));
+            return Err(format!("response too large ({len} bytes > {max_bytes} cap)").into());
         }
         // …but Content-Length is advisory: a chunked response carries none, and
         // a hostile server can simply lie. So the cap is enforced against bytes
@@ -961,9 +951,9 @@ impl FunctionHost for ProjectFunctionHost {
             // Checked BEFORE extending, so the cap is never exceeded even
             // transiently by one oversized chunk.
             if bytes.len() as u64 + chunk.len() as u64 > max_bytes {
-                return Err(format!(
-                    "response too large (exceeded the {max_bytes} byte cap)"
-                ));
+                return Err(
+                    format!("response too large (exceeded the {max_bytes} byte cap)").into(),
+                );
             }
             bytes.extend_from_slice(&chunk);
         }
@@ -979,13 +969,17 @@ impl FunctionHost for ProjectFunctionHost {
             other => {
                 return Err(format!(
                     "ctx.fetch: unknown encoding '{other}' (expected 'utf8' or 'base64')"
-                ));
+                )
+                .into());
             }
         };
         Ok(serde_json::json!({ "status": status, "body": body, "encoding": encoding }))
     }
 
-    async fn semantic_query(&self, spec: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn semantic_query(
+        &self,
+        spec: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
         // A staging build's semantic pin (#3370), re-scoped here: a host call
         // runs on a task of its own, which does not inherit the invocation's
         // task-locals, and the pin is what makes the rollup short-circuit
@@ -995,13 +989,14 @@ impl FunctionHost for ProjectFunctionHost {
             self.semantic_query_unpinned(spec),
         )
         .await
+        .map_err(HostError::from)
     }
 
     async fn airway_run(
         &self,
         pipeline_ref: String,
         variables: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         // Refused outside production by the broker: a run has no environment,
         // so any run is a production write (`env_policy`).
         let target = ("airway", pipeline_ref.as_str(), "RUN", "");
@@ -1064,7 +1059,7 @@ impl FunctionHost for ProjectFunctionHost {
     async fn warehouse_query(
         &self,
         payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         let database = payload
             .get("database")
             .and_then(|v| v.as_str())
@@ -1087,7 +1082,7 @@ impl FunctionHost for ProjectFunctionHost {
         &self,
         op: String,
         payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         let database = payload
             .get("database")
             .and_then(|v| v.as_str())
@@ -1192,8 +1187,8 @@ impl FunctionHost for ProjectFunctionHost {
         &self,
         op: String,
         payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        self.tx_op(&op, &payload).await
+    ) -> Result<serde_json::Value, HostError> {
+        self.tx_op(&op, &payload).await.map_err(HostError::from)
     }
 
     /// `ctx.oltp.{query,exec}` — the app's OWN per-org OLTP schema, and nothing
@@ -1202,8 +1197,8 @@ impl FunctionHost for ProjectFunctionHost {
         &self,
         op: String,
         payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        self.oltp_op(&op, &payload).await
+    ) -> Result<serde_json::Value, HostError> {
+        self.oltp_op(&op, &payload).await.map_err(HostError::from)
     }
 
     /// `ctx.airhouse.{query,exec,append}` — the app's own facts in its
@@ -1219,11 +1214,17 @@ impl FunctionHost for ProjectFunctionHost {
         &self,
         op: String,
         payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        self.airhouse_op(&op, &payload).await
+    ) -> Result<serde_json::Value, HostError> {
+        self.airhouse_op(&op, &payload)
+            .await
+            .map_err(HostError::from)
     }
 
-    async fn secrets_set(&self, key: String, value: String) -> Result<serde_json::Value, String> {
+    async fn secrets_set(
+        &self,
+        key: String,
+        value: String,
+    ) -> Result<serde_json::Value, HostError> {
         // §11.x fail-closed: the `secrets.write` capability is the broker's
         // gate. Scoped to the app's own `apps/<app_id>/` namespace, so it can
         // never touch another app's or the project's secrets. The key's name
@@ -1283,24 +1284,30 @@ impl FunctionHost for ProjectFunctionHost {
     ///
     /// Scoped to `self.org_id`, which the host resolved — never taken from the
     /// function, so a manifest cannot point this at another tenant.
-    async fn org_people(&self) -> Result<serde_json::Value, String> {
+    async fn org_people(&self) -> Result<serde_json::Value, HostError> {
         // The `org.read` gate is the broker's (`FunctionCapabilities::refuse`).
-        org_directory(&self.db, self.org_id, self.app_id).await
+        org_directory(&self.db, self.org_id, self.app_id)
+            .await
+            .map_err(HostError::from)
     }
 
     /// `ctx.org.places()` — the org's locations, hierarchy and external ids.
     /// Same capability as `people()`: a place is not a secret, and an app
     /// that shows "Clovis" needs the row before it knows whether the caller
     /// reaches it. The whole registry, not a reach-scoped slice.
-    async fn org_places(&self) -> Result<serde_json::Value, String> {
-        org_places_directory(&self.db, self.org_id).await
+    async fn org_places(&self) -> Result<serde_json::Value, HostError> {
+        org_places_directory(&self.db, self.org_id)
+            .await
+            .map_err(HostError::from)
     }
 
     /// `ctx.org.assignments()` — who holds which position where. Scoped like
     /// `people()`: the assignments of people who can reach this app, which is
     /// what makes it not a widening of the directory.
-    async fn org_assignments(&self) -> Result<serde_json::Value, String> {
-        org_assignments_directory(&self.db, self.org_id, self.app_id).await
+    async fn org_assignments(&self) -> Result<serde_json::Value, HostError> {
+        org_assignments_directory(&self.db, self.org_id, self.app_id)
+            .await
+            .map_err(HostError::from)
     }
 
     /// `ctx.platform.facts(opts)` — ids and counts about every org on the
@@ -1309,13 +1316,18 @@ impl FunctionHost for ProjectFunctionHost {
     /// the deployment's internal orgs, is this op's and fails closed
     /// (`platform_facts::admit_org`), then the build. The org is the host's,
     /// never the function's.
-    async fn platform_facts(&self, opts: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn platform_facts(
+        &self,
+        opts: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
         let internal = platform_facts::admit_org(self.org_id)?;
         let weeks = platform_facts::requested_weeks(&opts)?;
-        platform_facts::cached_reply(&self.db, internal, weeks).await
+        platform_facts::cached_reply(&self.db, internal, weeks)
+            .await
+            .map_err(HostError::from)
     }
 
-    async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, HostError> {
         // The `email.send` gate is the broker's (`FunctionCapabilities::refuse`).
         // Per-invocation fan-out cap (this host serves exactly one invocation).
         let n = self
@@ -1331,7 +1343,8 @@ impl FunctionHost for ProjectFunctionHost {
             return Err(format!(
                 "TooManyEmails: this invocation exceeded the \
                  {MAX_EMAILS_PER_INVOCATION}-email limit"
-            ));
+            )
+            .into());
         }
         // Parsed by reference, so a held send is refused for the same payload
         // errors production would refuse it for.
@@ -1362,18 +1375,18 @@ impl FunctionHost for ProjectFunctionHost {
         if let Some(hash) = hash {
             self.settle_email_claim(&hash, &result).await;
         }
-        result
+        result.map_err(HostError::from)
     }
 
-    async fn notify(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
-        self.notify_op(input).await
+    async fn notify(&self, input: serde_json::Value) -> Result<serde_json::Value, HostError> {
+        self.notify_op(input).await.map_err(HostError::from)
     }
 
     async fn storage(
         &self,
         op: String,
         payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         use crate::server::api::custom_apps_storage as st;
 
         // Resolved against the registry, as the broker resolved it: one off
@@ -1399,7 +1412,7 @@ impl FunctionHost for ProjectFunctionHost {
                 let pathname = match (str_field("pathname"), str_field("filename")) {
                     (Some(p), _) => p.to_string(),
                     (None, Some(f)) => format!("uploads/{f}"),
-                    (None, None) => return Err(required("pathname")),
+                    (None, None) => return Err(required("pathname").into()),
                 };
                 let content_length =
                     u64_field("contentLength").ok_or_else(|| required("contentLength"))?;
@@ -1421,7 +1434,7 @@ impl FunctionHost for ProjectFunctionHost {
                 // Kept for this invocation: the one mutating `ctx.fetch` an
                 // environment sends is a PUT to a URL minted here.
                 self.note_minted_upload(&silo, &out);
-                serde_json::to_value(out).map_err(|e| e.to_string())
+                serde_json::to_value(out).map_err(|e| HostError::from(e.to_string()))
             }
             HostOp::StorageGetDownloadUrl => {
                 let key = str_field("key").ok_or_else(|| required("key"))?;
@@ -1433,7 +1446,7 @@ impl FunctionHost for ProjectFunctionHost {
                 )
                 .await
                 .map_err(|e| e.to_string())?;
-                serde_json::to_value(out).map_err(|e| e.to_string())
+                serde_json::to_value(out).map_err(|e| HostError::from(e.to_string()))
             }
             HostOp::StoragePut => {
                 let pathname = str_field("pathname")
@@ -1451,7 +1464,8 @@ impl FunctionHost for ProjectFunctionHost {
                         return Err(format!(
                             "ctx.storage.put: unknown encoding '{other}' (expected 'utf8' or \
                              'base64')"
-                        ));
+                        )
+                        .into());
                     }
                 };
                 // Checked unconditionally, matching the presigned path above.
@@ -1480,7 +1494,7 @@ impl FunctionHost for ProjectFunctionHost {
                 )
                 .await
                 .map_err(|e| e.to_string())?;
-                serde_json::to_value(out).map_err(|e| e.to_string())
+                serde_json::to_value(out).map_err(|e| HostError::from(e.to_string()))
             }
             HostOp::StorageGet => {
                 let key = str_field("key").ok_or_else(|| required("key"))?;
@@ -1489,7 +1503,8 @@ impl FunctionHost for ProjectFunctionHost {
                     return Err(format!(
                         "ctx.storage.get: unknown encoding '{encoding}' (expected 'utf8' or \
                          'base64')"
-                    ));
+                    )
+                    .into());
                 }
                 match st::get(&silo, key).await.map_err(|e| e.to_string())? {
                     Some((bytes, content_type)) => {
@@ -1512,7 +1527,9 @@ impl FunctionHost for ProjectFunctionHost {
             HostOp::StorageHead => {
                 let key = str_field("key").ok_or_else(|| required("key"))?;
                 match st::head(&silo, key).await.map_err(|e| e.to_string())? {
-                    Some(meta) => serde_json::to_value(meta).map_err(|e| e.to_string()),
+                    Some(meta) => {
+                        serde_json::to_value(meta).map_err(|e| HostError::from(e.to_string()))
+                    }
                     None => Ok(serde_json::Value::Null),
                 }
             }
@@ -1525,7 +1542,7 @@ impl FunctionHost for ProjectFunctionHost {
                 )
                 .await
                 .map_err(|e| e.to_string())?;
-                serde_json::to_value(out).map_err(|e| e.to_string())
+                serde_json::to_value(out).map_err(|e| HostError::from(e.to_string()))
             }
             HostOp::StorageDelete => {
                 // One key or a batch, mirroring the object-store idiom.
@@ -1546,9 +1563,9 @@ impl FunctionHost for ProjectFunctionHost {
                 let out = st::copy(&silo, from, to, bool_field("allowOverwrite"))
                     .await
                     .map_err(|e| e.to_string())?;
-                serde_json::to_value(out).map_err(|e| e.to_string())
+                serde_json::to_value(out).map_err(|e| HostError::from(e.to_string()))
             }
-            _ => Err(format!("ctx.storage: unknown op '{op}'")),
+            _ => Err(format!("ctx.storage: unknown op '{op}'").into()),
         }
     }
 }
@@ -2805,6 +2822,47 @@ mod tests {
         .await
         .expect_err("a missing Parquet must be an error");
         assert!(!err.is_empty());
+    }
+}
+
+/// `ctx.org.*` without `org.read`; the member is named for all but `people`.
+fn refuse_org(op: HostOp) -> HostError {
+    let text = match op {
+        HostOp::OrgPeople => "OrgCapabilityMissing: this function has not declared the `org.read` \
+             capability (add \"org\": { \"read\": true } to its oxy-app.json entry)"
+            .to_string(),
+        other => org_capability_missing(other.sub_name().unwrap_or_default()),
+    };
+    HostError::capability_missing(CapabilityArea::Org, text)
+}
+
+/// `ctx.oltp` without a usable grant. A writer the slug cannot back says so;
+/// it is not a missing capability, so it carries no area.
+fn refuse_oltp(oltp: &WriterCapability) -> HostError {
+    match oltp {
+        WriterCapability::SlugNotDerivable { slug } => {
+            HostError::backend(slug_cannot_back_a_schema("OLTP", slug))
+        }
+        _ => HostError::capability_missing(
+            CapabilityArea::Oltp,
+            "OltpCapabilityMissing: this function has not declared the `oltp` capability \
+             (add \"oltp\": { \"enabled\": true } to its oxy-app.json entry). The schema \
+             it writes is derived from the app's own slug — the manifest only enables \
+             access.",
+        ),
+    }
+}
+
+/// `ctx.airhouse` without a usable grant; as [`refuse_oltp`].
+fn refuse_airhouse(airhouse: &WriterCapability) -> HostError {
+    match airhouse {
+        WriterCapability::SlugNotDerivable { slug } => {
+            HostError::backend(slug_cannot_back_a_schema("Airhouse", slug))
+        }
+        _ => HostError::capability_missing(
+            CapabilityArea::Airhouse,
+            airhouse_ops::AIRHOUSE_CAPABILITY_MISSING,
+        ),
     }
 }
 

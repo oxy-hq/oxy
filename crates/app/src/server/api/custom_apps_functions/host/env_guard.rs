@@ -85,7 +85,7 @@ impl ProjectFunctionHost {
     /// production run reads a branch — the policy's words, the same the
     /// broker uses for an op it holds itself.
     pub(super) fn held_error(&self, op: HostOp) -> String {
-        self.policy.held_error(op)
+        self.policy.held_error(op).message
     }
 
     /// [`Self::admit_op`] for a run found reading a branch; `reason` says how

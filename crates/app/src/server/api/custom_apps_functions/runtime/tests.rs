@@ -7,7 +7,7 @@
 fn every_host_call_span_carries_the_platform_only_target() {
     use super::super::host_call_attrs::HOST_CALL_TARGET;
     use tokio::sync::oneshot;
-    fn reply() -> oneshot::Sender<Result<serde_json::Value, String>> {
+    fn reply() -> oneshot::Sender<Result<serde_json::Value, HostError>> {
         oneshot::channel().0
     }
     let json = serde_json::Value::Null;
@@ -159,6 +159,7 @@ fn the_log_cap_emits_exactly_one_marker_then_goes_silent() {
 }
 use super::ops::reply_json;
 use super::*;
+use crate::server::api::custom_apps_functions::host_error::HostError;
 
 /// Test host: `ctx.query` returns one row and `ctx.email.send` records what
 /// actually arrived, so a test can assert a payload survived the isolate
@@ -267,14 +268,14 @@ impl FunctionHost for MockHost {
             .unwrap()
             .push((op, format!("{plane} {namespace} {verb} {table}")));
     }
-    async fn query(&self, _sql: String) -> Result<serde_json::Value, String> {
+    async fn query(&self, _sql: String) -> Result<serde_json::Value, HostError> {
         let calls_before = self
             .query_calls
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if let Some(message) = &self.query_error
             && !(self.query_error_once && calls_before > 0)
         {
-            return Err(message.clone());
+            return Err(message.clone().into());
         }
         Ok(serde_json::json!({ "rows": [{ "x": 1 }], "truncated": false }))
     }
@@ -302,10 +303,10 @@ impl FunctionHost for MockHost {
         &self,
         op: String,
         payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         self.tx_ops.lock().unwrap().push(op.clone());
         if let (Some(message), "begin_oltp") = (&self.own_store_error, op.as_str()) {
-            return Err(message.clone());
+            return Err(message.clone().into());
         }
         match op.as_str() {
             "begin" | "begin_oltp" => Ok(serde_json::json!({ "id": 1 })),
@@ -316,49 +317,55 @@ impl FunctionHost for MockHost {
             })),
             "exec" => Ok(serde_json::json!({ "rowCount": 1 })),
             "commit" | "rollback" => Ok(serde_json::json!({ "ok": true })),
-            other => Err(format!("unexpected tx op '{other}'")),
+            other => Err(format!("unexpected tx op '{other}'").into()),
         }
     }
-    async fn platform_facts(&self, opts: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn platform_facts(
+        &self,
+        opts: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
         match &self.platform_facts_error {
-            Some(message) => Err(message.clone()),
+            Some(message) => Err(message.clone().into()),
             // Echo what crossed the boundary, so a test sees the options
             // arrive as an object rather than a stringified blob.
             None => Ok(serde_json::json!({ "echo": opts })),
         }
     }
-    async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, HostError> {
         *self.last_email.lock().unwrap() = Some(input);
         Ok(serde_json::json!({ "messageId": "test-message-id" }))
     }
-    async fn notify(&self, input: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn notify(&self, input: serde_json::Value) -> Result<serde_json::Value, HostError> {
         *self.last_notify.lock().unwrap() = Some(input);
         Ok(serde_json::json!({ "notificationId": "n-1", "recipients": 2, "skipped": [] }))
     }
-    async fn query_stream(&self, _sql: String) -> Result<serde_json::Value, String> {
+    async fn query_stream(&self, _sql: String) -> Result<serde_json::Value, HostError> {
         Err("unused".into())
     }
     async fn fetch(
         &self,
         _url: String,
         _init: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         Err("unused".into())
     }
-    async fn semantic_query(&self, _spec: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn semantic_query(
+        &self,
+        _spec: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
         Err("unused".into())
     }
     async fn airway_run(
         &self,
         _pipeline_ref: String,
         _variables: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         Err("unused".into())
     }
     async fn warehouse_query(
         &self,
         payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         // Echo the database back so a test can prove the name crossed the
         // isolate boundary rather than being defaulted host-side.
         Ok(serde_json::json!({
@@ -371,14 +378,14 @@ impl FunctionHost for MockHost {
         &self,
         _op: String,
         _payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         Err("unused".into())
     }
     async fn oltp(
         &self,
         op: String,
         payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         // Echo sql/params so a test can prove the call crossed the isolate
         // boundary intact — params as an array, not a stringified blob.
         match op.as_str() {
@@ -386,16 +393,16 @@ impl FunctionHost for MockHost {
                 "rows": [{ "sql": payload.get("sql"), "params": payload.get("params") }]
             })),
             "exec" => Ok(serde_json::json!({ "rowCount": 1 })),
-            other => Err(format!("unexpected oltp op '{other}'")),
+            other => Err(format!("unexpected oltp op '{other}'").into()),
         }
     }
     async fn airhouse(
         &self,
         op: String,
         payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         if let Some(message) = &self.own_store_error {
-            return Err(message.clone());
+            return Err(message.clone().into());
         }
         // Echo what crossed the boundary: the row count proves `rows`
         // arrived as an array, not a stringified blob.
@@ -408,17 +415,21 @@ impl FunctionHost for MockHost {
                 "truncated": false,
             })),
             "exec" => Ok(serde_json::json!({ "ok": true })),
-            other => Err(format!("unexpected airhouse op '{other}'")),
+            other => Err(format!("unexpected airhouse op '{other}'").into()),
         }
     }
-    async fn secrets_set(&self, _key: String, _value: String) -> Result<serde_json::Value, String> {
+    async fn secrets_set(
+        &self,
+        _key: String,
+        _value: String,
+    ) -> Result<serde_json::Value, HostError> {
         Err("unused".into())
     }
     async fn storage(
         &self,
         _op: String,
         _payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, HostError> {
         Err("unused".into())
     }
 }
@@ -451,7 +462,7 @@ fn reply_json_ok_passes_value_through() {
 
 #[test]
 fn reply_json_err_wraps_as_oxy_error() {
-    let out = reply_json("ctx.warehouse", Err("boom".to_string()));
+    let out = reply_json("ctx.warehouse", Err("boom".into()));
     let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(parsed["__oxyError"], "HostError");
     assert_eq!(parsed["message"], "ctx.warehouse: boom");
@@ -691,7 +702,7 @@ async fn an_op_missing_from_the_registry_is_refused_by_the_broker() {
         reply,
     };
     let (_reply, result) = dispatch_host_call(call, host).await;
-    assert_eq!(result, Err("ctx.storage: unknown op 'rename'".to_string()));
+    assert_eq!(result, Err("ctx.storage: unknown op 'rename'".into()));
 }
 
 /// Run `artifact` against a fresh `MockHost` and hand back both, so a test

@@ -17,6 +17,8 @@
 
 use sha2::{Digest, Sha256};
 
+use super::host_error::{HostError, HostErrorKind};
+
 /// How an invocation failed, with nothing of what it said.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Failure {
@@ -298,25 +300,34 @@ impl Failure {
     }
 }
 
-/// Who an `error` status belongs to, from the prefix `RuntimeError` puts on the
-/// message. Anything without one failed before the isolate ran — a workspace
-/// or build lookup, a missing function — which is the platform's, not the app's.
-fn kind_of_error(message: &str) -> &'static str {
-    if message.starts_with("function threw:") {
-        "threw"
-    } else if message.starts_with("internal runtime error") {
-        "internal"
-    } else if message.starts_with("function exceeded its memory limit") {
+/// Who an `error` status belongs to, from the [`HostError`] kind the failure
+/// carries: the app's code threw, the runtime failed, the app breached its
+/// heap ceiling. Anything else failed before the isolate ran — a workspace or
+/// build lookup, a missing function — which is the platform's, not the app's.
+fn kind_of_host_error(error: &HostError) -> &'static str {
+    match error.kind {
+        HostErrorKind::Threw => "threw",
+        HostErrorKind::Internal => "internal",
         // The app's fault, and the fallback below would have called it the
         // platform's — inverting the attribution on exactly the failure the
         // heap ceiling exists to make attributable. Its own value rather than
         // folding into `threw`, because the remedy differs: `threw` is a bug in
         // the handler, this is the app holding more live objects than an
         // isolate may.
-        "exceeded_memory"
-    } else {
-        "platform"
+        HostErrorKind::MemoryLimit => "exceeded_memory",
+        HostErrorKind::CapabilityMissing { .. }
+        | HostErrorKind::Held
+        | HostErrorKind::Refused
+        | HostErrorKind::Backend => "platform",
     }
+}
+
+/// The same decision for a message that arrives as text — the stored
+/// `error` of an invocation row, which `RunOutcome` still carries. The prefix
+/// parsing lives in one place ([`HostError::from`]), and a test holds that it
+/// gives the kind each typed constructor has.
+fn kind_of_error(message: &str) -> &'static str {
+    kind_of_host_error(&HostError::from(message))
 }
 
 /// Chars of normalized message that feed the digest — chars, not bytes, so
@@ -1357,6 +1368,40 @@ mod tests {
             ("workspace not found", "platform"),
         ] {
             assert_eq!(kind_of_error(message), expected, "for {message:?}");
+        }
+    }
+
+    /// The typed route and the prefix fallback give one answer for every kind
+    /// a failed invocation can carry, through the real `Display` text, so a
+    /// reworded prefix fails here rather than reclassifying silently.
+    #[test]
+    fn the_typed_kind_and_the_prefix_fallback_agree() {
+        use super::super::host_error::CapabilityArea;
+        for (error, expected) in [
+            (HostError::threw("TypeError: x"), "threw"),
+            (HostError::internal("boom"), "internal"),
+            (HostError::memory_limit(), "exceeded_memory"),
+            (HostError::backend("workspace not found"), "platform"),
+            (
+                HostError::held("HeldInStaging: ctx.fetch was not performed."),
+                "platform",
+            ),
+            (
+                HostError::refused("EnvironmentRefused: ctx.fetch is refused."),
+                "platform",
+            ),
+            (
+                HostError::capability_missing(
+                    CapabilityArea::Email,
+                    "EmailCapabilityMissing: this function has not declared the `email.send`",
+                ),
+                "platform",
+            ),
+        ] {
+            assert_eq!(kind_of_host_error(&error), expected, "typed: {error}");
+            assert_eq!(kind_of_error(&error.to_string()), expected, "text: {error}");
+            let failure = Failure::of("error", 0, Some(&error.to_string()), None).unwrap();
+            assert_eq!(failure.kind, expected, "Failure::of: {error}");
         }
     }
 }

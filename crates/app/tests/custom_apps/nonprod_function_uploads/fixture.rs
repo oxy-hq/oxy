@@ -235,7 +235,9 @@ pub(crate) async fn send(
     let init = json!({
         "method": method, "body": "hello", "headers": { "content-type": "text/plain" },
     });
-    host.fetch(url.to_string(), init).await
+    host.fetch(url.to_string(), init)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// `ctx.fetch(url, { method: "PUT", body })`.

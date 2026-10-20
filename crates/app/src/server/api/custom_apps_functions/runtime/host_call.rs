@@ -10,6 +10,7 @@
 //! only ever sees an op the registry knows.
 
 use super::super::env_policy::{Decision, Family, HeldTarget, HoldBy, HostOp, Verb};
+use super::super::host_error::HostError;
 use super::FunctionHost;
 use super::ops::HostReply;
 
@@ -270,12 +271,12 @@ pub(super) fn host_call_span(call: &HostCall) -> (tracing::Span, HostCallKind, &
 pub(super) async fn dispatch_host_call(
     call: HostCall,
     host: std::sync::Arc<dyn FunctionHost>,
-) -> (HostReply, Result<serde_json::Value, String>) {
+) -> (HostReply, Result<serde_json::Value, HostError>) {
     let Some(op) = call.op() else {
         let message = call
             .family()
             .unknown_op_message(call.sub_op().unwrap_or_default());
-        return (call.into_reply(), Err(message));
+        return (call.into_reply(), Err(HostError::backend(message)));
     };
     if let Err(refusal) = host.capabilities().refuse(op) {
         return (call.into_reply(), Err(refusal));
@@ -340,7 +341,7 @@ async fn admit_by_environment(
     call: &HostCall,
     op: HostOp,
     host: &dyn FunctionHost,
-) -> Result<(), String> {
+) -> Result<(), HostError> {
     let HoldBy::Broker { plane, verb } = op.spec().holds else {
         return Ok(());
     };
@@ -367,19 +368,18 @@ async fn admit_by_environment(
 /// failure, rows / truncation for a query, the upstream status for a fetch.
 pub(super) fn record_host_call_outcome(
     kind: HostCallKind,
-    result: &Result<serde_json::Value, String>,
+    result: &Result<serde_json::Value, HostError>,
     environment_labels: bool,
 ) {
-    use super::super::host_call_attrs::{
-        classify_host_error_for, fetch_status, rows_and_truncated,
-    };
+    use super::super::host_call_attrs::{fetch_status, rows_and_truncated};
+    use super::super::host_error_class::classify_host_error_typed;
     let span = tracing::Span::current();
     match result {
-        Err(message) => {
+        Err(error) => {
             span.record("otel.status_code", "ERROR");
             span.record(
                 "error.type",
-                classify_host_error_for(message, environment_labels),
+                classify_host_error_typed(error, environment_labels),
             );
         }
         Ok(value) => match kind {

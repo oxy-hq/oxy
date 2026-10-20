@@ -118,6 +118,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use uuid::Uuid;
 
+use super::host_error::HostError;
+
 /// The registry — one row per op, read by the policy below and by the broker
 /// (`runtime::host_call`), which enforces each row's capability and, for an
 /// op that holds by not running, its environment decision.
@@ -351,19 +353,19 @@ fn non_production(op: HostOp, oltp: &OltpHome) -> Decision {
 impl EnvPolicy {
     /// What a held `op` throws here: the environment's hold, or a preview's
     /// when a production run reads a branch.
-    pub fn held_error(&self, op: HostOp) -> String {
-        match self.branch_reason() {
+    pub fn held_error(&self, op: HostOp) -> HostError {
+        HostError::held(match self.branch_reason() {
             Some(reason) => branch_held_message(op, &reason),
             None => held_message(op, &self.environment),
-        }
+        })
     }
 
     /// What a refused `op` throws here, with `fix`: the environment's
     /// refusal, or a preview's.
-    pub fn refusal(&self, op: HostOp, fix: &str) -> String {
-        match self.branch_reason() {
+    pub fn refusal(&self, op: HostOp, fix: &str) -> HostError {
+        HostError::refused(match self.branch_reason() {
             Some(reason) => branch_refused_message(op, &reason, fix),
             None => refused_message(op, &self.environment, fix),
-        }
+        })
     }
 }

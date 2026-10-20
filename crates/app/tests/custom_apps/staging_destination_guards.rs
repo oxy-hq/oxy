@@ -80,6 +80,7 @@ async fn insert(ws: &Workspace, mapping: &[(&str, &str)], from: &str) -> Result<
     )
     .await
     .map(|_| ())
+    .map_err(|e| e.to_string())
 }
 
 async fn refused(ws: &Workspace, mapping: &[(&str, &str)], from: &str, says: &str) {

@@ -62,6 +62,13 @@ pub mod host;
 /// payload) — the helpers behind `runtime`'s per-op spans.
 #[cfg(feature = "custom-app-functions")]
 mod host_call_attrs;
+/// A failed host call or invocation as a kind beside its text — the text is
+/// still the wire-and-classification contract.
+pub mod host_error;
+/// The kind-first `error.type` of a failed host call, over `host_call_attrs`'s
+/// text classification.
+#[cfg(feature = "custom-app-functions")]
+mod host_error_class;
 /// How many invocations may run at once, globally and per org. Bounds the
 /// thread and heap count the per-isolate ceiling cannot.
 #[cfg(feature = "custom-app-functions")]

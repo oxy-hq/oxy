@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{mpsc, oneshot};
 
 use super::super::LogLine;
+use super::super::host_error::HostError;
 use super::host_call::HostCall;
 
 /// An op that failed. Surfaces in JS as a plain `Error` whose message is this
@@ -180,7 +181,7 @@ impl OpContext {
 pub(super) struct HostSender(mpsc::UnboundedSender<HostCall>);
 
 /// The reply end every [`HostCall`] carries.
-pub(super) type HostReply = oneshot::Sender<Result<serde_json::Value, String>>;
+pub(super) type HostReply = oneshot::Sender<Result<serde_json::Value, HostError>>;
 
 impl HostSender {
     /// Send one host call to the broker and wait for its answer, encoded as
@@ -224,12 +225,15 @@ pub(super) fn parse_semantic_spec(json: &str) -> Result<serde_json::Value, OpErr
 /// ctx.tx: db error` — the surface named three times, the cause not once. The
 /// connector is the reason this has to be a rule rather than a habit: it backs
 /// both `ctx.tx` and `ctx.oltp` and cannot know which one called it.
-pub(super) fn reply_json(what: &str, result: Result<serde_json::Value, String>) -> String {
+pub(super) fn reply_json(what: &str, result: Result<serde_json::Value, HostError>) -> String {
     match result {
         Ok(value) => value.to_string(),
-        Err(message) => serde_json::json!({
+        // The one place the typed error becomes the string the isolate throws:
+        // `Display` is the text, byte for byte, so the JS-visible message and
+        // the audit rows are what they were when this was a `String`.
+        Err(error) => serde_json::json!({
             "__oxyError": "HostError",
-            "message": format!("{what}: {message}"),
+            "message": format!("{what}: {error}"),
         })
         .to_string(),
     }
