@@ -69,6 +69,9 @@ pub const REFUSED_WRITES: &[(&str, &str)] = &[
     // staff flip it, never a token (environments design §4.5, ruling 1).
     ("PUT", "/customer-apps/{id}/environments/{name}/schedules"),
     ("PUT", "/customer-apps/{id}/access"),
+    // Sends as the app to the caller. A sandbox agent is not the person a
+    // console test is for, and sends nothing as an app outside its sandbox.
+    ("POST", "/customer-apps/{id}/notification-test"),
     ("POST", "/admin/app-publish-tokens"),
     ("POST", "/admin/app-publish-tokens/{id}/revoke"),
 ];

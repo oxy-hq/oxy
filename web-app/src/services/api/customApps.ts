@@ -2,6 +2,7 @@ import type {
   AppAvailability,
   AppBuildHistory,
   AppFunctionSummary,
+  AppNotificationKinds,
   AppSecrets,
   BatchAppResult,
   ClientError,
@@ -218,6 +219,21 @@ export const CustomAppsService = {
       // `undefined` → axios sends no body → the function runs with no params.
       input ?? undefined
     );
+    return response.data;
+  },
+
+  // ── Test notifications (sent as the app, to the caller alone) ──────────────
+
+  /** The kinds the app's live build declares, and whether it can notify you. */
+  async listNotificationKinds(id: string): Promise<AppNotificationKinds> {
+    const response = await apiClient.get(`${appPath(id)}/notification-kinds`);
+    return response.data;
+  },
+
+  /** Send yourself one notification of `kind` as the app: push and the inbox,
+   *  with your mutes applied. One per app every 10 seconds, else a 429. */
+  async sendTestNotification(id: string, kind: string): Promise<{ id: string; kind: string }> {
+    const response = await apiClient.post(`${appPath(id)}/notification-test`, { kind });
     return response.data;
   },
 

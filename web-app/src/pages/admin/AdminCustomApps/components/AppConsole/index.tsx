@@ -21,6 +21,7 @@ import { ConsolePanel } from "../ConsolePanel";
 import { AppStoragePanel } from "./AppStoragePanel";
 import { PreviewCard } from "./PreviewCard";
 import { PublishCiPanel } from "./PublishCiPanel";
+import { TestNotifications } from "./TestNotifications";
 
 /**
  * One app, whole — the surface an operator works in, reached from the fleet at
@@ -169,6 +170,10 @@ export const AppConsole = ({ app }: { app: CustomApp }) => {
             <ConsolePanel id='secrets' title='Secrets'>
               <Secrets appId={app.id} />
             </ConsolePanel>
+
+            {/* Beside Functions: what its `ctx.notify` sends, tried on your own phone
+                without writing or running one. */}
+            <TestNotifications app={app} />
           </div>
 
           <div className='flex min-w-0 flex-col gap-3'>

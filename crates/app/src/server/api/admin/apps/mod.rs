@@ -38,6 +38,8 @@ pub mod run_as_schedule;
 mod run_audit;
 pub mod storage;
 pub mod templates;
+/// The console's "Test notifications": one sent as the app, to the caller alone.
+pub mod test_notification;
 /// One answer to "is this app OK?" on the list rows and launcher summaries.
 pub mod verdict;
 
@@ -155,6 +157,17 @@ fn core_routes() -> Router<AppState> {
         )
         .route("/{id}/teams", get(access::list_app_org_teams))
         .route("/{id}/members", get(access::list_app_org_members))
+        // "Test notifications": the kinds the live build declares, and one sent
+        // as the app to the caller alone, through `ctx.notify`'s send path. DB
+        // reads and a queued delivery — FleetOk, like the rest of this tree.
+        .route(
+            "/{id}/notification-kinds",
+            get(test_notification::list_kinds),
+        )
+        .route(
+            "/{id}/notification-test",
+            post(test_notification::send_test_notification),
+        )
 }
 
 /// What only `/api/customer-apps` serves: the console's lifecycle, batch and

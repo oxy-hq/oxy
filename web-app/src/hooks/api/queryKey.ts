@@ -633,6 +633,8 @@ const customAppKeys = {
   /** The app's declared ∪ stored secrets. Never holds a value — reveal is its
    *  own uncached call, so a decrypted secret never sits in the query cache. */
   secrets: (id: string) => ["customApps", "secrets", id] as const,
+  /** The kinds the app's live build declares, for the console's test panel. */
+  notificationKinds: (id: string) => ["customApps", "notificationKinds", id] as const,
   activitySummary: (id: string) => ["customApps", "activity", id, "summary"] as const,
   /** Fleet health for every published app the caller can see. Keyed by the
    *  filter, so the attention-only view and the full table cache separately. */

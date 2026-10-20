@@ -262,6 +262,26 @@ export interface AppSecrets {
   declaration_error?: string;
 }
 
+/** One notification kind an app's live build declares, as the console's "Test
+ *  notifications" lists it. See `GET /customer-apps/{id}/notification-kinds`. */
+export interface AppNotificationKind {
+  kind: string;
+  label: string;
+  description: string | null;
+  level: "passive" | "active" | "time_sensitive" | "critical";
+  /** The category labels, top first. */
+  category: string[];
+  /** Whether a person's mute stops it: false for a critical kind. */
+  mutable: boolean;
+}
+
+export interface AppNotificationKinds {
+  /** Whether the app can notify the signed-in person at all: they are in its
+   *  audience (a member of its org, or crew with a grant on it). */
+  reachable: boolean;
+  kinds: AppNotificationKind[];
+}
+
 /** One recorded invocation of a function (route / schedule / manual job). */
 export interface FunctionInvocation {
   id: string;
