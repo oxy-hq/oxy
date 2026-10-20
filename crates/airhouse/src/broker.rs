@@ -200,6 +200,11 @@ pub enum SystemPurpose {
     /// `server::previews::ddl` builds, from names a registry row vouches for.
     /// Its own audit segment, so a TTL drop never reads as a preview's reads.
     PreviewDdl,
+    /// The custom-app usage drain appending page-view and beacon facts to the
+    /// workspace's `oxy_custom_app_usage` table (a Writer; the table's DDL runs
+    /// as Admin under the same purpose). Its own audit segment, so the volume
+    /// of usage appends never reads as edge ingest.
+    UsageIngest,
 }
 
 impl SystemPurpose {
@@ -212,6 +217,7 @@ impl SystemPurpose {
             SystemPurpose::ComplianceReportsRead => "compliance-reports-read",
             SystemPurpose::Preview => "preview",
             SystemPurpose::PreviewDdl => "preview-ddl",
+            SystemPurpose::UsageIngest => "custom-app-usage",
         }
     }
 }

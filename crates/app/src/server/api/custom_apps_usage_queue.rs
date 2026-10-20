@@ -31,6 +31,15 @@
 //! would otherwise sink its neighbours), the batch falls back to row-by-row so
 //! only the rows that are actually bad are lost.
 //!
+//! **Airhouse sink (W2.3b).** After a batch's Postgres inserts have finished, the
+//! same rows (with the same ids) are appended to each workspace's Airhouse
+//! `oxy_custom_app_usage` table — see `custom_apps_usage_airhouse`. It is best
+//! effort and strictly behind the Postgres write: a workspace that cannot be
+//! reached costs a `warn!` and its Airhouse rows, never the Postgres ones, and
+//! a workspace with no Airhouse is skipped silently. It stays inside this
+//! in-process drain for the reason the rest of it does: the work is flushing
+//! this process's memory, not durable work another worker could claim.
+//!
 //! **Shutdown.** The drain is registered as a shutdown hook and does a final
 //! [`flush`] when the shutdown token fires. **Tests** call [`flush`] to make
 //! queued rows visible without waiting for a tick; it drains inline whether or
@@ -52,6 +61,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::custom_apps_tracking::{build_event_model, resolve_view_roles};
+use super::custom_apps_usage_airhouse::{self as airhouse_sink, UsageFact};
 
 /// Jobs the queue holds before it starts dropping. A view job carries one
 /// `apps::Model` and a few short strings, an event job at most
@@ -176,9 +186,14 @@ pub fn written_total() -> u64 {
 
 /// One multi-row insert; on failure, row by row so one bad row (an app deleted
 /// since the job was queued trips the foreign key) costs only itself.
+///
+/// Evaluates to the ids of the rows Postgres refused, so the Airhouse copy can
+/// leave them out: an app deleted mid-queue must not keep a viewer's email in
+/// Airhouse after the `ON DELETE CASCADE` that erases it in Postgres.
 macro_rules! insert_all {
     ($db:expr, $entity:ty, $models:expr, $what:literal) => {{
         let models = $models;
+        let mut rejected: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
         if !models.is_empty() {
             let n = models.len() as u64;
             match <$entity>::insert_many(models.clone())
@@ -195,11 +210,13 @@ macro_rules! insert_all {
                         $what
                     );
                     for model in models {
+                        let id = model.id.try_as_ref().copied();
                         match model.insert($db).await {
                             Ok(_) => {
                                 QUEUE.written.fetch_add(1, Ordering::Relaxed);
                             }
                             Err(e) => {
+                                rejected.extend(id);
                                 QUEUE.lost.fetch_add(1, Ordering::Relaxed);
                                 tracing::warn!(
                                     "custom-app usage drain: {} insert failed: {e}",
@@ -211,6 +228,7 @@ macro_rules! insert_all {
                 }
             }
         }
+        rejected
     }};
 }
 
@@ -332,17 +350,27 @@ async fn write_batch(batch: Vec<UsageJob>) {
             return;
         }
     };
-    write_views(&db, views).await;
-    write_events(&db, events).await;
+    // Postgres first, both tables; Airhouse only once they are done.
+    let mut facts = write_views(&db, views).await;
+    facts.extend(write_events(&db, events).await);
+    airhouse_sink::publish(&db, facts).await;
 }
+
+/// A fact and the workspace whose Airhouse it belongs in.
+type WorkspaceFact = (Uuid, UsageFact);
 
 type Roles = (Option<String>, Option<String>);
 
-async fn write_views(db: &DatabaseConnection, views: Vec<ViewJob>) {
+/// Insert the batch's views and return the Airhouse facts for them (empty when
+/// no sink is configured).
+async fn write_views(db: &DatabaseConnection, views: Vec<ViewJob>) -> Vec<WorkspaceFact> {
     if views.is_empty() {
-        return;
+        return Vec::new();
     }
     let roles = resolve_roles(db, &views).await;
+    let sink_enabled = airhouse_sink::enabled();
+    let recorded_at = chrono::Utc::now();
+    let mut facts = Vec::new();
     let models: Vec<custom_app_view_event::ActiveModel> = views
         .into_iter()
         .map(|v| {
@@ -350,7 +378,8 @@ async fn write_views(db: &DatabaseConnection, views: Vec<ViewJob>) {
                 .get(&(v.app.id, v.user_id))
                 .cloned()
                 .unwrap_or((None, None));
-            custom_app_view_event::ActiveModel {
+            let (workspace_id, org_id) = (v.app.project_id, v.app.org_id);
+            let model = custom_app_view_event::ActiveModel {
                 id: ActiveValue::Set(Uuid::new_v4()),
                 app_id: ActiveValue::Set(v.app.id),
                 user_id: ActiveValue::Set(v.user_id),
@@ -363,10 +392,16 @@ async fn write_views(db: &DatabaseConnection, views: Vec<ViewJob>) {
                 app_role: ActiveValue::Set(app_role),
                 org_role: ActiveValue::Set(org_role),
                 environment: ActiveValue::Set(v.environment),
+            };
+            if sink_enabled && let Some(fact) = UsageFact::from_view(&model, org_id, recorded_at) {
+                facts.push((workspace_id, fact));
             }
+            model
         })
         .collect();
-    insert_all!(db, custom_app_view_event::Entity, models, "view");
+    let rejected = insert_all!(db, custom_app_view_event::Entity, models, "view");
+    facts.retain(|(_, fact)| !rejected.contains(&fact.event_id));
+    facts
 }
 
 /// One role lookup per distinct `(app, viewer)` in the batch: the answer cannot
@@ -400,7 +435,10 @@ async fn resolve_one(db: &DatabaseConnection, v: &ViewJob) -> ((Uuid, Uuid), Rol
     )
 }
 
-async fn write_events(db: &DatabaseConnection, events: Vec<EventJob>) {
+/// Insert the batch's events and return the Airhouse facts for them. A queued
+/// event carries only its app id, so the owning workspace and org are looked up
+/// once for the batch, and only when a sink is configured.
+async fn write_events(db: &DatabaseConnection, events: Vec<EventJob>) -> Vec<WorkspaceFact> {
     let models: Vec<custom_app_event::ActiveModel> = events
         .into_iter()
         .filter_map(|e| {
@@ -422,7 +460,26 @@ async fn write_events(db: &DatabaseConnection, events: Vec<EventJob>) {
             .ok()
         })
         .collect();
-    insert_all!(db, custom_app_event::Entity, models, "event");
+    let rejected = insert_all!(db, custom_app_event::Entity, models.clone(), "event");
+    if models.is_empty() || !airhouse_sink::enabled() {
+        return Vec::new();
+    }
+    let app_ids = models
+        .iter()
+        .filter_map(|m| m.app_id.try_as_ref().copied())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let homes = airhouse_sink::app_homes(db, app_ids).await;
+    let recorded_at = chrono::Utc::now();
+    models
+        .iter()
+        .filter_map(|m| {
+            let (workspace_id, org_id) = *homes.get(m.app_id.try_as_ref()?)?;
+            let fact = UsageFact::from_event(m, org_id, recorded_at)?;
+            (!rejected.contains(&fact.event_id)).then_some((workspace_id, fact))
+        })
+        .collect()
 }
 
 #[cfg(test)]

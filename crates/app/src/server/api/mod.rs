@@ -72,6 +72,7 @@ pub mod custom_apps_tail;
 pub mod custom_apps_telemetry;
 pub mod custom_apps_threads;
 pub mod custom_apps_tracking;
+pub mod custom_apps_usage_airhouse;
 pub mod custom_apps_usage_queue;
 pub mod custom_apps_validate;
 pub mod data;

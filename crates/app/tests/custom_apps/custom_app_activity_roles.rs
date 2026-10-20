@@ -24,9 +24,13 @@ use entity::{
 };
 use oxy_app::server::api::custom_apps_activity::{VisitorsQuery, get_summary, get_visitors};
 use oxy_app::server::api::custom_apps_tracking::{queue_event, record_view};
+use oxy_app::server::api::custom_apps_usage_airhouse::{
+    self as airhouse_sink, SinkError, UsageFact, UsageSink,
+};
 use oxy_app::server::api::custom_apps_usage_queue as usage_queue;
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, QueryFilter};
 use sea_orm::{EntityTrait, QueryOrder};
+use std::sync::Arc;
 use uuid::Uuid;
 
 // ── Seeding ─────────────────────────────────────────────────────────────────
@@ -610,4 +614,234 @@ async fn a_batch_insert_that_fails_falls_back_to_row_by_row() {
         usage_queue::lost_total() >= lost_before + 2,
         "the view and the event for the deleted app are counted as lost"
     );
+}
+
+// ── Airhouse sink ───────────────────────────────────────────────────────────
+
+/// A sink that records what it is handed. Workspaces in `unreachable` answer as
+/// an Airhouse that cannot be reached; workspaces in `unconfigured` as one that
+/// does not exist. Keyed by workspace so a test only controls its own rows: the
+/// sink and the queue are process-wide.
+#[derive(Default)]
+struct RecordingSink {
+    calls: std::sync::Mutex<Vec<(Uuid, Vec<UsageFact>)>>,
+    unreachable: std::collections::HashSet<Uuid>,
+    unconfigured: std::collections::HashSet<Uuid>,
+}
+
+impl RecordingSink {
+    fn facts_for(&self, workspace_id: Uuid) -> Vec<UsageFact> {
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(w, _)| *w == workspace_id)
+            .flat_map(|(_, facts)| facts.clone())
+            .collect()
+    }
+}
+
+#[async_trait::async_trait]
+impl UsageSink for RecordingSink {
+    fn enabled(&self) -> bool {
+        true
+    }
+
+    async fn append(
+        &self,
+        _db: &DatabaseConnection,
+        workspace_id: Uuid,
+        facts: &[UsageFact],
+    ) -> Result<(), SinkError> {
+        if self.unconfigured.contains(&workspace_id) {
+            return Err(SinkError::NotConfigured);
+        }
+        if self.unreachable.contains(&workspace_id) {
+            return Err(SinkError::Failed("connection refused".into()));
+        }
+        self.calls
+            .lock()
+            .unwrap()
+            .push((workspace_id, facts.to_vec()));
+        Ok(())
+    }
+}
+
+/// One flush writes the Postgres rows and then appends the same facts, with the
+/// same ids, to the owning workspace's Airhouse.
+///
+/// The ids matter: they are the idempotency key in Airhouse, and what lets a
+/// reader line a fact up with the Postgres row the Activity tab shows.
+#[tokio::test]
+async fn a_flushed_batch_lands_in_postgres_and_in_the_workspace_airhouse() {
+    let conn = test_db().await;
+    let org = seed_org(&conn).await;
+    let app = seed_app(&conn, org).await;
+    let (user, email) = seed_user(&conn).await;
+    let session = Uuid::new_v4();
+    let sink = Arc::new(RecordingSink::default());
+    airhouse_sink::install_sink(sink.clone());
+
+    record_view(
+        app.clone(),
+        user,
+        Some(email.clone()),
+        session,
+        Some("/orders".into()),
+        "browser".into(),
+        "subpath".into(),
+        "production".into(),
+    );
+    for name in ["oxy-pageview", "oxy-web-vitals"] {
+        queue_event(
+            app.id,
+            user,
+            email.clone(),
+            session,
+            name.into(),
+            serde_json::json!({ "path": "/orders" }),
+            "production".into(),
+        );
+    }
+    usage_queue::flush().await;
+
+    let views = custom_app_view_event::Entity::find()
+        .filter(custom_app_view_event::Column::AppId.eq(app.id))
+        .all(&conn)
+        .await
+        .expect("query views");
+    let events = custom_app_event::Entity::find()
+        .filter(custom_app_event::Column::AppId.eq(app.id))
+        .all(&conn)
+        .await
+        .expect("query events");
+    assert_eq!((views.len(), events.len()), (1, 2));
+
+    let facts = sink.facts_for(app.project_id);
+    let mut fact_ids: Vec<Uuid> = facts.iter().map(|f| f.event_id).collect();
+    let mut row_ids: Vec<Uuid> = views
+        .iter()
+        .map(|v| v.id)
+        .chain(events.iter().map(|e| e.id))
+        .collect();
+    fact_ids.sort();
+    row_ids.sort();
+    assert_eq!(fact_ids, row_ids, "a fact carries its Postgres row's id");
+    assert!(facts.iter().all(|f| f.org_id == org && f.app_id == app.id));
+    assert_eq!(facts.iter().filter(|f| f.kind == "view").count(), 1);
+    let view_fact = facts.iter().find(|f| f.kind == "view").unwrap();
+    assert_eq!(view_fact.user_email, email);
+    assert_eq!(view_fact.referrer.as_deref(), Some("/orders"));
+    assert_eq!(
+        view_fact.occurred_at,
+        views[0].viewed_at.with_timezone(&Utc)
+    );
+}
+
+/// An Airhouse that cannot be reached must not cost a single Postgres row, and
+/// an org with no Airhouse at all is not an error. Both share one batch with a
+/// healthy workspace, which must still be appended.
+#[tokio::test]
+async fn an_airhouse_failure_leaves_the_postgres_rows_intact() {
+    let conn = test_db().await;
+    let org = seed_org(&conn).await;
+    let down = seed_app(&conn, org).await;
+    let none = seed_app(&conn, org).await;
+    let healthy = seed_app(&conn, org).await;
+    let (user, email) = seed_user(&conn).await;
+    let session = Uuid::new_v4();
+    let sink = Arc::new(RecordingSink {
+        unreachable: [down.project_id].into(),
+        unconfigured: [none.project_id].into(),
+        ..Default::default()
+    });
+    airhouse_sink::install_sink(sink.clone());
+    let failed_before = airhouse_sink::failed_total();
+
+    for app in [&down, &none, &healthy] {
+        record_view(
+            app.clone(),
+            user,
+            Some(email.clone()),
+            session,
+            None,
+            "browser".into(),
+            "subpath".into(),
+            "production".into(),
+        );
+        queue_event(
+            app.id,
+            user,
+            email.clone(),
+            session,
+            "oxy-pageview".into(),
+            serde_json::json!({ "path": "/" }),
+            "production".into(),
+        );
+    }
+    usage_queue::flush().await;
+
+    for app in [&down, &none, &healthy] {
+        let views = custom_app_view_event::Entity::find()
+            .filter(custom_app_view_event::Column::AppId.eq(app.id))
+            .all(&conn)
+            .await
+            .expect("query views");
+        let events = custom_app_event::Entity::find()
+            .filter(custom_app_event::Column::AppId.eq(app.id))
+            .all(&conn)
+            .await
+            .expect("query events");
+        assert_eq!(
+            (views.len(), events.len()),
+            (1, 1),
+            "Postgres keeps both rows whatever Airhouse did"
+        );
+    }
+    assert!(sink.facts_for(down.project_id).is_empty());
+    assert!(sink.facts_for(none.project_id).is_empty());
+    assert_eq!(sink.facts_for(healthy.project_id).len(), 2);
+    assert!(
+        airhouse_sink::failed_total() >= failed_before + 2,
+        "the unreachable workspace's two facts are counted; the unconfigured one's are not"
+    );
+}
+
+/// A view Postgres refuses (the app was deleted after the navigation, so the
+/// foreign key fails) must not reach Airhouse: the `ON DELETE CASCADE` that
+/// erases the viewer's email from Postgres has no counterpart there.
+#[tokio::test]
+async fn a_view_postgres_refused_is_not_appended_to_airhouse() {
+    let conn = test_db().await;
+    let org = seed_org(&conn).await;
+    let doomed = seed_app(&conn, org).await;
+    let survivor = seed_app(&conn, org).await;
+    let (user, email) = seed_user(&conn).await;
+    let session = Uuid::new_v4();
+    let sink = Arc::new(RecordingSink::default());
+    airhouse_sink::install_sink(sink.clone());
+
+    for app in [&doomed, &survivor] {
+        record_view(
+            app.clone(),
+            user,
+            Some(email.clone()),
+            session,
+            None,
+            "browser".into(),
+            "subpath".into(),
+            "production".into(),
+        );
+    }
+    apps::Entity::delete_by_id(doomed.id)
+        .exec(&conn)
+        .await
+        .expect("delete app");
+    usage_queue::flush().await;
+
+    assert!(
+        sink.facts_for(doomed.project_id).is_empty(),
+        "the refused view stays out of Airhouse"
+    );
+    assert_eq!(sink.facts_for(survivor.project_id).len(), 1);
 }

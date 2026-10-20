@@ -248,7 +248,10 @@ const TABLES: &[(&str, Placement)] = &[
         "custom_app_event",
         Backlog {
             holds: "app SDK events with a free-form payload",
-            belongs: "payload → Airhouse; the platform beacon's oxy-* rows are the volume (customer-apps-performance.md, Usage facts)",
+            belongs: "Airhouse. The usage drain already appends the beacon's oxy-* rows to the \
+                      workspace's oxy_custom_app_usage (W2.3b); these rows go once the Activity \
+                      tab reads it, with retention and a backfill. SDK events recorded through \
+                      record_event are not appended yet",
         },
     ),
     (
@@ -265,10 +268,14 @@ const TABLES: &[(&str, Placement)] = &[
     ),
     (
         "custom_app_view_event",
-        Control(
-            "Oxy's own app-open telemetry; the role snapshot reads control-plane tables, so the \
-             facts stay beside them (customer-apps-performance.md, Usage facts)",
-        ),
+        Backlog {
+            holds: "who opened which app: viewer email, session, role snapshot",
+            belongs: "Airhouse. The usage drain already appends these to the workspace's \
+                      oxy_custom_app_usage (W2.3b); the role snapshot is resolved from \
+                      control-plane tables when the row is written and travels with the fact. \
+                      These rows go once the Activity tab and the weekly report read Airhouse, \
+                      with retention and a backfill",
+        },
     ),
     (
         "customer_app_automation_runs",
