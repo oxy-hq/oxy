@@ -20,7 +20,7 @@ use entity::users::UserStatus;
 use oxy::service::secret_manager::SecretManagerService;
 use oxy_app::server::api::custom_apps_secrets::environment::EnvironmentQuery;
 use oxy_app::server::api::custom_apps_secrets::{
-    SetSecretRequest, admin_delete, admin_list, admin_reveal, admin_set,
+    ListQuery, SetSecretRequest, admin_delete, admin_list, admin_reveal, admin_set,
 };
 use oxy_app_core::audit::RequestActor;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
@@ -33,7 +33,7 @@ use crate::common::demo_workspace_id;
 use crate::custom_app_functions_fixture::{FunctionSpec, Tenant, publish_build, seeded_tenant};
 use crate::staging_functions::make_guest_staff;
 
-fn user(id: Uuid, email: &str) -> RequestActor {
+pub(crate) fn user(id: Uuid, email: &str) -> RequestActor {
     RequestActor::session(AuthenticatedUser {
         id,
         email: Some(email.to_string()),
@@ -44,11 +44,19 @@ fn user(id: Uuid, email: &str) -> RequestActor {
     })
 }
 
-fn request(key: &str, value: &str, environment: Option<&str>) -> Json<SetSecretRequest> {
+pub(crate) fn request(key: &str, value: &str, environment: Option<&str>) -> Json<SetSecretRequest> {
     Json(
         serde_json::from_value(json!({ "key": key, "value": value, "environment": environment }))
             .expect("request"),
     )
+}
+
+/// `?environment=` on the list route, which also takes `?build=`.
+fn list(environment: &str) -> Query<ListQuery> {
+    Query(ListQuery {
+        environment: Some(environment.to_string()),
+        build: None,
+    })
 }
 
 fn env(environment: &str) -> Query<EnvironmentQuery> {
@@ -120,7 +128,7 @@ async fn staff_set_a_staging_secret_that_a_tenant_admin_cannot() {
 
     let Json(prod) = admin_list(
         Path(app),
-        Query(EnvironmentQuery::default()),
+        Query(ListQuery::default()),
         AuthenticatedUserExtractor(staff().user),
         None,
     )
@@ -131,7 +139,7 @@ async fn staff_set_a_staging_secret_that_a_tenant_admin_cannot() {
     assert_eq!(prod.environment, "production");
     let Json(stg) = admin_list(
         Path(app),
-        env("staging"),
+        list("staging"),
         AuthenticatedUserExtractor(staff().user),
         None,
     )
@@ -154,7 +162,7 @@ async fn staff_set_a_staging_secret_that_a_tenant_admin_cannot() {
     assert_eq!(code, StatusCode::FORBIDDEN);
     let (code, _) = admin_list(
         Path(app),
-        env("staging"),
+        list("staging"),
         AuthenticatedUserExtractor(tenant().user),
         None,
     )
@@ -281,7 +289,7 @@ async fn staff_set_a_sandbox_secret_and_its_view_shows_what_staging_lends() {
     // A new sandbox stores nothing; what it would read is staging's first.
     let Json(view) = admin_list(
         Path(app),
-        env("dev-a1"),
+        list("dev-a1"),
         AuthenticatedUserExtractor(staff().user),
         None,
     )
@@ -301,7 +309,7 @@ async fn staff_set_a_sandbox_secret_and_its_view_shows_what_staging_lends() {
     // Control: staging's own view inherits production only.
     let Json(stg) = admin_list(
         Path(app),
-        env("staging"),
+        list("staging"),
         AuthenticatedUserExtractor(staff().user),
         None,
     )
@@ -329,7 +337,7 @@ async fn staff_set_a_sandbox_secret_and_its_view_shows_what_staging_lends() {
 
     let Json(mine) = admin_list(
         Path(app),
-        env("dev-a1"),
+        list("dev-a1"),
         AuthenticatedUserExtractor(staff().user),
         None,
     )
@@ -338,7 +346,7 @@ async fn staff_set_a_sandbox_secret_and_its_view_shows_what_staging_lends() {
     assert!(rows(&mine).contains(&("QB_TOKEN", true, false, false)));
     let Json(other) = admin_list(
         Path(app),
-        env("dev-b2"),
+        list("dev-b2"),
         AuthenticatedUserExtractor(staff().user),
         None,
     )
@@ -392,7 +400,7 @@ async fn staff_set_a_sandbox_secret_and_its_view_shows_what_staging_lends() {
     assert_eq!(stored(format!("apps/{app}/dev-a1/LATE")).await, None);
 }
 
-fn use_a_fixed_encryption_key() {
+pub(crate) fn use_a_fixed_encryption_key() {
     // SAFETY: nextest runs each test in its own process.
     unsafe {
         std::env::set_var(
@@ -404,7 +412,7 @@ fn use_a_fixed_encryption_key() {
 
 /// A published app with `QB_TOKEN` set in production (`prod`) and staging
 /// (`stg`) by staff.
-async fn app_with_both_values(t: &Tenant, slug: &str) -> Uuid {
+pub(crate) async fn app_with_both_values(t: &Tenant, slug: &str) -> Uuid {
     use_a_fixed_encryption_key();
     let spec = FunctionSpec {
         name: "noop",
@@ -469,7 +477,8 @@ async fn a_key_never_names_another_environments_row() {
     );
 }
 
-/// Every staff write of a staging value leaves a row naming the environment.
+/// Every staff write of a staging value leaves a row naming the environment —
+/// and so does production's (`secrets_audit` covers production on its own).
 #[tokio::test]
 async fn staging_secret_writes_are_audited_with_their_environment() {
     use entity::audit_events;
@@ -503,9 +512,13 @@ async fn staging_secret_writes_are_audited_with_their_environment() {
                 "custom_app.secret.deleted".to_string(),
                 "staging".to_string()
             ),
+            (
+                "custom_app.secret.set".to_string(),
+                "production".to_string()
+            ),
             ("custom_app.secret.set".to_string(), "staging".to_string()),
         ],
-        "one row per staging write; production's writes are logged as before"
+        "one row per write, each naming its environment"
     );
 }
 
@@ -577,23 +590,17 @@ async fn tenant_project_secret_routes_never_reach_a_staging_row() {
     );
     let rotate: secrets::UpdateSecretRequest =
         serde_json::from_value(json!({ "value": "rotated" })).expect("request");
-    let updated = secrets::update_secret(
-        admin(),
-        AuthenticatedUserExtractor(tenant().user),
-        by_id(),
-        axum::Json(rotate),
-    )
-    .await
-    .unwrap();
+    let updated = secrets::update_secret(admin(), tenant(), by_id(), axum::Json(rotate))
+        .await
+        .unwrap();
     assert_eq!(
         updated.into_response().status(),
         StatusCode::NOT_FOUND,
         "update"
     );
-    let deleted =
-        secrets::delete_secret(admin(), AuthenticatedUserExtractor(tenant().user), by_id())
-            .await
-            .unwrap();
+    let deleted = secrets::delete_secret(admin(), tenant(), by_id())
+        .await
+        .unwrap();
     assert_eq!(
         deleted.into_response().status(),
         StatusCode::NOT_FOUND,

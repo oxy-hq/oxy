@@ -1,7 +1,7 @@
 import axios from "axios";
 import { toast } from "sonner";
 import { getInjectedOrg } from "@/libs/orgSubdomain";
-import { isOrgApiAccessPath, isTokenErrorCode } from "@/libs/tokenErrorCodes";
+import { isAppEnvironmentPath, isOrgApiAccessPath, isTokenErrorCode } from "@/libs/tokenErrorCodes";
 import { reportAssumeRequired } from "@/libs/utils/assumeRequired";
 import { clearAuthScopedStorage } from "@/libs/utils/authStorage";
 import { readDetachedHeadBody } from "@/libs/utils/detachedHead";
@@ -166,12 +166,17 @@ const makeResponseErrorHandler = () => {
           | { org_name?: string | null; message?: string | null }
           | undefined;
         reportAssumeRequired(assumeOrgId, body?.org_name ?? null, body?.message ?? null);
-      } else if (!isTokenErrorCode(error.response?.data?.code) && !isOrgApiAccessPath(url)) {
+      } else if (
+        !isTokenErrorCode(error.response?.data?.code) &&
+        !isOrgApiAccessPath(url) &&
+        !isAppEnvironmentPath(url)
+      ) {
         // A token route's refusal names its reason (`session_required`,
         // `standing_required`), and the surface that made the call toasts that
         // reason in its own words. The generic denial on top of it would be a
         // second, vaguer toast for the same click. Organization → API access
-        // words its bare 403 itself too (see `isOrgApiAccessPath`).
+        // and a custom app's environments and secrets word their bare 403
+        // themselves too (see `isOrgApiAccessPath`, `isAppEnvironmentPath`).
         const now = Date.now();
         if (now - last403At > 1500) {
           last403At = now;

@@ -631,8 +631,17 @@ const customAppKeys = {
   /** The app's failures grouped per `(function, fingerprint)`, over `days`. */
   issues: (id: string, days: number) => ["customApps", "issues", id, days] as const,
   /** The app's declared ∪ stored secrets. Never holds a value — reveal is its
-   *  own uncached call, so a decrypted secret never sits in the query cache. */
-  secrets: (id: string) => ["customApps", "secrets", id] as const,
+   *  own uncached call, so a decrypted secret never sits in the query cache.
+   *  Without an environment it is the prefix of every environment's view: a
+   *  write in one environment changes what another inherits. */
+  secrets: (id: string, environment?: string) =>
+    environment
+      ? (["customApps", "secrets", id, environment] as const)
+      : (["customApps", "secrets", id] as const),
+  /** `environment`'s secrets reconciled against `build`'s declarations — the
+   *  pre-promote check. Under the `secrets` prefix, so every write refetches it. */
+  secretsForBuild: (id: string, environment: string, build: string) =>
+    ["customApps", "secrets", id, environment, "build", build] as const,
   /** The kinds the app's live build declares, for the console's test panel. */
   notificationKinds: (id: string) => ["customApps", "notificationKinds", id] as const,
   activitySummary: (id: string) => ["customApps", "activity", id, "summary"] as const,

@@ -13,6 +13,9 @@ import {
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { useSetAppSecret } from "@/hooks/api/customApps/useAppSecrets";
+import { errMessage } from "@/hooks/api/errMessage";
+import { PRODUCTION } from "@/types/appEnvironments";
+import { environmentLabel } from "./environmentLabel";
 
 /** Same charset the server enforces on the key half of `apps/<id>/<KEY>`. */
 const KEY_PATTERN = /^[A-Za-z0-9_.-]+$/;
@@ -29,11 +32,14 @@ const KEY_PATTERN = /^[A-Za-z0-9_.-]+$/;
  */
 export const SetSecretDialog = ({
   appId,
+  environment,
   secretKey,
   stored,
   onClose
 }: {
   appId: string;
+  /** Where the value is stored: production, staging or a sandbox. */
+  environment: string;
   /** `null` = closed. `""` = adding a new key. A name = that row's key. */
   secretKey: string | null;
   /** The row's key already has a value, so saving replaces it. */
@@ -44,7 +50,7 @@ export const SetSecretDialog = ({
   const rotating = fromRow && stored;
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
-  const set = useSetAppSecret(appId);
+  const set = useSetAppSecret(appId, environment);
 
   // Reset on each open so a previous value never lingers in the field — this
   // dialog holds a plaintext secret, so leaving one behind is worse than the
@@ -75,8 +81,7 @@ export const SetSecretDialog = ({
         },
         // The server rejects a bad key by name; show what it said rather than a
         // generic failure, since the message names the rule that was broken.
-        onError: (e: unknown) =>
-          toast.error(e instanceof Error ? e.message : `Couldn't save ${key}.`)
+        onError: (e: unknown) => toast.error(errMessage(e, `Couldn't save ${key}.`))
       }
     );
   };
@@ -89,8 +94,11 @@ export const SetSecretDialog = ({
             {rotating ? `Rotate ${secretKey}` : fromRow ? `Set ${secretKey}` : "Add secret"}
           </DialogTitle>
           <DialogDescription className='text-xs'>
-            Stored for this app only. Functions read it as <code>ctx.env.{key || "KEY"}</code> on
-            their next run.
+            {environment === PRODUCTION
+              ? "Stored for this app only."
+              : `Stored for this app's ${environmentLabel(environment).toLowerCase()} only.`}{" "}
+            Functions read it as <code>ctx.env.{key || "KEY"}</code> on their next run
+            {environment === PRODUCTION ? "" : " there"}.
           </DialogDescription>
         </DialogHeader>
 

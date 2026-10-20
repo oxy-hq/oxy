@@ -1,3 +1,6 @@
+use crate::server::api::custom_apps_secrets::project_routes::{
+    ProjectSecretWrite, audit_if_app_secret,
+};
 use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 use crate::server::api::middlewares::workspace_context::WorkspaceManagerWorkingCopy;
 use crate::server::service::secret_manager::{
@@ -13,6 +16,7 @@ use garde::Validate;
 use oxy::config::constants::{ANTHROPIC_API_KEY_VAR, GEMINI_API_KEY_VAR, OPENAI_API_KEY_VAR};
 use oxy::config::model::{DatabaseType, IntegrationType, SnowflakeAuthType};
 use oxy::database::client::establish_connection;
+use oxy_app_core::audit::RequestActor;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_shared::errors::OxyError;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -363,7 +367,7 @@ pub async fn get_secret(
 
 pub async fn update_secret(
     _: WorkspaceAdmin,
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    actor: RequestActor,
     Path((workspace_id, id)): Path<(Uuid, String)>,
     extract::Json(request): extract::Json<UpdateSecretRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -419,21 +423,27 @@ pub async fn update_secret(
             .into_response());
     };
 
+    let rotated = request.value.is_some();
     let update_params = UpdateSecretParams {
         value: request.value,
         description: request.description,
-        updated_by: user.id,
+        updated_by: actor.id,
     };
 
     match secret_manager
         .update_secret(&db, &secret.name, update_params)
         .await
     {
-        Ok(updated_secret) => Ok((
-            StatusCode::OK,
-            axum::Json(SecretResponse::from(updated_secret)),
-        )
-            .into_response()),
+        Ok(updated_secret) => {
+            if rotated {
+                audit_if_app_secret(&db, &secret.name, ProjectSecretWrite::Rotated, &actor).await;
+            }
+            Ok((
+                StatusCode::OK,
+                axum::Json(SecretResponse::from(updated_secret)),
+            )
+                .into_response())
+        }
         Err(OxyError::SecretManager(msg)) => {
             Ok((StatusCode::BAD_REQUEST, axum::Json(json!({ "error": msg }))).into_response())
         }
@@ -847,7 +857,7 @@ pub async fn list_env_secrets(
 
 pub async fn delete_secret(
     _: WorkspaceAdmin,
-    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    actor: RequestActor,
     Path((workspace_id, id)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let secret_id = match Uuid::parse_str(&id) {
@@ -881,7 +891,10 @@ pub async fn delete_secret(
     };
 
     match secret_manager.delete_secret(&db, &secret.name).await {
-        Ok(()) => Ok((StatusCode::NO_CONTENT, axum::Json(json!({}))).into_response()),
+        Ok(()) => {
+            audit_if_app_secret(&db, &secret.name, ProjectSecretWrite::Deleted, &actor).await;
+            Ok((StatusCode::NO_CONTENT, axum::Json(json!({}))).into_response())
+        }
         Err(OxyError::SecretManager(msg)) => {
             Ok((StatusCode::BAD_REQUEST, axum::Json(json!({ "error": msg }))).into_response())
         }

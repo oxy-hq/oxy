@@ -7,15 +7,21 @@
 //! environment's row — past the `AppNonProduction` gate
 //! (`environment::authorize`), and be audited as production.
 //!
-//! **Outside production every write is audited** with its environment
-//! (`custom_app.secret.set` / `.deleted`), as `reveal` is in every
-//! environment: a staging value is set by staff, and the row says who.
+//! **Every write is audited** with its environment (`custom_app.secret.set` /
+//! `.deleted` / `.copied`), as `reveal` is: a production value is the one
+//! customers' runs read, set by an App Operator from the console or by a
+//! workspace admin from settings, and an incident asks who changed it first.
+//! That covers this module's routes (staff set / delete / copy, tenant set)
+//! and the tenant project-secrets `PUT` / `DELETE` by id, which reach a
+//! production app secret too (`super::project_routes`). Production's writes
+//! once left only a log line, which made the console — production-only until
+//! it had an environment picker — the one secrets surface with no trail.
 
 use axum::Json;
 use axum::http::StatusCode;
 use entity::apps;
 use oxy::service::secret_manager::{SecretManagerService, SecretWrite};
-use oxy_app_core::audit;
+use oxy_app_core::audit::{self, RequestActor};
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use oxy_shared::errors::OxyError;
 use sea_orm::DatabaseConnection;
@@ -42,40 +48,54 @@ pub(super) fn bare_key(raw: &str) -> Result<&str, Failure> {
     Ok(key)
 }
 
-/// Audit a staff write of a non-production secret. Production's writes are
-/// logged as before; this row exists for the environment only staff reach.
-async fn audit_write(
-    db: &DatabaseConnection,
-    app: &apps::Model,
-    environment: &AppEnvironment,
-    action: &'static str,
-    key: &str,
-    actor: &oxy_app_core::audit::RequestActor,
-) {
-    if *environment == AppEnvironment::Production {
-        return;
-    }
-    audit::record_best_effort(
-        db,
-        audit::AuditEntry::for_request(actor, action)
+/// The subject of a `custom_app.secret.*` audit row: which key of which app,
+/// in which environment, and who wrote it. Grouped so a caller cannot misorder
+/// the app's key and environment among positional arguments.
+pub(super) struct WriteAudit<'a> {
+    pub app: &'a apps::Model,
+    pub environment: &'a AppEnvironment,
+    pub key: &'a str,
+    pub actor: &'a RequestActor,
+}
+
+impl WriteAudit<'_> {
+    /// Record `action` — in every environment, on every route that writes an
+    /// app secret. Best-effort, like `reveal`'s: failing to write the row must
+    /// not fail the write, and the helper logs its own failure. `copied_from`
+    /// names the environment a copied value was read from.
+    pub(super) async fn record(
+        &self,
+        db: &DatabaseConnection,
+        action: &'static str,
+        copied_from: Option<&AppEnvironment>,
+    ) {
+        let (app, key) = (self.app, self.key);
+        let mut entry = audit::AuditEntry::for_request(self.actor, action)
             .org(app.org_id)
             .workspace(app.project_id)
             .target(
                 "custom_app_secret",
-                scope::secret_name(app.id, environment, key),
+                scope::secret_name(app.id, self.environment, key),
                 format!("{}/{key}", app.slug),
             )
-            .environment(environment.name()),
-    )
-    .await;
+            .environment(self.environment.name());
+        if let Some(source) = copied_from {
+            entry = entry.metadata(serde_json::json!({ "copied_from": source.name() }));
+        }
+        audit::record_best_effort(db, entry).await;
+    }
 }
 
+/// Store `body.value` under `key` in `environment`. `copied_from` names the
+/// environment the value was read from when the request was a copy
+/// (`super::copy`), which the audit row records as `custom_app.secret.copied`.
 pub(super) async fn set(
     db: &DatabaseConnection,
     app: &apps::Model,
     environment: &AppEnvironment,
     body: SetSecretRequest,
-    actor: &oxy_app_core::audit::RequestActor,
+    copied_from: Option<&AppEnvironment>,
+    actor: &RequestActor,
 ) -> Result<StatusCode, Failure> {
     let key = bare_key(&body.key)?;
     // A sandbox agent token stores no value shaped like an Oxy credential,
@@ -127,7 +147,17 @@ pub(super) async fn set(
         actor = %actor.id,
         "app secret set"
     );
-    audit_write(db, app, environment, "custom_app.secret.set", key, actor).await;
+    let action = match copied_from {
+        Some(_) => "custom_app.secret.copied",
+        None => "custom_app.secret.set",
+    };
+    let audit = WriteAudit {
+        app,
+        environment,
+        key,
+        actor,
+    };
+    audit.record(db, action, copied_from).await;
     env_cache::invalidate(app.id, environment);
     // 201 for a key the app did not have, 204 for a rotation: the write is an
     // upsert, and a client that has to say which one happened ("created" or
@@ -143,7 +173,7 @@ pub(super) async fn delete(
     app: &apps::Model,
     environment: &AppEnvironment,
     key: &str,
-    actor: &oxy_app_core::audit::RequestActor,
+    actor: &RequestActor,
 ) -> Result<StatusCode, Failure> {
     // Trimmed, like `set` — otherwise `DELETE …/secrets/%20SIG` 404s on a key
     // the sibling POST would have normalised to `SIG`.
@@ -172,15 +202,13 @@ pub(super) async fn delete(
         actor = %actor.label(),
         "app secret deleted"
     );
-    audit_write(
-        db,
+    let audit = WriteAudit {
         app,
         environment,
-        "custom_app.secret.deleted",
         key,
         actor,
-    )
-    .await;
+    };
+    audit.record(db, "custom_app.secret.deleted", None).await;
     env_cache::invalidate(app.id, environment);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -192,7 +220,7 @@ pub(super) async fn reveal(
     app: &apps::Model,
     environment: &AppEnvironment,
     key: &str,
-    actor: &oxy_app_core::audit::RequestActor,
+    actor: &RequestActor,
 ) -> Result<Json<RevealResponse>, Failure> {
     // Parity with project secrets, which are already revealable by id on the
     // existing route — an app-scoped one is not a different kind of secret, and

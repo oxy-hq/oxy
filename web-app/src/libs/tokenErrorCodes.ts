@@ -34,3 +34,13 @@ const ORG_API_ACCESS_PATH = /^\/?orgs\/[^/]+\/(service-accounts|tokens|token-pol
  * so the API client's generic denial toast would be a second message for the same refusal.
  */
 export const isOrgApiAccessPath = (url: string): boolean => ORG_API_ACCESS_PATH.test(url);
+
+const APP_ENVIRONMENT_PATH = /^\/?customer-apps\/[^/]+\/(environments|secrets)(\/|\?|$)/;
+
+/**
+ * A custom app's environment and secrets routes. Their 403 means "may not open this app's
+ * non-production environments" (oxy-authz `AppNonProduction`), and the admin Secrets pane says
+ * so inline beside the environment picker — so the generic denial toast would be a second
+ * message, and one that fires every time the pane opens for a viewer without that ring.
+ */
+export const isAppEnvironmentPath = (url: string): boolean => APP_ENVIRONMENT_PATH.test(url);

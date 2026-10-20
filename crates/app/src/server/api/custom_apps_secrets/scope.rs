@@ -57,6 +57,15 @@ pub(crate) fn is_non_production_app_secret(name: &str) -> bool {
     Uuid::parse_str(app_id).is_ok() && rest.contains('/')
 }
 
+/// The app and bare key of a **production** app secret's stored name
+/// (`apps/<app_id>/<KEY>`); `None` for any other name — an environment's
+/// `apps/<app_id>/<env>/<KEY>`, or a plain project secret.
+pub(crate) fn production_app_secret(name: &str) -> Option<(Uuid, &str)> {
+    let (app_id, key) = name.strip_prefix("apps/")?.split_once('/')?;
+    let app_id = Uuid::parse_str(app_id).ok()?;
+    (!key.is_empty() && !key.contains('/')).then_some((app_id, key))
+}
+
 /// One key `ctx.env` resolves: its bare name, the stored name the value is
 /// read from, and whether that is another environment's — staging's, for a
 /// sandbox, or production's through the shared fallback.
@@ -321,6 +330,20 @@ mod tests {
             "apps/not-a-uuid/x/K".to_string(),
         ] {
             assert!(!is_non_production_app_secret(&tenant), "{tenant}");
+        }
+    }
+
+    #[test]
+    fn a_production_app_secret_names_its_app_and_key() {
+        let production = secret_name(app(), &AppEnvironment::Production, "K");
+        assert_eq!(production_app_secret(&production), Some((app(), "K")));
+        for other in [
+            secret_name(app(), &AppEnvironment::Staging, "K"),
+            secret_prefix(app(), &AppEnvironment::Production),
+            "STRIPE_KEY".to_string(),
+            "apps/not-a-uuid/K".to_string(),
+        ] {
+            assert_eq!(production_app_secret(&other), None, "{other}");
         }
     }
 

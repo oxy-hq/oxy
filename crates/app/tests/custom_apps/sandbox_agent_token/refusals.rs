@@ -283,6 +283,29 @@ async fn a_credential_is_not_stored_as_a_secret(s: &Scene) {
     assert!(!listed.to_string().contains("LEAK"), "{listed}");
 }
 
+/// A copy reads another environment's stored value, which the token never
+/// reads: refused from production and from staging alike, into its own
+/// sandbox, with the value in neither answer and nothing stored.
+async fn a_value_is_not_copied_into_its_sandbox(s: &Scene) {
+    let (db, app) = (&s.agent.t.db, s.agent.app.id);
+    let manager = oxy::service::secret_manager::SecretManagerService::new(s.agent.app.project_id);
+    for (segment, value) in [(None, "prod-held"), (Some("staging"), "stg-held")] {
+        manager
+            .set_app_secret_in(db, app, segment, "COPIED", value, s.agent.t.guest_id)
+            .await
+            .expect("a value to copy");
+    }
+    let uri = format!("/customer-apps/{app}/secrets");
+    for from in ["production", "staging"] {
+        let copy = json!({ "key": "COPIED", "environment": OWN, "copy_from": from });
+        let (status, body) = s.agent.api("POST", &uri, Some(copy)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "copy_from {from}: {body}");
+        assert!(!body.to_string().contains("-held"), "{body}");
+    }
+    let own = format!("apps/{app}/{OWN}/COPIED");
+    assert_eq!(manager.get_secret(&own).await, None, "nothing was stored");
+}
+
 /// The public reads refuse the token where they authenticate; `/logs` admits
 /// it, and then answers only for its own sandbox.
 async fn the_public_reads_are_closed(s: &Scene) {
@@ -382,6 +405,7 @@ async fn everything_outside_its_own_sandbox_is_refused_and_nothing_moves() {
     a_publish_reaches_only_its_own_sandbox(&s).await;
     nothing_else_on_the_api_exists(&s).await;
     a_credential_is_not_stored_as_a_secret(&s).await;
+    a_value_is_not_copied_into_its_sandbox(&s).await;
     the_public_reads_are_closed(&s).await;
     fn_runs_only_in_its_own_sandbox(&s).await;
 

@@ -19,18 +19,24 @@ afterEach(() => {
 
 /** Opens the dialog the way the panel does (`""` = Add secret, a name = that
  *  row's button), saves `key` with a value, and waits for it to close. */
-const save = async (secretKey: string, key: string) => {
+const save = async (secretKey: string, key: string, environment = "production") => {
   const onClose = vi.fn();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <SetSecretDialog appId='app-1' secretKey={secretKey} stored={false} onClose={onClose} />
+      <SetSecretDialog
+        appId='app-1'
+        environment={environment}
+        secretKey={secretKey}
+        stored={false}
+        onClose={onClose}
+      />
     </QueryClientProvider>
   );
   if (!secretKey) fireEvent.change(screen.getByLabelText("Key"), { target: { value: key } });
   fireEvent.change(screen.getByLabelText("Value"), { target: { value: "s3cret" } });
   fireEvent.click(screen.getByTestId("admin-app-secret-dialog-save"));
   await waitFor(() => expect(onClose).toHaveBeenCalled());
-  expect(setSecret).toHaveBeenCalledWith("app-1", key, "s3cret");
+  expect(setSecret).toHaveBeenCalledWith("app-1", key, "s3cret", environment);
 };
 
 // The write is an upsert, so how the dialog was opened does not say what it
@@ -47,5 +53,30 @@ describe("SetSecretDialog — the toast says what the write did", () => {
     setSecret.mockResolvedValue("updated");
     await save("", "API_KEY");
     expect(vi.mocked(toast.success).mock.calls).toEqual([["Rotated API_KEY."]]);
+  });
+});
+
+// The dialog writes where the pane is looking: a staging value set from the
+// staging view must not land in production's path.
+describe("SetSecretDialog — the environment it writes to", () => {
+  it("sends the pane's environment with the value", async () => {
+    setSecret.mockResolvedValue("created");
+    // `save` asserts the call: ("app-1", "API_KEY", "s3cret", "staging").
+    await save("API_KEY", "API_KEY", "staging");
+  });
+
+  it("says which environment the value is stored for", () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SetSecretDialog
+          appId='app-1'
+          environment='dev-luong'
+          secretKey=''
+          stored={false}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+    expect(screen.getByText(/Stored for this app's sandbox dev-luong only\./)).toBeInTheDocument();
   });
 });

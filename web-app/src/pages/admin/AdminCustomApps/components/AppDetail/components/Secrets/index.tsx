@@ -1,8 +1,13 @@
 import { Plus, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
+import { useAppEnvironments } from "@/hooks/api/customApps/useAppEnvironments";
 import { useAppSecrets } from "@/hooks/api/customApps/useAppSecrets";
+import { isForbidden } from "@/hooks/api/httpStatus";
 import { AdminAsync } from "@/pages/admin/components/AdminAsync";
+import { PRODUCTION } from "@/types/appEnvironments";
+import { EnvironmentPicker } from "./EnvironmentPicker";
+import { environmentLabel, STAGING } from "./environmentLabel";
 import { SecretRow } from "./SecretRow";
 import { SetSecretDialog } from "./SetSecretDialog";
 
@@ -18,59 +23,106 @@ import { SetSecretDialog } from "./SetSecretDialog";
  * among every other project secret, and the only way to *create* one was from
  * inside a function that could not run without it.
  *
+ * Each environment has its own: production's by default, or — for staff who
+ * may open non-production — staging's or a sandbox's, from the picker. A key
+ * an environment holds no value for but reads from another (staging's, in a
+ * sandbox; production's, for a `shared` key) says so instead of "Missing".
+ *
  * Rows a person has to act on come first and are the only coloured thing here.
  * A healthy key carries no badge at all: badging every row is what stops the
  * broken one from standing out.
  */
 export const Secrets = ({ appId }: { appId: string }) => {
-  const secrets = useAppSecrets(appId);
+  /** Whose secrets are shown and written: production unless the picker moved. */
+  const [environment, setEnvironment] = useState(PRODUCTION);
+  const secrets = useAppSecrets(appId, environment);
+  // Which keys production stores, for the rows of another environment: the
+  // same query (and cache entry) as the section badge, so no extra request.
+  const production = useAppSecrets(appId, PRODUCTION);
+  const productionKeys = production.data
+    ? new Set(production.data.entries.filter((e) => e.is_set).map((e) => e.key))
+    : null;
   /** The key being set: `""` = a new one; a name = that row's key, and whether
    *  it already has a value (a rotation) or not (a first set). */
   const [editing, setEditing] = useState<{ key: string; stored: boolean } | null>(null);
+  // Production is the mount's own guard and never refused here; anything else
+  // is refused to a viewer oxy-authz does not let open non-production.
+  const refused = environment !== PRODUCTION && isForbidden(secrets.error);
+
+  const switchTo = (next: string) => {
+    setEditing(null);
+    setEnvironment(next);
+  };
+
+  // A sandbox deleted while shown: its secrets answer 404 for good, so once the
+  // environments list (the picker's query) no longer offers it, being torn down
+  // or gone, the pane goes back to production.
+  const environments = useAppEnvironments(appId);
+  const sandboxGone =
+    environment !== PRODUCTION &&
+    environment !== STAGING &&
+    !!environments.data &&
+    !environments.data.some((e) => e.name === environment && e.status !== "deleting");
+  useEffect(() => {
+    if (!sandboxGone) return;
+    setEditing(null);
+    setEnvironment(PRODUCTION);
+  }, [sandboxGone]);
 
   return (
     <div className='flex flex-col gap-2' data-testid='admin-app-secrets'>
-      {/* The gate wraps only the list. "Add secret" stays reachable when the fetch
-          fails: setting a key is exactly what an operator may be here to do, and the
-          declaration list is not needed to do it. */}
-      <AdminAsync query={secrets} noun='this app&rsquo;s secrets' rows={2}>
-        {(data) => (
-          <>
-            {data.declaration_error && <DeclarationError message={data.declaration_error} />}
-            {data.entries.length === 0 ? (
-              <EmptyState />
-            ) : (
-              <ul className='flex flex-col gap-1.5' data-testid='admin-app-secrets-list'>
-                {data.entries.map((entry) => (
-                  <SecretRow
-                    key={entry.key}
-                    appId={appId}
-                    entry={entry}
-                    onSet={() => setEditing({ key: entry.key, stored: entry.is_set })}
-                  />
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-      </AdminAsync>
+      <EnvironmentPicker appId={appId} value={environment} onChange={switchTo} />
 
-      <div>
-        <Button
-          type='button'
-          variant='outline'
-          size='sm'
-          className='h-7 gap-1.5 text-xs'
-          onClick={() => setEditing({ key: "", stored: false })}
-          data-testid='admin-app-secrets-add'
-        >
-          <Plus className='size-3' />
-          Add secret
-        </Button>
-      </div>
+      {refused ? (
+        <NonProductionRefused environment={environment} onBack={() => switchTo(PRODUCTION)} />
+      ) : (
+        <>
+          {/* The gate wraps only the list. "Add secret" stays reachable when the fetch
+              fails: setting a key is exactly what an operator may be here to do, and the
+              declaration list is not needed to do it. */}
+          <AdminAsync query={secrets} noun='this app&rsquo;s secrets' rows={2}>
+            {(data) => (
+              <>
+                {data.declaration_error && <DeclarationError message={data.declaration_error} />}
+                {data.entries.length === 0 ? (
+                  <EmptyState />
+                ) : (
+                  <ul className='flex flex-col gap-1.5' data-testid='admin-app-secrets-list'>
+                    {data.entries.map((entry) => (
+                      <SecretRow
+                        key={entry.key}
+                        appId={appId}
+                        environment={environment}
+                        entry={entry}
+                        productionHolds={productionKeys?.has(entry.key)}
+                        onSet={() => setEditing({ key: entry.key, stored: entry.is_set })}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </AdminAsync>
+
+          <div>
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              className='h-7 gap-1.5 text-xs'
+              onClick={() => setEditing({ key: "", stored: false })}
+              data-testid='admin-app-secrets-add'
+            >
+              <Plus className='size-3' />
+              Add secret
+            </Button>
+          </div>
+        </>
+      )}
 
       <SetSecretDialog
         appId={appId}
+        environment={environment}
         // A named key is locked to its row; `""` is a new one.
         secretKey={editing?.key ?? null}
         stored={editing?.stored ?? false}
@@ -79,6 +131,33 @@ export const Secrets = ({ appId }: { appId: string }) => {
     </div>
   );
 };
+
+/**
+ * The viewer may not open this app's non-production environments, so the
+ * server refused the list (403). Said plainly, in place of the list, rather
+ * than as the generic "couldn't load" an outage gets: retrying will not help,
+ * and production is one click away.
+ */
+const NonProductionRefused = ({
+  environment,
+  onBack
+}: {
+  environment: string;
+  onBack: () => void;
+}) => (
+  <div
+    className='flex flex-col items-start gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-2 text-xs'
+    data-testid='admin-app-secrets-nonprod-refused'
+  >
+    <p className='text-muted-foreground'>
+      {environmentLabel(environment)} secrets are set by Oxy staff who may open this app&rsquo;s
+      non-production environments, and you may not. Production&rsquo;s secrets are unaffected.
+    </p>
+    <Button type='button' variant='outline' size='sm' className='h-6 text-xs' onClick={onBack}>
+      Back to production
+    </Button>
+  </div>
+);
 
 /**
  * The app has neither declarations nor stored keys. An empty screen is an
@@ -119,7 +198,10 @@ const DeclarationError = ({ message }: { message: string }) => (
  * badge at all.
  */
 export const SecretsBadge = ({ appId }: { appId: string }) => {
-  const { data } = useAppSecrets(appId);
+  // Production's count, whatever the pane's picker shows: the badge answers "is
+  // the live app missing something", and a sandbox someone is still filling in
+  // must not raise it on every viewer's collapsed section.
+  const { data } = useAppSecrets(appId, PRODUCTION);
   if (!data?.missing_required) return null;
   return (
     <span

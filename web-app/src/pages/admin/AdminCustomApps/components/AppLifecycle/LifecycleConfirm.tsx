@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -13,16 +14,24 @@ import type { ConfirmCopy } from "./lifecycleCopy";
  *
  * `copy` doubles as the open flag — `null` closes it — so a caller holds exactly one
  * piece of state ("what am I about to do") rather than an open boolean beside it.
+ *
+ * `notice` is said under the sentence — the admin console's check of the build about
+ * to go live — and `hold` keeps the verb disabled while that check is still out, so it
+ * cannot be clicked past before it renders.
  */
 export const LifecycleConfirm = ({
   copy,
   pending,
   onConfirm,
   onCancel,
+  notice,
+  hold = false,
   testId = "app-lifecycle-confirm"
 }: {
   copy: ConfirmCopy | null;
   pending: boolean;
+  notice?: ReactNode;
+  hold?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   /** The dialog's testid; `-ok` and `-cancel` hang off it. Another panel borrowing
@@ -34,6 +43,7 @@ export const LifecycleConfirm = ({
       <div className='flex flex-col gap-2'>
         <AlertDialogTitle>{copy?.title ?? ""}</AlertDialogTitle>
         <AlertDialogDescription>{copy?.description ?? ""}</AlertDialogDescription>
+        {notice}
       </div>
       <div className='flex justify-end gap-2'>
         <Button
@@ -44,7 +54,7 @@ export const LifecycleConfirm = ({
         >
           Cancel
         </Button>
-        <Button disabled={pending} onClick={onConfirm} data-testid={`${testId}-ok`}>
+        <Button disabled={pending || hold} onClick={onConfirm} data-testid={`${testId}-ok`}>
           {pending ? "Working…" : (copy?.confirm ?? "")}
         </Button>
       </div>

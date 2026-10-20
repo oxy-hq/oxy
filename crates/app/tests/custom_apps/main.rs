@@ -37,6 +37,8 @@
 //! | `staging_agent_ask` | a staging-host agent ask (staff only, else 404 `EnvironmentRefused`) builds its platform inside the hold: held from the drive's spawned task, DDL through its connector is refused and listed in `…/staging/held` as `agent`, the run is stamped with the app and startup recovery retires it; production asks are unchanged (no hold, no stamp) |
 //! | `staging_agent_ask_handlers` | the real `start_ask` on the staging host refuses a non-staff caller (404 `EnvironmentRefused`) before writing a thread, and reaches the pipeline for staff (`agent_not_found`); the staging `cancel_ask` reaches only this app's stamped staging runs, production's is unchanged |
 //! | `staging_automation_run_handlers` | the real `start_automation_run` on the staging host answers `409 held_in_staging` before any run row and logs it held as `automation`; a non-staff caller gets the same `404 EnvironmentRefused` an ask refuses with; production starts the run unaffected |
+//! | `secrets_audit` | a production app-secret set or delete leaves a `custom_app.secret.*` audit row naming `production`, on the staff mount and the tenant (workspace) mount alike |
+//! | `secrets_promote_and_copy` | `?build=` on the staff secrets list reconciles production's keys against a named build (the promote warning), another app's build 404s; `copy_from` copies a value server-side only downhill (production → staging or a sandbox, staging → a sandbox), refused uphill, to a caller who may not open the target, and on the tenant mount; a copy is audited as `custom_app.secret.copied` |
 //! | `staging_secrets_admin` | the staff secrets surface sets, lists and deletes `apps/<id>/staging/<KEY>` for staff only (oxy-authz `AppNonProduction`), audited with the environment; a key is one segment; the tenant project-secrets routes never list or reach a staging row |
 //! | `staging_functions_oltp` | a staging function reads production's OLTP rows; `COMMIT`/`SET TRANSACTION READ WRITE` escapes, `set_config` (by name, `U&"…"`-escaped, or inside `query_to_xml` text) and multi-statement strings are held unsent; `READ ONLY` refuses a write inside an app-defined function |
 //! | `staging_functions_oltp_branch` | with the org's OLTP staging branch, every OLTP write op (a table checked against the policy), DDL, a savepoint and an app-defined writing function run on the branch and never production; `dblink`, server files, `COPY … PROGRAM` and `ALTER ROLE` are refused there and listed in the held row; production's and staging's `ctx.oltp` resolve disjoint databases; a branch row naming production is refused |
@@ -180,6 +182,8 @@ mod sandbox_teardown;
 mod sandbox_teardown_failures;
 mod sandbox_teardown_races;
 mod sandbox_teardown_task;
+mod secrets_audit;
+mod secrets_promote_and_copy;
 mod seed_example_app;
 mod shape_zoo;
 mod shape_zoo_coverage;

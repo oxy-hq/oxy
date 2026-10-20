@@ -1,3 +1,4 @@
+import { PRODUCTION } from "@/types/appEnvironments";
 import type {
   AppAvailability,
   AppBuildHistory,
@@ -239,22 +240,61 @@ export const CustomAppsService = {
 
   // ── App-scoped secrets (`apps/<app_id>/<KEY>` — what `ctx.env` reads) ──────
 
-  /** The app's secrets: what its active build declares, unioned with what is
-   *  actually stored. Values are never included. */
-  async listSecrets(id: string): Promise<AppSecrets> {
-    const response = await apiClient.get(`${appPath(id)}/secrets`);
+  /** The app's secrets in `environment` (production by default): what the
+   *  build that environment serves declares, unioned with what is stored
+   *  there. Values are never included. Anything but production is staff only,
+   *  and answers 403 to a caller who may not open non-production. */
+  async listSecrets(
+    id: string,
+    environment: string = PRODUCTION,
+    build?: string
+  ): Promise<AppSecrets> {
+    // `build` (an `app_builds.id`) reconciles against that build's declarations
+    // instead of the one the environment serves: "what would be missing if this
+    // build went live here", asked before a promote.
+    const response = await apiClient.get(`${appPath(id)}/secrets`, {
+      params: build ? { environment, build } : { environment }
+    });
     return response.data;
   },
 
-  /** Create or rotate one key. The only write path there is — the project
-   *  secrets API rejects the `/` in an app-scoped name. */
-  async setSecret(id: string, key: string, value: string): Promise<AppSecretWrite> {
-    const response = await apiClient.post(`${appPath(id)}/secrets`, { key, value });
+  /** Create or rotate one key in `environment`. The only write path there is —
+   *  the project secrets API rejects the `/` in an app-scoped name. */
+  async setSecret(
+    id: string,
+    key: string,
+    value: string,
+    environment: string = PRODUCTION
+  ): Promise<AppSecretWrite> {
+    const response = await apiClient.post(`${appPath(id)}/secrets`, {
+      key,
+      value,
+      environment
+    });
     return appSecretWrite(response.status);
   },
 
-  async deleteSecret(id: string, key: string): Promise<void> {
-    await apiClient.delete(`${appPath(id)}/secrets/${encodeURIComponent(key)}`);
+  /** Copy `from`'s stored value of `key` into `environment`, server-side: the
+   *  value never reaches the browser. Staff only, and only downhill —
+   *  production into staging or a sandbox, staging into a sandbox. */
+  async copySecret(
+    id: string,
+    key: string,
+    environment: string,
+    from: string
+  ): Promise<AppSecretWrite> {
+    const response = await apiClient.post(`${appPath(id)}/secrets`, {
+      key,
+      environment,
+      copy_from: from
+    });
+    return appSecretWrite(response.status);
+  },
+
+  async deleteSecret(id: string, key: string, environment: string = PRODUCTION): Promise<void> {
+    await apiClient.delete(`${appPath(id)}/secrets/${encodeURIComponent(key)}`, {
+      params: { environment }
+    });
   },
 
   /** Tenant-side create/rotate, on the workspace's own route. Same handler as
@@ -278,9 +318,10 @@ export const CustomAppsService = {
   /** Read one value back. Deliberately not a query — a decrypted secret should
    *  never land in the react-query cache, so this is called on demand and the
    *  result held only as long as the row is expanded. */
-  async revealSecret(id: string, key: string): Promise<string> {
+  async revealSecret(id: string, key: string, environment: string = PRODUCTION): Promise<string> {
     const response = await apiClient.get<{ key: string; value: string }>(
-      `${appPath(id)}/secrets/${encodeURIComponent(key)}/value`
+      `${appPath(id)}/secrets/${encodeURIComponent(key)}/value`,
+      { params: { environment } }
     );
     return response.data.value;
   },

@@ -244,6 +244,16 @@ export interface AppSecretEntry {
   secret_id?: string;
   updated_at?: string;
   updated_by_email?: string;
+  /** Declared `"shared": true`. Only reported outside production: there an
+   *  environment with no value of its own reads production's. */
+  shared?: boolean;
+  /** Outside production: nothing is stored here and the key is `shared`, so a
+   *  run reads production's value. The server does not check that production
+   *  holds one; with none, a run reads nothing (the Secrets pane checks). */
+  inherits_production?: boolean;
+  /** In a sandbox: nothing is stored here and staging holds a value, so a run
+   *  reads staging's. Takes precedence over `inherits_production`. Not missing. */
+  inherits_staging?: boolean;
 }
 
 /** An app's secrets, reconciled against what its active build declares.
@@ -252,8 +262,12 @@ export interface AppSecrets {
   app_id: string;
   app_slug: string;
   app_name: string;
+  /** Whose secrets these are: `production`, `staging`, or a sandbox's
+   *  `dev-<handle>`. Each environment lists its own keys alone. */
+  environment: string;
   entries: AppSecretEntry[];
-  /** Required keys with nothing stored — the "not ready" count. */
+  /** Required keys with nothing a run would read (stored here or inherited)
+   *  — the "not ready" count. */
   missing_required: number;
   /** The build the declarations were read from (published, else draft). */
   declaring_build_id?: string;

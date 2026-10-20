@@ -7,13 +7,18 @@ import { cn } from "@/libs/shadcn/utils";
 import { relativeTime } from "@/pages/admin/utils";
 import { CustomAppsService } from "@/services/api/customApps";
 import type { AppSecretEntry } from "@/types/apps";
+import { CopyFrom } from "./CopyFrom";
 
 /**
- * One key. Three states, and only one of them is loud:
+ * One key. Four states, and only one of them is loud:
  *
- * - **Missing** — the build asks for it and nothing is stored. Carries the row's
- *   only colour and its only filled button, because it is the only row that is
- *   a task rather than a fact.
+ * - **Missing** — the build asks for it and nothing a run would read is stored.
+ *   Carries the row's only colour and its only filled button, because it is the
+ *   only row that is a task rather than a fact.
+ * - **Inherited** — outside production, nothing is stored here but a run reads
+ *   another environment's value: staging's in a sandbox, or production's for a
+ *   `shared` key. Says whose, quietly: it works, and setting a value here would
+ *   override it.
  * - **Set** — no badge. A tick beside every healthy key would compete with the
  *   one row that needs reading.
  * - **Undeclared** — stored, but nothing in the active build asks for it. A
@@ -23,15 +28,23 @@ import type { AppSecretEntry } from "@/types/apps";
  */
 export const SecretRow = ({
   appId,
+  environment,
   entry,
+  productionHolds,
   onSet
 }: {
   appId: string;
+  /** The environment this row's key lives in; reveal and delete act there. */
+  environment: string;
   entry: AppSecretEntry;
+  /** Production stores this key (from production's own view); `undefined`
+   *  while that is unknown. */
+  productionHolds?: boolean;
   /** Opens the set/rotate dialog for this key. */
   onSet: (key: string) => void;
 }) => {
-  const missing = !entry.is_set;
+  const inheritedFrom = inheritsFrom(entry, productionHolds);
+  const missing = !entry.is_set && !inheritedFrom;
   const urgent = missing && entry.required;
 
   return (
@@ -49,14 +62,14 @@ export const SecretRow = ({
           <KeyRound
             className={cn(
               "size-3.5 shrink-0",
-              missing ? "text-muted-foreground" : "text-vis-violet"
+              entry.is_set ? "text-vis-violet" : "text-muted-foreground"
             )}
           />
         )}
         <span
           className={cn(
             "truncate font-mono text-xs",
-            missing && !urgent && "text-muted-foreground"
+            !entry.is_set && !urgent && "text-muted-foreground"
           )}
         >
           {entry.key}
@@ -64,6 +77,19 @@ export const SecretRow = ({
 
         {urgent && <StateBadge tone='destructive'>Missing</StateBadge>}
         {missing && !urgent && <StateBadge tone='muted'>Not set</StateBadge>}
+        {inheritedFrom && (
+          <StateBadge tone='muted' testId={`admin-app-secret-inherits-${entry.key}`}>
+            Uses {inheritedFrom}&rsquo;s value
+          </StateBadge>
+        )}
+        {entry.shared && (
+          <StateBadge
+            tone='outline'
+            title="Declared shared: with no value of its own, a non-production environment reads production's."
+          >
+            Shared
+          </StateBadge>
+        )}
         {entry.is_set && !entry.declared && <StateBadge tone='outline'>Undeclared</StateBadge>}
 
         <div className='ml-auto flex shrink-0 items-center gap-1'>
@@ -73,7 +99,9 @@ export const SecretRow = ({
               {entry.updated_by_email ? ` · ${entry.updated_by_email}` : ""}
             </span>
           )}
-          {entry.is_set && <RevealButton appId={appId} secretKey={entry.key} />}
+          {entry.is_set && (
+            <RevealButton appId={appId} environment={environment} secretKey={entry.key} />
+          )}
           <Button
             type='button'
             size='sm'
@@ -83,25 +111,54 @@ export const SecretRow = ({
           >
             {entry.is_set ? "Rotate" : "Set"}
           </Button>
-          {entry.is_set && <DeleteButton appId={appId} secretKey={entry.key} />}
+          {entry.is_set && (
+            <DeleteButton appId={appId} environment={environment} secretKey={entry.key} />
+          )}
         </div>
       </div>
 
       {entry.description && (
         <p className='mt-1 pl-5 text-muted-foreground text-xs'>{entry.description}</p>
       )}
+      <CopyFrom
+        appId={appId}
+        environment={environment}
+        entry={entry}
+        productionHolds={productionHolds}
+      />
     </li>
   );
 };
 
+/** Which environment's value a run reads for a key stored nowhere here — in
+ *  the order the server resolves `ctx.env`: staging's before production's.
+ *  The server's `inherits_production` says only that the key is shared and
+ *  unset here; when production is known to hold no value either, a run reads
+ *  nothing, so the row is missing rather than inherited. */
+function inheritsFrom(
+  entry: AppSecretEntry,
+  productionHolds: boolean | undefined
+): "staging" | "production" | null {
+  if (entry.is_set) return null;
+  if (entry.inherits_staging) return "staging";
+  if (entry.inherits_production && productionHolds !== false) return "production";
+  return null;
+}
+
 const StateBadge = ({
   tone,
+  title,
+  testId,
   children
 }: {
   tone: "destructive" | "muted" | "outline";
+  title?: string;
+  testId?: string;
   children: React.ReactNode;
 }) => (
   <span
+    title={title}
+    data-testid={testId}
     className={cn(
       "shrink-0 rounded-sm px-1.5 py-px font-medium text-[10px]",
       tone === "destructive" && "bg-destructive/15 text-destructive",
@@ -121,7 +178,15 @@ const StateBadge = ({
  * at the cache. Here it exists while the eye is open and is dropped when it
  * closes.
  */
-const RevealButton = ({ appId, secretKey }: { appId: string; secretKey: string }) => {
+const RevealButton = ({
+  appId,
+  environment,
+  secretKey
+}: {
+  appId: string;
+  environment: string;
+  secretKey: string;
+}) => {
   const [value, setValue] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -132,7 +197,7 @@ const RevealButton = ({ appId, secretKey }: { appId: string; secretKey: string }
     }
     setBusy(true);
     try {
-      setValue(await CustomAppsService.revealSecret(appId, secretKey));
+      setValue(await CustomAppsService.revealSecret(appId, secretKey, environment));
     } catch {
       toast.error(`Couldn't read ${secretKey}.`);
     } finally {
@@ -170,10 +235,18 @@ const RevealButton = ({ appId, secretKey }: { appId: string; secretKey: string }
 /** Two clicks, no dialog: the second click within the confirm window deletes.
  *  A modal for one destructive row in a dense operator list is more ceremony
  *  than the action deserves, but one click alone is too few. */
-const DeleteButton = ({ appId, secretKey }: { appId: string; secretKey: string }) => {
+const DeleteButton = ({
+  appId,
+  environment,
+  secretKey
+}: {
+  appId: string;
+  environment: string;
+  secretKey: string;
+}) => {
   const [armed, setArmed] = useState(false);
   const disarm = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const del = useDeleteAppSecret(appId);
+  const del = useDeleteAppSecret(appId, environment);
 
   // Collapsing the Secrets section unmounts an armed row mid-countdown, so the
   // timer has to be cancelled — otherwise it fires `setArmed` on a component

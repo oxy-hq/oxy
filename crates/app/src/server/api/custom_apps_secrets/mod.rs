@@ -54,9 +54,12 @@
 //! A sandbox's teardown removes its whole path ([`delete_environment_secrets`]).
 
 mod agent;
+mod copy;
+mod declarations;
 pub(crate) mod declared;
 pub mod environment;
 mod ops;
+pub(crate) mod project_routes;
 pub(crate) mod required;
 pub(crate) mod scope;
 pub(crate) mod shared_env;
@@ -64,14 +67,14 @@ pub(crate) mod shared_env;
 use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
-use entity::{app_builds, app_functions, apps};
+use entity::apps;
 use oxy::database::client::establish_connection;
 use oxy::service::secret_manager::SecretManagerService;
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_auth::types::AppPublishTokenAuth;
 use oxy_server_authz::role_guards::WorkspaceAdmin;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{DatabaseConnection, EntityTrait};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -121,11 +124,31 @@ pub struct SetSecretRequest {
     /// system-built by `set_app_secret`, which is what keeps an app's write
     /// inside its own namespace.
     pub key: String,
+    /// Empty when `copy_from` names the value instead.
+    #[serde(default)]
     pub value: String,
     /// `production` (the default), `staging`, or a sandbox's `dev-<handle>`
     /// — anything but production is staff only ([`environment::authorize`]).
     #[serde(default)]
     pub environment: Option<String>,
+    /// Copy this environment's stored value of `key` instead of sending one —
+    /// server-side, so it never reaches the caller ([`copy`]). Only downhill:
+    /// production into staging or a sandbox, staging into a sandbox.
+    #[serde(default)]
+    pub copy_from: Option<String>,
+}
+
+/// `?environment=` and `?build=` on the list route.
+#[derive(Debug, Default, Deserialize)]
+pub struct ListQuery {
+    #[serde(default)]
+    pub environment: Option<String>,
+    /// An `app_builds.id` of this app: reconcile against that build's
+    /// declarations instead of the build the environment serves — "what would
+    /// this environment be missing if this build went live here", asked before
+    /// a promote, publish or rollback. Another app's build is a 404.
+    #[serde(default)]
+    pub build: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
@@ -189,117 +212,6 @@ fn scoped_to_workspace(app: apps::Model, workspace_id: Uuid) -> Result<apps::Mod
 
 // ── Core operations ──────────────────────────────────────────────────────────
 
-/// The build whose declarations are in force in `environment`: for
-/// production, production's, else staging's for an app never promoted; for
-/// staging, staging's. Matches how `/fn` and the storage sweeper pick a
-/// manifest — the declarations have to come from the same build as the code
-/// that reads them — so it asks the same resolver
-/// (`custom_apps_env_resolve::resolve_function_environment`).
-async fn declaring_build(
-    db: &DatabaseConnection,
-    app: &apps::Model,
-    environment: &AppEnvironment,
-) -> Result<Option<Uuid>, String> {
-    crate::server::api::custom_apps_env_resolve::resolve_function_environment(db, app, environment)
-        .await
-        .map(|resolved| resolved.build_id)
-        .map_err(|e| e.to_string())
-}
-
-/// What the active build declares, plus why the answer might be incomplete.
-///
-/// A struct rather than a tuple because the third field is the interesting one:
-/// every path that yields *no* declarations has to say whether that means "this
-/// app declares nothing" or "we could not find out".
-struct Declarations {
-    keys: std::collections::BTreeMap<String, declared::DeclaredKey>,
-    /// Non-`None` when the list is not the whole truth — a malformed `env`
-    /// block, or a query that failed.
-    error: Option<String>,
-    build_id: Option<String>,
-    /// The declaring build's manifest, for the `shared` overlay.
-    manifest: Option<serde_json::Value>,
-}
-
-impl Declarations {
-    /// The app has no build at all. Genuinely declares nothing — not an error.
-    fn none() -> Self {
-        Self {
-            keys: Default::default(),
-            error: None,
-            build_id: None,
-            manifest: None,
-        }
-    }
-
-    /// We could not read the declarations. Distinct from `none()` on purpose:
-    /// silently returning zero keys is the exact failure this module argues
-    /// against for a malformed manifest — every stored key would flip to
-    /// **Undeclared**, `missing_required` would fall to 0, and the header badge
-    /// would vanish, all reading as a healthy app.
-    fn unreadable(reason: &str) -> Self {
-        Self {
-            keys: Default::default(),
-            error: Some(format!(
-                "Could not read this app's declared keys ({reason}), so only what is \
-                 already stored is listed below."
-            )),
-            build_id: None,
-            manifest: None,
-        }
-    }
-}
-
-async fn build_declarations(
-    db: &DatabaseConnection,
-    app: &apps::Model,
-    environment: &AppEnvironment,
-) -> Declarations {
-    let build_pk = match declaring_build(db, app, environment).await {
-        Ok(Some(build_pk)) => build_pk,
-        Ok(None) => return Declarations::none(),
-        Err(e) => {
-            tracing::error!(app_id = %app.id, "environment lookup failed: {e}");
-            return Declarations::unreadable("its environments could not be read");
-        }
-    };
-
-    let build = match app_builds::Entity::find_by_id(build_pk).one(db).await {
-        // A build row that has gone away declares nothing, which is true rather
-        // than unknown — only the query FAILING is unknown.
-        Ok(row) => row,
-        Err(e) => {
-            tracing::error!(app_id = %app.id, %build_pk, "build lookup failed: {e}");
-            return Declarations::unreadable("its build could not be loaded");
-        }
-    };
-
-    let (env, manifest_error) = declared::declared_env(
-        build.as_ref().and_then(|b| b.manifest_json.as_ref()),
-        app.id,
-    );
-
-    // Every function in the same build, for their `webhook.secretVar`s.
-    let fn_manifests: Vec<serde_json::Value> = match app_functions::Entity::find()
-        .filter(app_functions::Column::BuildId.eq(build_pk))
-        .all(db)
-        .await
-    {
-        Ok(rows) => rows.into_iter().filter_map(|r| r.manifest_json).collect(),
-        Err(e) => {
-            tracing::error!(app_id = %app.id, "function lookup failed: {e}");
-            return Declarations::unreadable("its functions could not be loaded");
-        }
-    };
-
-    Declarations {
-        keys: declared::merge_declared(env, declared::webhook_secret_vars(fn_manifests.iter())),
-        error: manifest_error,
-        manifest: build.as_ref().and_then(|b| b.manifest_json.clone()),
-        build_id: build.map(|b| b.build_id),
-    }
-}
-
 /// Everything stored directly under this app's prefix in `environment`, keys
 /// bared and attributed. Directly: production's view never lists staging's
 /// `staging/KEY`, the rule `ctx.env` follows too.
@@ -354,9 +266,13 @@ async fn view(
     db: &DatabaseConnection,
     app: apps::Model,
     environment: &AppEnvironment,
+    build: Option<Uuid>,
 ) -> Result<AppSecretsResponse, Failure> {
     let stored = stored_secrets(db, &app, environment).await?;
-    let declarations = build_declarations(db, &app, environment).await;
+    let declarations = match build {
+        Some(build) => declarations::for_requested_build(db, &app, build).await?,
+        None => declarations::for_environment(db, &app, environment).await,
+    };
     let mut entries = declared::reconcile(declarations.keys, stored);
     environment::mark_inherited(
         db,
@@ -388,7 +304,7 @@ async fn view(
 
 pub async fn admin_list(
     Path(app_id): Path<Uuid>,
-    Query(q): Query<EnvironmentQuery>,
+    Query(q): Query<ListQuery>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     marker: Option<Extension<AppPublishTokenAuth>>,
 ) -> Result<Json<AppSecretsResponse>, Failure> {
@@ -396,20 +312,21 @@ pub async fn admin_list(
     let app = load_app(&db, app_id).await?;
     let caller = Caller::of(&user, &marker);
     let environment = environment::resolve(&db, &app, caller, q.environment.as_deref()).await?;
-    Ok(Json(view(&db, app, &environment).await?))
+    Ok(Json(view(&db, app, &environment, q.build).await?))
 }
 
 pub async fn admin_set(
     Path(app_id): Path<Uuid>,
     actor: oxy_app_core::audit::RequestActor,
     marker: Option<Extension<AppPublishTokenAuth>>,
-    Json(body): Json<SetSecretRequest>,
+    Json(mut body): Json<SetSecretRequest>,
 ) -> Result<StatusCode, Failure> {
     let db = connect().await?;
     let app = load_app(&db, app_id).await?;
     let caller = Caller::of(&actor.user, &marker);
     let environment = environment::resolve(&db, &app, caller, body.environment.as_deref()).await?;
-    ops::set(&db, &app, &environment, body, &actor).await
+    let copied = copy::fill_from_source(&db, &app, caller, &environment, &mut body).await?;
+    ops::set(&db, &app, &environment, body, copied.as_ref(), &actor).await
 }
 
 pub async fn admin_delete(
@@ -452,7 +369,8 @@ pub async fn admin_reveal(
 /// Everything else an app secret needs already works on the project-secrets
 /// routes next door, because those address a row by **id** rather than by name:
 /// `GET /secrets` lists it, `GET /secrets/{id}/value` reveals it, `PUT` rotates
-/// it, `DELETE` removes it. Only creation was impossible, because
+/// it, `DELETE` removes it — the last two audited like this route's writes
+/// ([`project_routes`]). Only creation was impossible, because
 /// `validate_secret_name` rejects the `/` in `apps/<app_id>/<KEY>` — so that is
 /// the one thing added, rather than a parallel CRUD surface whose other three
 /// verbs would duplicate working routes and have to be kept in step with them.
@@ -461,14 +379,16 @@ pub async fn workspace_set(
     Path((workspace_id, app_id)): Path<(Uuid, Uuid)>,
     actor: oxy_app_core::audit::RequestActor,
     marker: Option<Extension<AppPublishTokenAuth>>,
-    Json(body): Json<SetSecretRequest>,
+    Json(mut body): Json<SetSecretRequest>,
 ) -> Result<StatusCode, Failure> {
     let db = connect().await?;
     let app = scoped_to_workspace(load_app(&db, app_id).await?, workspace_id)?;
-    // Staging here too is staff-only: a workspace admin is refused.
+    // Staging here too is staff-only: a workspace admin is refused — and with
+    // it every copy, since nothing is copied into production.
     let caller = Caller::of(&actor.user, &marker);
     let environment = environment::resolve(&db, &app, caller, body.environment.as_deref()).await?;
-    ops::set(&db, &app, &environment, body, &actor).await
+    let copied = copy::fill_from_source(&db, &app, caller, &environment, &mut body).await?;
+    ops::set(&db, &app, &environment, body, copied.as_ref(), &actor).await
 }
 
 #[cfg(test)]

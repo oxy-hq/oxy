@@ -8,6 +8,7 @@ import {
   useCreateAppEnvironment,
   useDeleteAppEnvironment
 } from "@/hooks/api/customApps/useAppEnvironments";
+import { isForbidden } from "@/hooks/api/httpStatus";
 import { cn } from "@/libs/shadcn/utils";
 import { ADMIN_TONE } from "@/pages/admin/components/adminTone";
 import type { AppEnvironment } from "@/services/api/customApps";
@@ -33,6 +34,14 @@ export const Environments = ({ appId }: { appId: string }) => {
   const [deleting, setDeleting] = useState<AppEnvironment | null>(null);
 
   if (isLoading) return <Skeleton className='h-20 w-full' />;
+  if (isForbidden(error)) {
+    return (
+      <p className='text-muted-foreground text-xs' data-testid='admin-app-environments-refused'>
+        Environments are shown to Oxy staff who may open this app&rsquo;s non-production
+        environments, and you may not.
+      </p>
+    );
+  }
   if (error) {
     return (
       <p className='text-destructive text-xs' data-testid='admin-app-env-error'>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isOrgApiAccessPath, isTokenErrorCode } from "./tokenErrorCodes";
+import { isAppEnvironmentPath, isOrgApiAccessPath, isTokenErrorCode } from "./tokenErrorCodes";
 
 describe("isTokenErrorCode", () => {
   it("knows the two codes a token route answers 403 with", () => {
@@ -30,5 +30,22 @@ describe("isOrgApiAccessPath", () => {
     expect(isOrgApiAccessPath("/orgs/o1/tokens-legacy")).toBe(false);
     expect(isOrgApiAccessPath("/user/tokens")).toBe(false);
     expect(isOrgApiAccessPath("/orgs")).toBe(false);
+  });
+});
+
+describe("isAppEnvironmentPath", () => {
+  it("matches an app's environment and secrets routes", () => {
+    expect(isAppEnvironmentPath("/customer-apps/a1/environments")).toBe(true);
+    expect(isAppEnvironmentPath("/customer-apps/a1/environments/dev-x")).toBe(true);
+    expect(isAppEnvironmentPath("/customer-apps/a1/secrets")).toBe(true);
+    expect(isAppEnvironmentPath("/customer-apps/a1/secrets/KEY/value")).toBe(true);
+    expect(isAppEnvironmentPath("customer-apps/a1/secrets?environment=staging")).toBe(true);
+  });
+
+  it("leaves the app's other routes to the generic denial", () => {
+    expect(isAppEnvironmentPath("/customer-apps/a1/publish")).toBe(false);
+    expect(isAppEnvironmentPath("/customer-apps/a1/secrets-legacy")).toBe(false);
+    expect(isAppEnvironmentPath("/customer-apps/a1")).toBe(false);
+    expect(isAppEnvironmentPath("/ws/custom-apps/a1/secrets")).toBe(false);
   });
 });

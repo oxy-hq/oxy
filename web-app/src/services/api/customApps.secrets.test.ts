@@ -39,9 +39,22 @@ describe("CustomAppsService — what an app-secret write did", () => {
     post.mockResolvedValueOnce({ status: 204, data: "" });
     await expect(CustomAppsService.setSecret("app-1", "API_KEY", "v")).resolves.toBe("updated");
 
+    // No environment named = production, sent explicitly.
     expect(post).toHaveBeenCalledWith("/customer-apps/app-1/secrets", {
       key: "API_KEY",
-      value: "v"
+      value: "v",
+      environment: "production"
+    });
+  });
+
+  it("sends the named environment on the staff route", async () => {
+    post.mockResolvedValueOnce({ status: 201, data: "" });
+    await CustomAppsService.setSecret("app-1", "API_KEY", "v", "staging");
+
+    expect(post).toHaveBeenCalledWith("/customer-apps/app-1/secrets", {
+      key: "API_KEY",
+      value: "v",
+      environment: "staging"
     });
   });
 });

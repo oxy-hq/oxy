@@ -1,5 +1,5 @@
 import { ArrowUpCircle, ChevronDown, EyeOff, History, Send } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   DropdownMenu,
@@ -23,6 +23,20 @@ import { type ConfirmCopy, LIFECYCLE_COPY, shortBuildId } from "./lifecycleCopy"
  */
 export type LifecycleVariant = "full" | "row";
 
+/** The build an open confirm would put live, and by which verb. */
+export interface LifecycleTarget {
+  /** `app_builds.id`. */
+  buildId: string;
+  act: "promote" | "rollback";
+}
+
+/** What a surface checked about the target, said inside the confirm. `hold` keeps
+ *  the verb disabled until the check has answered. */
+export interface LifecyclePreflight {
+  notice: ReactNode;
+  hold: boolean;
+}
+
 /**
  * The lifecycle card — one component that answers "what is live, is it OK, and how do
  * I promote or roll back" wherever an app appears.
@@ -41,7 +55,9 @@ export const LifecycleCard = ({
   actions,
   orgSlug,
   variant = "full",
-  className
+  className,
+  onTargetChange,
+  preflight
 }: {
   lifecycle: AppLifecycle;
   actions: LifecycleActions;
@@ -49,6 +65,11 @@ export const LifecycleCard = ({
   orgSlug: string | null;
   variant?: LifecycleVariant;
   className?: string;
+  /** Told which build the open confirm would put live, and `null` when it closes —
+   *  so a surface that knows the app can check that build (the admin console's
+   *  missing-secrets warning) and hand the answer back as `preflight`. */
+  onTargetChange?: (target: LifecycleTarget | null) => void;
+  preflight?: LifecyclePreflight;
 }) => {
   // One piece of state: what is about to happen. `null` is "nothing".
   const [pending, setPending] = useState<{ copy: ConfirmCopy; run: () => Promise<void> } | null>(
@@ -57,12 +78,19 @@ export const LifecycleCard = ({
   const { liveBuild, draftBuild, draftAhead, published, verdict, heldCount, builds } = lifecycle;
   const liveId = liveBuild?.build_id ?? null;
 
-  const ask = (copy: ConfirmCopy, run: () => Promise<void>) => setPending({ copy, run });
+  const ask = (copy: ConfirmCopy, run: () => Promise<void>, target?: LifecycleTarget) => {
+    setPending({ copy, run });
+    onTargetChange?.(target ?? null);
+  };
+  const close = () => {
+    setPending(null);
+    onTargetChange?.(null);
+  };
   const confirm = async () => {
     if (!pending) return;
     try {
       await pending.run();
-      setPending(null);
+      close();
     } catch {
       // The verb toasted its own failure; the dialog stays so the operator can retry.
     }
@@ -88,7 +116,8 @@ export const LifecycleCard = ({
           onClick={() =>
             ask(
               LIFECYCLE_COPY.promote(draftBuild.build_id, liveId),
-              actions.promoteDraft as () => Promise<void>
+              actions.promoteDraft as () => Promise<void>,
+              { buildId: draftBuild.id, act: "promote" }
             )
           }
           data-testid='app-lifecycle-promote'
@@ -103,7 +132,12 @@ export const LifecycleCard = ({
           className='h-7 gap-1.5 text-xs'
           disabled={actions.pending}
           onClick={() =>
-            ask(LIFECYCLE_COPY.publish(orgSlug), actions.publish as () => Promise<void>)
+            ask(
+              LIFECYCLE_COPY.publish(orgSlug),
+              actions.publish as () => Promise<void>,
+              // A first publish with a draft makes that draft live.
+              draftBuild ? { buildId: draftBuild.id, act: "promote" } : undefined
+            )
           }
           data-testid='app-lifecycle-publish'
         >
@@ -116,8 +150,10 @@ export const LifecycleCard = ({
           targets={rollbackTargets}
           disabled={actions.pending}
           onPick={(b) =>
-            ask(LIFECYCLE_COPY.rollback(b.build_id, liveId), () =>
-              (actions.rollbackTo as (b: AppBuild) => Promise<void>)(b)
+            ask(
+              LIFECYCLE_COPY.rollback(b.build_id, liveId),
+              () => (actions.rollbackTo as (b: AppBuild) => Promise<void>)(b),
+              { buildId: b.id, act: "rollback" }
             )
           }
         />
@@ -143,7 +179,9 @@ export const LifecycleCard = ({
       copy={pending?.copy ?? null}
       pending={actions.pending}
       onConfirm={confirm}
-      onCancel={() => setPending(null)}
+      onCancel={close}
+      notice={pending ? preflight?.notice : undefined}
+      hold={!!pending && !!preflight?.hold}
     />
   );
 
