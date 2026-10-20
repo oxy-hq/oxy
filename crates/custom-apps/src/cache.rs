@@ -79,11 +79,11 @@ fn access_cache() -> &'static TtlLru<(Uuid, Uuid), bool> {
     CACHE.get_or_init(standard_cache)
 }
 
-pub fn cached_access(user_id: Uuid, app_id: Uuid) -> Option<bool> {
+pub(crate) fn cached_access(user_id: Uuid, app_id: Uuid) -> Option<bool> {
     access_cache().get(&(user_id, app_id))
 }
 
-pub fn set_cached_access(user_id: Uuid, app_id: Uuid, allowed: bool) {
+pub(crate) fn set_cached_access(user_id: Uuid, app_id: Uuid, allowed: bool) {
     access_cache().insert((user_id, app_id), allowed);
 }
 
