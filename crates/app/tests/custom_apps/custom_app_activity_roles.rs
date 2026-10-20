@@ -732,9 +732,12 @@ async fn a_flushed_batch_lands_in_postgres_and_in_the_workspace_airhouse() {
     let view_fact = facts.iter().find(|f| f.kind == "view").unwrap();
     assert_eq!(view_fact.user_email, email);
     assert_eq!(view_fact.referrer.as_deref(), Some("/orders"));
+    // Postgres keeps microseconds; the fact carries the navigation's own
+    // nanosecond clock reading on Linux, so compare both at microseconds.
+    use chrono::SubsecRound;
     assert_eq!(
-        view_fact.occurred_at,
-        views[0].viewed_at.with_timezone(&Utc)
+        view_fact.occurred_at.trunc_subsecs(6),
+        views[0].viewed_at.with_timezone(&Utc).trunc_subsecs(6)
     );
 }
 
