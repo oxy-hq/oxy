@@ -142,6 +142,9 @@ AREAS = [
     ("crates/app/src/server/api/documents",               "Document model (KB & compliance)"),
     ("crates/app/src/server/api/chat",                    "Chat channels"),
     ("crates/app/src/server/api/notifications",           "Notifications & push"),
+    # The inbox page and notification settings UI (#3626, #3640).
+    ("web-app/src/pages/Notifications",                   "Notifications & push"),
+    ("web-app/src/components/Notifications",              "Notifications & push"),
     ("crates/git",                                        "Git client / IDE git"),
     ("crates/app/src/server/api/custom_apps_shell_context.rs", "Client shell context"),
     ("web-app/.agents",                                   "Client shell (.agents)"),
