@@ -1,7 +1,5 @@
 use crate::cli::ServeArgs;
-use crate::server::api::custom_apps_functions::seam::FunctionQueryExecutor;
 use crate::server::api::custom_apps_serve::wants_html;
-use crate::server::api::projects::query::DataPlaneQueryExecutor;
 use crate::server::http_cache::{if_none_match, weak_etag};
 use agentic_pipeline::{AirwayMigrator, AnalyticsMigrator, AutomationMigrator};
 use agentic_runtime::migration::RuntimeMigrator;
@@ -31,8 +29,6 @@ use std::time::{Duration, Instant};
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 use tower::{ServiceBuilder, service_fn};
-use tower_http::compression::CompressionLayer;
-use tower_http::compression::predicate::{DefaultPredicate, NotForContentType, Predicate};
 use tower_serve_static::ServeDir;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -42,14 +38,6 @@ static DIST: Dir = include_dir!("D:\\a\\oxy\\oxy\\crates\\core\\dist");
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 
-/// The custom-app mount's compression policy: `DefaultPredicate` (no streams,
-/// no already-encoded bodies, no tiny ones) minus `text/html`, whose brotli form
-/// is memoised per build and served by the handler itself.
-pub(crate) fn custom_app_compression() -> CompressionLayer<impl Predicate> {
-    CompressionLayer::new()
-        .compress_when(DefaultPredicate::new().and(NotForContentType::const_new("text/html")))
-}
-
 pub async fn start_server_and_web_app(
     args: ServeArgs,
     seams: crate::server::router::SurfaceSeams,
@@ -57,6 +45,13 @@ pub async fn start_server_and_web_app(
     // OXY_ROLE → ide | serve | worker | all (default). Read once so the
     // routing middleware can enforce the FS-routing boundary.
     crate::server::role_manifest::init_process_role_from_env();
+
+    // Before anything is built: a composition that dropped a custom-app task
+    // kind, background job or the outer mount would otherwise boot and fail
+    // later, as tasks that never run or a custom app that 404s.
+    seams
+        .require_custom_apps()
+        .map_err(OxyError::RuntimeError)?;
 
     if std::env::var("OXY_DATABASE_URL").is_err() {
         return Err(OxyError::RuntimeError(
@@ -157,13 +152,6 @@ pub async fn start_server_and_web_app(
     // into it. No-op when OXY_OBSERVABILITY_BACKEND is unset — the layer was
     // never installed and there's no receiver to drain.
     crate::observability_boot::finalize().await;
-
-    // Spawn the 90-day retention sweep for custom-app usage tracking. Runs
-    // every 6h; the first tick fires 60s after startup so migrations can
-    // settle. See `custom_apps_tracking::spawn_retention_cleanup` for the
-    // failure-handling rationale, and its module doc for why this one is an
-    // app-level loop where observability leaves retention to ClickHouse.
-    crate::server::api::custom_apps_tracking::spawn_retention_cleanup();
 
     // Detect whether any cloud auth provider is configured — used only to
     // surface an informational log when `--local` is requested with providers
@@ -705,6 +693,9 @@ async fn create_web_application(
 ) -> Result<Router, OxyError> {
     // Taken before `api_router` consumes the seams: the document is assembled below.
     let surface_openapi = seams.openapi.clone();
+    let outer = seams.outer.ok_or_else(|| {
+        OxyError::RuntimeError("the surface seams hand in no outer mount".to_string())
+    })?;
     let (api_router, external_api_router, preagg_ctx) = crate::server::router::api_router(
         mode,
         enterprise,
@@ -722,61 +713,19 @@ async fn create_web_application(
     println!("create_web_application: openapi_router done, assembling final router");
     let static_service = service_fn(handle_static_files);
 
-    use crate::server::api::custom_apps_serve;
-    use axum::routing::any;
-
     // Everything that must be subject to the host-based subdomain rewrite:
     // the data API, the custom-app serve route, the SwaggerUI tree, and
     // the static admin-SPA fallback. Global CORS + trace are applied here so
     // they wrap this whole surface.
     let main = Router::new()
         .nest("/api", api_router)
-        // Customer-app subpath bundle serving. Mounted at the top level (NOT
-        // under /api) because the URL is browser-facing and must redirect to
-        // /login on auth failure rather than return 401. The handler
-        // authenticates inline and serves the bundle from disk OR (for
-        // remote-hosted source) reverse-proxies to the upstream — so we
-        // accept every method (POST form submits, Next.js Server Actions,
-        // bundle-internal `/api/*` fetches), not just GET.
-        //
-        // 32 MiB body ceiling to match the proxy's in-handler cap; without
-        // this layer axum's 2 MiB default rejects larger requests long
-        // before the proxy sees them.
-        .route(
-            "/customer-apps/{*path}",
-            // brotli/gzip for bundle bytes. DefaultPredicate skips
-            // text/event-stream (the /fn SSE stream) and already-encoded
-            // bodies (the V0 proxy), so streaming is unaffected. `text/html`
-            // is excluded: the serve path memoises a brotli copy of each
-            // rendered document (`custom_apps_html_cache`) instead of
-            // re-compressing it per navigation.
-            any(custom_apps_serve::serve_dispatch).layer(
-                ServiceBuilder::new()
-                    .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
-                    .layer(custom_app_compression())
-                    // BENEATH compression, not only on the outer router: by the
-                    // time a response climbs past `CompressionLayer` its body is
-                    // gzip/br with no exact size, and `record_error_body` skips
-                    // anything without one — so the outer mount can never see a
-                    // custom-app error body over 32 bytes. The request span is
-                    // still current here (the trace layer wraps routing).
-                    .layer(axum::middleware::from_fn(
-                        oxy_telemetry::http_trace::record_error_body,
-                    ))
-                    // Inject the function query executor (the shared data plane)
-                    // so `custom_apps_functions` runs `ctx.query` through the
-                    // trait without importing `projects::query`.
-                    .layer(axum::Extension(std::sync::Arc::new(DataPlaneQueryExecutor)
-                        as std::sync::Arc<dyn FunctionQueryExecutor>))
-                    // Inject the Layer-1 preagg cache the API router owns, so a
-                    // function's `ctx.semantic` compiles through the same
-                    // rollup-aware path as `/api/projects/{id}/semantic-query`.
-                    // This route is mounted outside the API router and so has no
-                    // `AppState` to read it from; the extension is the same seam
-                    // the query executor already uses.
-                    .layer(axum::Extension(preagg_ctx)),
-            ),
-        )
+        // The outer `/customer-apps/{*path}` route, built by the composition root
+        // (`SurfaceSeams::outer`) with the layers its requests need. Mounted at
+        // the top level, NOT under /api: the URL is browser-facing and must
+        // redirect to /login on auth failure rather than return 401. It is given
+        // the Layer-1 preagg cache the API router owns, because this route has no
+        // `AppState` to read it from.
+        .merge(outer(preagg_ctx))
         .merge(
             SwaggerUi::new("/apidoc")
                 .url("/apidoc/openapi.json", openapi_doc)
@@ -1815,62 +1764,6 @@ mod tests {
             Some("br"),
             "custom-app assets must be brotli-compressed"
         );
-    }
-
-    /// HTML is left to the handler's memoised brotli copy; everything else on
-    /// the mount is still compressed here.
-    #[tokio::test]
-    async fn custom_app_compression_skips_html_but_not_other_text() {
-        let body = "x".repeat(4096);
-        let page = body.clone();
-        let app = Router::new()
-            .route(
-                "/page",
-                get(move || {
-                    let page = page.clone();
-                    async move {
-                        (
-                            [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                            page,
-                        )
-                    }
-                }),
-            )
-            .route(
-                "/x.js",
-                get(move || {
-                    let body = body.clone();
-                    async move {
-                        (
-                            [(axum::http::header::CONTENT_TYPE, "application/javascript")],
-                            body,
-                        )
-                    }
-                }),
-            )
-            .layer(custom_app_compression());
-        let encoding = |path: &'static str| {
-            let app = app.clone();
-            async move {
-                app.oneshot(
-                    Request::get(path)
-                        .header("accept-encoding", "br")
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap()
-                .headers()
-                .get(axum::http::header::CONTENT_ENCODING)
-                .map(|v| v.to_str().unwrap().to_string())
-            }
-        };
-        assert_eq!(
-            encoding("/page").await,
-            None,
-            "html is not re-compressed per request"
-        );
-        assert_eq!(encoding("/x.js").await.as_deref(), Some("br"));
     }
 
     // ── SPA shell caching ────────────────────────────────────────────────

@@ -50,6 +50,9 @@ once_cell = { workspace = true }
 rustls = { workspace = true }
 sentry = { workspace = true }
 tokio = { workspace = true }
+tower = { workspace = true }
+# The custom-app mount's compression layer (`custom_apps_seams`).
+tower-http = { workspace = true, features = ["compression-br", "compression-gzip"] }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }

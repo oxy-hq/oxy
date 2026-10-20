@@ -52,6 +52,7 @@ fn the_driver_registry_executes_queued_asks() {
     let registry = build_custom_task_registry(
         &sea_orm::DatabaseConnection::default(),
         &PreaggCacheCtx::default(),
+        &[],
         None,
     );
     assert!(

@@ -201,7 +201,16 @@ pub struct WorkerArgs {
 ///
 /// Bootstraps the orchestrator, logs config, then blocks on SIGINT/SIGTERM.
 #[tracing::instrument(skip_all, fields(worker_id = tracing::field::Empty, version = tracing::field::Empty))]
-pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
+pub async fn run_worker(
+    args: WorkerArgs,
+    // The custom-app task kinds this worker can run, handed in by the composition
+    // root (`SurfaceSeams::tasks`).
+    custom_tasks: Vec<crate::server::router::TaskSeam>,
+) -> Result<(), OxyError> {
+    // Before anything is built: a worker without an executor for a kind
+    // `oxy-app` queues would claim those tasks and fail them as unknown.
+    crate::server::router::require_task_kinds(&custom_tasks).map_err(OxyError::RuntimeError)?;
+
     // The worker is a separate PROCESS, so `start_server_and_web_app`'s
     // registration does not reach it — and background work is where `notify`
     // will mostly be called from. Registering here keeps the boot log honest
@@ -389,6 +398,7 @@ pub async fn run_worker(args: WorkerArgs) -> Result<(), OxyError> {
             cache: None,
             renewal_threshold_secs: None,
         },
+        std::sync::Arc::from(custom_tasks),
         StartupPass::Skip,
     );
 

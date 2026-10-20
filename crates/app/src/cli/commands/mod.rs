@@ -650,7 +650,8 @@ mod panic_hook_tests {
 pub async fn cli(
     // Surface routes composed by the top `oxy-server` crate, named by where each
     // seam sits relative to the auth stack, and forwarded to `serve`/`start` (the
-    // only subcommands that mount them). Empty for every other command.
+    // only subcommands that mount them); `worker` takes only the task kinds.
+    // Empty for every other command.
     seams: crate::server::router::SurfaceSeams,
 ) -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
@@ -949,7 +950,7 @@ pub async fn cli(
             }
         }
         Some(SubCommand::Worker(worker_args)) => {
-            if let Err(e) = worker::run_worker(worker_args).await {
+            if let Err(e) = worker::run_worker(worker_args, seams.tasks).await {
                 // Returned rather than `exit(1)`-ed: `main` prints the same
                 // message, records it to Sentry, and — the reason this changed —
                 // flushes the platform-telemetry exporters, so the failure that

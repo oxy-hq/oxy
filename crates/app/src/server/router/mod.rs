@@ -35,7 +35,11 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 pub use entry::{api_router, internal_api_router};
 pub use openapi::{build_openapi_doc, openapi_router};
 pub use protected::{api_auth_layers, external_auth_layers};
-pub use seams::{AdminSection, SurfaceSeam, SurfaceSeams};
+pub use seams::{
+    AdminSection, BackgroundDeps, BackgroundSeam, CUSTOM_APP_BACKGROUND_JOBS,
+    CUSTOM_APP_TASK_KINDS, OuterMount, SurfaceSeam, SurfaceSeams, TaskDeps, TaskSeam,
+    require_task_kinds,
+};
 
 // `AppState` moved to `oxy-app-core` so the router and future per-surface crates
 // can hold it without depending on `oxy-app`. Re-exported here so every existing

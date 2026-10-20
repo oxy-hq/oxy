@@ -72,6 +72,10 @@ pub async fn api_router(
             },
         catalog,
         admin,
+        tasks,
+        background,
+        // Merged by `serve`, which takes it before handing the seams here.
+        outer: _,
         // Documentation only — `build_openapi_doc` merges it, not the router.
         openapi: _,
     } = seams;
@@ -136,6 +140,7 @@ pub async fn api_router(
                 cache: preagg_cache.clone(),
                 renewal_threshold_secs: preagg_renewal_threshold_secs,
             },
+            std::sync::Arc::from(tasks),
             StartupPass::Run,
         );
     }
@@ -147,23 +152,6 @@ pub async fn api_router(
     crate::server::api::projects::automation_run::spawn_periodic_sweep(
         agentic_state.db.clone(),
         agentic_state.shutdown_token.clone(),
-    );
-    // One-shot: verify the custom-app asset bucket enforces the TTL classes this
-    // binary stamps on objects. Singleton-gated because the answer is global, not
-    // per-tenant, and identical from every replica.
-    // Read-only: Terraform owns the asset bucket's lifecycle rules; this checks
-    // they still match the TTL classes this build stamps and logs loudly if not.
-    crate::server::api::custom_apps_storage::retention::spawn_lifecycle_verify(
-        super::recovery::inproc_global_worker_enabled(),
-    );
-    // Periodic: re-measure each app's asset silo into `app_storage_usage` so
-    // quotas, the admin fleet view, and GB-month billing have a number to read.
-    // Singleton-gated — every replica sweeping would multiply LIST cost by the
-    // replica count for identical results.
-    crate::server::api::custom_apps_storage::sweeper::spawn_periodic_sweep(
-        agentic_state.db.clone(),
-        agentic_state.shutdown_token.clone(),
-        super::recovery::inproc_global_worker_enabled(),
     );
 
     // Compile-boundary maintenance: reap stuck `compiling` revisions (crashed
@@ -180,14 +168,6 @@ pub async fn api_router(
     // idempotent across replicas.
     crate::server::previews::maintenance::spawn(
         crate::server::previews::maintenance::MaintenanceConfig::from_env(),
-    );
-
-    // Custom-app sandboxes: expire the ones idle past their TTL and queue
-    // again the teardowns that did not finish (the worker fleet tears down).
-    // Only writes rows; runs regardless of --no-workers, and two replicas
-    // sweeping at once is harmless — the teardown is idempotent.
-    crate::server::api::custom_apps_sandboxes::maintenance::spawn(
-        crate::server::api::custom_apps_sandboxes::maintenance::MaintenanceConfig::from_env(),
     );
 
     // Keep `origin/*` tracking refs warm so every surface that reports remote
@@ -212,16 +192,25 @@ pub async fn api_router(
         ),
     );
 
-    // Custom-app usage rows (page views, beacon events): the serve path only
-    // `try_send`s onto a bounded queue; this one task batch-inserts them every
-    // ~500 ms and once more on shutdown. In-process, not a `TaskSpec` — it
-    // flushes this process's memory, like the token-usage flush above. See
-    // `custom_apps_usage_queue` for the drop-never-block contract.
-    super::recovery::register_shutdown_hook(
-        crate::server::api::custom_apps_usage_queue::spawn_usage_drain(
-            agentic_state.shutdown_token.clone(),
-        ),
-    );
+    // The jobs the composition root hands in for custom apps (`SurfaceSeams::
+    // background`): the usage drain that batch-inserts page-view and beacon
+    // rows, the asset-bucket checks, sandbox expiry, usage retention. A job
+    // that flushes its memory on shutdown returns its handle; it is registered
+    // as a shutdown hook like the token-usage flush above. Each is in-process,
+    // not a `TaskSpec`: it acts on this process's memory or is a cheap idempotent
+    // sweep, and several are gated to the singleton role by `deps.singleton`.
+    {
+        let deps = super::seams::BackgroundDeps {
+            db: &agentic_state.db,
+            shutdown: &agentic_state.shutdown_token,
+            singleton: super::recovery::inproc_global_worker_enabled(),
+        };
+        for job in &background {
+            if let Some(handle) = (job.start)(&deps) {
+                super::recovery::register_shutdown_hook(handle);
+            }
+        }
+    }
 
     // Audit tamper evidence: every hour, each org's chain head goes to S3 under
     // Object Lock (compliance mode), so a verifier can check the database
@@ -483,6 +472,11 @@ pub async fn internal_api_router(
             },
         catalog,
         admin,
+        // The internal router starts no jobs, drives no queue and mounts no
+        // outer route.
+        tasks: _,
+        background: _,
+        outer: _,
         // Documentation only — `build_openapi_doc` merges it, not the router.
         openapi: _,
     } = seams;

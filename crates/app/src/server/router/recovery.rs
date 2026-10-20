@@ -25,6 +25,12 @@ use crate::agentic_wiring::{OxyProjectContext, build_builder_bridges};
 use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use crate::server::api::projects::agent_ask::caller::CallerRunResolver;
 use crate::server::service::secret_manager::SecretManagerService;
+
+use super::seams::TaskSeam;
+
+/// The custom-app task kinds the composition root handed in, shared by every
+/// driver loop this process runs.
+type CustomTasks = Arc<[TaskSeam]>;
 use oxy::config::WorkingCopy;
 use oxy_app_core::serve_mode::{LOCAL_WORKSPACE_ID, ServeMode};
 
@@ -335,6 +341,7 @@ pub(crate) fn spawn_recovery(
     // rollups on the tier its request-driven twin does. Default (no cache) simply
     // compiles to warehouse SQL.
     preagg: PreaggCacheCtx,
+    custom_tasks: CustomTasks,
     startup: StartupPass,
 ) {
     let db = agentic_state.db.clone();
@@ -384,6 +391,7 @@ pub(crate) fn spawn_recovery(
             shutdown.clone(),
             ws_cache.clone(),
             preagg.clone(),
+            custom_tasks.clone(),
             policy,
         );
     } else if matches!(mode, ServeMode::Cloud) {
@@ -420,6 +428,7 @@ pub(crate) fn spawn_recovery(
                     false, // one-shot startup recovery: every coordinator is dead
                     ws_cache.clone(),
                     preagg.clone(),
+                    custom_tasks.clone(),
                     policy,
                 )
                 .await;
@@ -480,6 +489,7 @@ pub(crate) fn spawn_recovery(
                         true, // periodic tick: stranded runs only (never poach a live interactive run)
                         ws_cache.clone(),
                         preagg.clone(),
+                        custom_tasks.clone(),
                         policy,
                     )
                     .await;
@@ -530,6 +540,7 @@ pub(super) async fn run_recovery(
     periodic: bool,
     ws_cache: Arc<super::workspace_cache::WorkspaceContextCache>,
     preagg: PreaggCacheCtx,
+    custom_tasks: CustomTasks,
     // Applied by both passes: the periodic tick's `recover_stranded_runs`
     // gates everything it selects; the one-shot startup pass gates only the
     // roots another node's latency worker can see (see
@@ -548,6 +559,7 @@ pub(super) async fn run_recovery(
                 periodic,
                 ws_cache,
                 preagg,
+                custom_tasks,
                 policy,
             )
             .await
@@ -563,6 +575,7 @@ pub(super) async fn run_recovery(
                 periodic,
                 ws_cache,
                 preagg,
+                custom_tasks,
                 policy,
             )
             .await
@@ -586,6 +599,7 @@ async fn recover_local(
     periodic: bool,
     ws_cache: Arc<super::workspace_cache::WorkspaceContextCache>,
     preagg: PreaggCacheCtx,
+    custom_tasks: CustomTasks,
     policy: agentic_pipeline::recovery::DrivePolicy,
 ) -> usize {
     let cwd = match std::env::current_dir() {
@@ -627,7 +641,12 @@ async fn recover_local(
             builder_app_runner,
             router,
             Some(LOCAL_WORKSPACE_ID),
-            Some(build_custom_task_registry(db, &preagg, schema_cache)),
+            Some(build_custom_task_registry(
+                db,
+                &preagg,
+                &custom_tasks,
+                schema_cache,
+            )),
             policy,
         )
         .await;
@@ -686,7 +705,12 @@ async fn recover_local(
             builder_app_runner,
             router,
             Some(LOCAL_WORKSPACE_ID),
-            Some(build_custom_task_registry(db, &preagg, schema_cache)),
+            Some(build_custom_task_registry(
+                db,
+                &preagg,
+                &custom_tasks,
+                schema_cache,
+            )),
             policy,
         )
         .await
@@ -709,6 +733,7 @@ async fn recover_all_workspaces(
     periodic: bool,
     ws_cache: Arc<super::workspace_cache::WorkspaceContextCache>,
     preagg: PreaggCacheCtx,
+    custom_tasks: CustomTasks,
     policy: agentic_pipeline::recovery::DrivePolicy,
 ) -> usize {
     let workspaces = match entity::workspaces::Entity::find().all(db).await {
@@ -773,6 +798,7 @@ async fn recover_all_workspaces(
                 Some(build_custom_task_registry(
                     db,
                     &preagg,
+                    &custom_tasks,
                     schema_cache.clone(),
                 )),
                 policy,
@@ -822,6 +848,7 @@ async fn recover_all_workspaces(
                 Some(build_custom_task_registry(
                     db,
                     &preagg,
+                    &custom_tasks,
                     schema_cache.clone(),
                 )),
                 policy,
@@ -902,6 +929,7 @@ fn spawn_latency_worker(
     shutdown: tokio_util::sync::CancellationToken,
     ws_cache: Arc<super::workspace_cache::WorkspaceContextCache>,
     preagg: PreaggCacheCtx,
+    custom_tasks: CustomTasks,
     // The process's one `drive_policy()` value, decided and announced by
     // `spawn_recovery`. Every tick is handed it; neither the probe nor the gate
     // re-reads the environment.
@@ -950,6 +978,7 @@ fn spawn_latency_worker(
                                     &router,
                                     &ws_cache,
                                     &preagg,
+                                    &custom_tasks,
                                     policy,
                                 )
                                 .await
@@ -964,6 +993,7 @@ fn spawn_latency_worker(
                                     &router,
                                     &ws_cache,
                                     &preagg,
+                                    &custom_tasks,
                                     policy,
                                 )
                                 .await
@@ -1023,6 +1053,7 @@ async fn tick_local(
     router: &Arc<dyn agentic_runtime::router::TaskRouter>,
     ws_cache: &Arc<super::workspace_cache::WorkspaceContextCache>,
     preagg: &PreaggCacheCtx,
+    custom_tasks: &[TaskSeam],
     policy: agentic_pipeline::recovery::DrivePolicy,
 ) -> usize {
     let Ok(cwd) = std::env::current_dir() else {
@@ -1046,6 +1077,7 @@ async fn tick_local(
         router,
         Some(LOCAL_WORKSPACE_ID),
         preagg,
+        custom_tasks,
         policy,
     )
     .await
@@ -1082,6 +1114,7 @@ async fn tick_cloud(
     router: &Arc<dyn agentic_runtime::router::TaskRouter>,
     ws_cache: &Arc<super::workspace_cache::WorkspaceContextCache>,
     preagg: &PreaggCacheCtx,
+    custom_tasks: &[TaskSeam],
     policy: agentic_pipeline::recovery::DrivePolicy,
 ) -> usize {
     use std::collections::HashSet;
@@ -1211,6 +1244,7 @@ async fn tick_cloud(
             router,
             Some(ws_id),
             preagg,
+            custom_tasks,
             policy,
         )
         .await;
@@ -1310,24 +1344,15 @@ async fn retire_orphaned_runs(
 fn build_custom_task_registry(
     db: &sea_orm::DatabaseConnection,
     preagg: &PreaggCacheCtx,
+    tasks: &[TaskSeam],
     schema_cache: Option<crate::server::api::projects::agent_ask::executor::SchemaCache>,
 ) -> Arc<agentic_runtime::worker::CustomTaskRegistry> {
-    use crate::server::app_function_executor::{APP_FUNCTION_KIND, AppFunctionTaskExecutor};
     use crate::server::health_eval_executor::{HEALTH_EVAL_KIND, HealthEvalTaskExecutor};
     use crate::server::preagg_executor::PreaggTaskExecutor;
     let mut reg = agentic_runtime::worker::CustomTaskRegistry::new();
     reg.register(
         HEALTH_EVAL_KIND,
         Arc::new(HealthEvalTaskExecutor { db: db.clone() }),
-    );
-    reg.register(
-        APP_FUNCTION_KIND,
-        // A scheduled Oxy Function's `ctx.semantic` resolves rollups on the node
-        // draining the queue, the same way its HTTP-invoked twin does.
-        Arc::new(AppFunctionTaskExecutor {
-            db: db.clone(),
-            preagg: preagg.clone(),
-        }),
     );
     reg.register(
         crate::server::simulation::SIMULATION_RUN_KIND,
@@ -1435,45 +1460,13 @@ fn build_custom_task_registry(
             crate::server::previews::sample::PreviewAirwaySampleExecutor::airhouse(db.clone()),
         ),
     );
-    // A custom app's staging migrations, queued by every publish: the sibling
-    // Airhouse schema and the org's OLTP staging branch, one task per store,
-    // each under its own per-target lock and ledger.
-    {
-        use crate::server::api::custom_apps_nonproduction::{staging_task, staging_task_executor};
-        reg.register(
-            staging_task::STAGING_MIGRATIONS_KIND,
-            Arc::new(staging_task_executor::StagingMigrationsExecutor { db: db.clone() }),
-        );
-    }
-    // A custom app's sandbox (`dev-<handle>`) torn down after a delete or an
-    // expiry: its storage silo, secrets and Airhouse sibling, then its row.
-    {
-        use crate::server::api::custom_apps_sandboxes::teardown;
-        reg.register(
-            teardown::SANDBOX_TEARDOWN_KIND,
-            Arc::new(teardown::SandboxTeardownExecutor { db: db.clone() }),
-        );
-    }
-    // A sandbox build's Airhouse migrations, queued by a publish that names
-    // the sandbox. Its own kind rather than a field on the staging task: a
-    // worker that does not know it fails the task instead of applying a
-    // sandbox's files to staging's sibling.
-    {
-        use crate::server::api::custom_apps_sandboxes::migrations_task;
-        reg.register(
-            migrations_task::SANDBOX_MIGRATIONS_KIND,
-            Arc::new(migrations_task::SandboxMigrationsExecutor { db: db.clone() }),
-        );
-    }
-    // A sandbox's own schema on the org's OLTP staging branch, created, seeded
-    // and migrated after a publish to it. A kind of its own for the same
-    // reason: an older worker fails it rather than migrate staging's schema.
-    {
-        use crate::server::api::custom_apps_sandboxes::oltp_task;
-        reg.register(
-            oltp_task::SANDBOX_OLTP_KIND,
-            Arc::new(oltp_task::SandboxOltpExecutor { db: db.clone() }),
-        );
+    // The custom-app kinds, handed in by the composition root
+    // (`SurfaceSeams::tasks`). A kind absent here fails its tasks as unknown, so
+    // `SurfaceSeams::require_custom_apps` refuses to start a process without
+    // them.
+    let deps = crate::server::router::TaskDeps { db, preagg };
+    for seam in tasks {
+        reg.register(seam.kind, (seam.build)(&deps));
     }
     Arc::new(reg)
 }
@@ -1496,6 +1489,7 @@ async fn drive_pending(
     router: &Arc<dyn agentic_runtime::router::TaskRouter>,
     workspace_id: Option<uuid::Uuid>,
     preagg: &PreaggCacheCtx,
+    custom_tasks: &[TaskSeam],
     policy: agentic_pipeline::recovery::DrivePolicy,
 ) -> usize {
     let platform: Arc<dyn PlatformContext> = ctx.clone();
@@ -1506,6 +1500,7 @@ async fn drive_pending(
     let custom_executors = Some(build_custom_task_registry(
         db,
         preagg,
+        custom_tasks,
         schema_cache.cloned(),
     ));
     // The real gate: `policy` is checked inside `recover_pending_global_runs`,
@@ -2139,6 +2134,9 @@ mod agent_ask_tests;
 
 #[cfg(test)]
 mod procedure_run_tests;
+
+#[cfg(test)]
+mod seam_tests;
 
 #[cfg(test)]
 mod tests {

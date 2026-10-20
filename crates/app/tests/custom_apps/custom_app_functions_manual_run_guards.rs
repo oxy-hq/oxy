@@ -6,17 +6,18 @@
 //! `create_web_application`, so they restate them:
 //!
 //! - **The executor registry.** Production registers `AppFunctionTaskExecutor`
-//!   under `APP_FUNCTION_KIND` in `router::recovery::build_custom_task_registry`,
-//!   and `drive_pending` hands that registry to `recover_pending_global_runs`.
-//!   The manual-run test registers its own. Delete the production registration
-//!   and every Run now, scheduled function and webhook job stays queued forever,
-//!   while the end-to-end test stays green.
+//!   under `APP_FUNCTION_KIND` in `crates/server/src/custom_apps_seams.rs`, hands
+//!   it to `oxy-app` as `SurfaceSeams::tasks`, `build_custom_task_registry`
+//!   registers every seam it is given, and `drive_pending` hands that registry to
+//!   `recover_pending_global_runs`. The manual-run test registers its own. Delete
+//!   the production registration and every Run now, scheduled function and
+//!   webhook job stays queued forever, while the end-to-end test stays green.
 //! - **The admin layers and routes.** `admin::router()` is `pub(crate)`, so the
 //!   manual-run test mounts the two handlers behind a hand-built copy of its
 //!   guards.
 //! - **The serve mount.** `custom_app_functions_fixture::serve_router` restates
-//!   the `/customer-apps/{*path}` route from `cli/commands/serve.rs` with only
-//!   the query-executor extension. Drop that extension in production and every
+//!   the `/customer-apps/{*path}` route that `crates/server/src/custom_apps_seams.rs`
+//!   builds and `serve.rs` merges, with only the query-executor extension. Drop that extension in production and every
 //!   function 500s while every end-to-end test stays green; add a layer a
 //!   function needs and they never see it.
 //!
@@ -80,21 +81,38 @@ fn between<'a>(src: &'a str, start: &str, end: &str) -> &'a str {
 
 #[test]
 fn the_production_registry_registers_the_app_function_executor_and_the_driver_uses_it() {
-    let src = code("crates/app/src/server/router/recovery.rs");
+    let server = code("crates/server/src/custom_apps_seams.rs");
     assert!(
-        fn_body(&src, "build_custom_task_registry")
-            .contains("reg.register(APP_FUNCTION_KIND,Arc::new(AppFunctionTaskExecutor{"),
-        "`build_custom_task_registry` no longer registers `AppFunctionTaskExecutor` under \
+        fn_body(&server, "tasks").contains(
+            "TaskSeam{kind:APP_FUNCTION_KIND,build:|deps|{Arc::new(AppFunctionTaskExecutor{"
+        ),
+        "`custom_apps_seams::tasks` no longer hands in `AppFunctionTaskExecutor` under \
          `APP_FUNCTION_KIND`. Every queued `app_function` task (Run now, scheduled functions, \
          webhook jobs) would stay queued, and `custom_app_functions_manual_run` would not \
          notice: it registers its own executor."
     );
+    let main = code("crates/server/src/main.rs");
+    assert!(
+        fn_body(&main, "surface_seams").contains("tasks:custom_apps_seams::tasks()"),
+        "`surface_seams` no longer fills `SurfaceSeams::tasks` from `custom_apps_seams::tasks()`"
+    );
+
+    let src = code("crates/app/src/server/router/recovery.rs");
+    assert!(
+        fn_body(&src, "build_custom_task_registry")
+            .contains("forseamintasks{reg.register(seam.kind,(seam.build)(&deps));}"),
+        "`build_custom_task_registry` no longer registers every executor `SurfaceSeams::tasks` \
+         hands in, under its kind"
+    );
     let driver = fn_body(&src, "drive_pending");
     assert!(
-        // The arguments after `preagg` are the registry's own business (today
-        // the driver's schema cache, for the queued-ask executor).
-        driver.contains("letcustom_executors=Some(build_custom_task_registry(db,preagg,"),
-        "`drive_pending` no longer builds its executors with `build_custom_task_registry`"
+        // The arguments after `custom_tasks` are the registry's own business
+        // (today the driver's schema cache, for the queued-ask executor).
+        driver.contains(
+            "letcustom_executors=Some(build_custom_task_registry(db,preagg,custom_tasks,"
+        ),
+        "`drive_pending` no longer builds its executors with `build_custom_task_registry`, \
+         handing it the seam tasks"
     );
     assert!(
         between(driver, "recover_pending_global_runs(", ".await").contains(",custom_executors,"),
@@ -150,18 +168,35 @@ fn the_admin_app_mount_wears_the_one_stack_the_manual_run_tests_call() {
 
 #[test]
 fn the_serve_mount_the_functions_fixture_copies_still_matches_production() {
-    let serve = code("crates/app/src/cli/commands/serve.rs");
+    let server = code("crates/server/src/custom_apps_seams.rs");
     let executor = ".layer(axum::Extension(std::sync::Arc::new(DataPlaneQueryExecutor)asstd::sync::Arc<dynFunctionQueryExecutor>))";
     let production = format!(
         ".route(\"/customer-apps/{{*path}}\",any(custom_apps_serve::serve_dispatch).layer(ServiceBuilder::new().layer(axum::extract::DefaultBodyLimit::max(32*1024*1024)).layer(custom_app_compression()).layer(axum::middleware::from_fn(oxy_telemetry::http_trace::record_error_body)){executor}.layer(axum::Extension(preagg_ctx))))"
     );
     assert!(
-        serve.contains(&production),
-        "the `/customer-apps/{{*path}}` mount in `serve.rs` no longer stacks exactly the 32 MiB \
-         body limit, compression, `record_error_body`, the `DataPlaneQueryExecutor` extension \
-         and the preagg extension onto `serve_dispatch`. The functions fixture's `serve_router` \
-         copies the executor extension and leaves the others off by name; re-check that each \
-         omission still holds for what the end-to-end tests send, then update both sides."
+        fn_body(&server, "outer").contains(&production),
+        "the `/customer-apps/{{*path}}` mount in `custom_apps_seams::outer` no longer stacks \
+         exactly the 32 MiB body limit, compression, `record_error_body`, the \
+         `DataPlaneQueryExecutor` extension and the preagg extension onto `serve_dispatch`. The \
+         functions fixture's `serve_router` copies the executor extension and leaves the others \
+         off by name; re-check that each omission still holds for what the end-to-end tests \
+         send, then update both sides."
+    );
+    let main = code("crates/server/src/main.rs");
+    assert!(
+        fn_body(&main, "surface_seams").contains("outer:Some(custom_apps_seams::outer)"),
+        "`surface_seams` no longer hands `custom_apps_seams::outer` to `SurfaceSeams::outer`"
+    );
+    // `serve` mounts whatever it is handed, and nothing of its own beside it.
+    let serve = code("crates/app/src/cli/commands/serve.rs");
+    assert!(
+        serve.contains(".merge(outer(preagg_ctx))"),
+        "`serve.rs` no longer merges the outer mount `SurfaceSeams::outer` hands in"
+    );
+    assert!(
+        !serve.contains("\"/customer-apps/{*path}\""),
+        "`serve.rs` mounts `/customer-apps/{{*path}}` itself again; the route and its layers \
+         belong to `custom_apps_seams::outer`, which the assertion above pins"
     );
 
     let copy = code("crates/app/tests/custom_apps/custom_app_functions_fixture.rs");

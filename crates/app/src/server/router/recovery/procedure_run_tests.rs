@@ -117,6 +117,7 @@ fn the_driver_registry_executes_procedure_runs() {
     let registry = build_custom_task_registry(
         &sea_orm::DatabaseConnection::default(),
         &PreaggCacheCtx::default(),
+        &[],
         None,
     );
     assert!(
@@ -202,6 +203,7 @@ async fn a_single_process_executes_the_run_it_queued() {
             &router,
             Some(workspace_id),
             &preagg,
+            &[],
             policy,
         )
         .await;

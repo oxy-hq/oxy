@@ -11,6 +11,7 @@
 #[cfg(feature = "dev-dynamic")]
 extern crate oxy_app_dylib as _;
 
+mod custom_apps_seams;
 mod logging;
 #[cfg(test)]
 mod recursion_limit_guard;
@@ -182,6 +183,13 @@ fn surface_seams() -> SurfaceSeams {
         // Operations the surfaces document, merged into the served OpenAPI
         // document (`oxyc schema` reads it).
         openapi: vec![oxy_api_tenancy::openapi()],
+        // The custom-app task kinds a worker runs, the background jobs a serve
+        // process starts, and the outer `/customer-apps/{*path}` mount. The code
+        // is still in `oxy-app`; `oxy-app` no longer names it, and refuses to
+        // start if any of it is missing here.
+        tasks: custom_apps_seams::tasks(),
+        background: custom_apps_seams::background(),
+        outer: Some(custom_apps_seams::outer),
     }
 }
 

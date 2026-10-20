@@ -9,10 +9,17 @@
 //! outside it. Which side of the auth stack a route lands on is the field it is
 //! assigned to, so that decision is spelled out at every construction site.
 
+use std::sync::Arc;
+
+use agentic_runtime::worker::TaskExecutor;
 use axum::Router;
 use oxy_shared::fleet_role::RouteRoleDecl;
+use sea_orm::DatabaseConnection;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 use super::AppState;
+use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use crate::server::authz::Action;
 
 /// One surface seam: routes and their placement declarations, which travel
@@ -72,6 +79,54 @@ pub struct AdminSection {
     pub decls: Vec<RouteRoleDecl>,
 }
 
+/// What a task executor is built from on the node that drains the queue.
+pub struct TaskDeps<'a> {
+    pub db: &'a DatabaseConnection,
+    /// The node's Layer-1 preagg cache. Default (no cache) compiles to
+    /// warehouse SQL.
+    pub preagg: &'a PreaggCacheCtx,
+}
+
+/// One `TaskSpec::Custom` kind an extracted surface runs, with the executor
+/// that runs it. The kind string is the persisted task-queue contract: it
+/// is written into `agentic_task_queue` rows, so it never changes with the code
+/// that registers it.
+#[derive(Clone, Copy)]
+pub struct TaskSeam {
+    pub kind: &'static str,
+    /// Builds the executor. Called every time the driver builds its registry,
+    /// so it must be cheap: a few `Arc` clones.
+    pub build: fn(&TaskDeps<'_>) -> Arc<dyn TaskExecutor>,
+}
+
+/// What a background job is started from.
+pub struct BackgroundDeps<'a> {
+    pub db: &'a DatabaseConnection,
+    /// Cancelled when the process shuts down.
+    pub shutdown: &'a CancellationToken,
+    /// Whether this process is the role that runs singleton work
+    /// (`inproc_global_worker_enabled`). A job whose answer is global rather
+    /// than per replica returns early when it is false.
+    pub singleton: bool,
+}
+
+/// One process-lifetime job an extracted surface needs running in a serve
+/// process.
+#[derive(Clone, Copy)]
+pub struct BackgroundSeam {
+    /// Names the job in the startup check ([`SurfaceSeams::require_custom_apps`]).
+    pub name: &'static str,
+    /// Starts the job. A job that must finish a last flush on shutdown returns
+    /// its handle, which the router registers as a shutdown hook.
+    pub start: fn(&BackgroundDeps<'_>) -> Option<JoinHandle<()>>,
+}
+
+/// Builds the router `serve` mounts at the top level of the outer router,
+/// beside `/api`. It is given the Layer-1 preagg cache the API router owns,
+/// because a route mounted outside the API router has no `AppState` to read it
+/// from.
+pub type OuterMount = fn(PreaggCacheCtx) -> Router;
+
 /// Every surface seam, by where it sits relative to the auth stack.
 #[derive(Clone, Default)]
 pub struct SurfaceSeams {
@@ -105,11 +160,192 @@ pub struct SurfaceSeams {
     /// AND local mode, unlike the api seam. Empty by default, which is what
     /// tests building a router without the generated table get.
     pub catalog: crate::server::route_catalog::RouteCatalog,
+    /// The custom-app task kinds a node that drains the queue can run, with
+    /// their executors. Consumed where the driver builds its
+    /// `CustomTaskRegistry` (`serve`'s in-process driver and `oxy worker`).
+    pub tasks: Vec<TaskSeam>,
+    /// Process-lifetime jobs a serve process starts for custom apps, started
+    /// by `api_router`. One-shot per-request spawns stay with their handlers.
+    pub background: Vec<BackgroundSeam>,
+    /// The outer `/customer-apps/{*path}` mount, merged by `serve` beside
+    /// `/api`. `None` mounts nothing; `serve` refuses to start without it.
+    pub outer: Option<OuterMount>,
+}
+
+/// The `TaskSpec::Custom` kinds `oxy-app`'s own enqueue sites queue for custom
+/// apps. The code that runs them is handed in through [`SurfaceSeams::tasks`];
+/// a node that lacks one would fail every such task as an unknown kind.
+pub const CUSTOM_APP_TASK_KINDS: [&str; 5] = [
+    agentic_pipeline::app_function_task::APP_FUNCTION_KIND,
+    crate::server::api::custom_apps_nonproduction::staging_task::STAGING_MIGRATIONS_KIND,
+    crate::server::api::custom_apps_sandboxes::teardown::SANDBOX_TEARDOWN_KIND,
+    crate::server::api::custom_apps_sandboxes::migrations_task::SANDBOX_MIGRATIONS_KIND,
+    crate::server::api::custom_apps_sandboxes::oltp_task::SANDBOX_OLTP_KIND,
+];
+
+/// The background jobs a serve process needs for custom apps (usage rows,
+/// storage measurement, sandbox expiry, retention). Without the usage drain,
+/// page views and events queue until the bounded queue sheds them.
+pub const CUSTOM_APP_BACKGROUND_JOBS: [&str; 5] = [
+    "custom_app_asset_lifecycle_verify",
+    "custom_app_storage_sweeper",
+    "custom_app_sandbox_maintenance",
+    "custom_app_tracking_retention",
+    "custom_app_usage_drain",
+];
+
+/// Refuse a task list that lacks a kind `oxy-app` queues, or names one twice.
+/// A missing kind would otherwise surface only as queued tasks that fail.
+pub fn require_task_kinds(tasks: &[TaskSeam]) -> Result<(), String> {
+    let mut seen = std::collections::HashSet::new();
+    for t in tasks {
+        if !seen.insert(t.kind) {
+            return Err(format!("task kind `{}` is registered twice", t.kind));
+        }
+    }
+    let missing: Vec<&str> = CUSTOM_APP_TASK_KINDS
+        .iter()
+        .copied()
+        .filter(|k| !seen.contains(k))
+        .collect();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "the surface seams hand in no executor for the custom-app task kind(s) {missing:?}; \
+             tasks of those kinds would be queued and then fail as unknown"
+        ))
+    }
 }
 
 impl SurfaceSeams {
     /// No extracted surfaces at all.
     pub fn empty() -> Self {
         Self::default()
+    }
+
+    /// The startup check for a process that serves custom apps: every task
+    /// kind and background job `oxy-app` depends on is present, and the outer
+    /// mount is. Called by `serve` before it builds anything.
+    pub fn require_custom_apps(&self) -> Result<(), String> {
+        require_task_kinds(&self.tasks)?;
+        let missing: Vec<&str> = CUSTOM_APP_BACKGROUND_JOBS
+            .iter()
+            .copied()
+            .filter(|n| !self.background.iter().any(|b| b.name == *n))
+            .collect();
+        if !missing.is_empty() {
+            return Err(format!(
+                "the surface seams start none of the custom-app background job(s) {missing:?}"
+            ));
+        }
+        if self.outer.is_none() {
+            return Err(
+                "the surface seams hand in no `/customer-apps/{*path}` mount; without it the \
+                 static fallback would answer for every custom app"
+                    .to_string(),
+            );
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agentic_core::delegation::TaskAssignment;
+    use agentic_runtime::worker::ExecutingTask;
+
+    struct Dummy;
+
+    #[async_trait::async_trait]
+    impl TaskExecutor for Dummy {
+        async fn execute(&self, _assignment: TaskAssignment) -> Result<ExecutingTask, String> {
+            Err("dummy".to_string())
+        }
+    }
+
+    fn task(kind: &'static str) -> TaskSeam {
+        TaskSeam {
+            kind,
+            build: |_| Arc::new(Dummy),
+        }
+    }
+
+    fn job(name: &'static str) -> BackgroundSeam {
+        BackgroundSeam {
+            name,
+            start: |_| None,
+        }
+    }
+
+    fn complete() -> SurfaceSeams {
+        SurfaceSeams {
+            tasks: CUSTOM_APP_TASK_KINDS.iter().map(|k| task(k)).collect(),
+            background: CUSTOM_APP_BACKGROUND_JOBS.iter().map(|n| job(n)).collect(),
+            outer: Some(|_| Router::new()),
+            ..SurfaceSeams::empty()
+        }
+    }
+
+    /// The persisted task-queue contract: these five strings are in
+    /// `agentic_task_queue` rows, so a change here strands queued work.
+    #[test]
+    fn the_required_task_kinds_are_the_five_the_fleet_knew() {
+        assert_eq!(
+            CUSTOM_APP_TASK_KINDS,
+            [
+                "app_function",
+                "custom_app_staging_migrations",
+                "custom_app_sandbox_teardown",
+                "custom_app_sandbox_migrations",
+                "custom_app_sandbox_oltp",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_complete_composition_is_accepted() {
+        assert_eq!(complete().require_custom_apps(), Ok(()));
+    }
+
+    /// No seams at all is what every router test builds, and not something a
+    /// process that serves custom apps may start with.
+    #[test]
+    fn an_empty_composition_is_refused() {
+        let err = SurfaceSeams::empty().require_custom_apps().unwrap_err();
+        assert!(err.contains("app_function"), "{err}");
+    }
+
+    #[test]
+    fn a_missing_task_kind_is_a_startup_error_that_names_it() {
+        let mut seams = complete();
+        seams.tasks.retain(|t| t.kind != "custom_app_sandbox_oltp");
+        let err = seams.require_custom_apps().unwrap_err();
+        assert!(err.contains("custom_app_sandbox_oltp"), "{err}");
+        assert!(require_task_kinds(&seams.tasks).is_err());
+    }
+
+    #[test]
+    fn a_task_kind_registered_twice_is_refused() {
+        let mut seams = complete();
+        seams.tasks.push(task("app_function"));
+        let err = seams.require_custom_apps().unwrap_err();
+        assert!(err.contains("registered twice"), "{err}");
+    }
+
+    #[test]
+    fn a_missing_background_job_or_outer_mount_is_a_startup_error() {
+        let mut seams = complete();
+        seams
+            .background
+            .retain(|b| b.name != "custom_app_usage_drain");
+        let err = seams.require_custom_apps().unwrap_err();
+        assert!(err.contains("custom_app_usage_drain"), "{err}");
+
+        let mut seams = complete();
+        seams.outer = None;
+        let err = seams.require_custom_apps().unwrap_err();
+        assert!(err.contains("/customer-apps/"), "{err}");
     }
 }
