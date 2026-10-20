@@ -104,6 +104,16 @@ const DECLARED: &[(&str, &str, Why)] = &[
     //  Why::Phase2 { after: "m20260922_000001_stop_writing_orders_total" }),
     (
         "central",
+        "m20261020_000001_drop_app_build_pointer_columns",
+        Why::Phase2 {
+            after: "#3686: record_move no longer mirrors apps.draft_build_id / published_build_id, so \
+                    nothing reads or writes them (app_environments rows are the only pointer \
+                    store). This migration must not be promoted before the release carrying \
+                    #3686 is the one prod runs",
+        },
+    ),
+    (
+        "central",
         "m20260928_000001_drop_app_preflight_tables",
         Why::Phase2 {
             after: "#3362: the preflight went report-only and stopped using both tables; \

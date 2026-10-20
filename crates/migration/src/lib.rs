@@ -219,6 +219,7 @@ mod m20261017_000002_app_environment_schedules_enabled;
 mod m20261017_000003_app_environment_events_retained_builds;
 mod m20261019_000001_function_invocation_activity_index;
 mod m20261019_000002_device_tokens_web_push_keys;
+mod m20261020_000001_drop_app_build_pointer_columns;
 
 pub use m20260922_000001_app_environments::BACKFILL_SQL as APP_ENVIRONMENTS_BACKFILL_SQL;
 pub use m20261001_000001_api_tokens::BACKFILL_SQL as API_TOKENS_BACKFILL_SQL;
@@ -226,6 +227,8 @@ pub use m20261006_000003_workspace_health_transitions::BACKFILL_SQL as WORKSPACE
 pub use m20261017_000001_notification_settings::BACKFILL_SQL as NOTIFICATION_SETTINGS_BACKFILL_SQL;
 pub use m20261017_000003_app_environment_events_retained_builds::BACKFILL_SQL as RETAINED_BUILDS_STAGING_BACKFILL_SQL;
 pub use m20261019_000001_function_invocation_activity_index::ACTIVITY_PREDICATE as FUNCTION_INVOCATION_ACTIVITY_PREDICATE;
+pub use m20261020_000001_drop_app_build_pointer_columns::BACKFILL_SQL as DROP_POINTER_COLUMNS_BACKFILL_SQL;
+pub use m20261020_000001_drop_app_build_pointer_columns::RESTORE_SQL as DROP_POINTER_COLUMNS_RESTORE_SQL;
 
 pub struct Migrator;
 
@@ -457,6 +460,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261017_000003_app_environment_events_retained_builds::Migration),
             Box::new(m20261019_000001_function_invocation_activity_index::Migration),
             Box::new(m20261019_000002_device_tokens_web_push_keys::Migration),
+            Box::new(m20261020_000001_drop_app_build_pointer_columns::Migration),
         ]
     }
 

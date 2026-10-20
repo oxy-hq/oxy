@@ -58,8 +58,8 @@ pub struct Model {
     pub repo_path: Option<String>,
     // The build each environment serves is not on this row: it is the
     // `build_id` of the `app_environments` row (`oxy_custom_apps::environments`).
-    // `draft_build_id` / `published_build_id` are retired: nothing reads or
-    // writes them, and a later migration drops them (#3690).
+    // `draft_build_id` / `published_build_id` were retired with the move to
+    // environments as the only pointer store.
     /// User who last made a build live (promote draft or Make Live/rollback),
     /// and when. Unlike `app_builds.published_by` (the build's original
     /// publisher), this captures the *promotion* event. FK → `users`

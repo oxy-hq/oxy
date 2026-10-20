@@ -2,7 +2,10 @@
 //! (`internal-docs/2026-09-10-custom-app-environments-design.md` §3).
 //!
 //! Database-backed: each test gets its own database cloned from the migrated
-//! template.
+//! template. The migration that dropped `apps.draft_build_id` /
+//! `apps.published_build_id` has already run on it, so its backfill is
+//! exercised by putting the columns back, seeding pointers and running
+//! `DROP_POINTER_COLUMNS_BACKFILL_SQL` directly.
 
 use crate::common::test_db;
 use entity::{app_builds, apps, organizations, users, workspaces};
@@ -212,6 +215,211 @@ async fn event_actors(conn: &DatabaseConnection, app_id: Uuid) -> Vec<(String, O
 fn sorted<T: Ord>(mut v: Vec<T>) -> Vec<T> {
     v.sort();
     v
+}
+
+/// Put the dropped columns back, as the database was before the migration, so
+/// the migration's backfill has pointers to read.
+async fn restore_pointer_columns(conn: &DatabaseConnection) {
+    conn.execute_unprepared(
+        "ALTER TABLE apps ADD COLUMN IF NOT EXISTS draft_build_id UUID, \
+         ADD COLUMN IF NOT EXISTS published_build_id UUID",
+    )
+    .await
+    .expect("restore the pointer columns");
+}
+
+/// Set the dropped pointer columns of an app, as pre-migration data looked.
+async fn set_pointer_columns(
+    conn: &DatabaseConnection,
+    app_id: Uuid,
+    draft: Option<Uuid>,
+    published: Option<Uuid>,
+) {
+    restore_pointer_columns(conn).await;
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE apps SET draft_build_id = $1, published_build_id = $2 WHERE id = $3",
+        [draft.into(), published.into(), app_id.into()],
+    ))
+    .await
+    .expect("set the pointer columns");
+}
+
+async fn run_backfill(conn: &DatabaseConnection) {
+    conn.execute_unprepared(migration::DROP_POINTER_COLUMNS_BACKFILL_SQL)
+        .await
+        .expect("backfill runs");
+}
+
+// ── The migration that drops the pointer columns ────────────────────────────
+
+#[tokio::test]
+async fn the_pointer_columns_are_gone() {
+    let conn = test_db().await;
+    let columns = conn
+        .query_all_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT column_name FROM information_schema.columns \
+             WHERE table_name = 'apps' \
+               AND column_name IN ('draft_build_id', 'published_build_id')",
+        ))
+        .await
+        .expect("read columns");
+    assert!(
+        columns.is_empty(),
+        "environments are the only pointer store; apps keeps no build pointer"
+    );
+}
+
+#[tokio::test]
+async fn backfill_maps_draft_to_staging_and_published_to_production() {
+    let conn = test_db().await;
+    let app = seed_app(&conn).await;
+    let draft = seed_build(&conn, app, "draft").await;
+    let live = seed_build(&conn, app, "live").await;
+    set_pointer_columns(&conn, app, Some(draft), Some(live)).await;
+
+    run_backfill(&conn).await;
+
+    assert_eq!(
+        env_rows(&conn, app).await,
+        vec![
+            ("production".into(), Some(live)),
+            ("staging".into(), Some(draft))
+        ]
+    );
+    // Every build a pointer names counts as served by staging, so each stays
+    // promotable; the live one was production's too.
+    assert_eq!(
+        sorted(event_rows(&conn, app).await),
+        sorted(vec![
+            ("production".into(), Some(live), "backfill".into()),
+            ("staging".into(), Some(draft), "backfill".into()),
+            ("staging".into(), Some(live), "backfill".into()),
+        ])
+    );
+}
+
+#[tokio::test]
+async fn backfill_gives_a_published_only_app_no_staging_row() {
+    let conn = test_db().await;
+    let app = seed_app(&conn).await;
+    let live = seed_build(&conn, app, "live").await;
+    set_pointer_columns(&conn, app, None, Some(live)).await;
+
+    run_backfill(&conn).await;
+
+    assert_eq!(
+        env_rows(&conn, app).await,
+        vec![("production".into(), Some(live))]
+    );
+    assert_eq!(
+        sorted(event_rows(&conn, app).await),
+        sorted(vec![
+            ("production".into(), Some(live), "backfill".into()),
+            ("staging".into(), Some(live), "backfill".into()),
+        ])
+    );
+}
+
+#[tokio::test]
+async fn backfill_gives_a_draft_only_app_no_production_row() {
+    let conn = test_db().await;
+    let app = seed_app(&conn).await;
+    let draft = seed_build(&conn, app, "draft").await;
+    set_pointer_columns(&conn, app, Some(draft), None).await;
+
+    run_backfill(&conn).await;
+
+    assert_eq!(
+        env_rows(&conn, app).await,
+        vec![("staging".into(), Some(draft))]
+    );
+    assert_eq!(
+        event_rows(&conn, app).await,
+        vec![("staging".into(), Some(draft), "backfill".into())]
+    );
+}
+
+#[tokio::test]
+async fn backfill_skips_a_pointer_to_a_build_that_no_longer_exists() {
+    let conn = test_db().await;
+    let app = seed_app(&conn).await;
+    // No FK on the dropped columns, so a dangling pointer is representable.
+    set_pointer_columns(&conn, app, Some(Uuid::new_v4()), None).await;
+
+    run_backfill(&conn).await;
+
+    assert!(env_rows(&conn, app).await.is_empty());
+}
+
+/// A row that exists is what every reader has read since Phase 1b: the
+/// backfill never moves it to what the column says, and runs again harmlessly.
+#[tokio::test]
+async fn backfill_never_touches_a_row_that_exists_and_is_idempotent() {
+    let conn = test_db().await;
+    let app = seed_app(&conn).await;
+    let draft = seed_build(&conn, app, "draft").await;
+    let live = seed_build(&conn, app, "live").await;
+    let current = seed_build(&conn, app, "current").await;
+    point(&conn, app, Some(current), None).await;
+    set_pointer_columns(&conn, app, Some(draft), Some(live)).await;
+
+    run_backfill(&conn).await;
+    let rows = env_rows(&conn, app).await;
+    run_backfill(&conn).await;
+
+    assert_eq!(
+        rows,
+        vec![
+            ("production".into(), Some(live)),
+            ("staging".into(), Some(current))
+        ]
+    );
+    assert_eq!(env_rows(&conn, app).await, rows);
+    // History only for the row the backfill created: staging's existing row
+    // gets none, and the second run added nothing.
+    assert_eq!(
+        sorted(event_rows(&conn, app).await),
+        sorted(vec![
+            ("production".into(), Some(live), "backfill".into()),
+            ("staging".into(), Some(live), "backfill".into()),
+        ])
+    );
+}
+
+#[tokio::test]
+async fn down_puts_the_pointers_back_from_the_rows() {
+    let conn = test_db().await;
+    let app = seed_app(&conn).await;
+    let draft = seed_build(&conn, app, "draft").await;
+    let live = seed_build(&conn, app, "live").await;
+    point(&conn, app, Some(draft), Some(live)).await;
+    restore_pointer_columns(&conn).await;
+
+    conn.execute_unprepared(migration::DROP_POINTER_COLUMNS_RESTORE_SQL)
+        .await
+        .expect("restore runs");
+
+    let row = conn
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT draft_build_id, published_build_id FROM apps WHERE id = $1",
+            [app.into()],
+        ))
+        .await
+        .expect("read pointers")
+        .expect("the app");
+    assert_eq!(
+        row.try_get::<Option<Uuid>>("", "draft_build_id")
+            .expect("draft"),
+        Some(draft)
+    );
+    assert_eq!(
+        row.try_get::<Option<Uuid>>("", "published_build_id")
+            .expect("published"),
+        Some(live)
+    );
 }
 
 // ── The name rules live in Rust and in a CHECK; they must agree ─────────────
