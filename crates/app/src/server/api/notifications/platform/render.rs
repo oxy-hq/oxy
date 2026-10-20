@@ -191,15 +191,9 @@ fn words(about: &About, org: Option<&OrgNames>, record: &subjects::Record) -> Op
             body: Some("It finished setting up and can be opened.".to_string()),
             href: slug.map(|s| format!("/{s}/workspaces/{id}")),
         }),
-        (SUBJECT_AUTOMATION_RUN | SUBJECT_AIRWAY_RUN, Record::Run(run)) => Some(Rendered {
-            title: format!("{} failed", run.name),
-            body: Some(format!(
-                "The {}run that started {} failed and will not be retried. Open it to see why.",
-                if run.scheduled { "scheduled " } else { "" },
-                run.started_at.format("%B %-d at %H:%M UTC")
-            )),
-            href: slug.map(|s| run.href(s)),
-        }),
+        (SUBJECT_AUTOMATION_RUN | SUBJECT_AIRWAY_RUN, Record::Run(run)) => {
+            Some(run_words(run, slug))
+        }
         (SUBJECT_ANOMALY, Record::Anomaly(a)) => Some(Rendered {
             title: format!("{} looks unusual", a.name),
             body: Some(a.summary()),
@@ -215,8 +209,37 @@ fn words(about: &About, org: Option<&OrgNames>, record: &subjects::Record) -> Op
     }
 }
 
+/// A failed run: the failure itself, or — when its source had already failed
+/// since it last succeeded — how long it has been failing. Only the first
+/// failure of a streak and a daily reminder are sent (`run_failed.rs`), so
+/// the second shape is the reminder.
+fn run_words(run: &subjects::RunRecord, slug: Option<&str>) -> Rendered {
+    let href = slug.map(|s| run.href(s));
+    if let Some(streak) = run.streak.filter(|s| s.failures > 1) {
+        return Rendered {
+            title: format!("{} is still failing", run.name),
+            body: Some(format!(
+                "It has failed {} times since {}. Open the latest run to see why.",
+                streak.failures,
+                streak.since.format("%B %-d at %H:%M UTC")
+            )),
+            href,
+        };
+    }
+    Rendered {
+        title: format!("{} failed", run.name),
+        body: Some(format!(
+            "The {}run that started {} failed and will not be retried. Open it to see why.",
+            if run.scheduled { "scheduled " } else { "" },
+            run.started_at.format("%B %-d at %H:%M UTC")
+        )),
+        href,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::super::run_streak::Streak;
     use super::*;
     use chrono::{TimeZone, Utc};
 
@@ -268,6 +291,59 @@ mod tests {
         .unwrap();
         assert_eq!(r.title, "Sales is ready");
         assert_eq!(r.href, Some(format!("/acme/workspaces/{id}")));
+    }
+
+    fn failed_run(streak: Option<Streak>) -> subjects::Record {
+        subjects::Record::Run(subjects::RunRecord {
+            id: "r-9".into(),
+            workspace_id: Uuid::nil(),
+            name: "restaurant_analytics".into(),
+            file: Some("restaurant_analytics.airway.yml".into()),
+            airway: true,
+            scheduled: false,
+            started_at: Utc.with_ymd_and_hms(2026, 10, 19, 14, 59, 0).unwrap(),
+            streak,
+        })
+    }
+
+    #[test]
+    fn a_run_that_kept_failing_says_how_long_and_one_that_did_not_says_it_failed() {
+        let about = about(RUN_FAILED, SUBJECT_AIRWAY_RUN);
+        let reminder = words(
+            &about,
+            Some(&acme()),
+            &failed_run(Some(Streak {
+                failures: 9,
+                since: Utc.with_ymd_and_hms(2026, 10, 19, 6, 59, 0).unwrap(),
+            })),
+        )
+        .unwrap();
+        assert_eq!(reminder.title, "restaurant_analytics is still failing");
+        assert_eq!(
+            reminder.body.as_deref(),
+            Some(
+                "It has failed 9 times since October 19 at 06:59 UTC. Open the latest run to see why."
+            )
+        );
+        assert!(
+            reminder.href.unwrap().ends_with("/runs/r-9"),
+            "the latest run"
+        );
+
+        for first in [None, Some(1)] {
+            let streak = first.map(|failures| Streak {
+                failures,
+                since: Utc.with_ymd_and_hms(2026, 10, 19, 14, 59, 0).unwrap(),
+            });
+            let r = words(&about, Some(&acme()), &failed_run(streak)).unwrap();
+            assert_eq!(r.title, "restaurant_analytics failed", "{first:?}");
+            assert_eq!(
+                r.body.as_deref(),
+                Some(
+                    "The run that started October 19 at 14:59 UTC failed and will not be retried. Open it to see why."
+                )
+            );
+        }
     }
 
     #[test]

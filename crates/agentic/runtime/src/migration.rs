@@ -6,6 +6,9 @@
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use sea_orm_migration::prelude::*;
 
+mod run_source_file_index;
+pub use run_source_file_index::{AddRunSourceFileIndex, RUN_SOURCE_FILE_INDEX_SQL};
+
 pub struct RuntimeMigrator;
 
 #[async_trait::async_trait]
@@ -37,6 +40,7 @@ impl MigratorTrait for RuntimeMigrator {
             Box::new(AddTaskQueueClaimEpoch),
             Box::new(AddPendingGlobalRunsIndex),
             Box::new(AddCompileTaskBackoffIndex),
+            Box::new(AddRunSourceFileIndex),
         ]
     }
 

@@ -15,19 +15,29 @@
 //! routes) while they are a member of the org; otherwise — a scheduled run,
 //! or a starter who left — the workspace's admins. Schedules record no
 //! creator, so there is no one closer to tell.
+//!
+//! **Once per failing streak, then daily** ([`run_streak`]), so a pipeline
+//! that fails every hour does not email its admins every hour. A person is
+//! told about a failure unless they were told about a run of the same streak
+//! in the last [`REMINDER_AFTER`]: the first failure after a success tells
+//! them, the next ones do not, and the first one a day later reminds them
+//! ("still failing"). The check runs under a lock on the source, so two of
+//! its runs failing at once tell each person once.
 
 use std::sync::Arc;
 
 use agentic_runtime::entity::run;
 use agentic_runtime::lifecycle::failure_hook::{RunFailureObserver, set_run_failure_observer};
 use async_trait::async_trait;
+use chrono::Utc;
 use entity::workspaces;
-use sea_orm::{DatabaseConnection, DbErr, EntityTrait};
+use sea_orm::{DatabaseConnection, DbErr, EntityTrait, TransactionTrait};
 use uuid::Uuid;
 
 use super::kinds::PlatformNotice;
 use super::people;
-use super::send::{PlatformSent, notify};
+use super::run_streak::{self, REMINDER_AFTER, Source};
+use super::send::{self, PlatformSent, notify};
 use super::subjects::run_record;
 
 /// Install the observer. Called at `oxy serve` and `oxy worker` boot: either
@@ -51,6 +61,14 @@ impl RunFailureObserver for RunFailureNotices {
             }
         };
         match notify_run_failed(&db, run_id).await {
+            Ok(Some(sent)) if sent.recipients == 0 && sent.already_told > 0 => tracing::info!(
+                %run_id,
+                already_told = sent.already_told,
+                "run failure notice not sent: already told about this failing streak"
+            ),
+            Ok(Some(sent)) if sent.recipients == 0 => {
+                tracing::info!(%run_id, "run failure notice not sent: no one to tell")
+            }
             Ok(Some(sent)) => {
                 tracing::info!(%run_id, recipients = sent.recipients, "run failure notice sent")
             }
@@ -94,7 +112,55 @@ pub async fn notify_run_failed(
         },
     };
     let recipients = recipients(db, org_id, &row).await?;
-    notify(db, &notice, &recipients).await.map(Some)
+    let Some(source) = Source::of(&row) else {
+        return notify(db, &notice, &recipients).await.map(Some);
+    };
+    notify_once_per_streak(db, &source, &row.id, &notice, &recipients)
+        .await
+        .map(Some)
+}
+
+/// [`notify`] the `recipients` not told about `run_id`'s streak in the last
+/// [`REMINDER_AFTER`]. The streak is read under the source's lock and the send
+/// written in the same transaction, so a second failure deciding at the same
+/// moment sees the first one's notice.
+async fn notify_once_per_streak(
+    db: &DatabaseConnection,
+    source: &Source,
+    run_id: &str,
+    notice: &PlatformNotice,
+    recipients: &[Uuid],
+) -> Result<PlatformSent, DbErr> {
+    let mut people: Vec<Uuid> = Vec::with_capacity(recipients.len());
+    for r in recipients {
+        if !people.contains(r) {
+            people.push(*r);
+        }
+    }
+    let workspace = send::delivery_workspace(db, notice).await?;
+    let txn = db.begin().await?;
+    source.lock(&txn).await?;
+    let streak = run_streak::streak_of(&txn, run_id).await?;
+    let quiet_since = Utc::now() - REMINDER_AFTER;
+    let told = run_streak::told_after(&txn, notice, streak, &people, quiet_since).await?;
+    let fresh: Vec<Uuid> = people
+        .iter()
+        .copied()
+        .filter(|u| !told.contains(u))
+        .collect();
+    if fresh.is_empty() {
+        txn.rollback().await?;
+        return Ok(PlatformSent {
+            id: None,
+            recipients: 0,
+            already_told: people.len(),
+        });
+    }
+    let mut sent = send::write(&txn, notice, &fresh, workspace).await?;
+    txn.commit().await?;
+    send::after_commit(db, notice, &sent, workspace).await;
+    sent.already_told += told.len();
+    Ok(sent)
 }
 
 /// Whether a run row is a terminal failure someone should hear about. Pure,

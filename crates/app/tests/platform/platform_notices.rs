@@ -1,7 +1,8 @@
 //! Platform notices (`oxy.*` kinds) against a real Oxy database: who each
 //! source tells, that each person is told once per subject, that the words are
 //! rendered from Oxy's records with no org OLTP store, that platform mutes
-//! apply per kind and channel, and that billing cannot be muted.
+//! apply per kind and channel, that billing cannot be muted, and that a
+//! failing pipeline tells once per streak, then daily (`run_failed_streak`).
 //!
 //! Run with:
 //! `cargo nextest run -p oxy-app --test platform -E 'test(platform_notices)'`
@@ -33,6 +34,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::common::{Schema, fresh_db};
+
+mod run_failed_streak;
 
 struct Org {
     id: Uuid,

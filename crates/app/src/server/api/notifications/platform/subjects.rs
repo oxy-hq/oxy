@@ -1,7 +1,7 @@
 //! The Oxy records platform notices are rendered from, loaded in batches.
 //!
-//! One query per subject kind on a page: workspaces by id, runs by id,
-//! anomaly buckets by event. A billing episode needs no query — its id is the
+//! One query per subject kind on a page: workspaces by id, runs by id (plus
+//! one for their failing streaks), anomaly buckets by event. A billing episode needs no query — its id is the
 //! end of the grace period, which is the one fact the notice states — and a
 //! test notice needs one only to name the token that sent it.
 
@@ -19,6 +19,7 @@ use super::kinds::{
     SUBJECT_WORKSPACE,
 };
 use super::render::About;
+use super::run_streak::Streak;
 
 /// A loaded subject.
 #[derive(Debug, Clone, PartialEq)]
@@ -44,6 +45,9 @@ pub struct RunRecord {
     pub scheduled: bool,
     /// When the run started, so two failures of one automation read apart.
     pub started_at: chrono::DateTime<chrono::Utc>,
+    /// How long its source had been failing by this run; `None` when not
+    /// loaded (see [`load`]) or the run names no file.
+    pub streak: Option<Streak>,
 }
 
 impl RunRecord {
@@ -173,16 +177,23 @@ async fn workspaces_by_id(
         .collect())
 }
 
+/// The runs, each with its streak: a second query for the page, not one per
+/// run.
 async fn runs_by_id(db: &DatabaseConnection, ids: Vec<String>) -> Result<Vec<RunRecord>, DbErr> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
+    let streaks = super::run_streak::through(db, &ids).await?;
     Ok(run::Entity::find()
         .filter(run::Column::Id.is_in(ids))
         .all(db)
         .await?
         .iter()
         .filter_map(run_record)
+        .map(|mut r| {
+            r.streak = streaks.get(&r.id).copied();
+            r
+        })
         .collect())
 }
 
@@ -222,6 +233,7 @@ pub fn run_record(row: &run::Model) -> Option<RunRecord> {
         airway,
         scheduled: row.schedule_id.is_some(),
         started_at: row.created_at.with_timezone(&chrono::Utc),
+        streak: None,
     })
 }
 
