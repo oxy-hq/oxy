@@ -53,7 +53,6 @@ use std::time::{Duration, Instant};
 
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use sentry::SentryFutureExt;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -238,10 +237,10 @@ fn admit(body: &[u8]) -> Result<Vec<(String, serde_json::Value)>, Response> {
 ///
 /// Always answers `204` on success and never blocks on the write: the sender is
 /// a page that is usually in the middle of unloading, and a slow insert would
-/// hold the browser's unload path open for telemetry.
+/// hold the browser's unload path open for telemetry. The write is a `try_send`
+/// onto the bounded usage queue (`custom_apps_usage_queue`).
 #[allow(clippy::too_many_arguments)]
 pub async fn handle(
-    db: sea_orm::DatabaseConnection,
     app_id: Uuid,
     org_id: Uuid,
     user_id: Uuid,
@@ -317,33 +316,20 @@ pub async fn handle(
         );
     }
 
-    tokio::spawn(
-        async move {
-            for (name, payload) in events {
-                if let Err(e) = custom_apps_tracking::record_event(
-                    &db,
-                    app_id,
-                    user_id,
-                    user_email.clone(),
-                    session_id,
-                    name,
-                    payload,
-                    &environment,
-                )
-                .await
-                {
-                    // Same failure posture as `record_view`: losing a telemetry row
-                    // is the documented acceptable outcome, and there is nobody
-                    // left on the other end of the request to tell.
-                    tracing::warn!("custom-app beacon insert failed for app {app_id}: {e}");
-                }
-            }
-        }
-        // The event names and payloads in scope here are tenant-authored, so a
-        // panic or a callee's ERROR must stay tagged once the request's hub is
-        // gone (`middlewares::sentry_surface`).
-        .bind_hub(sentry::Hub::current()),
-    );
+    // Queued, not spawned: the drain validates and batch-inserts, and a full
+    // queue drops the row. Losing a telemetry row is the documented acceptable
+    // outcome, and there is nobody left on the other end of the request to tell.
+    for (name, payload) in events {
+        custom_apps_tracking::queue_event(
+            app_id,
+            user_id,
+            user_email.clone(),
+            session_id,
+            name,
+            payload,
+            environment.clone(),
+        );
+    }
 
     StatusCode::NO_CONTENT.into_response()
 }

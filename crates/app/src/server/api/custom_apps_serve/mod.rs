@@ -49,7 +49,6 @@ use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use oxy_shared::fleet_role::{RouteRole, RouteRoleDecl};
 use sea_orm::DatabaseConnection;
-use sentry::SentryFutureExt;
 use tracing::Instrument;
 use uuid::Uuid;
 
@@ -382,7 +381,6 @@ impl ServeContext {
                 ingest_beacon(
                     body,
                     &self.headers,
-                    &self.request.db,
                     app.id,
                     app.org_id,
                     user.id,
@@ -524,10 +522,12 @@ impl ServeContext {
         });
     }
 
-    /// Spawn the view-event insert for a rendered navigation and return the
-    /// `Set-Cookie` that names its session. Fire-and-forget; a slow DB insert
-    /// must not stall the HTML response, and losing a row on crash is the
-    /// documented acceptable failure mode for tracking-grade data.
+    /// Queue the view-event row for a rendered navigation and return the
+    /// `Set-Cookie` that names its session. The cookie is minted here,
+    /// synchronously; the row goes onto the bounded usage queue (a `try_send`:
+    /// no spawn, no connection, no read on this path), and a full queue drops
+    /// it. Losing a row on overload or crash is the documented acceptable
+    /// failure mode for tracking-grade data.
     fn record_view(&self) -> String {
         let headers = &self.headers;
         let host = headers
@@ -561,26 +561,15 @@ impl ServeContext {
         }
         .to_string();
         let view_environment = self.environment.name();
-        tokio::spawn(
-            async move {
-                super::custom_apps_tracking::record_view(
-                    recorded_app,
-                    user_id,
-                    user_email,
-                    session_id,
-                    sanitized_referrer,
-                    user_agent_class,
-                    source_label,
-                    view_environment,
-                )
-                .await;
-            }
-            // Outlives the request, so it needs the request's hub carried
-            // over explicitly (`middlewares::sentry_surface`): barrier 1 drops
-            // this module's own tracing by target, but an ERROR from a callee
-            // such as `sea_orm`, or a panic in here, would otherwise reach
-            // Sentry untagged — carrying the viewer's email and referrer.
-            .bind_hub(sentry::Hub::current()),
+        super::custom_apps_tracking::record_view(
+            recorded_app,
+            user_id,
+            user_email,
+            session_id,
+            sanitized_referrer,
+            user_agent_class,
+            source_label,
+            view_environment,
         );
         set_cookie
     }
@@ -1079,7 +1068,6 @@ fn monogram_icon_for(app: &entity::apps::Model) -> Response {
 async fn ingest_beacon(
     body: axum::body::Body,
     headers: &HeaderMap,
-    db: &sea_orm::DatabaseConnection,
     app_id: Uuid,
     org_id: Uuid,
     user_id: Uuid,
@@ -1093,7 +1081,6 @@ async fn ingest_beacon(
         Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
     };
     super::custom_apps_beacon::handle(
-        db.clone(),
         app_id,
         org_id,
         user_id,

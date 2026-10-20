@@ -248,7 +248,7 @@ const TABLES: &[(&str, Placement)] = &[
         "custom_app_event",
         Backlog {
             holds: "app SDK events with a free-form payload",
-            belongs: "payload → Airhouse",
+            belongs: "payload → Airhouse; the platform beacon's oxy-* rows are the volume (customer-apps-performance.md, Usage facts)",
         },
     ),
     (
@@ -265,7 +265,10 @@ const TABLES: &[(&str, Placement)] = &[
     ),
     (
         "custom_app_view_event",
-        Control("Oxy's own app-open telemetry"),
+        Control(
+            "Oxy's own app-open telemetry; the role snapshot reads control-plane tables, so the \
+             facts stay beside them (customer-apps-performance.md, Usage facts)",
+        ),
     ),
     (
         "customer_app_automation_runs",

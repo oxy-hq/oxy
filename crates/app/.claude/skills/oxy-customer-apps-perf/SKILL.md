@@ -38,7 +38,13 @@ expensive to retrofit under load.
   on `DefaultPredicate`, which skips `text/event-stream` and already-encoded bodies —
   so the `/fn` SSE stream and the v0 proxy are untouched. If you add a streaming
   response under this route, confirm it stays `text/event-stream` (or keep it off the
-  layer); never compress a stream.
+  layer); never compress a stream. `text/html` is the one type **excluded**
+  (`custom_app_compression`): rendered HTML carries its own memoised brotli copy
+  (`RenderedHtml.br`, filled once on the blocking pool, served with `Vary`), so never
+  compress HTML per request.
+- **Usage writes are off the request path.** `record_view` / `queue_event` only
+  `try_send` onto the bounded queue in `custom_apps_usage_queue`; a full queue drops and
+  counts, never blocks. Do not add a `tokio::spawn` or a DB read to the page-load tail.
 
 ## Data plane — `projects/query.rs`, `projects/semantic_query.rs`, `projects/result_cache.rs`
 

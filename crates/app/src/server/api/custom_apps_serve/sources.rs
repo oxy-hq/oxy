@@ -355,9 +355,10 @@ pub(crate) async fn serve_from_s3_build(
     let cache = cache_control_for(&requested, resolved_path, pin);
 
     // HTML is transformed on the way out (base-path rewrite + identity
-    // injection), so it is never pre-compressed — the stored bytes and the
-    // sent bytes differ by construction. The `CompressionLayer` still
-    // compresses it on the fly.
+    // injection), so it is never pre-compressed at publish — the stored bytes
+    // and the sent bytes differ by construction. The rendered document carries
+    // its own memoised brotli copy instead (`html_cache::BrotliVariant`), and
+    // `text/html` is excluded from the mount's `CompressionLayer`.
     if mime.starts_with("text/html") {
         return html_response(
             HtmlBuild {
@@ -509,7 +510,7 @@ pub(super) fn render_html(
     let body = Bytes::from(inject_app_config(&rewritten, &runtime, resolved_path));
     let etag = etag_for(&body);
     let link = manifest.and_then(|m| asset_manifest::preload_link_header(&m, &runtime.base_path));
-    RenderedHtml { body, etag, link }
+    RenderedHtml::new(body, etag, link)
 }
 
 /// Turn a rendered document into a 200 or a 304, with the shared header set on
@@ -526,13 +527,24 @@ fn finish_html(
     let mut response = if not_modified {
         StatusCode::NOT_MODIFIED.into_response()
     } else {
-        (
-            [(header::CONTENT_TYPE, mime.to_string())],
-            Body::from(rendered.body),
-        )
-            .into_response()
+        let (body, encoding) = negotiated_body(&rendered, headers);
+        let mut response =
+            ([(header::CONTENT_TYPE, mime.to_string())], Body::from(body)).into_response();
+        if let Some(encoding) = encoding {
+            response.headers_mut().insert(
+                header::CONTENT_ENCODING,
+                header::HeaderValue::from_static(encoding),
+            );
+        }
+        response
     };
     let h = response.headers_mut();
+    // The body varies by `Accept-Encoding` (brotli when the client takes it and
+    // the variant is ready, identity otherwise), and a 304 stands for either.
+    h.append(
+        header::VARY,
+        header::HeaderValue::from_static("accept-encoding"),
+    );
     if let Ok(v) = header::HeaderValue::from_str(cache) {
         h.insert(header::CACHE_CONTROL, v);
     }
@@ -551,6 +563,27 @@ fn finish_html(
         h.insert("cache-tag", v);
     }
     response
+}
+
+/// The body to send and its `Content-Encoding`: the memoised brotli copy when
+/// the client accepts it and it is ready, the identity bytes otherwise.
+///
+/// A client that accepts brotli but arrives before the copy exists schedules it
+/// and is answered with identity — the compression runs on the blocking pool,
+/// never on this request. `text/html` is excluded from the mount's
+/// `CompressionLayer`, so this is the only place HTML is compressed: a client
+/// that does not accept brotli gets identity bytes.
+fn negotiated_body(rendered: &RenderedHtml, headers: &HeaderMap) -> (Bytes, Option<&'static str>) {
+    if !precompress::accepts_brotli(headers) {
+        return (rendered.body.clone(), None);
+    }
+    match rendered.br.get() {
+        Some(br) => (br, Some("br")),
+        None => {
+            rendered.br.schedule(&rendered.body);
+            (rendered.body.clone(), None)
+        }
+    }
 }
 
 /// Read a build's asset manifest, or `None` when it has none.
@@ -936,6 +969,125 @@ mod tests {
                 .get(header::CACHE_CONTROL)
                 .and_then(|v| v.to_str().ok()),
             Some("private, no-cache")
+        );
+    }
+
+    fn accept_encoding(value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(
+            header::ACCEPT_ENCODING,
+            header::HeaderValue::from_str(value).expect("valid header"),
+        );
+        h
+    }
+
+    async fn html_body(rendered: &RenderedHtml, request: &HeaderMap) -> (HeaderMap, Bytes) {
+        let response = finish_html(
+            rendered.clone(),
+            "text/html; charset=utf-8",
+            "private, no-cache",
+            "build-7",
+            Uuid::nil(),
+            request,
+        );
+        let headers = response.headers().clone();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        (headers, body)
+    }
+
+    fn big_document() -> RenderedHtml {
+        let runtime = test_runtime();
+        let page = format!(
+            "<html><head></head><body>{}</body></html>",
+            "<p>quarterly numbers</p>".repeat(300)
+        );
+        render_html(
+            page.as_bytes(),
+            std::path::Path::new("index.html"),
+            &runtime,
+            runtime.app_id,
+            Some(manifest_with_entries()),
+        )
+    }
+
+    /// The first navigation by a brotli client schedules the compression and is
+    /// answered with identity bytes; once the copy exists every later one gets
+    /// `Content-Encoding: br` and `Vary`, with the same weak ETag and a body that
+    /// decodes to exactly the identity document.
+    #[tokio::test]
+    async fn brotli_is_served_from_the_memoised_copy_once_it_exists() {
+        let rendered = big_document();
+        let request = accept_encoding("gzip, deflate, br");
+
+        let (headers, body) = html_body(&rendered, &request).await;
+        assert!(
+            headers.get(header::CONTENT_ENCODING).is_none(),
+            "first hit: identity"
+        );
+        assert_eq!(body, rendered.body);
+
+        let mut ready = None;
+        for _ in 0..2000 {
+            ready = rendered.br.get();
+            if ready.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert!(ready.is_some(), "the scheduled compression must land");
+
+        let (headers, body) = html_body(&rendered, &request).await;
+        assert_eq!(
+            headers
+                .get(header::CONTENT_ENCODING)
+                .and_then(|v| v.to_str().ok()),
+            Some("br")
+        );
+        assert!(
+            headers.get_all(header::VARY).iter().any(|v| v
+                .to_str()
+                .is_ok_and(|v| v.eq_ignore_ascii_case("accept-encoding"))),
+            "{headers:?}"
+        );
+        assert_eq!(
+            headers.get(header::ETAG).and_then(|v| v.to_str().ok()),
+            Some(rendered.etag.as_str())
+        );
+        assert!(body.len() < rendered.body.len());
+        let mut decoded = Vec::new();
+        brotli::BrotliDecompress(&mut std::io::Cursor::new(&body), &mut decoded)
+            .expect("valid brotli");
+        assert_eq!(decoded, rendered.body.as_ref());
+
+        // A client that does not take brotli still gets the identity bytes.
+        let (headers, body) = html_body(&rendered, &accept_encoding("gzip")).await;
+        assert!(headers.get(header::CONTENT_ENCODING).is_none());
+        assert_eq!(body, rendered.body);
+    }
+
+    /// The 304 path is untouched by the variant: no body, no encoding, the same
+    /// ETag, and `Vary` so a cache keys the revalidation the way it keyed the 200.
+    #[tokio::test]
+    async fn a_304_never_carries_a_content_encoding() {
+        let rendered = big_document();
+        rendered.br.schedule(&rendered.body);
+        while rendered.br.get().is_none() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let mut request = accept_encoding("br");
+        request.insert(
+            header::IF_NONE_MATCH,
+            header::HeaderValue::from_str(&rendered.etag).expect("etag"),
+        );
+        let (headers, body) = html_body(&rendered, &request).await;
+        assert!(body.is_empty());
+        assert!(headers.get(header::CONTENT_ENCODING).is_none());
+        assert!(headers.get(header::VARY).is_some());
+        assert_eq!(
+            headers.get(header::ETAG).and_then(|v| v.to_str().ok()),
+            Some(rendered.etag.as_str())
         );
     }
 

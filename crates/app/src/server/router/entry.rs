@@ -212,6 +212,17 @@ pub async fn api_router(
         ),
     );
 
+    // Custom-app usage rows (page views, beacon events): the serve path only
+    // `try_send`s onto a bounded queue; this one task batch-inserts them every
+    // ~500 ms and once more on shutdown. In-process, not a `TaskSpec` — it
+    // flushes this process's memory, like the token-usage flush above. See
+    // `custom_apps_usage_queue` for the drop-never-block contract.
+    super::recovery::register_shutdown_hook(
+        crate::server::api::custom_apps_usage_queue::spawn_usage_drain(
+            agentic_state.shutdown_token.clone(),
+        ),
+    );
+
     // Audit tamper evidence: every hour, each org's chain head goes to S3 under
     // Object Lock (compliance mode), so a verifier can check the database
     // against something the database cannot rewrite. Singleton-gated; a no-op

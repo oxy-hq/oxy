@@ -19,11 +19,12 @@
 use crate::common::test_db;
 use chrono::Utc;
 use entity::{
-    app_members, apps, custom_app_view_event, org_members, org_members::OrgRole, organizations,
-    users, workspaces,
+    app_members, apps, custom_app_event, custom_app_view_event, org_members, org_members::OrgRole,
+    organizations, users, workspaces,
 };
 use oxy_app::server::api::custom_apps_activity::{VisitorsQuery, get_summary, get_visitors};
-use oxy_app::server::api::custom_apps_tracking::record_view;
+use oxy_app::server::api::custom_apps_tracking::{queue_event, record_view};
+use oxy_app::server::api::custom_apps_usage_queue as usage_queue;
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, QueryFilter};
 use sea_orm::{EntityTrait, QueryOrder};
 use uuid::Uuid;
@@ -167,8 +168,8 @@ async fn recording_a_view_snapshots_app_and_org_role_separately() {
         "browser".into(),
         "subpath".into(),
         "production".into(),
-    )
-    .await;
+    );
+    usage_queue::flush().await;
 
     let row = custom_app_view_event::Entity::find()
         .filter(custom_app_view_event::Column::AppId.eq(app.id))
@@ -213,8 +214,8 @@ async fn a_view_with_no_standing_records_no_role_rather_than_a_default() {
         "browser".into(),
         "subpath".into(),
         "production".into(),
-    )
-    .await;
+    );
+    usage_queue::flush().await;
 
     let row = custom_app_view_event::Entity::find()
         .filter(custom_app_view_event::Column::AppId.eq(app.id))
@@ -449,8 +450,8 @@ async fn a_staging_view_is_not_app_activity() {
         "browser".into(),
         "subdomain".into(),
         "staging".into(),
-    )
-    .await;
+    );
+    usage_queue::flush().await;
 
     let visitors = get_visitors(
         axum::extract::Path(app.id),
@@ -472,4 +473,141 @@ async fn a_staging_view_is_not_app_activity() {
         .0;
     assert_eq!(summary.total_views_7d, 1);
     assert_eq!(summary.unique_users_7d, 1);
+}
+
+/// The usage queue writes what the request path handed it, with the
+/// navigation's own timestamp, in batches — and a bad row costs only itself.
+///
+/// One flush takes a view, two beacon events and one event the validator
+/// rejects (an uppercase name, which `queue_event` accepts and the drain
+/// refuses). The good rows must land with their fields intact; the rejected one
+/// must not take its neighbours down with it.
+#[tokio::test]
+async fn a_queued_batch_writes_the_good_rows_and_only_those() {
+    let conn = test_db().await;
+    let org = seed_org(&conn).await;
+    let app = seed_app(&conn, org).await;
+    let (user, email) = seed_user(&conn).await;
+    let session = Uuid::new_v4();
+
+    let navigated_at = Utc::now();
+    record_view(
+        app.clone(),
+        user,
+        Some(email.clone()),
+        session,
+        None,
+        "browser".into(),
+        "subpath".into(),
+        "production".into(),
+    );
+    for name in ["oxy-pageview", "Not-A-Valid-Name", "oxy-web-vitals"] {
+        queue_event(
+            app.id,
+            user,
+            email.clone(),
+            session,
+            name.into(),
+            serde_json::json!({ "path": "/orders" }),
+            "production".into(),
+        );
+    }
+    // A moment passes between the navigation and the write.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    usage_queue::flush().await;
+
+    let views = custom_app_view_event::Entity::find()
+        .filter(custom_app_view_event::Column::AppId.eq(app.id))
+        .all(&conn)
+        .await
+        .expect("query views");
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0].session_id, session);
+    assert!(
+        views[0].viewed_at.with_timezone(&Utc) < navigated_at + chrono::Duration::milliseconds(50),
+        "viewed_at must be the navigation's time, not the drain's"
+    );
+
+    let mut names: Vec<String> = custom_app_event::Entity::find()
+        .filter(custom_app_event::Column::AppId.eq(app.id))
+        .all(&conn)
+        .await
+        .expect("query events")
+        .into_iter()
+        .map(|e| e.event_name)
+        .collect();
+    names.sort();
+    assert_eq!(names, ["oxy-pageview", "oxy-web-vitals"]);
+}
+
+/// The fallback that keeps one doomed row from sinking a whole batch.
+///
+/// An app deleted between the navigation and the drain makes the multi-row
+/// insert fail on the foreign key. That is the branch under test: the batch
+/// insert *itself* errors (unlike a rejected event, which never reaches it), and
+/// the drain must retry row by row so the other app's rows — another tenant's —
+/// still land, and count the row it could not write.
+#[tokio::test]
+async fn a_batch_insert_that_fails_falls_back_to_row_by_row() {
+    let conn = test_db().await;
+    let org = seed_org(&conn).await;
+    let doomed = seed_app(&conn, org).await;
+    let survivor = seed_app(&conn, org).await;
+    let (user, email) = seed_user(&conn).await;
+    let session = Uuid::new_v4();
+    // Read before queueing: another test's flush may write these jobs first, and
+    // the counter is process-wide, so the assertion below is a floor.
+    let lost_before = usage_queue::lost_total();
+
+    for app in [&doomed, &survivor] {
+        record_view(
+            app.clone(),
+            user,
+            Some(email.clone()),
+            session,
+            None,
+            "browser".into(),
+            "subpath".into(),
+            "production".into(),
+        );
+        queue_event(
+            app.id,
+            user,
+            email.clone(),
+            session,
+            "oxy-pageview".into(),
+            serde_json::json!({ "path": "/orders" }),
+            "production".into(),
+        );
+    }
+    apps::Entity::delete_by_id(doomed.id)
+        .exec(&conn)
+        .await
+        .expect("delete app");
+
+    usage_queue::flush().await;
+
+    let views = custom_app_view_event::Entity::find()
+        .filter(custom_app_view_event::Column::AppId.eq(survivor.id))
+        .all(&conn)
+        .await
+        .expect("query views");
+    assert_eq!(views.len(), 1, "the surviving app's view must still land");
+    let events = custom_app_event::Entity::find()
+        .filter(custom_app_event::Column::AppId.eq(survivor.id))
+        .all(&conn)
+        .await
+        .expect("query events");
+    assert_eq!(events.len(), 1, "the surviving app's event must still land");
+
+    let doomed_rows = custom_app_view_event::Entity::find()
+        .filter(custom_app_view_event::Column::AppId.eq(doomed.id))
+        .all(&conn)
+        .await
+        .expect("query views");
+    assert!(doomed_rows.is_empty());
+    assert!(
+        usage_queue::lost_total() >= lost_before + 2,
+        "the view and the event for the deleted app are counted as lost"
+    );
 }

@@ -9,13 +9,16 @@
 //!    parsed by [`session_id_from_headers`] when the SDK posts a
 //!    custom event.
 //!
-//! 2. **Recorders.** [`record_view`] is `tokio::spawn`d from
-//!    `custom_apps_serve::serve_dispatch` after the response has been
-//!    queued; [`record_event`] is the body of the
-//!    `POST /api/customer-apps/<id>/events` handler. Both write to
-//!    PostgreSQL via SeaORM — see the design doc for the storage
-//!    rationale (TL;DR: low volume + simpler Activity-tab queries +
-//!    works in local dev). An Airhouse sink is a documented follow-up.
+//! 2. **Recorders.** [`record_view`] is called from
+//!    `custom_apps_serve::serve_dispatch` after the response has been built,
+//!    and the beacon route calls [`queue_event`]; both only *enqueue* onto the
+//!    bounded in-process queue in `custom_apps_usage_queue`, whose one drain
+//!    task batch-inserts. [`record_event`] is the body of the
+//!    `POST /api/customer-apps/<id>/events` handler, which must answer with
+//!    the new row id and so writes synchronously. All write to PostgreSQL via
+//!    SeaORM — see the design doc for the storage rationale (TL;DR: low volume
+//!    + simpler Activity-tab queries + works in local dev). An Airhouse sink is
+//!    a documented follow-up: `customer-apps-performance.md` § *Usage facts*.
 //!
 //! **What a view row captures, and why it needs no app cooperation.** The
 //! bundle is not asked to report anything: `record_view` runs on the serve
@@ -48,10 +51,10 @@
 //!   the prune has to be an app-level loop — "internal-volume product
 //!   analytics" doesn't need a tighter window than 6h.
 
+use super::custom_apps_usage_queue as usage_queue;
 use axum::http::{HeaderMap, header};
 use chrono::Utc;
 use entity::{custom_app_event, custom_app_view_event};
-use oxy::database::client::establish_connection;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
@@ -127,14 +130,18 @@ pub fn session_id_for_serve(headers: &HeaderMap, secure: bool) -> (Uuid, String)
 
 // ── Recorders ───────────────────────────────────────────────────────────
 
-/// Insert a view-event row. Designed to be called from a `tokio::spawn`
-/// so a slow DB doesn't stall the serve response. Errors are logged
-/// and swallowed — losing a view row on a transient DB blip is the
-/// documented acceptable failure mode (the alternative — failing the
-/// HTML serve because tracking is down — would be much worse).
+/// Queue a view-event row. Synchronous and non-blocking: the caller is the
+/// serve path's tail, and a navigation must not wait on — or even spawn for —
+/// a usage write. The row is stamped here (`viewed_at` is the navigation's
+/// time, not the drain's) and handed to [`usage_queue`], whose single drain
+/// task resolves the viewer's roles ([`resolve_view_roles`]) and batch-inserts.
+///
+/// A full queue drops the row and counts it ([`usage_queue::dropped_total`]):
+/// losing a view on overload is the same accepted failure mode as losing one
+/// on a crash, and the alternative — backpressure into the HTML response — is
+/// the one outcome tracking must never cause.
 #[allow(clippy::too_many_arguments)]
-#[tracing::instrument(skip_all, fields(app_id = %app.id, user_id = %user_id))]
-pub async fn record_view(
+pub fn record_view(
     app: entity::apps::Model,
     user_id: Uuid,
     user_email: Option<String>,
@@ -144,46 +151,30 @@ pub async fn record_view(
     source: String,
     environment: String,
 ) {
-    let db = match establish_connection().await {
-        Ok(d) => d,
-        Err(e) => {
-            tracing::warn!("custom-app view tracking: DB connect failed: {e}");
-            return;
-        }
-    };
-    // A label for the activity log, not a decision: it records the viewer's own
-    // role in the app, so it is asked of the user rather than of whichever
-    // credential this one view arrived with.
-    let viewer =
-        oxy_server_authz::Caller::without_credential(user_id, user_email.as_deref().unwrap_or(""));
-    let (app_role, org_role) = resolve_view_roles(&db, &app, &viewer).await;
-    let now = Utc::now().fixed_offset();
-    let model = custom_app_view_event::ActiveModel {
-        id: ActiveValue::Set(Uuid::new_v4()),
-        app_id: ActiveValue::Set(app.id),
-        user_id: ActiveValue::Set(user_id),
-        user_email: ActiveValue::Set(user_email.unwrap_or_default()),
-        session_id: ActiveValue::Set(session_id),
-        viewed_at: ActiveValue::Set(now),
-        referrer: ActiveValue::Set(referrer),
-        user_agent_class: ActiveValue::Set(user_agent_class),
-        source: ActiveValue::Set(source),
-        app_role: ActiveValue::Set(app_role),
-        org_role: ActiveValue::Set(org_role),
-        environment: ActiveValue::Set(environment),
-    };
-    if let Err(e) = model.insert(&db).await {
-        tracing::warn!("custom-app view tracking: insert failed: {e}");
-    }
+    usage_queue::enqueue(usage_queue::UsageJob::View(Box::new(
+        usage_queue::ViewJob {
+            app,
+            user_id,
+            user_email,
+            session_id,
+            referrer,
+            user_agent_class,
+            source,
+            environment,
+            viewed_at: Utc::now().fixed_offset(),
+        },
+    )));
 }
 
 /// The viewer's app + org standing at view time, for the snapshot columns on
 /// `custom_app_view_event`.
 ///
-/// Runs entirely inside `record_view`'s `tokio::spawn`, which is what makes the
+/// Runs entirely inside the usage queue's drain task, which is what makes the
 /// cost acceptable — it never touches the HTML response path, and it is per
 /// *navigation*, not per request (the caller records views only for HTML
-/// documents, so an asset storm doesn't multiply it).
+/// documents, so an asset storm doesn't multiply it). The drain resolves each
+/// distinct `(app, viewer)` once per batch, so a burst of reloads by one person
+/// costs one fact load, not one per view.
 ///
 /// The cost is **roughly 7 indexed reads**, not the two call sites it looks like:
 /// `resolve_app_role`'s fact load (`load_principal_facts_scoped` reads org
@@ -210,7 +201,7 @@ pub async fn record_view(
 /// `ctx.user.appRole` rather than a second query written here. The Activity tab
 /// and the app's own gate must be describing the same thing, or the log becomes
 /// evidence for a rule the platform doesn't actually enforce.
-async fn resolve_view_roles(
+pub(super) async fn resolve_view_roles(
     db: &sea_orm::DatabaseConnection,
     app: &entity::apps::Model,
     caller: &oxy_server_authz::Caller,
@@ -271,6 +262,65 @@ pub async fn record_event(
     payload: serde_json::Value,
     environment: &str,
 ) -> Result<Uuid, EventError> {
+    let model = build_event_model(
+        app_id,
+        user_id,
+        user_email,
+        session_id,
+        event_name,
+        payload,
+        environment,
+        Utc::now().fixed_offset(),
+    )?;
+    let id = *model.id.as_ref();
+    model
+        .insert(db)
+        .await
+        .map_err(|e| EventError::Db(e.to_string()))?;
+    Ok(id)
+}
+
+/// Queue a platform-beacon event for the drain task. Same validation as
+/// [`record_event`], run when the row is written, so a rejected event is logged
+/// there rather than failing a request that has already answered `204`.
+#[allow(clippy::too_many_arguments)]
+pub fn queue_event(
+    app_id: Uuid,
+    user_id: Uuid,
+    user_email: String,
+    session_id: Uuid,
+    event_name: String,
+    payload: serde_json::Value,
+    environment: String,
+) {
+    usage_queue::enqueue(usage_queue::UsageJob::Event(Box::new(
+        usage_queue::EventJob {
+            app_id,
+            user_id,
+            user_email,
+            session_id,
+            event_name,
+            payload,
+            environment,
+            occurred_at: Utc::now().fixed_offset(),
+        },
+    )));
+}
+
+/// The validated, not-yet-inserted event row. The one place the name/payload
+/// rules live, shared by the synchronous SDK route ([`record_event`]) and the
+/// queued beacon path, so the two cannot drift.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn build_event_model(
+    app_id: Uuid,
+    user_id: Uuid,
+    user_email: String,
+    session_id: Uuid,
+    event_name: String,
+    payload: serde_json::Value,
+    environment: &str,
+    occurred_at: chrono::DateTime<chrono::FixedOffset>,
+) -> Result<custom_app_event::ActiveModel, EventError> {
     if !is_valid_event_name(&event_name) {
         return Err(EventError::BadName(event_name));
     }
@@ -281,24 +331,17 @@ pub async fn record_event(
     if serialized.len() > MAX_EVENT_PAYLOAD_BYTES {
         return Err(EventError::PayloadTooLarge);
     }
-    let id = Uuid::new_v4();
-    let now = Utc::now().fixed_offset();
-    let model = custom_app_event::ActiveModel {
-        id: ActiveValue::Set(id),
+    Ok(custom_app_event::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
         app_id: ActiveValue::Set(app_id),
         user_id: ActiveValue::Set(user_id),
         user_email: ActiveValue::Set(user_email),
         session_id: ActiveValue::Set(session_id),
         event_name: ActiveValue::Set(event_name),
         payload: ActiveValue::Set(payload),
-        occurred_at: ActiveValue::Set(now),
+        occurred_at: ActiveValue::Set(occurred_at),
         environment: ActiveValue::Set(environment.to_string()),
-    };
-    model
-        .insert(db)
-        .await
-        .map_err(|e| EventError::Db(e.to_string()))?;
-    Ok(id)
+    })
 }
 
 /// Drop view + custom-event rows older than [`RETENTION_DAYS`]. Called

@@ -30,6 +30,7 @@ use entity::{org_members, org_members::OrgRole, organizations};
 use oxy_app::cli::commands::seed;
 use oxy_app::server::api::custom_apps_asset_manifest::{AssetManifest, SCHEMA_VERSION};
 use oxy_app::server::api::custom_apps_serve;
+use oxy_app::server::api::custom_apps_usage_queue as usage_queue;
 use oxy_auth::types::Identity;
 use oxy_auth::user::UserService;
 use sea_orm::{
@@ -465,6 +466,9 @@ async fn a_beacon_is_not_recorded_as_a_view() {
         assert_eq!(sent.status, StatusCode::NO_CONTENT);
     }
 
+    // Drain first: without it the count could be read before a (wrongly
+    // recorded) view had been written, and the assertion would pass vacuously.
+    usage_queue::flush().await;
     let after = entity::prelude::CustomAppViewEvent::find()
         .all(&db)
         .await
@@ -499,10 +503,11 @@ async fn a_prefetched_shell_is_served_but_not_counted() {
         "a prefetch minted a tracking session"
     );
 
-    // View recording is a `tokio::spawn`, so a negative assertion has to allow
-    // the spawn to have run. A generous yield is the honest way to say "we
-    // waited"; the positive case below is what proves the recorder works at all.
-    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    // View recording goes through the usage queue, so a negative assertion has
+    // to let it drain first: `flush` writes everything queued so far, which is
+    // the condition "the recorder has had its chance", not a guess at a delay.
+    // The positive case below is what proves the recorder works at all.
+    usage_queue::flush().await;
     let after_prefetch = entity::prelude::CustomAppViewEvent::find()
         .all(&db)
         .await
@@ -520,10 +525,8 @@ async fn a_prefetched_shell_is_served_but_not_counted() {
         "a real navigation must start a tracking session"
     );
 
-    // Await the recorder's spawn rather than ending the test under it — a task
-    // still writing when the process tears down is what nextest reports as a
-    // leaky test, and it would make the row count above a race.
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    // Write the queued row now, so the count below reads a drained queue.
+    usage_queue::flush().await;
     let after_navigation = entity::prelude::CustomAppViewEvent::find()
         .all(&db)
         .await

@@ -32,6 +32,7 @@ use tokio::signal;
 use tokio_util::sync::CancellationToken;
 use tower::{ServiceBuilder, service_fn};
 use tower_http::compression::CompressionLayer;
+use tower_http::compression::predicate::{DefaultPredicate, NotForContentType, Predicate};
 use tower_serve_static::ServeDir;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -40,6 +41,14 @@ static DIST: Dir = include_dir!("D:\\a\\oxy\\oxy\\crates\\core\\dist");
 #[cfg(not(target_os = "windows"))]
 static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
+
+/// The custom-app mount's compression policy: `DefaultPredicate` (no streams,
+/// no already-encoded bodies, no tiny ones) minus `text/html`, whose brotli form
+/// is memoised per build and served by the handler itself.
+pub(crate) fn custom_app_compression() -> CompressionLayer<impl Predicate> {
+    CompressionLayer::new()
+        .compress_when(DefaultPredicate::new().and(NotForContentType::const_new("text/html")))
+}
 
 pub async fn start_server_and_web_app(
     args: ServeArgs,
@@ -737,11 +746,14 @@ async fn create_web_application(
             "/customer-apps/{*path}",
             // brotli/gzip for bundle bytes. DefaultPredicate skips
             // text/event-stream (the /fn SSE stream) and already-encoded
-            // bodies (the V0 proxy), so streaming is unaffected.
+            // bodies (the V0 proxy), so streaming is unaffected. `text/html`
+            // is excluded: the serve path memoises a brotli copy of each
+            // rendered document (`custom_apps_html_cache`) instead of
+            // re-compressing it per navigation.
             any(custom_apps_serve::serve_dispatch).layer(
                 ServiceBuilder::new()
                     .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
-                    .layer(CompressionLayer::new())
+                    .layer(custom_app_compression())
                     // BENEATH compression, not only on the outer router: by the
                     // time a response climbs past `CompressionLayer` its body is
                     // gzip/br with no exact size, and `record_error_body` skips
@@ -1803,6 +1815,62 @@ mod tests {
             Some("br"),
             "custom-app assets must be brotli-compressed"
         );
+    }
+
+    /// HTML is left to the handler's memoised brotli copy; everything else on
+    /// the mount is still compressed here.
+    #[tokio::test]
+    async fn custom_app_compression_skips_html_but_not_other_text() {
+        let body = "x".repeat(4096);
+        let page = body.clone();
+        let app = Router::new()
+            .route(
+                "/page",
+                get(move || {
+                    let page = page.clone();
+                    async move {
+                        (
+                            [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                            page,
+                        )
+                    }
+                }),
+            )
+            .route(
+                "/x.js",
+                get(move || {
+                    let body = body.clone();
+                    async move {
+                        (
+                            [(axum::http::header::CONTENT_TYPE, "application/javascript")],
+                            body,
+                        )
+                    }
+                }),
+            )
+            .layer(custom_app_compression());
+        let encoding = |path: &'static str| {
+            let app = app.clone();
+            async move {
+                app.oneshot(
+                    Request::get(path)
+                        .header("accept-encoding", "br")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .headers()
+                .get(axum::http::header::CONTENT_ENCODING)
+                .map(|v| v.to_str().unwrap().to_string())
+            }
+        };
+        assert_eq!(
+            encoding("/page").await,
+            None,
+            "html is not re-compressed per request"
+        );
+        assert_eq!(encoding("/x.js").await.as_deref(), Some("br"));
     }
 
     // ── SPA shell caching ────────────────────────────────────────────────

@@ -43,12 +43,15 @@
 //! regardless.
 
 use std::num::NonZeroUsize;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use axum::body::Bytes;
 use lru::LruCache;
 use parking_lot::Mutex;
 use uuid::Uuid;
+
+use super::custom_apps_precompress as precompress;
 
 /// Entry cap. Each entry is one rendered HTML document — a few KiB for an SPA
 /// shell, tens for a static export's deep page. Bounded by count because the
@@ -69,6 +72,64 @@ pub struct RenderedHtml {
     /// build has no manifest (published before manifests existed, or a
     /// local-folder source).
     pub link: Option<String>,
+    /// The brotli form of [`Self::body`], filled once, off the request path.
+    /// Shared (`Arc`) across the clones the LRU hands out, so the one
+    /// compression a first miss schedules is visible to every later hit.
+    pub br: Arc<BrotliVariant>,
+}
+
+impl RenderedHtml {
+    pub fn new(body: Bytes, etag: String, link: Option<String>) -> Self {
+        Self {
+            body,
+            etag,
+            link,
+            br: Arc::default(),
+        }
+    }
+}
+
+/// A lazily-filled brotli copy of one rendered document.
+///
+/// The transform is memoised per build, but the *compression* of its output
+/// used to run per navigation inside `CompressionLayer`, on the critical path
+/// of every app open. Now it runs once: the first request that could use it
+/// [`schedule`](Self::schedule)s the work onto the blocking pool and is itself
+/// answered with the identity bytes, and every later one reads the result with
+/// [`get`](Self::get). A result of "brotli did not shrink it" is remembered too,
+/// so a document that never compresses is not retried per request.
+#[derive(Default)]
+pub struct BrotliVariant {
+    /// `Some(None)` = tried, did not pay (or failed); never tried again.
+    ready: OnceLock<Option<Bytes>>,
+    scheduled: AtomicBool,
+}
+
+impl BrotliVariant {
+    /// The compressed bytes, or `None` while pending or when brotli does not
+    /// pay for this document.
+    pub fn get(&self) -> Option<Bytes> {
+        self.ready.get().cloned().flatten()
+    }
+
+    /// Start the compression if nobody has. Idempotent and never blocks: with
+    /// no Tokio runtime (a plain `#[test]`) it does nothing and a later call may
+    /// try again.
+    pub fn schedule(self: &Arc<Self>, body: &Bytes) {
+        if self.ready.get().is_some() || self.scheduled.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            self.scheduled.store(false, Ordering::Release);
+            return;
+        };
+        let (this, body) = (Arc::clone(self), body.clone());
+        runtime.spawn_blocking(move || {
+            let _ = this
+                .ready
+                .set(precompress::compress(&body).map(Bytes::from));
+        });
+    }
 }
 
 type Cache = Mutex<LruCache<String, RenderedHtml>>;
@@ -146,11 +207,11 @@ mod tests {
     }
 
     fn rendered(body: &str) -> RenderedHtml {
-        RenderedHtml {
-            body: Bytes::from(body.to_string()),
-            etag: format!("W/\"{}\"", body.len()),
-            link: None,
-        }
+        RenderedHtml::new(
+            Bytes::from(body.to_string()),
+            format!("W/\"{}\"", body.len()),
+            None,
+        )
     }
 
     #[test]
@@ -229,5 +290,64 @@ mod tests {
         );
         // Same concatenation if the separator were "/" — must still miss.
         assert!(get(&k(app, "b1/a", "index.html", "acme", "sales", "production")).is_none());
+    }
+
+    /// The variant is shared by every clone of an entry — the LRU hands out
+    /// clones, and a compression scheduled from one must be visible to the next.
+    #[tokio::test]
+    async fn the_brotli_variant_is_filled_once_and_shared_across_clones() {
+        clear();
+        let app = Uuid::new_v4();
+        let key = k(app, "b1", "index.html", "acme", "sales", "production");
+        let body = "<html><body>".to_string() + &"<p>hello custom app</p>".repeat(200);
+        put(&key, rendered(&body));
+
+        let first = get(&key).expect("hit");
+        assert!(
+            first.br.get().is_none(),
+            "nothing is compressed before it is asked for"
+        );
+        first.br.schedule(&first.body);
+        first.br.schedule(&first.body); // idempotent
+
+        let second = get(&key).expect("hit");
+        let mut compressed = None;
+        for _ in 0..2000 {
+            compressed = second.br.get();
+            if compressed.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let compressed = compressed.expect("the scheduled compression must land");
+        assert!(compressed.len() < first.body.len());
+        assert_ne!(compressed, first.body);
+    }
+
+    /// A document brotli cannot shrink is remembered as such: `get` stays
+    /// `None` and `schedule` does not run it again.
+    #[tokio::test]
+    async fn a_document_brotli_cannot_shrink_is_not_retried() {
+        let variant = Arc::new(BrotliVariant::default());
+        let tiny = Bytes::from_static(b"x");
+        variant.schedule(&tiny);
+        for _ in 0..2000 {
+            if variant.ready.get().is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert_eq!(variant.ready.get(), Some(&None));
+        assert!(variant.get().is_none());
+    }
+
+    /// Outside a runtime `schedule` must not panic, and must leave the door
+    /// open for a later call that has one.
+    #[test]
+    fn scheduling_without_a_runtime_is_a_no_op() {
+        let variant = Arc::new(BrotliVariant::default());
+        variant.schedule(&Bytes::from_static(b"<html></html>"));
+        assert!(variant.ready.get().is_none());
+        assert!(!variant.scheduled.load(Ordering::Acquire));
     }
 }

@@ -135,11 +135,13 @@ fn is_function_artifact(rel_path: &str) -> bool {
 /// zero forms the grammar permits are matched.
 ///
 /// A bare `*` is **deliberately not** honored, though RFC 9110 §12.5.3 makes
-/// it mean "any coding is acceptable". Such a client falls through to the
-/// `CompressionLayer` and still gets a compressed body — just built on the
-/// fly — so the only cost is a missed fast path, and matching `*` would mean
-/// sending brotli to a client that never named it. Conservative on purpose,
-/// not an oversight.
+/// it mean "any coding is acceptable". For an **asset** such a client falls
+/// through to the `CompressionLayer` and still gets a compressed body — just
+/// built on the fly — so the only cost is a missed fast path. For `text/html`
+/// it gets **identity bytes**: the mount excludes HTML from the layer
+/// (`custom_app_compression`) because the handler serves a memoised brotli copy
+/// to clients this function accepts. Matching `*` would mean sending brotli to a
+/// client that never named it. Conservative on purpose, not an oversight.
 pub fn accepts_brotli(headers: &HeaderMap) -> bool {
     headers
         .get(header::ACCEPT_ENCODING)
@@ -172,7 +174,7 @@ fn is_q_zero(param: &str) -> bool {
 /// Brotli-compress one buffer. Returns `None` when compression fails or
 /// fails to pay for itself (output >= input), so the caller simply doesn't
 /// emit a sibling and the serve path falls back to on-the-fly compression.
-fn compress(bytes: &[u8]) -> Option<Vec<u8>> {
+pub fn compress(bytes: &[u8]) -> Option<Vec<u8>> {
     // Struct-update rather than assign-after-default: `clippy::
     // field_reassign_with_default` rejects the latter.
     let params = brotli::enc::BrotliEncoderParams {

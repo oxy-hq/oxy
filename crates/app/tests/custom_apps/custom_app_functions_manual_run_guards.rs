@@ -205,7 +205,7 @@ fn the_serve_mount_the_functions_fixture_copies_still_matches_production() {
     let serve = code("crates/app/src/cli/commands/serve.rs");
     let executor = ".layer(axum::Extension(std::sync::Arc::new(DataPlaneQueryExecutor)asstd::sync::Arc<dynFunctionQueryExecutor>))";
     let production = format!(
-        ".route(\"/customer-apps/{{*path}}\",any(custom_apps_serve::serve_dispatch).layer(ServiceBuilder::new().layer(axum::extract::DefaultBodyLimit::max(32*1024*1024)).layer(CompressionLayer::new()).layer(axum::middleware::from_fn(oxy_telemetry::http_trace::record_error_body)){executor}.layer(axum::Extension(preagg_ctx))))"
+        ".route(\"/customer-apps/{{*path}}\",any(custom_apps_serve::serve_dispatch).layer(ServiceBuilder::new().layer(axum::extract::DefaultBodyLimit::max(32*1024*1024)).layer(custom_app_compression()).layer(axum::middleware::from_fn(oxy_telemetry::http_trace::record_error_body)){executor}.layer(axum::Extension(preagg_ctx))))"
     );
     assert!(
         serve.contains(&production),
