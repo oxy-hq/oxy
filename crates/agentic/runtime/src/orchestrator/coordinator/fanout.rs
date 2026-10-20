@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use crate::crud;
 use crate::lifecycle::state::RunStatus;
 
+use super::child_guard::admit_child_result;
 use super::{ChildResult, Coordinator, TaskStatus};
 
 impl Coordinator {
@@ -25,6 +26,30 @@ impl Coordinator {
         child_id: &str,
         result: ChildResult,
     ) {
+        // The gate: only a child the parent is waiting on, while it waits.
+        // Everything else is late or stale (see `child_guard`) and must not
+        // resume, fail, or re-count the parent.
+        let Some(parent_node) = self.tasks.get(parent_id) else {
+            return;
+        };
+        if let Err(stale) = admit_child_result(&parent_node.status, child_id) {
+            if self.is_subtree_user_cancelled(parent_id) {
+                // A cancel cascade lands every descendant's result here.
+                tracing::info!(
+                    target: "coordinator",
+                    parent_id, child_id, reason = stale.reason(),
+                    "child result after cancel; dropped"
+                );
+            } else {
+                tracing::warn!(
+                    target: "coordinator",
+                    parent_id, child_id, reason = stale.reason(),
+                    "stale child result dropped"
+                );
+            }
+            return;
+        }
+
         // Loop-iteration metadata (only set on children that are
         // one iteration of a loop_sequential step's fan-out). Capture
         // *before* the mutable-borrow block below so we can emit the
@@ -41,36 +66,14 @@ impl Coordinator {
         // fold can map a partial fan-out (e.g. forcing iteration 7
         // out of 30) back to the right `items[i]`.
         //
-        // Only built when the parent is actually in `WaitingOnChildren`.
-        // Both single- and multi-child delegations suspend the parent
-        // into `WaitingOnChildren` (see `suspension.rs`), so the happy
-        // path always falls through here. The `_ => ResumeImmediate`
-        // arm below covers defensive edges — a child outcome landing
-        // after the parent has already been resumed — and skipping the
-        // lookup there avoids cloning every loop child's `task_id` on
-        // those late-arrival events. Peek at the status with a shared
-        // borrow before the mut-borrow block claims `self.tasks`.
-        let needs_loop_index_lookup = self
+        // Built before the mut-borrow block claims `self.tasks`. The
+        // guard above guarantees the parent is `WaitingOnChildren`.
+        let loop_index_lookup: HashMap<String, usize> = self
             .tasks
-            .get(parent_id)
-            .map(|n| matches!(n.status, TaskStatus::WaitingOnChildren { .. }))
-            .unwrap_or(false);
-        let loop_index_lookup: HashMap<String, usize> = if needs_loop_index_lookup {
-            self.tasks
-                .iter()
-                .filter_map(|(id, n)| n.loop_iteration.as_ref().map(|m| (id.clone(), m.index)))
-                .collect()
-        } else {
-            HashMap::new()
-        };
+            .iter()
+            .filter_map(|(id, n)| n.loop_iteration.as_ref().map(|m| (id.clone(), m.index)))
+            .collect();
         enum NextAction {
-            ResumeImmediate {
-                answer: String,
-                /// `"done"` for `ChildResult::Done`, `"failed"` for
-                /// `ChildResult::Failed`. Plumbed through to the automation
-                /// decider so its fold path can take its `Fail` branch.
-                child_status: &'static str,
-            },
             FailFast {
                 siblings: Vec<String>,
                 parent_run_id: String,
@@ -151,22 +154,8 @@ impl Coordinator {
                         }
                     }
                 }
-                _ => {
-                    // Parent is not waiting on children — resume directly.
-                    // Borrow rather than move so the subsequent
-                    // iteration-completion emit (outside the match) can
-                    // still inspect `result`. Cloning the contained
-                    // strings is cheap and keeps the two consumers
-                    // decoupled.
-                    let (answer, child_status) = match &result {
-                        ChildResult::Done(a) => (a.clone(), "done"),
-                        ChildResult::Failed(msg) => (format!("Delegation failed: {msg}"), "failed"),
-                    };
-                    NextAction::ResumeImmediate {
-                        answer,
-                        child_status,
-                    }
-                }
+                // `admit_child_result` above guarantees `WaitingOnChildren`.
+                _ => return,
             }
         };
 
@@ -188,12 +177,6 @@ impl Coordinator {
         }
 
         match action {
-            NextAction::ResumeImmediate {
-                answer,
-                child_status,
-            } => {
-                self.resume_parent(parent_id, answer, child_status).await;
-            }
             NextAction::FailFast {
                 siblings,
                 parent_run_id,

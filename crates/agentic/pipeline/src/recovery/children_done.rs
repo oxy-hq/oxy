@@ -108,6 +108,7 @@ mod tests {
             answer: "store 7 sold the most".into(),
             has_checkpoint,
             already_assigned: false,
+            child_status: "done",
         }
     }
 

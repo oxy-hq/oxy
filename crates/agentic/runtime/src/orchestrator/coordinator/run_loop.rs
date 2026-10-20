@@ -361,6 +361,9 @@ impl Coordinator {
             if let Some(node) = node {
                 node.status = TaskStatus::Failed;
                 node.suspended_at = None;
+                // The checkpoint is a license to resume. A timed-out task has
+                // none left to give, whatever its children do later.
+                node.suspend_data = None;
                 let run_id = node.run_id.clone();
                 let parent_id = node.parent_task_id.clone();
                 let msg = format!(

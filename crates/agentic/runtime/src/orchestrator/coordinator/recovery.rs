@@ -10,6 +10,7 @@ use sea_orm::DatabaseConnection;
 use crate::crud;
 use crate::lifecycle::state::RuntimeState;
 
+use super::recovery_status::{completed_children, fanout_status, terminal_status};
 use super::{
     ChildResult, Coordinator, DEFAULT_DRAIN_TIMEOUT, DEFAULT_SUSPEND_TIMEOUT, TaskNode, TaskStatus,
 };
@@ -32,34 +33,10 @@ pub struct PendingResume {
     /// `process_pending_resumes` then records the task as running instead of
     /// assigning the resume a second time over the one a worker is claiming.
     pub already_assigned: bool,
-}
-
-/// The outcomes on record for the children `parent_id` is waiting on **now**.
-///
-/// `agentic_task_outcomes` keeps every outcome a parent has ever been sent,
-/// and a parent that delegates more than once — an automation does, once per
-/// step — still has the rows from its earlier delegations. Only the children
-/// of the delegation it is parked at count. Counting all of them made a parent
-/// whose one child was still running read as "every child in" (one old outcome
-/// against one expected child), and recovery resumed it with an answer
-/// aggregated from children that had not reported.
-async fn completed_children(
-    db: &DatabaseConnection,
-    parent_id: &str,
-    child_task_ids: &[String],
-) -> Result<HashMap<String, ChildResult>, sea_orm::DbErr> {
-    let outcomes = crud::get_outcomes_for_parent(db, parent_id).await?;
-    Ok(outcomes
-        .into_iter()
-        .filter(|o| child_task_ids.contains(&o.child_id))
-        .map(|o| {
-            let result = match o.status.as_str() {
-                "done" => ChildResult::Done(o.answer.unwrap_or_default()),
-                _ => ChildResult::Failed(o.answer.unwrap_or_default()),
-            };
-            (o.child_id, result)
-        })
-        .collect())
+    /// How the parent's resume reads the fan-out: `"failed"` when any child
+    /// ended unsuccessfully, `"done"` otherwise — the same rule the live
+    /// `AllDone` path applies.
+    pub child_status: &'static str,
 }
 
 impl Coordinator {
@@ -89,6 +66,9 @@ impl Coordinator {
             let next_seq = crud::get_max_seq(&db, &row.id).await? + 1;
 
             let status = match row.task_status.as_deref() {
+                Some("done" | "failed" | "cancelled" | "timed_out") => {
+                    terminal_status(row.task_status.as_deref()).unwrap_or(TaskStatus::Failed)
+                }
                 Some("running") => TaskStatus::Running,
                 Some("awaiting_input") => TaskStatus::SuspendedHuman,
                 Some("delegating") => {
@@ -124,8 +104,6 @@ impl Coordinator {
                         failure_policy,
                     }
                 }
-                Some("done") => TaskStatus::Done,
-                Some("failed") => TaskStatus::Failed,
 
                 // "needs_resume" / "shutdown" / "running" — check if this task
                 // has children in the tree. If so, it was delegating before the
@@ -297,6 +275,12 @@ impl Coordinator {
             if all_done {
                 // Aggregate the answer exactly as the live code path does.
                 let answer = Self::aggregate_child_results_static(&tasks, task_id);
+                let child_status = match tasks.get(task_id).map(|n| &n.status) {
+                    Some(TaskStatus::WaitingOnChildren { completed, .. }) => {
+                        fanout_status(completed)
+                    }
+                    _ => "done",
+                };
                 let has_checkpoint = tasks
                     .get(task_id)
                     .is_some_and(|node| node.suspend_data.is_some());
@@ -305,6 +289,7 @@ impl Coordinator {
                     answer,
                     has_checkpoint,
                     already_assigned: false,
+                    child_status,
                 });
             }
         }

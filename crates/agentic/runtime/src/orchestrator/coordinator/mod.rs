@@ -30,10 +30,12 @@ use tokio::sync::mpsc;
 
 use crate::lifecycle::state::RuntimeState;
 
+mod child_guard;
 pub mod fanout;
 pub mod outcomes;
 pub mod policy;
 pub mod recovery;
+mod recovery_status;
 pub mod retry;
 pub mod run_loop;
 pub mod suspension;
@@ -319,11 +321,9 @@ impl Coordinator {
                 answer_len = resume.answer.len(),
                 "resuming parent from crash recovery"
             );
-            // Crash-recovery resume: replay the persisted child answer. We
-            // didn't capture the original status when persisting, so treat
-            // it as `done` — parents that failed mid-decision will surface
-            // their own `Fail` from the decider next pass.
-            self.resume_parent(&resume.parent_task_id, resume.answer, "done")
+            // Crash-recovery resume: replay the persisted child answer with the
+            // fan-out's real outcome (`child_status`), as the live path would.
+            self.resume_parent(&resume.parent_task_id, resume.answer, resume.child_status)
                 .await;
         }
     }
