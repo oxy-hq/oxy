@@ -11,16 +11,22 @@
 
 pub mod app_state;
 pub mod audit;
+pub mod compiled_reader;
 pub mod custom_app_env_request;
 pub mod custom_app_environment;
 pub mod custom_apps_host_dispatch;
+pub mod default_branch;
 pub mod forwarded;
 pub mod internal_orgs;
 pub mod member_authz;
 pub mod org_host_dispatch;
 pub mod pagination;
+pub mod preagg_context;
+pub mod process_role;
 pub mod serve_mode;
+pub mod staging_pin_scope;
 pub mod ttl_lru;
 pub mod workspace_cache;
+pub mod workspace_repo_facts;
 
 pub use app_state::AppState;

@@ -55,6 +55,13 @@ const ALLOWED: &[(&str, &str)] = &[
          the manager. It picks the revision; it reads no artifact.",
     ),
     (
+        "../app-core/src/staging_pin_scope.rs",
+        "`with_staging_pin` — the same function as the `custom_apps_staging_pin` \
+         entry above, lowered with `compiled_reader` so `preagg_context` can read \
+         the pin. It picks the revision a staging request resolves at; it reads \
+         no artifact.",
+    ),
+    (
         "src/server/api/webhooks/toast.rs",
         "Same, on the public webhook router.",
     ),
@@ -113,7 +120,8 @@ fn app_src() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
 }
 
-/// Every `.rs` under `src` — plus `oxy-api-documents` and
+/// Every `.rs` under `src` — plus `oxy-app-core` (where `compiled_reader`
+/// itself now lives) and `oxy-api-documents` and
 /// `oxy-api-source-upload`, extracted from `src/server/api` and still served
 /// by this binary — as
 /// (crate-relative path, contents).
@@ -143,6 +151,8 @@ fn source_files() -> Vec<(String, String)> {
     let mut out = Vec::new();
     walk(&root, &root, "src/", &mut out);
     walk(&documents, &documents, "../api-documents/src/", &mut out);
+    let app_core = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../app-core/src");
+    walk(&app_core, &app_core, "../app-core/src/", &mut out);
     let source_upload = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../api-source-upload/src");
     walk(
         &source_upload,
@@ -162,7 +172,7 @@ fn nothing_new_reaches_past_config_manager() {
     let offenders: Vec<String> = source_files()
         .into_iter()
         .filter(|(rel, body)| {
-            rel != "src/server/api/compiled_reader.rs"
+            rel != "../app-core/src/compiled_reader.rs"
                 && mentions_compiled_reader(body)
                 && !ALLOWED.iter().any(|(f, _)| f == rel)
         })
@@ -219,7 +229,7 @@ fn the_list_has_no_stale_entries() {
 /// living somewhere the process role and `git` are reachable.
 #[test]
 fn the_origin_resolver_still_exists() {
-    let path = app_src().join("server/api/compiled_reader.rs");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../app-core/src/compiled_reader.rs");
     let body =
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     for expected in [

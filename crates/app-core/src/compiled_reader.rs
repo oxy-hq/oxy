@@ -30,7 +30,7 @@
 //! here consults the preview registry. That is what keeps background work —
 //! which has no request, so no pin — on the promoted revision.
 
-use crate::server::role_manifest::current_process_role;
+use crate::process_role::current_process_role;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -422,7 +422,7 @@ async fn open_compiled_revision(
     // filesystem — otherwise an on-disk edit to a promoted workspace wouldn't
     // show until the next manual compile. The compile boundary exists for the
     // stateless cloud fleet, which has no working copy.
-    if workspace_id == oxy_app_core::serve_mode::LOCAL_WORKSPACE_ID {
+    if workspace_id == crate::serve_mode::LOCAL_WORKSPACE_ID {
         return Ok(None);
     }
     // Request-scoped pin: `workspace_middleware` already ran the branch /
@@ -539,7 +539,7 @@ fn normalize_branch_hint(branch_hint: Option<&str>) -> Option<&str> {
 
 /// Returns true when `branch` is the workspace's recorded default
 /// branch. Detected lazily and cached per-process by
-/// [`crate::server::default_branch::resolve_default_branch`].
+/// [`crate::default_branch::resolve_default_branch`].
 ///
 /// Only called for branch-hinted (IDE) requests — non-IDE callers
 /// pass `None` and bypass this entire check. On any resolver failure
@@ -552,7 +552,7 @@ fn normalize_branch_hint(branch_hint: Option<&str>) -> Option<&str> {
 /// whenever git resolution hiccups — the opposite of what
 /// branch-aware reading is for.
 async fn is_default_branch(db: &DatabaseConnection, workspace_id: Uuid, branch: &str) -> bool {
-    match crate::server::default_branch::resolve_default_branch(db, workspace_id).await {
+    match crate::default_branch::resolve_default_branch(db, workspace_id).await {
         Some(default) => branch == default,
         None => false,
     }

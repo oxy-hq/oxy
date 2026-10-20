@@ -11,6 +11,9 @@ rust-version.workspace = true
 [dependencies]
 oxy = { workspace = true }
 oxy-auth = { workspace = true }
+oxy-compile = { workspace = true }
+oxy-git = { workspace = true }
+oxy-shared = { workspace = true }
 entity = { workspace = true }
 
 # AppState field types (lifted here so the router + surface crates can hold it):
@@ -34,6 +37,7 @@ urlencoding = { workspace = true }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]
+tempfile = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 
 [lints]

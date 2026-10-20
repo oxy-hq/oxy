@@ -85,7 +85,7 @@ pub fn preagg_context(
     // view's SQL but not its rollup declaration would be answered from a rollup
     // of the old model. A pinned request compiles to warehouse SQL: slower,
     // always right. (`custom_apps_staging_pin::with_staging_pin`.)
-    if crate::server::api::custom_apps_staging_pin::current_staging_pin().is_some() {
+    if crate::staging_pin_scope::current_staging_pin().is_some() {
         return None;
     }
     Some(PreaggContext {

@@ -12,7 +12,7 @@ pub mod chart;
 pub mod competitors;
 pub mod compile;
 pub mod compile_staging;
-pub mod compiled_reader;
+pub use oxy_app_core::compiled_reader;
 pub mod custom_apps_activity;
 pub(crate) mod custom_apps_agent;
 pub mod custom_apps_agent_body;
