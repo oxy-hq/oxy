@@ -67,6 +67,8 @@ export interface CustomApp {
    * absent because the Activity tab fetches a richer view.
    */
   last_active_at?: string | null;
+  /** The server's verdict (see [`AppVerdict`]). List responses only. */
+  verdict?: AppVerdict;
   /**
    * Set when an Oxy engineer publishes the app via the admin UI. Null
    * = draft (only Oxy staff with workspace oxy-access can reach it).
@@ -147,8 +149,12 @@ export interface CustomAppSummary {
   suggested_questions?: string[];
   art_url?: string;
   icon_url?: string;
-  /** Launcher-card status line, e.g. "23 stores · sales +33.5% YoY · live". */
+  /** Launcher-card status line, e.g. "23 stores · sales +33.5% YoY · live". Free text
+   *  the app author writes; it says nothing about health. [`verdict`] does. */
   status?: string;
+  /** Is this app OK, per the server (see [`AppVerdict`]). Absent when the server
+   *  could not answer or predates the field — never read absence as healthy. */
+  verdict?: AppVerdict;
   /**
    * Who can open the app. Every card in this list is one the viewer may open —
    * the server drops the rest — so this is not an access decision, it's what
@@ -505,6 +511,16 @@ export interface AppAvailability {
  * either as healthy.
  */
 export type AppHealth = "down" | "degraded" | "not_measured" | "quiet" | "operational";
+
+/**
+ * The server's one answer to "is this app OK?": a published app's `AppHealth`, or
+ * `draft` for an unpublished one (it serves nobody, so there is nothing to measure).
+ * Computed by the same evaluator as `GET /customer-apps/fleet-health`, and carried on
+ * the `/customer-apps` list rows and the `/{workspace}/custom-apps` summaries. Optional:
+ * the cheap single-app responses and older servers omit it, and a surface that gets none
+ * falls back to its own mapping (`appStatus.ts`).
+ */
+export type AppVerdict = AppHealth | "draft";
 
 export interface AppHealthRow {
   app_id: string;

@@ -163,6 +163,7 @@ fn launcher(n: u128, name: &str, org_id: Uuid, org_name: &str) -> LauncherApp {
             icon_url,
             status: Some("live".to_string()),
             visibility: "org".to_string(),
+            verdict: None,
         },
     }
 }

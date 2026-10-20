@@ -186,35 +186,49 @@ fn read_applies_the_stripping() {
     );
 }
 
-/// Both app route trees must carry the path-based scope middleware.
+/// The app route trees must carry the path-based scope middleware, through the one stack.
 ///
-/// There are two, and that is the trap: `admin::apps::router()` under `/admin`, and the
-/// parallel `/customer-apps` nest in `router/global.rs` that serves the same handlers
-/// through a different mount. Gating only one leaves every route reachable unscoped by
-/// the other path.
+/// There used to be two stacks, and that was the trap: `admin::apps::router()` under
+/// `/admin`, and a parallel `/customer-apps` nest in `router/global.rs` serving the same
+/// handlers. Gating only one left every route reachable unscoped by the other path. Now
+/// `admin::apps::guarded` is the only place the guards are named, and both mounts (the
+/// `/customer-apps` surface and the `/admin/apps` alias) must wear it.
 #[test]
-fn both_app_route_trees_carry_the_scope_guard() {
-    for (file, what) in [
-        (
-            "crates/app/src/server/api/admin/mod.rs",
-            "the /admin/apps router",
-        ),
-        (
-            "crates/app/src/server/router/global.rs",
-            "the parallel /customer-apps nest",
-        ),
+fn every_app_route_tree_wears_the_stack_that_carries_the_scope_guard() {
+    let stack = read("crates/app/src/server/api/admin/apps/mod.rs");
+    assert!(
+        stack.contains("app_scope_guard::enforce_app_scope"),
+        "`admin::apps::guarded` no longer applies `app_scope_guard::enforce_app_scope`.\n\
+         Every `/{{id}}` custom-app route under it is now reachable by a platform \
+         grant bounded to a DIFFERENT org — publish, rollback, secrets, access, all \
+         of it. If the guard moved, point this test at its new home; if it was \
+         removed, scope is no longer enforced and that needs to be a deliberate, \
+         stated decision."
+    );
+
+    let global = read("crates/app/src/server/router/global.rs");
+    for mount in [
+        "admin::apps::guarded(",
+        "admin::apps::router()",
+        "admin::apps::legacy_alias_router()",
     ] {
-        let src = read(file);
         assert!(
-            src.contains("app_scope_guard::enforce_app_scope"),
-            "{what} ({file}) no longer applies `app_scope_guard::enforce_app_scope`.\n\
-             Every `/{{id}}` custom-app route under it is now reachable by a platform \
-             grant bounded to a DIFFERENT org — publish, rollback, secrets, access, all \
-             of it. If the guard moved, point this test at its new home; if it was \
-             removed, scope is no longer enforced and that needs to be a deliberate, \
-             stated decision."
+            global.contains(mount),
+            "`router/global.rs` no longer mounts the admin app handlers through `{mount}`"
         );
     }
+    assert_eq!(
+        global.matches("admin::apps::guarded(").count(),
+        2,
+        "exactly two mounts wear `admin::apps::guarded`: `/customer-apps` and the \
+         `/admin/apps` alias. A third app tree with its own layers is the second stack \
+         this test exists to prevent."
+    );
+    let admin = read("crates/app/src/server/api/admin/mod.rs");
+    assert!(
+        !admin.contains("apps::router()"),
+        "`admin::router()` mounts the app handlers again, outside `guarded`"
+    );
 }
 
 /// Every `batch_*` endpoint must fence its ids.

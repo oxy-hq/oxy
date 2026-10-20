@@ -56,7 +56,7 @@ use axum::middleware;
 
 use oxy_shared::fleet_role::{RouteRole, RouteRoleDecl};
 
-use crate::server::api::middlewares::{app_scope_guard, oxy_owner_guard, platform_cap_guard};
+use crate::server::api::middlewares::{oxy_owner_guard, platform_cap_guard};
 use crate::server::authz::Action;
 use crate::server::feature_flags;
 use crate::server::router::{AdminSection, AppState};
@@ -74,7 +74,7 @@ use crate::server::router::{AdminSection, AppState};
 ///   - POST   /admin/orgs/{org_id}/billing/resync
 ///   - GET    /admin/feature-flags
 ///   - PATCH  /admin/feature-flags/{key}
-///   - POST   /admin/apps
+///   - POST   /admin/apps   (the apps rows are an alias of /customer-apps, mounted in `router::global`)
 ///   - GET    /admin/apps
 ///   - GET    /admin/apps/{id}
 ///   - PATCH  /admin/apps/{id}
@@ -189,14 +189,9 @@ pub(crate) fn router(extracted: Vec<AdminSection>) -> Router<AppState> {
     // the same breath. Ending the session (below) restores all of it.
     let staff_surface = feature_flags::routes::router()
         .route_layer(cap(Action::PlatformOperate))
-        // Two layers, two questions: the capability admits you to the section, then the
-        // scope guard fences which apps you may touch inside it. Layered here rather
-        // than in ~20 handlers — see `app_scope_guard`.
-        .merge(
-            apps::router()
-                .route_layer(middleware::from_fn(app_scope_guard::enforce_app_scope))
-                .route_layer(cap(Action::PlatformApps)),
-        )
+        // The custom-app registry (`/admin/apps`) is NOT merged here any more: it is the
+        // `/customer-apps` surface, with `/admin/apps` kept as an alias in `router::global`,
+        // both behind the one `apps::guarded` stack.
         .merge(audit::router().route_layer(cap(Action::PlatformAudit)))
         .merge(app_publish_tokens::router().route_layer(cap(Action::PlatformApps)))
         // Every staff member's sandbox agent tokens: the cross-admin view, which

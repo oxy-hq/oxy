@@ -99,6 +99,59 @@ describe("lifecycleVerdict", () => {
     // `null` keeps the unknown where `statusOf` already ranks it.
     expect(statusRank(v.status)).toBe(statusRank(null));
   });
+
+  describe("with the server's verdict", () => {
+    it.each(["down", "degraded", "not_measured", "quiet", "operational"] as const)(
+      "reads %s from the verdict when no fleet row has arrived",
+      (verdict) => {
+        const v = lifecycleVerdict({ published: true, verdict });
+        expect(v.status).toBe(verdict);
+        expect(v.tone).toBe(STATUS_TONE[verdict]);
+        expect(v.source).toBe("fleet");
+      }
+    );
+
+    it("prefers the polled fleet row over a list verdict that disagrees — it is fresher", () => {
+      const v = lifecycleVerdict({ published: true, verdict: "operational", health: "down" });
+      expect(v.status).toBe("down");
+    });
+
+    it("still lets a burn escalate it — worse wins", () => {
+      expect(
+        lifecycleVerdict({
+          published: true,
+          verdict: "operational",
+          availability: { verdict: "burning", severity: "page" }
+        })
+      ).toEqual({ status: "down", tone: "danger", label: "Burning", source: "availability" });
+    });
+
+    it("never turns no_opinion into a healthy verdict", () => {
+      // The availability read has no opinion and the server sent a quiet verdict:
+      // the surface says so, muted, rather than borrowing a green tick.
+      expect(
+        lifecycleVerdict({
+          published: true,
+          verdict: "quiet",
+          availability: { verdict: "no_opinion" }
+        })
+      ).toEqual({ status: "quiet", tone: "muted", label: "Quiet", source: "fleet" });
+    });
+
+    it("does not let a stale draft verdict un-publish an app that says it is published", () => {
+      // `draft` carries no health, so the client mapping decides: here, nothing measured.
+      expect(lifecycleVerdict({ published: true, verdict: "draft" })).toEqual({
+        status: null,
+        tone: "muted",
+        label: "Published",
+        source: "none"
+      });
+    });
+
+    it("keeps a draft a draft whatever the verdict says", () => {
+      expect(lifecycleVerdict({ published: false, verdict: "operational" }).status).toBe("draft");
+    });
+  });
 });
 
 /**
@@ -136,6 +189,28 @@ describe("statusOf", () => {
   it("reports the health verdict for a published app", () => {
     const a = app({ id: "a" });
     expect(statusOf(a, health(["a", "degraded"]))).toBe("degraded");
+  });
+
+  it("prefers the polled health row over the list row's verdict — a left-open table stays current", () => {
+    expect(statusOf(app({ id: "a", verdict: "operational" }), health(["a", "down"]))).toBe("down");
+  });
+
+  it("uses the row's server verdict when the health index has not answered", () => {
+    expect(statusOf(app({ id: "a", verdict: "down" }), undefined)).toBe("down");
+    expect(statusOf(app({ id: "a", verdict: "down" }), health(["other", "operational"]))).toBe(
+      "down"
+    );
+    expect(statusOf(app({ id: "a", published_at: null, verdict: "draft" }), undefined)).toBe(
+      "draft"
+    );
+    // A verdict is an answer, so a row that has one is known even with no health index.
+    expect(statusOf(app({ id: "a", verdict: "not_measured" }), undefined)).toBe("not_measured");
+  });
+
+  it("falls back to the client mapping when the row carries no verdict", () => {
+    // An older server, or a cheap single response: exactly the behaviour before the field.
+    expect(statusOf(app({ id: "a" }), health(["a", "degraded"]))).toBe("degraded");
+    expect(statusOf(app({ id: "a", published_at: null }), undefined)).toBe("draft");
   });
 
   it("returns null — not a verdict — when health has not arrived", () => {

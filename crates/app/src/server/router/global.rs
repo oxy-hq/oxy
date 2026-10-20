@@ -251,301 +251,169 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
                 )),
             "the compile operator surface reads the revisions tables",
         )
-        // Parallel customer-apps surface for OXY_GLOBAL_ADMINS. Reuses the same
-        // handlers as /admin/apps but gated by a separate role so app admins
-        // can manage custom-app registrations without org/billing access.
+        // `/admin/apps/*`, kept ONE release as an alias of `/customer-apps`: the same
+        // handlers (`admin::apps::legacy_alias_router`) behind the same
+        // `admin::apps::guarded` stack. `oxyc` (a published CLI) still resolves apps
+        // through it. A sibling nest, so `admin::router`'s own layers do not reach it.
+        // Remove once `oxyc` calls `/customer-apps`.
+        .nest_all(
+            "/admin/apps",
+            RouteRole::FleetOk,
+            admin::apps::guarded(admin::apps::legacy_alias_router()),
+            "alias of the custom-app admin surface: registration rows plus S3 bundles",
+        )
+        // The custom-app admin surface, and the ONE registration of the admin app
+        // handlers: `admin::apps::router()` (create / list / get / update / delete,
+        // publish, functions, read-back, issues, access, builds, rollback, batch,
+        // templates, storage) plus the sibling modules' routes below, all behind the
+        // single `admin::apps::guarded` stack. Gated by `PlatformApps`, not by
+        // OXY_OWNER, so an App Operator can run the lifecycle without org or
+        // billing access.
         .nest_all(
             "/customer-apps",
             RouteRole::FleetOk,
-            Router::new()
-                .route(
-                    "/",
-                    post(admin::apps::handlers::create_app).get(admin::apps::handlers::list_apps),
-                )
-                // Fleet health. On the app-admin surface as well as OXY_OWNER's:
-                // an App Operator ships and develops these apps, so "which of
-                // mine are broken" is squarely their question. Scope still
-                // filters the rows — a bounded grant sees only its own orgs.
-                //
-                // `fleet-health`, NOT `/health`: `public.rs` owns
-                // `/customer-apps/health` for ONE published app's external
-                // liveness, resolved from the `Host` on a custom-app
-                // subdomain, and outside monitors poll it. This tree is merged
-                // into that one in `entry::api_router`, so the two names must
-                // differ or the whole router panics at construction — which is
-                // what #3207 shipped. The hyphenated static segment also
-                // matches this nest's own `batch/promote-latest`, and it says
-                // what the endpoint is: a fleet view, not one app's liveness.
-                .route(
-                    "/fleet-health",
-                    get(admin::apps::fleet_health::get_fleet_health),
-                )
-                .route(
-                    "/{id}",
-                    get(admin::apps::handlers::get_app)
-                        .patch(admin::apps::handlers::update_app)
-                        .delete(admin::apps::handlers::delete_app),
-                )
-                // Publish / unpublish lives on the app-admin surface too —
-                // shipping an app to the customer is a normal Oxy-engineer
-                // workflow, not an OXY_OWNER-only action.
-                .route(
-                    "/{id}/publish",
-                    post(admin::apps::handlers::publish_app)
-                        .delete(admin::apps::handlers::unpublish_app),
-                )
-                // Oxy Functions management/debug surface (read): list functions
-                // + config, one function's invocation history, and a job run's
-                // status + logs. Same handlers as the /admin/apps surface.
-                .route(
-                    "/{id}/functions",
-                    get(admin::apps::functions::list_functions),
-                )
-                .route(
-                    "/{id}/functions/{name}/invocations",
-                    get(admin::apps::functions::list_invocations),
-                )
-                .route(
-                    "/{id}/function-runs/{run_id}",
-                    get(admin::apps::functions::get_function_run),
-                )
-                // Read-back, mounted here as well as under `/admin/apps`: a
-                // scoped machine credential never reaches `/admin` at all, so
-                // the sandbox loop's read-back needs these two on the tree it
-                // can reach. Registered above the console layers below, which
-                // therefore cover them. DB reads — FleetOk with the nest.
-                .route(
-                    "/{id}/invocations",
-                    get(admin::apps::invocations::list_app_invocations),
-                )
-                .route(
-                    "/{id}/invocations/{invocation_id}/held",
-                    get(admin::apps::held_writes::get_held_writes),
-                )
-                // Manually trigger a one-off background run of an app function
-                // as a job (the "run now" not tied to a cron schedule). Same
-                // handler as the /admin/apps surface. See the Function Jobs doc.
-                .route(
-                    "/{id}/functions/{name}/runs",
-                    post(admin::apps::handlers::run_function_job),
-                )
-                // New-pipeline build lifecycle: list versioned builds and
-                // roll the published channel back to any retained one.
-                // Pointer moves only — bytes already live in S3.
-                .route("/{id}/builds", get(admin::apps::handlers::list_builds))
-                .route("/{id}/rollback", post(admin::apps::handlers::rollback_app))
-                // Batch mutations for the admin apps table: publish /
-                // unpublish / delete many apps in one request. POST even for
-                // delete, since the id set travels in the body. Each is
-                // best-effort per-id (see `BatchResponse`); `batch` is a
-                // static segment so it never collides with `/{id}`.
-                .route(
-                    "/batch/publish",
-                    post(admin::apps::handlers::batch_publish_apps),
-                )
-                .route(
-                    "/batch/promote-latest",
-                    post(admin::apps::handlers::batch_promote_latest_apps),
-                )
-                .route(
-                    "/batch/unpublish",
-                    post(admin::apps::handlers::batch_unpublish_apps),
-                )
-                .route(
-                    "/batch/delete",
-                    post(admin::apps::handlers::batch_delete_apps),
-                )
-                // Activity (usage tracking) — see `custom_apps_activity`.
-                // Reads the `custom_app_view_event` + `custom_app_event`
-                // tables to power the AppDetail "Activity" tab.
-                .route(
-                    "/{id}/activity/summary",
-                    get(crate::server::api::custom_apps_activity::get_summary),
-                )
-                .route(
-                    "/{id}/activity/visitors",
-                    get(crate::server::api::custom_apps_activity::get_visitors),
-                )
-                .route(
-                    "/{id}/activity/events",
-                    get(crate::server::api::custom_apps_activity::get_events),
-                )
-                // What the caller's own staging requests held, newest first —
-                // the console's staging banner. 404 unless oxy-authz lets the
-                // caller open the app's staging. See `custom_apps_staging_held`.
-                .route(
-                    "/{id}/staging/held",
-                    get(crate::server::api::custom_apps_staging_held::list_held),
-                )
-                // Template gallery for the Create-new dialog. No
-                // screenshot route yet — re-add when the first PNG
-                // ships (see templates.rs module docstring).
-                .route("/templates", get(admin::apps::templates::list_templates))
-                // Org / project browser: every workspace that granted Oxy
-                // access, flattened with its org + grant metadata. See
-                // `admin::oxy_access`.
-                .route("/oxy-access", get(admin::oxy_access::list_grants))
-                // ── Custom-app storage (see the asset-lifecycle design doc) ──
-                // Fleet view: every measured app ranked by size / 7d growth /
-                // untagged bytes. Reads the `app_storage_usage` rollup, never S3
-                // — ranking the fleet cannot mean walking every silo per request.
-                .route("/storage", get(admin::apps::storage::fleet))
-                // Force a re-measure. Without this the fleet view's staleness is
-                // visible but unactionable.
-                .route("/storage/sweep", post(admin::apps::storage::sweep_now))
-                // Daily totals for the usage-over-time chart. Fleet-wide by
-                // default; `?appId=` narrows it to one app.
-                .route("/storage/history", get(admin::apps::storage::history))
-                // Month-to-date GB-month for one org (time-weighted).
-                .route(
-                    "/storage/meter/{org_id}",
-                    get(admin::apps::storage::org_meter),
-                )
-                // Per-app browser: reads S3 live via `list()`, because the rollup
-                // holds no per-object rows and an operator investigating now
-                // needs current truth, not a number a sweep old.
-                .route("/{id}/storage/objects", get(admin::apps::storage::browse))
-                .route(
-                    "/{id}/storage/delete",
-                    post(admin::apps::storage::delete_objects),
-                )
-                // App-scoped secrets (`apps/<app_id>/<KEY>` — the namespace
-                // `ctx.env` reads). The list is reconciled against what the
-                // active build DECLARES, so a fresh deploy says which keys are
-                // still missing instead of failing at the first invocation.
-                // Creation lives only here and on the tenant twin: the project
-                // secrets API rejects `/` in a name, which is why an app secret
-                // had no write path at all. See `custom_apps_secrets`.
-                .route(
-                    "/{id}/secrets",
-                    get(crate::server::api::custom_apps_secrets::admin_list)
-                        .post(crate::server::api::custom_apps_secrets::admin_set),
-                )
-                .route(
-                    "/{id}/secrets/{key}",
-                    delete(crate::server::api::custom_apps_secrets::admin_delete),
-                )
-                .route(
-                    "/{id}/secrets/{key}/value",
-                    get(crate::server::api::custom_apps_secrets::admin_reveal),
-                )
-                // Sandbox environments (`dev-<handle>`): create, list, show and
-                // delete — see `custom_apps_sandboxes` and
-                // `internal-docs/custom-app-sandboxes.md` §5.1. Postgres only (the
-                // teardown is a queued task), so FleetOk like the rest of the nest.
-                // Registered above the four layers below so all of them cover it;
-                // each handler then also requires `Action::AppNonProduction` over
-                // the app and refuses a publish token. The app id is named `id`
-                // because `enforce_app_scope` reads it by that name.
-                .route(
-                    "/{id}/environments",
-                    get(crate::server::api::custom_apps_sandboxes::handlers::list)
-                        .post(crate::server::api::custom_apps_sandboxes::handlers::create),
-                )
-                .route(
-                    "/{id}/environments/{name}",
-                    get(crate::server::api::custom_apps_sandboxes::handlers::show)
-                        .delete(crate::server::api::custom_apps_sandboxes::handlers::delete),
-                )
-                // Promote and rollback (`custom_apps_promote`; environments
-                // design §5.5a): a sandbox's build to staging, staging's to
-                // production, and either of those two back. Postgres, the
-                // object store and the apps' migration connections — no working
-                // copy, so FleetOk with the nest; production's migrations run
-                // inside the request, as a promoting publish's do. Registered
-                // above the four layers below so all of them cover it; each
-                // handler also refuses a sandbox agent token and a publish
-                // token. `{name}` is the environment that moves — the
-                // contract's `{to}` for a promote — named as the route above
-                // names that segment.
-                .route(
-                    "/{id}/environments/{name}/promote",
-                    post(crate::server::api::custom_apps_promote::handlers::promote),
-                )
-                .route(
-                    "/{id}/environments/{name}/rollback",
-                    post(crate::server::api::custom_apps_promote::handlers::rollback),
-                )
-                // Live tail of one environment's function invocations (SSE) —
-                // see `custom_apps_tail`. FleetOk with the nest: producers
-                // `NOTIFY` and every replica `LISTEN`s, so any replica holds
-                // the stream whichever process runs the function. Under the
-                // four layers below, like the routes above; the handler then
-                // asks production for an app admin and every other
-                // environment for `Action::AppNonProduction`.
-                .route(
-                    "/{id}/environments/{name}/tail",
-                    get(crate::server::api::custom_apps_tail::handler::tail),
-                )
-                // A non-production environment's schedules switch (off by
-                // default) and its rows: read it back, or flip it and
-                // reconcile the rows. Postgres only — FleetOk with the nest.
-                // See `custom_apps_env_schedules`.
-                .route(
-                    "/{id}/environments/{name}/schedules",
-                    get(crate::server::api::custom_apps_env_schedules::handlers::show)
-                        .put(crate::server::api::custom_apps_env_schedules::handlers::set),
-                )
-                // Trusted-publishing config: register / list / remove the GitHub
-                // workflows allowed to OIDC-publish this app. See
-                // `custom_apps_publish_oidc`.
-                .route(
-                    "/{id}/publishers",
-                    get(crate::server::api::custom_apps_publish_oidc::list_publishers)
-                        .post(crate::server::api::custom_apps_publish_oidc::register_publisher),
-                )
-                .route(
-                    "/{id}/publishers/{publisher_id}",
-                    axum::routing::delete(
-                        crate::server::api::custom_apps_publish_oidc::delete_publisher,
+            admin::apps::guarded(
+                admin::apps::router()
+                    // Activity (usage tracking) — see `custom_apps_activity`.
+                    // Reads the `custom_app_view_event` + `custom_app_event`
+                    // tables to power the AppDetail "Activity" tab.
+                    .route(
+                        "/{id}/activity/summary",
+                        get(crate::server::api::custom_apps_activity::get_summary),
+                    )
+                    .route(
+                        "/{id}/activity/visitors",
+                        get(crate::server::api::custom_apps_activity::get_visitors),
+                    )
+                    .route(
+                        "/{id}/activity/events",
+                        get(crate::server::api::custom_apps_activity::get_events),
+                    )
+                    // What the caller's own staging requests held, newest first —
+                    // the console's staging banner. 404 unless oxy-authz lets the
+                    // caller open the app's staging. See `custom_apps_staging_held`.
+                    .route(
+                        "/{id}/staging/held",
+                        get(crate::server::api::custom_apps_staging_held::list_held),
+                    )
+                    // Org / project browser: every workspace that granted Oxy
+                    // access, flattened with its org + grant metadata. See
+                    // `admin::oxy_access`.
+                    .route("/oxy-access", get(admin::oxy_access::list_grants))
+                    // App-scoped secrets (`apps/<app_id>/<KEY>` — the namespace
+                    // `ctx.env` reads). The list is reconciled against what the
+                    // active build DECLARES, so a fresh deploy says which keys are
+                    // still missing instead of failing at the first invocation.
+                    // Creation lives only here and on the tenant twin: the project
+                    // secrets API rejects `/` in a name, which is why an app secret
+                    // had no write path at all. See `custom_apps_secrets`.
+                    .route(
+                        "/{id}/secrets",
+                        get(crate::server::api::custom_apps_secrets::admin_list)
+                            .post(crate::server::api::custom_apps_secrets::admin_set),
+                    )
+                    .route(
+                        "/{id}/secrets/{key}",
+                        delete(crate::server::api::custom_apps_secrets::admin_delete),
+                    )
+                    .route(
+                        "/{id}/secrets/{key}/value",
+                        get(crate::server::api::custom_apps_secrets::admin_reveal),
+                    )
+                    // Sandbox environments (`dev-<handle>`): create, list, show and
+                    // delete — see `custom_apps_sandboxes` and
+                    // `internal-docs/custom-app-sandboxes.md` §5.1. Postgres only (the
+                    // teardown is a queued task), so FleetOk like the rest of the nest.
+                    // Registered above the four layers below so all of them cover it;
+                    // each handler then also requires `Action::AppNonProduction` over
+                    // the app and refuses a publish token. The app id is named `id`
+                    // because `enforce_app_scope` reads it by that name.
+                    .route(
+                        "/{id}/environments",
+                        get(crate::server::api::custom_apps_sandboxes::handlers::list)
+                            .post(crate::server::api::custom_apps_sandboxes::handlers::create),
+                    )
+                    .route(
+                        "/{id}/environments/{name}",
+                        get(crate::server::api::custom_apps_sandboxes::handlers::show)
+                            .delete(crate::server::api::custom_apps_sandboxes::handlers::delete),
+                    )
+                    // Promote and rollback (`custom_apps_promote`; environments
+                    // design §5.5a): a sandbox's build to staging, staging's to
+                    // production, and either of those two back. Postgres, the
+                    // object store and the apps' migration connections — no working
+                    // copy, so FleetOk with the nest; production's migrations run
+                    // inside the request, as a promoting publish's do. Registered
+                    // above the four layers below so all of them cover it; each
+                    // handler also refuses a sandbox agent token and a publish
+                    // token. `{name}` is the environment that moves — the
+                    // contract's `{to}` for a promote — named as the route above
+                    // names that segment.
+                    .route(
+                        "/{id}/environments/{name}/promote",
+                        post(crate::server::api::custom_apps_promote::handlers::promote),
+                    )
+                    .route(
+                        "/{id}/environments/{name}/rollback",
+                        post(crate::server::api::custom_apps_promote::handlers::rollback),
+                    )
+                    // Live tail of one environment's function invocations (SSE) —
+                    // see `custom_apps_tail`. FleetOk with the nest: producers
+                    // `NOTIFY` and every replica `LISTEN`s, so any replica holds
+                    // the stream whichever process runs the function. Under the
+                    // four layers below, like the routes above; the handler then
+                    // asks production for an app admin and every other
+                    // environment for `Action::AppNonProduction`.
+                    .route(
+                        "/{id}/environments/{name}/tail",
+                        get(crate::server::api::custom_apps_tail::handler::tail),
+                    )
+                    // A non-production environment's schedules switch (off by
+                    // default) and its rows: read it back, or flip it and
+                    // reconcile the rows. Postgres only — FleetOk with the nest.
+                    // See `custom_apps_env_schedules`.
+                    .route(
+                        "/{id}/environments/{name}/schedules",
+                        get(crate::server::api::custom_apps_env_schedules::handlers::show)
+                            .put(crate::server::api::custom_apps_env_schedules::handlers::set),
+                    )
+                    // Trusted-publishing config: register / list / remove the GitHub
+                    // workflows allowed to OIDC-publish this app. See
+                    // `custom_apps_publish_oidc`.
+                    .route(
+                        "/{id}/publishers",
+                        get(crate::server::api::custom_apps_publish_oidc::list_publishers)
+                            .post(crate::server::api::custom_apps_publish_oidc::register_publisher),
+                    )
+                    .route(
+                        "/{id}/publishers/{publisher_id}",
+                        axum::routing::delete(
+                            crate::server::api::custom_apps_publish_oidc::delete_publisher,
+                        ),
                     ),
-                )
-                // Everything ABOVE is the interactive customer-apps admin surface
-                // (create / update / delete / rollback / batch): refuse it while a
-                // staff operator is acting as a tenant, closing the gap that this
-                // sibling nest never passed through `admin::router`'s block. `axum`
-                // applies a `.layer` only to routes registered before it, so this
-                // covers the routes above and NOT `/publish` below.
-                .layer(middleware::from_fn(admin::assume::block_admin_while_acting))
-                // Scope: which apps may this grant touch. Layered over the whole tree so
-                // the ~20 `/{id}` routes above don't each have to remember — see
-                // `app_scope_guard`. Same `.layer` ordering rule: covers the routes
-                // registered before it, not `/publish` (which resolves its own actor via
-                // `custom_apps_publish_authz::resolve_actor`, scope included).
-                .layer(middleware::from_fn(app_scope_guard::enforce_app_scope))
-                // The custom-app lifecycle IS `Cap::ManageApps` — this surface is the
-                // one an App Operator exists to use, so it is gated on the capability
-                // rather than on being staff. Same `.layer` ordering rule as above:
-                // applies to the routes registered before it, not to `/publish`.
-                .layer(middleware::from_fn(platform_cap_guard::require(
-                    crate::server::authz::Action::PlatformApps,
-                )))
-                // Owner-or-admin, not admin-only. A Global Owner who isn't also in
-                // `app_admins` was 403'd here — locking the MORE senior role out of a
-                // surface the junior one runs. Both tiers reach the custom-app
-                // lifecycle; only owner-exclusive destructive operations separate them.
-                .layer(middleware::from_fn(
-                    oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,
-                ))
-                // One-way publish entry point: CI (or local `oxyc publish`) uploads
-                // a built bundle tarball. Registered AFTER both layers above, so
-                // it is neither app-admin-gated nor blocked-while-acting:
-                //   * NOT app-admin-gated — authorization is decided INSIDE
-                //     `publish()` by the three gates (org officer, or a partner
-                //     with manage_apps + assignment + the client's consent, or
-                //     staff-unless-locked). Gating the route to app_admins would
-                //     have made partner publish impossible.
-                //   * NOT blocked-while-acting — it is also the CI endpoint reached
-                //     by a publish token; blocking it would 403 a CI job merely
-                //     because the token's minter has a browser assume-session open.
-                // It remains behind the outer auth + `app_publish_token_scope`
-                // layers, so it is always authenticated. Raised body limit —
-                // bundles are a few MB, over axum's 2 MB default.
-                .route(
-                    "/publish",
-                    post(crate::server::api::custom_apps_publish::publish_handler)
-                        .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024)),
-                ),
+            )
+            // Everything ABOVE is the interactive customer-apps admin surface; the
+            // stack it sits behind (`admin::apps::guarded`) covers the routes
+            // registered before it and NOT `/publish` below.
+            // One-way publish entry point: CI (or local `oxyc publish`) uploads
+            // a built bundle tarball. Registered AFTER both layers above, so
+            // it is neither app-admin-gated nor blocked-while-acting:
+            //   * NOT app-admin-gated — authorization is decided INSIDE
+            //     `publish()` by the three gates (org officer, or a partner
+            //     with manage_apps + assignment + the client's consent, or
+            //     staff-unless-locked). Gating the route to app_admins would
+            //     have made partner publish impossible.
+            //   * NOT blocked-while-acting — it is also the CI endpoint reached
+            //     by a publish token; blocking it would 403 a CI job merely
+            //     because the token's minter has a browser assume-session open.
+            // It remains behind the outer auth + `app_publish_token_scope`
+            // layers, so it is always authenticated. Raised body limit —
+            // bundles are a few MB, over axum's 2 MB default.
+            .route(
+                "/publish",
+                post(crate::server::api::custom_apps_publish::publish_handler)
+                    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024)),
+            ),
             "app registration rows plus S3 bundles",
         )
     // NOTE: Slack webhook + OAuth-callback + magic-link routes are NOT

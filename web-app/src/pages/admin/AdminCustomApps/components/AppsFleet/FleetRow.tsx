@@ -39,7 +39,11 @@ export const FleetRow = ({
   // state, from the same mapping. The fleet has no per-app availability read, so this
   // is the fleet-health answer; `null` health is "not known yet" and reads as the
   // publish fact alone, never a borrowed verdict.
-  const verdict = lifecycleVerdict({ published: !!app.published_at, health: health?.health });
+  const verdict = lifecycleVerdict({
+    published: !!app.published_at,
+    verdict: app.verdict,
+    health: health?.health
+  });
 
   const cell = (column: FleetColumn) => {
     switch (column.id) {

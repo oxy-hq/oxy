@@ -208,40 +208,83 @@ fn source(relative: &str) -> String {
 }
 
 /// The `/customer-apps` nest of `router/global.rs`: from its mount to the
-/// label that closes it.
-fn console_nest(router: &str) -> &str {
+/// label that closes it, whole-line comments dropped (they carry parentheses
+/// and name the symbols this reads).
+fn console_nest(router: &str) -> String {
     let start = router
         .find("\"/customer-apps\",\n            RouteRole::FleetOk,")
         .expect("the /customer-apps nest is mounted in router/global.rs");
     let end = router[start..]
         .find("\"app registration rows plus S3 bundles\"")
         .expect("the nest's closing label");
-    &router[start..start + end]
+    router[start..start + end]
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The byte range of the `admin::apps::guarded(…)` call in the nest: the
+/// routes inside it are covered by the stack, the ones after it are not.
+fn guarded_span(nest: &str) -> (usize, usize) {
+    let open = nest
+        .find("admin::apps::guarded(")
+        .expect("the nest wears `admin::apps::guarded`")
+        + "admin::apps::guarded".len();
+    let mut depth = 0;
+    let close = nest[open..]
+        .char_indices()
+        .find_map(|(at, c)| {
+            match c {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+            (depth == 0).then_some(open + at)
+        })
+        .expect("the guarded( call closes");
+    (open, close)
 }
 
 /// The console's layers are the four the table's `CONSOLE` rows were written
 /// from: two decide a platform action each, two decide none. A fifth layer
 /// fails here until someone says what it decides — and if that is an action
-/// the token does not cover, the loop is refused on every console row.
+/// the token does not cover, the loop is refused on every console row. They
+/// are named once, in `admin::apps::guarded`, which the nest (and the
+/// `/admin/apps` alias) call.
 #[test]
 fn the_console_mounts_the_layers_the_table_was_written_from() {
     let router = source("app/src/server/router/global.rs");
     let nest = console_nest(&router);
-    let layers = nest.matches(".layer(middleware::from_fn(").count();
+    guarded_span(&nest);
+    assert_eq!(
+        nest.matches(".layer(middleware::from_fn(").count(),
+        0,
+        "the /customer-apps nest layers something of its own: the stack is \
+         `admin::apps::guarded`, and a layer added beside it covers one mount only"
+    );
+
+    let stack = source("app/src/server/api/admin/apps/mod.rs");
+    let guarded = &stack[stack.find("pub fn guarded<S>").expect("guarded")..];
+    let guarded = &guarded[..guarded.find("\n}\n").expect("end of guarded")];
+    let layers = guarded.matches(".layer(middleware::from_fn(").count();
     assert_eq!(
         layers, 4,
-        "the /customer-apps nest has {layers} layers: state in `stack_of` what the new one \
+        "`admin::apps::guarded` has {layers} layers: state in `stack_of` what the new one \
          decides, for every console row"
     );
     for layer in [
-        "admin::assume::block_admin_while_acting",
+        "block_admin_while_acting",
         "app_scope_guard::enforce_app_scope",
-        "platform_cap_guard::require(\n                    crate::server::authz::Action::PlatformApps,",
-        "oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware",
+        "platform_cap_guard::require(\n            Action::PlatformApps,",
+        "oxy_owner_or_app_admin_guard_middleware",
     ] {
-        assert!(nest.contains(layer), "the nest no longer mounts {layer}");
+        assert!(
+            guarded.contains(layer),
+            "the stack no longer mounts {layer}"
+        );
     }
-    assert_eq!(nest.matches("platform_cap_guard::require(").count(), 1);
+    assert_eq!(guarded.matches("platform_cap_guard::require(").count(), 1);
     let door = source("app/src/server/api/middlewares/oxy_owner_or_app_admin_guard.rs");
     assert!(
         door.contains("crate::server::authz::Action::PlatformOps"),
@@ -255,21 +298,19 @@ fn the_console_mounts_the_layers_the_table_was_written_from() {
 fn the_publish_route_is_mounted_outside_the_console_layers() {
     let router = source("app/src/server/router/global.rs");
     let nest = console_nest(&router);
-    let last_layer = nest
-        .rfind(".layer(middleware::from_fn(")
-        .expect("the console layers");
+    let (open, close) = guarded_span(&nest);
     let publish = nest
         .find("post(crate::server::api::custom_apps_publish::publish_handler)")
         .expect("the publish route is in the nest");
-    assert!(publish > last_layer, "P1 moved under the console layers");
+    assert!(publish > close, "P1 moved under the console layers");
     assert!(
         stack_of("P1")
             .iter()
             .all(|(action, _)| *action == Action::AppNonProduction)
     );
-    // Every other console row is registered before the layers, so they apply.
+    // Every other console row is registered inside the call, so they apply.
     let environments = nest
         .find("\"/{id}/environments\"")
         .expect("the sandbox routes");
-    assert!(environments < last_layer);
+    assert!(open < environments && environments < close);
 }

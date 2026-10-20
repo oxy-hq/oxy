@@ -9,7 +9,7 @@ import type { CustomApp } from "@/types/apps";
 /**
  * Who can open this app, inside the admin dossier.
  *
- * Staff edit through `/admin/apps/{id}/access` rather than the org's own route:
+ * Staff edit through `/customer-apps/{id}/access` rather than the org's own route:
  * org routes need a live assume-role session, and `block_admin_while_acting`
  * closes this whole console the moment an operator starts one. Same service behind
  * both, so what an operator sees here is exactly what the org's admins see.

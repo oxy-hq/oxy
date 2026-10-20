@@ -100,7 +100,7 @@ export const useSetAppAccess = (scope: AccessScope) => {
  * The teams this scope can grant.
  *
  * `enabled` is driven by the caller passing a non-null `appId` only while the dialog
- * is open — otherwise `/admin/apps/{id}/teams` fires on every dossier render and the
+ * is open — otherwise `/customer-apps/{id}/teams` fires on every dossier render and the
  * org teams list fires whenever the settings pane mounts, for a picker nobody is
  * looking at.
  */

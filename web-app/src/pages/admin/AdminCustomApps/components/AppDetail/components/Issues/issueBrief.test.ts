@@ -92,7 +92,7 @@ describe("issueBrief", () => {
       `oxyc api "/api/customer-apps/acme/bookkeeping/logs?hours=168&invocation_id=${INVOCATION}"`
     );
     expect(brief).toContain(
-      'oxyc api "/api/admin/apps/app-id/invocations?function=upload-report&limit=50"'
+      'oxyc api "/api/customer-apps/app-id/invocations?function=upload-report&limit=50"'
     );
   });
 

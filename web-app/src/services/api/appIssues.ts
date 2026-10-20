@@ -42,7 +42,9 @@ export class AppIssuesService {
    * nothing about an issue is stored, so there is nothing to mutate here.
    */
   static async list(appId: string, days: number): Promise<AppIssueList> {
-    const response = await apiClient.get<AppIssueList>(`/admin/apps/${appId}/issues?days=${days}`);
+    const response = await apiClient.get<AppIssueList>(
+      `/customer-apps/${appId}/issues?days=${days}`
+    );
     return response.data;
   }
 }

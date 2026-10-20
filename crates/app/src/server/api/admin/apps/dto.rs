@@ -202,6 +202,15 @@ pub struct AppResponse {
     /// `list_apps` via one batched query; `None` on the cheap single responses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub live_published_via: Option<String>,
+    /// Is this app OK: `AppHealth`'s values (`down`, `degraded`, `not_measured`,
+    /// `quiet`, `operational`) plus `draft`, from the same evaluator as
+    /// `/customer-apps/fleet-health` (see [`super::verdict`]). Additive — every
+    /// other field is unchanged.
+    ///
+    /// Populated on the `/customer-apps` list only; `None` on the cheap single
+    /// responses, which a consumer reads as "not asked", never as healthy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<super::verdict::ListVerdict>,
 }
 
 impl AppResponse {
@@ -246,6 +255,7 @@ impl AppResponse {
             art_url: None,
             source_unrecorded: false,
             live_published_via: None,
+            verdict: None,
         }
     }
 }

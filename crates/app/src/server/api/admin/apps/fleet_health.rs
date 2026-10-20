@@ -1,12 +1,16 @@
-//! `GET /api/admin/apps/health` — every published custom app and whether it is
+//! `GET /api/customer-apps/fleet-health` — every published custom app and whether it is
 //! working.
 //!
-//! Mounted twice, on purpose: at `/api/admin/apps/health` for OXY_OWNER
-//! (`admin/apps/mod.rs`) and at `/api/customer-apps/fleet-health` for the
-//! app-admin surface (`router/global.rs`). The second is NOT `/health`, because
-//! `/api/customer-apps/health` is the external, `Host`-resolved liveness
-//! endpoint for ONE published app (`custom_apps_health`) — a different question,
-//! a different audience, and a path outside monitors already poll.
+//! Registered once, in `admin/apps/mod.rs`, and mounted at
+//! `/api/customer-apps/fleet-health`. `/api/admin/apps/health` and
+//! `/api/admin/apps/fleet-health` are the one-release alias. It is NOT
+//! `/api/customer-apps/health`, because that is the external, `Host`-resolved
+//! liveness endpoint for ONE published app (`custom_apps_health`) — a different
+//! question, a different audience, and a path outside monitors already poll.
+//!
+//! The same evaluator answers `verdict` on the `/customer-apps` list rows and the
+//! launcher summaries ([`super::verdict`]), so the fleet table, the list and the
+//! launcher cannot disagree about whether an app is OK.
 //!
 //! See `internal-docs/2026-09-16-custom-app-fleet-observability-design.md`.
 //!
@@ -182,7 +186,8 @@ pub async fn get_fleet_health(
         Default::default()
     });
 
-    let fleet = evaluate_fleet(&rows).await;
+    let keys: Vec<AppKey> = rows.iter().map(|a| (a.id, a.org_id)).collect();
+    let fleet = evaluate_fleet(&keys).await;
     let (apps, summary) = build_rows(&rows, &org_slugs, &fleet, q.needs_attention());
 
     Ok(Json(FleetHealthResponse {
@@ -311,11 +316,32 @@ const NOTHING_ASKED: &str = "no apps in scope";
 const QUERY_FAILED: &str =
     "the observability store did not answer — this is not a verdict about the app";
 
+/// `(app_id, org_id)` — all the evaluator needs to know about an app, so a caller
+/// holding a list row rather than a database row can ask too ([`super::verdict`]).
+pub(super) type AppKey = (Uuid, Uuid);
+
 /// What one pass over the fleet produced.
-struct Fleet {
+pub(super) struct Fleet {
     assessed: std::collections::HashMap<Uuid, Assessed>,
     /// The reason to report for any app absent from `assessed`.
     unmeasured: &'static str,
+}
+
+impl Fleet {
+    /// The health of every app that was asked about. An app the pass did not
+    /// measure is `NotMeasured` — never `Operational` — which is the distinction
+    /// this module exists to preserve.
+    pub(super) fn health_of(&self, keys: &[AppKey]) -> std::collections::HashMap<Uuid, AppHealth> {
+        keys.iter()
+            .map(|(app, _)| {
+                let health = self
+                    .assessed
+                    .get(app)
+                    .map_or(AppHealth::NotMeasured, |a| a.verdict.health);
+                (*app, health)
+            })
+            .collect()
+    }
 }
 
 /// One app's assessment plus the raw numbers behind it.
@@ -338,7 +364,7 @@ impl Assessed {
 /// Returns an entry per app that was **measured**. An app missing from the map
 /// was not assessed, and the caller reports it as `not_measured` — the
 /// distinction this whole module exists to preserve.
-async fn evaluate_fleet(rows: &[apps::Model]) -> Fleet {
+pub(super) async fn evaluate_fleet(keys: &[AppKey]) -> Fleet {
     let mut out = std::collections::HashMap::new();
     let Some(store) = oxy_observability::global::get_global() else {
         // Capture is off — the default on a developer's `oxy serve`. Every row
@@ -348,7 +374,7 @@ async fn evaluate_fleet(rows: &[apps::Model]) -> Fleet {
             unmeasured: NO_CAPTURE,
         };
     };
-    if rows.is_empty() {
+    if keys.is_empty() {
         // Nothing was asked about, so nothing is unmeasured. The reason is
         // unreachable — no row can look it up — but naming it QUERY_FAILED here
         // would put a lie one refactor away from being read.
@@ -358,13 +384,13 @@ async fn evaluate_fleet(rows: &[apps::Model]) -> Fleet {
         };
     }
 
-    let keys: Vec<(String, String)> = rows
+    let wire_keys: Vec<(String, String)> = keys
         .iter()
-        .map(|a| (a.org_id.to_string(), a.id.to_string()))
+        .map(|(app, org)| (org.to_string(), app.to_string()))
         .collect();
 
     let availability = match store
-        .get_fleet_availability(&keys, ALERT_WINDOWS_MINUTES)
+        .get_fleet_availability(&wire_keys, ALERT_WINDOWS_MINUTES)
         .await
     {
         Ok(a) => a,
@@ -384,7 +410,7 @@ async fn evaluate_fleet(rows: &[apps::Model]) -> Fleet {
     // is a correct verdict rather than a degraded one. A burn verdict is still
     // worth reporting, so this failure must not take the page down with it.
     let baselines = store
-        .get_fleet_heartbeat_baseline(&keys, heartbeat::WINDOW_MINUTES, heartbeat::CYCLE_DAYS)
+        .get_fleet_heartbeat_baseline(&wire_keys, heartbeat::WINDOW_MINUTES, heartbeat::CYCLE_DAYS)
         .await
         .unwrap_or_else(|e| {
             tracing::warn!("fleet health: heartbeat baseline query failed: {e}");
@@ -392,8 +418,8 @@ async fn evaluate_fleet(rows: &[apps::Model]) -> Fleet {
         });
 
     let cfg = SloConfig::default();
-    for app in rows {
-        let id = app.id.to_string();
+    for (app_id, _) in keys {
+        let id = app_id.to_string();
         let Some(windows) = availability.get(&id) else {
             continue;
         };
@@ -409,7 +435,7 @@ async fn evaluate_fleet(rows: &[apps::Model]) -> Fleet {
         };
         let burn = evaluate_burn(windows, &cfg);
         out.insert(
-            app.id,
+            *app_id,
             Assessed {
                 verdict: classify(windows, &burn, beat),
                 windows: windows.clone(),

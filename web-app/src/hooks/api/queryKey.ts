@@ -616,6 +616,9 @@ const customAppKeys = {
   // Broad union root — invalidating this refreshes every custom-app query,
   // including the workspace-scoped `list` used by the HQ launcher + rail.
   all: () => ["customApps"] as const,
+  /** The workspace list WITH each app's health verdict — the launcher's, kept apart
+   *  from `list` so the rail's cheap fetch never carries the observability read. */
+  listWithVerdict: (workspaceId: string) => ["customApps", "listWithVerdict", workspaceId] as const,
   manage: () => ["customApps", "manage"] as const,
   debug: (orgSlug: string, appSlug: string) => ["customApps", "debug", orgSlug, appSlug] as const,
   /** One app's admin detail — the response that carries `staging_url`. */

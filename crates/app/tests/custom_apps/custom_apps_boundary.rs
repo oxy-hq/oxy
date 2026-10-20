@@ -91,6 +91,15 @@ const ALLOWED_SEAMS: &[Seam] = &[
     // depend on. Moving it *into* custom-apps would have made admin depend on custom-apps (a
     // future cross-feature-crate edge the decomposition plan bans), so a shared home is correct.
     Seam {
+        prefix: "crate::server::api::admin::apps::verdict",
+        why: "the one app verdict (`AppHealth` plus `draft`) the launcher list \
+               (`workspace_custom_apps`) carries beside the admin list rows. It is computed by \
+               the same evaluator as the fleet-health table (`admin::apps::fleet_health`), which \
+               reads the observability store and so cannot move down to a shared crate the way \
+               `build_pretty_url` did; `verdict` is the narrow door onto it, so the launcher \
+               never imports the fleet-health internals.",
+    },
+    Seam {
         prefix: "crate::server::router",
         why: "the router/state seam — is_allowed_origin (custom_apps_gates) and AppState \
                (custom_apps_threads, the one handler that still takes app state).",

@@ -1,6 +1,6 @@
 //! The sandbox management routes, `/api/customer-apps/{id}/environments`
-//! (`internal-docs/custom-app-sandboxes.md` §5.1), through a copy of the staff
-//! console's guards: create, list, show and delete; every name that is not a
+//! (`internal-docs/custom-app-sandboxes.md` §5.1), behind the staff
+//! console's guards (`admin::apps::guarded`, the stack production calls): create, list, show and delete; every name that is not a
 //! sandbox's, with its code. The limit of 20 is `sandbox_routes_limit`'s;
 //! who is let through, `sandbox_routes_guards`'.
 
@@ -8,12 +8,9 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::routing::get;
 use axum::{Router, middleware};
-use oxy_app::server::api::admin::assume::block_admin_while_acting;
+use oxy_app::server::api::admin::apps::guarded;
 use oxy_app::server::api::custom_apps_sandboxes::handlers;
 use oxy_app::server::api::custom_apps_sandboxes::teardown::SANDBOX_TEARDOWN_KIND;
-use oxy_app::server::api::middlewares::oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware;
-use oxy_app::server::api::middlewares::{app_scope_guard, platform_cap_guard};
-use oxy_app::server::authz::Action;
 use oxy_auth::middleware::{AuthState, auth_middleware};
 use oxy_auth::user::LOCAL_GUEST_EMAIL;
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
@@ -29,26 +26,22 @@ use crate::custom_app_functions_fixture::{
 const APP: &str = "sbx";
 
 /// The four routes as `router::global` mounts them in the `/customer-apps`
-/// nest, behind a copy of that nest's four layers in production order and
+/// nest, behind `admin::apps::guarded` — the one stack production wears — and
 /// under `auth_middleware` (`build_global_routes` is `pub(super)`, hence the
-/// copy). [`the_routes_are_mounted_inside_the_console_guards`] fails when
-/// production stops mounting them so.
+/// copy of the routes). [`the_routes_are_mounted_inside_the_console_guards`]
+/// fails when production stops mounting them so.
 pub(crate) fn console() -> Router {
-    let nest = Router::new()
-        .route(
-            "/{id}/environments",
-            get(handlers::list).post(handlers::create),
-        )
-        .route(
-            "/{id}/environments/{name}",
-            get(handlers::show).delete(handlers::delete),
-        )
-        .layer(middleware::from_fn(block_admin_while_acting))
-        .layer(middleware::from_fn(app_scope_guard::enforce_app_scope))
-        .layer(middleware::from_fn(platform_cap_guard::require(
-            Action::PlatformApps,
-        )))
-        .layer(middleware::from_fn(oxy_owner_or_app_admin_guard_middleware));
+    let nest = guarded(
+        Router::new()
+            .route(
+                "/{id}/environments",
+                get(handlers::list).post(handlers::create),
+            )
+            .route(
+                "/{id}/environments/{name}",
+                get(handlers::show).delete(handlers::delete),
+            ),
+    );
     Router::new()
         .nest("/api/customer-apps", nest)
         .layer(middleware::from_fn_with_state(

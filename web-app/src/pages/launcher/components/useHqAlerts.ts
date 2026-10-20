@@ -1,26 +1,11 @@
-import { useCustomApps } from "@/hooks/api/customApps/useCustomApps";
+import { useCustomAppsWithVerdict } from "@/hooks/api/customApps/useCustomApps";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { appWindowName } from "@/libs/utils/appWindowName";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
+import { type AlertSeverity, type HqSignalSeed, healthSeeds } from "./healthSeeds";
 
-export type AlertSeverity = "critical" | "warning" | "info";
-
-/** Where a signal is addressed: a custom app, or Oxygen Factory (the system
- *  layer — for data/source/pipeline issues). */
-type SignalTarget = { app: string } | { core: true };
-
-/** An unresolved signal — the shape a real monitors/anomalies feed will emit,
- *  and the shape the demo set conforms to. `useHqAlerts` resolves the `target`
- *  into a concrete destination. */
-interface HqSignalSeed {
-  id: string;
-  severity: AlertSeverity;
-  /** Short signal category shown before the message (e.g. "Labor risk"). */
-  category: string;
-  title: string;
-  target: SignalTarget;
-}
+export type { AlertSeverity } from "./healthSeeds";
 
 export interface HqSignal {
   id: string;
@@ -41,19 +26,17 @@ export interface HqSignal {
  *  published app (dropped if absent so links never dead-end); core-targeted
  *  signals route to Oxygen Factory.
  *
- *  There is no real signal feed yet (roadmap: monitors, anomalies, source
- *  health), so this surfaces no signals today and `NeedsAttention` /
- *  `CriticalAlertBanner` self-hide. When a feed lands, populate `seeds` from it
- *  here — the resolution below is feed-agnostic. */
+ *  The one real feed today is each app's health verdict (`CustomAppSummary.verdict`,
+ *  the same evaluator as the admin fleet-health table). The roadmap's other feeds —
+ *  monitors, anomalies, source health — join `seeds` here; the resolution below is
+ *  feed-agnostic. */
 export function useHqAlerts(): HqSignal[] {
   const { project } = useCurrentProjectBranch();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
-  const { data: apps = [] } = useCustomApps(project?.id ?? "");
+  const { data: apps = [] } = useCustomAppsWithVerdict(project?.id ?? "");
   const coreRoute = ROUTES.ORG(orgSlug).WORKSPACE(project?.id ?? "").IDE.ROOT;
 
-  // No real signal feed yet — populate from monitors/anomalies/source-health
-  // when one is wired. Until then HQ surfaces no signals.
-  const seeds: HqSignalSeed[] = [];
+  const seeds: HqSignalSeed[] = healthSeeds(apps);
 
   return seeds.flatMap(({ target, ...rest }): HqSignal[] => {
     if ("core" in target) {

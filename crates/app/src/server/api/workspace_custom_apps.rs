@@ -11,7 +11,7 @@
 //! sidebar.
 
 use axum::Json;
-use axum::extract::Path;
+use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use entity::organizations;
 use entity::prelude::{Apps, Organizations};
@@ -22,6 +22,7 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::server::api::admin::apps::verdict::{AppRef, ListVerdict, verdicts_for};
 use crate::server::api::custom_apps_manifest::OxyAppManifest;
 use oxy_shared::utils::custom_app_url::build_pretty_url;
 
@@ -71,6 +72,19 @@ pub struct CustomAppSummary {
     /// an unrecognized column reads as unrestricted on both sides of the
     /// wire — the same way the access gates read it.
     pub visibility: String,
+    /// Is this app OK, per the server: `AppHealth`'s values plus `draft`, from the
+    /// same evaluator as `/customer-apps/fleet-health` (`admin::apps::verdict`).
+    /// Unlike [`status`](Self::status) — free text the app's author writes — this
+    /// is measured.
+    ///
+    /// Filled by [`list_custom_apps`] **only when the caller asks** with
+    /// `?verdict=true` — the launcher's health signal does. The workspace shell
+    /// fetches this same endpoint on every page for its rail, and the shell-context
+    /// and `/me/apps` lists share these summaries: none of them may wait on an
+    /// observability read. Absent means "not asked" or "could not say", never
+    /// healthy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<ListVerdict>,
 }
 
 /// Art must be a plain relative path inside the bundle — reject anything
@@ -199,13 +213,23 @@ impl CustomAppSummary {
             icon_url,
             status: fields.status,
             visibility: visibility.to_string(),
+            verdict: None,
         }
     }
+}
+
+#[derive(Deserialize, Default)]
+pub struct ListCustomAppsQuery {
+    /// Also compute each card's `verdict` (an observability read). Off by default:
+    /// this endpoint feeds the workspace rail on every page.
+    #[serde(default)]
+    verdict: bool,
 }
 
 pub async fn list_custom_apps(
     OptionalUserExtractor(viewer): OptionalUserExtractor,
     Path(WorkspaceIdPath { workspace_id }): Path<WorkspaceIdPath>,
+    Query(query): Query<ListCustomAppsQuery>,
 ) -> Result<Json<Vec<CustomAppSummary>>, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("list_custom_apps DB connect failed: {e}");
@@ -215,13 +239,55 @@ pub async fn list_custom_apps(
     // a missing user means the middleware was bypassed — and the fail-closed filter
     // below is a better answer to that than a 401 that hides the misconfiguration.
     let viewer = viewer.as_ref().map(oxy_server_authz::Caller::from_user);
-    let out = published_app_summaries(&db, workspace_id, viewer.as_ref())
+    let mut out = published_app_summaries(&db, workspace_id, viewer.as_ref())
         .await
         .map_err(|e| {
             tracing::error!("list_custom_apps failed: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+    if query.verdict {
+        attach_verdicts(&db, &mut out).await;
+    }
     Ok(Json(out))
+}
+
+/// Fill each card's `verdict` from the fleet-health evaluator. Best-effort: a
+/// failed lookup leaves the cards without one rather than failing the launcher.
+async fn attach_verdicts(db: &sea_orm::DatabaseConnection, summaries: &mut [CustomAppSummary]) {
+    use sea_orm::QuerySelect;
+    if summaries.is_empty() {
+        return;
+    }
+    // The card carries no org id, and the evaluator keys on `(org_id, app_id)`.
+    let ids: Vec<Uuid> = summaries.iter().map(|s| s.id).collect();
+    let orgs: Vec<(Uuid, Uuid)> = match Apps::find()
+        .select_only()
+        .column(apps::Column::Id)
+        .column(apps::Column::OrgId)
+        .filter(apps::Column::Id.is_in(ids))
+        .into_tuple()
+        .all(db)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!("launcher verdicts: org lookup failed (no verdicts shown): {e}");
+            return;
+        }
+    };
+    // Every card here is a published app: `published_app_summaries` drops the rest.
+    let refs: Vec<AppRef> = orgs
+        .into_iter()
+        .map(|(id, org_id)| AppRef {
+            id,
+            org_id,
+            published: true,
+        })
+        .collect();
+    let verdicts = verdicts_for(&refs).await;
+    for summary in summaries {
+        summary.verdict = verdicts.get(&summary.id).copied();
+    }
 }
 
 /// Who is asking, for the visibility filter in [`published_app_summaries`]:

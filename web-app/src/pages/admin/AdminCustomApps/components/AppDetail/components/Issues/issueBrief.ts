@@ -62,6 +62,6 @@ export function issueBrief(
     "",
     "Evidence:",
     `  oxyc api "/api/customer-apps/${app.org_slug}/${app.slug}/logs?hours=168&invocation_id=${last.invocation_id}"`,
-    `  oxyc api "/api/admin/apps/${app.id}/invocations?function=${encodeURIComponent(issue.function_name)}&limit=50"`
+    `  oxyc api "/api/customer-apps/${app.id}/invocations?function=${encodeURIComponent(issue.function_name)}&limit=50"`
   ].join("\n");
 }

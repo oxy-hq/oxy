@@ -102,6 +102,18 @@ export const CustomAppsService = {
   },
 
   /**
+   * The same list with each card's `verdict` (`?verdict=true`): an observability read
+   * on the server, so only the surface that shows health asks — the workspace rail,
+   * which fetches the plain list on every page, must not.
+   */
+  async listForWorkspaceWithVerdict(workspaceId: string): Promise<CustomAppSummary[]> {
+    const response = await apiClient.get(`/${workspaceId}/custom-apps`, {
+      params: { verdict: true }
+    });
+    return response.data;
+  },
+
+  /**
    * Every workspace that granted Oxy access, platform-wide, for the admin
    * org/project browser. App-admin gated (same surface as the registry).
    */
@@ -124,9 +136,10 @@ export const CustomAppsService = {
    * oxy-access) can reach the URL; once published, it surfaces in
    * the owning workspace's sidebar.
    *
-   * Hits the `/customer-apps/*` mount (app-admin gated) rather than
-   * `/admin/apps/*` (OXY_OWNER gated) — publishing is a normal
-   * Oxy-engineer automation.
+   * Every admin app route is the one `/customer-apps/*` mount (owner-or-app-admin,
+   * `PlatformApps` capability, app scope, refused while acting as a tenant) —
+   * publishing is a normal Oxy-engineer automation. `/admin/apps/*` is only a
+   * server-side alias kept for one release for `oxyc`; this client never calls it.
    */
   async publish(id: string): Promise<CustomApp> {
     const response = await apiClient.post(`${appPath(id)}/publish`);

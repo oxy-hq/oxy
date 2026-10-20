@@ -92,17 +92,17 @@ export class AppAccessService {
   // ── Oxy admin console. Keyed by app alone; the server derives the org. ──
 
   static async getForAdmin(appId: string): Promise<AppAccess> {
-    const response = await apiClient.get<AppAccess>(`/admin/apps/${appId}/access`);
+    const response = await apiClient.get<AppAccess>(`/customer-apps/${appId}/access`);
     return response.data;
   }
 
   static async setForAdmin(appId: string, body: SetAppAccessRequest): Promise<AppAccess> {
-    const response = await apiClient.put<AppAccess>(`/admin/apps/${appId}/access`, body);
+    const response = await apiClient.put<AppAccess>(`/customer-apps/${appId}/access`, body);
     return response.data;
   }
 
   static async listTeamsForAdmin(appId: string): Promise<Team[]> {
-    const response = await apiClient.get<Team[]>(`/admin/apps/${appId}/teams`);
+    const response = await apiClient.get<Team[]>(`/customer-apps/${appId}/teams`);
     return response.data;
   }
 
@@ -111,7 +111,7 @@ export class AppAccessService {
    * never holds an org id — the server derives the tenant from the app row.
    */
   static async listMembersForAdmin(appId: string): Promise<GrantablePerson[]> {
-    const response = await apiClient.get<GrantablePerson[]>(`/admin/apps/${appId}/members`);
+    const response = await apiClient.get<GrantablePerson[]>(`/customer-apps/${appId}/members`);
     return response.data;
   }
 

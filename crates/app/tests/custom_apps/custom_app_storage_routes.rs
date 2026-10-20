@@ -17,7 +17,7 @@
 //! ## What it checks
 //!
 //! Every URL literal in `services/api/customAppStorage.ts`, normalized back into
-//! an axum route pattern, must appear as a mounted route in `router/global.rs`.
+//! an axum route pattern, must appear as a mounted route in `admin/apps/mod.rs`.
 //! It deliberately does NOT try to parse either language properly — a regex over
 //! source is enough to catch a path that moved, and cheap enough to never rot.
 //!
@@ -25,7 +25,7 @@
 
 use crate::common::read_repo_file;
 
-/// The nest the storage handlers are mounted under (`router/global.rs`). The
+/// The nest the storage handlers are mounted under (`admin/apps/mod.rs`). The
 /// frontend's `apiClient` has `/api` as its baseURL, so a TS path of
 /// `/customer-apps/storage` is `/api/customer-apps/storage` on the wire.
 const NEST: &str = "/customer-apps";
@@ -89,7 +89,7 @@ fn to_route_pattern(path: &str) -> Option<String> {
 #[test]
 fn storage_ui_paths_match_mounted_routes() {
     let service = read_repo_file("web-app/src/services/api/customAppStorage.ts");
-    let router = read_repo_file("crates/app/src/server/router/global.rs");
+    let router = read_repo_file("crates/app/src/server/api/admin/apps/mod.rs");
 
     let paths = frontend_paths(&service);
     // A FLOOR, not merely non-empty. `frontend_paths` pairs backticks
@@ -127,7 +127,7 @@ fn storage_ui_paths_match_mounted_routes() {
         let Some(pattern) = to_route_pattern(path) else {
             failures.push(format!(
                 "{path} is not under the `{NEST}` nest the storage handlers are mounted in \
-                 (router/global.rs). Either move the route or fix the path."
+                 (admin/apps/mod.rs). Either move the route or fix the path."
             ));
             continue;
         };
@@ -135,7 +135,7 @@ fn storage_ui_paths_match_mounted_routes() {
         if !router.contains(&format!("\"{pattern}\"")) {
             failures.push(format!(
                 "{path} normalizes to route `{pattern}`, which is not mounted in \
-                 router/global.rs. The UI would 404 into the SPA fallback."
+                 admin/apps/mod.rs. The UI would 404 into the SPA fallback."
             ));
         }
     }
@@ -157,7 +157,7 @@ fn every_storage_handler_is_reachable() {
     // one silently stopped covering `history`, the first handler added after this
     // test shipped — a list you have to remember to update is a list that goes
     // stale exactly when it matters.
-    let router = read_repo_file("crates/app/src/server/router/global.rs");
+    let router = read_repo_file("crates/app/src/server/api/admin/apps/mod.rs");
     let handlers = read_repo_file("crates/app/src/server/api/admin/apps/storage.rs");
 
     // A `pub async fn` here is a route handler *or* a testable query helper
@@ -249,7 +249,7 @@ fn every_storage_handler_is_reachable() {
     for name in names {
         assert!(
             router.contains(&format!("storage::{name}")),
-            "`storage::{name}` is not mounted in router/global.rs.\n\
+            "`storage::{name}` is not mounted in admin/apps/mod.rs.\n\
              If it IS a route handler, mount it there. If it is a query helper, this \
              test misread it: helpers are recognized by returning a `DbErr` (see the \
              note above the classifier), so give it that shape or extend the predicate \

@@ -16,6 +16,18 @@ export const useCustomApps = (workspaceId: string) =>
     enabled: !!workspaceId
   });
 
+/**
+ * The launcher's list: the same published apps with each one's health `verdict`. A
+ * separate query from `useCustomApps` on purpose — the verdict is an observability
+ * read, and `useCustomApps` feeds the workspace rail on every page.
+ */
+export const useCustomAppsWithVerdict = (workspaceId: string) =>
+  useQuery({
+    queryKey: queryKeys.customApps.listWithVerdict(workspaceId),
+    queryFn: () => CustomAppsService.listForWorkspaceWithVerdict(workspaceId),
+    enabled: !!workspaceId
+  });
+
 export const usePublishApp = () => {
   const qc = useQueryClient();
   return useMutation({

@@ -33,8 +33,7 @@
 use crate::common::read_repo_file;
 use crate::custom_app_functions_manual_run::{
     ERRORS_ROUTE, FUNCTION_INVOCATIONS_ROUTE, FUNCTIONS_ROUTE, HELD_ROUTE, INVOCATIONS_ROUTE,
-    LOGS_ROUTE, RUN_DETAIL_ROUTE, RUNS_ROUTE, TOKEN_APP_INVOCATIONS_ROUTE, TOKEN_HELD_ROUTE,
-    TOKEN_INVOCATIONS_ROUTE, TOKEN_RUN_DETAIL_ROUTE,
+    LOGS_ROUTE, RUN_DETAIL_ROUTE, RUNS_ROUTE,
 };
 
 /// `rel` (from the repo root) with whole-line comments dropped, every whitespace
@@ -103,32 +102,20 @@ fn the_production_registry_registers_the_app_function_executor_and_the_driver_us
     );
 }
 
+/// The manual-run and publish-token tests call `admin::apps::guarded` themselves
+/// and register the handlers at the paths below, so what they must still see in
+/// production is: the stack's layers, in order, both mounts wearing it, and the
+/// handlers registered at those paths.
 #[test]
-fn the_admin_stack_the_manual_run_test_copies_still_matches_production() {
-    let admin = code("crates/app/src/server/api/admin/mod.rs");
-    let router = fn_body(&admin, "router");
-    assert!(
-        router.contains(
-            ".merge(apps::router().route_layer(middleware::from_fn(app_scope_guard::enforce_app_scope)).route_layer(cap(Action::PlatformApps)))"
-        ),
-        "the apps merge in `admin::router()` no longer applies exactly `enforce_app_scope`, \
-         then `cap(Action::PlatformApps)`"
-    );
-    assert!(
-        between(router, "letstaff_surface=", ";")
-            .ends_with(".route_layer(middleware::from_fn(assume::block_admin_while_acting))"),
-        "`block_admin_while_acting` is no longer the last layer on the staff surface"
-    );
-
-    let global = code("crates/app/src/server/router/global.rs");
-    assert!(
-        global.contains(
-            ".nest_declared(\"/admin\",admin::router(admin).layer(middleware::from_fn(oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware)),&admin_decls)"
-        ),
-        "the `/admin` nest no longer applies exactly `oxy_owner_or_app_admin_guard_middleware`"
-    );
-
+fn both_admin_app_mounts_wear_the_one_stack_the_manual_run_tests_call() {
     let apps = code("crates/app/src/server/api/admin/apps/mod.rs");
+    assert!(
+        fn_body(&apps, "guarded<S>").contains(
+            "routes.layer(middleware::from_fn(block_admin_while_acting)).layer(middleware::from_fn(app_scope_guard::enforce_app_scope)).layer(middleware::from_fn(platform_cap_guard::require(Action::PlatformApps))).layer(middleware::from_fn(oxy_owner_or_app_admin_guard_middleware))"
+        ),
+        "`admin::apps::guarded` no longer layers `block_admin_while_acting`, \
+         `enforce_app_scope`, `PlatformApps` and the owner-or-app-admin guard, in that order"
+    );
     for route in [
         format!(".route(\"{RUNS_ROUTE}\",post(handlers::run_function_job))"),
         format!(".route(\"{RUN_DETAIL_ROUTE}\",get(functions::get_function_run))"),
@@ -138,65 +125,25 @@ fn the_admin_stack_the_manual_run_test_copies_still_matches_production() {
         format!(".route(\"{HELD_ROUTE}\",get(held_writes::get_held_writes))"),
     ] {
         assert!(
-            apps.contains(&route),
-            "`admin::apps::router()` no longer mounts `{route}`; the manual-run test \
-             exercises a path production does not serve"
+            between(&apps, "fncore_routes(", "fnconsole_routes(").contains(&route),
+            "`admin::apps::core_routes()` no longer registers `{route}`; the manual-run tests \
+             exercise a path production does not serve"
         );
     }
 
-    let copy = code("crates/app/tests/custom_apps/custom_app_functions_manual_run.rs");
-    assert!(
-        copy.contains(
-            ".route_layer(middleware::from_fn(app_scope_guard::enforce_app_scope)).route_layer(middleware::from_fn(platform_cap_guard::require(Action::PlatformApps))).route_layer(middleware::from_fn(block_admin_while_acting));"
-        ) && copy.contains(
-            ".nest(\"/api/admin\",apps.layer(middleware::from_fn(oxy_owner_or_app_admin_guard_middleware)))"
-        ),
-        "the manual-run test's admin stack no longer matches the production shape asserted above"
-    );
-}
-
-/// `publish_token_router` drives the two reads a publish token may `GET` on
-/// the `/customer-apps/{id}/…` nest. Production must still mount those
-/// handlers there, behind the same guards, or the test exercises a surface
-/// no token reaches.
-#[test]
-fn the_customer_apps_reads_the_token_test_copies_still_match_production() {
     let global = code("crates/app/src/server/router/global.rs");
-    for route in [
-        format!(
-            ".route(\"{TOKEN_INVOCATIONS_ROUTE}\",get(admin::apps::functions::list_invocations))"
-        ),
-        format!(
-            ".route(\"{TOKEN_RUN_DETAIL_ROUTE}\",get(admin::apps::functions::get_function_run))"
-        ),
-        format!(
-            ".route(\"{TOKEN_APP_INVOCATIONS_ROUTE}\",get(admin::apps::invocations::list_app_invocations))"
-        ),
-        format!(".route(\"{TOKEN_HELD_ROUTE}\",get(admin::apps::held_writes::get_held_writes))"),
-    ] {
-        assert!(
-            global.contains(&route),
-            "the `/customer-apps` nest in `router/global.rs` no longer mounts `{route}`"
-        );
-    }
     assert!(
-        global.contains(
-            ".layer(middleware::from_fn(admin::assume::block_admin_while_acting))"
-        ) && global.contains(".layer(middleware::from_fn(app_scope_guard::enforce_app_scope))")
-            && global.contains(
-                ".layer(middleware::from_fn(platform_cap_guard::require(crate::server::authz::Action::PlatformApps)))"
-            )
-            && global.contains(
-                ".layer(middleware::from_fn(oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware))"
-            ),
-        "the `/customer-apps` nest no longer layers the four guards the token test copies"
+        global.contains(".nest_all(\"/customer-apps\",RouteRole::FleetOk,admin::apps::guarded(admin::apps::router()"),
+        "the `/customer-apps` nest is no longer `admin::apps::guarded(admin::apps::router()…)`"
     );
-    let copy = code("crates/app/tests/custom_apps/custom_app_functions_manual_run.rs");
     assert!(
-        fn_body(&copy, "customer_apps_router").contains(
-            ".layer(middleware::from_fn(block_admin_while_acting)).layer(middleware::from_fn(app_scope_guard::enforce_app_scope)).layer(middleware::from_fn(platform_cap_guard::require(Action::PlatformApps))).layer(middleware::from_fn(oxy_owner_or_app_admin_guard_middleware));"
-        ),
-        "the token test's `/customer-apps` stack no longer matches the production shape above"
+        global.contains(".nest_all(\"/admin/apps\",RouteRole::FleetOk,admin::apps::guarded(admin::apps::legacy_alias_router())"),
+        "the `/admin/apps` alias is no longer `admin::apps::guarded(admin::apps::legacy_alias_router())`"
+    );
+    let admin = code("crates/app/src/server/api/admin/mod.rs");
+    assert!(
+        !fn_body(&admin, "router").contains("apps::router()"),
+        "`admin::router()` registers the app handlers again; they are mounted once, in `router::global`"
     );
 }
 

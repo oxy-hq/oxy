@@ -160,8 +160,10 @@ fn is_allowed(method: &Method, path: &str) -> bool {
         return false;
     }
     match *method {
-        // Read-only inspection — no mutation, no credential mint.
-        Method::GET | Method::HEAD => true,
+        // Read-only inspection — no mutation, no credential mint. Not the three
+        // routes that list people: they moved here from `/admin/apps`, which a
+        // publish token never reached, and keep that answer.
+        Method::GET | Method::HEAD => !is_people_route(path),
         // The two mutating actions a publish token needs: shipping a build,
         // and running the app's own declared checks against what it shipped.
         // The second is narrowed twice over — this matcher admits only the
@@ -199,6 +201,21 @@ fn is_publish_route(path: &str) -> bool {
         (Some(id), Some("publish"), None) => !id.is_empty(),
         _ => false,
     }
+}
+
+/// `/customer-apps/{id}/access`, `/teams` and `/members`: who may open the app,
+/// and the owning org's teams and people. Staff reading an audience, not a
+/// build inspection — they were `/admin/apps` routes, outside every token's
+/// reach, until the admin handlers moved to one mount.
+fn is_people_route(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/customer-apps/") else {
+        return false;
+    };
+    let mut segs = rest.split('/');
+    matches!(
+        (segs.next(), segs.next(), segs.next()),
+        (Some(id), Some("access" | "teams" | "members"), None) if !id.is_empty()
+    )
 }
 
 /// The one path an app-scoped token may take that names no app: the CLI upload,
@@ -292,6 +309,19 @@ mod tests {
             &Method::POST,
             "/admin/apps/3f2504e0/functions/check_orders/runs"
         ));
+    }
+
+    #[test]
+    fn refuses_the_routes_that_list_people() {
+        for tail in ["access", "teams", "members"] {
+            let path = format!("/customer-apps/3f2504e0/{tail}");
+            assert!(!is_allowed(&Method::GET, &path), "GET {path}");
+            assert!(!is_allowed(&Method::HEAD, &path), "HEAD {path}");
+            assert!(!is_allowed(&Method::PUT, &path), "PUT {path}");
+        }
+        // Their neighbours stay readable.
+        assert!(is_allowed(&Method::GET, "/customer-apps/3f2504e0/issues"));
+        assert!(is_allowed(&Method::GET, "/customer-apps/3f2504e0/builds"));
     }
 
     #[test]

@@ -53,6 +53,13 @@ const UNKNOWN_RANK = 5;
 /**
  * An app's status, or `null` when its health is not known.
  *
+ * Three sources, freshest first. The polled fleet-health row (`health`) wins when it has
+ * one: it refreshes every minute, while a list row is read once and a console left open on
+ * a second monitor would keep showing yesterday's `operational`. The row's own server
+ * verdict (`app.verdict`, the same evaluator, from the list response) answers when the
+ * fleet has not — still loading, past its page cap, or a surface that never polls it.
+ * An unpublished app is a `draft` before either is read.
+ *
  * `null` covers two cases and deliberately does not guess between them: health is
  * still loading, or the app is past the fleet endpoint's page cap. Reporting either as
  * `not_measured` would claim capture is off for an app nobody asked about — the same
@@ -60,7 +67,7 @@ const UNKNOWN_RANK = 5;
  */
 export function statusOf(app: CustomApp, health: HealthIndex | undefined): AppStatus | null {
   if (!app.published_at) return "draft";
-  return health?.get(app.id)?.health ?? null;
+  return health?.get(app.id)?.health ?? app.verdict ?? null;
 }
 
 /** Sort key for "worst first". Unknown sits between the verdicts and drafts. */
@@ -136,6 +143,11 @@ export const statusTone = (s: AppStatus): AdminTone => STATUS_TONE[s];
  * | yes       | unknown      | no_opinion       | `quiet` · muted · "No data"    |
  * | yes       | unknown      | unknown          | `null` · muted · "Published"   |
  *
+ * "fleet health" in the table is `input.health` (the polled fleet-health row) when present,
+ * else `input.verdict` (the server's verdict, carried on the list rows). The columns are
+ * the client mapping and stay as the fallback: a surface whose response carries no
+ * `verdict` reads exactly the table above.
+ *
  * Three rules make the table, and each is one of this surface's standing commitments:
  *
  * - **Worse wins.** Availability can only *escalate* a fleet verdict (`burning` over
@@ -160,6 +172,14 @@ export interface LifecycleVerdict {
 
 export interface LifecycleVerdictInput {
   published: boolean;
+  /**
+   * The server's verdict for this app (`app.verdict`, read with the list). Used only when
+   * `health` has not answered: the polled fleet-health row is fresher, and a stale list
+   * row must not override it. `draft` is ignored here — `published` decides that, so a
+   * stale row cannot un-publish an app on screen. Absent: the client mapping below
+   * decides, exactly as it did before the field existed.
+   */
+  verdict?: AppStatus | null;
   /** The fleet-health row's verdict; `undefined`/`null` when the fleet has not answered. */
   health?: AppHealth | null;
   /** The per-app availability read; `undefined`/`null` when unconfigured (501) or failed. */
@@ -177,10 +197,17 @@ function burningVerdict(
 
 export function lifecycleVerdict({
   published,
-  health,
+  verdict,
+  health: fleetHealth,
   availability
 }: LifecycleVerdictInput): LifecycleVerdict {
   if (!published) return { status: "draft", tone: "muted", label: "Draft", source: "draft" };
+
+  // The polled fleet-health row first, the list row's server verdict when the fleet has
+  // not answered. They are the same evaluator read at different times, so the later read
+  // wins. `draft` here contradicts `published`, so it carries no health and falls through
+  // to the client mapping.
+  const health = fleetHealth ?? (verdict && verdict !== "draft" ? verdict : null);
 
   const burning = availability ? burningVerdict(availability) : null;
 

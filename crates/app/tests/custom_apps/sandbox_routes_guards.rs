@@ -236,42 +236,53 @@ async fn an_operator_scoped_to_the_apps_org_uses_its_sandboxes() {
 }
 
 /// Production mounts the two paths in the `/customer-apps` nest of
-/// `router::global`, **above** the four layers [`console`] copies — axum
-/// applies a `.layer` only to routes registered before it — and names the
-/// app id `id`, which `enforce_app_scope` reads by name.
+/// `router::global`, **inside** the `admin::apps::guarded(…)` call that
+/// [`console`] copies — axum applies a `.layer` only to routes registered
+/// before it — and names the app id `id`, which `enforce_app_scope` reads by
+/// name.
 #[test]
 fn the_routes_are_mounted_inside_the_console_guards() {
     let source = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/server/router/global.rs"),
     )
     .expect("read router/global.rs");
-    let nest = source
+    // Whole-line comments dropped: they name the symbols and carry parentheses.
+    let code = source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let nest = code
         .find("\"/customer-apps\",")
         .expect("router/global.rs mounts the /customer-apps nest");
     // Everything is looked for inside the nest: the same guards also wrap
     // other trees earlier in the file.
     let position = |needle: &str| {
-        nest + source[nest..]
+        nest + code[nest..]
             .find(needle)
             .unwrap_or_else(|| panic!("the /customer-apps nest no longer contains {needle:?}"))
     };
-    let routes = [
+    let open = position("admin::apps::guarded(") + "admin::apps::guarded".len();
+    let mut depth = 0;
+    let close = code[open..]
+        .char_indices()
+        .find_map(|(at, c)| {
+            match c {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+            (depth == 0).then_some(open + at)
+        })
+        .expect("the guarded( call closes");
+    for route in [
         position("\"/{id}/environments\","),
         position("\"/{id}/environments/{name}\","),
-    ];
-    let layers = [
-        position(".layer(middleware::from_fn(admin::assume::block_admin_while_acting))"),
-        position(".layer(middleware::from_fn(app_scope_guard::enforce_app_scope))"),
-        position("crate::server::authz::Action::PlatformApps,"),
-        position("oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware,"),
-    ];
-    for route in routes {
-        for layer in layers {
-            assert!(
-                route < layer,
-                "a route registered after a layer is not covered by it"
-            );
-        }
+    ] {
+        assert!(
+            open < route && route < close,
+            "a route registered outside `admin::apps::guarded(…)` is not covered by its layers"
+        );
     }
     for handler in ["list", "create", "show", "delete"] {
         position(&format!("custom_apps_sandboxes::handlers::{handler})"));

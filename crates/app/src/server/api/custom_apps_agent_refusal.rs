@@ -69,6 +69,7 @@ pub const REFUSED_WRITES: &[(&str, &str)] = &[
     // schedules on costs warehouse reads and third-party calls on a timer;
     // staff flip it, never a token (environments design §4.5, ruling 1).
     ("PUT", "/customer-apps/{id}/environments/{name}/schedules"),
+    ("PUT", "/customer-apps/{id}/access"),
     ("POST", "/admin/apps"),
     ("PATCH", "/admin/apps/{id}"),
     ("DELETE", "/admin/apps/{id}"),

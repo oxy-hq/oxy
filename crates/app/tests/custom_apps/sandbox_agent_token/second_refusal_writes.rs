@@ -134,6 +134,7 @@ fn fixed_state_writes() -> Vec<Write> {
             "/admin/apps/{id}/publish",
             delete(admin::unpublish_app),
         ),
+        write("PUT", "/customer-apps/{id}/access", put(set_app_access)),
         write("PUT", "/admin/apps/{id}/access", put(set_app_access)),
         write(
             "POST",
@@ -166,7 +167,9 @@ fn body_for(agent: &Agent, path: &str, staging: Uuid) -> Option<Value> {
             "repo_owner": "acme", "repo_owner_id": 1, "repo_name": "app",
             "workflow_ref": ".github/workflows/oxy-publish.yml", "environment": "production",
         }),
-        "/admin/apps/{id}/access" => json!({ "visibility": "restricted" }),
+        "/customer-apps/{id}/access" | "/admin/apps/{id}/access" => {
+            json!({ "visibility": "restricted" })
+        }
         "/customer-apps/{id}/environments/{name}/schedules" => json!({ "enabled": true }),
         "/admin/app-publish-tokens" => json!({ "name": "by token" }),
         batch if batch.starts_with("/customer-apps/batch/") => json!({ "ids": [app] }),

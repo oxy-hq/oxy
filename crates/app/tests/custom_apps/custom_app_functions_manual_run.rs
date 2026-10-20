@@ -4,15 +4,13 @@
 //! `GET /api/admin/apps/{id}/function-runs/{run_id}` reports the run done with
 //! the function's answer and its logs.
 //!
-//! **Routes.** The two handlers mount at their production paths (`RUNS_ROUTE`,
-//! `RUN_DETAIL_ROUTE` from `admin::apps::router()`, nested at `/admin` by
-//! `router::global` and under `/api` by `serve.rs`). They sit behind a copy of
-//! the admin guards in production order: the `/admin` door
-//! `oxy_owner_or_app_admin_guard`, then `block_admin_while_acting`,
-//! `platform_cap_guard::require(PlatformApps)` and `enforce_app_scope`, all under
-//! `auth_middleware`. `admin::router()` is `pub(crate)`, hence the copy;
-//! `custom_app_functions_manual_run_guards` fails when production and the copy
-//! diverge. The copy leaves out three outer layers of the protected tree
+//! **Routes.** The handlers register at their production paths (`RUNS_ROUTE`,
+//! `RUN_DETAIL_ROUTE`, … from `admin::apps::router()`) and sit behind the
+//! production guard stack itself, `admin::apps::guarded` — the stack
+//! `/customer-apps` and the `/admin/apps` alias both wear — under
+//! `auth_middleware`. The test nests them at the alias, `/api/admin/apps`.
+//! `custom_app_functions_manual_run_guards` fails when production stops
+//! registering them. The copy leaves out three outer layers of the protected tree
 //! (`router/protected.rs`): `api_key_query_middleware`, `timeout_middleware` and
 //! `app_publish_token_scope_middleware`. Global Owner standing comes from
 //! `OXY_OWNER`, as in `admin_app_workspace_in_org`, so only the allow path runs.
@@ -76,14 +74,10 @@ use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::config::OnMissing;
 use oxy_app::agentic_wiring::OxyProjectContext;
 use oxy_app::server::api::admin::apps::{
-    functions as admin_functions, handlers, held_writes, invocations as admin_invocations,
+    functions as admin_functions, guarded, handlers, held_writes, invocations as admin_invocations,
 };
-use oxy_app::server::api::admin::assume::block_admin_while_acting;
 use oxy_app::server::api::middlewares::app_publish_token_scope::app_publish_token_scope_middleware;
-use oxy_app::server::api::middlewares::oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware;
-use oxy_app::server::api::middlewares::{app_scope_guard, platform_cap_guard};
 use oxy_app::server::app_function_executor::{APP_FUNCTION_KIND, AppFunctionTaskExecutor};
-use oxy_app::server::authz::Action;
 use oxy_auth::middleware::{AuthState, auth_middleware};
 use oxy_auth::types::AuthenticatedUser;
 use oxy_auth::user::LOCAL_GUEST_EMAIL;
@@ -119,14 +113,16 @@ fn functions() -> Vec<FunctionSpec> {
     }]
 }
 
-/// The paths as `admin::apps::router()` mounts them, below `/api/admin`.
+/// The paths as `admin::apps::router()` registers them, below the mount
+/// (`/api/customer-apps`, or the `/api/admin/apps` alias).
 /// `custom_app_functions_manual_run_guards` checks production still does.
-pub(crate) const RUNS_ROUTE: &str = "/apps/{id}/functions/{name}/runs";
-pub(crate) const RUN_DETAIL_ROUTE: &str = "/apps/{id}/function-runs/{run_id}";
-pub(crate) const FUNCTIONS_ROUTE: &str = "/apps/{id}/functions";
-pub(crate) const FUNCTION_INVOCATIONS_ROUTE: &str = "/apps/{id}/functions/{name}/invocations";
-pub(crate) const INVOCATIONS_ROUTE: &str = "/apps/{id}/invocations";
-pub(crate) const HELD_ROUTE: &str = "/apps/{id}/invocations/{invocation_id}/held";
+pub(crate) const RUNS_ROUTE: &str = "/{id}/functions/{name}/runs";
+pub(crate) const RUN_DETAIL_ROUTE: &str = "/{id}/function-runs/{run_id}";
+pub(crate) const FUNCTIONS_ROUTE: &str = "/{id}/functions";
+pub(crate) const FUNCTION_INVOCATIONS_ROUTE: &str = "/{id}/functions/{name}/invocations";
+/// The app-wide invocation listing and one invocation's held list.
+pub(crate) const INVOCATIONS_ROUTE: &str = "/{id}/invocations";
+pub(crate) const HELD_ROUTE: &str = "/{id}/invocations/{invocation_id}/held";
 
 fn admin_router() -> Router {
     guarded_admin().layer(middleware::from_fn_with_state(
@@ -135,39 +131,22 @@ fn admin_router() -> Router {
     ))
 }
 
-/// The two reads `router/global.rs` also mounts on the `/customer-apps/{id}/…`
-/// surface — the one a publish token may `GET` — relative to that nest.
-/// `custom_app_functions_manual_run_guards` checks production still does.
-pub(crate) const TOKEN_INVOCATIONS_ROUTE: &str = "/{id}/functions/{name}/invocations";
-pub(crate) const TOKEN_RUN_DETAIL_ROUTE: &str = "/{id}/function-runs/{run_id}";
-/// The app-wide invocation listing and one invocation's held list, mounted
-/// on that surface too for the sandbox loop's read-back.
-pub(crate) const TOKEN_APP_INVOCATIONS_ROUTE: &str = "/{id}/invocations";
-pub(crate) const TOKEN_HELD_ROUTE: &str = "/{id}/invocations/{invocation_id}/held";
-
 /// That surface as a request reaches it: real authentication, the publish
 /// token's own scope middleware, then the nest's guards in production order.
 fn customer_apps_router() -> Router {
-    let apps = Router::new()
-        .route(
-            TOKEN_INVOCATIONS_ROUTE,
-            get(admin_functions::list_invocations),
-        )
-        .route(
-            TOKEN_RUN_DETAIL_ROUTE,
-            get(admin_functions::get_function_run),
-        )
-        .route(
-            TOKEN_APP_INVOCATIONS_ROUTE,
-            get(admin_invocations::list_app_invocations),
-        )
-        .route(TOKEN_HELD_ROUTE, get(held_writes::get_held_writes))
-        .layer(middleware::from_fn(block_admin_while_acting))
-        .layer(middleware::from_fn(app_scope_guard::enforce_app_scope))
-        .layer(middleware::from_fn(platform_cap_guard::require(
-            Action::PlatformApps,
-        )))
-        .layer(middleware::from_fn(oxy_owner_or_app_admin_guard_middleware));
+    let apps = guarded(
+        Router::new()
+            .route(
+                FUNCTION_INVOCATIONS_ROUTE,
+                get(admin_functions::list_invocations),
+            )
+            .route(RUN_DETAIL_ROUTE, get(admin_functions::get_function_run))
+            .route(
+                INVOCATIONS_ROUTE,
+                get(admin_invocations::list_app_invocations),
+            )
+            .route(HELD_ROUTE, get(held_writes::get_held_writes)),
+    );
     let api = Router::new()
         .nest("/customer-apps", apps)
         .layer(middleware::from_fn(app_publish_token_scope_middleware))
@@ -198,28 +177,23 @@ async fn get_customer_apps(path: &str, token: Option<&str>) -> (StatusCode, Valu
 /// The admin stack below authentication: every guard, and no decision yet
 /// about who is asking.
 fn guarded_admin() -> Router {
-    let apps = Router::new()
-        .route(RUNS_ROUTE, post(handlers::run_function_job))
-        .route(RUN_DETAIL_ROUTE, get(admin_functions::get_function_run))
-        .route(FUNCTIONS_ROUTE, get(admin_functions::list_functions))
-        .route(
-            FUNCTION_INVOCATIONS_ROUTE,
-            get(admin_functions::list_invocations),
-        )
-        .route(
-            INVOCATIONS_ROUTE,
-            get(admin_invocations::list_app_invocations),
-        )
-        .route(HELD_ROUTE, get(held_writes::get_held_writes))
-        .route_layer(middleware::from_fn(app_scope_guard::enforce_app_scope))
-        .route_layer(middleware::from_fn(platform_cap_guard::require(
-            Action::PlatformApps,
-        )))
-        .route_layer(middleware::from_fn(block_admin_while_acting));
-    Router::new().nest(
-        "/api/admin",
-        apps.layer(middleware::from_fn(oxy_owner_or_app_admin_guard_middleware)),
-    )
+    let apps = guarded(
+        Router::new()
+            .route(RUNS_ROUTE, post(handlers::run_function_job))
+            .route(RUN_DETAIL_ROUTE, get(admin_functions::get_function_run))
+            .route(FUNCTIONS_ROUTE, get(admin_functions::list_functions))
+            .route(
+                FUNCTION_INVOCATIONS_ROUTE,
+                get(admin_functions::list_invocations),
+            )
+            .route(
+                INVOCATIONS_ROUTE,
+                get(admin_invocations::list_app_invocations),
+            )
+            .route(HELD_ROUTE, get(held_writes::get_held_writes)),
+    );
+    // The `/api/admin/apps` alias; the same `guarded` stack is `/customer-apps`'s.
+    Router::new().nest("/api/admin/apps", apps)
 }
 
 /// `GET /api/admin<path>` through the same guards as `caller`, whom
