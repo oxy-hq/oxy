@@ -84,7 +84,7 @@ function sse(...frames: Array<[string, unknown]>): string {
 /** `<app>` already as "org/app" needs no admin lookup at all — see the UUID test below for the one that does. */
 function appAdminLookup(): RouteTable {
   return {
-    [`GET /api/admin/apps/${APP_ID}`]: () => ({
+    [`GET /api/customer-apps/${APP_ID}`]: () => ({
       status: 200,
       body: JSON.stringify({ id: APP_ID, slug: "store", org_slug: "acme" })
     })
@@ -254,7 +254,7 @@ describe("runFnCall", () => {
     expect(prodCall?.headers["x-oxy-app-env"]).toBeUndefined();
   });
 
-  it("a UUID <app> resolves org/app through GET /api/admin/apps/{id} first", async () => {
+  it("a UUID <app> resolves org/app through GET /api/customer-apps/{id} first", async () => {
     stubFetch(
       {
         ...appAdminLookup(),
@@ -271,7 +271,7 @@ describe("runFnCall", () => {
       timeoutSeconds: 5
     });
 
-    expect(calls.some((c) => c.url === `${TARGET}/api/admin/apps/${APP_ID}`)).toBe(true);
+    expect(calls.some((c) => c.url === `${TARGET}/api/customer-apps/${APP_ID}`)).toBe(true);
     expect(calls.some((c) => c.url === `${TARGET}/customer-apps/acme/store/fn/submit-order`)).toBe(
       true
     );

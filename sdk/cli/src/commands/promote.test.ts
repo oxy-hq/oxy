@@ -63,7 +63,7 @@ function stubFetch(routes: Record<string, Handler>, calls: Call[]) {
 }
 
 const APPS = {
-  "GET /api/admin/apps?limit=100&offset=0": () => ({
+  "GET /api/customer-apps?limit=100&offset=0": () => ({
     status: 200,
     body: { items: [{ id: APP_ID, slug: "store", org_slug: "acme" }], next_offset: null }
   })

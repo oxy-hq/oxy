@@ -1,12 +1,11 @@
 /**
  * Which credential `oxyc checks run` uses, and which surface it can reach.
  *
- * The three function routes are mounted twice: under `/api/admin/apps` for a
- * person, and under `/api/customer-apps` for a machine. The CREDENTIAL picks,
- * not the environment — a publish token or a service account's token carries
- * no platform standing, so the admin mount refuses it on a path the caller
- * cannot be given. A sandbox agent token (`oxy_sbx_…`) reads the machine
- * mount too, for the opposite reason: it never reaches `/admin` at all.
+ * Every credential reaches the three function routes at `/api/customer-apps`.
+ * What the CREDENTIAL picks, not the environment, is whether the app can be
+ * looked up: a publish token, a service account's token or a sandbox agent
+ * token (`oxy_sbx_…`) may not list apps, so `machine` is set and the app id
+ * comes from the credential or the caller instead.
  *
  * ORDER, which differs from every other command in exactly one place:
  *
@@ -19,7 +18,7 @@
  * The API key sits AHEAD of OIDC because this command can use one on its own.
  * A job that sets `OXY_API_KEY` and also happens to hold `id-token: write` has
  * said which credential it means, and minting over the top of it would swap a
- * staff key for a service account that cannot reach the admin surface.
+ * staff key for a service account that cannot list apps.
  */
 
 import { isProduction } from "../apps/environment.js";
@@ -32,16 +31,16 @@ import type { Context } from "../context/resolve.js";
 import { exchangeGithubOidc } from "../publish/server.js";
 import { CliError, ExitCode, usageError } from "../util/errors.js";
 
-/** Where the three function routes live for each kind of credential. */
-export const ADMIN_SURFACE = "/api/admin/apps";
-export const MACHINE_SURFACE = "/api/customer-apps";
+/** Where the three function routes live, for every kind of credential. */
+export const APPS_API = "/api/customer-apps";
 
 export { UUID_RE };
 
 export interface ResolvedCredentials {
   bearer?: string;
   apiKey?: string;
-  surface: string;
+  /** True for a credential that may not list apps (publish, service account, sandbox agent). */
+  machine: boolean;
   /** Set when the credential itself told us which app it is scoped to. */
   appId?: string;
 }
@@ -77,25 +76,25 @@ async function appIdFromGrants(
   return matches.length === 1 ? (matches[0]?.app_id ?? undefined) : undefined;
 }
 
-/** The surface a bearer reads, and the app id when the token can supply it. */
+/** Whether a bearer is a machine credential, and the app id when the token can supply it. */
 async function forBearer(
   target: string,
   bearer: string,
   app: string
 ): Promise<ResolvedCredentials> {
   const shape = credentialShape(bearer);
-  if (shape === "publish") return { bearer, surface: MACHINE_SURFACE };
+  if (shape === "publish") return { bearer, machine: true };
   if (shape === "service_account" || shape === "ci") {
     const appId = UUID_RE.test(app) ? undefined : await appIdFromGrants(target, bearer, app);
-    return { bearer, surface: MACHINE_SURFACE, appId };
+    return { bearer, machine: true, appId };
   }
   if (shape === "sandbox_agent") {
-    // The admin mount answers this token 404. The app comes off the token's
+    // This token may not list apps. The app comes off the token's
     // own list — a slug or a UUID — and one it was not minted for stops here.
     const { appId } = await resolveSandboxApp(target, bearer, app);
-    return { bearer, surface: MACHINE_SURFACE, appId };
+    return { bearer, machine: true, appId };
   }
-  return { bearer, surface: ADMIN_SURFACE };
+  return { bearer, machine: false };
 }
 
 /**
@@ -127,7 +126,7 @@ async function fromPublisher(
       hint: "this deployment predates trusted checks — upgrade it, or set OXY_TOKEN and pass the app UUID"
     });
   }
-  return { bearer: minted.token, surface: MACHINE_SURFACE, appId: minted.appId };
+  return { bearer: minted.token, machine: true, appId: minted.appId };
 }
 
 /**
@@ -201,7 +200,7 @@ export async function resolveCredentials(
   }
 
   const apiKey = ctx.apiKey();
-  if (apiKey) return { apiKey, surface: ADMIN_SURFACE };
+  if (apiKey) return { apiKey, machine: false };
 
   if (githubOidcAvailable()) {
     if (!isProduction(appEnv)) refuseNonProduction();
@@ -210,5 +209,5 @@ export async function resolveCredentials(
 
   // Throws — nothing resolved and nothing can be minted.
   await ctx.bearer();
-  return { surface: ADMIN_SURFACE };
+  return { machine: false };
 }

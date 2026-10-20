@@ -100,8 +100,8 @@ const APPS_PAGE_2 = {
 
 function appsRoutes(): RouteTable {
   return {
-    "GET /api/admin/apps?limit=100&offset=0": () => ({ status: 200, body: APPS_PAGE_1 }),
-    "GET /api/admin/apps?limit=100&offset=100": () => ({ status: 200, body: APPS_PAGE_2 })
+    "GET /api/customer-apps?limit=100&offset=0": () => ({ status: 200, body: APPS_PAGE_1 }),
+    "GET /api/customer-apps?limit=100&offset=100": () => ({ status: 200, body: APPS_PAGE_2 })
   };
 }
 
@@ -123,20 +123,20 @@ describe("runChecks", () => {
     vi.unstubAllEnvs();
   });
 
-  it("resolves an org/slug across pages of GET /api/admin/apps", async () => {
+  it("resolves an org/slug across pages of GET /api/customer-apps", async () => {
     let runs = 0;
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/functions`]: () => ({
           status: 200,
           body: [{ name: "canary", check: true }]
         }),
-        [`POST /api/admin/apps/${APP_ID}/functions/canary/runs`]: () => {
+        [`POST /api/customer-apps/${APP_ID}/functions/canary/runs`]: () => {
           runs += 1;
           return { status: 200, body: { run_id: "run-1" } };
         },
-        [`GET /api/admin/apps/${APP_ID}/function-runs/run-1`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/function-runs/run-1`]: () => ({
           status: 200,
           body: { run_id: "run-1", status: "done", trigger: "manual", answer: null, error: null }
         })
@@ -151,10 +151,10 @@ describe("runChecks", () => {
     });
 
     expect(runs).toBe(1);
-    const appsCalls = calls.filter((c) => c.url.includes("/api/admin/apps?"));
+    const appsCalls = calls.filter((c) => c.url.includes("/api/customer-apps?"));
     expect(appsCalls.map((c) => c.url)).toEqual([
-      `${TARGET}/api/admin/apps?limit=100&offset=0`,
-      `${TARGET}/api/admin/apps?limit=100&offset=100`
+      `${TARGET}/api/customer-apps?limit=100&offset=0`,
+      `${TARGET}/api/customer-apps?limit=100&offset=100`
     ]);
   });
 
@@ -351,7 +351,7 @@ describe("runChecks", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions`]: () => ({ status: 200, body: [] })
+        [`GET /api/customer-apps/${APP_ID}/functions`]: () => ({ status: 200, body: [] })
       },
       calls
     );
@@ -416,7 +416,7 @@ describe("runChecks", () => {
   });
 
   it("refuses a slug when the credential cannot resolve one", async () => {
-    // `resolveApp` pages `/api/admin/apps`, which a publish token may not
+    // `resolveApp` pages `/api/customer-apps`, which a publish token may not
     // reach — the request would 403 on a route the caller cannot be given, so
     // it is never sent. No route stub: any request at all fails this test.
     stubFetch({}, calls);
@@ -436,18 +436,18 @@ describe("runChecks", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/functions`]: () => ({
           status: 200,
           body: [
             { name: "echo", check: false },
             { name: "canary", check: true }
           ]
         }),
-        [`POST /api/admin/apps/${APP_ID}/functions/canary/runs`]: () => {
+        [`POST /api/customer-apps/${APP_ID}/functions/canary/runs`]: () => {
           runPaths.push("canary");
           return { status: 200, body: { run_id: "run-1" } };
         },
-        [`GET /api/admin/apps/${APP_ID}/function-runs/run-1`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/function-runs/run-1`]: () => ({
           status: 200,
           body: { run_id: "run-1", status: "done", answer: null, error: null }
         })
@@ -470,15 +470,15 @@ describe("runChecks", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/functions`]: () => ({
           status: 200,
           body: [{ name: "canary", check: true }]
         }),
-        [`POST /api/admin/apps/${APP_ID}/functions/canary/runs`]: () => ({
+        [`POST /api/customer-apps/${APP_ID}/functions/canary/runs`]: () => ({
           status: 200,
           body: { run_id: "run-1" }
         }),
-        [`GET /api/admin/apps/${APP_ID}/function-runs/run-1`]: () => {
+        [`GET /api/customer-apps/${APP_ID}/function-runs/run-1`]: () => {
           const status = statuses[Math.min(poll, statuses.length - 1)];
           poll += 1;
           return { status: 200, body: { run_id: "run-1", status, answer: null, error: null } };
@@ -501,15 +501,15 @@ describe("runChecks", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/functions`]: () => ({
           status: 200,
           body: [{ name: "canary", check: true }]
         }),
-        [`POST /api/admin/apps/${APP_ID}/functions/canary/runs`]: () => ({
+        [`POST /api/customer-apps/${APP_ID}/functions/canary/runs`]: () => ({
           status: 200,
           body: { run_id: "run-1" }
         }),
-        [`GET /api/admin/apps/${APP_ID}/function-runs/run-1`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/function-runs/run-1`]: () => ({
           status: 200,
           body: { run_id: "run-1", status: "failed", answer: null, error: "boom" }
         })
@@ -531,15 +531,15 @@ describe("runChecks", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/functions`]: () => ({
           status: 200,
           body: [{ name: "canary", check: true }]
         }),
-        [`POST /api/admin/apps/${APP_ID}/functions/canary/runs`]: () => ({
+        [`POST /api/customer-apps/${APP_ID}/functions/canary/runs`]: () => ({
           status: 200,
           body: { run_id: "run-1" }
         }),
-        [`GET /api/admin/apps/${APP_ID}/function-runs/run-1`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/function-runs/run-1`]: () => ({
           status: 200,
           body: {
             run_id: "run-1",
@@ -566,15 +566,15 @@ describe("runChecks", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/functions`]: () => ({
           status: 200,
           body: [{ name: "canary", check: true }]
         }),
-        [`POST /api/admin/apps/${APP_ID}/functions/canary/runs`]: () => ({
+        [`POST /api/customer-apps/${APP_ID}/functions/canary/runs`]: () => ({
           status: 200,
           body: { run_id: "run-1" }
         }),
-        [`GET /api/admin/apps/${APP_ID}/function-runs/run-1`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/function-runs/run-1`]: () => ({
           status: 200,
           body: { run_id: "run-1", status: "running", answer: null, error: null }
         })
@@ -607,7 +607,7 @@ describe("runChecks", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/functions`]: () => ({
           status: 200,
           body: [{ name: "echo", check: false }]
         })
@@ -668,15 +668,15 @@ describe("runChecks", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/functions`]: () => ({
           status: 200,
           body: [{ name: "canary", check: true }]
         }),
-        [`POST /api/admin/apps/${APP_ID}/functions/canary/runs`]: () => ({
+        [`POST /api/customer-apps/${APP_ID}/functions/canary/runs`]: () => ({
           status: 200,
           body: { run_id: "run-1" }
         }),
-        [`GET /api/admin/apps/${APP_ID}/function-runs/run-1`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/function-runs/run-1`]: () => ({
           status: 200,
           body: { run_id: "run-1", status: "done", answer: null, error: null }
         })
@@ -701,15 +701,15 @@ describe("runChecks", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/functions`]: () => ({
           status: 200,
           body: [{ name: "canary", check: true }]
         }),
-        [`POST /api/admin/apps/${APP_ID}/functions/canary/runs`]: () => ({
+        [`POST /api/customer-apps/${APP_ID}/functions/canary/runs`]: () => ({
           status: 200,
           body: { run_id: "run-1" }
         }),
-        [`GET /api/admin/apps/${APP_ID}/function-runs/run-1`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/function-runs/run-1`]: () => ({
           status: 200,
           body: { run_id: "run-1", status: "done", answer: null, error: null }
         })
@@ -773,15 +773,15 @@ describe("runChecks --app-env", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions?environment=dev-a1`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/functions?environment=dev-a1`]: () => ({
           status: 200,
           body: [{ name: "canary", check: true }]
         }),
-        [`POST /api/admin/apps/${APP_ID}/functions/canary/runs?environment=dev-a1`]: () => ({
+        [`POST /api/customer-apps/${APP_ID}/functions/canary/runs?environment=dev-a1`]: () => ({
           status: 200,
           body: { run_id: "run-1" }
         }),
-        [`GET /api/admin/apps/${APP_ID}/function-runs/run-1?environment=dev-a1`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/function-runs/run-1?environment=dev-a1`]: () => ({
           status: 200,
           body: {
             run_id: "run-1",
@@ -818,15 +818,15 @@ describe("runChecks --app-env", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/functions`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/functions`]: () => ({
           status: 200,
           body: [{ name: "canary", check: true }]
         }),
-        [`POST /api/admin/apps/${APP_ID}/functions/canary/runs`]: () => ({
+        [`POST /api/customer-apps/${APP_ID}/functions/canary/runs`]: () => ({
           status: 200,
           body: { run_id: "run-1" }
         }),
-        [`GET /api/admin/apps/${APP_ID}/function-runs/run-1`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/function-runs/run-1`]: () => ({
           status: 200,
           body: { run_id: "run-1", status: "done", answer: null, error: null }
         })

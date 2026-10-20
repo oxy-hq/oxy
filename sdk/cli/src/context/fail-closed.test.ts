@@ -145,7 +145,7 @@ describe("--token-env naming an unset variable", () => {
     expect(staffCreds(ctx)).toEqual({ target: TARGET, headers: { "X-API-Key": "oxy_0123abcd" } });
     expect(await resolveCredentials(ctx, TARGET, "acme/store")).toEqual({
       apiKey: "oxy_0123abcd",
-      surface: "/api/admin/apps"
+      machine: false
     });
     expect(cacheReads).not.toHaveBeenCalled();
   });

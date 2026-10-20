@@ -189,15 +189,15 @@ describe("resolveApp", () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it("pages GET /api/admin/apps to match an org/app slug", async () => {
+  it("pages GET /api/customer-apps to match an org/app slug", async () => {
     calls = [];
     stubFetch(
       {
-        "GET /api/admin/apps?limit=100&offset=0": () => ({
+        "GET /api/customer-apps?limit=100&offset=0": () => ({
           status: 200,
           body: { items: [], next_offset: 100 }
         }),
-        "GET /api/admin/apps?limit=100&offset=100": () => ({
+        "GET /api/customer-apps?limit=100&offset=100": () => ({
           status: 200,
           body: {
             items: [{ id: APP_ID, slug: "store", org_slug: "acme" }],
@@ -217,11 +217,11 @@ describe("resolveApp", () => {
     });
   });
 
-  it("resolves a UUID through GET /api/admin/apps/{id}", async () => {
+  it("resolves a UUID through GET /api/customer-apps/{id}", async () => {
     calls = [];
     stubFetch(
       {
-        [`GET /api/admin/apps/${APP_ID}`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}`]: () => ({
           status: 200,
           body: { id: APP_ID, slug: "store", org_slug: "acme" }
         })
@@ -243,7 +243,7 @@ describe("resolveApp", () => {
     calls = [];
     stubFetch(
       {
-        "GET /api/admin/apps?limit=100&offset=0": () => ({
+        "GET /api/customer-apps?limit=100&offset=0": () => ({
           status: 200,
           body: { items: [], next_offset: null }
         })

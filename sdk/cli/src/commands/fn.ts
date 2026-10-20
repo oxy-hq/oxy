@@ -14,7 +14,7 @@
 import { parseJson, request } from "../api/request.js";
 import { withUserAgent } from "../api/user-agent.js";
 import { APP_ENV_HEADER, isProduction, parseAppEnv } from "../apps/environment.js";
-import { ensureOk, PUBLISH_TOKEN_PREFIX, UUID_RE } from "../apps/resolve.js";
+import { CUSTOMER_APPS_API, ensureOk, PUBLISH_TOKEN_PREFIX, UUID_RE } from "../apps/resolve.js";
 import {
   readRefusal,
   requireOwnSandbox,
@@ -125,7 +125,7 @@ function fnCredential(ctx: Context): FnCreds {
 /**
  * `<app>` already as `<org>/<app>` needs no lookup — the route takes slugs
  * directly, and a publish token (which may call a function in production)
- * can never reach `/api/admin/apps` anyway. A UUID needs one lookup, which
+ * can never list apps anyway. A UUID needs one lookup, which
  * does need a non-machine credential — same constraint `checks.ts` has in
  * the opposite direction.
  */
@@ -144,15 +144,15 @@ async function resolveOrgAppSlug(
     }
     return { orgSlug, appSlug };
   }
-  // A UUID needs `GET /api/admin/apps/{id}`, which a publish token may never
+  // A UUID needs `GET /api/customer-apps/{id}`, which a publish token may never
   // reach — the same invariant `checks.ts` enforces, in the opposite
-  // direction (there, the admin APP LISTING a slug needs is refused; here,
-  // it's the admin LOOKUP a UUID needs). Refuse client-side rather than
+  // direction (there, the APP LISTING a slug needs is refused; here,
+  // it's the LOOKUP a UUID needs). Refuse client-side rather than
   // sending a request the server would 403 anyway.
   if (creds.bearer?.startsWith(PUBLISH_TOKEN_PREFIX)) {
     throw usageError(
       `a publish token cannot resolve ${app} — pass "<org-slug>/<app-slug>"`,
-      "resolving a UUID means GET /api/admin/apps/{id}, which a publish token may not reach"
+      "resolving a UUID means GET /api/customer-apps/{id}, which a publish token may not reach"
     );
   }
   // A sandbox agent token may not reach it either, and does not need to: the
@@ -162,7 +162,7 @@ async function resolveOrgAppSlug(
   }
   const response = await request({
     target: creds.target,
-    path: `/api/admin/apps/${app}`,
+    path: `${CUSTOMER_APPS_API}/${app}`,
     method: "GET",
     bearer: creds.bearer,
     headers: creds.apiKey ? { "X-API-Key": creds.apiKey } : undefined
@@ -170,7 +170,7 @@ async function resolveOrgAppSlug(
   ensureOk(response);
   const payload = parseJson(response.body) as { slug?: string; org_slug?: string } | undefined;
   if (!payload?.slug || !payload.org_slug) {
-    throw new CliError(`GET /api/admin/apps/${app} did not return slug and org_slug`, {
+    throw new CliError(`GET ${CUSTOMER_APPS_API}/${app} did not return slug and org_slug`, {
       code: ExitCode.UNAVAILABLE
     });
   }

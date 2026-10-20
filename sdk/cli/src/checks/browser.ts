@@ -24,7 +24,7 @@
  * page runs on the deployment's own origin, beside the whole API, and its code
  * is the build under test — often one an agent or an app operator published.
  * A credential on every same-origin request would let that code call
- * `/api/admin/…` (a promote, a token mint) as the person running the check.
+ * `/api/…` (a promote, a token mint) as the person running the check.
  * So the app's `/api/…` calls go without it, as an anonymous visitor's would:
  * an app that will not mount without its data fails the check rather than
  * borrowing the operator's authority.

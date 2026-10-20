@@ -71,7 +71,7 @@ function stubFetch(routes: RouteTable, calls: Call[]) {
 
 function appsRoutes(): RouteTable {
   return {
-    "GET /api/admin/apps?limit=100&offset=0": () => ({
+    "GET /api/customer-apps?limit=100&offset=0": () => ({
       status: 200,
       body: { items: [{ id: APP_ID, slug: "store", org_slug: "acme" }], next_offset: null }
     })
@@ -106,11 +106,11 @@ describe("runInvocationsList", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("GETs /api/admin/apps/{id}/invocations with no query by default", async () => {
+  it("GETs /api/customer-apps/{id}/invocations with no query by default", async () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/invocations`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/invocations`]: () => ({
           status: 200,
           body: { invocations: [ROW] }
         })
@@ -128,14 +128,14 @@ describe("runInvocationsList", () => {
 
     expect(JSON.parse(printed.trim())).toEqual({ invocations: [ROW] });
     const call = calls.find((c) => c.url.includes("/invocations"));
-    expect(call?.url).toBe(`${TARGET}/api/admin/apps/${APP_ID}/invocations`);
+    expect(call?.url).toBe(`${TARGET}/api/customer-apps/${APP_ID}/invocations`);
   });
 
   it("prints each row's id, function, environment and status without --json", async () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/invocations`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/invocations`]: () => ({
           status: 200,
           body: { invocations: [ROW] }
         })
@@ -160,7 +160,7 @@ describe("runInvocationsList", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/invocations?function=submit-order&environment=dev-a1&build=k3x9&limit=10`]:
+        [`GET /api/customer-apps/${APP_ID}/invocations?function=submit-order&environment=dev-a1&build=k3x9&limit=10`]:
           () => ({ status: 200, body: { invocations: [] } })
       },
       calls
@@ -178,7 +178,7 @@ describe("runInvocationsList", () => {
       calls.some(
         (c) =>
           c.url ===
-          `${TARGET}/api/admin/apps/${APP_ID}/invocations?function=submit-order&environment=dev-a1&build=k3x9&limit=10`
+          `${TARGET}/api/customer-apps/${APP_ID}/invocations?function=submit-order&environment=dev-a1&build=k3x9&limit=10`
       )
     ).toBe(true);
   });
@@ -198,7 +198,7 @@ describe("runInvocationsList", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/invocations`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/invocations`]: () => ({
           status: 403,
           body: { error: "non_production_refused", message: "nope" }
         })
@@ -243,7 +243,7 @@ describe("runInvocationsHeld", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/invocations/inv-1/held`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/invocations/inv-1/held`]: () => ({
           status: 200,
           body: HELD
         })
@@ -266,7 +266,7 @@ describe("runInvocationsHeld", () => {
     stubFetch(
       {
         ...appsRoutes(),
-        [`GET /api/admin/apps/${APP_ID}/invocations/missing/held`]: () => ({
+        [`GET /api/customer-apps/${APP_ID}/invocations/missing/held`]: () => ({
           status: 404,
           body: { error: "invocation_not_found", message: "no such invocation" }
         })

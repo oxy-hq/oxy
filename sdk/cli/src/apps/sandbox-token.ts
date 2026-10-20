@@ -1,6 +1,6 @@
 /**
  * What `oxyc` does differently when the credential is a sandbox agent token
- * (`oxy_sbx_…`): where an app is resolved, which mount read-back uses, what is
+ * (`oxy_sbx_…`): where an app is resolved, what is
  * refused before any request, and what a refusal from the server means.
  *
  * The token does the sandbox loop on the apps it was minted for, in sandboxes
@@ -14,12 +14,6 @@ import { normalizeToken, type SandboxTokenApp, type Token } from "../auth/token-
 import { isSandboxAgentToken } from "../auth/token-kind.js";
 import { CliError, ExitCode, usageError } from "../util/errors.js";
 import { printable, printableLines } from "../util/printable.js";
-
-/**
- * Where a sandbox agent token reads invocations and held writes. The admin
- * mount (`/api/admin/apps`) answers this credential `404` on every path.
- */
-export const SANDBOX_READ_BACK_SURFACE = "/api/customer-apps";
 
 /** An app id, as opposed to an `<org-slug>/<app-slug>` pair. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -117,7 +111,7 @@ function label(app: SandboxTokenApp): string {
 
 /**
  * Resolve `<org-slug>/<app-slug>` or an app UUID against the token's OWN app
- * list. Never `GET /api/admin/apps`, which this credential cannot reach.
+ * list. Never `GET /api/customer-apps`, which this credential may not call.
  */
 export async function resolveSandboxApp(
   target: string,

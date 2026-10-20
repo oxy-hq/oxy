@@ -13,7 +13,7 @@
  */
 
 import { parseJson, request } from "../api/request.js";
-import { type Creds, ensureOk, staffCreds, UUID_RE } from "../apps/resolve.js";
+import { type Creds, CUSTOMER_APPS_API, ensureOk, staffCreds, UUID_RE } from "../apps/resolve.js";
 import { refuseSandboxToken } from "../apps/sandbox-token.js";
 import type { Context } from "../context/resolve.js";
 import { CliError, ExitCode, usageError } from "../util/errors.js";
@@ -33,8 +33,8 @@ interface AppsPage<Row> {
   next_offset?: number | null;
 }
 
-/** The app-admin surface: the same handlers as `/api/admin/apps`, gated by the app-admin role. */
-export const CUSTOMER_APPS = "/api/customer-apps";
+/** The app registry API, gated by the app-admin role. */
+export const CUSTOMER_APPS = CUSTOMER_APPS_API;
 
 const APP_PAGE_SIZE = 100;
 /** Hard stop on the listing walk, mirroring `api/paginate.ts`'s `MAX_PAGES`. */
@@ -197,7 +197,7 @@ export interface BuildHistory {
  */
 export function connect(ctx: Context): Conn {
   const creds = staffCreds(ctx);
-  // Every `oxyc apps` verb reads `/api/admin/apps`, which answers this token 404.
+  // Every `oxyc apps` verb lists apps, which answers this token 404.
   refuseSandboxToken(
     creds.bearer,
     "use `oxyc apps`",

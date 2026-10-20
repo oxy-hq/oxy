@@ -155,7 +155,7 @@ describe("the prefix", () => {
 });
 
 describe("app resolution", () => {
-  it("matches <org>/<app> against the token's own list, and never calls /api/admin/apps", async () => {
+  it("matches <org>/<app> against the token's own list, and never lists apps", async () => {
     const calls = stubFetch(TARGET, {
       ...A1,
       [`GET /api/customer-apps/${APP_ID}/environments`]: () => ({
@@ -168,6 +168,12 @@ describe("app resolution", () => {
       "GET /api/auth/token",
       `GET /api/customer-apps/${APP_ID}/environments`
     ]);
+    // No app listing and no lookup by id: the token's own list is the source.
+    expect(
+      calls.some(
+        (c) => c.path.startsWith("/api/customer-apps?") || c.path === `/api/customer-apps/${APP_ID}`
+      )
+    ).toBe(false);
     expect(calls.some((c) => c.path.startsWith("/api/admin"))).toBe(false);
   });
 
@@ -206,10 +212,10 @@ describe("app resolution", () => {
     expect(cause.hint).not.toContain("try `oxyc login` again");
   });
 
-  it("a personal token still resolves through /api/admin/apps", async () => {
+  it("a personal token resolves by listing /api/customer-apps", async () => {
     vi.stubEnv("OXY_TOKEN", "oxy_pat_secret");
     const calls = stubFetch(TARGET, {
-      "GET /api/admin/apps?limit=100&offset=0": () => ({
+      "GET /api/customer-apps?limit=100&offset=0": () => ({
         status: 200,
         body: { items: [{ id: APP_ID, slug: "store", org_slug: "acme" }], next_offset: null }
       }),
@@ -219,13 +225,13 @@ describe("app resolution", () => {
       })
     });
     await envList(context(), "acme/store");
-    expect(paths(calls)[0]).toBe("GET /api/admin/apps?limit=100&offset=0");
+    expect(paths(calls)[0]).toBe("GET /api/customer-apps?limit=100&offset=0");
     expect(calls.some((c) => c.path === "/api/auth/token")).toBe(false);
   });
 });
 
 describe("the read-back surface", () => {
-  it("lists invocations under /api/customer-apps, not /api/admin/apps", async () => {
+  it("lists invocations under /api/customer-apps", async () => {
     const route = `GET /api/customer-apps/${APP_ID}/invocations?environment=dev-a1`;
     const calls = stubFetch(TARGET, {
       ...A1,
@@ -274,11 +280,11 @@ describe("the read-back surface", () => {
     expect(calls.every((c) => !c.path.startsWith("/api/admin"))).toBe(true);
   });
 
-  it("a personal token still reads invocations from /api/admin/apps", async () => {
+  it("a personal token reads invocations from the same route, after a lookup by id", async () => {
     vi.stubEnv("OXY_TOKEN", "oxy_pat_secret");
-    const route = `GET /api/admin/apps/${APP_ID}/invocations`;
+    const route = `GET /api/customer-apps/${APP_ID}/invocations`;
     const calls = stubFetch(TARGET, {
-      [`GET /api/admin/apps/${APP_ID}`]: () => ({
+      [`GET /api/customer-apps/${APP_ID}`]: () => ({
         status: 200,
         body: { id: APP_ID, slug: "store", org_slug: "acme" }
       }),

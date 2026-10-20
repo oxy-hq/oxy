@@ -1,9 +1,8 @@
 /**
- * `oxyc invocations` — the admin-only read-back of what ran in an app's
- * environment: `GET /api/admin/apps/{id}/invocations[/{id}/held]`
+ * `oxyc invocations` — the read-back of what ran in an app's
+ * environment: `GET /api/customer-apps/{id}/invocations[/{id}/held]`
  * (`admin/apps/{functions,invocations,held_writes}.rs`). A sandbox agent token
- * reads the same two handlers at `/api/customer-apps/{id}/invocations…`, for
- * its own sandboxes only.
+ * reads the same two handlers, for its own sandboxes only.
  *
  * `held` is the list of writes the non-production policy did NOT perform —
  * what production would have done — so an agent iterating in a sandbox can
@@ -12,23 +11,14 @@
 
 import { parseJson, request } from "../api/request.js";
 import { parseAppEnv } from "../apps/environment.js";
-import { type Creds, ensureOk, resolveApp, staffCreds } from "../apps/resolve.js";
-import { requireOwnSandbox, SANDBOX_READ_BACK_SURFACE } from "../apps/sandbox-token.js";
+import { CUSTOMER_APPS_API, ensureOk, resolveApp, staffCreds } from "../apps/resolve.js";
+import { requireOwnSandbox } from "../apps/sandbox-token.js";
 import { isSandboxAgentToken } from "../auth/token-kind.js";
 import type { Context } from "../context/resolve.js";
 
-/**
- * The mount the CREDENTIAL can reach, the way `checks.ts` picks its surface:
- * `/api/admin/apps` for staff, and for a sandbox agent token the same two
- * handlers under `/api/customer-apps`, since that token never reaches `/admin`.
- */
-function readBackSurface(creds: Creds): string {
-  return isSandboxAgentToken(creds.bearer) ? SANDBOX_READ_BACK_SURFACE : "/api/admin/apps";
-}
-
-function invocationsPath(creds: Creds, appId: string, query: URLSearchParams): string {
+function invocationsPath(appId: string, query: URLSearchParams): string {
   const qs = query.toString();
-  return `${readBackSurface(creds)}/${appId}/invocations${qs ? `?${qs}` : ""}`;
+  return `${CUSTOMER_APPS_API}/${appId}/invocations${qs ? `?${qs}` : ""}`;
 }
 
 export async function invocationsList(
@@ -51,7 +41,7 @@ export async function invocationsList(
 
   const response = await request({
     target: creds.target,
-    path: invocationsPath(creds, resolved.appId, query),
+    path: invocationsPath(resolved.appId, query),
     method: "GET",
     bearer: creds.bearer,
     headers: creds.headers
@@ -89,7 +79,7 @@ export async function invocationsHeld(
   const resolved = await resolveApp(creds, app);
   const response = await request({
     target: creds.target,
-    path: `${readBackSurface(creds)}/${resolved.appId}/invocations/${encodeURIComponent(invocationId)}/held`,
+    path: `${CUSTOMER_APPS_API}/${resolved.appId}/invocations/${encodeURIComponent(invocationId)}/held`,
     method: "GET",
     bearer: creds.bearer,
     headers: creds.headers

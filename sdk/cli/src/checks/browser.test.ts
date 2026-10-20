@@ -81,14 +81,14 @@ describe("headersFor", () => {
   it("never adds them to the rest of the API on the same origin", () => {
     const t = target();
     for (const url of [
-      "https://oxy.test/api/admin/apps",
-      "https://oxy.test/api/admin/apps/a1/promote",
+      "https://oxy.test/api/customer-apps",
+      "https://oxy.test/api/customer-apps/a1/promote",
       "https://oxy.test/api/auth/tokens",
       "https://oxy.test/api/projects/p/query",
       "https://oxy.test/customer-apps/acme/other/fn/echo",
       "https://oxy.test/customer-apps/acme/store-two/",
-      "https://oxy.test/customer-apps/acme/store/../../../api/admin/apps",
-      "https://oxy.test/customer-apps/acme/store/%2e%2e/%2e%2e/%2e%2e/api/admin/apps"
+      "https://oxy.test/customer-apps/acme/store/../../../api/customer-apps",
+      "https://oxy.test/customer-apps/acme/store/%2e%2e/%2e%2e/%2e%2e/api/customer-apps"
     ]) {
       expect(headersFor(url, t), url).toBeUndefined();
     }
@@ -201,8 +201,8 @@ describe("deniedCallOf", () => {
     expect(deniedCallOf("https://oxy.test/api/projects/p/query", 401, t)).toBe(
       "/api/projects/p/query answered 401"
     );
-    expect(deniedCallOf("https://oxy.test/api/admin/apps", 403, t)).toBe(
-      "/api/admin/apps answered 403"
+    expect(deniedCallOf("https://oxy.test/api/customer-apps", 403, t)).toBe(
+      "/api/customer-apps answered 403"
     );
     expect(deniedCallOf("https://oxy.test/api/projects/p/query", 200, t)).toBeUndefined();
     expect(deniedCallOf("https://oxy.test/api/projects/p/query", 500, t)).toBeUndefined();

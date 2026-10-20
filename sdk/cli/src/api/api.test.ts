@@ -312,7 +312,7 @@ describe("pagination", () => {
   });
 
   /**
-   * The app listings (`/api/admin/apps`, `/api/customer-apps`) page by
+   * The app listing (`/api/customer-apps`) pages by
    * `limit`/`offset` and answer `{items, next_offset}`. A number means "ask
    * again from here"; `null` is the server saying this was the last page, which
    * is an answer and must not read as "no pagination signal".

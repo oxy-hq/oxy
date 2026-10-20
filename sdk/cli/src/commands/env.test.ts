@@ -77,7 +77,7 @@ function stubFetch(routes: RouteTable, calls: Call[]) {
 /** A single-page admin-apps listing that resolves `acme/store` to APP_ID. */
 function appsRoutes(): RouteTable {
   return {
-    "GET /api/admin/apps?limit=100&offset=0": () => ({
+    "GET /api/customer-apps?limit=100&offset=0": () => ({
       status: 200,
       body: { items: [{ id: APP_ID, slug: "store", org_slug: "acme" }], next_offset: null }
     })

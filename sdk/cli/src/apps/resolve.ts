@@ -86,6 +86,9 @@ export function ensureOk(response: ApiResponse, creds?: { bearer?: string }): vo
     : errorForResponse(response);
 }
 
+/** The app registry API: where every credential lists, reads and runs an app. */
+export const CUSTOMER_APPS_API = "/api/customer-apps";
+
 interface AdminAppsPage {
   items?: { id: string; slug: string; org_slug: string }[];
   next_offset?: number | null;
@@ -100,15 +103,15 @@ interface AdminAppDetail {
 /**
  * Resolve `<org-slug>/<app-slug>` or an app UUID to its id and slugs.
  *
- * The org/app form is resolved by paging `GET /api/admin/apps` — the matched
+ * The org/app form is resolved by paging `GET /api/customer-apps` — the matched
  * row already carries `org_slug` and `slug`, so no extra request. A UUID
- * needs one more call, `GET /api/admin/apps/{id}`, to learn them — the shape
+ * needs one more call, `GET /api/customer-apps/{id}`, to learn them — the shape
  * `fn call` and `logs` need for their `/customer-apps/{org}/{app}/...`
- * routes. Both paths are the admin surface: a publish token never reaches
+ * routes. Both calls need a credential that may list apps: a publish token never reaches
  * this function (`checks.ts` short-circuits around it for that credential;
  * every other caller goes through `staffCreds`, which already refused one).
  *
- * A SANDBOX AGENT TOKEN NEVER REACHES THE ADMIN SURFACE EITHER, and resolves
+ * A SANDBOX AGENT TOKEN MAY NOT LIST APPS EITHER, and resolves
  * against its own app list instead (`GET /api/auth/token`).
  */
 export async function resolveApp(creds: Creds, app: string): Promise<ResolvedApp> {
@@ -118,7 +121,7 @@ export async function resolveApp(creds: Creds, app: string): Promise<ResolvedApp
   if (UUID_RE.test(app)) {
     const response = await request({
       target: creds.target,
-      path: `/api/admin/apps/${app}`,
+      path: `${CUSTOMER_APPS_API}/${app}`,
       method: "GET",
       bearer: creds.bearer,
       headers: creds.headers
@@ -126,7 +129,7 @@ export async function resolveApp(creds: Creds, app: string): Promise<ResolvedApp
     ensureOk(response);
     const payload = parseJson(response.body) as Partial<AdminAppDetail> | undefined;
     if (!payload?.id || !payload.slug || !payload.org_slug) {
-      throw new CliError(`GET /api/admin/apps/${app} did not return id, slug and org_slug`, {
+      throw new CliError(`GET ${CUSTOMER_APPS_API}/${app} did not return id, slug and org_slug`, {
         code: ExitCode.UNAVAILABLE
       });
     }
@@ -151,7 +154,7 @@ export async function resolveApp(creds: Creds, app: string): Promise<ResolvedApp
   for (let page = 0; page < MAX_APP_PAGES; page++) {
     const response = await request({
       target: creds.target,
-      path: `/api/admin/apps?limit=100&offset=${offset}`,
+      path: `${CUSTOMER_APPS_API}?limit=100&offset=${offset}`,
       method: "GET",
       bearer: creds.bearer,
       headers: creds.headers

@@ -5,7 +5,7 @@
  * every paginated endpoint, so the client follows a URL it was given. Oxy has
  * no such header and no single pagination shape — `thread.rs` answers with
  * `{pagination:{total_pages,has_next}}`, `workspaces/ops.rs` with a bare
- * `has_more`, the app listings (`admin/apps`, `customer-apps`) with
+ * `has_more`, the app listing (`customer-apps`) with
  * `next_offset`, and plenty of list endpoints with none of them.
  *
  * So this is a HEURISTIC, and it says so in `--help` rather than pretending to

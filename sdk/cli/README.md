@@ -276,9 +276,11 @@ what was minted, and exits `8`.
 With that token in `OXY_TOKEN`, `oxyc` behaves differently in five ways:
 
 - **An app resolves against the token's own list** (`GET /api/auth/token`),
-  never `/api/admin/apps`. An app it was not minted for is exit `5`.
+  never the app listing (`GET /api/customer-apps`), which it may not call. An
+  app it was not minted for is exit `5`.
 - **Read-back uses `/api/customer-apps/{id}/…`** — `invocations list`,
-  `invocations held` and `checks run` — since the token never reaches `/admin`.
+  `invocations held` and `checks run` — the same routes every other credential
+  uses; the token never reaches `/admin`.
 - **Refused before any request, exit `2`:** an `--app-env` that is not
   `dev-<handle>`; `publish` without `--app-env`, or with `--promote`;
   `fn call`, `fn run`, `logs`, `invocations list` and `checks run` without
@@ -834,7 +836,7 @@ oxyc checks run acme/store --app-env dev-a1 --browser --expect-selector 'main'
 ```
 
 **Auth** follows the same rule as `oxyc api`'s bearer surface, with one
-difference: `checks run` talks to `/api/admin/**`, which is not the
+difference: `checks run` talks to `/api/customer-apps/**`, which is not the
 `/external/api/*` surface, so a configured API key is sent explicitly as
 `X-API-Key` only when **no bearer resolves** — never both. A bearer from
 `oxyc login` (or `--token-env`) always wins when one is present.
@@ -843,11 +845,12 @@ difference: `checks run` talks to `/api/admin/**`, which is not the
 holding `id-token: write` signs itself in from its GitHub OIDC token — the same
 two exchanges `oxyc publish` tries, in the same order: a service account's
 trust policy first, the app's registered publisher second — and drives
-`/api/customer-apps/**` instead: the same three handlers, mounted where a
-machine credential may reach them. A service account's token (`oxy_sat_…`,
-`oxy_ci_…`) or a publish token set in `OXY_TOKEN` takes that surface too,
-without minting; a personal token, a legacy API key or a session takes the admin
-one. `OXY_API_KEY` is read **before** OIDC here: a job that set one has said
+`/api/customer-apps/**`, the same three routes a person's credential uses. A
+service account's token (`oxy_sat_…`, `oxy_ci_…`) or a publish token set in
+`OXY_TOKEN` is used without minting. What differs is the app lookup: a
+personal token, a legacy API key or a session can list apps to resolve
+`<org>/<app>`; a machine credential may not, so it names the app by UUID or
+through its own grants. `OXY_API_KEY` is read **before** OIDC here: a job that set one has said
 which credential it means.
 
 The app id comes from the credential where it can. The publisher exchange

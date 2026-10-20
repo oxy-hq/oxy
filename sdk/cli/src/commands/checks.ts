@@ -8,19 +8,18 @@
  * can branch on the exit code alone, the same contract every other `oxyc`
  * command keeps.
  *
- * Talks only to four routes (`GET /api/admin/apps`, `GET .../functions`,
+ * Talks only to four routes (`GET /api/customer-apps`, `GET .../functions`,
  * `POST .../functions/{name}/runs`, `GET .../function-runs/{run_id}`); nothing
  * here decides whether a function IS a check — that is `FunctionSummary.check`,
  * which the server projects from the manifest flag.
  *
- * Two surfaces, same handlers. A human runs this with their own credential and
- * hits `/api/admin/apps/…`. CI has no credential to store: in a job with
+ * One surface for every credential: `/api/customer-apps/…`. A human runs this
+ * with their own credential. CI has no credential to store: in a job with
  * `id-token: write` it exchanges a GitHub OIDC token for a short-lived token —
  * a service account's, or the app-scoped publish token `oxyc publish` falls
- * back to — and then hits `/api/customer-apps/…`, the same three handlers
- * mounted where a machine token may reach them. The app-listing route is NOT
- * one of them (a machine token may not enumerate apps), which is why the app
- * id comes from the credential rather than a lookup. Which credential, and in
+ * back to. The app-listing route is the one a machine token may not call (it
+ * may not enumerate apps), which is why the app id comes from the credential
+ * rather than a lookup. Which credential, and in
  * what order: `checks-credentials.ts`.
  */
 
@@ -38,7 +37,7 @@ import { refuseMachineBrowser, runBrowserStep } from "../checks/browser-step.js"
 import type { Context } from "../context/resolve.js";
 import { err } from "../ui/tty.js";
 import { CliError, ExitCode, usageError } from "../util/errors.js";
-import { MACHINE_SURFACE, resolveCredentials, UUID_RE } from "./checks-credentials.js";
+import { APPS_API, resolveCredentials, UUID_RE } from "./checks-credentials.js";
 
 /** The `--json` report: one object on stdout. */
 export interface ChecksReport {
@@ -123,15 +122,15 @@ export async function runChecksCore(
     target,
     bearer: machine.bearer,
     headers: machine.apiKey ? { "X-API-Key": machine.apiKey } : undefined,
-    surface: machine.surface
+    machine: machine.machine
   };
 
-  // `resolveApp` pages `/api/admin/apps`, which a machine token may not reach:
+  // `resolveApp` pages `/api/customer-apps`, which a machine token may not list:
   // sending it there would 403 on a route the caller cannot be given. A token
   // that names its own app (the publisher exchange's `app_id`, a service
   // account's `app_publish` grant) never gets here; one that does not needs
   // the UUID.
-  if (!machine.appId && creds.surface === MACHINE_SURFACE && !UUID_RE.test(app)) {
+  if (!machine.appId && creds.machine && !UUID_RE.test(app)) {
     throw usageError(
       "this token cannot resolve <org>/<app> — pass the app UUID",
       "resolving a slug means listing every app, which a publish or service-account token may not do; the id is on the app's admin page, and `oxyc publish --json` reports it"
@@ -139,8 +138,8 @@ export async function runChecksCore(
   }
   const resolved: ResolvedApp | { appId: string; label: string } = machine.appId
     ? { appId: machine.appId, label: app }
-    : creds.surface === MACHINE_SURFACE && UUID_RE.test(app)
-      ? // Never touch `/api/admin/apps/{id}` with a machine token — it is
+    : creds.machine && UUID_RE.test(app)
+      ? // Never touch `/api/customer-apps/{id}` with a machine token — it is
         // refused there just as the listing is, and the id already names the
         // app, so there is nothing left for `resolveApp` to add.
         { appId: app, label: app }
@@ -201,8 +200,8 @@ export async function runChecks(
 }
 
 interface Creds extends BaseCreds {
-  /** `/api/admin/apps` for a human, `/api/customer-apps` for a publish token. */
-  surface: string;
+  /** A publish, service-account or sandbox agent token: it may not list apps. */
+  machine: boolean;
 }
 
 /** `?environment=<name>`, or nothing — appended to all three check routes. */
@@ -218,7 +217,7 @@ async function listChecks(
 ): Promise<FunctionSummary[]> {
   const response = await request({
     target: creds.target,
-    path: `${creds.surface}/${appId}/functions${environmentQuery(appEnv)}`,
+    path: `${APPS_API}/${appId}/functions${environmentQuery(appEnv)}`,
     method: "GET",
     bearer: creds.bearer,
     headers: creds.headers
@@ -264,7 +263,7 @@ async function startRun(
 ): Promise<string> {
   const response = await request({
     target: creds.target,
-    path: `${creds.surface}/${appId}/functions/${encodeURIComponent(name)}/runs${environmentQuery(appEnv)}`,
+    path: `${APPS_API}/${appId}/functions/${encodeURIComponent(name)}/runs${environmentQuery(appEnv)}`,
     method: "POST",
     body: "{}",
     bearer: creds.bearer,
@@ -288,7 +287,7 @@ async function getRunDetail(
 ): Promise<RunDetail> {
   const response = await request({
     target: creds.target,
-    path: `${creds.surface}/${appId}/function-runs/${runId}${environmentQuery(appEnv)}`,
+    path: `${APPS_API}/${appId}/function-runs/${runId}${environmentQuery(appEnv)}`,
     method: "GET",
     bearer: creds.bearer,
     headers: creds.headers
