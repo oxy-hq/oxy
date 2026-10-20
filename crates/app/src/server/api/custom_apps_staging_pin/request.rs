@@ -30,26 +30,13 @@
 
 use axum::http::HeaderMap;
 use oxy_app_core::custom_app_environment::AppEnvironment;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::DatabaseConnection;
 use uuid::Uuid;
+
+pub(crate) use oxy_custom_apps::staging_pin::resolve::{AppRef, find_app};
 
 /// Header the SDK sends on data-plane calls to name the calling app.
 pub const APP_HEADER: &str = "x-oxy-app";
-
-/// How a request named its app, before any database lookup.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum AppRef {
-    Id(Uuid),
-    Slugs {
-        org: String,
-        app: String,
-    },
-    /// `/a/<slug>/` on an org subdomain: the org comes from the host.
-    OrgHostSlug {
-        org: String,
-        app: String,
-    },
-}
 
 /// The pin a non-production data-plane request should read, or `None` for
 /// every other request. Cheap for a production request (no DB work).
@@ -71,32 +58,15 @@ pub async fn staging_pin_for_data_request(
     let non_production = oxy_app_core::custom_app_env_request::request_environment(headers)
         .ok()
         .filter(|environment| *environment != AppEnvironment::Production)?;
-    let app = find_app(db, &app_ref(headers)?).await?;
-    if app.project_id != project_id {
-        return None;
-    }
-    let build_id = environment_build(db, caller, &app, &non_production).await?;
-    super::pinned_revision_for(db, build_id).await
-}
-
-/// The build `environment` — staging or a sandbox — serves, for a viewer who
-/// may open the app's non-production environments.
-async fn environment_build(
-    db: &DatabaseConnection,
-    caller: &oxy_server_authz::Caller,
-    app: &entity::apps::Model,
-    environment: &AppEnvironment,
-) -> Option<Uuid> {
-    use crate::server::api::custom_apps_env_resolve::{
-        may_open_non_production, resolve_environment,
-    };
-    if !may_open_non_production(db, caller, app).await {
-        return None;
-    }
-    resolve_environment(db, app, environment)
-        .await
-        .ok()?
-        .build_id
+    let app = app_ref(headers)?;
+    oxy_custom_apps::staging_pin::resolve::pin_for_environment(
+        db,
+        caller,
+        project_id,
+        &app,
+        &non_production,
+    )
+    .await
 }
 
 /// Name the app from the request, in the documented order.
@@ -204,27 +174,6 @@ fn app_ref_from_referer(referer: &str) -> Option<AppRef> {
         org: parsed.org_slug,
         app: parsed.app_slug,
     })
-}
-
-pub(crate) async fn find_app(db: &DatabaseConnection, r: &AppRef) -> Option<entity::apps::Model> {
-    let found = match r {
-        AppRef::Id(id) => entity::apps::Entity::find_by_id(*id).one(db).await,
-        AppRef::Slugs { org, app } | AppRef::OrgHostSlug { org, app } => {
-            let Ok(Some(org)) = entity::organizations::Entity::find()
-                .filter(entity::organizations::Column::Slug.eq(org.as_str()))
-                .one(db)
-                .await
-            else {
-                return None;
-            };
-            entity::apps::Entity::find()
-                .filter(entity::apps::Column::OrgId.eq(org.id))
-                .filter(entity::apps::Column::Slug.eq(app.as_str()))
-                .one(db)
-                .await
-        }
-    };
-    found.ok().flatten()
 }
 
 #[cfg(test)]

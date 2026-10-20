@@ -3,8 +3,8 @@
 //!
 //! Lives here (below `oxy-app`) because the compile-boundary readers
 //! ([`crate::preagg_context`]) must honour the pin; the publish-time and
-//! request-time pin logic stays in `oxy_app::server::api::custom_apps_staging_pin`,
-//! which re-exports everything below.
+//! pin logic is in `oxy_custom_apps::staging_pin`, and `oxy_app::server::api::
+//! custom_apps_staging_pin` re-exports everything below.
 
 use uuid::Uuid;
 
@@ -60,4 +60,55 @@ pub fn cache_partition() -> String {
     current_staging_pin()
         .map(|pin| format!("staging-pin:{pin}"))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The staging rules hold for anything running inside the pin — the
+    /// rollup short-circuit declines and result caches get their own partition —
+    /// and for nothing outside it, including a task spawned from inside it.
+    #[tokio::test]
+    async fn inside_a_staging_pin_rollups_are_skipped_and_caches_partitioned() {
+        let pin = Uuid::new_v4();
+        /// Would this task get the rollup short-circuit, given a warm cache?
+        fn rollups() -> bool {
+            crate::preagg_context::preagg_context(
+                Uuid::nil(),
+                Some(std::sync::Arc::new(std::sync::RwLock::new(
+                    agentic_semantic::refresh_key_cache::RefreshKeyCache::new(),
+                ))),
+                None,
+                crate::preagg_context::RollupFreshness::ServeStale,
+            )
+            .is_some()
+        }
+
+        assert!(rollups(), "unpinned, the rollup tier is available");
+        assert_eq!(current_staging_pin(), None);
+        assert_eq!(cache_partition(), "");
+
+        let (inside, spawned) = with_staging_pin(Some(pin), async move {
+            let inside = (current_staging_pin(), cache_partition(), rollups());
+            let spawned = tokio::spawn(async move { (current_staging_pin(), rollups()) })
+                .await
+                .unwrap();
+            (inside, spawned)
+        })
+        .await;
+        assert_eq!(
+            inside,
+            (Some(pin), format!("staging-pin:{pin}"), false),
+            "pinned: the pin is visible, caches partition on it, rollups decline"
+        );
+        assert_eq!(
+            spawned,
+            (None, true),
+            "a spawned task is background work: it never inherits the pin"
+        );
+
+        let untouched = with_staging_pin(None, async { (current_staging_pin(), rollups()) }).await;
+        assert_eq!(untouched, (None, true), "no pin means no scope at all");
+    }
 }

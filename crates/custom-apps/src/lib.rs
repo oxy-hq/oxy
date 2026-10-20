@@ -17,6 +17,8 @@
 //! - `function_trigger`: why a one-off function job was queued, and what the queue reads back.
 //! - `build_state`: what a build row says about whether it may go live.
 //! - `environments`, `publish_authz`: pointer writes and publish authority.
+//! - `staging_pin`: a draft build's semantic pin: read it, validate it at publish,
+//!   resolve it for a non-production request, and the promote drift notice.
 
 pub mod agent_built;
 pub mod audience;
@@ -28,3 +30,4 @@ pub mod environments;
 pub mod function_trigger;
 pub mod non_production;
 pub mod publish_authz;
+pub mod staging_pin;

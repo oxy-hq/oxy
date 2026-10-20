@@ -49,17 +49,19 @@ const ALLOWED: &[(&str, &str)] = &[
          router, which has no workspace middleware.",
     ),
     (
-        "src/server/api/custom_apps_staging_pin/mod.rs",
-        "Same kind: `with_staging_pin` scopes the revision a STAGING custom-app \
-         request resolves at (the draft build's pin), before the gates build \
-         the manager. It picks the revision; it reads no artifact.",
+        "../app-core/src/staging_pin_scope.rs",
+        "`with_staging_pin` scopes the revision a STAGING custom-app request \
+         resolves at (the draft build's pin), before the gates build the \
+         manager, and a workspace preview pins the same way. Lowered with \
+         `compiled_reader` so `preagg_context` can read the pin. It picks the \
+         revision; it reads no artifact.",
     ),
     (
-        "../app-core/src/staging_pin_scope.rs",
-        "`with_staging_pin` — the same function as the `custom_apps_staging_pin` \
-         entry above, lowered with `compiled_reader` so `preagg_context` can read \
-         the pin. It picks the revision a staging request resolves at; it reads \
-         no artifact.",
+        "../custom-apps/src/staging_pin/mod.rs",
+        "`check_pinnable` asks `revision_is_servable` whether a pinned revision's \
+         compiled config loads, for a workspace preview header. There is no \
+         manager to ask: the pin is what decides which revision a manager would \
+         read. It reads no artifact.",
     ),
     (
         "src/server/api/webhooks/toast.rs",
@@ -121,7 +123,7 @@ fn app_src() -> PathBuf {
 }
 
 /// Every `.rs` under `src` — plus `oxy-app-core` (where `compiled_reader`
-/// itself now lives) and `oxy-api-documents` and
+/// itself now lives), `oxy-custom-apps` and `oxy-api-documents` and
 /// `oxy-api-source-upload`, extracted from `src/server/api` and still served
 /// by this binary — as
 /// (crate-relative path, contents).
@@ -153,6 +155,8 @@ fn source_files() -> Vec<(String, String)> {
     walk(&documents, &documents, "../api-documents/src/", &mut out);
     let app_core = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../app-core/src");
     walk(&app_core, &app_core, "../app-core/src/", &mut out);
+    let custom_apps = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../custom-apps/src");
+    walk(&custom_apps, &custom_apps, "../custom-apps/src/", &mut out);
     let source_upload = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../api-source-upload/src");
     walk(
         &source_upload,
