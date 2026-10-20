@@ -57,7 +57,15 @@ const SOURCES: &[(&str, &str)] = &[
     ("host_call_attrs.rs", include_str!("host_call_attrs.rs")),
     ("upsert_support.rs", include_str!("upsert_support.rs")),
     ("tx.rs", include_str!("tx.rs")),
-    ("runtime.rs", include_str!("runtime.rs")),
+    // `host-contract.ts` cites `runtime.rs` for the bootstrap script's refusals
+    // (btoa, atob, ctx.tx), which now lives in its own file next to it.
+    (
+        "runtime.rs",
+        concat!(
+            include_str!("runtime.rs"),
+            include_str!("runtime/bootstrap.js")
+        ),
+    ),
     (
         "transaction.rs",
         include_str!("../../../../../agentic/connector/src/transaction.rs"),

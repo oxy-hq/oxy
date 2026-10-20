@@ -5,7 +5,7 @@
 //! lifecycle below.
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use deno_core::{JsRuntime, ModuleId, RuntimeOptions, v8};
 
@@ -14,6 +14,7 @@ use crate::server::api::custom_apps_functions::runtime::RuntimeError;
 use crate::server::api::custom_apps_functions::runtime::ops::{OpContext, RequestBody};
 
 mod ops;
+mod snapshot;
 
 /// How much headroom the near-limit callback grants so V8 can finish unwinding.
 ///
@@ -39,6 +40,7 @@ const HEAP_LIMIT_RATCHET_BYTES: usize = 1024 * 1024;
 
 pub(in super::super) struct DenoEngine {
     runtime: JsRuntime,
+    oom: Arc<AtomicBool>,
 }
 
 pub(in super::super) struct DenoTerminate(v8::IsolateHandle);
@@ -49,13 +51,14 @@ impl TerminateHandle for DenoTerminate {
     }
 }
 
-impl IsolateEngine for DenoEngine {
-    type Terminate = DenoTerminate;
-    type Module = ModuleId;
-
-    fn create(config: IsolateConfig, ops: OpContext) -> Self {
+impl DenoEngine {
+    /// Start from `snapshot` when there is one; otherwise run the bootstrap
+    /// script on a bare isolate, which is what every isolate did before the
+    /// snapshot and what an isolate does if the snapshot could not be built.
+    fn create_with(config: IsolateConfig, snapshot: Option<&'static [u8]>) -> Result<Self, String> {
         let mut runtime = JsRuntime::new(RuntimeOptions {
             extensions: vec![ops::oxy_functions_ext::init()],
+            startup_snapshot: snapshot,
             // The ceiling. Initial is left at 0 so V8 sizes the young generation
             // itself — pinning it would cost startup time on every invocation to
             // constrain something that was never the problem.
@@ -64,22 +67,51 @@ impl IsolateEngine for DenoEngine {
                 .map(|max| v8::CreateParams::default().heap_limits(0, max)),
             ..Default::default()
         });
+        let oom = Arc::new(AtomicBool::new(false));
         if config.heap_limit.is_some() {
-            terminate_near_heap_limit(&mut runtime, config.oom);
+            terminate_near_heap_limit(&mut runtime, Arc::clone(&oom));
         }
-        runtime.op_state().borrow_mut().put(ops);
-        Self { runtime }
+        if snapshot.is_none() {
+            runtime
+                .execute_script(snapshot::BOOTSTRAP_NAME, config.bootstrap)
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(Self { runtime, oom })
+    }
+
+    /// An isolate that runs the bootstrap script itself instead of starting
+    /// from the snapshot — what [`IsolateEngine::create`] did before the
+    /// snapshot existed. Kept so a test can compare the two.
+    #[cfg(test)]
+    pub(in super::super) fn create_without_snapshot(config: IsolateConfig) -> Result<Self, String> {
+        Self::create_with(config, None)
+    }
+}
+
+impl IsolateEngine for DenoEngine {
+    type Terminate = DenoTerminate;
+    type Module = ModuleId;
+
+    fn create(config: IsolateConfig) -> Result<Self, String> {
+        let snapshot = snapshot::bootstrap_snapshot(config.bootstrap);
+        Self::create_with(config, snapshot)
+    }
+
+    fn oom_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.oom)
+    }
+
+    fn bind_invocation(&mut self, ops: OpContext) {
+        let state = self.runtime.op_state();
+        let mut state = state.borrow_mut();
+        // Whatever the previous invocation left behind goes first, so an op
+        // can never read a value this invocation did not put there.
+        let _ = state.try_take::<RequestBody>();
+        state.put(ops);
     }
 
     fn terminate_handle(&mut self) -> DenoTerminate {
         DenoTerminate(self.runtime.v8_isolate().thread_safe_handle())
-    }
-
-    fn execute_script(&mut self, name: &'static str, source: &'static str) -> Result<(), String> {
-        self.runtime
-            .execute_script(name, source)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
     }
 
     async fn load_module(

@@ -5,7 +5,8 @@
 //! isolate thread, the broker loop, timeouts and cancellation, the bootstrap
 //! script and the invoke script — and drives one isolate through
 //! [`IsolateEngine`]. An engine owns only what is genuinely its own: creating
-//! an isolate under a heap ceiling, binding the `ctx.*` ops (whose logic is in
+//! an isolate under a heap ceiling (started from a snapshot of the bootstrap
+//! script where the engine has one), binding the `ctx.*` ops (whose logic is in
 //! [`super::ops`]), compiling and evaluating the tenant's ES module, running a
 //! script to a JSON value, and stopping itself from another thread.
 //!
@@ -22,8 +23,15 @@
 //!   The messages are part of what an app and its logs see, so they are the
 //!   engine's contract, not its choice.
 //! - **Heap-limit reporting.** When the engine terminates an isolate for
-//!   nearing its ceiling it sets [`IsolateConfig::oom`] *before* terminating,
-//!   so the caller can tell that kill from a timeout or a cancel.
+//!   nearing its ceiling it sets the flag [`IsolateEngine::oom_flag`] returns
+//!   *before* terminating, so the caller can tell that kill from a timeout or
+//!   a cancel.
+//! - **Per-invocation state is bound after creation.** Everything one
+//!   invocation owns (the broker channel, the cancellation flag, the log
+//!   buffer, the parked request body) reaches the ops through the isolate's
+//!   op state at call time ([`IsolateEngine::bind_invocation`]), never through
+//!   a value captured when the isolate was created. That is what lets the
+//!   state be replaced, and cleared, without rebuilding the isolate.
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -31,7 +39,7 @@ use std::sync::atomic::AtomicBool;
 use super::RuntimeError;
 use super::ops::OpContext;
 
-mod deno;
+pub(super) mod deno;
 
 /// The engine every isolate runs on.
 pub(super) type ActiveEngine = deno::DenoEngine;
@@ -51,10 +59,11 @@ pub(super) trait TerminateHandle: Send + 'static {
 pub(super) struct IsolateConfig {
     /// Heap ceiling in bytes; `None` disables it (`heap_limit_bytes`).
     pub heap_limit: Option<usize>,
-    /// Set by the engine when it terminates the isolate for nearing
-    /// `heap_limit` — set *before* terminating, so the error path cannot
-    /// observe the termination without the reason.
-    pub oom: Arc<AtomicBool>,
+    /// The script that defines `Response`, `console` and `__buildCtx` in the
+    /// global scope (`BOOTSTRAP_JS`). The same text for every isolate in the
+    /// process, which is what lets an engine run it once and start every
+    /// isolate from the result.
+    pub bootstrap: &'static str,
 }
 
 /// One JS isolate, driven through a single invocation. Lives and dies on the
@@ -64,16 +73,26 @@ pub(super) trait IsolateEngine: Sized {
     /// A compiled-but-not-evaluated module.
     type Module;
 
-    /// Create the isolate under `config.heap_limit`, bind the `ctx.*` ops,
-    /// and park `ops` where they can reach it.
-    fn create(config: IsolateConfig, ops: OpContext) -> Self;
+    /// Create the isolate under `config.heap_limit` with the `ctx.*` ops
+    /// registered and `config.bootstrap` already in effect, whether the
+    /// engine ran it now or restored it from a snapshot of the same text.
+    /// `Err` carries the script's error, unprefixed. No invocation is bound
+    /// yet: an op called before [`Self::bind_invocation`] finds no
+    /// [`OpContext`] and refuses.
+    fn create(config: IsolateConfig) -> Result<Self, String>;
+
+    /// Set when the engine terminates the isolate for nearing its heap
+    /// ceiling — *before* terminating, so the error path cannot observe the
+    /// termination without the reason. `None`-limit isolates never set it.
+    fn oom_flag(&self) -> Arc<AtomicBool>;
+
+    /// Park `ops` where the `ctx.*` ops read them at call time, replacing
+    /// whatever invocation was bound before, and clear the previous
+    /// invocation's parked request body.
+    fn bind_invocation(&mut self, ops: OpContext);
 
     /// The handle the broker loop terminates this isolate through.
     fn terminate_handle(&mut self) -> Self::Terminate;
-
-    /// Run a classic (non-module) script in the global scope, discarding its
-    /// value. Errors are returned as the engine's message, unprefixed.
-    fn execute_script(&mut self, name: &'static str, source: &'static str) -> Result<(), String>;
 
     /// Compile `code` as a side ES module under `specifier`, without
     /// evaluating it. `Internal("bad module specifier: …")` when `specifier`
