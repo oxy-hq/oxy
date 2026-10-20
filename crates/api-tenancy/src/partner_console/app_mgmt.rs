@@ -22,8 +22,8 @@ use uuid::Uuid;
 
 use super::{db, internal, require_org_scope};
 use crate::partner_console::partner_context::PartnerActor;
+use admin_apps::AuditedBy;
 use oxy_app::server::api::admin::apps::handlers as admin_apps;
-use oxy_app::server::api::custom_apps_promote::AuditedBy;
 use oxy_tenancy::org_teams::dto::{
     AppAccessDto, AppAccessSummaryDto, OrgMemberOptionDto, SetAppAccessRequest, TeamDto,
 };

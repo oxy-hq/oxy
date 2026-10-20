@@ -27,7 +27,8 @@ pub(crate) use super::ops::validate_display_name;
 // `pub`: the extracted `oxy-api-partner-console` surface publishes/unpublishes a
 // client's app through these.
 pub use super::ops::{publish_one, unpublish_one};
-use crate::server::api::custom_apps_promote::AuditedBy;
+// `pub`, beside `publish_one`: whoever calls it says who records the audit row.
+pub use crate::server::api::custom_apps_promote::AuditedBy;
 use crate::server::api::custom_apps_promote::audit::{published_entry, unpublished_entry};
 // `pub`, beside `publish_one`: whoever promotes through it answers what it
 // refuses with — the coded `409` for a build a sandbox agent token published,
