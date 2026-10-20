@@ -8,6 +8,7 @@ use chrono::Utc;
 use entity::apps;
 use entity::organizations;
 use entity::prelude::{AppBuilds, Apps, Organizations};
+use oxy_app_core::audit::{self, RequestActor};
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use oxy_shared::utils::slugify;
 use sea_orm::ActiveModelTrait;
@@ -19,14 +20,16 @@ use sea_orm::ModelTrait;
 use sea_orm::QueryFilter;
 use sea_orm::QueryOrder;
 use sea_orm::QuerySelect;
+use sea_orm::TransactionTrait;
 use uuid::Uuid;
 
 use crate::server::api::custom_apps_agent_built::{
     self as agent_built, AgentBuilt, PromoteRefusal,
 };
 use crate::server::api::custom_apps_environments::{self, EnvAction};
+use crate::server::api::custom_apps_promote::audit::published_entry;
 use crate::server::api::custom_apps_promote::{
-    self as promote, BuildRef, ProductionMove, PromoteError,
+    self as promote, AuditedBy, BuildRef, MoveAudit, MoveRow, ProductionMove, PromoteError,
 };
 use crate::server::api::workspace_org::{WorkspaceOrgMatch, workspace_in_org};
 
@@ -462,7 +465,8 @@ pub(super) async fn load_org(
 pub async fn publish_one(
     db: &DatabaseConnection,
     id: Uuid,
-    actor: Uuid,
+    actor: &RequestActor,
+    audited_by: AuditedBy,
 ) -> Result<apps::Model, AppOpError> {
     let row = Apps::find_by_id(id)
         .one(db)
@@ -479,7 +483,7 @@ pub async fn publish_one(
             AppOpError::internal()
         })?;
     if draft.is_none() {
-        return stamp_published(db, row, actor).await;
+        return stamp_published(db, row, actor, audited_by).await;
     }
     // The draft is named again under the app's row lock, so a draft publish
     // landing after the read above is the build this makes live.
@@ -487,16 +491,19 @@ pub async fn publish_one(
         app_id: id,
         build: BuildRef::Draft,
         action: EnvAction::Promote,
-        actor: Some(actor),
+        actor: Some(actor.id),
         expect_current: None,
         refuse_same: false,
     };
     // The global access cache is invalidated ONCE by the caller (a batch
     // would otherwise do N full global invalidations).
-    let moved = promote::move_production(db, &mv).await.map_err(|e| {
-        tracing::warn!("publish_one {id} refused: {e}");
-        AppOpError::from(e)
-    })?;
+    let audit = MoveAudit::of(audited_by, actor, MoveRow::Published);
+    let moved = promote::move_production_audited(db, &mv, audit.as_ref())
+        .await
+        .map_err(|e| {
+            tracing::warn!("publish_one {id} refused: {e}");
+            AppOpError::from(e)
+        })?;
     Ok(moved.app)
 }
 
@@ -505,17 +512,34 @@ pub async fn publish_one(
 async fn stamp_published(
     db: &DatabaseConnection,
     row: apps::Model,
-    actor: Uuid,
+    actor: &RequestActor,
+    audited_by: AuditedBy,
 ) -> Result<apps::Model, AppOpError> {
     let id = row.id;
     let now = Utc::now().fixed_offset();
     let mut active: apps::ActiveModel = row.into();
     active.published_at = ActiveValue::Set(Some(now));
-    active.last_promoted_by = ActiveValue::Set(Some(actor));
+    active.last_promoted_by = ActiveValue::Set(Some(actor.id));
     active.last_promoted_at = ActiveValue::Set(Some(now));
     active.updated_at = ActiveValue::Set(now);
-    let updated = active.update(db).await.map_err(|e| {
+    let txn = db.begin().await.map_err(|e| {
+        tracing::error!("publish_one {id} begin failed: {e}");
+        AppOpError::internal()
+    })?;
+    let updated = active.update(&txn).await.map_err(|e| {
         tracing::error!("publish_one {id} update failed: {e}");
+        AppOpError::internal()
+    })?;
+    if audited_by == AuditedBy::Move {
+        audit::record_in_txn(&txn, published_entry(actor, &updated))
+            .await
+            .map_err(|e| {
+                tracing::error!("publish_one {id} audit failed: {e}");
+                AppOpError::internal()
+            })?;
+    }
+    txn.commit().await.map_err(|e| {
+        tracing::error!("publish_one {id} commit failed: {e}");
         AppOpError::internal()
     })?;
     // The serve path caches the `apps` row itself (`published_at`).
@@ -529,13 +553,15 @@ async fn stamp_published(
 pub async fn unpublish_one(
     db: &DatabaseConnection,
     id: Uuid,
-    actor: Uuid,
+    actor: &RequestActor,
+    audited_by: AuditedBy,
 ) -> Result<apps::Model, AppOpError> {
     // The pointer, its `production` mirror and the event move together under
     // the app's row lock (`custom_apps_promote::unpublish`). The global access
     // cache is invalidated ONCE by the caller (a batch would otherwise do N
     // full global invalidations).
-    promote::unpublish::unpublish(db, id, Some(actor))
+    let audit_as = (audited_by == AuditedBy::Move).then_some(actor);
+    promote::unpublish::unpublish_audited(db, id, Some(actor.id), audit_as)
         .await
         .map_err(|e| {
             tracing::warn!("unpublish_one {id} refused: {e}");
@@ -610,7 +636,8 @@ pub(super) async fn delete_one(db: &DatabaseConnection, id: Uuid) -> Result<(), 
 pub(super) async fn promote_latest_one(
     db: &DatabaseConnection,
     id: Uuid,
-    actor: Uuid,
+    actor: &RequestActor,
+    audited_by: AuditedBy,
 ) -> Result<apps::Model, AppOpError> {
     Apps::find_by_id(id)
         .one(db)
@@ -636,14 +663,17 @@ pub(super) async fn promote_latest_one(
         app_id: id,
         build: BuildRef::Newest,
         action: EnvAction::Promote,
-        actor: Some(actor),
+        actor: Some(actor.id),
         expect_current: None,
         refuse_same: false,
     };
-    let moved = promote::move_production(db, &mv).await.map_err(|e| {
-        tracing::warn!("promote_latest_one {id} refused: {e}");
-        AppOpError::from(e)
-    })?;
+    let audit = MoveAudit::of(audited_by, actor, MoveRow::Promoted);
+    let moved = promote::move_production_audited(db, &mv, audit.as_ref())
+        .await
+        .map_err(|e| {
+            tracing::warn!("promote_latest_one {id} refused: {e}");
+            AppOpError::from(e)
+        })?;
     Ok(moved.app)
 }
 

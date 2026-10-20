@@ -27,6 +27,8 @@ pub(crate) use super::ops::validate_display_name;
 // `pub`: the extracted `oxy-api-partner-console` surface publishes/unpublishes a
 // client's app through these.
 pub use super::ops::{publish_one, unpublish_one};
+use crate::server::api::custom_apps_promote::AuditedBy;
+use crate::server::api::custom_apps_promote::audit::{published_entry, unpublished_entry};
 // `pub`, beside `publish_one`: whoever promotes through it answers what it
 // refuses with — the coded `409` for a build a sandbox agent token published,
 // not its bare status. The partner console takes it from here, the one module
@@ -906,7 +908,7 @@ pub async fn publish_app(
     })?;
     // A bare status, as always — but for a draft a sandbox agent token
     // published, which is `409 draft_published_by_agent` with who and what to do.
-    let updated = publish_one(&db, id, user.id).await?;
+    let updated = publish_one(&db, id, &user, AuditedBy::Caller).await?;
     crate::server::api::custom_apps_auth::invalidate_access_cache();
     let org = load_org(&db, updated.org_id).await?;
 
@@ -914,13 +916,7 @@ pub async fn publish_app(
     // the trail recorded the delegated tier and was blind to the privileged one —
     // backwards. Publishing puts an app in front of a customer's users; who did it
     // is exactly the question an incident asks first.
-    oxy_app_core::audit::record_best_effort(
-        &db,
-        oxy_app_core::audit::AuditEntry::for_request(&user, "app.published")
-            .org(updated.org_id)
-            .target("app", updated.id.to_string(), updated.name.clone()),
-    )
-    .await;
+    oxy_app_core::audit::record_best_effort(&db, published_entry(&user, &updated)).await;
 
     Ok(Json(promote_response(&db, updated, &org.slug).await))
 }
@@ -963,20 +959,14 @@ pub async fn unpublish_app(
         tracing::error!("unpublish_app DB connect failed: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let updated = unpublish_one(&db, id, user.id)
+    let updated = unpublish_one(&db, id, &user, AuditedBy::Caller)
         .await
         .map_err(|e| e.status)?;
     crate::server::api::custom_apps_auth::invalidate_access_cache();
     let org = load_org(&db, updated.org_id).await.map_err(|e| e.status)?;
 
     // Taking a customer's app DOWN is at least as auditable as putting it up.
-    oxy_app_core::audit::record_best_effort(
-        &db,
-        oxy_app_core::audit::AuditEntry::for_request(&user, "app.unpublished")
-            .org(updated.org_id)
-            .target("app", updated.id.to_string(), updated.name.clone()),
-    )
-    .await;
+    oxy_app_core::audit::record_best_effort(&db, unpublished_entry(&user, &updated)).await;
 
     Ok(Json(AppResponse::from_model_with_org(updated, &org.slug)))
 }
@@ -1373,17 +1363,17 @@ async fn delete_app_unscoped(id: Uuid) -> Result<StatusCode, ApiErr> {
 /// `POST /api/customer-apps/batch/publish` — publish many apps at once.
 pub async fn batch_publish_apps(
     _: crate::server::api::custom_apps_agent_refusal::RefuseSandboxAgent,
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    actor: oxy_app_core::audit::RequestActor,
     Json(req): Json<BatchIdsRequest>,
 ) -> Result<Json<BatchResponse>, ApiErr> {
     validate_batch(&req.ids)?;
     let db = establish_connection().await.map_err(internal)?;
     // Scope exception #2 — ids come from the body; see `split_by_scope`.
-    let (ids, mut results) = split_by_scope(&db, &user, req.ids)
+    let (ids, mut results) = split_by_scope(&db, &actor.user, req.ids)
         .await
         .map_err(|s| api_err(s, "Could not verify grant scope."))?;
     for id in ids {
-        results.push(match publish_one(&db, id, user.id).await {
+        results.push(match publish_one(&db, id, &actor, AuditedBy::Move).await {
             Ok(_) => BatchItemResult::ok(id),
             Err(e) => BatchItemResult::refused(id, e),
         });
@@ -1403,20 +1393,22 @@ pub async fn batch_publish_apps(
 /// per-item failure.
 pub async fn batch_promote_latest_apps(
     _: crate::server::api::custom_apps_agent_refusal::RefuseSandboxAgent,
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    actor: oxy_app_core::audit::RequestActor,
     Json(req): Json<BatchIdsRequest>,
 ) -> Result<Json<BatchResponse>, ApiErr> {
     validate_batch(&req.ids)?;
     let db = establish_connection().await.map_err(internal)?;
     // Scope exception #2 — ids come from the body; see `split_by_scope`.
-    let (ids, mut results) = split_by_scope(&db, &user, req.ids)
+    let (ids, mut results) = split_by_scope(&db, &actor.user, req.ids)
         .await
         .map_err(|s| api_err(s, "Could not verify grant scope."))?;
     for id in ids {
-        results.push(match promote_latest_one(&db, id, user.id).await {
-            Ok(_) => BatchItemResult::ok(id),
-            Err(e) => BatchItemResult::refused(id, e),
-        });
+        results.push(
+            match promote_latest_one(&db, id, &actor, AuditedBy::Move).await {
+                Ok(_) => BatchItemResult::ok(id),
+                Err(e) => BatchItemResult::refused(id, e),
+            },
+        );
     }
     if results.iter().any(|r| r.ok) {
         crate::server::api::custom_apps_auth::invalidate_access_cache();
@@ -1427,20 +1419,22 @@ pub async fn batch_promote_latest_apps(
 /// `POST /api/customer-apps/batch/unpublish` — unpublish many apps at once.
 pub async fn batch_unpublish_apps(
     _: crate::server::api::custom_apps_agent_refusal::RefuseSandboxAgent,
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    actor: oxy_app_core::audit::RequestActor,
     Json(req): Json<BatchIdsRequest>,
 ) -> Result<Json<BatchResponse>, ApiErr> {
     validate_batch(&req.ids)?;
     let db = establish_connection().await.map_err(internal)?;
     // Scope exception #2 — ids come from the body; see `split_by_scope`.
-    let (ids, mut results) = split_by_scope(&db, &user, req.ids)
+    let (ids, mut results) = split_by_scope(&db, &actor.user, req.ids)
         .await
         .map_err(|s| api_err(s, "Could not verify grant scope."))?;
     for id in ids {
-        results.push(match unpublish_one(&db, id, user.id).await {
-            Ok(_) => BatchItemResult::ok(id),
-            Err(e) => BatchItemResult::failed(id, e.message),
-        });
+        results.push(
+            match unpublish_one(&db, id, &actor, AuditedBy::Move).await {
+                Ok(_) => BatchItemResult::ok(id),
+                Err(e) => BatchItemResult::failed(id, e.message),
+            },
+        );
     }
     if results.iter().any(|r| r.ok) {
         crate::server::api::custom_apps_auth::invalidate_access_cache();

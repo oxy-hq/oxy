@@ -26,10 +26,12 @@
 //! | [`unpublish`] | taking production's build away, under the same lock |
 //! | [`staging`] | staging's pointer moves, and their queued migrations |
 //! | [`act`] | plan → refuse → move → audit |
+//! | [`audit`] | the audit rows of a production move, shared by the single and the batch handlers |
 //! | [`handlers`] | the two routes |
 //! | [`error`] | every refusal's status and code |
 
 pub mod act;
+pub mod audit;
 pub mod blockers;
 pub mod error;
 pub mod functions_diff;
@@ -42,6 +44,9 @@ pub mod staging;
 pub mod target;
 pub mod unpublish;
 
+pub use audit::{AuditedBy, MoveAudit, MoveRow};
 pub use error::{Blocker, PromoteError};
-pub use production::{MigrationsApplied, ProductionMove, move_locked, move_production};
+pub use production::{
+    MigrationsApplied, ProductionMove, move_locked, move_production, move_production_audited,
+};
 pub use target::BuildRef;

@@ -18,6 +18,7 @@
 use axum::http::StatusCode;
 use oxy_app::server::api::admin::apps::handlers::unpublish_one;
 use oxy_app::server::api::custom_apps_env_resolve::resolve_function_environment;
+use oxy_app::server::api::custom_apps_promote::AuditedBy;
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use serde_json::json;
@@ -73,7 +74,7 @@ async fn naming_an_agents_draft_on_an_unpublished_app_is_naming_staging() {
     let staged = ran(&t, APP, "whoami", &staging_host(&t, APP))
         .await
         .to_string();
-    unpublish_one(&t.db, app_id, t.guest_id)
+    unpublish_one(&t.db, app_id, &t.guest(), AuditedBy::Caller)
         .await
         .map_err(|refused| refused.status)
         .expect("unpublish the app");

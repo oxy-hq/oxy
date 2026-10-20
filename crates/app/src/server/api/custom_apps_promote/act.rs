@@ -16,12 +16,13 @@
 //! 5. One audit row: `app.promoted` / `app.rolled_back`, the moved
 //!    environment, metadata `{from, build, previous}`.
 
-use oxy_app_core::audit::{self, AuditEntry, RequestActor};
+use oxy_app_core::audit::{self, RequestActor};
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use oxy_server_authz::Caller;
 use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 
+use super::audit::promoted_entry;
 use super::blockers::Act;
 use super::error::PromoteError;
 use super::plan::{self, Plan};
@@ -175,24 +176,6 @@ pub async fn record_move(
     from: Option<String>,
     builds: (Uuid, Option<Uuid>),
 ) {
-    let (app, environment) = moved;
-    let action = match act {
-        Act::Promote => "app.promoted",
-        Act::Rollback => "app.rolled_back",
-    };
-    let entry = AuditEntry::for_request(actor, action)
-        .org(app.org_id)
-        .workspace(app.project_id)
-        .target(
-            "custom_app_environment",
-            format!("{}/{environment}", app.id),
-            format!("{}/{environment}", app.slug),
-        )
-        .environment(environment.name())
-        .metadata(serde_json::json!({
-            "from": from,
-            "build": builds.0,
-            "previous": builds.1,
-        }));
+    let entry = promoted_entry(actor, act, moved, from, builds);
     audit::record_best_effort(db, entry).await;
 }

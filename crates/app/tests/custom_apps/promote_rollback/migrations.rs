@@ -7,6 +7,7 @@ use axum::http::StatusCode;
 use entity::workspaces;
 use oxy_app::server::api::admin::apps::handlers::publish_one;
 use oxy_app::server::api::custom_apps_migrations::{MigrationTarget, read_ledger};
+use oxy_app::server::api::custom_apps_promote::AuditedBy;
 use oxy_app::server::api::custom_apps_promote::resolve::PromoteRequest;
 use oxy_app::server::api::custom_apps_promote::{PromoteError, act};
 use oxy_app::server::api::custom_apps_publish::publish;
@@ -184,7 +185,7 @@ async fn make_live_applies_the_drafts_pending_files() {
         )
         .await;
     let app_id = app.app_id().await;
-    publish_one(&app.t.db, app_id, app.t.guest_id)
+    publish_one(&app.t.db, app_id, &app.t.guest(), AuditedBy::Caller)
         .await
         .map_err(|e| e.status)
         .expect("make live");

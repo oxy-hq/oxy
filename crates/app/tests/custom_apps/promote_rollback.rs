@@ -10,6 +10,7 @@
 //! | `migrations` | a production move applies the build's pending OLTP files before the pointer moves — the new route and Make Live alike — and a failing file leaves the pointer where it was, answered with the migration's own status |
 //! | `rollback` | the default target is the previous build (twice swaps back), `--to` names one the environment served, a sandbox is `not_rollbackable`, an environment with nothing before is `nothing_to_roll_back_to` |
 //! | `blockers` | an unset `required` key blocks a promote and only warns a rollback; retiring a registered schedule needs the function named; rollback re-registers its target's schedules |
+//! | `batch_audit` | the batch publish, promote-latest and unpublish write the single handlers' audit row for every app they move, for the same actor, in the move's transaction; an app whose move is refused has none |
 //! | `agent_built` | a build a sandbox agent token published is `409 draft_published_by_agent` on every new path — promote from staging, a sandbox's promote to staging, a staging rollback — dry runs included |
 
 use axum::http::StatusCode;
@@ -23,6 +24,7 @@ use crate::sandbox_agent_token::fixture::{Agent, send};
 use crate::sandbox_publish::{build_pk, input, sandbox};
 
 mod agent_built;
+mod batch_audit;
 mod blockers;
 mod invariant;
 mod lock_resolved;

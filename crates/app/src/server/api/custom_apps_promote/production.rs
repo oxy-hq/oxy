@@ -38,7 +38,8 @@ use sea_orm::{
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::blockers::{staging_never_served, validation_not_passed};
+use super::audit::{MoveAudit, MoveRow, promoted_entry, published_entry};
+use super::blockers::{Act, staging_never_served, validation_not_passed};
 use super::error::PromoteError;
 use super::target::BuildRef;
 use crate::server::api::custom_apps_agent_built::AgentBuilt;
@@ -96,6 +97,17 @@ pub async fn move_production(
     db: &DatabaseConnection,
     mv: &ProductionMove,
 ) -> Result<Moved, PromoteError> {
+    move_production_audited(db, mv, None).await
+}
+
+/// [`move_production`] that also writes `audit`'s row (`audit`) in the move's
+/// transaction: a refused move leaves no row, and a row that cannot be
+/// written leaves no move.
+pub async fn move_production_audited(
+    db: &DatabaseConnection,
+    mv: &ProductionMove,
+    audit: Option<&MoveAudit<'_>>,
+) -> Result<Moved, PromoteError> {
     let mut last = None;
     for _ in 0..MAX_RESOLVES {
         let app = apps::Entity::find_by_id(mv.app_id)
@@ -117,7 +129,7 @@ pub async fn move_production(
             last = Some((build.id, named.id));
             continue;
         }
-        let app = move_resolved(&txn, row, mv, named).await?;
+        let app = move_resolved(&txn, row, mv, named, audit).await?;
         txn.commit()
             .await
             .map_err(|e| PromoteError::internal("commit the move", e))?;
@@ -151,7 +163,7 @@ pub async fn move_locked<C: ConnectionTrait>(
     mv: &ProductionMove,
 ) -> Result<apps::Model, PromoteError> {
     let build = mv.build.resolve(conn, &row).await?;
-    move_resolved(conn, row, mv, build).await
+    move_resolved(conn, row, mv, build, None).await
 }
 
 /// [`move_locked`] once the locked `row` has named its `build`.
@@ -160,8 +172,9 @@ async fn move_resolved<C: ConnectionTrait>(
     row: apps::Model,
     mv: &ProductionMove,
     build: app_builds::Model,
+    audit: Option<&MoveAudit<'_>>,
 ) -> Result<apps::Model, PromoteError> {
-    check_pointer(conn, &row, &build, mv).await?;
+    let previous = check_pointer(conn, &row, &build, mv).await?;
     admissible(conn, &build).await?;
     let now = Utc::now().fixed_offset();
     let mut active: apps::ActiveModel = row.into();
@@ -183,6 +196,21 @@ async fn move_resolved<C: ConnectionTrait>(
     )
     .await
     .map_err(|e| PromoteError::internal("record production's event", e))?;
+    if let Some(audit) = audit {
+        let entry = match audit.row {
+            MoveRow::Published => published_entry(audit.actor, &updated),
+            MoveRow::Promoted => promoted_entry(
+                audit.actor,
+                Act::Promote,
+                (&updated, &AppEnvironment::Production),
+                None,
+                (build.id, previous),
+            ),
+        };
+        oxy_app_core::audit::record_in_txn(conn, entry)
+            .await
+            .map_err(|e| PromoteError::internal("record the audit row", e))?;
+    }
     Ok(updated)
 }
 
@@ -202,13 +230,14 @@ pub async fn load_build<C: ConnectionTrait>(
 
 /// `target_moved` and `already_serving`, against the pointer production's row
 /// holds as `conn` sees it: for a move's final answer, `conn` is the
-/// transaction holding `row` locked.
+/// transaction holding `row` locked. Answers that pointer: the build
+/// production serves before the move.
 async fn check_pointer<C: ConnectionTrait>(
     conn: &C,
     row: &apps::Model,
     build: &app_builds::Model,
     mv: &ProductionMove,
-) -> Result<(), PromoteError> {
+) -> Result<Option<Uuid>, PromoteError> {
     let current = custom_apps_environments::pointer(conn, row.id, &AppEnvironment::Production)
         .await
         .map_err(|e| PromoteError::internal("read production's pointer", e))?;
@@ -227,7 +256,7 @@ async fn check_pointer<C: ConnectionTrait>(
             build: build.build_id.clone(),
         });
     }
-    Ok(())
+    Ok(current)
 }
 
 /// A pointer, for a sentence: its build id, or `nothing`.

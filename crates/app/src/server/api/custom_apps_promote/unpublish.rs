@@ -4,15 +4,20 @@
 //! pointer, `published_at` and the `unpublish` event move together, in one
 //! transaction holding the app's row `FOR UPDATE`.
 //!
+//! Called for a batch, the move also writes the app's `app.unpublished` audit
+//! row in that transaction ([`unpublish_audited`]).
+//!
 //! No admission applies — nothing is being made live — and no migration is
 //! touched: the bundle bytes and every schema stay as they were.
 
 use chrono::Utc;
 use entity::apps;
+use oxy_app_core::audit::{self, RequestActor};
 use oxy_app_core::custom_app_environment::AppEnvironment;
 use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, TransactionTrait};
 use uuid::Uuid;
 
+use super::audit::unpublished_entry;
 use super::error::PromoteError;
 use super::production::lock_app;
 use crate::server::api::custom_apps_cache;
@@ -25,6 +30,18 @@ pub async fn unpublish(
     db: &DatabaseConnection,
     app_id: Uuid,
     actor: Option<Uuid>,
+) -> Result<apps::Model, PromoteError> {
+    unpublish_audited(db, app_id, actor, None).await
+}
+
+/// [`unpublish`] that also writes the `app.unpublished` row for `audit_as` in
+/// the same transaction: an app that cannot be unpublished has no row, and a
+/// row that cannot be written leaves the app published.
+pub async fn unpublish_audited(
+    db: &DatabaseConnection,
+    app_id: Uuid,
+    actor: Option<Uuid>,
+    audit_as: Option<&RequestActor>,
 ) -> Result<apps::Model, PromoteError> {
     let txn = db
         .begin()
@@ -48,6 +65,11 @@ pub async fn unpublish(
     )
     .await
     .map_err(|e| PromoteError::internal("record production's event", e))?;
+    if let Some(actor) = audit_as {
+        audit::record_in_txn(&txn, unpublished_entry(actor, &updated))
+            .await
+            .map_err(|e| PromoteError::internal("record the audit row", e))?;
+    }
     txn.commit()
         .await
         .map_err(|e| PromoteError::internal("commit the unpublish", e))?;

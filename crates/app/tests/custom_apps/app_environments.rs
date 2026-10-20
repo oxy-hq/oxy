@@ -520,6 +520,19 @@ async fn protected_build_ids_lists_every_environment_build() {
 // ── The shared transitions move the environments ────────────────────────────
 
 use oxy_app::server::api::admin::apps::handlers as admin_apps;
+use oxy_app::server::api::custom_apps_promote::AuditedBy;
+
+/// `user` as a request's actor: a browser session, no key or token.
+fn session_of(user: Uuid) -> oxy_app_core::audit::RequestActor {
+    oxy_app_core::audit::RequestActor::session(oxy_auth::types::AuthenticatedUser {
+        id: user,
+        email: None,
+        name: "Environments Test".to_string(),
+        picture: None,
+        status: entity::users::UserStatus::Active,
+        credential: None,
+    })
+}
 
 #[tokio::test]
 async fn publish_one_and_unpublish_one_move_production() {
@@ -544,7 +557,9 @@ async fn publish_one_and_unpublish_one_move_production() {
     .expect("staging serves the draft");
 
     assert!(
-        admin_apps::publish_one(&conn, app, actor).await.is_ok(),
+        admin_apps::publish_one(&conn, app, &session_of(actor), AuditedBy::Caller)
+            .await
+            .is_ok(),
         "publish_one"
     );
     assert_eq!(
@@ -556,7 +571,7 @@ async fn publish_one_and_unpublish_one_move_production() {
     );
 
     assert!(
-        admin_apps::unpublish_one(&conn, app, unpublisher)
+        admin_apps::unpublish_one(&conn, app, &session_of(unpublisher), AuditedBy::Caller)
             .await
             .is_ok(),
         "unpublish_one"
@@ -600,7 +615,7 @@ async fn publish_one_refuses_a_draft_staging_never_served() {
     let draft = seed_build(&conn, app, "unstaged").await;
     point(&conn, app, Some(draft), None).await;
 
-    let refused = admin_apps::publish_one(&conn, app, actor)
+    let refused = admin_apps::publish_one(&conn, app, &session_of(actor), AuditedBy::Caller)
         .await
         .expect_err("staging never served the draft");
     let response = admin_apps::PromoteRefusal::from(refused).into_response();

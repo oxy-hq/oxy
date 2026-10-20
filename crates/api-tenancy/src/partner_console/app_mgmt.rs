@@ -23,6 +23,7 @@ use uuid::Uuid;
 use super::{db, internal, require_org_scope};
 use crate::partner_console::partner_context::PartnerActor;
 use oxy_app::server::api::admin::apps::handlers as admin_apps;
+use oxy_app::server::api::custom_apps_promote::AuditedBy;
 use oxy_tenancy::org_teams::dto::{
     AppAccessDto, AppAccessSummaryDto, OrgMemberOptionDto, SetAppAccessRequest, TeamDto,
 };
@@ -321,7 +322,7 @@ pub async fn publish_app(
     // drops the per-app canonical-dir caches. Re-stamping published_at by hand
     // would publish a channel with no live bytes behind it. Its refusal is
     // answered whole (`PromoteRefusal`), not cut down to a status.
-    let saved = admin_apps::publish_one(&db, app_id, actor.id).await?;
+    let saved = admin_apps::publish_one(&db, app_id, &actor, AuditedBy::Caller).await?;
     // Viewers' cached access must drop now, not at TTL (admin does the same).
     oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
 
@@ -350,7 +351,7 @@ pub async fn unpublish_app(
 
     // Canonical unpublish: also clears production's build (no dangling pointer)
     // and drops the per-app canonical-dir caches.
-    let saved = admin_apps::unpublish_one(&db, app_id, actor.id)
+    let saved = admin_apps::unpublish_one(&db, app_id, &actor, AuditedBy::Caller)
         .await
         .map_err(|e| e.status)?;
     oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
