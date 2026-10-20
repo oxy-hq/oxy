@@ -207,7 +207,7 @@ async fn an_app_publish_grant_reaches_its_app_on_the_publish_surface_and_nothing
     for uri in [
         format!("/orgs/{}", fx.org_id),
         format!("/orgs/{}/service-accounts", fx.org_id),
-        "/admin/apps".to_string(),
+        "/admin/standing-tokens".to_string(),
         "/chat/threads".to_string(),
     ] {
         let status = status_as(&secret, "GET", &uri).await;

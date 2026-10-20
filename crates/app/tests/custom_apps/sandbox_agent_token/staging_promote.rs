@@ -151,13 +151,9 @@ async fn no_promote_path_ships_a_draft_a_token_published() {
         Some(draft)
     );
 
-    for uri in [
-        format!("/customer-apps/{app}/publish"),
-        format!("/admin/apps/{app}/publish"),
-    ] {
-        let (status, body) = person(&agent, "POST", &uri, None).await;
-        assert_agent_refusal(status, &body, "agent-unapproved", &uri);
-    }
+    let uri = format!("/customer-apps/{app}/publish");
+    let (status, body) = person(&agent, "POST", &uri, None).await;
+    assert_agent_refusal(status, &body, "agent-unapproved", &uri);
     let token = publish_token(&agent).await;
     let bearer = format!("Bearer {token}");
     let promote = format!("/customer-apps/{app}/publish");

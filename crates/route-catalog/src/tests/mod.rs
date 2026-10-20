@@ -7,6 +7,7 @@ use oxy_app::server::route_catalog::{GeneratedRoute, RouteDescription, searchabl
 
 use super::{GENERATED_SCANNED_DIRS, catalog};
 
+mod admin_apps_alias_removed;
 mod app_grant_scope;
 mod handler;
 mod previews_read_only;
@@ -68,7 +69,6 @@ const REQUIRED_GROUPS: &[&str] = &[
     "/api/airhouse/",
     "/api/partners/",
     "/api/user/github/",
-    "/api/admin/apps",
     "/api/admin/compiles",
     "/api/admin/internal-jobs",
     "/api/admin/feature-flags",
@@ -288,7 +288,7 @@ fn landmark_routes_are_present() {
         ("GET", "/api/user"),
         ("GET", "/api/orgs"),
         ("GET", "/api/orgs/{org_id}/workspaces"),
-        ("GET", "/api/admin/apps"),
+        ("GET", "/api/customer-apps"),
         ("GET", "/api/{workspace_id}/threads"),
         ("GET", "/api/{workspace_id}/agents"),
         ("POST", "/api/{workspace_id}/sql/query"),

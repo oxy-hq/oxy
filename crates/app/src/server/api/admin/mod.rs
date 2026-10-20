@@ -74,11 +74,6 @@ use crate::server::router::{AdminSection, AppState};
 ///   - POST   /admin/orgs/{org_id}/billing/resync
 ///   - GET    /admin/feature-flags
 ///   - PATCH  /admin/feature-flags/{key}
-///   - POST   /admin/apps   (the apps rows are an alias of /customer-apps, mounted in `router::global`)
-///   - GET    /admin/apps
-///   - GET    /admin/apps/{id}
-///   - PATCH  /admin/apps/{id}
-///   - DELETE /admin/apps/{id}
 ///   - GET    /admin/app-admins
 ///   - POST   /admin/app-admins
 ///   - DELETE /admin/app-admins/{id}
@@ -189,9 +184,8 @@ pub(crate) fn router(extracted: Vec<AdminSection>) -> Router<AppState> {
     // the same breath. Ending the session (below) restores all of it.
     let staff_surface = feature_flags::routes::router()
         .route_layer(cap(Action::PlatformOperate))
-        // The custom-app registry (`/admin/apps`) is NOT merged here any more: it is the
-        // `/customer-apps` surface, with `/admin/apps` kept as an alias in `router::global`,
-        // both behind the one `apps::guarded` stack.
+        // The custom-app registry is NOT merged here: it is the `/customer-apps`
+        // surface in `router::global`, behind the one `apps::guarded` stack.
         .merge(audit::router().route_layer(cap(Action::PlatformAudit)))
         .merge(app_publish_tokens::router().route_layer(cap(Action::PlatformApps)))
         // Every staff member's sandbox agent tokens: the cross-admin view, which

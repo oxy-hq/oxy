@@ -251,17 +251,6 @@ pub(super) fn build_global_routes(app_state: &AppState, admin: Vec<AdminSection>
                 )),
             "the compile operator surface reads the revisions tables",
         )
-        // `/admin/apps/*`, kept ONE release as an alias of `/customer-apps`: the same
-        // handlers (`admin::apps::legacy_alias_router`) behind the same
-        // `admin::apps::guarded` stack. `oxyc` (a published CLI) still resolves apps
-        // through it. A sibling nest, so `admin::router`'s own layers do not reach it.
-        // Remove once `oxyc` calls `/customer-apps`.
-        .nest_all(
-            "/admin/apps",
-            RouteRole::FleetOk,
-            admin::apps::guarded(admin::apps::legacy_alias_router()),
-            "alias of the custom-app admin surface: registration rows plus S3 bundles",
-        )
         // The custom-app admin surface, and the ONE registration of the admin app
         // handlers: `admin::apps::router()` (create / list / get / update / delete,
         // publish, functions, read-back, issues, access, builds, rollback, batch,

@@ -250,8 +250,7 @@ fn guarded_span(nest: &str) -> (usize, usize) {
 /// from: two decide a platform action each, two decide none. A fifth layer
 /// fails here until someone says what it decides — and if that is an action
 /// the token does not cover, the loop is refused on every console row. They
-/// are named once, in `admin::apps::guarded`, which the nest (and the
-/// `/admin/apps` alias) call.
+/// are named once, in `admin::apps::guarded`, which the nest calls.
 #[test]
 fn the_console_mounts_the_layers_the_table_was_written_from() {
     let router = source("app/src/server/router/global.rs");

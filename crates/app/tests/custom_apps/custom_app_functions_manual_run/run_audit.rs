@@ -90,7 +90,7 @@ async fn run_with_token(
 async fn run_now_leaves_one_audit_row_for_a_session_and_for_a_publish_token() {
     let t = seeded_tenant().await;
     let app_id = two_builds(&t).await;
-    let runs = format!("/apps/{app_id}/functions/smoke/runs");
+    let runs = format!("/customer-apps/{app_id}/functions/smoke/runs");
 
     // The staff guest's own login: staging, then production.
     let (status, staged) = post_admin(&format!("{runs}?environment=staging")).await;

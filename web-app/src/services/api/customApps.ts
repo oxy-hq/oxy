@@ -138,8 +138,7 @@ export const CustomAppsService = {
    *
    * Every admin app route is the one `/customer-apps/*` mount (owner-or-app-admin,
    * `PlatformApps` capability, app scope, refused while acting as a tenant) —
-   * publishing is a normal Oxy-engineer automation. `/admin/apps/*` is only a
-   * server-side alias kept for one release for `oxyc`; this client never calls it.
+   * publishing is a normal Oxy-engineer automation.
    */
   async publish(id: string): Promise<CustomApp> {
     const response = await apiClient.post(`${appPath(id)}/publish`);

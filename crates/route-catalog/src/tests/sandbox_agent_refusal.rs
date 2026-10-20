@@ -16,7 +16,7 @@ use super::app_grant_scope::shape_of;
 use crate::catalog;
 
 /// The mounts the staff console's platform doors stand in front of.
-const CONSOLE: [&str; 3] = ["/customer-apps", "/admin/apps", "/admin/app-publish-tokens"];
+const CONSOLE: [&str; 2] = ["/customer-apps", "/admin/app-publish-tokens"];
 
 fn on_console(path: &str) -> bool {
     CONSOLE.iter().any(|prefix| {
@@ -96,9 +96,8 @@ fn only_the_loops_own_writes_decide_by_environment() {
         .map(|allowed| (allowed.method, allowed.shape))
         .collect();
     for (method, shape, _) in ENVIRONMENT_DECIDED {
-        let mirrored = shape.replacen("/admin/apps", "/customer-apps", 1);
         assert!(
-            loop_writes.iter().any(|row| same(method, &mirrored, *row)),
+            loop_writes.iter().any(|row| same(method, shape, *row)),
             "{method} {shape} is not a write of the sandbox loop: its handler takes \
              RefuseSandboxAgent"
         );

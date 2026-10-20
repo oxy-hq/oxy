@@ -1,10 +1,10 @@
 /**
  * `oxyc` calls `/api/customer-apps` and nothing else for the app registry.
  *
- * The server keeps `/api/admin/apps/*` only as a short-lived alias of the same
- * handlers, and can delete it once no client calls it. This test is what keeps
- * `oxyc` from calling it again: a path written back into any source or test file
- * fails here, before the alias deletion breaks a released CLI.
+ * The server no longer mounts `/api/admin/apps/*` (it was a short-lived alias of
+ * the same handlers). This test keeps `oxyc` from calling it again: a path
+ * written back into any source or test file fails here, not against a server
+ * that answers 404.
  */
 
 import { readdirSync, readFileSync } from "node:fs";

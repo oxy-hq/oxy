@@ -104,10 +104,10 @@ fn the_production_registry_registers_the_app_function_executor_and_the_driver_us
 
 /// The manual-run and publish-token tests call `admin::apps::guarded` themselves
 /// and register the handlers at the paths below, so what they must still see in
-/// production is: the stack's layers, in order, both mounts wearing it, and the
+/// production is: the stack's layers, in order, the mount wearing it, and the
 /// handlers registered at those paths.
 #[test]
-fn both_admin_app_mounts_wear_the_one_stack_the_manual_run_tests_call() {
+fn the_admin_app_mount_wears_the_one_stack_the_manual_run_tests_call() {
     let apps = code("crates/app/src/server/api/admin/apps/mod.rs");
     assert!(
         fn_body(&apps, "guarded<S>").contains(
@@ -137,8 +137,9 @@ fn both_admin_app_mounts_wear_the_one_stack_the_manual_run_tests_call() {
         "the `/customer-apps` nest is no longer `admin::apps::guarded(admin::apps::router()…)`"
     );
     assert!(
-        global.contains(".nest_all(\"/admin/apps\",RouteRole::FleetOk,admin::apps::guarded(admin::apps::legacy_alias_router())"),
-        "the `/admin/apps` alias is no longer `admin::apps::guarded(admin::apps::legacy_alias_router())`"
+        !global.contains("\"/admin/apps\""),
+        "`router/global.rs` mounts `/admin/apps` again: `/customer-apps` is the only mount of \
+         the admin app handlers"
     );
     let admin = code("crates/app/src/server/api/admin/mod.rs");
     assert!(

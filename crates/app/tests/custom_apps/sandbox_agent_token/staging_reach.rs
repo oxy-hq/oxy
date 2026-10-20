@@ -283,7 +283,6 @@ async fn the_staging_grant_opens_nothing_but_staging() {
         ("DELETE", format!("/customer-apps/{app}")),
         ("PATCH", format!("/customer-apps/{app}")),
         ("POST", "/customer-apps/batch/promote-latest".to_string()),
-        ("POST", format!("/admin/apps/{app}/publish")),
         ("GET", format!("/customer-apps/{app}/secrets/TOKEN/value")),
         (
             "GET",

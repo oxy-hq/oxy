@@ -83,8 +83,9 @@ async fn run_as(
 async fn a_run_outside_production_is_refused_unless_it_is_a_check_someone_with_reach_asked_for() {
     let t = seeded_tenant().await;
     let app_id = two_builds(&t).await;
-    let runs =
-        |function: &str, query: &str| format!("/apps/{app_id}/functions/{function}/runs{query}");
+    let runs = |function: &str, query: &str| {
+        format!("/customer-apps/{app_id}/functions/{function}/runs{query}")
+    };
 
     // Not a check in the build staging serves — including one production's
     // build still marks a check.
@@ -306,14 +307,17 @@ async fn staff_scoped_to_another_org_get_not_found_on_the_environment_routes() {
     )
     .await
     .expect("queue a production run");
-    let run_detail = format!("/apps/{app_id}/function-runs/{run}");
-    let listing = format!("/apps/{app_id}/invocations");
-    let held = format!("/apps/{app_id}/invocations/{}/held", Uuid::new_v4());
+    let run_detail = format!("/customer-apps/{app_id}/function-runs/{run}");
+    let listing = format!("/customer-apps/{app_id}/invocations");
+    let held = format!(
+        "/customer-apps/{app_id}/invocations/{}/held",
+        Uuid::new_v4()
+    );
     let paths = [
         run_detail.clone(),
         listing.clone(),
         format!("{listing}?environment=staging"),
-        format!("/apps/{app_id}/functions/smoke/invocations?environment=staging"),
+        format!("/customer-apps/{app_id}/functions/smoke/invocations?environment=staging"),
         held.clone(),
     ];
     for path in &paths {

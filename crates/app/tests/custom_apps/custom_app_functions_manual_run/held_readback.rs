@@ -1,4 +1,4 @@
-//! The held-write read-back: `GET /admin/apps/{id}/invocations/{inv}/held`.
+//! The held-write read-back: `GET /customer-apps/{id}/invocations/{inv}/held`.
 //!
 //! - it returns what a staging call held and `[]` for a production call;
 //! - **nothing reads across apps, orgs, invocations or audit actions**:
@@ -58,7 +58,10 @@ async fn the_held_route_returns_one_invocations_held_writes_and_no_one_elses() {
     let quiet = ran(&t, APP, "whoami", &staging_host(&t, APP)).await;
     let theirs = ran(&t, OTHER_APP, "writes", &staging_host(&t, OTHER_APP)).await;
     let held = |app: Uuid, invocation: Uuid| async move {
-        get_admin(&format!("/apps/{app}/invocations/{invocation}/held")).await
+        get_admin(&format!(
+            "/customer-apps/{app}/invocations/{invocation}/held"
+        ))
+        .await
     };
     let ops = |body: &Value| -> Vec<String> {
         body["held"]

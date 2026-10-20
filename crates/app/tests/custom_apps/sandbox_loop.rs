@@ -140,7 +140,10 @@ async fn each_environment_runs_its_own(t: &Tenant, app: &apps::Model) {
 async fn a_check_runs_in_its_sandbox(t: &Tenant, app: &apps::Model) -> String {
     let (platform, _platform_dir) = platform().await;
     let driver = spawn_driver(t.db.clone(), platform);
-    let runs = format!("/apps/{}/functions/smoke/runs?environment={A}", app.id);
+    let runs = format!(
+        "/customer-apps/{}/functions/smoke/runs?environment={A}",
+        app.id
+    );
     let (status, queued) = post_admin(&runs).await;
     assert_eq!(status, StatusCode::OK, "queue the check: {queued}");
     let run = wait_for_run(app.id, queued["run_id"].as_str().expect("a run id")).await;
@@ -165,8 +168,11 @@ async fn a_check_runs_in_its_sandbox(t: &Tenant, app: &apps::Model) -> String {
         .as_str()
         .expect("an invocation")
         .to_string();
-    let (status, held) =
-        get_admin(&format!("/apps/{}/invocations/{invocation}/held", app.id)).await;
+    let (status, held) = get_admin(&format!(
+        "/customer-apps/{}/invocations/{invocation}/held",
+        app.id
+    ))
+    .await;
     assert_eq!(status, StatusCode::OK, "{held}");
     assert_eq!(
         (&held["environment"], &held["function"], &held["build_id"]),

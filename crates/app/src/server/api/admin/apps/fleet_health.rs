@@ -2,8 +2,7 @@
 //! working.
 //!
 //! Registered once, in `admin/apps/mod.rs`, and mounted at
-//! `/api/customer-apps/fleet-health`. `/api/admin/apps/health` and
-//! `/api/admin/apps/fleet-health` are the one-release alias. It is NOT
+//! `/api/customer-apps/fleet-health`. It is NOT
 //! `/api/customer-apps/health`, because that is the external, `Host`-resolved
 //! liveness endpoint for ONE published app (`custom_apps_health`) — a different
 //! question, a different audience, and a path outside monitors already poll.

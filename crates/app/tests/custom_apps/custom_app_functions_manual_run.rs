@@ -1,14 +1,14 @@
 //! The admin **Run now** for a published function, end to end:
-//! `POST /api/admin/apps/{id}/functions/{name}/runs` queues it, the global-run
+//! `POST /api/customer-apps/{id}/functions/{name}/runs` queues it, the global-run
 //! driver executes it in the isolate, and
-//! `GET /api/admin/apps/{id}/function-runs/{run_id}` reports the run done with
+//! `GET /api/customer-apps/{id}/function-runs/{run_id}` reports the run done with
 //! the function's answer and its logs.
 //!
 //! **Routes.** The handlers register at their production paths (`RUNS_ROUTE`,
 //! `RUN_DETAIL_ROUTE`, … from `admin::apps::router()`) and sit behind the
 //! production guard stack itself, `admin::apps::guarded` — the stack
-//! `/customer-apps` and the `/admin/apps` alias both wear — under
-//! `auth_middleware`. The test nests them at the alias, `/api/admin/apps`.
+//! `/customer-apps` wears — under `auth_middleware`. The test nests them at
+//! `/api/customer-apps`.
 //! `custom_app_functions_manual_run_guards` fails when production stops
 //! registering them. The copy leaves out three outer layers of the protected tree
 //! (`router/protected.rs`): `api_key_query_middleware`, `timeout_middleware` and
@@ -114,7 +114,7 @@ fn functions() -> Vec<FunctionSpec> {
 }
 
 /// The paths as `admin::apps::router()` registers them, below the mount
-/// (`/api/customer-apps`, or the `/api/admin/apps` alias).
+/// (`/api/customer-apps`).
 /// `custom_app_functions_manual_run_guards` checks production still does.
 pub(crate) const RUNS_ROUTE: &str = "/{id}/functions/{name}/runs";
 pub(crate) const RUN_DETAIL_ROUTE: &str = "/{id}/function-runs/{run_id}";
@@ -192,15 +192,14 @@ fn guarded_admin() -> Router {
             )
             .route(HELD_ROUTE, get(held_writes::get_held_writes)),
     );
-    // The `/api/admin/apps` alias; the same `guarded` stack is `/customer-apps`'s.
-    Router::new().nest("/api/admin/apps", apps)
+    Router::new().nest("/api/customer-apps", apps)
 }
 
-/// `GET /api/admin<path>` through the same guards as `caller`, whom
+/// `GET /api<path>` through the same guards as `caller`, whom
 /// authentication is taken to have resolved — for a caller the built-in guest
 /// cannot be (a staff grant scoped to one org).
 async fn get_admin_as(caller: &AuthenticatedUser, path: &str) -> (StatusCode, Value) {
-    let request = Request::get(format!("/api/admin{path}"))
+    let request = Request::get(format!("/api{path}"))
         .body(Body::empty())
         .unwrap();
     let router = guarded_admin().layer(axum::Extension(caller.clone()));
@@ -223,20 +222,20 @@ async fn answer(response: axum::response::Response) -> (StatusCode, Value) {
     )
 }
 
-/// `GET /api/admin<path>` through the admin stack, as the guest.
+/// `GET /api<path>` through the admin stack, as the guest.
 pub(crate) async fn get_admin(path: &str) -> (StatusCode, Value) {
     send(
-        Request::get(format!("/api/admin{path}"))
+        Request::get(format!("/api{path}"))
             .body(Body::empty())
             .unwrap(),
     )
     .await
 }
 
-/// `POST /api/admin<path>` with no body through the admin stack, as the guest.
+/// `POST /api<path>` with no body through the admin stack, as the guest.
 pub(crate) async fn post_admin(path: &str) -> (StatusCode, Value) {
     send(
-        Request::post(format!("/api/admin{path}"))
+        Request::post(format!("/api{path}"))
             .body(Body::empty())
             .unwrap(),
     )
@@ -303,7 +302,7 @@ pub(crate) fn spawn_driver(
 
 /// The run's detail once it leaves `queued`/`running`; panics at the deadline.
 pub(crate) async fn wait_for_run(app_id: Uuid, run_id: &str) -> Value {
-    let uri = format!("/api/admin/apps/{app_id}/function-runs/{run_id}");
+    let uri = format!("/api/customer-apps/{app_id}/function-runs/{run_id}");
     let deadline = Instant::now() + RUN_DEADLINE;
     let mut last = Value::Null;
     while Instant::now() < deadline {
@@ -333,7 +332,7 @@ async fn run_now_queues_the_function_and_the_driver_runs_it_to_done() {
 
     let (status, queued) = send(
         Request::post(format!(
-            "/api/admin/apps/{}/functions/tally-store/runs",
+            "/api/customer-apps/{}/functions/tally-store/runs",
             published.app_id
         ))
         .header("content-type", "application/json")

@@ -40,8 +40,7 @@ const MESSAGE: &str = "a sandbox agent token writes only to a sandbox it created
                        an app's production or staging state";
 
 /// Every route whose handler takes [`RefuseSandboxAgent`], as `(method, path
-/// under /api)`: the staff console's writes to state a sandbox is not. The
-/// `/admin` rows mount the same handlers as the `/customer-apps` ones.
+/// under /api)`: the staff console's writes to state a sandbox is not.
 ///
 /// Two tests read this table. The route-catalog walk
 /// (`route-catalog/src/tests/sandbox_agent_refusal.rs`) fails when the
@@ -70,12 +69,6 @@ pub const REFUSED_WRITES: &[(&str, &str)] = &[
     // staff flip it, never a token (environments design §4.5, ruling 1).
     ("PUT", "/customer-apps/{id}/environments/{name}/schedules"),
     ("PUT", "/customer-apps/{id}/access"),
-    ("POST", "/admin/apps"),
-    ("PATCH", "/admin/apps/{id}"),
-    ("DELETE", "/admin/apps/{id}"),
-    ("POST", "/admin/apps/{id}/publish"),
-    ("DELETE", "/admin/apps/{id}/publish"),
-    ("PUT", "/admin/apps/{id}/access"),
     ("POST", "/admin/app-publish-tokens"),
     ("POST", "/admin/app-publish-tokens/{id}/revoke"),
 ];
@@ -122,11 +115,6 @@ pub const ENVIRONMENT_DECIDED: &[(&str, &str, &str)] = &[
         "DELETE",
         "/customer-apps/{id}/secrets/{key}",
         "S2: secrets::agent authorize",
-    ),
-    (
-        "POST",
-        "/admin/apps/{id}/functions/{name}/runs",
-        "C2's handler, mounted on the admin surface",
     ),
 ];
 

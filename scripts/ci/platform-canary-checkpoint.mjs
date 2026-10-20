@@ -714,7 +714,7 @@ async function stepsRan(opts, canary, appId, runId) {
     opts.target,
     canary.token,
     "GET",
-    `/api/admin/apps/${appId}/function-runs/${runId}`,
+    `/api/customer-apps/${appId}/function-runs/${runId}`,
     undefined,
     "read run detail"
   );

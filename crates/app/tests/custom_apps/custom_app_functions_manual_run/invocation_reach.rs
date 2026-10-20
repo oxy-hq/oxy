@@ -39,7 +39,7 @@ use crate::staging_functions::{make_guest_staff, production_host, staging_host};
 /// Which of the two listings a caller asks.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Listing {
-    /// `GET /admin/apps/{id}/invocations`
+    /// `GET /customer-apps/{id}/invocations`
     App,
     /// `GET …/{id}/functions/whoami/invocations`
     Function,

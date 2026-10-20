@@ -191,8 +191,8 @@ fn read_applies_the_stripping() {
 /// There used to be two stacks, and that was the trap: `admin::apps::router()` under
 /// `/admin`, and a parallel `/customer-apps` nest in `router/global.rs` serving the same
 /// handlers. Gating only one left every route reachable unscoped by the other path. Now
-/// `admin::apps::guarded` is the only place the guards are named, and both mounts (the
-/// `/customer-apps` surface and the `/admin/apps` alias) must wear it.
+/// `admin::apps::guarded` is the only place the guards are named, and the one mount
+/// (`/customer-apps`) must wear it.
 #[test]
 fn every_app_route_tree_wears_the_stack_that_carries_the_scope_guard() {
     let stack = read("crates/app/src/server/api/admin/apps/mod.rs");
@@ -207,11 +207,7 @@ fn every_app_route_tree_wears_the_stack_that_carries_the_scope_guard() {
     );
 
     let global = read("crates/app/src/server/router/global.rs");
-    for mount in [
-        "admin::apps::guarded(",
-        "admin::apps::router()",
-        "admin::apps::legacy_alias_router()",
-    ] {
+    for mount in ["admin::apps::guarded(", "admin::apps::router()"] {
         assert!(
             global.contains(mount),
             "`router/global.rs` no longer mounts the admin app handlers through `{mount}`"
@@ -219,10 +215,9 @@ fn every_app_route_tree_wears_the_stack_that_carries_the_scope_guard() {
     }
     assert_eq!(
         global.matches("admin::apps::guarded(").count(),
-        2,
-        "exactly two mounts wear `admin::apps::guarded`: `/customer-apps` and the \
-         `/admin/apps` alias. A third app tree with its own layers is the second stack \
-         this test exists to prevent."
+        1,
+        "exactly one mount wears `admin::apps::guarded`: `/customer-apps`. A second app \
+         tree with its own layers is the second stack this test exists to prevent."
     );
     let admin = read("crates/app/src/server/api/admin/mod.rs");
     assert!(

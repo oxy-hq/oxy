@@ -404,11 +404,11 @@ async function step5(ctx, state) {
   assertJson(call, Boolean(check.invocationId), "no invocationId on the passed check");
   state.invocationA = check.invocationId;
 
-  // STAFF_ONLY: the answer is read on the admin surface. The token itself
-  // read this run's detail while `checks run` polled it, on its own mount.
+  // STAFF_ONLY: the staff bearer reads the answer too. The token itself
+  // read this run's detail while `checks run` polled it.
   const detail = staff(ctx, [
     "api",
-    `/api/admin/apps/${ctx.appId}/function-runs/${check.runId}?environment=${SANDBOX_A}`,
+    `/api/customer-apps/${ctx.appId}/function-runs/${check.runId}?environment=${SANDBOX_A}`,
     "--target",
     ctx.target
   ]);
@@ -578,7 +578,7 @@ async function step8(ctx) {
 
   const detail = staff(ctx, [
     "api",
-    `/api/admin/apps/${ctx.appId}/function-runs/${check.runId}`,
+    `/api/customer-apps/${ctx.appId}/function-runs/${check.runId}`,
     "--target",
     ctx.target
   ]);

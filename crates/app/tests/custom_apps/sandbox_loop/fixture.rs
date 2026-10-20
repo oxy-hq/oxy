@@ -148,7 +148,7 @@ pub(super) async fn probe(t: &Tenant, environment: &str, put: Option<&str>) -> V
 /// of each row, having checked every row is that environment's.
 pub(super) async fn ran_in(app_id: Uuid, environment: &str) -> Vec<(String, String)> {
     let (status, body) = get_admin(&format!(
-        "/apps/{app_id}/invocations?environment={environment}"
+        "/customer-apps/{app_id}/invocations?environment={environment}"
     ))
     .await;
     assert_eq!(status, StatusCode::OK, "{environment}: {body}");

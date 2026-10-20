@@ -307,7 +307,7 @@ mod tests {
         // And still nothing outside the surface.
         assert!(!is_allowed(
             &Method::POST,
-            "/admin/apps/3f2504e0/functions/check_orders/runs"
+            "/admin/standing-tokens/3f2504e0/revoke"
         ));
     }
 

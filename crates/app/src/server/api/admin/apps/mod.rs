@@ -2,9 +2,8 @@
 //!
 //! One registration, one guard stack. [`router`] is every admin app handler,
 //! mounted at `/api/customer-apps` by `router/global.rs` behind [`guarded`].
-//! `/api/admin/apps` survives for one release as [`legacy_alias_router`]: the
-//! same handlers behind the same [`guarded`] stack, because `oxyc` (a published
-//! CLI) still resolves apps through it. Customer apps are routed and
+//! There is no other mount: `/api/admin/apps` was removed once `oxyc` called
+//! `/api/customer-apps`. Customer apps are routed and
 //! served entirely inside oxy (see `custom_apps_serve`); no external
 //! routing infra (CloudFront/Route53) sits in the data path.
 //!
@@ -85,14 +84,7 @@ pub(crate) fn router() -> Router<AppState> {
     core_routes().merge(console_routes())
 }
 
-/// The `/api/admin/apps` alias, for one release: the routes that tree always
-/// served (nothing new, so the route catalog's write rows stay as they were),
-/// plus the old spelling of fleet health. Mount it behind [`guarded`].
-pub(crate) fn legacy_alias_router() -> Router<AppState> {
-    core_routes().route("/health", get(fleet_health::get_fleet_health))
-}
-
-/// What `/api/admin/apps` and `/api/customer-apps` both serve.
+/// The registry, publish, functions, read-back, access, builds and storage routes.
 fn core_routes() -> Router<AppState> {
     Router::new()
         // The list wraps `handlers::list_apps` to add each row's `verdict`.

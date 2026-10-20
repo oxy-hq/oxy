@@ -1,4 +1,4 @@
-//! The invocation listings: `GET /admin/apps/{id}/invocations` and the
+//! The invocation listings: `GET /customer-apps/{id}/invocations` and the
 //! per-function `GET …/functions/{name}/invocations`, as staff with reach
 //! read them. Who may read which rows is `invocation_reach`'s.
 //!
@@ -39,7 +39,8 @@ async fn invocations_filter_by_environment_build_function_and_limit() {
         build_pk(&t, app_id, STAGING_BUILD).await,
     );
     let list = |query: String| async move {
-        let (status, body) = get_admin(&format!("/apps/{app_id}/invocations{query}")).await;
+        let (status, body) =
+            get_admin(&format!("/customer-apps/{app_id}/invocations{query}")).await;
         assert_eq!(status, StatusCode::OK, "{query}: {body}");
         body["invocations"].clone()
     };
@@ -114,21 +115,22 @@ async fn invocations_filter_by_environment_build_function_and_limit() {
         ("?limit=abc", "invalid_limit"),
         ("?environment=Prod", "invalid_environment"),
     ] {
-        let (status, body) = get_admin(&format!("/apps/{app_id}/invocations{query}")).await;
+        let (status, body) =
+            get_admin(&format!("/customer-apps/{app_id}/invocations{query}")).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{query}: {body}");
         assert_eq!(body["error"], code, "{query}: {body}");
     }
 
     // The other app's listing holds its own row and none of these.
-    let (_, theirs) = get_admin(&format!("/apps/{other_app}/invocations")).await;
+    let (_, theirs) = get_admin(&format!("/customer-apps/{other_app}/invocations")).await;
     assert_eq!(ids(&theirs["invocations"]), vec![elsewhere.to_string()]);
-    let (status, body) = get_admin(&format!("/apps/{}/invocations", Uuid::new_v4())).await;
+    let (status, body) = get_admin(&format!("/customer-apps/{}/invocations", Uuid::new_v4())).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(body["error"], "app_not_found");
 
     // The per-function listing is the same query with the path's function: a
     // bare array, the same new fields, the same filters and refusals.
-    let per_function = format!("/apps/{app_id}/functions/whoami/invocations");
+    let per_function = format!("/customer-apps/{app_id}/functions/whoami/invocations");
     let (status, mine) = get_admin(&per_function).await;
     assert_eq!(status, StatusCode::OK, "{mine}");
     assert_eq!(ids(&mine), vec![staged.clone(), live.clone()]);

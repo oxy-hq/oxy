@@ -33,8 +33,8 @@ export const STAFF_ONLY = [
   },
   {
     step: 5,
-    what: "read the check run's answer from /api/admin/apps",
-    why: "the admin surface answers the token 404, and `oxyc api` refuses it before any request"
+    what: "read the check run's answer from /api/customer-apps",
+    why: "the staff bearer reads what the check wrote, so the proof does not rest on the token's own reading"
   },
   {
     step: 8,

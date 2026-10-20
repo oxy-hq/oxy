@@ -266,7 +266,7 @@ async fn evaluate(
             format!(
                 "{e} — oxy serves only build-store (s3) apps, so every request for this app fails \
                  at dispatch, and re-publishing will not repair it. Switch the app's source to \
-                 s3 (PATCH /api/admin/apps/{{id}}), then ship a build with `oxyc publish`."
+                 s3 (PATCH /api/customer-apps/{{id}}), then ship a build with `oxyc publish`."
             ),
         ));
         skip_remaining(&mut checks, "source configuration is unreadable");

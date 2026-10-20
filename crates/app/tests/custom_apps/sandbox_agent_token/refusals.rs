@@ -229,10 +229,6 @@ async fn nothing_else_on_the_api_exists(s: &Scene) {
             "DELETE",
             format!("/customer-apps/{app}/publishers/{sibling}"),
         ),
-        ("POST", format!("/admin/apps/{app}/publish")),
-        ("DELETE", format!("/admin/apps/{app}/publish")),
-        ("DELETE", format!("/admin/apps/{app}")),
-        ("PUT", format!("/admin/apps/{app}/access")),
         ("POST", "/admin/app-publish-tokens".to_string()),
         (
             "GET",
@@ -250,14 +246,6 @@ async fn nothing_else_on_the_api_exists(s: &Scene) {
             format!("/customer-apps/{sibling}/secrets?environment={OWN}"),
         ),
         ("GET", "/customer-apps".to_string()),
-        (
-            "GET",
-            format!("/admin/apps/{app}/functions?environment={OWN}"),
-        ),
-        (
-            "GET",
-            format!("/admin/apps/{app}/invocations?environment={OWN}"),
-        ),
         ("GET", "/admin/sandbox-agent-tokens".to_string()),
         ("GET", "/admin/standing-tokens".to_string()),
         ("GET", "/user/tokens".to_string()),

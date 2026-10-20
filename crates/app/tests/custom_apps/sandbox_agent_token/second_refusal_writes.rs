@@ -125,17 +125,7 @@ fn fixed_state_writes() -> Vec<Write> {
             "/customer-apps/{id}/environments/{name}/schedules",
             put(env_schedules::set),
         ),
-        write("POST", "/admin/apps", post(admin::create_app)),
-        write("PATCH", "/admin/apps/{id}", patch(admin::update_app)),
-        write("DELETE", "/admin/apps/{id}", delete(admin::delete_app)),
-        write("POST", "/admin/apps/{id}/publish", post(admin::publish_app)),
-        write(
-            "DELETE",
-            "/admin/apps/{id}/publish",
-            delete(admin::unpublish_app),
-        ),
         write("PUT", "/customer-apps/{id}/access", put(set_app_access)),
-        write("PUT", "/admin/apps/{id}/access", put(set_app_access)),
         write(
             "POST",
             "/admin/app-publish-tokens",
@@ -154,11 +144,11 @@ fn fixed_state_writes() -> Vec<Write> {
 fn body_for(agent: &Agent, path: &str, staging: Uuid) -> Option<Value> {
     let app = agent.app.id;
     let body = match path {
-        "/customer-apps" | "/admin/apps" => json!({
+        "/customer-apps" => json!({
             "name": "By Token", "org_id": agent.t.org_id,
             "project_id": agent.app.project_id, "scaffold_pr": false,
         }),
-        "/customer-apps/{id}" | "/admin/apps/{id}" => json!({ "name": "Renamed By Token" }),
+        "/customer-apps/{id}" => json!({ "name": "Renamed By Token" }),
         "/customer-apps/{id}/rollback" => json!({ "build_id": staging }),
         "/customer-apps/{id}/environments/{name}/promote" => json!({ "from": "staging" }),
         "/customer-apps/{id}/environments/{name}/rollback" => json!({}),
@@ -167,9 +157,7 @@ fn body_for(agent: &Agent, path: &str, staging: Uuid) -> Option<Value> {
             "repo_owner": "acme", "repo_owner_id": 1, "repo_name": "app",
             "workflow_ref": ".github/workflows/oxy-publish.yml", "environment": "production",
         }),
-        "/customer-apps/{id}/access" | "/admin/apps/{id}/access" => {
-            json!({ "visibility": "restricted" })
-        }
+        "/customer-apps/{id}/access" => json!({ "visibility": "restricted" }),
         "/customer-apps/{id}/environments/{name}/schedules" => json!({ "enabled": true }),
         "/admin/app-publish-tokens" => json!({ "name": "by token" }),
         batch if batch.starts_with("/customer-apps/batch/") => json!({ "ids": [app] }),

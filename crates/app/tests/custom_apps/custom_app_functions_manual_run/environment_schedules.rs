@@ -27,15 +27,18 @@ async fn run_now_as_schedule_runs_in_the_named_environment_only() {
     let driver = spawn_driver(t.db.clone(), platform);
 
     let (status, queued) = post_admin(&format!(
-        "/apps/{}/functions/tick/runs?environment=dev-a1&as=schedule",
+        "/customer-apps/{}/functions/tick/runs?environment=dev-a1&as=schedule",
         app.id
     ))
     .await;
     assert_eq!(status, StatusCode::OK, "{queued}");
     assert_eq!(queued["environment"], "dev-a1");
     let sandbox_run = queued["run_id"].as_str().expect("a run id").to_string();
-    let (status, queued) =
-        post_admin(&format!("/apps/{}/functions/tick/runs?as=schedule", app.id)).await;
+    let (status, queued) = post_admin(&format!(
+        "/customer-apps/{}/functions/tick/runs?as=schedule",
+        app.id
+    ))
+    .await;
     assert_eq!(status, StatusCode::OK, "{queued}");
     assert_eq!(queued["environment"], "production");
     let production_run = queued["run_id"].as_str().expect("a run id").to_string();
@@ -80,7 +83,7 @@ async fn run_now_as_schedule_runs_in_the_named_environment_only() {
 async fn run_now_as_schedule_refuses_what_a_schedule_would_not_run() {
     let t = seeded_tenant().await;
     let app = scheduled_app(&t, "fn-sched-now-no").await;
-    let runs = |query: &str| format!("/apps/{}/functions/{query}", app.id);
+    let runs = |query: &str| format!("/customer-apps/{}/functions/{query}", app.id);
 
     for environment in ["", "&environment=staging", "&environment=dev-a1"] {
         let (status, body) =
@@ -95,7 +98,7 @@ async fn run_now_as_schedule_refuses_what_a_schedule_would_not_run() {
     );
 
     let with_body = Request::post(format!(
-        "/api/admin{}",
+        "/api{}",
         runs("tick/runs?environment=dev-a1&as=schedule")
     ))
     .header("content-type", "application/json")

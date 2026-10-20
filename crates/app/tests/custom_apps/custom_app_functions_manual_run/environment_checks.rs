@@ -119,7 +119,7 @@ async fn a_check_runs_in_staging_on_the_staging_build_under_the_staging_policy()
     let driver = spawn_driver(t.db.clone(), platform);
 
     let (status, queued) = post_admin(&format!(
-        "/apps/{app_id}/functions/smoke/runs?environment=staging"
+        "/customer-apps/{app_id}/functions/smoke/runs?environment=staging"
     ))
     .await;
     assert_eq!(status, StatusCode::OK, "run in staging: {queued}");
@@ -127,7 +127,8 @@ async fn a_check_runs_in_staging_on_the_staging_build_under_the_staging_policy()
     let staging_run = queued["run_id"].as_str().expect("a run id").to_string();
 
     // Without the parameter the same route queues production's run, as before.
-    let (status, queued) = post_admin(&format!("/apps/{app_id}/functions/smoke/runs")).await;
+    let (status, queued) =
+        post_admin(&format!("/customer-apps/{app_id}/functions/smoke/runs")).await;
     assert_eq!(status, StatusCode::OK, "run now: {queued}");
     assert_eq!(queued["environment"], "production");
     let production_run = queued["run_id"].as_str().expect("a run id").to_string();
@@ -180,7 +181,11 @@ async fn a_check_runs_in_staging_on_the_staging_build_under_the_staging_policy()
     assert_eq!(production["invocation_id"], live.id.to_string());
 
     // The non-production policy held the write, and the read-back lists it.
-    let (status, held) = get_admin(&format!("/apps/{app_id}/invocations/{}/held", staged.id)).await;
+    let (status, held) = get_admin(&format!(
+        "/customer-apps/{app_id}/invocations/{}/held",
+        staged.id
+    ))
+    .await;
     assert_eq!(status, StatusCode::OK, "held: {held}");
     assert_eq!(held["environment"], "staging");
     assert_eq!(held["function"], "smoke");
@@ -192,7 +197,11 @@ async fn a_check_runs_in_staging_on_the_staging_build_under_the_staging_policy()
         .filter_map(|w| w["op"].as_str())
         .collect();
     assert_eq!(ops, vec!["fetch"], "held: {held}");
-    let (_, held) = get_admin(&format!("/apps/{app_id}/invocations/{}/held", live.id)).await;
+    let (_, held) = get_admin(&format!(
+        "/customer-apps/{app_id}/invocations/{}/held",
+        live.id
+    ))
+    .await;
     assert_eq!(held["held"], json!([]), "production holds nothing: {held}");
 }
 
@@ -223,20 +232,32 @@ async fn the_functions_list_is_the_named_environments_build() {
         ]
     };
 
-    let (status, live) = get_admin(&format!("/apps/{app_id}/functions")).await;
+    let (status, live) = get_admin(&format!("/customer-apps/{app_id}/functions")).await;
     assert_eq!(status, StatusCode::OK, "{live}");
     assert_eq!(checks(&live), expect(true), "absent: the live build");
-    let (_, staged) = get_admin(&format!("/apps/{app_id}/functions?environment=staging")).await;
+    let (_, staged) = get_admin(&format!(
+        "/customer-apps/{app_id}/functions?environment=staging"
+    ))
+    .await;
     assert_eq!(checks(&staged), expect(false), "staging's build");
-    let (_, named) = get_admin(&format!("/apps/{app_id}/functions?environment=production")).await;
+    let (_, named) = get_admin(&format!(
+        "/customer-apps/{app_id}/functions?environment=production"
+    ))
+    .await;
     assert_eq!(checks(&named), expect(true));
-    let (status, empty) = get_admin(&format!("/apps/{app_id}/functions?environment=dev-a1")).await;
+    let (status, empty) = get_admin(&format!(
+        "/customer-apps/{app_id}/functions?environment=dev-a1"
+    ))
+    .await;
     assert_eq!(
         (status, empty),
         (StatusCode::OK, json!([])),
         "serves no build"
     );
-    let (status, body) = get_admin(&format!("/apps/{app_id}/functions?environment=nope")).await;
+    let (status, body) = get_admin(&format!(
+        "/customer-apps/{app_id}/functions?environment=nope"
+    ))
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_environment");
 }
@@ -289,8 +310,10 @@ async fn a_queued_check_reads_its_environments_secrets_not_productions() {
 
     let mut env_of = Vec::new();
     for query in ["?environment=staging", ""] {
-        let (status, queued) =
-            post_admin(&format!("/apps/{app_id}/functions/env/runs{query}")).await;
+        let (status, queued) = post_admin(&format!(
+            "/customer-apps/{app_id}/functions/env/runs{query}"
+        ))
+        .await;
         assert_eq!(status, StatusCode::OK, "{query:?}: {queued}");
         let run_id = queued["run_id"].as_str().expect("a run id").to_string();
         let run = wait_for_run(app_id, &run_id).await;

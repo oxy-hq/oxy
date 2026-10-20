@@ -102,7 +102,6 @@ fn a_shape_beside_the_loop_is_refused() {
         ("POST", format!("/customer-apps/{app}/invocations/x1/held")),
         ("POST", format!("/customer-apps/{app}/functions")),
         ("GET", format!("/customer-apps/{app}/functions/ping/runs")),
-        ("GET", format!("/admin/apps/{app}/invocations")),
         ("GET", format!("/admin/customer-apps/{app}/environments")),
         ("GET", format!("/api/customer-apps/{app}/environments")),
         ("HEAD", format!("/customer-apps/{app}/environments")),
