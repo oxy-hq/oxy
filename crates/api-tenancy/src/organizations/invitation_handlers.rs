@@ -631,6 +631,8 @@ pub async fn accept_invitation(
         tracing::error!("Failed to commit transaction: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    // A role that can make the caller an app admin changed: drop the no-role memo.
+    oxy_custom_apps::auth::invalidate_access_cache();
 
     // Sync the Stripe seat quantity to reflect the newly added member. Spawned
     // so the user-facing request doesn't block on Stripe; the reconciliation

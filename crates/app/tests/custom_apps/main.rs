@@ -107,6 +107,7 @@ mod admin_app_workspace_in_org;
 mod app_environments;
 mod app_environments_phase_1b;
 mod app_preflight;
+mod app_role_memo;
 mod app_scoped_secrets;
 mod canary_coverage;
 mod custom_app_access_control;

@@ -652,6 +652,8 @@ pub async fn add_to_org(
     .map_err(internal)?;
 
     tx.commit().await.map_err(internal)?;
+    // A role that can make the caller an app admin changed: drop the no-role memo.
+    crate::server::api::custom_apps_auth::invalidate_access_cache();
     Ok(StatusCode::CREATED)
 }
 
@@ -741,6 +743,8 @@ pub async fn update_role(
     .map_err(internal_resp)?;
 
     tx.commit().await.map_err(internal_resp)?;
+    // A role that can make the caller an app admin changed: drop the no-role memo.
+    crate::server::api::custom_apps_auth::invalidate_access_cache();
     tracing::info!(
         admin_email = %actor.label(),
         target_id = %user_id,

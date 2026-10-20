@@ -16,7 +16,7 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use entity::org_members;
+use entity::{org_members, partner_grants};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::json;
 use tracing::field::{Field, Visit};
@@ -32,10 +32,15 @@ use crate::custom_app_functions_fixture::{
 const APP: &str = "invocation-queries";
 
 /// What a warm call may issue before its isolate starts, for the org owner and
-/// for a plain member (who is asked more, since the owner is an app admin on
-/// the first answer).
-const MAX_OWNER: usize = 12;
-const MAX_MEMBER: usize = 14;
+/// for a plain member. The owner is an app admin, a role that is never
+/// remembered, so the owner's standing is read on every call; a member holds no
+/// role, and that is remembered for 60 s (the second call here is warm for it).
+const MAX_OWNER: usize = 11;
+const MAX_MEMBER: usize = 6;
+/// A member of an org that holds a partner grant: their "no role" is never
+/// remembered (see `resolve_app_role`), so they pay the standing reads, but the
+/// check that decides this is itself remembered and adds nothing per call.
+const MAX_PARTNER_ORG_MEMBER: usize = 14;
 
 const NOOP_JS: &str = r#"
 export default async () => Response.json({ ok: true });
@@ -168,6 +173,25 @@ async fn a_warm_function_call_reaches_the_isolate_in_few_queries() {
     let first = call_function(APP, "noop", json!({})).await;
     assert_eq!(first.status, 200, "{}", first.raw);
     report("a member", &statements_before_isolate().await, MAX_MEMBER);
+
+    // The same member once their org holds a partner grant.
+    partner_grants::ActiveModel {
+        org_id: sea_orm::ActiveValue::Set(t.org_id),
+        status: sea_orm::ActiveValue::Set("active".into()),
+        created_by: sea_orm::ActiveValue::Set(None),
+        created_at: sea_orm::ActiveValue::Set(chrono::Utc::now().into()),
+    }
+    .insert(&t.db)
+    .await
+    .expect("seed a partner grant");
+    oxy_app::server::api::custom_apps_cache::clear_access_caches();
+    let warm = call_function(APP, "noop", json!({})).await;
+    assert_eq!(warm.status, 200, "{}", warm.raw);
+    report(
+        "a member of a partner org",
+        &statements_before_isolate().await,
+        MAX_PARTNER_ORG_MEMBER,
+    );
 }
 
 async fn demote_guest_to_member(t: &Tenant) {

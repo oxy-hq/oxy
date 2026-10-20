@@ -239,6 +239,8 @@ pub async fn update_member_role(
     txn.commit()
         .await
         .map_err(internal("commit role-change txn"))?;
+    // A role that can make the caller an app admin changed: drop the no-role memo.
+    oxy_custom_apps::auth::invalidate_access_cache();
     Ok(StatusCode::NO_CONTENT)
 }
 

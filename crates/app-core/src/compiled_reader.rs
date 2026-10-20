@@ -73,10 +73,34 @@ pub async fn resolve_request_revision(
     workspace_id: Uuid,
     branch_hint: Option<&str>,
 ) -> Option<Uuid> {
-    let (db, candidate) = match open_compiled_revision(workspace_id, branch_hint).await {
-        Ok(Some(pair)) => pair,
-        _ => return None,
-    };
+    resolve_revision(workspace_id, branch_hint, None).await
+}
+
+/// [`resolve_request_revision`] for a caller that has already read the
+/// workspace row during this request: `current_revision_id` is taken from
+/// `workspace` instead of a second primary-key lookup of the same row.
+///
+/// The row must have been read for this request, not remembered from an earlier
+/// one — it stands in for the lookup, so a stale row would pin a stale revision.
+/// Every other step (pin, local mode, branch gate, last-known-good walk) is the
+/// same as [`resolve_request_revision`].
+pub async fn resolve_request_revision_for_workspace(
+    workspace: &entity::workspaces::Model,
+    branch_hint: Option<&str>,
+) -> Option<Uuid> {
+    resolve_revision(workspace.id, branch_hint, Some(workspace)).await
+}
+
+async fn resolve_revision(
+    workspace_id: Uuid,
+    branch_hint: Option<&str>,
+    workspace_row: Option<&entity::workspaces::Model>,
+) -> Option<Uuid> {
+    let (db, candidate) =
+        match open_compiled_revision(workspace_id, branch_hint, workspace_row).await {
+            Ok(Some(pair)) => pair,
+            _ => return None,
+        };
 
     // Fail-safe: never pin a revision whose compiled config won't deserialise
     // into the runtime `Config` — that revision 503s every request for this
@@ -268,7 +292,8 @@ pub async fn resolve_workspace_config_with_revision(
     workspace_id: Uuid,
     branch_hint: Option<&str>,
 ) -> Result<Option<(Value, Uuid)>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
+    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint, None).await?
+    else {
         return Ok(None);
     };
     Ok(load_config_value(&db, revision_id)
@@ -325,7 +350,8 @@ pub async fn resolve_semantic_view(
     branch_hint: Option<&str>,
     file_path: &str,
 ) -> Result<Option<CompiledArtifact>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
+    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint, None).await?
+    else {
         return Ok(None);
     };
     // Key by `file_path`, NOT the PK `name`. Callers (the IDE preview) only have
@@ -355,7 +381,8 @@ pub async fn resolve_semantic_topic(
     branch_hint: Option<&str>,
     file_path: &str,
 ) -> Result<Option<CompiledArtifact>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
+    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint, None).await?
+    else {
         return Ok(None);
     };
     let row = entity::semantic_topics::Entity::find()
@@ -384,7 +411,8 @@ pub async fn resolve_pipeline(
     branch_hint: Option<&str>,
     file_path: &str,
 ) -> Result<Option<CompiledArtifact>, sea_orm::DbErr> {
-    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint).await? else {
+    let Some((db, revision_id)) = open_compiled_revision(workspace_id, branch_hint, None).await?
+    else {
         return Ok(None);
     };
     let row = entity::airway_pipelines::Entity::find()
@@ -416,6 +444,7 @@ pub async fn resolve_pipeline(
 async fn open_compiled_revision(
     workspace_id: Uuid,
     branch_hint: Option<&str>,
+    workspace_row: Option<&entity::workspaces::Model>,
 ) -> Result<Option<(DatabaseConnection, Uuid)>, sea_orm::DbErr> {
     // Local / single-instance mode (the nil-UUID workspace) always has the live
     // working copy on disk and there's no compile-on-save, so serve from the
@@ -503,10 +532,19 @@ async fn open_compiled_revision(
         );
         return Ok(None);
     }
-    let row = entity::workspaces::Entity::find_by_id(workspace_id)
-        .one(&db)
-        .await?;
-    let Some(revision_id) = row.and_then(|w| w.current_revision_id) else {
+    // A row the caller read for this request answers the same question as the
+    // lookup below; the lookup runs only when there is none.
+    let current_revision_id = match workspace_row {
+        Some(row) => {
+            debug_assert_eq!(row.id, workspace_id, "the row must be this workspace's");
+            row.current_revision_id
+        }
+        None => entity::workspaces::Entity::find_by_id(workspace_id)
+            .one(&db)
+            .await?
+            .and_then(|w| w.current_revision_id),
+    };
+    let Some(revision_id) = current_revision_id else {
         return Ok(None);
     };
     Ok(Some((db, revision_id)))

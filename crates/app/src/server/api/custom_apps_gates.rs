@@ -671,6 +671,33 @@ pub(crate) async fn build_project_context_with_role(
     project_id: Uuid,
     role: Option<entity::workspace_members::WorkspaceRole>,
 ) -> Result<OxyProjectContext, Response> {
+    build_project_context_inner(workspace, user_id, project_id, role, false).await
+}
+
+/// As [`build_project_context_with_role`], for a caller that read `workspace`
+/// **during this request**: its `current_revision_id` picks the revision, so the
+/// context build does not read the same row a second time.
+///
+/// A row remembered from an earlier request must not come through here, because
+/// it would pin that request's revision. The function runner reads the row fresh
+/// just before the call, which is why it can.
+#[cfg(feature = "custom-app-functions")]
+pub(crate) async fn build_project_context_with_fresh_workspace(
+    workspace: &entity::workspaces::Model,
+    user_id: Uuid,
+    project_id: Uuid,
+    role: Option<entity::workspace_members::WorkspaceRole>,
+) -> Result<OxyProjectContext, Response> {
+    build_project_context_inner(workspace, user_id, project_id, role, true).await
+}
+
+async fn build_project_context_inner(
+    workspace: &entity::workspaces::Model,
+    user_id: Uuid,
+    project_id: Uuid,
+    role: Option<entity::workspace_members::WorkspaceRole>,
+    workspace_is_fresh: bool,
+) -> Result<OxyProjectContext, Response> {
     let branch_opt: Option<&str> = None;
     // Compile boundary first, filesystem second — the same order the workspace
     // middleware and the Slack entry point use.
@@ -684,8 +711,14 @@ pub(crate) async fn build_project_context_with_role(
     //
     // `Origin` is recorded, so every boundary read downstream resolves at the
     // revision picked here rather than deriving its own.
-    let revision_id =
-        crate::server::api::compiled_reader::resolve_request_revision(project_id, branch_opt).await;
+    let revision_id = if workspace_is_fresh {
+        crate::server::api::compiled_reader::resolve_request_revision_for_workspace(
+            workspace, branch_opt,
+        )
+        .await
+    } else {
+        crate::server::api::compiled_reader::resolve_request_revision(project_id, branch_opt).await
+    };
     let effective_path = context_root(workspace, project_id, branch_opt).await?;
     let init = WorkspaceBuilder::new(project_id)
         .with_working_copy(&effective_path, revision_id, oxy::config::OnMissing::Empty)

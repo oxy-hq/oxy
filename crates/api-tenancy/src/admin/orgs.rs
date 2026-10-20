@@ -793,6 +793,8 @@ pub async fn transfer_ownership(
     }
 
     tx.commit().await.map_err(internal)?;
+    // A role that can make the caller an app admin changed: drop the no-role memo.
+    oxy_custom_apps::auth::invalidate_access_cache();
     tracing::info!(
         admin_email = %actor.label(),
         target_id = %org_id,

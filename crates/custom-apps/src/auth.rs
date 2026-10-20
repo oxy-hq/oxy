@@ -29,16 +29,19 @@
 
 use entity::prelude::{
     AppAdmins, AppMembers, AppTeamGrants, Apps, OrgMembers, OrgTeamMembers, OrgTeams,
-    WorkspaceOxyLockdown,
+    PartnerGrants, WorkspaceOxyLockdown,
 };
 use entity::{
     app_admins, app_members, app_team_grants, apps, org_members, org_team_members, org_teams,
-    workspace_oxy_lockdown,
+    partner_grants, workspace_oxy_lockdown,
 };
 use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
-use crate::cache::{cached_access, set_cached_access};
+use crate::cache::{
+    cached_access, cached_no_app_role, cached_no_memo_standing, remember_no_app_role,
+    remember_no_memo_standing, set_cached_access,
+};
 
 // ── Combined per-(user, app) access cache ───────────────────────────────────
 //
@@ -256,6 +259,14 @@ pub async fn resolve_app_role(
     app: &apps::Model,
 ) -> Result<Option<&'static str>, DbErr> {
     let user_id = caller.user_id;
+    // A session's "no role" is remembered for a minute (see `cache`). Only the
+    // absence: a role is never read from here, so a revoked admin or member is
+    // seen on the next call. A token that narrows its bearer neither reads nor
+    // writes it — its answer is its ceiling's.
+    let memoizable = !caller.reach().is_some_and(oxy_authz::TokenReach::narrows);
+    if memoizable && cached_no_app_role(user_id, app.id, app.org_id) {
+        return Ok(None);
+    }
     // The admin verdict comes from the ONE model — not a second copy of the rule
     // written out here. Restating "staff OR org owner OR app-admin row" in SQL is
     // exactly the drift `oxy-authz` exists to end, and it would silently diverge
@@ -270,11 +281,14 @@ pub async fn resolve_app_role(
     let resource =
         oxy_authz::Resource::app_with_visibility(app.id, app.org_id, app.is_restricted())
             .published_from(app.project_id);
-    let is_admin =
+    let (is_admin, facts_loaded) =
         match oxy_server_authz::loader::load_principal_facts_scoped(db, caller, false).await {
-            Some(facts) => oxy_authz::allows(&facts, oxy_authz::Action::AppAdmin, &resource),
+            Some(facts) => (
+                oxy_authz::allows(&facts, oxy_authz::Action::AppAdmin, &resource),
+                true,
+            ),
             // Facts unknown (a DB blip) → not admin. Fail closed.
-            None => false,
+            None => (false, false),
         };
     if is_admin {
         return Ok(Some(app_members::ROLE_ADMIN));
@@ -283,9 +297,72 @@ pub async fn resolve_app_role(
     // distinguish "belongs to this app" from "just any org member". Goes through
     // `has_app_grant` so a team-granted user isn't reported as `None`, which would
     // make team grants invisible to `ctx.user.appRole`.
-    Ok(has_app_grant(db, user_id, app.id)
-        .await?
-        .then_some(app_members::ROLE_MEMBER))
+    if has_app_grant(db, user_id, app.id).await? {
+        return Ok(Some(app_members::ROLE_MEMBER));
+    }
+    // No role, found from facts that loaded: the one answer worth remembering.
+    // After a DB blip the admin verdict was a guess, so it is not.
+    if memoizable && facts_loaded && !cached_no_memo_standing(user_id) {
+        match memo_eligibility(db, caller).await {
+            MemoEligibility::Eligible => remember_no_app_role(user_id, app.id, app.org_id),
+            // Kept for the minute, so these reads are not repeated on every call.
+            MemoEligibility::Ineligible => remember_no_memo_standing(user_id),
+            // A read failed: decide nothing, try again on the next call.
+            MemoEligibility::Unknown => {}
+        }
+    }
+    Ok(None)
+}
+
+enum MemoEligibility {
+    Eligible,
+    Ineligible,
+    Unknown,
+}
+
+/// Whether the "not an admin" verdict of [`resolve_app_role`] can only have come
+/// from reads that succeeded.
+///
+/// The fact loader reports `Some` when its own reads succeeded, but it collapses a
+/// failed partner-standing or assume-session query to "no standing"
+/// (`oxy_server_authz::loader`). An admin verdict reached that way is a guess, and
+/// remembering it would hold a staff member's or a partner operator's real role
+/// back for a minute. So the answer is remembered only for a caller who cannot
+/// hold either standing, checked here with reads that report failure: not Oxy
+/// staff (assume-role sessions start from staff), and no org of theirs holds an
+/// active partner grant (an operator is a member of one). Runs once per remembered
+/// answer or per minute for an ineligible user, not per call.
+async fn memo_eligibility(
+    db: &DatabaseConnection,
+    caller: &oxy_server_authz::Caller,
+) -> MemoEligibility {
+    let Some(standing) = oxy_server_authz::globals::platform_standing_checked(db, caller).await
+    else {
+        return MemoEligibility::Unknown;
+    };
+    if standing.flags.is_staff() {
+        return MemoEligibility::Ineligible;
+    }
+    let Ok(memberships) = OrgMembers::find()
+        .filter(org_members::Column::UserId.eq(caller.user_id))
+        .all(db)
+        .await
+    else {
+        return MemoEligibility::Unknown;
+    };
+    if memberships.is_empty() {
+        return MemoEligibility::Eligible;
+    }
+    match PartnerGrants::find()
+        .filter(partner_grants::Column::OrgId.is_in(memberships.into_iter().map(|m| m.org_id)))
+        .filter(partner_grants::Column::Status.eq("active"))
+        .one(db)
+        .await
+    {
+        Ok(None) => MemoEligibility::Eligible,
+        Ok(Some(_)) => MemoEligibility::Ineligible,
+        Err(_) => MemoEligibility::Unknown,
+    }
 }
 
 /// The invoking user's role in the **owning org**, as surfaced through

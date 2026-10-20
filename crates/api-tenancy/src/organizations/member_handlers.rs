@@ -182,6 +182,8 @@ pub async fn update_member_role(
         tracing::error!("Failed to commit transaction: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    // A role that can make the caller an app admin changed: drop the no-role memo.
+    oxy_custom_apps::auth::invalidate_access_cache();
 
     // Role change → the airhouse role of every outstanding credential the
     // user holds (Owner→Admin, Admin→Writer, Member→Reader) is now wrong.

@@ -94,6 +94,8 @@ pub(crate) fn set_cached_access(user_id: Uuid, app_id: Uuid, allowed: bool) {
 pub fn clear_access_caches() {
     access_cache().clear();
     model_term_cache().clear();
+    no_app_role_cache().clear();
+    no_memo_standing_cache().clear();
 }
 
 // ── Data-plane gate: the ring's term ───────────────────────────────────────
@@ -130,6 +132,64 @@ pub fn remember_model_term(user_id: Uuid, project_id: Uuid, org_id: Uuid, term: 
     if let Some(term) = term {
         model_term_cache().insert((user_id, project_id, org_id), term);
     }
+}
+
+// ── No app role ((user_id, app_id, org_id) → holds none) ────────────────────
+//
+// `custom_apps_auth::resolve_app_role` reads the caller's standing (five
+// reads) and then the app's grants (up to three more) to answer "admin",
+// "member" or nothing. Only the last answer is remembered, and only as the
+// fact "this user holds no role on this app": an entry can make a role show as
+// missing for up to a minute after a grant, and nothing in it can make a role
+// appear that the caller does not hold. A role that was found, admin or
+// member, is never written, so a revoked admin is read fresh on the next call.
+//
+// The key carries `org_id` from the app row, read fresh on every call, so an
+// app that moves to another org cannot hit an entry made under the old one.
+// Dropped by `clear_access_caches`, i.e. by every access-invalidation hook.
+// A session's answer only: a token that narrows its bearer neither reads nor
+// writes it, since its "no role" is a ceiling's, not the user's.
+
+fn no_app_role_cache() -> &'static TtlLru<(Uuid, Uuid, Uuid), ()> {
+    static CACHE: OnceLock<TtlLru<(Uuid, Uuid, Uuid), ()>> = OnceLock::new();
+    CACHE.get_or_init(standard_cache)
+}
+
+/// True when a resolution within the last minute found this user holds no role
+/// on this app.
+pub fn cached_no_app_role(user_id: Uuid, app_id: Uuid, org_id: Uuid) -> bool {
+    no_app_role_cache()
+        .get(&(user_id, app_id, org_id))
+        .is_some()
+}
+
+/// Remember that the user holds no role on the app. Callers write this only
+/// after a resolution that loaded its facts and found neither admin nor a
+/// grant; a role is never remembered.
+pub fn remember_no_app_role(user_id: Uuid, app_id: Uuid, org_id: Uuid) {
+    no_app_role_cache().insert((user_id, app_id, org_id), ());
+}
+
+// A user whose "no role" is never remembered — Oxy staff, or a member of an org
+// that holds a partner grant, whose admin verdict the fact loader can get wrong
+// without saying so (see `auth::resolve_app_role`). Established with a few reads,
+// so the answer is kept for the same minute: it only stops those reads being
+// repeated on every call, and it can only keep a "no role" from being stored.
+// Dropped with the rest by `clear_access_caches`.
+
+fn no_memo_standing_cache() -> &'static TtlLru<Uuid, ()> {
+    static CACHE: OnceLock<TtlLru<Uuid, ()>> = OnceLock::new();
+    CACHE.get_or_init(standard_cache)
+}
+
+/// True when this user was found, within the last minute, to hold a standing for
+/// which no-role answers are not remembered.
+pub fn cached_no_memo_standing(user_id: Uuid) -> bool {
+    no_memo_standing_cache().get(&user_id).is_some()
+}
+
+pub fn remember_no_memo_standing(user_id: Uuid) {
+    no_memo_standing_cache().insert(user_id, ());
 }
 
 // ── App resolution cache ((org_slug, app_slug) → org + app rows) ────────────
@@ -368,6 +428,29 @@ mod tests {
         assert_eq!(cached_model_term(user, project, org), Some(true));
         clear_access_caches();
         assert_eq!(cached_model_term(user, project, org), None);
+    }
+
+    #[test]
+    fn a_no_role_memo_falls_with_the_access_verdicts() {
+        let (user, app, org) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        assert!(!cached_no_app_role(user, app, org));
+        remember_no_app_role(user, app, org);
+        assert!(cached_no_app_role(user, app, org));
+        // A different org (the app moved) or user never hits it.
+        assert!(!cached_no_app_role(user, app, Uuid::new_v4()));
+        assert!(!cached_no_app_role(Uuid::new_v4(), app, org));
+        clear_access_caches();
+        assert!(!cached_no_app_role(user, app, org));
+    }
+
+    #[test]
+    fn the_no_memo_standing_falls_with_the_access_verdicts() {
+        let user = Uuid::new_v4();
+        assert!(!cached_no_memo_standing(user));
+        remember_no_memo_standing(user);
+        assert!(cached_no_memo_standing(user));
+        clear_access_caches();
+        assert!(!cached_no_memo_standing(user));
     }
 
     #[test]

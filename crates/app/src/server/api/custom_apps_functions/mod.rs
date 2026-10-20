@@ -2219,7 +2219,7 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
 async fn resolve_project_context(
     args: &RunArgs<'_>,
 ) -> Result<std::sync::Arc<dyn seam::FunctionProjectContext>, RunOutcome> {
-    use crate::server::api::custom_apps_gates::build_project_context_with_role;
+    use crate::server::api::custom_apps_gates::build_project_context_with_fresh_workspace;
     use entity::prelude::Workspaces;
 
     let failed = |message: String| ("error", Some(message), String::new(), 0, None);
@@ -2257,7 +2257,8 @@ async fn resolve_project_context(
         None
     };
 
-    build_project_context_with_role(
+    // The row read at the top of this function stands in for the revision lookup.
+    build_project_context_with_fresh_workspace(
         &workspace,
         args.user_id,
         args.app.project_id,
