@@ -6,17 +6,6 @@
 //! production's, staging's or a sandbox's pointer goes through it, in the
 //! transaction that holds the app's row (`lock_app`), and appends the event.
 //!
-//! **A write-only mirror, for one release.** The `apps.published_build_id` /
-//! `apps.draft_build_id` columns this replaced still exist, and the previous
-//! release reads them. So for production and staging [`record_move`] also
-//! writes them, in the same transaction, and nothing reads them
-//! (`tests/custom_apps/app_environment_pointer_writes.rs` keeps it so). The
-//! mirror and the columns go in the follow-up that drops them, one promotion
-//! later (#3686): a rolling deploy or a revert then never leaves a replica of
-//! the previous release serving a build the columns no longer name. Readers ask [`fixed_pointers`] (production and staging),
-//! [`fixed_pointers_batch`] (the same for a list of apps, in one query) or
-//! [`pointer`].
-//!
 //! **Sandboxes** (`dev-<handle>`, `internal-docs/custom-app-sandboxes.md`): their
 //! row *is* the pointer and is created by the sandbox API. [`record_move`] moves
 //! it and appends the same event, but never creates the row.
@@ -29,7 +18,7 @@ use oxy_app_core::custom_app_environment::{AppEnvironment, AppEnvironmentKind};
 use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter,
-    QuerySelect, Statement,
+    QuerySelect,
 };
 use uuid::Uuid;
 
@@ -81,10 +70,7 @@ pub async fn record_move<C: ConnectionTrait>(
         AppEnvironment::Dev { .. } => {
             move_sandbox(conn, app_id, environment, build_id, actor, now).await?
         }
-        _ => {
-            upsert_fixed(conn, app_id, environment, build_id, actor, now).await?;
-            mirror_to_apps(conn, app_id, environment, build_id).await?;
-        }
+        _ => upsert_fixed(conn, app_id, environment, build_id, actor, now).await?,
     }
 
     app_environment_events::ActiveModel {
@@ -99,28 +85,6 @@ pub async fn record_move<C: ConnectionTrait>(
     .insert(conn)
     .await?;
 
-    Ok(())
-}
-
-/// The write-only mirror (module docs): the `apps` column the previous release
-/// reads for `environment`. Removed, with the column, by #3686.
-async fn mirror_to_apps<C: ConnectionTrait>(
-    conn: &C,
-    app_id: Uuid,
-    environment: &AppEnvironment,
-    build_id: Option<Uuid>,
-) -> Result<(), DbErr> {
-    let sql = match environment {
-        AppEnvironment::Production => "UPDATE apps SET published_build_id = $1 WHERE id = $2",
-        AppEnvironment::Staging => "UPDATE apps SET draft_build_id = $1 WHERE id = $2",
-        AppEnvironment::Dev { .. } => return Ok(()),
-    };
-    conn.execute_raw(Statement::from_sql_and_values(
-        conn.get_database_backend(),
-        sql,
-        [build_id.into(), app_id.into()],
-    ))
-    .await?;
     Ok(())
 }
 

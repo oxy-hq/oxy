@@ -103,7 +103,6 @@
 mod common;
 
 mod admin_app_workspace_in_org;
-mod app_environment_pointer_writes;
 mod app_environments;
 mod app_environments_phase_1b;
 mod app_preflight;

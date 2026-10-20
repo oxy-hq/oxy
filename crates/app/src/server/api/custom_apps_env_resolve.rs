@@ -3,7 +3,7 @@
 //! (`internal-docs/2026-09-10-custom-app-environments-design.md` §3, Phase 1b).
 //!
 //! `app_environments.build_id` is the only store of the build an environment
-//! serves (the `apps` build-id columns are retired and unread), so every
+//! serves (the `apps` build-id columns are retired: unread and unwritten), so every
 //! reader asks one question — [`resolve_environment`] — and the answer is the
 //! environment's row.
 //!
