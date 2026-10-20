@@ -22,6 +22,12 @@ agentic-semantic = { workspace = true }
 agentic-http = { workspace = true }
 oxy-airlayer-compat = { workspace = true }
 
+# `function_seam`: the custom-app function seam traits name these. Both are
+# already in this crate's graph through `oxy`.
+agentic-connector = { workspace = true }
+agentic-pipeline = { workspace = true }
+
+async-trait = { workspace = true }
 axum = { workspace = true }
 sea-orm = { workspace = true }
 serde = { workspace = true }

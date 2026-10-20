@@ -26,7 +26,7 @@ mod artifact_cache;
 /// `FunctionCapabilities`. Text scans of `host.rs` and the TypeScript, so it
 /// runs whether or not the feature that compiles `host` is on.
 /// Who can reach an app — the rule `ctx.org.*` and `ctx.notify` share.
-pub mod audience;
+pub use oxy_custom_apps::audience;
 /// Whose call this is — the scope every per-call key (result cache,
 /// idempotency record, rate-limit bucket) is built from, environment included.
 mod call_scope;
@@ -103,7 +103,7 @@ pub mod runtime;
 #[cfg(test)]
 mod sdk_testing_drift;
 /// The always-compiled dependency-inversion seam (see `seam.rs`).
-pub mod seam;
+pub use oxy_app_core::function_seam as seam;
 /// Whether an invocation reads a branch, so may not start production work.
 #[cfg(feature = "custom-app-functions")]
 mod staged_invocation;
@@ -563,45 +563,7 @@ pub(crate) fn function_webhook_contract(
     ))
 }
 
-/// Why a one-off function job was enqueued.
-///
-/// An enum rather than a `&str` because the label is not free text: it is
-/// replayed by `app_function_executor` as the invocation `mode`, and any value
-/// that executor does not recognise silently becomes `schedule` — a function
-/// branching on `mode` would then be told a webhook was a cron fire. Making the
-/// set closed here means a new trigger cannot be added without visiting that
-/// match.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FunctionJobTrigger {
-    /// Admin console **Run now**, or the API job trigger.
-    Manual,
-    /// A verified inbound webhook from a third party.
-    Webhook,
-    /// **Run now** `as=schedule`: a scheduled function run once as its
-    /// schedule would run it — no input, the system identity, its retry
-    /// policy (environments design §4.5, ruling 3). Its invocation `mode` is
-    /// `manual`: a person asked.
-    ScheduleNow,
-}
-
-impl FunctionJobTrigger {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Manual => "manual",
-            Self::Webhook => "webhook",
-            Self::ScheduleNow => "schedule_now",
-        }
-    }
-
-    /// The trigger the runner reads back from the task's label.
-    pub(crate) fn queued(self) -> queued_admission::QueuedTrigger {
-        match self {
-            Self::Manual => queued_admission::QueuedTrigger::Manual,
-            Self::Webhook => queued_admission::QueuedTrigger::Webhook,
-            Self::ScheduleNow => queued_admission::QueuedTrigger::ScheduleNow,
-        }
-    }
-}
+pub(crate) use oxy_custom_apps::function_trigger::FunctionJobTrigger;
 
 /// Trigger a **one-off background run** of a custom-app function as a job — the
 /// manual/API "run now" that isn't tied to a cron schedule. Validates the app +

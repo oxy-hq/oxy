@@ -17,6 +17,7 @@ pub mod custom_app_environment;
 pub mod custom_apps_host_dispatch;
 pub mod default_branch;
 pub mod forwarded;
+pub mod function_seam;
 pub mod internal_orgs;
 pub mod member_authz;
 pub mod org_host_dispatch;

@@ -26,32 +26,7 @@ use sea_orm::{ConnectionTrait, DbErr, EntityTrait};
 use crate::server::api::custom_apps_env_resolve::ResolvedEnvironment;
 use crate::server::api::custom_apps_sandboxes::activity;
 
-/// What queued a run, as its task's trigger label says.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum QueuedTrigger {
-    /// A cron fire (`scheduled`), and every task queued before the label was
-    /// carried, which were all cron fires.
-    Cron,
-    /// Run now, or a check run (`manual`).
-    Manual,
-    /// Run now as the function's schedule would run it (`schedule_now`).
-    ScheduleNow,
-    /// A verified inbound webhook (`webhook`).
-    Webhook,
-}
-
-impl QueuedTrigger {
-    /// The trigger a task's label names. An unknown label is a cron fire, as
-    /// `app_function_executor::invocation_mode` reads it.
-    pub(crate) fn from_label(label: Option<&str>) -> Self {
-        match label {
-            Some("manual") => Self::Manual,
-            Some("schedule_now") => Self::ScheduleNow,
-            Some("webhook") => Self::Webhook,
-            _ => Self::Cron,
-        }
-    }
-}
+pub(crate) use oxy_custom_apps::function_trigger::QueuedTrigger;
 
 /// What a function declares in one build's manifest.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

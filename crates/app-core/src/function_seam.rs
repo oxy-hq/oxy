@@ -9,6 +9,11 @@
 //! `--no-default-features` fails to compile (the trait names vanish under
 //! non-gated `use`s).
 //!
+//! Lives in `oxy-app-core` because both sides of it are outside the custom-apps
+//! crate: the data plane and `agentic_wiring` implement it, the function runtime
+//! and the composition roots name it. `oxy-app` re-exports this module at
+//! `custom_apps_functions::seam`.
+//!
 //! This is the ONE canonical path: gated and non-gated code alike import these
 //! two traits from `seam::` — `runtime` (the V8 impl) does not re-export them, so
 //! a new call site can't accidentally reach for a gated path and break the

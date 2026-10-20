@@ -9615,8 +9615,11 @@ dependencies = [
 name = "oxy-app-core"
 version = "0.5.156"
 dependencies = [
+ "agentic-connector",
  "agentic-http",
+ "agentic-pipeline",
  "agentic-semantic",
+ "async-trait",
  "axum",
  "chrono",
  "entity",
