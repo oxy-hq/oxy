@@ -44,7 +44,7 @@ const NO_REQUEST_ACTOR: &[(&str, &str)] = &[
          sandbox maintenance loop ending a dead token's sandboxes",
     ),
     (
-        "app/src/server/api/custom_apps_sandboxes/expiry_audit.rs",
+        "api-custom-apps/src/custom_apps_sandboxes/expiry_audit.rs",
         "a sandbox deleted by the expiry sweep on the global worker's tick: no \
          request, so the actor is the system; a person's create or delete goes \
          through `for_request`",

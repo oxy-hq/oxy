@@ -102,7 +102,7 @@ const ALLOWED: &[(&str, &str)] = &[
          manager yet.",
     ),
     (
-        "src/server/api/custom_apps_functions/preflight.rs",
+        "../api-custom-apps/src/custom_apps_functions/preflight.rs",
         "Runs inside `oxy migrate`, before any server or manager exists, and takes \
          the `databases` key from the compiled config of every workspace that has \
          a live custom app — the promoted revision the serve fleet reads. Building \
@@ -110,7 +110,7 @@ const ALLOWED: &[(&str, &str)] = &[
          names is the cost this avoids.",
     ),
     (
-        "src/server/api/custom_apps_nonproduction/mod.rs",
+        "../api-custom-apps/src/custom_apps_nonproduction/mod.rs",
         "Publish checks a build's `nonProduction.destinations` against the \
          `databases` key of the promoted revision's compiled config; publish \
          has no manager, and building one would read the node's working copy. \
@@ -123,7 +123,8 @@ fn app_src() -> PathBuf {
 }
 
 /// Every `.rs` under `src` — plus `oxy-app-core` (where `compiled_reader`
-/// itself now lives), `oxy-custom-apps` and `oxy-api-documents` and
+/// itself now lives), `oxy-custom-apps`, `oxy-api-custom-apps` (the custom-app
+/// vertical lifted out of `src/server/api`) and `oxy-api-documents` and
 /// `oxy-api-source-upload`, extracted from `src/server/api` and still served
 /// by this binary — as
 /// (crate-relative path, contents).
@@ -157,6 +158,13 @@ fn source_files() -> Vec<(String, String)> {
     walk(&app_core, &app_core, "../app-core/src/", &mut out);
     let custom_apps = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../custom-apps/src");
     walk(&custom_apps, &custom_apps, "../custom-apps/src/", &mut out);
+    let api_custom_apps = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../api-custom-apps/src");
+    walk(
+        &api_custom_apps,
+        &api_custom_apps,
+        "../api-custom-apps/src/",
+        &mut out,
+    );
     let source_upload = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../api-source-upload/src");
     walk(
         &source_upload,

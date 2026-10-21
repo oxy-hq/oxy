@@ -359,3 +359,40 @@ pub(crate) async fn invocations(
         .await
         .expect("query app_function_invocations")
 }
+
+/// The custom-app surface as `oxy-server`'s `surface_seams()` hands it to
+/// `oxy-app`: the `api` seam (the admin console and the lists) behind the auth
+/// stack, the `workspace` seam inside `/{workspace_id}`, and the `public` seam
+/// (health, logs, errors, webhooks, publish OIDC, debug, availability,
+/// shell-context, threads) outside it. Each route is in exactly one of them, so a
+/// router built from this value mounts it once; merging `public_routes()` again
+/// beside it makes axum panic on `Overlapping method route`.
+///
+/// The jobs, task kinds, outer mount and function runtime `serve` also requires
+/// are not here: no test that routes a request through `oxy-app` reads them.
+pub(crate) fn surface_seams() -> oxy_app::surface::testing::SurfaceSeams {
+    use oxy_app::surface::testing::{SurfaceSeam, SurfaceSeams};
+    SurfaceSeams {
+        api: SurfaceSeam {
+            routes: oxy_api_custom_apps::routes(),
+            decls: oxy_api_custom_apps::route_roles().to_vec(),
+        },
+        workspace: SurfaceSeam {
+            routes: oxy_api_custom_apps::workspace_routes(),
+            decls: oxy_api_custom_apps::workspace_route_roles().to_vec(),
+        },
+        public: SurfaceSeam {
+            routes: oxy_api_custom_apps::public_routes(),
+            decls: oxy_api_custom_apps::public_route_roles().to_vec(),
+        },
+        ..SurfaceSeams::empty()
+    }
+}
+
+/// The flat `/api` tree `oxy-app` serves for every path outside
+/// `/{workspace_id}/…`, built from [`surface_seams`]: the public routes, then the
+/// global ones behind the real authentication, fences and guards.
+pub(crate) fn flat_api_router() -> Router {
+    let seams = surface_seams();
+    oxy_app::surface::testing::flat_api_surface(seams.api.routes, seams.public.routes, seams.admin)
+}

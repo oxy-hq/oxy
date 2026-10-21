@@ -293,8 +293,8 @@ fn only_three_entry_points_admit_a_sandbox_agent_token() {
     assert_eq!(
         admitting,
         [
+            "api-custom-apps/src/custom_apps_functions/mod.rs",
             "api-custom-apps/src/logs.rs",
-            "app/src/server/api/custom_apps_functions/mod.rs",
             "app/src/server/router/protected.rs",
         ],
         "a new entry point admits a sandbox agent token: put it behind the route allow-list \

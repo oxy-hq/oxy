@@ -827,12 +827,13 @@ mod tests {
     /// literal (a char, a comment) yields nothing.
     fn typed_labels_in_host_sources() -> BTreeSet<String> {
         const HOST_SOURCES: &[&str] = &[
-            "src/emails",
-            "src/server/api/custom_apps_functions/host.rs",
-            "src/server/api/custom_apps_functions/host",
+            // The emailer stayed in `oxy-app`; the host and its ops came here.
+            "../app/src/emails",
+            "src/custom_apps_functions/host.rs",
+            "src/custom_apps_functions/host",
             // The storage module moved down with the serving lift.
             "../custom-apps/src/storage",
-            "src/server/api/notifications",
+            "../app/src/server/api/notifications",
             // The notification input and recipient errors moved to the prelude.
             "../app-core/src/notifications",
         ];

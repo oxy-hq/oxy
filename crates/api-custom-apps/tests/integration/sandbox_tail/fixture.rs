@@ -132,11 +132,7 @@ pub(super) async fn open(uri: &str, headers: &[(&str, &str)]) -> Result<Tail, (S
     for (name, value) in headers {
         request = request.header(*name, *value);
     }
-    let router = oxy_app::surface::testing::flat_api_surface(
-        oxy_api_custom_apps::routes(),
-        oxy_api_custom_apps::public_routes(),
-        Vec::new(),
-    );
+    let router = crate::custom_app_functions_fixture::flat_api_router();
     let response = router
         .oneshot(request.body(Body::empty()).expect("request"))
         .await

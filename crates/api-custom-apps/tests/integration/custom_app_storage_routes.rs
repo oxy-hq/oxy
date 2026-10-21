@@ -89,7 +89,7 @@ fn to_route_pattern(path: &str) -> Option<String> {
 #[test]
 fn storage_ui_paths_match_mounted_routes() {
     let service = read_repo_file("web-app/src/services/api/customAppStorage.ts");
-    let router = read_repo_file("crates/app/src/server/api/admin/apps/mod.rs");
+    let router = read_repo_file("crates/api-custom-apps/src/admin/apps/mod.rs");
 
     let paths = frontend_paths(&service);
     // A FLOOR, not merely non-empty. `frontend_paths` pairs backticks
@@ -157,8 +157,8 @@ fn every_storage_handler_is_reachable() {
     // one silently stopped covering `history`, the first handler added after this
     // test shipped — a list you have to remember to update is a list that goes
     // stale exactly when it matters.
-    let router = read_repo_file("crates/app/src/server/api/admin/apps/mod.rs");
-    let handlers = read_repo_file("crates/app/src/server/api/admin/apps/storage.rs");
+    let router = read_repo_file("crates/api-custom-apps/src/admin/apps/mod.rs");
+    let handlers = read_repo_file("crates/api-custom-apps/src/admin/apps/storage.rs");
 
     // A `pub async fn` here is a route handler *or* a testable query helper
     // (`fleet_rows_scoped`), and only the first kind belongs in the router. The
@@ -310,7 +310,7 @@ fn prose_states_the_real_url() {
     // one — each time because the check was scoped to where it had last been
     // found.
     let sources = [
-        "crates/app/src/server/api/admin/apps/storage.rs",
+        "crates/api-custom-apps/src/admin/apps/storage.rs",
         "internal-docs/customer-apps-functions.md",
     ];
 

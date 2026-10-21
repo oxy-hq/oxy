@@ -140,10 +140,15 @@ const DELEGATED: &[(&str, &str, &str)] = &[(
 ///
 /// Matched on the *relative path*, not the bare filename: a filename match
 /// would silently exempt any future `seed_*.rs` anywhere in the crate, which
-/// is a wider hole than this exemption is meant to be.
-const SEED_PREFIX: &str = "app/src/cli/commands/seed";
+/// is a wider hole than this exemption is meant to be. The custom-app example
+/// seed (`seed_apps.rs`) moved out of `app/src/cli/commands/` with the
+/// custom-apps vertical, so it is named here by its exact path in its crate.
+const SEED_PREFIXES: &[&str] = &[
+    "app/src/cli/commands/seed",
+    "api-custom-apps/src/seed_apps.rs",
+];
 
-/// `crates/…`-relative, forward-slashed — the shape [`SEED_PREFIX`] is written in.
+/// `crates/…`-relative, forward-slashed — the shape [`SEED_PREFIXES`] is written in.
 ///
 /// Rooted at `crates/`, not `crates/app/src`, so a row-writer that moves into a
 /// sibling crate stays in frame. `ALLOWED` is matched with `ends_with`, so its
@@ -163,7 +168,7 @@ fn crates_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Production sources only — see [`SEED_PREFIX`].
+/// Production sources only — see [`SEED_PREFIXES`].
 fn production_sources(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -180,7 +185,9 @@ fn production_sources(dir: &Path, out: &mut Vec<PathBuf>) {
             // would otherwise sweep in every crate's `tests/` tree. Mirrors
             // `authz_boundaries`.
             && path.components().any(|c| c.as_os_str() == "src")
-            && !relative_to_src(&path).starts_with(SEED_PREFIX)
+            && !SEED_PREFIXES
+                .iter()
+                .any(|prefix| relative_to_src(&path).starts_with(prefix))
         {
             out.push(path);
         }

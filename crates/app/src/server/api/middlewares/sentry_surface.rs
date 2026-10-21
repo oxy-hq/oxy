@@ -617,8 +617,10 @@ mod tests {
         "enter_semantic_boundary",
     ];
 
-    /// Every source file under `src/server` but this one, as `(path relative
-    /// to the crate, raw source)`, sorted — the one traversal both the walk's
+    /// Every source file under `src/server` and under `oxy-api-custom-apps`
+    /// (`../api-custom-apps/src`, where the function runtime, the job executor
+    /// and publish now live) but this one, as `(path relative to the crate,
+    /// raw source)`, sorted — the one traversal both the walk's
     /// scope and the entry-point derivation read, so a violation in either
     /// reports in a deterministic order. This module is left out: it defines
     /// the bindings and names every detector in its own tests.
@@ -626,6 +628,7 @@ mod tests {
         let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut files = Vec::new();
         rust_files(&crate_root.join("src/server"), &mut files);
+        rust_files(&crate_root.join("../api-custom-apps/src"), &mut files);
         files.sort();
         files
             .into_iter()
@@ -652,6 +655,9 @@ mod tests {
     /// automation is tenant-authored.
     const PROCEDURE_RUN_EXECUTOR: &str = "src/server/api/projects/automation_run/executor.rs";
 
+    /// Publish, in `oxy-api-custom-apps`.
+    const CUSTOM_APPS_PUBLISH: &str = "../api-custom-apps/src/custom_apps_publish.rs";
+
     /// The files the data-plane walk reads: every module whose production code
     /// calls one of `entry_points`, plus three kept in by name — the two places
     /// a hub is *made* rather than inherited from a request (the function
@@ -667,10 +673,11 @@ mod tests {
         server_sources()
             .into_iter()
             .filter(|(relative, text)| {
-                let always_scanned = relative.starts_with("src/server/api/custom_apps_functions/")
-                    || relative == "src/server/app_function_executor.rs"
+                let always_scanned = relative
+                    .starts_with("../api-custom-apps/src/custom_apps_functions/")
+                    || relative == "../api-custom-apps/src/app_function_executor.rs"
                     || relative == PROCEDURE_RUN_EXECUTOR
-                    || relative == "src/server/api/custom_apps_publish.rs";
+                    || relative == CUSTOM_APPS_PUBLISH;
                 let production = production_text(text);
                 let reaches_the_gate = entry_points
                     .iter()
@@ -759,9 +766,10 @@ mod tests {
         /// — including the one hub carried from *earlier*: the held-write
         /// log's, captured when the log is made, because its `Drop` runs where
         /// `Hub::current()` is no longer the request's.
-        const BINDINGS: [&str; 5] = [
+        const BINDINGS: [&str; 6] = [
             ".bind_hub(sentry::Hub::current())",
             ".bind_hub(crate::server::api::middlewares::sentry_surface::custom_app_hub())",
+            ".bind_hub(oxy_telemetry::sentry_filter::custom_app_hub())",
             ".bind_hub(Arc::clone(&self.writer.hub))",
             "bind_hub_stream(",
             "Hub::run(",
@@ -903,9 +911,7 @@ mod tests {
         // its deliberate carries keep their remove-it test.
         for paths in [&scope, &narrowed] {
             assert!(
-                paths
-                    .iter()
-                    .any(|path| path == "src/server/api/custom_apps_publish.rs"),
+                paths.iter().any(|path| path == CUSTOM_APPS_PUBLISH),
                 "custom_apps_publish.rs is kept in the scope by name"
             );
         }

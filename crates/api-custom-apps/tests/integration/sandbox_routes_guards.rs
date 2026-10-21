@@ -235,17 +235,17 @@ async fn an_operator_scoped_to_the_apps_org_uses_its_sandboxes() {
     assert_eq!(status, StatusCode::OK, "{listed}");
 }
 
-/// Production mounts the two paths in the `/customer-apps` nest of
-/// `router::global`, **inside** the `admin::apps::guarded(…)` call that
+/// Production mounts the two paths in the `/customer-apps` nest of this crate's
+/// `routes()` (merged by `oxy-server`), **inside** the `admin::apps::guarded(…)` call that
 /// [`console`] copies — axum applies a `.layer` only to routes registered
 /// before it — and names the app id `id`, which `enforce_app_scope` reads by
 /// name.
 #[test]
 fn the_routes_are_mounted_inside_the_console_guards() {
     let source = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/server/router/global.rs"),
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
     )
-    .expect("read router/global.rs");
+    .expect("read src/lib.rs");
     // Whole-line comments dropped: they name the symbols and carry parentheses.
     let code = source
         .lines()
@@ -254,7 +254,7 @@ fn the_routes_are_mounted_inside_the_console_guards() {
         .join("\n");
     let nest = code
         .find("\"/customer-apps\",")
-        .expect("router/global.rs mounts the /customer-apps nest");
+        .expect("src/lib.rs mounts the /customer-apps nest");
     // Everything is looked for inside the nest: the same guards also wrap
     // other trees earlier in the file.
     let position = |needle: &str| {

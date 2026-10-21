@@ -126,7 +126,7 @@ fn the_production_registry_registers_the_app_function_executor_and_the_driver_us
 /// handlers registered at those paths.
 #[test]
 fn the_admin_app_mount_wears_the_one_stack_the_manual_run_tests_call() {
-    let apps = code("crates/app/src/server/api/admin/apps/mod.rs");
+    let apps = code("crates/api-custom-apps/src/admin/apps/mod.rs");
     assert!(
         fn_body(&apps, "guarded<S>").contains(
             "routes.layer(middleware::from_fn(block_admin_while_acting)).layer(middleware::from_fn(app_scope_guard::enforce_app_scope)).layer(middleware::from_fn(platform_cap_guard::require(Action::PlatformApps))).layer(middleware::from_fn(oxy_owner_or_app_admin_guard_middleware))"
@@ -149,15 +149,27 @@ fn the_admin_app_mount_wears_the_one_stack_the_manual_run_tests_call() {
         );
     }
 
+    // The `/customer-apps` nest is `oxy-api-custom-apps`'s `routes()`, which
+    // `oxy-server` merges at the protected tree's root; `oxy-app`'s own global
+    // router mounts neither it nor `/admin/apps`.
+    let lib = code("crates/api-custom-apps/src/lib.rs");
+    assert!(
+        fn_body(&lib, "routes")
+            .contains(".nest(\"/customer-apps\",admin::apps::guarded(admin::apps::router()"),
+        "the `/customer-apps` nest of `oxy_api_custom_apps::routes()` is no longer \
+         `admin::apps::guarded(admin::apps::router()…)`"
+    );
+    let main = code("crates/server/src/main.rs");
+    assert!(
+        fn_body(&main, "api_seam_routes").contains(".merge(oxy_api_custom_apps::routes())"),
+        "`api_seam_routes` no longer merges `oxy_api_custom_apps::routes()`, the only mount of \
+         the admin app handlers"
+    );
     let global = code("crates/app/src/server/router/global.rs");
     assert!(
-        global.contains(".nest_all(\"/customer-apps\",RouteRole::FleetOk,admin::apps::guarded(admin::apps::router()"),
-        "the `/customer-apps` nest is no longer `admin::apps::guarded(admin::apps::router()…)`"
-    );
-    assert!(
-        !global.contains("\"/admin/apps\""),
-        "`router/global.rs` mounts `/admin/apps` again: `/customer-apps` is the only mount of \
-         the admin app handlers"
+        !global.contains("\"/admin/apps\"") && !global.contains("\"/customer-apps\""),
+        "`router/global.rs` mounts `/admin/apps` or `/customer-apps` again: \
+         `oxy_api_custom_apps::routes()` is the only mount of the admin app handlers"
     );
     let admin = code("crates/app/src/server/api/admin/mod.rs");
     assert!(
@@ -199,7 +211,7 @@ fn the_serve_mount_the_functions_fixture_copies_still_matches_production() {
          belong to `custom_apps_seams::outer`, which the assertion above pins"
     );
 
-    let copy = code("crates/app/tests/custom_apps/custom_app_functions_fixture.rs");
+    let copy = code("crates/api-custom-apps/tests/integration/custom_app_functions_fixture.rs");
     assert!(
         fn_body(&copy, "serve_router").contains(
             ".route(\"/customer-apps/{*path}\",any(custom_apps_serve::serve_dispatch).layer(axum::Extension(Arc::new(DataPlaneQueryExecutor)asArc<dynFunctionQueryExecutor>)))"
@@ -227,7 +239,9 @@ fn the_log_route_the_readback_test_copies_still_matches_production() {
         "`oxy-api-custom-apps` no longer mounts `logs::get_errors` on `{ERRORS_ROUTE}`; \
          the read-back test exercises a path production does not serve"
     );
-    let copy = code("crates/app/tests/custom_apps/custom_app_functions_manual_run/log_reads.rs");
+    let copy = code(
+        "crates/api-custom-apps/tests/integration/custom_app_functions_manual_run/log_reads.rs",
+    );
     assert!(
         copy.contains(".route(LOGS_ROUTE,get(custom_apps_logs::get_logs))")
             && copy.contains(".route(ERRORS_ROUTE,get(custom_apps_logs::get_errors))"),

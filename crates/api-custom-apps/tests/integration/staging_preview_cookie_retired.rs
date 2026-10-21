@@ -31,7 +31,7 @@ use tower::ServiceExt;
 use crate::app_environments_phase_1b::{
     APP, make_guest_staff, production_host, staging_host, two_environments,
 };
-use crate::custom_app_functions_fixture::{ORG_SLUG, seeded_tenant, serve_router};
+use crate::custom_app_functions_fixture::{ORG_SLUG, seeded_tenant, serve_router, surface_seams};
 
 /// The retired cookie, exactly as `custom_apps_preview` used to set it.
 const PREVIEW_COOKIE: &str = "oxy_preview_draft=1";
@@ -112,7 +112,7 @@ async fn staging_preview_draft_route_is_gone() {
         std::path::PathBuf::new(),
         tokio_util::sync::CancellationToken::new(),
         true,
-        oxy_app::surface::testing::SurfaceSeams::empty(),
+        surface_seams(),
     )
     .await
     .expect("build router");

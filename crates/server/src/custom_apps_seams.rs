@@ -350,17 +350,21 @@ mod tests {
     }
 
     /// Same for the background jobs: the five `api_router` and `serve` started
-    /// by name before.
+    /// by name before, plus the log tail's listener and the function limits'
+    /// boot-time resolution. `SurfaceSeams::require_custom_apps` refuses to
+    /// start without every one of them.
     #[test]
-    fn the_background_jobs_are_exactly_the_five_that_started_by_name() {
+    fn the_background_jobs_are_exactly_the_seven_the_composition_root_starts() {
         let mut names: Vec<&str> = background().iter().map(|b| b.name).collect();
         names.sort_unstable();
         assert_eq!(
             names,
             [
                 "custom_app_asset_lifecycle_verify",
+                "custom_app_function_limits",
                 "custom_app_sandbox_maintenance",
                 "custom_app_storage_sweeper",
+                "custom_app_tail_listener",
                 "custom_app_tracking_retention",
                 "custom_app_usage_drain",
             ]
