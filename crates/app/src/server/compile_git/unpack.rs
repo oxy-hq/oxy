@@ -28,7 +28,7 @@ use std::path::{Component, Path, PathBuf};
 use flate2::read::GzDecoder;
 use tar::{Archive, EntryType};
 
-use crate::server::api::custom_apps_publish::is_safe_relative_path;
+use oxy_custom_apps::manifest::is_safe_relative_path;
 
 /// The most entries — files, directories and links — one commit may unpack to.
 ///

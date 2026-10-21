@@ -711,3 +711,23 @@ mod tests {
         );
     }
 }
+
+/// `404 EnvironmentRefused`: a surface outside production that this caller
+/// may not reach. A 404, as for an app that does not exist, so it confirms
+/// nothing. `what` names the surface (`"an agent ask"`, `"an automation
+/// run"`) for the message.
+pub fn environment_refused(environment: &AppEnvironment, what: &str) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    (
+        axum::http::StatusCode::NOT_FOUND,
+        axum::Json(serde_json::json!({
+            "error": "EnvironmentRefused",
+            "environment": environment.name(),
+            "message": format!(
+                "{what} in the {environment} environment runs only for a developer who \
+                 may open this app's {environment}"
+            ),
+        })),
+    )
+        .into_response()
+}

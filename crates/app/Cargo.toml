@@ -16,16 +16,10 @@ rust-version.workspace = true
 # `oxy-app-dylib` crate re-exports it as a dylib, pulled in only by oxy-server's
 # `dev-dynamic` feature. See `just dev-backend-dyn`.
 
-[features]
-default = ["custom-app-functions"]
-# V8-isolate runtime for Oxy Functions. On by default so `oxy serve --local`
-# runs the real runtime (see design doc §11.8); a build profile that wants to
-# skip V8 entirely can use `--no-default-features`.
-custom-app-functions = ["deno_core", "deno_error"]
+# The V8-isolate runtime for Oxy Functions (`custom-app-functions`) is a feature
+# of `oxy-api-custom-apps` now, with the functions host; oxy-app links no V8.
 
 [dependencies]
-deno_core = { workspace = true, optional = true }
-deno_error = { workspace = true, optional = true }
 handlebars = { workspace = true }
 df-interchange = { workspace = true, features = ["arrow_56", "arrow_57"] }
 libc = { workspace = true }
@@ -255,13 +249,6 @@ chrono = { workspace = true }
 
 [dev-dependencies]
 oxy-app-core = { workspace = true, features = ["test-fixtures"] }
-# The function tests still in `tests/custom_apps` mount the serve route, which now
-# lives in this surface crate. A dev-dependency cycle is allowed, and the crate
-# under test links once in an integration-test target, but cargo builds
-# dev-dependencies for every test target: until the second lift moves these tests
-# into the surface crate, `cargo nextest run -p oxy-app --lib` also builds this
-# crate and the non-test `oxy-app` beneath it.
-oxy-api-custom-apps = { path = "../api-custom-apps" }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 assert_cmd = { workspace = true }

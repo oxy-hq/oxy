@@ -994,7 +994,7 @@ async fn authorize_workspace(
 ///
 /// A browser session and a legacy key have no ceiling: they resolve exactly as
 /// before.
-pub(crate) async fn resolve_effective_role(
+pub async fn resolve_effective_role(
     db: &sea_orm::DatabaseConnection,
     workspace_id: Uuid,
     org_id: Uuid,

@@ -35,37 +35,30 @@
 //!
 //! The decisions — the user lookup, the workspace row, the shipped access
 //! check, the ring's term, [`CustomAppContext`] — are in
-//! `oxy_custom_apps::gate`, which has no HTTP types and reports a failure as a
-//! `GateError`. Its module doc says what the chain remembers and what it reads
-//! fresh on every call; read that before changing the order of the steps here.
-//! What stays here needs `HeaderMap`, the authenticator, the Sentry surface
-//! mark, `connect()` or `OxyProjectContext`: [`check_custom_app_gates`] (the
-//! entry that runs the steps and maps a `GateError` onto the response),
-//! [`parse_versioned_body`], and `build_project_context*`, which compose the
-//! data plane's project context. The moved items are re-exported at the old
-//! path.
+//! `oxy_custom_apps::gate`, which has no web framework and reports a failure as a
+//! `GateError`: the steps themselves (`check_custom_app_gates`: Sentry mark,
+//! authentication, origin, user, database, access, staging pin) and the
+//! decisions behind them. Its module doc says what the chain remembers and what
+//! it reads fresh on every call; read that before changing the order of the
+//! steps. What stays here needs `Response` or `OxyProjectContext`:
+//! [`check_custom_app_gates`] (the same chain, with a `GateError` mapped onto
+//! the response), [`parse_versioned_body`], and `build_project_context*`, which
+//! compose the data plane's project context. The moved items are re-exported
+//! at the old path.
 
 use std::borrow::Cow;
 
-use axum::Json;
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use oxy::adapters::secrets::SecretsManager;
 use oxy::adapters::workspace::{builder::WorkspaceBuilder, effective_workspace_path};
-use oxy::database::client::{DbFailure, establish_connection};
-use oxy_auth::authenticator::Authenticator;
-use oxy_auth::built_in::BuiltInAuthenticator;
-use oxy_custom_apps::gate::{GateError, gate_user, gate_verdict};
-use sea_orm::DatabaseConnection;
+use oxy_custom_apps::gate::GateError;
 use serde::Deserialize;
-use tracing::{error, warn};
+use tracing::error;
 use uuid::Uuid;
 
 use crate::agentic_wiring::OxyProjectContext;
-use crate::server::api::middlewares::sentry_surface::mark_custom_app_surface;
 use oxy::service::secret_manager::SecretManagerService;
-use oxy_app_core::origin::is_allowed_origin;
-use oxy_server_authz as authz;
 
 pub use oxy_custom_apps::gate::{CustomAppContext, frontline_worker_with_app_grant};
 
@@ -99,169 +92,24 @@ impl CustomAppContextExt for CustomAppContext {
     }
 }
 
-/// Common error-body shape returned by the gate chain. Keep in sync
-/// with `query.rs`'s `ApiErr` — both deliberately use the same
-/// `{ message, code? }` JSON envelope so callers can render errors
-/// uniformly across endpoints.
-///
-/// Every 500 this chain raises off a `DbErr` carries a `code` from
-/// [`DbFailure`]; see `oxy_custom_apps::gate::GateError` for why.
-#[derive(serde::Serialize)]
-struct GateErr {
-    message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    code: Option<&'static str>,
-}
-
-fn err(status: StatusCode, msg: impl Into<String>) -> Response {
-    (
-        status,
-        Json(GateErr {
-            message: msg.into(),
-            code: None,
-        }),
-    )
-        .into_response()
-}
-
-fn err_with_code(status: StatusCode, msg: impl Into<String>, code: &'static str) -> Response {
-    (
-        status,
-        Json(GateErr {
-            message: msg.into(),
-            code: Some(code),
-        }),
-    )
-        .into_response()
-}
+use oxy_app_core::gate_response::{err, err_with_code};
 
 /// The response for a refusal or failure the decision half reports.
 fn gate_error_response(e: GateError) -> Response {
-    let status = StatusCode::from_u16(e.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    match e.code() {
-        Some(code) => err_with_code(status, e.message(), code),
-        None => err(status, e.message()),
-    }
+    oxy_app_core::gate_response::refusal(e.status(), e.message(), e.code())
 }
 
-/// Run the gate chain. Returns the resolved context on success or a
-/// fully-formed HTTP error response on any failure. Handlers should
-/// pattern-match the `Err` arm and early-return.
-///
-/// Context-based access: when the app is served by oxy (in-workspace or
-/// admin preview) the request carries the session cookie; external/dev
-/// callers send a bearer token. Either way the caller must be able to
-/// access the project (org member or oxy app-admin). Auth runs first so
-/// unauthenticated callers can't probe routes via axum extractor errors.
-///
-/// Warm, an org member pays two queries here — the workspace row and
-/// `is_org_member`, both asked fresh on every request by design: the user
-/// comes from the 60 s cache, the ring's term from the `(user_id,
-/// project_id, org_id)` cache, and on a production request the staging pin is
-/// answered from the headers alone. See `oxy_custom_apps::gate` for what is
-/// remembered and why.
+/// Run the gate chain (`oxy_custom_apps::gate::check_custom_app_gates`).
+/// Returns the resolved context on success or a fully-formed HTTP error
+/// response on any failure. Handlers should pattern-match the `Err` arm and
+/// early-return.
 pub async fn check_custom_app_gates(
     headers: &HeaderMap,
     project_id: Uuid,
 ) -> Result<CustomAppContext, Response> {
-    // ── 0. Sentry, barrier 2: this request is a custom app's ──────────
-    //
-    // Entering this gate IS the identity. Every route behind it is a
-    // custom-app data-plane route and the web app calls none of them, so
-    // the hub can be tagged here without guessing at a URL — which the URL
-    // rules cannot do for this plane anyway: a bundle fetches same-origin
-    // with an empty `apiBaseUrl`, and its origin is `app.oxygen-hq.com`
-    // (canonical `/customer-apps/<org>/<app>/` URL) or an org subdomain,
-    // neither of which carries a custom-app host label or a
-    // `/customer-apps/**` path. See `sentry_surface::mark_custom_app_surface`.
-    //
-    // FIRST, before authentication, so the tag covers everything captured
-    // for the rest of this request: the handler's own `error!` on a
-    // warehouse failure (whose target is `…::projects::query`, which
-    // barrier 1 does not drop), `OxyError::capture_to_sentry`, and a panic.
-    mark_custom_app_surface();
-
-    // ── 1. Authenticate ───────────────────────────────────────────────
-    // Session cookie (served by oxy) or a bearer token (external/dev).
-    //
-    // With the credential: an API token's grants and standing flags decide the
-    // access check below exactly as they do on `/api`.
-    let (identity, credential) =
-        match BuiltInAuthenticator::new(oxy_auth::token::SandboxAgent::Refuse)
-            .authenticate_with_credential(headers)
-            .await
-        {
-            Ok(authenticated) => authenticated,
-            Err(_) => return Err(err(StatusCode::UNAUTHORIZED, "authentication required")),
-        };
-
-    // ── 2. Origin allowlist ───────────────────────────────────────────
-    if !is_allowed_origin(headers) {
-        warn!("custom-app gate: request rejected — origin not in allowlist");
-        return Err(err(StatusCode::FORBIDDEN, "origin not allowed"));
-    }
-
-    // ── 3. User lookup, through the 60 s user cache ───────────────────
-    // Attached AFTER the cache: the cached row is the user, never the
-    // credential one request happened to arrive with.
-    let user = gate_user(&identity)
+    oxy_custom_apps::gate::check_custom_app_gates(headers, project_id)
         .await
-        .map_err(gate_error_response)?
-        .with_credential(credential);
-    let caller = authz::Caller::from_user(&user);
-
-    // ── 4. DB connection ──────────────────────────────────────────────
-    let db = connect().await?;
-
-    // ── 5. Workspace + access: the row and the gate fresh, the term cached ─
-    let verdict = gate_verdict(&db, &caller, project_id)
-        .await
-        .map_err(gate_error_response)?;
-    if !verdict.allowed {
-        return Err(err(
-            StatusCode::FORBIDDEN,
-            "not a member of the owning organization",
-        ));
-    }
-
-    // ── 6. Staging pin, per request ───────────────────────────────────
-    // The staging build's semantic pin, for a request on the app's staging
-    // host, decided by the same reach rule that serves that viewer the
-    // staging bundle. After the access decision, so it can only narrow WHICH
-    // revision an already authorized request reads, never whether it may
-    // read. Never cached: it is a property of this request's host and
-    // headers, and a production request answers it from them alone.
-    let staging_pin = crate::server::api::custom_apps_staging_pin::staging_pin_for_data_request(
-        &db, headers, &caller, project_id,
-    )
-    .await;
-
-    Ok(CustomAppContext {
-        user,
-        project_id,
-        workspace: verdict.workspace,
-        org_id: verdict.org_id,
-        db,
-        staging_pin,
-    })
-}
-
-/// Step 4: the pool checkout. No `DbErr` to classify — failing to build the
-/// pool at all is unreachable by construction, so state the same code the
-/// lookups behind it reach by inspection.
-async fn connect() -> Result<DatabaseConnection, Response> {
-    establish_connection().await.map_err(|e| {
-        error!(
-            code = DbFailure::Unreachable.code(),
-            error = %e,
-            "DB connection failed"
-        );
-        err_with_code(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "database unavailable",
-            DbFailure::Unreachable.code(),
-        )
-    })
+        .map_err(gate_error_response)
 }
 
 /// Parse a custom-app endpoint's JSON body, enforcing the
@@ -414,7 +262,6 @@ pub(crate) async fn build_project_context_with_role(
 /// A row remembered from an earlier request must not come through here, because
 /// it would pin that request's revision. The function runner reads the row fresh
 /// just before the call, which is why it can.
-#[cfg(feature = "custom-app-functions")]
 pub(crate) async fn build_project_context_with_fresh_workspace(
     workspace: &entity::workspaces::Model,
     user_id: Uuid,
@@ -563,6 +410,7 @@ async fn context_root(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oxy::database::client::DbFailure;
     use serde::Deserialize;
     use serde_json::json;
 

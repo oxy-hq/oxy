@@ -204,20 +204,18 @@ pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Re
             .get::<oxy_app_core::preagg_cache_ctx::PreaggCacheCtx>()
             .cloned()
             .unwrap_or_default();
-        // The runtime is reached through the executor object the router layers
-        // on (above), because the runtime sits below this crate.
-        return query_exec
-            .handle_function_request(FunctionRequest {
-                org_slug: first,
-                app_slug,
-                function_name,
-                method,
-                uri,
-                headers,
-                body: body_bytes,
-                preagg,
-            })
-            .await;
+        return crate::custom_apps_functions::handle_function_request(
+            first,
+            app_slug,
+            function_name,
+            method,
+            uri,
+            headers,
+            body_bytes,
+            query_exec,
+            preagg,
+        )
+        .await;
     }
 
     serve_pretty(first, app_slug, rest, method, headers, uri, body).await

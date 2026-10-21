@@ -111,9 +111,7 @@ pub async fn tag_custom_app_surface(req: Request, next: Next) -> Response {
 /// capture — including a panic, which has no `tracing` target for barrier 1 to
 /// read. That is the fail-closed direction the barrier is built on: a false
 /// drop costs one platform event, a false keep ships customer data.
-pub fn mark_custom_app_surface() {
-    sentry::configure_scope(|scope| scope.set_tag(CUSTOM_APP_SURFACE_TAG, CUSTOM_APP_SURFACE));
-}
+pub use oxy_telemetry::sentry_filter::mark_custom_app_surface;
 
 /// A fresh hub, already tagged, for custom-app work with no request around it:
 /// a scheduled, manual or webhook-triggered function job. Defined beside the

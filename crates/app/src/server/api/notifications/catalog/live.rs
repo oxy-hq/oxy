@@ -16,10 +16,10 @@ use uuid::Uuid;
 use super::parse;
 use super::platform::oxygen;
 use super::source::{KindInfo, SourceCatalogue};
-use crate::server::api::custom_apps_agent_built::prime_marks;
 use crate::server::api::custom_apps_env_resolve::{
     EnvironmentBuilds, load_environment_builds, load_environment_builds_batch,
 };
+use oxy_custom_apps::agent_built::prime_marks;
 
 /// The catalogue a manifest declares, with the kinds its functions may send.
 pub fn from_manifest(manifest: Option<&Value>) -> SourceCatalogue {

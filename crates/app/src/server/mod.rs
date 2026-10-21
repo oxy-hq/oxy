@@ -3,8 +3,6 @@
 pub mod admission;
 pub mod anomaly_notify;
 pub mod api;
-mod app_function_agent;
-pub mod app_function_executor;
 pub mod audit_anchor;
 pub mod authz;
 pub mod build_identity;
@@ -24,7 +22,6 @@ pub mod git_fetch_maintenance;
 pub mod health_eval_executor;
 pub mod http_cache;
 pub mod ide_proxy;
-pub(crate) mod invocation_placement;
 pub mod metrics_server;
 pub use oxy_app_core::preagg_context;
 pub mod preagg_executor;
@@ -44,7 +41,7 @@ pub mod runtime_artifact;
 pub mod serve_safety;
 pub mod service;
 pub mod simulation;
-pub(crate) mod task_router_listener;
+pub mod task_router_listener;
 #[cfg(test)]
 pub(crate) mod test_support;
 mod token_sweep;

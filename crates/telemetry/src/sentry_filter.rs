@@ -254,6 +254,14 @@ pub const CUSTOM_APP_SURFACE_TAG: &str = "oxy.surface";
 /// See [`CUSTOM_APP_SURFACE_TAG`].
 pub const CUSTOM_APP_SURFACE: &str = "custom_app";
 
+/// Tag the current hub as a custom app's. The data-plane gate calls it first,
+/// before authentication, so the tag covers everything captured for the rest of
+/// the request. See `sentry_surface::mark_custom_app_surface` for why the gate,
+/// not the URL, is the identity.
+pub fn mark_custom_app_surface() {
+    sentry::configure_scope(|scope| scope.set_tag(CUSTOM_APP_SURFACE_TAG, CUSTOM_APP_SURFACE));
+}
+
 /// A fresh hub, already tagged, for custom-app work with no request around it:
 /// a scheduled, manual or webhook-triggered function job.
 pub fn custom_app_hub() -> std::sync::Arc<sentry::Hub> {

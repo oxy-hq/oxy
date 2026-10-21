@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use agentic_runtime::worker::TaskExecutor;
 use axum::Router;
+use oxy_app_core::function_seam::FunctionRuntime;
 use oxy_shared::fleet_role::RouteRoleDecl;
 use sea_orm::DatabaseConnection;
 use tokio::task::JoinHandle;
@@ -127,6 +128,44 @@ pub struct BackgroundSeam {
 /// from.
 pub type OuterMount = fn(PreaggCacheCtx) -> Router;
 
+/// What `oxy migrate` prints after the migrations: a report the custom-app
+/// surface produces (the functions preflight). Given the build's label.
+pub type MigrateReport =
+    fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = String> + Send>>;
+
+/// The demo seed's custom-app half: the example apps it deploys and the storage
+/// figures hung off them, and the matching teardown. `oxy seed` and the
+/// integration-test fixture pass it to `seed_demo_with`; `oxy-app` holds the rows
+/// the apps belong to (workspaces, orgs, teams) and `oxy-api-custom-apps` the
+/// apps themselves.
+#[derive(Clone, Copy)]
+pub struct ExampleAppsSeam {
+    /// Deploy the example apps to the demo workspace (id, workspace path) and to
+    /// Acme's, restricted to `acme_restricted_team` when the partner seed made one.
+    /// Warns instead of failing, like the rest of the seed's extras.
+    pub deploy: for<'a> fn(
+        &'a sea_orm::DatabaseConnection,
+        uuid::Uuid,
+        &'a str,
+        Option<uuid::Uuid>,
+    )
+        -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>>,
+    /// Remove the seeded storage figures (before the apps, see `clear_demo`).
+    pub clear_storage: for<'a> fn(
+        &'a sea_orm::DatabaseConnection,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<(), oxy_shared::errors::OxyError>> + Send + 'a>,
+    >,
+    /// Remove the seeded example apps; how many were removed.
+    pub clear_apps: for<'a> fn(
+        &'a sea_orm::DatabaseConnection,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<u64, oxy_shared::errors::OxyError>> + Send + 'a,
+        >,
+    >,
+}
+
 /// Every surface seam, by where it sits relative to the auth stack.
 #[derive(Clone, Default)]
 pub struct SurfaceSeams {
@@ -175,28 +214,43 @@ pub struct SurfaceSeams {
     /// declarations of the seams above they do not get the `/api` prefix.
     /// Installed with the others in cloud mode.
     pub outer_decls: Vec<RouteRoleDecl>,
+    /// Runs a function request on a person's behalf for the `oxy-app` handlers
+    /// that do (a notification's function action). Layered onto the API tree as
+    /// an `Extension`; `None` leaves such an action answering that no runtime
+    /// is available.
+    pub function_runtime: Option<Arc<dyn FunctionRuntime>>,
+    /// The report `oxy migrate` prints after the migrations.
+    pub post_migrate: Option<MigrateReport>,
+    /// The demo seed's custom-app half; `None` seeds the rows only.
+    pub example_apps: Option<ExampleAppsSeam>,
 }
 
 /// The `TaskSpec::Custom` kinds `oxy-app`'s own enqueue sites queue for custom
 /// apps. The code that runs them is handed in through [`SurfaceSeams::tasks`];
 /// a node that lacks one would fail every such task as an unknown kind.
+///
+/// The strings, not the constants that name them in `oxy-api-custom-apps`: the
+/// executors are in that crate and `oxy-app` cannot name it. A test there
+/// (`task_kinds_are_the_five_the_fleet_knew`) holds each constant to its string.
 pub const CUSTOM_APP_TASK_KINDS: [&str; 5] = [
-    agentic_pipeline::app_function_task::APP_FUNCTION_KIND,
-    crate::server::api::custom_apps_nonproduction::staging_task::STAGING_MIGRATIONS_KIND,
-    crate::server::api::custom_apps_sandboxes::teardown::SANDBOX_TEARDOWN_KIND,
-    crate::server::api::custom_apps_sandboxes::migrations_task::SANDBOX_MIGRATIONS_KIND,
-    crate::server::api::custom_apps_sandboxes::oltp_task::SANDBOX_OLTP_KIND,
+    "app_function",
+    "custom_app_staging_migrations",
+    "custom_app_sandbox_teardown",
+    "custom_app_sandbox_migrations",
+    "custom_app_sandbox_oltp",
 ];
 
 /// The background jobs a serve process needs for custom apps (usage rows,
 /// storage measurement, sandbox expiry, retention). Without the usage drain,
 /// page views and events queue until the bounded queue sheds them.
-pub const CUSTOM_APP_BACKGROUND_JOBS: [&str; 5] = [
+pub const CUSTOM_APP_BACKGROUND_JOBS: [&str; 7] = [
     "custom_app_asset_lifecycle_verify",
     "custom_app_storage_sweeper",
     "custom_app_sandbox_maintenance",
     "custom_app_tracking_retention",
     "custom_app_usage_drain",
+    "custom_app_tail_listener",
+    "custom_app_function_limits",
 ];
 
 /// Refuse a task list that lacks a kind `oxy-app` queues, or names one twice.

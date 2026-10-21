@@ -425,3 +425,13 @@ mod card_metadata_tests {
         assert!(m.art.is_none());
     }
 }
+
+/// A tar entry path is safe iff it's relative and contains no `..`
+/// component — guards against an archive member escaping the build
+/// prefix (`../../etc/...`) when its files are later keyed into S3.
+pub fn is_safe_relative_path(path: &std::path::Path) -> bool {
+    !path.is_absolute()
+        && !path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+}

@@ -13,75 +13,48 @@ pub mod competitors;
 pub mod compile;
 pub mod compile_staging;
 pub use oxy_app_core::compiled_reader;
-pub mod custom_apps_activity;
 pub mod custom_apps_agent;
 /// Moved to `oxy-app-core`; the old path stays so no call site changes.
 pub use oxy_app_core::agent_body as custom_apps_agent_body;
-pub mod custom_apps_agent_built;
 #[cfg(test)]
 pub(crate) use oxy_app_core::agent_fixture as custom_apps_agent_fixture;
-pub mod custom_apps_agent_refusal;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::asset_manifest as custom_apps_asset_manifest;
 pub mod custom_apps_auth;
-pub mod custom_apps_availability;
-pub mod custom_apps_build_history;
 pub use oxy_custom_apps::build_state as custom_apps_build_state;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::build_store as custom_apps_build_store;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::bundle_cache as custom_apps_bundle_cache;
 pub use oxy_custom_apps::cache as custom_apps_cache;
-pub mod custom_apps_debug;
 pub use oxy_custom_apps::env_resolve as custom_apps_env_resolve;
-pub mod custom_apps_env_schedules;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::environments as custom_apps_environments;
-pub mod custom_apps_functions;
 pub mod custom_apps_gates;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::manifest as custom_apps_manifest;
-pub mod custom_apps_migrations;
 pub use oxy_custom_apps::non_production as custom_apps_non_production;
-pub mod custom_apps_nonproduction;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::precompress as custom_apps_precompress;
-/// `oxyc promote` / `oxyc rollback`, and the one function that moves
-/// production's pointer for every writer.
-pub mod custom_apps_promote;
-pub mod custom_apps_publish;
-/// The audit row of a bundle publish, and what one says of a publish token.
-pub(crate) mod custom_apps_publish_audit;
-pub mod custom_apps_publish_form;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::publish_authz as custom_apps_publish_authz;
-pub mod custom_apps_publish_oidc;
-pub mod custom_apps_publish_refusal;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::sandbox_instance as custom_apps_sandbox_instance;
-pub mod custom_apps_sandboxes;
-pub mod custom_apps_scaffold;
-pub mod custom_apps_secrets;
-pub mod custom_apps_shell_context;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::source as custom_apps_source;
-pub mod custom_apps_staging_held;
 pub mod custom_apps_staging_pin;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::storage as custom_apps_storage;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::sync as custom_apps_sync;
-pub mod custom_apps_tail;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::telemetry as custom_apps_telemetry;
-pub mod custom_apps_threads;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::tracking as custom_apps_tracking;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::usage_airhouse as custom_apps_usage_airhouse;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::usage_queue as custom_apps_usage_queue;
-pub mod custom_apps_validate;
 pub mod data;
 pub mod data_repo;
 pub mod database;
@@ -97,11 +70,9 @@ mod foot_traffic_seed;
 pub mod chat;
 pub mod frontline_admin;
 pub mod frontline_grants;
-pub mod github_oidc_keys;
 pub mod healthcheck;
 pub mod integration;
 pub mod local_setup;
-pub mod me_apps;
 pub mod metric_anomalies;
 pub mod metric_tree;
 pub mod metric_tree_baseline;
@@ -139,7 +110,6 @@ pub mod user_tokens;
 pub mod video;
 pub mod webhooks;
 pub mod work;
-pub mod workspace_custom_apps;
 pub mod workspace_logo;
 pub mod workspace_members;
 pub mod workspace_org;

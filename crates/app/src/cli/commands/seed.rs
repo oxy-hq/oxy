@@ -30,6 +30,8 @@ use oxy::theme::StyledText;
 use oxy_auth::types::Identity;
 use oxy_auth::user::UserService;
 use oxy_shared::errors::OxyError;
+
+use crate::server::router::ExampleAppsSeam;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
 };
@@ -63,7 +65,7 @@ pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> 
         compile: false,
         llm_keys: false,
     };
-    seed_demo_with(workspace_path, rows_only).await
+    seed_demo_with(workspace_path, rows_only, None).await
 }
 
 /// Run the full demo seed. `workspace_path` defaults to `./examples`.
@@ -71,14 +73,18 @@ pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> 
 /// A compile failure is returned only after everything else — rows, keys, the
 /// other workspaces' compiles — has run, so a wrapper script fails visibly
 /// without a single bad file leaving the box half-seeded.
+///
+/// `example_apps` is the custom-app surface's half of the seed (the example
+/// apps and their storage figures); `None` seeds the rows only.
 pub async fn seed_demo_with(
     workspace_path: Option<PathBuf>,
     options: SeedOptions,
+    example_apps: Option<ExampleAppsSeam>,
 ) -> Result<(), OxyError> {
     let resolved = resolve_workspace_path(workspace_path)?;
     let resolved_str = resolved.to_string_lossy().to_string();
     let workspace_id = demo_workspace_id();
-    let conn = seed_rows(workspace_id, &resolved_str).await?;
+    let conn = seed_rows(workspace_id, &resolved_str, example_apps).await?;
 
     let mut compiled = Ok(());
     if options.compile || options.llm_keys {
@@ -133,6 +139,7 @@ pub(crate) fn seeded_persona_emails() -> Vec<(&'static str, String)> {
 async fn seed_rows(
     workspace_id: Uuid,
     resolved_str: &str,
+    example_apps: Option<ExampleAppsSeam>,
 ) -> Result<sea_orm::DatabaseConnection, OxyError> {
     println!(
         "{} seeding demo (workspace_id={}, path={})",
@@ -165,7 +172,7 @@ async fn seed_rows(
     // apps summary, so the output reads: tenants → staff → what they can see.
     super::seed_platform_grants::seed_platform_grants().await?;
 
-    deploy_example_apps(&conn, workspace_id, resolved_str).await;
+    deploy_example_apps(&conn, workspace_id, resolved_str, example_apps).await;
 
     // After `bind_org_admin_emails`: threads are user-scoped, and this
     // materializes one copy per Local-org member — the memberships that call
@@ -187,44 +194,26 @@ async fn seed_rows(
 /// actually likely — `OXY_ROLE` exported in the shell, which makes the build
 /// store refuse a filesystem write — would otherwise turn a stray env var into a
 /// completely failed seed.
-async fn deploy_example_apps(conn: &sea_orm::DatabaseConnection, workspace_id: Uuid, path: &str) {
-    let mut targets = vec![super::seed_apps::AppTarget::open(
-        LOCAL_ORG_ID,
-        "local".to_string(),
+///
+/// The apps are the custom-app surface's (`ExampleAppsSeam::deploy`, in
+/// `oxy-api-custom-apps`); the team that restricts Acme's second one is this
+/// seed's, so it is handed over.
+async fn deploy_example_apps(
+    conn: &sea_orm::DatabaseConnection,
+    workspace_id: Uuid,
+    path: &str,
+    example_apps: Option<ExampleAppsSeam>,
+) {
+    let Some(apps) = example_apps else {
+        return;
+    };
+    (apps.deploy)(
+        conn,
         workspace_id,
-    )];
-    // Absent when the partner seed skipped (non-local DB) — deploy to the demo
-    // workspace anyway rather than treating that as an error.
-    match super::seed_apps::seeded_app_workspace_of(conn, "acme").await {
-        Ok(Some(acme)) => {
-            // A SECOND, restricted app beside the open one — never instead of it.
-            // Acme's only app being invisible to most of Acme would read as a broken
-            // seed; two apps show the contrast the feature is about, with the open
-            // one still on everyone's launcher.
-            if let Some(team) = super::seed_partners::restricted_team_for("acme") {
-                targets.push(acme.restricted(team));
-            }
-            targets.push(acme);
-        }
-        Ok(None) => {}
-        Err(e) => println!("{} could not resolve Acme's workspace: {e}", "⚠️".warning()),
-    }
-
-    if let Err(e) = super::seed_apps::seed_example_apps(conn, path, &targets).await {
-        println!(
-            "{} example app not deployed: {e}\n  \
-             Everything else seeded. Re-run `oxy seed` once the cause is fixed.",
-            "⚠️".warning()
-        );
-    }
-
-    // After the apps exist — storage usage hangs off `apps.id` (with an
-    // ON DELETE CASCADE foreign key), so seeding it earlier would insert
-    // nothing. Warn rather than fail: demo storage numbers are a nicety, and
-    // the rest of the seed is what a developer cannot work without.
-    if let Err(e) = super::seed_storage::seed_storage_usage(conn).await {
-        println!("{} storage usage not seeded: {e}", "⚠️".warning());
-    }
+        path,
+        super::seed_partners::restricted_team_for("acme"),
+    )
+    .await;
 }
 
 /// Ensure the Local organization exists at LOCAL_ORG_ID (nil). Shared with
@@ -376,7 +365,7 @@ async fn bind_org_admin_emails(conn: &sea_orm::DatabaseConnection) -> Result<(),
 /// Drop the demo workspace row and every seeded example app. Org + guest user
 /// are left in place since other code paths (Airhouse provision, customer-apps
 /// demos) depend on the nil-UUID org existing.
-pub async fn clear_demo() -> Result<(), OxyError> {
+pub async fn clear_demo(example_apps: Option<ExampleAppsSeam>) -> Result<(), OxyError> {
     let conn = establish_connection().await?;
 
     // Apps first. `apps.project_id` carries no foreign key, so deleting the
@@ -385,7 +374,9 @@ pub async fn clear_demo() -> Result<(), OxyError> {
     // with nothing left to reference them.
     // Before the apps: the FK would cascade these away, but `--clear` also runs
     // where apps survive, and orphaned usage keeps counting against an org's quota.
-    if let Err(e) = super::seed_storage::clear_storage_usage(&conn).await {
+    if let Some(apps) = example_apps
+        && let Err(e) = (apps.clear_storage)(&conn).await
+    {
         println!("{} storage usage not cleared: {e}", "⚠️".warning());
     }
 
@@ -404,7 +395,10 @@ pub async fn clear_demo() -> Result<(), OxyError> {
         Err(e) => println!("{} seeded threads not cleared: {e}", "⚠️".warning()),
     }
 
-    let apps = super::seed_apps::clear_example_apps(&conn).await?;
+    let apps = match example_apps {
+        Some(seam) => (seam.clear_apps)(&conn).await?,
+        None => 0,
+    };
 
     // Staff grants are keyed by email, not by workspace or org, so nothing else in
     // this teardown reaches them — left behind, they would keep granting console

@@ -56,7 +56,7 @@ pub mod sandbox;
 pub mod sandbox_describe;
 pub(crate) mod sandbox_staff;
 pub mod sandbox_staging;
-pub(crate) mod sandboxes_queued;
+pub mod sandboxes_queued;
 mod service;
 pub(crate) mod standing_staff;
 mod system_audit;

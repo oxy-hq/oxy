@@ -47,6 +47,8 @@
 //! The staging pin is per request by design.
 
 use entity::prelude::Workspaces;
+use oxy_auth::authenticator::Authenticator;
+use oxy_auth::built_in::BuiltInAuthenticator;
 use oxy_auth::types::{AuthenticatedUser, Identity};
 use oxy_auth::user::UserService;
 use oxy_platform::db::DbFailure;
@@ -127,18 +129,29 @@ pub enum GateError {
     NoOwningOrganization,
     /// The org-membership query failed.
     MembershipCheckFailed { code: &'static str },
+    /// No credential, or one the authenticator refuses.
+    AuthenticationRequired,
+    /// The request's `Origin` is not on the allow-list.
+    OriginNotAllowed,
+    /// The pool could not be built.
+    DatabaseUnavailable { code: &'static str },
+    /// The caller may not read the owning organization's data.
+    NotAMember,
 }
 
 impl GateError {
     /// The HTTP status code of the response.
     pub fn status(self) -> u16 {
         match self {
-            GateError::UserNotFound => 401,
+            GateError::UserNotFound | GateError::AuthenticationRequired => 401,
             GateError::ProjectNotFound => 404,
-            GateError::NoOwningOrganization => 403,
+            GateError::NoOwningOrganization
+            | GateError::OriginNotAllowed
+            | GateError::NotAMember => 403,
             GateError::UserLookupFailed { .. }
             | GateError::WorkspaceLookupFailed { .. }
-            | GateError::MembershipCheckFailed { .. } => 500,
+            | GateError::MembershipCheckFailed { .. }
+            | GateError::DatabaseUnavailable { .. } => 500,
         }
     }
 
@@ -151,6 +164,10 @@ impl GateError {
             GateError::WorkspaceLookupFailed { .. } => "workspace lookup failed",
             GateError::NoOwningOrganization => "workspace has no owning organization",
             GateError::MembershipCheckFailed { .. } => "org membership check failed",
+            GateError::AuthenticationRequired => "authentication required",
+            GateError::OriginNotAllowed => "origin not allowed",
+            GateError::DatabaseUnavailable { .. } => "database unavailable",
+            GateError::NotAMember => "not a member of the owning organization",
         }
     }
 
@@ -159,12 +176,123 @@ impl GateError {
         match self {
             GateError::UserLookupFailed { code }
             | GateError::WorkspaceLookupFailed { code }
-            | GateError::MembershipCheckFailed { code } => Some(code),
+            | GateError::MembershipCheckFailed { code }
+            | GateError::DatabaseUnavailable { code } => Some(code),
             GateError::UserNotFound
             | GateError::ProjectNotFound
-            | GateError::NoOwningOrganization => None,
+            | GateError::NoOwningOrganization
+            | GateError::AuthenticationRequired
+            | GateError::OriginNotAllowed
+            | GateError::NotAMember => None,
         }
     }
+}
+
+/// The whole gate chain, for every custom-app data-plane endpoint: returns the
+/// resolved context, or the refusal for `oxy-app` (or a surface crate) to turn
+/// into a response. Auth runs first so an unauthenticated caller cannot probe
+/// a route through an extractor error.
+///
+/// Context-based access: when the app is served by oxy (in-workspace or admin
+/// preview) the request carries the session cookie; external/dev callers send a
+/// bearer token. Either way the caller must be able to access the project (org
+/// member or oxy app-admin).
+///
+/// Warm, an org member pays two queries here — the workspace row and
+/// `is_org_member`, both asked fresh on every request by design: the user comes
+/// from the 60 s cache, the ring's term from the `(user_id, project_id, org_id)`
+/// cache, and on a production request the staging pin is answered from the
+/// headers alone.
+pub async fn check_custom_app_gates(
+    headers: &http::HeaderMap,
+    project_id: Uuid,
+) -> Result<CustomAppContext, GateError> {
+    // ── 0. Sentry, barrier 2: this request is a custom app's ──────────
+    //
+    // Entering this gate IS the identity. Every route behind it is a
+    // custom-app data-plane route and the web app calls none of them, so
+    // the hub can be tagged here without guessing at a URL — which the URL
+    // rules cannot do for this plane anyway: a bundle fetches same-origin
+    // with an empty `apiBaseUrl`, and its origin is `app.oxygen-hq.com`
+    // (canonical `/customer-apps/<org>/<app>/` URL) or an org subdomain,
+    // neither of which carries a custom-app host label or a
+    // `/customer-apps/**` path. See `sentry_surface::mark_custom_app_surface`.
+    //
+    // FIRST, before authentication, so the tag covers everything captured
+    // for the rest of this request: the handler's own `error!` on a
+    // warehouse failure (whose target is `…::projects::query`, which
+    // barrier 1 does not drop), `OxyError::capture_to_sentry`, and a panic.
+    oxy_telemetry::sentry_filter::mark_custom_app_surface();
+
+    // ── 1. Authenticate ───────────────────────────────────────────────
+    // Session cookie (served by oxy) or a bearer token (external/dev).
+    //
+    // With the credential: an API token's grants and standing flags decide the
+    // access check below exactly as they do on `/api`.
+    let (identity, credential) =
+        match BuiltInAuthenticator::new(oxy_auth::token::SandboxAgent::Refuse)
+            .authenticate_with_credential(headers)
+            .await
+        {
+            Ok(authenticated) => authenticated,
+            Err(_) => return Err(GateError::AuthenticationRequired),
+        };
+
+    // ── 2. Origin allowlist ───────────────────────────────────────────
+    if !oxy_app_core::origin::is_allowed_origin(headers) {
+        tracing::warn!("custom-app gate: request rejected — origin not in allowlist");
+        return Err(GateError::OriginNotAllowed);
+    }
+
+    // ── 3. User lookup, through the 60 s user cache ───────────────────
+    // Attached AFTER the cache: the cached row is the user, never the
+    // credential one request happened to arrive with.
+    let user = gate_user(&identity).await?.with_credential(credential);
+    let caller = authz::Caller::from_user(&user);
+
+    // ── 4. DB connection ──────────────────────────────────────────────
+    // No `DbErr` to classify — failing to build the pool at all is unreachable
+    // by construction, so state the same code the lookups behind it reach by
+    // inspection.
+    let db = oxy::database::client::establish_connection()
+        .await
+        .map_err(|e| {
+            error!(
+                code = DbFailure::Unreachable.code(),
+                error = %e,
+                "DB connection failed"
+            );
+            GateError::DatabaseUnavailable {
+                code: DbFailure::Unreachable.code(),
+            }
+        })?;
+
+    // ── 5. Workspace + access: the row and the gate fresh, the term cached ─
+    let verdict = gate_verdict(&db, &caller, project_id).await?;
+    if !verdict.allowed {
+        return Err(GateError::NotAMember);
+    }
+
+    // ── 6. Staging pin, per request ───────────────────────────────────
+    // The staging build's semantic pin, for a request on the app's staging
+    // host, decided by the same reach rule that serves that viewer the
+    // staging bundle. After the access decision, so it can only narrow WHICH
+    // revision an already authorized request reads, never whether it may
+    // read. Never cached: it is a property of this request's host and
+    // headers, and a production request answers it from them alone.
+    let staging_pin = crate::staging_pin::request::staging_pin_for_data_request(
+        &db, headers, &caller, project_id,
+    )
+    .await;
+
+    Ok(CustomAppContext {
+        user,
+        project_id,
+        workspace: verdict.workspace,
+        org_id: verdict.org_id,
+        db,
+        staging_pin,
+    })
 }
 
 /// Step 3: the user the credential names, from the cache the bundle path
@@ -508,6 +636,25 @@ mod tests {
                 500,
                 "org membership check failed",
                 Some(unreachable),
+            ),
+            (
+                GateError::AuthenticationRequired,
+                401,
+                "authentication required",
+                None,
+            ),
+            (GateError::OriginNotAllowed, 403, "origin not allowed", None),
+            (
+                GateError::DatabaseUnavailable { code: unreachable },
+                500,
+                "database unavailable",
+                Some(unreachable),
+            ),
+            (
+                GateError::NotAMember,
+                403,
+                "not a member of the owning organization",
+                None,
             ),
         ];
         for (error, status, message, code) in cases {

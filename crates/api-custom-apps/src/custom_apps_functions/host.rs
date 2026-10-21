@@ -1,0 +1,2996 @@
+//! Host-side data plane for Oxy Functions — the Rust implementation of the
+//! `ctx.query` / `ctx.fetch` calls the isolate makes over the broker channel.
+//!
+//! See `internal-docs/customer-apps-functions.md` §11.5
+//! (query cap), §11.9 (fetch size cap), §11.3 (warehouse write scope —
+//! per-function fail-closed `destinations` allowlist).
+
+use std::collections::BTreeMap;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
+
+use agentic_connector::{DatabaseConnector, PostgresConnector};
+use agentic_pipeline::airway_run::StartAirwayRequest;
+use agentic_semantic::compile::{CompiledQuery, resolve_and_compile};
+use agentic_semantic::config::SemanticQueryConfig;
+use sea_orm::DatabaseConnection;
+use uuid::Uuid;
+
+use oxy::service::secret_manager::SecretManagerService;
+
+use crate::custom_apps_storage::RetentionPolicy;
+
+use super::data_audit::{self, InvocationIdentity, WriteRecord};
+use super::host_call_attrs::db_query_summary;
+use super::host_error::{CapabilityArea, HostError};
+use super::runtime::{FUNCTION_MAX_ROWS, FUNCTION_STREAM_MAX_ROWS, FunctionHost};
+use super::seam::{FunctionProjectContext, FunctionQueryExecutor};
+use super::upsert_support;
+use agentic_connector::SqlTransaction;
+use agentic_connector::{SqlDialect, StringLiteral};
+
+mod airhouse_ops;
+mod config_source;
+mod connector_cache;
+mod destinations;
+mod email_idempotency;
+mod env_guard;
+mod env_homes;
+mod held_log;
+mod notify_op;
+mod oltp_guard;
+mod oltp_home;
+mod oltp_ops;
+pub mod platform_facts;
+mod semantic_op;
+mod tx_ops;
+mod uploads;
+mod warehouse_home;
+
+pub use super::audience::{Audience, app_audience};
+use super::env_policy::{Capability, EnvPolicy, HeldTarget, HostOp};
+pub use oltp_home::writer_connection;
+
+// Visible to the rest of custom_apps_functions so the preflight judges live
+// manifests with the host's own write rule, not a copy of it.
+pub(in crate::custom_apps_functions) use destinations::{
+    WriteSurface, destination_kind, destination_write_policy,
+};
+
+/// Outbound fetch response size cap (design doc §11.9).
+const FETCH_MAX_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Total per-request wall-clock cap for `ctx.fetch` (connect + transfer). A
+/// backstop so a slow/never-responding upstream can't keep the isolate parked
+/// in a host call past the function's own timeout (design doc §11.9).
+const FETCH_TOTAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Concrete `FunctionHost` backed by the invocation's resolved project
+/// context (for SQL connectors) and a shared HTTP client (for `ctx.fetch`).
+pub struct ProjectFunctionHost {
+    /// The invocation's project context (connectors + workspace config +
+    /// Airway seed), behind a trait so the runtime doesn't depend on
+    /// `agentic_wiring`. Injected at construction.
+    proj_ctx: Arc<dyn FunctionProjectContext>,
+    /// Runs `ctx.query` / `ctx.queryStream` SQL. Injected at the composition
+    /// root so the runtime depends on the trait, not on `projects::query`.
+    query_exec: Arc<dyn FunctionQueryExecutor>,
+    db: DatabaseConnection,
+    http: reqwest::Client,
+    /// §11.3 allowlist — database names `ctx.warehouse.*` may write to. Empty →
+    /// the function may not write to any database (fail-closed).
+    write_destinations: Vec<String>,
+    /// Project the app belongs to — scopes the SecretManager for `ctx.secrets.set`.
+    project_id: Uuid,
+    /// App id — `ctx.secrets.set` writes land under `apps/<app_id>/`.
+    app_id: Uuid,
+    /// Org the app belongs to. Storage quotas are org-level (a tenant thinks in
+    /// organizations, and one invoice covers every app under it), so the write
+    /// path needs it without re-reading `apps`.
+    org_id: Uuid,
+    /// Actor stamped as created_by/updated_by on secret writes (the invoking
+    /// user for a route call; the app owner for a scheduled call). Non-null FK.
+    actor: Uuid,
+    /// App display name, used as the `From` friendly name on `ctx.email.send`.
+    app_name: String,
+    /// What this function may do, and under what storage policy.
+    caps: FunctionCapabilities,
+    /// Per-invocation `ctx.email.send` counter (this host lives for exactly one
+    /// invocation), bounding email fan-out from a single run.
+    email_send_count: std::sync::atomic::AtomicUsize,
+    /// Per-invocation `ctx.notify` counter, bounding how many sends one run
+    /// makes (each send can name many people).
+    notify_count: std::sync::atomic::AtomicUsize,
+    /// Transactions `ctx.tx()` has open. Per-invocation like the counter above,
+    /// which is what makes cleanup automatic — see `tx`'s module docs.
+    transactions: super::tx::TxRegistry,
+    /// Layer-1 preagg cache + renewal threshold for `ctx.semantic`. Injected
+    /// at the serve router and threaded through the invocation, because this
+    /// route is mounted outside the API router and so has no `AppState` to read
+    /// it from. Both fields `None` (the scheduled path, or a composition with no
+    /// rebuild worker) means every semantic query compiles to warehouse SQL.
+    preagg: oxy_app_core::preagg_cache_ctx::PreaggCacheCtx,
+    /// Where the caller may act — the same `Reach` `ctx.user.reach` carries,
+    /// so `ctx.semantic.query({ scope: "reach" })` pins to it server-side.
+    reach: oxy_app_core::operating_graph::reach::Reach,
+    /// The warehouse connectors `connect` has built this invocation, by
+    /// database name: N `ctx.query` / `ctx.warehouse.*` / `ctx.semantic`
+    /// calls on one database cost one build — config lookup, secret
+    /// decrypt, credential mint — rather than N. Per host, so per invocation
+    /// and per principal: a connector is never shared across invocations.
+    /// Built once per database (`connector_cache`), so a slow handshake on
+    /// one database never stalls a call on another.
+    connectors: connector_cache::BuildOnce<Arc<dyn DatabaseConnector>>,
+    /// Resolved `ctx.oltp` writer connection, cached for this invocation so N
+    /// calls cost one control-plane resolve (a query + decrypt) rather than N.
+    /// The per-call TCP+TLS connect to the tenant still happens (each call is a
+    /// one-shot transaction on its own connection — see `oltp`); this only saves
+    /// the resolve. Filled lazily on the first `ctx.oltp` call.
+    oltp_conn: tokio::sync::Mutex<Option<oxy_oltp::resolver::WriterConnection>>,
+    /// The app's own Airhouse connections for `ctx.airhouse`, by the schema
+    /// each is scoped to, filled on first use: production's `app_<writer>`,
+    /// and outside production its sibling too. The connections behind them
+    /// are pooled per app and schema across invocations.
+    airhouse_conn:
+        tokio::sync::Mutex<std::collections::HashMap<String, Arc<dyn DatabaseConnector>>>,
+    /// Who is running, for the audit record on every data-plane write.
+    identity: InvocationIdentity,
+    /// The writes each open `ctx.tx()` handle has made so far, keyed by the
+    /// handle id; audited as one row at commit, dropped at rollback.
+    tx_writes: tokio::sync::Mutex<std::collections::HashMap<u64, TxAudit>>,
+    /// Every committed `ctx.oltp` / `ctx.warehouse` write of this invocation,
+    /// coalesced by target; written as one row per plane when the invocation
+    /// ends (`end_of_invocation`), so the hot path pays no control-plane
+    /// round trip.
+    writes: tokio::sync::Mutex<data_audit::WriteBuffer>,
+    /// The `ctx.*` call of this invocation that failed in a way that pages and
+    /// that the run did not recover from. The first failure stands over later
+    /// ones (one page names one failure, and later calls often fail because of
+    /// it); a later success of the same op against the same target clears
+    /// it, so an app that retries a flaky `ctx.fetch` and gets its answer on
+    /// the second attempt pages nobody, while a `fetch` to B that worked says
+    /// nothing about the `fetch` to A that did not. The target is what the
+    /// broker reads off the call before dispatch (`runtime::host_call_target`):
+    /// a `fetch`'s host, a `warehouse.*` op's database and table, nothing for
+    /// the rest — shape already on the call's span, never a key, a URL's path
+    /// or the SQL. Concurrent calls of one op settle in completion order. The
+    /// rule is `HostCallFailure::{noted, recovered}`; this holds the state,
+    /// for one assignment at a time and never across an await, so a std
+    /// mutex. What it holds of the host's message and of the target is the
+    /// normalized, bounded form the fingerprint digests — `noted` takes the
+    /// raw text and keeps none of it.
+    host_call_failure: std::sync::Mutex<Option<super::failure_signal::HostCallFailure>>,
+    /// What each op may do in the environment this run was admitted to
+    /// (`environment_gate::Admission`), with the staging pin already in scope
+    /// where this host was built folded in — host calls run on tasks of their
+    /// own, which do not inherit it. Every op asks it; none re-derives the
+    /// environment. Production allows everything.
+    policy: super::env_policy::EnvPolicy,
+    /// Every call the policy held or refused this invocation, written as one
+    /// `app.staging.held` audit row (`held_log`). Empty in production.
+    held: Arc<held_log::HeldLog>,
+    /// Set when a production-admitted run was found reading a branch and an
+    /// op was refused for it (previews S9, I9): from then on the host's
+    /// held/refused labels classify as such (`env_guard`).
+    on_branch: std::sync::atomic::AtomicBool,
+    /// This invocation's running total for its environment storage silo,
+    /// measured on the first write (`env_homes::storage_limit`). Unused in
+    /// production, which answers to the org quota.
+    environment_meter: crate::custom_apps_storage::environment_limits::SiloMeter,
+    /// The upload URLs this invocation's `ctx.storage.getUploadUrl` minted
+    /// into its environment's silo — what a `ctx.fetch` PUT outside
+    /// production is matched against (`uploads`). Empty in production.
+    minted_uploads: uploads::MintedUploads,
+}
+
+/// The audit state of one open transaction.
+struct TxAudit {
+    plane: &'static str,
+    database: String,
+    writes: Vec<WriteRecord>,
+    /// The isolated home `begin` opened the handle into; `None` when it was
+    /// opened as asked. Every statement on the handle is decided by it
+    /// (`EnvPolicy::decide_on_handle`).
+    opened_into: Option<super::env_policy::Target>,
+    /// For a handle on a mapped destination, the fence every statement on it
+    /// passes before it is sent (`env_policy::destination_sql`).
+    fence: Option<super::env_policy::destination_sql::DestinationFence>,
+}
+
+/// The fail-closed capability gates a function's manifest grants, plus the
+/// app-level storage retention policy those writes are stamped with.
+///
+/// Grouped rather than passed as five more positional `bool`s: adjacent
+/// same-typed parameters are exactly where a transposed argument silently grants
+/// a capability nobody declared, and this constructor already carried a
+/// `too_many_arguments` waiver.
+///
+/// Every gate defaults to **false** and the policy to empty, so a caller that
+/// forgets to set one denies the capability rather than granting it.
+#[derive(Debug, Clone, Default)]
+pub struct FunctionCapabilities {
+    /// §11.x — `ctx.secrets.set` is rejected unless the manifest declares
+    /// `secrets.write`.
+    pub secrets_write: bool,
+    /// Gate for `ctx.email.send`.
+    pub email_send: bool,
+    /// Gate for `ctx.notify`: the kinds the manifest declared, each mapped to
+    /// whether it is critical. `None` → not declared, every call refused.
+    pub notify_kinds: Option<BTreeMap<String, bool>>,
+    /// Gate for `ctx.org.people()` — the org's people directory, read-only.
+    pub org_read: bool,
+    /// Gate for `ctx.platform.facts()` — ids and counts about every org. The
+    /// first of two: the app's org must also be one of the deployment's
+    /// internal orgs, `OXY_INTERNAL_ORGS` ([`platform_facts::platform_facts_gate`]).
+    pub platform_facts: bool,
+    /// Gate for `ctx.storage` reads (getDownloadUrl / get / head / list, and
+    /// the source side of copy).
+    pub storage_read: bool,
+    /// Gate for `ctx.storage` writes (getUploadUrl / put / delete, and the
+    /// destination side of copy).
+    pub storage_write: bool,
+    /// What `ctx.oltp` may do — the gate AND why it's closed, so the two
+    /// fail-closed reasons get different diagnoses. See [`WriterCapability`].
+    pub oltp: WriterCapability,
+    /// What `ctx.airhouse` may do. Same derivation as `oltp`: the schema is
+    /// `app_<writer>`, from the app's slug, never from the manifest.
+    pub airhouse: WriterCapability,
+    /// Customer warehouses this function may write to despite the read-only
+    /// rule, each with the reason its manifest gave. Empty → none.
+    pub customer_warehouse_writes: BTreeMap<String, String>,
+    /// App-level `storage.retention` policy. Empty → written objects carry no
+    /// TTL tag and never expire.
+    pub storage_retention: RetentionPolicy,
+    /// Per-function `ctx.fetch` response ceiling. `None` → [`FETCH_MAX_BYTES`].
+    ///
+    /// `Option`, not a bare `u64`: this struct is `Default`-constructible and
+    /// every other field defaults to DENY, but a `0` here would deny every
+    /// fetch rather than fall back — so absence has to mean "the default", not
+    /// "nothing".
+    pub fetch_max_bytes: Option<u64>,
+}
+
+impl FunctionCapabilities {
+    /// Whether the manifest grants `capability` — the gate the broker asks
+    /// for every host op before its implementation runs
+    /// (`runtime::host_call`), read off the op's registry row. Fail-closed:
+    /// an ungranted field refuses, and a `WriterCapability` grants only when
+    /// its schema can be derived.
+    pub fn allows(&self, capability: Capability) -> bool {
+        match capability {
+            Capability::None => true,
+            Capability::SecretsWrite => self.secrets_write,
+            Capability::EmailSend => self.email_send,
+            Capability::Notify => self.notify_kinds.is_some(),
+            Capability::OrgRead => self.org_read,
+            Capability::PlatformFacts => self.platform_facts,
+            Capability::StorageRead => self.storage_read,
+            Capability::StorageWrite => self.storage_write,
+            Capability::StorageReadAndWrite => self.storage_read && self.storage_write,
+            Capability::Oltp => matches!(self.oltp, WriterCapability::Enabled { .. }),
+            Capability::Airhouse => matches!(self.airhouse, WriterCapability::Enabled { .. }),
+            // Decided per database the call names (`check_write_destination`),
+            // after the op is admitted; the op itself is open to every function.
+            Capability::WarehouseWrite => true,
+        }
+    }
+
+    /// `Ok` when the manifest grants what `op`'s registry row asks for;
+    /// otherwise the refusal the function sees — the host's own words, which
+    /// `oxyc`'s lint and `@oxy-hq/sdk/testing` repeat verbatim
+    /// (`sdk_testing_drift`), so each literal stays where those cite it.
+    /// Every `<Area>CapabilityMissing` is written here and nowhere else.
+    pub fn refuse(&self, op: HostOp) -> Result<(), HostError> {
+        let capability = op.spec().capability;
+        if self.allows(capability) {
+            return Ok(());
+        }
+        Err(match capability {
+            Capability::None | Capability::WarehouseWrite => return Ok(()),
+            Capability::SecretsWrite => HostError::capability_missing(
+                CapabilityArea::Secrets,
+                "ctx.secrets.set: this function has not declared the `secrets.write` \
+                 capability (add it to oxy-app.json to permit writes)",
+            ),
+            Capability::EmailSend => HostError::capability_missing(
+                CapabilityArea::Email,
+                "EmailCapabilityMissing: this function has not declared the `email.send` \
+                 capability (add \"email\": { \"send\": true } to its oxy-app.json entry)",
+            ),
+            Capability::Notify => HostError::capability_missing(
+                CapabilityArea::Notify,
+                notify_op::NOTIFY_CAPABILITY_MISSING,
+            ),
+            Capability::OrgRead => refuse_org(op),
+            Capability::PlatformFacts => HostError::capability_missing(
+                CapabilityArea::Platform,
+                platform_facts::CAPABILITY_MISSING,
+            ),
+            Capability::StorageRead
+            | Capability::StorageWrite
+            | Capability::StorageReadAndWrite => self.refuse_storage(capability),
+            Capability::Oltp => refuse_oltp(&self.oltp),
+            Capability::Airhouse => refuse_airhouse(&self.airhouse),
+        })
+    }
+
+    /// `copy` asks for write first, then read, as the two gates did.
+    fn refuse_storage(&self, capability: Capability) -> HostError {
+        let asks_write = matches!(
+            capability,
+            Capability::StorageWrite | Capability::StorageReadAndWrite
+        );
+        let text = if asks_write && !self.storage_write {
+            "StorageCapabilityMissing: this function has not declared the `storage.write` \
+             capability (add \"storage\": { \"write\": true } to its oxy-app.json entry)"
+        } else {
+            "StorageCapabilityMissing: this function has not declared the `storage.read` \
+             capability (add \"storage\": { \"read\": true } to its oxy-app.json entry)"
+        };
+        HostError::capability_missing(CapabilityArea::Storage, text)
+    }
+
+    /// Every gate open, for a test double that stands in for a manifest
+    /// declaring everything.
+    #[cfg(test)]
+    pub fn granting_everything() -> Self {
+        Self {
+            secrets_write: true,
+            email_send: true,
+            notify_kinds: Some(BTreeMap::from([("ping".to_string(), false)])),
+            org_read: true,
+            platform_facts: true,
+            storage_read: true,
+            storage_write: true,
+            oltp: WriterCapability::resolve(true, "test-app"),
+            airhouse: WriterCapability::resolve(true, "test-app"),
+            ..Default::default()
+        }
+    }
+}
+
+/// What an op's method says when it runs without the capability the broker
+/// was to refuse it for — a platform bug, never the function's: the broker
+/// admits every op (`runtime::host_call::dispatch_host_call`).
+fn gate_bypassed(op: HostOp) -> String {
+    format!(
+        "internal runtime error: ctx.{} reached the host without its capability",
+        op.name()
+    )
+}
+
+/// Whether a store keyed on the app's writer — `ctx.oltp` or `ctx.airhouse` —
+/// is available, and, when it is not, which of the two fail-closed reasons
+/// applies, so the host can tell them apart in the error.
+///
+/// The writer is DERIVED from the app's slug, never named by the manifest (the
+/// binding that keeps one app out of another's schema), so "the slug can't back
+/// a schema" is a distinct failure from "the manifest didn't ask for the store"
+/// — and reporting the first as the second sends an author to edit a manifest
+/// that is already correct.
+#[derive(Debug, Clone, Default)]
+pub enum WriterCapability {
+    /// The manifest did not enable the store.
+    #[default]
+    Disabled,
+    /// Enabled, and the app's slug backs a valid `app_<writer>` schema.
+    Enabled { writer: String },
+    /// Enabled, but the app's slug cannot normalise to a schema identifier
+    /// (leading digit, too long, …). Carries the slug for the diagnosis.
+    SlugNotDerivable { slug: String },
+}
+
+impl WriterCapability {
+    /// Build from the manifest gate and the app's slug. The writer is DERIVED
+    /// from the slug (never the manifest), so an enabled gate whose slug cannot
+    /// back a schema is [`Self::SlugNotDerivable`] — a different fail-closed
+    /// reason from a disabled gate, and one the host reports differently.
+    pub fn resolve(enabled: bool, app_slug: &str) -> Self {
+        if !enabled {
+            return Self::Disabled;
+        }
+        match oxy_oltp::schema::app_writer_name(app_slug) {
+            Some(writer) => Self::Enabled { writer },
+            None => Self::SlugNotDerivable {
+                slug: app_slug.to_string(),
+            },
+        }
+    }
+
+    /// The app's own schema, `app_<writer>`, when the gate is open.
+    pub fn schema(&self) -> Option<String> {
+        match self {
+            Self::Enabled { writer } => oxy_oltp::schema::WriterRef::app(writer)
+                .ok()
+                .map(|w| w.schema_name()),
+            _ => None,
+        }
+    }
+}
+
+impl ProjectFunctionHost {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        proj_ctx: Arc<dyn FunctionProjectContext>,
+        query_exec: Arc<dyn FunctionQueryExecutor>,
+        db: DatabaseConnection,
+        write_destinations: Vec<String>,
+        project_id: Uuid,
+        app_id: Uuid,
+        org_id: Uuid,
+        actor: Uuid,
+        app_name: String,
+        caps: FunctionCapabilities,
+        preagg: oxy_app_core::preagg_cache_ctx::PreaggCacheCtx,
+        reach: oxy_app_core::operating_graph::reach::Reach,
+        identity: InvocationIdentity,
+        policy: super::env_policy::EnvPolicy,
+    ) -> Self {
+        let policy = policy.within_scope_pin(crate::custom_apps_staging_pin::current_staging_pin());
+        Self {
+            held: held_log::HeldLog::new(
+                db.clone(),
+                identity.clone(),
+                app_id,
+                org_id,
+                project_id,
+                policy.environment().name(),
+            ),
+            on_branch: std::sync::atomic::AtomicBool::new(false),
+            environment_meter: Default::default(),
+            minted_uploads: Default::default(),
+            policy,
+            identity,
+            tx_writes: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            writes: tokio::sync::Mutex::new(data_audit::WriteBuffer::new()),
+            proj_ctx,
+            query_exec,
+            db,
+            write_destinations,
+            project_id,
+            app_id,
+            org_id,
+            actor,
+            app_name,
+            caps,
+            preagg,
+            reach,
+            email_send_count: std::sync::atomic::AtomicUsize::new(0),
+            notify_count: std::sync::atomic::AtomicUsize::new(0),
+            transactions: super::tx::TxRegistry::default(),
+            connectors: Default::default(),
+            oltp_conn: tokio::sync::Mutex::new(None),
+            airhouse_conn: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            host_call_failure: std::sync::Mutex::new(None),
+            http: fetch_client(),
+        }
+    }
+
+    /// Resolve the database `ctx.query` runs against: the project's
+    /// configured default, else the first listed database. Mirrors the
+    /// fallback in `projects::query::run_query`.
+    fn default_database(&self) -> Result<String, String> {
+        let cm = &self.proj_ctx.workspace_manager().config_manager;
+        if let Some(default) = cm.default_database_ref() {
+            Ok(default.clone())
+        } else if let Some(first) = cm.list_databases().first() {
+            Ok(first.name.clone())
+        } else {
+            // Unknown here is not the same answer as configured-none.
+            Err(self
+                .databases_unknown_here()
+                .unwrap_or_else(|| "this project has no databases configured".to_string()))
+        }
+    }
+
+    /// The connector for `db_name`: built once per invocation and reused
+    /// (`connectors`), bounded by the host DB-op timeout so a slow TLS/auth
+    /// handshake during construction can't keep a detached isolate thread
+    /// alive past the backstop. Two concurrent calls on one database share
+    /// one build; a call on another database never waits for it; a failed
+    /// build caches nothing (`connector_cache::BuildOnce`).
+    async fn connect(&self, db_name: &str) -> Result<Arc<dyn DatabaseConnector>, String> {
+        // A config this node could not read names no database at all, so the
+        // lookup below would report a configured one as missing.
+        if let Some(why) = self.databases_unknown_here() {
+            return Err(why);
+        }
+        self.connectors
+            .get_or_build(db_name, || {
+                with_db_timeout("connect", async {
+                    self.proj_ctx
+                        .build_connector_for(db_name)
+                        .await
+                        .map_err(|e| format!("failed to connect to database '{db_name}': {e}"))
+                })
+            })
+            .await
+    }
+
+    /// `(trace id, traceparent)` of the host-op span this call runs under.
+    fn trace_context() -> (Option<String>, Option<String>) {
+        (
+            oxy_telemetry::propagation::current_ids().map(|(t, _)| t),
+            oxy_telemetry::propagation::current_traceparent(),
+        )
+    }
+
+    /// Name the session for the transaction's lifetime (layer 1 of
+    /// `data_audit`). Postgres only. A failure is a **platform error** raised
+    /// before any tenant statement runs: the `SET LOCAL` executes inside the
+    /// open block, so "log and continue" would leave the transaction aborted
+    /// and the author's next statement failing with SQL they never wrote.
+    async fn name_session(
+        &self,
+        tx: &mut dyn SqlTransaction,
+        trace_id: Option<&str>,
+    ) -> Result<(), String> {
+        let tag = data_audit::session_tag(&self.identity, trace_id);
+        let sql = data_audit::set_application_name_sql(&tag);
+        with_db_timeout("name-session", async {
+            tx.exec(&sql, &[]).await.map(|_| ()).map_err(|e| {
+                format!("could not name the database session (platform-side application_name): {e}")
+            })
+        })
+        .await
+    }
+
+    /// Layer 3, immediate: one hash-chained row now. Used for a committed
+    /// `ctx.tx()` handle, which is already one row per transaction.
+    async fn record_writes(
+        &self,
+        action: &'static str,
+        writes: Vec<WriteRecord>,
+        trace_id: Option<&str>,
+    ) {
+        if writes.is_empty() {
+            return;
+        }
+        let entry = data_audit::entry(
+            action,
+            &self.identity,
+            self.org_id,
+            self.project_id,
+            &writes,
+            trace_id,
+        );
+        // A row written outside production says so in its `environment`
+        // column; production's rows are written exactly as before.
+        let entry = if self.policy.is_production() {
+            entry
+        } else {
+            entry.environment(self.policy.environment().name())
+        };
+        oxy_app_core::audit::record_best_effort(&self.db, entry).await;
+    }
+
+    /// Layer 3, deferred: fold a committed `ctx.oltp` / `ctx.warehouse` write
+    /// into the invocation's buffer; `end_of_invocation` writes the rows.
+    ///
+    /// Host calls are detached tasks and `runtime::run` returns on cancel or
+    /// timeout without awaiting them, so a write can commit after
+    /// `end_of_invocation` drained the buffer. The buffer is then closed and
+    /// hands the write back; it is recorded on its own, right here — the
+    /// per-write round trip is the right trade on a path that has already
+    /// timed out, and a committed write never goes unaudited.
+    async fn note_write(&self, write: WriteRecord) {
+        let late = self.writes.lock().await.note(write);
+        if let Some(write) = late {
+            let action = data_audit::action_for(write.plane);
+            let (trace_id, _) = Self::trace_context();
+            self.record_writes(action, vec![write], trace_id.as_deref())
+                .await;
+        }
+    }
+
+    /// Remember a write made through a `ctx.tx()` handle until it commits.
+    async fn note_tx_write(
+        &self,
+        id: u64,
+        summary: super::host_call_attrs::QuerySummary,
+        rows: Option<u64>,
+    ) {
+        if !data_audit::is_write_verb(&summary.verb) {
+            return;
+        }
+        if let Some(audit) = self.tx_writes.lock().await.get_mut(&id) {
+            let write = WriteRecord {
+                plane: audit.plane,
+                namespace: audit.database.clone(),
+                verb: summary.verb,
+                table: summary.table,
+                rows,
+                statements: 1,
+                op: None,
+                note: None,
+            };
+            data_audit::coalesce(&mut audit.writes, write);
+        }
+    }
+
+    /// The database a `ctx.tx()` handle was opened on, for the span.
+    async fn tx_database(&self, id: u64) -> Option<String> {
+        self.tx_writes
+            .lock()
+            .await
+            .get(&id)
+            .map(|a| a.database.clone())
+    }
+
+    /// §11.3 — a write may only target a database the function declared in its
+    /// manifest `destinations`, that database must actually be configured, and
+    /// it must not be a customer warehouse the function gave no reason to write
+    /// (`destination_write_policy`).
+    ///
+    /// Fail-closed: an empty allowlist denies every database. Checked *before*
+    /// any connector — and therefore any credential — is built, so a function
+    /// can never reach the project's source warehouse just because it happens
+    /// to be configured. `ctx.tx` shares this with `ctx.warehouse` because a
+    /// transaction is a write by definition; splitting them would let a
+    /// transaction reach a database the same function may not `insert` into.
+    ///
+    /// The message names no surface: `reply_json` prefixes the one that asked
+    /// (`ctx.warehouse` or `ctx.tx`), and spelling it here too was how this
+    /// error came out as `ctx.tx: ctx.tx: database '…' is not in …`.
+    fn check_write_destination(&self, database: &str, surface: WriteSurface) -> Result<(), String> {
+        if !self.write_destinations.iter().any(|d| d == database) {
+            return Err(format!(
+                "database '{database}' is not in this function's \
+                 `destinations` allowlist (declare it in oxy-app.json to permit writes)"
+            ));
+        }
+        let cm = &self.proj_ctx.workspace_manager().config_manager;
+        let databases = cm.list_databases();
+        let Some(db) = databases.iter().find(|db| db.name == database) else {
+            return Err(self.databases_unknown_here().unwrap_or_else(|| {
+                format!("database '{database}' is not configured for this project")
+            }));
+        };
+        destination_write_policy(
+            database,
+            destination_kind(&db.database_type),
+            &self.caps.customer_warehouse_writes,
+            surface,
+        )
+    }
+
+    /// Pull `{ id, sql, params }` off a `ctx.tx` payload.
+    ///
+    /// `params` distinguishes three cases: **absent or null** is "no
+    /// parameters" (the common case — a statement with no placeholders), an
+    /// **array** is the argument list, and **anything else** is an author error
+    /// reported as such. Collapsing the third into the first is what produced
+    /// the misleading "takes 1 parameter(s) but 0 were passed" for
+    /// `tx.exec(sql, {a: 1})`.
+    fn tx_statement(
+        payload: &serde_json::Value,
+    ) -> Result<(u64, String, Vec<serde_json::Value>), String> {
+        let id = payload
+            .get("id")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| "`id` is required".to_string())?;
+        let sql = payload
+            .get("sql")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "`sql` is required".to_string())?
+            .to_string();
+        // Absent means "no parameters"; present-but-not-an-array is an author
+        // error and must say so. Collapsing both to `[]` reported the far more
+        // confusing "takes 1 parameter(s) but 0 were passed".
+        let params = match payload.get("params") {
+            None | Some(serde_json::Value::Null) => Vec::new(),
+            Some(serde_json::Value::Array(a)) => a.clone(),
+            Some(other) => {
+                return Err(format!(
+                    "`params` must be an array of values, got {}. \
+                     Pass positional arguments for $1, $2, … — e.g. [tableNo, sku].",
+                    match other {
+                        serde_json::Value::Object(_) => "an object",
+                        serde_json::Value::String(_) => "a string",
+                        serde_json::Value::Number(_) => "a number",
+                        serde_json::Value::Bool(_) => "a boolean",
+                        _ => "a non-array value",
+                    }
+                ));
+            }
+        };
+        Ok((id, sql, params))
+    }
+
+    /// Pull `{ sql, params }` off a `ctx.oltp` payload. Like [`tx_statement`]
+    /// without the transaction `id` — `ctx.oltp` runs one auto-committed
+    /// statement, not a caller-held transaction. Same three-way `params`
+    /// handling (absent/null → none, array → the list, anything else → an
+    /// author error) so a mistyped argument says so rather than surfacing as a
+    /// confusing arity error.
+    fn oltp_statement(
+        payload: &serde_json::Value,
+    ) -> Result<(String, Vec<serde_json::Value>), String> {
+        let sql = payload
+            .get("sql")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "`sql` is required".to_string())?
+            .to_string();
+        let params = match payload.get("params") {
+            None | Some(serde_json::Value::Null) => Vec::new(),
+            Some(serde_json::Value::Array(a)) => a.clone(),
+            Some(_) => {
+                return Err("`params` must be an array of values. Pass \
+                     positional arguments for $1, $2, … — e.g. [name, partySize]."
+                    .to_string());
+            }
+        };
+        Ok((sql, params))
+    }
+
+    /// The app's OLTP writer. The `oltp` gate — and its two refusals, a
+    /// manifest that did not ask and a slug that backs no schema — is the
+    /// broker's (`FunctionCapabilities::refuse`); `op` reaches here granted.
+    fn oltp_writer(&self, op: HostOp) -> Result<&str, String> {
+        match &self.caps.oltp {
+            WriterCapability::Enabled { writer } => Ok(writer.as_str()),
+            _ => Err(gate_bypassed(op)),
+        }
+    }
+
+    /// Resolve the app's OLTP writer once per invocation, then reuse it: N
+    /// `ctx.oltp` calls and `ctx.oltp.tx` handles cost one control-plane resolve
+    /// (a query + decrypt), not N. The isolate drives calls sequentially, so
+    /// holding this lock across the first resolve serialises nothing real. The
+    /// tenant's status is checked on that first resolve — an invocation is short
+    /// enough that a mid-run status change need not be observed. The cached
+    /// `WriterConnection` holds the DECRYPTED writer DSN for the rest of the
+    /// invocation; that is the same lifetime as the isolate that already drives
+    /// this credential, and the host is dropped when the invocation ends, so the
+    /// secret's window is not widened.
+    ///
+    /// Which database is the policy's, decided at admission
+    /// (`EnvPolicy::oltp_home`): production's, or the org's staging branch.
+    async fn oltp_connection(
+        &self,
+        writer_name: &str,
+    ) -> Result<oxy_oltp::resolver::WriterConnection, String> {
+        let mut cached = self.oltp_conn.lock().await;
+        if let Some(conn) = cached.as_ref() {
+            return Ok(conn.clone());
+        }
+        let home = self.policy.oltp_home();
+        let conn = with_db_timeout(
+            "resolve",
+            writer_connection(&self.db, self.org_id, writer_name, home),
+        )
+        .await?;
+        *cached = Some(conn.clone());
+        Ok(conn)
+    }
+}
+
+#[async_trait::async_trait]
+impl FunctionHost for ProjectFunctionHost {
+    /// Layer 3 for the buffered planes: one row per action per invocation
+    /// (`app.oltp.write`, `app.airhouse.write`, `app.warehouse.write`), each listing every target
+    /// it touched with statement counts and row sums. Runs after the isolate
+    /// has finished, off the hot path; `ctx.tx()` commits were recorded as
+    /// they happened.
+    async fn end_of_invocation(&self) {
+        let (trace_id, _) = Self::trace_context();
+        // The held-write log first: one `app.staging.held` row, written from a
+        // task of its own, then closed so a held call racing this records
+        // itself (`held_log`).
+        self.held.flush(trace_id.clone()).await;
+        // Drain and close under the one lock `note_write` checks, so a write
+        // racing this either lands in `writes` here or records itself.
+        let writes = self.writes.lock().await.drain();
+        if writes.is_empty() {
+            return;
+        }
+        let mut by_action: BTreeMap<&'static str, Vec<WriteRecord>> = BTreeMap::new();
+        for write in writes {
+            by_action
+                .entry(data_audit::action_for(write.plane))
+                .or_default()
+                .push(write);
+        }
+        for (action, writes) in by_action {
+            self.record_writes(action, writes, trace_id.as_deref())
+                .await;
+        }
+    }
+
+    fn note_host_call_failure(
+        &self,
+        op: &'static str,
+        kind: &'static str,
+        message: &str,
+        target: Option<&str>,
+    ) {
+        let mut noted = self
+            .host_call_failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // `noted` normalizes the message and the target before they are
+        // stored; the raw text goes no further than this call.
+        *noted =
+            super::failure_signal::HostCallFailure::noted(noted.take(), op, kind, message, target);
+    }
+
+    fn note_host_call_success(&self, op: &'static str, target: Option<&str>) {
+        let mut noted = self
+            .host_call_failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *noted = super::failure_signal::HostCallFailure::recovered(noted.take(), op, target);
+    }
+
+    fn decides_by_environment(&self) -> bool {
+        self.policy_decides()
+    }
+
+    fn capabilities(&self) -> &FunctionCapabilities {
+        &self.caps
+    }
+
+    fn env_policy(&self) -> &EnvPolicy {
+        &self.policy
+    }
+
+    async fn record_held(&self, op: HostOp, target: HeldTarget<'_>) {
+        self.note_held(op, target).await;
+    }
+
+    fn host_call_failure(&self) -> Option<super::failure_signal::HostCallFailure> {
+        self.host_call_failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    async fn query(&self, sql: String) -> Result<serde_json::Value, HostError> {
+        let db_name = self.default_database()?;
+        let connector = self.connect(&db_name).await?;
+        let (rows, truncated) =
+            query_with_truncation(&self.query_exec, connector, &sql, FUNCTION_MAX_ROWS).await?;
+        let result = serde_json::json!({ "rows": rows, "truncated": truncated });
+        enforce_result_byte_cap(&result)?;
+        Ok(result)
+    }
+
+    async fn query_stream(&self, sql: String) -> Result<serde_json::Value, HostError> {
+        let db_name = self.default_database()?;
+        let connector = self.connect(&db_name).await?;
+        let rows = with_db_timeout(
+            "query_stream",
+            self.query_exec
+                .execute(connector, &sql, FUNCTION_STREAM_MAX_ROWS),
+        )
+        .await?;
+        Ok(serde_json::Value::Array(rows))
+    }
+
+    async fn fetch(
+        &self,
+        url: String,
+        init: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
+        let parsed = reqwest::Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
+        if !is_safe_outbound(&parsed) {
+            return Err(format!("fetch to '{url}' blocked by SSRF allowlist").into());
+        }
+
+        let method = init
+            .get("method")
+            .and_then(|m| m.as_str())
+            .unwrap_or("GET")
+            .to_uppercase();
+        // Outside production anything but a bodiless read method answers 409
+        // unsent — except this invocation's own upload into its environment's
+        // silo (`env_guard`); a read is sent as ever.
+        let has_body = !matches!(init.get("body"), None | Some(serde_json::Value::Null));
+        if let Some(held) = self.held_fetch(&method, &parsed, has_body).await {
+            return Ok(held);
+        }
+        let mut req = self
+            .http
+            .request(
+                reqwest::Method::from_bytes(method.as_bytes())
+                    .map_err(|_| format!("invalid method '{method}'"))?,
+                parsed,
+            )
+            .timeout(FETCH_TOTAL_TIMEOUT);
+        if let Some(headers) = init.get("headers").and_then(|h| h.as_object()) {
+            for (k, v) in headers {
+                if let Some(vs) = v.as_str() {
+                    // Validated here rather than left to `send()`. `RequestBuilder::header`
+                    // stores a rejected name or value and surfaces it as reqwest's opaque
+                    // `builder error`, which reads as the platform failing and pages; the
+                    // app's own header is its own argument, and it deserves a message that
+                    // names which one.
+                    let name = reqwest::header::HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|_| format!("InvalidFetchHeader: `{k}` is not a header name"))?;
+                    let value = reqwest::header::HeaderValue::from_str(vs).map_err(|_| {
+                        format!("InvalidFetchHeader: the value of `{k}` is not a header value")
+                    })?;
+                    req = req.header(name, value);
+                }
+            }
+        }
+        if let Some(body) = fetch_body_bytes(&init)? {
+            req = req.body(body);
+        }
+
+        let mut resp = req.send().await.map_err(|e| format!("fetch failed: {e}"))?;
+        let status = resp.status().as_u16();
+
+        // A function may raise this via `fetch.maxResponseBytes`, clamped to the
+        // platform ceiling at manifest-resolve time.
+        let max_bytes = self.caps.fetch_max_bytes.unwrap_or(FETCH_MAX_BYTES);
+        // §11.9 — reject oversized responses up front via Content-Length…
+        if let Some(len) = resp.content_length()
+            && len > max_bytes
+        {
+            return Err(format!("response too large ({len} bytes > {max_bytes} cap)").into());
+        }
+        // …but Content-Length is advisory: a chunked response carries none, and
+        // a hostile server can simply lie. So the cap is enforced against bytes
+        // RECEIVED, aborting mid-stream, rather than against bytes retained
+        // after the fact.
+        //
+        // `resp.bytes()` would read the whole body into memory and only then
+        // compare — which bounds what we KEEP, not what we ALLOCATE. That was
+        // survivable at a fixed 10 MiB. It is not once a manifest can raise the
+        // ceiling to `fetch_ceiling_bytes()` on a process shared by every app on
+        // the instance, and it was never bounded at all for a length-less
+        // response.
+        let mut bytes: Vec<u8> = Vec::new();
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| format!("read failed: {e}"))?
+        {
+            // Checked BEFORE extending, so the cap is never exceeded even
+            // transiently by one oversized chunk.
+            if bytes.len() as u64 + chunk.len() as u64 > max_bytes {
+                return Err(
+                    format!("response too large (exceeded the {max_bytes} byte cap)").into(),
+                );
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        // UTF-8 stays the default for back-compat, but it is lossy: every
+        // non-UTF-8 byte becomes U+FFFD, so fetching a PDF/PNG to attach to an
+        // email silently yields a corrupt file. `encoding: "base64"` is the
+        // only way binary survives the crossing — same contract as
+        // `ctx.storage.get`.
+        let encoding = encoding_or(init.get("encoding").and_then(|e| e.as_str()), "utf8");
+        let body = match encoding {
+            "utf8" => String::from_utf8_lossy(&bytes).into_owned(),
+            "base64" => encode_base64(&bytes),
+            other => {
+                return Err(format!(
+                    "ctx.fetch: unknown encoding '{other}' (expected 'utf8' or 'base64')"
+                )
+                .into());
+            }
+        };
+        Ok(serde_json::json!({ "status": status, "body": body, "encoding": encoding }))
+    }
+
+    async fn semantic_query(
+        &self,
+        spec: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
+        // A staging build's semantic pin (#3370), re-scoped here: a host call
+        // runs on a task of its own, which does not inherit the invocation's
+        // task-locals, and the pin is what makes the rollup short-circuit
+        // stand aside for a branch's model. `None` in production.
+        crate::custom_apps_staging_pin::with_staging_pin(
+            self.policy.semantic_pin(),
+            self.semantic_query_unpinned(spec),
+        )
+        .await
+        .map_err(HostError::from)
+    }
+
+    async fn airway_run(
+        &self,
+        pipeline_ref: String,
+        variables: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
+        // Refused outside production by the broker: a run has no environment,
+        // so any run is a production write (`env_policy`).
+        let target = ("airway", pipeline_ref.as_str(), "RUN", "");
+        // A production-admitted invocation can still read a branch — a pin in
+        // scope where the host was built, or a context at a `staging`
+        // revision — and must not start production ELT (previews S9, I9).
+        // The policy decides that too, so the refusal is classified, never a
+        // failure that pages. Checked before anything is seeded.
+        let revision = self
+            .proj_ctx
+            .workspace_manager()
+            .config_manager
+            .revision_id();
+        if let Some(reason) =
+            super::staged_invocation::staged_reason(&self.db, self.policy.semantic_pin(), revision)
+                .await
+        {
+            self.admit_on_branch(HostOp::AirwayRun, target, &reason)
+                .await?;
+        }
+        // Seed the run on the global queue and return the run id. We don't
+        // drive a co-located coordinator (TaskScope::Global) because ELT runs
+        // routinely outlast a function's timeout ceiling — the worker fleet
+        // picks it up and drives it to completion asynchronously. The caller
+        // polls the Orchestrator/runs API for status.
+        let request = StartAirwayRequest {
+            pipeline_ref,
+            variables: if variables.is_null() {
+                None
+            } else {
+                Some(variables)
+            },
+            thread_id: None,
+            resources: Vec::new(),
+            schedule_id: None,
+            trigger: Some("manual".to_string()),
+            logical_date: None,
+            retry_of: None,
+            backfill_from: None,
+            backfill_to: None,
+        };
+        let run_id = self.proj_ctx.start_airway_seed(&self.db, request).await?;
+        Ok(serde_json::json!({ "runId": run_id }))
+    }
+
+    /// `ctx.warehouse.query(database, sql)` — a READ against a named database.
+    ///
+    /// `ctx.query` targets the project's default database, and every other
+    /// named-database surface here is a write — so before this there was no way
+    /// for an app to read a database that was not the default. A per-org OLTP
+    /// database never is: it is the app's own store, sitting beside whatever
+    /// warehouse the project analyses.
+    ///
+    /// Deliberately NOT behind `check_write_destination`. That allowlist exists
+    /// so a function cannot reach the project's source warehouse and modify it;
+    /// a read is not that risk, and `postgres_managed` resolves the read-only
+    /// analyst regardless of who asks. Requiring a *write* declaration to
+    /// perform a read would also mean every read-only app had to ask for write
+    /// access, which is the wrong shape.
+    async fn warehouse_query(
+        &self,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
+        let database = payload
+            .get("database")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "warehouse.query: `database` is required".to_string())?;
+        let sql = payload
+            .get("sql")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "warehouse.query: `sql` is required".to_string())?;
+
+        data_audit::record_db_span(&db_query_summary(sql), Some(database), None);
+        let connector = self.connect(database).await?;
+        let (rows, truncated) =
+            query_with_truncation(&self.query_exec, connector, sql, FUNCTION_MAX_ROWS).await?;
+        let result = serde_json::json!({ "rows": rows, "truncated": truncated });
+        enforce_result_byte_cap(&result)?;
+        Ok(result)
+    }
+
+    async fn warehouse_write(
+        &self,
+        op: String,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
+        let database = payload
+            .get("database")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "`database` is required".to_string())?;
+
+        self.check_write_destination(database, WriteSurface::Warehouse)?;
+        // Resolved against the registry before anything else is decided: the
+        // broker refused an op off the list, and a direct caller gets the
+        // same answer.
+        let host_op =
+            HostOp::sub_op("warehouse", &op).ok_or_else(|| format!("unknown op '{op}'"))?;
+        // After the destination gate, never instead of it (design §4.2).
+        // Outside production the write lands in the mapped database, which
+        // passes the same gate first; an unmapped one is held.
+        let payload_table = payload.get("table").and_then(|v| v.as_str());
+        let verb = op.to_ascii_uppercase();
+        let (database, mapped) = self
+            .write_database(
+                host_op,
+                database,
+                WriteSurface::Warehouse,
+                (
+                    "warehouse",
+                    database,
+                    &verb,
+                    payload_table.unwrap_or_default(),
+                ),
+            )
+            .await?;
+        let database = database.as_str();
+
+        let build = |dialect, strings| match host_op {
+            HostOp::WarehouseExec => payload
+                .get("sql")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .ok_or_else(|| "warehouse.exec: `sql` is required".to_string()),
+            HostOp::WarehouseInsert => build_insert_sql(&payload, false, dialect, strings),
+            HostOp::WarehouseUpsert => build_insert_sql(&payload, true, dialect, strings),
+            _ => Err(format!("unknown op '{op}'")),
+        };
+        // Built, and so checked, before any connection. Once the engine is
+        // known it is built again wherever the engine reads the text
+        // differently — see `engine_spelling`.
+        let sql = build(SqlDialect::Postgres, StringLiteral::Standard)?;
+
+        let summary = db_query_summary(&sql);
+        data_audit::record_db_span(&summary, Some(database), payload_table);
+        let connector = self.connect(database).await?;
+        let (idents, strings) = engine_spelling(self.policy.is_production(), connector.as_ref());
+        let sql = if (idents, strings) == (SqlDialect::Postgres, StringLiteral::Standard) {
+            sql
+        } else {
+            build(idents, strings)?
+        };
+        if let Some(mapped) = &mapped {
+            let fence = mapped.fence(connector.dialect());
+            self.admit_on_mapped(host_op, &fence, &sql, database)
+                .await?;
+        }
+        if host_op == HostOp::WarehouseUpsert {
+            upsert_support::check(connector.dialect())?;
+        }
+        let (_, traceparent) = Self::trace_context();
+        let tag = data_audit::tag(&self.identity, traceparent.as_deref());
+        let plane = data_audit::plane_for_dialect(connector.dialect());
+        let label = format!("warehouse {op}");
+        with_db_timeout(&label, async {
+            // The SQL goes as the app wrote it; the connector decides where the
+            // tag rides, because only it knows what its engine reads as SQL.
+            connector
+                .execute_statement_tagged(&sql, &tag)
+                .await
+                .map_err(|e| format!("warehouse {op} failed: {e}"))
+        })
+        .await?;
+        // The verb decides, not the method: `ctx.warehouse.exec("SELECT …")`
+        // is a read and leaves no row.
+        if data_audit::is_write_verb(&summary.verb) {
+            let table = if summary.table.is_empty() {
+                payload_table.unwrap_or_default().to_string()
+            } else {
+                summary.table
+            };
+            self.note_write(WriteRecord {
+                plane,
+                namespace: database.to_string(),
+                verb: summary.verb,
+                table,
+                rows: None,
+                statements: 1,
+                op: None,
+                note: None,
+            })
+            .await;
+        }
+        Ok(serde_json::json!({ "ok": true }))
+    }
+
+    /// `ctx.tx` and `ctx.oltp.tx` — six verbs over one op (`host/tx_ops.rs`).
+    async fn tx(
+        &self,
+        op: String,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
+        self.tx_op(&op, &payload).await.map_err(HostError::from)
+    }
+
+    /// `ctx.oltp.{query,exec}` — the app's OWN per-org OLTP schema, and nothing
+    /// else (`host/oltp_ops.rs`).
+    async fn oltp(
+        &self,
+        op: String,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
+        self.oltp_op(&op, &payload).await.map_err(HostError::from)
+    }
+
+    /// `ctx.airhouse.{query,exec,append}` — the app's own facts in its
+    /// workspace's Airhouse, in the schema `app_<writer>` derived from its slug.
+    ///
+    /// The credential is the app's, whoever invoked the function, so a schedule
+    /// writes like a click — the stance `ctx.oltp` takes. Every statement is
+    /// checked against the schema before it is sent (`airhouse::sql_rules`):
+    /// reads may name any schema, writes only `app_<writer>.<table>`, and `exec`
+    /// runs no DDL, because tables come from `airhouseMigrations`. Airhouse also
+    /// confines the credential when it supports scoped mints.
+    async fn airhouse(
+        &self,
+        op: String,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
+        self.airhouse_op(&op, &payload)
+            .await
+            .map_err(HostError::from)
+    }
+
+    async fn secrets_set(
+        &self,
+        key: String,
+        value: String,
+    ) -> Result<serde_json::Value, HostError> {
+        // §11.x fail-closed: the `secrets.write` capability is the broker's
+        // gate. Scoped to the app's own `apps/<app_id>/` namespace, so it can
+        // never touch another app's or the project's secrets. The key's name
+        // is logged when it is an identifier; never its value.
+        let name = if super::host_call_attrs::identifier_like(&key) {
+            key.as_str()
+        } else {
+            ""
+        };
+        // Outside production: the environment's own path (`env_homes`).
+        self.set_secret(&key, &value, ("secrets", "", "SET", name))
+            .await?;
+        Ok(serde_json::json!({ "ok": true }))
+    }
+
+    /// `ctx.org.people()` — who is in this org, by name.
+    ///
+    /// # Why this exists
+    ///
+    /// An app that models work assigned to humans had no way to name one. A
+    /// function cannot call `GET /api/orgs/{org}/members`, so apps invent their
+    /// own user ids and hold no human name at all — one of them drops a
+    /// "who conducted this" column rather than guess, and another breaks its
+    /// performance dashboard down by ROLE because a person is not available.
+    /// Every such app grows its own fiction, and the fictions do not agree.
+    ///
+    /// # What it deliberately does not return
+    ///
+    /// No email, no phone. It answers with a display name, a role and a
+    /// role — enough to put somebody on a roster, name an assignee, or label a
+    /// submission. NOT a location: the platform holds no location for an org
+    /// member, and the only place one exists is an app's own `staff` table, so
+    /// promising one here would be a field this query cannot fill.
+    ///
+    /// # Who is in it
+    ///
+    /// **People who can reach this app** — one rule, both halves. Org members,
+    /// who reach an org-visible app by membership; and frontline workers holding
+    /// an explicit `app_members` grant on this app, which is already the only
+    /// way a worker reaches anything.
+    ///
+    /// Each carries `kind: "member" | "frontline"`, and that field is the point:
+    /// a caller that must not name a worker — a document's approver, say — can
+    /// refuse structurally instead of by convention, and one that should name
+    /// them (a submission's author, a roster row) does not have to make a second
+    /// call and union it themselves. Two callers unioning by hand is how two
+    /// people models start, which is the thing this capability exists to end.
+    ///
+    /// It is not a widening: every name here belongs to somebody who can already
+    /// USE the app. A suspended worker is out, by the same column the login and
+    /// the kiosk roster read.
+    ///
+    /// Being able to NAME a colleague is a different need
+    /// from being able to contact them off-platform, and only the first was
+    /// blocking anything. A bundle runs code the tenant did not write; handing
+    /// it the org's address book by default is not a thing to do quietly.
+    ///
+    /// Scoped to `self.org_id`, which the host resolved — never taken from the
+    /// function, so a manifest cannot point this at another tenant.
+    async fn org_people(&self) -> Result<serde_json::Value, HostError> {
+        // The `org.read` gate is the broker's (`FunctionCapabilities::refuse`).
+        org_directory(&self.db, self.org_id, self.app_id)
+            .await
+            .map_err(HostError::from)
+    }
+
+    /// `ctx.org.places()` — the org's locations, hierarchy and external ids.
+    /// Same capability as `people()`: a place is not a secret, and an app
+    /// that shows "Clovis" needs the row before it knows whether the caller
+    /// reaches it. The whole registry, not a reach-scoped slice.
+    async fn org_places(&self) -> Result<serde_json::Value, HostError> {
+        org_places_directory(&self.db, self.org_id)
+            .await
+            .map_err(HostError::from)
+    }
+
+    /// `ctx.org.assignments()` — who holds which position where. Scoped like
+    /// `people()`: the assignments of people who can reach this app, which is
+    /// what makes it not a widening of the directory.
+    async fn org_assignments(&self) -> Result<serde_json::Value, HostError> {
+        org_assignments_directory(&self.db, self.org_id, self.app_id)
+            .await
+            .map_err(HostError::from)
+    }
+
+    /// `ctx.platform.facts(opts)` — ids and counts about every org on the
+    /// deployment, for an internal app (`host/platform_facts`). The
+    /// capability gate is the broker's; the second gate, the app's org among
+    /// the deployment's internal orgs, is this op's and fails closed
+    /// (`platform_facts::admit_org`), then the build. The org is the host's,
+    /// never the function's.
+    async fn platform_facts(
+        &self,
+        opts: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
+        let internal = platform_facts::admit_org(self.org_id)?;
+        let weeks = platform_facts::requested_weeks(&opts)?;
+        platform_facts::cached_reply(&self.db, internal, weeks)
+            .await
+            .map_err(HostError::from)
+    }
+
+    async fn send_email(&self, input: serde_json::Value) -> Result<serde_json::Value, HostError> {
+        // The `email.send` gate is the broker's (`FunctionCapabilities::refuse`).
+        // Per-invocation fan-out cap (this host serves exactly one invocation).
+        let n = self
+            .email_send_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        if n > MAX_EMAILS_PER_INVOCATION {
+            // `TooManyEmails`, not `RateLimitExceeded`: this is the app's own loop
+            // against a cap it can see, which belongs with `TooManyRecipients` and
+            // `TooManyAttachments` and must not page. `RateLimitExceeded` stays the
+            // emailer's label for SES throttling — a platform limit the app cannot
+            // see — so the two no longer share one placement.
+            return Err(format!(
+                "TooManyEmails: this invocation exceeded the \
+                 {MAX_EMAILS_PER_INVOCATION}-email limit"
+            )
+            .into());
+        }
+        // Parsed by reference, so a held send is refused for the same payload
+        // errors production would refuse it for.
+        let parsed =
+            <oxy_app::surface::emails::app_emailer::EmailSendInput as serde::Deserialize>::deserialize(&input)
+                .map_err(|e| format!("InvalidEmailPayload: {e}"))?;
+        // Held where the policy holds email (`env_guard`); elsewhere outside
+        // production it goes to the invoking user alone (`env_homes`).
+        if let Some(held) = self.held_email(&input).await {
+            return Ok(held);
+        }
+        // A key within the documented bound is claimed before anything is
+        // sent; one outside it is left for the emailer to refuse by name.
+        let key = parsed
+            .idempotency_key()
+            .filter(|k| !k.is_empty() && k.len() <= 256)
+            .map(str::to_string);
+        let claim = match key {
+            Some(k) => Some(self.claim_email_key(&k).await?),
+            None => None,
+        };
+        let hash = match claim {
+            Some(email_idempotency::EmailClaim::Taken(prior)) => return Ok(prior),
+            Some(email_idempotency::EmailClaim::Fresh(hash)) => Some(hash),
+            None => None,
+        };
+        let result = self.deliver_email(parsed).await;
+        if let Some(hash) = hash {
+            self.settle_email_claim(&hash, &result).await;
+        }
+        result.map_err(HostError::from)
+    }
+
+    async fn notify(&self, input: serde_json::Value) -> Result<serde_json::Value, HostError> {
+        self.notify_op(input).await.map_err(HostError::from)
+    }
+
+    async fn storage(
+        &self,
+        op: String,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
+        use crate::custom_apps_storage as st;
+
+        // Resolved against the registry, as the broker resolved it: one off
+        // the list is refused as unknown, and a direct caller gets the same
+        // answer. The manifest's `storage.{read,write}` gate and the
+        // environment's hold were the broker's, before anything here ran.
+        // Outside production the op works in the environment's silo, reading
+        // production's same key as a fallback (`env_homes`).
+        let host_op = HostOp::sub_op("storage", &op)
+            .ok_or_else(|| format!("ctx.storage: unknown op '{op}'"))?;
+        let silo = self.storage_silo(host_op)?;
+
+        let str_field = |key: &str| payload.get(key).and_then(|v| v.as_str());
+        let bool_field = |key: &str| payload.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+        let u64_field = |key: &str| payload.get(key).and_then(|v| v.as_u64());
+        let required = |field: &str| format!("ctx.storage.{op}: `{field}` is required");
+
+        match host_op {
+            HostOp::StorageGetUploadUrl => {
+                // `pathname` is the general form; `filename` is the ergonomic
+                // shorthand for "a human picked a file", which lands under
+                // `uploads/`. Generated assets pass `pathname` directly.
+                let pathname = match (str_field("pathname"), str_field("filename")) {
+                    (Some(p), _) => p.to_string(),
+                    (None, Some(f)) => format!("uploads/{f}"),
+                    (None, None) => return Err(required("pathname").into()),
+                };
+                let content_length =
+                    u64_field("contentLength").ok_or_else(|| required("contentLength"))?;
+                // Org-level quota (an environment silo: its own cap). Checked
+                // before the URL is minted, not after the bytes land: a
+                // presigned PUT goes straight to S3, so this is the last moment
+                // oxy can refuse it.
+                self.storage_limit(&silo, content_length).await?;
+                let out = st::get_upload_url(
+                    &silo,
+                    &pathname,
+                    str_field("contentType").unwrap_or(""),
+                    content_length,
+                    u64_field("expiresInSeconds"),
+                    &self.caps.storage_retention,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                // Kept for this invocation: the one mutating `ctx.fetch` an
+                // environment sends is a PUT to a URL minted here.
+                self.note_minted_upload(&silo, &out);
+                serde_json::to_value(out).map_err(|e| HostError::from(e.to_string()))
+            }
+            HostOp::StorageGetDownloadUrl => {
+                let key = str_field("key").ok_or_else(|| required("key"))?;
+                let out = st::get_download_url(
+                    &silo,
+                    key,
+                    u64_field("expiresInSeconds"),
+                    bool_field("download"),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                serde_json::to_value(out).map_err(|e| HostError::from(e.to_string()))
+            }
+            HostOp::StoragePut => {
+                let pathname = str_field("pathname")
+                    .or_else(|| str_field("key"))
+                    .ok_or_else(|| required("pathname"))?;
+                let body = str_field("body").ok_or_else(|| required("body"))?;
+                // base64 is how a BINARY generated asset (PDF, PNG, Parquet)
+                // crosses the isolate's JSON boundary; utf8 is the default for
+                // text a function built itself.
+                let bytes = match encoding_or(str_field("encoding"), "utf8") {
+                    "base64" => decode_base64(body)
+                        .map_err(|e| format!("ctx.storage.put: `body` is not valid base64: {e}"))?,
+                    "utf8" => body.as_bytes().to_vec(),
+                    other => {
+                        return Err(format!(
+                            "ctx.storage.put: unknown encoding '{other}' (expected 'utf8' or \
+                             'base64')"
+                        )
+                        .into());
+                    }
+                };
+                // Checked unconditionally, matching the presigned path above.
+                //
+                // An earlier version exempted `allowOverwrite: true` on the
+                // reasoning that refusing an overwrite pushes the caller to write
+                // under a new name and grow the silo. That only holds when the key
+                // already exists — and the flag does not assert it does. A
+                // function that always passes `allowOverwrite: true` with fresh
+                // pathnames would never have been checked at all, which is exactly
+                // the runaway growth this gate exists to stop. The concern it was
+                // guarding against is moot anyway: past the hard limit *every*
+                // write is refused, so there is no cheaper name to escape to.
+                self.storage_limit(&silo, bytes.len() as u64).await?;
+                let out = st::put(
+                    &silo,
+                    pathname,
+                    bytes,
+                    st::PutOptions {
+                        content_type: str_field("contentType").map(str::to_string),
+                        add_random_suffix: bool_field("addRandomSuffix"),
+                        allow_overwrite: bool_field("allowOverwrite"),
+                        cache_control_max_age: u64_field("cacheControlMaxAge"),
+                    },
+                    &self.caps.storage_retention,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                serde_json::to_value(out).map_err(|e| HostError::from(e.to_string()))
+            }
+            HostOp::StorageGet => {
+                let key = str_field("key").ok_or_else(|| required("key"))?;
+                let encoding = encoding_or(str_field("encoding"), "utf8").to_string();
+                if !matches!(encoding.as_str(), "utf8" | "base64") {
+                    return Err(format!(
+                        "ctx.storage.get: unknown encoding '{encoding}' (expected 'utf8' or \
+                         'base64')"
+                    )
+                    .into());
+                }
+                match st::get(&silo, key).await.map_err(|e| e.to_string())? {
+                    Some((bytes, content_type)) => {
+                        let size = bytes.len();
+                        let body = if encoding == "base64" {
+                            encode_base64(&bytes)
+                        } else {
+                            String::from_utf8_lossy(&bytes).into_owned()
+                        };
+                        Ok(serde_json::json!({
+                            "body": body,
+                            "contentType": content_type,
+                            "size": size,
+                            "encoding": encoding,
+                        }))
+                    }
+                    None => Ok(serde_json::Value::Null),
+                }
+            }
+            HostOp::StorageHead => {
+                let key = str_field("key").ok_or_else(|| required("key"))?;
+                match st::head(&silo, key).await.map_err(|e| e.to_string())? {
+                    Some(meta) => {
+                        serde_json::to_value(meta).map_err(|e| HostError::from(e.to_string()))
+                    }
+                    None => Ok(serde_json::Value::Null),
+                }
+            }
+            HostOp::StorageList => {
+                let out = st::list(
+                    &silo,
+                    str_field("prefix"),
+                    u64_field("limit").map(|v| v as usize),
+                    str_field("cursor").map(str::to_string),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                serde_json::to_value(out).map_err(|e| HostError::from(e.to_string()))
+            }
+            HostOp::StorageDelete => {
+                // One key or a batch, mirroring the object-store idiom.
+                let keys: Vec<String> = match payload.get("keys") {
+                    Some(serde_json::Value::Array(items)) => items
+                        .iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect(),
+                    _ => vec![str_field("key").ok_or_else(|| required("key"))?.to_string()],
+                };
+                let deleted = st::delete(&silo, &keys).await.map_err(|e| e.to_string())?;
+                Ok(serde_json::json!({ "deleted": deleted }))
+            }
+            HostOp::StorageCopy => {
+                let from = str_field("fromKey").ok_or_else(|| required("fromKey"))?;
+                let to = str_field("toPathname").ok_or_else(|| required("toPathname"))?;
+                self.environment_copy_limit(&silo).await?;
+                let out = st::copy(&silo, from, to, bool_field("allowOverwrite"))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                serde_json::to_value(out).map_err(|e| HostError::from(e.to_string()))
+            }
+            _ => Err(format!("ctx.storage: unknown op '{op}'").into()),
+        }
+    }
+}
+
+/// Normalize an author-supplied `encoding` field. Absent, empty, and
+/// whitespace-only all mean "unspecified" → `default`, so `ctx.fetch`,
+/// `ctx.storage`, and `ctx.email.send` attachments all read it the same way:
+/// a stray space shouldn't behave differently per API, and `?? ""` in JS
+/// shouldn't be a distinct error from omitting the field.
+fn encoding_or<'a>(value: Option<&'a str>, default: &'a str) -> &'a str {
+    value
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default)
+}
+
+/// Decode a base64 `ctx.storage` payload, tolerating whitespace/newlines a caller
+/// may have wrapped it in. base64 is the only way binary can cross the isolate's
+/// JSON op boundary.
+fn decode_base64(s: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    use base64::Engine as _;
+    let compact: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+    base64::engine::general_purpose::STANDARD
+        .decode(&compact)
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(&compact))
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+/// Resolve a `ctx.fetch` request body to real bytes.
+///
+/// A request body reaches us as a JS string, so raw binary cannot ride in it:
+/// every byte >= 0x80 is re-encoded as a multi-byte UTF-8 sequence and the far
+/// end receives a corrupt file. `bodyEncoding: "base64"` decodes to real bytes
+/// first, which is what makes uploading a file to an external system possible
+/// at all — the mirror of the `encoding: "base64"` that already exists on the
+/// response side, and the same contract as `ctx.storage.put`.
+///
+/// Deliberately a SEPARATE field from `encoding`: that one names the encoding
+/// of the RESPONSE. One knob cannot mean both, because posting a binary body
+/// and reading back JSON needs them set differently.
+///
+/// Split out of `fetch` so the decision is unit-testable without a live HTTP
+/// round trip.
+fn fetch_body_bytes(init: &serde_json::Value) -> Result<Option<Vec<u8>>, String> {
+    let Some(body) = init.get("body").and_then(|b| b.as_str()) else {
+        return Ok(None);
+    };
+    match encoding_or(init.get("bodyEncoding").and_then(|e| e.as_str()), "utf8") {
+        "utf8" => Ok(Some(body.as_bytes().to_vec())),
+        "base64" => decode_base64(body)
+            .map(Some)
+            .map_err(|e| format!("ctx.fetch: `body` is not valid base64: {e}")),
+        other => Err(format!(
+            "ctx.fetch: unknown bodyEncoding '{other}' (expected 'utf8' or 'base64')"
+        )),
+    }
+}
+
+/// Hard ceiling for a host DB op. The runtime's per-function timeout (≤300s) is
+/// the primary bound, but on the timeout-grace path the isolate thread is
+/// *detached* on the premise that each host op is individually bounded — only
+/// true if the underlying call can't hang forever. This wraps the DB paths most
+/// likely to hang: connector construction (`connect`, i.e. TLS/auth handshake),
+/// query execution, and warehouse `execute_statement`. NOT yet wrapped: the
+/// semantic compile (`resolve_and_compile`, a `spawn_blocking`) and the Airway
+/// run seed — a hang in either can still outlive the backstop (follow-up). Set
+/// above the max function timeout so it only fires as a backstop, never trips a
+/// legitimate long `airwayStep`.
+const HOST_DB_OP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(330);
+
+/// Max `ctx.email.send` calls per function invocation — bounds email fan-out
+/// from a single run. The per-send recipient cap lives in `AppEmailer`.
+const MAX_EMAILS_PER_INVOCATION: usize = 20;
+
+async fn with_db_timeout<T>(
+    label: &str,
+    fut: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    match tokio::time::timeout(HOST_DB_OP_TIMEOUT, fut).await {
+        Ok(r) => r,
+        Err(_) => Err(format!(
+            "{label} exceeded the {}s host DB-op ceiling",
+            HOST_DB_OP_TIMEOUT.as_secs()
+        )),
+    }
+}
+
+/// The connector's `ResultCap` already bounds a query's *raw* result in-pod
+/// (≈256 MB), but that payload is then re-encoded to JSON, shipped over the
+/// broker channel, and parsed into the V8 isolate heap (~3× the bytes) — and
+/// for `ctx.query` it ultimately lands in a browser. Reject a result whose JSON
+/// exceeds this budget with a clear, actionable error rather than spiking
+/// isolate memory. (`ctx.queryStream` is the path for genuinely large scans; it
+/// stays bounded by the connector `ResultCap` since ETL data must flow through.)
+const FUNCTION_QUERY_MAX_BYTES: usize = 64 * 1024 * 1024;
+
+/// Cheap estimate of a value's JSON byte size — walks the tree once with no
+/// allocation, so the byte cap doesn't need a throwaway full serialization (the
+/// runtime serializes the value for real afterward; measuring with `to_vec`
+/// would double-encode every result).
+fn approx_json_bytes(v: &serde_json::Value) -> usize {
+    match v {
+        serde_json::Value::Null => 4,
+        serde_json::Value::Bool(_) => 5,
+        serde_json::Value::Number(_) => 20,
+        serde_json::Value::String(s) => s.len() + 2,
+        serde_json::Value::Array(a) => 2 + a.len() + a.iter().map(approx_json_bytes).sum::<usize>(),
+        serde_json::Value::Object(o) => {
+            2 + o.len()
+                + o.iter()
+                    .map(|(k, val)| k.len() + 4 + approx_json_bytes(val))
+                    .sum::<usize>()
+        }
+    }
+}
+
+fn enforce_result_byte_cap(result: &serde_json::Value) -> Result<(), String> {
+    let bytes = approx_json_bytes(result);
+    if bytes > FUNCTION_QUERY_MAX_BYTES {
+        return Err(format!(
+            "query result too large (~{bytes} bytes > {FUNCTION_QUERY_MAX_BYTES} byte cap); \
+             narrow the query (fewer columns / a tighter filter), aggregate in SQL, or use \
+             ctx.queryStream"
+        ));
+    }
+    Ok(())
+}
+
+/// Read a covering rollup and shape it like `ctx.semantic`'s warehouse answer.
+///
+/// The row cap is pushed into the SQL rather than applied after the fact: the
+/// preagg connection is `open_in_memory()` with no `temp_directory`, so a
+/// high-cardinality `group_by` would build a `serde_json::Value` per cell for
+/// rows the cap then throws away, with nowhere to spill. `max_rows + 1` keeps
+/// `truncated` exact instead of a `len() == max_rows` guess — the same
+/// treatment both branches of the `/semantic-query` route give it, so a
+/// function sees one row ceiling however the question was answered.
+async fn read_rollup(
+    preagg_sql: &str,
+    source: &agentic_semantic::compile::PreaggSource,
+    max_rows: usize,
+) -> Result<serde_json::Value, String> {
+    // The same wrap `/semantic-query` applies, called rather than copied: the
+    // parity claim above only holds while the two produce identical SQL, and a
+    // fourth hand-rolled copy is how that stops being true.
+    let read_sql = oxy_app_core::semantic_limit::wrap_with_limit(preagg_sql, max_rows + 1);
+    let src = source.clone();
+    // Sentry hubs are per thread; keep the invocation's on the blocking pool.
+    let hub = sentry::Hub::current();
+    let value = tokio::task::spawn_blocking(move || {
+        sentry::Hub::run(hub, || {
+            agentic_semantic::preagg::execute_preagg_sql(&read_sql, &src)
+        })
+    })
+    .await
+    .map_err(|e| format!("preagg task panicked: {e}"))?
+    .map_err(|e| e.to_string())?;
+
+    let mut rows = match value.get("rows") {
+        Some(serde_json::Value::Array(rows)) => rows.clone(),
+        _ => Vec::new(),
+    };
+    let truncated = rows.len() > max_rows;
+    rows.truncate(max_rows);
+    Ok(serde_json::json!({ "rows": rows, "truncated": truncated }))
+}
+
+/// Run the injected query executor with a one-row overfetch so `truncated` is
+/// reported correctly: a result of exactly `max_rows` rows is NOT truncated,
+/// but `exec.execute(.., max_rows)` alone can't distinguish "exactly
+/// `max_rows` rows exist" from "there were more and the LIMIT cut it off".
+/// Fetching `max_rows + 1` and trimming the extra row resolves the ambiguity.
+async fn query_with_truncation(
+    exec: &Arc<dyn FunctionQueryExecutor>,
+    connector: Arc<dyn DatabaseConnector>,
+    sql: &str,
+    max_rows: usize,
+) -> Result<(Vec<serde_json::Value>, bool), String> {
+    let mut rows = with_db_timeout("query", exec.execute(connector, sql, max_rows + 1)).await?;
+    let truncated = rows.len() > max_rows;
+    rows.truncate(max_rows);
+    Ok((rows, truncated))
+}
+
+/// Build an `INSERT INTO table (cols) VALUES (...), (...)` statement from
+/// `{ table, rows: [{col: value, ...}, ...], conflictColumns?: [...] }`.
+/// `upsert` additionally appends `ON CONFLICT (conflictColumns) DO UPDATE SET
+/// col = EXCLUDED.col` for every non-key column — the Postgres/DuckDB
+/// upsert syntax, which covers the destinations this is scoped to (§11.3).
+/// [`upsert_support::check`] refuses the others by name before this is sent.
+///
+/// `dialect` decides how identifiers are quoted and `strings` how values are
+/// escaped; [`engine_spelling`] picks both for the connector the statement is
+/// sent to.
+fn build_insert_sql(
+    payload: &serde_json::Value,
+    upsert: bool,
+    dialect: SqlDialect,
+    strings: StringLiteral,
+) -> Result<String, String> {
+    let table = payload
+        .get("table")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "`table` is required".to_string())?;
+    let quote_ident = identifier_quoter(dialect);
+    let (columns, values) = columns_and_values_with(payload, quote_ident, strings)?;
+    let mut sql = format!("INSERT INTO {} {values}", quote_ident(table));
+
+    if upsert {
+        let conflict_columns: Vec<String> = payload
+            .get("conflictColumns")
+            .and_then(|v| v.as_array())
+            .map(|cols| {
+                cols.iter()
+                    .filter_map(|c| c.as_str().map(quote_ident))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if conflict_columns.is_empty() {
+            return Err("warehouse.upsert: `conflictColumns` must be a non-empty array".into());
+        }
+        let conflict_set: std::collections::HashSet<&str> = payload["conflictColumns"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| c.as_str())
+            .collect();
+        let update_assignments: Vec<String> = columns
+            .iter()
+            .filter(|c| !conflict_set.contains(c.as_str()))
+            .map(|c| {
+                let q = quote_ident(c);
+                format!("{q} = EXCLUDED.{q}")
+            })
+            .collect();
+        sql.push_str(&format!(" ON CONFLICT ({}) ", conflict_columns.join(", ")));
+        if update_assignments.is_empty() {
+            sql.push_str("DO NOTHING");
+        } else {
+            sql.push_str(&format!("DO UPDATE SET {}", update_assignments.join(", ")));
+        }
+    }
+
+    Ok(sql)
+}
+
+/// `(col, …) VALUES (…), (…)` from `payload.rows`, a non-empty array of objects
+/// that all carry the first row's columns. Returns the column names too, for
+/// callers that build more around them (`upsert`'s conflict clause).
+///
+/// For Airhouse, which is DuckDB: double-quoted identifiers, and a literal in
+/// which `''` is the only escape.
+fn columns_and_values(payload: &serde_json::Value) -> Result<(Vec<String>, String), String> {
+    columns_and_values_with(payload, quote_ident, StringLiteral::Standard)
+}
+
+/// [`columns_and_values`], quoting columns with `quote_ident` and writing
+/// values as `strings` says the destination reads them.
+fn columns_and_values_with(
+    payload: &serde_json::Value,
+    quote_ident: fn(&str) -> String,
+    strings: StringLiteral,
+) -> Result<(Vec<String>, String), String> {
+    let rows = payload
+        .get("rows")
+        .and_then(|v| v.as_array())
+        .filter(|rows| !rows.is_empty())
+        .ok_or_else(|| "`rows` must be a non-empty array".to_string())?;
+    let first = rows[0]
+        .as_object()
+        .ok_or_else(|| "each row must be an object".to_string())?;
+    let columns: Vec<String> = first.keys().cloned().collect();
+
+    let mut values_sql = Vec::with_capacity(rows.len());
+    for row in rows {
+        let obj = row
+            .as_object()
+            .ok_or_else(|| "each row must be an object".to_string())?;
+        let mut literals = Vec::with_capacity(columns.len());
+        for col in &columns {
+            let value = obj
+                .get(col)
+                .ok_or_else(|| format!("row missing column '{col}'"))?;
+            literals.push(json_value_to_sql_literal(value, strings));
+        }
+        values_sql.push(format!("({})", literals.join(", ")));
+    }
+    let quoted_columns: Vec<String> = columns.iter().map(|c| quote_ident(c)).collect();
+    let values = format!(
+        "({}) VALUES {}",
+        quoted_columns.join(", "),
+        values_sql.join(", ")
+    );
+    Ok((columns, values))
+}
+
+/// The message for a writer-keyed store whose gate is open but whose slug
+/// cannot name a schema. Names every rule the slug can fail, INCLUDING
+/// no-underscore — `app_writer_name` refuses `_` (it would alias a hyphenated
+/// sibling onto one schema), which the identifier rules alone do not cover.
+fn slug_cannot_back_a_schema(store: &str, slug: &str) -> String {
+    format!(
+        "the capability is enabled, but this app's slug '{slug}' cannot back an {store} schema: \
+         to do so a slug must start with a letter, be at most {max} characters, and use only \
+         lowercase letters, digits and hyphens (a `_` is refused — it would collide with the \
+         hyphenated form). A leading digit is a legal app slug but not a legal schema name. \
+         Rename the app to one that qualifies.",
+        max = oxy_oltp::schema::MAX_NAME_LEN,
+    )
+}
+
+/// Double-quote an identifier, escaping embedded `"` (Postgres/DuckDB/
+/// ANSI-style quoting — the destinations `ctx.warehouse` targets).
+fn quote_ident(ident: &str) -> String {
+    format!("\"{}\"", ident.replace('"', "\"\""))
+}
+
+/// Backquote an identifier, escaping embedded backquotes: BigQuery and MySQL
+/// read a double-quoted word as a string.
+fn backquote_ident(ident: &str) -> String {
+    format!("`{}`", ident.replace('`', "``"))
+}
+
+/// Whether `dialect` quotes identifiers with backquotes rather than `"`.
+fn backquotes_identifiers(dialect: SqlDialect) -> bool {
+    dialect == SqlDialect::BigQuery || dialect == SqlDialect::MYSQL
+}
+
+/// How `dialect` quotes an identifier the host builds into SQL.
+fn identifier_quoter(dialect: SqlDialect) -> fn(&str) -> String {
+    if backquotes_identifiers(dialect) {
+        backquote_ident
+    } else {
+        quote_ident
+    }
+}
+
+/// How the statement the host builds must be spelled for `connector`.
+///
+/// Identifiers keep the double quotes production has always sent, and follow
+/// the engine only outside it. Values always follow the engine: a row is
+/// whatever the function was handed, often by an end user, and an engine that
+/// reads a backslash inside a literal would otherwise let one value end its
+/// literal and be read as the rest of the row.
+fn engine_spelling(
+    is_production: bool,
+    connector: &dyn DatabaseConnector,
+) -> (SqlDialect, StringLiteral) {
+    let dialect = connector.dialect();
+    let idents = if !is_production && backquotes_identifiers(dialect) {
+        dialect
+    } else {
+        SqlDialect::Postgres
+    };
+    (idents, connector.string_literal())
+}
+
+/// Render a JSON value as a SQL literal. Strings are escaped as `strings` says
+/// the destination reads them; objects/arrays are serialized to a JSON string
+/// literal (for `jsonb`-typed columns) and escaped the same way, so the engine
+/// reads back the JSON text that was serialized.
+fn json_value_to_sql_literal(value: &serde_json::Value, strings: StringLiteral) -> String {
+    match value {
+        serde_json::Value::Null => "NULL".to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::String(s) => strings.quote(s),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            strings.quote(&value.to_string())
+        }
+    }
+}
+
+pub fn into_arc(host: ProjectFunctionHost) -> Arc<dyn FunctionHost> {
+    Arc::new(host)
+}
+
+/// The HTTP client every `ctx.fetch` of one invocation is sent with.
+///
+/// `ctx.fetch` is defended in two layers:
+///  1. `is_safe_outbound` rejects the request URL up front (scheme, literal
+///     private IPs, internal suffixes).
+///  2. `PublicOnlyDnsResolver` validates every *resolved* IP at connect time,
+///     closing the DNS-rebinding hole the URL string check can't see (a
+///     public hostname whose A record points at 169.254.169.254 / 10.x /
+///     127.x).
+///
+/// Redirects are disabled so a 302 to an internal address can't launder past
+/// either layer on a later hop (reqwest gives no per-hop validation hook) —
+/// and so an upload the environment policy sends to a minted URL
+/// (`env_policy::upload`) goes to that URL or nowhere. A total timeout bounds
+/// the call.
+fn fetch_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .dns_resolver(Arc::new(PublicOnlyDnsResolver))
+        .build()
+        .expect("failed to build ctx.fetch HTTP client")
+}
+
+/// First-layer SSRF check for `ctx.fetch` — rejects non-HTTPS, loopback,
+/// private, link-local, and internal-suffix hosts *by inspecting the URL
+/// string only*. A non-literal hostname that resolves to a private/internal
+/// address (DNS rebinding) passes this check; that case is caught at connect
+/// time by [`PublicOnlyDnsResolver`].
+fn is_safe_outbound(url: &reqwest::Url) -> bool {
+    if url.scheme() != "https" {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let host_for_ip = host
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(host);
+    if let Ok(ip) = host_for_ip.parse::<IpAddr>() {
+        return is_public_ip(&ip);
+    }
+    let lower = host.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "localhost" | "ip6-localhost" | "ip6-loopback"
+    ) {
+        return false;
+    }
+    const INTERNAL_SUFFIXES: &[&str] = &[
+        ".internal",
+        ".local",
+        ".localdomain",
+        ".svc",
+        ".cluster.local",
+    ];
+    !INTERNAL_SUFFIXES.iter().any(|s| lower.ends_with(s))
+}
+
+fn is_public_ip(ip: &IpAddr) -> bool {
+    // Fold an IPv4-mapped IPv6 address (`::ffff:a.b.c.d`) back to IPv4 before
+    // classifying. Otherwise `::ffff:169.254.169.254` (cloud metadata),
+    // `::ffff:10.x`, `::ffff:127.0.0.1` have `segments()[0] == 0` and slip
+    // through the v6 arm below as "public" — and Linux routes a v4-mapped
+    // address on a v6 socket straight to the underlying internal IPv4.
+    // `to_canonical()` (stable since 1.75) makes the v4 checks below apply.
+    let ip = ip.to_canonical();
+    if ip.is_loopback() || ip.is_unspecified() {
+        return false;
+    }
+    match ip {
+        IpAddr::V4(v4) => {
+            !v4.is_private() && !v4.is_link_local() && !v4.is_broadcast() && !v4.is_documentation()
+        }
+        IpAddr::V6(v6) => {
+            // NAT64 (`64:ff9b::/96`) and IPv4-compatible (`::/96`) addresses
+            // embed a v4 address in the low 32 bits. `to_canonical()` folds
+            // v4-*mapped* (`::ffff:a.b.c.d`) but NOT these, so an id like
+            // `64:ff9b::169.254.169.254` (or `::10.0.0.5`) would otherwise pass
+            // the v6 arm below as "public" while pointing at metadata / RFC1918
+            // — reachable on any host with a NAT64 path. Re-run the v4 checks on
+            // the embedded address instead of trusting the v6 prefix.
+            if let Some(v4) = embedded_ipv4(&v6) {
+                return is_public_ip(&IpAddr::V4(v4));
+            }
+            let seg = v6.segments()[0];
+            let link_local = (seg & 0xffc0) == 0xfe80;
+            let unique_local = (seg & 0xfe00) == 0xfc00;
+            !link_local && !unique_local
+        }
+    }
+}
+
+/// Extract the IPv4 address embedded in an IPv4-compatible (`::/96`) or NAT64
+/// (`64:ff9b::/96`) IPv6 address. Returns `None` for every other v6 address.
+///
+/// v4-*mapped* (`::ffff:0:0/96`) is deliberately excluded: [`is_public_ip`]
+/// calls `to_canonical()` first, which already folds it to a real `IpAddr::V4`,
+/// so it never reaches here as a v6 value. Both prefixes handled here are
+/// non-global by design (IPv4-compatible is deprecated; NAT64 is a translation
+/// prefix), so treating anything in them as an embedded v4 cannot mis-block a
+/// legitimately-routable global v6 address.
+fn embedded_ipv4(v6: &std::net::Ipv6Addr) -> Option<std::net::Ipv4Addr> {
+    let seg = v6.segments();
+    let is_v4_compatible = seg[0..6] == [0, 0, 0, 0, 0, 0];
+    let is_nat64 = seg[0] == 0x0064 && seg[1] == 0xff9b && seg[2..6] == [0, 0, 0, 0];
+    if is_v4_compatible || is_nat64 {
+        Some(std::net::Ipv4Addr::from(
+            ((seg[6] as u32) << 16) | seg[7] as u32,
+        ))
+    } else {
+        None
+    }
+}
+
+/// Partition resolved socket addresses into the ones safe to connect to,
+/// dropping any that point at a non-public IP. Factored out of the resolver so
+/// the rebinding decision is unit-testable without real DNS. Returns `Err` with
+/// a diagnostic when *every* resolved address is filtered out (the rebinding
+/// case), so the caller surfaces a clear message instead of an opaque DNS miss.
+fn keep_public_addrs(host: &str, resolved: Vec<SocketAddr>) -> Result<Vec<SocketAddr>, String> {
+    let safe: Vec<SocketAddr> = resolved
+        .into_iter()
+        .filter(|addr| is_public_ip(&addr.ip()))
+        .collect();
+    if safe.is_empty() {
+        return Err(format!("'{host}' resolves only to non-public addresses"));
+    }
+    Ok(safe)
+}
+
+/// Second-layer SSRF defense for `ctx.fetch`: a custom reqwest DNS resolver
+/// that drops every resolved address pointing at a non-public IP. This closes
+/// the DNS-rebinding vector [`is_safe_outbound`] can't see — a public hostname
+/// whose A record resolves to `169.254.169.254` / `10.x` / `127.x`. Validation
+/// happens at resolution (i.e. connect) time, so there is no resolve-then-
+/// reconnect TOCTOU window, and reqwest connects only to an address we vetted.
+#[derive(Debug)]
+struct PublicOnlyDnsResolver;
+
+impl reqwest::dns::Resolve for PublicOnlyDnsResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let host = name.as_str().to_owned();
+            // Port 0: reqwest overrides it with the URL's port; we only care
+            // about the resolved IPs here.
+            let resolved: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0u16))
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?
+                .collect();
+            let safe = keep_public_addrs(&host, resolved)
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
+            let addrs: reqwest::dns::Addrs = Box::new(safe.into_iter());
+            Ok(addrs)
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ── ctx.fetch request bodies ──────────────────────────────────────────
+
+    #[test]
+    fn fetch_body_absent_stays_absent_and_defaults_to_utf8() {
+        assert_eq!(fetch_body_bytes(&json!({})).unwrap(), None);
+        assert_eq!(
+            fetch_body_bytes(&json!({ "body": "hello" })).unwrap(),
+            Some(b"hello".to_vec())
+        );
+        // An explicit empty/whitespace bodyEncoding means "unspecified", the
+        // same as every other encoding field (see `encoding_or`).
+        assert_eq!(
+            fetch_body_bytes(&json!({ "body": "hello", "bodyEncoding": "  " })).unwrap(),
+            Some(b"hello".to_vec())
+        );
+    }
+
+    #[test]
+    fn fetch_body_base64_survives_bytes_that_utf8_would_corrupt() {
+        // 0xFF is not valid UTF-8. Carried as a JS string it becomes U+FFFD and
+        // the far end receives a corrupt file — the exact failure this option
+        // exists to prevent. Note the assertion is that the bytes round-trip
+        // EXACTLY, not merely that decoding succeeds.
+        let raw = vec![0x50u8, 0x4B, 0x03, 0x04, 0xFF, 0x00, 0x80];
+        let b64 = encode_base64(&raw);
+        assert_eq!(
+            fetch_body_bytes(&json!({ "body": b64, "bodyEncoding": "base64" })).unwrap(),
+            Some(raw.clone())
+        );
+        // And the same string WITHOUT the flag is what corruption looks like:
+        // the utf8 path hands on the base64 text itself, not the bytes.
+        assert_ne!(
+            fetch_body_bytes(&json!({ "body": encode_base64(&raw) })).unwrap(),
+            Some(raw)
+        );
+    }
+
+    #[test]
+    fn fetch_body_rejects_bad_base64_and_unknown_encodings() {
+        let err = fetch_body_bytes(&json!({ "body": "not!base64", "bodyEncoding": "base64" }))
+            .unwrap_err();
+        assert!(err.contains("not valid base64"), "{err}");
+        let err = fetch_body_bytes(&json!({ "body": "x", "bodyEncoding": "hex" })).unwrap_err();
+        assert!(err.contains("unknown bodyEncoding"), "{err}");
+    }
+
+    // ── ctx.storage capability gate ─────────────────────────────────────────
+
+    fn storage_caps(read: bool, write: bool) -> FunctionCapabilities {
+        FunctionCapabilities {
+            storage_read: read,
+            storage_write: write,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn storage_delete_and_copy_are_refused_without_write() {
+        // A read-only function must not be able to destroy or overwrite what
+        // is in its app's silo. Both ops used to pass on `storage.read` alone.
+        let read_only = storage_caps(true, false);
+        for op in [HostOp::StorageDelete, HostOp::StorageCopy] {
+            let err = read_only
+                .refuse(op)
+                .expect_err(&format!("`{op:?}` must be refused without storage.write"));
+            assert!(err.starts_with("StorageCapabilityMissing"), "{op:?}: {err}");
+            assert!(err.contains("`storage.write`"), "{op:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn storage_copy_is_refused_without_read() {
+        // `copy` reads its source as well as writing its destination, so write
+        // alone is not enough. `delete` reads nothing, so write alone is.
+        let write_only = storage_caps(false, true);
+        let err = write_only
+            .refuse(HostOp::StorageCopy)
+            .expect_err("`copy` must be refused without storage.read");
+        assert!(err.contains("`storage.read`"), "{err}");
+        for op in [
+            HostOp::StorageDelete,
+            HostOp::StoragePut,
+            HostOp::StorageGetUploadUrl,
+        ] {
+            write_only
+                .refuse(op)
+                .unwrap_or_else(|e| panic!("`{op:?}` needs only storage.write: {e}"));
+        }
+        // Holding both is what a copy needs.
+        storage_caps(true, true)
+            .refuse(HostOp::StorageCopy)
+            .expect("read+write copies");
+    }
+
+    #[test]
+    fn storage_reads_work_with_read_only_and_writes_do_not() {
+        let read_only = storage_caps(true, false);
+        for op in [
+            HostOp::StorageGet,
+            HostOp::StorageList,
+            HostOp::StorageHead,
+            HostOp::StorageGetDownloadUrl,
+        ] {
+            read_only
+                .refuse(op)
+                .unwrap_or_else(|e| panic!("`{op:?}` needs only storage.read: {e}"));
+        }
+        for op in [HostOp::StoragePut, HostOp::StorageGetUploadUrl] {
+            assert!(
+                read_only.refuse(op).is_err(),
+                "`{op:?}` must be refused without storage.write"
+            );
+        }
+    }
+
+    /// Nothing declared refuses every gated op, in the host's words — and
+    /// the registry row, not an arm per op, is what gates it: an op added
+    /// with a capability is refused here without any check of its own.
+    #[test]
+    fn every_gated_op_is_refused_when_nothing_is_declared() {
+        let none = FunctionCapabilities::default();
+        for op in HostOp::ALL {
+            let gated = !matches!(
+                op.spec().capability,
+                Capability::None | Capability::WarehouseWrite
+            );
+            match none.refuse(*op) {
+                Err(refusal) => {
+                    assert!(gated, "{op:?} is ungated yet refused: {refusal}");
+                    assert!(
+                        refusal.contains("has not declared the"),
+                        "{op:?}: {refusal}"
+                    );
+                }
+                Ok(()) => assert!(!gated, "{op:?} must be refused with nothing declared"),
+            }
+        }
+        let everything = FunctionCapabilities::granting_everything();
+        for op in HostOp::ALL {
+            everything
+                .refuse(*op)
+                .unwrap_or_else(|e| panic!("{op:?}: {e}"));
+        }
+    }
+
+    /// A writer the slug cannot back says so, not "capability missing".
+    #[test]
+    fn a_slug_that_backs_no_schema_is_refused_as_that() {
+        let caps = FunctionCapabilities {
+            oltp: WriterCapability::resolve(true, "9lives"),
+            airhouse: WriterCapability::resolve(true, "9lives"),
+            ..Default::default()
+        };
+        for op in [HostOp::OltpExec, HostOp::AirhouseAppend] {
+            let err = caps.refuse(op).unwrap_err();
+            assert!(err.contains("cannot back an"), "{op:?}: {err}");
+            assert!(!err.contains("CapabilityMissing"), "{op:?}: {err}");
+        }
+    }
+
+    // ── build_insert_sql / quote_ident / json_value_to_sql_literal ─────────
+
+    /// BigQuery and MySQL read a double-quoted word as a string, so the host
+    /// backquotes the identifiers it builds for them.
+    #[test]
+    fn a_host_built_insert_quotes_identifiers_as_its_dialect_does() {
+        let payload = json!({ "table": "orders", "rows": [{ "id": 1 }] });
+        for dialect in [SqlDialect::BigQuery, SqlDialect::MYSQL] {
+            assert_eq!(
+                build_insert_sql(&payload, false, dialect, StringLiteral::Standard).unwrap(),
+                "INSERT INTO `orders` (`id`) VALUES (1)"
+            );
+        }
+        assert_eq!(
+            build_insert_sql(
+                &payload,
+                false,
+                SqlDialect::CLICKHOUSE,
+                StringLiteral::Standard
+            )
+            .unwrap(),
+            r#"INSERT INTO "orders" ("id") VALUES (1)"#
+        );
+        assert_eq!(backquote_ident("we`ird"), "`we``ird`");
+    }
+
+    #[test]
+    fn quote_ident_escapes_embedded_quotes() {
+        assert_eq!(quote_ident("orders"), "\"orders\"");
+        assert_eq!(quote_ident(r#"weird"col"#), "\"weird\"\"col\"");
+    }
+
+    #[test]
+    fn oltp_capability_distinguishes_its_two_fail_closed_reasons() {
+        // Gate off → Disabled, whatever the slug.
+        assert!(matches!(
+            WriterCapability::resolve(false, "bookings"),
+            WriterCapability::Disabled
+        ));
+        // Gate on + derivable slug → Enabled, writer derived from the slug
+        // (hyphens → underscores), NOT from the manifest.
+        match WriterCapability::resolve(true, "oltp-bookings") {
+            WriterCapability::Enabled { writer } => assert_eq!(writer, "oltp_bookings"),
+            other => panic!("expected Enabled, got {other:?}"),
+        }
+        // Gate on but the slug can't back a schema → SlugNotDerivable (NOT
+        // Disabled), so the author sees "your slug can't back a schema" rather
+        // than "you didn't declare the capability" — the exact misdiagnosis this
+        // enum exists to prevent. A leading digit, an over-long slug, and an
+        // underscore (which `app_writer_name` refuses to keep the derivation
+        // injective) all resolve here.
+        for bad in [
+            "2fa-app",
+            "1password-sync",
+            "my_app", // an `_` slug — refused so it can't alias `my-app`
+            &"a".repeat(oxy_oltp::schema::MAX_NAME_LEN + 1),
+        ] {
+            match WriterCapability::resolve(true, bad) {
+                WriterCapability::SlugNotDerivable { slug } => assert_eq!(slug, bad),
+                other => panic!("expected SlugNotDerivable for {bad:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn json_value_to_sql_literal_covers_all_variants() {
+        assert_eq!(
+            json_value_to_sql_literal(&json!(null), StringLiteral::Standard),
+            "NULL"
+        );
+        assert_eq!(
+            json_value_to_sql_literal(&json!(true), StringLiteral::Standard),
+            "true"
+        );
+        assert_eq!(
+            json_value_to_sql_literal(&json!(42), StringLiteral::Standard),
+            "42"
+        );
+        assert_eq!(
+            json_value_to_sql_literal(&json!(4.5), StringLiteral::Standard),
+            "4.5"
+        );
+        assert_eq!(
+            json_value_to_sql_literal(&json!("plain"), StringLiteral::Standard),
+            "'plain'"
+        );
+        assert_eq!(
+            json_value_to_sql_literal(&json!("it's"), StringLiteral::Standard),
+            "'it''s'"
+        );
+        // Arrays/objects round-trip through JSON with single quotes escaped.
+        assert_eq!(
+            json_value_to_sql_literal(&json!({"a": "b's"}), StringLiteral::Standard),
+            "'{\"a\":\"b''s\"}'"
+        );
+    }
+
+    /// The four values that separate the rules: a backslash, a quote, the two
+    /// together, and a backslash at the very end of the value.
+    const ESCAPES: &[&str] = &["a\\b", "it's", "x\\' OR 1=1 -- ", "C:\\"];
+
+    /// A string is written the way the destination's engine reads a literal.
+    /// With quote-only escaping, the third value ended its literal on every
+    /// engine that reads a backslash and the fourth swallowed the closing
+    /// quote, so the rest of the row was read as part of the value.
+    #[test]
+    fn a_string_is_escaped_as_its_engine_reads_a_literal() {
+        let written = |rule: StringLiteral| -> Vec<String> {
+            ESCAPES
+                .iter()
+                .map(|v| json_value_to_sql_literal(&json!(v), rule))
+                .collect()
+        };
+        assert_eq!(
+            written(StringLiteral::Standard),
+            ["'a\\b'", "'it''s'", "'x\\'' OR 1=1 -- '", "'C:\\'"],
+            "on DuckDB and Postgres a backslash is an ordinary character"
+        );
+        assert_eq!(
+            written(StringLiteral::Backslash),
+            ["'a\\\\b'", "'it''s'", "'x\\\\'' OR 1=1 -- '", "'C:\\\\'"],
+            "on ClickHouse, MySQL, Snowflake and Redshift the backslash is doubled"
+        );
+        assert_eq!(
+            written(StringLiteral::BackslashOnly),
+            ["'a\\\\b'", "'it\\'s'", "'x\\\\\\' OR 1=1 -- '", "'C:\\\\'"],
+            "on BigQuery the backslash is doubled and the quote is written with one"
+        );
+    }
+
+    /// JSON escapes with backslashes of its own, so an object written for an
+    /// engine that reads them has to double them or the engine stores
+    /// different JSON from what was serialized.
+    #[test]
+    fn a_json_object_keeps_its_own_escapes_on_a_backslash_engine() {
+        let value = json!({ "note": "say \"hi\"", "path": "C:\\" });
+        assert_eq!(
+            json_value_to_sql_literal(&value, StringLiteral::Standard),
+            r#"'{"note":"say \"hi\"","path":"C:\\"}'"#
+        );
+        assert_eq!(
+            json_value_to_sql_literal(&value, StringLiteral::Backslash),
+            r#"'{"note":"say \\"hi\\"","path":"C:\\\\"}'"#
+        );
+    }
+
+    /// The whole statement, for the engine it is sent to: every value stays in
+    /// its own literal, and nothing follows the row list (ClickHouse reads
+    /// anything after `VALUES` as row data).
+    #[test]
+    fn an_insert_keeps_each_value_in_its_own_column() {
+        let payload = json!({
+            "table": "notes",
+            "rows": [{ "a": "x\\' OR 1=1 -- ", "b": "C:\\" }],
+        });
+        assert_eq!(
+            build_insert_sql(
+                &payload,
+                false,
+                SqlDialect::Postgres,
+                StringLiteral::Standard
+            )
+            .unwrap(),
+            "INSERT INTO \"notes\" (\"a\", \"b\") VALUES ('x\\'' OR 1=1 -- ', 'C:\\')"
+        );
+        assert_eq!(
+            build_insert_sql(
+                &payload,
+                false,
+                SqlDialect::Postgres,
+                StringLiteral::Backslash
+            )
+            .unwrap(),
+            "INSERT INTO \"notes\" (\"a\", \"b\") VALUES ('x\\\\'' OR 1=1 -- ', 'C:\\\\')"
+        );
+        assert_eq!(
+            build_insert_sql(
+                &payload,
+                false,
+                SqlDialect::BigQuery,
+                StringLiteral::BackslashOnly
+            )
+            .unwrap(),
+            "INSERT INTO `notes` (`a`, `b`) VALUES ('x\\\\\\' OR 1=1 -- ', 'C:\\\\')"
+        );
+    }
+
+    /// Production keeps its identifier quoting, but the values follow the
+    /// engine there too: Redshift answers as Postgres and reads backslashes.
+    #[test]
+    fn values_follow_the_engine_in_production_and_identifiers_do_not() {
+        let postgres = PostgresConnector::new("h", 5432, "u", "p", "d");
+        let redshift = PostgresConnector::new("h", 5432, "u", "p", "d").redshift();
+        for is_production in [true, false] {
+            assert_eq!(
+                engine_spelling(is_production, &postgres),
+                (SqlDialect::Postgres, StringLiteral::Standard)
+            );
+            assert_eq!(
+                engine_spelling(is_production, &redshift),
+                (SqlDialect::Postgres, StringLiteral::Backslash)
+            );
+        }
+    }
+
+    /// A row with no quote and no backslash is the same bytes on every engine,
+    /// so nothing a working app sends today changes.
+    #[test]
+    fn a_plain_row_is_written_the_same_for_every_engine() {
+        let payload = json!({ "table": "orders", "rows": [{ "id": 1, "name": "ada" }] });
+        for rule in [
+            StringLiteral::Standard,
+            StringLiteral::Backslash,
+            StringLiteral::BackslashOnly,
+        ] {
+            assert_eq!(
+                build_insert_sql(&payload, false, SqlDialect::Postgres, rule).unwrap(),
+                r#"INSERT INTO "orders" ("id", "name") VALUES (1, 'ada')"#,
+                "{rule:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_insert_sql_basic_insert() {
+        let payload = json!({
+            "table": "daily_rollup",
+            "rows": [
+                { "day": "2026-06-13", "store_id": 12, "total": 4821.5 },
+            ],
+        });
+        let sql = build_insert_sql(
+            &payload,
+            false,
+            SqlDialect::Postgres,
+            StringLiteral::Standard,
+        )
+        .unwrap();
+        assert_eq!(
+            sql,
+            r#"INSERT INTO "daily_rollup" ("day", "store_id", "total") VALUES ('2026-06-13', 12, 4821.5)"#
+        );
+    }
+
+    #[test]
+    fn build_insert_sql_multi_row() {
+        let payload = json!({
+            "table": "t",
+            "rows": [
+                { "a": 1, "b": "x" },
+                { "a": 2, "b": "y" },
+            ],
+        });
+        let sql = build_insert_sql(
+            &payload,
+            false,
+            SqlDialect::Postgres,
+            StringLiteral::Standard,
+        )
+        .unwrap();
+        assert_eq!(
+            sql,
+            r#"INSERT INTO "t" ("a", "b") VALUES (1, 'x'), (2, 'y')"#
+        );
+    }
+
+    #[test]
+    fn build_insert_sql_requires_table() {
+        let payload = json!({ "rows": [{ "a": 1 }] });
+        let err = build_insert_sql(
+            &payload,
+            false,
+            SqlDialect::Postgres,
+            StringLiteral::Standard,
+        )
+        .unwrap_err();
+        assert!(err.contains("`table`"));
+    }
+
+    #[test]
+    fn build_insert_sql_requires_non_empty_rows() {
+        let payload = json!({ "table": "t", "rows": [] });
+        let err = build_insert_sql(
+            &payload,
+            false,
+            SqlDialect::Postgres,
+            StringLiteral::Standard,
+        )
+        .unwrap_err();
+        assert!(err.contains("`rows`"));
+    }
+
+    #[test]
+    fn build_insert_sql_requires_consistent_columns() {
+        let payload = json!({
+            "table": "t",
+            "rows": [
+                { "a": 1, "b": 2 },
+                { "a": 1 },
+            ],
+        });
+        let err = build_insert_sql(
+            &payload,
+            false,
+            SqlDialect::Postgres,
+            StringLiteral::Standard,
+        )
+        .unwrap_err();
+        assert!(err.contains("missing column 'b'"));
+    }
+
+    #[test]
+    fn build_insert_sql_upsert_appends_on_conflict() {
+        let payload = json!({
+            "table": "daily_rollup",
+            "rows": [{ "day": "2026-06-13", "store_id": 12, "total": 4821.5 }],
+            "conflictColumns": ["day", "store_id"],
+        });
+        let sql = build_insert_sql(
+            &payload,
+            true,
+            SqlDialect::Postgres,
+            StringLiteral::Standard,
+        )
+        .unwrap();
+        assert_eq!(
+            sql,
+            r#"INSERT INTO "daily_rollup" ("day", "store_id", "total") VALUES ('2026-06-13', 12, 4821.5) ON CONFLICT ("day", "store_id") DO UPDATE SET "total" = EXCLUDED."total""#
+        );
+    }
+
+    #[test]
+    fn build_insert_sql_upsert_all_columns_in_conflict_does_nothing() {
+        let payload = json!({
+            "table": "t",
+            "rows": [{ "a": 1, "b": 2 }],
+            "conflictColumns": ["a", "b"],
+        });
+        let sql = build_insert_sql(
+            &payload,
+            true,
+            SqlDialect::Postgres,
+            StringLiteral::Standard,
+        )
+        .unwrap();
+        assert!(sql.ends_with("DO NOTHING"));
+    }
+
+    #[test]
+    fn build_insert_sql_upsert_requires_conflict_columns() {
+        let payload = json!({
+            "table": "t",
+            "rows": [{ "a": 1 }],
+        });
+        let err = build_insert_sql(
+            &payload,
+            true,
+            SqlDialect::Postgres,
+            StringLiteral::Standard,
+        )
+        .unwrap_err();
+        assert!(err.contains("conflictColumns"));
+    }
+
+    // ── is_safe_outbound / is_public_ip (ctx.fetch SSRF allowlist) ──────────
+
+    fn url(s: &str) -> reqwest::Url {
+        reqwest::Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn rejects_non_https() {
+        assert!(!is_safe_outbound(&url("http://example.com")));
+    }
+
+    #[test]
+    fn allows_public_https_host() {
+        assert!(is_safe_outbound(&url("https://api.example.com/v1")));
+    }
+
+    #[test]
+    fn rejects_loopback_and_private_hosts() {
+        assert!(!is_safe_outbound(&url("https://localhost/")));
+        assert!(!is_safe_outbound(&url("https://127.0.0.1/")));
+        assert!(!is_safe_outbound(&url("https://10.0.0.5/")));
+        assert!(!is_safe_outbound(&url("https://192.168.1.1/")));
+        assert!(!is_safe_outbound(&url("https://[::1]/")));
+    }
+
+    #[test]
+    fn rejects_internal_suffix_hosts() {
+        assert!(!is_safe_outbound(&url("https://service.internal/")));
+        assert!(!is_safe_outbound(&url("https://db.svc/")));
+        assert!(!is_safe_outbound(&url("https://app.cluster.local/")));
+        assert!(!is_safe_outbound(&url("https://box.localdomain/")));
+    }
+
+    #[test]
+    fn allows_public_ip_literal() {
+        assert!(is_safe_outbound(&url("https://93.184.216.34/")));
+    }
+
+    #[test]
+    fn rejects_link_local_ip() {
+        assert!(!is_safe_outbound(&url("https://169.254.1.1/")));
+    }
+
+    #[test]
+    fn rejects_ipv4_mapped_ipv6_internal_literals() {
+        // ::ffff:a.b.c.d must be canonicalized to IPv4 before classification —
+        // otherwise the metadata endpoint (and RFC1918 / loopback) reach the
+        // internal target via a v6-socket-routed v4-mapped address.
+        assert!(!is_safe_outbound(&url(
+            "https://[::ffff:169.254.169.254]/latest/meta-data/"
+        )));
+        assert!(!is_safe_outbound(&url("https://[::ffff:10.0.0.5]/")));
+        assert!(!is_safe_outbound(&url("https://[::ffff:127.0.0.1]/")));
+        // The primitive directly: mapped-internal is rejected, mapped-public
+        // still allowed.
+        assert!(!is_public_ip(
+            &"::ffff:169.254.169.254".parse::<IpAddr>().unwrap()
+        ));
+        assert!(is_public_ip(
+            &"::ffff:93.184.216.34".parse::<IpAddr>().unwrap()
+        ));
+    }
+
+    #[test]
+    fn nat64_and_v4_compatible_embedded_internal_ips_are_blocked() {
+        // NAT64 (`64:ff9b::/96`) and IPv4-compatible (`::/96`) addresses embed a
+        // v4 in the low 32 bits and are NOT folded by `to_canonical()`, so the
+        // embedded v4 must be re-checked. An embedded metadata / RFC1918 / loopback
+        // address must be rejected; an embedded public one still allowed.
+        for internal in [
+            "64:ff9b::169.254.169.254", // NAT64 → cloud metadata
+            "64:ff9b::10.0.0.5",        // NAT64 → RFC1918
+            "64:ff9b::127.0.0.1",       // NAT64 → loopback
+            "::169.254.169.254",        // IPv4-compatible → cloud metadata
+            "::10.0.0.5",               // IPv4-compatible → RFC1918
+        ] {
+            let ip = internal.parse::<IpAddr>().unwrap();
+            assert!(!is_public_ip(&ip), "{internal} must be classed non-public");
+            assert!(
+                !is_safe_outbound(&url(&format!("https://[{internal}]/latest/meta-data/"))),
+                "{internal} must be blocked by is_safe_outbound"
+            );
+        }
+        // An embedded PUBLIC v4 behind NAT64 is still reachable.
+        assert!(is_public_ip(
+            &"64:ff9b::93.184.216.34".parse::<IpAddr>().unwrap()
+        ));
+    }
+
+    // ── keep_public_addrs (DNS-rebinding defense) ───────────────────────────
+
+    fn sa(s: &str) -> SocketAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn keep_public_addrs_filters_private_and_metadata() {
+        // A "public" hostname that resolves to a mix keeps only the public IP.
+        let resolved = vec![sa("169.254.169.254:0"), sa("93.184.216.34:0")];
+        let kept = keep_public_addrs("evil.example.com", resolved).unwrap();
+        assert_eq!(kept, vec![sa("93.184.216.34:0")]);
+    }
+
+    #[test]
+    fn keep_public_addrs_rejects_when_all_private() {
+        // Pure rebinding: every resolved address is internal → hard error.
+        let resolved = vec![sa("169.254.169.254:0"), sa("10.0.0.5:0"), sa("127.0.0.1:0")];
+        let err = keep_public_addrs("evil.example.com", resolved).unwrap_err();
+        assert!(err.contains("non-public"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn keep_public_addrs_passes_all_public() {
+        let resolved = vec![sa("93.184.216.34:0"), sa("1.1.1.1:0")];
+        let kept = keep_public_addrs("api.example.com", resolved.clone()).unwrap();
+        assert_eq!(kept, resolved);
+    }
+
+    /// Write a one-column Parquet with `n` rows and return its path (plus the
+    /// tempdir guard the caller must keep alive).
+    fn rollup_fixture(n: usize) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let path = dir.path().join("rollup.parquet");
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        conn.execute_batch(&format!(
+            "COPY (SELECT i AS n FROM range({n}) t(i)) TO '{}' (FORMAT PARQUET);",
+            path.display()
+        ))
+        .unwrap();
+        (dir, path)
+    }
+
+    #[tokio::test]
+    async fn read_rollup_shapes_the_result_like_the_warehouse_branch() {
+        let (_guard, path) = rollup_fixture(3);
+        let sql = format!(
+            "SELECT n FROM read_parquet('{}') ORDER BY n",
+            path.display()
+        );
+        let result = read_rollup(
+            &sql,
+            &agentic_semantic::compile::PreaggSource::Local(path),
+            10,
+        )
+        .await
+        .expect("rollup read");
+        let rows = result["rows"].as_array().expect("rows array");
+        assert_eq!(rows.len(), 3);
+        // Objects keyed by column name — the same shape `query_with_truncation`
+        // hands back, so a function cannot tell which tier answered.
+        assert_eq!(rows[0]["n"], serde_json::json!(0));
+        assert_eq!(result["truncated"], serde_json::json!(false));
+    }
+
+    #[tokio::test]
+    async fn read_rollup_caps_rows_and_flags_truncation() {
+        let (_guard, path) = rollup_fixture(5);
+        let sql = format!(
+            "SELECT n FROM read_parquet('{}') ORDER BY n",
+            path.display()
+        );
+        let result = read_rollup(
+            &sql,
+            &agentic_semantic::compile::PreaggSource::Local(path),
+            2,
+        )
+        .await
+        .expect("rollup read");
+        assert_eq!(result["rows"].as_array().unwrap().len(), 2);
+        assert_eq!(result["truncated"], serde_json::json!(true));
+    }
+
+    #[tokio::test]
+    async fn read_rollup_reports_a_missing_parquet_rather_than_zero_rows() {
+        // The caller answers from the warehouse on this error. Returning an
+        // empty result instead would be indistinguishable from a rollup that
+        // genuinely has no rows.
+        let missing = std::path::PathBuf::from("/nonexistent/rollup.parquet");
+        let err = read_rollup(
+            "SELECT 1",
+            &agentic_semantic::compile::PreaggSource::Local(missing),
+            10,
+        )
+        .await
+        .expect_err("a missing Parquet must be an error");
+        assert!(!err.is_empty());
+    }
+}
+
+/// `ctx.org.*` without `org.read`; the member is named for all but `people`.
+fn refuse_org(op: HostOp) -> HostError {
+    let text = match op {
+        HostOp::OrgPeople => "OrgCapabilityMissing: this function has not declared the `org.read` \
+             capability (add \"org\": { \"read\": true } to its oxy-app.json entry)"
+            .to_string(),
+        other => org_capability_missing(other.sub_name().unwrap_or_default()),
+    };
+    HostError::capability_missing(CapabilityArea::Org, text)
+}
+
+/// `ctx.oltp` without a usable grant. A writer the slug cannot back says so;
+/// it is not a missing capability, so it carries no area.
+fn refuse_oltp(oltp: &WriterCapability) -> HostError {
+    match oltp {
+        WriterCapability::SlugNotDerivable { slug } => {
+            HostError::backend(slug_cannot_back_a_schema("OLTP", slug))
+        }
+        _ => HostError::capability_missing(
+            CapabilityArea::Oltp,
+            "OltpCapabilityMissing: this function has not declared the `oltp` capability \
+             (add \"oltp\": { \"enabled\": true } to its oxy-app.json entry). The schema \
+             it writes is derived from the app's own slug — the manifest only enables \
+             access.",
+        ),
+    }
+}
+
+/// `ctx.airhouse` without a usable grant; as [`refuse_oltp`].
+fn refuse_airhouse(airhouse: &WriterCapability) -> HostError {
+    match airhouse {
+        WriterCapability::SlugNotDerivable { slug } => {
+            HostError::backend(slug_cannot_back_a_schema("Airhouse", slug))
+        }
+        _ => HostError::capability_missing(
+            CapabilityArea::Airhouse,
+            airhouse_ops::AIRHOUSE_CAPABILITY_MISSING,
+        ),
+    }
+}
+
+/// The people directory, as a free function so it can be tested.
+///
+/// `ProjectFunctionHost` needs a project context, connectors and a workspace to
+/// construct; this needs a database, an org and an app. Splitting them is what
+/// lets the scoping rule — the part with a decision in it — be driven against a
+/// real database without standing up an isolate.
+fn org_capability_missing(member: &str) -> String {
+    format!(
+        "OrgCapabilityMissing: this function has not declared the `org.read` capability \
+         (add \"org\": {{ \"read\": true }} to its oxy-app.json entry) — ctx.org.{member}"
+    )
+}
+
+/// `ctx.org.places()`'s query. The org's whole registry, name-sorted, each
+/// place with its hierarchy and what every integration calls it.
+pub async fn org_places_directory(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+) -> Result<serde_json::Value, String> {
+    let rows = oxy_app_core::operating_graph::readers::location_rows(db, org_id)
+        .await
+        .map_err(|e| format!("ctx.org.places: {e}"))?;
+    Ok(serde_json::json!({ "total": rows.len(), "places": rows }))
+}
+
+/// `ctx.org.assignments()`'s query: every assignment held by somebody in the
+/// app's audience, with the names a screen shows.
+pub async fn org_assignments_directory(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+    app_id: Uuid,
+) -> Result<serde_json::Value, String> {
+    use oxy_app_core::operating_graph::dto::AssignmentsQuery;
+    use oxy_app_core::operating_graph::readers as assignments;
+    let audience = app_audience(db, org_id, app_id).await?.ids;
+    let rows: Vec<_> = assignments::rows(db, org_id, &AssignmentsQuery::default())
+        .await
+        .map_err(|e| format!("ctx.org.assignments: {e}"))?
+        .into_iter()
+        .filter(|a| audience.contains(&a.user_id))
+        .map(|mut a| {
+            // The supervisor is a person too. One the app may not name — an
+            // area manager holding no grant on it — is withheld from the
+            // row, not the row from the app: the assignment is still real.
+            if a.supervisor_id.is_some_and(|s| !audience.contains(&s)) {
+                a.supervisor_id = None;
+                a.supervisor_name = None;
+            }
+            a
+        })
+        .collect();
+    Ok(serde_json::json!({ "total": rows.len(), "assignments": rows }))
+}
+
+pub async fn org_directory(
+    db: &DatabaseConnection,
+    org_id: Uuid,
+    app_id: Uuid,
+) -> Result<serde_json::Value, String> {
+    use entity::{org_frontline_members, users};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+
+    // WHO is in the directory is `app_audience`'s decision — the one rule
+    // `people()` and `assignments()` share. This function only decorates:
+    // a name, an org role for a member, `kind` for both.
+    let Audience {
+        ids: audience,
+        mut members,
+    } = app_audience(db, org_id, app_id).await?;
+    members.sort_by_key(|m| m.user_id);
+
+    // The members' names, one batch; the membership rows came with the
+    // audience, so `org_members` is read once.
+    let member_ids: Vec<Uuid> = members.iter().map(|m| m.user_id).collect();
+    let names: std::collections::HashMap<Uuid, String> = users::Entity::find()
+        .filter(users::Column::Id.is_in(member_ids))
+        .all(db)
+        .await
+        .map_err(|e| format!("ctx.org.people: {e}"))?
+        .into_iter()
+        .map(|u| (u.id, u.name))
+        .collect();
+    let mut people: Vec<serde_json::Value> = members
+        .into_iter()
+        .filter_map(|m| {
+            // A membership whose user row is missing is data drift, not a
+            // person. Dropped rather than emitted with a null name, because
+            // a directory entry nobody can be is worse than a shorter list.
+            let name = names.get(&m.user_id)?;
+            Some(serde_json::json!({
+                "id": m.user_id.to_string(),
+                "name": name,
+                "role": m.role.as_str(),
+                "kind": "member",
+            }))
+        })
+        .collect();
+
+    // Frontline workers: in the audience only with a grant on THIS app, which
+    // is the reason two apps in one org see different frontline slices — a
+    // grant is per-app — and the reason this is not a widening: every name
+    // here belongs to somebody who can already use the app.
+    let workers = org_frontline_members::Entity::find()
+        .filter(org_frontline_members::Column::OrgId.eq(org_id))
+        .find_also_related(users::Entity)
+        .order_by_asc(org_frontline_members::Column::UserId)
+        .all(db)
+        .await
+        .map_err(|e| format!("ctx.org.people: {e}"))?;
+    people.extend(
+        workers
+            .into_iter()
+            .filter(|(w, _)| audience.contains(&w.user_id))
+            .filter_map(|(_, u)| {
+                let u = u?;
+                Some(serde_json::json!({
+                    "id": u.id.to_string(),
+                    "name": u.name,
+                    // `role` is the org-membership vocabulary and a worker has
+                    // none, so it is null rather than an invented "worker" that
+                    // would sort beside owner/admin/member as if it were one.
+                    // `kind` is where the distinction lives.
+                    "role": serde_json::Value::Null,
+                    "kind": "frontline",
+                }))
+            }),
+    );
+
+    Ok(serde_json::json!({ "people": people, "total": people.len() }))
+}

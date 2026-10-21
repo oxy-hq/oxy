@@ -433,29 +433,19 @@ fn push_reap_counters(body: &mut String) {
 /// that endpoint is FleetOk, so a load-balanced read would report whichever
 /// replica happened to answer, which for a per-process number is worse than not
 /// reporting it. Healthy is zero on every replica.
-#[cfg(feature = "custom-app-functions")]
 fn push_abandoned_isolates(body: &mut String) {
     body.push_str(
         "# HELP oxy_abandoned_isolates_total Function isolate threads detached after the termination grace period.\n\
          # TYPE oxy_abandoned_isolates_total counter\n",
     );
+    // A flat zero when this build cannot run functions: the counter is never
+    // incremented, so the series exists on every replica and a scraper cannot
+    // mistake "this build cannot run functions" for "the metric stopped being
+    // reported".
     body.push_str(&format!(
         "oxy_abandoned_isolates_total {}\n",
-        crate::server::api::custom_apps_functions::runtime::abandoned_isolates()
+        oxy_telemetry::metrics::sources::abandoned_isolates()
     ));
-}
-
-/// Without the V8 runtime there are no isolates to abandon. Emitted as a flat
-/// zero rather than omitted, so the series exists on every replica and a
-/// scraper cannot mistake "this build cannot run functions" for "the metric
-/// stopped being reported".
-#[cfg(not(feature = "custom-app-functions"))]
-fn push_abandoned_isolates(body: &mut String) {
-    body.push_str(
-        "# HELP oxy_abandoned_isolates_total Function isolate threads detached after the termination grace period.\n\
-         # TYPE oxy_abandoned_isolates_total counter\n\
-         oxy_abandoned_isolates_total 0\n",
-    );
 }
 
 /// Health of the LISTEN/NOTIFY wake pipeline, as seen by this process.

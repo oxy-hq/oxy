@@ -12,10 +12,10 @@
 use axum::http::StatusCode;
 use entity::service_accounts;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
-use oxy_app::server::api::github_oidc_keys::install_keys_for_tests;
 use oxy_app::server::api::org_api_access::repo_resolve::{Resolved, stub_resolver_for_tests};
 use oxy_auth::github_oidc::GithubOidcClaims;
 use oxy_auth::token::trust_policy_access::RepoIds;
+use oxy_custom_apps::github_oidc_keys::install_keys_for_tests;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
 use uuid::Uuid;

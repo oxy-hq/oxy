@@ -5,19 +5,26 @@ authors.workspace = true
 # Editing this crate re-runs oxy-route-catalog's build script (it watches this
 # tree; see crates/route-catalog/build_route_catalog.rs) but does NOT rebuild
 # oxy-app — the catalog was moved above it for exactly that reason.
-description = "Custom Apps HTTP surface, serving half (the /customer-apps bundle route, health, logs and the browser beacon) — a sibling crate mounted by oxy-server"
+description = "Custom Apps HTTP surface: the /customer-apps bundle route, health, logs and the browser beacon, the Oxy Functions host and V8 runtime, publish and promote, sandboxes, secrets, migrations and the staff console — a sibling crate mounted by oxy-server"
 documentation.workspace = true
 publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+default = ["custom-app-functions"]
+# The V8-isolate runtime for Oxy Functions. On by default so `oxy serve --local`
+# runs the real runtime (design doc §11.8); `--no-default-features` drops V8 and
+# the Functions endpoints go inert. oxy-server forwards this feature, and every
+# crate that depends on this one sets `default-features = false`, so the switch
+# is one place.
+custom-app-functions = ["deno_core", "deno_error"]
+
 [dependencies]
-# What this surface still reaches into oxy-app for: the sandbox-agent-token
-# fence on the serve tree (`oxy_app::surface::serve_tree_refuses`). oxy-app never
-# depends back on this crate, except as a dev-dependency for the function tests
-# that still sit in its `tests/custom_apps` group until the second lift.
-# default-features off so a `--no-default-features` build of oxy-server keeps
-# dropping V8.
+# What this surface reaches into oxy-app for: the platform prelude
+# (`oxy_app::surface`), and nothing else (rule S4,
+# `tests/routing/surface_contract.rs`). oxy-app never depends back on this crate,
+# not even as a dev-dependency, so none of its test binaries links V8.
 oxy-app = { path = "../app", default-features = false }
 oxy-app-core = { workspace = true }       # AppState, the agent-token body, the function seam traits
 oxy-custom-apps = { workspace = true }    # the serve resolver, build store, caches, usage queue
@@ -43,6 +50,63 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 urlencoding = { workspace = true }
 uuid = { workspace = true }
+
+# ── what the functions host, publish, sandboxes, secrets, migrations and the
+# console brought with them (they were oxy-app's) ─────────────────────────────
+deno_core = { workspace = true, optional = true }
+deno_error = { workspace = true, optional = true }
+agentic-connector = { workspace = true, features = [
+    "duckdb",
+    "postgres",
+    "clickhouse",
+    "snowflake",
+    "bigquery",
+    "mysql",
+    "domo",
+] }
+airhouse = { workspace = true, features = ["connector", "rest", "sql-rules", "preview-sql"] }
+sqlparser = { workspace = true, features = ["visitor"] }
+oxy-oltp = { workspace = true }
+agentic-core = { workspace = true }
+agentic-http = { workspace = true }
+agentic-pipeline = { workspace = true }
+agentic-runtime = { workspace = true }
+agentic-semantic = { workspace = true }
+oxy-airlayer-compat = { workspace = true }
+oxy-billing = { workspace = true }
+oxy-tenancy = { workspace = true }
+oxy-slack-client = { workspace = true }
+migration = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json"] }
+log = { workspace = true }
+reqwest = { workspace = true, features = ["stream", "form", "query", "json"] }
+clickhouse = { workspace = true, features = ["rustls-tls"] }
+arrow = { workspace = true, features = ["json"] }
+parquet = { workspace = true }
+duckdb = { workspace = true }
+tempfile = { workspace = true }
+tokio-util = { workspace = true }
+tokio-postgres = { workspace = true }
+include_dir = { workspace = true }
+constant_time_eq = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+tar = { workspace = true }
+flate2 = { workspace = true }
+base64 = { workspace = true, features = ["std"] }
+regex = { workspace = true }
+serde_urlencoded = { workspace = true }
+slugify = { workspace = true }
+url = { workspace = true }
+sqlx = { workspace = true, features = ["runtime-tokio", "tls-rustls", "postgres"] }
+backoff = { workspace = true, features = ["tokio"] }
+sentry = { workspace = true }
+dirs = { workspace = true }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]

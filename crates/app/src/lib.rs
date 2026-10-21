@@ -21,10 +21,6 @@ pub const BUILD_SHA: &str = env!("GIT_HASH");
 pub mod agentic_wiring;
 pub mod airway_boot;
 pub mod cli;
-/// The admin apps list's traceability rule — see the module doc. `oxyc publish`
-/// (`sdk/cli/src/publish/provenance.ts`) mirrors it for its warnings.
-pub mod custom_app_provenance;
-pub mod custom_app_template;
 pub mod emails;
 pub mod integrations;
 pub mod observability_boot;

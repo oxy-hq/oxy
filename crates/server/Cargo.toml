@@ -14,10 +14,11 @@ path = "src/main.rs"
 
 [features]
 default = ["custom-app-functions"]
-# Forwards to oxy-app's V8 (deno_core) Oxy Functions runtime. On by default so a
-# plain build runs the real runtime; `--no-default-features` drops V8 (Functions
-# endpoints go inert) for the fast local loop — see `.cargo/config.toml` bf/rf.
-custom-app-functions = ["oxy-app/custom-app-functions"]
+# Forwards to oxy-api-custom-apps' V8 (deno_core) Oxy Functions runtime. On by
+# default so a plain build runs the real runtime; `--no-default-features` drops V8
+# (Functions endpoints go inert) for the fast local loop — see `.cargo/config.toml`
+# bf/rf.
+custom-app-functions = ["oxy-api-custom-apps/custom-app-functions"]
 
 # Dev-only fast build loop: link oxy-app dynamically (see `oxy-app-dylib` +
 # `just dev-backend-dyn`). Pulls in the dylib shim so `main.rs`'s guarded
@@ -34,7 +35,8 @@ oxy-api-github = { path = "../api-github" }
 oxy-api-tenancy = { path = "../api-tenancy" }
 oxy-api-documents = { path = "../api-documents" }
 oxy-api-frontline = { path = "../api-frontline" }
-oxy-api-custom-apps = { path = "../api-custom-apps" }
+# default-features off so the `custom-app-functions` feature above is the one switch for V8.
+oxy-api-custom-apps = { path = "../api-custom-apps", default-features = false }
 oxy-custom-apps = { workspace = true }
 oxy-route-catalog = { path = "../route-catalog" }
 oxy-api-source-upload = { path = "../api-source-upload" }

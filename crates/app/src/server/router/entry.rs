@@ -77,6 +77,10 @@ pub async fn api_router(
         // Merged by `serve`, which takes it before handing the seams here.
         outer: _,
         outer_decls,
+        function_runtime,
+        // Run by `oxy migrate` and `oxy seed`, which never build this router.
+        post_migrate: _,
+        example_apps: _,
         // Documentation only — `build_openapi_doc` merges it, not the router.
         openapi: _,
     } = seams;
@@ -403,6 +407,13 @@ pub async fn api_router(
     //     trusts the URL's workspace_id.
     let camera_routes = oxy_cameras::routes::router::<AppState>(agentic_state.db.clone());
     let app_routes = public_router.merge(protected_routes).merge(camera_routes);
+    // The function runtime, for the handlers in this crate that run a function
+    // on a person's behalf (a notification's function action). Handed in by the
+    // composition root; absent, those answer that no runtime is available.
+    let app_routes = match function_runtime {
+        Some(runtime) => app_routes.layer(axum::Extension(runtime)),
+        None => app_routes,
+    };
 
     // External API surface (`/external/api`): curated routes, API-key-only
     // auth, wide-open CORS. Built from the SAME shared `app_state` +
@@ -491,6 +502,9 @@ pub async fn internal_api_router(
         background: _,
         outer: _,
         outer_decls: _,
+        function_runtime: _,
+        post_migrate: _,
+        example_apps: _,
         // Documentation only — `build_openapi_doc` merges it, not the router.
         openapi: _,
     } = seams;
@@ -589,15 +603,6 @@ async fn new_agentic_state(
         tls_verification,
         shutdown_token.clone(),
     );
-    // The custom-app log tail's listener rides the same settings, for the
-    // same reason. Installed, not started: the connection opens on this
-    // process's first tail, and most processes never hold one.
-    crate::server::api::custom_apps_tail::listener::install(
-        factory.clone(),
-        tls_verification,
-        shutdown_token.clone(),
-    );
-
     let (router_handle, router_cancel) =
         agentic_runtime::router::PostgresTaskRouter::start_with_options(
             db.clone(),

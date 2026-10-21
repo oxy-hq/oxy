@@ -11,7 +11,6 @@ pub mod airhouse;
 pub(crate) mod airway_config;
 pub mod app_admins;
 pub mod app_publish_tokens;
-pub mod apps;
 pub mod assume;
 pub mod audit;
 pub mod billing;

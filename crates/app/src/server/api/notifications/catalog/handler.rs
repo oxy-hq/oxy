@@ -29,10 +29,10 @@ use uuid::Uuid;
 use super::platform::oxygen;
 use super::source::SourceCatalogue;
 use super::tree::{self, CategoryNode, Facts};
-use crate::server::api::custom_apps_functions::audience::PersonReach;
 use crate::server::api::notifications::preferences::{Reachability, reachability};
 use crate::server::api::notifications::settings::model::Node;
 use crate::server::api::notifications::settings::store::{self, UserNodes};
+use oxy_app_core::audience::PersonReach;
 
 #[derive(Debug, Serialize)]
 pub struct SourceApp {

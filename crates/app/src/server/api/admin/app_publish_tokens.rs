@@ -165,7 +165,7 @@ fn token_event(
 }
 
 pub async fn create_token(
-    _: crate::server::api::custom_apps_agent_refusal::RefuseSandboxAgent,
+    _: oxy_app_core::agent_refusal::RefuseSandboxAgent,
     _: SessionOrLegacyKey<MintPublishToken>,
     actor: RequestActor,
     body: Option<Json<CreateTokenBody>>,
@@ -345,7 +345,7 @@ mod tests {
 }
 
 pub async fn revoke_token(
-    _: crate::server::api::custom_apps_agent_refusal::RefuseSandboxAgent,
+    _: oxy_app_core::agent_refusal::RefuseSandboxAgent,
     actor: RequestActor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TokenResponse>, StatusCode> {

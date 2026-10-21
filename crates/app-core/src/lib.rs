@@ -15,6 +15,7 @@ pub mod agent_body;
 /// production build does not ship constructors for an admin-ceiling credential.
 #[cfg(any(test, feature = "test-fixtures"))]
 pub mod agent_fixture;
+pub mod agent_refusal;
 pub mod app_state;
 pub mod audience;
 pub mod audit;
@@ -26,6 +27,7 @@ pub mod customer_runs;
 pub mod default_branch;
 pub mod forwarded;
 pub mod function_seam;
+pub mod gate_response;
 pub mod http_cache;
 pub mod internal_orgs;
 pub mod llm_usage;
@@ -38,6 +40,7 @@ pub mod pagination;
 pub mod preagg_cache_ctx;
 pub mod preagg_context;
 pub mod process_role;
+pub mod semantic_limit;
 pub mod serve_mode;
 pub mod sql_kind;
 pub mod staging_pin_scope;

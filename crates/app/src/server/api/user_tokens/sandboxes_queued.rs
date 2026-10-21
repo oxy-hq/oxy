@@ -32,7 +32,7 @@ const REASON: &str = "token_ended";
 
 /// One sandbox whose teardown the pass queued.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct QueuedSandbox {
+pub struct QueuedSandbox {
     pub org_id: Uuid,
     pub app_id: Uuid,
     pub environment: String,
@@ -108,7 +108,7 @@ fn entries(
 }
 
 /// Write the event for `token`, which ended at `ended_at`, in `txn`.
-pub(crate) async fn record<C: ConnectionTrait>(
+pub async fn record<C: ConnectionTrait>(
     txn: &C,
     token: &api_tokens::Model,
     ended_at: DateTime<Utc>,

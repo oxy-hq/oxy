@@ -29,6 +29,7 @@ use axum::extract::Path;
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use indexmap::IndexMap;
+use oxy_app_core::function_seam::{FunctionProjectContext, FunctionQueryExecutor};
 use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -412,20 +413,18 @@ pub(crate) async fn execute_function_query(
 }
 
 /// Production
-/// [`FunctionQueryExecutor`](crate::server::api::custom_apps_functions::seam::FunctionQueryExecutor)
+/// [`FunctionQueryExecutor`]
 /// — delegates to [`execute_function_query`] so the read-only gate and
 /// outer-LIMIT wrap stay shared with the custom-app `/query` endpoint.
 ///
 /// Stateless: constructed at the composition root (the serve router / the
 /// scheduled-function worker) and handed to the function runtime as a trait
 /// object, so the runtime never imports this module. See
-/// `custom_apps_functions::seam::FunctionQueryExecutor`.
+/// `oxy_app_core::function_seam::FunctionQueryExecutor`.
 pub struct DataPlaneQueryExecutor;
 
 #[async_trait::async_trait]
-impl crate::server::api::custom_apps_functions::seam::FunctionQueryExecutor
-    for DataPlaneQueryExecutor
-{
+impl FunctionQueryExecutor for DataPlaneQueryExecutor {
     async fn execute(
         &self,
         connector: Arc<dyn DatabaseConnector>,
@@ -435,21 +434,20 @@ impl crate::server::api::custom_apps_functions::seam::FunctionQueryExecutor
         execute_function_query(connector, sql, max_rows).await
     }
 
-    fn handle_function_request<'a>(
-        self: Arc<Self>,
-        request: crate::server::api::custom_apps_functions::seam::FunctionRequest<'a>,
-    ) -> crate::server::api::custom_apps_functions::seam::FunctionResponse<'a> {
-        crate::server::api::custom_apps_functions::handle_function_request(
-            request.org_slug,
-            request.app_slug,
-            request.function_name,
-            request.method,
-            request.uri,
-            request.headers,
-            request.body,
-            self,
-            request.preagg,
+    async fn build_project_context(
+        &self,
+        workspace: &entity::workspaces::Model,
+        user_id: Uuid,
+        project_id: Uuid,
+        role: Option<entity::workspace_members::WorkspaceRole>,
+    ) -> Result<Arc<dyn FunctionProjectContext>, ()> {
+        // The row the caller already read stands in for the revision lookup.
+        crate::server::api::custom_apps_gates::build_project_context_with_fresh_workspace(
+            workspace, user_id, project_id, role,
         )
+        .await
+        .map(|ctx| Arc::new(ctx) as Arc<dyn FunctionProjectContext>)
+        .map_err(|_| ())
     }
 }
 

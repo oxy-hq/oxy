@@ -1113,28 +1113,9 @@ async fn serve_application(
         "custom-app bundle cache budget"
     );
 
-    // Unconditional above, feature-gated here: the bundle cache serves static
-    // assets and exists whether or not the V8 runtime is compiled in, while the
-    // concurrency ceilings only mean anything with it.
-    #[cfg(feature = "custom-app-functions")]
-    {
-        use crate::server::api::custom_apps_functions::limits;
-        let max_concurrency = limits::max_concurrency();
-        let max_org_concurrency = limits::max_org_concurrency();
-        let max_queued = limits::max_queued();
-        let queue_budget_secs = limits::queue_budget().as_secs();
-        let heap_limit_bytes =
-            crate::server::api::custom_apps_functions::runtime::heap_limit_bytes();
-        tracing::info!(
-            target: "oxy.custom_app.admission",
-            max_concurrency,
-            max_org_concurrency,
-            max_queued,
-            queue_budget_secs,
-            heap_limit_bytes = ?heap_limit_bytes,
-            "custom-app function limits"
-        );
-    }
+    // The function concurrency ceilings are resolved at boot the same way, by the
+    // `custom_app_function_limits` background job the composition root hands in
+    // (`SurfaceSeams::background`), because they live with the runtime.
 
     // `/metrics` on its own port, off unless OXY_METRICS_PORT says otherwise.
     // A bind failure is logged and stepped over rather than propagated: losing

@@ -1,6 +1,3 @@
-use crate::server::api::custom_apps_secrets::project_routes::{
-    ProjectSecretWrite, audit_if_app_secret,
-};
 use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 use crate::server::api::middlewares::workspace_context::WorkspaceManagerWorkingCopy;
 use crate::server::service::secret_manager::{
@@ -18,6 +15,7 @@ use oxy::config::model::{DatabaseType, IntegrationType, SnowflakeAuthType};
 use oxy::database::client::establish_connection;
 use oxy_app_core::audit::RequestActor;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
+use oxy_custom_apps::secret_audit::{ProjectSecretWrite, audit_if_app_secret};
 use oxy_shared::errors::OxyError;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
@@ -55,7 +53,7 @@ impl From<SecretInfo> for SecretResponse {
 }
 
 /// Resolve a set of user UUIDs to their emails in one query.
-pub(crate) async fn resolve_user_emails(
+pub async fn resolve_user_emails(
     db: &impl sea_orm::ConnectionTrait,
     ids: &[Uuid],
 ) -> HashMap<Uuid, String> {
@@ -273,7 +271,7 @@ pub async fn bulk_create_secrets(
 /// tenant routes neither list it nor reach it by id — it answers 404 as a row
 /// that does not exist would.
 fn staff_only(name: &str) -> bool {
-    crate::server::api::custom_apps_secrets::scope::is_non_production_app_secret(name)
+    oxy_custom_apps::secret_scope::is_non_production_app_secret(name)
 }
 
 /// List all secrets (without values)

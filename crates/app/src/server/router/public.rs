@@ -26,8 +26,7 @@
 use axum::routing::{get, post};
 
 use crate::api::{auth, billing, healthcheck, user, webhooks};
-use crate::server::api::admin::apps::handlers::{get_build_config, get_org_for_project};
-use crate::server::api::{custom_apps_debug, projects};
+use crate::server::api::projects;
 
 use super::AppState;
 use super::role_router::RoleRouter;
@@ -39,14 +38,6 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
         .route_fleet("/ready", get(healthcheck::readiness_check))
         .route_fleet("/live", get(healthcheck::liveness_check))
         .route_fleet("/version", get(healthcheck::version_info))
-        // Trusted-publishing OIDC exchange — unauthenticated by construction: the
-        // GitHub Actions OIDC JWT in the Authorization header IS the credential.
-        // Returns a short-lived, app-scoped publish token. See
-        // `custom_apps_publish_oidc`.
-        .route_fleet(
-            "/customer-apps/publish/oidc-exchange",
-            post(crate::api::custom_apps_publish_oidc::oidc_exchange_handler),
-        )
         .merge(build_public_token_routes(app_state))
         .route_fleet("/auth/config", get(auth::get_config))
         .route_fleet("/auth/session", get(auth::get_session))
@@ -76,30 +67,6 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
         .route_fleet(
             "/webhooks/toast/orders",
             post(webhooks::toast::toast_order_webhook),
-        )
-        // Custom-app webhooks. Unauthenticated by design — the sender is proven
-        // by an HMAC the PLATFORM verifies against a secret the app's manifest
-        // declares, before any app code runs. A function that declares no
-        // `webhook:` block is a 404 here, so this cannot be walked to enumerate
-        // an app's functions.
-        //
-        // `route_fleet`: it must answer on every replica. A provider retrying
-        // against whichever instance it reaches has no idea which one owns a
-        // workspace, and a webhook that only works on the singleton is a webhook
-        // that silently drops events.
-        .route_fleet(
-            "/webhooks/apps/{org_slug}/{app_slug}/{function_name}",
-            post(webhooks::app_function::app_function_webhook),
-        )
-        // The same, for a non-production environment (`staging`,
-        // `dev-<handle>`), named in the path so a provider that drops a query
-        // string cannot land on production — which this route never reaches.
-        // Verified with that environment's own secret and no fallback; every
-        // unknown, deleting, expired or build-less environment is the same
-        // 404. FleetOk for the reason above: Postgres and the secret store.
-        .route_fleet(
-            "/webhooks/apps-env/{environment}/{org_slug}/{app_slug}/{function_name}",
-            post(webhooks::app_function_env::app_function_env_webhook),
         )
         // Slack-originated traffic. None of these carry a user Authorization
         // header; they're either signature-verified (webhooks) or reached
@@ -140,37 +107,6 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
         .route_fleet(
             "/slack/link/confirm",
             post(crate::integrations::slack::linking::landing::confirm),
-        )
-        // Public build-config endpoint — no auth required. CI reads this at
-        // build time so no per-app env vars need to live in customer-apps repo.
-        .route_fleet(
-            "/apps/{org_slug}/{app_slug}/build-config",
-            get(get_build_config),
-        )
-        // Public: resolve a workspace's org slug so `oxyc publish --project <id>`
-        // can bake the /customer-apps/<org>/<app>/ base path without a hardcoded
-        // orgSlug (same rationale as build-config — ids/slugs aren't secrets).
-        .route_fleet("/org-for-project/{project_id}", get(get_org_for_project))
-        // Diagnostic snapshot for admins — what the server sees about
-        // this app + its manifest. Same cookie-auth + org-membership
-        // gate; human inspection only, shape not guaranteed stable.
-        .route_fleet(
-            "/customer-apps/{org_slug}/{app_slug}/debug",
-            get(custom_apps_debug::get_debug),
-        )
-        // `/customer-apps/{org}/{app}/health` and `/customer-apps/health` (external
-        // liveness for ONE published custom app) moved to the `oxy-api-custom-apps`
-        // sibling crate, with `/logs` and `/errors` below. `oxy-server` merges them
-        // beside this tree through the public seam.
-        // The SERVING answer, as opposed to `/health`'s deployment-integrity
-        // ladder: the success ratio of real traffic over several windows, plus
-        // a multi-window error-budget burn verdict. A ClickHouse read behind
-        // the same inline auth gate as its neighbours, so FleetOk — an
-        // availability endpoint pinned to the singleton would go dark exactly
-        // when that singleton is the thing in trouble.
-        .route_fleet(
-            "/customer-apps/{org_slug}/{app_slug}/availability",
-            get(crate::server::api::custom_apps_availability::get_availability),
         )
         // Project-scoped proxies for custom-app bundles. Auth is
         // performed inline (session cookie or API key) so these sit
@@ -254,34 +190,6 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
         .route_fleet(
             "/projects/{project_id}/semantic/world-model/measure-breakdown",
             get(projects::world_model::get_measure_breakdown),
-        )
-        // Shell bootstrap for `@oxy-hq/sdk/shell` chrome inside bundles:
-        // workspace/org identity + published-apps list + host-aware
-        // product links. Pure Postgres reads behind the same gate chain →
-        // FleetOk (deliberately not pinned in role_manifest.rs).
-        .route_fleet(
-            "/projects/{project_id}/shell-context",
-            get(crate::server::api::custom_apps_shell_context::get_shell_context),
-        )
-        // Bundle chat history for the SDK Ask dock. Pure Postgres reads
-        // behind the same gate chain → FleetOk (not pinned in
-        // role_manifest.rs). `/threads` lists the viewer's threads;
-        // `/threads/{id}` rebuilds a transcript for restore.
-        .route_fleet(
-            "/projects/{project_id}/threads",
-            get(crate::server::api::custom_apps_threads::list_threads),
-        )
-        .route_fleet(
-            "/projects/{project_id}/threads/{thread_id}",
-            get(crate::server::api::custom_apps_threads::get_thread_transcript),
-        )
-        // Bundle-SDK custom event ingest — `useTrackEvent("name", {...})`.
-        // Sits next to /query because both share the same gate chain
-        // (cookie or bearer auth + org-member/app-admin access check).
-        // See `custom_apps_activity::post_event`.
-        .route_fleet(
-            "/customer-apps/{project_id}/events",
-            post(crate::server::api::custom_apps_activity::post_event),
         )
         // Phase 2 — one-shot ask. POST starts a run, GET polls for state.
         // Bundle SDK exposes both behind `useAsk({agentId})`.

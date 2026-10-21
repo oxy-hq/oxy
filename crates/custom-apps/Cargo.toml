@@ -9,6 +9,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+agentic-connector = { workspace = true }
 airhouse = { workspace = true, features = ["connector", "rest"] }
 entity = { workspace = true }
 oxy = { workspace = true }
@@ -38,6 +39,9 @@ futures = { workspace = true }
 # Header and status types only (the serve resolver takes the request's headers
 # and answers with a status); no framework.
 http = { workspace = true }
+# The fetch behind GitHub's OIDC key cache (`github_oidc_keys`).
+jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
+reqwest = { workspace = true, features = ["json"] }
 lru = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true }

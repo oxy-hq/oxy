@@ -12,7 +12,7 @@ use oxy_shared::errors::OxyError;
 
 /// The router's connection factory, honouring `OXY_DATABASE_AUTH_MODE`
 /// exactly as the pool does.
-pub(crate) fn listener_factory_from_env() -> Result<ListenerConfigFactory, OxyError> {
+pub fn listener_factory_from_env() -> Result<ListenerConfigFactory, OxyError> {
     oxy::database::client::listener_factory_from_env()
 }
 
@@ -20,7 +20,7 @@ pub(crate) fn listener_factory_from_env() -> Result<ListenerConfigFactory, OxyEr
 /// `OXY_DATABASE_SSL_MODE`: `require` encrypts without validating (our RDS
 /// and CloudNativePG CAs aren't in the Mozilla bundle); `verify-full`
 /// enforces the full chain and hostname.
-pub(crate) fn listener_tls_verification_from_env() -> Result<TlsVerification, OxyError> {
+pub fn listener_tls_verification_from_env() -> Result<TlsVerification, OxyError> {
     Ok(tls_verification(listener_ssl_mode_from_env()?))
 }
 

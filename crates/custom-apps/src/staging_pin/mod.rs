@@ -12,9 +12,8 @@
 //!   a promoted build's pin and the revision live actually reads;
 //! * `oxy_app_core::staging_pin_scope` — run a future under a pin
 //!   (`with_staging_pin`) and read it back;
-//! * `oxy_app::server::api::custom_apps_staging_pin::request` — read the app
-//!   and the environment out of a browser data-plane request's headers (axum
-//!   `HeaderMap`), then call [`resolve::pin_for_environment`].
+//! * [`request`] — read the app and the environment out of a browser
+//!   data-plane request's headers, then call [`resolve::pin_for_environment`].
 //!
 //! **The live channel ignores pins.** Nothing here is consulted for a request
 //! that is not a staging request (the app's staging host, for a viewer who may
@@ -22,6 +21,7 @@
 //! stays a pointer move.
 
 pub mod drift;
+pub mod request;
 pub mod resolve;
 
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, Statement};

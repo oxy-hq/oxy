@@ -15,6 +15,7 @@
 //! runs only in production: a staging or sandbox app host is refused like
 //! every other write there (`EnvironmentRefused`).
 
+use axum::Extension;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, Method, StatusCode};
@@ -34,6 +35,7 @@ use super::catalog::platform::oxygen;
 use super::inbox_view::Links;
 use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use crate::server::router::AppState;
+use oxy_app_core::function_seam::FunctionRuntime;
 
 /// What tapping an action does.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,6 +85,7 @@ impl IntoResponse for Refused {
 #[instrument(skip_all, fields(id = %id, action = %action_id))]
 pub async fn run(
     State(state): State<AppState>,
+    runtime: Option<Extension<std::sync::Arc<dyn FunctionRuntime>>>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path((id, action_id)): Path<(Uuid, String)>,
     headers: HeaderMap,
@@ -109,7 +112,14 @@ pub async fn run(
                 cache: state.preagg_cache.clone(),
                 renewal_threshold_secs: state.preagg_renewal_threshold_secs,
             };
-            match invoke(&call, &headers, preagg).await {
+            // No runtime on this server (a composition that mounted none): the
+            // function did not run, which is what a failed action says.
+            let Some(Extension(runtime)) = runtime else {
+                return failed(Outcome::Failed(
+                    "the function runtime is not available on this server".into(),
+                ));
+            };
+            match invoke(&call, &headers, preagg, runtime.as_ref()).await {
                 Outcome::Done(result) => json!({ "ok": true, "result": result, "url": null }),
                 other => return failed(other),
             }

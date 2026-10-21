@@ -22,7 +22,7 @@
 //!   thread or run row is written. Fail closed: a lookup error is a refusal.
 //!
 //! Every statement the hold refuses is recorded through the one
-//! `app.staging.held` writer (`custom_apps_staging_held::record_held`) as
+//! `app.staging.held` writer (`oxy_custom_apps::staging_held::record_held`) as
 //! `function = "agent"`, so the console's held list shows it to the developer
 //! who asked. Cancelling on the staging host makes the same decision and
 //! reaches only a run this app's staging ask started ([`staging_run_matches`]).
@@ -38,16 +38,17 @@ use oxy_auth::types::AuthenticatedUser;
 use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 
-use crate::server::api::custom_apps_functions::write_record::{WriteRecord, plane_for_dialect};
-use crate::server::api::custom_apps_staging_held::{HeldActor, HeldRow, record_held};
-use crate::server::api::custom_apps_threads::{PRODUCTION_THREAD_SOURCE, staging_thread_source};
 use agentic_pipeline::platform::preview_stamp::RUN_STAMP;
+use oxy_custom_apps::staging_held::{HeldActor, HeldRow, record_held};
+use oxy_custom_apps::thread_source::{PRODUCTION_THREAD_SOURCE, staging_thread_source};
+use oxy_custom_apps::write_record::{WriteRecord, plane_for_dialect};
 
 use crate::server::api::custom_apps_staging_pin::request::{
-    AppRef, environment_refused, staging_app_for, staging_app_ref,
+    AppRef, staging_app_for, staging_app_ref,
 };
 use crate::server::previews::request_hold::{HeldSink, HeldStatement, HoldScope};
 use crate::server::previews::sql_kind::StatementKind;
+use oxy_app_core::custom_app_env_request::environment_refused;
 
 /// The surface an ask's held rows are listed under, and their `mode`.
 pub const ASK_SURFACE: &str = "agent";
@@ -72,7 +73,7 @@ pub async fn ask_scope(
 }
 
 /// The `threads.source` an ask under `hold` writes, and the only one it may
-/// continue (`custom_apps_threads::staging_thread_source`): production's
+/// continue (`oxy_custom_apps::thread_source::staging_thread_source`): production's
 /// history, or this app's staging history.
 pub fn thread_source(hold: Option<&HoldScope>) -> String {
     match hold {

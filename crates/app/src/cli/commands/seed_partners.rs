@@ -287,7 +287,7 @@ fn seed_id(kind: &str, key: &str) -> Uuid {
 /// One accessor on purpose: every write path that fabricates data gates on the
 /// same definition of "local", because a second, drifting copy is how one seed
 /// ends up safe and its sibling doesn't.
-pub(crate) fn is_local_db() -> bool {
+pub fn is_local_db() -> bool {
     is_local()
 }
 

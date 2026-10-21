@@ -68,6 +68,66 @@ pub mod notices {
 /// The CORS origin allowlist, for routes that gate on where a call came from.
 pub use crate::server::router::is_allowed_origin;
 
+/// The staff-console guards: the layers a surface stacks on its staff routes
+/// (`oxy_owner_or_app_admin_guard` admits an Oxy owner or an app admin;
+/// `platform_cap_guard::require(Action)` the capability the section is about;
+/// `app_scope_guard` which apps a bounded grant may touch). The surface names the
+/// stack; `oxy-app` owns what each layer decides.
+pub mod guards {
+    pub use crate::server::api::middlewares::oxy_owner_or_app_admin_guard::oxy_owner_or_app_admin_guard_middleware;
+    pub use crate::server::api::middlewares::{app_scope_guard, platform_cap_guard};
+}
+
+/// The workspace middleware's role resolution: the role an API token's grant
+/// caps a caller at in a workspace, as every workspace guard sees it.
+pub mod workspace_context {
+    pub use crate::server::api::middlewares::workspace_context::resolve_effective_role;
+}
+
+/// Pod placement: whether this process holds the working copy, and how a
+/// request that needs the Factory is relayed to it.
+pub mod fleet {
+    pub use crate::server::{ide_proxy, role_middleware, serve_safety};
+}
+
+/// The notification service's parts the staff console's "Test notifications"
+/// sends through: the same send path `ctx.notify` uses, the live catalogue and
+/// the per-caller cooldown.
+pub mod notifications {
+    pub use crate::server::api::notifications::catalog::live;
+    pub use crate::server::api::notifications::catalog::source::SourceCatalogue;
+    pub use crate::server::api::notifications::platform::self_test::{COOLDOWN, cooldown_left};
+    pub use crate::server::api::notifications::send::{
+        self, AppRef, Outgoing, SendError, key_hash,
+    };
+}
+
+/// The token lifecycle audit a sandbox's teardown writes when a sandbox agent
+/// token ended (`token.expired_sandboxes_queued`).
+pub mod token_audit {
+    pub use crate::server::api::user_tokens::sandboxes_queued;
+}
+
+/// Project secrets: the email lookup the app-secret listing shares.
+pub mod secrets {
+    pub use crate::server::api::secrets::resolve_user_emails;
+}
+
+/// The Postgres LISTEN/NOTIFY connection settings a surface's own listener
+/// rides, so it connects the way the task router does.
+pub mod listener {
+    pub use crate::server::task_router_listener::{
+        listener_factory_from_env, listener_tls_verification_from_env,
+    };
+}
+
+/// What the demo seed knows that a surface seeding its own rows needs: which
+/// workspace the partner seed made for an org, and whether the database is one a
+/// seed may touch.
+pub mod seed {
+    pub use crate::cli::commands::seed_partners::{is_local_db, seeded_workspace_id};
+}
+
 /// Router state for tests that mount a single handler.
 pub use crate::server::router::bare_app_state;
 
@@ -79,7 +139,7 @@ pub use crate::server::router::AdminSection;
 /// Route-role (pod placement) declarations and the classifier that reads them.
 pub mod roles {
     pub use crate::server::role_manifest::{
-        RouteRole, classify, ensure_fs_writable, init_process_role_from_env,
+        RouteRole, classify, current_process_role, ensure_fs_writable, init_process_role_from_env,
         install_route_declarations_for_tests_with,
     };
 }

@@ -19,8 +19,8 @@ use oxy_shared::errors::OxyError;
 use sea_orm::DatabaseConnection;
 
 use super::OxyProjectContext;
-use crate::server::api::custom_apps_functions::seam::FunctionProjectContext;
 use oxy::config::WorkingCopy;
+use oxy_app_core::function_seam::FunctionProjectContext;
 
 #[async_trait::async_trait]
 impl FunctionProjectContext for OxyProjectContext {

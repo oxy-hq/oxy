@@ -64,11 +64,11 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use self::reject::Rejection;
-use crate::server::api::github_oidc_keys::github_keys;
 use crate::server::api::public_rate_limit::{self, PublicRoute};
 use crate::server::api::user_tokens::dto::{GrantDto, grant_dto};
 use crate::server::api::user_tokens::error::TokenError;
 use crate::server::api::user_tokens::view;
+use oxy_custom_apps::github_oidc_keys::github_keys;
 
 #[derive(Deserialize)]
 struct ExchangeBody {

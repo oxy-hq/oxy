@@ -54,9 +54,7 @@ pub async fn list_grants(
     // browses every org's workspaces to populate the "Add custom app" picker. A bounded
     // grant must see only its own orgs here, or the picker becomes a cross-tenant
     // directory listing.
-    if let Some(orgs) =
-        crate::server::api::admin::apps::handlers::scope_org_filter(&db, &user).await
-    {
+    if let Some(orgs) = super::scope::scope_org_filter(&db, &user).await {
         query = query.filter(workspaces::Column::OrgId.is_in(orgs));
     }
     let all_ws = query.all(&db).await.map_err(db_err)?;

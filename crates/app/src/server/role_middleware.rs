@@ -167,7 +167,7 @@ fn stamp(mut resp: Response<Body>, role: Role) -> Response<Body> {
 /// forwards an `IdeOnly` route; a handler that forwards from inside a
 /// `FleetOk` route applies the same, so the pair an operator reads a hop from
 /// (`forwarded-via: serve@…`, `served-by: ide@…`) holds on both paths.
-pub(crate) fn stamp_forwarded_via(mut resp: Response<Body>, role: Role) -> Response<Body> {
+pub fn stamp_forwarded_via(mut resp: Response<Body>, role: Role) -> Response<Body> {
     let Ok(v) = HeaderValue::from_str(&format!("{}@{}", role.as_str(), worker_id())) else {
         return resp;
     };

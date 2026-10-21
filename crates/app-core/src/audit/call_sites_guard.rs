@@ -33,7 +33,7 @@ const NO_REQUEST_ACTOR: &[(&str, &str)] = &[
         "defines `AuditEntry::new`; its unit tests build entries with no request",
     ),
     (
-        "app/src/server/api/custom_apps_functions/write_record.rs",
+        "custom-apps/src/write_record.rs",
         "the function host: the actor is the invocation's verified identity or the \
          app itself (a schedule, a webhook, a queued run), not the HTTP request",
     ),

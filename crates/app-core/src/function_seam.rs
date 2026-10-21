@@ -24,7 +24,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use axum::http::{HeaderMap, Method, Uri};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 
 use crate::preagg_cache_ctx::PreaggCacheCtx;
 
@@ -66,27 +66,39 @@ pub trait FunctionQueryExecutor: Send + Sync {
         max_rows: usize,
     ) -> Result<Vec<serde_json::Value>, String>;
 
-    /// Run one `/fn/<name>` request through the function runtime.
-    ///
-    /// The serve route reaches the runtime through this object because it is
-    /// the one thing the composition root already layers onto the route for
-    /// the runtime's sake, and the route is in a crate above the runtime's. The
-    /// production executor (`projects::query::DataPlaneQueryExecutor`) answers
-    /// by calling the runtime's entry point, handing itself on as the query
-    /// executor. The default refuses: an executor with no runtime behind it
-    /// (a test fake) cannot run a function, and saying so is better than
-    /// answering as if it had.
-    fn handle_function_request<'a>(
-        self: Arc<Self>,
-        _request: FunctionRequest<'a>,
-    ) -> FunctionResponse<'a> {
-        Box::pin(async move {
-            tracing::error!(
-                "custom-app function invoked through a FunctionQueryExecutor with no function runtime behind it"
-            );
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        })
+    /// The project context a function invocation runs against, built from its
+    /// workspace row: warehouse connectors, workspace config and the Airway
+    /// seed ([`FunctionProjectContext`]). The production executor
+    /// (`projects::query::DataPlaneQueryExecutor`) builds it from the data
+    /// plane's own composition root (`custom_apps_gates`), so the runtime
+    /// depends on this trait and not on `agentic_wiring`. The default refuses:
+    /// an executor with no data plane behind it (a test fake) cannot build one.
+    async fn build_project_context(
+        &self,
+        _workspace: &entity::workspaces::Model,
+        _user_id: uuid::Uuid,
+        _project_id: uuid::Uuid,
+        _role: Option<entity::workspace_members::WorkspaceRole>,
+    ) -> Result<Arc<dyn FunctionProjectContext>, ()> {
+        tracing::error!(
+            "custom-app function invoked through a FunctionQueryExecutor that cannot build a project context"
+        );
+        Err(())
     }
+}
+
+/// Runs a `/fn/<name>` request through the function runtime.
+///
+/// The runtime lives in `oxy-api-custom-apps`, above `oxy-app`; the one
+/// `oxy-app` handler that runs a function on a person's behalf (a
+/// notification's function action) reaches it through this object, which the
+/// composition root hands in (`SurfaceSeams::function_runtime`) and the router
+/// layers onto the API tree as an `Extension`.
+pub trait FunctionRuntime: Send + Sync {
+    /// Run one request exactly as `POST /customer-apps/<org>/<app>/fn/<name>`
+    /// would: authentication, app access, the environment gate, the
+    /// function's capability gates, its rate limit, the invocation row.
+    fn handle<'a>(&'a self, request: FunctionRequest<'a>) -> FunctionResponse<'a>;
 }
 
 /// The per-invocation project context a function runs against — warehouse

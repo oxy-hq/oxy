@@ -205,13 +205,11 @@ pub async fn may_be_told_by(
         .is_some();
     // Asked only when it can change the answer.
     let in_audience = !received
-        && crate::server::api::custom_apps_functions::audience::app_audience(
-            db, app.org_id, app.id,
-        )
-        .await
-        .map_err(DbErr::Custom)?
-        .ids
-        .contains(&user_id);
+        && oxy_app_core::audience::app_audience(db, app.org_id, app.id)
+            .await
+            .map_err(DbErr::Custom)?
+            .ids
+            .contains(&user_id);
     Ok(may_be_told(received, in_audience))
 }
 

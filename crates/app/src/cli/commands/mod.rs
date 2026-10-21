@@ -18,12 +18,10 @@ mod migrate_automations;
 pub mod oltp;
 pub mod run;
 pub mod seed;
-mod seed_apps;
 mod seed_compile;
 mod seed_llm_keys;
-mod seed_partners;
+pub(crate) mod seed_partners;
 mod seed_platform_grants;
-mod seed_storage;
 mod seed_threads;
 pub(crate) mod serve;
 mod start;
@@ -919,11 +917,12 @@ pub async fn cli(
             // `oxy migrate` is the chart's pre-upgrade hook, running the new
             // image before any pod rolls: report the custom apps this release
             // would stop. Report only; it never fails the hook.
-            #[cfg(feature = "custom-app-functions")]
-            eprintln!(
-                "{}",
-                crate::server::api::custom_apps_functions::preflight::run().await
-            );
+            if let Some(report) = seams.post_migrate {
+                eprintln!(
+                    "{}",
+                    report(crate::server::build_identity::build_label()).await
+                );
+            }
         }
         Some(SubCommand::MigrateAutomations(args)) => {
             if let Err(e) = migrate_automations(args) {
@@ -1012,7 +1011,7 @@ pub async fn cli(
         }
 
         Some(SubCommand::Seed(seed_args)) => {
-            handle_seed_command(seed_args).await?;
+            handle_seed_command(seed_args, seams.example_apps).await?;
         }
 
         Some(SubCommand::Clean(clean_args)) => {
@@ -1269,7 +1268,10 @@ async fn handle_check_for_updates() -> Result<(), OxyError> {
     Ok(())
 }
 
-async fn handle_seed_command(seed_args: SeedArgs) -> Result<(), OxyError> {
+async fn handle_seed_command(
+    seed_args: SeedArgs,
+    example_apps: Option<crate::server::router::ExampleAppsSeam>,
+) -> Result<(), OxyError> {
     use seed::*;
     if seed_args.clear {
         // Guard BOTH teardowns UP FRONT. clear_demo has no is_local() gate of its
@@ -1277,7 +1279,7 @@ async fn handle_seed_command(seed_args: SeedArgs) -> Result<(), OxyError> {
         // rejected a non-local DB — a partial, guard-bypassing teardown. Refuse
         // first; delete nothing on a remote DB.
         seed_partners::refuse_if_not_local()?;
-        clear_demo().await?;
+        clear_demo(example_apps).await?;
         seed_partners::clear_partner_tenants().await
     } else {
         // Seeds the demo workspace AND (folded in) the partner + tenant data —
@@ -1287,7 +1289,7 @@ async fn handle_seed_command(seed_args: SeedArgs) -> Result<(), OxyError> {
             compile: !seed_args.no_compile,
             llm_keys: seed_args.llm_keys,
         };
-        seed_demo_with(seed_args.workspace_path, options).await
+        seed_demo_with(seed_args.workspace_path, options, example_apps).await
     }
 }
 

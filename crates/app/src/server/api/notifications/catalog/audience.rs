@@ -1,7 +1,7 @@
 //! The apps that could tell a person something, decided for all of them at
 //! once.
 //!
-//! The inverse of `custom_apps_functions::audience::app_audience`: an app's
+//! The inverse of `oxy_app_core::audience::app_audience`: an app's
 //! audience is its org's members plus the org's active frontline workers
 //! holding a grant on it, so a person's candidate apps are those of the orgs
 //! they belong to, plus the apps they hold a frontline grant on. Each is then
@@ -20,8 +20,8 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use crate::server::api::custom_apps_functions::audience::PersonReach;
 use crate::server::api::notifications::preferences::may_be_told;
+use oxy_app_core::audience::PersonReach;
 
 /// The apps to weigh for the person `reach` describes, in one query: those
 /// with a build in an org they are a member of, or that they hold a grant on

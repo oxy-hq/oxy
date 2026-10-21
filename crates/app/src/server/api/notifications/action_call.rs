@@ -2,7 +2,8 @@
 //! tapped it.
 //!
 //! Not a second way to run a function: the call goes through the app's own
-//! function route (`custom_apps_functions::handle_function_request`) exactly
+//! function route (the runtime in `oxy-api-custom-apps`, reached through
+//! `FunctionRuntime`) exactly
 //! as `POST /customer-apps/<org>/<app>/fn/<name>` would, on the caller's own
 //! credential, so authentication, app access, the environment gate, the
 //! function's capability gates, its rate limit, the invocation row and its
@@ -17,9 +18,8 @@ use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::server::api::custom_apps_functions::handle_function_request;
-use crate::server::api::custom_apps_functions::seam::FunctionQueryExecutor;
 use crate::server::api::middlewares::workspace_context::PreaggCacheCtx;
+use oxy_app_core::function_seam::{FunctionRequest, FunctionRuntime};
 
 /// The most of a function's answer read back. Its result is JSON for a
 /// client, not a download.
@@ -96,26 +96,29 @@ impl FunctionCall {
 }
 
 /// Run `call` through the function route as the caller.
-pub async fn invoke(call: &FunctionCall, caller: &HeaderMap, preagg: PreaggCacheCtx) -> Outcome {
+pub async fn invoke(
+    call: &FunctionCall,
+    caller: &HeaderMap,
+    preagg: PreaggCacheCtx,
+    runtime: &dyn FunctionRuntime,
+) -> Outcome {
     let body = call.body();
     let headers = call.headers(caller, body.len());
     let Ok(uri) = call.uri().parse() else {
         return Outcome::Failed("the function's address is not a valid path".into());
     };
-    let executor: std::sync::Arc<dyn FunctionQueryExecutor> =
-        std::sync::Arc::new(crate::server::api::projects::query::DataPlaneQueryExecutor);
-    let response = handle_function_request(
-        &call.org_slug,
-        &call.app_slug,
-        &call.function,
-        Method::POST,
-        uri,
-        headers,
-        body,
-        executor,
-        preagg,
-    )
-    .await;
+    let response = runtime
+        .handle(FunctionRequest {
+            org_slug: &call.org_slug,
+            app_slug: &call.app_slug,
+            function_name: &call.function,
+            method: Method::POST,
+            uri,
+            headers,
+            body,
+            preagg,
+        })
+        .await;
     let status = response.status();
     let bytes = match axum::body::to_bytes(response.into_body(), MAX_ANSWER_BYTES).await {
         Ok(bytes) => bytes,
