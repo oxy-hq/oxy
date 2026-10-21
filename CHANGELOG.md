@@ -2,6 +2,126 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.157] - 2026-10-21
+
+### 🚀 Features
+
+- Slack notifications reach the right person — unlinked members found by email, platform notices dmed, sender named (#3614)
+- Native push to ios and android (apns, fcm) with the notification id, plus a test notification endpoint (#3625)
+- Mobile sign-in with pkce and an oxygen:// redirect, plus GET /api/me/apps for the native apps (#3624)
+- Notification categories for mobile, a notifications page, and mutes by app, category and kind (#3626)
+- Platform facts carry each app's customer use and the org's priced llm cost (#3637)
+- Deep notification settings: pause, quiet hours, per-node channels and floors, device controls (#3640)
+- Custom-app log tail — a live sse tail of an environment's function output and oxyc logs --follow (#3638)
+- Sdk manifest schema as the one oxy-app.json contract; one-step first publish (#3645)
+- Mobile ios and android apps for milestone a, token sign-in, apps, app webview and notifications (#3628)
+- Mobile ios browser sign-in, an apps-first home with ask, and push registration (#3633)
+- Custom-app promote and rollback, plus schedules, webhooks and run now outside production (#3639)
+- Ios simulator push from a debug server, and mobile sign-in goes straight to the chosen provider (#3631)
+- Web push prompt in the inbox, and pushes that name their app and kind (encrypted, ids and config only) (#3642)
+- Oxyc fn dev runs a function locally on the testing context (#3676)
+- Custom app console sends a test notification as the app, to the caller alone (#3706)
+- Admin custom-app secrets per environment, promote warnings and sandbox list (#3619)
+- Mobile milestone b app work: android browser sign-in, home, svg icons, ask, notification settings, ios fixes (#3672)
+- Custom-app open tabs detect new builds and recover stale chunks (#3620)
+- Oxyc device-code approval for agents no browser can reach (#3724)
+- The device-code approver is told through notifications; GitHub-signed custom-app webhooks; sandbox mints by org/app (#3723)
+
+### 🐛 Bug Fixes
+
+- Predict impact form is optional, absent for a recomputed non-linear composite (#3555)
+- Semantic query results carry iso timestamps, not rust debug strings (#3634)
+- Orchestrator heartbeat survives one failed write and stop always fires its tokens (#3573)
+- Agentic-runtime fences every owned queue write on claim_epoch (#3661)
+- Custom-app log tail requires app admin for every environment (#3664)
+- Examples analytics agent asks for claude-sonnet-4-6, a model its config declares, so it runs (#3671)
+- Mobile ios icons load without flashing monograms, and what-moved asks a question ask can answer (#3670)
+- Batch custom-app handlers write the same audit rows as the single ones (#3691)
+- Run-failed notices alert once per failing streak with a daily reminder, not on every failed run (#3680)
+- Partner console takes AuditedBy from the admin apps handlers (#3695)
+- Airhouse usage test compares timestamps at postgres precision (#3697)
+- Agentic-runtime drops a child result its parent no longer waits for (#3689)
+- Task-kind and route-catalog scanners follow the registry into oxy-server (#3714)
+- A missing op context refuses the host call instead of panicking (#3711)
+- Agentic-runtime boot cleanup leaves runs a live peer is driving (#3704)
+- Oxy-app compiles again after the api-custom-apps serving lift (#3715)
+- Custom apps sandbox refusal test covers the console's test notification route (#3710)
+- Simulation probe reads induced composite inputs by their source alias (#3617)
+- Remount every custom-app route, provide the required background jobs, wire the function runtime and seed hooks after the api-custom-apps lift (#3719)
+- Predict baseline reads every input a reached composite reads, induced ones by their source alias (#3651)
+- Test scanners and the sandbox fixture follow the custom-apps vertical into its crate (#3721)
+- Oxy-api-custom-apps database tests join the serial-db group (#3726)
+- Oxyc standalone binaries compile tsdown's bundle, so the sdk testing subpath resolves (#3727)
+- Api-custom-apps skills symlink resolves, and two guard messages name the moved crate (#3725)
+- Admin user directory and status honour a bounded staff grant (#3622)
+- Postgres connector reports the server's refusal, not the last unreachable address (#3729)
+
+### 💼 Other
+
+- Oxyc ci template and init-ci generate pnpm 11 setups (#3621)
+- *(deps)* Bump coverallsapp/github-action from 2.3.7 to 2.3.8 (#3611)
+
+### 🚜 Refactor
+
+- Oxy functions engine seam and deno_core 0.412 bump (#3627)
+- Report the image tag, not the semver, in the api, the version badge and deploy messages (#3623)
+- Telemetry service.version names the image tag, shared with /api/version (#3630)
+- Web-app one app lifecycle card and shared lifecycle query (#3644)
+- One host-op registry; broker enforces capability and env policy (#3647)
+- Seed the oxy-custom-apps domain crate with the seam-free modules (#3677)
+- Typed build state and lock-resolved targets for the custom-app production move (#3678)
+- Retire the apps build-id columns, environments are the only pointer store (#3685)
+- One mount and one guard stack for the admin app routes; one app verdict at the api edge (#3674)
+- Typed host errors for oxy functions, text unchanged (#3684)
+- Oxyc calls the customer-apps routes, not the admin alias (#3682)
+- Stop mirroring the retired apps build-id columns (#3686)
+- Compiled_reader and preagg_context move down to oxy-app-core (#3683)
+- Drop the retired apps build-id columns (#3690)
+- Delete the /api/admin/apps alias, /api/customer-apps is the only mount (#3694)
+- Custom-app auth, cache and environment-resolution modules move down to oxy-custom-apps (#3696)
+- Functions seam traits, audience types and the job trigger move below oxy-app (#3701)
+- Keep the access-verdict cache accessors private to oxy-custom-apps (#3700)
+- Custom-app staging pin logic moves down to oxy-custom-apps (#3702)
+- Oxy-server hands the custom-app task kinds, background work and outer mount in through SurfaceSeams (#3712)
+- The remaining custom-app leaves and the notification service move down to oxy-app-core (#3709)
+- The custom-app gate's decision half moves down to oxy-custom-apps (#3708)
+- Oxy-api-custom-apps serves the custom-app bundle, storage, health, logs and activity routes (#3713)
+- Oxy-api-custom-apps owns functions, publish, sandboxes, secrets, migrations and the admin console; v8 leaves oxy-app (#3717)
+
+### 📚 Documentation
+
+- World model calibration layer and a comparison with palantir's ontology (#3570)
+- Mobile host app proposal, native ios and android apps to open custom apps and receive their notifications (#3613)
+- Add ClickBench performance results to the Airhouse page (#3648)
+- Palantir replenishment app shown in red as the manual engineering step (#3649)
+- Custom-apps architecture assessment and refactor roadmap (#3643)
+- Palantir comparison frames the ontologies as transaction-first vs. analytics-first (#3650)
+- Gateway, the software factory, joins pylon and matrix as the top layer of oxygen nexus (#3655)
+- Gateway says the sdk runs agents and automations configured in the project but does not create them (#3658)
+- Custom-apps roadmap status after the wave-1 merges (#3660)
+- Company-facing platform roadmap (#3663)
+- Custom-apps roadmap marks #3659 merged and the open prs as reviewed (#3666)
+- Custom-apps roadmap gets a deferred list and corrected per-request numbers (#3692)
+- Refresh ownership matrix + CODEOWNERS (weekly) (#3667)
+- Custom-apps roadmap records the second lift and closes wave 3 with measured numbers (#3720)
+
+### ⚡ Performance
+
+- Cache function artifacts and resolved env, one invocation pipeline (#3659)
+- Bounded custom-app caches, one cached resolver, cached data-plane gate (#3646)
+- Custom-app usage writes leave the request path; compressed html is memoised (#3679)
+- Custom-app usage batches also land in the workspace airhouse (#3688)
+- A function invocation reaches v8 in 12 queries, not 14 (#3698)
+- Oxy functions run on pooled isolates started from a snapshot (#3699)
+- A function invocation reaches v8 in 11 queries (6 for a member); no-role memo and one workspace read (#3707)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release @oxy-hq/cli 0.9.0, @oxy-hq/vite-plugin 0.3.0 and @oxy-hq/create-oxy-app 0.6.0 (#3629)
+- Open-source mirror leaves out mobile/, the native apps stay internal (#3635)
+- Test job adds swap before its test-compile memory peak, and logs a memory watermark (#3632)
+- Give the test job's postgres services 1g of shared memory (#3665)
+
 ## [0.5.156] - 2026-10-15
 
 ### 🚀 Features
@@ -44,6 +164,7 @@ All notable changes to this project will be documented in this file.
 - *(deps)* Bump docker/build-push-action from 7.3.0 to 7.4.0 (#3606)
 - *(deps)* Bump jlumbroso/free-disk-space from 1.3.1 to 2.0.0 (#3605)
 - *(deps)* Bump the prod-npm-minor-dependencies group across 1 directory with 32 updates (#3609)
+- *(deps)* Bump docker/setup-buildx-action from 4.3.0 to 4.4.1 (#3612)
 
 ### 📚 Documentation
 
@@ -62,6 +183,7 @@ All notable changes to this project will be documented in this file.
 - Automated review pipeline with focused lenses, a verifier, review-gate and weekly metrics (#3577)
 - Reconcile builder knowledge cards with sdk/cli/skills (#3595)
 - Rust jobs install 1.98.1 again — dependabot moved the toolchain pin to a rust that does not exist (#3604)
+- Release 0.5.156 (#3564)
 
 ## [0.5.155] - 2026-10-07
 
