@@ -1,9 +1,29 @@
 //! The three task kinds a sandbox queues, `custom_app_sandbox_teardown`,
 //! `custom_app_sandbox_migrations` and `custom_app_sandbox_oltp`: each is
-//! registered with the worker fleet,
+//! handed to the worker fleet by `oxy-server`,
 //! and each is filed as a platform daemon wherever a daemon is told from the
 //! tenant's own work. Source scans — the registry and two of the three lists
 //! are private to their crates.
+
+/// The task kinds `oxy-server` hands the worker fleet (`SurfaceSeams::tasks`),
+/// read from `custom_apps_seams::tasks` with whitespace removed. The registry
+/// builder in `oxy-app` registers whatever it is handed, so the kind is named
+/// here, not there; `custom_app_functions_manual_run_guards` pins that the
+/// builder registers every seam and that `surface_seams` fills the field.
+fn handed_in_tasks() -> String {
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../server/src/custom_apps_seams.rs"),
+    )
+    .expect("read crates/server/src/custom_apps_seams.rs");
+    let from = source
+        .find("fn tasks(")
+        .expect("`custom_apps_seams::tasks` is gone");
+    let body = &source[from..];
+    let body = &body[..body
+        .find("fn background(")
+        .expect("`background` follows `tasks`")];
+    body.split_whitespace().collect()
+}
 
 /// A sandbox's task kinds are filed as platform daemons everywhere a
 /// daemon is told from the tenant's own work: the coordinator's run feed
@@ -48,64 +68,46 @@ fn the_sandbox_task_kinds_are_platform_daemons_in_every_list() {
     }
 }
 
-/// The worker fleet runs a sandbox's migrations only if the registry names
+/// The worker fleet runs a sandbox's migrations only if `oxy-server` hands in
 /// their kind.
 #[test]
 fn the_migrations_executor_is_registered_for_its_kind() {
-    let source = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/server/router/recovery.rs"),
-    )
-    .expect("read router/recovery.rs");
-    let registry = &source[source
-        .find("fn build_custom_task_registry(")
-        .expect("the registry builder")..];
-    let squeezed: String = registry.split_whitespace().collect();
+    let squeezed = handed_in_tasks();
     assert!(
         squeezed.contains(
-            "reg.register(migrations_task::SANDBOX_MIGRATIONS_KIND,\
-             Arc::new(migrations_task::SandboxMigrationsExecutor{db:db.clone()}),);"
+            "TaskSeam{kind:migrations_task::SANDBOX_MIGRATIONS_KIND,\
+             build:|deps|{Arc::new(migrations_task::SandboxMigrationsExecutor{db:deps.db.clone(),})},}"
         ),
-        "`build_custom_task_registry` no longer registers the sandbox migrations"
+        "`custom_apps_seams::tasks` no longer hands in \
+         the executor for SANDBOX_MIGRATIONS_KIND"
     );
 }
 
 /// The worker fleet creates, seeds and migrates a sandbox's OLTP schema only
-/// if the registry names its kind.
+/// if `oxy-server` hands in its kind.
 #[test]
 fn the_oltp_schema_executor_is_registered_for_its_kind() {
-    let source = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/server/router/recovery.rs"),
-    )
-    .expect("read router/recovery.rs");
-    let registry = &source[source
-        .find("fn build_custom_task_registry(")
-        .expect("the registry builder")..];
-    let squeezed: String = registry.split_whitespace().collect();
+    let squeezed = handed_in_tasks();
     assert!(
         squeezed.contains(
-            "reg.register(oltp_task::SANDBOX_OLTP_KIND,\
-             Arc::new(oltp_task::SandboxOltpExecutor{db:db.clone()}),);"
+            "TaskSeam{kind:oltp_task::SANDBOX_OLTP_KIND,\
+             build:|deps|{Arc::new(oltp_task::SandboxOltpExecutor{db:deps.db.clone(),})},}"
         ),
-        "`build_custom_task_registry` no longer registers the sandbox OLTP schema task"
+        "`custom_apps_seams::tasks` no longer hands in \
+         the executor for SANDBOX_OLTP_KIND"
     );
 }
 
-/// The worker fleet runs the task only if the registry names its kind.
+/// The worker fleet runs the task only if `oxy-server` hands in its kind.
 #[test]
 fn the_teardown_executor_is_registered_for_its_kind() {
-    let source = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/server/router/recovery.rs"),
-    )
-    .expect("read router/recovery.rs");
-    let registry = &source[source
-        .find("fn build_custom_task_registry(")
-        .expect("the registry builder")..];
-    let squeezed: String = registry.split_whitespace().collect();
+    let squeezed = handed_in_tasks();
     assert!(
         squeezed.contains(
-            "reg.register(teardown::SANDBOX_TEARDOWN_KIND,\
-             Arc::new(teardown::SandboxTeardownExecutor{db:db.clone()}),);"
+            "TaskSeam{kind:teardown::SANDBOX_TEARDOWN_KIND,\
+             build:|deps|{Arc::new(teardown::SandboxTeardownExecutor{db:deps.db.clone(),})},}"
         ),
-        "`build_custom_task_registry` no longer registers the sandbox teardown"
+        "`custom_apps_seams::tasks` no longer hands in \
+         the executor for SANDBOX_TEARDOWN_KIND"
     );
 }

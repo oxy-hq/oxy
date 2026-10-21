@@ -111,6 +111,9 @@ const UNSCANNED_ROUTE_FILES: &[&str] = &[
     // Mounts `/customer-apps/{*path}` and the SwaggerUI tree at the top
     // level, outside `/api` — deliberately out of scope (see module docs).
     "crates/app/src/cli/commands/serve.rs",
+    // The same `/customer-apps/{*path}` mount, built here since `SurfaceSeams::outer`
+    // moved it out of `serve.rs`: outside `/api`, deliberately out of scope.
+    "crates/server/src/custom_apps_seams.rs",
     // The `oxy worker --health-port` surface: /healthz, /readyz, /metrics.
     "crates/app/src/server/worker_health.rs",
     // The `OXY_METRICS_PORT` surface on serve/ide: `/metrics`, on its own
