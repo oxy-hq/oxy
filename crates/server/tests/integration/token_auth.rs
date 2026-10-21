@@ -86,6 +86,8 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
 
+pub(crate) use crate::common::Schema;
+
 use crate::common;
 
 pub(crate) struct Fixture {
@@ -100,7 +102,14 @@ pub(crate) struct Fixture {
 /// A migrated database of this test's own, auth switched on, the credential
 /// cache empty, one user in one org's workspace, and a session for them.
 pub(crate) async fn fixture() -> Fixture {
-    let db = common::test_db().await;
+    fixture_with(Schema::Central).await
+}
+
+/// [`fixture`] over a chosen schema: a test whose code under test writes a
+/// side migrator's tables (a platform notice queues its delivery as an
+/// `agentic_task_queue` task) needs [`Schema::All`].
+pub(crate) async fn fixture_with(schema: Schema) -> Fixture {
+    let db = common::test_db_with(schema).await;
     oxy_auth::built_in::set_auth_configured(true);
     oxy_auth::token::cache::clear();
     let user = seed_user(&db, "owner").await;

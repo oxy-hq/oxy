@@ -10,6 +10,9 @@
 //!   the asker learns nothing about who has an account;
 //! - a request bound to an approver answers 404 to anyone else's read,
 //!   approve and deny, as for a wrong code, and decides normally for them.
+//!
+//! A notice queues its delivery as a task, so the tests that expect one run
+//! over [`Schema::All`]; the binding tests need only the central schema.
 
 use axum::http::StatusCode;
 use entity::notifications;
@@ -23,7 +26,7 @@ use uuid::Uuid;
 use super::device_login::{HOST, VERIFIER, approve, describe, page, started};
 use super::sandbox_agent::another_session;
 use super::stack::{flat_api, join_org};
-use super::{call, fixture};
+use super::{Schema, call, fixture, fixture_with};
 use oxy_auth::token::cli_login::challenge_of;
 
 /// Start naming `approver`, as `oxyc --approver` does.
@@ -80,7 +83,7 @@ fn agent_ask() -> Value {
 
 #[tokio::test]
 async fn a_start_naming_a_users_email_tells_them_without_the_code() {
-    let fx = fixture().await;
+    let fx = fixture_with(Schema::All).await;
     join_org(&fx.db, fx.org_id, fx.user.id, OrgRole::Owner).await;
     let email = fx.user.email.clone().unwrap();
 
@@ -134,7 +137,7 @@ async fn a_start_naming_a_users_email_tells_them_without_the_code() {
 
 #[tokio::test]
 async fn an_unknown_email_starts_the_same_and_tells_nobody() {
-    let fx = fixture().await;
+    let fx = fixture_with(Schema::All).await;
     join_org(&fx.db, fx.org_id, fx.user.id, OrgRole::Owner).await;
     let email = fx.user.email.clone().unwrap();
 
@@ -177,7 +180,7 @@ async fn an_unknown_email_starts_the_same_and_tells_nobody() {
 /// person; the fourth is stored and bound like the others, and tells nobody.
 #[tokio::test]
 async fn notices_stop_at_the_pending_cap() {
-    let fx = fixture().await;
+    let fx = fixture_with(Schema::All).await;
     join_org(&fx.db, fx.org_id, fx.user.id, OrgRole::Owner).await;
     let email = fx.user.email.clone().unwrap();
     for _ in 0..4 {
@@ -191,7 +194,7 @@ async fn notices_stop_at_the_pending_cap() {
 
 #[tokio::test]
 async fn a_user_in_no_org_is_bound_but_there_is_nowhere_to_file_a_notice() {
-    let fx = fixture().await;
+    let fx = fixture_with(Schema::All).await;
     let (status, body) = start_naming(fx.user.email.as_deref().unwrap(), None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(notices_settled(&fx.db, fx.user.id).await.is_empty());
