@@ -327,10 +327,9 @@ async fn ensure_client_connected(
     if opt_client.is_some() {
         return Ok(());
     }
-    let (client, connection) = config
-        .connect(tls_connector(verify_tls))
+    let (client, connection) = crate::pg_connect::connect(config, tls_connector(verify_tls))
         .await
-        .map_err(|e| ConnectorError::ConnectionError(pg_error_message(&e)))?;
+        .map_err(ConnectorError::ConnectionError)?;
     // Bare on purpose, and allowlisted in oxy-app's `every_agentic_spawn_carries_a_hub`:
     // this driver lives as long as the memoized `Client`, not the request that
     // happened to open it, so binding that request's Sentry hub here would

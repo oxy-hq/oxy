@@ -41,6 +41,11 @@ mod postgres_typed;
 #[cfg(feature = "postgres")]
 mod pg_error;
 
+/// Connect that reports the server's refusal rather than the last address's
+/// io error, shared by BOTH Postgres paths. See the module docs.
+#[cfg(feature = "postgres")]
+mod pg_connect;
+
 #[cfg(feature = "mysql")]
 pub mod mysql;
 

@@ -162,7 +162,7 @@ async fn introspect(
     // session.
     let client = crate::connect::connect(dsn, "OLTP introspection")
         .await
-        .map_err(|e| format!("connect: {e}"))?;
+        .map_err(|e| format!("connect: {}", crate::connect::pg_detail(&e)))?;
 
     // Columns come from information_schema **on purpose**: it exposes only what
     // the connected role may SELECT, so the analyst's grants keep `oxy_meta`

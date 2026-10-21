@@ -35,7 +35,7 @@ use tokio_postgres::Client;
 use tokio_postgres::types::ToSql;
 
 use crate::connector::ConnectorError;
-use crate::pg_error::{pg_error_message, pg_query_failed};
+use crate::pg_error::pg_query_failed;
 use crate::transaction::{SqlTransaction, TxParams};
 
 use convert::{OwnedParam, check_decodable, json_to_param, row_to_json};
@@ -137,12 +137,15 @@ impl PgTransaction {
         config: &tokio_postgres::Config,
         verify_tls: bool,
     ) -> Result<Self, ConnectorError> {
-        let (client, connection) = config
-            .connect(crate::postgres::tls_connector(verify_tls))
-            .await
-            .map_err(|e| {
-                ConnectorError::ConnectionError(format!("connect failed: {}", pg_error_message(&e)))
-            })?;
+        // `pg_connect`, not `config.connect`: tokio-postgres keeps only the
+        // last address's error, which hid a server refusal behind an IPv6
+        // `Network is unreachable`. The `connect failed:` prefix is pinned.
+        let (client, connection) =
+            crate::pg_connect::connect(config, crate::postgres::tls_connector(verify_tls))
+                .await
+                .map_err(|message| {
+                    ConnectorError::ConnectionError(format!("connect failed: {message}"))
+                })?;
         let driver = spawn_with_hub(async move {
             if let Err(e) = connection.await {
                 tracing::debug!("transaction connection closed: {e}");

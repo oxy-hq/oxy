@@ -477,9 +477,13 @@ async fn audit(db: &DatabaseConnection, t: OrgArgs) -> Result<(), OxyError> {
     let owner_dsn =
         migrator::owner_dsn(&tenant).map_err(|e| OxyError::RuntimeError(e.to_string()))?;
 
+    // `pg_detail`, not `{e}`: a refused session displays as the literal "db
+    // error", which hid Neon's `exceeded the quota` for two days.
     let client = oxy_oltp::connect::connect(&owner_dsn, "oltp audit")
         .await
-        .map_err(|e| OxyError::RuntimeError(format!("connect: {e}")))?;
+        .map_err(|e| {
+            OxyError::RuntimeError(format!("connect: {}", oxy_oltp::connect::pg_detail(&e)))
+        })?;
     // Columns generated from `roles::CONFINEMENT_ATTRIBUTES`, so this command
     // and `assert_confined_sql` can never check different things again — the
     // divergence that let a REPLICATION-carrying role print `risk: none`.

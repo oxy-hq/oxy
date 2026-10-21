@@ -32,9 +32,33 @@ pub(crate) fn pg_error_message(e: &tokio_postgres::Error) -> String {
     match e.as_db_error() {
         Some(db) => flatten(db),
         // Not a server error: a closed socket, a TLS handshake failure, a
-        // connect timeout. `Display` is genuinely informative for those.
-        None => e.to_string(),
+        // connect timeout. `Display` names the phase, and the cause hangs off
+        // `source()`, so both are joined (see [`with_sources`]).
+        None => with_sources(e),
     }
+}
+
+/// `Display` of `e` followed by each `source()` in turn, joined with `: `.
+///
+/// `tokio_postgres::Error::connect` displays as the fixed text
+/// `error connecting to server` and keeps the `io::Error` behind it
+/// (`Network is unreachable (os error 101)`, `Connection refused (os error
+/// 111)`) as its source, so `e.to_string()` alone says a connection failed
+/// without saying why. A source whose text is already contained in what has
+/// been written is skipped, so an error that embeds its own cause does not
+/// print it twice.
+fn with_sources(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut msg = e.to_string();
+    let mut source = e.source();
+    while let Some(cause) = source {
+        let text = cause.to_string();
+        if !msg.contains(&text) {
+            msg.push_str(": ");
+            msg.push_str(&text);
+        }
+        source = cause.source();
+    }
+    msg
 }
 
 /// Build a structured [`QueryFailedDetails`] from a driver error.
