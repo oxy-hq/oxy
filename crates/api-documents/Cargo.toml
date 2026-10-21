@@ -13,13 +13,15 @@ rust-version.workspace = true
 
 [dependencies]
 # The only oxy-app dependency: the helpers this surface still shares with it —
-# the org middlewares + `OrgAdmin` guard, the assume-role liveness check, the
-# custom-app storage bucket + S3 presigner (documents sign into the same bucket
-# under `org-documents/`), and the project-context builder (`surface::build_project_context`)
-# for the ask agent. oxy-app never depends back on this crate. default-features off so a
+# the org middlewares + `OrgAdmin` guard, the assume-role liveness check, and the
+# project-context builder (`surface::build_project_context`) for the ask agent.
+# (The custom-app storage bucket + S3 presigner, which documents sign into under
+# `org-documents/`, come from `oxy-custom-apps`.) oxy-app never depends back on
+# this crate. default-features off so a
 # `--no-default-features` build of oxy-server keeps dropping V8.
 oxy-app = { path = "../app", default-features = false }
 oxy-app-core = { workspace = true }       # AppState (router state) + pagination
+oxy-custom-apps = { workspace = true }    # the custom-app S3 silo (bucket, presigner)
 oxy = { workspace = true }                # database client
 oxy-auth = { workspace = true }           # AuthenticatedUserExtractor
 oxy-server-authz = { workspace = true }   # Caller: the reader with the credential they used

@@ -1,6 +1,6 @@
 //! Validator helpers for the two surfaces that serve an HTML shell with
 //! `Cache-Control: no-cache` — the admin SPA (`cli::commands::serve`) and
-//! custom-app bundles (`server::api::custom_apps_serve`).
+//! custom-app bundles (`oxy_api_custom_apps::serve`).
 //!
 //! Both must revalidate on every load, so both need a validator, and a
 //! validator format that drifts between them is a bug that only shows up as
@@ -43,6 +43,22 @@ pub fn if_none_match(headers: &HeaderMap, etag: &str) -> bool {
         .get(header::IF_NONE_MATCH)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|value| if_none_match_matches(value, etag))
+}
+
+/// Returns true if the client wants HTML — used to scope the SPA fallback
+/// (`bundle_dir/index.html`) to top-level navigations only. Browsers send
+/// `Accept: text/html,application/xhtml+xml,...` for navigations; `fetch()`
+/// and asset XHRs send `Accept: */*` or a specific MIME type. We deliberately
+/// do NOT treat `*/*` as HTML, because that's exactly the case the reviewer
+/// wanted to 404 cleanly (asset for a missing file shouldn't get the SPA
+/// shell back at 200). Missing Accept is rare in practice (manual `curl`
+/// without flags); we treat it as HTML so the SPA still renders.
+pub fn wants_html(headers: &HeaderMap) -> bool {
+    let Some(accept) = headers.get(header::ACCEPT).and_then(|v| v.to_str().ok()) else {
+        return true;
+    };
+    let accept = accept.to_ascii_lowercase();
+    accept.contains("text/html") || accept.contains("application/xhtml+xml")
 }
 
 #[cfg(test)]

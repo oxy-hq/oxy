@@ -1,5 +1,4 @@
 use crate::cli::ServeArgs;
-use crate::server::api::custom_apps_serve::wants_html;
 use crate::server::http_cache::{if_none_match, weak_etag};
 use agentic_pipeline::{AirwayMigrator, AnalyticsMigrator, AutomationMigrator};
 use agentic_runtime::migration::RuntimeMigrator;
@@ -20,6 +19,7 @@ use oxy::{
     state_dir::get_state_dir,
     theme::StyledText,
 };
+use oxy_app_core::http_cache::wants_html;
 use oxy_app_core::serve_mode::ServeMode;
 use oxy_cameras::CamerasMigrator;
 use oxy_shared::errors::OxyError;

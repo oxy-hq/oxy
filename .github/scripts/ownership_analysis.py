@@ -42,8 +42,12 @@ EMAIL2PERSON = {e: p for p, v in PEOPLE.items() for e in v["emails"]}
 # Several prefixes MAY share one friendly name (an area whose files don't sit
 # under a single directory): touches aggregate and the report prints one row.
 AREAS = [
+    ("crates/api-custom-apps",                            "Custom Apps — serve"),
+    # Pre-lift path of what moved into crates/api-custom-apps/.
     ("crates/app/src/server/api/custom_apps_serve",       "Custom Apps — serve"),
     ("crates/app/src/server/api/custom_apps_functions",   "Custom Apps — functions"),
+    # Storage moved into the domain crate (oxy-custom-apps) in the same lift.
+    ("crates/custom-apps/src/storage",                    "Custom Apps — storage"),
     ("crates/app/src/server/api/custom_apps_storage",     "Custom Apps — storage"),
     ("crates/app/src/custom_app_template",                "Custom Apps — template"),
     ("sdk/create-oxy-app",                                "Custom Apps — scaffold SDK"),

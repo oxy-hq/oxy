@@ -36,6 +36,12 @@ pub use crate::server::api::middlewares::workspace_context::{
     WorkspaceManagerReadOnly, WorkspaceManagerWorkingCopy, WorkspacePath, enqueue_lazy_compile,
 };
 
+/// The fence that keeps a sandbox agent token (`oxy_sbx_`) to the one shape it
+/// may reach on the `/customer-apps` serve tree. Asked before authentication by
+/// the serve route, which sits above this crate. Platform authz, not a tenant
+/// context: it reads the presented credential's prefix and nothing else.
+pub use crate::server::api::middlewares::app_grant_scope::serve_tree_refuses;
+
 /// The project context a workspace's agents run with: its configuration, its
 /// database secrets and the compiled revision, built the way the platform builds
 /// it for every data-plane call. The document library's answering agent runs

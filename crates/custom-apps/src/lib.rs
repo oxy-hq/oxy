@@ -1,10 +1,11 @@
 //! Custom Apps domain logic: the modules of the custom-apps surface that need
-//! nothing from `oxy-app` and no HTTP types.
+//! nothing from `oxy-app` and no web framework (the serve resolver takes the
+//! request's `http` headers and answers with an `http` status, nothing more).
 //!
 //! A domain crate in the sense of `internal-docs/domain-boundaries.md` rule S3:
 //! it sits below `oxy-app` and every `api-*` surface, so a surface that needs
 //! custom-app behavior imports it from here rather than reaching into `oxy-app`.
-//! It holds no routes, no handlers and no HTTP types. Built as pure relocations
+//! It holds no routes and no handlers. Built as pure relocations
 //! (S6 step 3); `oxy-app` keeps each module reachable at its old
 //! `server::api::custom_apps_*` path through a re-export.
 //!
@@ -19,18 +20,52 @@
 //! - `environments`, `publish_authz`: pointer writes and publish authority.
 //! - `staging_pin`: a draft build's semantic pin: read it, validate it at publish,
 //!   resolve it for a non-production request, and the promote drift notice.
+//! - `resolve`, `authenticate`, `agent`: the one cached chain every app-keyed
+//!   request runs (credential, user, app rows, access verdict), the flow handlers
+//!   call over it, and the admission rules for a sandbox agent token.
+//! - `storage`: the per-app S3 silo behind `ctx.storage` (quota, metering,
+//!   retention, the sweeper).
+//! - `build_store`, `bundle_cache`, `precompress`, `asset_manifest`: where a
+//!   published build's files live, the byte cache in front of them, their
+//!   build-time brotli copies and the manifest the service worker reads.
+//! - `manifest`, `source`, `sync`: `oxy-app.json`, where an app's source lives,
+//!   and the channel a request reads it from.
+//! - `telemetry`, `sandbox_instance`: the serve path's metrics, and which
+//!   instance of a sandbox a log line belongs to.
+//! - `tracking`, `usage_queue`, `usage_airhouse`: page views and custom events,
+//!   the bounded queue they are `try_send`-ed onto and the sink that drains it.
 //! - `gate`: the data-plane gate's decision half (user, workspace row, access
 //!   verdict) and the context it resolves; `oxy-app` keeps the request-facing entry.
 
+// The usage sink's chained connector futures (`usage_airhouse`) exceed the
+// default type-layout query depth of 128, as the same code did in `oxy-app`.
+#![recursion_limit = "256"]
+
+pub mod agent;
 pub mod agent_built;
+pub mod asset_manifest;
 pub use oxy_app_core::audience;
 pub mod auth;
+pub mod authenticate;
 pub mod build_state;
+pub mod build_store;
+pub mod bundle_cache;
 pub mod cache;
 pub mod env_resolve;
 pub mod environments;
 pub mod function_trigger;
 pub mod gate;
+pub mod manifest;
 pub mod non_production;
+pub mod precompress;
 pub mod publish_authz;
+pub mod resolve;
+pub mod sandbox_instance;
+pub mod source;
 pub mod staging_pin;
+pub mod storage;
+pub mod sync;
+pub mod telemetry;
+pub mod tracking;
+pub mod usage_airhouse;
+pub mod usage_queue;

@@ -76,6 +76,7 @@ pub async fn api_router(
         background,
         // Merged by `serve`, which takes it before handing the seams here.
         outer: _,
+        outer_decls,
         // Documentation only — `build_openapi_doc` merges it, not the router.
         openapi: _,
     } = seams;
@@ -368,6 +369,15 @@ pub async fn api_router(
                     .collect(),
             ));
             decls.extend(public_decls.clone());
+            // `/customer-apps/{*path}` is mounted on the OUTER router in serve.rs,
+            // not in this tree, but this is the declaration set that gets
+            // installed — so the split its crate declares rides along rather than
+            // living in a table. Absolute: no `/api` prefix.
+            decls.extend(
+                outer_decls
+                    .iter()
+                    .map(|d| (d.method, d.path.to_string(), d.role)),
+            );
             apply_middleware(routes.merge(extra_api_routes), decls)?
         }
         ServeMode::Local => {
@@ -480,6 +490,7 @@ pub async fn internal_api_router(
         tasks: _,
         background: _,
         outer: _,
+        outer_decls: _,
         // Documentation only — `build_openapi_doc` merges it, not the router.
         openapi: _,
     } = seams;

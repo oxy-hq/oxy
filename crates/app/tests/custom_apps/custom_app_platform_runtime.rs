@@ -27,12 +27,12 @@ use axum::routing::any;
 use chrono::Utc;
 use entity::prelude::Organizations;
 use entity::{org_members, org_members::OrgRole, organizations};
+use oxy_api_custom_apps::serve as custom_apps_serve;
 use oxy_app::cli::commands::seed;
-use oxy_app::server::api::custom_apps_asset_manifest::{AssetManifest, SCHEMA_VERSION};
-use oxy_app::server::api::custom_apps_serve;
-use oxy_app::server::api::custom_apps_usage_queue as usage_queue;
 use oxy_auth::types::Identity;
 use oxy_auth::user::UserService;
+use oxy_custom_apps::asset_manifest::{AssetManifest, SCHEMA_VERSION};
+use oxy_custom_apps::usage_queue;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };

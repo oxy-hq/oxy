@@ -25,8 +25,9 @@ use chrono::Utc;
 const RESTRICTED_APP_SLUG: &str = "oxy-starter-private";
 use entity::prelude::{Apps, OrgMembers, Organizations};
 use entity::{apps, org_members, org_members::OrgRole, organizations};
+use oxy_api_custom_apps::serve as custom_apps_serve;
 use oxy_app::cli::commands::seed;
-use oxy_app::server::api::{custom_apps_serve, workspace_custom_apps};
+use oxy_app::server::api::workspace_custom_apps;
 use oxy_auth::types::Identity;
 use oxy_auth::user::UserService;
 use sea_orm::{

@@ -63,28 +63,12 @@ fn org_reads_stay_on_the_fleet() {
     }
 }
 
-/// One mount, any pod. `serve_dispatch` answers everything under
-/// `/customer-apps/{*path}`: bundle bytes from S3, and `POST .../fn/<name>`,
-/// which executes an Oxy Function. The function half was IdeOnly while it read
-/// the working copy; it reads the promoted revision now, so a custom app's
-/// backend runs on whichever replica the request lands on.
-/// `custom_apps_serve::serve_dispatch_roles()` states both; assert both,
-/// because a declaration that covered only one would look right.
-#[test]
-fn a_custom_app_function_and_its_bundle_both_run_on_any_replica() {
-    install_route_declarations_for_tests();
-
-    assert_eq!(
-        classify("POST", "/customer-apps/acme/dash/fn/send-report"),
-        RouteRole::FleetOk,
-        "an Oxy Function reads its workspace through the compile boundary",
-    );
-    assert_eq!(
-        classify("GET", "/customer-apps/acme/dash/index.html"),
-        RouteRole::FleetOk,
-        "bundle bytes come from S3",
-    );
-}
+// The custom-app serve route (`/customer-apps/{*path}`, bundle bytes and
+// `POST …/fn/<name>` both FleetOk) and the health, logs and errors reads moved to
+// the `oxy-api-custom-apps` sibling crate, and their guard moved with them
+// (`crates/api-custom-apps/tests/integration/route_roles.rs`). Not assertable
+// here: the declaration set this harness installs no longer contains them, so
+// `classify` would answer with the FleetOk default and pass for the wrong reason.
 
 // The two document-library cases (`/documents/ask` on the ide, its search and
 // session store on the fleet) moved to the `oxy-api-documents` sibling crate with

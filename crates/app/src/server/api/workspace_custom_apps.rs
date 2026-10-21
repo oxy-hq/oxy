@@ -87,22 +87,9 @@ pub struct CustomAppSummary {
     pub verdict: Option<ListVerdict>,
 }
 
-/// Art must be a plain relative path inside the bundle — reject anything
-/// that could escape the bundle dir or point off-origin.
-///
-/// `pub(crate)` so the seeded example bundle is checked by THIS predicate
-/// rather than a copy of it (`cli::commands::seed_apps`): a copy would drift,
-/// and then the example would either break silently or fail on a rule the
-/// launcher doesn't actually apply.
-pub(crate) fn safe_relative_art_path(p: &str) -> bool {
-    !p.is_empty()
-        && !p.starts_with('/')
-        && !p.contains("..")
-        && !p.contains("://")
-        && !p.contains('\\')
-        && !p.contains('?')
-        && !p.contains('#')
-}
+/// The predicate is `oxy_custom_apps::manifest::safe_relative_art_path`; it moved
+/// down because the serve path checks a manifest icon with it too.
+pub(crate) use oxy_custom_apps::manifest::safe_relative_art_path;
 
 /// Card metadata resolved from a manifest. Everything defaults to empty
 /// when the manifest is missing or unreadable so the summary endpoint

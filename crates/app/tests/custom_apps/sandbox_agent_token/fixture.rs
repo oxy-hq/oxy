@@ -224,9 +224,12 @@ pub(crate) async fn mint(cookie: &str, apps: &[Uuid]) -> (Uuid, String) {
 }
 
 /// The flat `/api` tree as `oxy-app` mounts it: the public routes, then the
-/// global ones behind the real authentication, fences and guards.
+/// global ones behind the real authentication, fences and guards. Beside the
+/// public tree, as `oxy-server` merges it, the public seam of the custom-app
+/// surface (`/logs`, `/errors`, `/health`), which authenticates inline.
 pub(crate) fn api_router() -> axum::Router {
     oxy_app::server::router::flat_api_surface(axum::Router::new(), Vec::new())
+        .merge(oxy_api_custom_apps::public_routes().with_state(oxy_app::surface::bare_app_state()))
 }
 
 async fn answer(response: axum::response::Response) -> (StatusCode, Value) {

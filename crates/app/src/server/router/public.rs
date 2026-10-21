@@ -158,24 +158,10 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
             "/customer-apps/{org_slug}/{app_slug}/debug",
             get(custom_apps_debug::get_debug),
         )
-        // External liveness for ONE published custom app. In the public router
-        // because it authenticates inline (session cookie or bearer token) like
-        // its neighbours — and the token is mandatory: auth runs before the app
-        // lookup so an unauthenticated caller gets 401 whether or not the app
-        // exists, which is what keeps this from becoming an app-enumeration
-        // oracle. Two forms: slug-explicit (pollable from the admin host, one
-        // monitor for every app) and Host-resolved (`/customer-apps/health` on
-        // an `<org>--<slug>.customer-apps.<zone>` subdomain, where `/api/*` is
-        // the only prefix the subdomain rewrite passes through). NOT a k8s
-        // probe — see the module docs.
-        .route_fleet(
-            "/customer-apps/{org_slug}/{app_slug}/health",
-            get(crate::server::api::custom_apps_health::get_health),
-        )
-        .route_fleet(
-            "/customer-apps/health",
-            get(crate::server::api::custom_apps_health::get_health_for_host),
-        )
+        // `/customer-apps/{org}/{app}/health` and `/customer-apps/health` (external
+        // liveness for ONE published custom app) moved to the `oxy-api-custom-apps`
+        // sibling crate, with `/logs` and `/errors` below. `oxy-server` merges them
+        // beside this tree through the public seam.
         // The SERVING answer, as opposed to `/health`'s deployment-integrity
         // ladder: the success ratio of real traffic over several windows, plus
         // a multi-window error-budget burn verdict. A ClickHouse read behind
@@ -185,21 +171,6 @@ pub(super) fn build_public_routes(app_state: &AppState) -> RoleRouter {
         .route_fleet(
             "/customer-apps/{org_slug}/{app_slug}/availability",
             get(crate::server::api::custom_apps_availability::get_availability),
-        )
-        // Per-app debuggability: persisted Oxy Function output, and browser
-        // errors with source maps applied server-side. Same inline
-        // AUTHENTICATION as their neighbours, but a narrower AUTHORIZATION:
-        // both call `require_app_admin`, because function log output is what
-        // the author printed while debugging, not the app's own data that
-        // every org member may already see. FleetOk — ClickHouse reads plus
-        // build-store maps, which every replica has.
-        .route_fleet(
-            "/customer-apps/{org_slug}/{app_slug}/logs",
-            get(crate::server::api::custom_apps_logs::get_logs),
-        )
-        .route_fleet(
-            "/customer-apps/{org_slug}/{app_slug}/errors",
-            get(crate::server::api::custom_apps_logs::get_errors),
         )
         // Project-scoped proxies for custom-app bundles. Auth is
         // performed inline (session cookie or API key) so these sit

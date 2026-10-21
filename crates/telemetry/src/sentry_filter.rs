@@ -254,6 +254,14 @@ pub const CUSTOM_APP_SURFACE_TAG: &str = "oxy.surface";
 /// See [`CUSTOM_APP_SURFACE_TAG`].
 pub const CUSTOM_APP_SURFACE: &str = "custom_app";
 
+/// A fresh hub, already tagged, for custom-app work with no request around it:
+/// a scheduled, manual or webhook-triggered function job.
+pub fn custom_app_hub() -> std::sync::Arc<sentry::Hub> {
+    let hub = std::sync::Arc::new(sentry::Hub::new_from_top(sentry::Hub::current()));
+    hub.configure_scope(|scope| scope.set_tag(CUSTOM_APP_SURFACE_TAG, CUSTOM_APP_SURFACE));
+    hub
+}
+
 /// Whether a request is for a custom app. Two kinds match:
 /// - a host with a `customer-apps` or `customer-apps-<env>` label (the
 ///   `<org>--<slug>.customer-apps[-<env>].<zone>` scheme);
@@ -465,6 +473,12 @@ mod tests {
             "oxy_app::server::api::custom_apps_serve",
             "custom_apps_serve",
             "oxy_app_core::custom_apps_host_dispatch",
+            // The serving lift: the crate name carries the marker, so the modules
+            // that left `oxy-app` stay behind the barrier.
+            "oxy_api_custom_apps::serve",
+            "oxy_api_custom_apps::logs",
+            "oxy_custom_apps::storage::sweeper",
+            "oxy_custom_apps::usage_queue",
         ];
         for target in targets {
             for level in ALL_LEVELS {
@@ -667,6 +681,8 @@ mod tests {
             "oxy_app::server::api::custom_apps_functions::runtime",
             "oxy_app::server::api::custom_apps_serve",
             "oxy_app_core::custom_apps_host_dispatch",
+            "oxy_api_custom_apps::serve",
+            "oxy_custom_apps::storage::sweeper",
             "oxy::app_function",
             "custom_app_function",
         ] {

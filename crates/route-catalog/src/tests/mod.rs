@@ -65,6 +65,9 @@ const REQUIRED_GROUPS: &[&str] = &[
     "/api/orgs/{org_id}/frontline",
     "/api/frontline/",
     "/api/customer-apps",
+    // `oxy-api-custom-apps`, on the public seam; `/api/customer-apps` above is
+    // the admin console's mount and does not cover it.
+    "/api/customer-apps/{org_slug}/{app_slug}/health",
     "/api/assume",
     "/api/airhouse/",
     "/api/partners/",
@@ -108,8 +111,8 @@ const REQUIRED_GROUPS: &[&str] = &[
 const UNSCANNED_ROUTE_FILES: &[&str] = &[
     // The walker itself: `.route(` appears as a string literal.
     "crates/route-catalog/build_route_catalog.rs",
-    // Mounts `/customer-apps/{*path}` and the SwaggerUI tree at the top
-    // level, outside `/api` — deliberately out of scope (see module docs).
+    // Mounts the SwaggerUI tree at the top level, outside `/api` —
+    // deliberately out of scope (see module docs).
     "crates/app/src/cli/commands/serve.rs",
     // The same `/customer-apps/{*path}` mount, built here since `SurfaceSeams::outer`
     // moved it out of `serve.rs`: outside `/api`, deliberately out of scope.
@@ -136,6 +139,8 @@ const UNSCANNED_ROUTE_FILES: &[&str] = &[
     // routers moved to `RoleRouter` — so they started looking like mounts.
     "crates/app/src/server/role_manifest_tests.rs",
     "crates/app/src/server/role_middleware_tests.rs",
+    // Fixture routers for the sandbox-agent-token body assertions.
+    "crates/app-core/src/agent_body_tests.rs",
 ];
 
 /// The floor exists so a router refactor the lexical walker can no longer

@@ -170,6 +170,11 @@ pub struct SurfaceSeams {
     /// The outer `/customer-apps/{*path}` mount, merged by `serve` beside
     /// `/api`. `None` mounts nothing; `serve` refuses to start without it.
     pub outer: Option<OuterMount>,
+    /// Pod-placement declarations for [`outer`](Self::outer). Absolute paths, as
+    /// the outer router sits beside `/api` and not under it, so unlike the
+    /// declarations of the seams above they do not get the `/api` prefix.
+    /// Installed with the others in cloud mode.
+    pub outer_decls: Vec<RouteRoleDecl>,
 }
 
 /// The `TaskSpec::Custom` kinds `oxy-app`'s own enqueue sites queue for custom

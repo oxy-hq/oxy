@@ -1195,53 +1195,12 @@ fn the_customer_app_data_plane_is_fleet_ok() {
     }
 }
 
-/// An Oxy Function invocation runs on any replica, so a custom app's backend
-/// does not go down with the Factory.
-///
-/// It was IdeOnly while a function read its workspace off the working copy.
-/// Both reads moved to the compile boundary: the project context takes
-/// `config.yml` from the promoted revision
-/// (`custom_apps_gates::build_project_context_with_role`) and `ctx.semantic`
-/// scans the compiled model (`host/semantic_op.rs`). The remaining host
-/// capabilities — the bundle, secrets, `ctx.oltp`, `ctx.airhouse`,
-/// `ctx.storage`, the warehouse connectors — were never on the working copy.
-/// `tests/custom_apps/custom_app_functions_diskless.rs` runs a real invocation
-/// with the working copy deleted to hold that true.
-///
-/// A replica cannot serve a workspace with nothing compiled, or one whose
-/// database is a file in the checkout; the handler replays those calls to the
-/// Factory itself (`server::invocation_placement`), so neither needs an
-/// IdeOnly entry.
-#[test]
-fn custom_app_function_route_is_fleet_ok() {
-    assert_eq!(
-        classify("POST", "/customer-apps/acme/hello-oxy/fn/post-je"),
-        RouteRole::FleetOk,
-        "pinning a function invocation to the ide puts every custom app's \
-         backend behind the one pod holding a checkout"
-    );
-    // The entry is its own, not the wildcard's. A broader IdeOnly pattern
-    // added later must lose to it, or the pin comes back without anyone
-    // touching this route.
-    let declared = dump_manifest();
-    assert!(
-        declared.iter().any(|(method, path, role)| {
-            *method == "*" && path == "/customer-apps/{org}/{app}/fn/{name}" && *role == "fleet-ok"
-        }),
-        "the function route must be declared FleetOk by name, not only fall \
-         under `/customer-apps/{{*path}}`"
-    );
-    // Static assets + index are served from S3 → any replica → FleetOk.
-    assert_eq!(
-        classify("GET", "/customer-apps/acme/hello-oxy/assets/main.js"),
-        RouteRole::FleetOk,
-        "custom-app static assets stay FleetOk"
-    );
-    assert_eq!(
-        classify("GET", "/customer-apps/acme/hello-oxy"),
-        RouteRole::FleetOk
-    );
-}
+// The custom-app serve route and its function entry (`/customer-apps/{*path}`,
+// `…/fn/{name}`) are FleetOk, and so is the external health read. Both moved to
+// the `oxy-api-custom-apps` sibling crate with the routes, and their guards moved
+// with them (`crates/api-custom-apps/tests/integration/route_roles.rs`). They
+// cannot be asserted here: `oxy-app` does not declare them any more, so
+// `classify` would answer with the FleetOk default and pass for the wrong reason.
 
 /// Path string of every `.route("PATH", ...)` mounted directly in
 /// `fn {fn_name}` of `src`. Deliberately simple text parsing (no syntax
@@ -1793,23 +1752,6 @@ fn airhouse_admin_routes_are_fleet_ok() {
              the ide makes a tenant's warehouse surface die with the singleton"
         );
     }
-}
-
-#[test]
-fn custom_app_health_is_fleet_ok() {
-    assert_eq!(
-        classify("GET", "/customer-apps/acme/command-center/health"),
-        RouteRole::FleetOk,
-        "the external liveness endpoint must stay FleetOk — a health check that \
-         needs the singleton fails whenever the singleton restarts"
-    );
-    // A function that happens to be named `health` is a different route — the
-    // `fn` segment splits them — and is FleetOk on its own account
-    // (`custom_app_function_route_is_fleet_ok`).
-    assert_eq!(
-        classify("POST", "/customer-apps/acme/command-center/fn/health"),
-        RouteRole::FleetOk
-    );
 }
 
 // ── Ported from origin/main's inline `mod tests` at the #2851 merge ──────

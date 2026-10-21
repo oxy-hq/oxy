@@ -13,7 +13,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::routing::get;
-use oxy_app::server::api::custom_apps_logs;
+use oxy_api_custom_apps::logs as custom_apps_logs;
 use serde_json::Value;
 use tower::ServiceExt;
 

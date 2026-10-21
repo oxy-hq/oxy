@@ -434,6 +434,23 @@ impl crate::server::api::custom_apps_functions::seam::FunctionQueryExecutor
     ) -> Result<Vec<JsonValue>, String> {
         execute_function_query(connector, sql, max_rows).await
     }
+
+    fn handle_function_request<'a>(
+        self: Arc<Self>,
+        request: crate::server::api::custom_apps_functions::seam::FunctionRequest<'a>,
+    ) -> crate::server::api::custom_apps_functions::seam::FunctionResponse<'a> {
+        crate::server::api::custom_apps_functions::handle_function_request(
+            request.org_slug,
+            request.app_slug,
+            request.function_name,
+            request.method,
+            request.uri,
+            request.headers,
+            request.body,
+            self,
+            request.preagg,
+        )
+    }
 }
 
 /// Wrap `sql` in `SELECT * FROM (...) AS oxy_proxy_query LIMIT {max_rows}`.

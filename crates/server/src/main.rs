@@ -118,6 +118,11 @@ fn api_seam_routes() -> SeamRouter {
         .merge(oxy_api_frontline::routes())
 }
 
+/// The sibling crates merged beside the public tree, outside the auth stack.
+fn public_seam_routes() -> SeamRouter {
+    oxy_api_frontline::public_routes().merge(oxy_api_custom_apps::public_routes())
+}
+
 /// The sibling crates merged inside the `/{workspace_id}` nest.
 fn workspace_seam_routes() -> SeamRouter {
     oxy_api_tenancy::onboarding::workspace_routes().merge(oxy_api_source_upload::routes())
@@ -148,6 +153,12 @@ fn workspace_seam_routes() -> SeamRouter {
 /// `SurfaceSeams`), so a route cannot change sides by argument order: `public`
 /// is the only one outside auth.
 ///
+/// `oxy-api-custom-apps` is the second surface on the public seam: its health,
+/// logs and client-error reads authenticate inline, before they look the app up,
+/// and read the build store and ClickHouse, which every replica has. Its
+/// `/customer-apps/{*path}` route rides `outer`, with its declarations in
+/// `outer_decls` (absolute, because that router sits beside `/api`).
+///
 /// `oxy-api-source-upload` rides the workspace seam and declares its one route
 /// FleetOk: an S3 write that must not need the ide.
 fn surface_seams() -> SurfaceSeams {
@@ -171,8 +182,12 @@ fn surface_seams() -> SurfaceSeams {
                 .collect(),
         },
         public: SurfaceSeam {
-            routes: oxy_api_frontline::public_routes(),
-            decls: oxy_api_frontline::public_route_roles().to_vec(),
+            routes: public_seam_routes(),
+            decls: oxy_api_frontline::public_route_roles()
+                .iter()
+                .chain(oxy_api_custom_apps::public_route_roles())
+                .copied()
+                .collect(),
         },
         // The route table `/api/_catalog` serves, generated above oxy-app (see
         // `oxy-route-catalog`). Passed, not global: a composition that dropped
@@ -184,12 +199,16 @@ fn surface_seams() -> SurfaceSeams {
         // document (`oxyc schema` reads it).
         openapi: vec![oxy_api_tenancy::openapi()],
         // The custom-app task kinds a worker runs, the background jobs a serve
-        // process starts, and the outer `/customer-apps/{*path}` mount. The code
-        // is still in `oxy-app`; `oxy-app` no longer names it, and refuses to
-        // start if any of it is missing here.
+        // process starts, and the outer `/customer-apps/{*path}` mount. The task
+        // executors and the sandbox maintenance job are still in `oxy-app` (the
+        // second lift moves them); the sweeps and usage jobs are in
+        // `oxy-custom-apps`, and the mount is `oxy-api-custom-apps`'s. `oxy-app`
+        // no longer names any of it, and refuses to start if any of it is missing
+        // here.
         tasks: custom_apps_seams::tasks(),
         background: custom_apps_seams::background(),
         outer: Some(custom_apps_seams::outer),
+        outer_decls: oxy_api_custom_apps::serve::serve_dispatch_roles().to_vec(),
     }
 }
 

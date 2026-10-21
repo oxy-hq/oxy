@@ -3,10 +3,13 @@
 //! the worker fleet runs, the five process-lifetime background jobs, and the
 //! outer `/customer-apps/{*path}` mount.
 //!
-//! The code behind each is still in `oxy-app` (`custom_apps_*`,
-//! `app_function_executor`); what moved here is the decision that a process
-//! runs it. `oxy-app`'s router and `serve` no longer name any of it, so when the
-//! custom-apps code moves into its own crate, only the `use` paths below change.
+//! The outer mount is `oxy-api-custom-apps`'s route; the usage-retention and
+//! usage-drain jobs and the storage sweeps are in `oxy-custom-apps`. The task
+//! executors and the sandbox maintenance job are still in `oxy-app`
+//! (`custom_apps_*`, `app_function_executor`) until the second lift. What moved
+//! here is the decision that a process runs each of them. `oxy-app`'s router and
+//! `serve` no longer name any of it, so when the rest moves into
+//! `oxy-api-custom-apps`, only the `use` paths below change.
 //!
 //! `oxy-app` refuses to start (`SurfaceSeams::require_custom_apps`) when a kind
 //! or a job it needs is missing from what this module returns, so dropping an
@@ -16,18 +19,18 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::any;
+use oxy_api_custom_apps::serve as custom_apps_serve;
 use oxy_app::server::api::custom_apps_functions::seam::FunctionQueryExecutor;
 use oxy_app::server::api::custom_apps_nonproduction::{staging_task, staging_task_executor};
 use oxy_app::server::api::custom_apps_sandboxes::{
     maintenance, migrations_task, oltp_task, teardown,
 };
-use oxy_app::server::api::custom_apps_serve;
-use oxy_app::server::api::custom_apps_storage::{retention, sweeper};
 use oxy_app::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use oxy_app::server::api::projects::query::DataPlaneQueryExecutor;
-use oxy_app::server::api::{custom_apps_tracking, custom_apps_usage_queue};
 use oxy_app::server::app_function_executor::{APP_FUNCTION_KIND, AppFunctionTaskExecutor};
 use oxy_app::server::router::{BackgroundSeam, TaskSeam};
+use oxy_custom_apps::storage::{retention, sweeper};
+use oxy_custom_apps::{tracking as custom_apps_tracking, usage_queue as custom_apps_usage_queue};
 use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{DefaultPredicate, NotForContentType, Predicate};

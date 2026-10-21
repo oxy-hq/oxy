@@ -19,7 +19,32 @@
 //! a new call site can't accidentally reach for a gated path and break the
 //! feature-off build again.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+
+use axum::http::{HeaderMap, Method, Uri};
+use axum::response::{IntoResponse, Response};
+
+use crate::preagg_cache_ctx::PreaggCacheCtx;
+
+/// One `<method> /customer-apps/<org>/<app>/fn/<name>` request, as the serve
+/// route hands it to the function runtime once it has split the path.
+pub struct FunctionRequest<'a> {
+    pub org_slug: &'a str,
+    pub app_slug: &'a str,
+    pub function_name: &'a str,
+    pub method: Method,
+    /// The URI the outer stack routed on, kept whole: `?refresh` is read from
+    /// it, and a replica replays it to the Factory.
+    pub uri: Uri,
+    pub headers: HeaderMap,
+    pub body: axum::body::Bytes,
+    pub preagg: PreaggCacheCtx,
+}
+
+/// The function runtime's answer to a [`FunctionRequest`].
+pub type FunctionResponse<'a> = Pin<Box<dyn Future<Output = Response> + Send + 'a>>;
 
 /// Runs a function's read-only SQL against a warehouse `connector`, capped at
 /// `max_rows` rows, returning the rows as JSON objects.
@@ -40,6 +65,28 @@ pub trait FunctionQueryExecutor: Send + Sync {
         sql: &str,
         max_rows: usize,
     ) -> Result<Vec<serde_json::Value>, String>;
+
+    /// Run one `/fn/<name>` request through the function runtime.
+    ///
+    /// The serve route reaches the runtime through this object because it is
+    /// the one thing the composition root already layers onto the route for
+    /// the runtime's sake, and the route is in a crate above the runtime's. The
+    /// production executor (`projects::query::DataPlaneQueryExecutor`) answers
+    /// by calling the runtime's entry point, handing itself on as the query
+    /// executor. The default refuses: an executor with no runtime behind it
+    /// (a test fake) cannot run a function, and saying so is better than
+    /// answering as if it had.
+    fn handle_function_request<'a>(
+        self: Arc<Self>,
+        _request: FunctionRequest<'a>,
+    ) -> FunctionResponse<'a> {
+        Box::pin(async move {
+            tracing::error!(
+                "custom-app function invoked through a FunctionQueryExecutor with no function runtime behind it"
+            );
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        })
+    }
 }
 
 /// The per-invocation project context a function runs against — warehouse

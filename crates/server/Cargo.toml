@@ -34,6 +34,8 @@ oxy-api-github = { path = "../api-github" }
 oxy-api-tenancy = { path = "../api-tenancy" }
 oxy-api-documents = { path = "../api-documents" }
 oxy-api-frontline = { path = "../api-frontline" }
+oxy-api-custom-apps = { path = "../api-custom-apps" }
+oxy-custom-apps = { workspace = true }
 oxy-route-catalog = { path = "../route-catalog" }
 oxy-api-source-upload = { path = "../api-source-upload" }
 # Dev-dynamic-linking shim, pulled in only by the `dev-dynamic` feature above.

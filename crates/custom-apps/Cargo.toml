@@ -9,24 +9,54 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+airhouse = { workspace = true, features = ["connector", "rest"] }
 entity = { workspace = true }
+oxy = { workspace = true }
+oxy-cameras = { workspace = true }
 oxy-app-core = { workspace = true }
 oxy-auth = { workspace = true }
 oxy-authz = { workspace = true }
+oxy-observability = { workspace = true }
+oxy-oltp = { workspace = true }
 oxy-platform = { workspace = true }
 oxy-server-authz = { workspace = true }
 oxy-shared = { workspace = true }
+oxy-telemetry = { workspace = true }
 
+async-trait = { workspace = true }
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-sdk-s3 = { workspace = true }
+# Build-time brotli for bundle assets, so the serve path never re-compresses an
+# immutable content-hashed file (`precompress`). rayon fans that compression
+# across the bundle: it is the one-shot cost that `oxyc publish` makes an
+# engineer wait on.
+brotli = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
+dirs = { workspace = true }
+futures = { workspace = true }
+# Header and status types only (the serve resolver takes the request's headers
+# and answers with a status); no framework.
+http = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
+rayon = { workspace = true }
 sea-orm = { workspace = true }
+sentry = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-postgres = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
+url = { workspace = true }
+urlencoding = { workspace = true }
 uuid = { workspace = true }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]
+oxy-app-core = { workspace = true, features = ["test-fixtures"] }
 futures = { workspace = true }
 tokio = { workspace = true }
 

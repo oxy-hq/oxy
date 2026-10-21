@@ -116,12 +116,10 @@ pub fn mark_custom_app_surface() {
 }
 
 /// A fresh hub, already tagged, for custom-app work with no request around it:
-/// a scheduled, manual or webhook-triggered function job.
-pub fn custom_app_hub() -> Arc<sentry::Hub> {
-    let hub = Arc::new(sentry::Hub::new_from_top(sentry::Hub::current()));
-    hub.configure_scope(|scope| scope.set_tag(CUSTOM_APP_SURFACE_TAG, CUSTOM_APP_SURFACE));
-    hub
-}
+/// a scheduled, manual or webhook-triggered function job. Defined beside the
+/// tag in `oxy_telemetry::sentry_filter`, because the usage queue below
+/// `oxy-app` needs it too.
+pub use oxy_telemetry::sentry_filter::custom_app_hub;
 
 /// Bind `hub` across every poll of `stream` — the stream counterpart of
 /// [`sentry::SentryFutureExt::bind_hub`], which only extends `Future`.

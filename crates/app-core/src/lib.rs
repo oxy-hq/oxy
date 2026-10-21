@@ -9,6 +9,12 @@
 //! Nothing in here may depend on a per-surface crate. If something in this crate
 //! needs a surface, the dependency is pointing the wrong way.
 
+pub mod agent_body;
+/// A sandbox-agent credential and its request, for tests. Behind `test-fixtures`
+/// (enabled from the dev-dependencies of the crates whose tests use it) so a
+/// production build does not ship constructors for an admin-ceiling credential.
+#[cfg(any(test, feature = "test-fixtures"))]
+pub mod agent_fixture;
 pub mod app_state;
 pub mod audience;
 pub mod audit;
@@ -29,6 +35,7 @@ pub mod operating_graph;
 pub mod org_host_dispatch;
 pub mod origin;
 pub mod pagination;
+pub mod preagg_cache_ctx;
 pub mod preagg_context;
 pub mod process_role;
 pub mod serve_mode;
@@ -36,6 +43,7 @@ pub mod sql_kind;
 pub mod staging_pin_scope;
 pub mod ttl_lru;
 pub mod usage_period;
+pub mod usage_probe;
 pub mod workspace_cache;
 pub mod workspace_org;
 pub mod workspace_repo_facts;

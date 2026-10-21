@@ -171,7 +171,7 @@ pub async fn app_grant_scope_middleware(
 ///
 /// Asked before authentication, so it reads the presented prefix and nothing
 /// from the database. `false` for every other credential.
-pub(crate) fn serve_tree_refuses(method: &Method, headers: &HeaderMap, path: &str) -> bool {
+pub fn serve_tree_refuses(method: &Method, headers: &HeaderMap, path: &str) -> bool {
     oxy_auth::token::presents_sandbox_agent(headers) && !serve_tree_admits(method, headers, path)
 }
 

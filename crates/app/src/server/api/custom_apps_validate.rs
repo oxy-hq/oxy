@@ -101,7 +101,9 @@ pub fn validate_bundle(
     //    cause: serve-time rewriting patches index.html but can't reach into the
     //    JS chunks, so a mismatch 404s every data fetch. Note the expected prefix
     //    uses the frozen wire path `/customer-apps/`.
-    if let Some(baked) = crate::server::api::custom_apps_serve::first_custom_apps_prefix(html) {
+    if let Some(baked) =
+        crate::server::api::custom_apps_asset_manifest::first_custom_apps_prefix(html)
+    {
         let expected = format!("/customer-apps/{org_slug}/{app_slug}/");
         if baked != expected {
             return Err(BundleValidation::new(

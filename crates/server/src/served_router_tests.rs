@@ -164,3 +164,44 @@ async fn local_mode_drops_the_github_namespace_surface() {
     }
     assert_local_drops(github_namespace_routes()).await;
 }
+
+/// `oxy-api-custom-apps`'s public seam. Unlike the routes above, "mounted" cannot
+/// be read off "not 404" here: the Host-resolved health read answers 404 itself
+/// when the `Host` names no custom app. What tells the handler's 404 from the
+/// router's is the body — the router's is empty, the handler explains itself.
+async fn custom_app_health_answers_from_its_handler(mode: ServeMode) {
+    let router = served(mode).await;
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/customer-apps/health")
+        .header(axum::http::header::HOST, "app.oxygen-hq.com")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(req).await.expect("oneshot");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    assert!(
+        String::from_utf8_lossy(&body).contains("not a custom-app subdomain"),
+        "`/customer-apps/health` must reach `oxy-api-custom-apps`'s handler in {mode:?}, got {:?}",
+        String::from_utf8_lossy(&body)
+    );
+}
+
+#[tokio::test]
+async fn cloud_mode_mounts_the_custom_app_health_read() {
+    if db_unavailable() {
+        return;
+    }
+    custom_app_health_answers_from_its_handler(ServeMode::Cloud).await;
+}
+
+/// The public seam is merged in BOTH modes, unlike the api seam above.
+#[tokio::test]
+async fn local_mode_mounts_the_custom_app_health_read_too() {
+    if db_unavailable() {
+        return;
+    }
+    custom_app_health_answers_from_its_handler(ServeMode::Local).await;
+}

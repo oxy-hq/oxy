@@ -1,0 +1,53 @@
+[package]
+name = "oxy-api-custom-apps"
+version.workspace = true
+authors.workspace = true
+# Editing this crate re-runs oxy-route-catalog's build script (it watches this
+# tree; see crates/route-catalog/build_route_catalog.rs) but does NOT rebuild
+# oxy-app — the catalog was moved above it for exactly that reason.
+description = "Custom Apps HTTP surface, serving half (the /customer-apps bundle route, health, logs and the browser beacon) — a sibling crate mounted by oxy-server"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# What this surface still reaches into oxy-app for: the sandbox-agent-token
+# fence on the serve tree (`oxy_app::surface::serve_tree_refuses`). oxy-app never
+# depends back on this crate, except as a dev-dependency for the function tests
+# that still sit in its `tests/custom_apps` group until the second lift.
+# default-features off so a `--no-default-features` build of oxy-server keeps
+# dropping V8.
+oxy-app = { path = "../app", default-features = false }
+oxy-app-core = { workspace = true }       # AppState, the agent-token body, the function seam traits
+oxy-custom-apps = { workspace = true }    # the serve resolver, build store, caches, usage queue
+oxy = { workspace = true }                # database client
+oxy-auth = { workspace = true }           # credentials and the token kinds
+oxy-authz = { workspace = true }
+oxy-observability = { workspace = true }  # the serving SLI and the log store
+oxy-server-authz = { workspace = true }   # Caller
+oxy-shared = { workspace = true }         # RouteRoleDecl, the request id
+oxy-telemetry = { workspace = true }
+entity = { workspace = true }
+
+axum = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
+chrono = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Applies the build's source maps to a browser error's stack (`sourcemap`).
+sourcemap = "9"
+tokio = { workspace = true }
+tracing = { workspace = true }
+urlencoding = { workspace = true }
+uuid = { workspace = true }
+workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[dev-dependencies]
+brotli = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+
+[lints]
+workspace = true

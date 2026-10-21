@@ -830,7 +830,8 @@ mod tests {
             "src/emails",
             "src/server/api/custom_apps_functions/host.rs",
             "src/server/api/custom_apps_functions/host",
-            "src/server/api/custom_apps_storage",
+            // The storage module moved down with the serving lift.
+            "../custom-apps/src/storage",
             "src/server/api/notifications",
             // The notification input and recipient errors moved to the prelude.
             "../app-core/src/notifications",

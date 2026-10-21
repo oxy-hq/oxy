@@ -77,15 +77,7 @@ pub(super) fn build_protected_routes(
         .nest("/{workspace_id}", workspace)
         .nest("/{workspace_id}/previews", previews)
         .into_parts();
-    let mut decls = crate::server::role_manifest::api_prefixed(decls);
-    // `/customer-apps/{*path}` is mounted on the OUTER router in serve.rs, not
-    // here, but this is the declaration set that gets installed — so the split
-    // that module declares rides along rather than living in a table.
-    decls.extend(
-        crate::server::api::custom_apps_serve::serve_dispatch_roles()
-            .iter()
-            .map(|d| (d.method, d.path.to_string(), d.role)),
-    );
+    let decls = crate::server::role_manifest::api_prefixed(decls);
     (router, decls)
 }
 

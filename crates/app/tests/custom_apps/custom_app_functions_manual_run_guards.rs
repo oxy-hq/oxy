@@ -216,19 +216,15 @@ fn the_serve_mount_the_functions_fixture_copies_still_matches_production() {
 /// handlers on the same paths.
 #[test]
 fn the_log_route_the_readback_test_copies_still_matches_production() {
-    let public = code("crates/app/src/server/router/public.rs");
+    let public = code("crates/api-custom-apps/src/lib.rs");
     assert!(
-        public.contains(&format!(
-            ".route_fleet(\"{LOGS_ROUTE}\",get(crate::server::api::custom_apps_logs::get_logs))"
-        )),
-        "`router/public.rs` no longer mounts `custom_apps_logs::get_logs` on `{LOGS_ROUTE}`; \
+        public.contains(&format!(".route(\"{LOGS_ROUTE}\",get(logs::get_logs))")),
+        "`oxy-api-custom-apps` no longer mounts `logs::get_logs` on `{LOGS_ROUTE}`; \
          the read-back test exercises a path production does not serve"
     );
     assert!(
-        public.contains(&format!(
-            ".route_fleet(\"{ERRORS_ROUTE}\",get(crate::server::api::custom_apps_logs::get_errors))"
-        )),
-        "`router/public.rs` no longer mounts `custom_apps_logs::get_errors` on `{ERRORS_ROUTE}`; \
+        public.contains(&format!(".route(\"{ERRORS_ROUTE}\",get(logs::get_errors))")),
+        "`oxy-api-custom-apps` no longer mounts `logs::get_errors` on `{ERRORS_ROUTE}`; \
          the read-back test exercises a path production does not serve"
     );
     let copy = code("crates/app/tests/custom_apps/custom_app_functions_manual_run/log_reads.rs");

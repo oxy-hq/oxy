@@ -28,8 +28,9 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Custom Apps Platform (code-first React bundles shipped via `oxyc publish`)
-crates/app/src/server/api/custom_apps_serve/       @luong-komorebi @NTtanh
-crates/app/src/server/api/custom_apps_storage/     @luong-komorebi @NTtanh
+# The serving half of the surface (the /customer-apps route, health, logs, the
+# browser beacon), lifted out of the custom_apps_* modules below.
+crates/api-custom-apps/                            @luong-komorebi @NTtanh
 # No `.rs` suffix on the glob: several of these are now directories
 # (custom_apps_client/, custom_apps_health/, custom_apps_migrations/ — #3103),
 # which a `custom_apps_*.rs` pattern silently stops matching.
