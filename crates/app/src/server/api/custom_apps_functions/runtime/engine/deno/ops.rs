@@ -29,7 +29,7 @@ impl From<OpError> for JsErrorBox {
 
 /// The cancellation check, then a handle on the broker channel.
 fn host_sender(state: &Rc<RefCell<OpState>>) -> Result<HostSender, OpError> {
-    state.borrow().borrow::<OpContext>().host_sender()
+    neutral::host_sender_of(state.borrow().try_borrow::<OpContext>())
 }
 
 // Still `(fast)`: the JS-visible args are primitives (no return), so deno_core
@@ -37,8 +37,8 @@ fn host_sender(state: &Rc<RefCell<OpState>>) -> Result<HostSender, OpError> {
 // special arg to reach the shared log buffer.
 #[op2(fast)]
 fn op_ctx_log(state: &mut OpState, #[string] level: &str, #[string] message: &str) {
-    // Absent context: drop the line rather than emit it uncapped. Unreachable
-    // in production (`DenoEngine::create` always parks one).
+    // Absent context: drop the line rather than emit it uncapped. Reachable only
+    // before `bind_invocation` parks one.
     if let Some(ctx) = state.try_borrow::<OpContext>() {
         ctx.log(level, message);
     }

@@ -177,6 +177,15 @@ impl OpContext {
     }
 }
 
+/// [`OpContext::host_sender`] for an op that may run before any invocation is
+/// bound (`IsolateEngine::bind_invocation`): the refusal is the one a dropped
+/// broker gives, so an op reaching an isolate with nothing bound fails that
+/// call instead of panicking the isolate thread.
+pub(super) fn host_sender_of(ctx: Option<&OpContext>) -> Result<HostSender, OpError> {
+    ctx.ok_or_else(|| OpError::new("function host unavailable"))?
+        .host_sender()
+}
+
 /// A clone of the broker channel, taken by [`OpContext::host_sender`].
 pub(super) struct HostSender(mpsc::UnboundedSender<HostCall>);
 

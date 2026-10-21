@@ -1951,3 +1951,11 @@ fn the_isolate_guard_balances() {
     }
     assert_eq!(ISOLATES_LIVE.load(Ordering::Relaxed), before);
 }
+
+/// An op that reaches an isolate before an invocation is bound is refused with
+/// the dropped-broker text; it must not panic the isolate thread.
+#[test]
+fn an_op_with_no_invocation_bound_is_refused_not_panicked() {
+    let refusal = super::ops::host_sender_of(None).err().expect("refused");
+    assert_eq!(refusal.to_string(), "function host unavailable");
+}
