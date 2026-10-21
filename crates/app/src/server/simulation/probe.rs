@@ -9,7 +9,7 @@
 //!
 //! # Both halves of a baseline, because a coefficient is not enough
 //!
-//! A real baseline runs two reads, not one: `reachable_values_outcome` for the
+//! A real baseline runs two reads, not one: `reachable_values_outcome_in` for the
 //! current level of every reachable measure, and `fit_driver_coefficients` for
 //! the slopes. The first is not optional here. The fitter picks a basis by AIC,
 //! so an edge that declares nothing comes back **log-log** — an elasticity —
@@ -28,7 +28,9 @@ use std::sync::Arc;
 
 use oxy_airlayer_compat::engine::metric_tree::{MetricEdge, MetricTree};
 use oxy_airlayer_compat::engine::metric_tree_fit::{fit_driver_coefficients, fit_panel_dimensions};
-use oxy_airlayer_compat::engine::metric_tree_ops::{QueryExecutor, reachable_values_outcome};
+use oxy_airlayer_compat::engine::metric_tree_ops::{
+    BaselineOutcome, MeasureValues, QueryExecutor, reachable_values_outcome_in,
+};
 use oxy_airlayer_compat::schema::models::DriverForm;
 use oxy_simulation::{EdgeFit, FitForm, Probe, SemanticProbe, SimulationError, SimulationSpec};
 use serde_json::{Map, Value};
@@ -89,9 +91,7 @@ enum ValuesVerdict {
 /// in the wildcard. It is treated as `Degraded` rather than `Complete`: an
 /// unknown outcome is by definition not a clean read, and a warn line on a
 /// healthy run is a far cheaper mistake than a silent `refused`.
-fn classify_values(
-    outcome: &oxy_airlayer_compat::engine::metric_tree_ops::BaselineOutcome,
-) -> ValuesVerdict {
+fn classify_values(outcome: &BaselineOutcome) -> ValuesVerdict {
     use oxy_airlayer_compat::engine::metric_tree_ops::BaselineOutcome as O;
 
     match outcome {
@@ -187,6 +187,29 @@ impl FitProbe {
             })
         })
     }
+
+    /// The first of a baseline's two reads: the current level of every
+    /// measure reachable from the roots, and every input a reached composite
+    /// recomputes from.
+    ///
+    /// Through the layer, because an input can be an induced measure
+    /// (`stores.net_sales`, declared on `sales`): the engine keys its row by
+    /// the source alias, and only the layer's promotions say what that is.
+    fn read_levels(
+        &self,
+        time_dimension: &str,
+        executor: &QueryExecutor,
+    ) -> (MeasureValues, BaselineOutcome) {
+        reachable_values_outcome_in(
+            &self.tree,
+            &self.layer,
+            &self.roots,
+            time_dimension,
+            (WINDOW_START, WINDOW_END),
+            &[],
+            executor,
+        )
+    }
 }
 
 impl SemanticProbe for FitProbe {
@@ -200,14 +223,7 @@ impl SemanticProbe for FitProbe {
         // The target's and lever's current aggregates. Same call, same
         // executor, same window as the fit — so the profile is sampled at the
         // level the world is actually sitting at.
-        let (values, outcome) = reachable_values_outcome(
-            &self.tree,
-            &self.roots,
-            &time_dimension,
-            (WINDOW_START, WINDOW_END),
-            &[],
-            &executor,
-        );
+        let (values, outcome) = self.read_levels(&time_dimension, &executor);
         // Never discarded: see `ValuesVerdict` for what losing this read costs.
         match classify_values(&outcome) {
             ValuesVerdict::Complete => {}
