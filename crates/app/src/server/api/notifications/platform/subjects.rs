@@ -1,7 +1,8 @@
 //! The Oxy records platform notices are rendered from, loaded in batches.
 //!
 //! One query per subject kind on a page: workspaces by id, runs by id (plus
-//! one for their failing streaks), anomaly buckets by event. A billing episode needs no query — its id is the
+//! one for their failing streaks), anomaly buckets by event, CLI device
+//! requests by user code. A billing episode needs no query — its id is the
 //! end of the grace period, which is the one fact the notice states — and a
 //! test notice needs one only to name the token that sent it.
 
@@ -15,8 +16,8 @@ use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
 use super::kinds::{
-    SUBJECT_AIRWAY_RUN, SUBJECT_ANOMALY, SUBJECT_AUTOMATION_RUN, SUBJECT_BILLING, SUBJECT_TEST,
-    SUBJECT_WORKSPACE,
+    SUBJECT_AIRWAY_RUN, SUBJECT_ANOMALY, SUBJECT_AUTOMATION_RUN, SUBJECT_BILLING,
+    SUBJECT_CLI_DEVICE_REQUEST, SUBJECT_TEST, SUBJECT_WORKSPACE,
 };
 use super::render::About;
 use super::run_streak::Streak;
@@ -24,10 +25,29 @@ use super::run_streak::Streak;
 /// A loaded subject.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Record {
-    Billing { grace_ends_at: DateTime<Utc> },
-    Workspace { id: Uuid, name: String },
+    Billing {
+        grace_ends_at: DateTime<Utc>,
+    },
+    Workspace {
+        id: Uuid,
+        name: String,
+    },
     Run(RunRecord),
     Anomaly(AnomalyRecord),
+    /// An `oxyc … --no-browser` request waiting on the person it named.
+    CliDeviceRequest {
+        /// Stored form, without the dash. Never worded.
+        user_code: String,
+        hostname: String,
+        /// `login`, `agent` or `sandbox_agent`.
+        kind: &'static str,
+        /// The ask's `apps`, split on commas, as sent.
+        apps: Vec<String>,
+        hours: Option<i64>,
+        /// `pending`, `approved` or `denied`.
+        status: String,
+        expires_at: DateTime<Utc>,
+    },
     Test(super::self_test::TestRecord),
 }
 
@@ -141,6 +161,9 @@ pub async fn load(
     }
     for (id, record) in anomalies_by_event(db, ids(SUBJECT_ANOMALY)).await? {
         out.insert((SUBJECT_ANOMALY, id), Record::Anomaly(record));
+    }
+    for (id, record) in super::cli_approval::load(db, ids(SUBJECT_CLI_DEVICE_REQUEST)).await? {
+        out.insert((SUBJECT_CLI_DEVICE_REQUEST, id), record);
     }
     for (id, record) in super::self_test::load(db, ids(SUBJECT_TEST)).await? {
         out.insert((SUBJECT_TEST, id), Record::Test(record));

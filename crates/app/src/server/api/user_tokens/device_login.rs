@@ -22,6 +22,16 @@
 //!   ([`cli_login::mint_redeemed`]), so who may mint is asked again, and the
 //!   `token.created` row records `approval: device_code` and the approver.
 //!
+//! **Naming who approves.** `oxyc --approver <email>` puts `approver` in the
+//! start body. An email that resolves to an active user binds the request to
+//! them — the three page routes answer 404 to anyone else, as for a wrong code
+//! — and tells them through the notification machine (`oxy.cli_approval`:
+//! push, email, Slack, the inbox), best-effort after the row is stored. The
+//! notice links to the page and never carries the code: the person types it
+//! from the terminal that ran `oxyc`. The answer to the start is identical
+//! whether the email resolved or not, so the asker learns who has an account
+//! from nothing.
+//!
 //! **A device-code token never carries staff or partner standing.** The
 //! loopback code only ever reaches the approver's own machine; a device code
 //! is collected by whoever started the request, and an approver who was sent
@@ -48,11 +58,13 @@ use oxy_auth::token::device_login::{self, Pending, Polled};
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use uuid::Uuid;
 
 use super::ManageTokens;
 use super::cli_login::{self, Collected};
 use super::error::TokenError;
 use super::handlers::{TokenWithSecret, parse};
+use crate::server::api::notifications::platform::cli_approval::notify_cli_approval;
 use crate::server::api::public_rate_limit::{self, PublicRoute};
 
 /// What a person's own refusal records, for the CLI to print.
@@ -64,6 +76,8 @@ pub struct StartBody {
     hostname: String,
     /// The `/cli-auth` parameters. Absent for `oxyc login`.
     ask: Option<Value>,
+    /// Who should approve: an email. Absent when the CLI named nobody.
+    approver: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -135,8 +149,23 @@ pub async fn start(headers: HeaderMap, body: Bytes) -> Result<Json<StartResponse
     let hostname = code_store::clean_hostname(&body.hostname)
         .ok_or_else(|| TokenError::Invalid("'hostname' must be 1 to 255 characters".into()))?;
     let ask = device_login::clean_ask(body.ask.as_ref()).map_err(TokenError::Invalid)?;
+    let approver = body.approver.as_deref().map(clean_approver).transpose()?;
     let db = establish_connection().await?;
-    let started = device_login::start(&db, &challenge, &hostname, ask).await?;
+    // A named approver always binds the request: to the person, or — when the
+    // address names nobody — to a sentinel no session matches, so the asker
+    // learns nothing from who may open it.
+    let approver_id = match approver {
+        Some(email) => Some(
+            device_login::resolve_approver(&db, &email)
+                .await?
+                .unwrap_or(device_login::UNRESOLVED_APPROVER),
+        ),
+        None => None,
+    };
+    let started = device_login::start(&db, &challenge, &hostname, ask, approver_id).await?;
+    if let Some(user_id) = approver_id.filter(|id| *id != device_login::UNRESOLVED_APPROVER) {
+        tell_approver(db, user_id, started.user_code.clone(), started.created_at);
+    }
     Ok(Json(StartResponse {
         device_code: started.device_code,
         user_code: device_login::display_user_code(&started.user_code),
@@ -145,22 +174,67 @@ pub async fn start(headers: HeaderMap, body: Bytes) -> Result<Json<StartResponse
     }))
 }
 
-/// The pending request a user code names: 404 for a code that is malformed,
-/// unknown, decided or lapsed — one answer, so the page cannot probe.
-async fn find(db: &DatabaseConnection, raw: &str) -> Result<Pending, TokenError> {
+/// `approver` as the start takes it: trimmed, or a 400 when it cannot be an
+/// email.
+fn clean_approver(raw: &str) -> Result<String, TokenError> {
+    device_login::clean_approver(raw).ok_or_else(|| {
+        TokenError::Invalid("'approver' must be an email address of at most 254 characters".into())
+    })
+}
+
+/// The most live requests one anonymous caller can have waiting on a person,
+/// and so the most notices they can aim at them before the rest go unsent.
+///
+/// The cap is keyed on the person, not the caller, so a flooder can mute the
+/// notices to someone for as long as it keeps three requests pending (each
+/// lapses in ten minutes). That is the chosen side: a notice is a convenience
+/// and the code the CLI printed still works on the page, while the flood it
+/// prevents goes out on every channel in Oxygen's name. The per-IP rate limit
+/// on the start bounds the keeping-up.
+const MAX_NOTICES_PER_APPROVER: u64 = 3;
+
+/// Tell the approver, off the request's own clock: the start answers the same
+/// whether or not the address named anyone, so nothing here may add to its
+/// time. A short write that then queues delivery, never a reason to fail the
+/// start — the CLI still prints the code and the person can be handed the page.
+fn tell_approver(db: DatabaseConnection, user_id: Uuid, user_code: String, as_of: DateTime<Utc>) {
+    tokio::spawn(async move {
+        let bound = match device_login::bound_pending(&db, user_id, as_of).await {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::warn!(error = %e, "could not count cli device requests");
+                return;
+            }
+        };
+        if bound > MAX_NOTICES_PER_APPROVER {
+            tracing::info!(approver = %user_id, bound, "cli approval notice withheld: over the pending cap");
+            return;
+        }
+        if let Err(e) = notify_cli_approval(&db, user_id, &user_code).await {
+            tracing::warn!(error = %e, "could not notify the named approver of a cli device request");
+        }
+    });
+}
+
+/// The pending request a user code names, for `user_id`: 404 for a code that
+/// is malformed, unknown, decided or lapsed — and for a request bound to
+/// another approver. One answer, so the page cannot probe.
+async fn find(db: &DatabaseConnection, raw: &str, user_id: Uuid) -> Result<Pending, TokenError> {
     let code = device_login::clean_user_code(raw).ok_or(TokenError::NotFound)?;
     device_login::pending(db, &code)
         .await?
+        .filter(|pending| pending.may_decide(user_id))
         .ok_or(TokenError::NotFound)
 }
 
 /// `GET /auth/cli/device/requests/{user_code}` — the request, for the page.
 pub async fn describe(
     _: SessionOnly<ManageTokens>,
+    actor: RequestActor,
     Path(user_code): Path<String>,
 ) -> Result<Json<DeviceRequestView>, TokenError> {
     let db = establish_connection().await?;
-    let pending = find(&db, &user_code).await?;
+    let pending = find(&db, &user_code, actor.id).await?;
     Ok(Json(DeviceRequestView {
         user_code: device_login::display_user_code(&pending.user_code),
         hostname: pending.hostname,
@@ -209,7 +283,7 @@ pub async fn approve(
 ) -> Result<Json<Decided>, TokenError> {
     let body: ApproveBody = parse(&body)?;
     let db = establish_connection().await?;
-    let pending = find(&db, &user_code).await?;
+    let pending = find(&db, &user_code, actor.id).await?;
     if !mint_matches_ask(&pending.ask, body.mint.as_ref()) {
         return Err(TokenError::Invalid(
             "the approval is not for the kind of token the request asked for".into(),
@@ -245,7 +319,7 @@ pub async fn deny(
     Path(user_code): Path<String>,
 ) -> Result<Json<Decided>, TokenError> {
     let db = establish_connection().await?;
-    let pending = find(&db, &user_code).await?;
+    let pending = find(&db, &user_code, actor.id).await?;
     if !device_login::deny(&db, &pending.user_code, actor.id, DECLINED).await? {
         return Err(TokenError::NotFound);
     }

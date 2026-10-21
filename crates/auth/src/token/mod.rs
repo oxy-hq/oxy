@@ -50,6 +50,7 @@ pub mod ci;
 pub mod ci_mint;
 pub mod cli_login;
 pub mod credential;
+mod device_approver;
 mod device_ask;
 pub mod device_login;
 pub mod dispatch;

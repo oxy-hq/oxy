@@ -195,4 +195,74 @@ describe("deviceRound", () => {
     expect(cause.code).toBe(ExitCode.REQUEST);
     expect(polls).toHaveLength(0);
   });
+  describe("--approver", () => {
+    /** stderr as written while `run` runs, with quiet mode off. */
+    async function stderrOf(run: () => Promise<unknown>): Promise<string> {
+      vi.stubEnv("OXYC_QUIET", "");
+      const lines: string[] = [];
+      const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+        lines.push(String(chunk));
+        return true;
+      });
+      try {
+        await run();
+      } finally {
+        spy.mockRestore();
+      }
+      return lines.join("");
+    }
+
+    it("sends the approver in the start body, beside the ask", async () => {
+      pollReplies = [approved];
+      await deviceRound(target, { ...opts(), approver: "ada@example.com" }, createPkce(), {
+        query: "kind=agent&hours=4"
+      });
+      expect(starts).toHaveLength(1);
+      expect(starts[0]).toMatchObject({
+        approver: "ada@example.com",
+        ask: { kind: "agent", hours: "4" }
+      });
+      // Only the start names the approver: a poll carries the device code and the verifier.
+      expect(Object.keys(polls[0] ?? {}).sort()).toEqual(["code_verifier", "device_code"]);
+    });
+
+    it("sends no approver key when none was named (or only whitespace)", async () => {
+      pollReplies = [approved];
+      await deviceRound(target, opts(), createPkce());
+      pollReplies = [approved];
+      await deviceRound(target, { ...opts(), approver: "  " }, createPkce());
+      expect(starts).toHaveLength(2);
+      for (const start of starts) expect(start).not.toHaveProperty("approver");
+    });
+
+    it("says who was asked and keeps every existing line, never printing the device code", async () => {
+      pollReplies = [approved];
+      const said = await stderrOf(() =>
+        deviceRound(target, { ...opts(), approver: "ada@example.com" }, createPkce())
+      );
+      const lines = said.split("\n").filter(Boolean);
+      expect(lines).toContain(`  ${target}/cli-auth/device?code=BCDF-GHJK`);
+      expect(said).toContain("and type this code on that page: BCDF-GHJK");
+      expect(said).toContain("Waiting for approval (the request lapses in 10 min)");
+      expect(said).toContain(
+        `Approval request sent to ada@example.com — they type the code BCDF-GHJK on ${target}/cli-auth/device?code=BCDF-GHJK.`
+      );
+      expect(said).not.toContain("dev-code");
+    });
+
+    it("says nothing about an approver when none was named", async () => {
+      pollReplies = [approved];
+      const said = await stderrOf(() => deviceRound(target, opts(), createPkce()));
+      expect(said).toContain("and type this code on that page: BCDF-GHJK");
+      expect(said).not.toContain("Approval request sent");
+    });
+
+    it("strips control characters from the address it prints", async () => {
+      pollReplies = [approved];
+      const said = await stderrOf(() =>
+        deviceRound(target, { ...opts(), approver: "ada@example.com\u001b[2J" }, createPkce())
+      );
+      expect(said).not.toContain("\u001b[2J");
+    });
+  });
 });

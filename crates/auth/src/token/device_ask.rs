@@ -19,6 +19,9 @@ const ASK_FIELDS: [(&str, usize); 5] = [
 /// The kinds a request may ask for, besides a login (no `kind`).
 const ASK_KINDS: [&str; 2] = ["sandbox_agent", "agent"];
 
+/// The longest address an email can be (RFC 5321 §4.5.3.1.3, path minus `<>`).
+const APPROVER_EMAIL_MAX: usize = 254;
+
 /// A fresh user code, stored and compared without its dash.
 pub(super) fn new_user_code() -> String {
     let mut code = String::with_capacity(USER_CODE_LEN);
@@ -36,6 +39,23 @@ pub(super) fn new_user_code() -> String {
 pub fn display_user_code(code: &str) -> String {
     let (head, tail) = code.split_at(code.len().min(USER_CODE_LEN / 2));
     format!("{head}-{tail}")
+}
+
+/// Whether `text` could be smuggling a user code: any run of eight letters
+/// of the code alphabet once everything that is not a letter or digit is
+/// dropped, so no separator (`-`, `/`, `,`, a space) can split one. The
+/// alphabet has no vowel, so ordinary words and hostnames never match; a
+/// notice that repeats an asker's text refuses it, so it can never carry the
+/// code.
+pub fn carries_user_code(text: &str) -> bool {
+    let letters: Vec<u8> = text
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_uppercase() as u8)
+        .collect();
+    letters
+        .windows(USER_CODE_LEN)
+        .any(|w| w.iter().all(|b| USER_CODE_ALPHABET.contains(b)))
 }
 
 /// A user code as typed — any case, with or without the dash or spaces — in
@@ -95,5 +115,37 @@ pub fn clean_ask(ask: Option<&Value>) -> Result<Value, String> {
         Some(kind) if !ASK_KINDS.contains(&kind) => Err(format!("'ask.kind' '{kind}' is unknown")),
         None if !fields.is_empty() => Err("'ask' names no 'kind', so it asks for a login".into()),
         _ => Ok(ask.clone()),
+    }
+}
+
+/// The approver a CLI named (`--approver`), trimmed, or `None` when it cannot
+/// be an email: over 254 characters, not exactly one `@` with something on
+/// each side, or carrying whitespace or a control character. Plausible, not
+/// valid: whether it names anyone is the lookup's to say, and it never says.
+pub fn clean_approver(raw: &str) -> Option<String> {
+    let email = raw.trim();
+    let (local, domain) = email.split_once('@')?;
+    let ok = email.chars().count() <= APPROVER_EMAIL_MAX
+        && !local.is_empty()
+        && !domain.is_empty()
+        && !domain.contains('@')
+        && !email.chars().any(|c| c.is_whitespace() || c.is_control());
+    ok.then(|| email.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_carrying_a_user_code_is_told_apart() {
+        assert!(carries_user_code("BCDF-GHJK"));
+        assert!(carries_user_code("enter code bcdf ghjk now"));
+        assert!(carries_user_code("x-BCDFGHJK-y"));
+        assert!(carries_user_code("BCDF/GHJK"));
+        assert!(carries_user_code("bcdf, ghjk"));
+        assert!(!carries_user_code("luongs-macbook-pro"));
+        assert!(!carries_user_code("build-box.internal"));
+        assert!(!carries_user_code("BCDF-GHJ"));
     }
 }

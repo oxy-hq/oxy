@@ -43,6 +43,8 @@ function oxyc(...args: string[]): Run {
       OXY_CREDENTIALS_PATH: join(BIN, "..", "__no_such_credentials__.json"),
       OXYC_CACHE_DIR: join(BIN, "..", "__no_such_cache__"),
       OXY_TOKEN: "",
+      // An approver exported in the developer's shell would turn a plain case into a usage error.
+      OXY_APPROVER: "",
       NO_COLOR: "1",
       // The bare-customer cases reach `launch`, which would otherwise spawn a
       // real `claude` process. Dry-run prints the command instead — the same
@@ -130,6 +132,41 @@ describe("exit codes", () => {
       const r = oxyc(...args);
       expect(r.status, args.join(" ")).toBe(ExitCode.USAGE);
       expect(r.stderr).toContain("--standing is only valid with --agent");
+      expect(r.stdout).toBe("");
+    }
+  });
+
+  /** `--approver` names who approves a device-code request, so it needs `--no-browser`. */
+  it("refuses --approver without --no-browser, before any browser opens", () => {
+    for (const args of [
+      ["tokens", "create", "--agent", "--approver", "ada@example.com"],
+      [
+        "tokens",
+        "create",
+        "--sandbox-agent",
+        "--app",
+        "acme/store",
+        "--approver",
+        "ada@example.com"
+      ],
+      ["tokens", "create", "--approver", "ada@example.com"],
+      ["login", "--approver", "ada@example.com"]
+    ]) {
+      const r = oxyc(...args);
+      expect(r.status, args.join(" ")).toBe(ExitCode.USAGE);
+      expect(r.stderr).toContain("--approver is only valid with --no-browser");
+      expect(r.stdout).toBe("");
+    }
+  });
+
+  it("refuses an --approver that cannot be an email, before any request", () => {
+    for (const args of [
+      ["tokens", "create", "--agent", "--no-browser", "--approver", "not-an-email"],
+      ["login", "--no-browser", "--approver", "ada@"]
+    ]) {
+      const r = oxyc(...args);
+      expect(r.status, args.join(" ")).toBe(ExitCode.USAGE);
+      expect(r.stderr).toContain("--approver must be an email address");
       expect(r.stdout).toBe("");
     }
   });

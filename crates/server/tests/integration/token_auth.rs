@@ -25,6 +25,7 @@ mod browser_session;
 mod cli_login;
 mod deactivated_owner;
 mod device_login;
+mod device_login_approver;
 mod discovery;
 mod email_identity;
 mod extend;

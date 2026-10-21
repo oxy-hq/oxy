@@ -10,9 +10,11 @@ use std::collections::HashSet;
 
 use entity::org_members::{self, OrgRole};
 use entity::workspace_members::{self, WorkspaceRole};
-use entity::{org_team_members, org_teams, users};
+use entity::{org_frontline_members, org_team_members, org_teams, users};
 use oxy_metric_monitoring::notify::{OrgRoleTarget, Person};
-use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect};
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+};
 use uuid::Uuid;
 
 /// The org roles at or above `at_least`.
@@ -38,6 +40,30 @@ pub async fn org_members_from(
         .all(db)
         .await?;
     active(db, ids).await
+}
+
+/// The orgs `user_id` belongs to, oldest first: memberships, then frontline
+/// standing (crew hold no membership and are who custom-app notifications are
+/// for). Not narrowed to what a request's token reaches; the caller does that.
+pub async fn orgs_of(db: &DatabaseConnection, user_id: Uuid) -> Result<Vec<Uuid>, DbErr> {
+    let members: Vec<Uuid> = org_members::Entity::find()
+        .select_only()
+        .column(org_members::Column::OrgId)
+        .filter(org_members::Column::UserId.eq(user_id))
+        .order_by_asc(org_members::Column::CreatedAt)
+        .into_tuple::<Uuid>()
+        .all(db)
+        .await?;
+    let crew: Vec<Uuid> = org_frontline_members::Entity::find()
+        .select_only()
+        .column(org_frontline_members::Column::OrgId)
+        .filter(org_frontline_members::Column::UserId.eq(user_id))
+        .filter(org_frontline_members::Column::Status.eq(org_frontline_members::STATUS_ACTIVE))
+        .order_by_asc(org_frontline_members::Column::CreatedAt)
+        .into_tuple::<Uuid>()
+        .all(db)
+        .await?;
+    Ok(members.into_iter().chain(crew).collect())
 }
 
 /// `users` among `ids` whose account is active, in `ids`' order.

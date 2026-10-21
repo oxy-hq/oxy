@@ -39,6 +39,12 @@ pub struct Model {
     /// Set once the CLI collects the approval, or burns the row with a wrong
     /// verifier. Nothing is collected twice.
     pub consumed_at: Option<DateTimeWithTimeZone>,
+    /// The one person who may read, approve or deny the request, when the CLI
+    /// named an approver (`oxyc --approver`): their id when the email resolved
+    /// to one active user, else the nil id, which nobody matches. `None`:
+    /// whoever types the code decides. See
+    /// `m20261021_000002_cli_device_requests_approver`.
+    pub approver_user_id: Option<Uuid>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

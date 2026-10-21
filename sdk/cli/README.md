@@ -149,7 +149,7 @@ route's surface and fleet role.
 ## Authentication
 
 ```bash
-oxyc login [--env <e>] [--login-env <e...>] [--assume <org> -r <why>] [--no-browser]
+oxyc login [--env <e>] [--login-env <e...>] [--assume <org> -r <why>] [--no-browser [--approver <email>]]
 oxyc whoami [--json]        # who the credential is, and what it can reach
 oxyc token                  # print the bearer, for a raw curl
 oxyc login-link [--next <path>] [--json] [--open]   # a one-time URL that signs a browser in
@@ -158,8 +158,8 @@ oxyc tokens list [--json]   # your personal access tokens
 oxyc tokens revoke <id>
 oxyc tokens revoke --current   # end the token in OXY_TOKEN
 oxyc tokens create          # opens Account → Personal access tokens
-oxyc tokens create --sandbox-agent --app <org>/<app> [--app …] [--hours 8] [--name …] [--no-browser]
-oxyc tokens create --agent [--standing] [--hours 8] [--name …] [--no-browser]
+oxyc tokens create --sandbox-agent --app <org>/<app> [--app …] [--hours 8] [--name …] [--no-browser [--approver <email>]]
+oxyc tokens create --agent [--standing] [--hours 8] [--name …] [--no-browser [--approver <email>]]
 ```
 
 **An agent runs on its own token, never on the person's `oxyc login`.** Which
@@ -280,6 +280,20 @@ approved by device code **never carries staff or partner access**, since
 whoever started the request collects it and the approver cannot see who that
 is. `--standing --no-browser` is a usage error (exit `2`), and a login made
 this way reaches only what its approver's organization memberships do.
+
+**`--approver <email>`** (env `OXY_APPROVER`, valid only with `--no-browser`;
+anything else is a usage error, exit `2`) names who must approve, so nobody
+has to hand them a URL: the platform tells that person itself, by push,
+email and Slack DM where their organization connected it, and in their
+Oxygen inbox. They type the code from your output on the approval page. The
+notice never holds the code and links to `/cli-auth/device` without it, and
+the request is then theirs alone: anyone else who finds the page is told
+there is no such request. `oxyc` prints `Approval request sent to <email>`
+beside the code and the URL; it prints that whether or not the deployment
+knew the address, since the deployment never says. An address nobody holds
+leaves a request nobody can approve: it lapses after ten minutes, so a typo
+means running the command again with the right one. An agent still never
+opens or approves the page.
 
 What comes back is checked before anything is printed: it must be an
 `oxy_sbx_`, described as `sandbox_agent` and not all-access, for exactly the

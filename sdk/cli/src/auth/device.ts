@@ -14,6 +14,11 @@
  *   2. The URL and the user code go to stderr. A person opens the URL on any
  *      device, signed in, types the code oxyc printed, and approves. The page
  *      never shows the code: reading it off this terminal is the check.
+ *      With `--approver <email>` the start also names who must approve, and
+ *      the platform tells them itself (push, email, Slack, the inbox): the
+ *      notice carries no code and links to the page without one, so they still
+ *      type it from this terminal. Whether the email names anyone is never
+ *      answered, so a typo is not told apart from a stranger.
  *   3. `POST /api/auth/cli/device/poll` with the device code and the PKCE
  *      verifier, every `interval` seconds, until the deployment answers with
  *      the token (the exchange's own body), a refusal, or a lapse.
@@ -89,13 +94,19 @@ async function startRequest(
   target: string,
   pkce: Pkce,
   hostname: string,
-  query: string | undefined
+  query: string | undefined,
+  approver: string | undefined
 ): Promise<Started | undefined> {
   const url = `${base(target)}/api/auth/cli/device`;
   const ask = askFromQuery(query);
   let response: Response;
   try {
-    response = await post(url, { code_challenge: pkce.challenge, hostname, ask });
+    response = await post(url, {
+      code_challenge: pkce.challenge,
+      hostname,
+      ask,
+      ...(approver ? { approver } : {})
+    });
   } catch (cause) {
     throw new CliError(`POST ${url} failed: ${(cause as Error).message}`, {
       code: ExitCode.UNAVAILABLE
@@ -124,11 +135,24 @@ async function startRequest(
 }
 
 /** Say where to approve. Stderr only: stdout stays the one line a shell evaluates. */
-function announce(target: string, started: Started, purpose: BrowserPurpose): void {
+function announce(
+  target: string,
+  started: Started,
+  purpose: BrowserPurpose,
+  approver: string | undefined
+): void {
   const code = printable(started.user_code);
+  const url = deviceUrl(target, started.user_code);
   log.info(`To ${purpose.opening}, open this on any device where you are signed in to Oxygen:`);
-  log.info(`  ${deviceUrl(target, started.user_code)}`);
+  log.info(`  ${url}`);
   log.info(`and type this code on that page: ${code}`);
+  // The same words whether or not the email names an account: the deployment
+  // does not say, and neither do we.
+  if (approver) {
+    log.info(
+      `Approval request sent to ${printable(approver)} — they type the code ${code} on ${url}.`
+    );
+  }
   log.info(
     `Waiting for approval (the request lapses in ${Math.round(started.expires_in / 60)} min)…`
   );
@@ -250,9 +274,10 @@ export async function deviceRound(
 ): Promise<Minted | undefined> {
   const purpose = ask.purpose ?? LOGIN_PURPOSE;
   const hostname = opts.hostname ?? osHostname();
-  const started = await startRequest(target, pkce, hostname, ask.query);
+  const approver = opts.approver?.trim() || undefined;
+  const started = await startRequest(target, pkce, hostname, ask.query, approver);
   if (!started) return undefined;
-  announce(target, started, purpose);
+  announce(target, started, purpose, approver);
   const wording = { refused: ask.refused ?? LOGIN_CODE_REFUSED, purpose };
   return pollUntilDecided(target, pkce, started, wording, opts.sleep ?? defaultSleep);
 }

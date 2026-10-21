@@ -1,4 +1,4 @@
-//! Oxygen's own catalogue: the four platform notice kinds, in code.
+//! Oxygen's own catalogue: the platform notice kinds, in code.
 //!
 //! The kinds themselves, their channels and which one is critical are
 //! `platform::kinds`; this places them in the tree and labels them. A kind
@@ -10,12 +10,12 @@ use std::collections::BTreeMap;
 use super::model::{Action, Catalogue, CategoryDef, KindDef, Level};
 use super::source::{Source, SourceCatalogue};
 use crate::server::api::notifications::platform::kinds::{
-    ANOMALY, BILLING_PAST_DUE, RUN_FAILED, TEST, WORKSPACE_READY,
+    ANOMALY, BILLING_PAST_DUE, CLI_APPROVAL, RUN_FAILED, TEST, WORKSPACE_READY,
 };
 use crate::server::api::notifications::platform::self_test::TITLE as TEST_TITLE;
 
 /// (kind, label, category, category label, level).
-const PLATFORM: [(&str, &str, &str, &str, Level); 4] = [
+const PLATFORM: [(&str, &str, &str, &str, Level); 5] = [
     (
         BILLING_PAST_DUE,
         "Payment past due",
@@ -43,6 +43,13 @@ const PLATFORM: [(&str, &str, &str, &str, Level); 4] = [
         "monitoring",
         "Monitoring",
         Level::Active,
+    ),
+    (
+        CLI_APPROVAL,
+        "oxyc approval request",
+        "access",
+        "Access and sign-in",
+        Level::TimeSensitive,
     ),
 ];
 
@@ -130,6 +137,15 @@ mod tests {
         let run = c.describe(RUN_FAILED);
         assert_eq!(run.category_labels, vec!["Automations and pipelines"]);
         assert_eq!(run.level, Level::TimeSensitive);
+        let approval = c.describe(CLI_APPROVAL);
+        assert_eq!(approval.label, "oxyc approval request");
+        assert_eq!(approval.category_labels, vec!["Access and sign-in"]);
+        assert_eq!(approval.level, Level::TimeSensitive);
+        assert!(approval.mutable && approval.has_switch());
+        assert_eq!(
+            approval.channels,
+            crate::server::api::notifications::platform::kinds::channels(CLI_APPROVAL)
+        );
         assert_eq!(
             run.channels,
             crate::server::api::notifications::platform::kinds::channels(RUN_FAILED)

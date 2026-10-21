@@ -18,9 +18,9 @@ use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
 use super::kinds::{
-    self, ANOMALY, BILLING_PAST_DUE, RUN_FAILED, SUBJECT_AIRWAY_RUN, SUBJECT_ANOMALY,
-    SUBJECT_AUTOMATION_RUN, SUBJECT_BILLING, SUBJECT_TEST, SUBJECT_WORKSPACE, TEST,
-    WORKSPACE_READY,
+    self, ANOMALY, BILLING_PAST_DUE, CLI_APPROVAL, RUN_FAILED, SUBJECT_AIRWAY_RUN, SUBJECT_ANOMALY,
+    SUBJECT_AUTOMATION_RUN, SUBJECT_BILLING, SUBJECT_CLI_DEVICE_REQUEST, SUBJECT_TEST,
+    SUBJECT_WORKSPACE, TEST, WORKSPACE_READY,
 };
 use super::subjects;
 
@@ -130,6 +130,7 @@ pub fn fallback(kind: &str) -> Rendered {
         WORKSPACE_READY => "A workspace is ready",
         RUN_FAILED => "A run failed",
         ANOMALY => "A monitor found an anomaly",
+        CLI_APPROVAL => "oxyc asks for your approval",
         TEST => super::self_test::TITLE,
         _ => "Oxygen notice",
     };
@@ -204,6 +205,9 @@ fn words(about: &About, org: Option<&OrgNames>, record: &subjects::Record) -> Op
                 )
             }),
         }),
+        (SUBJECT_CLI_DEVICE_REQUEST, record @ Record::CliDeviceRequest { .. }) => {
+            super::cli_approval::words(record, chrono::Utc::now())
+        }
         (SUBJECT_TEST, Record::Test(t)) => Some(t.words(slug)),
         _ => None,
     }
@@ -344,6 +348,58 @@ mod tests {
                 )
             );
         }
+    }
+
+    fn cli_request(status: &str, expires_in: chrono::Duration) -> subjects::Record {
+        subjects::Record::CliDeviceRequest {
+            user_code: "BCDFGHJK".into(),
+            hostname: "build-box".into(),
+            kind: "sandbox_agent",
+            apps: vec!["acme/store".into()],
+            hours: Some(2),
+            status: status.into(),
+            expires_at: Utc::now() + expires_in,
+        }
+    }
+
+    #[test]
+    fn an_oxyc_approval_names_the_host_and_links_to_the_page_without_the_code() {
+        let about = about(CLI_APPROVAL, SUBJECT_CLI_DEVICE_REQUEST);
+        let r = words(
+            &about,
+            Some(&acme()),
+            &cli_request("pending", chrono::Duration::minutes(5)),
+        )
+        .unwrap();
+        assert_eq!(
+            r.title,
+            "oxyc on build-box asks for a sandbox agent token for acme/store (2 h)"
+        );
+        assert!(
+            r.body
+                .unwrap()
+                .starts_with("Open the approval page and type the code")
+        );
+        assert_eq!(r.href.as_deref(), Some("/cli-auth/device"));
+    }
+
+    #[test]
+    fn an_oxyc_approval_that_was_decided_or_lapsed_says_so_under_the_same_title() {
+        let about = about(CLI_APPROVAL, SUBJECT_CLI_DEVICE_REQUEST);
+        let say = |status, left| words(&about, Some(&acme()), &cli_request(status, left)).unwrap();
+        let waiting = say("pending", chrono::Duration::minutes(5));
+        for (status, left, body) in [
+            ("approved", chrono::Duration::minutes(5), "Approved."),
+            ("denied", chrono::Duration::minutes(5), "Declined."),
+            ("pending", chrono::Duration::minutes(-1), "Expired."),
+        ] {
+            let r = say(status, left);
+            assert_eq!(r.title, waiting.title);
+            assert_eq!(r.body.as_deref(), Some(body));
+        }
+        // Swept, or from a newer binary: the plain sentence, no link.
+        assert_eq!(fallback(CLI_APPROVAL).title, "oxyc asks for your approval");
+        assert_eq!(fallback(CLI_APPROVAL).href, None);
     }
 
     #[test]

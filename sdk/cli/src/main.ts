@@ -19,6 +19,7 @@
 import { Command } from "commander";
 import { clearAllCaches, unknownCacheEntries } from "./api/cache.js";
 import { hintToShow } from "./auth/agent-token.js";
+import { approverFrom, approverOption } from "./auth/approver.js";
 import { runExitRevokes } from "./auth/exit-revoke.js";
 import { runActivity } from "./commands/activity.js";
 import { runApi } from "./commands/api.js";
@@ -263,8 +264,9 @@ function buildProgram(): Command {
         "--no-browser",
         "approve by device code from any device, for a machine no browser can reach (a container, CI, a remote box)"
       )
+      .addOption(approverOption("with --no-browser"))
       .option("-r, --reason <why>", "why you are acting as that org — recorded in the audit log")
-  ).action(async (opts: Record<string, unknown>) => {
+  ).action(async (opts: Record<string, unknown>, cmd: Command) => {
     const extra = (opts.loginEnv as string[]) ?? [];
     // The positional `--env` is one of the set, not a separate default. No
     // `??` here: `withGlobals` already defaults the option and `createContext`
@@ -308,9 +310,9 @@ function buildProgram(): Command {
             reason: String(opts.reason)
           };
     // Commander's `--no-browser` is `browser: false`; it defaults to true.
-    await runLogin(createContext(globals(opts)), envs, assume, {
-      noBrowser: opts.browser === false
-    });
+    const noBrowser = opts.browser === false;
+    const approver = approverFrom(opts, noBrowser, cmd.getOptionValueSource("approver"));
+    await runLogin(createContext(globals(opts)), envs, assume, { noBrowser, approver });
   });
 
   const assume = program
@@ -539,6 +541,7 @@ function buildProgram(): Command {
         "--no-browser",
         "with --agent or --sandbox-agent: approve by device code from any device, for a machine no browser can reach (a container, CI, a remote box)"
       )
+      .addOption(approverOption("with --no-browser, on --agent or --sandbox-agent"))
       .addHelpText(
         "after",
         "\nWhich one an agent mints:\n\n" +
@@ -553,15 +556,17 @@ function buildProgram(): Command {
           '    eval "$(oxyc tokens create --agent --env dev)"\n\n' +
           "Where no browser can reach this machine (a cloud container, CI, a remote box), add\n" +
           "--no-browser: oxyc prints a URL and a code, the operator approves from any device,\n" +
-          "and the token is printed the same way.\n"
+          "and the token is printed the same way. Add --approver <email> and the operator is\n" +
+          "told by push, email and Slack; they type the code from your output on the page.\n"
       )
-  ).action(async (opts: Record<string, unknown>) => {
+  ).action(async (opts: Record<string, unknown>, cmd: Command) => {
     const ctx = createContext(globals(opts));
     const apps = opts.app as string[];
     const hours = opts.hours as string | undefined;
     const name = opts.name as string | undefined;
     // Commander's `--no-browser` is `browser: false`; it defaults to true.
     const noBrowser = opts.browser === false;
+    const approver = approverFrom(opts, noBrowser, cmd.getOptionValueSource("approver"));
     // Two different tokens. Asked for both, neither is minted.
     if (opts.agent && opts.sandboxAgent) {
       throw usageError(
@@ -591,12 +596,12 @@ function buildProgram(): Command {
       await runTokensCreateAgent(
         ctx,
         { standing: Boolean(opts.standing), hours, name },
-        { noBrowser }
+        { noBrowser, approver }
       );
       return;
     }
     if (opts.sandboxAgent) {
-      await runTokensCreateSandboxAgent(ctx, { apps, hours, name }, { noBrowser });
+      await runTokensCreateSandboxAgent(ctx, { apps, hours, name }, { noBrowser, approver });
       return;
     }
     // The flags mean nothing without it, and silently opening the page

@@ -21,8 +21,8 @@ use super::stack::{Reach, flat_api, make_staff, mint};
 use super::{audit_rows, call, fixture};
 
 /// RFC 7636 appendix B's verifier.
-const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-const HOST: &str = "cloud-box";
+pub(super) const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+pub(super) const HOST: &str = "cloud-box";
 
 async fn start(ask: Option<Value>) -> (StatusCode, Value) {
     let mut body = json!({ "code_challenge": challenge_of(VERIFIER), "hostname": HOST });
@@ -33,14 +33,14 @@ async fn start(ask: Option<Value>) -> (StatusCode, Value) {
 }
 
 /// Start a request and return `(device_code, user_code)`.
-async fn started(ask: Option<Value>) -> (String, String) {
+pub(super) async fn started(ask: Option<Value>) -> (String, String) {
     let (status, body) = start(ask).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let text = |key: &str| body[key].as_str().expect(key).to_string();
     (text("device_code"), text("user_code"))
 }
 
-async fn poll_with(device_code: &str, verifier: &str) -> (StatusCode, Value) {
+pub(super) async fn poll_with(device_code: &str, verifier: &str) -> (StatusCode, Value) {
     let body = json!({ "device_code": device_code, "code_verifier": verifier });
     call(flat_api(), "POST", "/auth/cli/device/poll", &[], Some(body)).await
 }
@@ -58,16 +58,25 @@ async fn poll(db: &DatabaseConnection, device_code: &str) -> (StatusCode, Value)
     poll_with(device_code, VERIFIER).await
 }
 
-async fn page(cookie: &str, method: &str, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
+pub(super) async fn page(
+    cookie: &str,
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
     call(flat_api(), method, uri, &[("cookie", cookie)], body).await
 }
 
-async fn describe(cookie: &str, user_code: &str) -> (StatusCode, Value) {
+pub(super) async fn describe(cookie: &str, user_code: &str) -> (StatusCode, Value) {
     let uri = format!("/auth/cli/device/requests/{user_code}");
     page(cookie, "GET", &uri, None).await
 }
 
-async fn approve(cookie: &str, user_code: &str, mint: Option<Value>) -> (StatusCode, Value) {
+pub(super) async fn approve(
+    cookie: &str,
+    user_code: &str,
+    mint: Option<Value>,
+) -> (StatusCode, Value) {
     let uri = format!("/auth/cli/device/requests/{user_code}/approve");
     let body = mint.map_or_else(|| json!({}), |mint| json!({ "mint": mint }));
     page(cookie, "POST", &uri, Some(body)).await

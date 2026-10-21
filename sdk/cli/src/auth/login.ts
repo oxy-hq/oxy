@@ -54,6 +54,12 @@ export interface LoginOptions {
    * loopback, for a machine whose `127.0.0.1` no browser can reach.
    */
   noBrowser?: boolean;
+  /**
+   * With `noBrowser`: the email of the person who must approve. The platform
+   * tells them (push, email, Slack, the inbox); they type the code this
+   * command prints on the approval page. Nothing about the code is sent.
+   */
+  approver?: string;
   /** Wait between device-code polls. Tests inject one; the default sleeps. */
   sleep?: (ms: number) => Promise<void>;
 }

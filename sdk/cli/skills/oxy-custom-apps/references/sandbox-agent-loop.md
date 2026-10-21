@@ -30,6 +30,13 @@ oxyc tokens create --sandbox-agent --app <org>/<app> --env <deployment>
   in, type the code the terminal shows, and approve. The token is printed
   exactly as above. The rule does not change: never open or approve that page
   yourself, with a browser tool or any other way.
+- **Name who approves with `--approver <email>`** (or `OXY_APPROVER`), only
+  with `--no-browser`: the engineer is told by push, email and Slack; they type
+  the code from your output on the page. Use the email your engineer gave you,
+  and still show them the code `oxyc` printed, since the notice does not carry
+  it. Only that person can open the request: if you were given no address, omit
+  the flag and hand them the URL and the code as before. Never open or click
+  the page yourself.
 - **Evaluate that line and work with the token.** In a shell that persists:
   `eval "$(oxyc tokens create --sandbox-agent --app <org>/<app> --env <deployment>)"`.
   In one that does not, keep the value and set `OXY_TOKEN` on each command.
@@ -236,7 +243,9 @@ cases:
   `--no-browser`). Ask your engineer what the page said. Only Oxy staff
   holding `develop_apps` and `manage_apps` over the app's org can approve: if
   the page refused, report what it said and stop. If they missed it, run the
-  command once more.
+  command once more. If you named an `--approver`, say so: the request went to
+  that person's phone and inbox, so they may have missed the notice rather
+  than the page.
 - **Exit `4`.** The approval code was rejected and nothing was minted. Run the
   command once more, with fewer `--hours` if an organization caps a token's
   lifetime. With `--no-browser`, exit `4` with `access_denied` means your
@@ -246,6 +255,8 @@ cases:
   device-code approval (exit `8`).** The CLI or the deployment is too old for
   a machine no browser can reach. Ask your engineer to update, or to run the
   command on a machine with a browser and hand you the token.
+- **`--approver` is an unknown option (exit `2`).** The CLI predates it. Run
+  without it and give your engineer the URL and the code yourself.
 
 ## Over MCP
 

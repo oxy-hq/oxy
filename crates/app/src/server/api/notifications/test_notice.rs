@@ -20,18 +20,16 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use entity::{org_frontline_members, org_members};
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_auth::types::AuthenticatedUser;
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-};
+use sea_orm::{DatabaseConnection, DbErr};
 use serde::Deserialize;
 use serde_json::json;
 use tracing::instrument;
 use uuid::Uuid;
 
+use super::platform::people;
 use super::platform::self_test::{TestSent, send_test};
 
 #[derive(Debug, Default, Deserialize)]
@@ -100,34 +98,17 @@ pub fn parse(raw: &[u8]) -> Result<Option<Uuid>, &'static str> {
 }
 
 /// The org to file the caller's test under: `named` if it is one of theirs,
-/// else their oldest. Members first, then frontline standing (crew hold no
-/// membership and are who custom-app notifications are for). Only orgs the
-/// request's token reaches, as the inbox lists only those.
+/// else their oldest (`people::orgs_of`: members first, then frontline
+/// standing). Only orgs the request's token reaches, as the inbox lists only
+/// those.
 pub async fn org_for(
     db: &DatabaseConnection,
     user: &AuthenticatedUser,
     named: Option<Uuid>,
 ) -> Result<Option<Uuid>, DbErr> {
-    let members: Vec<Uuid> = org_members::Entity::find()
-        .select_only()
-        .column(org_members::Column::OrgId)
-        .filter(org_members::Column::UserId.eq(user.id))
-        .order_by_asc(org_members::Column::CreatedAt)
-        .into_tuple::<Uuid>()
-        .all(db)
-        .await?;
-    let crew: Vec<Uuid> = org_frontline_members::Entity::find()
-        .select_only()
-        .column(org_frontline_members::Column::OrgId)
-        .filter(org_frontline_members::Column::UserId.eq(user.id))
-        .filter(org_frontline_members::Column::Status.eq(org_frontline_members::STATUS_ACTIVE))
-        .order_by_asc(org_frontline_members::Column::CreatedAt)
-        .into_tuple::<Uuid>()
-        .all(db)
-        .await?;
-    let mut orgs = members
+    let mut orgs = people::orgs_of(db, user.id)
+        .await?
         .into_iter()
-        .chain(crew)
         .filter(|org| user.reaches_org(*org));
     Ok(match named {
         Some(want) => orgs.find(|org| *org == want),

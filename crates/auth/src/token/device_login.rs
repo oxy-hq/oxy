@@ -27,6 +27,15 @@
 //!   collects nothing, and the page shows it so the person can compare it with
 //!   the one their terminal printed.
 //!
+//! ## A request may name who approves it
+//!
+//! `oxyc --approver <email>` names the person to ask ([`resolve_approver`]).
+//! When it resolves to an active user, the request is bound to them: the page's
+//! read, approve and deny answer as for an unknown code to anyone else
+//! ([`Pending::may_decide`]). The binding is never a second factor — the user
+//! code still has to be typed — it only keeps a request meant for one person
+//! from being decided by another who got hold of the code.
+//!
 //! ## A request asks for one kind, and is approved as that kind
 //!
 //! A request whose ask names a `kind` is approved only with a mint, and one
@@ -41,18 +50,21 @@ use entity::prelude::CliDeviceRequests;
 use oxy_shared::errors::OxyError;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, PaginatorTrait,
+    QueryFilter, Set,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::cli_login::{Redeemed, VERIFIER_LEN, challenge_of};
+pub use super::device_approver::{clean_approver, resolve as resolve_approver};
 #[cfg(test)]
 use super::device_ask::USER_CODE_ALPHABET;
 use super::device_ask::new_user_code;
 pub use super::device_ask::{
-    AskedKind, USER_CODE_LEN, asked_kind, clean_ask, clean_user_code, display_user_code,
+    AskedKind, USER_CODE_LEN, asked_kind, carries_user_code, clean_ask, clean_user_code,
+    display_user_code,
 };
 
 /// How long a request waits for a decision.
@@ -87,15 +99,48 @@ pub struct Started {
     pub user_code: String,
     pub expires_in: i64,
     pub interval: i64,
+    /// When the row was written: what a count of the requests before it is
+    /// taken as of.
+    pub created_at: DateTime<Utc>,
+}
+
+/// The approver a request is bound to when it named an email nobody holds
+/// (or one two accounts share up to case): the nil id matches no user, so
+/// nobody can decide it, and it lapses — exactly as a request bound to a real
+/// person reads to everyone else. Without it, whether a named address belongs
+/// to a user would show in who may open the request. A typo in `--approver`
+/// therefore means rerunning with the right address.
+pub const UNRESOLVED_APPROVER: Uuid = Uuid::nil();
+
+/// How many pending requests bound to `user_id` were live as of `as_of`
+/// (those created then or before): what an anonymous caller naming that
+/// person can have waiting, and so how many notices they can aim at them
+/// (the handler tells the approver only under the cap). Counted as of the
+/// request's own write, so a request that lands later cannot withhold an
+/// earlier one's notice, however the two tasks are scheduled.
+pub async fn bound_pending<C: ConnectionTrait>(
+    db: &C,
+    user_id: Uuid,
+    as_of: DateTime<Utc>,
+) -> Result<u64, OxyError> {
+    CliDeviceRequests::find()
+        .filter(Column::ApproverUserId.eq(user_id))
+        .filter(Column::Status.eq(PENDING))
+        .filter(Column::CreatedAt.lte(as_of.fixed_offset()))
+        .filter(Column::ExpiresAt.gt(Utc::now().fixed_offset()))
+        .count(db)
+        .await
+        .map_err(db_err("count cli device requests"))
 }
 
 /// Open a request. The caller has validated the challenge, the hostname and
-/// the ask ([`clean_ask`]).
+/// the ask ([`clean_ask`]); `approver` is who may decide it, when it names one.
 pub async fn start<C: ConnectionTrait>(
     db: &C,
     code_challenge: &str,
     hostname: &str,
     ask: Value,
+    approver: Option<Uuid>,
 ) -> Result<Started, OxyError> {
     let now = Utc::now();
     sweep(db, now).await;
@@ -117,6 +162,7 @@ pub async fn start<C: ConnectionTrait>(
             decided_at: Set(None),
             last_polled_at: Set(None),
             consumed_at: Set(None),
+            approver_user_id: Set(approver),
         };
         match row.insert(db).await {
             Ok(_) => {
@@ -125,6 +171,7 @@ pub async fn start<C: ConnectionTrait>(
                     user_code,
                     expires_in: REQUEST_TTL_SECS,
                     interval: POLL_INTERVAL_SECS,
+                    created_at: now,
                 });
             }
             // The unique index on `user_code`: draw another.
@@ -165,6 +212,17 @@ pub struct Pending {
     pub ask: Value,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+    /// The one person who may decide it; `None` when the CLI named nobody.
+    pub approver_user_id: Option<Uuid>,
+}
+
+impl Pending {
+    /// Whether `user_id` may read and decide this request: anyone, unless it
+    /// is bound to an approver, and then only them.
+    pub fn may_decide(&self, user_id: Uuid) -> bool {
+        self.approver_user_id
+            .is_none_or(|approver| approver == user_id)
+    }
 }
 
 /// The live, undecided request a user code names, or `None`.
@@ -186,6 +244,7 @@ pub async fn pending<C: ConnectionTrait>(
         ask: row.ask,
         created_at: row.created_at.into(),
         expires_at: row.expires_at.into(),
+        approver_user_id: row.approver_user_id,
     }))
 }
 

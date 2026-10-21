@@ -72,3 +72,53 @@ fn an_ask_that_no_oxyc_sends_is_refused() {
         assert!(clean_ask(Some(&bad)).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn an_approver_is_a_plausible_email_trimmed() {
+    assert_eq!(
+        clean_approver("  Luong@Oxy.tech \n"),
+        Some("Luong@Oxy.tech".into())
+    );
+    assert_eq!(clean_approver("a@b"), Some("a@b".into()));
+    let at_the_limit = format!("{}@oxy.tech", "a".repeat(254 - "@oxy.tech".len()));
+    assert_eq!(at_the_limit.chars().count(), 254);
+    assert_eq!(clean_approver(&at_the_limit), Some(at_the_limit.clone()));
+}
+
+#[test]
+fn an_approver_that_cannot_be_an_email_is_refused() {
+    let too_long = format!("{}@oxy.tech", "a".repeat(254));
+    for bad in [
+        "",
+        "   ",
+        "no-at-sign",
+        "@oxy.tech",
+        "luong@",
+        "a@b@c",
+        "lu ong@oxy.tech",
+        "luong@oxy.tech\n.evil",
+        "luong@oxy\u{0}.tech",
+        "luong\t@oxy.tech",
+        too_long.as_str(),
+    ] {
+        assert_eq!(clean_approver(bad), None, "{bad:?}");
+    }
+}
+
+#[test]
+fn a_request_bound_to_an_approver_is_decided_only_by_them() {
+    let approver = Uuid::new_v4();
+    let pending = |approver_user_id| Pending {
+        user_code: "BCDFGHJK".into(),
+        hostname: "box".into(),
+        code_challenge: String::new(),
+        ask: json!({}),
+        created_at: Utc::now(),
+        expires_at: Utc::now(),
+        approver_user_id,
+    };
+    assert!(pending(Some(approver)).may_decide(approver));
+    assert!(!pending(Some(approver)).may_decide(Uuid::new_v4()));
+    // Naming nobody changes nothing: whoever types the code decides.
+    assert!(pending(None).may_decide(Uuid::new_v4()));
+}

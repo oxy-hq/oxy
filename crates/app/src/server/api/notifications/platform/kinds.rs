@@ -16,11 +16,20 @@ pub const BILLING_PAST_DUE: &str = "oxy.billing_past_due";
 pub const WORKSPACE_READY: &str = "oxy.workspace_ready";
 pub const RUN_FAILED: &str = "oxy.run_failed";
 pub const ANOMALY: &str = "oxy.anomaly";
+/// `oxyc … --no-browser --approver <email>` asks this person to approve.
+pub const CLI_APPROVAL: &str = "oxy.cli_approval";
 /// A notice a person sent themselves (`POST /api/notifications/test`).
 pub const TEST: &str = "oxy.test";
 
 /// Every kind the platform sends.
-pub const KINDS: [&str; 5] = [BILLING_PAST_DUE, WORKSPACE_READY, RUN_FAILED, ANOMALY, TEST];
+pub const KINDS: [&str; 6] = [
+    BILLING_PAST_DUE,
+    WORKSPACE_READY,
+    RUN_FAILED,
+    ANOMALY,
+    CLI_APPROVAL,
+    TEST,
+];
 
 /// Whether `kind` is one the platform sends.
 pub fn is_platform_kind(kind: &str) -> bool {
@@ -52,11 +61,13 @@ pub fn is_mutable(kind: &str) -> bool {
 /// A Slack DM, where the org connected Slack, for the three a person has to
 /// act on: a failed run, a past-due bill, and an anomaly someone was named
 /// for (a monitor's own `slack_channel` post is the broadcast; this is the
-/// named person). A ready workspace is news its creator is looking at. A test
+/// named person). A CLI approval asks for all three channels: the person is
+/// away from the terminal that is waiting on them, so push, email and Slack
+/// are each a way to reach their phone. A ready workspace is news its creator is looking at. A test
 /// notice tests push and the inbox, nothing else.
 pub fn channels(kind: &str) -> &'static [&'static str] {
     match kind {
-        RUN_FAILED => &["push", "email", "slack"],
+        RUN_FAILED | CLI_APPROVAL => &["push", "email", "slack"],
         BILLING_PAST_DUE | ANOMALY => &["push", "slack"],
         _ => &["push"],
     }
@@ -65,7 +76,8 @@ pub fn channels(kind: &str) -> &'static [&'static str] {
 /// The record a notice is about, by kind and id — never its text.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Subject {
-    /// `billing`, `workspace`, `automation_run`, `airway_run` or `anomaly`.
+    /// `billing`, `workspace`, `automation_run`, `airway_run`, `anomaly` or
+    /// `cli_device_request`.
     pub kind: &'static str,
     pub id: String,
 }
@@ -76,6 +88,9 @@ pub const SUBJECT_WORKSPACE: &str = "workspace";
 pub const SUBJECT_AUTOMATION_RUN: &str = "automation_run";
 pub const SUBJECT_AIRWAY_RUN: &str = "airway_run";
 pub const SUBJECT_ANOMALY: &str = "anomaly";
+/// A device-code request, by its user code without the dash: unique while the
+/// request exists, and never the device code.
+pub const SUBJECT_CLI_DEVICE_REQUEST: &str = "cli_device_request";
 /// A test notice: its id is a [`TestSubject`].
 pub const SUBJECT_TEST: &str = "test";
 
@@ -88,6 +103,7 @@ pub fn subject_kind(stored: &str) -> Option<&'static str> {
         SUBJECT_AUTOMATION_RUN,
         SUBJECT_AIRWAY_RUN,
         SUBJECT_ANOMALY,
+        SUBJECT_CLI_DEVICE_REQUEST,
         SUBJECT_TEST,
     ]
     .into_iter()
@@ -153,6 +169,9 @@ pub enum PlatformNotice {
         workspace_id: Uuid,
         event_id: Uuid,
     },
+    /// A CLI asks this person to approve its device-code request. The user
+    /// code names the request; the notice never says it.
+    CliApproval { org_id: Uuid, user_code: String },
     /// A person sent themselves a test, filed under one of their orgs.
     Test { org_id: Uuid, subject: TestSubject },
 }
@@ -164,6 +183,7 @@ impl PlatformNotice {
             Self::WorkspaceReady { .. } => WORKSPACE_READY,
             Self::AutomationRunFailed { .. } | Self::AirwayRunFailed { .. } => RUN_FAILED,
             Self::Anomaly { .. } => ANOMALY,
+            Self::CliApproval { .. } => CLI_APPROVAL,
             Self::Test { .. } => TEST,
         }
     }
@@ -175,6 +195,7 @@ impl PlatformNotice {
             | Self::AutomationRunFailed { org_id, .. }
             | Self::AirwayRunFailed { org_id, .. }
             | Self::Anomaly { org_id, .. }
+            | Self::CliApproval { org_id, .. }
             | Self::Test { org_id, .. } => *org_id,
         }
     }
@@ -183,7 +204,7 @@ impl PlatformNotice {
     /// org-level notice, which records it under the org's oldest workspace.
     pub fn workspace_id(&self) -> Option<Uuid> {
         match self {
-            Self::BillingPastDue { .. } | Self::Test { .. } => None,
+            Self::BillingPastDue { .. } | Self::CliApproval { .. } | Self::Test { .. } => None,
             Self::WorkspaceReady { workspace_id, .. }
             | Self::AutomationRunFailed { workspace_id, .. }
             | Self::AirwayRunFailed { workspace_id, .. }
@@ -214,6 +235,10 @@ impl PlatformNotice {
             Self::Anomaly { event_id, .. } => Subject {
                 kind: SUBJECT_ANOMALY,
                 id: event_id.to_string(),
+            },
+            Self::CliApproval { user_code, .. } => Subject {
+                kind: SUBJECT_CLI_DEVICE_REQUEST,
+                id: user_code.clone(),
             },
             Self::Test { subject, .. } => Subject {
                 kind: SUBJECT_TEST,
@@ -253,11 +278,12 @@ mod tests {
     }
 
     #[test]
-    fn only_a_failed_run_is_emailed_and_only_news_and_the_test_skip_slack() {
+    fn only_a_failed_run_and_a_cli_approval_are_emailed_and_only_news_and_the_test_skip_slack() {
         for kind in KINDS {
             let ch = channels(kind);
             assert_eq!(ch[0], "push", "{kind}");
-            assert_eq!(ch.contains(&"email"), kind == RUN_FAILED, "{kind}");
+            let emailed = kind == RUN_FAILED || kind == CLI_APPROVAL;
+            assert_eq!(ch.contains(&"email"), emailed, "{kind}");
             // A ready workspace is news in the product; a test notice tests push
             // and the inbox, nothing else.
             let push_only = kind == WORKSPACE_READY || kind == TEST;
@@ -300,6 +326,31 @@ mod tests {
         assert!(!is_critical(TEST));
         assert!(!is_mutable(TEST) && !is_mutable(BILLING_PAST_DUE));
         assert!(is_mutable(WORKSPACE_READY) && is_mutable(RUN_FAILED) && is_mutable(ANOMALY));
+    }
+
+    #[test]
+    fn a_cli_approval_is_keyed_by_its_user_code_and_reaches_every_channel_but_can_be_muted() {
+        let org = Uuid::new_v4();
+        let notice = PlatformNotice::CliApproval {
+            org_id: org,
+            user_code: "BCDFGHJK".into(),
+        };
+        assert_eq!(notice.kind(), CLI_APPROVAL);
+        assert_eq!(notice.org_id(), org);
+        let subject = notice.subject();
+        assert_eq!(subject.kind, SUBJECT_CLI_DEVICE_REQUEST);
+        assert_eq!(subject_kind(subject.kind), Some(SUBJECT_CLI_DEVICE_REQUEST));
+        assert_eq!(subject.id, "BCDFGHJK", "the code without its dash");
+        assert_eq!(channels(CLI_APPROVAL), &["push", "email", "slack"]);
+        assert!(is_platform_kind(CLI_APPROVAL));
+        assert!(is_mutable(CLI_APPROVAL) && !is_critical(CLI_APPROVAL));
+        assert!(notice.emailed() && notice.slacked() && !notice.critical());
+        assert_eq!(notice.workspace_id(), None);
+        let other = PlatformNotice::CliApproval {
+            org_id: org,
+            user_code: "BCDFGHJL".into(),
+        };
+        assert_ne!(notice.subject(), other.subject());
     }
 
     #[test]

@@ -16,9 +16,11 @@
 //!   per failing streak, then daily, by [`run_streak`]),
 //!   [`workspace_ready`] (called by onboarding's clone), billing's
 //!   `billing/notify.rs`, the anomaly delivery task's people
-//!   (`anomaly_notify/people.rs`), and [`self_test`] (a person testing their
+//!   (`anomaly_notify/people.rs`), [`cli_approval`] (a CLI naming who must
+//!   approve its device-code request), and [`self_test`] (a person testing their
 //!   own push, `POST /api/notifications/test`).
 
+pub mod cli_approval;
 pub mod kinds;
 pub mod people;
 pub mod preferences;
